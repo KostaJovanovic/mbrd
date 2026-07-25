@@ -180,19 +180,49 @@ function plus(tile, long, thick) {
 }
 
 /**
+ * How many quantised tile sizes there are per doubling.
+ *
+ * This number is the whole performance story of this tier, so it is worth
+ * being explicit about what it buys.
+ *
+ * The tile is baked into the SVG as its canvas size, so a different tile is a
+ * different URL - and a different URL is an image the browser has to decode
+ * and rasterise again, twice a frame, once per lattice. The mark *inside* is
+ * identical either way: `long` and `thick` do not depend on the tile at all,
+ * only the canvas it is centred on does.
+ *
+ * The first cut of this rounded the tile to a tenth of a pixel, which is finer
+ * than a zoom's own step - so a measured sweep from 1x to 4x minted 90 distinct
+ * images across 91 frames and 47 KB of URL. The cache was holding nothing,
+ * because nothing ever repeated: it was a per-frame rebuild wearing a memo.
+ *
+ * Quantising geometrically instead is what makes the values recur. gridStep()
+ * already pins the on-screen tile inside [MIN_PX, MAX_PX] - two doublings - so
+ * 16 steps per doubling is at most 32 distinct images for the whole zoom range,
+ * ever, and the same 32 on every gesture after the first. The same sweep now
+ * mints a handful.
+ *
+ * What it costs is that the mark is scaled by up to half a step - about 2% -
+ * because background-size stays exact while the SVG canvas is rounded. On a
+ * six-pixel arm that is a tenth of a pixel, which is under the rasteriser's own
+ * resolution. Spacing is untouched, so the lattice cannot drift.
+ */
+const TILE_STEPS = 16;
+const quantTile = tile =>
+  +Math.pow(2, Math.round(Math.log2(Math.max(1, tile)) * TILE_STEPS) / TILE_STEPS).toFixed(2);
+
+/**
  * One tiled cross, as a background-image.
  *
- * The SVG's own width is the tile rounded to a tenth of a pixel while
- * background-size stays exact, so the lattice spacing is unchanged and only the
- * mark inside it is scaled by up to a twentieth of a pixel. That rounding is
- * what makes the cache worth having: a zoom sweeps the tile through a
- * continuous range, and to a tenth of a pixel it revisits the same values.
+ * The SVG's own width is the quantised tile while background-size stays exact,
+ * so the lattice spacing is unchanged and only the mark inside it moves - see
+ * TILE_STEPS for why that trade is the right way round.
  */
 const plusCache = new Map();
 const PLUS_CACHE_MAX = 128;
 
 function plusURL(tile, color, long, thick) {
-  const t = Math.max(1, Math.round(tile * 10) / 10);
+  const t = quantTile(tile);
   const key = `${t}|${color}|${long.toFixed(2)}|${thick.toFixed(2)}`;
   const hit = plusCache.get(key);
   if (hit) return hit;
