@@ -24,32 +24,49 @@ export function initDrop(vp) {
   const show = () => { overlay.hidden = false; };
   const hide = () => { depth = 0; overlay.hidden = true; };
 
+  // Files or a link. Both are "something from outside landing on the board",
+  // and the overlay says the same thing for either.
+  const takes = dt => hasFiles(dt) || hasLink(dt);
+
   addEventListener('dragenter', e => {
-    if (!hasFiles(e.dataTransfer)) return;
+    if (!takes(e.dataTransfer)) return;
     e.preventDefault();
     depth++;
     show();
   });
 
   addEventListener('dragover', e => {
-    if (!hasFiles(e.dataTransfer)) return;
+    if (!takes(e.dataTransfer)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
     lastPoint = { x: e.clientX, y: e.clientY };
   });
 
   addEventListener('dragleave', e => {
-    if (!hasFiles(e.dataTransfer)) return;
+    if (!takes(e.dataTransfer)) return;
     if (--depth <= 0) hide();
   });
 
   addEventListener('drop', async e => {
-    if (!hasFiles(e.dataTransfer)) return;
+    if (!takes(e.dataTransfer)) return;
     e.preventDefault();
     hide();
     const pt = lastPoint || { x: e.clientX, y: e.clientY };
-    const files = await filesFrom(e.dataTransfer);
-    await importFiles(files, vp.toWorld(pt.x, pt.y));
+    const at = vp.toWorld(pt.x, pt.y);
+    // Files first. A drag can carry both - dragging an image out of a page
+    // offers the picture *and* the address it came from - and in that case the
+    // picture is what was being dragged, with the URL along for the ride.
+    if (hasFiles(e.dataTransfer)) {
+      await importFiles(await filesFrom(e.dataTransfer), at);
+      return;
+    }
+    const urls = urlsFrom(e.dataTransfer);
+    // The overlay has already said yes by this point - it has to, since a drag's
+    // contents cannot be read until it lands - so a payload that turns out to
+    // hold nothing we will open needs saying out loud. Silently swallowing it
+    // would look exactly like the drop having missed.
+    if (!urls.length) { toast('That link is not one this can open'); return; }
+    addLinks(at, urls);
   });
 
   addEventListener('paste', async e => {
@@ -212,10 +229,68 @@ export function addLink(centre, url) {
   return item;
 }
 
+/**
+ * Several links at once, cascaded from where they landed.
+ *
+ * Not run through the arrangement engine like a file drop is. That engine
+ * reserves a cell per item and lays the whole set out from a centre, which is
+ * right for a folder of photos arriving at once and wrong for two or three
+ * links dropped at a spot you chose: a cascade keeps the first one exactly
+ * where the pointer was, and a dropped link should land under the pointer.
+ */
+export function addLinks(at, urls) {
+  if (!urls.length) return [];
+  const drafts = urls.map((url, i) => ({
+    ...linkDraft(url),
+    x: at.x + i * LINK_STEP.x,
+    y: at.y + i * LINK_STEP.y,
+  }));
+  const made = addItems(drafts, drafts.length > 1 ? `Add ${drafts.length} links` : 'Add link');
+  select(made.map(i => i.id));
+  return made;
+}
+
+/** Enough that each card's corner and title clear the one beneath it. */
+const LINK_STEP = { x: 26, y: -26 };
+
 // --- drag payload helpers --------------------------------------------------
 
 function hasFiles(dt) {
   return !!dt && [...(dt.types || [])].includes('Files');
+}
+
+/**
+ * Whether a drag is carrying a link - a tab, a bookmark, or an anchor dragged
+ * off a page.
+ *
+ * Only `text/uri-list` counts, and the narrowness is the point. A drag's data
+ * cannot be read during dragenter/dragover - only the list of types is exposed,
+ * deliberately, so a page cannot read what is passing over it - which means the
+ * overlay has to commit to accepting the drop before it can see what it is. Any
+ * dragged text at all sets `text/plain`, so gating on that would raise the
+ * overlay for every stray selection dragged across the window and then quietly
+ * drop most of them. `text/uri-list` is set only when the source says the thing
+ * being dragged *is* a link.
+ */
+function hasLink(dt) {
+  return !!dt && [...(dt.types || [])].includes('text/uri-list');
+}
+
+/**
+ * The URLs in a dropped payload.
+ *
+ * text/uri-list is a real format rather than a bare string: it may hold several
+ * URLs, one per line, and lines beginning with '#' are comments. Falls back to
+ * text/plain because a few sources announce uri-list and then put the address
+ * only in the plain text. Everything goes through linkURL(), so whatever is in
+ * there is held to exactly the same standard as a pasted address.
+ */
+function urlsFrom(dt) {
+  const raw = (dt.getData('text/uri-list') || dt.getData('text/plain') || '');
+  return raw.split(/[\r\n]+/)
+    .filter(line => line && !line.startsWith('#'))
+    .map(linkURL)
+    .filter(Boolean);
 }
 
 /**
