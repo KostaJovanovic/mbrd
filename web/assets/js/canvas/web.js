@@ -357,13 +357,93 @@ function paint() {
  * inside a frame's budget on a board with hundreds of things on it.
  */
 const NEIGHBOURS = 14;
-/** Past this, the second pass is skipped and the tree alone is drawn. */
-const DENSE_LIMIT = 700;
+
+/**
+ * Past so many items the second pass is skipped and the tree alone is drawn -
+ * and how many that is, this machine decides for itself.
+ *
+ * It used to be a flat 700, which is a number picked on one computer. The same
+ * board on a phone or an old laptop is the same 700 and several times the work,
+ * so the constant was really "700 on hardware like the author's". The whole of
+ * the quality-modes question in the roadmap came down to this one lever, and
+ * making it measure rather than assume is what closes that item: there is no
+ * setting to find, nothing to explain, and a slow machine simply draws a
+ * slightly sparser web instead of dropping frames.
+ *
+ * **The timing has to come from the spanning tree, not from the whole call**,
+ * and that is the one thing here worth reading twice. The obvious version -
+ * time the whole of `threads()` and solve for n - measures nothing at all the
+ * moment it does any work: once the limit drops below the board size the second
+ * pass is skipped, so no further sample is ever taken and the limit is frozen
+ * wherever it happened to land. A single slow warm-up frame then thins the web
+ * for the rest of the session. That version was written, measured, and threw
+ * the limit to 119 on a board it rebuilds in 1.65ms.
+ *
+ * The tree runs on every single rebuild, so timing *it* gives a fresh reading
+ * forever, on every board, whether or not the second pass ran.
+ *
+ * The two passes are then fitted separately, and that is the second thing this
+ * got wrong on the way here. Treating the second pass as a fixed multiple of
+ * the tree's cost looks reasonable and is not: the tree is O(n^2) and the pass,
+ * since it got its grid, is about O(n), so the ratio between them falls as the
+ * board grows. Measured at a small board it says the pass is twenty times the
+ * tree, and the limit lands at 328 - which would have made a 400-item board
+ * that rebuilds comfortably in 5ms drop to a bare tree.
+ *
+ * So: `a` is ms per n^2 for the tree, `b` is ms per n for the pass, both
+ * scale-invariant properties of the machine, and the limit is the n that solves
+ * a*n^2 + b*n = budget.
+ *
+ * Solving for n directly rather than nudging the limit up and down is what
+ * keeps this from oscillating - a servo would lower the limit, skip the second
+ * pass, measure a fast frame, raise it again, and the web would visibly change
+ * shape every few frames while you dragged.
+ *
+ * It only ever goes *below* the ceiling, and the first thing it found is that
+ * the old constant was too high even here: on the machine this was written on
+ * it settles around 450, because a 400-point board already spends 7.6ms of an
+ * 8ms budget and 700 spends over eight on its own - with items.js still to run
+ * in the same frame. So this is not only a concession to slow hardware. The
+ * flat 700 was optimistic on the computer that chose it.
+ */
+const DENSE_CEILING = 700;
+/** Below this the web stops being a web, so a slow machine still gets one. */
+const DENSE_FLOOR = 60;
+/** Half a 60fps frame. The rest of it belongs to items.js and the browser. */
+const FRAME_BUDGET_MS = 8;
+/**
+ * Rebuilds ignored before any of this starts.
+ *
+ * The first few calls are the JIT's, not the machine's, and they can be an
+ * order of magnitude slow. Reacting to them would thin the web at exactly the
+ * moment a board is being opened.
+ */
+const WARMUP = 4;
+
+let denseLimit = DENSE_CEILING;
+/**
+ * `a` and `b`, both seeded from a real measurement rather than from zero.
+ *
+ * On the machine this was written on, a 700-point board spends about 2.2ms in
+ * the tree and 6.1ms in the second pass, which is where these two numbers come
+ * from. Starting at a real board's figures means the first rebuild of a session
+ * is budgeted roughly right instead of being handed the whole ceiling and then
+ * jerked back off it.
+ */
+let treeCost = 4.5e-6;   // ms per n^2
+let passCost = 0.009;    // ms per n
+let warmup = WARMUP;
+
+/** What the limit currently is. Exported for tests; nothing in the app reads it. */
+export const denseLimitNow = () => denseLimit;
 
 export function threads(pts) {
   const n = pts.length;
+  const t0 = performance.now();
   const edges = spanningTree(pts);
-  if (n > DENSE_LIMIT) return edges;
+  const tTree = performance.now() - t0;
+  learnTree(n, tTree);
+  if (n > denseLimit) return edges;
 
   const taken = new Set(edges.map(([a, b]) => pair(a, b, n)));
   const k = Math.min(NEIGHBOURS, n - 1);
@@ -419,7 +499,45 @@ export function threads(pts) {
     grid.add(a, b);
     taken.add(pair(a, b, n));
   }
+
+  learnPass(n, performance.now() - t0 - tTree);
   return edges;
+}
+
+/**
+ * The tree's timing. Taken on every rebuild, which is the whole point.
+ *
+ * Smoothed hard, because a single frame is mostly noise - a collection pause or
+ * a tab regaining focus lands here as a board twice as expensive as it is, and
+ * reacting to that would visibly thin the web for no reason.
+ */
+function learnTree(n, ms) {
+  // Too few points to time anything but the clock's own resolution.
+  if (n < 24 || !(ms > 0)) return;
+  if (warmup > 0) { warmup--; return; }
+  treeCost = treeCost * 0.85 + (ms / (n * n)) * 0.15;
+  settle();
+}
+
+/** The same for the second pass, on its own scale: ms per point. */
+function learnPass(n, ms) {
+  if (n < 24 || !(ms > 0) || warmup > 0) return;
+  passCost = passCost * 0.85 + (ms / n) * 0.15;
+  settle();
+}
+
+/**
+ * The largest n whose whole rebuild fits the budget: solve a*n^2 + b*n = budget
+ * for n, which is the quadratic formula and nothing cleverer.
+ *
+ * Moved only when the answer differs by a sixth, so the limit sits still
+ * instead of trembling around a boundary and taking the web's shape with it.
+ */
+function settle() {
+  if (!(treeCost > 0)) return;
+  const root = Math.sqrt(passCost * passCost + 4 * treeCost * FRAME_BUDGET_MS);
+  const want = clampi(Math.round((root - passCost) / (2 * treeCost)), DENSE_FLOOR, DENSE_CEILING);
+  if (Math.abs(want - denseLimit) > denseLimit / 6) denseLimit = want;
 }
 
 const pair = (a, b, n) => (a < b ? a * n + b : b * n + a);
