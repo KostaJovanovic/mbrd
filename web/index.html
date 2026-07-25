@@ -9,6 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>mbrd</title>
 <meta name="description" content="An infinite freeform moodboard. Drop in anything, place it anywhere. Runs entirely in your browser.">
+<meta name="author" content="valjdakosta">
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#fbf8f1">
 <link rel="manifest" href="manifest.json">
@@ -193,8 +194,14 @@
     </section>
   </div>
 
+  <!-- The credit sits at the quiet end on purpose. An anchor and nothing else:
+       no logo request, no analytics, no font from anywhere - the same rule the
+       link cards follow, so an offline board still renders this footer exactly
+       as an online one does. rel carries noopener because every outbound link
+       in this app does. -->
   <footer class="side-foot">
     <span id="version"></span>
+    <a class="by" href="https://valjdakosta.com" target="_blank" rel="noopener noreferrer">valjdakosta</a>
   </footer>
 </aside>
 
