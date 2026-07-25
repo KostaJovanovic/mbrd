@@ -97,6 +97,11 @@ function binRow(entry) {
     // The note's own first line, so a wall of notes is still tellable apart.
     thumb.classList.add('is-note');
     thumb.textContent = (item.meta?.text || '').split('\n')[0].slice(0, 12) || 'note';
+  } else if (item.type === 'link') {
+    // A link's name is a hostname, not a filename, and extOf() reads the last
+    // dot in it - so "example.com" came out as a card badged "com" filed under
+    // "example". Neither half of the filename convention applies here.
+    thumb.textContent = 'link';
   } else {
     thumb.textContent = extOf(item.name) || item.type;
   }
@@ -114,6 +119,9 @@ function binRow(entry) {
 }
 
 function label(item) {
+  // Before the filename branch, for the same reason: baseName() would cut
+  // "example.com" back to "example".
+  if (item.type === 'link') return item.name || item.meta?.url || 'link';
   if (item.name) return baseName(item.name) || item.name;
   if (item.type === 'note') return (item.meta?.text || '').split('\n')[0] || 'Empty note';
   return item.type;
