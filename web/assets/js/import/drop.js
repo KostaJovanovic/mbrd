@@ -10,6 +10,7 @@ import { board, addItems, select, setItemCover, NOTE_MAX } from '../state.js';
 import { addFile } from '../storage/assets.js';
 import { classify, defaultSize, measureSize, linkURL, linkDraft } from '../canvas/renderers.js';
 import { arrange } from '../arrange/arrangements.js';
+import { coverArt, mayHaveArt } from './artwork.js';
 import { looksLikeMbrd } from '../storage/mbrd.js';
 import { openFile } from '../storage/storage.js';
 
@@ -109,10 +110,21 @@ export function initDrop(vp) {
   // The "Add files" button and the picker fallback share one hidden input.
   const input = document.getElementById('file-input');
   input.addEventListener('change', async () => {
-    if (!input.dataset.mode) return;             // storage.js is using it for .mbrd
+    const mode = input.dataset.mode;
+    if (!mode) return;                           // storage.js is using it for .mbrd
     const files = [...input.files];
     input.value = '';
     delete input.dataset.mode;
+    // Back to the defaults the content picker wants, so the next opening of it
+    // is not still filtered to images and limited to one.
+    input.accept = '';
+    input.multiple = true;
+    if (mode === 'cover') {
+      const id = coverFor;
+      coverFor = null;
+      if (files[0]) await applyCover(id, files[0]);
+      return;
+    }
     if (files.length) await importFiles(files, vp.toWorld(vp.left + vp.cx, vp.top + vp.cy));
   });
 }
@@ -124,6 +136,52 @@ export function pickFiles() {
   input.multiple = true;
   input.dataset.mode = 'content';
   input.click();
+}
+
+/**
+ * The item waiting for a picture, between opening the picker and it answering.
+ *
+ * Module state rather than a closure because the one hidden input is shared
+ * three ways - content here, .mbrd in storage.js, and now this - and `mode` on
+ * the element is how they stay out of each other's way. Cleared as soon as it
+ * is read, so a cancelled picker cannot leave a card armed to receive the next
+ * unrelated file.
+ */
+let coverFor = null;
+
+/** Choose a picture for one card. See setItemCover() in state.js. */
+export function pickCover(id) {
+  const input = document.getElementById('file-input');
+  input.accept = 'image/*';
+  input.multiple = false;
+  input.dataset.mode = 'cover';
+  coverFor = id;
+  input.click();
+}
+
+/**
+ * Attach a chosen picture to a card.
+ *
+ * Decodability is checked rather than assumed, and that is the whole of the
+ * work here. `accept="image/*"` is a filter on a dialog, not a promise: it lets
+ * through HEIC out of a phone and camera RAW out of a folder, both of which
+ * this browser may well be unable to draw. Setting one anyway would replace a
+ * card that looked like something with a card showing a broken image - a worse
+ * result than the one being fixed, and undoable only if the user works out
+ * what happened.
+ */
+async function applyCover(id, file) {
+  if (classify(file) !== 'image') {
+    toast(`${file.name} is not a picture`, 'error');
+    return;
+  }
+  const { decodable } = await measureSize('image', file);
+  if (!decodable) {
+    toast(`This browser cannot draw ${file.name}`, 'error');
+    return;
+  }
+  setItemCover(id, await addFile(file));
+  toast('Picture set');
 }
 
 /**
@@ -217,6 +275,15 @@ async function prepareFile(file) {
     size = defaultSize('generic');
   }
   const hash = await addFile(file);
+  // An audio file usually carries its own picture, and the card has a slot for
+  // one already - see setItemCover() in state.js. Registered as an ordinary
+  // asset, so an album's twelve tracks embedding the identical cover cost one
+  // copy of it. Tried before the item exists rather than after it mounts, so
+  // the card is never briefly the plain one; null is the common answer and
+  // costs a single 16-byte read.
+  const cover = type === 'audio' && mayHaveArt(file.name)
+    ? await coverArt(file).then(art => art && addFile(art)).catch(() => null)
+    : null;
   return {
     type,
     name: file.name,
@@ -224,6 +291,7 @@ async function prepareFile(file) {
     h: size.h,
     asset: { hash, embedded: true },
     meta: {
+      ...(cover ? { cover } : {}),
       mime: file.type || '',
       ext: extOf(file.name),
       size: file.size,
