@@ -36,6 +36,12 @@
 <!-- The canvas. #viewport is fixed to the window and paints the grid; #world is
      the single transformed layer every item lives in (see canvas/viewport.js). -->
 <div id="viewport">
+  <!-- The lattice at the plain end of the whimsy axis, which is drawn rather
+       than tiled - see canvas/grid.js for why a background image could not be
+       made to hold still. The other two tiers leave it empty and paint the
+       viewport's own background instead. First child, so it is under the axes,
+       the origin mark and every item. -->
+  <canvas id="grid-ink" aria-hidden="true"></canvas>
   <div id="axis-x" class="axis"></div>
   <div id="axis-y" class="axis"></div>
   <svg id="origin-mark" viewBox="0 0 36 36" fill="none" stroke="currentColor" aria-hidden="true">

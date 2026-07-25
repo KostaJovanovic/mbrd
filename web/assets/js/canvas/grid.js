@@ -1,11 +1,19 @@
 // Background grid. Purely visual: it never participates in hit-testing and no
 // item is ever snapped to it unless the snap setting is on.
 //
-// The grid is painted as layered CSS background gradients on #viewport (screen
-// space), not inside the transformed #world - so lines stay hairline-crisp at
-// any zoom instead of being scaled up into fat blurry bands. The world origin is
-// tracked through `background-position`, and the spacing is quantised in powers
-// of two so it never degenerates into a solid fill when you zoom out.
+// The grid is painted in screen space on #viewport, not inside the transformed
+// #world - so marks stay crisp at any zoom instead of being scaled up into fat
+// blurry blobs. The world origin is tracked through the mark positions, and the
+// spacing is quantised in powers of two so it never degenerates into a solid
+// fill when you zoom out.
+//
+// Two tiers draw it two ways, and the split is not an accident:
+//
+//   Softish, Middle   layered CSS radial gradients. A dot is a circle, a
+//                     gradient is a circle, and a gradient carrying var()
+//                     restyles itself when a slider moves with no repaint at
+//                     all. Panning is one background-position write.
+//   Harsh             a <canvas>. See drawCrosses() for why nothing else works.
 
 import { board } from '../state.js';
 
@@ -28,8 +36,11 @@ export function paintGrid(vp) {
 
   el.classList.toggle('no-axes', !s.axes);
 
+  const canvas = ensureCanvas(el);
+
   if (!s.grid) {
     el.style.backgroundImage = 'none';
+    clearCanvas(canvas);
     return;
   }
 
@@ -43,15 +54,16 @@ export function paintGrid(vp) {
   // afternoon. ui/appearance.js announces the change instead, so the attribute
   // is always current by the time we look at it.
   const harsh = document.documentElement.dataset.whimsy === HARSH;
-  // The dot keeps its colour as `var(--grid-minor)` and never resolves it: a
-  // gradient carrying a custom property restyles itself the instant the
-  // strength slider moves, with no repaint at all. The cross cannot - its
-  // colour goes inside a data URI, where var() means nothing - so it pays for
-  // one resolved read, cached, and ui/appearance.js hands it back on change.
-  const ink = harsh ? gridInk() : null;
-  const mark = (which, scale, tile) => harsh
-    ? cross(ink[which], ink.dot, scale, tile)
-    : dot(`var(--grid-${which})`, scale);
+
+  if (harsh) {
+    // The two painters are exclusive. Leaving the gradients up under the canvas
+    // would show a dot inside every cross.
+    el.style.backgroundImage = 'none';
+    drawCrosses(canvas, vp, o, minor, major);
+    return;
+  }
+
+  clearCanvas(canvas);
 
   const images = [], sizes = [], positions = [];
   // A mark is a list of image layers rather than one, because the dot's major
@@ -69,11 +81,10 @@ export function paintGrid(vp) {
   // on an infinite board: at any fractional zoom a full-bleed line grid beats
   // against the pixel grid into moire, and it competes with the world axes for
   // the same reading. A mark at each intersection states the same lattice and
-  // stays quiet - which is also why the cross below is a short mark and not
-  // the pair of rules it looks like it wants to be.
+  // stays quiet.
   // First layer paints on top, so majors are listed before minors.
-  push(mark('major', 1.5, major), major, o.x - major / 2, o.y - major / 2);
-  push(mark('minor', 1, minor), minor, o.x - minor / 2, o.y - minor / 2);
+  push(dot('var(--grid-major)', 1.5), major, o.x - major / 2, o.y - major / 2);
+  push(dot('var(--grid-minor)', 1), minor, o.x - minor / 2, o.y - minor / 2);
 
   el.style.backgroundImage = images.join(', ');
   el.style.backgroundSize = sizes.join(', ');
@@ -88,11 +99,7 @@ export function paintGrid(vp) {
  */
 const HARSH = '2';
 
-/**
- * Both marks are sized from --grid-dot, the user's grid-weight slider, and
- * both take a scale so the major lattice is the same mark drawn heavier rather
- * than a second shape with its own rules.
- */
+/** Both marks are sized from --grid-dot, the user's grid-weight slider. */
 const scaled = scale => `calc(var(--grid-dot) * ${scale})`;
 
 const dot = (color, scale) => {
@@ -116,129 +123,150 @@ const dot = (color, scale) => {
 // honest reading of "grid weight": turning it up should press harder, not draw
 // a bigger cross.
 const ARM_LONG = 3;
-const ARM_LONG_MAX = 6;   // px, before the lattice's own scale factor
+const ARM_LONG_MAX = 6;   // CSS px, before the lattice's own scale factor
 const ARM_THICK = 0.5;
 
+// ---------------------------------------------------------------------------
+// The Harsh lattice
+// ---------------------------------------------------------------------------
+
 /**
- * The lattice at Harsh: a registration mark instead of a dot. A real one.
+ * Why this is a canvas and not a background image.
  *
- * This was two elliptical gradients, an arm and its transpose, because a
- * gradient is the only thing that tiles for free and no gradient can bound a
- * rectangle on both axes - a linear one is bounded on one axis only and gives
- * ruled lines through every tile, and a radial one with two radii is an
- * ellipse. Which is what it looked like: an ellipse 10px long and 1.7px thick
- * keeps barely 40% of its thickness at 90% of its length, so both arms tapered
- * to points and the mark read as a smudge with a bright middle rather than as
- * a cross. Six pixels of it were doing the work of one dot.
+ * The mark at this tier is a registration cross - the drawing-office reference
+ * the whole tier is quoting - and it has been attempted twice before as
+ * something CSS could tile.
  *
- * So the cross is drawn instead of approximated - one SVG polygon, twelve
- * corners, square ends, uniform density. The old pair also overlapped at the
- * centre and doubled their alpha there; a single polygon has no seam to double.
+ * First as two elliptical gradients, an arm and its transpose. No gradient can
+ * bound a rectangle on both axes: a linear one is unbounded on the second axis
+ * and rules lines through every tile, and a radial one with two radii *is* an
+ * ellipse. An ellipse 10px long and 1.7px thick keeps barely 40% of its
+ * thickness at 90% of its length, so both arms tapered to points and the mark
+ * read as a smudge with a bright middle.
  *
- * The cost, stated plainly because it is a real one: the mark is a data URI
- * that bakes in the tile size, so it is rebuilt whenever the tile changes -
- * which is every frame of a zoom, though not of a pan, where only the position
- * moves. Memoised below to keep that to one small string per lattice, and paid
- * only by the tier that asked for crosses: every other tier is still two
- * gradients that never touch this path.
+ * Then as one SVG polygon in a data URI, tiled by background-size. That drew
+ * the right shape and brought two problems that are really the same problem.
+ * The tile has to be baked into the image, so every zoom step minted a new URL
+ * for the browser to decode and rasterise - 90 distinct images across 91 frames
+ * of one gesture, measured. Quantising the baked tile fixed the churn and
+ * *caused a worse bug*: with the SVG canvas rounded and background-size exact,
+ * the image is scaled by a hair, the arms land on fractional device pixels, and
+ * the rasteriser drops them. The crosses blinked in and out while resizing.
+ *
+ * Both failures come from one root: a tiled image cannot know where the device
+ * pixel grid is. A canvas can. Every mark below is snapped to whole device
+ * pixels and every arm is at least one of them wide, so a cross is either drawn
+ * properly or not at all - it can never be a fraction of a pixel the rasteriser
+ * is free to round away. Nothing is decoded, so there is no churn to cache, and
+ * the colours are read at paint time instead of being baked into a URI.
+ *
+ * The cost is that panning now redraws rather than moving a background-position.
+ * One Path2D and one fill() per lattice, measured at well under a frame - and
+ * only this tier pays it. The other two never enter this function.
  */
-function cross(color, dotPx, scale, tile) {
-  // The cap is scaled with the mark, so the major lattice stays proportionally
-  // the heavier of the two right up to the limit instead of meeting the minor
-  // one there and losing the distinction.
-  const long = Math.min(dotPx * ARM_LONG * scale, ARM_LONG_MAX * scale);
-  const thick = Math.max(dotPx * ARM_THICK * scale, MIN_ARM);
-  return [plusURL(tile, color, long, thick)];
+function drawCrosses(canvas, vp, o, minor, major) {
+  const ctx = sizeCanvas(canvas, vp);
+  if (!ctx) return;
+  const dpr = canvas._dpr;
+  const ink = gridInk();
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // Minor first, then major over it: the heavier mark wins where they coincide,
+  // which is every major intersection.
+  lattice(ctx, minor, o, dpr, canvas, ink.minor, ink.dot, 1);
+  lattice(ctx, major, o, dpr, canvas, ink.major, ink.dot, 1.5);
 }
 
 /**
- * Half-thickness an arm may not go under, in px.
+ * One lattice of crosses, as a single filled path.
  *
- * An arm thinner than a device pixel is not a fainter cross, it is a cross with
- * gaps in it: the rasteriser drops parts of the stroke and the mark comes apart
- * into dashes. The strength slider is the control for "fainter".
+ * One path and one fill() rather than a fill per mark, for two reasons. It is
+ * the fast shape - a couple of thousand rectangles composited once instead of a
+ * couple of thousand times - and it is the *correct* one: the grid colours are
+ * a low-alpha mix of the ink, and two overlapping translucent rectangles
+ * composite to twice the strength where they meet. Filling the union once is
+ * what stops every crossing point reading as a bright dot with whiskers, which
+ * is exactly how the two-gradient version failed.
  */
-const MIN_ARM = 0.4;
+function lattice(ctx, tileCss, o, dpr, canvas, color, dotPx, scale) {
+  const tile = tileCss * dpr;
+  if (!(tile > 3)) return;         // gridStep() should never allow this
 
-/**
- * The twelve corners of a plus, centred in a `tile`-square SVG.
- *
- * Written as one polygon rather than two rectangles so the arms cannot double
- * their alpha where they meet - the grid colours are already mixed down to a
- * fraction of the ink, and a crossing point at twice the strength of its own
- * arms is what made the old mark read as a dot with whiskers.
- */
-function plus(tile, long, thick) {
-  const c = tile / 2;
-  const n = v => v.toFixed(2);
-  const pts = [
-    [-thick, -long], [thick, -long], [thick, -thick], [long, -thick],
-    [long, thick], [thick, thick], [thick, long], [-thick, long],
-    [-thick, thick], [-long, thick], [-long, -thick], [-thick, -thick],
-  ];
-  return pts.map(([x, y]) => `${n(c + x)},${n(c + y)}`).join(' ');
+  // Snapped to whole device pixels, and never thinner than one. An arm under a
+  // device pixel is not a fainter cross, it is a cross the rasteriser is
+  // entitled to drop - which is the blinking this rewrite exists to end. The
+  // strength slider is the control for "fainter".
+  const arm = Math.max(1, Math.round(Math.min(dotPx * ARM_LONG * scale, ARM_LONG_MAX * scale) * dpr));
+  const thick = Math.max(1, Math.round(dotPx * ARM_THICK * 2 * scale * dpr));
+  const half = Math.floor(thick / 2);
+
+  const W = canvas.width, H = canvas.height;
+  const path = new Path2D();
+
+  // Positions accumulate in floats and are rounded per mark, so the lattice
+  // keeps its exact spacing over the whole screen instead of drifting by the
+  // rounding error a stepped integer would compound.
+  let x0 = (o.x * dpr) % tile;
+  if (x0 > 0) x0 -= tile;
+  let y0 = (o.y * dpr) % tile;
+  if (y0 > 0) y0 -= tile;
+
+  for (let y = y0; y < H + arm; y += tile) {
+    const cy = Math.round(y);
+    for (let x = x0; x < W + arm; x += tile) {
+      const cx = Math.round(x);
+      path.rect(cx - arm, cy - half, arm * 2, thick);
+      path.rect(cx - half, cy - arm, thick, arm * 2);
+    }
+  }
+
+  ctx.fillStyle = color;
+  ctx.fill(path);
 }
 
 /**
- * How many quantised tile sizes there are per doubling.
+ * The canvas layer, made if it is not there.
  *
- * This number is the whole performance story of this tier, so it is worth
- * being explicit about what it buys.
- *
- * The tile is baked into the SVG as its canvas size, so a different tile is a
- * different URL - and a different URL is an image the browser has to decode
- * and rasterise again, twice a frame, once per lattice. The mark *inside* is
- * identical either way: `long` and `thick` do not depend on the tile at all,
- * only the canvas it is centred on does.
- *
- * The first cut of this rounded the tile to a tenth of a pixel, which is finer
- * than a zoom's own step - so a measured sweep from 1x to 4x minted 90 distinct
- * images across 91 frames and 47 KB of URL. The cache was holding nothing,
- * because nothing ever repeated: it was a per-frame rebuild wearing a memo.
- *
- * Quantising geometrically instead is what makes the values recur. gridStep()
- * already pins the on-screen tile inside [MIN_PX, MAX_PX] - two doublings - so
- * 16 steps per doubling is at most 32 distinct images for the whole zoom range,
- * ever, and the same 32 on every gesture after the first. The same sweep now
- * mints a handful.
- *
- * What it costs is that the mark is scaled by up to half a step - about 2% -
- * because background-size stays exact while the SVG canvas is rounded. On a
- * six-pixel arm that is a tenth of a pixel, which is under the rasteriser's own
- * resolution. Spacing is untouched, so the lattice cannot drift.
+ * index.html carries it like the axes and the origin mark, since it is one of
+ * the viewport's permanent layers rather than something a gesture puts up. The
+ * fallback is for the tests and the render harnesses, which mount a #viewport
+ * without the rest of the page around it.
  */
-const TILE_STEPS = 16;
-const quantTile = tile =>
-  +Math.pow(2, Math.round(Math.log2(Math.max(1, tile)) * TILE_STEPS) / TILE_STEPS).toFixed(2);
+function ensureCanvas(el) {
+  let canvas = el.querySelector(':scope > #grid-ink');
+  if (!canvas) {
+    canvas = document.createElement('canvas');
+    canvas.id = 'grid-ink';
+    canvas.setAttribute('aria-hidden', 'true');
+    el.prepend(canvas);
+  }
+  return canvas;
+}
 
 /**
- * One tiled cross, as a background-image.
+ * Match the backing store to the viewport in device pixels.
  *
- * The SVG's own width is the quantised tile while background-size stays exact,
- * so the lattice spacing is unchanged and only the mark inside it moves - see
- * TILE_STEPS for why that trade is the right way round.
+ * Only on a real change: assigning width or height clears the canvas even when
+ * the value is identical, so doing it unconditionally would blank the lattice
+ * every frame and draw it again - which looks exactly like the flicker this is
+ * replacing.
  */
-const plusCache = new Map();
-const PLUS_CACHE_MAX = 128;
+function sizeCanvas(canvas, vp) {
+  const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+  const w = Math.round(vp.width * dpr);
+  const h = Math.round(vp.height * dpr);
+  if (!(w > 0 && h > 0)) return null;
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
+  }
+  canvas._dpr = dpr;
+  return canvas.getContext('2d');
+}
 
-function plusURL(tile, color, long, thick) {
-  const t = quantTile(tile);
-  const key = `${t}|${color}|${long.toFixed(2)}|${thick.toFixed(2)}`;
-  const hit = plusCache.get(key);
-  if (hit) return hit;
-  const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${t}" height="${t}">` +
-    `<polygon points="${plus(t, long, thick)}" fill="${color}"/></svg>`;
-  // encodeURIComponent rather than a hand-rolled escape: a resolved colour
-  // arrives as rgba(...) or color(srgb ... / ...), and `#` alone would end the
-  // URI at a fragment.
-  const url = `url("data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}")`;
-  // A plain cap, not an LRU. The keys that matter are the ones a zoom is
-  // sweeping through right now, and dropping the whole map costs one rebuild
-  // per lattice on the next frame.
-  if (plusCache.size >= PLUS_CACHE_MAX) plusCache.clear();
-  plusCache.set(key, url);
-  return url;
+function clearCanvas(canvas) {
+  if (!canvas.width || !canvas.height) return;
+  canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
 }
 
 /**
@@ -247,8 +275,8 @@ function plusURL(tile, color, long, thick) {
  * getComputedStyle is exactly what the note in paintGrid() forbids per frame,
  * so this is read once and held. resetGridInk() below is how it is given back,
  * and ui/appearance.js calls it on every change to a look - which includes each
- * drag of the strength and weight sliders, since a cross cannot follow those on
- * its own the way a gradient carrying var() can.
+ * drag of the strength and weight sliders, since a canvas cannot follow those
+ * on its own the way a gradient carrying var() can.
  */
 let ink = null;
 
@@ -267,5 +295,4 @@ function gridInk() {
 /** Forget the resolved colours - the look changed. */
 export function resetGridInk() {
   ink = null;
-  plusCache.clear();
 }
