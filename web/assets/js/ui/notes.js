@@ -40,9 +40,17 @@ export function noteHeight(id, width) {
   body.style.height = 'auto';
 
   const cs = getComputedStyle(card);
-  const padding = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
   const head = card.querySelector('.note-title');
-  const need = Math.ceil(padding + (head?.offsetHeight || 0) + body.offsetHeight);
+  // Every band between the top of the card and the bottom of the text: the
+  // card's own padding, the title, the flex gap the card puts *between* its
+  // children, and the body. Leaving the gap out cost exactly one gap of
+  // height, which showed up as the last line of a note sliced through the
+  // middle - enough to look like a rendering fault rather than a bad sum.
+  const gap = head && body ? (parseFloat(cs.rowGap) || 0) : 0;
+  const padding = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+  // offsetHeight is a rounded integer, so it can sit a fraction under the real
+  // height; ceil plus a pixel keeps a descender off the edge.
+  const need = Math.ceil(padding + (head?.offsetHeight || 0) + gap + body.offsetHeight) + 1;
 
   body.style.flex = prevFlex;
   body.style.height = prevHeight;

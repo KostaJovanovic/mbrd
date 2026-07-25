@@ -102,8 +102,8 @@
      swelling rather than as a second line hovering nearby. */
   --sel-gap:    5px;    /* clear space between the item and the outline */
   --sel-line:   2px;    /* the outline itself */
-  --sel-corner: 2.2px;  /* how heavy that line gets at the corners */
-  --sel-reach:  18px;   /* how far along each edge the heavy part runs */
+  --sel-corner: 3.2px;  /* how heavy that line gets at the corners */
+  --sel-reach:  10px;   /* how far it runs on past the end of that curve */
 
   /* ---- sticky notes ----
      A pack of four colours, every one mixed out of this palette's own pigment
@@ -304,8 +304,8 @@
   --btn-press: 0.93;
   --tilt-max: 3deg;
 
-  --sel-corner: 3px;
-  --sel-reach:  22px;
+  --sel-corner: 4.2px;
+  --sel-reach:  12px;
 
   --dur-fast: 0.19s;
   --dur-base: 0.4s;
@@ -372,8 +372,8 @@
 
   --sel-gap:    4px;
   --sel-line:   2px;
-  --sel-corner: 2.2px;
-  --sel-reach:  16px;
+  --sel-corner: 3.2px;
+  --sel-reach:  14px;
 
   --font-display: "Geist", -apple-system, "Helvetica Neue", Helvetica, "Liberation Sans", system-ui, sans-serif;
   --font-body:    var(--font-display);
@@ -382,8 +382,12 @@
   --ls-scale: 0.5;
 
   --wash: 0;
-  --grid-alpha: 0.11;
-  --grid-dot: 1px;
+  /* A fine lattice, but a *visible* one. At 1px and 0.11 these were painted
+     and not seen: a 1px radius is two pixels across before antialiasing eats
+     the edges, and an eighth of an alpha on near-white paper finished the job.
+     Harsh is spare, not blank. */
+  --grid-alpha: 0.16;
+  --grid-dot: 1.5px;
 
   --dur-fast: 0.1s;
   --dur-base: 0.15s;
