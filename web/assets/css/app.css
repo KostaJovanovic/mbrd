@@ -1406,6 +1406,16 @@ kbd {
 
 /* A card at radius 0 with a hairline border already reads as ruled - a second
    rule inside it is just noise. */
+/* The origin stops being a compass rose and becomes a registration mark: the
+   ring squares off to match the crosses the lattice is drawn with at this end
+   of the axis, and the pip with it. The square pair is inert everywhere else. */
+#origin-mark .om-ring-sq,
+#origin-mark .om-pip-sq { display: none; }
+:root[data-whimsy="2"] #origin-mark .om-ring,
+:root[data-whimsy="2"] #origin-mark .om-pip { display: none; }
+:root[data-whimsy="2"] #origin-mark .om-ring-sq,
+:root[data-whimsy="2"] #origin-mark .om-pip-sq { display: inline; }
+
 :root[data-whimsy="2"] .card::after { content: none; }
 
 /* Stickies go flat: no adhesive band showing through, just a ruled edge. */
