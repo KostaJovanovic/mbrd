@@ -380,15 +380,23 @@
      #f8fbfb), which is precisely the "every palette identical at this end of
      the axis" failure the derivation was there to prevent in the first place.
 
-     So the stock is named outright, and named as a cool grey rather than as
-     white. Cool because this is the plain end and the warmth is Middle's to
-     keep; grey because --paper-card stays #fff below, and a white card only
-     reads as a card if the board behind it is not white too. The palette's own
-     accent is then mixed into that stock at a share big enough to actually be
-     seen, so Peacock still prints on something faintly green and Tearose on
-     something faintly pink. Harsh stays a change of contrast, not of colour. */
-  --stock:      #f6f7f9;
-  --paper:      color-mix(in srgb, var(--accent) 10%, var(--stock));
+     So the stock is named outright rather than being 97% of a white nobody
+     chose. It is a near-white, because that is what this end of the axis wants
+     - a spec sheet is printed on office paper, not on card - but cool, since
+     the warmth is Middle's to keep and a cool sheet is most of what tells the
+     two ends apart at a glance.
+
+     The accent share is deliberately small, and small is a real constraint
+     rather than a shrug. It has to be big enough that Peacock still prints on
+     something faintly green and Tearose on something faintly pink, so the
+     palette is not simply erased at this end; and small enough that the sheet
+     still reads as white. What it cannot also do is carry the separation from
+     --paper-card, which stays #fff below - at this lightness there are only a
+     few units between the two, so a card is told from the board by its edge and
+     its shadow rather than by its fill. That is the honest trade for a white
+     sheet, and it is why --rule at this level is the strongest of the three. */
+  --stock:      #fafbfc;
+  --paper:      color-mix(in srgb, var(--accent) 4%, var(--stock));
   /* Wells and pressed states step down towards this palette's own ink rather
      than towards more accent. More accent would darken and saturate in the same
      move, and a button that goes peach when you press it is the opposite of
