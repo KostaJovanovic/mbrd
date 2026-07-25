@@ -21,13 +21,23 @@
 // on it would otherwise mean six sliders to turn down.
 
 import { getAsset } from '../storage/assets.js';
-import { markDirty } from '../state.js';
+import { bus, markDirty, selection } from '../state.js';
 
 const VOLUME_KEY = 'mbrd.volume';
 /** Loud enough to hear on laptop speakers, quiet enough not to make you jump. */
 export const DEFAULT_VOLUME = 0.6;
-/** How many bars a waveform is drawn with. */
-const BARS = 48;
+
+/**
+ * How many readings are taken off a file, which is *not* how many bars get
+ * drawn. The card's width decides that, and the card can be resized - so the
+ * measurement is stored at a resolution finer than any card will ever show and
+ * averaged down to fit. Re-measuring on resize would mean decoding the file
+ * again to draw the same shape at a different pitch.
+ */
+const PEAK_RES = 256;
+/** Screen px per bar, near enough - a bar plus its gap. */
+const BAR_PITCH = 5;
+const MIN_BARS = 10;
 
 let volume = DEFAULT_VOLUME;
 /** Every <audio> currently on the board, so a slider move reaches all of them. */
@@ -103,7 +113,7 @@ function context() {
  */
 export async function peaks(item) {
   const cached = item.meta?.peaks;
-  if (Array.isArray(cached) && cached.length === BARS) return cached;
+  if (Array.isArray(cached) && cached.length === PEAK_RES) return cached;
 
   const asset = item.asset && getAsset(item.asset.hash);
   const measured = asset ? await measure(asset.blob) : null;
@@ -124,10 +134,10 @@ async function measure(blob) {
   try {
     const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
     const data = buf.getChannelData(0);
-    const per = Math.max(1, Math.floor(data.length / BARS));
+    const per = Math.max(1, Math.floor(data.length / PEAK_RES));
     const out = [];
     let loudest = 0;
-    for (let b = 0; b < BARS; b++) {
+    for (let b = 0; b < PEAK_RES; b++) {
       const start = b * per;
       const end = Math.min(data.length, start + per);
       let sum = 0;
@@ -151,13 +161,174 @@ function pseudo(seed) {
     h = Math.imul(h, 16777619);
   }
   const out = [];
-  for (let i = 0; i < BARS; i++) {
+  for (let i = 0; i < PEAK_RES; i++) {
     h ^= h << 13; h ^= h >>> 17; h ^= h << 5; h |= 0;
     // Swelled towards the middle, so it reads as a clip rather than as noise.
-    const envelope = 0.55 + 0.45 * Math.sin((i / (BARS - 1)) * Math.PI);
+    const envelope = 0.55 + 0.45 * Math.sin((i / (PEAK_RES - 1)) * Math.PI);
     out.push(Math.round(((0.25 + ((h >>> 0) % 1000) / 1000 * 0.75) * envelope) * 100) / 100);
   }
   return out;
 }
 
-export const BAR_COUNT = BARS;
+/** Average the stored readings down to `n` bars. */
+function resample(values, n) {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const from = Math.floor((i * values.length) / n);
+    const to = Math.max(from + 1, Math.floor(((i + 1) * values.length) / n));
+    let sum = 0;
+    for (let k = from; k < to; k++) sum += values[k];
+    out.push(sum / (to - from));
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// The transport
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the play button, the waveform and the clock for one audio item.
+ *
+ * The waveform is two identical lanes of bars stacked on top of each other -
+ * one in the quiet colour, one in the accent - and the played portion is the
+ * accent lane revealed by a clip. That is what makes the fill continuous: a
+ * clip can cut a bar in half, where colouring whole bars can only ever step
+ * from one to the next, and at forty bars over three minutes that step is a
+ * visible lurch every four seconds.
+ *
+ * Bars are mirrored about the centre line rather than standing on a baseline.
+ * A recording has no up and no down - the waveform of a signal is symmetric by
+ * construction, and drawing only its top half is a bar chart of a sound rather
+ * than a picture of one.
+ */
+export function buildTransport(item, sound) {
+  const transport = document.createElement('div');
+  transport.className = 'transport';
+
+  const play = document.createElement('button');
+  play.type = 'button';
+  play.className = 'play';
+  play.setAttribute('aria-label', 'Play');
+  play.innerHTML = PLAY_ICON;
+
+  const wave = document.createElement('div');
+  wave.className = 'wave';
+  wave.setAttribute('role', 'slider');
+  wave.setAttribute('aria-label', 'Seek');
+  const base = lane('wave-base');
+  const fill = lane('wave-fill');
+  wave.append(base, fill);
+
+  const time = document.createElement('span');
+  time.className = 'transport-time';
+  time.textContent = '0:00';
+
+  transport.append(play, wave, time);
+
+  let values = null;      // the stored readings, once they arrive
+  let builtFor = 0;       // the width the current bars were drawn for
+
+  const barCount = () => {
+    const w = wave.clientWidth || parseFloat(getComputedStyle(wave).width) || 0;
+    return Math.max(MIN_BARS, Math.round(w / BAR_PITCH));
+  };
+
+  const drawBars = () => {
+    const w = wave.clientWidth;
+    if (!w || !values) return;
+    const heights = resample(values, barCount());
+    for (const el of [base, fill]) {
+      el.replaceChildren(...heights.map(v => {
+        const bar = document.createElement('i');
+        // A floor, so a silent passage is a thin line through the middle
+        // rather than a gap in the waveform.
+        bar.style.height = Math.max(7, Math.round(v * 100)) + '%';
+        return bar;
+      }));
+    }
+    builtFor = w;
+    paint();
+  };
+
+  const paint = () => {
+    const at = sound.duration ? sound.currentTime / sound.duration : 0;
+    fill.style.clipPath = `inset(0 ${((1 - at) * 100).toFixed(3)}% 0 0)`;
+    time.textContent = clock(sound.currentTime || 0);
+  };
+
+  // While it plays, the fill is driven by the frame clock rather than by
+  // timeupdate, which fires about four times a second - fine for a digit,
+  // nowhere near enough for something that is supposed to glide.
+  let frame = 0;
+  const follow = () => {
+    paint();
+    frame = sound.paused ? 0 : requestAnimationFrame(follow);
+  };
+
+  peaks(item).then(v => { values = v; drawBars(); });
+
+  play.addEventListener('click', () => {
+    if (sound.paused) sound.play().catch(() => {});
+    else sound.pause();
+  });
+  sound.addEventListener('play', () => {
+    transport.classList.add('is-playing');
+    play.innerHTML = PAUSE_ICON;
+    play.setAttribute('aria-label', 'Pause');
+    if (!frame) frame = requestAnimationFrame(follow);
+  });
+  sound.addEventListener('pause', () => {
+    transport.classList.remove('is-playing');
+    play.innerHTML = PLAY_ICON;
+    play.setAttribute('aria-label', 'Play');
+    paint();
+  });
+  sound.addEventListener('loadedmetadata', paint);
+  // The frame loop above covers playback. This covers everything else that can
+  // move the playhead - a seek while paused, a buffering stall, currentTime set
+  // from outside - none of which produce a frame loop of their own.
+  sound.addEventListener('timeupdate', paint);
+  sound.addEventListener('seeked', paint);
+  sound.addEventListener('ended', () => { sound.currentTime = 0; paint(); });
+
+  wave.addEventListener('pointerdown', e => {
+    if (!sound.duration) return;
+    const box = wave.getBoundingClientRect();
+    sound.currentTime = Math.max(0, Math.min(1, (e.clientX - box.left) / box.width)) * sound.duration;
+    paint();
+  });
+
+  // Redrawn when the card is let go of, not while it is being dragged.
+  //
+  // The bar count follows the card's width, so a resize wants a different set
+  // of bars - but rebuilding them on every frame of a drag would have the
+  // waveform reflowing under the pointer, which reads as the sound changing.
+  // Deselection is the end of the gesture, and by then the width is final.
+  const off = bus.on('selection', () => {
+    // A card replaced by rebuild() (a rename, a note edit) is detached from
+    // its item and will never be seen again; that is when this stops.
+    if (!wave.closest('.item')) { off(); return; }
+    if (selection.has(item.id)) return;
+    if (wave.clientWidth && wave.clientWidth !== builtFor) drawBars();
+  });
+
+  return transport;
+}
+
+function lane(className) {
+  const el = document.createElement('div');
+  el.className = 'wave-lane ' + className;
+  return el;
+}
+
+const PLAY_ICON =
+  '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5 3.4l7.5 4.6L5 12.6z"/></svg>';
+const PAUSE_ICON =
+  '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.6 3.2h2.6v9.6H4.6zM8.8 3.2h2.6v9.6H8.8z"/></svg>';
+
+/** m:ss. Hours are possible and would be a strange thing to pin to a board. */
+function clock(secs) {
+  const s = Math.max(0, Math.floor(secs));
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}

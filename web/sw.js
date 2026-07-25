@@ -39,8 +39,17 @@ const SHELL = [
   './assets/js/storage/mbrd.js',
   './assets/js/storage/storage.js',
   './assets/js/storage/zip.js',
+  './assets/js/canvas/web.js',
+  './assets/js/canvas/stills.js',
   './assets/js/ui/sidebar.js',
   './assets/js/ui/appearance.js',
+  './assets/js/ui/menu.js',
+  './assets/js/ui/notes.js',
+  './assets/js/ui/trash.js',
+  './assets/js/ui/audio.js',
+  './assets/css/fonts.css',
+  './assets/fonts/fraunces-latin.woff2',
+  './assets/fonts/fraunces-latin-italic.woff2',
 ];
 
 self.addEventListener('install', event => {
