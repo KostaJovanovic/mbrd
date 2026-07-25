@@ -6,7 +6,7 @@
 // forty photos lands as a spiral around the cursor rather than a stack.
 
 import { toast, extOf } from '../util.js';
-import { board, addItems, select } from '../state.js';
+import { board, addItems, select, NOTE_MAX } from '../state.js';
 import { addFile } from '../storage/assets.js';
 import { classify, defaultSize, measureSize } from './renderers.js';
 import { arrange } from '../arrange/arrangements.js';
@@ -171,6 +171,7 @@ const NOTE_TINTS = 4;
 
 /** A text card with no source file - the one item type born on the board. */
 export function addNote(centre, text = '') {
+  text = text.slice(0, NOTE_MAX);
   const size = defaultSize('note');
   // Cycled rather than random, so a run of notes comes off the pad in order
   // and you never get three of the same colour in a row. Stored on the item,
