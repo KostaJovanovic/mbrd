@@ -59,6 +59,7 @@ const SHELL = [
   './assets/js/canvas/model.js',
   './assets/js/import/mesh.js',
   './assets/js/ui/search.js',
+  './assets/js/ui/konami.js',
   './assets/js/ui/sidebar.js',
   './assets/js/ui/appearance.js',
   './assets/js/ui/look.js',
