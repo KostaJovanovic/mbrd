@@ -9,6 +9,8 @@ import { describeExt, PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS } from '../im
 import { buildTransport, registerPlayer } from './audio.js';
 import { buildVideoPlayer } from './video.js';
 import { youTubeId, embedOffer } from './embed.js';
+import { buildModelCard } from './model.js';
+import { meshKind } from '../import/mesh.js';
 
 
 /**
@@ -43,6 +45,11 @@ export function classify(file) {
   if (mime.startsWith('image/') || SVG_EXTS.has(ext)) return 'image';
   if (mime.startsWith('video/')) return 'video';
   if (mime.startsWith('audio/')) return 'audio';
+  // Before the text branch, not after it. An .obj and a .gltf are both plain
+  // text and arrive as `text/plain` from half the systems that hand them over,
+  // so testing MIME first would route every model a person owns to the text
+  // renderer and print its vertex list.
+  if (meshKind(file.name)) return 'model';
   if (mime.startsWith('text/') || mime === 'application/json') return 'text';
   // The catalog's sets are broader than the MIME types a browser bothers to
   // set - .jxl, .avif and friends often arrive with an empty file.type.
@@ -60,6 +67,9 @@ export function defaultSize(type) {
     case 'video':   return { w: 360, h: 203 };
     case 'audio':   return { w: 330, h: 196 };
     case 'text':    return { w: 300, h: 360 };
+    // Square-ish, because a model has no aspect of its own until it is read -
+    // it is framed from its bounding sphere, so it fills whatever box it gets.
+    case 'model':   return { w: 280, h: 280 };
     // Square: a sticky comes off a square pad. Small, too - a note is an
     // annotation on the board, not a thing on it, and at the old 240 it
     // outweighed most of the photos it was written about. Well clear of
@@ -436,6 +446,14 @@ const RENDERERS = {
     }).catch(() => { body.textContent = ''; });
 
     return card;
+  },
+
+  /**
+   * A model, turned over on the card. See canvas/model.js - the geometry is
+   * read there, the drawing happens there, and this is only the routing.
+   */
+  model(item) {
+    return buildModelCard(item);
   },
 
   generic(item) {

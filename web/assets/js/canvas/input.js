@@ -233,7 +233,10 @@ export function initInput(vp, cmds) {
     // .vtrack is the video scrubber; a video's own <video> is deliberately not
     // in this list, because the picture is the card and dragging it has to drag
     // the card. Only the transport laid over it claims the gesture.
-    const widget = target?.closest('audio, video[controls], input, button, a, .wave, .vtrack, [contenteditable="true"], [contenteditable="plaintext-only"]');
+    // .model-stage is the 3D canvas: a drag on it turns the model over, so it
+    // has to claim the gesture the way the audio scrubber does, or the card
+    // would move out from under the hand instead.
+    const widget = target?.closest('audio, video[controls], input, button, a, .wave, .vtrack, .model-stage, [contenteditable="true"], [contenteditable="plaintext-only"]');
 
     if (widget && !spaceDown && e.button !== 1) {
       if (id) select([id]);

@@ -56,6 +56,8 @@ const SHELL = [
   './assets/js/canvas/audio.js',
   './assets/js/canvas/video.js',
   './assets/js/canvas/embed.js',
+  './assets/js/canvas/model.js',
+  './assets/js/import/mesh.js',
   './assets/js/ui/search.js',
   './assets/js/ui/sidebar.js',
   './assets/js/ui/appearance.js',

@@ -11,6 +11,7 @@ import {
 import { Viewport, MIN_ZOOM, MAX_ZOOM, zoomMs, travelMs } from './canvas/viewport.js';
 import { paintGrid, resetGridInk } from './canvas/grid.js';
 import { initItems, resetItems } from './canvas/items.js';
+import { resetModels } from './canvas/model.js';
 import { initWeb } from './canvas/web.js';
 import { initStills } from './canvas/stills.js';
 import { initInput } from './canvas/input.js';
@@ -192,6 +193,8 @@ bus.on('board:load', () => {
   // so this is the other door the grid's colours change behind.
   resetGridInk();
   resetItems();
+  // Parsed geometry is keyed by asset hash and the old board's assets are gone.
+  resetModels();
   requestAnimationFrame(() => {
     for (const it of board.items) if (it.type === 'note') growNote(it.id);
   });
