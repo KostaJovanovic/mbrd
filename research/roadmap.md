@@ -99,7 +99,7 @@ Mostly CSS scoped to `[data-whimsy="0"]`, with three things to settle first:
   curve. Either `--shape-radius` is overridden for images here — going against
   the tier's own identity — or the frames come out round-cornered.
 
-Unrelated to item 19's photo frame, and worth keeping straight: that one is a
+Unrelated to item 20's photo frame, and worth keeping straight: that one is a
 correction *away* from polaroids, this one is an explicit ask *for* them.
 
 ### 8. The zoom detail ladder
@@ -120,17 +120,53 @@ means the audio rule can hang off the existing `zoom-far` class unchanged.
 Worth a glance at whether hiding item chrome at `0.4` is too early on its own.
 
 Note this is a zoom ladder, not a hardware setting — it fires for everyone,
-always, which is what makes it cheap. It removes two of the levers item 15 was
+always, which is what makes it cheap. It removes two of the levers item 16 was
 going to argue about.
 
-### 9. valjdakosta branding *(was A9)*
+### 9. Don't work on what is off screen
+Half done already, and the half that is missing is the expensive one.
+
+**Items are culled.** `sync()` in `items.js` mounts what falls inside
+`visibleRect(CULL_MARGIN)` — 400 world px of slack — and detaches the rest,
+discarding the node entirely unless its media is mid-playback. That part is
+solid and needs nothing.
+
+**The web is not.** `points()` in `web.js` is
+`board.items.map(...)` with no visibility test at all, so every thread on the
+board is recomputed whether or not any of it is on screen — and the comment
+above `threads()` says the whole web is rebuilt *on every drag frame*. So
+dragging one card on a 500-item board runs a spanning tree plus a
+nearest-neighbour pass over all 500, several hundred times a second, to draw
+threads that are almost all outside the viewport. `DENSE_LIMIT` (700) only
+switches the second pass off; it does not reduce the first.
+
+The fix is not simply "filter to the visible rect", and that is the whole
+subtlety: the web is a *connected* structure. Cull the points and the spanning
+tree changes shape, so threads would visibly reroute as you pan — the exact
+failure that makes naive culling of a graph worse than none. Either the tree is
+computed once over everything and only its visible edges are drawn (correct,
+still O(n log n) per frame but no longer quadratic), or it is computed over the
+visible set plus a margin and accepted as approximate near the edges. The first
+is probably right, and the honest version of this item is "stop *drawing* what
+is off screen, and stop *recomputing* what has not moved" — the web is rebuilt
+on drag frames when only one item's position changed.
+
+**Also worth a look while in here:** `sync()` walks every item on every view
+change to decide what is visible. That is linear per frame and fine at hundreds,
+not at tens of thousands; a spatial index is the answer if a board ever gets
+there, and is over-engineering before then.
+
+The Harsh lattice used to belong on this list and no longer does — it draws only
+the marks inside the canvas, which is the viewport.
+
+### 10. valjdakosta branding *(was A9)*
 Mechanically small. Needs the assets and a decision on how loud it should be.
 
 ---
 
 ## Tier 3 — a real feature each
 
-### 10. Search *(was A1)*
+### 11. Search *(was A1)*
 Find items by name, note text, link URL, file type. Open questions are only
 about surface, not behaviour: an overlay palette (Ctrl+K) versus a sidebar
 field. Should probably fly the viewport to a hit and select it, since a board
@@ -139,26 +175,26 @@ is spatial and a list of names without positions is not much use.
 The flying is the part that is more than an afternoon — animating the viewport
 to a point at a sensible zoom is new machinery.
 
-### 11. Custom pictures on text and audio cards *(was A8)*
-Let any card carry a chosen image. **Build this before 12** — album art is the
+### 12. Custom pictures on text and audio cards *(was A8)*
+Let any card carry a chosen image. **Build this before 13** — album art is the
 automatic case of exactly this feature, so the slot wants building once and
 filling twice.
 
-### 12. Album art from audio files *(was A7)*
+### 13. Album art from audio files *(was A7)*
 Read embedded cover art (ID3v2 `APIC` for mp3, `metadata`/`covr` atom for m4a,
 FLAC `PICTURE` block) and show it on the audio card. No dependency needed — the
 frame headers are simple enough to parse by hand, the way `storage/zip.js` was.
 Falls back to the waveform, which stays the card's identity when there is no
 art.
 
-Three container formats parsed by hand is the cost. Filling the slot from 11 is
+Three container formats parsed by hand is the cost. Filling the slot from 12 is
 the easy half.
 
 ---
 
 ## Tier 4 — the decision costs more than the code
 
-### 13. `.mbrd` format documentation *(was B4)* *(discussion)*
+### 14. `.mbrd` format documentation *(was B4)* *(discussion)*
 No written spec exists. The format has grown a `notes/` directory of real
 Markdown and a `waveforms/<hash>.json` sidecar set, both of which are
 deliberate — the archive is meant to be openable and readable. That principle
@@ -169,7 +205,7 @@ being one thing you can email.
 Placed first in this tier because it is pure writing, and because every item
 below it can break the format it describes.
 
-### 14. Default palettes and 60-30-10 *(was B3)* *(discussion)*
+### 15. Default palettes and 60-30-10 *(was B3)* *(discussion)*
 Whether Papyrus / Absinthe / Tea rose / Peacock should be rebuilt on a
 60-30-10 split. Worth knowing before that conversation: measured in OKLCH, the
 existing palettes are already two-hue, with `--leafy` carrying the second at
@@ -178,8 +214,8 @@ exceeds 0.127 anywhere. So the raw material for a 60-30-10 reading is there;
 the question is whether the *proportions* on screen match it, which is a
 question about `app.css` usage rather than about the tokens.
 
-### 15. Quality modes for weaker hardware *(was B7)* *(discussion)*
-Distinct from 22: that one shrinks the file, this one shrinks the work. Item 8
+### 16. Quality modes for weaker hardware *(was B7)* *(discussion)*
+Distinct from 23: that one shrinks the file, this one shrinks the work. Item 8
 has now taken the GIF freeze and the audio card out of this conversation by
 making them unconditional, which leaves culling in `items.js` and the web's
 `DENSE_LIMIT` as the levers still in play. Question is whether what remains is
@@ -188,16 +224,16 @@ zoom ladder covers the common case.
 
 Cheap to build because the levers are built. The whole cost is deciding.
 
-### 16. Sidebar reform *(was B1)* *(discussion)*
+### 17. Sidebar reform *(was B1)* *(discussion)*
 The sidebar has grown to six sections and keeps growing — search, optimize,
 fonts and quality modes all want a home. Worth settling what it *is* before
 adding more: a settings panel, a tool palette, or an inspector that changes
 with the selection.
 
-Note the ordering pressure: items 6, 10, 15 and 22 all add a control. Either
+Note the ordering pressure: items 6, 11, 16 and 23 all add a control. Either
 this happens before them or it happens to them.
 
-### 17. Image palette extraction *(was B2)* *(discussion)*
+### 18. Image palette extraction *(was B2)* *(discussion)*
 Partly discussed already. Settled so far: cluster in OKLCH not RGB, exclude
 near-neutral pixels from hue voting, let the harmony fall out of what the
 photos contain rather than forcing one, and repair lightness afterwards so ink
@@ -214,7 +250,7 @@ repair pass, plus a mapping onto 13 tokens.
 
 ## Tier 5 — large
 
-### 18. YouTube (and video) embeds *(was C3)*
+### 19. YouTube (and video) embeds *(was C3)*
 A pasted YouTube link becomes a player rather than a link card. Not much code —
 URL parsing and an iframe, on top of the link card that already exists. It is
 here for the principle, not the effort: **an embed breaks offline-first.** It is
@@ -224,7 +260,7 @@ deciding whether embeds are opt-in per item.
 Same call that was made for you on link favicons, so it should be deliberate
 rather than inherited.
 
-### 19. Konami code → 90s skin *(was C4)*
+### 20. Konami code → 90s skin *(was C4)*
 Konami sequence swaps the whole interface for one built from
 `C:\Users\kosta\Projekti\sajt90`. Large in volume, but with no unknowns — the
 source is hand-written static HTML with one 4618-line stylesheet, and it is a
@@ -263,7 +299,7 @@ Whether this is a real reskin or a joke that lasts thirty seconds decides how
 much of it is worth wiring to the token system — and that answer swings the
 effort by an order of magnitude.
 
-### 20. Cloud sync *(was B5)* *(discussion)*
+### 21. Cloud sync *(was B5)* *(discussion)*
 See `research/gdrive implementation.md`. Recommendation there stands: try the
 synced-folder route first, because Save already writes a real file to a real
 path and a folder inside Drive/iCloud costs no code at all. The Drive API route
@@ -274,14 +310,14 @@ merging is not, since positions are absolute and there is no CRDT).
 Sits in Tier 5 for the API route. **The cheap route is genuinely cheap** — if
 the answer is "a synced folder is fine", this drops out of the tier entirely.
 
-### 21. Mobile *(was C1)*
+### 22. Mobile *(was C1)*
 Touch already works — `input.js` handles pinch and two-finger pan. What does
 not is the layout: the sidebar is a desktop panel, the bin and zoom controls
 sit in thumb-hostile corners, and the resize grips are sized for a mouse. A
 layout rework across most of `app.css`, with a real interaction question under
 it (what does select-then-act mean without hover).
 
-### 22. "Optimize board" *(was B6)* *(discussion — its own conversation)*
+### 23. "Optimize board" *(was B6)* *(discussion — its own conversation)*
 Flagged as needing separate discussion, and it does. Sketch as given: photos to
 1200px on the long edge at 4:2:0 JPEG q87, audio to 192kbps mp3, video to 480p,
 already-optimised files marked so they are never processed twice.
@@ -301,7 +337,7 @@ The things that make this its own conversation:
   and anything with text in it, which are exactly the things a moodboard
   collects. Whether to detect that or let it be lossy is a real choice.
 
-### 23. 3D model support *(was C2)*
+### 24. 3D model support *(was C2)*
 `.stl`, `.obj`, `.glb`. Needs a renderer, which means either WebGL by hand or
 the first real dependency this project has taken. `formats.js` already knows
 what these files *are*; today they land as named cards, which is a working
@@ -406,19 +442,38 @@ below.
 
 Items **2** (copy/cut/paste toasts), **3** (note size), **4** (paste under the
 cursor), **5** (rearrange varies the slots, and `free` shakes in place),
-**8** (the zoom ladder, JS half), **10** (search), **11** (a picture on any
-card), **12** (album art — ID3v2, MP4 and FLAC parsed by hand, no dependency).
+**8** (the zoom ladder, JS half), **11** (search), **12** (a picture on any
+card), **13** (album art — ID3v2, MP4 and FLAC parsed by hand, no dependency).
 
-Item **1** is yours and untouched. Item **7** (polaroids) is yours. Item **9**
-needs assets. Tier 4 is all marked *discussion* and none of it was decided here.
-Tier 5 was not started: **18** breaks offline-first, **22** is destructive and
-lossy, **23** would be this project's first dependency — three calls that belong
-to Kosta, not to either of us.
+> Numbers in this section are as at the time of writing. Inserting item 9
+> shifted everything from 10 up by one; they are corrected above.
+
+Tier 4 is all marked *discussion* and none of it was decided here. Tier 5 was
+not started: **19** breaks offline-first, **23** is destructive and lossy,
+**24** would be this project's first dependency — three calls that belong to
+Kosta, not to either of us.
 
 ## Not verified
 
-None of the above has been run in a browser by me. `npm test` is green and every
-file parses; that is the whole of the evidence. The surfaces that most want a
-real look: the Harsh crosses at several zooms and both grid sliders, the search
-palette once it has rules, a cover on an audio card, and whether importing a
-folder of tagged mp3s is still quick now that each one is read for art.
+Written by the JS session; the CSS session has since gone through most of it in
+a real browser (headless Edge over the DevTools Protocol, against `serve.py`).
+
+**Now verified.** Items 1, 6, 7, 8, 11, 12 and 13 have been looked at rather
+than reasoned about, at all three whimsy levels. Doing so found three defects
+the tests could not: `clone(null)` threw on any browser with no saved
+preference and killed the whole Appearance panel on a first visit;
+`releasePlayers()` queried only `'audio'`, so renaming a video card leaked a
+player holding a decoded stream; and the polaroid mat came out on two sides
+only, because an absolutely-positioned `<img>` with `width: auto` takes its
+intrinsic size and drops the opposing offsets.
+
+**The Harsh crosses were the worst of it, and are now rebuilt** — twice. The
+tiled-SVG version minted 90 distinct images across 91 frames of one zoom; the
+quantised version that fixed the churn made the marks blink in and out during a
+resize, because a scaled image cannot land on the device pixel grid. They are
+drawn on a canvas now. Measured at 0.086ms a paint, with zero blank frames
+across 61 resize widths and 24 zoom steps.
+
+**Still unverified:** whether importing a folder of tagged mp3s is still quick
+now that each one is read for art — the one item on the original list that
+needs real files rather than a synthetic board.
