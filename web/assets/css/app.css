@@ -847,6 +847,48 @@ button, input, select, textarea { font: inherit; color: inherit; }
           line-clamp: 2;
   overflow: hidden;
 }
+/* ---- A model on a card (canvas/model.js) ---------------------------------
+   The canvas fills the card above the filename and takes the pointer, because
+   dragging it turns the model rather than moving the item. Everything around
+   it - the padding, the name - still drags the card, which is the same bargain
+   the audio scrubber and the link anchor make. */
+.card-model { gap: 6px; }
+.model-stage {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  pointer-events: auto;
+  cursor: grab;
+  /* A pinch on a phone must reach the board, and a drag must not scroll the
+     page out from under the model. */
+  touch-action: none;
+}
+.model-stage.is-turning { cursor: grabbing; }
+.card-model .card-name {
+  flex: none;
+  font-size: var(--t-tiny);
+  color: var(--ink-3);
+  font-style: var(--display-italic);
+}
+/* Reading a large STL is a real pause, and the card says so rather than
+   sitting empty. Replaced by the drawing, or by the reason there is not one. */
+.model-note {
+  display: grid;
+  place-items: center;
+  flex: 1;
+  min-height: 0;
+  font-family: var(--font-display);
+  font-size: var(--t-tiny);
+  font-style: var(--display-italic);
+  color: var(--ink-3);
+  text-align: center;
+  padding: 0 8px;
+}
+.model-note.is-error { color: var(--danger); }
+/* Far out, a turned model is a grey smudge and the canvas is the most
+   expensive thing on the card. Same rung as every other detail (viewport.js). */
+#world.zoom-far .model-stage { visibility: hidden; }
+
 /* ---- The one link that can become a player (canvas/embed.js) -------------
    The button is a standing offer, not a state: nothing has been requested from
    anyone until it is pressed, and it is styled to say so - the same accent a
