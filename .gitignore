@@ -1,0 +1,21 @@
+# Boards are user data, not source. Keep test boards out of the repo.
+*.mbrd
+!docs/examples/*.mbrd
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Tauri (M4+)
+src-tauri/target/
+src-tauri/gen/
+
+# Node, if tooling ever needs it
+node_modules/

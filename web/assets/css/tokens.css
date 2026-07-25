@@ -1,0 +1,159 @@
+/* =========================================================
+   mbrd - design tokens
+   Papyrus & terracotta. Warm paper, iron-gall ink, art nouveau lines.
+
+   Light only, on purpose: the whole thing reads as a sheet of paper you pin
+   things to, and a dark sheet of papyrus is a contradiction. (Dark can come
+   back later as just another palette in the block below.)
+
+   Every value is a runtime-overridable custom property: the Appearance panel
+   writes straight onto :root and a board carries its own overrides in
+   board.json.settings.appearance.
+   ========================================================= */
+
+:root {
+  /* ---- paper ---- */
+  --paper:      #fbf8f1;   /* the sheet */
+  --paper-2:    #f4efe4;   /* insets, wells */
+  --paper-3:    #ebe3d4;   /* pressed, active */
+  --paper-card: #fffdf8;   /* items sit slightly brighter than the board */
+
+  /* ---- ink ---- */
+  --ink:        #372a1d;
+  --ink-2:      #6f5b45;   /* secondary text */
+  --ink-3:      #9a866c;   /* faint */
+  --rule:       #e6dcc8;
+  --rule-2:     #cdbfa2;
+
+  /* ---- pigment ---- */
+  --accent:      #c25c2b;  /* terracotta */
+  --accent-warm: #e0983f;  /* amber */
+  --accent-deep: #8d3c17;  /* burnt sienna, for pressed states */
+  --accent-fg:   #fdf8ec;
+  --leafy:       #75855f;  /* art nouveau olive - secondary ornament */
+  --danger:      #a83232;
+
+  /* ---- canvas grid ----
+     Derived from the ink, so one --grid-alpha slider drives both layers and
+     every palette gets a grid that matches its own ink. */
+  --grid-alpha: 0.14;
+  --grid-minor: color-mix(in srgb, var(--ink) calc(var(--grid-alpha) * 100%), transparent);
+  --grid-major: color-mix(in srgb, var(--ink) calc(var(--grid-alpha) * 190%), transparent);
+  --grid-axis:  color-mix(in srgb, var(--accent) 55%, transparent);
+  --grid-dot:   1.7px;
+
+  /* ---- item chrome ---- */
+  --item-bg:     var(--paper-card);
+  --item-border: color-mix(in srgb, var(--ink) 16%, transparent);
+  /* Warm shadow, never grey: a grey drop shadow on warm paper is the single
+     most generic-web-app thing you can do. */
+  --item-shadow: 0 1px 1px rgba(78, 54, 28, 0.10),
+                 0 10px 22px -10px rgba(78, 54, 28, 0.36);
+  --select:      var(--accent);
+  --select-fill: color-mix(in srgb, var(--accent) 15%, transparent);
+
+  /* ---- sticky notes ----
+     A pack of four colours, every one mixed out of this palette's own pigment
+     rather than named outright - so a note stays a note when the palette
+     changes underneath it, instead of turning into a stray office-yellow
+     rectangle in the middle of a sage-green board. */
+  --note-1: color-mix(in srgb, var(--accent-warm) 34%, var(--paper-card));
+  --note-2: color-mix(in srgb, var(--accent) 17%, var(--paper-card));
+  --note-3: color-mix(in srgb, var(--leafy) 26%, var(--paper-card));
+  --note-4: color-mix(in srgb, var(--accent-warm) 13%, var(--paper-2));
+  --note-radius: 3px;   /* guillotined from a pad, not die-cut */
+  /* Tight and close: a sticky is pressed flat to the board, not floating over
+     it like the framed items are. */
+  --note-shadow: 0 1px 1px rgba(78, 54, 28, 0.17),
+                 0 5px 9px -5px rgba(78, 54, 28, 0.34),
+                 0 13px 16px -13px rgba(78, 54, 28, 0.30);
+
+  /* ---- shape ----
+     Every corner is even. The names survive from the asymmetric leaf-and-ogee
+     cuts they used to describe, but they are now just two sizes: --leaf for
+     controls, --ogee for the panels that hold them. */
+  --radius:    13px;
+  --radius-sm: 8px;
+  /* Gap between a card's edge and its inner rule. The rule's own radius
+     is --radius minus this, so the two curves stay concentric. */
+  --card-rule-gap: 5px;
+  --leaf:      10px;
+  --ogee:      15px;
+  --density:   1;
+  --sidebar-w: 322px;
+  --hairline:  1px;
+
+  --shadow-1: 0 1px 2px rgba(78, 54, 28, 0.14);
+  --shadow-2: 0 18px 44px -18px rgba(60, 40, 20, 0.5);
+
+  /* ---- type ----
+     An old-style serif throughout. Every face listed ships with an OS, so
+     there is nothing to download and nothing to break offline. */
+  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua",
+                  "URW Palladio L", Georgia, "Times New Roman", serif;
+  --font-body:    var(--font-display);
+  --font-mono:    ui-monospace, "Cascadia Mono", "SF Mono", Consolas, "DejaVu Sans Mono", monospace;
+  --t-body:  15px;
+  --t-small: 13px;
+  --t-tiny:  11px;
+
+  /* ---- motion ---- */
+  --dur-fast: 0.13s;
+  --dur-base: 0.24s;
+  --ease:      cubic-bezier(0.22, 0.9, 0.28, 1);
+  /* A slight overshoot, so panels settle like they have weight. */
+  --ease-back: cubic-bezier(0.34, 1.4, 0.5, 1);
+}
+
+/* ---------------------------------------------------------
+   Alternate palettes. Same paper-and-ink logic, different pigment.
+   Picked in the Appearance panel, written to :root as data-palette.
+   --------------------------------------------------------- */
+
+:root[data-palette="absinthe"] {
+  --paper:      #f9f9f0;
+  --paper-2:    #f1f1e3;
+  --paper-3:    #e6e6d3;
+  --paper-card: #fdfdf6;
+  --ink:        #2c3324;
+  --ink-2:      #5c6650;
+  --ink-3:      #8b9480;
+  --rule:       #cbd0b0;
+  --rule-2:     #a8b088;
+  --accent:      #7d8f3c;
+  --accent-warm: #b3ae4a;
+  --accent-deep: #56652a;
+  --leafy:       #a4772f;
+}
+
+:root[data-palette="tearose"] {
+  --paper:      #fdf7f4;
+  --paper-2:    #f8ece6;
+  --paper-3:    #eedcd3;
+  --paper-card: #fffbf9;
+  --ink:        #3b2725;
+  --ink-2:      #75564f;
+  --ink-3:      #a4837a;
+  --rule:       #e2c6bb;
+  --rule-2:     #c9a294;
+  --accent:      #b4574f;
+  --accent-warm: #d98f7a;
+  --accent-deep: #82352f;
+  --leafy:       #7c8466;
+}
+
+:root[data-palette="peacock"] {
+  --paper:      #faf9f3;
+  --paper-2:    #f2f1e8;
+  --paper-3:    #e7e5d9;
+  --paper-card: #fefdf9;
+  --ink:        #22302f;
+  --ink-2:      #4f6462;
+  --ink-3:      #849593;
+  --rule:       #c6cfc3;
+  --rule-2:     #9fae9f;
+  --accent:      #1f7a72;
+  --accent-warm: #cf9a3a;
+  --accent-deep: #14544f;
+  --leafy:       #8a6f3c;
+}
