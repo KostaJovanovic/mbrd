@@ -20,7 +20,7 @@
      stylesheet already renders, so the common case sets nothing at all. */
   try {
     var s = JSON.parse(localStorage.getItem('mbrd.appearance') || '{}');
-    /* != null, not truthiness: 0 is Warm, a real level with its own rules. */
+    /* != null, not truthiness: 0 is Softish, a real level with its own rules. */
     if (s.whimsy != null) document.documentElement.dataset.whimsy = s.whimsy;
     if (s.palette) document.documentElement.dataset.palette = s.palette;
     for (var k in s.vars || {}) document.documentElement.style.setProperty(k, s.vars[k]);
@@ -110,6 +110,11 @@
       <label class="check"><input type="checkbox" id="opt-axes" checked> Show axes</label>
       <label class="check"><input type="checkbox" id="opt-snap"> Snap to grid</label>
       <label class="check"><input type="checkbox" id="opt-hud" checked> Show readout</label>
+      <!-- One volume for the whole board. See ui/audio.js. -->
+      <label class="field">
+        <span>Volume<output id="opt-volume-out">60%</output></span>
+        <input id="opt-volume" type="range" min="0" max="100" step="1" value="60">
+      </label>
     </section>
 
 
@@ -121,15 +126,16 @@
            serious. See the third block of tokens.css. -->
       <label class="field">
         <span>Whimsy</span>
+        <!-- No <datalist> of stops here on purpose. It buys nothing - Chromium
+             ignores it once the track is custom-painted - and Firefox honours
+             it by drawing its own tick marks on the track, where the two end
+             ticks vanish into the rounded track ends and the middle one is
+             left sitting there as a stray dot. The three names below are the
+             stops, and they are legible in a way ticks are not. -->
         <input id="opt-whimsy" type="range" min="0" max="2" step="1" value="1"
-               list="whimsy-stops" aria-describedby="whimsy-stop-labels">
-        <datalist id="whimsy-stops">
-          <option value="0"></option>
-          <option value="1"></option>
-          <option value="2"></option>
-        </datalist>
+               aria-describedby="whimsy-stop-labels">
         <span class="field-stops" id="whimsy-stop-labels" aria-hidden="true">
-          <span>Warm</span><span>Middle</span><span>Harsh</span>
+          <span>Softish</span><span>Middle</span><span>Harsh</span>
         </span>
       </label>
       <label class="field">
@@ -174,6 +180,30 @@
 <button id="menu-btn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="sidebar">
   <span></span><span></span><span></span>
 </button>
+
+<!-- The bin. Opposite corner to the zoom controls, and deliberately the same
+     kind of object: a small permanent affordance on the glass rather than
+     something buried in the panel. Its list is built by ui/trash.js. -->
+<div id="bin">
+  <div id="bin-panel" hidden role="dialog" aria-label="Trash">
+    <header>
+      <h2>Trash</h2>
+      <button type="button" id="bin-empty" title="Throw it all out">Empty</button>
+    </header>
+    <div id="bin-list"></div>
+    <p id="bin-none">Nothing thrown away yet.</p>
+    <p id="bin-hint">Drag anything back onto the board.</p>
+  </div>
+  <button type="button" id="bin-btn" aria-label="Trash" aria-expanded="false" aria-controls="bin-panel" title="Trash">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M2.5 4h11"/>
+      <path d="M6 4V2.5h4V4"/>
+      <path d="M3.8 4l.6 9a1 1 0 0 0 1 1h5.2a1 1 0 0 0 1-1l.6-9"/>
+      <path d="M6.6 6.5v5M9.4 6.5v5"/>
+    </svg>
+    <span id="bin-count" hidden></span>
+  </button>
+</div>
 
 <div id="corner">
   <div id="zoom-ctl">

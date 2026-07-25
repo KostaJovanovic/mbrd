@@ -3,8 +3,9 @@
 //
 //   myboard.mbrd            (ZIP, renamed)
 //   |- manifest.json        { format, version, app, created, modified, title }
-//   |- board.json           { view, settings, arrangement, items[] }
+//   |- board.json           { view, settings, arrangement, items[], trash[] }
 //   |- assets/<hash>.<ext>  embedded bytes, deduped by content hash
+//   |- notes/<slug>--<id>.md    one sticky note, as Markdown
 //   \- thumbnails/<hash>.webp   (reserved; not written yet)
 //
 // Items reference bytes as `asset: { hash, embedded: true }`. The schema also
@@ -45,7 +46,11 @@ export async function packBoard(boardData, { created = null } = {}) {
   ];
 
   const seen = new Set();
-  for (const item of boardData.items) {
+  // Binned items count as referenced. Their bytes are the whole reason the bin
+  // is worth anything after a save - dropping them would leave the panel
+  // listing things that can no longer come back.
+  const referenced = [...boardData.items, ...(boardData.trash || []).map(t => t.item)];
+  for (const item of referenced) {
     const hash = item.asset?.hash;
     if (!hash || seen.has(hash)) continue;
     seen.add(hash);
@@ -63,7 +68,70 @@ export async function packBoard(boardData, { created = null } = {}) {
     });
   }
 
+  // Every sticky note also goes in as a file you can read without this app.
+  for (const item of referenced) {
+    if (item.type !== 'note') continue;
+    entries.push({ name: noteFile(item), data: enc.encode(noteMarkdown(item)), compress: true });
+  }
+
   return { blob: await writeZip(entries, { date: now, mime: MIME }), manifest };
+}
+
+// ---------------------------------------------------------------------------
+// Notes as Markdown
+//
+// A note is one string in board.json and that is still where it is *edited*
+// from - but board.json is a machine's file, and a sticky note is the one kind
+// of thing on a board that is purely the user's own writing. So each one is
+// written out again as its own .md: unzip a .mbrd and your notes are a folder
+// of readable files, greppable, diffable, openable in anything.
+//
+// The named half of the filename is for you and the id half is for the reader
+// below, which is why both are there. Unpack prefers the .md over the copy in
+// board.json, so editing one of those files by hand and reopening the board
+// does what you would expect it to do.
+// ---------------------------------------------------------------------------
+
+const NOTES_DIR = 'notes/';
+
+function noteFile(item) {
+  const first = (item.meta?.text || '').split('\n')[0];
+  const slug = first.toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48) || 'note';
+  // Two dashes: the slug has had its own runs collapsed to one, and a uid
+  // carries a single dash, so this separator appears nowhere else in the name.
+  return `${NOTES_DIR}${slug}--${item.id}.md`;
+}
+
+/** First line as a heading, the rest as the body. */
+function noteMarkdown(item) {
+  const [title, ...rest] = (item.meta?.text || '').split('\n');
+  const head = title.trim();
+  const body = rest.join('\n').trim();
+  return (head ? '# ' + head + '\n' : '') + (body ? '\n' + body + '\n' : '');
+}
+
+/**
+ * ...and back. Tolerant on the way in, because by design these are files a
+ * person may have typed into: the heading marker is optional, so is the blank
+ * line under it, and trailing whitespace is nobody's content.
+ */
+function parseNote(text) {
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
+  const title = (lines.shift() || '').replace(/^#+\s*/, '').trim();
+  while (lines.length && !lines[0].trim()) lines.shift();
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  return [title, ...lines].join('\n').replace(/\n+$/, '');
+}
+
+/** The id a note file was written for, or null if this is not one of ours. */
+function noteId(name) {
+  if (!name.startsWith(NOTES_DIR) || !name.endsWith('.md')) return null;
+  const stem = name.slice(NOTES_DIR.length, -'.md'.length);
+  const cut = stem.lastIndexOf('--');
+  return cut === -1 ? null : stem.slice(cut + 2) || null;
 }
 
 /**
@@ -90,6 +158,18 @@ export async function unpackBoard(blob) {
 
   const board = JSON.parse(dec.decode(boardBytes));
   if (manifest.title && !board.title) board.title = manifest.title;
+
+  // Notes come back from their own files, which outrank the copy in
+  // board.json - see the block above packBoard's note writer.
+  const notes = new Map();
+  for (const item of board.items || []) if (item.type === 'note') notes.set(item.id, item);
+  for (const t of board.trash || []) if (t?.item?.type === 'note') notes.set(t.item.id, t.item);
+  for (const [name, bytes] of files) {
+    const id = noteId(name);
+    const item = id && notes.get(id);
+    if (!item) continue;
+    item.meta = { ...item.meta, text: parseNote(dec.decode(bytes)) };
+  }
 
   for (const [name, bytes] of files) {
     if (!name.startsWith('assets/')) continue;

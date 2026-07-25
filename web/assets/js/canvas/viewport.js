@@ -25,6 +25,8 @@ export const MIN_ZOOM = 0.02;
 export const MAX_ZOOM = 32;
 /** Below this, item chrome (labels, grips) is more noise than help. */
 export const FAR_ZOOM = 0.35;
+/** At or below this, animated pictures hold still - see canvas/stills.js. */
+export const STILL_ZOOM = 0.3;
 
 // How long a commanded view move takes.
 //

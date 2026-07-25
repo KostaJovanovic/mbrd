@@ -134,7 +134,7 @@ export function initInput(vp, cmds) {
     // A real control inside a card (the audio scrubber, a note being edited)
     // owns the whole gesture: no capture, no drag. Capturing here would redirect
     // every following pointermove to #viewport and leave the scrubber dead.
-    const widget = target?.closest('audio, video[controls], input, button, a, [contenteditable="true"], [contenteditable="plaintext-only"]');
+    const widget = target?.closest('audio, video[controls], input, button, a, .wave, [contenteditable="true"], [contenteditable="plaintext-only"]');
 
     if (widget && !spaceDown && e.button !== 1) {
       if (id) select([id]);
