@@ -1,24 +1,23 @@
-// The web: a thread from item to item, drawn behind everything.
+// The web: threads from item to item, drawn behind everything.
 //
-// The brief was "connect every element, straight lines between centres, and
-// never let two of them cross". That last clause is the whole design, because
-// it rules out almost every obvious answer: connect-everything crosses
-// immediately, a chain crosses as soon as it doubles back, nearest-neighbour
-// links cross whenever two pairs sit at an angle to each other.
+// One rule - no two threads may cross - and otherwise as many of them as will
+// fit. That is a maximal planar set of straight segments over the item
+// centres, and it is built in two passes for two different reasons.
 //
-// The structure that satisfies it is the Euclidean minimum spanning tree - the
-// cheapest set of straight edges that still joins every item into one piece.
-// Its edges provably never cross, and the proof is short enough to keep here:
-// if AB and CD crossed at some point P, then |AB| + |CD| = (|AP|+|PB|) +
-// (|CP|+|PD|), and regrouping those four pieces by the triangle inequality
-// gives |AC| + |BD| <= that sum, with equality only if all four are collinear.
-// So swapping to AC and BD is never worse, which means a *minimum* tree never
-// contains a crossing pair in the first place.
+// The first pass is a Euclidean minimum spanning tree, and it is here to
+// guarantee the web is one connected piece rather than islands. Its edges are
+// provably non-crossing, and the proof is short enough to keep: if AB and CD
+// crossed at a point P then |AB| + |CD| = (|AP|+|PB|) + (|CP|+|PD|), and
+// regrouping those four pieces by the triangle inequality gives
+// |AC| + |BD| <= that sum, equal only if all four points are collinear. So
+// re-pairing is never worse, and a *minimum* tree cannot contain a crossing.
 //
-// It is also the right structure by eye, not just by construction: minimising
-// total length means every item joins the board at its nearest neighbour, so
-// the threads read as "these two things are near each other" rather than as an
-// arbitrary graph laid over the top.
+// The second pass then adds every other thread that fits, shortest first,
+// keeping one only if it crosses nothing accepted so far. Shortest-first is
+// what makes the result look like a web rather than a mess: a short thread
+// gets to claim its space before a long one can cut across the same gap, so
+// the board fills up with small local triangles instead of a few long
+// diagonals stretched over everything.
 //
 // Drawn inside #world, so pan and zoom come for free from the layer transform
 // and this only ever redraws when the geometry actually changes. The stroke is
@@ -74,7 +73,7 @@ function draw() {
   }
   svg.style.display = '';
 
-  const edges = spanningTree(pts);
+  const edges = threads(pts);
 
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const p of pts) {
@@ -103,6 +102,90 @@ function draw() {
          `L${(pts[b].x - minX).toFixed(2)} ${(pts[b].y - minY).toFixed(2)}`;
   }
   path.setAttribute('d', d);
+}
+
+/**
+ * Every thread that fits: the spanning tree, then everything else that can be
+ * added without crossing anything already there, shortest first.
+ *
+ * Candidates are limited to each point's nearest neighbours rather than all
+ * n(n-1)/2 pairs. A long thread almost never survives the crossing test on a
+ * board dense enough for the limit to matter - by the time it is considered,
+ * the ground between its ends is already covered by shorter ones - so this
+ * costs a handful of edges around the outside and turns a cubic pass into a
+ * quadratic one. The whole web is rebuilt on every drag frame; it has to stay
+ * inside a frame's budget on a board with hundreds of things on it.
+ */
+const NEIGHBOURS = 14;
+/** Past this, the second pass is skipped and the tree alone is drawn. */
+const DENSE_LIMIT = 700;
+
+function threads(pts) {
+  const n = pts.length;
+  const edges = spanningTree(pts);
+  if (n > DENSE_LIMIT) return edges;
+
+  const taken = new Set(edges.map(([a, b]) => pair(a, b, n)));
+  const k = Math.min(NEIGHBOURS, n - 1);
+  const candidates = [];
+  const seen = new Set();
+  for (let i = 0; i < n; i++) {
+    const near = [];
+    for (let j = 0; j < n; j++) if (j !== i) near.push([dist2(pts[i], pts[j]), j]);
+    near.sort((x, y) => x[0] - y[0]);
+    for (let m = 0; m < k; m++) {
+      const j = near[m][1];
+      const id = pair(i, j, n);
+      if (taken.has(id) || seen.has(id)) continue;
+      seen.add(id);
+      candidates.push([near[m][0], Math.min(i, j), Math.max(i, j)]);
+    }
+  }
+  candidates.sort((x, y) => x[0] - y[0]);
+
+  for (const [, a, b] of candidates) {
+    let blocked = false;
+    for (const e of edges) {
+      if (crosses(pts[a], pts[b], pts[e[0]], pts[e[1]])) { blocked = true; break; }
+    }
+    if (blocked) continue;
+    edges.push([a, b]);
+    taken.add(pair(a, b, n));
+  }
+  return edges;
+}
+
+const pair = (a, b, n) => (a < b ? a * n + b : b * n + a);
+
+/**
+ * Do segments AB and CD cross?
+ *
+ * Sharing an endpoint is not crossing - that is just two threads meeting at an
+ * item, which is the entire point of a web. Collinear overlap *is* rejected,
+ * because two threads lying along each other draw as one and the longer would
+ * pass straight through the item in the middle.
+ *
+ * Bounding boxes are checked first. It rejects most pairs in four comparisons,
+ * and this runs tens of thousands of times per redraw.
+ */
+function crosses(a, b, c, d) {
+  if (a === c || a === d || b === c || b === d) return false;
+  if (Math.max(a.x, b.x) < Math.min(c.x, d.x) || Math.max(c.x, d.x) < Math.min(a.x, b.x) ||
+      Math.max(a.y, b.y) < Math.min(c.y, d.y) || Math.max(c.y, d.y) < Math.min(a.y, b.y)) return false;
+
+  const o1 = side(a, b, c), o2 = side(a, b, d);
+  const o3 = side(c, d, a), o4 = side(c, d, b);
+  if (o1 !== o2 && o3 !== o4) return true;
+  // All four collinear and their boxes overlap: they lie along each other.
+  return o1 === 0 && o2 === 0 && o3 === 0 && o4 === 0;
+}
+
+/** Which way you turn going p -> q -> r: 1 left, -1 right, 0 straight on. */
+function side(p, q, r) {
+  const v = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
+  // A tolerance, not an exact zero: these are floats off a drag, and two
+  // threads that are collinear to within a thousandth of a pixel draw as one.
+  return v > 1e-9 ? 1 : v < -1e-9 ? -1 : 0;
 }
 
 /**

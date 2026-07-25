@@ -17,7 +17,7 @@ import { initInput } from './canvas/input.js';
 import { initDrop, pickFiles, addNote } from './import/drop.js';
 import { arrange } from './arrange/arrangements.js';
 import {
-  initStorage, restoreSession, saveBoard, openBoard, newBoard, openFile,
+  initStorage, restoreSession, saveBoard, exportBoard, openBoard, newBoard, openFile,
 } from './storage/storage.js';
 import { initSidebar, close as closeSidebar } from './ui/sidebar.js';
 import { initMenu, openContextMenu, close as closeMenu } from './ui/menu.js';
@@ -32,14 +32,15 @@ const vp = new Viewport(el('viewport'), el('world'), el('axis-x'), el('axis-y'),
 
 // ---------------------------------------------------------------------------
 // Commands - the single surface the sidebar buttons and the keyboard share.
-// data-cmd="save-as" resolves to cmds.saveAs, and so on.
+// data-cmd="reset-appearance" resolves to cmds.resetAppearance, and so on.
 // ---------------------------------------------------------------------------
 
 const cmds = {
   new: () => newBoard(),
   open: () => openBoard(),
   save: () => saveBoard(),
-  saveAs: () => saveBoard({ pickNew: true }),
+  export: () => exportBoard(),
+  exportAs: () => exportBoard({ pickNew: true }),
 
   addFiles: () => pickFiles(),
   addNote: () => {

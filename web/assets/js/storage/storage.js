@@ -1,11 +1,22 @@
-// Board persistence: the .mbrd file on one side, an IndexedDB working cache on
-// the other.
+// Board persistence, in two halves that answer two different questions.
 //
-//   .mbrd  - the durable artefact. Written through the File System Access API
-//            when the browser has it (so Save overwrites in place), otherwise
-//            downloaded and re-opened through a file input.
-//   IndexedDB - the safety net. Every change is debounced into a snapshot plus
-//            the asset blobs, so closing the tab mid-edit doesn't lose work.
+//   Save   - "keep this". Writes the board into this browser, where it already
+//            autosaves to, and where it is picked up again on the next visit.
+//            No dialog, no file, no folder to choose: the common case is
+//            wanting the work kept, not wanting a document filed.
+//   Export - "give me the file". Packs a .mbrd and writes it out, through the
+//            File System Access API where there is one and a download where
+//            there is not. That is the copy you email, archive, or move to
+//            another machine.
+//
+// The split matters because the two have different failure modes. A browser
+// store can be cleared by the browser itself; a file cannot, but only exists
+// if you remembered to ask for one. So Save is the cheap frequent one and
+// Export is the deliberate one, and the interface says which is which.
+//
+// Underneath, both serialise the same board through mbrd.js. The IndexedDB
+// side also runs on a debounce after every edit, so an unsaved board survives
+// a closed tab regardless.
 
 import { toast, IS_DEV } from '../util.js';
 import {
@@ -32,7 +43,28 @@ export const currentFileName = () => fileHandle?.name || null;
 // Save
 // ---------------------------------------------------------------------------
 
-export async function saveBoard({ pickNew = false } = {}) {
+/**
+ * Keep the board in this browser. Nothing leaves the machine and no file is
+ * written - this is the same IndexedDB store the autosave uses, flushed now
+ * rather than in a second and a bit, and the board marked clean.
+ */
+export async function saveBoard() {
+  clearTimeout(saveTimer);
+  const ok = await autosave();
+  if (!ok) return false;      // autosave() has already said why
+  markDirty(false);
+  toast('Saved in this browser');
+  return true;
+}
+
+/**
+ * Write the board out as a .mbrd.
+ *
+ * With a file picker, the handle is remembered, so exporting the same board a
+ * second time overwrites the file you chose instead of asking again - pass
+ * `pickNew` for a Save-as. Without one, every export is a download.
+ */
+export async function exportBoard({ pickNew = false } = {}) {
   try {
     const data = serializeBoard();
     const { blob, manifest } = await packBoard(data, { created });
@@ -53,13 +85,16 @@ export async function saveBoard({ pickNew = false } = {}) {
       download(blob, fileNameFor(data.title));
     }
 
+    // Exporting is also a save: the bytes are on disk now, and telling someone
+    // their board has unsaved changes right after they wrote it to a file
+    // would be a lie.
     markDirty(false);
-    toast('Saved ' + fileNameFor(board.title));
+    toast('Exported ' + fileNameFor(board.title));
     return true;
   } catch (err) {
     if (err?.name === 'AbortError') return false;   // user closed the picker
     console.error(err);
-    toast('Save failed: ' + err.message, 'error');
+    toast('Export failed: ' + err.message, 'error');
     return false;
   }
 }
@@ -188,7 +223,7 @@ export function scheduleAutosave() {
 }
 
 export async function autosave() {
-  if (!cacheOk) return;
+  if (!cacheOk) return false;
   try {
     const known = new Set(await idbKeys('assets'));
     for (const [hash, asset] of allAssets()) {
@@ -204,11 +239,13 @@ export async function autosave() {
       dirty: isDirty(),
       at: Date.now(),
     });
+    return true;
   } catch (err) {
     // Quota or a private-mode refusal: stop trying and say so once.
     cacheOk = false;
     console.warn('[mbrd] autosave disabled:', err);
-    toast('Autosave unavailable (storage full or blocked) - save to a .mbrd file', 'error');
+    toast('This browser will not store the board (full, or blocked) - export it to a file', 'error');
+    return false;
   }
 }
 
@@ -217,7 +254,12 @@ export async function restoreSession() {
   try {
     const session = await idbGet('kv', SESSION_KEY);
     if (!session?.board?.items) return false;
-    const needed = new Set(session.board.items.map(i => i.asset?.hash).filter(Boolean));
+    // The bin's items need their bytes back too, or restoring one would put an
+    // empty frame on the board.
+    const needed = new Set([
+      ...session.board.items,
+      ...(session.board.trash || []).map(t => t?.item).filter(Boolean),
+    ].map(i => i.asset?.hash).filter(Boolean));
     for (const hash of needed) {
       const rec = await idbGet('assets', hash);
       if (rec?.blob) putAsset(hash, rec.blob, { ext: rec.ext, mime: rec.mime, name: rec.name });

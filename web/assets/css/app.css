@@ -28,6 +28,19 @@ html, body {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* The small print goes in the display face.
+   Every selector here is an aside - a caption, a section head, a keyboard
+   legend, a toast - and an aside is the display voice's job, not the body's.
+   In the middle of the whimsy axis, where the two tokens name different
+   families, this is the split doing its work; at either end both name the
+   same family and the whole rule is a no-op. Grouped rather than repeated
+   thirteen times, and kept next to the body rule it is the counterweight to. */
+.card-icon, .card-meta, .item-label, .wordmark h1, .wordmark .sub,
+.side-sec h2, .field > span, .hint, .keys li, .side-foot,
+#bin-panel h2, #bin-none, #bin-hint, #drop-overlay div, #toast {
+  font-family: var(--font-display);
+}
+
 /* The sheet. #viewport paints the grid on top of this and stays transparent,
    so the paper shows through at every zoom without the grid painter having to
    know about it.
@@ -309,8 +322,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
   color: var(--accent);
 }
 .card-name {
+  font-family: var(--font-display);
   font-weight: 600;
-  font-size: 17px;
+  font-size: var(--t-title);
   line-height: 1.2;
   word-break: break-word;
 }
@@ -361,30 +375,42 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .transport .play svg { width: 13px; height: 13px; }
 .transport .play:hover { background: var(--accent); color: var(--accent-fg); transform: scale(var(--btn-grow)); }
-.card-audio.is-playing .play { background: var(--accent); color: var(--accent-fg); }
+.transport.is-playing .play { background: var(--accent); color: var(--accent-fg); }
 
-/* The waveform. Bars, bottom-aligned, each one an RMS reading of that slice of
-   the file - see ui/audio.js. Rounded off with the rest of the interface, so a
-   plain board gets square bars and a soft one gets capsules. */
+/* The waveform. Each bar is an RMS reading of that slice of the file, mirrored
+   about the centre line - a signal has no up and no down, and half of one
+   drawn on a baseline is a bar chart rather than a picture of a sound.
+   Rounded off with the rest of the interface, so a plain board gets square
+   bars and a soft one gets capsules. See ui/audio.js. */
 .wave {
+  position: relative;
   flex: 1;
   min-width: 0;
-  height: 34px;
-  display: flex;
-  align-items: flex-end;
-  gap: 1px;
+  height: 40px;
   cursor: pointer;
 }
-.wave i {
+/* Two identical lanes, stacked. The quiet one is the whole waveform; the
+   accent one is the same waveform revealed by a clip that follows the
+   playhead, which is what lets the fill cut a bar in half instead of stepping
+   whole bars at a time. */
+.wave-lane {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+.wave-lane i {
   flex: 1;
   min-width: 1px;
   border-radius: min(var(--radius-xs), 2px);
-  background: color-mix(in srgb, var(--ink) 22%, transparent);
-  transition: background var(--dur-fast) var(--ease);
 }
-/* Everything behind the playhead. A waveform that does not fill in as it plays
-   is a picture of a file; one that does is a position in it. */
-.wave i.is-played { background: var(--accent); }
+.wave-base i { background: color-mix(in srgb, var(--ink) 22%, transparent); }
+.wave-fill {
+  clip-path: inset(0 100% 0 0);
+  will-change: clip-path;
+}
+.wave-fill i { background: var(--accent); }
 .transport-time {
   flex: none;
   font-family: var(--font-mono);
@@ -435,9 +461,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
    a line drawn on it. */
 .item[data-type="note"] .note-title {
   font-family: var(--font-display);
-  font-size: 23px;
+  font-size: var(--t-display);
   font-weight: 700;
-  line-height: 1.25;
+  line-height: 1.2;
   color: var(--ink);
   padding-bottom: 9px;
   border-bottom: var(--hairline) solid color-mix(in srgb, var(--ink) 14%, transparent);

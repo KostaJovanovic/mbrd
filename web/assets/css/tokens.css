@@ -75,8 +75,8 @@
      every item and behind whatever colours those items bring, and a tinted
      thread crossing a photograph reads as an artefact of the photograph. Grey
      reads as string. Screen px, because the stroke does not scale with zoom. */
-  --web-line:   rgba(128, 128, 128, 0.34);
-  --web-weight: 1px;
+  --web-line:   rgba(128, 128, 128, 0.4);
+  --web-weight: 1.4px;
 
   /* ---- item chrome ---- */
   --item-bg:     var(--paper-card);
@@ -152,15 +152,38 @@
   --shadow-2: 0 18px 44px -18px color-mix(in srgb, var(--ink) 46%, transparent);
 
   /* ---- type ----
-     An old-style serif throughout. Every face listed ships with an OS, so
-     there is nothing to download and nothing to break offline. */
-  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua",
-                  "URW Palladio L", Georgia, "Times New Roman", serif;
-  --font-body:    var(--font-display);
+     Two voices, and this level is the only one that has two.
+     A serif for anything that announces itself - titles, names, headings, the
+     small italic asides - over a neutral sans for everything you actually
+     read. That pairing, not a bigger heading, is what makes a thing look set
+     rather than styled, and it is why the middle of the axis is its loudest
+     point: the soft end is one serif doing every job, the plain end is one
+     sans doing every job, and only here do two faces have to agree with each
+     other.
+
+     Serif above sans, never the other way round. Sans headlines over serif
+     body is the newspaper convention and it reads as a newspaper.
+
+     Fraunces is self-hosted (see fonts.css); the stack behind it is the old
+     system-serif list, so a board still sets sensibly before the file lands
+     or if it never does. */
+  --font-display: "Fraunces", "Iowan Old Style", "Palatino Linotype", Palatino,
+                  "Book Antiqua", "URW Palladio L", Georgia, "Times New Roman", serif;
+  --font-body:    "Geist", -apple-system, "Helvetica Neue", Helvetica,
+                  "Liberation Sans", system-ui, sans-serif;
   --font-mono:    ui-monospace, "Cascadia Mono", "SF Mono", Consolas, "DejaVu Sans Mono", monospace;
+  /* The display sizes are tokens rather than numbers in app.css because they
+     are the axis's loudest lever: three steps above the body here, closer to
+     two at the ends. --t-display is the largest thing on a board (a note's
+     title, the wordmark); --t-title is a filed card's name. */
+  --t-display: 30px;
+  --t-title:   21px;
   --t-body:  15px;
   --t-small: 13px;
   --t-tiny:  11px;
+  /* Fraunces gets a display cut up top and a text cut down at 13px on its own.
+     Blink needs telling; Gecko does it by default. */
+  font-optical-sizing: auto;
   /* Two knobs the whimsy axis turns rather than rewriting a dozen rules:
      whether ornamental text is italic, and how wide the tracked small caps
      are set. Each site multiplies its own em value by --ls-scale, so their
@@ -295,6 +318,16 @@
   --grid-alpha: 0.18;
   --grid-dot: 2.4px;
 
+  /* One serif, top to bottom. The optical axis is what makes that survivable:
+     the same file is a display cut at 28px and a text cut at 15px, so setting
+     running copy in the display face is not the compromise it usually is.
+     Sizes sit a step under the middle's - with only one voice on the page,
+     the size difference has nothing to hold apart, and shouting it would
+     just be shouting. */
+  --font-body:  var(--font-display);
+  --t-display: 28px;
+  --t-title:   20px;
+
   --item-shadow: 0 2px 3px color-mix(in srgb, var(--ink) 13%, transparent),
                  0 20px 38px -14px color-mix(in srgb, var(--ink) 44%, transparent);
   --note-shadow: 0 2px 2px color-mix(in srgb, var(--ink) 18%, transparent),
@@ -384,11 +417,18 @@
   --sel-corner: 3.2px;
   --sel-reach:  14px;
 
+  /* One sans, top to bottom - and the serif is not merely unused here, it is
+     unnamed, so a board left at this end never downloads it. */
   --font-display: "Geist", -apple-system, "Helvetica Neue", Helvetica, "Liberation Sans", system-ui, sans-serif;
   --font-body:    var(--font-display);
   --font-mono:    "Geist Mono", ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
   --display-italic: normal;
   --ls-scale: 0.5;
+  /* Swiss takes its contrast from weight and rule, not from size. These are
+     the smallest of the three, and the type still reads as the loudest,
+     because nothing around it is competing. */
+  --t-display: 25px;
+  --t-title:   19px;
 
   --wash: 0;
   /* A fine lattice, but a *visible* one. At 1px and 0.11 these were painted

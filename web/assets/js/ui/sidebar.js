@@ -53,9 +53,10 @@ export function initSidebar(cmds) {
   bindCheck('opt-hud', 'hud');
 
   el('version').textContent = 'v' + VERSION;
+  // Two different promises, so they get two different sentences.
   el('save-hint').textContent = canPickFiles()
-    ? 'Save writes straight back to the same .mbrd.'
-    : 'No file picker in this browser — Save sends you a .mbrd, and Open takes it back.';
+    ? 'Save keeps this board in the browser. Export writes a .mbrd you can keep anywhere.'
+    : 'Save keeps this board in the browser. Export downloads a .mbrd, and Open takes it back.';
 
   bus.on('board', paint);
   bus.on('settings', paint);

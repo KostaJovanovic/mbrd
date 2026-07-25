@@ -344,7 +344,13 @@ export function initInput(vp, cmds) {
     if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? cmds.redo() : cmds.undo(); return; }
     if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); cmds.redo(); return; }
     if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); cmds.duplicate(); return; }
-    if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); cmds.save(); return; }
+    // Ctrl+S is the cheap one - keep this, in the browser. Ctrl+Shift+S is the
+    // deliberate one, and writes a file.
+    if (mod && e.key.toLowerCase() === 's') {
+      e.preventDefault();
+      if (e.shiftKey) cmds.export(); else cmds.save();
+      return;
+    }
     if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); cmds.open(); return; }
     if (mod) return;
 
