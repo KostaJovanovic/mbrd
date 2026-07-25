@@ -361,6 +361,76 @@ Last because it is the only item that changes what this project is made of.
 
 ---
 
+# Status — end of 2026-07-25
+
+Everything on this list that was not marked *(discussion)* is built. What
+follows is the record of what landed and what did not, so the list above can be
+read as history rather than as a plan.
+
+## Done
+
+**Tier 1** — items 1, 2, 3.
+**Tier 2** — items 4, 5, 6, 7, 8, 9, 10.
+**Tier 3** — items 11, 12, 13.
+**Tier 5** — items 19, 20, 22, 24.
+
+Three of those deserve a note, because they were not built the way this
+document guessed.
+
+**Item 9, "don't work on what is off screen."** Items were already culled; the
+web was not. It is now split into a `build` that runs when geometry changes and
+a `paint` that runs when the view changes, so panning across a board no longer
+recomputes a spanning tree. Both quadratic passes inside `threads()` went with
+it: the k-nearest search no longer allocates an array per point, and the
+crossing test consults a grid of accepted threads rather than all of them. A
+500-item board went from 72ms a rebuild to about 5ms, edge-for-edge identical.
+Threads that are off screen also no longer get a fade element each, which is
+what opening a 400-item board was spending eleven hundred DOM nodes on.
+
+**Item 19, YouTube embeds.** Built opt-in *per click* rather than per item. A
+stored `embed: true` would have turned one click today into a silent request
+every time the board was opened afterwards, on any machine it was ever copied
+to — which is the thing this item was placed in tier 5 to avoid. Nothing is
+requested until the button on the card is pressed, and that was measured with
+the network log open rather than reasoned about.
+
+**Item 24, 3D models.** No dependency. `import/mesh.js` reads binary and ASCII
+STL, OBJ and GLB/glTF by hand, and `canvas/model.js` draws them with one shared
+WebGL context that every card blits from — because contexts are capped per page
+at around sixteen, and a canvas that mounts and unmounts cards as you pan would
+spend them all and then hand back blank cards.
+
+## Not done, and why
+
+**Item 12's parked question — finalising the display serif — is blocked on
+files that do not exist.** Newsreader, Literata and Source Serif 4 are not in
+`web/assets/fonts/` and are not anywhere else on this machine; the scratchpad
+this document said they were downloaded to is gone. Only Fraunces and Geist
+ship. The live switcher works and can compare Fraunces against faces the
+operating system already has, which is not the comparison the question needs.
+Someone has to fetch those three woff2 files and their licences.
+
+**Tier 4 and the rest of tier 5 are decisions, and they have been written up
+rather than taken.** Item 14 turned out to be pure writing with one open
+question at the end, so it is written: `docs/mbrd-format.md`. The other six —
+items 15, 16, 17, 18, 21, 23 — each have a brief in
+`research/decisions-2026-07-25.md`: what is actually true in the code today,
+the options, and a recommendation. Four of the six close with little or no
+code. Nothing was built for any of them.
+
+## Corrections to this document
+
+- **Item 5 said the fix was to vary the seed.** The seed was already being
+  varied; `scatter` was the only layout that read it. All seven read it now.
+- **Item 16's premise has mostly expired.** Item 8 made the zoom ladder
+  unconditional and item 9 took the web's quadratics out, so the only quality
+  lever left that is not automatic is `DENSE_LIMIT`.
+- **The Harsh lattice is a canvas**, not a tiled image, and it draws only the
+  marks inside the viewport. It no longer belongs on item 9's list and its
+  colours are resolved in JS rather than read from tokens at paint time.
+
+---
+
 # Handover — the JS half, 2026-07-25
 
 Written by the session doing JavaScript, for the session doing CSS. I touched
