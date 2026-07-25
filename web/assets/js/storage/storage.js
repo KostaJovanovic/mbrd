@@ -18,7 +18,7 @@
 // side also runs on a debounce after every edit, so an unsaved board survives
 // a closed tab regardless.
 
-import { toast, isDev } from '../util.js';
+import { toast, isDev, itemHashes } from '../util.js';
 import {
   board, serializeBoard, loadBoard, markDirty, isDirty, setTitle, bus,
 } from '../state.js';
@@ -347,23 +347,10 @@ function scheduleAutosave() {
  */
 function referencedHashes(data) {
   const out = new Set();
-  for (const it of data.items || []) add(out, it);
-  for (const t of data.trash || []) add(out, t?.item);
+  const add = it => { for (const h of itemHashes(it)) out.add(h); };
+  for (const it of data.items || []) add(it);
+  for (const t of data.trash || []) add(t?.item);
   return out;
-}
-
-/**
- * The two places an item can name asset bytes.
- *
- * `asset.hash` is the thing the item *is*; `meta.cover` is a picture chosen for
- * it, which since covers landed can be any item's, not just an audio card's.
- * Missing the second would sweep away every album cover on the next autosave,
- * so this is one function rather than two loops that can drift apart.
- */
-function add(out, it) {
-  if (!it) return;
-  if (it.asset?.hash) out.add(it.asset.hash);
-  if (it.meta?.cover) out.add(it.meta.cover);
 }
 
 /**

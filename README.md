@@ -41,6 +41,8 @@ modules in `web/` directly, so an edit is one refresh away.
 | `Ctrl`+`A` / `Del` | select all / delete |
 | `Ctrl`+`Z` / `Y` | undo / redo |
 | `Ctrl`+`S` / `O` | save in this browser / open a `.mbrd` |
+| `Ctrl`+`K` | find anything on the board, and fly to it |
+| right-click, or long-press | the context menu |
 
 Files arrive by drag-and-drop (folders included), clipboard paste, or **Add
 files** in the sidebar. Pasted text becomes a note. Multiple files land arranged
@@ -48,8 +50,22 @@ around the drop point using the layout picked in **Arrange**.
 
 ### What actually displays
 
-Pictures, moving pictures, sound and text — the four things a browser can draw
-with no help. Everything else becomes a named card rather than a broken box:
+Pictures, moving pictures, sound, text, links — and 3D models, which the browser
+does not draw with no help but does draw with about six hundred lines of it.
+`.stl`, `.obj` and `.glb`/`.gltf` are parsed by hand in
+`web/assets/js/import/mesh.js` and drawn by `web/assets/js/canvas/model.js`,
+which holds **one** WebGL context for the whole app and blits it into each
+card's own 2D canvas — contexts are capped per page at around sixteen, and a
+board that mounts and unmounts cards as you pan would spend them all. Drag a
+model to turn it over, wheel to zoom it.
+
+A YouTube link can become a player, and does so only when you press the button
+on the card. Nothing is requested from anyone before that, the choice is not
+stored in the `.mbrd`, and it uses `youtube-nocookie.com` with
+`referrerpolicy=no-referrer`. That is the app's one and only third-party
+request, and it never happens by itself.
+
+Everything else becomes a named card rather than a broken box:
 `web/assets/js/import/formats.js` is a data table lifted from the sibling
 [file-analyser](../file-analyser) project that knows what ~1350 extensions
 *are*, so a `.sldprt` reads "SolidWorks · 3D / CAD" and a `.dwg` reads
@@ -67,13 +83,21 @@ A `.mbrd` is a ZIP with a different extension — the same trick `.3mf` and
 myboard.mbrd
 ├── manifest.json        { format, version, app, created, modified, title }
 ├── board.json           { view, settings, arrangement, items[] }
-└── assets/<hash>.<ext>  the embedded bytes, deduped by content hash
+├── assets/<hash>.<ext>  the embedded bytes, deduped by content hash
+├── notes/<slug>--<id>.md      one sticky note, as readable Markdown
+└── waveforms/<hash>.json      one audio file's measured readings
 ```
 
 Items reference bytes by SHA-256 hash, so the same photo dropped five times is
 stored once. Media is stored uncompressed (it already is); the JSON is deflated.
 The schema reserves `asset: { external: { path } }` for a future
 link-instead-of-embed setting.
+
+The archive is meant to be *opened*, not merely parsed — your notes are Markdown
+files with your words in them, and the waveform data is a list of numbers laid
+out sixteen to a line. **[`docs/mbrd-format.md`](docs/mbrd-format.md) is the
+full specification**, including which changes are free and which are a version
+bump.
 
 **Save** and **Export** are two different things, on purpose:
 
