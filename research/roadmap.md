@@ -30,24 +30,42 @@ Two lines. The smallest item on this list and fully specified.
 one that actually needs it — items vanish into the bin with no confirmation.
 `toast()` is in `util.js` and already fades.
 
+### 3. Sticky notes at half size
+`defaultSize('note')` in `renderers.js` returns `240 × 240`. One line to change,
+and only affects new notes — existing boards keep whatever they were saved at.
+
+**"Half" is ambiguous and the two readings are very different.** Half of each
+side is `120 × 120`, which is a *quarter* of the area; half the area is about
+`170 × 170`. The second is probably what a shrunken sticky should feel like,
+but the first is what the words say.
+
+Either way the type does not come with it. `.note-title` is set at
+`var(--t-display)` — 28px in Softish — so on a 120px note the title alone eats
+a third of the sheet, leaving about three lines of 16px body under it, and
+`NOTE_MAX` is 512 characters. `.note-body` is `overflow: hidden`, so the excess
+does not spill, it just stops being visible. If the small size is meant to hold
+a real note rather than a word, notes need their own type step down from the
+display ramp — that part is not a one-liner. Check the minimum resize limit
+still sits below the new default.
+
 ---
 
 ## Tier 2 — an hour or two each
 
-### 3. Paste under the cursor *(was A3)*
+### 4. Paste under the cursor *(was A3)*
 Today paste offsets from where the items were copied. It should land where the
 pointer is if the pointer has moved since. `pasteItems(at)` already takes an
 optional point and centres the clipboard bounds on it — this is mostly a
 question of tracking the last pointer position in `input.js` and deciding when
 "the cursor moved enough to mean somewhere else".
 
-### 4. Rearrange shuffles positions, not just items *(was A5)*
+### 5. Rearrange shuffles positions, not just items *(was A5)*
 `rearrange()` in `main.js` shuffles which item goes in which slot, but the
 slots themselves come out of `arrange()` in the same order every time. The
 layouts take a `seed`, so the fix is to vary it — and for `free`, to actually
 scatter rather than no-op.
 
-### 5. Live font switcher *(was A6)*
+### 6. Live font switcher *(was A6)*
 Buttons to swap `--font-display` / `--font-body` at runtime, to settle the type
 by looking rather than arguing. Newsreader, Literata and Source Serif 4 are
 already downloaded as variable woff2 with `opsz` axes and true italics.
@@ -55,7 +73,7 @@ already downloaded as variable woff2 with `opsz` axes and true italics.
 **Worth doing early despite its position here:** it unblocks the parked serif
 decision, which is otherwise waiting on a comparison page nobody has built.
 
-### 6. Polaroid borders on Softish photos
+### 7. Polaroid borders on Softish photos
 In Softish, a photo gets a white mat around it with a deeper chin at the foot —
 a print rather than a bare image. The tier is half-built for it already:
 `--item-tilt` × `--tilt-max` gives Softish crooked cards, so the scattered-prints
@@ -81,10 +99,10 @@ Mostly CSS scoped to `[data-whimsy="0"]`, with three things to settle first:
   curve. Either `--shape-radius` is overridden for images here — going against
   the tier's own identity — or the frames come out round-cornered.
 
-Unrelated to item 18's photo frame, and worth keeping straight: that one is a
+Unrelated to item 19's photo frame, and worth keeping straight: that one is a
 correction *away* from polaroids, this one is an explicit ask *for* them.
 
-### 7. The zoom detail ladder
+### 8. The zoom detail ladder
 Two rules, both specified:
 
 - **GIFs freeze at 40% zoom**, not 30%. One constant: `STILL_ZOOM` in
@@ -102,17 +120,17 @@ means the audio rule can hang off the existing `zoom-far` class unchanged.
 Worth a glance at whether hiding item chrome at `0.4` is too early on its own.
 
 Note this is a zoom ladder, not a hardware setting — it fires for everyone,
-always, which is what makes it cheap. It removes two of the levers item 14 was
+always, which is what makes it cheap. It removes two of the levers item 15 was
 going to argue about.
 
-### 8. valjdakosta branding *(was A9)*
+### 9. valjdakosta branding *(was A9)*
 Mechanically small. Needs the assets and a decision on how loud it should be.
 
 ---
 
 ## Tier 3 — a real feature each
 
-### 9. Search *(was A1)*
+### 10. Search *(was A1)*
 Find items by name, note text, link URL, file type. Open questions are only
 about surface, not behaviour: an overlay palette (Ctrl+K) versus a sidebar
 field. Should probably fly the viewport to a hit and select it, since a board
@@ -121,26 +139,26 @@ is spatial and a list of names without positions is not much use.
 The flying is the part that is more than an afternoon — animating the viewport
 to a point at a sensible zoom is new machinery.
 
-### 10. Custom pictures on text and audio cards *(was A8)*
-Let any card carry a chosen image. **Build this before 11** — album art is the
+### 11. Custom pictures on text and audio cards *(was A8)*
+Let any card carry a chosen image. **Build this before 12** — album art is the
 automatic case of exactly this feature, so the slot wants building once and
 filling twice.
 
-### 11. Album art from audio files *(was A7)*
+### 12. Album art from audio files *(was A7)*
 Read embedded cover art (ID3v2 `APIC` for mp3, `metadata`/`covr` atom for m4a,
 FLAC `PICTURE` block) and show it on the audio card. No dependency needed — the
 frame headers are simple enough to parse by hand, the way `storage/zip.js` was.
 Falls back to the waveform, which stays the card's identity when there is no
 art.
 
-Three container formats parsed by hand is the cost. Filling the slot from 10 is
+Three container formats parsed by hand is the cost. Filling the slot from 11 is
 the easy half.
 
 ---
 
 ## Tier 4 — the decision costs more than the code
 
-### 12. `.mbrd` format documentation *(was B4)* *(discussion)*
+### 13. `.mbrd` format documentation *(was B4)* *(discussion)*
 No written spec exists. The format has grown a `notes/` directory of real
 Markdown and a `waveforms/<hash>.json` sidecar set, both of which are
 deliberate — the archive is meant to be openable and readable. That principle
@@ -151,7 +169,7 @@ being one thing you can email.
 Placed first in this tier because it is pure writing, and because every item
 below it can break the format it describes.
 
-### 13. Default palettes and 60-30-10 *(was B3)* *(discussion)*
+### 14. Default palettes and 60-30-10 *(was B3)* *(discussion)*
 Whether Papyrus / Absinthe / Tea rose / Peacock should be rebuilt on a
 60-30-10 split. Worth knowing before that conversation: measured in OKLCH, the
 existing palettes are already two-hue, with `--leafy` carrying the second at
@@ -160,8 +178,8 @@ exceeds 0.127 anywhere. So the raw material for a 60-30-10 reading is there;
 the question is whether the *proportions* on screen match it, which is a
 question about `app.css` usage rather than about the tokens.
 
-### 14. Quality modes for weaker hardware *(was B7)* *(discussion)*
-Distinct from 21: that one shrinks the file, this one shrinks the work. Item 7
+### 15. Quality modes for weaker hardware *(was B7)* *(discussion)*
+Distinct from 22: that one shrinks the file, this one shrinks the work. Item 8
 has now taken the GIF freeze and the audio card out of this conversation by
 making them unconditional, which leaves culling in `items.js` and the web's
 `DENSE_LIMIT` as the levers still in play. Question is whether what remains is
@@ -170,16 +188,16 @@ zoom ladder covers the common case.
 
 Cheap to build because the levers are built. The whole cost is deciding.
 
-### 15. Sidebar reform *(was B1)* *(discussion)*
+### 16. Sidebar reform *(was B1)* *(discussion)*
 The sidebar has grown to six sections and keeps growing — search, optimize,
 fonts and quality modes all want a home. Worth settling what it *is* before
 adding more: a settings panel, a tool palette, or an inspector that changes
 with the selection.
 
-Note the ordering pressure: items 5, 9, 14 and 21 all add a control. Either
+Note the ordering pressure: items 6, 10, 15 and 22 all add a control. Either
 this happens before them or it happens to them.
 
-### 16. Image palette extraction *(was B2)* *(discussion)*
+### 17. Image palette extraction *(was B2)* *(discussion)*
 Partly discussed already. Settled so far: cluster in OKLCH not RGB, exclude
 near-neutral pixels from hue voting, let the harmony fall out of what the
 photos contain rather than forcing one, and repair lightness afterwards so ink
@@ -196,7 +214,7 @@ repair pass, plus a mapping onto 13 tokens.
 
 ## Tier 5 — large
 
-### 17. YouTube (and video) embeds *(was C3)*
+### 18. YouTube (and video) embeds *(was C3)*
 A pasted YouTube link becomes a player rather than a link card. Not much code —
 URL parsing and an iframe, on top of the link card that already exists. It is
 here for the principle, not the effort: **an embed breaks offline-first.** It is
@@ -206,7 +224,7 @@ deciding whether embeds are opt-in per item.
 Same call that was made for you on link favicons, so it should be deliberate
 rather than inherited.
 
-### 18. Konami code → 90s skin *(was C4)*
+### 19. Konami code → 90s skin *(was C4)*
 Konami sequence swaps the whole interface for one built from
 `C:\Users\kosta\Projekti\sajt90`. Large in volume, but with no unknowns — the
 source is hand-written static HTML with one 4618-line stylesheet, and it is a
@@ -232,7 +250,7 @@ What to take, verbatim:
   paper, which is probably the impression being remembered. **Decide whether
   the skin reproduces that faithfully, or adds the rotation and drop-shadow a
   real polaroid has.** Faithful is one CSS rule; polaroid is a design choice.
-  (Item 6 is a separate, deliberate ask for polaroids in Softish — the two
+  (Item 7 is a separate, deliberate ask for polaroids in Softish — the two
   should not be collapsed into one frame style.)
 - **The 90s devices that genuinely exist there** — a real `<marquee>`,
   `2px outset` → `inset` beveled buttons, hard `4px 4px 0` unblurred shadows, a
@@ -245,7 +263,7 @@ Whether this is a real reskin or a joke that lasts thirty seconds decides how
 much of it is worth wiring to the token system — and that answer swings the
 effort by an order of magnitude.
 
-### 19. Cloud sync *(was B5)* *(discussion)*
+### 20. Cloud sync *(was B5)* *(discussion)*
 See `research/gdrive implementation.md`. Recommendation there stands: try the
 synced-folder route first, because Save already writes a real file to a real
 path and a folder inside Drive/iCloud costs no code at all. The Drive API route
@@ -256,14 +274,14 @@ merging is not, since positions are absolute and there is no CRDT).
 Sits in Tier 5 for the API route. **The cheap route is genuinely cheap** — if
 the answer is "a synced folder is fine", this drops out of the tier entirely.
 
-### 20. Mobile *(was C1)*
+### 21. Mobile *(was C1)*
 Touch already works — `input.js` handles pinch and two-finger pan. What does
 not is the layout: the sidebar is a desktop panel, the bin and zoom controls
 sit in thumb-hostile corners, and the resize grips are sized for a mouse. A
 layout rework across most of `app.css`, with a real interaction question under
 it (what does select-then-act mean without hover).
 
-### 21. "Optimize board" *(was B6)* *(discussion — its own conversation)*
+### 22. "Optimize board" *(was B6)* *(discussion — its own conversation)*
 Flagged as needing separate discussion, and it does. Sketch as given: photos to
 1200px on the long edge at 4:2:0 JPEG q87, audio to 192kbps mp3, video to 480p,
 already-optimised files marked so they are never processed twice.
@@ -283,7 +301,7 @@ The things that make this its own conversation:
   and anything with text in it, which are exactly the things a moodboard
   collects. Whether to detect that or let it be lossy is a real choice.
 
-### 22. 3D model support *(was C2)*
+### 23. 3D model support *(was C2)*
 `.stl`, `.obj`, `.glb`. Needs a renderer, which means either WebGL by hand or
 the first real dependency this project has taken. `formats.js` already knows
 what these files *are*; today they land as named cards, which is a working
@@ -297,7 +315,7 @@ Last because it is the only item that changes what this project is made of.
 
 - **Finalise the serif.** Fraunces is a placeholder chosen for its optical-size
   axis. Newsreader, Literata and Source Serif 4 are downloaded and their axes
-  checked; the comparison page was never built. Item 5 would settle it faster.
+  checked; the comparison page was never built. Item 6 would settle it faster.
 - **Drag a selected-text URL onto the board.** Deliberately not supported —
   gating on `text/plain` would raise the drop overlay for every text drag
   across the window. Only `text/uri-list` is accepted.
