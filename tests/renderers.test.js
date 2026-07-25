@@ -66,6 +66,17 @@ test('an extension carries it when the browser sets no MIME', () => {
   assert.equal(classify(file('holiday.JPG')), 'image');
 });
 
+test('a sticky note is square and small', () => {
+  // Square because a sticky comes off a square pad, and small because a note
+  // is an annotation on the board rather than a thing on it. The floor that
+  // matters is MIN_SIZE in canvas/input.js (48): the default has to sit above
+  // it, or a fresh note would arrive already smaller than it can be dragged.
+  const { w, h } = defaultSize('note');
+  assert.equal(w, h, `a note should be square, got ${w}x${h}`);
+  assert.ok(w > 48, `a note starts below the resize floor at ${w}`);
+  assert.ok(w < defaultSize('image').w, 'a note should not outweigh a photo');
+});
+
 test('text files get a card taller than it is wide', () => {
   // A page is portrait. The generic card is 250x140, which is the shape this
   // was falling back to, and it fits about two lines.

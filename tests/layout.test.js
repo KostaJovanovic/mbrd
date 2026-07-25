@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 
 import { arrange, ARRANGEMENTS } from '../web/assets/js/arrange/arrangements.js';
 import { gridStep } from '../web/assets/js/canvas/grid.js';
+import { FAR_ZOOM, STILL_ZOOM, MIN_ZOOM, MAX_ZOOM } from '../web/assets/js/canvas/viewport.js';
 import { item } from './helpers.js';
 
 const items = n => Array.from({ length: n }, (_, i) => item({ id: `i${i}`, w: 100, h: 80 }));
@@ -73,6 +74,95 @@ test('layouts spread out rather than stacking', () => {
     const out = arrange(items(12), { name, center: { x: 0, y: 0 }, spacing: 32 });
     const distinct = new Set(out.map(p => `${p.x.toFixed(3)},${p.y.toFixed(3)}`));
     assert.ok(distinct.size > 1, `${name} stacked everything on one point`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// The seed
+//
+// A seed is a layout's licence to move the slots themselves, not just to fill
+// them in a new order - without that, Rearrange hands back the same shape with
+// the cards swapped, which from far enough out to see a whole board is the
+// same picture. What varies is each layout's own business; what is asserted
+// here is that something does, that it is reproducible, and that the layout is
+// still recognisably itself afterwards.
+// ---------------------------------------------------------------------------
+
+test('every layout answers a seed with a different arrangement', () => {
+  // Some layouts vary in steps - a quarter turn, one column more or fewer -
+  // and one step in four is "the same again", which is a legitimate outcome
+  // rather than a failure. So the property is that *some* seed moves it, not
+  // that any particular one does.
+  const base = { center: { x: 0, y: 0 }, spacing: 32 };
+  for (const name of named) {
+    const src = items(17);   // not a square number, so grid's outer ring is partial
+    const plain = JSON.stringify(arrange(src, { ...base, name }));
+    const moved = [1, 2, 3, 7, 11, 4242]
+      .some(seed => JSON.stringify(arrange(src, { ...base, name, seed })) !== plain);
+    assert.ok(moved, `${name} ignored every seed it was given`);
+  }
+});
+
+test('the same seed lays out the same way in every layout', () => {
+  const opts = { center: { x: 12, y: -8 }, spacing: 24, seed: 20260725 };
+  for (const name of named) {
+    const src = items(13);
+    assert.deepEqual(arrange(src, { ...opts, name }), arrange(src, { ...opts, name }),
+      `${name} is not reproducible from its seed`);
+  }
+});
+
+test('a seeded grid is still a grid', () => {
+  // The rotation permutes integer cells, so every point must still land on the
+  // lattice and no two may share a cell. A grid that came out overlapping
+  // would be worse than one that never varied.
+  const out = arrange(items(17), { name: 'grid', center: { x: 0, y: 0 }, spacing: 32, seed: 3 });
+  const [cw, ch] = [100 + 32, 80 + 32];
+  for (const [i, p] of out.entries()) {
+    assert.ok(Math.abs(p.x / cw - Math.round(p.x / cw)) < 1e-9, `point ${i} is off the lattice in x`);
+    assert.ok(Math.abs(p.y / ch - Math.round(p.y / ch)) < 1e-9, `point ${i} is off the lattice in y`);
+  }
+  assert.equal(new Set(out.map(p => `${p.x},${p.y}`)).size, out.length, 'two items share a cell');
+});
+
+test('a seeded free shakes items loose without relocating them', () => {
+  // Free's whole promise is that it will not impose a shape, so a shaken item
+  // may move about half its own size and no further. Any more and the
+  // arrangement you built by hand stops being recognisable, which is the one
+  // thing this layout must not do.
+  const src = Array.from({ length: 12 }, (_, i) => item({ id: `i${i}`, x: i * 500, y: 0, w: 100, h: 80 }));
+  const out = arrange(src, { name: 'free', center: { x: 0, y: 0 }, spacing: 32, seed: 5 });
+  const travelled = out.map((p, i) => Math.hypot(p.x - src[i].x, p.y - src[i].y));
+  assert.ok(travelled.some(d => d > 1), 'a seeded free must actually move something');
+  const reach = (100 + 32) * 0.5;
+  for (const [i, d] of travelled.entries()) {
+    assert.ok(d <= reach + 1e-9, `item ${i} travelled ${d.toFixed(1)}, past the ${reach} it may shake`);
+  }
+});
+
+test('a seeded date layout is still oldest-first', () => {
+  const src = [
+    item({ id: 'd', meta: { mtime: 4000 } }),
+    item({ id: 'b', meta: { mtime: 2000 } }),
+    item({ id: 'a', meta: { mtime: 1000 } }),
+    item({ id: 'c', meta: { mtime: 3000 } }),
+  ];
+  for (const seed of [1, 2, 3, 4]) {
+    const out = arrange(src, { name: 'date', center: { x: 0, y: 0 }, spacing: 10, seed });
+    const at = id => out[src.findIndex(i => i.id === id)];
+    assert.ok(at('a').y >= at('d').y, `seed ${seed} put the oldest below the newest`);
+  }
+});
+
+test('a seeded type layout still clusters', () => {
+  const src = [
+    item({ id: 'a', type: 'image' }), item({ id: 'b', type: 'note' }),
+    item({ id: 'c', type: 'image' }), item({ id: 'd', type: 'note' }),
+  ];
+  const spread = pts => Math.max(...pts.map(p => p.x)) - Math.min(...pts.map(p => p.x));
+  for (const seed of [1, 2, 3, 4]) {
+    const [a, b, c, d] = arrange(src, { name: 'type', center: { x: 0, y: 0 }, spacing: 20, seed });
+    assert.ok(spread([a, c]) < spread([a, b, c, d]), `seed ${seed} broke the clustering`);
   }
 });
 
@@ -154,6 +244,21 @@ test('the grid step is a power-of-two multiple of the base', () => {
 test('a nonsense base falls back rather than looping', () => {
   assert.ok(gridStep(0, 1) > 0);
   assert.ok(gridStep(-5, 1) > 0);
+});
+
+// ---------------------------------------------------------------------------
+// The zoom detail ladder
+// ---------------------------------------------------------------------------
+
+test('chrome and motion drop out at the same zoom', () => {
+  // These were 0.35 and 0.3 - two thresholds four hundredths apart that nobody
+  // could perceive as two, and that made "zoomed out" mean something slightly
+  // different depending on which module asked. They are one rung now. Two
+  // names because two modules import them for two purposes; if a future change
+  // means them to differ, that is a decision and this test is where to record
+  // it rather than a number to quietly edit.
+  assert.equal(FAR_ZOOM, STILL_ZOOM, 'the ladder has grown a second rung');
+  assert.ok(FAR_ZOOM > MIN_ZOOM && FAR_ZOOM < MAX_ZOOM, 'the rung is outside the zoom range');
 });
 
 // ---------------------------------------------------------------------------

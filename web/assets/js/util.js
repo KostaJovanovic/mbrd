@@ -124,6 +124,26 @@ export function formatBytes(n) {
  */
 export const isHash = v => typeof v === 'string' && /^[0-9a-f]{64}$/.test(v);
 
+/**
+ * Every content id an item depends on: its own bytes, and the picture it was
+ * given (see setItemCover in state.js).
+ *
+ * Here beside isHash for the same reason isHash is here - the packer, the
+ * autosave sweep, that sweep's error message and the session restore all need
+ * it, and they sit in layers that do not import one another. Four inline copies
+ * of `item.asset?.hash` is exactly how a second id gets missed, and missing it
+ * in the sweep is the expensive one: the sweep deletes whatever no item claims,
+ * so an id it has not heard of is bytes deleted out from under a live card.
+ *
+ * Filtered for presence, not validity. makeItem() drops an id that is not a
+ * digest, and the one caller that must not silently skip a malformed one is the
+ * packer - it spells the id into an archive path and refuses the whole export
+ * over a bad one. Filtering here would take that refusal away and write the
+ * hole instead.
+ */
+export const itemHashes = item =>
+  [item?.asset?.hash, item?.meta?.cover].filter(Boolean);
+
 /** SHA-256 hex of an ArrayBuffer/Uint8Array - the content id for assets. */
 export async function sha256(buf) {
   const src = buf instanceof ArrayBuffer ? buf : buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
@@ -149,6 +169,12 @@ let toastSeq = 0;
 
 /** One-line status message at the bottom of the screen. */
 export function toast(msg, kind = '') {
+  // Same bargain isDev() makes below: nothing in this file may assume a
+  // browser is present, or the modules that import it stop being loadable
+  // outside one. Saying something to a user who is not there is not an error,
+  // it is a no-op - so state.js can leave a receipt without every caller
+  // having to know whether there is a screen to leave it on.
+  if (typeof document === 'undefined') return;
   const el = document.getElementById('toast');
   if (!el) return;
   const mine = ++toastSeq;

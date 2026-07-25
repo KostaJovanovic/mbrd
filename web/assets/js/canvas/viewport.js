@@ -24,10 +24,18 @@ import { itemBounds } from '../geometry.js';
 
 export const MIN_ZOOM = 0.02;
 export const MAX_ZOOM = 32;
+// One detail ladder with one rung on it, at 0.4: below that the board is a
+// composition rather than a set of things you are reading, so item chrome
+// (labels, grips) becomes noise and an animation is movement with nothing to
+// see in it. These were 0.35 and 0.3, which put chrome and motion on separate
+// rungs - two thresholds four hundredths apart that nobody could perceive as
+// two, and that made "zoomed out" mean something slightly different depending
+// on which module was asking. Kept as two names because two modules import
+// them for two purposes; they are one number and should move together.
 /** Below this, item chrome (labels, grips) is more noise than help. */
-export const FAR_ZOOM = 0.35;
+export const FAR_ZOOM = 0.4;
 /** At or below this, animated pictures hold still - see canvas/stills.js. */
-export const STILL_ZOOM = 0.3;
+export const STILL_ZOOM = 0.4;
 
 // How long a commanded view move takes.
 //

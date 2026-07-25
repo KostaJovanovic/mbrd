@@ -31,7 +31,11 @@ export function initStills(world, vp) {
   worldEl = world;
 
   const update = () => {
-    const want = vp.zoom <= STILL_ZOOM;
+    // `<`, matching the zoom-far toggle in viewport.js. The two constants are
+    // now the same number, so the comparison has to agree as well or the one
+    // zoom that sits exactly on the rung would freeze the pictures while
+    // leaving the chrome up.
+    const want = vp.zoom < STILL_ZOOM;
     if (want !== stilled) {
       stilled = want;
       // Shoot before swapping, so what freezes is the frame that was on

@@ -15,6 +15,16 @@
 
 * { box-sizing: border-box; }
 
+/* Selected text, in this board's own pigment rather than the browser's blue.
+   Unqualified on purpose: it covers the canvas, the sidebar and the menus in
+   one rule, because a highlight is a property of the board's palette and not
+   of any one surface on it. See --highlight in tokens.css for why it is a
+   wash at two of the three whimsy levels and a solid block at the third. */
+::selection {
+  background: var(--highlight);
+  color: var(--highlight-ink);
+}
+
 html, body {
   margin: 0;
   height: 100%;
@@ -432,6 +442,177 @@ button, input, select, textarea { font: inherit; color: inherit; }
   font-variant-numeric: tabular-nums;
 }
 
+/* Zoomed out past the ladder's threshold, an audio card stops being a player
+   and becomes a button.
+
+   The waveform is the first thing that has to go. At this zoom a bar is under
+   half a device pixel and the gaps between them are less than that, so eighty
+   readings composite down to one flat grey block - noise wearing the shape of
+   information, and the most expensive thing on the card to keep painting. The
+   name and the clock follow it for the same reason the caption plates and the
+   resize handles already stand down here: type five pixels tall is a smudge,
+   and a smudge that is only there to be unreadable is worse than a gap.
+
+   What survives is the one control still worth hitting from across the board,
+   grown to fill the card it is on. Sized from --half-min (min(w, h) / 2, per
+   item from canvas/items.js/place()) rather than from --iz, because this is
+   part of the card rather than chrome laid over it: it belongs to the board's
+   scale, and taking half the shorter side as its bound is what stops it
+   outgrowing the card on anything that has been resized to a strip. */
+#world.zoom-far .card-audio .card-icon,
+#world.zoom-far .card-audio .card-name,
+#world.zoom-far .card-audio .card-meta,
+#world.zoom-far .card-audio .wave,
+#world.zoom-far .card-audio .transport-time { display: none; }
+
+#world.zoom-far .card-audio .transport {
+  flex: 1;
+  margin-top: 0;           /* nothing above it left to be pushed away from */
+  justify-content: center;
+}
+#world.zoom-far .card-audio .play {
+  width:  calc(var(--half-min, 98px) * 0.86);
+  height: calc(var(--half-min, 98px) * 0.86);
+  /* The ring has to thicken with the button or it antialiases away exactly
+     when the button is all there is left to see. */
+  border-width: max(var(--hairline), calc(var(--half-min, 98px) * 0.03));
+}
+#world.zoom-far .card-audio .play svg { width: 38%; height: 38%; }
+
+/* The video transport (canvas/video.js).
+   Laid over the picture rather than under it, because on a video card the
+   picture *is* the card - every row of chrome given its own space is a row of
+   the thing you pinned up, taken away. So it floats, and it stays out of the
+   way until the pointer is on the card or the clip is running. */
+.vplayer {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  /* Same bargain .transport and the link anchor make: the layer refuses the
+     pointer so the whole card stays one drag target, and only the controls on
+     it take the gesture back. */
+  pointer-events: none;
+}
+
+/* The one thing on a parked video that says it is a video. A clip sitting on
+   its poster frame is otherwise a photograph, which is exactly the state the
+   old bare <video> left every one of them in.
+   Sized from --half-min (min(w, h) / 2, per item from items.js/place()) so it
+   belongs to the card rather than to the screen, with a floor and a ceiling
+   because a play button has a size that reads as a play button. */
+.vbig {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  display: grid;
+  place-items: center;
+  width:  clamp(30px, calc(var(--half-min, 100px) * 0.42), 92px);
+  height: clamp(30px, calc(var(--half-min, 100px) * 0.42), 92px);
+  padding: 0;
+  border: var(--hairline) solid var(--accent);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--paper-card) 84%, transparent);
+  backdrop-filter: blur(3px);
+  color: var(--accent);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: opacity var(--dur-fast) var(--ease),
+              background var(--dur-fast) var(--ease),
+              color var(--dur-fast) var(--ease),
+              scale var(--dur-base) var(--ease-back);
+}
+.vbig svg { width: 40%; height: 40%; }
+/* scale, not transform: translate above is doing the centring, and a transform
+   here would overwrite it and throw the button off the middle of the card. */
+.vbig:hover { background: var(--accent); color: var(--accent-fg); scale: var(--btn-grow); }
+.vplayer.is-playing .vbig { opacity: 0; pointer-events: none; }
+
+.transport-video {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  margin: 0;                 /* the audio bar's margin-top: auto means nothing here */
+  padding: 6px 9px;
+  gap: 8px;
+  background: color-mix(in srgb, var(--paper-card) 88%, transparent);
+  border-top: var(--hairline) solid var(--rule);
+  backdrop-filter: blur(3px);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+/* :focus-within is not a nicety - without it the bar vanishes the moment the
+   pointer leaves, taking the scrubber the keyboard is currently on with it. */
+.item:hover .transport-video,
+.transport-video:focus-within,
+.transport-video.is-playing { opacity: 1; }
+/* Smaller than the audio card's, which is the only control on a card of its
+   own and can afford to be the size it is. */
+.transport-video .play { width: 25px; height: 25px; }
+.transport-video .play svg { width: 11px; height: 11px; }
+
+/* A plain line, deliberately, where the audio card gets a measured waveform.
+   A waveform is worth its space when it is the only picture of the file there
+   is; over a video it would be a drawing of the soundtrack laid across the
+   picture, competing with it to say something you can already see. */
+.vtrack {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  /* Taller than the line it draws: 3px is not a thing anyone can hit, and the
+     hit area is what the pointer is actually aiming at. */
+  height: 14px;
+  cursor: pointer;
+}
+.vtrack::before,
+.vtrack-fill {
+  content: '';
+  position: absolute;
+  left: 0; right: 0;
+  top: 50%;
+  height: 3px;
+  margin-top: -1.5px;
+  border-radius: min(var(--radius-xs), 2px);
+}
+.vtrack::before { background: color-mix(in srgb, var(--ink) 22%, transparent); }
+.vtrack-fill {
+  background: var(--accent);
+  /* Scaled rather than resized: this is written on every frame of playback,
+     and a transform is the one way to move it that never touches layout. */
+  transform-origin: 0 50%;
+  transform: scaleX(0);
+}
+.vtrack:focus-visible { outline: var(--sel-line) solid var(--select); outline-offset: 2px; }
+
+.vmute {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease);
+}
+.vmute svg { width: 15px; height: 15px; }
+.vmute:hover { color: var(--accent); }
+.vplayer.is-muted .vmute { color: var(--danger); }
+
+/* The caption plate and the control bar want the same strip of card, so they
+   take turns: the name while you are looking, the transport while you are
+   using it. */
+.item[data-type="video"] .item-label { transition: opacity var(--dur-fast) var(--ease); }
+.item[data-type="video"]:hover .item-label,
+.item[data-type="video"]:focus-within .item-label,
+.item-body:has(.vplayer.is-playing) .item-label { opacity: 0; }
+
+/* Far zoom leaves the same thing behind that an audio card is left with: the
+   one control worth hitting from across the board. The bar's type and its
+   3px line are both under a pixel down here. */
+#world.zoom-far .transport-video { display: none; }
+
 /* Notes: the one item type born on the board, so it is drawn as a sticky
    rather than as a filed card - a square of coloured pad paper, cut corners,
    pressed flat to the board.
@@ -441,6 +622,29 @@ button, input, select, textarea { font: inherit; color: inherit; }
   --item-shadow: var(--note-shadow);
   --shape-radius: var(--note-radius);
   --note-paper: var(--note-1);
+  /* Every measurement on a sticky is a fraction of the sticky.
+     A note was 240px square and its furniture was written as the fixed numbers
+     that suited a note that size - 20px of margin, a 30px adhesive band, a
+     title off the display ramp. Halve the square and none of that halves with
+     it: the title alone takes a third of the sheet, the margins take most of
+     what is left, and a note that holds 512 characters shows about three lines
+     of them before .note-body's clip quietly eats the rest. A small note has
+     to be a small note, not a big note's fittings crammed into a smaller
+     square.
+
+     --half-min is min(w, h) / 2, written per item by canvas/items.js/place().
+     Every coefficient below is calibrated on the 240px default, so a note that
+     size still resolves to exactly the number it was drawn with and nothing on
+     an existing board moves; only the smaller ones change. The clamps are
+     floors and ceilings, not the operative value - the ceiling is what keeps a
+     note that has been dragged out to 900px from setting its title in 110pt,
+     and the floor is the size below which type stops being type. */
+  --note-half:    var(--half-min, 120px);
+  --note-pad:     clamp(9px,  calc(var(--note-half) * 0.167),  20px);
+  --note-gap:     clamp(4px,  calc(var(--note-half) * 0.075),  9px);
+  --note-band:    clamp(12px, calc(var(--note-half) * 0.25),   30px);
+  --note-t-title: clamp(12px, calc(var(--note-half) * 0.25),   var(--t-display));
+  --note-t-body:  clamp(10px, calc(var(--note-half) * 0.1333), 16px);
   /* The item under the card takes the pad colour too. Two rounded boxes of the
      same radius stacked exactly on top of each other still leave a hairline of
      the lower one showing along the curve, where the antialiasing of the two
@@ -453,12 +657,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .item[data-type="note"][data-tint="4"] { --note-paper: var(--note-4); }
 
 .item[data-type="note"] .card {
-  padding: 20px;
-  /* The band at the head is the adhesive strip reading through the sheet. */
+  padding: var(--note-pad);
+  /* The band at the head is the adhesive strip reading through the sheet. It
+     is a fixed share of the sheet rather than a fixed depth, because a strip
+     of glue is as wide as the pad it came off. */
   background:
     linear-gradient(180deg,
       color-mix(in srgb, var(--ink) 6%, transparent) 0,
-      transparent 30px),
+      transparent var(--note-band)),
     var(--note-paper);
   /* No ruled border - pad paper has no printed edge. Just enough of an inset
      line to keep a pale note off a pale board. */
@@ -474,11 +680,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
    a line drawn on it. */
 .item[data-type="note"] .note-title {
   font-family: var(--font-display);
-  font-size: var(--t-display);
+  font-size: var(--note-t-title);
   font-weight: 700;
   line-height: 1.2;
   color: var(--ink);
-  padding-bottom: 9px;
+  padding-bottom: var(--note-gap);
   border-bottom: var(--hairline) solid color-mix(in srgb, var(--ink) 14%, transparent);
   word-break: break-word;
 }
@@ -486,10 +692,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  padding-top: 9px;
+  padding-top: var(--note-gap);
   white-space: pre-wrap;
   font-family: var(--font-display);
-  font-size: 16px;
+  font-size: var(--note-t-body);
   line-height: 1.45;
   color: var(--ink-2);
   word-break: break-word;
@@ -1449,9 +1655,92 @@ kbd {
    *structural*: an ornament that has to stop existing rather than shrink to
    zero, and a couple of shapes that are drawn rather than declared.
 
-   Only the plain end needs any of this. The middle keeps its ornaments and
-   just turns them down, which the tokens already do on their own.
+   The middle needs none of it: it keeps its ornaments and just turns them
+   down, which the tokens already do on their own. Both ends have one thing
+   each that a number cannot say - the plain end wants ornaments gone rather
+   than small, and the soft end wants a photograph to become a print.
    --------------------------------------------------------- */
+
+/* ---- 0: softish - a photograph becomes a print ---------------------------
+   White stock all round the picture, deeper at the foot, and the caption
+   written on that chin where a caption belongs. The tier was already most of
+   the way there: --tilt-max is 3deg at this end, so the cards sit crooked and
+   the scattered-prints reading was there with only the frame missing.
+
+   The mat is drawn *inside* the item's own box, by insetting the picture -
+   not by growing the card, and not on a pseudo-element hanging outside it.
+   Both of those were considered and both are worse. Growing the card would
+   mean the whimsy slider silently resized every item on a saved board, so
+   sliding to this end and back would not return you to the board you started
+   with. Drawing the mat outside would leave the white border outside the
+   item's hit area: the visible edge of a photograph would not be draggable,
+   the selection ring and all eight resize handles would trace the picture
+   rather than the print, and the item's shadow would fall from the picture's
+   edge into the middle of its own frame.
+
+   What insetting costs, said plainly: the picture keeps object-fit: cover and
+   the inner box is proportionally wider than the item, so a photograph loses
+   roughly a tenth of its height to the crop. That is the trade, and it is a
+   small one on a board that already crops on every resize.
+
+   Every measure is a fraction of --half-min (min(w, h) / 2, per item from
+   canvas/items.js/place()). A fraction rather than a fixed border because a
+   print scales as a print: 12px of mat is a frame on a thumbnail and a
+   hairline on a photograph two thousand across. Taking it off the shorter
+   side is what makes the mat the same real width on all four edges. */
+:root[data-whimsy="0"] .item[data-type="image"] {
+  --mat:  calc(var(--half-min, 120px) * 0.08);
+  --chin: calc(var(--half-min, 120px) * 0.26);
+  /* A print has a cut edge, not a mathematical one - so not zero, but a long
+     way under this level's 26px, which would read as a rounded sticker. A
+     fraction of --radius rather than a literal, so the Corner radius slider
+     still moves it along with everything else. */
+  --shape-radius: calc(var(--radius) * 0.12);
+}
+/* Absolute, positioned off the top-left corner and *sized* to the rest, rather
+   than stretched between four insets.
+   That distinction is the whole rule. An `inset: mat; bottom: chin` with auto
+   width and height is the obvious way to write this and it does not work: an
+   <img> is a replaced element, and an absolutely positioned replaced box with
+   auto width resolves it to the picture's own intrinsic size rather than to
+   the gap between the offsets - which leaves `right` and `bottom` merely
+   over-constrained and dropped. The picture then hangs off the corner at its
+   natural size and .item-body's clip cuts it at the item's edge, so the mat
+   comes out on the top and left only and the caption is back over the photo.
+   Widths written out are unambiguous for a replaced box.
+   Both pictures of an animated pair are matched, so a frozen GIF sits in its
+   frame exactly where the moving one did. */
+:root[data-whimsy="0"] .item[data-type="image"] .item-body img {
+  position: absolute;
+  left: var(--mat);
+  top:  var(--mat);
+  width:  calc(100% - var(--mat) * 2);
+  height: calc(100% - var(--mat) - var(--chin));
+  border-radius: 0;
+  /* A pale photograph on pale stock has no edge of its own. This is the one
+     the print would have. */
+  box-shadow: 0 0 0 var(--hairline) color-mix(in srgb, var(--ink) 10%, transparent);
+}
+/* The caption plate stops being a strip laid across the foot of the picture
+   and becomes what is written on the chin. It needs no moving to get there:
+   .item-label is a child of .item-body and positions against *its* edges, not
+   the picture's, so insetting the picture has already left it sitting on the
+   mat. All it has to do is stop looking like a plate - the translucent paper,
+   the rule and the blur were all there to hold it off a photograph, and there
+   is no photograph behind it now.
+
+   line-height rather than a flex centre, because the plate keeps its ellipsis
+   and its single line, and both of those want it to stay a block. */
+:root[data-whimsy="0"] .item[data-type="image"] .item-label {
+  height: var(--chin);
+  line-height: var(--chin);
+  padding: 0 var(--mat);
+  text-align: center;
+  background: none;
+  border-top: 0;
+  backdrop-filter: none;
+  font-size: clamp(11px, calc(var(--half-min, 120px) * 0.09), 20px);
+}
 
 /* A card at radius 0 with a hairline border already reads as ruled - a second
    rule inside it is just noise. */

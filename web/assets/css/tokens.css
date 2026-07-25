@@ -60,6 +60,26 @@
      it is printed on. */
   --danger:      color-mix(in srgb, #a83232 85%, var(--ink));
 
+  /* ---- text highlight ----
+     What a selected run of text sits on - a note being written, a name being
+     renamed, an address being copied out of a link card. Left to the browser
+     this was the one colour on the whole page nobody chose: a flat system
+     blue, on a board whose entire premise is that you picked the pigments.
+
+     Translucent rather than solid, and that is the load-bearing decision. One
+     declaration then works on every surface the app has - a white card, a
+     coloured sticky, the sidebar's wells - because the surface shows through
+     it. A solid block would need a colour per surface and a text colour light
+     enough to read on the accent, which is a second decision that fights the
+     note tints the moment they are anything but pale.
+
+     So: a wash of this palette's own pigment, which reads as a marker drawn
+     over paper, with the ink underneath left as ink. --highlight-ink is named
+     anyway rather than left to inherit, because the plain end of the axis
+     wants a solid block and needs somewhere to say so. */
+  --highlight:     color-mix(in srgb, var(--accent) 26%, transparent);
+  --highlight-ink: var(--ink);
+
   /* ---- canvas grid ----
      Derived from the ink, so one --grid-alpha slider drives both layers and
      every palette gets a grid that matches its own ink. */
@@ -317,8 +337,18 @@
 
   --ls-scale: 1.2;
   --wash: 2.2;
-  --grid-alpha: 0.18;
-  --grid-dot: 2.4px;
+  /* An actual highlighter pen: the warm accent rather than the primary one,
+     and laid on heavier. This is the end of the axis where a board is a
+     scrapbook, and a scrapbook is marked up in amber. */
+  --highlight: color-mix(in srgb, var(--accent-warm) 42%, transparent);
+  /* No --grid-alpha and no --grid-dot here, deliberately.
+     This level used to restate them as 0.18 and 2.4px against the middle's
+     0.14 and 1.7px. A dot lays down ink by area, so 2.4px against 1.7px is
+     twice the mark before the extra strength is counted and about two and a
+     half times after - a lattice that had stopped being the paper's texture
+     and become a pattern printed on it, competing with the things pinned to
+     it. Turning ornament up at this end is --wash's job and the shapes', not
+     the board's. Saying nothing is what inherits the middle's grid. */
 
   /* One serif, top to bottom. The optical axis is what makes that survivable:
      the same file is a display cut at 28px and a text cut at 15px, so setting
@@ -416,6 +446,14 @@
   --rule:       color-mix(in srgb, var(--ink) 13%, var(--paper));
   --rule-2:     var(--ink);
   --accent-fg:  #fff;
+
+  /* A solid block, not a wash. This end takes its emphasis from contrast
+     rather than from tint, and a marker-pen highlight is an ornament - the
+     same reason the blooms and the vignette are gone. It can afford to be
+     solid because it is the one place --accent-fg is already the answer to
+     "what reads on top of the accent". */
+  --highlight:     var(--accent);
+  --highlight-ink: var(--accent-fg);
 
   /* The one place four colours survive: note tints carry meaning, so they are
      kept distinguishable rather than flattened to grey - just pale enough to

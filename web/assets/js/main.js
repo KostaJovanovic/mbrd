@@ -9,7 +9,7 @@ import {
   raiseSelection, lowerSelection, duplicateItems, select,
 } from './state.js';
 import { Viewport, MIN_ZOOM, MAX_ZOOM, zoomMs, travelMs } from './canvas/viewport.js';
-import { paintGrid } from './canvas/grid.js';
+import { paintGrid, resetGridInk } from './canvas/grid.js';
 import { initItems, resetItems } from './canvas/items.js';
 import { initWeb } from './canvas/web.js';
 import { initStills } from './canvas/stills.js';
@@ -88,7 +88,11 @@ const cmds = {
 // ---------------------------------------------------------------------------
 
 initAssets();
-initAppearance();
+// The grid's marks at Harsh are drawn rather than composed from gradients, so
+// unlike every other tier they cannot follow a custom property on their own -
+// see canvas/grid.js. Every edit to a look hands the resolved colours back and
+// repaints; the other tiers repaint for nothing, which is four gradients.
+initAppearance({ onChange: () => { resetGridInk(); paintGrid(vp); } });
 initAudio();
 initSidebar(cmds);
 initItems(el('world'), vp);
@@ -152,6 +156,9 @@ function paintZoom() {
 }
 
 bus.on('settings', key => {
+  // The whimsy slider arrives here, and it moves the grid's colours as well as
+  // its mark - so the resolved copy the Harsh crosses hold has to go back.
+  if (key === 'appearance') resetGridInk();
   paintGrid(vp);
   if (key === 'hud') el('hud').hidden = !board.settings.hud;
 });
@@ -164,6 +171,9 @@ bus.on('items', () => requestAnimationFrame(() => {
   for (const it of board.items) if (it.type === 'note') growNote(it.id);
 }));
 bus.on('board:load', () => {
+  // A board can bring its own look, applied without going through persist() -
+  // so this is the other door the grid's colours change behind.
+  resetGridInk();
   resetItems();
   requestAnimationFrame(() => {
     for (const it of board.items) if (it.type === 'note') growNote(it.id);
@@ -192,26 +202,25 @@ function paintCount() {
 function rearrange() {
   const items = board.items;
   if (!items.length) return;
-  if (board.arrangement === 'free') {
-    toast('Free keeps every position - pick another layout to rearrange');
-    return;
-  }
   const before = snapshotGeom(items.map(i => i.id));
 
-  // Every layout is a pure function of the order it is handed, so feeding it
-  // the item list twice puts everything back exactly where it already was -
-  // and a button called "Rearrange everything" that does nothing the second
-  // time you press it reads as broken. The shuffle is what makes it a
-  // rearrangement rather than a re-application: same layout, items dealt into
-  // it in a fresh order.
+  // Two things vary here, and neither is enough on its own.
+  //
+  // The shuffle changes which item lands in which slot. Without it a layout is
+  // a pure function of the list it is handed, so feeding it the same board
+  // twice puts everything back exactly where it already was - and a button
+  // called "Rearrange everything" that does nothing the second time you press
+  // it reads as broken.
+  //
+  // The seed changes where the slots are (see arrangements.js). Without it the
+  // board comes back in the identical shape with the cards swapped around,
+  // which from any distance is the same picture - and zoomed out far enough to
+  // see a whole rearrangement at once, cards are shapes and not subjects.
   const order = shuffle(items.map((_, i) => i));
   const spots = arrange(order.map(i => items[i]), {
     name: board.arrangement,
     center: { x: 0, y: 0 },
     spacing: board.settings.spacing,
-    // Scatter picks its own points from a seed. Left to itself it would hand
-    // back the same disc every time and the shuffle would only permute items
-    // between fixed spots; a fresh seed makes it a genuinely new scatter.
     seed: (Math.random() * 0xffffffff) >>> 0,
   });
   // spots came back in shuffled order, so each one goes to the item that was
@@ -220,7 +229,12 @@ function rearrange() {
   order.forEach((itemIndex, slot) => { target[itemIndex] = spots[slot]; });
   applyGeom(before.map((g, i) => ({ ...g, x: target[i].x, y: target[i].y })));
   commitGeom('Rearrange', before);
-  vp.fit(board.items, 80, travelMs());
+  // Every other layout rebuilds the board around the origin, so the view has
+  // to follow it there or the rearrangement happens off screen. Free is the
+  // exception: it shakes each item where it stands, and flying to fit the
+  // whole board afterwards would move things on screen far more than the
+  // shake did - hiding the change inside a much larger one.
+  if (board.arrangement !== 'free') vp.fit(board.items, 80, travelMs());
 }
 
 // A console handle, deliberately public: `mbrd.board` to inspect state,

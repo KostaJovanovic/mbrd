@@ -6,7 +6,7 @@
 // forty photos lands as a spiral around the cursor rather than a stack.
 
 import { toast, extOf } from '../util.js';
-import { board, addItems, select, NOTE_MAX } from '../state.js';
+import { board, addItems, select, setItemCover, NOTE_MAX } from '../state.js';
 import { addFile } from '../storage/assets.js';
 import { classify, defaultSize, measureSize, linkURL, linkDraft } from '../canvas/renderers.js';
 import { arrange } from '../arrange/arrangements.js';

@@ -7,6 +7,7 @@ import { assetURL, getAsset, readText } from '../storage/assets.js';
 import { byId, bus, markDirty } from '../state.js';
 import { describeExt, PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS } from '../import/formats.js';
 import { buildTransport, registerPlayer } from './audio.js';
+import { buildVideoPlayer } from './video.js';
 
 
 /**
@@ -58,8 +59,11 @@ export function defaultSize(type) {
     case 'video':   return { w: 360, h: 203 };
     case 'audio':   return { w: 330, h: 196 };
     case 'text':    return { w: 300, h: 360 };
-    // Square: a sticky comes off a square pad.
-    case 'note':    return { w: 240, h: 240 };
+    // Square: a sticky comes off a square pad. Small, too - a note is an
+    // annotation on the board, not a thing on it, and at the old 240 it
+    // outweighed most of the photos it was written about. Well clear of
+    // MIN_SIZE (48) in canvas/input.js, so the resize floor is unchanged.
+    case 'note':    return { w: 120, h: 120 };
     // Wide and short: an address is a wide thing, and there is no body under
     // it - a link card is a name, a URL, and nothing else.
     case 'link':    return { w: 320, h: 132 };
@@ -167,18 +171,32 @@ const RENDERERS = {
     return pair;
   },
 
+  /**
+   * A moving picture, with the board's own transport laid over it.
+   *
+   * Neither muted nor looping any more, and both of those were doing damage.
+   * Muted is what a browser makes you be in order to autoplay, and nothing
+   * here autoplays - playback starts from a click - so it bought nothing and
+   * cost the sound. Looping suits a silent GIF and not a clip with audio in
+   * it: an eight-second loop with a voice on it is not ambience, it is a
+   * board that will not stop talking. See canvas/video.js for the controls,
+   * which is also where this is registered for the global volume and for the
+   * one-clip-at-a-time rule the audio cards already follow.
+   */
   video(item) {
     const v = document.createElement('video');
     v.preload = 'metadata';
     v.playsInline = true;
-    v.loop = true;
-    v.muted = true;
     v.draggable = false;
     v.addEventListener('loadedmetadata', () => adoptAspect(item, v.videoWidth, v.videoHeight), { once: true });
     const url = item.asset && assetURL(item.asset.hash);
     // #t=0.1 pulls a real frame as the poster instead of a black rectangle.
     if (url) v.src = url + '#t=0.1';
-    return v;
+    // A fragment so both land as siblings inside .item-body, the same way an
+    // animated picture travels with its still.
+    const pair = document.createDocumentFragment();
+    pair.append(v, buildVideoPlayer(item, v));
+    return pair;
   },
 
   /**

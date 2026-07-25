@@ -15,7 +15,7 @@
 
 import { writeZip, readZip } from './zip.js';
 import { getAsset, putAsset } from './assets.js';
-import { sha256, isHash } from '../util.js';
+import { sha256, isHash, itemHashes } from '../util.js';
 import { VERSION } from '../version.js';
 
 export const FORMAT = 'mbrd';
@@ -102,20 +102,24 @@ export async function packBoard(boardData, { created = null } = {}) {
   const seen = new Set();
   const assets = [];
   for (const item of referenced) {
-    const hash = item.asset?.hash;
-    if (!hash || seen.has(hash)) continue;
-    seen.add(hash);
-    // Checked here as well as on the way in, because this is the line that
-    // turns a hash into a path. Nothing this app produces can fail it.
-    if (!isHash(hash)) {
-      throw new Error(
-        `"${nameOf(item, String(hash))}" has a malformed content id. ` +
-        'Nothing was written - the board is unchanged.'
-      );
+    // Plural: an item can name two lots of bytes, its own and the picture it
+    // was given (see setItemCover in state.js). Both have to be in the archive
+    // or the board comes back with a card that has lost its cover.
+    for (const hash of itemHashes(item)) {
+      if (seen.has(hash)) continue;
+      seen.add(hash);
+      // Checked here as well as on the way in, because this is the line that
+      // turns a hash into a path. Nothing this app produces can fail it.
+      if (!isHash(hash)) {
+        throw new Error(
+          `"${nameOf(item, String(hash))}" has a malformed content id. ` +
+          'Nothing was written - the board is unchanged.'
+        );
+      }
+      const asset = getAsset(hash);
+      if (asset) assets.push({ hash, asset });
+      else missing.push(nameOf(item, hash));
     }
-    const asset = getAsset(hash);
-    if (asset) assets.push({ hash, asset });
-    else missing.push(nameOf(item, hash));
   }
   if (missing.length) {
     const shown = missing.slice(0, 3).join(', ');

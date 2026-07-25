@@ -42,12 +42,21 @@ export function paintGrid(vp) {
   // a synchronous style flush per frame for a value that changes about once an
   // afternoon. ui/appearance.js announces the change instead, so the attribute
   // is always current by the time we look at it.
-  const mark = document.documentElement.dataset.whimsy === HARSH ? cross : dot;
+  const harsh = document.documentElement.dataset.whimsy === HARSH;
+  // The dot keeps its colour as `var(--grid-minor)` and never resolves it: a
+  // gradient carrying a custom property restyles itself the instant the
+  // strength slider moves, with no repaint at all. The cross cannot - its
+  // colour goes inside a data URI, where var() means nothing - so it pays for
+  // one resolved read, cached, and ui/appearance.js hands it back on change.
+  const ink = harsh ? gridInk() : null;
+  const mark = (which, scale, tile) => harsh
+    ? cross(ink[which], ink.dot, scale, tile)
+    : dot(`var(--grid-${which})`, scale);
 
   const images = [], sizes = [], positions = [];
-  // A mark is a list of gradient layers rather than one, because the cross
-  // takes two. Every layer of a mark shares its lattice's tile and origin, so
-  // they are pushed together.
+  // A mark is a list of image layers rather than one, because the dot's major
+  // and minor lattices each want their own. Every layer of a mark shares its
+  // lattice's tile and origin, so they are pushed together.
   const push = (layers, size, px, py) => {
     for (const img of layers) {
       images.push(img);
@@ -63,8 +72,8 @@ export function paintGrid(vp) {
   // stays quiet - which is also why the cross below is a short mark and not
   // the pair of rules it looks like it wants to be.
   // First layer paints on top, so majors are listed before minors.
-  push(mark('var(--grid-major)', 1.5), major, o.x - major / 2, o.y - major / 2);
-  push(mark('var(--grid-minor)', 1), minor, o.x - minor / 2, o.y - minor / 2);
+  push(mark('major', 1.5, major), major, o.x - major / 2, o.y - major / 2);
+  push(mark('minor', 1, minor), minor, o.x - minor / 2, o.y - minor / 2);
 
   el.style.backgroundImage = images.join(', ');
   el.style.backgroundSize = sizes.join(', ');
@@ -111,49 +120,122 @@ const ARM_LONG_MAX = 6;   // px, before the lattice's own scale factor
 const ARM_THICK = 0.5;
 
 /**
- * The lattice at Harsh: a registration mark instead of a dot.
+ * The lattice at Harsh: a registration mark instead of a dot. A real one.
  *
- * Two gradients, because one cannot do it. A linear-gradient is bounded on one
- * axis only, so the obvious pair of them gives full-length ruled lines through
- * every tile - the very thing the note above rejects - and no amount of colour
- * stops will shorten them. Bounding an arm on both axes inside its tile takes a
- * radial-gradient with two radii, which is an ellipse: an arm with faintly
- * rounded ends, invisible at a few pixels across. So each cross is that ellipse
- * and its transpose.
+ * This was two elliptical gradients, an arm and its transpose, because a
+ * gradient is the only thing that tiles for free and no gradient can bound a
+ * rectangle on both axes - a linear one is bounded on one axis only and gives
+ * ruled lines through every tile, and a radial one with two radii is an
+ * ellipse. Which is what it looked like: an ellipse 10px long and 1.7px thick
+ * keeps barely 40% of its thickness at 90% of its length, so both arms tapered
+ * to points and the mark read as a smudge with a bright middle rather than as
+ * a cross. Six pixels of it were doing the work of one dot.
  *
- * The two overlap in the middle, and since the grid colours are mixed down to a
- * fraction of the ink the crossing point lands at roughly double the arms'
- * strength. That is left alone rather than worked around: a drawn cross is
- * densest where the pen crossed its own line, and the alternative - splitting
- * each arm into two stubs that stop short of the centre - is six layers per
- * lattice to remove something that reads as correct.
+ * So the cross is drawn instead of approximated - one SVG polygon, twelve
+ * corners, square ends, uniform density. The old pair also overlapped at the
+ * centre and doubled their alpha there; a single polygon has no seam to double.
+ *
+ * The cost, stated plainly because it is a real one: the mark is a data URI
+ * that bakes in the tile size, so it is rebuilt whenever the tile changes -
+ * which is every frame of a zoom, though not of a pan, where only the position
+ * moves. Memoised below to keep that to one small string per lattice, and paid
+ * only by the tier that asked for crosses: every other tier is still two
+ * gradients that never touch this path.
  */
-const cross = (color, scale) => {
+function cross(color, dotPx, scale, tile) {
   // The cap is scaled with the mark, so the major lattice stays proportionally
   // the heavier of the two right up to the limit instead of meeting the minor
   // one there and losing the distinction.
-  const long = `min(${scaled(ARM_LONG * scale)}, ${(ARM_LONG_MAX * scale).toFixed(2)}px)`;
-  const thick = scaled(ARM_THICK * scale);
-  return [arm(color, long, thick), arm(color, thick, long)];
-};
+  const long = Math.min(dotPx * ARM_LONG * scale, ARM_LONG_MAX * scale);
+  const thick = Math.max(dotPx * ARM_THICK * scale, MIN_ARM);
+  return [plusURL(tile, color, long, thick)];
+}
 
 /**
- * One arm, `rx` by `ry` from the tile's centre.
+ * Half-thickness an arm may not go under, in px.
  *
- * The soft edge is a percentage where the dot's is 0.7px, because an elliptical
- * gradient measures its colour stops along the horizontal radius alone: an
- * absolute stop would feather the flat arm generously along its length and
- * barely at all across its thickness, and would then swap those two the moment
- * the same call is used for the upright arm. A proportional one gives both arms
- * the identical shape, one rotated, and keeps the feather across the thickness
- * - the edge you actually read the weight from - a sane fraction of it instead
- * of wide enough to eat a 1.5px arm whole.
- *
- * It also stops at 100% rather than running past it. A last stop beyond the
- * gradient's own radius makes the mark bigger than the radii say it is, which
- * is a quiet way to lose track of how much room a lattice actually needs - and
- * it was a third of the reason the crosses could swallow the board. Contained
- * here, the radii mean what they look like they mean.
+ * An arm thinner than a device pixel is not a fainter cross, it is a cross with
+ * gaps in it: the rasteriser drops parts of the stroke and the mark comes apart
+ * into dashes. The strength slider is the control for "fainter".
  */
-const arm = (color, rx, ry) =>
-  `radial-gradient(ellipse ${rx} ${ry} at center, ${color} 0, ${color} 78%, transparent 100%)`;
+const MIN_ARM = 0.4;
+
+/**
+ * The twelve corners of a plus, centred in a `tile`-square SVG.
+ *
+ * Written as one polygon rather than two rectangles so the arms cannot double
+ * their alpha where they meet - the grid colours are already mixed down to a
+ * fraction of the ink, and a crossing point at twice the strength of its own
+ * arms is what made the old mark read as a dot with whiskers.
+ */
+function plus(tile, long, thick) {
+  const c = tile / 2;
+  const n = v => v.toFixed(2);
+  const pts = [
+    [-thick, -long], [thick, -long], [thick, -thick], [long, -thick],
+    [long, thick], [thick, thick], [thick, long], [-thick, long],
+    [-thick, thick], [-long, thick], [-long, -thick], [-thick, -thick],
+  ];
+  return pts.map(([x, y]) => `${n(c + x)},${n(c + y)}`).join(' ');
+}
+
+/**
+ * One tiled cross, as a background-image.
+ *
+ * The SVG's own width is the tile rounded to a tenth of a pixel while
+ * background-size stays exact, so the lattice spacing is unchanged and only the
+ * mark inside it is scaled by up to a twentieth of a pixel. That rounding is
+ * what makes the cache worth having: a zoom sweeps the tile through a
+ * continuous range, and to a tenth of a pixel it revisits the same values.
+ */
+const plusCache = new Map();
+const PLUS_CACHE_MAX = 128;
+
+function plusURL(tile, color, long, thick) {
+  const t = Math.max(1, Math.round(tile * 10) / 10);
+  const key = `${t}|${color}|${long.toFixed(2)}|${thick.toFixed(2)}`;
+  const hit = plusCache.get(key);
+  if (hit) return hit;
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${t}" height="${t}">` +
+    `<polygon points="${plus(t, long, thick)}" fill="${color}"/></svg>`;
+  // encodeURIComponent rather than a hand-rolled escape: a resolved colour
+  // arrives as rgba(...) or color(srgb ... / ...), and `#` alone would end the
+  // URI at a fragment.
+  const url = `url("data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}")`;
+  // A plain cap, not an LRU. The keys that matter are the ones a zoom is
+  // sweeping through right now, and dropping the whole map costs one rebuild
+  // per lattice on the next frame.
+  if (plusCache.size >= PLUS_CACHE_MAX) plusCache.clear();
+  plusCache.set(key, url);
+  return url;
+}
+
+/**
+ * The grid's resolved colours and dot size.
+ *
+ * getComputedStyle is exactly what the note in paintGrid() forbids per frame,
+ * so this is read once and held. resetGridInk() below is how it is given back,
+ * and ui/appearance.js calls it on every change to a look - which includes each
+ * drag of the strength and weight sliders, since a cross cannot follow those on
+ * its own the way a gradient carrying var() can.
+ */
+let ink = null;
+
+function gridInk() {
+  if (ink) return ink;
+  const s = getComputedStyle(document.documentElement);
+  const dot = parseFloat(s.getPropertyValue('--grid-dot'));
+  ink = {
+    major: s.getPropertyValue('--grid-major').trim() || 'currentColor',
+    minor: s.getPropertyValue('--grid-minor').trim() || 'currentColor',
+    dot: Number.isFinite(dot) ? dot : 1.5,
+  };
+  return ink;
+}
+
+/** Forget the resolved colours - the look changed. */
+export function resetGridInk() {
+  ink = null;
+  plusCache.clear();
+}
