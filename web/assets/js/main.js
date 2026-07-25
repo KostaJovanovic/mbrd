@@ -5,7 +5,7 @@ import { toast } from './util.js';
 import { VERSION } from './version.js';
 import {
   board, bus, selection, selectAll, removeItems, setSetting,
-  snapshotGeom, applyGeom, commitGeom, undo, redo, setItemText, byId,
+  snapshotGeom, applyGeom, commitGeom, undo, redo, byId,
   raiseSelection, lowerSelection, duplicateItems, select,
 } from './state.js';
 import { Viewport, MIN_ZOOM, MAX_ZOOM, zoomMs, travelMs } from './canvas/viewport.js';
@@ -20,6 +20,7 @@ import {
 import { initSidebar, close as closeSidebar } from './ui/sidebar.js';
 import { initMenu, openContextMenu, close as closeMenu } from './ui/menu.js';
 import { initAppearance, resetAppearance } from './ui/appearance.js';
+import { editNote, growNote } from './ui/notes.js';
 
 const el = id => document.getElementById(id);
 
@@ -134,8 +135,17 @@ bus.on('settings', key => {
 });
 
 bus.on('items', paintCount);
+// A note can arrive with text already in it - pasted, duplicated, or loaded
+// from a file saved before it grew - so it is sized for what it says as soon
+// as it has a node to measure.
+bus.on('items', () => requestAnimationFrame(() => {
+  for (const it of board.items) if (it.type === 'note') growNote(it.id);
+}));
 bus.on('board:load', () => {
   resetItems();
+  requestAnimationFrame(() => {
+    for (const it of board.items) if (it.type === 'note') growNote(it.id);
+  });
   vp.setView(board.view.pan, board.view.zoom);
   el('hud').hidden = !board.settings.hud;
   paintCount();
@@ -173,41 +183,6 @@ function rearrange() {
   applyGeom(before.map((g, i) => ({ ...g, x: spots[i].x, y: spots[i].y })));
   commitGeom('Rearrange', before);
   vp.fit(board.items, 80, travelMs());
-}
-
-/** Turn a note card into an editable field until it loses focus. */
-function editNote(id) {
-  const item = byId(id);
-  const node = nodeFor(id);
-  if (!item || item.type !== 'note' || !node) return;
-  const field = node.querySelector('.card-text');
-  if (!field) return;
-
-  node.classList.add('is-editing');
-  // plaintext-only keeps pasted HTML out of a note; not every engine has it.
-  try { field.contentEditable = 'plaintext-only'; }
-  catch { field.contentEditable = 'true'; }
-  if (!field.isContentEditable) field.contentEditable = 'true';
-  field.focus();
-
-  const range = document.createRange();
-  range.selectNodeContents(field);
-  const sel = getSelection();
-  sel.removeAllRanges();
-  sel.addRange(range);
-
-  const finish = () => {
-    field.removeEventListener('keydown', onKey);
-    field.contentEditable = 'false';
-    node.classList.remove('is-editing');
-    setItemText(id, field.innerText.replace(/\n+$/, ''));
-  };
-  const onKey = e => {
-    e.stopPropagation();                      // the canvas must not see Delete/space
-    if (e.key === 'Escape') field.blur();
-  };
-  field.addEventListener('keydown', onKey);
-  field.addEventListener('blur', finish, { once: true });
 }
 
 // A console handle, deliberately public: `mbrd.board` to inspect state,

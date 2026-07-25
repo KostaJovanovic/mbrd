@@ -177,13 +177,33 @@ const RENDERERS = {
     return card;
   },
 
+  /**
+   * A note is two fields, not one: its first line is a title, set bigger and
+   * bolder and ruled off from the rest.
+   *
+   * They are separate elements rather than a ::first-line on one field,
+   * because ::first-line accepts no border - and because it styles the first
+   * *rendered* line, so a long opening sentence would have had its first
+   * visual row promoted to a title halfway through a word. The split is on the
+   * newline, which is where the author put it.
+   *
+   * meta.text stays the single stored value, title and body joined by that
+   * newline; ui/notes.js is what splits and rejoins it.
+   */
   note(item) {
     const card = document.createElement('div');
     card.className = 'card';
+    const [title, ...rest] = (item.meta.text || '').split('\n');
+
+    const head = document.createElement('div');
+    head.className = 'note-title';
+    head.textContent = title || '';
+
     const body = document.createElement('div');
-    body.className = 'card-text';
-    body.textContent = item.meta.text || '';
-    card.append(body);
+    body.className = 'note-body';
+    body.textContent = rest.join('\n');
+
+    card.append(head, body);
     return card;
   },
 

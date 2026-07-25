@@ -359,12 +359,16 @@
   --btn-press: 1;
   --tilt-max: 0deg;
 
-  --radius:      0;
-  --radius-sm:   0;
-  --radius-xs:   0;
-  --leaf:        0;
-  --ogee:        0;
-  --note-radius: 0;
+  /* 0px, not 0. These are lengths, and a bare 0 is a *number*: calc() cannot
+     add a number to a length, so an unsuffixed zero here silently invalidated
+     every expression downstream that offsets a radius - including the one that
+     sizes the selection's corner marks, which collapsed to nothing. */
+  --radius:      0px;
+  --radius-sm:   0px;
+  --radius-xs:   0px;
+  --leaf:        0px;
+  --ogee:        0px;
+  --note-radius: 0px;
 
   --sel-gap:    4px;
   --sel-line:   2px;

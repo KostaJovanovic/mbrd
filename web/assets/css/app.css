@@ -117,12 +117,18 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .item {
   position: absolute;
   background: var(--item-bg);
-  /* The item's own corner, which is not always --radius: a note is cut from a
-     pad and carries --note-radius instead. Anything that has to trace this
-     corner - the selection's corner marks, most of all - reads --own-radius
-     rather than guessing, so it can never end up sweeping a 22px curve around
-     a 7px corner. */
-  --own-radius: var(--radius);
+  /* The corner this item actually draws, which is not simply --radius.
+     Two things bend it. A note is cut from a pad and carries --note-radius
+     instead, so --shape-radius is overridden per type. And the browser caps a
+     border-radius at half the box's shorter side - an item narrower than twice
+     its radius comes out a lozenge, whatever was asked for - so --half-min
+     (written by items.js/place(), which is where the size is known) applies
+     that same cap here.
+     Everything that has to trace this corner reads --own-radius rather than
+     guessing, so nothing ends up sweeping a 26px curve around a corner the
+     browser quietly flattened to 10. */
+  --shape-radius: var(--radius);
+  --own-radius: min(var(--shape-radius), var(--half-min, 9999px));
   border-radius: var(--own-radius);
   box-shadow: var(--item-shadow);
   /* Deliberately not clipped: the resize handles and their brackets sit
@@ -133,14 +139,36 @@ button, input, select, textarea { font: inherit; color: inherit; }
   cursor: grab;
   user-select: none;
   -webkit-user-select: none;
-  /* How far the selection ring's *outer* edge sits from the item box. The ring
-     and the corner marks are both placed off this one number, so they cannot
-     drift apart. */
+  /* The selection ring's geometry, derived once here so that the ring and its
+     corner marks cannot drift apart - which they had, in two separate ways.
+       --sel-edge    how far the ring's outer edge sits from the item box
+       --mark-radius the curve both of them trace: the item's own corner,
+                     pushed outwards by that gap. A curve of radius R offset
+                     outwards by d is a curve of radius R + d, and both terms
+                     are in the item's own units, so it holds at any zoom
+       --mark-size   how big a corner mark has to be. Not merely --sel-reach:
+                     a border-radius larger than its own box is scaled down by
+                     the browser, which flattened the marks on a heavily
+                     rounded card while a note's - with a much smaller radius -
+                     came out true. Sized from the curve *plus* the straight
+                     run, so --sel-reach now means what it says: how far the
+                     heavy part continues past the end of the curve.
+
+     R + d is the true parallel of a *rounded* corner. A square corner's true
+     parallel is an arc of radius d - geometrically correct, and visibly wrong:
+     a rounded ring around a sharp card reads as a mistake in a language whose
+     whole premise is that corners are square. So the growth is switched off
+     when there is no corner to grow. Multiplying by a large factor saturates
+     to R + d for any real radius and collapses to zero at exactly zero, which
+     is a branch CSS has no other way to express. */
   --sel-edge: calc((var(--sel-gap) + var(--sel-line)) * var(--iz));
+  --mark-radius: min(calc(var(--own-radius) + var(--sel-edge)),
+                     calc(var(--own-radius) * 1000));
+  --mark-size: calc(var(--mark-radius) + var(--sel-reach) * var(--iz));
   /* The lift and the tilt are zero at the plain end of the whimsy axis, so the
      same declaration covers "springs up to meet you" and "does not move".
      The resting tilt is each item's own factor in [-1, 1] (written by
-     canvas/items.js, derived from its id so it never shifts under you) times
+     canvas/items.js, dealt from a bag so a third of the board hangs straight) times
      whatever the axis currently allows - and the drag tilt adds on top of it,
      rather than replacing it, so picking a crooked item up keeps it crooked. */
   translate: 0 calc(var(--lift) * var(--iz));
@@ -184,7 +212,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   position: absolute;
   inset: calc(-1 * var(--sel-edge));
   border: 0 solid var(--select);
-  border-radius: calc(var(--own-radius) + var(--sel-edge));
+  border-radius: var(--mark-radius);
   pointer-events: none;
   transition: border-width var(--dur-fast) var(--ease);
 }
@@ -291,7 +319,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
    meta.tint), so a wall of notes reads as a pack rather than a monotone. */
 .item[data-type="note"] {
   --item-shadow: var(--note-shadow);
-  --own-radius: var(--note-radius);
+  --shape-radius: var(--note-radius);
   --note-paper: var(--note-1);
   /* The item under the card takes the pad colour too. Two rounded boxes of the
      same radius stacked exactly on top of each other still leave a hairline of
@@ -319,17 +347,51 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* The filed-card inner rule has no business on a sticky. */
 .item[data-type="note"] .card::after { content: none; }
 
-.item[data-type="note"] .card-text {
-  -webkit-mask-image: none;
-          mask-image: none;
+/* Title and body are separate fields (renderers.js/note), ruled apart. The
+   rule is a hairline of the ink at very low strength rather than --rule: on
+   coloured pad paper the shared rule colour reads as a different, greyer
+   material laid across the sheet, where a tint of the note's own ink reads as
+   a line drawn on it. */
+.item[data-type="note"] .note-title {
   font-family: var(--font-display);
-  font-size: 17px;
-  line-height: 1.4;
+  font-size: 23px;
+  font-weight: 700;
+  line-height: 1.25;
   color: var(--ink);
+  padding-bottom: 9px;
+  border-bottom: var(--hairline) solid color-mix(in srgb, var(--ink) 14%, transparent);
+  word-break: break-word;
 }
+.item[data-type="note"] .note-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding-top: 9px;
+  white-space: pre-wrap;
+  font-family: var(--font-display);
+  font-size: 16px;
+  line-height: 1.45;
+  color: var(--ink-2);
+  word-break: break-word;
+}
+/* A note that is only a title is only a title: no rule under it, and no empty
+   band of body below. While it is being edited the body has to stay reachable,
+   so the collapse waits until you are done. */
+.item[data-type="note"]:not(.is-editing) .note-body:empty { display: none; }
+.item[data-type="note"]:not(.is-editing) .note-title:has(+ .note-body:empty) {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
 .item.is-editing { cursor: text; }
 .item.is-editing .item-body { pointer-events: auto; }
-.item.is-editing .card-text { outline: none; overflow: auto; cursor: text; }
+.item.is-editing .card-text,
+.item.is-editing .note-title,
+.item.is-editing .note-body { outline: none; overflow: auto; cursor: text; }
+/* An empty field collapses to nothing and becomes unclickable, so both keep a
+   line's worth of height while the note is open for editing. */
+.item.is-editing .note-title:empty,
+.item.is-editing .note-body:empty { min-height: 1em; }
 
 /* Caption plate: a strip of paper across the foot of a picture, not a black
    gradient. Reads like a museum label. */
@@ -365,8 +427,12 @@ button, input, select, textarea { font: inherit; color: inherit; }
    marks share their geometry with. */
 .grip {
   position: absolute;
-  width:  calc(var(--sel-reach) * var(--iz));
-  height: calc(var(--sel-reach) * var(--iz));
+  /* Capped at half the *ring*, not half the item: opposite marks then meet
+     exactly at the middle of each side without crossing, and a small item at
+     low zoom - where the ring stands off further in world units than the item
+     is wide - still gets a box big enough to hold its own curve. */
+  width:  min(var(--mark-size), calc(50% + var(--sel-edge)));
+  height: min(var(--mark-size), calc(50% + var(--sel-edge)));
   display: none;
   z-index: 2;
 }
@@ -397,19 +463,19 @@ button, input, select, textarea { font: inherit; color: inherit; }
    squares up along with everything else. */
 .grip[data-g="nw"]::after {
   border-right-width: 0; border-bottom-width: 0;
-  border-radius: calc(var(--own-radius) + var(--sel-edge)) 0 0 0;
+  border-radius: var(--mark-radius) 0 0 0;
 }
 .grip[data-g="ne"]::after {
   border-left-width: 0; border-bottom-width: 0;
-  border-radius: 0 calc(var(--radius) + var(--sel-edge)) 0 0;
+  border-radius: 0 var(--mark-radius) 0 0;
 }
 .grip[data-g="se"]::after {
   border-left-width: 0; border-top-width: 0;
-  border-radius: 0 0 calc(var(--radius) + var(--sel-edge)) 0;
+  border-radius: 0 0 var(--mark-radius) 0;
 }
 .grip[data-g="sw"]::after {
   border-right-width: 0; border-top-width: 0;
-  border-radius: 0 0 0 calc(var(--radius) + var(--sel-edge));
+  border-radius: 0 0 0 var(--mark-radius);
 }
 
 /* Straddling the corner: the box's outer corner lands exactly on the
@@ -426,8 +492,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
    drag is never stolen by the edge next to it. */
 .grip-edge { background: none; }
 .grip[data-g="n"], .grip[data-g="s"] {
-  left:  calc(var(--sel-reach) * var(--iz));
-  right: calc(var(--sel-reach) * var(--iz));
+  left:  min(var(--mark-size), 40%);
+  right: min(var(--mark-size), 40%);
   width: auto;
   height: calc(14px * var(--iz));
   cursor: ns-resize;
@@ -435,8 +501,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .grip[data-g="n"] { top: calc(-1 * var(--sel-edge)); }
 .grip[data-g="s"] { bottom: calc(-1 * var(--sel-edge)); }
 .grip[data-g="w"], .grip[data-g="e"] {
-  top:    calc(var(--sel-reach) * var(--iz));
-  bottom: calc(var(--sel-reach) * var(--iz));
+  top:    min(var(--mark-size), 40%);
+  bottom: min(var(--mark-size), 40%);
   height: auto;
   width: calc(14px * var(--iz));
   cursor: ew-resize;

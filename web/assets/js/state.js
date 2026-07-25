@@ -231,8 +231,17 @@ export function duplicateItems(ids, offset = { x: 28, y: -28 }) {
   return addItems(copies, copies.length > 1 ? `Duplicate ${copies.length} items` : 'Duplicate');
 }
 
+/**
+ * How much a sticky note holds. A sticky is a thought you can take in at a
+ * glance - past a couple of hundred characters it is a document, and it wants
+ * to be a text file on the board instead. Enforced here as well as in the
+ * editor, so a paste, an import or an older .mbrd cannot get around it.
+ */
+export const NOTE_MAX = 255;
+
 export function setItemText(id, text) {
   const it = byId(id);
+  if (it?.type === 'note') text = text.slice(0, NOTE_MAX);
   if (!it || it.meta.text === text) return;
   const prev = it.meta.text;
   commit('Edit note',

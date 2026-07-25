@@ -183,6 +183,12 @@ function place(el, item) {
   el.style.top = (-item.y - item.h / 2).toFixed(2) + 'px';
   el.style.width = item.w.toFixed(2) + 'px';
   el.style.height = item.h.toFixed(2) + 'px';
+  // Half the shorter side: the ceiling the browser puts on a border-radius.
+  // CSS can express the cap (50%) but not *read* the capped result, and the
+  // selection ring and its corner marks have to trace the corner that actually
+  // got drawn - so the number is handed to them from here, where the size is
+  // known. See --own-radius in app.css.
+  el.style.setProperty('--half-min', (Math.min(item.w, item.h) / 2).toFixed(2) + 'px');
   el.style.transform = item.rot ? `rotate(${-item.rot}deg)` : '';
   el.style.zIndex = Math.round(item.z);
 }

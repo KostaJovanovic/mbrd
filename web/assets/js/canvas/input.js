@@ -22,6 +22,7 @@ import {
 import { zoomMs, travelMs } from './viewport.js';
 import { itemIdFromEvent, ensureMounted, sync as syncItems } from './items.js';
 import { gridStep } from './grid.js';
+import { noteFloor } from '../ui/notes.js';
 
 const DRAG_SLOP = 3;      // screen px before a press becomes a drag
 const MIN_SIZE = 24;      // world px - below this an item is unclickable
@@ -227,11 +228,24 @@ export function initInput(vp, cmds) {
         if (Math.abs(w - g.box.w) > Math.abs(h - g.box.h)) h = w / ratio;
         else w = h * ratio;
       }
+      // A note may not be dragged smaller than its own text. The floor is
+      // measured at the width being proposed, not the one on screen, because
+      // narrowing a note rewraps it and makes it *taller* - so pulling a side
+      // in can push the bottom out, which is the honest answer.
+      const it = byId(g.id);
+      if (it.type === 'note') {
+        const floor = noteFloor(g.id, w);
+        if (floor > h) {
+          h = floor;
+          // The height was forced, so the aspect lock no longer holds and the
+          // centre has to be recomputed from the height we actually got.
+          if (!signY) return applyGeom([{ id: g.id, x: g.box.x + signX * (w - g.box.w) / 2, y: g.box.y, w, h, rot: it.rot, z: it.z }]);
+        }
+      }
       // The opposite edge stays put, so the centre shifts by half the growth -
       // and on the axis an edge handle doesn't touch, signY is 0 and the item
       // grows symmetrically about its centre, which is what an aspect-locked
       // side drag should do.
-      const it = byId(g.id);
       applyGeom([{
         id: g.id,
         x: g.box.x + signX * (w - g.box.w) / 2,
