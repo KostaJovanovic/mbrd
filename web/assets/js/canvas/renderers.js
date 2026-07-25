@@ -8,6 +8,7 @@ import { byId, bus, markDirty } from '../state.js';
 import { describeExt, PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS } from '../import/formats.js';
 import { buildTransport, registerPlayer } from './audio.js';
 import { buildVideoPlayer } from './video.js';
+import { youTubeId, embedOffer } from './embed.js';
 
 
 /**
@@ -359,6 +360,14 @@ const RENDERERS = {
     }
 
     card.append(icon, name);
+
+    // The one link that can be more than a link. The offer only - see
+    // canvas/embed.js for why nothing is loaded until it is taken.
+    const yt = u && youTubeId(u);
+    if (yt) {
+      card.classList.add('card-yt');
+      card.append(embedOffer(item, yt, card));
+    }
 
     const dest = u ? linkDest(u) : '';
     // Left off when it would only repeat the name - a bare hostname with

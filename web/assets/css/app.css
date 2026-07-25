@@ -847,8 +847,54 @@ button, input, select, textarea { font: inherit; color: inherit; }
           line-clamp: 2;
   overflow: hidden;
 }
+/* ---- The one link that can become a player (canvas/embed.js) -------------
+   The button is a standing offer, not a state: nothing has been requested from
+   anyone until it is pressed, and it is styled to say so - the same accent a
+   link wears, on the card's own paper, rather than the filled red of a control
+   that is already doing something. */
+.yt-play {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: auto;
+  padding: 5px 11px 5px 9px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper-2);
+  color: var(--accent-deep);
+  font-family: var(--font-display);
+  font-size: var(--t-tiny);
+  letter-spacing: calc(0.04em * var(--ls-scale));
+  cursor: pointer;
+  pointer-events: auto;   /* same bargain the anchor above makes */
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.yt-play:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.yt-play svg { width: 11px; height: 11px; }
+/* Far out, the offer is unreadable and un-pressable, and it would be the only
+   thing left saying anything on a card whose text has already stood down. */
+#world.zoom-far .yt-play { display: none; }
+
+/* Taken. The name row survives as the only part of the card still ours to
+   grab - see embed.js - and the frame takes everything under it. */
+.card.has-embed { gap: 6px; }
+.card.has-embed .card-name { flex: none; }
+.yt-frame {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: #000;
+  pointer-events: auto;
+}
+/* Nothing to see at a distance but a black rectangle, and a cross-origin frame
+   is the most expensive thing on the board to keep composited. */
+#world.zoom-far .yt-frame { visibility: hidden; }
+
 /* The anchor stands down at far zoom, for the reason the grips and the caption
-   plates do: below a third of size a card is a coloured tile, and a click on
+plates do: below a third of size a card is a coloured tile, and a click on
    one is a click on the board rather than a considered press on a line of text
    five pixels tall. Opening a tab is not a thing to do by accident. */
 #world.zoom-far .card-link .card-name { pointer-events: none; }

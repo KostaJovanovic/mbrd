@@ -77,6 +77,13 @@ function disposable(el) {
   for (const m of el.querySelectorAll('video, audio')) {
     if (!m.paused || m.currentTime > 0) return false;
   }
+  // An embedded player is another origin, so there is no asking whether it is
+  // playing - `paused` is not readable across one. Its presence is the answer
+  // available: it only exists because somebody pressed Watch here, and
+  // discarding the node would both stop whatever is running and throw away a
+  // consent that is deliberately not written down anywhere else. Kept for the
+  // same reason a playing clip is, on weaker evidence.
+  if (el.querySelector('iframe')) return false;
   return true;
 }
 
