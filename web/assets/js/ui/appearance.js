@@ -64,10 +64,55 @@ const HARSH = 2;
  */
 const AXIS_TOKENS = ['--radius', '--grid-alpha', '--grid-dot'];
 
+/**
+ * Faces the board can be set in, live.
+ *
+ * Here to settle an argument by looking at it rather than by discussing it:
+ * the display serif is the loudest decision on the whole board and the only
+ * honest way to choose one is to put real names, real note titles and a real
+ * wordmark in it and see. A comparison page cannot do that, because the thing
+ * being judged is how a face sits among photographs at three sizes.
+ *
+ * Every stack here is either shipped with the app (Fraunces, Geist - see
+ * fonts.css) or already named as a fallback in tokens.css, so nothing is
+ * fetched to try one on. That constraint is the offline-first promise, and it
+ * is also why the list is short: these are the faces a board can actually be
+ * set in today, not a catalogue.
+ *
+ * '' is not a face. It removes the inline property and lets the whimsy level
+ * have the type back, which is the state every board starts in - so trying
+ * something on is always undoable without a reset.
+ *
+ * Kept under SAFE_VALUE's 160 characters (see ui/look.js), because these end up
+ * in `settings.appearance.vars` and travel inside a .mbrd like any other token.
+ */
+const DISPLAY_FACES = [
+  { label: 'As the level sets it', value: '' },
+  { label: 'Fraunces',             value: '"Fraunces", Georgia, serif' },
+  { label: 'Iowan Old Style',      value: '"Iowan Old Style", Palatino, serif' },
+  { label: 'Palatino',             value: '"Palatino Linotype", "Book Antiqua", Palatino, serif' },
+  { label: 'Georgia',              value: 'Georgia, "Times New Roman", serif' },
+  { label: 'Times New Roman',      value: '"Times New Roman", Times, serif' },
+  { label: 'Geist (sans)',         value: '"Geist", system-ui, sans-serif' },
+];
+
+const BODY_FACES = [
+  { label: 'As the level sets it', value: '' },
+  { label: 'Geist',                value: '"Geist", system-ui, sans-serif' },
+  { label: 'System sans',          value: 'system-ui, -apple-system, "Segoe UI", sans-serif' },
+  { label: 'Helvetica',            value: '"Helvetica Neue", Helvetica, Arial, sans-serif' },
+  { label: 'Georgia',              value: 'Georgia, "Times New Roman", serif' },
+  // The soft end of the axis does exactly this. Offered at every level so the
+  // one-voice setting can be tried without moving the slider to get it.
+  { label: 'Same as display',      value: 'var(--font-display)' },
+];
+
 /** The curated set of tokens worth exposing. Everything else stays internal. */
 const CONTROLS = [
   { var: '--accent',      label: 'Pigment',       type: 'color' },
   { var: '--paper',       label: 'Paper',         type: 'color' },
+  { var: '--font-display', label: 'Display face', type: 'font', options: DISPLAY_FACES },
+  { var: '--font-body',    label: 'Body face',    type: 'font', options: BODY_FACES },
   { var: '--radius',      label: 'Corner radius', type: 'range', min: 0,   max: 28,  step: 1,    unit: 'px' },
   // Floored well above zero. The bottom of this range used to be an invisible
   // grid, which is a second, hidden "off" switch sitting next to the real one
@@ -256,6 +301,18 @@ function persist() {
 }
 
 function setVar(name, value) {
+  // An empty value is "stop overriding this", not "override it with nothing".
+  // Setting a token to '' would leave an inline declaration that resolves to
+  // the initial value and still beats the stylesheet, so the whimsy level
+  // would never get its type back and the Default entry would be a one-way
+  // door. Removal is the only thing that actually hands it back.
+  if (value === '') {
+    delete current.vars[name];
+    root.style.removeProperty(name);
+    applied.delete(name);
+    persist();
+    return;
+  }
   current.vars[name] = value;
   root.style.setProperty(name, value);
   applied.add(name);
@@ -292,7 +349,18 @@ const clone = look => ({
   whimsy: look?.whimsy == null ? DEFAULT_WHIMSY : clampWhimsy(look.whimsy),
   // Becomes an attribute value that stylesheet rules match on, so it is held to
   // the shape a palette name has rather than trusted to be one.
-  palette: /^[a-z0-9-]{1,24}$/i.test(look?.palette) ? look.palette : '',
+  //
+  // The typeof guard is load-bearing, not defensive padding. RegExp.test()
+  // coerces its argument to a string, and `String(undefined)` is "undefined" -
+  // twenty-four lowercase letters, which this pattern happily matches. So a
+  // `look` of null took the true branch and then threw on `look.palette`, and
+  // clone(null) is not a hypothetical: readStored() calls it with whatever
+  // readPrefJSON returns, which is null on any browser that has never saved a
+  // preference. A fresh profile therefore threw inside initAppearance() before
+  // it had built a single control - the palette menu, the whimsy slider and
+  // every token control were dead on a first visit, and only a first visit.
+  palette: typeof look?.palette === 'string' && /^[a-z0-9-]{1,24}$/i.test(look.palette)
+    ? look.palette : '',
   vars: safeVars(look?.vars),
 });
 
@@ -319,16 +387,33 @@ function buildControls() {
     const out = document.createElement('output');
     head.append(text, out);
 
-    const input = document.createElement('input');
-    input.type = c.type === 'color' ? 'color' : 'range';
-    if (c.type === 'range') {
-      input.min = c.min; input.max = c.max; input.step = c.step;
+    // A <select> rather than an <input>, and 'change' rather than 'input',
+    // because a face is a choice from a list and not a value on a scale.
+    const input = c.type === 'font' ? document.createElement('select')
+                                    : document.createElement('input');
+    if (c.type === 'font') {
+      for (const f of c.options) {
+        const opt = document.createElement('option');
+        opt.value = f.value;
+        opt.textContent = f.label;
+        // Each name set in the face it names, so the list is the comparison
+        // rather than a legend for one. Costs nothing: every stack here is
+        // already loaded or already on the machine.
+        if (f.value && !f.value.startsWith('var(')) opt.style.fontFamily = f.value;
+        input.append(opt);
+      }
+      input.addEventListener('change', () => setVar(c.var, input.value));
+    } else {
+      input.type = c.type === 'color' ? 'color' : 'range';
+      if (c.type === 'range') {
+        input.min = c.min; input.max = c.max; input.step = c.step;
+      }
+      input.addEventListener('input', () => {
+        const value = c.type === 'color' ? input.value : input.value + (c.unit || '');
+        out.textContent = c.type === 'color' ? '' : format(input.value, c);
+        setVar(c.var, value);
+      });
     }
-    input.addEventListener('input', () => {
-      const value = c.type === 'color' ? input.value : input.value + (c.unit || '');
-      out.textContent = c.type === 'color' ? '' : format(input.value, c);
-      setVar(c.var, value);
-    });
 
     label.append(head, input);
     host.append(label);
@@ -341,7 +426,14 @@ function syncControls() {
   const computed = getComputedStyle(root);
   for (const [name, { input, out, spec }] of inputs) {
     const raw = (current.vars[name] ?? computed.getPropertyValue(name)).trim();
-    if (spec.type === 'color') {
+    if (spec.type === 'font') {
+      // Read off `current.vars` alone, never off the computed value. The
+      // computed one is whatever the whimsy level resolved to, which is a stack
+      // that matches no option here and would select nothing - where '' is a
+      // real state with a real entry: the level still has the type.
+      input.value = current.vars[name] ?? '';
+      out.textContent = '';
+    } else if (spec.type === 'color') {
       input.value = toHex(raw) || '#000000';
       out.textContent = '';
     } else {
