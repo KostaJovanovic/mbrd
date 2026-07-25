@@ -13,7 +13,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { threads } from '../web/assets/js/canvas/web.js';
+import { threads, denseLimitNow } from '../web/assets/js/canvas/web.js';
 
 /**
  * Deliberately not the module's own predicate.
@@ -155,4 +155,40 @@ test('the second pass adds threads the tree alone does not have', () => {
   // silently stopped doing half the work.
   const pts = uniform(60, 21);
   assert.ok(threads(pts).length > pts.length - 1);
+});
+
+// ---------------------------------------------------------------------------
+// The dense limit, which the machine sets for itself
+// ---------------------------------------------------------------------------
+//
+// The failure this guards against is not slowness, it is *instability*. A limit
+// that chases a servo would drop, skip the second pass, measure a fast frame,
+// climb, and the web would change shape every few frames while you dragged -
+// which is far worse than a web that is permanently a little sparse.
+
+test('the dense limit stays inside its bounds and settles', () => {
+  const pts = uniform(200, 31);
+  const seen = new Set();
+  for (let i = 0; i < 40; i++) {
+    threads(pts);
+    seen.add(denseLimitNow());
+    assert.ok(denseLimitNow() >= 60, 'fell below the floor');
+    assert.ok(denseLimitNow() <= 700, 'climbed past the ceiling');
+  }
+  // The last ten runs are the settled ones: whatever it converged to, it should
+  // not still be moving by then.
+  const tail = [];
+  for (let i = 0; i < 10; i++) { threads(pts); tail.push(denseLimitNow()); }
+  assert.equal(new Set(tail).size, 1, `still moving: ${tail.join(' ')}`);
+});
+
+test('a board past the limit still gets a connected web', () => {
+  // The second pass is what gets skipped, never the tree - so the guarantee
+  // that the web is one piece has to survive the limit being hit.
+  const pts = uniform(900, 33);
+  const edges = threads(pts);
+  const parent = Array.from({ length: pts.length }, (_, i) => i);
+  const find = i => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  for (const [a, b] of edges) parent[find(a)] = find(b);
+  assert.equal(new Set(pts.map((_, i) => find(i))).size, 1);
 });
