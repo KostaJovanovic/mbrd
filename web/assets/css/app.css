@@ -780,7 +780,10 @@ kbd {
   letter-spacing: calc(0.1em * var(--ls-scale));
   color: var(--ink-3);
   display: flex;
-  justify-content: space-between;
+  /* The version is the only thing down here now, and it stays on the right
+     where it has always been - space-between would have walked it to the left
+     the moment its neighbour went away. */
+  justify-content: flex-end;
 }
 
 /* ---------------------------------------------------------
