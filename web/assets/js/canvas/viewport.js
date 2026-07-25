@@ -20,6 +20,7 @@
 // (see items.js), which makes the vertical translate +panY*zoom, not -panY*zoom.
 
 import { clamp, rafThrottle, emitter } from '../util.js';
+import { itemBounds } from '../geometry.js';
 
 export const MIN_ZOOM = 0.02;
 export const MAX_ZOOM = 32;
@@ -112,13 +113,6 @@ export class Viewport {
     this.stopAnim();
     this.pan.x -= dx / this.zoom;
     this.pan.y += dy / this.zoom;   // screen y is down, world y is up
-    this.apply();
-  }
-
-  panByWorld(dx, dy) {
-    this.stopAnim();
-    this.pan.x += dx;
-    this.pan.y += dy;
     this.apply();
   }
 
@@ -226,17 +220,9 @@ export class Viewport {
    * With nothing to fit, falls back to the origin at 1:1.
    */
   fit(items, pad = 80, ms = 0) {
-    if (!items || !items.length) return this.recenter(ms);
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const it of items) {
-      // Rotation-aware: use the bounding box of the rotated rect.
-      const rad = (it.rot || 0) * Math.PI / 180;
-      const c = Math.abs(Math.cos(rad)), s = Math.abs(Math.sin(rad));
-      const hw = (it.w * c + it.h * s) / 2;
-      const hh = (it.w * s + it.h * c) / 2;
-      x0 = Math.min(x0, it.x - hw); x1 = Math.max(x1, it.x + hw);
-      y0 = Math.min(y0, it.y - hh); y1 = Math.max(y1, it.y + hh);
-    }
+    const box = items && items.length ? itemBounds(items) : null;
+    if (!box) return this.recenter(ms);
+    const { x0, y0, x1, y1 } = box;
     const w = Math.max(x1 - x0, 1), h = Math.max(y1 - y0, 1);
     const z = clamp(Math.min((this.width - pad * 2) / w, (this.height - pad * 2) / h), MIN_ZOOM, MAX_ZOOM);
     this.viewTo({ x: (x0 + x1) / 2, y: (y0 + y1) / 2 }, z, ms);

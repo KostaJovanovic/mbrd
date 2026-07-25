@@ -21,9 +21,10 @@ import {
   copyItems, cutItems, pasteItems, clipboardSize, clipboardBounds, clipboardHasOurs,
 } from '../state.js';
 import { zoomMs, travelMs } from './viewport.js';
+import { itemInRect } from '../geometry.js';
 import { itemIdFromEvent, ensureMounted, sync as syncItems, editItemName } from './items.js';
 import { gridStep } from './grid.js';
-import { noteFloor } from '../ui/notes.js';
+import { noteFloor } from './notes.js';
 
 const DRAG_SLOP = 3;      // screen px before a press becomes a drag
 
@@ -132,8 +133,7 @@ export function initInput(vp, cmds) {
     const x0 = Math.min(g.x0, g.x1), x1 = Math.max(g.x0, g.x1);
     const y0 = Math.min(g.y0, g.y1), y1 = Math.max(g.y0, g.y1);
     const hit = board.items
-      .filter(i => i.x + i.w / 2 >= x0 && i.x - i.w / 2 <= x1 &&
-                   i.y + i.h / 2 >= y0 && i.y - i.h / 2 <= y1)
+      .filter(i => itemInRect(i, x0, y0, x1, y1))
       .map(i => i.id);
     select(hit, g.additive);
   }
@@ -145,21 +145,41 @@ export function initInput(vp, cmds) {
     // across other items, so the group you picked up would not be the group you
     // put down. What is stuck when you take hold is what travels.
     const moving = [...selection, ...stuckFollowers(selection)];
-    // Snapshot before raising, so the z-bump rides along in the same undo entry.
+    // Snapshotted here, before anything is touched, so the raise below rides
+    // along in the same undo entry as the move it belongs to.
     const before = snapshotGeom(moving);
-    // Raised bottom-to-top rather than in selection order, so the group keeps
-    // its internal stacking. That is what leaves a stuck note still above the
-    // thing it is stuck to when the pair lands, and so still stuck.
-    let z = topZ();
-    for (const sid of stackOrder(moving)) byId(sid).z = ++z;
-    bus.emit('geom', moving);
     const start = vp.toWorld(e.clientX, e.clientY);
     g = {
-      kind: 'move', id, before, start,
+      kind: 'move', id, moving, before, start,
       origin: before.map(b => ({ id: b.id, x: b.x, y: b.y })),
       moved: false,
     };
     for (const sid of moving) ensureMounted(sid);
+  }
+
+  /**
+   * Bring the gesture's items to the front. Called on the first movement past
+   * the slop, not on the press that started it.
+   *
+   * It used to happen in startMove(), which meant a plain click reordered the
+   * board. Nothing committed it, because only a gesture that actually moved
+   * gets a history entry - so clicking an item changed its z with no undo entry
+   * to reverse it and no markDirty() to say the board had changed. The change
+   * was real and the record of it was not: a later unrelated save would write it
+   * out, and closing the tab straight after would lose it, and either way the
+   * user had done nothing but click.
+   *
+   * Deferring it costs nothing visible. The slop is three pixels, so anything
+   * that is a drag raises before it has visibly moved, and anything that is a
+   * click leaves the stack exactly as it found it.
+   */
+  function raiseToFront(ids) {
+    // Bottom-to-top rather than in selection order, so the group keeps its
+    // internal stacking. That is what leaves a stuck note still above the thing
+    // it is stuck to when the pair lands, and so still stuck.
+    let z = topZ();
+    for (const sid of stackOrder(ids)) byId(sid).z = ++z;
+    bus.emit('geom', ids);
   }
 
   function startResize(e, id, corner) {
@@ -265,6 +285,9 @@ export function initInput(vp, cmds) {
       const p = vp.toWorld(e.clientX, e.clientY);
       const dx = p.x - g.start.x, dy = p.y - g.start.y;
       if (!g.moved && Math.hypot(dx * vp.zoom, dy * vp.zoom) < DRAG_SLOP) return;
+      // The press has become a drag. Raise now, so the stack change belongs to
+      // the move that is about to be committed - see raiseToFront.
+      if (!g.moved) raiseToFront(g.moving);
       g.moved = true;
       // Snap the dragged item; everything else keeps its offset from it, so a
       // multi-selection moves rigidly instead of collapsing onto the grid.
@@ -412,12 +435,28 @@ export function initInput(vp, cmds) {
     t instanceof HTMLElement &&
     (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName));
 
+  /**
+   * Something that answers to the keyboard on its own.
+   *
+   * Space activates a focused button and a focused link, and the canvas took
+   * that key unconditionally - so tabbing to Save and pressing Space entered
+   * pan mode instead of saving, and preventDefault() meant the button never
+   * heard about it. A keyboard user could reach every control in the sidebar
+   * and operate none of them.
+   */
+  const nativeKeyTarget = t =>
+    t instanceof HTMLElement && !!t.closest('button, a[href], summary, [role="button"]');
+
   addEventListener('keydown', e => {
     if (typingInto(e.target)) {
       if (e.key === 'Escape') e.target.blur();
       return;
     }
     const mod = e.ctrlKey || e.metaKey;
+
+    // Let a focused control have its own keys. The shortcuts with a modifier
+    // are still ours - Ctrl+S means save wherever the focus happens to be.
+    if (!mod && nativeKeyTarget(e.target) && (e.code === 'Space' || e.key === 'Enter')) return;
 
     if (e.code === 'Space' && !spaceDown) {
       spaceDown = true;

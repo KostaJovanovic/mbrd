@@ -1,12 +1,17 @@
 // Mounts board items into #world and keeps their DOM in sync with state.
 //
-// Nodes are cached by id and only *detached* when they scroll out of view, not
-// destroyed - so a playing <video> or a scrubbed <audio> keeps its state when it
-// leaves and re-enters the viewport. Culling keeps the DOM proportional to what
-// is on screen rather than to the size of the board.
+// Culling keeps the DOM proportional to what is on screen rather than to the
+// size of the board. A node that scrolls out of view is detached, and then
+// either kept or thrown away: kept if its media is mid-playback, so a video
+// that leaves and re-enters the viewport carries on where it was, and thrown
+// away otherwise, because rebuilding a still card costs a few DOM nodes while
+// holding one costs whatever it had decoded. See disposable() and discard().
 
 import { board, byId, selection, bus, renameItem } from '../state.js';
-import { buildContent, fitMode } from '../import/renderers.js';
+import { shuffle } from '../util.js';
+import { itemRadius } from '../geometry.js';
+import { buildContent, fitMode } from './renderers.js';
+import { releasePlayers } from './audio.js';
 
 /** id -> element, including elements currently detached by culling. */
 const nodes = new Map();
@@ -36,12 +41,51 @@ export function itemIdFromEvent(target) {
   return el ? el.dataset.id : null;
 }
 
+/**
+ * Throw a node away for good, rather than merely detaching it.
+ *
+ * The distinction this draws is the whole reason it exists. Culling detaches a
+ * node and expects to put the same one back, media state and all - that is why
+ * the cache is here. Everything else that removes a node is discarding it, and
+ * a discarded card still owns a decoded video or audio stream and, if it had a
+ * transport, a registered player. Dropping the reference is not enough: the
+ * media element frees its buffers when its source goes, not when the last
+ * reference to it does.
+ */
+function discard(el) {
+  el.remove();
+  releasePlayers(el);
+  for (const m of el.querySelectorAll('video, audio')) {
+    m.pause();
+    m.removeAttribute('src');
+    // Tells the element to re-read its (now absent) source, which is what
+    // actually releases what it had buffered.
+    m.load?.();
+  }
+}
+
+/**
+ * Whether a detached node can be dropped and rebuilt without anyone noticing.
+ *
+ * Anything at rest can: rebuilding is a few DOM nodes and an object URL that
+ * the asset store still holds. What cannot is media that is doing something -
+ * a video left playing, an audio scrubbed to the middle of a track - because
+ * the cache exists precisely so that panning away from a playing clip and back
+ * does not restart it.
+ */
+function disposable(el) {
+  for (const m of el.querySelectorAll('video, audio')) {
+    if (!m.paused || m.currentTime > 0) return false;
+  }
+  return true;
+}
+
 /** Drop cached nodes for items that no longer exist. */
 function reconcile() {
   const live = new Set(board.items.map(i => i.id));
   for (const [id, el] of nodes) {
     if (live.has(id)) continue;
-    el.remove();
+    discard(el);
     nodes.delete(id);
   }
   worldEl.classList.toggle('is-empty', board.items.length === 0);
@@ -52,7 +96,10 @@ export function sync() {
   if (!worldEl) return;
   const r = vp.visibleRect(CULL_MARGIN);
   for (const item of board.items) {
-    const half = Math.max(item.w, item.h) / 2 + 2;
+    // The circumscribed radius rather than the tight box: it costs no trig,
+    // it is right at any rotation, and erring towards mounting something just
+    // off screen is free where erring the other way is a visible pop-in.
+    const half = itemRadius(item) + 2;
     const visible = item.x + half >= r.x0 && item.x - half <= r.x1 &&
                     item.y + half >= r.y0 && item.y - half <= r.y1;
     const el = nodes.get(item.id);
@@ -60,7 +107,21 @@ export function sync() {
       const node = el || build(item);
       if (!node.isConnected) worldEl.append(node);
     } else if (el && el.isConnected) {
-      el.remove();
+      // Off screen. Detached either way; the question is whether the node is
+      // kept for its media state or let go of.
+      //
+      // Keeping every one of them made memory proportional to the board a
+      // person had *visited* rather than to what was on screen, which is the
+      // opposite of what the culling is for: pan across a thousand photos and
+      // all thousand were still held, decoded, for the life of the tab. The
+      // cache only ever earned its keep for media that is mid-playback, so
+      // that is now all it holds.
+      if (disposable(el)) {
+        discard(el);
+        nodes.delete(item.id);
+      } else {
+        el.remove();
+      }
     }
   }
 }
@@ -152,15 +213,12 @@ const TILT_MIN = 0.4;
 
 function tiltFactor() {
   if (!tiltBag.length) {
-    tiltBag.push(0, -1, 1);
     // Shuffled, so the straight one is not always in the same position within
     // its three. Dealing them in order would put every third item square, and
     // in a grid arrangement that regularity reads as banding rather than as a
     // hand-pinned board.
-    for (let i = tiltBag.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [tiltBag[i], tiltBag[j]] = [tiltBag[j], tiltBag[i]];
-    }
+    tiltBag.push(0, -1, 1);
+    shuffle(tiltBag);
   }
   const dir = tiltBag.pop();
   return dir && dir * (TILT_MIN + Math.random() * (1 - TILT_MIN));
@@ -172,6 +230,11 @@ function rebuild(id) {
   const item = byId(id);
   if (!el || !item) return;
   const body = el.querySelector('.item-body');
+  // The old content is being thrown away, not detached, so it has to be let go
+  // of properly first - replaceChildren would otherwise leave the card's former
+  // <audio> registered under the volume control and holding its stream, once
+  // per rename.
+  releasePlayers(body);
   // The caption plate is a child of .item-body too, so replaceChildren takes it
   // with the content and it has to be put back rather than patched. That is
   // also what lets a rename add or remove a plate: it exists exactly when there
@@ -203,7 +266,7 @@ export const canRenameItem = id => {
  * inside instead. Whichever one you can actually see is the one that turns
  * editable, so the rename happens where you are already looking rather than in
  * a dialog thrown over the top of it. The same bargain a sticky note makes -
- * see ui/notes.js, which this follows.
+ * see canvas/notes.js, which this follows.
  *
  * A card line normally shows the stem alone (renderers.js runs it through
  * baseName), but an edit puts the whole filename back on screen for as long as
@@ -312,7 +375,7 @@ function paintSelection() {
 
 /** Repaint every mounted node from scratch - used after loading a board. */
 export function resetItems() {
-  for (const el of nodes.values()) el.remove();
+  for (const el of nodes.values()) discard(el);
   nodes.clear();
   // A new board gets a new pack, so its first three items carry a full set of
   // leans rather than whatever was left over from the last one.

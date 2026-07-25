@@ -15,11 +15,43 @@
 
 import { writeZip, readZip } from './zip.js';
 import { getAsset, putAsset } from './assets.js';
+import { sha256, isHash } from '../util.js';
 import { VERSION } from '../version.js';
 
 export const FORMAT = 'mbrd';
 export const FORMAT_VERSION = 1;
 export const MIME = 'application/vnd.mbrd+zip';
+
+const ASSETS_DIR = 'assets/';
+
+/**
+ * What a content id is allowed to be, enforced in both directions.
+ *
+ * A hash is not just a label here - it is interpolated into a path, both on the
+ * way out (`assets/<hash>.<ext>`) and on the way back in, and a ZIP entry name
+ * is a string that some other program will eventually treat as a filename. A
+ * board claiming a hash of `../escape` opened perfectly happily and then packed
+ * back out as `assets/../escape.bin`: harmless to this app, which never writes
+ * the archive to disk, and a directory traversal in any extractor that does.
+ *
+ * The shape is also the load-bearing half of content addressing. Dedup, the
+ * waveform sidecars and the autosave sweep all assume a hash names its bytes
+ * and nothing else, so an id that was never a digest quietly breaks three
+ * things that look unrelated.
+ *
+ * The shape itself is util.js/isHash, which is also what state.js holds items
+ * to on the way in - the two ends of the same rule.
+ */
+
+/** Extensions we will put in a path. Long enough for `jpeg`, `webm`, `tiff`. */
+const ASSET_EXT = /^[a-z0-9]{1,12}$/;
+
+/**
+ * Ids safe to spell inside a filename. `uid()` always produces one; anything
+ * that does not is something a hand-written board.json invented, and it loses
+ * its readable .md rather than being allowed to name a file (see noteFile).
+ */
+const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -56,19 +88,49 @@ export async function packBoard(boardData, { created = null } = {}) {
     { name: 'board.json', data: json(withoutPeaks(boardData, waveforms)), compress: true },
   ];
 
+  // Every distinct hash the board refers to, in one pass, before a single byte
+  // is written.
+  //
+  // The check has to come first and it has to be fatal. This used to warn to
+  // the console and carry on, which meant a board missing an asset packed
+  // *successfully*: the .mbrd was written, "Exported" appeared, the board was
+  // marked clean - and the file had a hole in it where a photograph should
+  // have been. Every signal the user had said the work was safe. A refused
+  // export leaves them with the board still open and still dirty, which is the
+  // honest answer and the recoverable one.
+  const missing = [];
   const seen = new Set();
+  const assets = [];
   for (const item of referenced) {
     const hash = item.asset?.hash;
     if (!hash || seen.has(hash)) continue;
     seen.add(hash);
-    const asset = getAsset(hash);
-    if (!asset) {
-      console.warn('[mbrd] missing bytes for asset', hash, '- skipping');
-      continue;
+    // Checked here as well as on the way in, because this is the line that
+    // turns a hash into a path. Nothing this app produces can fail it.
+    if (!isHash(hash)) {
+      throw new Error(
+        `"${nameOf(item, String(hash))}" has a malformed content id. ` +
+        'Nothing was written - the board is unchanged.'
+      );
     }
-    const ext = asset.ext ? '.' + asset.ext : '';
+    const asset = getAsset(hash);
+    if (asset) assets.push({ hash, asset });
+    else missing.push(nameOf(item, hash));
+  }
+  if (missing.length) {
+    const shown = missing.slice(0, 3).join(', ');
+    const rest = missing.length > 3 ? ` and ${missing.length - 3} more` : '';
+    throw new Error(
+      `${missing.length} item${missing.length === 1 ? '' : 's'} ` +
+      `${missing.length === 1 ? 'has' : 'have'} no stored data (${shown}${rest}). ` +
+      'Nothing was written - the board is unchanged.'
+    );
+  }
+
+  for (const { hash, asset } of assets) {
+    const ext = ASSET_EXT.test((asset.ext || '').toLowerCase()) ? '.' + asset.ext.toLowerCase() : '';
     entries.push({
-      name: `assets/${hash}${ext}`,
+      name: `${ASSETS_DIR}${hash}${ext}`,
       data: new Uint8Array(await asset.blob.arrayBuffer()),
       // Media is already compressed; deflating it burns time for ~0 bytes.
       compress: shouldCompress(asset.mime, asset.ext),
@@ -76,8 +138,11 @@ export async function packBoard(boardData, { created = null } = {}) {
   }
 
   // Every sticky note also goes in as a file you can read without this app.
+  // A note whose id could not be spelled in a filename simply does not get one:
+  // the .md is a convenience copy, the text itself is in board.json either way,
+  // and unpack already falls back to it where no sidecar exists.
   for (const item of referenced) {
-    if (item.type !== 'note') continue;
+    if (item.type !== 'note' || !SAFE_ID.test(item.id)) continue;
     entries.push({ name: noteFile(item), data: enc.encode(noteMarkdown(item)), compress: true });
   }
 
@@ -87,6 +152,21 @@ export async function packBoard(boardData, { created = null } = {}) {
   }
 
   return { blob: await writeZip(entries, { date: now, mime: MIME }), manifest };
+}
+
+/**
+ * What to call an item in an error the user has to act on. Its name if it has
+ * one, the first words of a note if it does not, and the bare hash only as a
+ * last resort - "3 items have no stored data (photo.jpg, ...)" is something
+ * you can go and look for on the board; a list of SHA-256 digests is not.
+ */
+function nameOf(item, hash) {
+  if (item.name) return item.name;
+  if (item.type === 'note') {
+    const first = (item.meta?.text || '').split('\n')[0].trim();
+    if (first) return `note "${first.slice(0, 24)}"`;
+  }
+  return `${item.type || 'item'} ${hash.slice(0, 8)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -152,7 +232,7 @@ function noteId(name) {
 // Drawing an audio card's bars means decoding the entire file - a few hundred
 // milliseconds for a long track, times every audio card on the board, all at
 // once on the way in. What comes out of that is tiny: a couple of hundred RMS
-// readings in [0, 1], which is why ui/audio.js caches them on the item, and
+// readings in [0, 1], which is why canvas/audio.js caches them on the item, and
 // why they have been riding along inside board.json. This gives them a file,
 // for the reason notes have one and for a second reason of their own.
 //
@@ -232,7 +312,10 @@ const waveformFile = hash => `${WAVES_DIR}${hash}.json`;
 /** The hash a waveform file was written for, or null if this is not one. */
 function waveformHash(name) {
   if (!name.startsWith(WAVES_DIR) || !name.endsWith('.json')) return null;
-  return name.slice(WAVES_DIR.length, -'.json'.length) || null;
+  const hash = name.slice(WAVES_DIR.length, -'.json'.length);
+  // Same rule as assets/: this half of the name is a content id, and one that
+  // is not shaped like one belongs to no recording we could be holding.
+  return isHash(hash) ? hash : null;
 }
 
 /**
@@ -267,7 +350,7 @@ function parseWaveform(text) {
  * Whether something is a plausible set of readings, in the loose sense this
  * layer can judge: normalised amplitudes, none of them a string, a NaN or a
  * negative number. Deliberately not a check for one exact length - the
- * resolution is ui/audio.js's business, and a board written at some other one
+ * resolution is canvas/audio.js's business, and a board written at some other one
  * should arrive there to be rejected on its own terms rather than be thrown
  * away here. The ceiling is only so that a hand-written file cannot ask this
  * to carry a million numbers around.
@@ -347,12 +430,35 @@ export async function unpackBoard(blob) {
     for (const item of holders) item.meta = { ...item.meta, peaks };
   }
 
+  // Assets last, and strictly. Everything above reads content out of the
+  // archive; this is the part that takes a name *from* the archive and lets it
+  // become an identity the rest of the app trusts - so the name has to be
+  // exactly the one this format defines, and the bytes have to be the ones the
+  // name claims. See the HASH comment above for what the loose version cost.
+  const registered = new Set();
   for (const [name, bytes] of files) {
-    if (!name.startsWith('assets/')) continue;
-    const file = name.slice('assets/'.length);
+    if (!name.startsWith(ASSETS_DIR)) continue;
+    const file = name.slice(ASSETS_DIR.length);
     const dot = file.lastIndexOf('.');
     const hash = dot > 0 ? file.slice(0, dot) : file;
-    const ext = dot > 0 ? file.slice(dot + 1) : '';
+    const ext = dot > 0 ? file.slice(dot + 1).toLowerCase() : '';
+    if (!isHash(hash) || (ext && !ASSET_EXT.test(ext))) {
+      throw new Error(`Not a readable .mbrd: "${name}" is not a valid asset path`);
+    }
+    // One hash, one file. Two entries for the same content under different
+    // extensions would leave which bytes you get down to directory order.
+    if (registered.has(hash)) {
+      throw new Error(`Not a readable .mbrd: content ${hash.slice(0, 8)} is stored twice`);
+    }
+    // The name says what these bytes are; this is the only thing that checks
+    // whether that is true. Without it the archive gets to choose an id
+    // independently of the content, which is precisely what content addressing
+    // is supposed to make impossible - and dedup, waveform sidecars and the
+    // autosave sweep all key off that promise.
+    if (await sha256(bytes) !== hash) {
+      throw new Error(`"${name}" does not contain the data its name claims`);
+    }
+    registered.add(hash);
     // Copy out of the archive buffer: subarrays keep the whole ZIP alive.
     putAsset(hash, new Blob([bytes.slice()], { type: mimeFor(ext) }), { ext, mime: mimeFor(ext) });
   }

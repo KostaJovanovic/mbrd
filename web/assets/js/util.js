@@ -2,6 +2,67 @@
 
 export const clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
 
+/** The element with this id, or null. Every module wants this and no other. */
+export const el = id => document.getElementById(id);
+
+/**
+ * Fisher-Yates, in place, returning the same array.
+ *
+ * Every shuffle in the app wants an unbiased one and there is exactly one way
+ * to write it, so it is written here rather than a fourth time: dealing the
+ * tilt bag in canvas/items.js, and re-dealing the layout order in
+ * main.js/rearrange.
+ */
+export function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+// ---------------------------------------------------------------------------
+// Preferences
+//
+// The things that follow the *user* rather than the board - the look, the
+// volume, whether the panel is open - as against everything in board.settings,
+// which travels inside the .mbrd.
+//
+// Every one of these reads and writes has to be wrapped, because localStorage
+// is not merely empty in a private window: touching it throws outright, and an
+// uncaught throw on the way through boot would take the whole app with it over
+// a remembered slider position. That wrapper was written out by hand six times
+// before it was written down once.
+// ---------------------------------------------------------------------------
+
+export function readPref(key, fallback = null) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw === null ? fallback : raw;
+  } catch {
+    return fallback;
+  }
+}
+
+export function writePref(key, value) {
+  try { localStorage.setItem(key, String(value)); return true; }
+  catch { return false; }
+}
+
+/**
+ * The same, for a value stored as JSON. Two ways to get nothing back - storage
+ * refused, or what came out will not parse - and they want the same answer,
+ * because a preference that cannot be read is a preference that was not set.
+ */
+export function readPrefJSON(key, fallback = null) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw === null ? fallback : JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+}
+
 let _seq = 0;
 export function uid(prefix = 'i') {
   // Monotonic + random: unique inside a session and across merged boards.
@@ -52,6 +113,16 @@ export function formatBytes(n) {
   while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
   return (i === 0 ? n : n.toFixed(n < 10 ? 1 : 0)) + ' ' + u[i];
 }
+
+/**
+ * Whether something is a content id of the shape sha256() produces.
+ *
+ * Lives here, beside the function that makes them, because two layers that
+ * never import each other both have to know: storage/mbrd.js spells a hash into
+ * an archive path, and state.js decides whether an item arriving from a file is
+ * allowed to claim one. Written twice, they would drift.
+ */
+export const isHash = v => typeof v === 'string' && /^[0-9a-f]{64}$/.test(v);
 
 /** SHA-256 hex of an ArrayBuffer/Uint8Array - the content id for assets. */
 export async function sha256(buf) {
@@ -105,9 +176,22 @@ export function toast(msg, kind = '') {
  * when testing from a phone. sw.js makes the same test to turn itself into a
  * pass-through; it cannot import this module, so the two are kept in step by
  * hand rather than shared.
+ *
+ * A function, and memoised, rather than the constant this used to be. A
+ * constant meant `location` was read the moment this module was imported, and
+ * because almost everything imports util.js that made the whole app impossible
+ * to load anywhere without a `location` - which is to say, impossible to test
+ * outside a browser. The answer cannot change within a document, so the read
+ * still happens exactly once; it just happens on the first ask instead of on
+ * import.
  */
-export const IS_DEV = (() => {
-  const h = location.hostname;
-  return h === 'localhost' || h === '127.0.0.1' || h === '0.0.0.0' ||
-         /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h);
-})();
+let devHost = null;
+
+export function isDev() {
+  if (devHost === null) {
+    const h = location.hostname;
+    devHost = h === 'localhost' || h === '127.0.0.1' || h === '0.0.0.0' ||
+              /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h);
+  }
+  return devHost;
+}

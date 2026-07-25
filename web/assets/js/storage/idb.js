@@ -44,8 +44,3 @@ export const idbSet = (store, key, value) => tx(store, 'readwrite', s => s.put(v
 export const idbDel = (store, key) => tx(store, 'readwrite', s => s.delete(key));
 export const idbKeys = store => tx(store, 'readonly', s => s.getAllKeys());
 export const idbClear = store => tx(store, 'readwrite', s => s.clear());
-
-/** True when IndexedDB is usable at all (private modes can refuse it). */
-export async function idbAvailable() {
-  try { await open(); return true; } catch { return false; }
-}

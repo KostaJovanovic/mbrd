@@ -18,9 +18,7 @@
 
 import { board, bus, restoreItems, emptyTrash, select } from '../state.js';
 import { assetURL } from '../storage/assets.js';
-import { extOf, baseName } from '../util.js';
-
-const el = id => document.getElementById(id);
+import { extOf, baseName, el } from '../util.js';
 
 let vp = null;
 let panel, button, list, none, hint, emptyBtn;
@@ -39,6 +37,7 @@ export function initTrash(viewport) {
   button.addEventListener('click', () => setOpen(panel.hidden));
   emptyBtn.addEventListener('click', emptyTrash);
   list.addEventListener('pointerdown', startDrag);
+  list.addEventListener('keydown', restoreByKey);
 
   // Clicking the board puts the panel away. Not a scrim and not focus-based:
   // the board stays fully live while the bin is open, and dismissing has to
@@ -49,8 +48,6 @@ export function initTrash(viewport) {
   bus.on('board:load', paint);
   paint();
 }
-
-export const closeTrash = () => setOpen(false);
 
 function setOpen(want) {
   panel.hidden = !want;
@@ -82,7 +79,13 @@ function binRow(entry) {
   const node = document.createElement('div');
   node.className = 'bin-item';
   node.dataset.id = item.id;
-  node.title = 'Drag onto the board to put it back';
+  node.title = 'Drag onto the board to put it back, or press Enter';
+  // Reachable and operable without a pointer. Deleting was already a keystroke;
+  // until this, taking something back was a drag and nothing else, so a
+  // keyboard or screen-reader user could empty the bin and never look inside it.
+  node.tabIndex = 0;
+  node.setAttribute('role', 'button');
+  node.setAttribute('aria-label', `Restore ${label(item)}`);
 
   const thumb = document.createElement('div');
   thumb.className = 'bin-thumb';
@@ -140,6 +143,25 @@ function ago(at) {
 // ---------------------------------------------------------------------------
 // Dragging one back out
 // ---------------------------------------------------------------------------
+
+/**
+ * Enter or Space on a bin row puts that item back.
+ *
+ * It lands in the middle of the view rather than where it was deleted from,
+ * which is the same judgement the drag makes: the old spot is usually the
+ * reason it was thrown away, and the board has grown into the gap since. The
+ * middle of what you are looking at is the keyboard's answer to "say where".
+ */
+function restoreByKey(e) {
+  if (e.key !== 'Enter' && e.key !== ' ' && e.code !== 'Space') return;
+  const line = e.target.closest?.('.bin-item');
+  if (!line) return;
+  e.preventDefault();
+  const back = restoreItems([line.dataset.id], vp.toWorld(innerWidth / 2, innerHeight / 2));
+  if (!back.length) return;
+  select(back.map(i => i.id));
+  setOpen(board.trash.length > 0);
+}
 
 function startDrag(e) {
   if (e.button !== 0) return;

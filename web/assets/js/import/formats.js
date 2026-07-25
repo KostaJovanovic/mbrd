@@ -6,7 +6,7 @@
 // 1359 extensions across 102 families in 12 categories.
 // This is data only: it names what a file *is*, so an item that mbrd cannot
 // draw still shows something better than "file". What mbrd can actually render
-// is decided in import/renderers.js, not here.
+// is decided in canvas/renderers.js, not here.
 
 /** Category key -> human label. */
 export const CATEGORIES = {

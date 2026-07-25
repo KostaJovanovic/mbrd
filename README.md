@@ -18,8 +18,9 @@ same on any machine.
 server.bat
 ```
 
-Opens `http://localhost:3000` and prints a QR for the LAN URL, so a phone on the
-same Wi-Fi can open the same board. (`python serve.py 3000` works too.)
+Opens `http://localhost:6273` and prints a QR for the LAN URL, so a phone on the
+same Wi-Fi can open the same board. (`python serve.py` works too, and takes a
+port: `python serve.py 8000`.)
 
 There is no build step — no bundler, no npm install. The browser loads the ES
 modules in `web/` directly, so an edit is one refresh away.
@@ -39,7 +40,7 @@ modules in `web/` directly, so an edit is one refresh away.
 | arrows | nudge; `Shift` for a whole grid step |
 | `Ctrl`+`A` / `Del` | select all / delete |
 | `Ctrl`+`Z` / `Y` | undo / redo |
-| `Ctrl`+`S` / `O` | save / open |
+| `Ctrl`+`S` / `O` | save in this browser / open a `.mbrd` |
 
 Files arrive by drag-and-drop (folders included), clipboard paste, or **Add
 files** in the sidebar. Pasted text becomes a note. Multiple files land arranged
@@ -74,10 +75,20 @@ stored once. Media is stored uncompressed (it already is); the JSON is deflated.
 The schema reserves `asset: { external: { path } }` for a future
 link-instead-of-embed setting.
 
-Where the browser supports the File System Access API, **Save** writes back to
-the same file. Elsewhere it downloads a `.mbrd` and **Open** takes it back.
-Either way, the working board is mirrored into IndexedDB, so closing the tab
-mid-edit doesn't lose anything.
+**Save** and **Export** are two different things, on purpose:
+
+- **Save** (`Ctrl`+`S`) keeps the board *in this browser*. No dialog, no file,
+  no folder to pick — the common case is wanting the work kept, not wanting a
+  document filed. It writes to the same IndexedDB store the autosave uses.
+- **Export** writes the `.mbrd` itself. Where the browser has the File System
+  Access API it writes back to the file you chose, so exporting the same board
+  again overwrites it; elsewhere it downloads one. That is the copy you email,
+  archive, or move to another machine.
+
+The distinction matters because the two fail differently: a browser store can
+be cleared by the browser, a file cannot — but a file only exists if you asked
+for one. Either way the working board is mirrored into IndexedDB as you go, so
+closing the tab mid-edit doesn't lose anything.
 
 ## Layout
 
@@ -88,16 +99,29 @@ web/
                   app.css           layout, canvas chrome, item cards
   assets/js/
     main.js       boot + the command set the UI and keyboard share
-    state.js      board state, selection, undo/redo
+    state.js      board state, selection, undo/redo, clipboard
+    geometry.js   where an item is and what it covers
     util.js       helpers
-    canvas/       viewport.js  grid.js  items.js  input.js
-    import/       drop.js  renderers.js  formats.js (generated)
+    canvas/       viewport.js  grid.js  items.js  input.js  web.js
+                  stills.js  renderers.js  notes.js  audio.js
+    import/       drop.js  formats.js (generated)
     arrange/      arrangements.js
     storage/      storage.js  mbrd.js  zip.js  idb.js  assets.js
-    ui/           sidebar.js  appearance.js
-serve.py  server.bat  save.bat
+    ui/           sidebar.js  appearance.js  menu.js  trash.js
+serve.py  qr.py  server.bat  save.bat
 tools/gen-formats.mjs   regenerates import/formats.js from file-analyser
+tests/                  node --test; `npm test`. Dev only - nothing ships.
 ```
+
+Dependencies run one way: `util`/`geometry` ← `state` ← {`import`, `storage`,
+`canvas`} ← `ui`, with `canvas` reaching into `import` for the format catalog.
+Anything that builds an item's DOM lives under `canvas/`, which is why the
+renderers, the note editor and the audio transport are there rather than under
+`import/` or `ui/`.
+
+There is no build step, but there is a test suite: `npm test` runs it under
+Node's own runner with zero dependencies installed. Nothing in `tests/` is
+served to the browser.
 
 The rendering model is one DOM layer (`#world`) moved by a single CSS
 `translate(...) scale(...)`, so pan and zoom composite on the GPU and native

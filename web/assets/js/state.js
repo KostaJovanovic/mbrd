@@ -10,14 +10,18 @@
 //   selection  - the selection set changed
 //   settings   - a setting changed (payload: key)
 //   board      - a whole new board was loaded, or the title/dirty flag changed
-//   history    - undo/redo availability changed
 //   trash      - something was thrown away, restored, or purged
 
-import { emitter, uid } from './util.js';
+import { emitter, uid, isHash } from './util.js';
 // The asset registry remembers the filename each item arrived under, which is
 // what a cleared name falls back to - see renameItem(). One-way: assets.js
 // depends on nothing but util.js, so this cannot close a cycle.
 import { getAsset } from './storage/assets.js';
+// Pure geometry, shared with the canvas and the input layer so that "where is
+// this item and what does it cover" has exactly one answer in this app. Kept
+// at the top level rather than under canvas/ because it depends on nothing and
+// belongs to no one layer - see geometry.js.
+import { pointInItem, topEdge, itemBounds } from './geometry.js';
 
 export const bus = emitter();
 
@@ -58,9 +62,16 @@ export function topZ() {
   return board.items.reduce((m, i) => Math.max(m, i.z || 0), 0);
 }
 
-/** Normalise a partial item into the full persisted shape. */
+/**
+ * Normalise a partial item into the full persisted shape.
+ *
+ * Total, deliberately: it is handed objects straight out of somebody else's
+ * board.json, and it must not be able to throw part-way through rebuilding a
+ * board - see loadBoard. Every field is coerced rather than trusted, and a
+ * value that cannot be coerced falls back to the default for its slot.
+ */
 export function makeItem(partial) {
-  let meta = partial.meta || {};
+  let meta = partial.meta && typeof partial.meta === 'object' ? partial.meta : {};
   // The one funnel every item passes through on its way onto the board, which
   // makes it the place to hold a note to its ceiling. The editor enforces the
   // same limit while you type; this catches the other doors - an older .mbrd,
@@ -69,18 +80,35 @@ export function makeItem(partial) {
     meta = { ...meta, text: meta.text.slice(0, NOTE_MAX) };
   }
   return {
-    id: partial.id || uid(),
-    type: partial.type || 'generic',
+    id: typeof partial.id === 'string' && partial.id ? partial.id.slice(0, 64) : uid(),
+    type: typeof partial.type === 'string' && partial.type ? partial.type : 'generic',
     x: +partial.x || 0,
     y: +partial.y || 0,
     w: +partial.w || 240,
     h: +partial.h || 180,
     rot: +partial.rot || 0,
-    z: partial.z != null ? +partial.z : topZ() + 1,
-    name: partial.name || '',
-    asset: partial.asset || null,
+    z: partial.z != null && Number.isFinite(+partial.z) ? +partial.z : topZ() + 1,
+    name: typeof partial.name === 'string' ? partial.name.slice(0, 260) : '',
+    asset: normalizeAsset(partial.asset),
     meta,
   };
+}
+
+/**
+ * An item's link to its bytes, or null.
+ *
+ * The hash is checked for shape here rather than only where it is used, because
+ * of what it becomes downstream: storage/mbrd.js spells it into an archive path
+ * and the asset store treats it as an identity. An id that is not a digest can
+ * never resolve to bytes anyway - dropping it leaves a card that shows as a
+ * plain one, which is honest, where keeping it leaves a board that also cannot
+ * be exported. `external` is the reserved link-instead-of-embed form and has no
+ * hash to check; it is carried through untouched.
+ */
+function normalizeAsset(asset) {
+  if (!asset || typeof asset !== 'object') return null;
+  if (isHash(asset.hash)) return asset;
+  return asset.external ? { external: asset.external } : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -91,9 +119,6 @@ const undoStack = [];
 const redoStack = [];
 const HISTORY_LIMIT = 200;
 
-export const canUndo = () => undoStack.length > 0;
-export const canRedo = () => redoStack.length > 0;
-
 /** Run `redo` now and remember how to reverse it. */
 export function commit(label, redo, undo) {
   redo();
@@ -101,7 +126,6 @@ export function commit(label, redo, undo) {
   if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
   redoStack.length = 0;
   markDirty();
-  bus.emit('history');
 }
 
 export function undo() {
@@ -110,7 +134,6 @@ export function undo() {
   cmd.undo();
   redoStack.push(cmd);
   markDirty();
-  bus.emit('history');
   return true;
 }
 
@@ -120,14 +143,12 @@ export function redo() {
   cmd.redo();
   undoStack.push(cmd);
   markDirty();
-  bus.emit('history');
   return true;
 }
 
-export function clearHistory() {
+function clearHistory() {
   undoStack.length = 0;
   redoStack.length = 0;
-  bus.emit('history');
 }
 
 // ---------------------------------------------------------------------------
@@ -135,7 +156,23 @@ export function clearHistory() {
 // ---------------------------------------------------------------------------
 
 export function addItems(items, label = 'Add') {
-  const added = items.map(makeItem);
+  // The stack is dealt here rather than left to makeItem().
+  //
+  // makeItem() defaults `z` to topZ() + 1, which reads the *live* board - and
+  // the batch is not on it yet. So a group added in one call every one of them
+  // read the same number and landed on a single layer. One flat layer is a
+  // stacking order nobody chose, and two things went wrong on top of it:
+  // duplicating a pile came back flat, defeating the sort in itemsIn() that
+  // exists for exactly that reason, and stuckTo() - which needs a *strictly*
+  // lower z - stopped recognising the pair. Copy a photo with a note on it and
+  // the copied note was not stuck to the copied photo; it silently attached
+  // itself to whatever else happened to be underneath.
+  //
+  // An explicit z is still honoured, because loadBoard() and the bin restore
+  // items that already have one and must come back exactly where they were.
+  let z = topZ();
+  const added = items.map(partial =>
+    makeItem(partial.z != null ? partial : { ...partial, z: ++z }));
   commit(label,
     () => { board.items.push(...added.filter(a => !byId(a.id))); bus.emit('items'); },
     () => { const ids = new Set(added.map(a => a.id));
@@ -151,7 +188,7 @@ export function addItems(items, label = 'Add') {
  * asset's bytes into the saved file, so an unbounded one would quietly make a
  * board grow forever as you worked on it.
  */
-export const TRASH_LIMIT = 60;
+const TRASH_LIMIT = 60;
 
 export function removeItems(ids, label = 'Delete') {
   const set = new Set(ids);
@@ -163,16 +200,29 @@ export function removeItems(ids, label = 'Delete') {
   // Built once, outside the closures, so redoing a delete puts the *same*
   // entries back in the bin rather than minting new ones with a later date.
   const binned = removed.map(r => ({ item: r.item, at: Date.now() }));
+  // What this delete pushed out the bottom of the bin, so undo can put it back.
+  //
+  // Truncating used to be a one-liner on the grounds that the entries falling
+  // out are older than the delete and so belong to no undo entry being replayed
+  // - which is true and beside the point. They were still in the bin before
+  // this command ran and gone after it, which makes them part of what it did.
+  // On a full bin, deleting one item and immediately undoing it left the bin
+  // one entry short for good, and the entry that vanished was the oldest thing
+  // in there: the one furthest past the point of being able to get it back any
+  // other way.
+  let evicted = [];
   commit(label,
     () => { board.items = board.items.filter(i => !set.has(i.id));
             set.forEach(id => selection.delete(id));
             board.trash.unshift(...binned);
-            // Anything the limit pushes out is older than this delete and so
-            // belongs to no undo entry being replayed here.
-            if (board.trash.length > TRASH_LIMIT) board.trash.length = TRASH_LIMIT;
+            evicted = board.trash.splice(TRASH_LIMIT);   // [] while under the limit
             bus.emit('items'); bus.emit('selection'); bus.emit('trash'); },
     () => { for (const r of removed) board.items.splice(r.index, 0, r.item);
             board.trash = board.trash.filter(t => !set.has(t.item.id));
+            // Back on the end, which is where they were: the entries this
+            // command added went on the front, and undo has just taken them off.
+            board.trash.push(...evicted);
+            evicted = [];
             bus.emit('items'); bus.emit('trash'); });
 }
 
@@ -254,7 +304,7 @@ export function commitGeom(label, before) {
   commit(label, () => applyGeom(after), () => applyGeom(before));
 }
 
-export function bottomZ() {
+function bottomZ() {
   return board.items.reduce((m, i) => Math.min(m, i.z || 0), 0);
 }
 
@@ -318,17 +368,6 @@ function cloneItem(i, dx = 0, dy = 0) {
   };
 }
 
-/** The axis-aligned box around a set of items, or null for none. */
-function boundsOf(items) {
-  if (!items.length) return null;
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const i of items) {
-    x0 = Math.min(x0, i.x - i.w / 2); x1 = Math.max(x1, i.x + i.w / 2);
-    y0 = Math.min(y0, i.y - i.h / 2); y1 = Math.max(y1, i.y + i.h / 2);
-  }
-  return { x0, y0, x1, y1 };
-}
-
 /** Copy items, offset a little so the copy is visibly on top of the original. */
 export function duplicateItems(ids, offset = { x: 28, y: -28 }) {
   const src = itemsIn(ids);
@@ -355,7 +394,7 @@ const clipboard = { items: [], text: '', pastes: 0 };
 export const clipboardSize = () => clipboard.items.length;
 
 /** The box the clipboard's contents were copied from, or null when it is empty. */
-export const clipboardBounds = () => boundsOf(clipboard.items);
+export const clipboardBounds = () => itemBounds(clipboard.items);
 
 /**
  * Whether the text the system clipboard is offering is the text *we* put there.
@@ -455,7 +494,7 @@ export function pasteItems(at = null) {
   if (at) {
     // n rather than n + 1, so the first paste at a given point lands *on* it
     // and only the ones after it fan out.
-    const b = boundsOf(clipboard.items);
+    const b = itemBounds(clipboard.items);
     dx = at.x - (b.x0 + b.x1) / 2 + n * PASTE_STEP.x;
     dy = at.y - (b.y0 + b.y1) / 2 + n * PASTE_STEP.y;
   } else {
@@ -476,48 +515,6 @@ export function pasteItems(at = null) {
 // without the pair ever being touched together. So it is measured from live
 // geometry, once per gesture, and a board file never mentions it.
 // ---------------------------------------------------------------------------
-
-/**
- * Whether a world point lies inside an item's box.
- *
- * Tested in the item's *own* frame: the point is brought back through the
- * item's rotation and compared against the unrotated extents. That is the same
- * box the resize grips work in and the same one fit() frames, and it is the one
- * on screen. Testing the axis-aligned bounding box instead would be visibly
- * wrong for a rotated item - a card turned 45 degrees draws a diamond, and its
- * bounding box reaches half its diagonal past that into empty space, so a note
- * parked in one of those corners would claim to be stuck to nothing.
- *
- * `rot` is the only rotation accounted for. Items also rest at a small
- * presentational tilt (--item-tilt, dealt in items.js) which is deliberately
- * not part of the geometry model. It is a couple of degrees, so leaving it out
- * can only disagree with the eye a hair's breadth from an edge, which is
- * exactly where "is it over it or not" had no obvious answer anyway.
- */
-function pointInItem(px, py, it) {
-  const dx = px - it.x, dy = py - it.y;
-  // Cheap reject first, and it takes almost every pair: no rotation of the box
-  // reaches outside the circle that circumscribes it, and this costs no trig.
-  if (dx * dx + dy * dy > (it.w * it.w + it.h * it.h) / 4) return false;
-  if (!it.rot) return Math.abs(dx) <= it.w / 2 && Math.abs(dy) <= it.h / 2;
-  // rot is anticlockwise-positive in world space, so undoing it is a rotation
-  // by -rot: the usual matrix with the signs on the sines swapped.
-  const rad = it.rot * Math.PI / 180;
-  const c = Math.cos(rad), s = Math.sin(rad);
-  return Math.abs(c * dx + s * dy) <= it.w / 2 &&
-         Math.abs(c * dy - s * dx) <= it.h / 2;
-}
-
-/** The two ends of an item's top edge, in world coordinates (+y is up). */
-function topEdge(it) {
-  const rad = (it.rot || 0) * Math.PI / 180;
-  const c = Math.cos(rad), s = Math.sin(rad);
-  const hw = it.w / 2, hh = it.h / 2;
-  return [
-    { x: it.x - c * hw - s * hh, y: it.y - s * hw + c * hh },
-    { x: it.x + c * hw - s * hh, y: it.y + s * hw + c * hh },
-  ];
-}
 
 /**
  * The item a sticky note is stuck to, or null.
@@ -652,10 +649,22 @@ export function retypeItem(id, next, label = 'Change item') {
  * it had, and only one that never had a name can come out of this without one -
  * which costs it nothing, because it had no plate to lose.
  */
+/**
+ * Rename an item, or clear the name to get the original filename back.
+ *
+ * The fallback order is the point. `meta.origName` is written at import and
+ * travels in board.json, so it survives a save and reopen; the asset registry's
+ * copy is the older path and only holds for assets registered this session,
+ * because the archive carries bytes and hashes but no filenames. Consulting
+ * only the registry meant that after a round trip, clearing the name of a
+ * renamed item handed back the *renamed* value - the original had nowhere to
+ * have been kept.
+ */
 export function renameItem(id, name) {
   const it = byId(id);
   if (!it) return;
   const next = String(name ?? '').trim() ||
+               it.meta?.origName ||
                (it.asset && getAsset(it.asset.hash)?.name) || it.name;
   if (it.name === next) return;
   const prev = it.name;
@@ -671,11 +680,6 @@ export function renameItem(id, name) {
 export function select(ids, additive = false) {
   if (!additive) selection.clear();
   for (const id of ids) selection.add(id);
-  bus.emit('selection');
-}
-
-export function deselect(ids) {
-  for (const id of ids) selection.delete(id);
   bus.emit('selection');
 }
 
@@ -712,44 +716,31 @@ export function setTitle(title) {
   bus.emit('board');
 }
 
-/** Replace the whole board (open / new). Clears selection and history. */
+/**
+ * Replace the whole board (open / new). Clears selection and history.
+ *
+ * Two steps, and the split is the whole of it: normalise() builds a complete
+ * replacement board out of the incoming data and cannot throw, then the
+ * assignments below swap it in with nothing left that can fail between them.
+ *
+ * It used to assign field by field straight from `data`, which was fine right
+ * up until one of those fields was not the shape it looked like. `board.json`
+ * arrives parsed but unvalidated - it is JSON from a file this app did not
+ * necessarily write - and `(data.items || []).map(...)` throws on anything that
+ * is not an array. By then the title, the view, the settings and the
+ * arrangement had already been replaced, so a board that failed to open left
+ * the user looking at their own items under someone else's title, with no way
+ * back: there is no undo across a load, by design. Half a board is the one
+ * outcome an open must not have.
+ */
 export function loadBoard(data) {
-  board.title = data.title || 'Untitled board';
-  board.view = {
-    pan: { x: +data.view?.pan?.x || 0, y: +data.view?.pan?.y || 0 },
-    zoom: +data.view?.zoom || 1,
-  };
-  board.settings = {
-    ...DEFAULT_SETTINGS,
-    ...(data.settings || {}),
-    appearance: {
-      // Carried through explicitly, and this is the line whose absence lost it.
-      // Rebuilding this object key by key overrides the spread above, so an
-      // axis position written out with the rest of settings was dropped by
-      // every load path there is - a reopened session, an opened .mbrd,
-      // somebody else's board. It only ever looked like it worked because
-      // ui/appearance.js keeps its own copy in localStorage, which masks the
-      // loss until the two disagree.
-      //
-      // Spread conditionally rather than written as a plain key: an explicit
-      // `whimsy: undefined` still puts the property there, and hasLook() tests
-      // `whimsy != null`, so a board that genuinely brought no look would start
-      // claiming it had one and would override the user's own saved axis with a
-      // default. Left unclamped, because ui/appearance.js clamps whatever it is
-      // handed - which is the right place for it, this value also arriving from
-      // files this app did not write.
-      ...(data.settings?.appearance?.whimsy != null
-        ? { whimsy: data.settings.appearance.whimsy }
-        : {}),
-      palette: data.settings?.appearance?.palette || '',
-      vars: { ...(data.settings?.appearance?.vars || {}) },
-    },
-  };
-  board.arrangement = data.arrangement || 'spiral';
-  board.items = (data.items || []).map(makeItem);
-  board.trash = (data.trash || [])
-    .filter(t => t && t.item)
-    .map(t => ({ item: makeItem(t.item), at: +t.at || 0 }));
+  const next = normalizeBoard(data);
+  board.title = next.title;
+  board.view = next.view;
+  board.settings = next.settings;
+  board.arrangement = next.arrangement;
+  board.items = next.items;
+  board.trash = next.trash;
   selection.clear();
   clearHistory();
   // The clipboard cannot cross a board. Opening one calls clearAssets(), so a
@@ -768,6 +759,63 @@ export function loadBoard(data) {
   bus.emit('items');
   bus.emit('selection');
   bus.emit('trash');
+}
+
+/**
+ * A whole board, built from whatever arrived, with no way to fail.
+ *
+ * Every container is checked for the shape it is about to be used as rather
+ * than assumed, so a hand-written or truncated board.json degrades to defaults
+ * one field at a time instead of throwing half-way through a load.
+ */
+function normalizeBoard(data) {
+  const src = data && typeof data === 'object' ? data : {};
+  const settings = src.settings && typeof src.settings === 'object' ? src.settings : {};
+  const appearance = settings.appearance && typeof settings.appearance === 'object'
+    ? settings.appearance : {};
+  const items = Array.isArray(src.items) ? src.items : [];
+  const trash = Array.isArray(src.trash) ? src.trash : [];
+
+  return {
+    title: typeof src.title === 'string' && src.title ? src.title : 'Untitled board',
+    view: {
+      pan: { x: +src.view?.pan?.x || 0, y: +src.view?.pan?.y || 0 },
+      zoom: +src.view?.zoom || 1,
+    },
+    settings: {
+      ...DEFAULT_SETTINGS,
+      ...settings,
+      appearance: {
+        // Carried through explicitly, and this is the line whose absence lost
+        // it. Rebuilding this object key by key overrides the spread above, so
+        // an axis position written out with the rest of settings was dropped by
+        // every load path there is - a reopened session, an opened .mbrd,
+        // somebody else's board. It only ever looked like it worked because
+        // ui/appearance.js keeps its own copy in localStorage, which masks the
+        // loss until the two disagree.
+        //
+        // Spread conditionally rather than written as a plain key: an explicit
+        // `whimsy: undefined` still puts the property there, and hasLook()
+        // tests `whimsy != null`, so a board that genuinely brought no look
+        // would start claiming it had one and would override the user's own
+        // saved axis with a default. Left unclamped, because ui/appearance.js
+        // clamps whatever it is handed - which is the right place for it, this
+        // value also arriving from files this app did not write. Same for
+        // `vars`: ui/appearance.js is what decides which tokens a board is
+        // allowed to set, and it applies that rule to every look it is given.
+        ...(appearance.whimsy != null ? { whimsy: appearance.whimsy } : {}),
+        palette: typeof appearance.palette === 'string' ? appearance.palette : '',
+        vars: appearance.vars && typeof appearance.vars === 'object'
+          ? { ...appearance.vars } : {},
+      },
+    },
+    arrangement: typeof src.arrangement === 'string' && src.arrangement
+      ? src.arrangement : 'spiral',
+    items: items.filter(it => it && typeof it === 'object').map(makeItem),
+    trash: trash
+      .filter(t => t && t.item && typeof t.item === 'object')
+      .map(t => ({ item: makeItem(t.item), at: +t.at || 0 })),
+  };
 }
 
 /** The serialisable board, exactly as it lands in board.json. */

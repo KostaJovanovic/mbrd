@@ -19,8 +19,8 @@
 // below, which is as much about the moment the check runs as about the check.
 
 import { byId, bus, markDirty, setItemText, retypeItem, NOTE_MAX } from '../state.js';
-import { nodeFor } from '../canvas/items.js';
-import { linkURL, linkDraft } from '../import/renderers.js';
+import { nodeFor } from './items.js';
+import { linkURL, linkDraft } from './renderers.js';
 
 /**
  * Height this note needs, in world px, for its text at `width`.
@@ -162,6 +162,7 @@ export function editNote(id) {
   function finish() {
     if (done) return;
     done = true;
+    if (editing?.finish === finish) editing = null;
     card.removeEventListener('beforeinput', onBeforeInput);
     card.removeEventListener('input', onInput);
     card.removeEventListener('keydown', onKey);
@@ -180,8 +181,36 @@ export function editNote(id) {
   card.addEventListener('input', onInput);
   card.addEventListener('keydown', onKey);
   card.addEventListener('focusout', onFocusOut);
+  editing = { id, finish };
   countLeft();
   caretToEnd(head);
+}
+
+/**
+ * The note currently being edited, if any, so it can be closed from outside.
+ *
+ * There is only ever one: opening an editor moves focus, which fires focusout
+ * on any other and finishes it.
+ */
+let editing = null;
+
+/**
+ * Commit any note being edited right now, and say whether there was one.
+ *
+ * Until this existed, a note's text lived only in contenteditable DOM between
+ * the first keystroke and the blur that ended the edit. Everything else about
+ * the note was already state - typing calls growNote(), which changes the
+ * item's height, which schedules a snapshot - so an autosave taken mid-edit
+ * recorded the *new* height with the *old* text. And a teardown that never
+ * delivers a usable focusout (a closed tab, a crash, a phone reclaiming the
+ * page) lost the edit outright.
+ *
+ * Synchronous, so it can be called from pagehide, where nothing may await.
+ */
+export function flushNoteEdit() {
+  if (!editing) return false;
+  editing.finish();
+  return true;
 }
 
 /**

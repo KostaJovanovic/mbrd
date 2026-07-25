@@ -1,7 +1,7 @@
 // Boot: build the viewport, wire every subsystem to it, restore the last
 // session, and expose the command set the sidebar and keyboard both drive.
 
-import { toast } from './util.js';
+import { toast, el, shuffle } from './util.js';
 import { VERSION } from './version.js';
 import {
   board, bus, selection, selectAll, removeItems, setSetting,
@@ -10,23 +10,23 @@ import {
 } from './state.js';
 import { Viewport, MIN_ZOOM, MAX_ZOOM, zoomMs, travelMs } from './canvas/viewport.js';
 import { paintGrid } from './canvas/grid.js';
-import { initItems, resetItems, nodeFor } from './canvas/items.js';
+import { initItems, resetItems } from './canvas/items.js';
 import { initWeb } from './canvas/web.js';
 import { initStills } from './canvas/stills.js';
 import { initInput } from './canvas/input.js';
 import { initDrop, pickFiles, addNote } from './import/drop.js';
 import { arrange } from './arrange/arrangements.js';
 import {
-  initStorage, restoreSession, saveBoard, exportBoard, openBoard, newBoard, openFile,
+  initStorage, restoreSession, saveBoard, exportBoard, openBoard, newBoard, openFile, autosave,
 } from './storage/storage.js';
+import { flushNoteEdit } from './canvas/notes.js';
+import { initAssets } from './storage/assets.js';
 import { initSidebar, close as closeSidebar } from './ui/sidebar.js';
 import { initMenu, openContextMenu, close as closeMenu } from './ui/menu.js';
 import { initTrash } from './ui/trash.js';
 import { initAppearance, resetAppearance } from './ui/appearance.js';
-import { initAudio } from './ui/audio.js';
-import { editNote, growNote } from './ui/notes.js';
-
-const el = id => document.getElementById(id);
+import { initAudio } from './canvas/audio.js';
+import { editNote, growNote } from './canvas/notes.js';
 
 const vp = new Viewport(el('viewport'), el('world'), el('axis-x'), el('axis-y'), el('origin-mark'));
 
@@ -87,6 +87,7 @@ const cmds = {
 // Wiring
 // ---------------------------------------------------------------------------
 
+initAssets();
 initAppearance();
 initAudio();
 initSidebar(cmds);
@@ -101,11 +102,23 @@ initStorage();
 
 // The grid is screen-space, so it repaints on every view change - cheap: it is
 // four CSS gradients, not a canvas.
+// The view is board state and is saved with the board, but it changes on every
+// frame of a pan - so it is written here on each change and *announced* on a
+// trailing timer. Without the announcement nothing scheduled an autosave, and a
+// board closed after nothing but panning came back at the view it had before,
+// which is not where the user left it. Without the timer, every pan would queue
+// a snapshot per frame.
+let viewSettle = 0;
 vp.onChange(() => {
   paintGrid(vp);
   board.view.pan = { x: vp.pan.x, y: vp.pan.y };
   board.view.zoom = vp.zoom;
   paintZoom();
+  clearTimeout(viewSettle);
+  // Its own event rather than 'settings', which several modules repaint on -
+  // and deliberately not markDirty(): looking around a board is not editing it,
+  // and a pan that raised "unsaved changes" on the way out would be a lie.
+  viewSettle = setTimeout(() => bus.emit('view'), 400);
 });
 
 // ---------------------------------------------------------------------------
@@ -191,11 +204,7 @@ function rearrange() {
   // time you press it reads as broken. The shuffle is what makes it a
   // rearrangement rather than a re-application: same layout, items dealt into
   // it in a fresh order.
-  const order = items.map((_, i) => i);
-  for (let i = order.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [order[i], order[j]] = [order[j], order[i]];
-  }
+  const order = shuffle(items.map((_, i) => i));
   const spots = arrange(order.map(i => items[i]), {
     name: board.arrangement,
     center: { x: 0, y: 0 },
@@ -222,7 +231,22 @@ window.mbrd = { board, bus, vp, cmds, selection };
 // Start
 // ---------------------------------------------------------------------------
 
-(async function start() {
+// A note being written is the one piece of board state that is not in `board`
+// yet: its text lives in contenteditable DOM until the blur that ends the edit.
+// So the page going away has to close the editor first, or the snapshot behind
+// it saves the note's new *height* with its old text - and a tab that is closed
+// or reclaimed mid-sentence loses the sentence.
+//
+// visibilitychange is the reliable one - a phone discarding the page may never
+// run pagehide - and both are cheap, because flushNoteEdit() does nothing at
+// all unless a note is actually open.
+const flushEdits = () => { if (flushNoteEdit()) autosave().catch(() => {}); };
+addEventListener('pagehide', flushEdits);
+addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushEdits();
+});
+
+const started = (async function start() {
   const restored = await restoreSession();
   if (restored) {
     vp.setView(board.view.pan, board.view.zoom);
@@ -239,11 +263,21 @@ window.mbrd = { board, bus, vp, cmds, selection };
 
 // Installed as a PWA, "Open with mbrd" on a .mbrd hands us the file here
 // (manifest.json file_handlers). The desktop equivalent lands in M4 via Tauri.
+//
+// Waits for start(), which is the whole of the fix. Both of these load a board
+// and both register assets, and start() yields at its first await - so the OS
+// handing over a file while IndexedDB was still being read had the two racing:
+// whichever loadBoard() finished last won the board, while the asset registry
+// ended up holding an interleaving of both. Restoring first and then opening
+// over the top is the same result the user would get by opening the file
+// themselves, which is what they asked for.
 if ('launchQueue' in window) {
   launchQueue.setConsumer(async ({ files }) => {
     if (!files?.length) return;
-    try { await openFile(await files[0].getFile(), files[0]); }
-    catch (err) { console.warn('[mbrd] launch file:', err); }
+    try {
+      await started;
+      await openFile(await files[0].getFile(), files[0]);
+    } catch (err) { console.warn('[mbrd] launch file:', err); }
   });
 }
 
