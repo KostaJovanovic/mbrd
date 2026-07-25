@@ -21,7 +21,7 @@ export const DEFAULT_SETTINGS = {
   axes: true,
   snap: false,
   hud: true,
-  gridStyle: 'dots',   // dots | lines | graph
+  gridStyle: 'dots',   // the only style; kept so old .mbrd files still load
   gridStep: 64,        // world px between minor grid lines, before zoom quantisation
   spacing: 32,         // gap used by the arrangement engine
   appearance: { palette: '', vars: {} },

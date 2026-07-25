@@ -138,9 +138,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
      drift apart. */
   --sel-edge: calc((var(--sel-gap) + var(--sel-line)) * var(--iz));
   /* The lift and the tilt are zero at the plain end of the whimsy axis, so the
-     same declaration covers "springs up to meet you" and "does not move". */
+     same declaration covers "springs up to meet you" and "does not move".
+     The resting tilt is each item's own factor in [-1, 1] (written by
+     canvas/items.js, derived from its id so it never shifts under you) times
+     whatever the axis currently allows - and the drag tilt adds on top of it,
+     rather than replacing it, so picking a crooked item up keeps it crooked. */
   translate: 0 calc(var(--lift) * var(--iz));
-  rotate: var(--tilt);
+  rotate: calc(var(--item-tilt, 0) * var(--tilt-max) + var(--tilt));
   scale: var(--grow);
   --lift: 0px;
   --tilt: 0deg;

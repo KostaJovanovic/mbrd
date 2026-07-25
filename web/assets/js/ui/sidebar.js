@@ -52,10 +52,6 @@ export function initSidebar(cmds) {
   bindCheck('opt-snap', 'snap');
   bindCheck('opt-hud', 'hud');
 
-  const gridStyle = el('opt-gridstyle');
-  gridStyle.value = board.settings.gridStyle;
-  gridStyle.addEventListener('change', () => setSetting('gridStyle', gridStyle.value));
-
   el('version').textContent = 'v' + VERSION;
   el('save-hint').textContent = canPickFiles()
     ? 'Save writes straight back to the same .mbrd.'
@@ -83,7 +79,6 @@ function paint() {
   node.textContent = title;
   el('board-title').append(node);
   el('arrangement').value = board.arrangement;
-  el('opt-gridstyle').value = board.settings.gridStyle;
   el('spacing').value = board.settings.spacing;
   el('spacing-out').textContent = board.settings.spacing + 'px';
   for (const [id, key] of [['opt-grid', 'grid'], ['opt-axes', 'axes'], ['opt-snap', 'snap'], ['opt-hud', 'hud']]) {

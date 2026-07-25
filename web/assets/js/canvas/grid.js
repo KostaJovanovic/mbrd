@@ -41,20 +41,13 @@ export function paintGrid(vp) {
   const images = [], sizes = [], positions = [];
   const push = (img, size, px, py) => { images.push(img); sizes.push(`${size}px ${size}px`); positions.push(`${px.toFixed(1)}px ${py.toFixed(1)}px`); };
 
+  // Dots, and only dots. Ruled lines were an option here and were the wrong
+  // one on an infinite board: at any fractional zoom a full-bleed line grid
+  // beats against the pixel grid into moire, and it competes with the world
+  // axes for the same reading. Dots mark the same lattice and stay quiet.
   // First layer paints on top, so majors are listed before minors.
-  if (s.gridStyle === 'dots') {
-    push(dot('var(--grid-major)', 'calc(var(--grid-dot) * 1.5)'), major, o.x - major / 2, o.y - major / 2);
-    push(dot('var(--grid-minor)', 'var(--grid-dot)'), minor, o.x - minor / 2, o.y - minor / 2);
-  } else if (s.gridStyle === 'graph') {
-    // Major lines only - a calmer grid for busy boards.
-    push(line(90, 'var(--grid-major)'), major, o.x, o.y);
-    push(line(180, 'var(--grid-major)'), major, o.x, o.y);
-  } else {
-    push(line(90, 'var(--grid-major)', 'calc(var(--grid-dot) * 1.2)'), major, o.x, o.y);
-    push(line(180, 'var(--grid-major)', 'calc(var(--grid-dot) * 1.2)'), major, o.x, o.y);
-    push(line(90, 'var(--grid-minor)'), minor, o.x, o.y);
-    push(line(180, 'var(--grid-minor)'), minor, o.x, o.y);
-  }
+  push(dot('var(--grid-major)', 'calc(var(--grid-dot) * 1.5)'), major, o.x - major / 2, o.y - major / 2);
+  push(dot('var(--grid-minor)', 'var(--grid-dot)'), minor, o.x - minor / 2, o.y - minor / 2);
 
   el.style.backgroundImage = images.join(', ');
   el.style.backgroundSize = sizes.join(', ');
@@ -63,6 +56,3 @@ export function paintGrid(vp) {
 
 const dot = (color, r) =>
   `radial-gradient(circle at center, ${color} 0, ${color} ${r}, transparent calc(${r} + 0.7px))`;
-
-const line = (deg, color, t = 'var(--grid-dot)') =>
-  `linear-gradient(${deg}deg, ${color} 0, ${color} ${t}, transparent ${t})`;

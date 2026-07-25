@@ -32,6 +32,9 @@ const STORE_KEY = 'mbrd.appearance';
  */
 export const WHIMSY = ['Warm', 'Middle', 'Harsh'];
 
+/** Where a board starts: the middle, which is also the bare stylesheet. */
+const DEFAULT_WHIMSY = 1;
+
 /**
  * Tokens the whimsy axis owns. A hand-set value beats any stylesheet, which is
  * what you want for a pigment - but not for these: leaving a hand-picked 13px
@@ -52,7 +55,8 @@ const CONTROLS = [
 ];
 
 const root = document.documentElement;
-let current = { whimsy: 0, palette: '', vars: {} };
+const themeColour = document.querySelector('meta[name="theme-color"]');
+let current = { whimsy: DEFAULT_WHIMSY, palette: '', vars: {} };
 let onChange = () => {};
 
 export function initAppearance(handlers = {}) {
@@ -106,13 +110,14 @@ export function setPigments(vars) {
     current.vars[key] = value;
     root.style.setProperty(key, value);
   }
+  paintThemeColour();
   persist();
   syncControls();
 }
 
 export function resetAppearance() {
   for (const key of Object.keys(current.vars)) root.style.removeProperty(key);
-  current = { whimsy: 0, palette: '', vars: {} };
+  current = { whimsy: DEFAULT_WHIMSY, palette: '', vars: {} };
   apply(current);
   persist();
   syncControls();
@@ -121,15 +126,29 @@ export function resetAppearance() {
 // ---------------------------------------------------------------------------
 
 function apply(look) {
-  // Level 0 is the absence of the attribute, so the default look needs nothing
-  // set - which is also what the pre-paint script in index.html relies on.
-  if (look.whimsy) root.dataset.whimsy = look.whimsy;
-  else delete root.dataset.whimsy;
+  // Always written, including the default: the stylesheet's base *is* the
+  // middle, so an absent attribute already means 1 - but 0 is a real level
+  // with its own rules, and leaving the attribute off for it would silently
+  // land on the middle instead.
+  root.dataset.whimsy = look.whimsy;
   if (look.palette) root.dataset.palette = look.palette;
   else delete root.dataset.palette;   // no attribute = the default, Papyrus
   for (const [key, value] of Object.entries(look.vars || {})) {
     root.style.setProperty(key, value);
   }
+  paintThemeColour();
+}
+
+/**
+ * The installed-PWA title bar takes the paper colour, which moves with the
+ * palette, the axis and any hand-set override - so it is repainted from the
+ * computed value rather than left at whatever Papyrus happened to be when
+ * index.html was written.
+ */
+function paintThemeColour() {
+  if (!themeColour) return;
+  const paper = getComputedStyle(root).getPropertyValue('--paper').trim();
+  if (paper) themeColour.setAttribute('content', paper);
 }
 
 function persist() {
@@ -142,6 +161,7 @@ function persist() {
 function setVar(name, value) {
   current.vars[name] = value;
   root.style.setProperty(name, value);
+  if (name === '--paper') paintThemeColour();
   persist();
 }
 
@@ -153,14 +173,20 @@ function readStored() {
   }
 }
 
+// Compared against the default rather than tested for truthiness: whimsy 0 is
+// Warm, a deliberate choice, and `!0` would file a board saved at that end of
+// the axis as having brought no look at all.
 const hasLook = look =>
-  !!look && (look.whimsy || look.palette || Object.keys(look.vars || {}).length);
+  !!look && ((look.whimsy != null && +look.whimsy !== DEFAULT_WHIMSY) ||
+             look.palette || Object.keys(look.vars || {}).length);
 const clone = look => ({
   // Clamped, not trusted: this value arrives from localStorage and from other
   // people's .mbrd files, and an out-of-range one would set a data-whimsy no
   // stylesheet answers to - leaving the interface in whatever the base look is
   // while the slider claims otherwise.
-  whimsy: Math.max(0, Math.min(WHIMSY.length - 1, Math.round(+look?.whimsy) || 0)),
+  whimsy: look?.whimsy == null
+    ? DEFAULT_WHIMSY
+    : Math.max(0, Math.min(WHIMSY.length - 1, Math.round(+look.whimsy) || 0)),
   palette: look?.palette || '',
   vars: { ...(look?.vars || {}) },
 });
