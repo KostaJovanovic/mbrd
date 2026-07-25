@@ -142,7 +142,43 @@ function videoSize(file) {
 /** Build the inner DOM for an item. Async content fills itself in afterwards. */
 export function buildContent(item) {
   const fn = RENDERERS[item.type] || RENDERERS.generic;
-  return fn(item);
+  const content = fn(item);
+  // Any card may carry a chosen picture, and it is attached here rather than in
+  // each renderer so that a type added later gets it for free - the same reason
+  // adding a type is meant to be one entry in RENDERERS and nothing else.
+  //
+  // The test is for a `.card`, which quietly says the right thing: the only two
+  // renderers that do not return one are image and video, and they hand back a
+  // fragment because they *are* the picture. Giving those a cover as well would
+  // be a picture in front of a picture.
+  const cover = coverEl(item);
+  if (cover && content.classList?.contains('card')) {
+    content.classList.add('has-cover');
+    content.prepend(cover);
+  }
+  return content;
+}
+
+/**
+ * The picture an item was given, or null. See setItemCover() in state.js.
+ *
+ * Null when the hash names nothing, which is a real state and not a fault: a
+ * board can be opened from a .mbrd whose assets are still being registered, and
+ * a card with no cover is what it looked like before anyway. The alternative -
+ * an <img> with no src - is a broken-image icon on a card that was fine.
+ */
+function coverEl(item) {
+  const url = item.meta?.cover ? assetURL(item.meta.cover) : null;
+  if (!url) return null;
+  const img = document.createElement('img');
+  img.className = 'card-cover';
+  // Decorative: the card's name is right beside it and says the same thing, so
+  // announcing the picture as well would read the card out twice.
+  img.alt = '';
+  img.decoding = 'async';
+  img.draggable = false;
+  img.src = url;
+  return img;
 }
 
 const RENDERERS = {

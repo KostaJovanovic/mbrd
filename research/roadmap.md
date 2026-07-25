@@ -322,3 +322,103 @@ Last because it is the only item that changes what this project is made of.
 - **Favicons on link cards.** Deliberately not built: it is a request to the
   linked site, which tells them the board holds a link to them, and it would
   make an offline board render differently from an online one.
+
+---
+
+# Handover — the JS half, 2026-07-25
+
+Written by the session doing JavaScript, for the session doing CSS. I touched
+no `.css` file. Everything below is either done and needing styling, or a
+correction to what this document said before.
+
+## What you need to style
+
+Four things now emit markup that has no rules yet. In rough order of how broken
+they look without you:
+
+**`#search` — the find palette (`ui/search.js`).** New, and the most exposed:
+it is a `<div>` appended to `<body>` with no position of its own, so today it
+lands at the bottom of the document flow. Structure:
+
+```
+#search[role=dialog]
+  input#search-field[role=combobox]
+  #search-hits[role=listbox]
+    button.search-hit[role=option]   ( .is-at marks the keyboard highlight )
+      span.search-kind               ( "image", "note", "audio" )
+      span.search-name
+      span.search-where              ( the matched snippet; often empty )
+    p.search-note                    ( shown instead of rows when empty )
+```
+
+It wants to be a palette pinned near the top of the viewport, above the canvas
+and above the sidebar. `.is-at` needs to be legible without hover, since the
+arrow keys drive it and the pointer is usually nowhere near. `.search-where` is
+a single line that should truncate rather than wrap.
+
+**`.card-cover` — a chosen picture on a card (`canvas/renderers.js`).** Any card
+that is not itself a picture can carry one: audio, text, link, note, generic.
+The `<img>` is prepended inside `.card`, and the card also gets `.has-cover`, so
+you can restyle the whole card rather than only the image. It should read as the
+card's subject — album art, a diagram — not as decoration beside the name. On an
+audio card it is the thing the waveform used to be alone in doing.
+
+**`.card-audio` under `.zoom-far`.** Still yours, still unbuilt — roadmap item 8.
+Note the threshold moved: `zoom-far` now engages below **0.4**, not 0.35.
+
+**The Harsh grid.** Nothing for you to write, but it changed under you — see
+below.
+
+## What changed in JS that lands on your side
+
+- **`FAR_ZOOM` and `STILL_ZOOM` are both `0.4`** and the comparisons agree
+  (`<` in both). Chrome hiding and GIF freezing are one rung now. Anything you
+  hang off `.zoom-far` fires earlier than it used to.
+- **Sticky notes default to 120×120**, down from 240. Existing boards keep their
+  saved sizes. `.note-title` at `var(--t-display)` is 28px in Softish, which on
+  a 120px sheet leaves about three lines of body — the type step-down is yours
+  and the small size is not really usable until it exists.
+- **The Harsh grid draws real crosses now.** It was two elliptical gradients
+  whose arms tapered to points; it is now one SVG polygon per mark, square
+  ends, uniform density. The consequence for you: at Harsh the mark's colour and
+  size are **resolved in JS and baked into a data URI**, so `--grid-major`,
+  `--grid-minor` and `--grid-dot` no longer restyle it for free. `ui/appearance.js`
+  hands the resolved values back on every look change and the grid repaints, so
+  the sliders still work — but if you add a rule that changes those tokens by
+  some route that does not go through `persist()` or `bus.emit('settings')`, the
+  crosses will not notice. The other two tiers are untouched and still pure
+  gradients.
+- **`Free` is now labelled `Free (no layout)`** in the arrangement menu. It used
+  to say "keep positions" and that stopped being true.
+
+## Corrections to this document
+
+- **Item 6 / Parked "finalise the serif": Newsreader, Literata and Source Serif 4
+  are not in the repository.** `web/assets/fonts/` holds Fraunces and Geist and
+  nothing else. The live font switcher exists and works, but it can only compare
+  Fraunces against faces the operating system already has. Someone has to fetch
+  those three woff2 files and their licences before the parked question can
+  actually be settled.
+- **Item 5 said the fix was to vary the seed.** The seed was already being
+  varied; `scatter` was the only layout that read it. All seven read it now.
+
+## Done, JS side
+
+Items **2** (copy/cut/paste toasts), **3** (note size), **4** (paste under the
+cursor), **5** (rearrange varies the slots, and `free` shakes in place),
+**8** (the zoom ladder, JS half), **10** (search), **11** (a picture on any
+card), **12** (album art — ID3v2, MP4 and FLAC parsed by hand, no dependency).
+
+Item **1** is yours and untouched. Item **7** (polaroids) is yours. Item **9**
+needs assets. Tier 4 is all marked *discussion* and none of it was decided here.
+Tier 5 was not started: **18** breaks offline-first, **22** is destructive and
+lossy, **23** would be this project's first dependency — three calls that belong
+to Kosta, not to either of us.
+
+## Not verified
+
+None of the above has been run in a browser by me. `npm test` is green and every
+file parses; that is the whole of the evidence. The surfaces that most want a
+real look: the Harsh crosses at several zooms and both grid sliders, the search
+palette once it has rules, a cover on an audio card, and whether importing a
+folder of tagged mp3s is still quick now that each one is read for art.

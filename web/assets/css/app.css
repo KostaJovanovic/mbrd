@@ -368,6 +368,36 @@ button, input, select, textarea { font: inherit; color: inherit; }
   -webkit-mask-image: linear-gradient(180deg, #000 80%, transparent);
           mask-image: linear-gradient(180deg, #000 80%, transparent);
 }
+/* A picture given to a card that is not itself one - album art off an mp3's
+   tags, or anything chosen by hand. See coverEl() in canvas/renderers.js, which
+   prepends it inside the card rather than behind it.
+
+   Inside the padding, not bled to the edges. A card here is a plate: ruled
+   just in from its own border, with the rule's radius derived from the card's
+   so the two curves stay concentric. A full-bleed cover would cross that rule
+   and turn the plate into a poster with a line drawn across it - and the rule
+   is what tells a filed card apart from a photograph on this board.
+
+   flex rather than a fixed aspect, because a cover has no aspect it is
+   entitled to. Square for album art, wide for a screenshot, tall for a poster;
+   the card was sized by its type and its own resizing, so the picture takes the
+   room the words leave and crops to it. */
+.card-cover {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  object-fit: cover;
+  display: block;
+  border-radius: var(--radius-sm);
+  /* A pale cover on pale card stock has no edge of its own - the same problem
+     the polaroid mat has, and the same hairline answers it. */
+  box-shadow: 0 0 0 var(--hairline) color-mix(in srgb, var(--ink) 10%, transparent);
+}
+
+/* The kicker earns its place on a card that is only words. Above a picture of
+   the record it is labelling a card AUDIO that is plainly a record sleeve. */
+.card.has-cover .card-icon { display: none; }
+
 /* The native player is a fixed-height control, so it is pinned to the foot of
    the card rather than left to be squeezed by the text above it. */
 /* The audio card's own transport. The <audio> element is present but never
@@ -478,6 +508,35 @@ button, input, select, textarea { font: inherit; color: inherit; }
   border-width: max(var(--hairline), calc(var(--half-min, 98px) * 0.03));
 }
 #world.zoom-far .card-audio .play svg { width: 38%; height: 38%; }
+
+/* An audio card that has album art is the one case where zooming out should
+   leave *more* than a button. A sleeve is recognisable at a size a name is not
+   - it is the only thing on a card of this kind that still says which record
+   this is from across the board - so down here the picture takes the whole card
+   and the button sits on it, which is what a sleeve with a play button on it
+   has looked like for fifteen years.
+
+   .card is already position: relative, and .item-body clips at the item's
+   radius, so the cover can simply fill the box. */
+#world.zoom-far .card-audio.has-cover { padding: 0; }
+#world.zoom-far .card-audio.has-cover::after { content: none; }   /* no rule left to be inside of */
+#world.zoom-far .card-audio.has-cover .card-cover {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  border-radius: inherit;
+  box-shadow: none;
+}
+/* Over the sleeve rather than beside it. */
+#world.zoom-far .card-audio.has-cover .transport { position: relative; }
+/* And it needs a plate under it once it is over a picture. The button is an
+   accent ring on nothing, which is legible on card stock and disappears on a
+   dark sleeve - artwork is the one background this app does not choose. Same
+   answer .vbig uses over a video's poster frame, and for the same reason. */
+#world.zoom-far .card-audio.has-cover .play {
+  background: color-mix(in srgb, var(--paper-card) 84%, transparent);
+  backdrop-filter: blur(3px);
+}
 
 /* The video transport (canvas/video.js).
    Laid over the picture rather than under it, because on a video card the
