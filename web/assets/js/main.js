@@ -6,7 +6,7 @@ import { VERSION } from './version.js';
 import {
   board, bus, selection, selectAll, removeItems, setSetting,
   snapshotGeom, applyGeom, commitGeom, undo, redo, byId,
-  raiseSelection, lowerSelection, duplicateItems, select,
+  raiseSelection, lowerSelection, duplicateItems, select, setItemCover,
 } from './state.js';
 import { Viewport, MIN_ZOOM, MAX_ZOOM, zoomMs, travelMs } from './canvas/viewport.js';
 import { paintGrid, resetGridInk } from './canvas/grid.js';
@@ -14,7 +14,7 @@ import { initItems, resetItems } from './canvas/items.js';
 import { initWeb } from './canvas/web.js';
 import { initStills } from './canvas/stills.js';
 import { initInput } from './canvas/input.js';
-import { initDrop, pickFiles, addNote } from './import/drop.js';
+import { initDrop, pickFiles, pickCover, addNote } from './import/drop.js';
 import { arrange } from './arrange/arrangements.js';
 import {
   initStorage, restoreSession, saveBoard, exportBoard, openBoard, newBoard, openFile, autosave,
@@ -23,6 +23,7 @@ import { flushNoteEdit } from './canvas/notes.js';
 import { initAssets } from './storage/assets.js';
 import { initSidebar, close as closeSidebar } from './ui/sidebar.js';
 import { initMenu, openContextMenu, close as closeMenu } from './ui/menu.js';
+import { initSearch, open as openSearch } from './ui/search.js';
 import { initTrash } from './ui/trash.js';
 import { initAppearance, resetAppearance } from './ui/appearance.js';
 import { initAudio } from './canvas/audio.js';
@@ -79,6 +80,19 @@ const cmds = {
     requestAnimationFrame(() => cmds.editNote(item.id));
   },
   canEditNote: id => byId(id)?.type === 'note',
+  // Image and video cards are already a picture; everything else can be given
+  // one. Asked of the item rather than of the renderer because this is about
+  // what the card *is*, not about which module happens to draw it.
+  canCoverItem: id => {
+    const type = byId(id)?.type;
+    return !!type && type !== 'image' && type !== 'video';
+  },
+  itemHasCover: id => !!byId(id)?.meta?.cover,
+  setCover: id => pickCover(id),
+  clearCover: id => setItemCover(id, null),
+  // On the command surface as well as on Ctrl+K, because a keyboard shortcut
+  // nothing mentions is a feature only the person who wrote it has.
+  find: () => openSearch(),
   getSetting: key => board.settings[key],
   toggleSetting: key => setSetting(key, !board.settings[key]),
 };
@@ -100,6 +114,7 @@ initWeb(el('world'));
 initStills(el('world'), vp);
 initInput(vp, cmds);
 initMenu(vp, cmds);
+initSearch(vp);
 initTrash(vp);
 initDrop(vp);
 initStorage();
