@@ -101,6 +101,20 @@ button, input, select, textarea { font: inherit; color: inherit; }
   --iz: 1;
 }
 
+/* The Harsh lattice. Empty at the other two tiers, where #viewport's own
+   background-image draws the dots - so this is either the whole grid or
+   nothing, never a second layer under one.
+   Sized in device pixels by canvas/grid.js and stretched back to CSS pixels
+   here, which is what lets a mark be snapped to the device grid rather than to
+   a CSS pixel that may be two thirds of one. */
+#grid-ink {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
 /* World axes, drawn in screen space so they stay hairline at any zoom. */
 .axis {
   position: absolute;
