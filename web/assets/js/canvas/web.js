@@ -19,15 +19,28 @@
 // the board fills up with small local triangles instead of a few long
 // diagonals stretched over everything.
 //
-// Drawn inside #world, so pan and zoom come for free from the layer transform
-// and this only ever redraws when the geometry actually changes. The stroke is
-// marked non-scaling so a thread stays a thread at 8x instead of becoming a
-// beam.
+// Drawn inside #world, so pan and zoom come for free from the layer transform.
+// The stroke is marked non-scaling so a thread stays a thread at 8x instead of
+// becoming a beam.
+//
+// Two jobs, and they are deliberately separated: `build` decides which threads
+// exist, `paint` decides which of them go into the `d` string. Only build reads
+// the board, and only paint reads the viewport, so panning across a board never
+// recomputes a spanning tree and moving an item never waits on one.
 
 import { board, bus } from '../state.js';
 import { rafThrottle } from '../util.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/**
+ * How far outside the viewport a thread is still drawn, in world px.
+ *
+ * The same 400 that items.js culls with, and for the same reason: the pan that
+ * brings a thread on screen is the frame that would otherwise have to draw it,
+ * and a margin means the work happened a frame or two earlier instead.
+ */
+const CULL_MARGIN = 400;
 
 /**
  * A thread appears and disappears by fading, which needs two things this file
@@ -54,7 +67,12 @@ const FADE_OUT_MS = 300;
 let svg = null;
 let path = null;         // every settled thread, as subpaths of one `d`
 let fadeLayer = null;    // <g> holding only the threads currently fading
-let redraw = () => {};
+let vp = null;           // for the visible rect; absent in tests, which then draw everything
+
+/** The last built geometry, reused by every paint until an item moves. */
+let builtPts = [];
+/** The box last written to the <svg>, so an unchanged one is not rewritten. */
+let lastBox = '';
 
 /** key -> { el, dir, timer, seg } for the threads mid-fade. */
 const animating = new Map();
@@ -76,7 +94,25 @@ const lastSeg = new Map();
 // worth knowing that the guarantee lives there rather than here.
 const keyOf = (a, b) => (a < b ? a + '\0' + b : b + '\0' + a);
 
-export function initWeb(worldEl) {
+/**
+ * Both jobs share one frame.
+ *
+ * A rebuild always repaints, but a repaint must never silently drop a rebuild
+ * that was asked for in the same frame - hence the flag rather than two
+ * throttles. Two would race: the paint throttle could fire first and draw the
+ * old edges, and the build throttle would then have to schedule a third frame.
+ */
+let wantBuild = false;
+let frame = () => {};
+const requestBuild = () => { wantBuild = true; frame(); };
+const requestPaint = () => frame();
+
+function tick() {
+  if (wantBuild) { wantBuild = false; build(); }
+  paint();
+}
+
+export function initWeb(worldEl, viewport) {
   svg = document.createElementNS(SVG_NS, 'svg');
   svg.id = 'web';
   svg.setAttribute('aria-hidden', 'true');
@@ -90,11 +126,17 @@ export function initWeb(worldEl) {
   // backdrop for the items, not a thing you can catch hold of.
   worldEl.prepend(svg);
 
-  redraw = rafThrottle(draw);
-  bus.on('items', redraw);
-  bus.on('geom', redraw);
-  bus.on('board:load', redraw);
-  draw();
+  vp = viewport || null;
+  frame = rafThrottle(tick);
+  bus.on('items', requestBuild);
+  bus.on('geom', requestBuild);
+  bus.on('board:load', requestBuild);
+  // Panning and zooming change which threads are worth drawing and nothing
+  // else, so they ask for a paint and never for a build.
+  if (vp) vp.onChange(requestPaint);
+
+  build();
+  paint();
 }
 
 /**
@@ -141,8 +183,9 @@ function land(key) {
   entry.el.remove();
   if (entry.dir === 'in') settled.add(key);
   else lastSeg.delete(key);
-  // The bulk path is only ever written by draw(), so ask for one.
-  redraw();
+  // The thread moved between the two layers; which threads exist did not
+  // change, so this needs the `d` rewritten and nothing more.
+  requestPaint();
 }
 
 /**
@@ -156,9 +199,12 @@ function centres() {
   return board.items.map(i => ({ id: i.id, x: i.x, y: -i.y }));
 }
 
-function draw() {
+/**
+ * Which threads exist. Runs only when an item has moved, arrived or gone.
+ */
+function build() {
   if (!svg) return;
-  const pts = centres();
+  const pts = builtPts = centres();
   // One item has nothing to connect to, and zero items have nothing at all -
   // but the threads that were there a moment ago still have a fade to finish,
   // so this is an empty edge set rather than an early return.
@@ -169,13 +215,27 @@ function draw() {
     wanted.set(keyOf(pts[a].id, pts[b].id), { a: pts[a], b: pts[b] });
   }
 
+  // A fade costs an element, a transition and a timer, and none of that is
+  // worth spending on a thread nobody can see. Opening a 400-item board used
+  // to mint eleven hundred <line> elements at once and animate every one of
+  // them, almost all outside the viewport; off screen, a thread now simply is
+  // or is not, and only the ones on screen get the courtesy of fading.
+  const vis = visibleBox();
+  const onScreen = seg => !vis || !seg ||
+    !(Math.max(seg.a.x, seg.b.x) < vis.x0 || Math.min(seg.a.x, seg.b.x) > vis.x1 ||
+      Math.max(seg.a.y, seg.b.y) < vis.y0 || Math.min(seg.a.y, seg.b.y) > vis.y1);
+
   // Threads that should be visible: settled ones just move, the rest start or
   // reverse a fade towards visible.
   for (const [key, seg] of wanted) {
     lastSeg.set(key, seg);
     if (settled.has(key)) continue;
     const live = animating.get(key);
-    if (!live) { begin(key, seg, 'in'); continue; }
+    if (!live) {
+      if (onScreen(seg)) begin(key, seg, 'in');
+      else settled.add(key);
+      continue;
+    }
     live.seg = seg;
     if (live.dir === 'out') fadeTo(key, live, 'in');
   }
@@ -184,12 +244,37 @@ function draw() {
   for (const key of [...settled]) {
     if (wanted.has(key)) continue;
     settled.delete(key);
-    begin(key, lastSeg.get(key), 'out');
+    const seg = lastSeg.get(key);
+    if (onScreen(seg)) begin(key, seg, 'out');
+    else lastSeg.delete(key);
   }
   for (const [key, live] of animating) {
     if (!wanted.has(key) && live.dir === 'in') fadeTo(key, live, 'out');
   }
+}
 
+/**
+ * The visible rect in the web's own coordinates, widened by the cull margin.
+ *
+ * World y points up and this layer is laid out with y down, so the rect flips:
+ * the top edge of the box is the *largest* world y.
+ */
+function visibleBox() {
+  if (!vp) return null;
+  const r = vp.visibleRect(CULL_MARGIN);
+  return { x0: r.x0, x1: r.x1, y0: -r.y1, y1: -r.y0 };
+}
+
+/**
+ * Which threads are drawn. Runs on a build and on every view change.
+ *
+ * A thread is kept if its bounding box meets the visible one - conservative on
+ * a long diagonal, which passes the test while barely clipping the corner, and
+ * that is the right way round: over-drawing a handful of threads costs two
+ * numbers each, and under-drawing one is a hole in the web.
+ */
+function paint() {
+  if (!svg) return;
   if (!settled.size && !animating.size) {
     svg.style.display = 'none';
     return;
@@ -200,6 +285,11 @@ function draw() {
   // an item that has just been deleted, sitting outside the box the surviving
   // centres describe - and an SVG clips at its own edge, so it would be cut in
   // half on its way out.
+  //
+  // It is the *whole* board's box, not the visible one. Sizing it to the view
+  // would move its origin on every pan, which means re-emitting every
+  // coordinate in `d` for threads that had not moved at all - the opposite of
+  // what the culling is for.
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   const stretch = p => {
     if (p.x < minX) minX = p.x;
@@ -207,28 +297,36 @@ function draw() {
     if (p.x > maxX) maxX = p.x;
     if (p.y > maxY) maxY = p.y;
   };
-  for (const p of pts) stretch(p);
+  for (const p of builtPts) stretch(p);
   for (const entry of animating.values()) { stretch(entry.seg.a); stretch(entry.seg.b); }
   // A board whose items all sit on one row has a zero-height box, and an SVG
   // with a zero extent renders nothing at all - so the box never closes fully.
   const w = Math.max(maxX - minX, 1);
   const h = Math.max(maxY - minY, 1);
 
-  svg.style.left = minX.toFixed(2) + 'px';
-  svg.style.top = minY.toFixed(2) + 'px';
-  svg.style.width = w.toFixed(2) + 'px';
-  svg.style.height = h.toFixed(2) + 'px';
-  svg.setAttribute('viewBox', `0 0 ${w.toFixed(2)} ${h.toFixed(2)}`);
+  const box = `${minX.toFixed(2)} ${minY.toFixed(2)} ${w.toFixed(2)} ${h.toFixed(2)}`;
+  if (box !== lastBox) {
+    lastBox = box;
+    svg.style.left = minX.toFixed(2) + 'px';
+    svg.style.top = minY.toFixed(2) + 'px';
+    svg.style.width = w.toFixed(2) + 'px';
+    svg.style.height = h.toFixed(2) + 'px';
+    svg.setAttribute('viewBox', `0 0 ${w.toFixed(2)} ${h.toFixed(2)}`);
+  }
 
-  // One path of many subpaths rather than one element per thread: the web is
-  // rebuilt wholesale on every move, and swapping a single `d` attribute beats
-  // reconciling a few hundred nodes. Only the settled threads are here; the
-  // fading ones are drawn as their own <line> just below, and drawing a thread
-  // in both places at once would leave a fading one with a solid twin under it.
+  const vis = visibleBox();
+
+  // One path of many subpaths rather than one element per thread: swapping a
+  // single `d` attribute beats reconciling a few hundred nodes. Only the
+  // settled threads are here; the fading ones are drawn as their own <line>
+  // just below, and drawing a thread in both places at once would leave a
+  // fading one with a solid twin under it.
   let d = '';
   for (const key of settled) {
     const seg = lastSeg.get(key);
     if (!seg) continue;
+    if (vis && (Math.max(seg.a.x, seg.b.x) < vis.x0 || Math.min(seg.a.x, seg.b.x) > vis.x1 ||
+                Math.max(seg.a.y, seg.b.y) < vis.y0 || Math.min(seg.a.y, seg.b.y) > vis.y1)) continue;
     d += `M${(seg.a.x - minX).toFixed(2)} ${(seg.a.y - minY).toFixed(2)}` +
          `L${(seg.b.x - minX).toFixed(2)} ${(seg.b.y - minY).toFixed(2)}`;
   }
@@ -236,7 +334,8 @@ function draw() {
 
   // The box's origin moves whenever the outermost item does, so every fading
   // thread is repositioned each frame as well - they are relative to a corner
-  // that is itself in motion.
+  // that is itself in motion. There are only ever a handful, so they are not
+  // worth culling.
   for (const { el, seg } of animating.values()) {
     el.setAttribute('x1', (seg.a.x - minX).toFixed(2));
     el.setAttribute('y1', (seg.a.y - minY).toFixed(2));
@@ -261,7 +360,7 @@ const NEIGHBOURS = 14;
 /** Past this, the second pass is skipped and the tree alone is drawn. */
 const DENSE_LIMIT = 700;
 
-function threads(pts) {
+export function threads(pts) {
   const n = pts.length;
   const edges = spanningTree(pts);
   if (n > DENSE_LIMIT) return edges;
@@ -270,33 +369,158 @@ function threads(pts) {
   const k = Math.min(NEIGHBOURS, n - 1);
   const candidates = [];
   const seen = new Set();
+
+  // The k nearest, kept by insertion into a fixed pair of buffers rather than
+  // by sorting all n-1 distances and reading the front off.
+  //
+  // The sort was not the expensive part. The array it sorted was: one array of
+  // n two-element arrays per point, so a 500-item board minted a quarter of a
+  // million short-lived arrays on every drag frame and handed the whole lot to
+  // the collector. These two buffers are allocated once for the whole pass.
+  const bestD = new Float64Array(k);
+  const bestJ = new Int32Array(k);
   for (let i = 0; i < n; i++) {
-    const near = [];
-    for (let j = 0; j < n; j++) if (j !== i) near.push([dist2(pts[i], pts[j]), j]);
-    near.sort((x, y) => x[0] - y[0]);
-    for (let m = 0; m < k; m++) {
-      const j = near[m][1];
+    const p = pts[i];
+    let filled = 0;
+    for (let j = 0; j < n; j++) {
+      if (j === i) continue;
+      const q = pts[j];
+      const dx = p.x - q.x, dy = p.y - q.y;
+      const d = dx * dx + dy * dy;
+      // Already holding k closer ones: nothing to do, and this is the branch
+      // taken for almost every pair on a board of any size.
+      if (filled === k && d >= bestD[k - 1]) continue;
+      let m = filled < k ? filled++ : k - 1;
+      while (m > 0 && bestD[m - 1] > d) {
+        bestD[m] = bestD[m - 1]; bestJ[m] = bestJ[m - 1]; m--;
+      }
+      bestD[m] = d; bestJ[m] = j;
+    }
+    for (let m = 0; m < filled; m++) {
+      const j = bestJ[m];
       const id = pair(i, j, n);
       if (taken.has(id) || seen.has(id)) continue;
       seen.add(id);
-      candidates.push([near[m][0], Math.min(i, j), Math.max(i, j)]);
+      candidates.push([bestD[m], Math.min(i, j), Math.max(i, j)]);
     }
   }
   candidates.sort((x, y) => x[0] - y[0]);
 
+  // Accepted threads go into a grid as they are accepted, so a candidate only
+  // has to be tested against the ones whose boxes could touch its own. Without
+  // it every candidate walks the whole accepted set, which is the quadratic
+  // that made a drag on a large board stutter.
+  const grid = new EdgeGrid(pts);
+  for (const [a, b] of edges) grid.add(a, b);
+
   for (const [, a, b] of candidates) {
-    let blocked = false;
-    for (const e of edges) {
-      if (crosses(pts[a], pts[b], pts[e[0]], pts[e[1]])) { blocked = true; break; }
-    }
-    if (blocked) continue;
+    if (grid.blocks(pts[a], pts[b])) continue;
     edges.push([a, b]);
+    grid.add(a, b);
     taken.add(pair(a, b, n));
   }
   return edges;
 }
 
 const pair = (a, b, n) => (a < b ? a * n + b : b * n + a);
+
+/**
+ * Accepted threads, bucketed by the cells their bounding box covers.
+ *
+ * Conservative by construction: a thread is registered in *every* cell its box
+ * touches, so any candidate whose box overlaps it shares at least one of them
+ * and the pair is always tested. Missing a pair here would put a visible
+ * crossing in the web, so there is no clever early exit anywhere in this class.
+ *
+ * The escape hatch is `wide`. A spanning tree on a sparse board can hold one
+ * very long edge reaching across the whole thing, and listing that in every
+ * cell it passes over would cost more than testing it against everything. Past
+ * a cap it goes in a list that every candidate checks.
+ */
+const MAX_CELLS_PER_EDGE = 32;
+
+class EdgeGrid {
+  constructor(pts) {
+    this.pts = pts;
+    // Edges live here as two flat arrays; the buckets hold indices into them.
+    // An index is what makes the visited stamp below cheap - marking the edge
+    // itself would mean hanging a property on an array and dropping it out of
+    // the fast representation.
+    this.ea = [];
+    this.eb = [];
+    this.marks = [];
+    this.cells = new Map();
+    this.wide = [];
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of pts) {
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y > maxY) maxY = p.y;
+    }
+    this.minX = minX;
+    this.minY = minY;
+
+    // One cell per point, near enough, which puts a handful of threads in each.
+    // Finer wastes time registering; coarser puts everything back in one bucket.
+    const side = Math.max(1, Math.round(Math.sqrt(pts.length)));
+    this.gw = side;
+    this.gh = side;
+    this.cw = Math.max((maxX - minX) / side, 1e-6);
+    this.ch = Math.max((maxY - minY) / side, 1e-6);
+  }
+
+  _col(x) { return clampi(Math.floor((x - this.minX) / this.cw), 0, this.gw - 1); }
+  _row(y) { return clampi(Math.floor((y - this.minY) / this.ch), 0, this.gh - 1); }
+
+  add(ai, bi) {
+    const i = this.ea.length;
+    this.ea.push(ai);
+    this.eb.push(bi);
+    this.marks.push(0);
+    const a = this.pts[ai], b = this.pts[bi];
+    const c0 = this._col(Math.min(a.x, b.x)), c1 = this._col(Math.max(a.x, b.x));
+    const r0 = this._row(Math.min(a.y, b.y)), r1 = this._row(Math.max(a.y, b.y));
+    if ((c1 - c0 + 1) * (r1 - r0 + 1) > MAX_CELLS_PER_EDGE) { this.wide.push(i); return; }
+    for (let c = c0; c <= c1; c++) {
+      for (let r = r0; r <= r1; r++) {
+        const key = c * this.gh + r;
+        const bucket = this.cells.get(key);
+        if (bucket) bucket.push(i); else this.cells.set(key, [i]);
+      }
+    }
+  }
+
+  /** Does any accepted thread cross AB? */
+  blocks(a, b) {
+    const { pts, ea, eb, marks } = this;
+    for (const i of this.wide) {
+      if (crosses(a, b, pts[ea[i]], pts[eb[i]])) return true;
+    }
+    const c0 = this._col(Math.min(a.x, b.x)), c1 = this._col(Math.max(a.x, b.x));
+    const r0 = this._row(Math.min(a.y, b.y)), r1 = this._row(Math.max(a.y, b.y));
+    // A thread listed in two of the candidate's cells would otherwise be tested
+    // twice. Harmless, but `crosses` is the hot call in this file, so the
+    // repeat is skipped with a stamp rather than a Set.
+    const stamp = ++mark;
+    for (let c = c0; c <= c1; c++) {
+      for (let r = r0; r <= r1; r++) {
+        const bucket = this.cells.get(c * this.gh + r);
+        if (!bucket) continue;
+        for (const i of bucket) {
+          if (marks[i] === stamp) continue;
+          marks[i] = stamp;
+          if (crosses(a, b, pts[ea[i]], pts[eb[i]])) return true;
+        }
+      }
+    }
+    return false;
+  }
+}
+
+let mark = 0;
+const clampi = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
 /**
  * Do segments AB and CD cross?
