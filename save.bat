@@ -11,6 +11,14 @@ set FORCE_MODE=0
 set COMMIT_ONLY=0
 set ACTION=%~1
 
+rem The branch that is actually checked out.
+rem
+rem Everything below used to say "origin main" outright while the menu offered
+rem to "push current branch". On any branch but main that combination is a trap:
+rem it commits where you are and then pushes something else, and reports success
+rem for having done it. Resolved once, here, and used everywhere.
+call :resolvebranch
+
 if /i "%ACTION%"=="--force"   (set FORCE_MODE=1 & set ACTION=save)
 if /i "%ACTION%"=="commit"    (set COMMIT_ONLY=1 & set ACTION=save)
 if /i "%ACTION%"=="--commit"  (set COMMIT_ONLY=1 & set ACTION=save)
@@ -57,6 +65,7 @@ if errorlevel 1 (
   set SAVE_ERROR=1
   goto end
 )
+call :resolvebranch
 echo [git]  initialised. Add a remote later with:
 echo        git remote add origin ^<url^>
 goto save
@@ -93,7 +102,13 @@ powershell -NoProfile -Command "(Get-Content 'web/sw.js' -Encoding UTF8) -replac
 
 echo [git]  stage
 git add .
-git status
+echo.
+echo [git]  what is about to be committed on %BRANCH%:
+git status --short
+echo.
+git diff --cached --stat
+echo.
+echo        Everything above is staged. Close this window to abort.
 
 echo.
 set /p MSG=commit message [v%VERLABEL%]:
@@ -106,6 +121,10 @@ if errorlevel 1 (
   set SAVE_ERROR=1
   goto end
 )
+
+rem Re-resolved: in a repo whose first commit has just been made, HEAD did not
+rem name a branch when this script started.
+call :resolvebranch
 
 if "%COMMIT_ONLY%"=="1" goto committed
 
@@ -121,11 +140,12 @@ if errorlevel 1 (
 
 if "%FORCE_MODE%"=="1" goto forcepush
 
+if "%BRANCH%"=="" goto nobranch
 echo.
-set /p DOPUSH=push to origin/main? (y/n):
+set /p DOPUSH=push to origin/%BRANCH%? (y/n):
 if /i not "%DOPUSH%"=="y" goto skipped
 
-git push -u origin main
+git push -u origin %BRANCH%
 if not errorlevel 1 goto pushed
 
 echo.
@@ -134,7 +154,10 @@ echo.
 set /p FETCH=pull + merge remote first? (y/n):
 if /i "%FETCH%"=="y" goto fetch
 
-set /p FORCE=force push instead? overwrites the remote. (y/n):
+echo.
+echo [warn] a force push discards whatever is on origin/%BRANCH% that you do
+echo        not have. If anyone else has pushed, their work goes with it.
+set /p FORCE=force push instead? (y/n):
 if /i "%FORCE%"=="y" goto forcepush
 
 echo [git]  skipped - nothing pushed
@@ -142,22 +165,25 @@ set SAVE_ERROR=1
 goto end
 
 :fetch
-git pull origin main
+git pull origin %BRANCH%
 if errorlevel 1 set SAVE_ERROR=1
 echo.
 echo [git]  pulled - resolve any conflicts, then re-run
 goto end
 
 :forcepush
-git push origin main --force
+if "%BRANCH%"=="" goto nobranch
+rem --force-with-lease, not --force: it refuses when the remote has moved since
+rem the last fetch, which is the one case a force push is actually destructive.
+git push origin %BRANCH% --force-with-lease
 if errorlevel 1 set SAVE_ERROR=1
 echo.
-echo [git]  force pushed origin/main
+echo [git]  force pushed origin/%BRANCH%
 goto end
 
 :pushed
 echo.
-echo [git]  pushed origin/main
+echo [git]  pushed origin/%BRANCH%
 goto end
 
 :skipped
@@ -176,12 +202,15 @@ echo.
 echo === git: push ===
 echo.
 set SAVE_ERROR=0
-git push origin main
+if "%BRANCH%"=="" goto nobranch
+git push origin %BRANCH%
 if errorlevel 1 (
   echo.
-  set /p FORCE=push failed. force push? overwrites the remote. (y/n):
+  echo [warn] a force push discards whatever is on origin/%BRANCH% that you do
+  echo        not have. If anyone else has pushed, their work goes with it.
+  set /p FORCE=push failed. force push? (y/n):
   if /i "!FORCE!"=="y" (
-    git push origin main --force
+    git push origin %BRANCH% --force-with-lease
     if errorlevel 1 set SAVE_ERROR=1
   ) else (
     set SAVE_ERROR=1
@@ -195,8 +224,25 @@ echo.
 echo === git: pull ===
 echo.
 set SAVE_ERROR=0
-git pull origin main
+if "%BRANCH%"=="" goto nobranch
+git pull origin %BRANCH%
 if errorlevel 1 set SAVE_ERROR=1
+goto end
+
+
+rem Resolve the checked-out branch into %BRANCH%. Empty when there is no repo
+rem yet (the first save offers to create one) or when HEAD is detached, which
+rem is not a state to push from.
+:resolvebranch
+set BRANCH=
+for /f "delims=" %%b in ('git rev-parse --abbrev-ref HEAD 2^>nul') do set BRANCH=%%b
+if /i "%BRANCH%"=="HEAD" set BRANCH=
+exit /b 0
+
+:nobranch
+echo.
+echo [err]  no branch checked out (detached HEAD?) - not pushing
+set SAVE_ERROR=1
 goto end
 
 

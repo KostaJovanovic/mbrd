@@ -26,11 +26,11 @@
 
 import { getAsset } from '../storage/assets.js';
 import { bus, markDirty, selection } from '../state.js';
-import { toast } from '../util.js';
+import { toast, clamp, readPref, writePref } from '../util.js';
 
 const VOLUME_KEY = 'mbrd.volume';
 /** Loud enough to hear on laptop speakers, quiet enough not to make you jump. */
-export const DEFAULT_VOLUME = 0.6;
+const DEFAULT_VOLUME = 0.6;
 
 /**
  * How many readings are taken off a file, which is *not* how many bars get
@@ -64,30 +64,24 @@ export function initAudio() {
 }
 
 export function setVolume(v) {
-  volume = Math.max(0, Math.min(1, +v || 0));
+  volume = clamp(+v || 0, 0, 1);
   for (const a of players) a.volume = volume;
-  try { localStorage.setItem(VOLUME_KEY, String(volume)); } catch { /* private mode */ }
+  writePref(VOLUME_KEY, volume);
 }
 
-export const getVolume = () => volume;
-
 function readVolume() {
-  try {
-    const n = parseFloat(localStorage.getItem(VOLUME_KEY));
-    return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : DEFAULT_VOLUME;
-  } catch {
-    return DEFAULT_VOLUME;
-  }
+  const n = parseFloat(readPref(VOLUME_KEY));
+  return Number.isFinite(n) ? clamp(n, 0, 1) : DEFAULT_VOLUME;
 }
 
 /**
  * Put an <audio> under the global volume.
  *
- * The set holds every player ever built, including ones whose item has since
- * been deleted - a few dozen dead references, against the alternative of
- * teaching items.js to tell this module when a node is culled. Culling detaches
- * nodes and puts them back; unregistering on detach would silently drop a
- * player out of the volume control for the rest of the session.
+ * The set deliberately survives culling: culling detaches a node and puts it
+ * back, and unregistering on detach would silently drop a player out of the
+ * volume control for the rest of the session. What it must not survive is a
+ * node being *destroyed* - see releasePlayers, and canvas/items.js/discard for
+ * the one place that tells the difference.
  */
 export function registerPlayer(el) {
   el.volume = volume;
@@ -108,6 +102,27 @@ export function registerPlayer(el) {
       if (other !== el && !other.paused) other.pause();
     }
   });
+}
+
+/**
+ * Let go of every player inside a card that is being thrown away.
+ *
+ * The set used to hold every <audio> ever built, on the reasoning that a few
+ * dead references were cheaper than teaching items.js about node lifetimes.
+ * That estimate only held while nodes were rare. A rename or a note edit
+ * rebuilds a card's whole content, so editing one audio card ten times left
+ * ten players in here, and every one of them still owned a decoded stream and
+ * still got iterated on every volume change and every play.
+ *
+ * Paused on the way out as well: an element with no card is an element nobody
+ * can stop, and the exclusive-playback loop above only pauses things it can
+ * still see.
+ */
+export function releasePlayers(root) {
+  for (const el of root.querySelectorAll?.('audio') || []) {
+    el.pause();
+    players.delete(el);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -153,13 +168,35 @@ function context() {
  * height. RMS rather than peak: peak picks up single-sample transients and
  * draws almost every piece of music as a solid block.
  */
+/**
+ * Measurements currently running, by asset hash.
+ *
+ * The readings cached on the item make this once per *file* rather than once
+ * per mount - but only after the first one has finished. Two cards holding the
+ * same recording mount together, both find nothing cached, and both start
+ * decoding the same megabytes: the claim was true and the window in front of it
+ * was not. Keyed by hash rather than by item id because that is what a waveform
+ * actually belongs to - the same reason the sidecars in a .mbrd are named that
+ * way - so the second card joins the first's decode instead of starting another.
+ */
+const measuring = new Map();
+
 export async function peaks(item) {
   const cached = item.meta?.peaks;
   if (usable(cached)) return cached;
 
-  const asset = item.asset && getAsset(item.asset.hash);
-  const measured = asset ? await measure(asset.blob) : null;
-  const result = measured || pseudo(item.asset?.hash || item.id);
+  const hash = item.asset?.hash;
+  const asset = hash && getAsset(hash);
+  let measured = null;
+  if (asset) {
+    let run = hash && measuring.get(hash);
+    if (!run) {
+      run = measure(asset.blob).finally(() => measuring.delete(hash));
+      measuring.set(hash, run);
+    }
+    measured = await run;
+  }
+  const result = measured || pseudo(hash || item.id);
 
   // Cached on the item, so this happens once per file rather than once per
   // mount. Written directly rather than through a command: it is a measurement
@@ -297,8 +334,15 @@ export function buildTransport(item, sound) {
 
   const wave = document.createElement('div');
   wave.className = 'wave';
+  // role="slider" is a promise: focusable, driven by the arrow keys, and
+  // reporting where it is. It had the role and the label and none of the rest,
+  // which is worse than no role at all - a screen reader announces a slider
+  // that cannot be reached or moved. See seekBy() and paint() for the other
+  // two thirds.
   wave.setAttribute('role', 'slider');
   wave.setAttribute('aria-label', 'Seek');
+  wave.tabIndex = 0;
+  wave.setAttribute('aria-valuemin', '0');
   const base = lane('wave-base');
   const fill = lane('wave-fill');
   wave.append(base, fill);
@@ -338,6 +382,12 @@ export function buildTransport(item, sound) {
     const at = sound.duration ? sound.currentTime / sound.duration : 0;
     fill.style.clipPath = `inset(0 ${((1 - at) * 100).toFixed(3)}% 0 0)`;
     time.textContent = clock(sound.currentTime || 0);
+    // In seconds, with a spoken form beside it: "83" is not a position in a
+    // recording, "1:23 of 4:10" is.
+    wave.setAttribute('aria-valuemax', Math.round(sound.duration || 0));
+    wave.setAttribute('aria-valuenow', Math.round(sound.currentTime || 0));
+    wave.setAttribute('aria-valuetext',
+      `${clock(sound.currentTime || 0)} of ${clock(sound.duration || 0)}`);
   };
 
   // While it plays, the fill is driven by the frame clock rather than by
@@ -409,8 +459,38 @@ export function buildTransport(item, sound) {
   wave.addEventListener('pointerdown', e => {
     if (!sound.duration) return;
     const box = wave.getBoundingClientRect();
-    sound.currentTime = Math.max(0, Math.min(1, (e.clientX - box.left) / box.width)) * sound.duration;
+    sound.currentTime = clamp((e.clientX - box.left) / box.width, 0, 1) * sound.duration;
     paint();
+  });
+
+  /** Seek by `secs`, or to an absolute point when `to` is given. */
+  const seekBy = (secs, to = null) => {
+    if (!sound.duration) return;
+    const next = to != null ? to : sound.currentTime + secs;
+    sound.currentTime = clamp(next, 0, sound.duration);
+    paint();
+  };
+
+  // The keyboard contract for a slider: arrows nudge, PageUp/PageDown take a
+  // bigger step, Home and End go to the ends. Space plays and pauses, which is
+  // what that key does on every other transport a person has used.
+  //
+  // stopPropagation is what keeps the canvas out of it - these are its keys
+  // too, and without this an arrow would seek *and* nudge the selection.
+  wave.addEventListener('keydown', e => {
+    const step = e.shiftKey ? 1 : 5;
+    switch (e.key) {
+      case 'ArrowRight': case 'ArrowUp': seekBy(step); break;
+      case 'ArrowLeft': case 'ArrowDown': seekBy(-step); break;
+      case 'PageUp': seekBy(30); break;
+      case 'PageDown': seekBy(-30); break;
+      case 'Home': seekBy(0, 0); break;
+      case 'End': seekBy(0, sound.duration); break;
+      case ' ': case 'Enter': play.click(); break;
+      default: return;
+    }
+    e.preventDefault();
+    e.stopPropagation();       // the canvas must not also act on this
   });
 
   // Redrawn when the card is let go of, not while it is being dragged.

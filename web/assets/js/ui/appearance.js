@@ -22,6 +22,10 @@
 // their contrast and sharpness say it belongs.
 
 import { board, bus, markDirty, setSetting } from '../state.js';
+import { clamp, readPrefJSON, writePref } from '../util.js';
+// What a board is allowed to ask for. Kept in its own module because this one
+// touches document at import time and that one must stay testable - see look.js.
+import { safeVars } from './look.js';
 
 const STORE_KEY = 'mbrd.appearance';
 
@@ -93,20 +97,31 @@ export function initAppearance(handlers = {}) {
   wirePalette();
   wireWhimsy();
 
+  // A board's look on the way in, and the user's own back again on the way out.
+  //
+  // The early return this replaces meant "no look" was read as "no change",
+  // so opening a plain board after someone else's heavily styled one left
+  // their look on screen indefinitely - the board had nothing to say and so
+  // nothing was said. Falling back to the stored preference is what makes a
+  // board without a look mean something rather than nothing.
+  //
+  // Guarded on the look actually differing, because 'board' also fires for a
+  // title change and for every dirty-flag flip, and persist() emits it on the
+  // way through - so an unguarded handler would re-apply the current look on
+  // every keystroke that renames a board.
   bus.on('board', () => {
     const look = board.settings.appearance;
-    if (!hasLook(look)) return;
-    current = clone(look);
+    const next = hasLook(look) ? clone(look) : readStored();
+    if (sameLook(next, current)) return;
+    current = next;
     apply(current);
     syncControls();
   });
 }
 
-export function currentAppearance() { return clone(current); }
-
 /** Slide the whole interface along the playful-to-plain axis. 0, 1 or 2. */
-export function setWhimsy(level) {
-  const n = Math.max(0, Math.min(WHIMSY.length - 1, Math.round(+level) || 0));
+function setWhimsy(level) {
+  const n = clampWhimsy(level);
   if (n === current.whimsy) return;
   // Hand-set values for tokens this axis owns would outrank the new level
   // (they are inline), so they go back to the stylesheet.
@@ -161,9 +176,12 @@ function axisMoved(level) {
  */
 export function setPigments(vars) {
   current.palette = '';    // a derived palette is nobody's named palette
-  for (const [key, value] of Object.entries(vars)) {
+  // Through the same filter as anything else, because the eventual caller is
+  // pigments read out of whatever pictures were dropped on the board.
+  for (const [key, value] of Object.entries(safeVars(vars))) {
     current.vars[key] = value;
     root.style.setProperty(key, value);
+    applied.add(key);
   }
   paintThemeColour();
   persist();
@@ -172,7 +190,7 @@ export function setPigments(vars) {
 
 export function resetAppearance() {
   const was = current.whimsy;
-  for (const key of Object.keys(current.vars)) root.style.removeProperty(key);
+  // apply() takes the previous look's properties back off - see `applied`.
   current = { whimsy: DEFAULT_WHIMSY, palette: '', vars: {} };
   apply(current);
   persist();
@@ -186,6 +204,18 @@ export function resetAppearance() {
 
 // ---------------------------------------------------------------------------
 
+/**
+ * Everything this module has written inline on :root.
+ *
+ * Kept because applying a look has to *replace* one, not add to it. An inline
+ * property beats every stylesheet rule and nothing takes it back off, so a look
+ * that simply set its own tokens left the previous one's behind: a board with a
+ * hand-picked --accent went on tinting the next board that never asked for one,
+ * and the controls would show the palette's value while the stale inline
+ * property was what you could actually see.
+ */
+let applied = new Set();
+
 function apply(look) {
   // Always written, including the default: the stylesheet's base *is* the
   // middle, so an absent attribute already means 1 - but 0 is a real level
@@ -194,9 +224,15 @@ function apply(look) {
   root.dataset.whimsy = look.whimsy;
   if (look.palette) root.dataset.palette = look.palette;
   else delete root.dataset.palette;   // no attribute = the default, Papyrus
-  for (const [key, value] of Object.entries(look.vars || {})) {
+
+  const vars = look.vars || {};
+  for (const key of applied) {
+    if (!(key in vars)) root.style.removeProperty(key);
+  }
+  for (const [key, value] of Object.entries(vars)) {
     root.style.setProperty(key, value);
   }
+  applied = new Set(Object.keys(vars));
   paintThemeColour();
 }
 
@@ -213,7 +249,7 @@ function paintThemeColour() {
 }
 
 function persist() {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(current)); } catch { /* private mode */ }
+  writePref(STORE_KEY, JSON.stringify(current));
   board.settings.appearance = clone(current);
   markDirty();
   onChange();
@@ -222,16 +258,13 @@ function persist() {
 function setVar(name, value) {
   current.vars[name] = value;
   root.style.setProperty(name, value);
+  applied.add(name);
   if (name === '--paper') paintThemeColour();
   persist();
 }
 
 function readStored() {
-  try {
-    return clone(JSON.parse(localStorage.getItem(STORE_KEY) || '{}'));
-  } catch {
-    return clone(null);
-  }
+  return clone(readPrefJSON(STORE_KEY));
 }
 
 // Compared against the default rather than tested for truthiness: whimsy 0 is
@@ -240,17 +273,30 @@ function readStored() {
 const hasLook = look =>
   !!look && ((look.whimsy != null && +look.whimsy !== DEFAULT_WHIMSY) ||
              look.palette || Object.keys(look.vars || {}).length);
+/**
+ * A level the stylesheet actually answers to.
+ *
+ * Clamped, not trusted: this value arrives from localStorage, from the slider,
+ * and from other people's .mbrd files, and an out-of-range one would set a
+ * data-whimsy no rule matches - leaving the interface in whatever the base look
+ * is while the slider claims otherwise. `|| 0` catches the non-number, since
+ * clamping NaN only gives NaN back.
+ */
+const clampWhimsy = v => clamp(Math.round(+v) || 0, 0, WHIMSY.length - 1);
+
+// Every look in this module - the user's stored one, the one a board brought,
+// the one a control just edited - is built here, which is what makes this the
+// one place the rules have to hold. `vars` is filtered rather than rejected
+// wholesale: a board with one bad token should lose that token, not its look.
 const clone = look => ({
-  // Clamped, not trusted: this value arrives from localStorage and from other
-  // people's .mbrd files, and an out-of-range one would set a data-whimsy no
-  // stylesheet answers to - leaving the interface in whatever the base look is
-  // while the slider claims otherwise.
-  whimsy: look?.whimsy == null
-    ? DEFAULT_WHIMSY
-    : Math.max(0, Math.min(WHIMSY.length - 1, Math.round(+look.whimsy) || 0)),
-  palette: look?.palette || '',
-  vars: { ...(look?.vars || {}) },
+  whimsy: look?.whimsy == null ? DEFAULT_WHIMSY : clampWhimsy(look.whimsy),
+  // Becomes an attribute value that stylesheet rules match on, so it is held to
+  // the shape a palette name has rather than trusted to be one.
+  palette: /^[a-z0-9-]{1,24}$/i.test(look?.palette) ? look.palette : '',
+  vars: safeVars(look?.vars),
 });
+
+const sameLook = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 // ---------------------------------------------------------------------------
 // Controls
@@ -371,4 +417,4 @@ function toHex(value) {
   }
 }
 
-const clamp255 = n => Math.max(0, Math.min(255, Math.round(n || 0)));
+const clamp255 = n => clamp(Math.round(n || 0), 0, 255);

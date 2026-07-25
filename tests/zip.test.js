@@ -1,0 +1,231 @@
+// The ZIP container - the whole storage substrate, since a .mbrd is a ZIP.
+//
+// Two halves. The round-trip tests say the writer and reader agree, which is
+// the thing a board depends on. The rest feed the reader damaged and hostile
+// archives, because a .mbrd arrives from outside - emailed, downloaded, handed
+// over on a stick - and every offset in it is a number this app is about to
+// index memory by.
+//
+// Malformed cases are built by writing a good archive and then corrupting one
+// field, rather than by hand-assembling bytes. That keeps each test about the
+// single thing it changed, and it keeps them honest: if the writer's layout
+// moves, these move with it instead of silently testing a format nobody emits.
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+
+import { writeZip, readZip, crc32 } from '../web/assets/js/storage/zip.js';
+import { bytes, zeros } from './helpers.js';
+
+const enc = new TextEncoder();
+const dec = new TextDecoder();
+
+const buf = async (entries, opts) =>
+  new Uint8Array(await (await writeZip(entries, opts)).arrayBuffer());
+
+/** Little-endian writes, for reaching into a built archive and breaking it. */
+const put32 = (b, off, v) => new DataView(b.buffer).setUint32(off, v, true);
+const put16 = (b, off, v) => new DataView(b.buffer).setUint16(off, v, true);
+
+/** Offset of the EOCD record, found the way the reader finds it. */
+function eocdAt(b) {
+  const view = new DataView(b.buffer);
+  for (let i = b.length - 22; i >= 0; i--) if (view.getUint32(i, true) === 0x06054b50) return i;
+  throw new Error('no EOCD in test fixture');
+}
+
+/** Offset of the first central-directory record. */
+const cdAt = b => new DataView(b.buffer).getUint32(eocdAt(b) + 16, true);
+
+// ---------------------------------------------------------------------------
+// Round trip
+// ---------------------------------------------------------------------------
+
+test('round-trips a stored entry', async () => {
+  const data = bytes(1000);
+  const files = await readZip(await buf([{ name: 'a.bin', data, compress: false }]));
+  assert.deepEqual([...files.keys()], ['a.bin']);
+  assert.deepEqual(files.get('a.bin'), data);
+});
+
+test('round-trips a deflated entry', async () => {
+  // Long and repetitive, so the writer actually takes the compressed form:
+  // it only does so when deflating wins, and only above 256 bytes.
+  const data = enc.encode('the same sentence over and over. '.repeat(200));
+  const archive = await buf([{ name: 'board.json', data, compress: true }]);
+  assert.ok(archive.length < data.length, 'fixture did not actually compress');
+  const files = await readZip(archive);
+  assert.deepEqual(files.get('board.json'), data);
+});
+
+test('round-trips many entries, preserving names and order', async () => {
+  const names = ['manifest.json', 'board.json', 'assets/abc.png', 'notes/a--i1.md'];
+  const archive = await buf(names.map((name, i) => ({ name, data: bytes(300 + i, i + 1), compress: i % 2 === 0 })));
+  const files = await readZip(archive);
+  assert.deepEqual([...files.keys()], names);
+});
+
+test('round-trips UTF-8 names and content', async () => {
+  const name = 'notes/ćirilica-и-ćevapi--i9.md';
+  const data = enc.encode('# Ćevapi\n\nБеоград, 15 ком.\n');
+  const files = await readZip(await buf([{ name, data, compress: true }]));
+  assert.equal(dec.decode(files.get(name)), dec.decode(data));
+});
+
+test('skips directory entries', async () => {
+  const files = await readZip(await buf([
+    { name: 'assets/', data: new Uint8Array(0) },
+    { name: 'assets/a.png', data: bytes(50) },
+  ]));
+  assert.deepEqual([...files.keys()], ['assets/a.png']);
+});
+
+test('an empty entry survives the trip', async () => {
+  const files = await readZip(await buf([{ name: 'empty', data: new Uint8Array(0) }]));
+  assert.equal(files.get('empty').length, 0);
+});
+
+test('incompressible data is stored, not deflated', async () => {
+  // Random bytes deflate to *more* than they started as; the writer is
+  // supposed to notice and keep the original.
+  const data = bytes(4096, 99);
+  const files = await readZip(await buf([{ name: 'noise', data, compress: true }]));
+  assert.deepEqual(files.get('noise'), data);
+});
+
+// ---------------------------------------------------------------------------
+// Malformed and hostile archives
+// ---------------------------------------------------------------------------
+
+const rejects = (promise, why) => assert.rejects(promise, /.+/, why);
+
+test('rejects something that is not a ZIP at all', async () => {
+  await rejects(readZip(enc.encode('this is a text file, not a board')));
+});
+
+test('rejects an archive too short to hold a directory', async () => {
+  await rejects(readZip(new Uint8Array(8)));
+});
+
+test('rejects a truncated archive', async () => {
+  const archive = await buf([{ name: 'a.bin', data: bytes(2000), compress: false }]);
+  // Keep the directory, lose the payload it points at.
+  const cut = archive.slice(0, cdAt(archive) - 500);
+  await rejects(readZip(cut));
+});
+
+test('rejects a central directory pointing outside the file', async () => {
+  const archive = await buf([{ name: 'a.bin', data: bytes(500) }]);
+  put32(archive, eocdAt(archive) + 16, 0xfffff0);
+  await rejects(readZip(archive));
+});
+
+test('rejects a local-header offset pointing outside the file', async () => {
+  const archive = await buf([{ name: 'a.bin', data: bytes(500) }]);
+  put32(archive, cdAt(archive) + 42, 0xfffff0);
+  await rejects(readZip(archive));
+});
+
+test('rejects an entry whose data runs past the end', async () => {
+  const archive = await buf([{ name: 'a.bin', data: bytes(500), compress: false }]);
+  put32(archive, cdAt(archive) + 20, 0xffff);      // csize
+  put32(archive, cdAt(archive) + 24, 0xffff);      // usize, kept equal for STORE
+  await rejects(readZip(archive));
+});
+
+test('rejects a stored entry whose two sizes disagree', async () => {
+  const archive = await buf([{ name: 'a.bin', data: bytes(500), compress: false }]);
+  put32(archive, cdAt(archive) + 24, 400);         // usize != csize
+  await rejects(readZip(archive));
+});
+
+test('rejects a CRC mismatch', async () => {
+  const archive = await buf([{ name: 'a.bin', data: bytes(500), compress: false }]);
+  put32(archive, cdAt(archive) + 16, 0xdeadbeef);
+  await rejects(readZip(archive), 'a damaged photo must not open silently');
+});
+
+test('rejects a deflated entry that inflates to the wrong size', async () => {
+  const data = enc.encode('x'.repeat(4000));
+  const archive = await buf([{ name: 'a.txt', data, compress: true }]);
+  put32(archive, cdAt(archive) + 24, 3999);        // declared usize is now a lie
+  await rejects(readZip(archive));
+});
+
+test('rejects an unsupported compression method', async () => {
+  const archive = await buf([{ name: 'a.bin', data: bytes(500) }]);
+  put16(archive, cdAt(archive) + 10, 12);          // bzip2
+  await rejects(readZip(archive));
+});
+
+test('rejects duplicate entry names', async () => {
+  // Two board.json entries make the archive mean two different things
+  // depending on which the reader keeps.
+  const archive = await buf([
+    { name: 'board.json', data: enc.encode('{"items":[]}') },
+    { name: 'board.json', data: enc.encode('{"items":[{"evil":true}]}') },
+  ]);
+  await rejects(readZip(archive));
+});
+
+test('rejects an absurd entry count', async () => {
+  const archive = await buf([{ name: 'a.bin', data: bytes(100) }]);
+  put16(archive, eocdAt(archive) + 10, 60000);
+  await rejects(readZip(archive));
+});
+
+test('rejects a decompression bomb by its declared ratio', async () => {
+  // 8 MiB of zeros deflates to a couple of kilobytes: a ratio in the
+  // thousands, and the reader must refuse it on the declared numbers alone,
+  // before spending the memory to find out.
+  const data = zeros(8 * 1024 * 1024);
+  const archive = await buf([{ name: 'bomb', data, compress: true }]);
+  assert.ok(archive.length < 64 * 1024, 'fixture is not actually a bomb');
+  await rejects(readZip(archive));
+});
+
+test('rejects a bomb that lies about its uncompressed size', async () => {
+  // The ratio guard above reads the *declared* size, so the way past it is to
+  // declare something else. This entry says it inflates to one byte, which is
+  // under every ceiling there is - and then expands to 8 MiB.
+  //
+  // The reader used to collect the whole stream and compare lengths afterwards,
+  // so it did reject this, but only once the memory had already been spent: at
+  // this size the check cost ~26 MiB of allocation to reach, and the size in
+  // the fixture is the only thing stopping that being a gigabyte. Now the
+  // declared size is a budget the inflate is cancelled against, so the cost is
+  // bounded by what the entry claimed rather than by what it contains.
+  const data = zeros(8 * 1024 * 1024);
+  const archive = await buf([{ name: 'bomb.bin', data, compress: true }]);
+  const cd = cdAt(archive);
+  put32(archive, cd + 24, 1);                  // central directory: usize
+  await assert.rejects(readZip(archive), /more than the 1 bytes it declares/);
+});
+
+test('the inflate budget is the declared size, not a round number', async () => {
+  // One byte over is still over: the cap is the entry's own claim, so an
+  // archive cannot buy headroom by declaring something merely plausible.
+  const data = enc.encode('the same sentence over and over. '.repeat(200));
+  const archive = await buf([{ name: 'board.json', data, compress: true }]);
+  const cd = cdAt(archive);
+  put32(archive, cd + 24, data.length - 1);
+  await rejects(readZip(archive));
+});
+
+test('a big but honest entry is still accepted', async () => {
+  // The ratio guard must not catch real content. 2 MiB of noise compresses
+  // barely at all, which is what a photo or a video chunk looks like.
+  const data = bytes(2 * 1024 * 1024, 7);
+  const files = await readZip(await buf([{ name: 'photo.jpg', data, compress: true }]));
+  assert.equal(files.get('photo.jpg').length, data.length);
+});
+
+// ---------------------------------------------------------------------------
+// CRC32
+// ---------------------------------------------------------------------------
+
+test('crc32 matches known vectors', () => {
+  assert.equal(crc32(enc.encode('')), 0);
+  assert.equal(crc32(enc.encode('123456789')), 0xcbf43926);
+  assert.equal(crc32(enc.encode('The quick brown fox jumps over the lazy dog')), 0x414fa339);
+});

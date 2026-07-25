@@ -5,8 +5,7 @@ import { board, bus, setSetting, setArrangement } from '../state.js';
 import { ARRANGEMENTS } from '../arrange/arrangements.js';
 import { canPickFiles, currentFileName } from '../storage/storage.js';
 import { VERSION } from '../version.js';
-
-const el = id => document.getElementById(id);
+import { el, readPref, writePref } from '../util.js';
 
 let sidebar, menuBtn;
 
@@ -95,7 +94,7 @@ function paint() {
 // work is not a property of someone else's moodboard.
 const OPEN_KEY = 'mbrd.sidebar';
 
-export const isOpen = () => sidebar?.classList.contains('is-open');
+const isOpen = () => sidebar?.classList.contains('is-open');
 
 export function open() {
   setOpen(true);
@@ -111,14 +110,12 @@ function setOpen(want, remember = true) {
   sidebar.setAttribute('aria-hidden', String(!want));
   menuBtn.setAttribute('aria-expanded', String(want));
   if (!remember) return;
-  try { localStorage.setItem(OPEN_KEY, want ? '1' : '0'); } catch { /* private mode */ }
+  writePref(OPEN_KEY, want ? '1' : '0');
 }
 
 /** Reopen the panel on load, without playing the slide-in for it. */
 function restoreOpen() {
-  let want = false;
-  try { want = localStorage.getItem(OPEN_KEY) === '1'; } catch { /* private mode */ }
-  if (!want) return;
+  if (readPref(OPEN_KEY) !== '1') return;
   // Already-open is a fact about the page, not a thing that just happened, so
   // it should not animate. One frame with the transition off is enough.
   sidebar.style.transition = 'none';

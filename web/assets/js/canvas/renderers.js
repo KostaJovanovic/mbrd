@@ -5,9 +5,19 @@
 import { extOf, baseName, formatBytes } from '../util.js';
 import { assetURL, getAsset, readText } from '../storage/assets.js';
 import { byId, bus, markDirty } from '../state.js';
-import { describeExt, PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS } from './formats.js';
-import { buildTransport, registerPlayer } from '../ui/audio.js';
+import { describeExt, PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS } from '../import/formats.js';
+import { buildTransport, registerPlayer } from './audio.js';
 
+
+/**
+ * How much of a text file a card shows.
+ *
+ * The same number readText() defaults to, named here because this is where it
+ * means something: a card is a preview on a board, not a viewer. Past this the
+ * body is marked clipped so the card can say so rather than appearing to be
+ * the whole file.
+ */
+const TEXT_PREVIEW = 20000;
 
 const TEXT_EXT = new Set([
   'txt', 'md', 'markdown', 'rst', 'log', 'csv', 'tsv', 'json', 'xml', 'yml', 'yaml',
@@ -177,7 +187,7 @@ const RENDERERS = {
    * The <audio> element is still what plays the sound - it handles streaming,
    * seeking and codecs, and nothing here would be improved by reimplementing
    * that - but it is kept out of the layout entirely and driven by the button
-   * and the bars. See ui/audio.js for the waveform and the global volume.
+   * and the bars. See canvas/audio.js for the waveform and the global volume.
    */
   audio(item) {
     const card = cardShell(item, 'audio');
@@ -204,7 +214,7 @@ const RENDERERS = {
    * newline, which is where the author put it.
    *
    * meta.text stays the single stored value, title and body joined by that
-   * newline; ui/notes.js is what splits and rejoins it.
+   * newline; canvas/notes.js is what splits and rejoins it.
    */
   note(item) {
     const card = document.createElement('div');
@@ -243,7 +253,7 @@ const RENDERERS = {
    *
    * classify() is not involved and never will be - it sorts *files*, and a
    * link arrives as text, from a paste (import/drop.js) or from a sticky note
-   * that turned out to hold nothing else (ui/notes.js).
+   * that turned out to hold nothing else (canvas/notes.js).
    */
   link(item) {
     const card = document.createElement('div');
@@ -310,10 +320,78 @@ const RENDERERS = {
     return card;
   },
 
+  /**
+   * A text file, shown as text.
+   *
+   * classify() has returned 'text' for some fifty extensions since the day it
+   * was written, defaultSize() has had a 300x360 for it, readText() was added
+   * and documented as "used by the text renderer", and the README lists text
+   * as one of the four things that renders. There was no entry here, so every
+   * .txt, .md and .csv fell through to the generic card - a name and a byte
+   * count, for a file whose entire content the browser could have drawn.
+   *
+   * Bounded by readText's own limit rather than trusting the file: a card on a
+   * board is a preview, and a 40 MB log has no business being turned into DOM
+   * to be looked at from across an infinite canvas.
+   */
+  text(item) {
+    const card = document.createElement('div');
+    card.className = 'card';
+
+    const name = document.createElement('div');
+    name.className = 'card-name';
+    name.textContent = baseName(item.name) || item.name || 'untitled';
+
+    // .card-text was already in app.css, waiting - monospaced, pre-wrapped, and
+    // masked to a fade at the bottom so a long file ends by trailing off rather
+    // than by being chopped. It had no markup to style until now.
+    //
+    // <pre> and textContent, never innerHTML: most of what classify() routes
+    // here is source, config or tabular data whose whitespace is its shape,
+    // and .html and .svg are both on the list of things that land here.
+    const body = document.createElement('pre');
+    body.className = 'card-text';
+
+    card.append(name, body);
+
+    const hash = item.asset?.hash;
+    if (!hash) return card;
+
+    readText(hash, TEXT_PREVIEW).then(text => {
+      // The card can be rebuilt or culled while the read is in flight, and
+      // writing into a node nothing will ever show is wasted work.
+      if (!card.closest('.item')) return;
+      body.textContent = text;
+      // Said out loud rather than left to the fade, which looks identical
+      // whether the file ended or the preview did.
+      if (text.length >= TEXT_PREVIEW) {
+        const more = document.createElement('div');
+        more.className = 'card-meta';
+        more.textContent = `first ${formatBytes(TEXT_PREVIEW)} shown`;
+        card.append(more);
+      }
+    }).catch(() => { body.textContent = ''; });
+
+    return card;
+  },
+
   generic(item) {
     return cardShell(item, extOf(item.name) || 'file');
   },
 };
+
+/**
+ * Whether a type has a renderer of its own rather than falling back to the
+ * generic card.
+ *
+ * Exported for tests/renderers.test.js, which asserts that everything
+ * classify() can return has one. That check is here because its absence is
+ * exactly how the text renderer went missing: classify() routed fifty
+ * extensions to 'text', defaultSize() sized it, the README advertised it, and
+ * nothing anywhere noticed that RENDERERS had no such key. Nothing failed -
+ * the files just quietly came out as generic cards.
+ */
+export const hasRenderer = type => Object.hasOwn(RENDERERS, type);
 
 /**
  * The URL behind a link item, or null for anything that is not one.

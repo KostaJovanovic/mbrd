@@ -10,10 +10,8 @@ import { sha256, extOf } from '../util.js';
 /** hash -> { blob, url, mime, ext, size, name } */
 const store = new Map();
 
-export function hasAsset(hash) { return store.has(hash); }
 export function getAsset(hash) { return store.get(hash); }
 export function allAssets() { return store; }
-export function assetCount() { return store.size; }
 
 /** Object URL for an asset, created on first use and reused after. */
 export function assetURL(hash) {
@@ -71,8 +69,36 @@ export function clearAssets() {
 // the item back, and a save only ever writes the hashes the live items still
 // reference. Assets are released wholesale by clearAssets() on board close.
 
-// Object URLs die with the document anyway, but revoking on unload keeps
-// long-lived PWA sessions (open all day, many boards) from leaking.
-addEventListener('pagehide', () => {
-  for (const a of store.values()) if (a.url) URL.revokeObjectURL(a.url);
-});
+/**
+ * Release the object URLs when the document goes away.
+ *
+ * They die with the document anyway; this is for the long-lived PWA session -
+ * open all day, several boards - where nothing else would ever hand them back.
+ *
+ * `persisted` is the whole subtlety. A pagehide that reports it is going into
+ * the back/forward cache is not a teardown at all: the document is frozen with
+ * its DOM intact and may be handed back whole, every <img> still pointing at
+ * the blob: URL it was built with. Revoking on the way into that cache breaks
+ * every one of them, and the breakage only shows up on the way *back*, which
+ * is the hardest place to notice it. So a persisted hide releases nothing.
+ *
+ * When it is a real teardown the URLs go, and the cached string goes with
+ * them. Leaving a revoked URL in the entry would make assetURL() keep handing
+ * out a dead address for the rest of the session, since it only mints a new
+ * one when the field is empty - which is the same broken picture by a slower
+ * route.
+ *
+ * Registered from main.js rather than on import: a module that reaches for a
+ * browser global the moment it loads cannot be loaded anywhere else, and this
+ * one is imported by state.js and so by everything.
+ */
+export function initAssets() {
+  addEventListener('pagehide', event => {
+    if (event.persisted) return;
+    for (const a of store.values()) {
+      if (!a.url) continue;
+      URL.revokeObjectURL(a.url);
+      a.url = null;
+    }
+  });
+}

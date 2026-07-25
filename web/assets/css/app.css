@@ -339,11 +339,18 @@ button, input, select, textarea { font: inherit; color: inherit; }
   font-size: var(--t-small);
   font-style: var(--display-italic);
 }
+/* The body of a text card. Written before the renderer that uses it existed;
+   canvas/renderers.js/RENDERERS.text is what fills it. */
 .card-text {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  margin: 0;
   white-space: pre-wrap;
+  /* Source and CSV routinely run past the card; wrapping mid-word is what keeps
+     a minified line or a long path from widening the card's own scroll box. */
+  overflow-wrap: anywhere;
+  tab-size: 2;
   font-family: var(--font-mono);
   font-size: var(--t-small);
   line-height: 1.5;
@@ -387,7 +394,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
    about the centre line - a signal has no up and no down, and half of one
    drawn on a baseline is a bar chart rather than a picture of a sound.
    Rounded off with the rest of the interface, so a plain board gets square
-   bars and a soft one gets capsules. See ui/audio.js. */
+   bars and a soft one gets capsules. See canvas/audio.js. */
 .wave {
   position: relative;
   flex: 1;

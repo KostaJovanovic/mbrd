@@ -3,15 +3,32 @@ title mbrd server
 cd /d "%~dp0"
 
 rem 6273 is "mbrd" on a phone keypad. Deliberately off the well-worn ports
-rem (3000, 5173, 8000, 8080) so this never fights another project for one -
-rem and note that the kill below is unconditional, so a shared port would
-rem take somebody else's server down with it.
+rem (3000, 5173, 8000, 8080) so this never fights another project for one.
 set PORT=6273
 
-rem Kill whatever is still holding the port so every launch is a fresh instance
-rem (a previous server.bat, or any other listener on %PORT%). Uses PowerShell so
-rem it handles both IPv4 and IPv6 listeners without brittle netstat parsing.
-powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort %PORT% -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | Where-Object { $_ -ne 0 } | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }" 1>nul 2>nul
+rem Free the port so every launch is a fresh instance - but only from a process
+rem that is recognisably a previous run of this script. It used to stop whatever
+rem was listening, full stop, which on a port collision meant force-killing
+rem somebody else's editor, database or dev server with no warning and no way to
+rem tell what had happened. A launcher may clean up after itself; it may not
+rem clean up after other people.
+rem
+rem The test is "a python process whose command line mentions this repo's
+rem serve.py". Anything else is reported and left alone, and the server below
+rem then fails to bind and says so.
+powershell -NoProfile -Command ^
+  "$mine = '%~dp0serve.py'.Replace('\\','\');" ^
+  "Get-NetTCPConnection -LocalPort %PORT% -State Listen -ErrorAction SilentlyContinue |" ^
+  "  Select-Object -ExpandProperty OwningProcess -Unique | Where-Object { $_ -ne 0 } | ForEach-Object {" ^
+  "    $p = Get-CimInstance Win32_Process -Filter \"ProcessId = $_\" -ErrorAction SilentlyContinue;" ^
+  "    if ($p -and $p.CommandLine -and $p.CommandLine.Replace('/','\') -like ('*' + $mine + '*')) {" ^
+  "      Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue" ^
+  "    } elseif ($p) {" ^
+  "      Write-Host ('Port %PORT% is held by PID ' + $p.ProcessId + ': ' + $p.Name) -ForegroundColor Yellow;" ^
+  "      Write-Host ('  ' + $p.CommandLine) -ForegroundColor DarkGray;" ^
+  "      Write-Host '  Not this project''s server - leaving it alone.' -ForegroundColor Yellow" ^
+  "    }" ^
+  "  }"
 
 rem Find local IP for phone access
 set LOCAL_IP=

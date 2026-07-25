@@ -8,13 +8,24 @@
 import { toast, extOf } from '../util.js';
 import { board, addItems, select, NOTE_MAX } from '../state.js';
 import { addFile } from '../storage/assets.js';
-import { classify, defaultSize, measureSize, linkURL, linkDraft } from './renderers.js';
+import { classify, defaultSize, measureSize, linkURL, linkDraft } from '../canvas/renderers.js';
 import { arrange } from '../arrange/arrangements.js';
 import { looksLikeMbrd } from '../storage/mbrd.js';
 import { openFile } from '../storage/storage.js';
 
 /** Guard against someone dropping a whole photo library by accident. */
 const MAX_FILES = 500;
+
+/**
+ * How many files are prepared at once.
+ *
+ * Small on purpose. Each one holds a whole file in memory while it is hashed
+ * and measured, so this is the number that decides the peak cost of a big
+ * drop - and a drop can be 500 videos. Six keeps the two-second measurement
+ * timeouts overlapping, which is where all the wall-clock went, without
+ * turning a folder of video into a folder of video decoded simultaneously.
+ */
+const IMPORT_WORKERS = 6;
 
 export function initDrop(vp) {
   const overlay = document.getElementById('drop-overlay');
@@ -134,43 +145,43 @@ export async function importFiles(files, centre) {
     trimmed = true;
   }
 
-  const drafts = [];
+  // Prepared several at a time, in order.
+  //
+  // This was a plain sequential loop, and every file in it waits on two slow
+  // things: hashing its bytes and measuring it. Measurement is the bad one - a
+  // video the browser cannot read sits on the two-second timeout in
+  // measureSize() before giving up, so a folder of 500 of them took something
+  // like a thousand seconds before a single item appeared on the board, with
+  // nothing on screen to suggest anything was happening.
+  //
+  // Bounded rather than unbounded: each of these holds a whole file in memory
+  // while it works, so Promise.all over the lot would turn a folder of video
+  // into a folder of video decoded all at once. Six is enough to keep the
+  // timeouts overlapping without that.
+  //
+  // Results land by index, so the order the arrangement sees is the order the
+  // files arrived in rather than the order they happened to finish.
+  const prepared = new Array(files.length).fill(null);
   const failed = [];
-  for (const file of files) {
-    try {
-      let type = classify(file);
-      // Measured before the layout runs, so the arrangement reserves the cell
-      // the item will actually occupy (see renderers.measureSize).
-      let size = await measureSize(type, file);
-      // A photo this browser can't decode - HEIC, JPEG XL, camera RAW - would
-      // mount as a broken <img>. A named card is a better answer than a hole,
-      // and it upgrades itself for free the day a decoder lands.
-      if (type === 'image' && !size.decodable) {
-        type = 'generic';
-        size = defaultSize('generic');
+  let next = 0;
+  const worker = async () => {
+    for (;;) {
+      const i = next++;
+      if (i >= files.length) return;
+      const file = files[i];
+      try {
+        prepared[i] = await prepareFile(file);
+      } catch (err) {
+        console.error('[mbrd] import failed for', file.name, err);
+        failed.push(file.name);
       }
-      const hash = await addFile(file);
-      drafts.push({
-        type,
-        name: file.name,
-        w: size.w,
-        h: size.h,
-        asset: { hash, embedded: true },
-        meta: {
-          mime: file.type || '',
-          ext: extOf(file.name),
-          size: file.size,
-          mtime: file.lastModified || 0,
-          // Tells adoptAspect() the size is already right; only unmeasurable
-          // media leaves this off and gets resized once it loads.
-          sized: !!size.measured,
-        },
-      });
-    } catch (err) {
-      console.error('[mbrd] import failed for', file.name, err);
-      failed.push(file.name);
     }
-  }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(IMPORT_WORKERS, files.length) }, worker)
+  );
+  const drafts = prepared.filter(Boolean);
+
   if (!drafts.length) {
     toast('Nothing could be imported', 'error');
     return [];
@@ -190,6 +201,48 @@ export async function importFiles(files, centre) {
   if (failed.length) msg += `, ${failed.length} failed`;
   toast(msg, failed.length ? 'error' : '');
   return added;
+}
+
+/** One file, classified, measured, hashed and turned into a draft item. */
+async function prepareFile(file) {
+  let type = classify(file);
+  // Measured before the layout runs, so the arrangement reserves the cell
+  // the item will actually occupy (see renderers.measureSize).
+  let size = await measureSize(type, file);
+  // A photo this browser can't decode - HEIC, JPEG XL, camera RAW - would
+  // mount as a broken <img>. A named card is a better answer than a hole,
+  // and it upgrades itself for free the day a decoder lands.
+  if (type === 'image' && !size.decodable) {
+    type = 'generic';
+    size = defaultSize('generic');
+  }
+  const hash = await addFile(file);
+  return {
+    type,
+    name: file.name,
+    w: size.w,
+    h: size.h,
+    asset: { hash, embedded: true },
+    meta: {
+      mime: file.type || '',
+      ext: extOf(file.name),
+      size: file.size,
+      mtime: file.lastModified || 0,
+      // The name the file arrived under, kept even after it is renamed,
+      // because clearing a name is meant to give this back - see
+      // state.js/renameItem.
+      //
+      // On the item rather than only in the asset registry, which is where
+      // it used to live alone. The registry is rebuilt from the archive on
+      // every open and the archive carries no filenames, so after a save
+      // and a reopen "clear the name" fell back to the *renamed* value and
+      // the original was gone. Here it travels inside board.json.
+      origName: file.name,
+      // Tells adoptAspect() the size is already right; only unmeasurable
+      // media leaves this off and gets resized once it loads.
+      sized: !!size.measured,
+    },
+  };
 }
 
 /** How many colours the sticky pad comes in (see --note-1..4 in tokens.css). */

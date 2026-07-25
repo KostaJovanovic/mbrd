@@ -17,10 +17,6 @@ export const ARRANGEMENTS = [
   { id: 'scatter', label: 'Random scatter' },
 ];
 
-export function arrangementLabel(id) {
-  return (ARRANGEMENTS.find(a => a.id === id) || ARRANGEMENTS[1]).label;
-}
-
 /**
  * World y points up, but every layout below is written the way you read a page:
  * successive rows go *down*. So the centre goes in negated and the results come

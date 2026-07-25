@@ -2,7 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<!-- No user-scalable=no. The canvas has its own zoom, which is why it was there
+     - but browser zoom is also how a low-vision user reads the sidebar, the
+     menus and the item names, none of which the canvas zoom touches. Taking
+     the page's zoom away to protect a gesture is a bad trade. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>mbrd</title>
 <meta name="description" content="An infinite freeform moodboard. Drop in anything, place it anywhere. Runs entirely in your browser.">
 <meta name="color-scheme" content="light">
@@ -117,7 +121,7 @@
       <label class="check"><input type="checkbox" id="opt-axes" checked> Show axes</label>
       <label class="check"><input type="checkbox" id="opt-snap"> Snap to grid</label>
       <label class="check"><input type="checkbox" id="opt-hud" checked> Show readout</label>
-      <!-- One volume for the whole board. See ui/audio.js. -->
+      <!-- One volume for the whole board. See canvas/audio.js. -->
       <label class="field">
         <span>Volume<output id="opt-volume-out">60%</output></span>
         <input id="opt-volume" type="range" min="0" max="100" step="1" value="60">
@@ -251,7 +255,10 @@
 
 <div id="drop-overlay" hidden><div>let it fall</div></div>
 
-<div id="toast" hidden></div>
+<!-- role=status + aria-live: "Saved in this browser", "Export failed" and the
+     missing-asset warnings are the app's only reply to a save, and without
+     these a screen reader never hears any of them. -->
+<div id="toast" role="status" aria-live="polite" hidden></div>
 
 <input id="file-input" type="file" multiple hidden>
 
