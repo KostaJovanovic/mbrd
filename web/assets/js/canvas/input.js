@@ -9,15 +9,16 @@
 //   left-drag empty space ....... pan            (an infinite board pans more than it marquees)
 //   shift / ctrl + drag empty ... marquee select
 //   middle-drag or space+drag ... pan, from anywhere
-//   drag an item ................ move the whole selection
+//   drag an item ................ move the whole selection, plus anything stuck to it
 //   drag a corner grip .......... resize (aspect-locked for media, shift to free it)
 //   wheel ....................... zoom to cursor;  shift+wheel pans horizontally
 //   two fingers ................. pan + pinch zoom
 
 import { clamp } from '../util.js';
 import {
-  board, byId, selection, select, clearSelection, topZ,
-  snapshotGeom, applyGeom, commitGeom, bus,
+  board, byId, selection, select, clearSelection, topZ, stackOrder,
+  snapshotGeom, applyGeom, commitGeom, bus, stuckFollowers,
+  copyItems, cutItems, pasteItems, clipboardSize, clipboardBounds, clipboardHasOurs,
 } from '../state.js';
 import { zoomMs, travelMs } from './viewport.js';
 import { itemIdFromEvent, ensureMounted, sync as syncItems, editItemName } from './items.js';
@@ -138,18 +139,27 @@ export function initInput(vp, cmds) {
   }
 
   function startMove(e, id) {
+    // Whatever is stuck to the selection comes with it. Worked out once, here,
+    // and then held for the length of the gesture: recomputing it per frame
+    // would let notes latch on and fall off as the drag swept the selection
+    // across other items, so the group you picked up would not be the group you
+    // put down. What is stuck when you take hold is what travels.
+    const moving = [...selection, ...stuckFollowers(selection)];
     // Snapshot before raising, so the z-bump rides along in the same undo entry.
-    const before = snapshotGeom(selection);
+    const before = snapshotGeom(moving);
+    // Raised bottom-to-top rather than in selection order, so the group keeps
+    // its internal stacking. That is what leaves a stuck note still above the
+    // thing it is stuck to when the pair lands, and so still stuck.
     let z = topZ();
-    for (const sid of selection) byId(sid).z = ++z;
-    bus.emit('geom', [...selection]);
+    for (const sid of stackOrder(moving)) byId(sid).z = ++z;
+    bus.emit('geom', moving);
     const start = vp.toWorld(e.clientX, e.clientY);
     g = {
       kind: 'move', id, before, start,
       origin: before.map(b => ({ id: b.id, x: b.x, y: b.y })),
       moved: false,
     };
-    for (const sid of selection) ensureMounted(sid);
+    for (const sid of moving) ensureMounted(sid);
   }
 
   function startResize(e, id, corner) {
@@ -457,9 +467,80 @@ export function initInput(vp, cmds) {
     const step = e.shiftKey ? gridStep(board.settings.gridStep, vp.zoom) : 1;
     const dx = (e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0) * step;
     const dy = (e.key === 'ArrowUp' ? 1 : e.key === 'ArrowDown' ? -1 : 0) * step;
-    const before = snapshotGeom(selection);
+    // The arrow keys are a drag by another route, so they carry the same stuck
+    // notes. No z-bump here: a nudge does not raise anything, and the pair are
+    // already in the right order relative to each other.
+    const before = snapshotGeom([...selection, ...stuckFollowers(selection)]);
     applyGeom(before.map(b => ({ ...b, x: b.x + dx, y: b.y + dy })));
     commitGeom('Nudge', before);
+  }
+
+  // ---- clipboard --------------------------------------------------------
+  //
+  // The real copy/cut/paste events, not a Ctrl+C branch in the keydown handler
+  // above, and two things follow from that. A `copy` handler is the only place
+  // the system clipboard can be written synchronously and without asking
+  // permission, which is what lets a copy leave the receipt that decides the
+  // next paste (see clipboardHasOurs in state.js). And the browser only sends
+  // these where they belong, so a note being edited or a name being typed keeps
+  // the browser's own copy and paste for nothing - the same bargain the
+  // `widget` branch in pointerdown makes for the pointer.
+  //
+  // import/drop.js listens for `paste` too, to bring images, files and text in
+  // from outside. This one is registered first, because main.js calls
+  // initInput() before initDrop(), and stops the event dead the moment it
+  // claims it - so exactly one of the two ever acts on a given paste.
+
+  /** A clipboard gesture is ours only when the canvas, not a field, has focus. */
+  const canClip = e => !typingInto(e.target) && !!selection.size;
+
+  addEventListener('copy', e => {
+    if (!canClip(e)) return;
+    const text = copyItems(selection);
+    if (!text) return;
+    e.preventDefault();
+    e.clipboardData?.setData('text/plain', text);
+  });
+
+  addEventListener('cut', e => {
+    if (!canClip(e)) return;
+    const text = cutItems(selection);
+    if (!text) return;
+    e.preventDefault();
+    e.clipboardData?.setData('text/plain', text);
+  });
+
+  addEventListener('paste', e => {
+    if (typingInto(e.target) || !clipboardSize()) return;
+    const text = e.clipboardData?.getData('text/plain') || '';
+    const files = e.clipboardData?.files;
+    // Ours wins in two cases and no others. Either the system clipboard still
+    // carries the receipt our copy left on it, meaning nothing has been copied
+    // anywhere since - or it carries nothing at all, which is what a browser
+    // that refused to let us write the receipt looks like, and is anyway the
+    // one situation where a paste can mean nothing else. Anything else on it
+    // was put there after our copy, and the newer thing is the one meant.
+    if (!clipboardHasOurs(text) && (files?.length || text.trim())) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    const copies = pasteItems(pasteAt());
+    // Selected afterwards, so the copies are what a following nudge, drag or
+    // second Ctrl+D acts on - and so the eye is told where the paste landed.
+    if (copies.length) select(copies.map(i => i.id));
+  });
+
+  /**
+   * Where a paste should land: nothing, meaning "beside the original", unless
+   * the box the copy was taken from is nowhere in view - in which case the
+   * middle of the screen, because a paste you cannot see is indistinguishable
+   * from one that failed.
+   */
+  function pasteAt() {
+    const box = clipboardBounds();
+    const r = vp.visibleRect(0);
+    const inView = box && box.x1 >= r.x0 && box.x0 <= r.x1 &&
+                          box.y1 >= r.y0 && box.y0 <= r.y1;
+    return inView ? null : vp.toWorld(vp.left + vp.cx, vp.top + vp.cy);
   }
 
   // The canvas owns the right-click slot: a board's useful actions are spatial,

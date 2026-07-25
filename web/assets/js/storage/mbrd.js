@@ -6,6 +6,7 @@
 //   |- board.json           { view, settings, arrangement, items[], trash[] }
 //   |- assets/<hash>.<ext>  embedded bytes, deduped by content hash
 //   |- notes/<slug>--<id>.md    one sticky note, as Markdown
+//   |- waveforms/<hash>.json    one audio file's measured readings
 //   \- thumbnails/<hash>.webp   (reserved; not written yet)
 //
 // Items reference bytes as `asset: { hash, embedded: true }`. The schema also
@@ -40,16 +41,22 @@ export async function packBoard(boardData, { created = null } = {}) {
     title: boardData.title || 'Untitled board',
   };
 
-  const entries = [
-    { name: 'manifest.json', data: json(manifest), compress: true },
-    { name: 'board.json', data: json(boardData), compress: true },
-  ];
-
-  const seen = new Set();
   // Binned items count as referenced. Their bytes are the whole reason the bin
   // is worth anything after a save - dropping them would leave the panel
   // listing things that can no longer come back.
   const referenced = [...boardData.items, ...(boardData.trash || []).map(t => t.item)];
+
+  // Gathered before board.json is serialised, because those are not two
+  // decisions but one: a hash whose readings get a file of their own is a hash
+  // whose readings come out of the board. See the waveform block below.
+  const waveforms = collectWaveforms(referenced);
+
+  const entries = [
+    { name: 'manifest.json', data: json(manifest), compress: true },
+    { name: 'board.json', data: json(withoutPeaks(boardData, waveforms)), compress: true },
+  ];
+
+  const seen = new Set();
   for (const item of referenced) {
     const hash = item.asset?.hash;
     if (!hash || seen.has(hash)) continue;
@@ -72,6 +79,11 @@ export async function packBoard(boardData, { created = null } = {}) {
   for (const item of referenced) {
     if (item.type !== 'note') continue;
     entries.push({ name: noteFile(item), data: enc.encode(noteMarkdown(item)), compress: true });
+  }
+
+  // ...and every waveform that has been measured, one per audio file.
+  for (const [hash, peaks] of waveforms) {
+    entries.push({ name: waveformFile(hash), data: enc.encode(waveformJSON(peaks)), compress: true });
   }
 
   return { blob: await writeZip(entries, { date: now, mime: MIME }), manifest };
@@ -134,6 +146,147 @@ function noteId(name) {
   return cut === -1 ? null : stem.slice(cut + 2) || null;
 }
 
+// ---------------------------------------------------------------------------
+// Waveforms as sidecars
+//
+// Drawing an audio card's bars means decoding the entire file - a few hundred
+// milliseconds for a long track, times every audio card on the board, all at
+// once on the way in. What comes out of that is tiny: a couple of hundred RMS
+// readings in [0, 1], which is why ui/audio.js caches them on the item, and
+// why they have been riding along inside board.json. This gives them a file,
+// for the reason notes have one and for a second reason of their own.
+//
+// They are keyed by the hash of the audio, not by the id of the card. A
+// waveform is a property of a recording rather than of the thing showing it -
+// drop the same clip on the board twice and the two cards are the same shape,
+// once - and assets/ is already named by content hash, so this is not a new
+// naming scheme, it is the one already in the archive.
+//
+// JSON, and the size argument against it turns out not to survive contact
+// with the ZIP. Packed 16-bit samples would be 512 bytes against 1858 of text,
+// which sounds decisive until both go through deflate: 426 against 582. Three
+// decimal digits and a comma are a six-character alphabet, and that is exactly
+// the redundancy deflate exists to remove, so the whole saving is 156 bytes -
+// per audio file, beside the megabytes of audio it was measured from. (Eight
+// bits per sample would beat it properly, at a resolution of 1/255, which is
+// four times coarser than the thousandths measure() goes out of its way to
+// keep - see the note about quiet passages there.)
+//
+// So the readable form costs a rounding error, and readable is the point of a
+// container that is a folder of files: a few hundred numbers laid out sixteen
+// to a line is something a person can open, diff, and edit, and this format's
+// whole pitch is that you can unzip it and find your work in there.
+//
+// Because the file is now the copy, the copy in board.json goes - see
+// withoutPeaks(). Storing it twice would have been the same bytes for nothing
+// and two places to disagree. Reading back is the notes rule again: the
+// sidecar outranks board.json where there is one, board.json still works where
+// there is not (a board written before this existed), and a file that has been
+// truncated or typed into is ignored rather than fatal - the card can always
+// fall back to measuring the audio again, which is what it did before any of
+// this was here.
+// ---------------------------------------------------------------------------
+
+const WAVES_DIR = 'waveforms/';
+
+/**
+ * The readings to write, hash -> peaks, one entry per distinct audio file.
+ *
+ * First valid set wins. Two cards on the same hash should hold the same
+ * readings - they were measured from the same bytes - and where they somehow
+ * do not, one file per hash is the answer that keeps being true afterwards:
+ * on the way back in both cards are given the file's.
+ */
+function collectWaveforms(items) {
+  const out = new Map();
+  for (const item of items) {
+    const hash = item?.asset?.hash;
+    if (!hash || out.has(hash)) continue;
+    if (isReadings(item.meta?.peaks)) out.set(hash, item.meta.peaks);
+  }
+  return out;
+}
+
+/**
+ * The board as it goes into board.json: the same data, minus the readings that
+ * are being written out beside it.
+ *
+ * Driven by the same map the files are written from, so the two can never
+ * drift into a board that dropped its readings without a file to find them in.
+ * Copies rather than edits - `meta` here is the live object off the item, and
+ * packing a board is not allowed to change it.
+ */
+function withoutPeaks(boardData, waveforms) {
+  const strip = item => {
+    if (!item?.meta || !waveforms.has(item.asset?.hash)) return item;
+    const { peaks, ...meta } = item.meta;
+    return { ...item, meta };
+  };
+  const out = { ...boardData, items: boardData.items.map(strip) };
+  if (boardData.trash) out.trash = boardData.trash.map(t => ({ ...t, item: strip(t.item) }));
+  return out;
+}
+
+const waveformFile = hash => `${WAVES_DIR}${hash}.json`;
+
+/** The hash a waveform file was written for, or null if this is not one. */
+function waveformHash(name) {
+  if (!name.startsWith(WAVES_DIR) || !name.endsWith('.json')) return null;
+  return name.slice(WAVES_DIR.length, -'.json'.length) || null;
+}
+
+/**
+ * Hand-laid out rather than run through JSON.stringify, which would give
+ * either one unreadable line or one number per line for several hundred lines.
+ * Sixteen to a row makes it a block of sixteen columns you can scan down and
+ * see the shape in, the quiet stretches showing up as runs of leading zeros.
+ * It is still perfectly ordinary JSON either way.
+ *
+ * `res` is the count again, in the one place a reader looks first. It also
+ * catches the edit that deletes a row: a file whose header and body disagree
+ * is a file that has lost something, and is dropped on the way in.
+ */
+function waveformJSON(peaks) {
+  const rows = [];
+  for (let i = 0; i < peaks.length; i += 16) rows.push('    ' + peaks.slice(i, i + 16).join(', '));
+  return `{\n  "res": ${peaks.length},\n  "peaks": [\n${rows.join(',\n')}\n  ]\n}\n`;
+}
+
+/** ...and back, or null for anything that is not a set of readings. */
+function parseWaveform(text) {
+  try {
+    const data = JSON.parse(text);
+    if (!isReadings(data?.peaks) || data.res !== data.peaks.length) return null;
+    return data.peaks;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether something is a plausible set of readings, in the loose sense this
+ * layer can judge: normalised amplitudes, none of them a string, a NaN or a
+ * negative number. Deliberately not a check for one exact length - the
+ * resolution is ui/audio.js's business, and a board written at some other one
+ * should arrive there to be rejected on its own terms rather than be thrown
+ * away here. The ceiling is only so that a hand-written file cannot ask this
+ * to carry a million numbers around.
+ */
+function isReadings(v) {
+  return Array.isArray(v) && v.length >= 2 && v.length <= 4096
+    && v.every(n => typeof n === 'number' && n >= 0 && n <= 1);
+}
+
+/**
+ * Every item in a just-parsed board, on the board and in the bin alike. The
+ * sidecar readers all want both: a note or a waveform belonging to something
+ * you threw away is still yours until the bin is emptied.
+ */
+function* allItems(board) {
+  for (const item of board.items || []) if (item) yield item;
+  for (const t of board.trash || []) if (t?.item) yield t.item;
+}
+
 /**
  * Read a .mbrd Blob. Registers every embedded asset in the asset store and
  * returns `{ manifest, board }` ready for state.loadBoard().
@@ -162,13 +315,36 @@ export async function unpackBoard(blob) {
   // Notes come back from their own files, which outrank the copy in
   // board.json - see the block above packBoard's note writer.
   const notes = new Map();
-  for (const item of board.items || []) if (item.type === 'note') notes.set(item.id, item);
-  for (const t of board.trash || []) if (t?.item?.type === 'note') notes.set(t.item.id, t.item);
+  for (const item of allItems(board)) if (item.type === 'note') notes.set(item.id, item);
   for (const [name, bytes] of files) {
     const id = noteId(name);
     const item = id && notes.get(id);
     if (!item) continue;
     item.meta = { ...item.meta, text: parseNote(dec.decode(bytes)) };
+  }
+
+  // Waveforms the same, but one file can answer for several cards: the sidecar
+  // is named after the audio, and every card holding that audio wants it.
+  const waves = new Map();
+  for (const item of allItems(board)) {
+    const hash = item.asset?.hash;
+    if (!hash) continue;
+    if (!waves.has(hash)) waves.set(hash, []);
+    waves.get(hash).push(item);
+  }
+  for (const [name, bytes] of files) {
+    const hash = waveformHash(name);
+    const holders = hash && waves.get(hash);
+    if (!holders) continue;
+    const peaks = parseWaveform(dec.decode(bytes));
+    if (!peaks) {
+      // Nothing to fail over. The card falls back to whatever board.json gave
+      // it and, failing that, to measuring the audio again - slower by a few
+      // hundred milliseconds, which is the entire stake here.
+      console.warn('[mbrd] unreadable waveform', name, '- will re-measure');
+      continue;
+    }
+    for (const item of holders) item.meta = { ...item.meta, peaks };
   }
 
   for (const [name, bytes] of files) {

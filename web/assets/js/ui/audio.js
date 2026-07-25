@@ -10,7 +10,11 @@
 // The bars are measured, not decorative. The file is decoded once, reduced to
 // one RMS value per bar, and the result is cached on the item - so the shape
 // you see is that recording's shape, a quiet intro reads as a quiet intro, and
-// reopening the board does not decode anything a second time. When decoding is
+// reopening the board does not decode anything a second time. The readings
+// outlive the session too: a save writes them into the .mbrd as their own
+// waveforms/<hash>.json, named after the audio rather than after the card, so
+// a board comes back with its waveforms already drawn. See the sidecar block
+// in storage/mbrd.js. When decoding is
 // impossible (an exotic codec, no Web Audio) the fallback is a stable pattern
 // derived from the file's own hash: still that file's own shape, in the weak
 // sense that it never changes and never matches another file's, which is all a
@@ -88,6 +92,22 @@ function readVolume() {
 export function registerPlayer(el) {
   el.volume = volume;
   players.add(el);
+
+  // One clip at a time. A board is a wall of things you are looking at
+  // together, and two of them talking over each other is not a mix, it is a
+  // mess - so starting one stops whatever else was going.
+  //
+  // Hung on the element's own 'play' event rather than on the play button,
+  // because the button is not the only way playback starts: a seek on a paused
+  // clip, a media key, the OS notification controls, and anything added later
+  // all arrive here and nowhere else. Elements whose card has since been
+  // deleted are still in the set and are simply already paused, so the loop
+  // does not need to know about them.
+  el.addEventListener('play', () => {
+    for (const other of players) {
+      if (other !== el && !other.paused) other.pause();
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -135,7 +155,7 @@ function context() {
  */
 export async function peaks(item) {
   const cached = item.meta?.peaks;
-  if (Array.isArray(cached) && cached.length === PEAK_RES) return cached;
+  if (usable(cached)) return cached;
 
   const asset = item.asset && getAsset(item.asset.hash);
   const measured = asset ? await measure(asset.blob) : null;
@@ -148,6 +168,23 @@ export async function peaks(item) {
   if (item.meta) item.meta.peaks = result;
   if (measured) markDirty();
   return result;
+}
+
+/**
+ * Whether a set of readings can be drawn as they stand.
+ *
+ * The length check is what makes PEAK_RES safe to change: readings taken at
+ * some older resolution are not recognised, and the file is measured again
+ * rather than drawn at the wrong pitch. The value check earns its keep now
+ * that readings can arrive out of a file a person is invited to open -
+ * waveforms/<hash>.json inside the .mbrd - where a deleted comma or a stray
+ * letter would otherwise reach drawBars() as a NaN and come out as a card of
+ * bars with no height. mbrd.js checks that the file is well formed; this is
+ * the narrower question of whether this build can use what was in it.
+ */
+function usable(v) {
+  return Array.isArray(v) && v.length === PEAK_RES
+    && v.every(n => typeof n === 'number' && n >= 0 && n <= 1);
 }
 
 async function measure(blob) {
