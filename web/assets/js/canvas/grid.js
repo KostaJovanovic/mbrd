@@ -122,8 +122,14 @@ const dot = (color, scale) => {
 // So thickness follows the slider and length stops. That is also the more
 // honest reading of "grid weight": turning it up should press harder, not draw
 // a bigger cross.
-const ARM_LONG = 3;
-const ARM_LONG_MAX = 6;   // CSS px, before the lattice's own scale factor
+//
+// Both lengths were cut by 30% after looking at a real board: the mark reads as
+// a registration cross rather than a plus sign at this size, and the lattice
+// stops competing with the items sitting on it. Thickness is deliberately not
+// part of that cut - it is what the weight slider drives, and shrinking it here
+// would quietly rescale the whole slider.
+const ARM_LONG = 2.1;
+const ARM_LONG_MAX = 4.2;   // CSS px, before the lattice's own scale factor
 const ARM_THICK = 0.5;
 
 // ---------------------------------------------------------------------------

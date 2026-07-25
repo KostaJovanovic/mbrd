@@ -14,6 +14,7 @@ import {
   select, clearSelection, selectAll, duplicateItems,
   copyItems, cutItems, pasteItems, clipboardSize, clipboardHasOurs, clipboardBounds,
   stuckTo, stuckFollowers, setItemText, renameItem, NOTE_MAX,
+  setSetting, snapshotGeom, commitGeom,
 } from '../web/assets/js/state.js';
 import { hash } from './helpers.js';
 
@@ -551,4 +552,98 @@ test('markDirty is idempotent', () => {
   assert.ok(isDirty());
   markDirty(false);
   assert.ok(!isDirty());
+});
+
+// ---------------------------------------------------------------------------
+// Snapping the whole board
+// ---------------------------------------------------------------------------
+//
+// The promise has three halves, and it is the third that is easy to get wrong:
+// turning snapping on lays everything on the lattice, turning it off puts it
+// back, and anything placed by hand in between keeps where it was put rather
+// than being dragged back to a position the user has already overruled.
+
+const boxAt = (x, y, w = 100, h = 100) => ({ type: 'note', x, y, w, h, meta: { text: 'n' } });
+const geom = it => ({ x: it.x, y: it.y, w: it.w, h: it.h });
+
+test('turning snapping on lays the board on the lattice', () => {
+  fresh();
+  const [a] = addItems([boxAt(17, -23, 100, 100)]);
+  setSetting('snap', true);
+  const it = byId(a.id);
+  // Edges on grid lines, size a whole number of cells - the resize rule, since
+  // laying out a board is the resize case, not the drag case.
+  const step = board.settings.gridStep;
+  // Math.abs, because a negative coordinate divides to -0 and assert.equal is
+  // strict enough to tell the two zeroes apart.
+  assert.equal(Math.abs((it.x - it.w / 2) % step), 0, 'left edge off the lattice');
+  assert.equal(Math.abs((it.y - it.h / 2) % step), 0, 'bottom edge off the lattice');
+  assert.equal(it.w % step, 0);
+  assert.equal(it.h % step, 0);
+});
+
+test('turning snapping off puts everything back where it was', () => {
+  fresh();
+  const [a] = addItems([boxAt(17, -23, 90, 140)]);
+  const was = geom(byId(a.id));
+  setSetting('snap', true);
+  assert.notDeepEqual(geom(byId(a.id)), was, 'nothing moved, so the test proves nothing');
+  setSetting('snap', false);
+  assert.deepEqual(geom(byId(a.id)), was);
+});
+
+test('an item moved while snapped keeps its new place', () => {
+  fresh();
+  const [a, b] = addItems([boxAt(17, -23), boxAt(300, 300)]);
+  const bWas = geom(byId(b.id));
+  setSetting('snap', true);
+
+  // A hand placement, committed the way a drag commits.
+  const before = snapshotGeom([a.id]);
+  const it = byId(a.id);
+  it.x = 512; it.y = 512;
+  commitGeom('Move', before);
+
+  setSetting('snap', false);
+  assert.equal(byId(a.id).x, 512, 'the moved item was dragged back');
+  assert.equal(byId(a.id).y, 512);
+  assert.deepEqual(geom(byId(b.id)), bWas, 'the untouched item should have gone back');
+});
+
+test('snapping twice remembers life before the lattice, not the lattice', () => {
+  fresh();
+  const [a] = addItems([boxAt(17, -23, 90, 140)]);
+  const was = geom(byId(a.id));
+  setSetting('snap', true);
+  setSetting('snap', false);
+  setSetting('snap', true);
+  setSetting('snap', false);
+  assert.deepEqual(geom(byId(a.id)), was);
+});
+
+test('the snap is one undo step', () => {
+  fresh();
+  const [a] = addItems([boxAt(17, -23, 90, 140)]);
+  const was = geom(byId(a.id));
+  setSetting('snap', true);
+  assert.ok(undo());
+  assert.deepEqual(geom(byId(a.id)), was);
+});
+
+test('a board with nothing on it does not record an undo step', () => {
+  fresh();
+  setSetting('snap', true);
+  assert.equal(undo(), false);
+});
+
+test('a memo that is not a box is ignored rather than written onto the item', () => {
+  // What a hand-edited .mbrd can carry. Restoring from it would otherwise put
+  // a string, or a zero size, straight onto the item's geometry.
+  fresh([{ type: 'note', x: 40, y: 40, w: 100, h: 100,
+           meta: { text: 'n', presnap: { x: 'left', y: 0, w: 100, h: 100 } } }]);
+  const a = board.items[0];
+  board.settings.snap = true;
+  setSetting('snap', false);
+  assert.equal(byId(a.id).x, 40);
+  assert.ok(!byId(a.id).meta.presnap, 'the bad memo should have been dropped');
 });

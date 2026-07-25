@@ -21,7 +21,7 @@ import { getAsset } from './storage/assets.js';
 // this item and what does it cover" has exactly one answer in this app. Kept
 // at the top level rather than under canvas/ because it depends on nothing and
 // belongs to no one layer - see geometry.js.
-import { pointInItem, topEdge, itemBounds } from './geometry.js';
+import { pointInItem, topEdge, itemBounds, MIN_SIZE, MAX_SIZE } from './geometry.js';
 
 export const bus = emitter();
 
@@ -316,7 +316,119 @@ export function commitGeom(label, before) {
   const after = snapshotGeom(before.map(b => b.id));
   const changed = after.some((a, i) => GEOM_KEYS.some(k => a[k] !== before[i][k]));
   if (!changed) return;
+  // Placed by hand while snapping was on: this *is* where the item belongs
+  // now, so it gives up its memory of where it sat before the board was laid
+  // on the lattice. Turning snapping off later leaves it exactly here.
+  if (board.settings.snap) {
+    for (let i = 0; i < after.length; i++) {
+      if (GEOM_KEYS.some(k => after[i][k] !== before[i][k])) forgetPresnap(byId(after[i].id));
+    }
+  }
   commit(label, () => applyGeom(after), () => applyGeom(before));
+}
+
+// ---------------------------------------------------------------------------
+// Snapping the whole board
+// ---------------------------------------------------------------------------
+
+/**
+ * Turning snapping on lays every item on the lattice at once, rather than only
+ * governing the next thing you drag - so the board *looks* snapped the moment
+ * the setting is on, which is the only way a grid reads as a grid.
+ *
+ * Turning it off puts everything back. That needs the old geometry kept
+ * somewhere, and it goes in `meta.presnap` on the item: per item, so an item
+ * touched during a snapped session can drop its own memo without affecting the
+ * rest, and serialised with the board, so the promise survives a save and a
+ * reload rather than lasting only as long as the tab.
+ *
+ * Two consequences worth being explicit about:
+ *
+ * - **The step is the base step, not the one on screen.** `gridStep()` picks a
+ *   spacing from the current zoom so the lattice never becomes a fill, which is
+ *   right for something drawn and wrong for something stored: snapping at 20%
+ *   zoom would otherwise commit a board to a coarser geometry than snapping at
+ *   100%, and the same click would do two different things depending on how far
+ *   out you happened to be.
+ * - **Edges land on lines, not centres.** A drag snaps the centre and a resize
+ *   snaps the moving edge; laying out the whole board is the resize case, since
+ *   what makes a snapped board look snapped is items sitting flush in cells. An
+ *   item whose size is an odd number of cells therefore ends up with its centre
+ *   on a half-step, which is correct and is not a rounding error.
+ */
+function snapAll() {
+  const step = board.settings.gridStep > 0 ? board.settings.gridStep : 64;
+  const before = [], after = [];
+  for (const it of board.items) {
+    const pre = it.meta?.presnap || null;
+    before.push({ id: it.id, x: it.x, y: it.y, w: it.w, h: it.h, pre });
+
+    const w = Math.min(Math.max(Math.round(it.w / step), 1) * step, MAX_SIZE);
+    const h = Math.min(Math.max(Math.round(it.h / step), 1) * step, MAX_SIZE);
+    after.push({
+      id: it.id,
+      x: Math.round((it.x - it.w / 2) / step) * step + w / 2,
+      y: Math.round((it.y - it.h / 2) / step) * step + h / 2,
+      w: Math.max(w, MIN_SIZE),
+      h: Math.max(h, MIN_SIZE),
+      // A board snapped, unsnapped and snapped again remembers the first
+      // position, not the second - the memo is of life before the lattice.
+      pre: pre || { x: it.x, y: it.y, w: it.w, h: it.h },
+    });
+  }
+  applySnapState(before, after, 'Snap to grid');
+}
+
+/** Put back what snapAll() remembered, for everything still carrying a memo. */
+function unsnapAll() {
+  const before = [], after = [];
+  for (const it of board.items) {
+    // Checked rather than trusted: a memo arrives from a .mbrd like everything
+    // else, and a hand-edited one holding a string would write it straight onto
+    // the item's geometry. A memo that does not describe a box is no memo.
+    const pre = usableMemo(it.meta?.presnap);
+    if (!pre) { forgetPresnap(it); continue; }
+    before.push({ id: it.id, x: it.x, y: it.y, w: it.w, h: it.h, pre });
+    after.push({ id: it.id, x: pre.x, y: pre.y, w: pre.w, h: pre.h, pre: null });
+  }
+  applySnapState(before, after, 'Leave the grid');
+}
+
+const SNAP_KEYS = ['x', 'y', 'w', 'h'];
+
+function applySnapState(before, after, label) {
+  const moved = after.some((a, i) =>
+    SNAP_KEYS.some(k => a[k] !== before[i][k]) || !!a.pre !== !!before[i].pre);
+  if (!moved) return;
+  writeSnapState(after);
+  commit(label, () => writeSnapState(after), () => writeSnapState(before));
+}
+
+function writeSnapState(list) {
+  const ids = [];
+  for (const g of list) {
+    const it = byId(g.id);
+    if (!it) continue;
+    for (const k of SNAP_KEYS) it[k] = g[k];
+    if (g.pre) it.meta = { ...it.meta, presnap: g.pre };
+    else forgetPresnap(it);
+    ids.push(g.id);
+  }
+  if (ids.length) bus.emit('geom', ids);
+}
+
+function forgetPresnap(it) {
+  if (!it?.meta || !('presnap' in it.meta)) return;
+  const { presnap, ...rest } = it.meta;
+  it.meta = rest;
+}
+
+/** A memo is four finite numbers with a size that is actually a size. */
+function usableMemo(pre) {
+  if (!pre || typeof pre !== 'object') return null;
+  const ok = SNAP_KEYS.every(k => Number.isFinite(pre[k]));
+  if (!ok || pre.w < MIN_SIZE || pre.h < MIN_SIZE || pre.w > MAX_SIZE || pre.h > MAX_SIZE) return null;
+  return { x: pre.x, y: pre.y, w: pre.w, h: pre.h };
 }
 
 function bottomZ() {
@@ -775,6 +887,10 @@ export function selectAll() {
 export function setSetting(key, value) {
   if (board.settings[key] === value) return;
   board.settings[key] = value;
+  // Snapping is not only a rule for the next drag - it moves the board. Done
+  // here rather than at the checkbox because the whimsy axis flips this setting
+  // too (Harsh means snapped), and both routes have to behave the same.
+  if (key === 'snap') value ? snapAll() : unsnapAll();
   markDirty();
   bus.emit('settings', key);
 }
