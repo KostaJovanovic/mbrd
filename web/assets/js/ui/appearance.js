@@ -79,6 +79,14 @@ const AXIS_TOKENS = ['--radius', '--grid-alpha', '--grid-dot'];
  * is also why the list is short: these are the faces a board can actually be
  * set in today, not a catalogue.
  *
+ * Which means this settles the serif only as far as it can. **Newsreader,
+ * Literata and Source Serif 4 are not in web/assets/fonts/** - the roadmap
+ * records them as downloaded to a scratchpad and that scratchpad is gone, so
+ * what is offered compares Fraunces against the faces already on the machine
+ * and no further. Adding one is an entry here, an @font-face in fonts.css, the
+ * files themselves and a line in sw.js's SHELL; nothing else in this module
+ * changes.
+ *
  * '' is not a face. It removes the inline property and lets the whimsy level
  * have the type back, which is the state every board starts in - so trying
  * something on is always undoable without a reset.
@@ -109,10 +117,22 @@ const BODY_FACES = [
 
 /** The curated set of tokens worth exposing. Everything else stays internal. */
 const CONTROLS = [
+  // The type first, because these two are the controls somebody is trying to
+  // answer a question with, where the rest are adjustments.
+  //
+  // Deliberately not in AXIS_TOKENS, and that is the decision worth naming:
+  // sliding whimsy drops a hand-set radius back to the stylesheet, but a chosen
+  // face survives the move. Comparing one serif across all three tiers is the
+  // whole reason to have this, and a control that reset itself every time you
+  // looked at the other end of the axis could not do it.
+  //
+  // --font-mono is left out on purpose: it is spent on byte counts, coordinates
+  // and the text card's body, where the question is "does it line up in
+  // columns" rather than one of taste.
+  { var: '--font-display', label: 'Display type', type: 'font', options: DISPLAY_FACES },
+  { var: '--font-body',    label: 'Body type',    type: 'font', options: BODY_FACES },
   { var: '--accent',      label: 'Pigment',       type: 'color' },
   { var: '--paper',       label: 'Paper',         type: 'color' },
-  { var: '--font-display', label: 'Display face', type: 'font', options: DISPLAY_FACES },
-  { var: '--font-body',    label: 'Body face',    type: 'font', options: BODY_FACES },
   { var: '--radius',      label: 'Corner radius', type: 'range', min: 0,   max: 28,  step: 1,    unit: 'px' },
   // Floored well above zero. The bottom of this range used to be an invisible
   // grid, which is a second, hidden "off" switch sitting next to the real one

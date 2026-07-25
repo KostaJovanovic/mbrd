@@ -70,6 +70,11 @@ function itemEntries(id, count, at) {
   // there is nowhere sensible to put the caret when a whole group is selected.
   const editable = !many && cmds.canEditNote(id);
   const renamable = !many && canRenameItem(id);
+  // A card that is not itself a picture can be given one. Single-item, like the
+  // two above: a file dialog answers with one file, and there is no sensible
+  // reading of "set the picture" for a group of nine.
+  const coverable = !many && cmds.canCoverItem(id);
+  const covered = coverable && cmds.itemHasCover(id);
   return [
     // First, and only on a note: right-clicking the one item type you can
     // actually type into should offer to type into it before anything else.
@@ -77,7 +82,11 @@ function itemEntries(id, count, at) {
       action: () => cmds.editNote(id) },
     // No ellipsis: nothing opens. The name goes editable where it already sits.
     { label: 'Rename', accel: 'F2', hidden: !renamable, action: () => editItemName(id) },
-    { sep: true, hidden: !editable && !renamable },
+    // Ellipsis: a file dialog opens.
+    { label: covered ? 'Change picture…' : 'Set a picture…', hidden: !coverable,
+      action: () => cmds.setCover(id) },
+    { label: 'Remove picture', hidden: !covered, action: () => cmds.clearCover(id) },
+    { sep: true, hidden: !editable && !renamable && !coverable },
     { label: 'Bring to front', action: () => cmds.raise() },
     { label: 'Send to back', action: () => cmds.lower() },
     { sep: true },
@@ -96,6 +105,7 @@ function canvasEntries(at) {
     { label: 'Add a note here', action: () => cmds.addNoteAt(at) },
     { label: 'Add files…', action: () => cmds.addFiles() },
     { sep: true },
+    { label: 'Find…', accel: 'Ctrl K', action: () => cmds.find() },
     { label: 'Select all', accel: 'Ctrl A', action: () => cmds.selectAll() },
     { label: 'Rearrange everything', action: () => cmds.rearrange() },
     { sep: true },

@@ -1555,6 +1555,115 @@ kbd {
    Right-click menu
    --------------------------------------------------------- */
 
+/* ---------------------------------------------------------
+   Find (Ctrl+K)
+
+   Pinned near the top rather than centred, and that is the one layout decision
+   here worth defending: the answers are places on the board, and the moment a
+   row is picked the viewport flies to it. A panel in the middle of the screen
+   would be sitting on the very thing it is about to show you. Up here it takes
+   the strip of board you are least likely to be looking at, and gives it back.
+   --------------------------------------------------------- */
+#search {
+  position: fixed;
+  z-index: 70;               /* over the context menu, which it can be opened from */
+  top: 12vh;
+  left: 50%;
+  translate: -50% 0;
+  width: min(560px, calc(100vw - 32px));
+  padding: 6px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--ogee);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
+  animation: ctx-in var(--dur-fast) var(--ease);
+}
+#search-field {
+  width: 100%;
+  padding: 11px 13px;
+  border: 0;
+  border-radius: calc(var(--ogee) - 6px);
+  background: none;
+  font-family: var(--font-display);
+  font-size: var(--t-title);
+  color: var(--ink);
+}
+#search-field::placeholder { color: var(--ink-3); font-style: var(--display-italic); }
+#search-field:focus { outline: none; }
+/* Cleared by pressing Escape, which this palette already answers to. The
+   engine's own X is a second, differently-shaped affordance for the same verb,
+   drawn in a style no token here can reach. */
+#search-field::-webkit-search-cancel-button { display: none; }
+
+#search-hits {
+  max-height: min(46vh, 420px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+#search-hits:not(:empty) {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: var(--hairline) solid var(--rule);
+}
+
+.search-hit {
+  display: grid;
+  /* The kind column is fixed so the names line up down the list - a ragged
+     left edge on a list you are scanning is what makes you read it twice.
+     Wide enough for "generic", which is the longest of the seven and was
+     coming out as "GENER…". */
+  grid-template-columns: 68px 1fr;
+  align-items: baseline;
+  gap: 2px 10px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.search-kind {
+  grid-row: 1 / span 2;
+  font-family: var(--font-display);
+  font-size: var(--t-tiny);
+  font-style: var(--display-italic);
+  letter-spacing: calc(0.14em * var(--ls-scale));
+  text-transform: uppercase;
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.search-name {
+  font-family: var(--font-display);
+  font-size: var(--t-body);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-where {
+  font-size: var(--t-small);
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* One highlight, driven by the keyboard, and hover only *shows* it rather than
+   moving it - the pointer is usually resting wherever it was left, and letting
+   that win would drag the selection back every time the list reflowed. */
+.search-hit.is-at { background: var(--paper-2); }
+.search-hit:hover { background: var(--paper-3); }
+.search-hit:focus-visible { outline: var(--sel-line) solid var(--select); outline-offset: -2px; }
+
+.search-note {
+  margin: 0;
+  padding: 9px 10px 10px;
+  font-size: var(--t-small);
+  font-style: var(--display-italic);
+  color: var(--ink-3);
+}
+
 #ctx-menu {
   position: fixed;
   z-index: 60;
