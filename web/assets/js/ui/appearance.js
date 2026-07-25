@@ -25,12 +25,12 @@ import { board, bus, markDirty } from '../state.js';
 
 const STORE_KEY = 'mbrd.appearance';
 
-/** The stops on the whimsy slider. Index is the value written to :root. */
-export const WHIMSY = [
-  { label: 'Warm',   hint: 'papyrus, serif, animated' },
-  { label: 'Middle', hint: 'calm paper, sans body' },
-  { label: 'Harsh',  hint: 'high contrast, square, Geist' },
-];
+/**
+ * The stops on the whimsy slider. The index is the value written to :root, and
+ * the names are the ones printed under the track in index.html - what each
+ * stop *does* is visible the moment you move it, so nothing here is captioned.
+ */
+export const WHIMSY = ['Warm', 'Middle', 'Harsh'];
 
 /**
  * Tokens the whimsy axis owns. A hand-set value beats any stylesheet, which is
@@ -157,8 +157,9 @@ const hasLook = look =>
   !!look && (look.whimsy || look.palette || Object.keys(look.vars || {}).length);
 const clone = look => ({
   // Clamped, not trusted: this value arrives from localStorage and from other
-  // people's .mbrd files, and an out-of-range one would index WHIMSY to
-  // undefined the moment the panel tried to label it.
+  // people's .mbrd files, and an out-of-range one would set a data-whimsy no
+  // stylesheet answers to - leaving the interface in whatever the base look is
+  // while the slider claims otherwise.
   whimsy: Math.max(0, Math.min(WHIMSY.length - 1, Math.round(+look?.whimsy) || 0)),
   palette: look?.palette || '',
   vars: { ...(look?.vars || {}) },
@@ -220,9 +221,7 @@ function syncControls() {
   if (paletteSel) paletteSel.value = current.palette || '';
 
   const whimsy = document.getElementById('opt-whimsy');
-  const out = document.getElementById('whimsy-out');
   if (whimsy) whimsy.value = current.whimsy;
-  if (out) out.textContent = WHIMSY[current.whimsy].hint;
 }
 
 function wireWhimsy() {

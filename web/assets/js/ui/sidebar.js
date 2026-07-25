@@ -64,6 +64,7 @@ export function initSidebar(cmds) {
   bus.on('board', paint);
   bus.on('settings', paint);
   paint();
+  restoreOpen();
 }
 
 function bindCheck(id, key) {
@@ -92,20 +93,41 @@ function paint() {
 
 // Deliberately non-modal: no scrim, nothing disabled behind it. The board keeps
 // panning, zooming, accepting drops and responding to keys while the panel is
-// open, so you can leave it open and keep working.
+// open, so you can leave it open and keep working - which is also why the open
+// state is worth remembering across reloads. It follows the user rather than
+// the board, so it lives in localStorage and not in the .mbrd: how you like to
+// work is not a property of someone else's moodboard.
+const OPEN_KEY = 'mbrd.sidebar';
+
 export const isOpen = () => sidebar?.classList.contains('is-open');
 
 export function open() {
-  sidebar.classList.add('is-open');
-  sidebar.setAttribute('aria-hidden', 'false');
-  menuBtn.setAttribute('aria-expanded', 'true');
+  setOpen(true);
 }
 
 export function close() {
   if (!sidebar) return;
-  sidebar.classList.remove('is-open');
-  sidebar.setAttribute('aria-hidden', 'true');
-  menuBtn.setAttribute('aria-expanded', 'false');
+  setOpen(false);
+}
+
+function setOpen(want, remember = true) {
+  sidebar.classList.toggle('is-open', want);
+  sidebar.setAttribute('aria-hidden', String(!want));
+  menuBtn.setAttribute('aria-expanded', String(want));
+  if (!remember) return;
+  try { localStorage.setItem(OPEN_KEY, want ? '1' : '0'); } catch { /* private mode */ }
+}
+
+/** Reopen the panel on load, without playing the slide-in for it. */
+function restoreOpen() {
+  let want = false;
+  try { want = localStorage.getItem(OPEN_KEY) === '1'; } catch { /* private mode */ }
+  if (!want) return;
+  // Already-open is a fact about the page, not a thing that just happened, so
+  // it should not animate. One frame with the transition off is enough.
+  sidebar.style.transition = 'none';
+  setOpen(true, false);
+  requestAnimationFrame(() => { sidebar.style.transition = ''; });
 }
 
 const camel = s => s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
