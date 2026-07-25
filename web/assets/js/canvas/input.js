@@ -21,30 +21,21 @@ import {
   copyItems, cutItems, pasteItems, clipboardSize, clipboardBounds, clipboardHasOurs,
 } from '../state.js';
 import { zoomMs, travelMs } from './viewport.js';
-import { itemInRect } from '../geometry.js';
+import { itemInRect, MIN_SIZE, MAX_SIZE } from '../geometry.js';
 import { itemIdFromEvent, ensureMounted, sync as syncItems, editItemName } from './items.js';
 import { gridStep } from './grid.js';
 import { noteFloor } from './notes.js';
 
 const DRAG_SLOP = 3;      // screen px before a press becomes a drag
 
-// The resize limits, in world units. The floor is not about staying *visible*
-// but about staying *operable*: the eight grips are sized in screen pixels (see
-// .grip in app.css, everything multiplied by --iz), so as an item shrinks they
-// do not shrink with it - they crowd it. At 48 world units, viewed at 100%
-// zoom, the four corner marks are only just clear of one another and the edge
-// strips between them keep about ten pixels of length. Below that the corners
-// overlap, the strips collapse to nothing, and the resize becomes one-way: an
-// item dragged down to a speck could never be dragged back out. 48 is still
-// well under half a note (120x120) and a third of the shortest default card
-// (250x140), so a deliberate shrink never runs into it.
-const MIN_SIZE = 48;
-// The ceiling is eighty default cards wide - far past anything a board wants,
-// while still spanning 400 screen pixels at the furthest zoom out, so even an
-// item used as a deliberate backdrop stays inside it. Its job is the drag that
-// leaves the window at high zoom: without a stop, one flick could carry an item
-// to a size that makes Fit frame the board at nothing.
-const MAX_SIZE = 20000;
+// MIN_SIZE and MAX_SIZE are the resize limits, in world units, and they live in
+// geometry.js - a resize handle stopped being the only thing that sets a size
+// when snapping learned to lay the whole board onto the lattice. The reasoning
+// behind both numbers is written there. The floor's job here is the one it has
+// always had: the eight grips are sized in screen pixels, so as an item shrinks
+// they crowd it rather than shrinking with it. The ceiling's is the drag that
+// leaves the window at high zoom - without a stop, one flick could carry an
+// item to a size that makes Fit frame the board at nothing.
 
 export function initInput(vp, cmds) {
   const el = vp.el;

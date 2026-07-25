@@ -21,6 +21,26 @@
 const RAD = Math.PI / 180;
 
 /**
+ * How small and how large an item is allowed to get.
+ *
+ * Here rather than in input.js because a resize handle is no longer the only
+ * thing that sets a size: snapping the whole board onto the lattice does too,
+ * and it lives in state.js, which has no business importing from canvas/.
+ *
+ * 48 is where the eight resize grips stop fitting around a box - below it the
+ * corners overlap, the edge strips collapse, and an item dragged down to a
+ * speck could never be dragged back out. It is still well under half a note
+ * (120x120) and a third of the shortest default card (250x140), so a
+ * deliberate shrink never runs into it.
+ *
+ * 20000 is eighty default cards wide - far past anything a board wants, while
+ * still spanning 400 screen pixels at the furthest zoom out, so even an item
+ * used as a deliberate backdrop stays inside it.
+ */
+export const MIN_SIZE = 48;
+export const MAX_SIZE = 20000;
+
+/**
  * Half-extents of the axis-aligned box that contains a rotated item.
  *
  * The standard result: project the rotated rectangle's own half-extents onto
