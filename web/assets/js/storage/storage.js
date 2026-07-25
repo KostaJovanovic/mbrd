@@ -51,11 +51,28 @@ export const currentFileName = () => fileHandle?.name || null;
 export async function saveBoard() {
   clearTimeout(saveTimer);
   const ok = await autosave();
-  if (!ok) return false;      // autosave() has already said why
+  if (!ok) {
+    // Always an answer, and this is the fix. autosave() deliberately says a
+    // thing like this only once per run of trouble - it fires after every edit
+    // and would otherwise hold a red toast on screen for the session - and
+    // once cacheOk has gone false it returns before it can say anything at
+    // all. Both are right for a background save and both are wrong here:
+    // pressing Save is a question, and the answer to a question is never
+    // silence, nor "we mentioned it earlier".
+    toast(lastFailure || 'Could not save in this browser', 'error');
+    return false;
+  }
   markDirty(false);
   toast('Saved in this browser');
   return true;
 }
+
+/**
+ * Why the last autosave failed, kept for the explicit Save that has to report
+ * it. Cleared on success, so it can never explain a failure that has since
+ * been fixed.
+ */
+let lastFailure = '';
 
 /**
  * Write the board out as a .mbrd.
@@ -291,6 +308,7 @@ export async function newBoard() {
   // reloaded, on a board that is now empty.
   cacheOk = true;
   warnedIncomplete = false;
+  lastFailure = '';
   return true;
 }
 
@@ -329,7 +347,7 @@ function scheduleAutosave() {
  */
 function referencedHashes(data) {
   const out = new Set();
-  const add = it => { const h = it?.asset?.hash; if (h) out.add(h); };
+  const add = it => { for (const h of itemHashes(it)) out.add(h); };
   for (const it of data.items || []) add(it);
   for (const t of data.trash || []) add(t?.item);
   return out;
@@ -358,7 +376,10 @@ function referencedHashes(data) {
  * simply does not happen that time round.
  */
 export async function autosave() {
-  if (!cacheOk) return false;
+  if (!cacheOk) {
+    lastFailure = 'This browser will not store the board (full, or blocked) - export it to a file';
+    return false;
+  }
   try {
     // Serialised once and reused, so the snapshot and the set of assets kept
     // for it can never describe two different boards.
@@ -403,22 +424,26 @@ export async function autosave() {
     }
 
     if (missing.length) {
+      lastFailure = `${describeMissing(data, missing)} - the board cannot be saved complete`;
       // Once per run of trouble, not once per debounce - autosave fires after
       // every edit, and a board that has lost an asset would otherwise put a
-      // red toast on screen for the rest of the session.
+      // red toast on screen for the rest of the session. saveBoard() says it
+      // again regardless, because a press was a question.
       if (!warnedIncomplete) {
         warnedIncomplete = true;
-        toast(`${describeMissing(data, missing)} - the board cannot be saved complete`, 'error');
+        toast(lastFailure, 'error');
       }
       return false;
     }
     warnedIncomplete = false;
+    lastFailure = '';
     return true;
   } catch (err) {
     // Quota or a private-mode refusal: stop trying and say so once.
     cacheOk = false;
     console.warn('[mbrd] autosave disabled:', err);
-    toast('This browser will not store the board (full, or blocked) - export it to a file', 'error');
+    lastFailure = 'This browser will not store the board (full, or blocked) - export it to a file';
+    toast(lastFailure, 'error');
     return false;
   }
 }

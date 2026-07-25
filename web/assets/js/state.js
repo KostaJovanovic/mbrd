@@ -12,7 +12,7 @@
 //   board      - a whole new board was loaded, or the title/dirty flag changed
 //   trash      - something was thrown away, restored, or purged
 
-import { emitter, uid, isHash } from './util.js';
+import { emitter, uid, isHash, toast } from './util.js';
 // The asset registry remembers the filename each item arrived under, which is
 // what a cleared name falls back to - see renameItem(). One-way: assets.js
 // depends on nothing but util.js, so this cannot close a cycle.
@@ -90,8 +90,23 @@ export function makeItem(partial) {
     z: partial.z != null && Number.isFinite(+partial.z) ? +partial.z : topZ() + 1,
     name: typeof partial.name === 'string' ? partial.name.slice(0, 260) : '',
     asset: normalizeAsset(partial.asset),
-    meta,
+    meta: normalizeMeta(meta),
   };
+}
+
+/**
+ * `meta` is the open field - anything a renderer wants to remember about an
+ * item lives in it and nothing here reads most of it. `cover` is the exception,
+ * because it is a *second* content id: it names bytes, gets spelled into an
+ * archive path by storage/mbrd.js and decides what the autosave sweep is
+ * allowed to delete. So it goes through the same gate item.asset.hash does, and
+ * a cover that is not a digest is dropped rather than carried.
+ */
+function normalizeMeta(meta) {
+  if (!('cover' in meta)) return meta;
+  if (isHash(meta.cover)) return meta;
+  const { cover, ...rest } = meta;
+  return rest;
 }
 
 /**
@@ -427,6 +442,20 @@ export function clipboardHasOurs(systemText) {
  * `copy`/`cut` event may write to the system clipboard synchronously.
  */
 export function copyItems(ids) {
+  const text = take(ids);
+  if (text) toast(`Copied ${count(clipboard.items.length)}`);
+  return text;
+}
+
+/**
+ * The copy itself, without the receipt.
+ *
+ * Cut takes exactly this copy but has something else to say about it, and two
+ * toasts in the same turn are not two messages - the second replaces the first
+ * inside a frame, so all the user sees is the last one and all the first one
+ * did was reset the fade.
+ */
+function take(ids) {
   const src = itemsIn(ids);
   if (!src.length) return '';
   clipboard.items = src.map(i => cloneItem(i));
@@ -435,16 +464,26 @@ export function copyItems(ids) {
   return clipboard.text;
 }
 
+/** "1 item" / "3 items", for the three clipboard receipts. */
+const count = n => `${n} item${n === 1 ? '' : 's'}`;
+
 /**
  * Copy, then delete: one undo entry, because removeItems() is the only half
  * that touched the board. Cut items go to the bin like any other delete, so a
  * cut you never paste is still recoverable.
+ *
+ * The one of the three that genuinely needed saying out loud: copy and paste
+ * both leave something on screen to look at, where cut makes things disappear
+ * and looks identical to having pressed delete by mistake. Naming the bin is
+ * the useful half of the message - it is the difference between "gone" and
+ * "over there".
  */
 export function cutItems(ids) {
   const doomed = itemsIn(ids).map(i => i.id);
-  const text = copyItems(doomed);
+  const text = take(doomed);
   if (!text) return '';
   removeItems(doomed, doomed.length > 1 ? `Cut ${doomed.length} items` : 'Cut');
+  toast(`Cut ${count(doomed.length)} to the bin`);
   return text;
 }
 
@@ -502,7 +541,13 @@ export function pasteItems(at = null) {
     dy = (n + 1) * PASTE_STEP.y;
   }
   const copies = clipboard.items.map(i => cloneItem(i, dx, dy));
-  return addItems(copies, copies.length > 1 ? `Paste ${copies.length} items` : 'Paste');
+  const added = addItems(copies, copies.length > 1 ? `Paste ${copies.length} items` : 'Paste');
+  // Worth saying even though the copies are visible: a paste that lands under
+  // the pointer looks like a paste, but one that fanned out from an original
+  // off the edge of the screen can put every copy somewhere you are not
+  // looking, and then a working paste and a dead key are the same event.
+  toast(`Pasted ${count(added.length)}`);
+  return added;
 }
 
 // ---------------------------------------------------------------------------
@@ -671,6 +716,36 @@ export function renameItem(id, name) {
   commit('Rename',
     () => { byId(id).name = next; bus.emit('item', id); },
     () => { byId(id).name = prev; bus.emit('item', id); });
+}
+
+/**
+ * Give an item a picture of its own, or take it away with a null.
+ *
+ * A card that is not itself a picture - a sound file, a text file, a named
+ * card for something the browser cannot draw - has nothing to look at on a
+ * board, and a board is looked at from a distance where a name is not legible.
+ * So any of them can carry one: an album cover, a diagram, a frame grabbed by
+ * hand. The picture is an ordinary asset, hashed and deduped like every other,
+ * which is what makes "the same cover on nine tracks" cost one file.
+ *
+ * Only the *reference* is undoable. The bytes stay in the registry either way,
+ * because undo has to be able to put the picture back and the autosave sweep
+ * is what eventually collects anything no item points at.
+ */
+export function setItemCover(id, hash) {
+  const it = byId(id);
+  if (!it) return;
+  const next = isHash(hash) ? hash : null;
+  const prev = isHash(it.meta?.cover) ? it.meta.cover : null;
+  if (next === prev) return;
+  const write = value => {
+    const item = byId(id);
+    if (!item) return;
+    if (value) item.meta = { ...item.meta, cover: value };
+    else { const { cover, ...rest } = item.meta || {}; item.meta = rest; }
+    bus.emit('item', id);
+  };
+  commit(next ? 'Set picture' : 'Remove picture', () => write(next), () => write(prev));
 }
 
 // ---------------------------------------------------------------------------

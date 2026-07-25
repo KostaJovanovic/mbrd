@@ -223,6 +223,20 @@ test('deleting an item drops it from the selection', () => {
 // Clipboard
 // ---------------------------------------------------------------------------
 
+test('the clipboard leaves its receipts without a screen to leave them on', () => {
+  // copy/cut/paste now toast, and state.js is imported by tests that have no
+  // document at all. toast() no-ops when there is nothing to draw on - stated
+  // here because a regression in util.js would otherwise fail this whole file
+  // with a ReferenceError far from its cause.
+  assert.equal(typeof globalThis.document, 'undefined', 'this test is only meaningful headless');
+  const [a] = addItems([note({ meta: { text: 'said to nobody' } })]);
+  assert.doesNotThrow(() => {
+    copyItems([a.id]);
+    pasteItems();
+    cutItems([a.id]);
+  });
+});
+
 test('copying returns the text that goes on the system clipboard', () => {
   const [a] = addItems([note({ meta: { text: 'remember the milk' } })]);
   const text = copyItems([a.id]);

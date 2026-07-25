@@ -119,7 +119,11 @@ export function registerPlayer(el) {
  * still see.
  */
 export function releasePlayers(root) {
-  for (const el of root.querySelectorAll?.('audio') || []) {
+  // 'audio, video' - a <video> registers here too, for the global volume and
+  // for the one-clip-at-a-time rule, so it has to be let go of by the same
+  // path. While this said 'audio' alone, every rename of a video card left a
+  // player in the set holding a decoded stream that nothing could ever pause.
+  for (const el of root.querySelectorAll?.('audio, video') || []) {
     el.pause();
     players.delete(el);
   }
@@ -516,13 +520,16 @@ function lane(className) {
   return el;
 }
 
-const PLAY_ICON =
+/* Exported so canvas/video.js draws the same two triangles. A video transport
+   that invented its own play glyph would be a second visual language for the
+   same verb, on the same board. */
+export const PLAY_ICON =
   '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5 3.4l7.5 4.6L5 12.6z"/></svg>';
-const PAUSE_ICON =
+export const PAUSE_ICON =
   '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.6 3.2h2.6v9.6H4.6zM8.8 3.2h2.6v9.6H8.8z"/></svg>';
 
 /** m:ss. Hours are possible and would be a strange thing to pin to a board. */
-function clock(secs) {
+export function clock(secs) {
   const s = Math.max(0, Math.floor(secs));
   return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
 }

@@ -35,9 +35,9 @@ const DRAG_SLOP = 3;      // screen px before a press becomes a drag
 // zoom, the four corner marks are only just clear of one another and the edge
 // strips between them keep about ten pixels of length. Below that the corners
 // overlap, the strips collapse to nothing, and the resize becomes one-way: an
-// item dragged down to a speck could never be dragged back out. 48 is still a
-// fifth of a note and a third of the shortest default card (250x140), so a
-// deliberate shrink never runs into it.
+// item dragged down to a speck could never be dragged back out. 48 is still
+// well under half a note (120x120) and a third of the shortest default card
+// (250x140), so a deliberate shrink never runs into it.
 const MIN_SIZE = 48;
 // The ceiling is eighty default cards wide - far past anything a board wants,
 // while still spanning 400 screen pixels at the furthest zoom out, so even an
@@ -54,6 +54,12 @@ export function initInput(vp, cmds) {
   const pointers = new Map();
   let g = null;            // the active gesture
   let spaceDown = false;
+  // Where the cursor is, and where it was when the last copy was taken - the
+  // two halves of "has the pointer moved since?", which is what decides where
+  // a paste lands. Both null on a touch device, and a null falls back to the
+  // old behaviour rather than guessing.
+  let hover = null;
+  let copiedFrom = null;
 
   // ---- helpers ----------------------------------------------------------
 
@@ -220,7 +226,10 @@ export function initInput(vp, cmds) {
     // A real control inside a card (the audio scrubber, a note being edited)
     // owns the whole gesture: no capture, no drag. Capturing here would redirect
     // every following pointermove to #viewport and leave the scrubber dead.
-    const widget = target?.closest('audio, video[controls], input, button, a, .wave, [contenteditable="true"], [contenteditable="plaintext-only"]');
+    // .vtrack is the video scrubber; a video's own <video> is deliberately not
+    // in this list, because the picture is the card and dragging it has to drag
+    // the card. Only the transport laid over it claims the gesture.
+    const widget = target?.closest('audio, video[controls], input, button, a, .wave, .vtrack, [contenteditable="true"], [contenteditable="plaintext-only"]');
 
     if (widget && !spaceDown && e.button !== 1) {
       if (id) select([id]);
@@ -250,6 +259,10 @@ export function initInput(vp, cmds) {
   });
 
   el.addEventListener('pointermove', e => {
+    // Before the gesture guard below, which drops every pointer that is not
+    // pressed - and a hovering mouse is exactly that. Touch is excluded
+    // because a finger that is not down is not anywhere.
+    if (e.pointerType !== 'touch') hover = { x: e.clientX, y: e.clientY };
     if (!pointers.has(e.pointerId)) return;
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (!g) return;
@@ -420,13 +433,13 @@ export function initInput(vp, cmds) {
     if (!id) { cmds.fit(); return; }
     const it = byId(id);
     if (!it) return;
+    // Video used to be a case here, toggling playback - the only way a clip
+    // could be played at all, and an invisible one. Now that a video carries a
+    // play button of its own it goes back to meaning what a double click means
+    // on everything else on the board, which is zoom to fit. One gesture, one
+    // meaning, and the special case disappears.
     if (it.type === 'note') cmds.editNote(id);
-    else if (it.type === 'video') {
-      const v = e.target.closest('.item')?.querySelector('video');
-      if (v) v.paused ? v.play().catch(() => {}) : v.pause();
-    } else {
-      vp.fit([it], 120, travelMs());
-    }
+    else vp.fit([it], 120, travelMs());
   });
 
   // ---- keyboard ---------------------------------------------------------
@@ -537,6 +550,7 @@ export function initInput(vp, cmds) {
     if (!canClip(e)) return;
     const text = copyItems(selection);
     if (!text) return;
+    copiedFrom = hover;
     e.preventDefault();
     e.clipboardData?.setData('text/plain', text);
   });
@@ -545,6 +559,7 @@ export function initInput(vp, cmds) {
     if (!canClip(e)) return;
     const text = cutItems(selection);
     if (!text) return;
+    copiedFrom = hover;
     e.preventDefault();
     e.clipboardData?.setData('text/plain', text);
   });
@@ -569,12 +584,32 @@ export function initInput(vp, cmds) {
   });
 
   /**
-   * Where a paste should land: nothing, meaning "beside the original", unless
-   * the box the copy was taken from is nowhere in view - in which case the
-   * middle of the screen, because a paste you cannot see is indistinguishable
-   * from one that failed.
+   * How far the cursor has to have travelled since the copy before the paste
+   * follows it, in screen pixels. Small, because moving the mouse at all is
+   * already deliberate; not zero, because a mouse drifts a pixel or two under
+   * a hand that is only reaching for Ctrl+V, and a paste that jumped for that
+   * would be worse than one that never followed at all.
+   */
+  const MOVED_ENOUGH = 24;
+
+  /**
+   * Where a paste should land, in three cases.
+   *
+   * Under the cursor, if the cursor has gone somewhere since the copy was
+   * taken. Moving the mouse and then pasting is the plainest way there is of
+   * saying "put it here", and it costs nothing to answer.
+   *
+   * Otherwise nothing, meaning "beside the original" - unless the box the copy
+   * came from is nowhere in view, in which case the middle of the screen,
+   * because a paste you cannot see is indistinguishable from one that failed.
+   *
+   * A device with no cursor never reaches the first case: `hover` stays null,
+   * and the other two are what it had before.
    */
   function pasteAt() {
+    if (hover && copiedFrom && Math.hypot(hover.x - copiedFrom.x, hover.y - copiedFrom.y) > MOVED_ENOUGH) {
+      return vp.toWorld(hover.x, hover.y);
+    }
     const box = clipboardBounds();
     const r = vp.visibleRect(0);
     const inView = box && box.x1 >= r.x0 && box.x0 <= r.x1 &&
