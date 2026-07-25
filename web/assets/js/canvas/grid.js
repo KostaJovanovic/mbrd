@@ -92,12 +92,22 @@ const dot = (color, scale) => {
 };
 
 // The cross, in multiples of --grid-dot: half an arm's length, and half its
-// thickness. An arm as thick as the dot's radius and four times that long is
-// about the smallest thing that still reads as a plus rather than as a smudge
-// at the 1.5px Harsh sets, and it keeps the slider meaning the same thing at
-// both ends of the axis - turn the weight up and the mark gets heavier, not
-// longer relative to itself.
-const ARM_LONG = 2;
+// thickness.
+//
+// The length is capped, and the cap is the whole point. A dot's extent is
+// --grid-dot itself, so at the weight slider's maximum of 4px it is 8px across
+// and the lattice stays a lattice. A cross built by the same rule is not: it
+// spans twice its half-length, so scaling the length with the slider made the
+// mark 2.7x the dot's width at the same setting, and on the minor lattice's
+// tightest tile - gridStep() will let it down to 26px - a mark that wide leaves
+// a few pixels of gap and the whole board floods with the grid's own colour.
+// Past a certain size a bigger mark is not a heavier grid, it is a fill.
+//
+// So thickness follows the slider and length stops. That is also the more
+// honest reading of "grid weight": turning it up should press harder, not draw
+// a bigger cross.
+const ARM_LONG = 3;
+const ARM_LONG_MAX = 6;   // px, before the lattice's own scale factor
 const ARM_THICK = 0.5;
 
 /**
@@ -119,7 +129,10 @@ const ARM_THICK = 0.5;
  * lattice to remove something that reads as correct.
  */
 const cross = (color, scale) => {
-  const long = scaled(ARM_LONG * scale);
+  // The cap is scaled with the mark, so the major lattice stays proportionally
+  // the heavier of the two right up to the limit instead of meeting the minor
+  // one there and losing the distinction.
+  const long = `min(${scaled(ARM_LONG * scale)}, ${(ARM_LONG_MAX * scale).toFixed(2)}px)`;
   const thick = scaled(ARM_THICK * scale);
   return [arm(color, long, thick), arm(color, thick, long)];
 };
@@ -135,6 +148,12 @@ const cross = (color, scale) => {
  * the identical shape, one rotated, and keeps the feather across the thickness
  * - the edge you actually read the weight from - a sane fraction of it instead
  * of wide enough to eat a 1.5px arm whole.
+ *
+ * It also stops at 100% rather than running past it. A last stop beyond the
+ * gradient's own radius makes the mark bigger than the radii say it is, which
+ * is a quiet way to lose track of how much room a lattice actually needs - and
+ * it was a third of the reason the crosses could swallow the board. Contained
+ * here, the radii mean what they look like they mean.
  */
 const arm = (color, rx, ry) =>
-  `radial-gradient(ellipse ${rx} ${ry} at center, ${color} 0, ${color} 100%, transparent 135%)`;
+  `radial-gradient(ellipse ${rx} ${ry} at center, ${color} 0, ${color} 78%, transparent 100%)`;
