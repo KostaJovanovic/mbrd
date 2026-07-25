@@ -61,15 +61,43 @@ export async function sha256(buf) {
 }
 
 let toastTimer = 0;
+let toastHide = 0;
+/**
+ * How long the toast takes to fade, paired with the `transition` on #toast in
+ * app.css. The element is only hidden once the fade has run - hiding it on the
+ * old schedule would cut the fade off at its first frame.
+ */
+const TOAST_FADE_MS = 300;
+/**
+ * A sequence number, so a fade that is already in flight cannot hide a message
+ * that arrived after it. Clearing the timers is not enough on its own: the
+ * inner timeout is scheduled by the outer one, so the moment between them
+ * belongs to no timer this call can see.
+ */
+let toastSeq = 0;
+
 /** One-line status message at the bottom of the screen. */
 export function toast(msg, kind = '') {
   const el = document.getElementById('toast');
   if (!el) return;
+  const mine = ++toastSeq;
+  clearTimeout(toastTimer);
+  clearTimeout(toastHide);
   el.textContent = msg;
   el.classList.toggle('is-error', kind === 'error');
+  // Back to full strength before anything else. A message arriving while the
+  // last one is on its way out would otherwise inherit its dying opacity and
+  // read as a flicker rather than as something new being said.
+  el.classList.remove('is-going');
   el.hidden = false;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.hidden = true; }, kind === 'error' ? 6000 : 2600);
+  toastTimer = setTimeout(() => {
+    el.classList.add('is-going');
+    toastHide = setTimeout(() => {
+      if (mine !== toastSeq) return;
+      el.hidden = true;
+      el.classList.remove('is-going');
+    }, TOAST_FADE_MS);
+  }, kind === 'error' ? 6000 : 2600);
 }
 
 /**

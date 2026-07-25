@@ -116,7 +116,22 @@ export function editNote(id) {
     if (read().length - selected + adding > NOTE_MAX) e.preventDefault();
   };
 
-  const onInput = () => growNote(id);
+  // How much room is left, shown only while the note is being written. A limit
+  // you cannot see is indistinguishable from a broken keyboard: onBeforeInput
+  // refuses the keystroke outright at the ceiling, so without this the note
+  // simply stops accepting letters with nothing on screen to say why.
+  const counter = document.createElement('div');
+  counter.className = 'note-count';
+  node.append(counter);
+  const countLeft = () => {
+    const left = NOTE_MAX - read().length;
+    counter.textContent = left + ' left';
+    // Quiet until it is nearly gone, at which point it is the only warning
+    // there is going to be.
+    counter.classList.toggle('is-low', left <= 40);
+  };
+
+  const onInput = () => { growNote(id); countLeft(); };
 
   const onKey = e => {
     e.stopPropagation();                    // the canvas must not see Delete/space
@@ -148,6 +163,7 @@ export function editNote(id) {
     card.removeEventListener('focusout', onFocusOut);
     head.contentEditable = 'false';
     body.contentEditable = 'false';
+    counter.remove();
     node.classList.remove('is-editing');
     setItemText(id, read());
     growNote(id);
@@ -157,6 +173,7 @@ export function editNote(id) {
   card.addEventListener('input', onInput);
   card.addEventListener('keydown', onKey);
   card.addEventListener('focusout', onFocusOut);
+  countLeft();
   caretToEnd(head);
 }
 

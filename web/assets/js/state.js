@@ -279,29 +279,304 @@ export function lowerSelection() {
 }
 
 /** The given ids, sorted bottom-to-top by their current z. */
-function stackOrder(ids) {
+export function stackOrder(ids) {
   return [...ids].sort((a, b) => (byId(a)?.z || 0) - (byId(b)?.z || 0));
 }
 
 /**
- * Copy items, offset a little so the copy is visibly on top of the original.
- * The copies reference the same asset hashes, so duplicating a 40 MB video
- * costs nothing on disk - the packer writes each hash once.
+ * The live items behind a set of ids, bottom-to-top.
+ *
+ * Sorted, because a copy of several things has to be laid down in the order
+ * they were stacked in: addItems() gives each new item the next z as it goes,
+ * so handing it the group in board order rather than stacking order would
+ * reshuffle a carefully arranged pile every time it was duplicated.
  */
-export function duplicateItems(ids, offset = { x: 28, y: -28 }) {
-  const src = board.items.filter(i => [...ids].includes(i.id));
-  if (!src.length) return [];
-  const copies = src.map(i => ({
+function itemsIn(ids) {
+  const set = ids instanceof Set ? ids : new Set(ids);
+  return board.items.filter(i => set.has(i.id)).sort((a, b) => (a.z || 0) - (b.z || 0));
+}
+
+/**
+ * The copy that Duplicate and Paste both make: everything about an item except
+ * its identity and its place in the stack.
+ *
+ * `id` and `z` are left off so makeItem() mints a fresh id and puts the copy on
+ * top. The asset is copied by *reference*, never by bytes: assets are keyed by
+ * content hash and the packer writes each hash once, so duplicating a 40 MB
+ * video costs nothing on disk. meta is shallow-copied because every field in it
+ * is a scalar - text, tint, mime, size and the rest.
+ */
+function cloneItem(i, dx = 0, dy = 0) {
+  return {
     type: i.type,
-    x: i.x + offset.x,
-    y: i.y + offset.y,
+    x: i.x + dx,
+    y: i.y + dy,
     w: i.w, h: i.h, rot: i.rot,
     name: i.name,
     asset: i.asset ? { ...i.asset } : null,
     meta: { ...i.meta },
-    // id and z left undefined so makeItem() mints a fresh id and stacks it on top.
-  }));
+  };
+}
+
+/** The axis-aligned box around a set of items, or null for none. */
+function boundsOf(items) {
+  if (!items.length) return null;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const i of items) {
+    x0 = Math.min(x0, i.x - i.w / 2); x1 = Math.max(x1, i.x + i.w / 2);
+    y0 = Math.min(y0, i.y - i.h / 2); y1 = Math.max(y1, i.y + i.h / 2);
+  }
+  return { x0, y0, x1, y1 };
+}
+
+/** Copy items, offset a little so the copy is visibly on top of the original. */
+export function duplicateItems(ids, offset = { x: 28, y: -28 }) {
+  const src = itemsIn(ids);
+  if (!src.length) return [];
+  const copies = src.map(i => cloneItem(i, offset.x, offset.y));
   return addItems(copies, copies.length > 1 ? `Duplicate ${copies.length} items` : 'Duplicate');
+}
+
+// ---------------------------------------------------------------------------
+// The internal clipboard
+//
+// Items are held here rather than pushed onto the system clipboard, because an
+// item is not text. It can reference an embedded asset of any size, which has
+// no honest text/plain form and which round-tripping through the system
+// clipboard would make us re-encode and re-hash on every paste - where a copy
+// held in memory shares the original's asset hash for free, exactly as
+// Duplicate does. What does go out to the system clipboard is a readable
+// summary, so that copying a sticky note and pasting it into a text editor
+// gives you its words.
+// ---------------------------------------------------------------------------
+
+const clipboard = { items: [], text: '', pastes: 0 };
+
+export const clipboardSize = () => clipboard.items.length;
+
+/** The box the clipboard's contents were copied from, or null when it is empty. */
+export const clipboardBounds = () => boundsOf(clipboard.items);
+
+/**
+ * Whether the text the system clipboard is offering is the text *we* put there.
+ *
+ * This is the one question that decides a paste, and the browser gives no way
+ * to ask it directly: two clipboards exist - ours and the machine's - and
+ * nothing reports which of them was filled more recently. So a copy leaves a
+ * receipt. The exact string handed to the system clipboard is remembered here,
+ * and a paste that arrives carrying it is a paste of our own copy: nothing has
+ * been copied anywhere else since. A paste carrying anything else means the
+ * user has been somewhere else and copied something there, and that newer thing
+ * is what they mean by Ctrl+V.
+ *
+ * The receipt is the summary text itself rather than a hidden token, so that
+ * what lands in a text editor is clean. The cost is a collision no wider than
+ * copying a note, going away, copying that same text back verbatim from
+ * somewhere else, and returning - which yields a copy of the note instead of a
+ * new note of the same words, and is not a bad answer to a question nobody can
+ * answer correctly.
+ */
+export function clipboardHasOurs(systemText) {
+  return !!clipboard.items.length && !!clipboard.text && systemText === clipboard.text;
+}
+
+/**
+ * Take a copy of some items. Not a board mutation, so nothing to undo.
+ *
+ * Returns the text the caller should hand to the system clipboard, or '' when
+ * there was nothing to copy. That half is the caller's, because only a real
+ * `copy`/`cut` event may write to the system clipboard synchronously.
+ */
+export function copyItems(ids) {
+  const src = itemsIn(ids);
+  if (!src.length) return '';
+  clipboard.items = src.map(i => cloneItem(i));
+  clipboard.pastes = 0;
+  clipboard.text = summarise(src);
+  return clipboard.text;
+}
+
+/**
+ * Copy, then delete: one undo entry, because removeItems() is the only half
+ * that touched the board. Cut items go to the bin like any other delete, so a
+ * cut you never paste is still recoverable.
+ */
+export function cutItems(ids) {
+  const doomed = itemsIn(ids).map(i => i.id);
+  const text = copyItems(doomed);
+  if (!text) return '';
+  removeItems(doomed, doomed.length > 1 ? `Cut ${doomed.length} items` : 'Cut');
+  return text;
+}
+
+/**
+ * What a copied selection says on the system clipboard. A note gives up its
+ * text and everything else its name, which is the only part of an item that
+ * means anything outside this app. The bracketed count is the fallback for a
+ * selection with nothing to say - an unnamed photo - because the receipt above
+ * only works while the string is never empty.
+ */
+function summarise(src) {
+  const lines = src.map(i => (i.type === 'note' ? i.meta.text : i.name) || '').filter(Boolean);
+  if (lines.length) return lines.join('\n\n');
+  return `[mbrd: ${src.length} item${src.length === 1 ? '' : 's'}]`;
+}
+
+/**
+ * How far each paste steps off the one before it. The same offset Duplicate
+ * uses - up and to the right, where a copy lands on a physical desk.
+ */
+const PASTE_STEP = { x: 28, y: -28 };
+
+/**
+ * Put the internal clipboard on the board.
+ *
+ * `at` is an optional world point to centre the pasted group on. The caller
+ * passes one only when the place the copy was taken from is off screen;
+ * otherwise it passes nothing and the copy lands beside its original. Pasting
+ * in place is what makes copy/paste usable as "another one of these": the pair
+ * appears side by side where you can compare them. It is only when the original
+ * is somewhere you are not looking that the middle of the screen beats it,
+ * because a paste that lands off screen is indistinguishable from one that did
+ * nothing at all.
+ *
+ * Either way the step accumulates across pastes of the same clipboard, so the
+ * second Ctrl+V clears the first instead of hiding underneath it.
+ */
+export function pasteItems(at = null) {
+  if (!clipboard.items.length) return [];
+  const n = clipboard.pastes++;
+  let dx, dy;
+  if (at) {
+    // n rather than n + 1, so the first paste at a given point lands *on* it
+    // and only the ones after it fan out.
+    const b = boundsOf(clipboard.items);
+    dx = at.x - (b.x0 + b.x1) / 2 + n * PASTE_STEP.x;
+    dy = at.y - (b.y0 + b.y1) / 2 + n * PASTE_STEP.y;
+  } else {
+    dx = (n + 1) * PASTE_STEP.x;
+    dy = (n + 1) * PASTE_STEP.y;
+  }
+  const copies = clipboard.items.map(i => cloneItem(i, dx, dy));
+  return addItems(copies, copies.length > 1 ? `Paste ${copies.length} items` : 'Paste');
+}
+
+// ---------------------------------------------------------------------------
+// Sticky notes that stick
+//
+// A note is stuck to whatever it is lying on, and a stuck note travels with its
+// host. Nothing about that is stored. Stuckness is a fact about where two
+// things are, and an edge recorded on the item would have to be invalidated by
+// every move, resize, undo and redo at either end - all of which can happen
+// without the pair ever being touched together. So it is measured from live
+// geometry, once per gesture, and a board file never mentions it.
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether a world point lies inside an item's box.
+ *
+ * Tested in the item's *own* frame: the point is brought back through the
+ * item's rotation and compared against the unrotated extents. That is the same
+ * box the resize grips work in and the same one fit() frames, and it is the one
+ * on screen. Testing the axis-aligned bounding box instead would be visibly
+ * wrong for a rotated item - a card turned 45 degrees draws a diamond, and its
+ * bounding box reaches half its diagonal past that into empty space, so a note
+ * parked in one of those corners would claim to be stuck to nothing.
+ *
+ * `rot` is the only rotation accounted for. Items also rest at a small
+ * presentational tilt (--item-tilt, dealt in items.js) which is deliberately
+ * not part of the geometry model. It is a couple of degrees, so leaving it out
+ * can only disagree with the eye a hair's breadth from an edge, which is
+ * exactly where "is it over it or not" had no obvious answer anyway.
+ */
+function pointInItem(px, py, it) {
+  const dx = px - it.x, dy = py - it.y;
+  // Cheap reject first, and it takes almost every pair: no rotation of the box
+  // reaches outside the circle that circumscribes it, and this costs no trig.
+  if (dx * dx + dy * dy > (it.w * it.w + it.h * it.h) / 4) return false;
+  if (!it.rot) return Math.abs(dx) <= it.w / 2 && Math.abs(dy) <= it.h / 2;
+  // rot is anticlockwise-positive in world space, so undoing it is a rotation
+  // by -rot: the usual matrix with the signs on the sines swapped.
+  const rad = it.rot * Math.PI / 180;
+  const c = Math.cos(rad), s = Math.sin(rad);
+  return Math.abs(c * dx + s * dy) <= it.w / 2 &&
+         Math.abs(c * dy - s * dx) <= it.h / 2;
+}
+
+/** The two ends of an item's top edge, in world coordinates (+y is up). */
+function topEdge(it) {
+  const rad = (it.rot || 0) * Math.PI / 180;
+  const c = Math.cos(rad), s = Math.sin(rad);
+  const hw = it.w / 2, hh = it.h / 2;
+  return [
+    { x: it.x - c * hw - s * hh, y: it.y - s * hw + c * hh },
+    { x: it.x + c * hw - s * hh, y: it.y + s * hw + c * hh },
+  ];
+}
+
+/**
+ * The item a sticky note is stuck to, or null.
+ *
+ * Two ways to be stuck, either sufficient: the note's centre is over the item,
+ * or its whole top edge is - the strip a real sticky is pressed down by, which
+ * is why a note hanging off the bottom of a photo still counts and one hanging
+ * off the top does not. The top-edge test only checks the two ends of that
+ * edge, and that is exact rather than an approximation: an item's box is
+ * convex, so a segment with both ends inside it lies inside it entirely.
+ *
+ * Only notes stick, and only to something below them in the stack. A note
+ * hidden behind the thing it claims to be stuck to would be a relationship
+ * nobody could see, and being seen is the whole of the point. It costs nothing
+ * to arrange, either: startMove() lifts whatever you drag to the top, so a note
+ * dropped onto a photo is already above it. Where several candidates qualify -
+ * a note on a note on a photo - the nearest one underneath wins, so a pile
+ * hangs together in the order it was laid down.
+ */
+export function stuckTo(note) {
+  if (!note || note.type !== 'note') return null;
+  const [a, b] = topEdge(note);
+  let best = null;
+  for (const it of board.items) {
+    if (it.id === note.id || (it.z || 0) >= (note.z || 0)) continue;
+    if (best && (it.z || 0) < (best.z || 0)) continue;
+    if (pointInItem(note.x, note.y, it) ||
+        (pointInItem(a.x, a.y, it) && pointInItem(b.x, b.y, it))) best = it;
+  }
+  return best;
+}
+
+/**
+ * The ids of the notes that have to come along when `ids` are moved.
+ *
+ * Transitive, so a note stuck to a note stuck to a photo travels with the
+ * photo: a pile of stickies on a picture reads as one object, and having to
+ * move it in two goes would be the surprise. The walk cannot loop - being stuck
+ * requires a lower z, which makes the relation a strict order - but each note
+ * leaves the pool as it joins, so termination is a property here rather than an
+ * assumption about z.
+ *
+ * Anything already moving is left out, which is what keeps this from fighting a
+ * multi-select drag: a note selected alongside its host is moved once, by the
+ * selection, instead of once by the selection and again as a follower.
+ */
+export function stuckFollowers(ids) {
+  const moving = new Set(ids);
+  const pool = board.items.filter(i => i.type === 'note' && !moving.has(i.id));
+  const out = [];
+  // Passes rather than one sweep: a note can only join once whatever it is
+  // stuck to has joined, and the pool is in no particular order.
+  for (let grew = true; grew;) {
+    grew = false;
+    for (let n = pool.length - 1; n >= 0; n--) {
+      const host = stuckTo(pool[n]);
+      if (!host || !moving.has(host.id)) continue;
+      moving.add(pool[n].id);
+      out.push(pool[n].id);
+      pool.splice(n, 1);
+      grew = true;
+    }
+  }
+  return out;
 }
 
 /**
@@ -310,7 +585,7 @@ export function duplicateItems(ids, offset = { x: 28, y: -28 }) {
  * to be a text file on the board instead. Enforced here as well as in the
  * editor, so a paste, an import or an older .mbrd cannot get around it.
  */
-export const NOTE_MAX = 255;
+export const NOTE_MAX = 512;
 
 export function setItemText(id, text) {
   const it = byId(id);
@@ -406,6 +681,24 @@ export function loadBoard(data) {
     ...DEFAULT_SETTINGS,
     ...(data.settings || {}),
     appearance: {
+      // Carried through explicitly, and this is the line whose absence lost it.
+      // Rebuilding this object key by key overrides the spread above, so an
+      // axis position written out with the rest of settings was dropped by
+      // every load path there is - a reopened session, an opened .mbrd,
+      // somebody else's board. It only ever looked like it worked because
+      // ui/appearance.js keeps its own copy in localStorage, which masks the
+      // loss until the two disagree.
+      //
+      // Spread conditionally rather than written as a plain key: an explicit
+      // `whimsy: undefined` still puts the property there, and hasLook() tests
+      // `whimsy != null`, so a board that genuinely brought no look would start
+      // claiming it had one and would override the user's own saved axis with a
+      // default. Left unclamped, because ui/appearance.js clamps whatever it is
+      // handed - which is the right place for it, this value also arriving from
+      // files this app did not write.
+      ...(data.settings?.appearance?.whimsy != null
+        ? { whimsy: data.settings.appearance.whimsy }
+        : {}),
       palette: data.settings?.appearance?.palette || '',
       vars: { ...(data.settings?.appearance?.vars || {}) },
     },
@@ -417,6 +710,13 @@ export function loadBoard(data) {
     .map(t => ({ item: makeItem(t.item), at: +t.at || 0 }));
   selection.clear();
   clearHistory();
+  // The clipboard cannot cross a board. Opening one calls clearAssets(), so a
+  // copy taken from the old board would paste an item whose asset hash no
+  // longer resolves to any bytes - a card with a hole in it, which is worse
+  // than a Ctrl+V that politely does nothing.
+  clipboard.items = [];
+  clipboard.text = '';
+  clipboard.pastes = 0;
   dirty = false;
   // 'board:load' is the "everything was replaced" signal - distinct from
   // 'board', which also fires for a title change or a dirty-flag flip and so

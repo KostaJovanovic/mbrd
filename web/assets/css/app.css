@@ -133,7 +133,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
   pointer-events: none;
   z-index: -1;
 }
-#web path {
+/* Two kinds of element, one appearance. The bulk <path> carries every settled
+   thread as subpaths of a single `d`, which is what keeps a redraw to one
+   attribute write on a board with hundreds of them. A thread only gets its own
+   <line> for as long as it is fading, because opacity cannot be applied to a
+   subpath - and it is handed back to the path the moment it lands. */
+#web path,
+#web line.thread {
   stroke: var(--web-line);
   stroke-width: var(--web-weight);
   stroke-linecap: round;
@@ -489,6 +495,36 @@ button, input, select, textarea { font: inherit; color: inherit; }
   padding-bottom: 0;
   border-bottom: 0;
 }
+/* A rule divides a title from a body, so with no title there is nothing to
+   divide and the line is just a stray mark across the top of the note.
+   No :not(.is-editing) here, and that falls out rather than being a
+   compromise: an empty field being typed into holds a <br>, so it stops
+   matching :empty the moment it has focus and the rule comes back to show
+   where the title goes. It is only gone when the title is genuinely left
+   empty, which is what was asked for. */
+.item[data-type="note"] .note-title:empty {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+/* How much room is left, while a note is being written. Outside .item-body so
+   the body's clip cannot cut it off, and scaled by --iz like the rest of the
+   item chrome so it stays the same size on screen at any zoom. */
+.note-count {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: calc(6px * var(--iz));
+  transform: scale(var(--iz));
+  transform-origin: 100% 0;
+  font-family: var(--font-display);
+  font-size: var(--t-tiny);
+  font-style: var(--display-italic);
+  color: var(--ink-3);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.note-count.is-low { color: var(--danger); }
 
 .item.is-editing { cursor: text; }
 .item.is-editing .item-body { pointer-events: auto; }
@@ -1341,7 +1377,14 @@ kbd {
   font-size: var(--t-small);
   font-style: var(--display-italic);
   animation: rise var(--dur-base) var(--ease-back);
+  /* Paired with TOAST_FADE_MS in util.js, which is what decides when the
+     element is actually hidden. Kept as a literal on both sides rather than a
+     token: a duration the axis could flatten to zero would leave the JS timer
+     holding an invisible toast on screen for its own 300ms, and the two
+     disagreeing is worse than neither following the axis. */
+  transition: opacity 300ms var(--ease);
 }
+#toast.is-going { opacity: 0; }
 #toast.is-error { border-color: var(--danger); color: var(--danger); }
 @keyframes rise { from { opacity: 0; transform: translate(-50%, 10px) rotate(-3deg); } }
 

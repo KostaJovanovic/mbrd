@@ -292,8 +292,10 @@
    pigments: Papyrus stays terracotta, Peacock stays teal. Harsh is a change of
    *contrast*, not of colour - it pushes this palette's own paper and ink to
    their extremes, mixing them out of the palette's accent so the hue survives
-   the trip. Nothing below names a colour that is not derived from one already
-   chosen above.
+   the trip. No pigment is named below: the only literals either end declares
+   are the achromatic ends of its own ramps - white, black, and the one neutral
+   stock Harsh prints its sheet on - and every colour is mixed out of a pigment
+   already chosen above.
 
    The stops are discrete for now. The intended endgame is a board that reads
    the pictures dropped on it - their contrast and their sharpness - and parks
@@ -362,12 +364,43 @@
    Swiss / International: square corners, hairline rules, high contrast,
    readability first. Same pigments, taken to their extremes. */
 :root[data-whimsy="2"] {
-  /* Paper and ink are mixed out of this palette's own accent, so the sheet
-     stays faintly the palette's colour instead of snapping to a neutral white
-     that would make every palette identical at this end of the axis. */
-  --paper:      color-mix(in srgb, var(--accent) 3%,  #fff);
-  --paper-2:    color-mix(in srgb, var(--accent) 8%,  #fff);
-  --paper-3:    color-mix(in srgb, var(--accent) 15%, #fff);
+  /* The stock this end of the axis prints on - and the one flat colour on the
+     board that has to hold the whole surface up on its own.
+
+     Middle's paper is a warm literal with three radial blooms laid over it by
+     `body` in app.css, every one of them scaled by --wash. Harsh sets --wash to
+     0 further down, which is right - a spec sheet has no ornament - but it also
+     means all three blooms mix away to fully transparent and the flat colour
+     underneath becomes the entire sheet. A value picked to sit *under* a wash
+     is not the same value as one that has to be the wash as well, and that is
+     exactly what went wrong here: --paper was `var(--accent) 3%` into #fff -
+     ninety-seven percent pure white - which reads as a blown-out screen with a
+     faint cast on it rather than as paper. At that share all four palettes also
+     landed within a couple of units of each other (#fdfaf9, #fbfcf9, #fdfafa,
+     #f8fbfb), which is precisely the "every palette identical at this end of
+     the axis" failure the derivation was there to prevent in the first place.
+
+     So the stock is named outright, and named as a cool grey rather than as
+     white. Cool because this is the plain end and the warmth is Middle's to
+     keep; grey because --paper-card stays #fff below, and a white card only
+     reads as a card if the board behind it is not white too. The palette's own
+     accent is then mixed into that stock at a share big enough to actually be
+     seen, so Peacock still prints on something faintly green and Tearose on
+     something faintly pink. Harsh stays a change of contrast, not of colour. */
+  --stock:      #f6f7f9;
+  --paper:      color-mix(in srgb, var(--accent) 10%, var(--stock));
+  /* Wells and pressed states step down towards this palette's own ink rather
+     than towards more accent. More accent would darken and saturate in the same
+     move, and a button that goes peach when you press it is the opposite of
+     what this end of the axis is for - these want to read as the same sheet in
+     shadow. Mixing against --paper also makes the ramp correct by construction
+     rather than by coincidence: each step is a step down from the sheet itself,
+     so the three can never cross no matter what the sheet is moved to, which
+     three independent mixes into a shared white could not promise. (--ink is
+     declared immediately below; custom properties resolve by name rather than
+     by source order, so referring to it from up here is fine.) */
+  --paper-2:    color-mix(in srgb, var(--ink) 4%, var(--paper));
+  --paper-3:    color-mix(in srgb, var(--ink) 9%, var(--paper));
   --paper-card: #fff;
   --ink:        color-mix(in srgb, var(--accent) 13%, #000);
   --ink-2:      color-mix(in srgb, var(--ink) 74%, var(--paper));
@@ -378,7 +411,10 @@
 
   /* The one place four colours survive: note tints carry meaning, so they are
      kept distinguishable rather than flattened to grey - just pale enough to
-     read black text and a black rule over. */
+     read black text and a black rule over. Mixed into the card white rather
+     than into --stock, because a note is an object lying *on* the board, and it
+     belongs to the same family as the cards next to it rather than to the sheet
+     underneath it. */
   --note-1: color-mix(in srgb, var(--accent-warm) 20%, #fff);
   --note-2: color-mix(in srgb, var(--accent) 11%, #fff);
   --note-3: color-mix(in srgb, var(--leafy) 16%, #fff);
@@ -430,6 +466,9 @@
   --t-display: 25px;
   --t-title:   19px;
 
+  /* No blooms and no vignette: the ornament in the paper is Middle's, not this
+     end's. Which is the whole reason --paper above has to be a colour that can
+     stand up flat - with this at 0 there is nothing else left in the sheet. */
   --wash: 0;
   /* A fine lattice, but a *visible* one. At 1px and 0.11 these were painted
      and not seen: a 1px radius is two pixels across before antialiasing eats
