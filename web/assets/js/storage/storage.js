@@ -7,7 +7,7 @@
 //   IndexedDB - the safety net. Every change is debounced into a snapshot plus
 //            the asset blobs, so closing the tab mid-edit doesn't lose work.
 
-import { toast } from '../util.js';
+import { toast, IS_DEV } from '../util.js';
 import {
   board, serializeBoard, loadBoard, markDirty, isDirty, setTitle, bus,
 } from '../state.js';
@@ -244,6 +244,12 @@ export function initStorage() {
   for (const evt of ['items', 'geom', 'item', 'settings', 'board']) {
     bus.on(evt, scheduleAutosave);
   }
+  // "Leave site?" on every refresh is worse than useless while developing: the
+  // autosave below has already put the board in IndexedDB, and restoreSession()
+  // brings it straight back, so the prompt guards nothing and costs a click on
+  // every edit-reload cycle. Off on the dev server, kept everywhere else, where
+  // a closed tab really can be the end of an unsaved board.
+  if (IS_DEV) return;
   addEventListener('beforeunload', e => {
     if (!isDirty()) return;
     e.preventDefault();

@@ -64,6 +64,11 @@ function itemEntries(id, count, at) {
   const many = count > 1;
   const what = many ? `${count} items` : 'item';
   return [
+    // First, and only on a note: right-clicking the one item type you can
+    // actually type into should offer to type into it before anything else.
+    { label: 'Edit text', accel: 'dbl-click', hidden: many || !cmds.canEditNote(id),
+      action: () => cmds.editNote(id) },
+    { sep: true, hidden: many || !cmds.canEditNote(id) },
     { label: 'Bring to front', action: () => cmds.raise() },
     { label: 'Send to back', action: () => cmds.lower() },
     { sep: true },

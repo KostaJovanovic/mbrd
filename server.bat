@@ -2,7 +2,11 @@
 title mbrd server
 cd /d "%~dp0"
 
-set PORT=3000
+rem 6273 is "mbrd" on a phone keypad. Deliberately off the well-worn ports
+rem (3000, 5173, 8000, 8080) so this never fights another project for one -
+rem and note that the kill below is unconditional, so a shared port would
+rem take somebody else's server down with it.
+set PORT=6273
 
 rem Kill whatever is still holding the port so every launch is a fresh instance
 rem (a previous server.bat, or any other listener on %PORT%). Uses PowerShell so

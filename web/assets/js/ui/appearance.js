@@ -1,18 +1,44 @@
 // Live theming. Every control here writes a CSS custom property straight onto
 // :root, so the change is immediate and nothing needs re-rendering.
 //
-// A "palette" is a named set of pigments defined in tokens.css and selected via
-// data-palette; the sliders below then nudge individual tokens on top of it.
+// Three things make up a look, in increasing order of how much they change:
+//
+//   whimsy   0-2, how playful the whole interface is. Moves shape, type,
+//            motion, elevation, ornament and contrast at once.
+//   palette  a named set of pigments. Same personality, different colour.
+//   vars     per-token overrides on top of both. Written inline on :root, so
+//            they beat any stylesheet rule and survive a change to either of
+//            the above.
 //
 // The result is stored in two places on purpose:
 //   localStorage  - "my app looks like this", follows the user across boards
 //   board.settings.appearance - "this board looks like this", travels in the
 //                   .mbrd, so opening someone else's board shows their look.
 // Opening a board applies its appearance; editing a control updates both.
+//
+// Everything here is a plain setter over that one `current` object, which is
+// what will let the board set its own look later: reading the pictures dropped
+// on it, extracting their pigments into `vars` and parking `whimsy` where
+// their contrast and sharpness say it belongs.
 
 import { board, bus, markDirty } from '../state.js';
 
 const STORE_KEY = 'mbrd.appearance';
+
+/** The stops on the whimsy slider. Index is the value written to :root. */
+export const WHIMSY = [
+  { label: 'Warm',   hint: 'papyrus, serif, animated' },
+  { label: 'Middle', hint: 'calm paper, sans body' },
+  { label: 'Harsh',  hint: 'high contrast, square, Geist' },
+];
+
+/**
+ * Tokens the whimsy axis owns. A hand-set value beats any stylesheet, which is
+ * what you want for a pigment - but not for these: leaving a hand-picked 13px
+ * radius inline would keep the corners round in a mode whose whole point is
+ * that they are square. So sliding the axis drops them back to the stylesheet.
+ */
+const AXIS_TOKENS = ['--radius'];
 
 /** The curated set of tokens worth exposing. Everything else stays internal. */
 const CONTROLS = [
@@ -26,7 +52,7 @@ const CONTROLS = [
 ];
 
 const root = document.documentElement;
-let current = { palette: '', vars: {} };
+let current = { whimsy: 0, palette: '', vars: {} };
 let onChange = () => {};
 
 export function initAppearance(handlers = {}) {
@@ -41,6 +67,7 @@ export function initAppearance(handlers = {}) {
 
   buildControls();
   wirePalette();
+  wireWhimsy();
 
   bus.on('board', () => {
     const look = board.settings.appearance;
@@ -53,9 +80,39 @@ export function initAppearance(handlers = {}) {
 
 export function currentAppearance() { return clone(current); }
 
+/** Slide the whole interface along the playful-to-plain axis. 0, 1 or 2. */
+export function setWhimsy(level) {
+  const n = Math.max(0, Math.min(WHIMSY.length - 1, Math.round(+level) || 0));
+  if (n === current.whimsy) return;
+  // Hand-set values for tokens this axis owns would outrank the new level
+  // (they are inline), so they go back to the stylesheet.
+  for (const key of AXIS_TOKENS) {
+    delete current.vars[key];
+    root.style.removeProperty(key);
+  }
+  current.whimsy = n;
+  apply(current);
+  persist();
+  syncControls();          // computed radii, fonts and durations all moved
+}
+
+/**
+ * Replace the pigments wholesale - the hook for palettes derived from the
+ * pictures on the board. Pass any subset of the pigment tokens.
+ */
+export function setPigments(vars) {
+  current.palette = '';    // a derived palette is nobody's named palette
+  for (const [key, value] of Object.entries(vars)) {
+    current.vars[key] = value;
+    root.style.setProperty(key, value);
+  }
+  persist();
+  syncControls();
+}
+
 export function resetAppearance() {
   for (const key of Object.keys(current.vars)) root.style.removeProperty(key);
-  current = { palette: '', vars: {} };
+  current = { whimsy: 0, palette: '', vars: {} };
   apply(current);
   persist();
   syncControls();
@@ -64,6 +121,10 @@ export function resetAppearance() {
 // ---------------------------------------------------------------------------
 
 function apply(look) {
+  // Level 0 is the absence of the attribute, so the default look needs nothing
+  // set - which is also what the pre-paint script in index.html relies on.
+  if (look.whimsy) root.dataset.whimsy = look.whimsy;
+  else delete root.dataset.whimsy;
   if (look.palette) root.dataset.palette = look.palette;
   else delete root.dataset.palette;   // no attribute = the default, Papyrus
   for (const [key, value] of Object.entries(look.vars || {})) {
@@ -86,15 +147,22 @@ function setVar(name, value) {
 
 function readStored() {
   try {
-    const raw = JSON.parse(localStorage.getItem(STORE_KEY) || '{}');
-    return { palette: raw.palette || '', vars: raw.vars || {} };
+    return clone(JSON.parse(localStorage.getItem(STORE_KEY) || '{}'));
   } catch {
-    return { palette: '', vars: {} };
+    return clone(null);
   }
 }
 
-const hasLook = look => !!look && (look.palette || Object.keys(look.vars || {}).length);
-const clone = look => ({ palette: look?.palette || '', vars: { ...(look?.vars || {}) } });
+const hasLook = look =>
+  !!look && (look.whimsy || look.palette || Object.keys(look.vars || {}).length);
+const clone = look => ({
+  // Clamped, not trusted: this value arrives from localStorage and from other
+  // people's .mbrd files, and an out-of-range one would index WHIMSY to
+  // undefined the moment the panel tried to label it.
+  whimsy: Math.max(0, Math.min(WHIMSY.length - 1, Math.round(+look?.whimsy) || 0)),
+  palette: look?.palette || '',
+  vars: { ...(look?.vars || {}) },
+});
 
 // ---------------------------------------------------------------------------
 // Controls
@@ -150,6 +218,19 @@ function syncControls() {
   }
   const paletteSel = document.getElementById('opt-palette');
   if (paletteSel) paletteSel.value = current.palette || '';
+
+  const whimsy = document.getElementById('opt-whimsy');
+  const out = document.getElementById('whimsy-out');
+  if (whimsy) whimsy.value = current.whimsy;
+  if (out) out.textContent = WHIMSY[current.whimsy].hint;
+}
+
+function wireWhimsy() {
+  const input = document.getElementById('opt-whimsy');
+  if (!input) return;
+  input.max = WHIMSY.length - 1;
+  input.value = current.whimsy;
+  input.addEventListener('input', () => setWhimsy(input.value));
 }
 
 function format(value, spec) {

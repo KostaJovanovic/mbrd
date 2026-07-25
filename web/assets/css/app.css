@@ -1,10 +1,16 @@
 /* =========================================================
    mbrd - layout, canvas chrome, sidebar, item cards
 
-   The look: a sheet of papyrus with terracotta ink. Shapes lean on art
-   nouveau - leaf-cut buttons, ogee arches, whiplash rules, scalloped edges -
-   so nothing here is a plain rounded rectangle with a grey shadow.
-   All colour and shape comes from tokens.css; nothing below hardcodes a hue.
+   Structure only. Every colour, corner, duration, typeface and ornament comes
+   from a custom property in tokens.css - nothing below names a hue, and the
+   handful of values that are written literally here are proportions rather
+   than style (a 50% centre, a 100% fill).
+
+   That is what lets the whimsy slider re-skin the whole interface at runtime
+   without touching this file, and what will let the board re-skin itself from
+   the pictures dropped on it later. The rules gated on [data-whimsy] at the
+   bottom are the exceptions: the few decisions that are structural rather than
+   numeric, and so cannot live in a token.
    ========================================================= */
 
 * { box-sizing: border-box; }
@@ -30,10 +36,12 @@ html, body {
    two beat against each other into moire. */
 body {
   background-color: var(--paper);
+  /* --wash scales all three at once, so the whimsy axis can flatten the paper
+     to nothing without a second background declaration to keep in sync. */
   background-image:
-    radial-gradient(58% 44% at 18% 12%, color-mix(in srgb, var(--accent-warm) 5%, transparent), transparent 70%),
-    radial-gradient(52% 40% at 84% 78%, color-mix(in srgb, var(--leafy) 4%, transparent), transparent 72%),
-    radial-gradient(120% 100% at 50% 50%, transparent 55%, color-mix(in srgb, var(--ink) 5%, transparent));
+    radial-gradient(58% 44% at 18% 12%, color-mix(in srgb, var(--accent-warm) calc(5% * var(--wash)), transparent), transparent 70%),
+    radial-gradient(52% 40% at 84% 78%, color-mix(in srgb, var(--leafy) calc(4% * var(--wash)), transparent), transparent 72%),
+    radial-gradient(120% 100% at 50% 50%, transparent 55%, color-mix(in srgb, var(--ink) calc(5% * var(--wash)), transparent));
 }
 
 button, input, select, textarea { font: inherit; color: inherit; }
@@ -109,20 +117,53 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .item {
   position: absolute;
   background: var(--item-bg);
-  border-radius: var(--radius);
+  /* The item's own corner, which is not always --radius: a note is cut from a
+     pad and carries --note-radius instead. Anything that has to trace this
+     corner - the selection's corner marks, most of all - reads --own-radius
+     rather than guessing, so it can never end up sweeping a 22px curve around
+     a 7px corner. */
+  --own-radius: var(--radius);
+  border-radius: var(--own-radius);
   box-shadow: var(--item-shadow);
-  overflow: hidden;
+  /* Deliberately not clipped: the resize handles and their brackets sit
+     *outside* this box, and a clip here would slice every one of them in half.
+     .item-body does the clipping instead - it fills the item and carries the
+     same radius, so content still rounds off at the corners. */
+  overflow: visible;
   cursor: grab;
   user-select: none;
   -webkit-user-select: none;
   outline: 0 solid var(--select);
-  outline-offset: calc(4px * var(--iz));
+  outline-offset: calc(var(--sel-gap) * var(--iz));
+  /* The lift and the tilt are zero at the plain end of the whimsy axis, so the
+     same declaration covers "springs up to meet you" and "does not move". */
+  translate: 0 calc(var(--lift) * var(--iz));
+  rotate: var(--tilt);
+  scale: var(--grow);
+  --lift: 0px;
+  --tilt: 0deg;
+  --grow: 1;
   transition: outline-width var(--dur-fast) var(--ease),
-              box-shadow var(--dur-base) var(--ease);
+              box-shadow var(--dur-base) var(--ease),
+              translate var(--dur-base) var(--ease-back),
+              rotate var(--dur-base) var(--ease-back),
+              scale var(--dur-base) var(--ease-back);
 }
-.item:hover { box-shadow: var(--item-shadow), 0 0 0 calc(1px * var(--iz)) var(--rule-2); }
-.item.is-dragging { cursor: grabbing; }
-.item.is-selected { outline-width: calc(2px * var(--iz)); }
+/* translate/rotate/scale rather than transform, because items.js already owns
+   `transform` for the item's own rotation - these are independent properties
+   and compose with it instead of fighting over one declaration. */
+.item:hover {
+  box-shadow: var(--item-shadow), 0 0 0 calc(1px * var(--iz)) var(--rule-2);
+  --lift: var(--lift-hover);
+  --grow: var(--grow-hover);
+}
+.item.is-dragging {
+  cursor: grabbing;
+  --lift: var(--lift-drag);
+  --tilt: var(--tilt-drag);
+  --grow: var(--grow-hover);
+}
+.item.is-selected { outline-width: calc(var(--sel-line) * var(--iz)); }
 
 .item-body {
   position: absolute;
@@ -175,14 +216,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
   position: absolute;
   inset: var(--card-rule-gap);
   border: var(--hairline) solid var(--rule);
-  border-radius: max(0px, calc(var(--radius) - var(--card-rule-gap)));
+  border-radius: max(0px, calc(var(--own-radius) - var(--card-rule-gap)));
   pointer-events: none;
 }
 .card-icon {
   font-family: var(--font-display);
   font-size: 11px;
-  font-style: italic;
-  letter-spacing: 0.16em;
+  font-style: var(--display-italic);
+  letter-spacing: calc(0.16em * var(--ls-scale));
   text-transform: uppercase;
   color: var(--accent);
 }
@@ -195,7 +236,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .card-meta {
   color: var(--ink-3);
   font-size: var(--t-small);
-  font-style: italic;
+  font-style: var(--display-italic);
 }
 .card-text {
   flex: 1;
@@ -220,21 +261,26 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* Notes: the one item type born on the board, so it is drawn as a sticky
    rather than as a filed card - a square of coloured pad paper, cut corners,
-   pressed flat, with the corner starting to lift.
+   pressed flat to the board.
    The tint comes from data-tint (1-4, cycled at creation and stored in
    meta.tint), so a wall of notes reads as a pack rather than a monotone. */
 .item[data-type="note"] {
   --item-shadow: var(--note-shadow);
+  --own-radius: var(--note-radius);
   --note-paper: var(--note-1);
-  /* Square-cut, and inherited all the way down to .card. */
-  border-radius: var(--note-radius);
+  /* The item under the card takes the pad colour too. Two rounded boxes of the
+     same radius stacked exactly on top of each other still leave a hairline of
+     the lower one showing along the curve, where the antialiasing of the two
+     edges does not quite agree - and a near-white hairline around a coloured
+     sticky reads as a printing misregistration. */
+  background: var(--note-paper);
 }
 .item[data-type="note"][data-tint="2"] { --note-paper: var(--note-2); }
 .item[data-type="note"][data-tint="3"] { --note-paper: var(--note-3); }
 .item[data-type="note"][data-tint="4"] { --note-paper: var(--note-4); }
 
 .item[data-type="note"] .card {
-  padding: 20px 20px 26px;
+  padding: 20px;
   /* The band at the head is the adhesive strip reading through the sheet. */
   background:
     linear-gradient(180deg,
@@ -247,25 +293,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 /* The filed-card inner rule has no business on a sticky. */
 .item[data-type="note"] .card::after { content: none; }
-
-/* The corner lifting off the board. The gradient's line runs to the top left,
-   so the first stops paint the bottom-right triangle: the underside of the
-   sheet, a crease, then nothing. Being a child of .card it is clipped by the
-   same radius as the note, so it can never poke out of the corner. */
-.item[data-type="note"] .card::before {
-  content: '';
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  width: 26px;
-  height: 26px;
-  background: linear-gradient(315deg,
-    color-mix(in srgb, #fff 62%, var(--note-paper)) 0 42%,
-    color-mix(in srgb, var(--ink) 22%, var(--note-paper)) 42% 50%,
-    transparent 50%);
-  pointer-events: none;
-}
-#world.zoom-far .item[data-type="note"] .card::before { display: none; }
 
 .item[data-type="note"] .card-text {
   -webkit-mask-image: none;
@@ -286,7 +313,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   left: 0; right: 0; bottom: 0;
   padding: 6px 11px 7px;
   font-size: 12px;
-  font-style: italic;
+  font-style: var(--display-italic);
   line-height: 1.25;
   color: var(--ink-2);
   background: color-mix(in srgb, var(--paper-card) 88%, transparent);
@@ -303,25 +330,97 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .item[data-type="generic"] .item-label { display: none; }
 #world.zoom-far .item-label { display: none; }
 
-/* Resize grips as little terracotta lozenges. Constant screen size via --iz so
-   they stay grabbable at any zoom instead of shrinking to nothing. */
+/* Resize handles. Everything on the board takes all eight - four corners that
+   move both axes, four edges that move one.
+   Every size is multiplied by --iz (= 1/zoom) so the handles stay a constant
+   size on screen and remain grabbable at any zoom instead of shrinking away.
+
+   The grip itself is an invisible hit area; the only thing drawn is a heavier
+   stretch of the selection outline at each corner. */
 .grip {
   position: absolute;
-  width:  calc(11px * var(--iz));
-  height: calc(11px * var(--iz));
-  background: var(--accent);
-  border: calc(1.5px * var(--iz)) solid var(--paper-card);
-  border-radius: calc(2px * var(--iz));
-  transform: rotate(45deg);
+  /* How far the selection outline's *outer* edge sits from the item box. Every
+     handle is placed off this one number, so the marks land on the outline
+     however the whimsy axis has set it. */
+  --sel-edge: calc((var(--sel-gap) + var(--sel-line)) * var(--iz));
+  width:  calc(var(--sel-reach) * var(--iz));
+  height: calc(var(--sel-reach) * var(--iz));
   display: none;
   z-index: 2;
 }
 .item.is-selected .grip { display: block; }
 #world.zoom-far .grip { display: none; }
-.grip[data-g="nw"] { left: calc(-6px * var(--iz)); top: calc(-6px * var(--iz)); cursor: nwse-resize; }
-.grip[data-g="ne"] { right: calc(-6px * var(--iz)); top: calc(-6px * var(--iz)); cursor: nesw-resize; }
-.grip[data-g="sw"] { left: calc(-6px * var(--iz)); bottom: calc(-6px * var(--iz)); cursor: nesw-resize; }
-.grip[data-g="se"] { right: calc(-6px * var(--iz)); bottom: calc(-6px * var(--iz)); cursor: nwse-resize; }
+
+/* The corner mark. Not a separate line near the outline - the *same* line,
+   drawn heavier for a stretch either side of each corner.
+   The outline's outer edge sits (--sel-gap + --sel-line) out from the item, so
+   this box is inset by exactly that much and its border grows inwards from the
+   same edge. The two are flush, and a corner reads as the outline swelling.
+   Only the two outward-facing borders are drawn; the inward pair would close
+   it into a box floating around the handle. */
+.grip:not(.grip-edge)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: calc(var(--sel-corner) * var(--iz)) solid var(--select);
+  pointer-events: none;
+}
+/* The mark follows the corner it traces rather than turning a hard 90 degrees
+   against a rounded item. A curve of radius R offset outwards by d is a curve
+   of radius R + d, so the two stay concentric - and because both terms are in
+   the item's own units, they stay concentric at every zoom, even though the
+   offset is a constant size on screen and the item's radius is not. Only the
+   corner where the two strokes meet is curved; a radius on the open ends would
+   hook them inwards. --radius comes off the whimsy axis, so this rounds and
+   squares up along with everything else. */
+.grip[data-g="nw"]::after {
+  border-right-width: 0; border-bottom-width: 0;
+  border-radius: calc(var(--own-radius) + var(--sel-edge)) 0 0 0;
+}
+.grip[data-g="ne"]::after {
+  border-left-width: 0; border-bottom-width: 0;
+  border-radius: 0 calc(var(--radius) + var(--sel-edge)) 0 0;
+}
+.grip[data-g="se"]::after {
+  border-left-width: 0; border-top-width: 0;
+  border-radius: 0 0 calc(var(--radius) + var(--sel-edge)) 0;
+}
+.grip[data-g="sw"]::after {
+  border-right-width: 0; border-top-width: 0;
+  border-radius: 0 0 0 calc(var(--radius) + var(--sel-edge));
+}
+
+/* Straddling the corner: the box's outer corner lands exactly on the
+   outline's, so the drawn mark and the grab area are the same place. */
+.grip[data-g="nw"] { left:  calc(-1 * var(--sel-edge)); top:    calc(-1 * var(--sel-edge)); cursor: nwse-resize; }
+.grip[data-g="ne"] { right: calc(-1 * var(--sel-edge)); top:    calc(-1 * var(--sel-edge)); cursor: nesw-resize; }
+.grip[data-g="sw"] { left:  calc(-1 * var(--sel-edge)); bottom: calc(-1 * var(--sel-edge)); cursor: nesw-resize; }
+.grip[data-g="se"] { right: calc(-1 * var(--sel-edge)); bottom: calc(-1 * var(--sel-edge)); cursor: nwse-resize; }
+
+/* Edge handles are invisible strips running between the corners. Drawing them
+   would put eight marks around a small item and make the selection read as a
+   dotted outline; leaving them bare keeps the corners as the only marks while
+   the sides are still grabbable. They stop short of the corners so a corner
+   drag is never stolen by the edge next to it. */
+.grip-edge { background: none; }
+.grip[data-g="n"], .grip[data-g="s"] {
+  left:  calc(var(--sel-reach) * var(--iz));
+  right: calc(var(--sel-reach) * var(--iz));
+  width: auto;
+  height: calc(14px * var(--iz));
+  cursor: ns-resize;
+}
+.grip[data-g="n"] { top: calc(-1 * var(--sel-edge)); }
+.grip[data-g="s"] { bottom: calc(-1 * var(--sel-edge)); }
+.grip[data-g="w"], .grip[data-g="e"] {
+  top:    calc(var(--sel-reach) * var(--iz));
+  bottom: calc(var(--sel-reach) * var(--iz));
+  height: auto;
+  width: calc(14px * var(--iz));
+  cursor: ew-resize;
+}
+.grip[data-g="w"] { left: calc(-1 * var(--sel-edge)); }
+.grip[data-g="e"] { right: calc(-1 * var(--sel-edge)); }
 
 /* ---------------------------------------------------------
    Menu button + sidebar
@@ -350,7 +449,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 #menu-btn span {
   width: 17px;
   height: 1.5px;
-  border-radius: 1px;
+  border-radius: var(--radius-xs);
   background: var(--ink);
 }
 #sidebar.is-open ~ #menu-btn { opacity: 0; pointer-events: none; }
@@ -399,7 +498,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   margin: 0;
   font-size: 30px;
   font-weight: 400;
-  letter-spacing: 0.14em;
+  letter-spacing: calc(0.14em * var(--ls-scale));
   line-height: 1;
   color: var(--ink);
 }
@@ -407,8 +506,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
   display: block;
   margin-top: 3px;
   font-size: 10px;
-  font-style: italic;
-  letter-spacing: 0.22em;
+  font-style: var(--display-italic);
+  letter-spacing: calc(0.22em * var(--ls-scale));
   text-transform: uppercase;
   color: var(--ink-3);
 }
@@ -448,8 +547,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
   margin: 0 0 11px;
   font-size: var(--t-tiny);
   font-weight: 400;
-  font-style: italic;
-  letter-spacing: 0.24em;
+  font-style: var(--display-italic);
+  letter-spacing: calc(0.24em * var(--ls-scale));
   text-transform: uppercase;
   color: var(--ink-3);
 }
@@ -489,7 +588,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   background: var(--accent);
   border-color: var(--accent-deep);
   color: var(--accent-fg);
-  letter-spacing: 0.03em;
+  letter-spacing: calc(0.03em * var(--ls-scale));
 }
 .btn-row button.primary:hover { background: var(--accent-deep); color: var(--accent-fg); }
 
@@ -499,7 +598,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   justify-content: space-between;
   gap: 8px;
   font-size: var(--t-small);
-  font-style: italic;
+  font-style: var(--display-italic);
   color: var(--ink-2);
   margin-bottom: 5px;
 }
@@ -539,24 +638,44 @@ button, input, select, textarea { font: inherit; color: inherit; }
   width: 15px; height: 15px;
   margin-top: -6px;
   border: 1.5px solid var(--paper-card);
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   background: var(--accent);
   transform: rotate(45deg);
 }
 .field input[type="range"]::-moz-range-thumb {
   width: 13px; height: 13px;
   border: 1.5px solid var(--paper-card);
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   background: var(--accent);
 }
+/* Colour wells.
+   A native colour input paints its swatch as an inner element that ignores the
+   host's border-radius, so a rounded well ends up with a square block of
+   colour poking into its corners. The two pseudo-elements below are the only
+   way to reach that inner element: drop its inset and its own border, then
+   give it the concentric inner radius (outer minus the frame it sits in). */
 .field input[type="color"] {
+  -webkit-appearance: none;
+          appearance: none;
   width: 100%;
   height: calc(30px * var(--density));
-  padding: 2px;
+  padding: var(--well-pad);
   border: var(--hairline) solid var(--rule-2);
   border-radius: var(--radius-sm);
   background: var(--paper);
   cursor: pointer;
+  --well-pad: 3px;
+  --well-radius: max(0px, calc(var(--radius-sm) - var(--well-pad)));
+}
+.field input[type="color"]:hover { border-color: var(--accent); }
+.field input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+.field input[type="color"]::-webkit-color-swatch {
+  border: none;
+  border-radius: var(--well-radius);
+}
+.field input[type="color"]::-moz-color-swatch {
+  border: none;
+  border-radius: var(--well-radius);
 }
 
 /* Checkboxes as inked boxes with a hand-drawn tick. */
@@ -574,28 +693,32 @@ button, input, select, textarea { font: inherit; color: inherit; }
   width: 17px; height: 17px;
   margin: 0;
   border: 1.5px solid var(--rule-2);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: var(--paper);
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
 }
 .check input:hover { border-color: var(--accent); }
 .check input:checked {
-  background: var(--accent);
+  background-color: var(--accent);
   border-color: var(--accent-deep);
-  /* The tick, drawn with two clipped bars rather than a font glyph. */
-  background-image:
-    linear-gradient(45deg, transparent 42%, var(--accent-fg) 42% 58%, transparent 58%),
-    linear-gradient(-45deg, transparent 42%, var(--accent-fg) 42% 58%, transparent 58%);
-  background-size: 11px 7px, 11px 11px;
-  background-position: 1px 7px, 4px 1px;
+  /* A real tick, as an SVG.
+     It was two clipped diagonal gradient bars before, which is a neat trick and
+     a bad checkmark: each bar is an infinite 45-degree line cropped to a box,
+     so the two strokes meet only at one exact size and drift apart into a pair
+     of disconnected slashes at any other. An SVG scales.
+     The stroke is white rather than var(--accent-fg) because a data URI cannot
+     read a custom property - and every palette's --accent-fg is a near-white
+     that is indistinguishable from it on a saturated chip this small. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.6 8.4 6.6 11.4 12.4 4.9'/%3E%3C/svg%3E");
+  background-size: 100% 100%;
   background-repeat: no-repeat;
 }
 
 .hint {
   margin: 9px 0 0;
   font-size: var(--t-small);
-  font-style: italic;
+  font-style: var(--display-italic);
   line-height: 1.5;
   color: var(--ink-3);
 }
@@ -608,7 +731,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   gap: 12px;
   align-items: baseline;
   padding: 4px 0;
-  font-style: italic;
+  font-style: var(--display-italic);
 }
 .keys li span { color: var(--ink-3); text-align: right; }
 kbd {
@@ -618,7 +741,7 @@ kbd {
   padding: 2px 6px;
   border: 1px solid var(--rule-2);
   border-bottom-width: 2px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: var(--paper);
   color: var(--ink);
   white-space: nowrap;
@@ -628,8 +751,8 @@ kbd {
   padding: 10px 18px calc(12px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--rule);
   font-size: var(--t-tiny);
-  font-style: italic;
-  letter-spacing: 0.1em;
+  font-style: var(--display-italic);
+  letter-spacing: calc(0.1em * var(--ls-scale));
   color: var(--ink-3);
   display: flex;
   justify-content: space-between;
@@ -691,7 +814,7 @@ kbd {
   font-family: var(--font-mono);
   font-size: var(--t-tiny);
   color: var(--ink);
-  letter-spacing: 0.02em;
+  letter-spacing: calc(0.02em * var(--ls-scale));
 }
 /* A hairline gap before the fit/home pair - they move the view, not the zoom. */
 #zoom-ctl button[data-zoom="fit"] { border-left-width: 3px; border-left-style: double; }
@@ -732,7 +855,7 @@ kbd {
   background: var(--paper-card);
   box-shadow: var(--shadow-2);
   font-size: 19px;
-  font-style: italic;
+  font-style: var(--display-italic);
   color: var(--accent-deep);
   animation: bloom var(--dur-base) var(--ease-back);
 }
@@ -817,7 +940,7 @@ kbd {
   background: var(--paper-card);
   box-shadow: var(--shadow-2);
   font-size: var(--t-small);
-  font-style: italic;
+  font-style: var(--display-italic);
   animation: rise var(--dur-base) var(--ease-back);
 }
 #toast.is-error { border-color: var(--danger); color: var(--danger); }
@@ -826,3 +949,51 @@ kbd {
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* ---------------------------------------------------------
+   Whimsy axis - the parts a token cannot express
+
+   Almost everything the slider moves is a value, and values live in
+   tokens.css. What is left here is the handful of decisions that are
+   *structural*: an ornament that has to stop existing rather than shrink to
+   zero, and a couple of shapes that are drawn rather than declared.
+
+   Only the plain end needs any of this. The middle keeps its ornaments and
+   just turns them down, which the tokens already do on their own.
+   --------------------------------------------------------- */
+
+/* A card at radius 0 with a hairline border already reads as ruled - a second
+   rule inside it is just noise. */
+:root[data-whimsy="2"] .card::after { content: none; }
+
+/* Stickies go flat: no adhesive band showing through, just a ruled edge. */
+:root[data-whimsy="2"] .item[data-type="note"] .card {
+  background: var(--note-paper);
+  box-shadow: inset 0 0 0 var(--hairline) var(--ink);
+}
+
+/* Lozenges become squares. Same target size, no tilt. */
+:root[data-whimsy="2"] .grip,
+:root[data-whimsy="2"] .field input[type="range"]::-webkit-slider-thumb { transform: none; }
+
+/* The toast sits straight rather than tossed onto the page. */
+:root[data-whimsy="2"] #toast {
+  transform: translateX(-50%);
+  animation-name: rise-plain;
+}
+@keyframes rise-plain { from { opacity: 0; transform: translate(-50%, 6px); } }
+
+/* The close button stops spinning; it still lights up. */
+:root[data-whimsy="2"] #side-close:hover { transform: none; }
+
+/* The stop labels under the whimsy slider. Not a legend - the ends of a scale,
+   which is the only way a three-position slider says what it does. */
+.field-stops {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 3px;
+  color: var(--ink-3);
+  font-size: var(--t-tiny);
+  font-style: var(--display-italic);
+}
+.field-stops span:nth-child(2) { color: var(--ink-2); }

@@ -88,16 +88,21 @@ function build(item) {
   body.append(buildContent(item));
   el.append(body);
 
+  // Inside .item-body, not .item: the body is what clips to the rounded
+  // corners now that .item lets the resize handles hang outside it, and a
+  // caption plate across the foot has to be clipped by that same curve.
   if (item.name) {
     const label = document.createElement('div');
     label.className = 'item-label';
     label.textContent = item.name;
-    el.append(label);
+    body.append(label);
   }
 
-  for (const g of ['nw', 'ne', 'sw', 'se']) {
+  // Eight handles: four corners, and four edges for resizing one axis alone.
+  // The single-letter ones are the edges (see .grip-edge in app.css).
+  for (const g of ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']) {
     const grip = document.createElement('div');
-    grip.className = 'grip';
+    grip.className = g.length === 1 ? 'grip grip-edge' : 'grip';
     grip.dataset.g = g;
     el.append(grip);
   }
