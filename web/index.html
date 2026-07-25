@@ -16,11 +16,12 @@
 <script>
   /* Before first paint: apply the saved look - whimsy level, palette, and any
      per-token overrides - so an installed PWA never flashes the default
-     pigment on launch. Whimsy 0 is the absence of the attribute, so the common
-     case sets nothing at all. */
+     pigment on launch. An unset whimsy is the middle, which is what the bare
+     stylesheet already renders, so the common case sets nothing at all. */
   try {
     var s = JSON.parse(localStorage.getItem('mbrd.appearance') || '{}');
-    if (s.whimsy) document.documentElement.dataset.whimsy = s.whimsy;
+    /* != null, not truthiness: 0 is Warm, a real level with its own rules. */
+    if (s.whimsy != null) document.documentElement.dataset.whimsy = s.whimsy;
     if (s.palette) document.documentElement.dataset.palette = s.palette;
     for (var k in s.vars || {}) document.documentElement.style.setProperty(k, s.vars[k]);
   } catch (e) {}
@@ -120,7 +121,7 @@
            serious. See the third block of tokens.css. -->
       <label class="field">
         <span>Whimsy</span>
-        <input id="opt-whimsy" type="range" min="0" max="2" step="1" value="0"
+        <input id="opt-whimsy" type="range" min="0" max="2" step="1" value="1"
                list="whimsy-stops" aria-describedby="whimsy-stop-labels">
         <datalist id="whimsy-stops">
           <option value="0"></option>
@@ -138,14 +139,6 @@
           <option value="absinthe">Absinthe</option>
           <option value="tearose">Tea rose</option>
           <option value="peacock">Peacock</option>
-        </select>
-      </label>
-      <label class="field">
-        <span>Grid style</span>
-        <select id="opt-gridstyle">
-          <option value="dots">Dots</option>
-          <option value="lines">Lines</option>
-          <option value="graph">Sparse</option>
         </select>
       </label>
       <div id="appearance-vars"></div>

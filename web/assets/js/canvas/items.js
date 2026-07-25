@@ -82,6 +82,10 @@ function build(item) {
   el.dataset.fit = fitMode(item.type);
   // Which colour off the sticky pad. CSS picks the tint from this.
   if (item.meta.tint) el.dataset.tint = item.meta.tint;
+  // How far off square this one rests, as a fraction of whatever the whimsy
+  // axis currently allows (--tilt-max). Presentational, so it stays out of
+  // item.rot and the geometry model - see tiltFactor().
+  el.style.setProperty('--item-tilt', tiltFactor().toFixed(3));
 
   const body = document.createElement('div');
   body.className = 'item-body';
@@ -112,6 +116,23 @@ function build(item) {
   el.classList.toggle('is-selected', selection.has(item.id));
   return el;
 }
+
+/**
+ * A number in [-1, 1] for an item, used as its resting tilt - freshly rolled,
+ * so the board is pinned up a little differently every time you open it.
+ *
+ * Rolled here in build() rather than stored on the item, which also settles
+ * how long it lasts: nodes are cached and only detached when culled, so an
+ * item keeps its lean while you pan away and back, and only a reload or
+ * opening another board re-scatters everything.
+ *
+ * It stays out of item.rot on purpose. rot is geometry - fit() reads it, the
+ * resize handles work in its frame, a marquee tests against it, and it is
+ * saved. This is presentation: the browser hit-tests the rotated box, so
+ * pointing at a crooked item still works, and nothing that reasons about where
+ * things *are* has to know the board is not square.
+ */
+const tiltFactor = () => Math.random() * 2 - 1;
 
 /** Rebuild one item's content in place (note edits, renames). */
 function rebuild(id) {

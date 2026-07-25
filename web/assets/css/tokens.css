@@ -21,11 +21,13 @@
    ========================================================= */
 
 /* =========================================================
-   1. Base - whimsy 0, "Warm". Papyrus & terracotta at its most playful:
-   deep pigment, generous corners, springy motion, ornament turned up.
+   1. Base - whimsy 1, "Middle". Papyrus & terracotta: warm paper, iron-gall
+   ink, corners in, nothing moving on its own.
 
-   This is the base rather than a variant because it is the default look, and
-   the default has to be what renders before any script has run.
+   The middle of the axis is the base rather than a variant because it is the
+   default look, and the default has to be what renders before any script has
+   run - so an unset data-whimsy and a data-whimsy="1" mean the same thing, and
+   a first paint needs no attribute at all.
 
    Light only, on purpose: the whole thing reads as a sheet of paper you pin
    things to, and a dark sheet of papyrus is a contradiction.
@@ -49,38 +51,49 @@
   --accent:      #c25c2b;  /* terracotta */
   --accent-warm: #e0983f;  /* amber */
   --accent-deep: #8d3c17;  /* burnt sienna, for pressed states */
-  --accent-fg:   #fdf8ec;
+  /* What sits on top of the accent. Mixed up out of this palette's own sheet
+     rather than fixed, so it is never a warm cream on a teal button. */
+  --accent-fg:   color-mix(in srgb, var(--paper) 45%, #fff);
   --leafy:       #75855f;  /* olive - secondary ornament */
-  --danger:      #a83232;
+  /* Kept unmistakably red - a destructive action should not have to be
+     decoded - but pulled towards this palette's ink so it belongs to the board
+     it is printed on. */
+  --danger:      color-mix(in srgb, #a83232 85%, var(--ink));
 
   /* ---- canvas grid ----
      Derived from the ink, so one --grid-alpha slider drives both layers and
      every palette gets a grid that matches its own ink. */
-  --grid-alpha: 0.18;
+  --grid-alpha: 0.14;
   --grid-minor: color-mix(in srgb, var(--ink) calc(var(--grid-alpha) * 100%), transparent);
   --grid-major: color-mix(in srgb, var(--ink) calc(var(--grid-alpha) * 190%), transparent);
   --grid-axis:  color-mix(in srgb, var(--accent) 55%, transparent);
-  --grid-dot:   2.4px;
+  --grid-dot:   1.7px;
 
   /* ---- item chrome ---- */
   --item-bg:     var(--paper-card);
   --item-border: color-mix(in srgb, var(--ink) 16%, transparent);
-  /* Warm shadow, never grey: a grey drop shadow on warm paper is the single
-     most generic-web-app thing you can do. */
-  --item-shadow: 0 2px 3px rgba(78, 54, 28, 0.12),
-                 0 20px 38px -14px rgba(78, 54, 28, 0.46);
+  /* Never grey - and never one fixed brown either. Mixed out of this palette's
+     own ink, so a teal board casts a teal-grey shadow rather than a warm one
+     borrowed from Papyrus. A grey drop shadow on warm paper is the single most
+     generic-web-app thing you can do; a brown one on a green board is worse. */
+  --item-shadow: 0 1px 1px color-mix(in srgb, var(--ink) 11%, transparent),
+                 0 10px 22px -10px color-mix(in srgb, var(--ink) 34%, transparent);
   /* How much the interface reacts to being touched. Every one of these is
      zero (or 1x) at the plain end, where nothing should move on its own, so
      the same declarations cover "springs up to meet you" and "sits still".
      Items, on the board: */
-  --lift-hover: -6px;
-  --grow-hover: 1.03;
-  --lift-drag:  -16px;
-  --tilt-drag:  -2deg;
+  --lift-hover: 0px;
+  --grow-hover: 1;
+  --lift-drag:  0px;
+  --tilt-drag:  0deg;
   /* Controls, in the panels: */
-  --btn-lift:  -3px;
-  --btn-grow:  1.04;
-  --btn-press: 0.93;
+  --btn-lift:  -1px;
+  --btn-grow:  1;
+  --btn-press: 0.985;
+  /* How far off square an item may come to rest. Each one gets its own factor
+     in [-1, 1] from canvas/items.js and multiplies it by this, so the whole
+     board straightens up or scatters as the axis moves, with no JS involved. */
+  --tilt-max: 1.5deg;
   --select:      var(--accent);
   --select-fill: color-mix(in srgb, var(--accent) 15%, transparent);
   /* The selection outline, and the corner brackets that thicken it. All three
@@ -89,8 +102,8 @@
      swelling rather than as a second line hovering nearby. */
   --sel-gap:    5px;    /* clear space between the item and the outline */
   --sel-line:   2px;    /* the outline itself */
-  --sel-corner: 3px;    /* how heavy that line gets at the corners */
-  --sel-reach:  22px;   /* how far along each edge the heavy part runs */
+  --sel-corner: 2.2px;  /* how heavy that line gets at the corners */
+  --sel-reach:  18px;   /* how far along each edge the heavy part runs */
 
   /* ---- sticky notes ----
      A pack of four colours, every one mixed out of this palette's own pigment
@@ -101,30 +114,33 @@
   --note-2: color-mix(in srgb, var(--accent) 17%, var(--paper-card));
   --note-3: color-mix(in srgb, var(--leafy) 26%, var(--paper-card));
   --note-4: color-mix(in srgb, var(--accent-warm) 13%, var(--paper-2));
-  --note-radius: 10px;   /* guillotined from a pad, not die-cut */
+  /* Guillotined from a pad, not die-cut - so a sticky's corner is tighter than
+     a card's, but a fraction of it rather than an independent number. That way
+     the Corner radius slider moves the notes along with everything else. */
+  --note-radius: calc(var(--radius) * 0.42);
   /* Tight and close: a sticky is pressed flat to the board, not floating over
      it like the framed items are. */
-  --note-shadow: 0 1px 1px rgba(78, 54, 28, 0.17),
-                 0 5px 9px -5px rgba(78, 54, 28, 0.34),
-                 0 13px 16px -13px rgba(78, 54, 28, 0.30);
+  --note-shadow: 0 1px 1px color-mix(in srgb, var(--ink) 17%, transparent),
+                 0 5px 9px -5px color-mix(in srgb, var(--ink) 32%, transparent),
+                 0 13px 16px -13px color-mix(in srgb, var(--ink) 28%, transparent);
 
   /* ---- shape ----
      Every corner is even. --leaf sizes controls, --ogee the panels that hold
      them, --radius-xs the small fry (checkboxes, chips, kbd). */
-  --radius:    26px;
-  --radius-sm: 17px;
-  --radius-xs: 9px;
-  --leaf:      20px;    /* on a 35px control this is all but a pill */
-  --ogee:      30px;
+  --radius:    13px;
+  --radius-sm: 8px;
+  --radius-xs: 4px;
+  --leaf:      10px;
+  --ogee:      15px;
   /* Gap between a card's edge and its inner rule. The rule's own radius is
      --radius minus this, so the two curves stay concentric. */
-  --card-rule-gap: 8px;
+  --card-rule-gap: 5px;
   --density:   1;
   --sidebar-w: 322px;
   --hairline:  1px;
 
-  --shadow-1: 0 2px 3px rgba(78, 54, 28, 0.15);
-  --shadow-2: 0 24px 56px -20px rgba(60, 40, 20, 0.55);
+  --shadow-1: 0 1px 2px color-mix(in srgb, var(--ink) 14%, transparent);
+  --shadow-2: 0 18px 44px -18px color-mix(in srgb, var(--ink) 46%, transparent);
 
   /* ---- type ----
      An old-style serif throughout. Every face listed ships with an OS, so
@@ -141,23 +157,23 @@
      are set. Each site multiplies its own em value by --ls-scale, so their
      relative differences survive being scaled down. */
   --display-italic: italic;
-  --ls-scale: 1.2;
+  --ls-scale: 1;
 
   /* ---- ornament ----
      Multiplier on the decorative washes in the paper. 0 flattens them without
      app.css needing a second background declaration. */
-  --wash: 2.2;
+  --wash: 1;
 
   /* ---- motion ---- */
-  --dur-fast: 0.19s;
-  --dur-base: 0.4s;
-  --ease:      cubic-bezier(0.2, 0.9, 0.24, 1);
-  /* A real overshoot: things arrive, go visibly too far, and settle back. */
-  --ease-back: cubic-bezier(0.3, 2.05, 0.4, 1);
+  --dur-fast: 0.13s;
+  --dur-base: 0.24s;
+  --ease:      cubic-bezier(0.22, 0.9, 0.28, 1);
+  /* A slight overshoot, so panels settle like they have weight. */
+  --ease-back: cubic-bezier(0.34, 1.4, 0.5, 1);
   /* Read by canvas/viewport.js, so the board's own movement sits on the same
      axis as the interface's - not in a JS constant that ignores it. */
-  --dur-zoom:   300ms;
-  --dur-travel: 700ms;
+  --dur-zoom:   190ms;
+  --dur-travel: 400ms;
 }
 
 /* =========================================================
@@ -222,6 +238,7 @@
 }
 
 
+
 /* =========================================================
    3. The whimsy axis.
 
@@ -230,14 +247,14 @@
    reactivity together, because those together are what make a thing feel
    playful or serious. Moving only one of them reads as a bug.
 
-     0  Warm    the base above. Deep corners, springy motion, things that lift
-                and tilt under the pointer, ornament turned up.
-     1  Middle  the same room with the furniture straightened. Corners in,
-                motion shortened, nothing moving on its own.
+     0  Warm    deep corners, springy overshoot, things that lift and tilt
+                under the pointer, ornament turned up, items pinned up crooked.
+     1  Middle  the base above - the same room with the furniture straightened.
      2  Harsh   Swiss. Square, hairline, high contrast, sans, minimal motion.
 
-   Level 0 is the base, so it is what renders before any script has run - the
-   default look needs no attribute set.
+   Level 1 is the base, so it is the default and what renders before any script
+   has run. The other two are overrides on top of it, which also means the two
+   ends stay honest: anything they do not restate is deliberately the middle's.
 
    What the axis does NOT touch is the palette. All three levels are the same
    pigments: Papyrus stays terracotta, Peacock stays teal. Harsh is a change of
@@ -253,45 +270,50 @@
    custom property, so it can drive all of this without touching app.css.
    ========================================================= */
 
-/* ---- 1: middle ----------------------------------------------------------
-   Shape, motion and ornament only. No pigment: the palette is the palette. */
-:root[data-whimsy="1"] {
-  --radius:    13px;
-  --radius-sm: 8px;
-  --radius-xs: 4px;
-  --leaf:      10px;
-  --ogee:      15px;
-  --card-rule-gap: 5px;
-  --note-radius: 3px;
+/* ---- 0: warm ------------------------------------------------------------
+   Shape, motion, ornament and reactivity only. No pigment: the palette is the
+   palette, and the shadows below take their colour from its ink. */
+:root[data-whimsy="0"] {
+  --radius:    26px;
+  --radius-sm: 17px;
+  --radius-xs: 9px;
+  --leaf:      20px;    /* on a 35px control this is all but a pill */
+  --ogee:      30px;
+  --card-rule-gap: 8px;
 
-  --ls-scale: 1;
-  --wash: 1;
-  --grid-alpha: 0.14;
-  --grid-dot: 1.7px;
+  --ls-scale: 1.2;
+  --wash: 2.2;
+  --grid-alpha: 0.18;
+  --grid-dot: 2.4px;
 
-  --item-shadow: 0 1px 1px rgba(78, 54, 28, 0.10),
-                 0 10px 22px -10px rgba(78, 54, 28, 0.36);
-  --shadow-1: 0 1px 2px rgba(78, 54, 28, 0.14);
-  --shadow-2: 0 18px 44px -18px rgba(60, 40, 20, 0.5);
-  /* Nothing rises to meet the pointer here; selection and drag still read,
-     they just do not perform. */
-  --lift-hover: 0px;
-  --grow-hover: 1;
-  --lift-drag:  0px;
-  --tilt-drag:  0deg;
-  --btn-lift:  -1px;
-  --btn-grow:  1;
-  --btn-press: 0.985;
+  --item-shadow: 0 2px 3px color-mix(in srgb, var(--ink) 13%, transparent),
+                 0 20px 38px -14px color-mix(in srgb, var(--ink) 44%, transparent);
+  --note-shadow: 0 2px 2px color-mix(in srgb, var(--ink) 18%, transparent),
+                 0 8px 14px -6px color-mix(in srgb, var(--ink) 34%, transparent),
+                 0 18px 22px -16px color-mix(in srgb, var(--ink) 30%, transparent);
+  --shadow-1: 0 2px 3px color-mix(in srgb, var(--ink) 16%, transparent);
+  --shadow-2: 0 24px 56px -20px color-mix(in srgb, var(--ink) 52%, transparent);
 
-  --sel-corner: 2.2px;
-  --sel-reach:  18px;
+  /* Everything rises to meet the pointer and swings when you pick it up. */
+  --lift-hover: -6px;
+  --grow-hover: 1.03;
+  --lift-drag:  -16px;
+  --tilt-drag:  -2deg;
+  --btn-lift:  -3px;
+  --btn-grow:  1.04;
+  --btn-press: 0.93;
+  --tilt-max: 3deg;
 
-  --dur-fast: 0.13s;
-  --dur-base: 0.24s;
-  --ease:      cubic-bezier(0.22, 0.9, 0.28, 1);
-  --ease-back: cubic-bezier(0.34, 1.4, 0.5, 1);
-  --dur-zoom:   190ms;
-  --dur-travel: 400ms;
+  --sel-corner: 3px;
+  --sel-reach:  22px;
+
+  --dur-fast: 0.19s;
+  --dur-base: 0.4s;
+  --ease:      cubic-bezier(0.2, 0.9, 0.24, 1);
+  /* A real overshoot: things arrive, go visibly too far, and settle back. */
+  --ease-back: cubic-bezier(0.3, 2.05, 0.4, 1);
+  --dur-zoom:   300ms;
+  --dur-travel: 700ms;
 }
 
 /* ---- 2: harsh -----------------------------------------------------------
@@ -326,6 +348,8 @@
   --note-shadow: none;
   --shadow-1: none;
   --shadow-2: 0 8px 28px color-mix(in srgb, var(--ink) 18%, transparent);
+
+  /* Nothing moves on its own, and nothing rests off square. */
   --lift-hover: 0px;
   --grow-hover: 1;
   --lift-drag:  0px;
@@ -333,6 +357,7 @@
   --btn-lift:  0px;
   --btn-grow:  1;
   --btn-press: 1;
+  --tilt-max: 0deg;
 
   --radius:      0;
   --radius-sm:   0;
