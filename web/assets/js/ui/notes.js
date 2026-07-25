@@ -13,9 +13,14 @@
 // The second is enforced from both directions - the note grows as you type,
 // and a resize drag stops at the height the text requires - so there is no
 // state in which a note is hiding something.
+//
+// One note stops being a note. If what it says turns out to be an address and
+// nothing else, it becomes a link item as the edit closes - see linkify()
+// below, which is as much about the moment the check runs as about the check.
 
-import { byId, bus, markDirty, setItemText, NOTE_MAX } from '../state.js';
+import { byId, bus, markDirty, setItemText, retypeItem, NOTE_MAX } from '../state.js';
 import { nodeFor } from '../canvas/items.js';
+import { linkURL, linkDraft } from '../import/renderers.js';
 
 /**
  * Height this note needs, in world px, for its text at `width`.
@@ -165,7 +170,9 @@ export function editNote(id) {
     body.contentEditable = 'false';
     counter.remove();
     node.classList.remove('is-editing');
-    setItemText(id, read());
+    const text = read();
+    if (linkify(id, text)) return;
+    setItemText(id, text);
     growNote(id);
   }
 
@@ -175,6 +182,47 @@ export function editNote(id) {
   card.addEventListener('focusout', onFocusOut);
   countLeft();
   caretToEnd(head);
+}
+
+/**
+ * A note written down to nothing but a URL is a link, and this is where it
+ * becomes one. Returns whether it did.
+ *
+ * *When* matters more than what. The check runs from finish() - once, as the
+ * edit is put away - and never from the input handler, because watching a note
+ * dissolve into a link card as you type the last character of an address would
+ * be the app taking the pen out of your hand mid-sentence. Waiting until you
+ * have stepped away from the note makes the conversion something you finished
+ * rather than something that happened to you, and one Ctrl+Z puts the sticky
+ * back exactly as it was.
+ *
+ * It fires nowhere else, either. A note that already held nothing but a URL -
+ * loaded from a .mbrd saved before links existed, or restored from the bin -
+ * is left alone, because rewriting somebody's saved file on the way in is the
+ * same surprise arriving at a worse moment. Only an edit you just made can
+ * convert the thing you just edited.
+ *
+ * The typed text is never committed on its way past. One edit, one undo entry:
+ * undoing the conversion gives back the note as it stood before the edit
+ * started, not a half-way note that only ever existed in the DOM.
+ *
+ * The link takes the note's place, its position and its place in the stack -
+ * but the link's own default size, because a sticky is square in order to hold
+ * a paragraph and this holds two lines.
+ *
+ * Stickiness is read from live geometry rather than stored, so it needs no
+ * repair: notes stuck *to* this one are stuck to a link now and go on
+ * travelling with it, since a host may be anything. What does end is the other
+ * direction - only notes stick, so a note that was riding on a photo stops
+ * riding on it the moment it becomes a link. That is the honest outcome and
+ * not an oversight: it is no longer a sticky, and a link card lying on a photo
+ * is a card lying on a photo.
+ */
+function linkify(id, text) {
+  const url = linkURL(text);
+  if (!url) return false;
+  retypeItem(id, linkDraft(url), 'Turn note into link');
+  return true;
 }
 
 function caretToEnd(el) {

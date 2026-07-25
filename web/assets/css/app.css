@@ -526,6 +526,47 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .note-count.is-low { color: var(--danger); }
 
+/* Links: the other item born on the board, and the only one whose subject is
+   somewhere else entirely. Drawn as an ordinary filed card, because that is
+   what it is - a name, an address, and no body. The one part that behaves
+   differently is the name, which is the anchor. */
+.card-link .card-name {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: from-font;
+  text-underline-offset: 2px;
+  /* .item-body refuses the pointer so that the whole card is one drag target;
+     the anchor is the exception, the same bargain .transport makes for the
+     audio scrubber. Everything around it - the badge, the address, the card's
+     own padding - still drags, selects and resizes as usual. */
+  pointer-events: auto;
+  cursor: pointer;
+  /* An address has no spaces to break at, so a long one is allowed to break
+     anywhere rather than shouldering the card's edge out of the way. */
+  overflow-wrap: anywhere;
+}
+.card-link .card-name:hover { text-decoration-thickness: 2px; }
+/* The address itself: monospaced, so that a URL reads as a URL and not as
+   prose, and upright rather than in the italic the other card metadata wears -
+   an address is a literal, and slanting one is a small lie about it. */
+.card-link .card-meta {
+  font-family: var(--font-mono);
+  font-style: normal;
+  overflow-wrap: anywhere;
+  /* Two lines of address is as much orientation as anyone wants, and the whole
+     of it is on the anchor's tooltip for the rare time it is not. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+          line-clamp: 2;
+  overflow: hidden;
+}
+/* The anchor stands down at far zoom, for the reason the grips and the caption
+   plates do: below a third of size a card is a coloured tile, and a click on
+   one is a click on the board rather than a considered press on a line of text
+   five pixels tall. Opening a tab is not a thing to do by accident. */
+#world.zoom-far .card-link .card-name { pointer-events: none; }
+
 .item.is-editing { cursor: text; }
 .item.is-editing .item-body { pointer-events: auto; }
 .item.is-editing .card-text,
@@ -563,6 +604,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .item[data-type="audio"] .item-label,
 .item[data-type="text"] .item-label,
 .item[data-type="note"] .item-label,
+.item[data-type="link"] .item-label,
 .item[data-type="generic"] .item-label { display: none; }
 /* :not(), rather than an override that unhides it again - winning on
    specificity here would also unhide the plates that particular item types

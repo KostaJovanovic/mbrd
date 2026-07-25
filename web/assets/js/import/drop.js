@@ -8,7 +8,7 @@
 import { toast, extOf } from '../util.js';
 import { board, addItems, select, NOTE_MAX } from '../state.js';
 import { addFile } from '../storage/assets.js';
-import { classify, defaultSize, measureSize } from './renderers.js';
+import { classify, defaultSize, measureSize, linkURL, linkDraft } from './renderers.js';
 import { arrange } from '../arrange/arrangements.js';
 import { looksLikeMbrd } from '../storage/mbrd.js';
 import { openFile } from '../storage/storage.js';
@@ -65,7 +65,16 @@ export function initDrop(vp) {
     const text = e.clipboardData?.getData('text/plain');
     if (text && text.trim()) {
       e.preventDefault();
-      addNote(centre, text.trim());
+      // A pasted address is a link, not a note about a link. Tested before the
+      // note branch because a note is the fallback for "some text arrived" and
+      // a bare URL is the one shape of text that means something narrower than
+      // that. It is also the one shape a note handles badly: NOTE_MAX would cut
+      // a long address in half, leaving a sticky that quietly says somewhere
+      // else. linkURL() is strict, so a paragraph that merely mentions a link
+      // still lands as the note it is.
+      const url = linkURL(text);
+      if (url) addLink(centre, url);
+      else addNote(centre, text.trim());
     }
   });
 
@@ -183,6 +192,22 @@ export function addNote(centre, text = '') {
     x: centre.x, y: centre.y, w: size.w, h: size.h,
     meta: { text, tint },
   }], 'Add note');
+  select([item.id]);
+  return item;
+}
+
+/**
+ * A card for somewhere else. The second item type with no source file behind
+ * it, and unlike a note it is never empty: there is no such thing as a blank
+ * link, so this takes a URL that has already been through linkURL() rather
+ * than a string it would have to re-check.
+ *
+ * No cap on the length. A note has one because a sticky is a thought you can
+ * take in at a glance, and an address is not a thought - it is one value, and
+ * half of one is not a shorter link but a broken one.
+ */
+export function addLink(centre, url) {
+  const [item] = addItems([{ ...linkDraft(url), x: centre.x, y: centre.y }], 'Add link');
   select([item.id]);
   return item;
 }

@@ -411,13 +411,18 @@ export function cutItems(ids) {
 
 /**
  * What a copied selection says on the system clipboard. A note gives up its
- * text and everything else its name, which is the only part of an item that
- * means anything outside this app. The bracketed count is the fallback for a
+ * text, a link its address, and everything else its name - in each case the
+ * only part of that item which means anything outside this app. A link's name
+ * would be the wrong half here: it is a label, editable and often nothing like
+ * the URL, and a link copied out of the board is copied in order to be pasted
+ * somewhere that wants the address. The bracketed count is the fallback for a
  * selection with nothing to say - an unnamed photo - because the receipt above
  * only works while the string is never empty.
  */
 function summarise(src) {
-  const lines = src.map(i => (i.type === 'note' ? i.meta.text : i.name) || '').filter(Boolean);
+  const lines = src.map(i => (i.type === 'note' ? i.meta.text
+                            : i.type === 'link' ? i.meta.url
+                            : i.name) || '').filter(Boolean);
   if (lines.length) return lines.join('\n\n');
   return `[mbrd: ${src.length} item${src.length === 1 ? '' : 's'}]`;
 }
@@ -595,6 +600,43 @@ export function setItemText(id, text) {
   commit('Edit note',
     () => { byId(id).meta.text = text; bus.emit('item', id); },
     () => { byId(id).meta.text = prev; bus.emit('item', id); });
+}
+
+/**
+ * Turn one item into an item of another kind, as a single undoable step.
+ *
+ * The item is replaced rather than edited, and the replacement is minted with
+ * a fresh id. That is not bookkeeping. canvas/items.js caches one node per id
+ * and writes the type onto that node when it is *built*, and the stylesheet
+ * keys off it - so an item that changed type under a node that stayed would go
+ * on wearing the old type's clothes until something unrelated forced a
+ * rebuild. Retiring the id retires the node with it, which is the only way to
+ * get an honest one back without reaching into the renderer from here.
+ *
+ * Position, rotation and stacking carry over unless `next` overrules them:
+ * this is the same thing seen differently, and it should not move or change
+ * places in the pile. The selection follows the swap in both directions, so
+ * whichever of the pair is on the board is the one that is selected, and an
+ * undo hands the original back ready to be dragged rather than anonymous.
+ *
+ * The slot to write into is found by identity when the command runs, not by an
+ * index captured while it is being built. Undo may be pressed three edits
+ * later, by which time a position recorded now is pointing at somebody else.
+ */
+export function retypeItem(id, next, label = 'Change item') {
+  const old = byId(id);
+  if (!old) return null;
+  const item = makeItem({ x: old.x, y: old.y, rot: old.rot, z: old.z, ...next });
+  const swap = (out, into) => {
+    const at = board.items.indexOf(out);
+    if (at < 0) return;
+    board.items.splice(at, 1, into);
+    if (selection.delete(out.id)) selection.add(into.id);
+    bus.emit('items');
+    bus.emit('selection');
+  };
+  commit(label, () => swap(old, item), () => swap(item, old));
+  return item;
 }
 
 /**
