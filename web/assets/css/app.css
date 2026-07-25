@@ -1,0 +1,828 @@
+/* =========================================================
+   mbrd - layout, canvas chrome, sidebar, item cards
+
+   The look: a sheet of papyrus with terracotta ink. Shapes lean on art
+   nouveau - leaf-cut buttons, ogee arches, whiplash rules, scalloped edges -
+   so nothing here is a plain rounded rectangle with a grey shadow.
+   All colour and shape comes from tokens.css; nothing below hardcodes a hue.
+   ========================================================= */
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--t-body);
+  -webkit-font-smoothing: antialiased;
+  /* Kill rubber-band / pull-to-refresh: every gesture on this page is ours. */
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The sheet. #viewport paints the grid on top of this and stays transparent,
+   so the paper shows through at every zoom without the grid painter having to
+   know about it.
+   Soft blooms and a vignette only - no fibre hatching. Fine repeating lines
+   under a dot grid read as a second, competing grid, and at fractional zoom the
+   two beat against each other into moire. */
+body {
+  background-color: var(--paper);
+  background-image:
+    radial-gradient(58% 44% at 18% 12%, color-mix(in srgb, var(--accent-warm) 5%, transparent), transparent 70%),
+    radial-gradient(52% 40% at 84% 78%, color-mix(in srgb, var(--leafy) 4%, transparent), transparent 72%),
+    radial-gradient(120% 100% at 50% 50%, transparent 55%, color-mix(in srgb, var(--ink) 5%, transparent));
+}
+
+button, input, select, textarea { font: inherit; color: inherit; }
+
+/* ---------------------------------------------------------
+   Canvas
+   --------------------------------------------------------- */
+
+#viewport {
+  position: fixed;
+  inset: 0;
+  /* Pointer Events only - the browser must never claim a pan/pinch for itself. */
+  touch-action: none;
+  cursor: default;
+  overflow: hidden;
+  background-color: transparent;   /* the paper on <body> shows through */
+  background-repeat: repeat;
+  contain: layout paint;
+}
+#viewport.is-panning { cursor: grabbing; }
+#viewport.can-pan    { cursor: grab; }
+
+/* The one transformed layer. Sits at the viewport centre so world (0,0) is the
+   centre of the screen at pan (0,0); viewport.js writes the transform and --iz
+   (= 1/zoom), which item chrome multiplies by to stay a constant screen size. */
+#world {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+  --iz: 1;
+}
+
+/* World axes, drawn in screen space so they stay hairline at any zoom. */
+.axis {
+  position: absolute;
+  background: var(--grid-axis);
+  pointer-events: none;
+}
+#axis-x { left: 0; width: 100%; height: 1px; }
+#axis-y { top: 0; height: 100%; width: 1px; }
+#viewport.no-axes .axis { display: none; }
+
+/* The origin, marked like a compass rose rather than just a crossing. Drawn a
+   shade stronger than the axes so (0,0) reads as a place, not an accident. */
+#origin-mark {
+  position: absolute;
+  width: 36px;
+  height: 36px;
+  margin: -18px 0 0 -18px;
+  color: var(--accent);
+  opacity: 0.7;
+  pointer-events: none;
+}
+#viewport.no-axes #origin-mark { display: none; }
+
+#marquee {
+  position: absolute;
+  border: 1.5px dashed var(--select);
+  background: var(--select-fill);
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* ---------------------------------------------------------
+   Items
+   --------------------------------------------------------- */
+
+.item {
+  position: absolute;
+  background: var(--item-bg);
+  border-radius: var(--radius);
+  box-shadow: var(--item-shadow);
+  overflow: hidden;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  outline: 0 solid var(--select);
+  outline-offset: calc(4px * var(--iz));
+  transition: outline-width var(--dur-fast) var(--ease),
+              box-shadow var(--dur-base) var(--ease);
+}
+.item:hover { box-shadow: var(--item-shadow), 0 0 0 calc(1px * var(--iz)) var(--rule-2); }
+.item.is-dragging { cursor: grabbing; }
+.item.is-selected { outline-width: calc(2px * var(--iz)); }
+
+.item-body {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  /* Carries .item's radius down the tree. `border-radius: inherit` copies the
+     *parent's* value, so without this link the card inside inherits 0 and its
+     border and inset ruling turn up square inside a rounded card. */
+  border-radius: inherit;
+  pointer-events: none;   /* the whole card is one drag target */
+}
+.item-body img,
+.item-body video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.item[data-fit="contain"] .item-body img,
+.item[data-fit="contain"] .item-body video { object-fit: contain; }
+
+/* Cards for the non-visual types: audio, text, and the generic fallback.
+   Ruled just inside the edge, the way a plate or a bookplate is. */
+.card {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding: 15px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  border-radius: inherit;
+  background: var(--paper-card);
+  /* The card fills .item exactly, and .item clips at the same radius - so a
+     real border would be shaved away at the corners by that clip. An inset
+     shadow draws inside the padding box and survives it. */
+  box-shadow: inset 0 0 0 var(--hairline) var(--item-border);
+  overflow: hidden;
+}
+
+/* The inner rule. Two nested rounded rectangles only look concentric when the
+   inner radius is the outer radius *minus* the gap between them - otherwise
+   the corners bow outward and the gap reads wider at the corners than along
+   the sides. That subtraction is the whole point of this rule. */
+.card::after {
+  content: '';
+  position: absolute;
+  inset: var(--card-rule-gap);
+  border: var(--hairline) solid var(--rule);
+  border-radius: max(0px, calc(var(--radius) - var(--card-rule-gap)));
+  pointer-events: none;
+}
+.card-icon {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-style: italic;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.card-name {
+  font-weight: 600;
+  font-size: 17px;
+  line-height: 1.2;
+  word-break: break-word;
+}
+.card-meta {
+  color: var(--ink-3);
+  font-size: var(--t-small);
+  font-style: italic;
+}
+.card-text {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  line-height: 1.5;
+  color: var(--ink-2);
+  -webkit-mask-image: linear-gradient(180deg, #000 80%, transparent);
+          mask-image: linear-gradient(180deg, #000 80%, transparent);
+}
+/* The native player is a fixed-height control, so it is pinned to the foot of
+   the card rather than left to be squeezed by the text above it. */
+.card audio {
+  width: 100%;
+  margin-top: auto;
+  border-radius: var(--radius-sm);
+  pointer-events: auto;
+}
+
+/* Notes: the one item type born on the board, so it is drawn as a sticky
+   rather than as a filed card - a square of coloured pad paper, cut corners,
+   pressed flat, with the corner starting to lift.
+   The tint comes from data-tint (1-4, cycled at creation and stored in
+   meta.tint), so a wall of notes reads as a pack rather than a monotone. */
+.item[data-type="note"] {
+  --item-shadow: var(--note-shadow);
+  --note-paper: var(--note-1);
+  /* Square-cut, and inherited all the way down to .card. */
+  border-radius: var(--note-radius);
+}
+.item[data-type="note"][data-tint="2"] { --note-paper: var(--note-2); }
+.item[data-type="note"][data-tint="3"] { --note-paper: var(--note-3); }
+.item[data-type="note"][data-tint="4"] { --note-paper: var(--note-4); }
+
+.item[data-type="note"] .card {
+  padding: 20px 20px 26px;
+  /* The band at the head is the adhesive strip reading through the sheet. */
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--ink) 6%, transparent) 0,
+      transparent 30px),
+    var(--note-paper);
+  /* No ruled border - pad paper has no printed edge. Just enough of an inset
+     line to keep a pale note off a pale board. */
+  box-shadow: inset 0 0 0 var(--hairline) color-mix(in srgb, var(--ink) 7%, transparent);
+}
+/* The filed-card inner rule has no business on a sticky. */
+.item[data-type="note"] .card::after { content: none; }
+
+/* The corner lifting off the board. The gradient's line runs to the top left,
+   so the first stops paint the bottom-right triangle: the underside of the
+   sheet, a crease, then nothing. Being a child of .card it is clipped by the
+   same radius as the note, so it can never poke out of the corner. */
+.item[data-type="note"] .card::before {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 26px;
+  height: 26px;
+  background: linear-gradient(315deg,
+    color-mix(in srgb, #fff 62%, var(--note-paper)) 0 42%,
+    color-mix(in srgb, var(--ink) 22%, var(--note-paper)) 42% 50%,
+    transparent 50%);
+  pointer-events: none;
+}
+#world.zoom-far .item[data-type="note"] .card::before { display: none; }
+
+.item[data-type="note"] .card-text {
+  -webkit-mask-image: none;
+          mask-image: none;
+  font-family: var(--font-display);
+  font-size: 17px;
+  line-height: 1.4;
+  color: var(--ink);
+}
+.item.is-editing { cursor: text; }
+.item.is-editing .item-body { pointer-events: auto; }
+.item.is-editing .card-text { outline: none; overflow: auto; cursor: text; }
+
+/* Caption plate: a strip of paper across the foot of a picture, not a black
+   gradient. Reads like a museum label. */
+.item-label {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  padding: 6px 11px 7px;
+  font-size: 12px;
+  font-style: italic;
+  line-height: 1.25;
+  color: var(--ink-2);
+  background: color-mix(in srgb, var(--paper-card) 88%, transparent);
+  border-top: 1px solid var(--rule);
+  backdrop-filter: blur(3px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.item[data-type="audio"] .item-label,
+.item[data-type="text"] .item-label,
+.item[data-type="note"] .item-label,
+.item[data-type="generic"] .item-label { display: none; }
+#world.zoom-far .item-label { display: none; }
+
+/* Resize grips as little terracotta lozenges. Constant screen size via --iz so
+   they stay grabbable at any zoom instead of shrinking to nothing. */
+.grip {
+  position: absolute;
+  width:  calc(11px * var(--iz));
+  height: calc(11px * var(--iz));
+  background: var(--accent);
+  border: calc(1.5px * var(--iz)) solid var(--paper-card);
+  border-radius: calc(2px * var(--iz));
+  transform: rotate(45deg);
+  display: none;
+  z-index: 2;
+}
+.item.is-selected .grip { display: block; }
+#world.zoom-far .grip { display: none; }
+.grip[data-g="nw"] { left: calc(-6px * var(--iz)); top: calc(-6px * var(--iz)); cursor: nwse-resize; }
+.grip[data-g="ne"] { right: calc(-6px * var(--iz)); top: calc(-6px * var(--iz)); cursor: nesw-resize; }
+.grip[data-g="sw"] { left: calc(-6px * var(--iz)); bottom: calc(-6px * var(--iz)); cursor: nesw-resize; }
+.grip[data-g="se"] { right: calc(-6px * var(--iz)); bottom: calc(-6px * var(--iz)); cursor: nwse-resize; }
+
+/* ---------------------------------------------------------
+   Menu button + sidebar
+   --------------------------------------------------------- */
+
+#menu-btn {
+  position: fixed;
+  top: max(16px, env(safe-area-inset-top));
+  left: max(16px, env(safe-area-inset-left));
+  z-index: 30;
+  width: 42px;
+  height: 40px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 4px;
+  padding: 0;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--radius-sm);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-1);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+#menu-btn:hover { background: var(--paper-2); border-color: var(--accent); }
+#menu-btn span {
+  width: 17px;
+  height: 1.5px;
+  border-radius: 1px;
+  background: var(--ink);
+}
+#sidebar.is-open ~ #menu-btn { opacity: 0; pointer-events: none; }
+
+/* A panel of paper laid over the board. Deliberately NOT modal: no scrim, no
+   blocked canvas - you can pan, drop and drag with it open, which is the whole
+   point of putting the controls on a floating sheet instead of in a dialog. */
+#sidebar {
+  position: fixed;
+  z-index: 40;
+  top: max(14px, env(safe-area-inset-top));
+  bottom: max(14px, env(safe-area-inset-bottom));
+  left: max(14px, env(safe-area-inset-left));
+  width: min(var(--sidebar-w), calc(100vw - 28px));
+  display: flex;
+  flex-direction: column;
+  background: var(--paper-card);
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--ogee);
+  box-shadow: var(--shadow-2);
+  transform: translateX(calc(-100% - 22px));
+  opacity: 0;
+  visibility: hidden;
+  transition: transform var(--dur-base) var(--ease-back),
+              opacity var(--dur-fast) var(--ease),
+              visibility 0s linear var(--dur-base);
+}
+#sidebar.is-open {
+  transform: none;
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+.side-head {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 16px 18px 14px;
+  border-bottom: 1px solid var(--rule);
+}
+.wordmark { margin: 0; }
+.wordmark h1 {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  line-height: 1;
+  color: var(--ink);
+}
+.wordmark .sub {
+  display: block;
+  margin-top: 3px;
+  font-size: 10px;
+  font-style: italic;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+#side-close {
+  flex: none;
+  width: 30px; height: 30px;
+  display: grid; place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease), transform var(--dur-base) var(--ease-back);
+}
+/* The cross is symmetric about the middle of its viewBox, so the default
+   50%/50% origin spins it in place. */
+#side-close svg { width: 15px; height: 15px; display: block; }
+#side-close:hover { color: var(--accent); background: var(--paper-2); transform: rotate(90deg); }
+
+.side-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 18px 16px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule-2) transparent;
+}
+
+.side-sec {
+  padding: calc(15px * var(--density)) 0;
+  border-top: 1px solid var(--rule);
+}
+.side-sec:first-child { border-top: 0; }
+.side-sec h2 {
+  margin: 0 0 11px;
+  font-size: var(--t-tiny);
+  font-weight: 400;
+  font-style: italic;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.board-title {
+  margin: 0 0 11px;
+  font-size: 18px;
+  word-break: break-word;
+}
+.board-title em { color: var(--ink-3); }
+
+.btn-row { display: flex; gap: 8px; margin-bottom: 8px; }
+.btn-row:last-child { margin-bottom: 0; }
+.btn-row button {
+  flex: 1;
+  min-height: calc(35px * var(--density));
+  padding: 0 12px;
+  color: var(--ink);
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease),
+              transform var(--dur-base) var(--ease-back),
+              color var(--dur-fast) var(--ease);
+}
+.btn-row button:hover {
+  background: var(--paper-2);
+  border-color: var(--accent);
+  color: var(--accent-deep);
+  transform: translateY(-1px);
+}
+.btn-row button:active { transform: translateY(0) scale(0.985); background: var(--paper-3); }
+.btn-row button.primary {
+  background: var(--accent);
+  border-color: var(--accent-deep);
+  color: var(--accent-fg);
+  letter-spacing: 0.03em;
+}
+.btn-row button.primary:hover { background: var(--accent-deep); color: var(--accent-fg); }
+
+.field { display: block; margin-bottom: 11px; }
+.field > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--t-small);
+  font-style: italic;
+  color: var(--ink-2);
+  margin-bottom: 5px;
+}
+.field output { font-family: var(--font-mono); font-style: normal; color: var(--ink); }
+.field select {
+  width: 100%;
+  min-height: calc(35px * var(--density));
+  padding: 0 10px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper);
+  cursor: pointer;
+}
+.field select:hover { border-color: var(--accent); }
+
+/* Ruled slider: a hairline track with a terracotta lozenge riding it. */
+.field input[type="range"] {
+  width: 100%;
+  height: 22px;
+  -webkit-appearance: none;
+          appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+.field input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--rule-2), var(--rule));
+}
+.field input[type="range"]::-moz-range-track {
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--rule-2), var(--rule));
+}
+.field input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 15px; height: 15px;
+  margin-top: -6px;
+  border: 1.5px solid var(--paper-card);
+  border-radius: 3px;
+  background: var(--accent);
+  transform: rotate(45deg);
+}
+.field input[type="range"]::-moz-range-thumb {
+  width: 13px; height: 13px;
+  border: 1.5px solid var(--paper-card);
+  border-radius: 3px;
+  background: var(--accent);
+}
+.field input[type="color"] {
+  width: 100%;
+  height: calc(30px * var(--density));
+  padding: 2px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  cursor: pointer;
+}
+
+/* Checkboxes as inked boxes with a hand-drawn tick. */
+.check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  cursor: pointer;
+}
+.check input {
+  -webkit-appearance: none;
+          appearance: none;
+  flex: none;
+  width: 17px; height: 17px;
+  margin: 0;
+  border: 1.5px solid var(--rule-2);
+  border-radius: 4px;
+  background: var(--paper);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.check input:hover { border-color: var(--accent); }
+.check input:checked {
+  background: var(--accent);
+  border-color: var(--accent-deep);
+  /* The tick, drawn with two clipped bars rather than a font glyph. */
+  background-image:
+    linear-gradient(45deg, transparent 42%, var(--accent-fg) 42% 58%, transparent 58%),
+    linear-gradient(-45deg, transparent 42%, var(--accent-fg) 42% 58%, transparent 58%);
+  background-size: 11px 7px, 11px 11px;
+  background-position: 1px 7px, 4px 1px;
+  background-repeat: no-repeat;
+}
+
+.hint {
+  margin: 9px 0 0;
+  font-size: var(--t-small);
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+.hint em { font-style: normal; color: var(--accent); }
+
+.keys { margin: 0; padding: 0; list-style: none; font-size: var(--t-small); color: var(--ink-2); }
+.keys li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+  padding: 4px 0;
+  font-style: italic;
+}
+.keys li span { color: var(--ink-3); text-align: right; }
+kbd {
+  font-family: var(--font-mono);
+  font-style: normal;
+  font-size: 10px;
+  padding: 2px 6px;
+  border: 1px solid var(--rule-2);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.side-foot {
+  padding: 10px 18px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--rule);
+  font-size: var(--t-tiny);
+  font-style: italic;
+  letter-spacing: 0.1em;
+  color: var(--ink-3);
+  display: flex;
+  justify-content: space-between;
+}
+
+/* ---------------------------------------------------------
+   HUD, drop overlay, toast
+   --------------------------------------------------------- */
+
+/* The corner stack: zoom controls over the coordinate readout. */
+#corner {
+  position: fixed;
+  z-index: 20;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  user-select: none;
+}
+
+#zoom-ctl {
+  display: flex;
+  align-items: stretch;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  overflow: hidden;
+  background: var(--paper-card);
+  box-shadow: var(--shadow-1);
+}
+#zoom-ctl button {
+  display: grid;
+  place-items: center;
+  min-width: 34px;
+  height: 32px;
+  padding: 0 7px;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+#zoom-ctl button + button { border-left: 1px solid var(--rule); }
+#zoom-ctl button:hover { background: var(--paper-2); color: var(--accent-deep); }
+#zoom-ctl button:active { background: var(--paper-3); }
+#zoom-ctl button:disabled { color: var(--ink-3); cursor: default; background: none; }
+#zoom-ctl svg {
+  width: 15px; height: 15px;
+  /* The glyph takes the press, not the button: scaling the button itself would
+     drag the hairline dividers between them around. */
+  transition: transform var(--dur-fast) var(--ease);
+}
+#zoom-ctl button:active:not(:disabled) svg { transform: scale(0.8); }
+/* The readout doubles as the reset-to-100% button, so it needs to be wide
+   enough that 12% and 1600% don't shove the + and - around as you zoom. */
+#zoom-level {
+  min-width: 58px;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  color: var(--ink);
+  letter-spacing: 0.02em;
+}
+/* A hairline gap before the fit/home pair - they move the view, not the zoom. */
+#zoom-ctl button[data-zoom="fit"] { border-left-width: 3px; border-left-style: double; }
+
+#hud {
+  display: flex;
+  align-items: stretch;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  overflow: hidden;
+  background: var(--paper-card);
+  box-shadow: var(--shadow-1);
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  color: var(--ink-2);
+  pointer-events: none;
+}
+#hud span { padding: 6px 11px; }
+#hud span + span { border-left: 1px solid var(--rule); }
+#hud-xy { color: var(--accent-deep); }
+#hud[hidden] { display: none; }
+
+#drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--accent-warm) 14%, transparent);
+  pointer-events: none;
+}
+/* An explicit display value beats the UA's [hidden] rule, so it needs saying. */
+#drop-overlay[hidden] { display: none; }
+#drop-overlay div {
+  padding: 16px 30px;
+  border: 2px dashed var(--accent);
+  border-radius: var(--ogee);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
+  font-size: 19px;
+  font-style: italic;
+  color: var(--accent-deep);
+  animation: bloom var(--dur-base) var(--ease-back);
+}
+@keyframes bloom { from { opacity: 0; transform: scale(0.94) rotate(-1deg); } }
+
+/* ---------------------------------------------------------
+   Right-click menu
+   --------------------------------------------------------- */
+
+#ctx-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 208px;
+  padding: 5px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--radius);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
+  animation: ctx-in var(--dur-fast) var(--ease);
+  user-select: none;
+}
+@keyframes ctx-in { from { opacity: 0; transform: translateY(-3px); } }
+
+.ctx-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--ink);
+  font-size: var(--t-small);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.ctx-item:hover,
+.ctx-item:focus-visible {
+  background: var(--paper-2);
+  color: var(--accent-deep);
+  outline: none;
+}
+.ctx-item.is-danger:hover,
+.ctx-item.is-danger:focus-visible { color: var(--danger); }
+.ctx-item kbd {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--ink-3);
+  font-size: 10px;
+}
+/* Toggle entries reserve a tick column, so the label does not shift sideways
+   when the option flips on. Plain entries have no column at all. */
+.ctx-item.is-toggle > span::before {
+  content: "";
+  display: inline-block;
+  width: 15px;
+  color: var(--accent);
+}
+.ctx-item.is-toggle.is-checked > span::before { content: "\2713"; }
+
+.ctx-sep {
+  height: 1px;
+  margin: 5px 8px;
+  background: var(--rule);
+}
+
+/* A slip of paper, pinned briefly at the foot of the sheet. */
+#toast {
+  position: fixed;
+  z-index: 50;
+  left: 50%;
+  bottom: max(24px, env(safe-area-inset-bottom));
+  transform: translateX(-50%) rotate(-0.5deg);
+  max-width: min(520px, 90vw);
+  padding: 10px 20px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
+  font-size: var(--t-small);
+  font-style: italic;
+  animation: rise var(--dur-base) var(--ease-back);
+}
+#toast.is-error { border-color: var(--danger); color: var(--danger); }
+@keyframes rise { from { opacity: 0; transform: translate(-50%, 10px) rotate(-3deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
