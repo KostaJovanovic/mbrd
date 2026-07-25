@@ -11,6 +11,8 @@ import {
 import { Viewport, MIN_ZOOM, MAX_ZOOM, zoomMs, travelMs } from './canvas/viewport.js';
 import { paintGrid } from './canvas/grid.js';
 import { initItems, resetItems, nodeFor } from './canvas/items.js';
+import { initWeb } from './canvas/web.js';
+import { initStills } from './canvas/stills.js';
 import { initInput } from './canvas/input.js';
 import { initDrop, pickFiles, addNote } from './import/drop.js';
 import { arrange } from './arrange/arrangements.js';
@@ -19,7 +21,9 @@ import {
 } from './storage/storage.js';
 import { initSidebar, close as closeSidebar } from './ui/sidebar.js';
 import { initMenu, openContextMenu, close as closeMenu } from './ui/menu.js';
+import { initTrash } from './ui/trash.js';
 import { initAppearance, resetAppearance } from './ui/appearance.js';
+import { initAudio } from './ui/audio.js';
 import { editNote, growNote } from './ui/notes.js';
 
 const el = id => document.getElementById(id);
@@ -83,10 +87,14 @@ const cmds = {
 // ---------------------------------------------------------------------------
 
 initAppearance();
+initAudio();
 initSidebar(cmds);
 initItems(el('world'), vp);
+initWeb(el('world'));
+initStills(el('world'), vp);
 initInput(vp, cmds);
 initMenu(vp, cmds);
+initTrash(vp);
 initDrop(vp);
 initStorage();
 
@@ -175,12 +183,32 @@ function rearrange() {
     return;
   }
   const before = snapshotGeom(items.map(i => i.id));
-  const spots = arrange(items, {
+
+  // Every layout is a pure function of the order it is handed, so feeding it
+  // the item list twice puts everything back exactly where it already was -
+  // and a button called "Rearrange everything" that does nothing the second
+  // time you press it reads as broken. The shuffle is what makes it a
+  // rearrangement rather than a re-application: same layout, items dealt into
+  // it in a fresh order.
+  const order = items.map((_, i) => i);
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  const spots = arrange(order.map(i => items[i]), {
     name: board.arrangement,
     center: { x: 0, y: 0 },
     spacing: board.settings.spacing,
+    // Scatter picks its own points from a seed. Left to itself it would hand
+    // back the same disc every time and the shuffle would only permute items
+    // between fixed spots; a fresh seed makes it a genuinely new scatter.
+    seed: (Math.random() * 0xffffffff) >>> 0,
   });
-  applyGeom(before.map((g, i) => ({ ...g, x: spots[i].x, y: spots[i].y })));
+  // spots came back in shuffled order, so each one goes to the item that was
+  // in that slot, not to the item at the same index in board.items.
+  const target = new Array(items.length);
+  order.forEach((itemIndex, slot) => { target[itemIndex] = spots[slot]; });
+  applyGeom(before.map((g, i) => ({ ...g, x: target[i].x, y: target[i].y })));
   commitGeom('Rearrange', before);
   vp.fit(board.items, 80, travelMs());
 }

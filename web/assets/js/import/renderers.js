@@ -6,6 +6,18 @@ import { extOf, baseName, formatBytes } from '../util.js';
 import { assetURL, getAsset, readText } from '../storage/assets.js';
 import { byId, bus, markDirty } from '../state.js';
 import { describeExt, PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS } from './formats.js';
+import { peaks, registerPlayer, BAR_COUNT } from '../ui/audio.js';
+
+const PLAY_ICON =
+  '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5 3.4l7.5 4.6L5 12.6z"/></svg>';
+const PAUSE_ICON =
+  '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.6 3.2h2.6v9.6H4.6zM8.8 3.2h2.6v9.6H8.8z"/></svg>';
+
+/** m:ss. Hours are possible and would be a strange thing to pin to a board. */
+function clock(secs) {
+  const s = Math.max(0, Math.floor(secs));
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
 
 const TEXT_EXT = new Set([
   'txt', 'md', 'markdown', 'rst', 'log', 'csv', 'tsv', 'json', 'xml', 'yml', 'yaml',
@@ -135,7 +147,21 @@ const RENDERERS = {
     img.addEventListener('load', () => adoptAspect(item, img.naturalWidth, img.naturalHeight), { once: true });
     const url = item.asset && assetURL(item.asset.hash);
     if (url) img.src = url;
-    return img;
+    if (!isAnimated(item)) return img;
+
+    // An animated picture travels with a twin that canvas/stills.js paints a
+    // frame into when the board is zoomed out. Empty and hidden until then;
+    // the pair is returned as a fragment so both land as siblings inside
+    // .item-body and pick up the same sizing rules.
+    img.dataset.gif = '';
+    const still = document.createElement('img');
+    still.className = 'still';
+    still.alt = '';
+    still.decoding = 'async';
+    still.draggable = false;
+    const pair = document.createDocumentFragment();
+    pair.append(img, still);
+    return pair;
   },
 
   video(item) {
@@ -152,14 +178,97 @@ const RENDERERS = {
     return v;
   },
 
+  /**
+   * A player the board owns, rather than the browser's grey plastic one.
+   *
+   * The <audio> element is still what plays the sound - it handles streaming,
+   * seeking and codecs, and nothing here would be improved by reimplementing
+   * that - but it is kept out of the layout entirely and driven by the button
+   * and the bars. See ui/audio.js for the waveform and the global volume.
+   */
   audio(item) {
     const card = cardShell(item, 'audio');
-    const a = document.createElement('audio');
-    a.controls = true;
-    a.preload = 'metadata';
+    card.classList.add('card-audio');
+
+    const sound = document.createElement('audio');
+    sound.preload = 'metadata';
     const url = item.asset && assetURL(item.asset.hash);
-    if (url) a.src = url;
-    card.append(a);
+    if (url) sound.src = url;
+    registerPlayer(sound);
+
+    const transport = document.createElement('div');
+    transport.className = 'transport';
+
+    const play = document.createElement('button');
+    play.type = 'button';
+    play.className = 'play';
+    play.setAttribute('aria-label', 'Play');
+    play.innerHTML = PLAY_ICON;
+
+    const wave = document.createElement('div');
+    wave.className = 'wave';
+    wave.setAttribute('role', 'slider');
+    wave.setAttribute('aria-label', 'Seek');
+    // Drawn flat and filled in when the decode lands, so the card has its
+    // final shape from the first frame and does not jump when the bars arrive.
+    const bars = [];
+    for (let i = 0; i < BAR_COUNT; i++) {
+      const bar = document.createElement('i');
+      bar.style.height = '12%';
+      wave.append(bar);
+      bars.push(bar);
+    }
+    peaks(item).then(values => {
+      values.forEach((v, i) => {
+        // A floor, so a silent passage is still a visible bar rather than a
+        // gap in the middle of the waveform.
+        if (bars[i]) bars[i].style.height = Math.max(8, Math.round(v * 100)) + '%';
+      });
+    });
+
+    const time = document.createElement('span');
+    time.className = 'transport-time';
+    time.textContent = '0:00';
+
+    transport.append(play, wave, time);
+    card.append(transport);
+    card.append(sound);
+
+    const paint = () => {
+      const at = sound.duration ? sound.currentTime / sound.duration : 0;
+      const upTo = Math.round(at * BAR_COUNT);
+      bars.forEach((bar, i) => bar.classList.toggle('is-played', i < upTo));
+      time.textContent = clock(sound.currentTime || 0);
+    };
+
+    // No stopPropagation on either control: input.js already treats buttons and
+    // .wave as widgets that own their own gesture, and swallowing the event
+    // here would also swallow the click that selects the card.
+    play.addEventListener('click', () => {
+      if (sound.paused) sound.play().catch(() => {});
+      else sound.pause();
+    });
+    sound.addEventListener('play', () => {
+      card.classList.add('is-playing');
+      play.innerHTML = PAUSE_ICON;
+      play.setAttribute('aria-label', 'Pause');
+    });
+    sound.addEventListener('pause', () => {
+      card.classList.remove('is-playing');
+      play.innerHTML = PLAY_ICON;
+      play.setAttribute('aria-label', 'Play');
+    });
+    sound.addEventListener('timeupdate', paint);
+    sound.addEventListener('loadedmetadata', paint);
+    sound.addEventListener('ended', () => { sound.currentTime = 0; paint(); });
+
+    wave.addEventListener('pointerdown', e => {
+      if (!sound.duration) return;
+      const box = wave.getBoundingClientRect();
+      sound.currentTime = Math.max(0, Math.min(1, (e.clientX - box.left) / box.width)) * sound.duration;
+      paint();
+    });
+
     return card;
   },
 
@@ -211,6 +320,17 @@ const RENDERERS = {
     return cardShell(item, extOf(item.name) || 'file');
   },
 };
+
+/**
+ * Whether a picture moves. GIF and APNG announce themselves in the type or the
+ * extension; an animated WebP does not, and telling one from a still WebP means
+ * parsing the container - so it is left out rather than guessed at.
+ */
+function isAnimated(item) {
+  const mime = (item.meta?.mime || '').toLowerCase();
+  const ext = (item.meta?.ext || extOf(item.name) || '').toLowerCase();
+  return mime === 'image/gif' || mime === 'image/apng' || ext === 'gif' || ext === 'apng';
+}
 
 /** Icon badge + name + size - the shared head of every non-visual card. */
 function cardShell(item, kind) {

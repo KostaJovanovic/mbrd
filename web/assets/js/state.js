@@ -11,6 +11,7 @@
 //   settings   - a setting changed (payload: key)
 //   board      - a whole new board was loaded, or the title/dirty flag changed
 //   history    - undo/redo availability changed
+//   trash      - something was thrown away, restored, or purged
 
 import { emitter, uid } from './util.js';
 
@@ -33,6 +34,8 @@ export const board = {
   settings: { ...DEFAULT_SETTINGS, appearance: { palette: '', vars: {} } },
   arrangement: 'spiral',
   items: [],
+  // Thrown away but not gone. Entries are { item, at }, newest first.
+  trash: [],
 };
 
 export const selection = new Set();
@@ -53,6 +56,14 @@ export function topZ() {
 
 /** Normalise a partial item into the full persisted shape. */
 export function makeItem(partial) {
+  let meta = partial.meta || {};
+  // The one funnel every item passes through on its way onto the board, which
+  // makes it the place to hold a note to its ceiling. The editor enforces the
+  // same limit while you type; this catches the other doors - an older .mbrd,
+  // and a notes/*.md someone edited by hand outside the app.
+  if ((partial.type || 'generic') === 'note' && typeof meta.text === 'string' && meta.text.length > NOTE_MAX) {
+    meta = { ...meta, text: meta.text.slice(0, NOTE_MAX) };
+  }
   return {
     id: partial.id || uid(),
     type: partial.type || 'generic',
@@ -64,7 +75,7 @@ export function makeItem(partial) {
     z: partial.z != null ? +partial.z : topZ() + 1,
     name: partial.name || '',
     asset: partial.asset || null,
-    meta: partial.meta || {},
+    meta,
   };
 }
 
@@ -130,6 +141,14 @@ export function addItems(items, label = 'Add') {
   return added;
 }
 
+/**
+ * How many things the bin holds before the oldest start falling out the
+ * bottom. A bin is a safety net, not an archive - and every entry pins its
+ * asset's bytes into the saved file, so an unbounded one would quietly make a
+ * board grow forever as you worked on it.
+ */
+export const TRASH_LIMIT = 60;
+
 export function removeItems(ids, label = 'Delete') {
   const set = new Set(ids);
   // Keep the original index so undo restores z-order position, not just the item.
@@ -137,12 +156,62 @@ export function removeItems(ids, label = 'Delete') {
     .map((item, index) => ({ item, index }))
     .filter(r => set.has(r.item.id));
   if (!removed.length) return;
+  // Built once, outside the closures, so redoing a delete puts the *same*
+  // entries back in the bin rather than minting new ones with a later date.
+  const binned = removed.map(r => ({ item: r.item, at: Date.now() }));
   commit(label,
     () => { board.items = board.items.filter(i => !set.has(i.id));
             set.forEach(id => selection.delete(id));
-            bus.emit('items'); bus.emit('selection'); },
+            board.trash.unshift(...binned);
+            // Anything the limit pushes out is older than this delete and so
+            // belongs to no undo entry being replayed here.
+            if (board.trash.length > TRASH_LIMIT) board.trash.length = TRASH_LIMIT;
+            bus.emit('items'); bus.emit('selection'); bus.emit('trash'); },
     () => { for (const r of removed) board.items.splice(r.index, 0, r.item);
-            bus.emit('items'); });
+            board.trash = board.trash.filter(t => !set.has(t.item.id));
+            bus.emit('items'); bus.emit('trash'); });
+}
+
+/**
+ * Take things back out of the bin.
+ *
+ * `at` is where the item should land - the point it was dropped on when it was
+ * dragged out of the bin panel. Without one it goes back exactly where it was
+ * deleted from, which is what the bin's own Restore does.
+ *
+ * Restored items are stacked on top rather than returned to their old z: they
+ * were absent while everything else moved on, and coming back underneath a
+ * pile is the same as not coming back.
+ */
+export function restoreItems(ids, at = null, label = 'Restore') {
+  const set = new Set(ids);
+  const entries = board.trash.filter(t => set.has(t.item.id));
+  if (!entries.length) return [];
+  let z = topZ();
+  const items = entries.map(e => ({
+    ...e.item,
+    ...(at ? { x: at.x, y: at.y } : null),
+    z: ++z,
+  }));
+  const back = new Set(items.map(i => i.id));
+  commit(label,
+    () => { board.items.push(...items.filter(i => !byId(i.id)));
+            board.trash = board.trash.filter(t => !set.has(t.item.id));
+            bus.emit('items'); bus.emit('trash'); },
+    () => { board.items = board.items.filter(i => !back.has(i.id));
+            back.forEach(id => selection.delete(id));
+            board.trash.unshift(...entries);
+            bus.emit('items'); bus.emit('selection'); bus.emit('trash'); });
+  return items;
+}
+
+/** Throw the bin out. Undoable - emptying it by accident is a bad afternoon. */
+export function emptyTrash() {
+  if (!board.trash.length) return;
+  const held = board.trash;
+  commit('Empty trash',
+    () => { board.trash = []; bus.emit('trash'); },
+    () => { board.trash = held; bus.emit('trash'); });
 }
 
 const GEOM_KEYS = ['x', 'y', 'w', 'h', 'rot', 'z'];
@@ -314,6 +383,9 @@ export function loadBoard(data) {
   };
   board.arrangement = data.arrangement || 'spiral';
   board.items = (data.items || []).map(makeItem);
+  board.trash = (data.trash || [])
+    .filter(t => t && t.item)
+    .map(t => ({ item: makeItem(t.item), at: +t.at || 0 }));
   selection.clear();
   clearHistory();
   dirty = false;
@@ -324,6 +396,7 @@ export function loadBoard(data) {
   bus.emit('board');
   bus.emit('items');
   bus.emit('selection');
+  bus.emit('trash');
 }
 
 /** The serialisable board, exactly as it lands in board.json. */
@@ -333,13 +406,19 @@ export function serializeBoard() {
     view: { pan: { ...board.view.pan }, zoom: board.view.zoom },
     settings: board.settings,
     arrangement: board.arrangement,
-    items: board.items.map(i => ({
-      id: i.id, type: i.type,
-      x: round(i.x), y: round(i.y), w: round(i.w), h: round(i.h),
-      rot: round(i.rot), z: i.z,
-      name: i.name, asset: i.asset, meta: i.meta,
-    })),
+    items: board.items.map(serializeItem),
+    // The bin travels with the board. Saving is the moment a board becomes a
+    // file you might not open again for a month, and a bin that emptied itself
+    // at exactly that moment would be a trapdoor rather than a safety net.
+    trash: board.trash.map(t => ({ at: t.at, item: serializeItem(t.item) })),
   };
 }
+
+const serializeItem = i => ({
+  id: i.id, type: i.type,
+  x: round(i.x), y: round(i.y), w: round(i.w), h: round(i.h),
+  rot: round(i.rot), z: i.z,
+  name: i.name, asset: i.asset, meta: i.meta,
+});
 
 const round = n => Math.round(n * 100) / 100;

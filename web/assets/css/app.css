@@ -110,6 +110,25 @@ button, input, select, textarea { font: inherit; color: inherit; }
   z-index: 5;
 }
 
+/* The web of threads between items (canvas/web.js). Inside #world, so pan and
+   zoom are the layer's transform rather than anything this has to redraw.
+   Negative z-index puts it under every item; #world paints no background of
+   its own, so there is nothing for it to disappear behind. */
+#web {
+  position: absolute;
+  overflow: visible;
+  pointer-events: none;
+  z-index: -1;
+}
+#web path {
+  stroke: var(--web-line);
+  stroke-width: var(--web-weight);
+  stroke-linecap: round;
+  /* A thread, not a beam: without this the stroke would be multiplied by the
+     zoom along with everything else, and reach ten pixels wide at 8x. */
+  vector-effect: non-scaling-stroke;
+}
+
 /* ---------------------------------------------------------
    Items
    --------------------------------------------------------- */
@@ -241,6 +260,15 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .item[data-fit="contain"] .item-body img,
 .item[data-fit="contain"] .item-body video { object-fit: contain; }
 
+/* Frozen GIFs (canvas/stills.js). The twin is out of the flow until it holds a
+   decoded frame - is-ready, not merely [src], because the attribute lands the
+   moment it is assigned and swapping then would show a blank where the picture
+   was. Until it is ready the GIF just keeps playing, which is the harmless
+   failure. */
+.item-body img.still { display: none; }
+#world.is-stilled .item-body img.still.is-ready { display: block; }
+#world.is-stilled .item-body img[data-gif]:has(+ .still.is-ready) { display: none; }
+
 /* Cards for the non-visual types: audio, text, and the generic fallback.
    Ruled just inside the edge, the way a plate or a bookplate is. */
 .card {
@@ -305,11 +333,64 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 /* The native player is a fixed-height control, so it is pinned to the foot of
    the card rather than left to be squeezed by the text above it. */
-.card audio {
-  width: 100%;
+/* The audio card's own transport. The <audio> element is present but never
+   laid out - it is the engine, not the interface. */
+.card-audio audio { display: none; }
+
+.transport {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin-top: auto;
-  border-radius: var(--radius-sm);
   pointer-events: auto;
+}
+.transport .play {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: var(--hairline) solid var(--accent);
+  border-radius: 50%;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
+              transform var(--dur-base) var(--ease-back);
+}
+.transport .play svg { width: 13px; height: 13px; }
+.transport .play:hover { background: var(--accent); color: var(--accent-fg); transform: scale(var(--btn-grow)); }
+.card-audio.is-playing .play { background: var(--accent); color: var(--accent-fg); }
+
+/* The waveform. Bars, bottom-aligned, each one an RMS reading of that slice of
+   the file - see ui/audio.js. Rounded off with the rest of the interface, so a
+   plain board gets square bars and a soft one gets capsules. */
+.wave {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  cursor: pointer;
+}
+.wave i {
+  flex: 1;
+  min-width: 1px;
+  border-radius: min(var(--radius-xs), 2px);
+  background: color-mix(in srgb, var(--ink) 22%, transparent);
+  transition: background var(--dur-fast) var(--ease);
+}
+/* Everything behind the playhead. A waveform that does not fill in as it plays
+   is a picture of a file; one that does is a position in it. */
+.wave i.is-played { background: var(--accent); }
+.transport-time {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Notes: the one item type born on the board, so it is drawn as a sticky
@@ -931,6 +1012,177 @@ kbd {
 #hud span + span { border-left: 1px solid var(--rule); }
 #hud-xy { color: var(--accent-deep); }
 #hud[hidden] { display: none; }
+
+/* ---------------------------------------------------------
+   The bin (ui/trash.js)
+   --------------------------------------------------------- */
+
+#bin {
+  position: fixed;
+  z-index: 20;
+  left: max(16px, env(safe-area-inset-left));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  user-select: none;
+}
+
+#bin-btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-1);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+#bin-btn:hover { background: var(--paper-2); color: var(--accent-deep); }
+#bin-btn svg {
+  width: 17px; height: 17px;
+  transition: transform var(--dur-base) var(--ease-back);
+}
+#bin-btn:hover svg { transform: scale(var(--btn-grow)) translateY(var(--btn-lift)); }
+/* Something is in there. Not a number in a red circle - a quiet count, the way
+   a physical bin tells you it is filling up by being visibly not empty. */
+#bin-btn.has-things { color: var(--accent-deep); border-color: var(--accent); }
+#bin-count {
+  position: absolute;
+  right: -5px;
+  top: -5px;
+  min-width: 17px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 17px;
+  text-align: center;
+}
+#bin-count[hidden] { display: none; }
+
+/* Open while a drag is in flight: you are dragging *out* of the panel and onto
+   the board, so the panel must not shut the moment the pointer leaves it. */
+#bin-panel {
+  width: 268px;
+  max-height: min(52vh, 420px);
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--radius-sm);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
+}
+#bin-panel[hidden] { display: none; }
+#bin-panel header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 9px;
+}
+#bin-panel h2 {
+  margin: 0;
+  font-size: var(--t-small);
+  font-style: var(--display-italic);
+  font-weight: 400;
+  letter-spacing: calc(0.1em * var(--ls-scale));
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+#bin-empty {
+  padding: 2px 7px;
+  border: var(--hairline) solid transparent;
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--danger);
+  font-size: var(--t-tiny);
+  cursor: pointer;
+}
+#bin-empty:hover { border-color: var(--danger); }
+#bin-empty:disabled { color: var(--ink-3); cursor: default; border-color: transparent; }
+
+#bin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule-2) transparent;
+}
+#bin-none, #bin-hint {
+  margin: 0;
+  font-size: var(--t-tiny);
+  font-style: var(--display-italic);
+  color: var(--ink-3);
+}
+#bin-hint { margin-top: 9px; }
+#bin-none[hidden], #bin-hint[hidden] { display: none; }
+
+.bin-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px;
+  border: var(--hairline) solid transparent;
+  border-radius: var(--radius-xs);
+  cursor: grab;
+  touch-action: none;
+}
+.bin-item:hover { border-color: var(--rule-2); background: var(--paper-2); }
+.bin-item.is-lifting { opacity: 0.4; cursor: grabbing; }
+.bin-thumb {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: var(--hairline) solid var(--rule);
+  border-radius: var(--radius-xs);
+  background: var(--paper-2);
+  font-size: 8px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.bin-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.bin-thumb.is-note { background: var(--note-1); color: var(--ink-2); }
+.bin-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--t-tiny);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bin-when { flex: none; font-size: 10px; color: var(--ink-3); font-family: var(--font-mono); }
+
+/* The thing under the pointer while it is being carried back to the board. */
+#bin-ghost {
+  position: fixed;
+  z-index: 60;
+  width: 54px;
+  height: 54px;
+  margin: -27px 0 0 -27px;
+  overflow: hidden;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--radius-xs);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
+  pointer-events: none;
+  rotate: -4deg;
+}
+#bin-ghost img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
 #drop-overlay {
   position: fixed;

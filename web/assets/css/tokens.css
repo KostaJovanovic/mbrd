@@ -69,6 +69,15 @@
   --grid-axis:  color-mix(in srgb, var(--accent) 55%, transparent);
   --grid-dot:   1.7px;
 
+  /* ---- the web between items (canvas/web.js) ----
+     Deliberately a true neutral grey rather than a mix of this palette's ink,
+     which is the one exception on this whole sheet. The threads run *under*
+     every item and behind whatever colours those items bring, and a tinted
+     thread crossing a photograph reads as an artefact of the photograph. Grey
+     reads as string. Screen px, because the stroke does not scale with zoom. */
+  --web-line:   rgba(128, 128, 128, 0.34);
+  --web-weight: 1px;
+
   /* ---- item chrome ---- */
   --item-bg:     var(--paper-card);
   --item-border: color-mix(in srgb, var(--ink) 16%, transparent);
@@ -247,7 +256,7 @@
    reactivity together, because those together are what make a thing feel
    playful or serious. Moving only one of them reads as a bug.
 
-     0  Warm    deep corners, springy overshoot, things that lift and tilt
+     0  Softish deep corners, springy overshoot, things that lift and tilt
                 under the pointer, ornament turned up, items pinned up crooked.
      1  Middle  the base above - the same room with the furniture straightened.
      2  Harsh   Swiss. Square, hairline, high contrast, sans, minimal motion.
@@ -270,7 +279,7 @@
    custom property, so it can drive all of this without touching app.css.
    ========================================================= */
 
-/* ---- 0: warm ------------------------------------------------------------
+/* ---- 0: softish ---------------------------------------------------------
    Shape, motion, ornament and reactivity only. No pigment: the palette is the
    palette, and the shadows below take their colour from its ink. */
 :root[data-whimsy="0"] {

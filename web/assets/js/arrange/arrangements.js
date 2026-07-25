@@ -5,7 +5,7 @@
 // brand-new items) or for "Rearrange all" (new positions for existing ones)
 // without either path knowing how the layout was computed.
 //
-// opts: { center: {x, y}, spacing: number }
+// opts: { center: {x, y}, spacing: number, seed?: number }
 
 export const ARRANGEMENTS = [
   { id: 'free',    label: 'Free (keep positions)' },
@@ -142,7 +142,11 @@ const LAYOUTS = {
   scatter(items, o) {
     const avg = items.reduce((s, i) => s + Math.max(i.w, i.h), 0) / items.length;
     const R = Math.sqrt(items.length) * (avg + o.spacing) * 0.72;
-    const rnd = mulberry32(items.length * 2654435761 >>> 0);
+    // Seeded, so one scatter is reproducible - but the seed is the caller's to
+    // choose. An import wants the default (the same drop lands the same way);
+    // "Rearrange everything" passes a fresh one, because there the whole point
+    // is that it comes out different.
+    const rnd = mulberry32(o.seed ?? (items.length * 2654435761 >>> 0));
     return items.map(() => {
       const a = rnd() * Math.PI * 2;
       const r = Math.sqrt(rnd()) * R;   // sqrt keeps the density even across the disc

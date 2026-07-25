@@ -30,7 +30,7 @@ const STORE_KEY = 'mbrd.appearance';
  * the names are the ones printed under the track in index.html - what each
  * stop *does* is visible the moment you move it, so nothing here is captioned.
  */
-export const WHIMSY = ['Warm', 'Middle', 'Harsh'];
+export const WHIMSY = ['Softish', 'Middle', 'Harsh'];
 
 /** Where a board starts: the middle, which is also the bare stylesheet. */
 const DEFAULT_WHIMSY = 1;
@@ -40,15 +40,22 @@ const DEFAULT_WHIMSY = 1;
  * what you want for a pigment - but not for these: leaving a hand-picked 13px
  * radius inline would keep the corners round in a mode whose whole point is
  * that they are square. So sliding the axis drops them back to the stylesheet.
+ *
+ * The grid pair belongs here for the same reason - each level sets its own
+ * weight and strength, and touching either slider once would otherwise pin the
+ * grid for good and leave it ignoring the axis from then on.
  */
-const AXIS_TOKENS = ['--radius'];
+const AXIS_TOKENS = ['--radius', '--grid-alpha', '--grid-dot'];
 
 /** The curated set of tokens worth exposing. Everything else stays internal. */
 const CONTROLS = [
   { var: '--accent',      label: 'Pigment',       type: 'color' },
   { var: '--paper',       label: 'Paper',         type: 'color' },
   { var: '--radius',      label: 'Corner radius', type: 'range', min: 0,   max: 28,  step: 1,    unit: 'px' },
-  { var: '--grid-alpha',  label: 'Grid strength', type: 'range', min: 0,   max: 0.4, step: 0.01 },
+  // Floored well above zero. The bottom of this range used to be an invisible
+  // grid, which is a second, hidden "off" switch sitting next to the real one
+  // in View - and one that gives no hint of what turned the dots off.
+  { var: '--grid-alpha',  label: 'Grid strength', type: 'range', min: 0.04, max: 0.4, step: 0.01 },
   { var: '--grid-dot',    label: 'Grid weight',   type: 'range', min: 0.5, max: 4,   step: 0.1,  unit: 'px' },
   { var: '--density',     label: 'Panel density', type: 'range', min: 0.8, max: 1.5, step: 0.05 },
   { var: '--sidebar-w',   label: 'Panel width',   type: 'range', min: 260, max: 460, step: 4,    unit: 'px' },
@@ -174,7 +181,7 @@ function readStored() {
 }
 
 // Compared against the default rather than tested for truthiness: whimsy 0 is
-// Warm, a deliberate choice, and `!0` would file a board saved at that end of
+// Softish, a deliberate choice, and `!0` would file a board saved at that end of
 // the axis as having brought no look at all.
 const hasLook = look =>
   !!look && ((look.whimsy != null && +look.whimsy !== DEFAULT_WHIMSY) ||
