@@ -110,7 +110,7 @@ initAppearance({ onChange: () => { resetGridInk(); paintGrid(vp); } });
 initAudio();
 initSidebar(cmds);
 initItems(el('world'), vp);
-initWeb(el('world'));
+initWeb(el('world'), vp);
 initStills(el('world'), vp);
 initInput(vp, cmds);
 initMenu(vp, cmds);
@@ -119,8 +119,10 @@ initTrash(vp);
 initDrop(vp);
 initStorage();
 
-// The grid is screen-space, so it repaints on every view change - cheap: it is
-// four CSS gradients, not a canvas.
+// The grid is screen-space, so it repaints on every view change. Two tiers are
+// four CSS gradients; Harsh draws its lattice, but only over the canvas, which
+// is the viewport - so both are bounded by the screen rather than the board.
+//
 // The view is board state and is saved with the board, but it changes on every
 // frame of a pan - so it is written here on each change and *announced* on a
 // trailing timer. Without the announcement nothing scheduled an autosave, and a
