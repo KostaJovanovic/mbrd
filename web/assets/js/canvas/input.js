@@ -20,12 +20,29 @@ import {
   snapshotGeom, applyGeom, commitGeom, bus,
 } from '../state.js';
 import { zoomMs, travelMs } from './viewport.js';
-import { itemIdFromEvent, ensureMounted, sync as syncItems } from './items.js';
+import { itemIdFromEvent, ensureMounted, sync as syncItems, editItemName } from './items.js';
 import { gridStep } from './grid.js';
 import { noteFloor } from '../ui/notes.js';
 
 const DRAG_SLOP = 3;      // screen px before a press becomes a drag
-const MIN_SIZE = 24;      // world px - below this an item is unclickable
+
+// The resize limits, in world units. The floor is not about staying *visible*
+// but about staying *operable*: the eight grips are sized in screen pixels (see
+// .grip in app.css, everything multiplied by --iz), so as an item shrinks they
+// do not shrink with it - they crowd it. At 48 world units, viewed at 100%
+// zoom, the four corner marks are only just clear of one another and the edge
+// strips between them keep about ten pixels of length. Below that the corners
+// overlap, the strips collapse to nothing, and the resize becomes one-way: an
+// item dragged down to a speck could never be dragged back out. 48 is still a
+// fifth of a note and a third of the shortest default card (250x140), so a
+// deliberate shrink never runs into it.
+const MIN_SIZE = 48;
+// The ceiling is eighty default cards wide - far past anything a board wants,
+// while still spanning 400 screen pixels at the furthest zoom out, so even an
+// item used as a deliberate backdrop stays inside it. Its job is the drag that
+// leaves the window at high zoom: without a stop, one flick could carry an item
+// to a size that makes Fit frame the board at nothing.
+const MAX_SIZE = 20000;
 
 export function initInput(vp, cmds) {
   const el = vp.el;
@@ -43,6 +60,45 @@ export function initInput(vp, cmds) {
     const step = gridStep(board.settings.gridStep, vp.zoom);
     return Math.round(v / step) * step;
   };
+
+  /**
+   * One axis of a resize: the extent it should end up with, given the box the
+   * gesture started from and how far the pointer has travelled along that axis.
+   *
+   * `sign` is +1 when the handle drags the high edge (east, or north - world y
+   * points up), -1 for the low one, and 0 for an axis the handle does not
+   * touch, whose extent comes back untouched.
+   *
+   * Snapping quantises the *moving edge's world position*, not the extent.
+   * Rounding a width to the step would leave both edges off the lattice, since
+   * the pinned edge was never on it to begin with; it is the edge the pointer
+   * is actually holding that has to land on a grid line for the result to sit
+   * flush against the dots on screen. The extent then falls out of the distance
+   * back to the edge that stayed put, which is why the anchor is derived here
+   * rather than the size being adjusted afterwards.
+   *
+   * The limits are applied before the snap so the rounding is handed an edge
+   * that is already legal, and repaired after it by stepping one grid line the
+   * other way: rounding can only move the edge by half a step, so one line
+   * always brings it back inside, and the answer is still on the lattice rather
+   * than parked at a bare limit that no grid line passes through. The closing
+   * clamp is what actually guarantees the range - it has to hold even where the
+   * step is coarser than the whole band between floor and ceiling, and a floor
+   * that only usually holds is the same collapsed item it exists to prevent.
+   */
+  function resizeAxis(sign, centre, extent, travel) {
+    if (!sign) return extent;
+    let size = clamp(extent + sign * travel, MIN_SIZE, MAX_SIZE);
+    if (board.settings.snap) {
+      const anchor = centre - sign * extent / 2;
+      const step = gridStep(board.settings.gridStep, vp.zoom);
+      const k = Math.round((anchor + sign * size) / step);
+      size = sign * (k * step - anchor);
+      if (size < MIN_SIZE) size = sign * ((k + sign) * step - anchor);
+      else if (size > MAX_SIZE) size = sign * ((k - sign) * step - anchor);
+    }
+    return clamp(size, MIN_SIZE, MAX_SIZE);
+  }
 
   function setPanCursor() {
     el.classList.toggle('can-pan', spaceDown && !g);
@@ -221,17 +277,36 @@ export function initInput(vp, cmds) {
       const signX = c.includes('e') ? 1 : c.includes('w') ? -1 : 0;
       // 'n' is the +y side of the item, because world y points up.
       const signY = c.includes('n') ? 1 : c.includes('s') ? -1 : 0;
-      let w = signX ? Math.max(MIN_SIZE, g.box.w + dx * signX) : g.box.w;
-      let h = signY ? Math.max(MIN_SIZE, g.box.h + dy * signY) : g.box.h;
+      let w = resizeAxis(signX, g.box.x, g.box.w, dx);
+      let h = resizeAxis(signY, g.box.y, g.box.h, dy);
       if (g.lockAspect !== e.shiftKey) {          // XOR: shift inverts the default
+        // A fixed ratio and both edges on the lattice are not both achievable,
+        // so with snap on the dominant side is the one that lands on the grid
+        // and the follower goes wherever the ratio puts it. That is the right
+        // way round: the side you are watching move is the side that clicks.
         const ratio = g.box.w / g.box.h;
         if (Math.abs(w - g.box.w) > Math.abs(h - g.box.h)) h = w / ratio;
         else w = h * ratio;
+        // The follower can land outside a limit the dragged side never reached,
+        // and clamping only the offender would change the ratio - the single
+        // thing this branch exists to hold. So the pair is rescaled together.
+        // Shrink first and grow second, so that on the extreme shape where both
+        // limits bind at once it is the floor that survives: a box too large is
+        // a nuisance, a box too small cannot be grabbed to undo it.
+        let k = Math.min(1, MAX_SIZE / Math.max(w, h));
+        k = Math.max(k, MIN_SIZE / Math.min(w, h));
+        w *= k;
+        h *= k;
       }
       // A note may not be dragged smaller than its own text. The floor is
       // measured at the width being proposed, not the one on screen, because
       // narrowing a note rewraps it and makes it *taller* - so pulling a side
       // in can push the bottom out, which is the honest answer.
+      //
+      // This runs after the limits above and is allowed to overrule the ceiling
+      // on the way up, because a note taller than MAX_SIZE is only unusual
+      // whereas a note with its last paragraph cut off is wrong. It can only
+      // ever raise the height, so it never threatens the floor.
       const it = byId(g.id);
       if (it.type === 'note') {
         const floor = noteFloor(g.id, w);
@@ -356,6 +431,9 @@ export function initInput(vp, cmds) {
 
     switch (e.key) {
       case 'Delete': case 'Backspace': cmds.deleteSelection(); e.preventDefault(); break;
+      // One item only: a rename has to put the caret somewhere, and a group
+      // selection has no single name to put it in.
+      case 'F2': if (selection.size === 1) { editItemName([...selection][0]); e.preventDefault(); } break;
       case '0': cmds.recenter(); break;
       case 'f': case 'F': cmds.fit(); break;
       case '+': case '=': vp.zoomBy(1.25, zoomMs()); break;

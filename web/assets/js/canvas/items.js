@@ -5,7 +5,7 @@
 // leaves and re-enters the viewport. Culling keeps the DOM proportional to what
 // is on screen rather than to the size of the board.
 
-import { board, byId, selection, bus } from '../state.js';
+import { board, byId, selection, bus, renameItem } from '../state.js';
 import { buildContent, fitMode } from '../import/renderers.js';
 
 /** id -> element, including elements currently detached by culling. */
@@ -95,12 +95,7 @@ function build(item) {
   // Inside .item-body, not .item: the body is what clips to the rounded
   // corners now that .item lets the resize handles hang outside it, and a
   // caption plate across the foot has to be clipped by that same curve.
-  if (item.name) {
-    const label = document.createElement('div');
-    label.className = 'item-label';
-    label.textContent = item.name;
-    body.append(label);
-  }
+  if (item.name) body.append(nameplate(item));
 
   // Eight handles: four corners, and four edges for resizing one axis alone.
   // The single-letter ones are the edges (see .grip-edge in app.css).
@@ -115,6 +110,14 @@ function build(item) {
   place(el, item);
   el.classList.toggle('is-selected', selection.has(item.id));
   return el;
+}
+
+/** The caption plate itself. Built in one place because a rename rebuilds it. */
+function nameplate(item) {
+  const label = document.createElement('div');
+  label.className = 'item-label';
+  label.textContent = item.name;
+  return label;
 }
 
 /**
@@ -169,9 +172,113 @@ function rebuild(id) {
   const item = byId(id);
   if (!el || !item) return;
   const body = el.querySelector('.item-body');
+  // The caption plate is a child of .item-body too, so replaceChildren takes it
+  // with the content and it has to be put back rather than patched. That is
+  // also what lets a rename add or remove a plate: it exists exactly when there
+  // is a name to put on it, which is the same rule build() applies.
   body.replaceChildren(buildContent(item));
-  const label = el.querySelector('.item-label');
-  if (label) label.textContent = item.name;
+  if (item.name) body.append(nameplate(item));
+}
+
+/**
+ * Whether an item has a name you can get at.
+ *
+ * Everything except a sticky note. A note does carry a `name` - the first line
+ * of its text, copied when it was created - but nothing on the board draws it,
+ * so renaming one would be typing into a field with no visible effect. What a
+ * note has instead is Edit text, which changes the line the name came from.
+ */
+export const canRenameItem = id => {
+  const type = byId(id)?.type;
+  return !!type && type !== 'note';
+};
+
+/**
+ * Rename an item by typing on the name it is already showing.
+ *
+ * There are two places that name appears and they are not interchangeable. A
+ * picture wears it on the caption plate across its foot; a card - audio, text,
+ * or any of the ~1350 named formats - has no plate, because CSS hides it for
+ * every type that has a card, and carries its name on the .card-name line
+ * inside instead. Whichever one you can actually see is the one that turns
+ * editable, so the rename happens where you are already looking rather than in
+ * a dialog thrown over the top of it. The same bargain a sticky note makes -
+ * see ui/notes.js, which this follows.
+ *
+ * A card line normally shows the stem alone (renderers.js runs it through
+ * baseName), but an edit puts the whole filename back on screen for as long as
+ * it lasts. What gets committed is the item's name in full, and hiding half of
+ * a string while someone edits it is how a .jpg goes missing without anyone
+ * being told.
+ */
+export function editItemName(id) {
+  const item = byId(id);
+  if (!item || !canRenameItem(id)) return;
+  const el = ensureMounted(id);
+  const body = el?.querySelector('.item-body');
+  if (!body) return;
+
+  let field = el.querySelector('.card-name') || el.querySelector('.item-label');
+  // A picture that has lost its name has no plate to type on, so one is
+  // conjured for the duration of the edit and taken away again if nothing
+  // comes of it.
+  const conjured = !field;
+  if (conjured) {
+    field = nameplate(item);
+    body.append(field);
+  }
+
+  el.classList.add('is-editing');
+  // plaintext-only keeps pasted markup out of a name; not every engine has it.
+  try { field.contentEditable = 'plaintext-only'; }
+  catch { field.contentEditable = 'true'; }
+  if (!field.isContentEditable) field.contentEditable = 'true';
+  field.textContent = item.name;
+
+  let done = false;
+  let keep = true;
+
+  const onKey = e => {
+    e.stopPropagation();          // the canvas must not see Delete, space or Escape
+    if (e.key === 'Enter') { e.preventDefault(); finish(); }
+    else if (e.key === 'Escape') { keep = false; finish(); }
+  };
+
+  function finish() {
+    if (done) return;
+    done = true;
+    // Read before anything is torn down: innerText is what the field *renders*,
+    // and both the class and the editable flag being dropped below are things
+    // stylesheets key off. A name is one line, so a pasted paragraph is
+    // flattened into one rather than refused - the alternative is a caption
+    // plate two thirds of a page tall - and renameItem() trims the ends.
+    const typed = field.innerText.replace(/\s+/g, ' ');
+    field.removeEventListener('keydown', onKey);
+    field.removeEventListener('blur', finish);
+    field.contentEditable = 'false';
+    field.blur();
+    el.classList.remove('is-editing');
+    // Put the field back the way state has it *before* asking for the rename.
+    // A name that comes back unchanged commits nothing and so fires no rebuild,
+    // and without this the half-finished text would simply stay on screen.
+    field.textContent = item.name;
+    if (conjured && !item.name) field.remove();
+    // Escape abandons, and must not travel through renameItem() as an empty
+    // string: empty means "put the original filename back", which is an edit of
+    // its own and the opposite of cancelling one.
+    if (keep) renameItem(id, typed);
+  }
+
+  field.addEventListener('keydown', onKey);
+  field.addEventListener('blur', finish);
+  // Selected, not just focused: a rename usually replaces the name rather than
+  // appends to it, and a 60-character filename is a long way to hold backspace.
+  field.focus();
+  const range = document.createRange();
+  range.selectNodeContents(field);
+  const sel = getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
 }
 
 // World y points up, CSS top points down - this negation is the only place the

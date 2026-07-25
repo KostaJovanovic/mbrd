@@ -434,7 +434,16 @@
   /* A fine lattice, but a *visible* one. At 1px and 0.11 these were painted
      and not seen: a 1px radius is two pixels across before antialiasing eats
      the edges, and an eighth of an alpha on near-white paper finished the job.
-     Harsh is spare, not blank. */
+     Harsh is spare, not blank.
+
+     This is the one level where the lattice is not dots - canvas/grid.js reads
+     data-whimsy and marks each intersection with a small cross instead, which
+     is the drawing-office register mark this end of the axis is quoting. Both
+     numbers still mean what they mean everywhere else, so the Grid weight and
+     Grid strength sliders keep working; --grid-dot is simply spent on an arm's
+     thickness rather than on a radius, and a cross lays down more ink than a
+     dot of the same weight, so the lattice reads a shade firmer here than the
+     0.16 alone would suggest. That is the intent, not an oversight. */
   --grid-alpha: 0.16;
   --grid-dot: 1.5px;
 

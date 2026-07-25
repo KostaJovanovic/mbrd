@@ -493,8 +493,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .item.is-editing { cursor: text; }
 .item.is-editing .item-body { pointer-events: auto; }
 .item.is-editing .card-text,
+.item.is-editing .card-name,
+.item.is-editing .item-label,
 .item.is-editing .note-title,
 .item.is-editing .note-body { outline: none; overflow: auto; cursor: text; }
+/* The caption plate refuses the pointer and ellipsises whatever it cannot fit -
+   both right for a label, both wrong for a field. While it is being renamed it
+   takes the caret and scrolls instead of truncating. */
+.item.is-editing .item-label { pointer-events: auto; text-overflow: clip; }
 /* An empty field collapses to nothing and becomes unclickable, so both keep a
    line's worth of height while the note is open for editing. */
 .item.is-editing .note-title:empty,
@@ -522,7 +528,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .item[data-type="text"] .item-label,
 .item[data-type="note"] .item-label,
 .item[data-type="generic"] .item-label { display: none; }
-#world.zoom-far .item-label { display: none; }
+/* :not(), rather than an override that unhides it again - winning on
+   specificity here would also unhide the plates that particular item types
+   hide on purpose. A plate being typed into is the one that must survive. */
+#world.zoom-far .item:not(.is-editing) .item-label { display: none; }
 
 /* Resize handles. Everything on the board takes all eight - four corners that
    move both axes, four edges that move one.
@@ -1053,10 +1062,26 @@ kbd {
   align-items: flex-start;
   gap: 8px;
   user-select: none;
+  transition: opacity var(--dur-base) var(--ease), visibility 0s;
+}
+
+/* The panel opens over this corner, so the bin gets out of the way - the same
+   move #menu-btn makes, and for the same reason.
+
+   visibility, not opacity alone: a button faded to nothing is still in the tab
+   order and still announced, so it would be a control you can reach but cannot
+   see. Delaying it by the fade's own duration lets it hide only once it has
+   finished fading, and drop instantly on the way back in. The whole #bin goes
+   rather than just the button, so a panel left open goes with it - and comes
+   back open when the sidebar closes, which is what leaving it open meant. */
+#sidebar.is-open ~ #bin {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity var(--dur-base) var(--ease), visibility 0s var(--dur-base);
 }
 
 #bin-btn {
-  position: relative;
   display: grid;
   place-items: center;
   width: 38px;
@@ -1067,32 +1092,33 @@ kbd {
   box-shadow: var(--shadow-1);
   color: var(--ink-2);
   cursor: pointer;
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease);
 }
+/* An empty bin has nothing to offer, and says so by receding: the faintest ink
+   and the fainter of the two hairlines, so it sits on the glass at about the
+   weight of the board's own furniture rather than asking to be pressed. It is
+   deliberately not the disabled treatment used elsewhere (no dimmed cursor, no
+   half opacity) - the button still works, and pressing it opens a panel that
+   tells you in words that there is nothing in there.
+
+   This has to come before :hover, which it ties with on specificity: source
+   order is what lets the hover colour win over the muted one. */
+#bin-btn:not(.has-things) { color: var(--ink-3); border-color: var(--rule); }
 #bin-btn:hover { background: var(--paper-2); color: var(--accent-deep); }
+/* Hovering an empty bin brings its edge back up to the normal hairline, so the
+   pointer gets the same "this is a control" answer it gets from a full one. */
+#bin-btn:not(.has-things):hover { border-color: var(--rule-2); }
 #bin-btn svg {
   width: 17px; height: 17px;
   transition: transform var(--dur-base) var(--ease-back);
 }
 #bin-btn:hover svg { transform: scale(var(--btn-grow)) translateY(var(--btn-lift)); }
-/* Something is in there. Not a number in a red circle - a quiet count, the way
-   a physical bin tells you it is filling up by being visibly not empty. */
+/* Something is in there. Not a number in a badge - the whole button simply
+   comes up to full strength, the way a physical bin tells you it is filling up
+   by being visibly not empty. The icon inherits currentColor, so this carries
+   the state without anything extra being drawn on top of it. */
 #bin-btn.has-things { color: var(--accent-deep); border-color: var(--accent); }
-#bin-count {
-  position: absolute;
-  right: -5px;
-  top: -5px;
-  min-width: 17px;
-  padding: 0 4px;
-  border-radius: 9px;
-  background: var(--accent);
-  color: var(--accent-fg);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  line-height: 17px;
-  text-align: center;
-}
-#bin-count[hidden] { display: none; }
 
 /* Open while a drag is in flight: you are dragging *out* of the panel and onto
    the board, so the panel must not shut the moment the pointer leaves it. */

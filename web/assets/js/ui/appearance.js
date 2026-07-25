@@ -21,7 +21,7 @@
 // on it, extracting their pigments into `vars` and parking `whimsy` where
 // their contrast and sharpness say it belongs.
 
-import { board, bus, markDirty } from '../state.js';
+import { board, bus, markDirty, setSetting } from '../state.js';
 
 const STORE_KEY = 'mbrd.appearance';
 
@@ -36,6 +36,16 @@ export const WHIMSY = ['Softish', 'Middle', 'Harsh'];
 const DEFAULT_WHIMSY = 1;
 
 /**
+ * The plain end of the axis, named because two things key off it rather than
+ * off "the last stop": snapping, below, and the shape of the grid's marks,
+ * which canvas/grid.js reads straight off data-whimsy. That file holds the same
+ * number as a string; they are not shared through an import because the canvas
+ * has no business importing from ui/, and both are really keyed to the
+ * attribute this module writes rather than to each other.
+ */
+const HARSH = 2;
+
+/**
  * Tokens the whimsy axis owns. A hand-set value beats any stylesheet, which is
  * what you want for a pigment - but not for these: leaving a hand-picked 13px
  * radius inline would keep the corners round in a mode whose whole point is
@@ -44,6 +54,9 @@ const DEFAULT_WHIMSY = 1;
  * The grid pair belongs here for the same reason - each level sets its own
  * weight and strength, and touching either slider once would otherwise pin the
  * grid for good and leave it ignoring the axis from then on.
+ *
+ * The snap setting is owned in exactly this spirit without being a token at
+ * all; see axisMoved() for why it is, and for what it costs.
  */
 const AXIS_TOKENS = ['--radius', '--grid-alpha', '--grid-dot'];
 
@@ -105,6 +118,41 @@ export function setWhimsy(level) {
   apply(current);
   persist();
   syncControls();          // computed radii, fonts and durations all moved
+  axisMoved(n);
+}
+
+/**
+ * The two things a move along the axis changes that a custom property cannot.
+ *
+ * The first is the grid. canvas/grid.js draws a cross at the plain end where
+ * the other levels get a dot, and it composes that in JS on view change rather
+ * than leaving it to the stylesheet - so the marks would keep their old shape
+ * until the next pan unless the move is announced. 'settings' is the event
+ * main.js already repaints the grid on, and the payload is honest rather than
+ * invented: persist() has just rewritten board.settings.appearance.
+ *
+ * The second is snapping. Harsh is the level where the board stops being a
+ * scrapbook and starts being a drawing, and things landing on the lattice is
+ * part of that - so the axis owns `snap` the same way it owns the tokens
+ * above. Moving the slider sets it; toggling the checkbox afterwards is still
+ * the user's call and stands until the slider moves again.
+ *
+ * Worth naming the straddle, because it is the one place this module reaches
+ * outside appearance: whimsy follows the *user* across boards, while `snap` is
+ * board state and travels inside someone else's .mbrd. Crossing that line is
+ * reserved for a deliberate move of the slider, which is why this is called
+ * from the two places the user moves it and never from apply() - applying a
+ * look on boot, or when a loaded board brings its own, must leave the snap
+ * setting that arrived with that board exactly as saved, and must not mark a
+ * board dirty before it has been touched.
+ */
+function axisMoved(level) {
+  setSetting('snap', level === HARSH);
+  // setSetting is silent when the value already matches, and it often will:
+  // whenever the checkbox was hand-toggled to where the new level wants it, or
+  // the move was between two levels that agree about snapping. So the repaint
+  // is signalled in its own right rather than left riding on snap changing.
+  bus.emit('settings', 'appearance');
 }
 
 /**
@@ -123,11 +171,17 @@ export function setPigments(vars) {
 }
 
 export function resetAppearance() {
+  const was = current.whimsy;
   for (const key of Object.keys(current.vars)) root.style.removeProperty(key);
   current = { whimsy: DEFAULT_WHIMSY, palette: '', vars: {} };
   apply(current);
   persist();
   syncControls();
+  // Reset is the other way out of a level, so it owes the axis the same
+  // announcement - but only when it actually moved. Guarded rather than
+  // unconditional so that resetting the pigments while already at the middle
+  // is not also a silent way to switch someone's snapping off.
+  if (was !== DEFAULT_WHIMSY) axisMoved(DEFAULT_WHIMSY);
 }
 
 // ---------------------------------------------------------------------------

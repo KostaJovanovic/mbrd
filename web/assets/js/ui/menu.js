@@ -9,6 +9,13 @@
 // One menu exists at a time. It is built fresh on each open rather than kept
 // hidden, so entries can be enabled, checked or omitted per context.
 
+// Reached straight rather than through cmds, which every other entry here goes
+// by. Renaming *is* the name drawn on the item, so the affordance lives with
+// the code that draws it, and routing it through the command surface would add
+// a second name for it and nothing else. ui/notes.js takes the same shortcut to
+// the same module for the same reason.
+import { canRenameItem, editItemName } from '../canvas/items.js';
+
 const el = id => document.getElementById(id);
 
 let node = null;
@@ -63,12 +70,18 @@ export function openContextMenu(clientX, clientY, itemId, selectionSize) {
 function itemEntries(id, count, at) {
   const many = count > 1;
   const what = many ? `${count} items` : 'item';
+  // Both are single-item edits: they act on the one thing under the cursor, and
+  // there is nowhere sensible to put the caret when a whole group is selected.
+  const editable = !many && cmds.canEditNote(id);
+  const renamable = !many && canRenameItem(id);
   return [
     // First, and only on a note: right-clicking the one item type you can
     // actually type into should offer to type into it before anything else.
-    { label: 'Edit text', accel: 'dbl-click', hidden: many || !cmds.canEditNote(id),
+    { label: 'Edit text', accel: 'dbl-click', hidden: !editable,
       action: () => cmds.editNote(id) },
-    { sep: true, hidden: many || !cmds.canEditNote(id) },
+    // No ellipsis: nothing opens. The name goes editable where it already sits.
+    { label: 'Rename', accel: 'F2', hidden: !renamable, action: () => editItemName(id) },
+    { sep: true, hidden: !editable && !renamable },
     { label: 'Bring to front', action: () => cmds.raise() },
     { label: 'Send to back', action: () => cmds.lower() },
     { sep: true },

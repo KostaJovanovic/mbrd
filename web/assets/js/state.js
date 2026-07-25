@@ -14,6 +14,10 @@
 //   trash      - something was thrown away, restored, or purged
 
 import { emitter, uid } from './util.js';
+// The asset registry remembers the filename each item arrived under, which is
+// what a cleared name falls back to - see renameItem(). One-way: assets.js
+// depends on nothing but util.js, so this cannot close a cycle.
+import { getAsset } from './storage/assets.js';
 
 export const bus = emitter();
 
@@ -316,6 +320,31 @@ export function setItemText(id, text) {
   commit('Edit note',
     () => { byId(id).meta.text = text; bus.emit('item', id); },
     () => { byId(id).meta.text = prev; bus.emit('item', id); });
+}
+
+/**
+ * Call an item something else.
+ *
+ * An empty name never sticks. A picture wears its name on the caption plate
+ * that build() only draws `if (item.name)`, so clearing it would take away the
+ * very handle you renamed it by and leave the item anonymous with no way back -
+ * a one-way door, on the one edit people make by accident most. Blank therefore
+ * means "put it back", and what goes back is the name the file arrived under:
+ * the asset registry has held it since the import and a .mbrd carries it, so it
+ * is still there a month later. An item with no asset behind it keeps the name
+ * it had, and only one that never had a name can come out of this without one -
+ * which costs it nothing, because it had no plate to lose.
+ */
+export function renameItem(id, name) {
+  const it = byId(id);
+  if (!it) return;
+  const next = String(name ?? '').trim() ||
+               (it.asset && getAsset(it.asset.hash)?.name) || it.name;
+  if (it.name === next) return;
+  const prev = it.name;
+  commit('Rename',
+    () => { byId(id).name = next; bus.emit('item', id); },
+    () => { byId(id).name = prev; bus.emit('item', id); });
 }
 
 // ---------------------------------------------------------------------------
