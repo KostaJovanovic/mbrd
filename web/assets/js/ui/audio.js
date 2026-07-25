@@ -22,6 +22,7 @@
 
 import { getAsset } from '../storage/assets.js';
 import { bus, markDirty, selection } from '../state.js';
+import { toast } from '../util.js';
 
 const VOLUME_KEY = 'mbrd.volume';
 /** Loud enough to hear on laptop speakers, quiet enough not to make you jump. */
@@ -93,17 +94,38 @@ export function registerPlayer(el) {
 // Waveforms
 // ---------------------------------------------------------------------------
 
-let audioCtx = null;
+let decodeCtx = null;
 
 function context() {
-  // Created suspended and never resumed: decodeAudioData does not need a
-  // running context, and starting one without a user gesture is refused
-  // anyway. Playback goes through <audio>, which has no such restriction.
-  if (!audioCtx) {
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    audioCtx = Ctx ? new Ctx() : null;
+  // An OfflineAudioContext, deliberately, and not the live AudioContext this
+  // used to build.
+  //
+  // Decoding is the only thing this module needs a context for - playback goes
+  // through <audio>, which has its own pipeline - and an offline context never
+  // reaches the speakers, so the autoplay policy takes no interest in it.
+  // A live one is a different story: Firefox reports
+  // getAutoplayPolicy('audiocontext') as "disallowed" out of the box, which
+  // leaves the context parked in "suspended" until a gesture arrives. Every
+  // card on the board decodes through the same one, so the whole set queues
+  // behind that single gate and the waveforms all appear together some time
+  // later, or never. Offline decoding also happens to be an order of magnitude
+  // quicker - 9ms against 105ms on the same file - because nothing is being
+  // scheduled against a real clock.
+  //
+  // The 1-frame, 44.1kHz shape is a formality. decodeAudioData ignores the
+  // context's own length and resamples to its sample rate, and an RMS taken
+  // over a bucket is indifferent to what that rate is.
+  //
+  // The constructor sits inside the try because it can throw - a browser with
+  // audio disabled, a hardened profile - and it is called from outside
+  // measure()'s own guard, where an exception would escape all the way out of
+  // peaks() and leave the card with no readings at all. `false` records that
+  // we asked and were refused, so it is not retried for every card.
+  if (decodeCtx === null) {
+    const Ctx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    try { decodeCtx = Ctx ? new Ctx(1, 1, 44100) : false; } catch { decodeCtx = false; }
   }
-  return audioCtx;
+  return decodeCtx || null;
 }
 
 /**
@@ -132,7 +154,7 @@ async function measure(blob) {
   const ctx = context();
   if (!ctx) return null;
   try {
-    const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
+    const buf = await withTimeout(ctx.decodeAudioData(await blob.arrayBuffer()));
     const data = buf.getChannelData(0);
     const per = Math.max(1, Math.floor(data.length / PEAK_RES));
     const out = [];
@@ -147,10 +169,34 @@ async function measure(blob) {
       if (rms > loudest) loudest = rms;
     }
     if (!loudest) return out.map(() => 0);
-    return out.map(v => Math.round((v / loudest) * 100) / 100);
+    // Three decimals, not two. RMS against the loudest bucket puts quiet
+    // passages well below 0.01, and rounding those to a flat 0.00 turns the
+    // quiet half of a track into a dead line along the floor.
+    return out.map(v => Math.round((v / loudest) * 1000) / 1000);
   } catch {
     return null;   // not a codec this browser decodes
   }
+}
+
+/**
+ * How long a decode is given before the card settles for the stand-in shape.
+ *
+ * Not a guess at how slow decoding is - it is generous for that. It is here
+ * because decodeAudioData is allowed to simply never settle: a codec the build
+ * does not really support, a context the browser has quietly wedged, an
+ * autoplay policy that leaves the whole graph parked. An await on a promise
+ * that never resolves is indistinguishable from a hang, and the card would sit
+ * there with no bars for the rest of the session with nothing logged anywhere.
+ * Losing the real shape is a far smaller failure than an empty waveform.
+ */
+const DECODE_MS = 8000;
+
+function withTimeout(promise) {
+  let timer;
+  return Promise.race([
+    promise.finally(() => clearTimeout(timer)),
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('decode timed out')), DECODE_MS); }),
+  ]);
 }
 
 /** A stable stand-in when the bytes cannot be decoded. Same file, same shape. */
@@ -268,9 +314,40 @@ export function buildTransport(item, sound) {
 
   peaks(item).then(v => { values = v; drawBars(); });
 
+  // The first draw waits for the element to have a real width, rather than
+  // taking whatever it measures at the moment the readings arrive.
+  //
+  // buildContent() composes a card while its .item is still detached - on the
+  // first build, and again on every rebuild() for a rename or a note edit -
+  // and a detached element measures zero. That was survivable only because
+  // decoding a file takes long enough for the node to land in the document
+  // first. Cached readings do not: peaks() returns them in a microtask, which
+  // beats attachment, so a reopened board drew its bars into a zero width,
+  // bailed, and never had cause to try again. This fires whenever the box
+  // turns up, which is the actual condition being waited on.
+  //
+  // Only while there is nothing drawn yet. Once there is, resizes are left to
+  // the deselect below, so the bars do not reflow under a dragging pointer.
+  const watch = new ResizeObserver(() => {
+    if (builtFor || !wave.clientWidth || !values) return;
+    drawBars();
+    watch.disconnect();
+  });
+  watch.observe(wave);
+
   play.addEventListener('click', () => {
-    if (sound.paused) sound.play().catch(() => {});
-    else sound.pause();
+    if (!sound.paused) { sound.pause(); return; }
+    sound.play().catch(err => {
+      // Never swallowed. A rejected play() is almost always the browser
+      // refusing rather than the file being broken - Firefox blocks audible
+      // playback outright when a site's autoplay permission is set to block,
+      // and every card then behaves exactly like a dead one. An empty catch
+      // here is the reason "the cards are unplayable" had nothing behind it,
+      // in the console or anywhere else.
+      toast(err && err.name === 'NotAllowedError'
+        ? 'Your browser blocked playback — allow audio for this site'
+        : 'Could not play this file');
+    });
   });
   sound.addEventListener('play', () => {
     transport.classList.add('is-playing');

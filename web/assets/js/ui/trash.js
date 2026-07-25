@@ -23,7 +23,7 @@ import { extOf, baseName } from '../util.js';
 const el = id => document.getElementById(id);
 
 let vp = null;
-let panel, button, list, none, hint, emptyBtn, count;
+let panel, button, list, none, hint, emptyBtn;
 let ghost = null;
 
 export function initTrash(viewport) {
@@ -34,7 +34,6 @@ export function initTrash(viewport) {
   none = el('bin-none');
   hint = el('bin-hint');
   emptyBtn = el('bin-empty');
-  count = el('bin-count');
   if (!panel || !button) return;
 
   button.addEventListener('click', () => setOpen(panel.hidden));
@@ -60,9 +59,16 @@ function setOpen(want) {
 
 function paint() {
   const entries = board.trash;
-  count.textContent = entries.length;
-  count.hidden = !entries.length;
   button.classList.toggle('has-things', entries.length > 0);
+  // The button carries its state as colour alone, which a screen reader cannot
+  // see, so the name has to carry the same fact in words - and it may as well
+  // carry the exact number while it is there, since that is the one thing the
+  // muted-or-not look genuinely cannot say.
+  const name = entries.length
+    ? `Trash, ${entries.length} ${entries.length === 1 ? 'item' : 'items'}`
+    : 'Trash, empty';
+  button.setAttribute('aria-label', name);
+  button.title = name;
   emptyBtn.disabled = !entries.length;
   none.hidden = entries.length > 0;
   hint.hidden = entries.length === 0;
