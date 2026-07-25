@@ -19,7 +19,7 @@ import {
   board, byId, selection, select, clearSelection, topZ,
   snapshotGeom, applyGeom, commitGeom, bus,
 } from '../state.js';
-import { ZOOM_MS, TRAVEL_MS } from './viewport.js';
+import { zoomMs, travelMs } from './viewport.js';
 import { itemIdFromEvent, ensureMounted, sync as syncItems } from './items.js';
 import { gridStep } from './grid.js';
 
@@ -214,17 +214,23 @@ export function initInput(vp, cmds) {
     if (g.kind === 'resize') {
       const p = vp.toWorld(e.clientX, e.clientY);
       const dx = p.x - g.start.x, dy = p.y - g.start.y;
-      const signX = g.corner.includes('e') ? 1 : -1;
+      // Zero on an axis the handle does not touch: dragging the east edge must
+      // leave the height alone, where a corner moves both.
+      const c = g.corner;
+      const signX = c.includes('e') ? 1 : c.includes('w') ? -1 : 0;
       // 'n' is the +y side of the item, because world y points up.
-      const signY = g.corner.includes('s') ? -1 : 1;
-      let w = Math.max(MIN_SIZE, g.box.w + dx * signX);
-      let h = Math.max(MIN_SIZE, g.box.h + dy * signY);
+      const signY = c.includes('n') ? 1 : c.includes('s') ? -1 : 0;
+      let w = signX ? Math.max(MIN_SIZE, g.box.w + dx * signX) : g.box.w;
+      let h = signY ? Math.max(MIN_SIZE, g.box.h + dy * signY) : g.box.h;
       if (g.lockAspect !== e.shiftKey) {          // XOR: shift inverts the default
         const ratio = g.box.w / g.box.h;
         if (Math.abs(w - g.box.w) > Math.abs(h - g.box.h)) h = w / ratio;
         else w = h * ratio;
       }
-      // The opposite corner stays put, so the centre shifts by half the growth.
+      // The opposite edge stays put, so the centre shifts by half the growth -
+      // and on the axis an edge handle doesn't touch, signY is 0 and the item
+      // grows symmetrically about its centre, which is what an aspect-locked
+      // side drag should do.
       const it = byId(g.id);
       applyGeom([{
         id: g.id,
@@ -297,7 +303,7 @@ export function initInput(vp, cmds) {
       const v = e.target.closest('.item')?.querySelector('video');
       if (v) v.paused ? v.play().catch(() => {}) : v.pause();
     } else {
-      vp.fit([it], 120, TRAVEL_MS);
+      vp.fit([it], 120, travelMs());
     }
   });
 
@@ -332,8 +338,8 @@ export function initInput(vp, cmds) {
       case 'Delete': case 'Backspace': cmds.deleteSelection(); e.preventDefault(); break;
       case '0': cmds.recenter(); break;
       case 'f': case 'F': cmds.fit(); break;
-      case '+': case '=': vp.zoomBy(1.25, ZOOM_MS); break;
-      case '-': case '_': vp.zoomBy(1 / 1.25, ZOOM_MS); break;
+      case '+': case '=': vp.zoomBy(1.25, zoomMs()); break;
+      case '-': case '_': vp.zoomBy(1 / 1.25, zoomMs()); break;
       case 'Escape': clearSelection(); cmds.closeSidebar(); break;
       case 'ArrowLeft': case 'ArrowRight': case 'ArrowUp': case 'ArrowDown':
         nudge(e);

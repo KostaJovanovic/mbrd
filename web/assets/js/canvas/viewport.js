@@ -28,14 +28,24 @@ export const FAR_ZOOM = 0.35;
 
 // How long a commanded view move takes.
 //
+// Read from CSS rather than fixed here, so the board's own movement sits on
+// the same whimsy axis as the interface's: sliding towards "plain" shortens
+// these along with every transition in app.css, instead of leaving the canvas
+// animating at scrapbook speed inside a spec-sheet UI.
+//
 // A tapped zoom step glides instead of jumping: a discrete 1.3x cut gives you
 // no idea which way the board went, where the same step animated stays
-// legible. Short enough that holding the button still feels like a zoom
-// control rather than a queue of animations.
-export const ZOOM_MS = 190;
-// Fit, home and zoom-to-item can cross the whole board, so they get longer -
-// the point of animating those is to show you the journey.
-export const TRAVEL_MS = 400;
+// legible. Fit, home and zoom-to-item can cross the whole board, so they get
+// longer - the point of animating those is to show you the journey.
+export const zoomMs = () => cssMs('--dur-zoom', 190);
+export const travelMs = () => cssMs('--dur-travel', 400);
+
+function cssMs(name, fallback) {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const n = parseFloat(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return raw.endsWith('ms') ? n : n * 1000;   // CSS times are ms or s
+}
 
 /** Decelerating: fast off the mark, settling at the end. */
 const ease = t => 1 - Math.pow(1 - t, 3);

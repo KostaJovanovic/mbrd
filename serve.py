@@ -15,7 +15,7 @@ revalidation fetches. This does the three things that matter:
 It binds 0.0.0.0 and prints a scannable QR for the LAN URL, so a phone on the
 same Wi-Fi can open the board without typing an IP.
 
-Run: python serve.py [port] [lan-ip]   (defaults to 3000; server.bat passes both)
+Run: python serve.py [port] [lan-ip]   (defaults to 6273; server.bat passes both)
 """
 import os
 import socket
@@ -23,7 +23,7 @@ import sys
 import urllib.parse
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 
-PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 3000
+PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 6273
 # serve.py lives in the repo root but its document root is web/, so paths match
 # what a static host would serve.
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web')

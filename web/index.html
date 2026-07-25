@@ -10,13 +10,17 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="assets/img/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/img/icon.svg">
+<link rel="stylesheet" href="assets/css/fonts.css">
 <link rel="stylesheet" href="assets/css/tokens.css">
 <link rel="stylesheet" href="assets/css/app.css">
 <script>
-  /* Before first paint: apply the saved palette + any appearance overrides, so
-     an installed PWA never flashes the default pigment on launch. */
+  /* Before first paint: apply the saved look - whimsy level, palette, and any
+     per-token overrides - so an installed PWA never flashes the default
+     pigment on launch. Whimsy 0 is the absence of the attribute, so the common
+     case sets nothing at all. */
   try {
     var s = JSON.parse(localStorage.getItem('mbrd.appearance') || '{}');
+    if (s.whimsy) document.documentElement.dataset.whimsy = s.whimsy;
     if (s.palette) document.documentElement.dataset.palette = s.palette;
     for (var k in s.vars || {}) document.documentElement.style.setProperty(k, s.vars[k]);
   } catch (e) {}
@@ -110,6 +114,23 @@
 
     <section class="side-sec">
       <h2>Appearance</h2>
+      <!-- The whimsy axis. One dial from scrapbook to spec sheet - it moves
+           shape, type, motion, elevation, ornament and contrast together,
+           because those together are what makes a thing feel playful or
+           serious. See the third block of tokens.css. -->
+      <label class="field">
+        <span><span>Whimsy</span><output id="whimsy-out"></output></span>
+        <input id="opt-whimsy" type="range" min="0" max="2" step="1" value="0"
+               list="whimsy-stops" aria-describedby="whimsy-stop-labels">
+        <datalist id="whimsy-stops">
+          <option value="0"></option>
+          <option value="1"></option>
+          <option value="2"></option>
+        </datalist>
+        <span class="field-stops" id="whimsy-stop-labels" aria-hidden="true">
+          <span>Warm</span><span>Middle</span><span>Harsh</span>
+        </span>
+      </label>
       <label class="field">
         <span>Palette</span>
         <select id="opt-palette">

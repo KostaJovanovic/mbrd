@@ -71,3 +71,15 @@ export function toast(msg, kind = '') {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { el.hidden = true; }, kind === 'error' ? 6000 : 2600);
 }
+
+/**
+ * Running against the local dev server - server.bat on localhost, or a LAN IP
+ * when testing from a phone. sw.js makes the same test to turn itself into a
+ * pass-through; it cannot import this module, so the two are kept in step by
+ * hand rather than shared.
+ */
+export const IS_DEV = (() => {
+  const h = location.hostname;
+  return h === 'localhost' || h === '127.0.0.1' || h === '0.0.0.0' ||
+         /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h);
+})();

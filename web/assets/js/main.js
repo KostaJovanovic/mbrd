@@ -8,7 +8,7 @@ import {
   snapshotGeom, applyGeom, commitGeom, undo, redo, setItemText, byId,
   raiseSelection, lowerSelection, duplicateItems, select,
 } from './state.js';
-import { Viewport, MIN_ZOOM, MAX_ZOOM, ZOOM_MS, TRAVEL_MS } from './canvas/viewport.js';
+import { Viewport, MIN_ZOOM, MAX_ZOOM, zoomMs, travelMs } from './canvas/viewport.js';
 import { paintGrid } from './canvas/grid.js';
 import { initItems, resetItems, nodeFor } from './canvas/items.js';
 import { initInput } from './canvas/input.js';
@@ -43,8 +43,8 @@ const cmds = {
   },
 
   rearrange,
-  fit: () => vp.fit(board.items, 80, TRAVEL_MS),
-  recenter: () => vp.recenter(TRAVEL_MS),
+  fit: () => vp.fit(board.items, 80, travelMs()),
+  recenter: () => vp.recenter(travelMs()),
   resetAppearance,
 
   selectAll,
@@ -66,12 +66,13 @@ const cmds = {
   },
   zoomToSelection: () => {
     const items = board.items.filter(i => selection.has(i.id));
-    if (items.length) vp.fit(items, 120, TRAVEL_MS);
+    if (items.length) vp.fit(items, 120, travelMs());
   },
   addNoteAt: at => {
     const item = addNote(at);
     requestAnimationFrame(() => cmds.editNote(item.id));
   },
+  canEditNote: id => byId(id)?.type === 'note',
   getSetting: key => board.settings[key],
   toggleSetting: key => setSetting(key, !board.settings[key]),
 };
@@ -107,10 +108,10 @@ el('zoom-ctl').addEventListener('click', e => {
   const btn = e.target.closest('[data-zoom]');
   if (!btn) return;
   switch (btn.dataset.zoom) {
-    case 'in':    vp.zoomBy(ZOOM_STEP, ZOOM_MS); break;
-    case 'out':   vp.zoomBy(1 / ZOOM_STEP, ZOOM_MS); break;
+    case 'in':    vp.zoomBy(ZOOM_STEP, zoomMs()); break;
+    case 'out':   vp.zoomBy(1 / ZOOM_STEP, zoomMs()); break;
     // 1:1, without moving the view.
-    case 'reset': vp.viewTo(vp.pan, 1, TRAVEL_MS); break;
+    case 'reset': vp.viewTo(vp.pan, 1, travelMs()); break;
     case 'fit':   cmds.fit(); break;
     case 'home':  cmds.recenter(); break;
   }
@@ -171,7 +172,7 @@ function rearrange() {
   });
   applyGeom(before.map((g, i) => ({ ...g, x: spots[i].x, y: spots[i].y })));
   commitGeom('Rearrange', before);
-  vp.fit(board.items, 80, TRAVEL_MS);
+  vp.fit(board.items, 80, travelMs());
 }
 
 /** Turn a note card into an editable field until it loses focus. */
