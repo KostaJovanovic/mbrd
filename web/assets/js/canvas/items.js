@@ -118,13 +118,24 @@ function build(item) {
 }
 
 /**
- * A number in [-1, 1] for an item, used as its resting tilt - freshly rolled,
+ * A number in [-1, 1] for an item, used as its resting tilt - freshly dealt,
  * so the board is pinned up a little differently every time you open it.
  *
- * Rolled here in build() rather than stored on the item, which also settles
- * how long it lasts: nodes are cached and only detached when culled, so an
- * item keeps its lean while you pan away and back, and only a reload or
- * opening another board re-scatters everything.
+ * A third of the board hangs straight, and the tilted two-thirds lean left and
+ * right in equal numbers. That is a property of the *set*, not of any one
+ * item, so these are dealt from a bag rather than rolled independently: one
+ * slot of each kind per three items, reshuffled whenever it runs out. Rolling
+ * independently would only hit those proportions on average, and a small board
+ * - which is most boards - would miss them visibly.
+ *
+ * Over any whole group of three the split is exact. A board whose count is not
+ * a multiple of three is off by at most one item, which is the best that
+ * exists.
+ *
+ * Dealt here in build() rather than stored on the item, which also settles how
+ * long a lean lasts: nodes are cached and only detached when culled, so an item
+ * keeps its lean while you pan away and back, and only a reload or opening
+ * another board re-deals the pack.
  *
  * It stays out of item.rot on purpose. rot is geometry - fit() reads it, the
  * resize handles work in its frame, a marquee tests against it, and it is
@@ -132,7 +143,25 @@ function build(item) {
  * pointing at a crooked item still works, and nothing that reasons about where
  * things *are* has to know the board is not square.
  */
-const tiltFactor = () => Math.random() * 2 - 1;
+const tiltBag = [];
+/** Below this a tilted item reads as a straight one that missed, not a lean. */
+const TILT_MIN = 0.4;
+
+function tiltFactor() {
+  if (!tiltBag.length) {
+    tiltBag.push(0, -1, 1);
+    // Shuffled, so the straight one is not always in the same position within
+    // its three. Dealing them in order would put every third item square, and
+    // in a grid arrangement that regularity reads as banding rather than as a
+    // hand-pinned board.
+    for (let i = tiltBag.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [tiltBag[i], tiltBag[j]] = [tiltBag[j], tiltBag[i]];
+    }
+  }
+  const dir = tiltBag.pop();
+  return dir && dir * (TILT_MIN + Math.random() * (1 - TILT_MIN));
+}
 
 /** Rebuild one item's content in place (note edits, renames). */
 function rebuild(id) {
@@ -172,6 +201,9 @@ function paintSelection() {
 export function resetItems() {
   for (const el of nodes.values()) el.remove();
   nodes.clear();
+  // A new board gets a new pack, so its first three items carry a full set of
+  // leans rather than whatever was left over from the last one.
+  tiltBag.length = 0;
   reconcile();
   sync();
 }
