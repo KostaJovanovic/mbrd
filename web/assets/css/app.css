@@ -965,6 +965,19 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .grip[data-g="sw"] { left:  calc(-1 * var(--sel-edge)); bottom: calc(-1 * var(--sel-edge)); cursor: nesw-resize; }
 .grip[data-g="se"] { right: calc(-1 * var(--sel-edge)); bottom: calc(-1 * var(--sel-edge)); cursor: nwse-resize; }
 
+/* The grab area, which is not the mark.
+   A finger is not a pointer, and the honest fix is to make the target bigger
+   without making the drawing bigger - so the slop is an invisible box hanging
+   outside the grip rather than a larger grip. Zero here; the touch block at the
+   foot of this file is the only thing that opens it. In --iz units like
+   everything else in the ring, so it is a constant number of screen pixels at
+   any zoom. */
+.grip::before {
+  content: '';
+  position: absolute;
+  inset: calc(-1 * var(--grip-slop, 0px) * var(--iz));
+}
+
 /* Edge handles are invisible strips running between the corners. Drawing them
    would put eight marks around a small item and make the selection read as a
    dotted ring; leaving them bare keeps the corners as the only marks while
@@ -1827,6 +1840,143 @@ kbd {
 
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* ---------------------------------------------------------
+   Touch, and small screens
+
+   Two separate questions that are usually confused for one.
+
+   *Touch* is about the input: a finger has no hover state and covers about ten
+   millimetres, so anything that only appears on hover is unreachable and
+   anything under about 44px is a coin toss. That is `pointer: coarse`, and it
+   is true of a large tablet as much as a phone.
+
+   *Small* is about the room: the chrome sits in four corners, and on a narrow
+   screen those corners are the parts of the glass a thumb cannot reach while
+   the hand is holding the device. That is a width query, and it is true of a
+   phone whether or not it is being touched.
+
+   Written in that order, and deliberately not merged.
+   --------------------------------------------------------- */
+
+@media (pointer: coarse) {
+  /* Corner marks keep their drawn size and gain a ring of slop around them.
+     9px each way turns a 12px mark into a 30px target without putting a
+     heavier ring on the board. */
+  .item { --grip-slop: 9px; }
+  /* The edge strips are pure hit area, so these are the targets themselves. */
+  .grip[data-g="n"], .grip[data-g="s"] { height: calc(24px * var(--iz)); }
+  .grip[data-g="w"], .grip[data-g="e"] { width:  calc(24px * var(--iz)); }
+
+  /* A video's transport is revealed by hovering the card, which on a touch
+     screen means it is revealed by nothing at all. Selection is the touch
+     equivalent of "the one I am working on", so it takes over the job. */
+  .item.is-selected .transport-video { opacity: 1; }
+
+  /* Every hover reaction in the chrome fires on the *first* tap on a touch
+     screen and then sticks until something else is tapped, so a bin button
+     stays lit long after you have finished with it. The reactions are
+     decoration; the pressed state below is the one that carries information. */
+  #menu-btn:hover, #bin-btn:hover, #zoom-ctl button:hover,
+  .btn-row button:hover, #side-close:hover {
+    background: var(--paper-card);
+    border-color: var(--rule-2);
+    color: inherit;
+    transform: none;
+  }
+  #zoom-ctl button:hover:not(:disabled) svg,
+  #bin-btn:hover svg { transform: none; }
+  #menu-btn:active, #bin-btn:active, #zoom-ctl button:active,
+  .btn-row button:active { background: var(--paper-3); }
+
+  /* 44px, everywhere a finger has to land. This is the *input* question, so it
+     is here rather than in the width query below: a 10" tablet has all the room
+     in the world and the same finger. */
+  #menu-btn { width: 46px; height: 46px; }
+  #menu-btn span { width: 19px; }
+  #bin-btn { width: 46px; height: 46px; }
+  #bin-btn svg { width: 20px; height: 20px; }
+  #zoom-ctl button { min-width: 40px; height: 46px; }
+  #zoom-ctl svg { width: 17px; height: 17px; }
+  .check input { width: 20px; height: 20px; }
+
+  /* A long press on the board opens the context menu (canvas/input.js). iOS
+     answers the same gesture with its own callout - "Copy / Look Up" over a
+     card - so the platform's has to be turned off or the two fight. */
+  #world, #viewport { -webkit-touch-callout: none; }
+}
+
+@media (max-width: 700px) {
+  /* One bar along the bottom edge instead of four corners: menu and bin on the
+     left, the view controls on the right, all of it inside the reach of a
+     thumb. The menu button in particular was diagonally opposite the hand.
+
+     Nothing moves in the markup - these are four independently fixed elements
+     and always were, so this is only a question of where each one is pinned. */
+  #menu-btn {
+    top: auto;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    left: max(12px, env(safe-area-inset-left));
+  }
+
+  #bin {
+    bottom: max(12px, env(safe-area-inset-bottom));
+    /* Clear of the menu button, which is now its neighbour rather than its
+       diagonal opposite. */
+    left: calc(max(12px, env(safe-area-inset-left)) + 56px);
+  }
+  /* Pinned 56px in from the left edge now, so its fixed 268px could run off a
+     narrow screen. */
+  #bin-panel { width: min(268px, calc(100vw - 84px)); max-height: min(60vh, 420px); }
+
+  #corner {
+    bottom: max(12px, env(safe-area-inset-bottom));
+    right: max(12px, env(safe-area-inset-right));
+  }
+  /* The readout can afford to be tighter than it is on a desktop: there is no
+     room for 58px of it, and the + and - shifting by a few pixels as the zoom
+     crosses 100% matters less than the whole bar fitting. */
+  #zoom-level { min-width: 46px; }
+
+  /* The coordinate readout is the first thing to go. It is a thing to glance
+     at while working with a mouse, and there is no cursor to report. */
+  #hud { display: none; }
+
+  /* The panel becomes the screen rather than a sheet laid on it. At this width
+     the board behind it is not usable anyway, and half a panel is worse than a
+     whole one. It keeps the inset at the top so the notch does not eat the
+     title, and it stops short of the bar so the menu button it came from is
+     still visible underneath. */
+  #sidebar {
+    top: max(10px, env(safe-area-inset-top));
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + 58px);
+    left: max(10px, env(safe-area-inset-left));
+    right: max(10px, env(safe-area-inset-right));
+    width: auto;
+  }
+  /* A flick that runs off the end of the panel would otherwise carry on into
+     the page behind it, which on a phone is the browser's own overscroll. */
+  .side-body { overscroll-behavior: contain; }
+
+  /* The find palette is a desktop-width strip; here it wants the width it can
+     get, and to sit higher up so the keyboard does not cover its own results. */
+  #search {
+    top: max(10px, env(safe-area-inset-top));
+    left: 10px;
+    right: 10px;
+    width: auto;
+    /* The centring is a `translate`, not a `transform` - cancelling the wrong
+       one of those leaves the palette half a screen to the left. */
+    translate: none;
+  }
+}
+
+/* Landscape on a phone: the bar is still at the bottom but there is barely any
+   bottom to put it in, so the panel gives up the inset and takes the height. */
+@media (max-width: 900px) and (max-height: 480px) {
+  #sidebar { top: 6px; bottom: 6px; }
+  .side-head { padding: 10px 14px 8px; }
 }
 
 /* ---------------------------------------------------------

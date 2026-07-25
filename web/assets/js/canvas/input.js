@@ -27,6 +27,10 @@ import { gridStep } from './grid.js';
 import { noteFloor } from './notes.js';
 
 const DRAG_SLOP = 3;      // screen px before a press becomes a drag
+// How long a finger has to rest before the press means "show me the menu".
+// Long enough not to fire on a slow tap, short enough to feel deliberate;
+// it is the interval both mobile platforms use for the same gesture.
+const LONG_PRESS_MS = 480;
 
 // MIN_SIZE and MAX_SIZE are the resize limits, in world units, and they live in
 // geometry.js - a resize handle stopped being the only thing that sets a size
@@ -51,6 +55,14 @@ export function initInput(vp, cmds) {
   // old behaviour rather than guessing.
   let hover = null;
   let copiedFrom = null;
+  // A long press is the touch equivalent of a right-click, and without it the
+  // context menu is unreachable with a finger - which is where duplicate,
+  // delete, send to back and rename live. Held here rather than inside the
+  // gesture, because it has to survive the gesture being replaced (a second
+  // finger arriving) and be cancelled by it.
+  let pressTimer = 0;
+  let pressAt = null;
+  const cancelPress = () => { clearTimeout(pressTimer); pressTimer = 0; pressAt = null; };
 
   // ---- helpers ----------------------------------------------------------
 
@@ -200,6 +212,7 @@ export function initInput(vp, cmds) {
 
     // A second finger always converts the gesture into a pinch.
     if (pointers.size === 2) {
+      cancelPress();
       abortGesture();
       const [a, b] = [...pointers.values()];
       g = {
@@ -246,6 +259,23 @@ export function initInput(vp, cmds) {
       if (selection.size) clearSelection();
       startPan(e);
     }
+
+    // Armed after the gesture, so the early returns above - a widget claiming
+    // the press, a second finger - never reach it. It waits out the whole
+    // duration and then checks that the press is still a press: a drag cancels
+    // it from pointermove, and lifting cancels it from endPointer.
+    if (e.pointerType === 'touch' && pointers.size === 1) {
+      pressAt = { x: e.clientX, y: e.clientY, id };
+      pressTimer = setTimeout(() => {
+        const p = pressAt;
+        cancelPress();
+        if (!p) return;
+        // Whatever the finger had started - a move, a pan, a marquee - it was
+        // not that. Dropped rather than committed, since nothing moved.
+        abortGesture();
+        openMenuAt(p.x, p.y, p.id);
+      }, LONG_PRESS_MS);
+    }
     setPanCursor();
   });
 
@@ -256,6 +286,9 @@ export function initInput(vp, cmds) {
     if (e.pointerType !== 'touch') hover = { x: e.clientX, y: e.clientY };
     if (!pointers.has(e.pointerId)) return;
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    // A finger that has travelled is dragging, not pressing. The same slop the
+    // move gesture uses, so the two agree about when a press has become a drag.
+    if (pressAt && Math.hypot(e.clientX - pressAt.x, e.clientY - pressAt.y) > DRAG_SLOP) cancelPress();
     if (!g) return;
 
     if (g.kind === 'pinch') {
@@ -368,6 +401,7 @@ export function initInput(vp, cmds) {
   });
 
   const endPointer = e => {
+    cancelPress();
     pointers.delete(e.pointerId);
     if (el.hasPointerCapture?.(e.pointerId)) el.releasePointerCapture(e.pointerId);
     if (!g) return;
@@ -612,11 +646,14 @@ export function initInput(vp, cmds) {
   // and the browser's menu can't express any of them.
   el.addEventListener('contextmenu', e => {
     e.preventDefault();
-    const id = itemIdFromEvent(e.target);
-    // Right-clicking outside the selection retargets it, the way every file
-    // manager behaves; right-clicking inside one leaves the group intact.
+    openMenuAt(e.clientX, e.clientY, itemIdFromEvent(e.target));
+  });
+
+  function openMenuAt(x, y, id) {
+    // Opening outside the selection retargets it, the way every file manager
+    // behaves; opening inside one leaves the group intact.
     if (id && !selection.has(id)) select([id]);
     if (!id) clearSelection();
-    cmds.contextMenu(e.clientX, e.clientY, id, selection.size);
-  });
+    cmds.contextMenu(x, y, id, selection.size);
+  }
 }
