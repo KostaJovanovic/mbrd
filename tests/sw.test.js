@@ -38,6 +38,19 @@ const shellUrls = (() => {
 /** ...minus the bare navigation entry, which is not a file on disk. */
 const shell = shellUrls.filter(p => p !== './');
 
+/**
+ * The one thing that ships and is deliberately *not* precached.
+ *
+ * The 90s skin is behind the Konami code and pulls four typefaces and a
+ * wallpaper with it - about 450KB for an easter egg most boards will never
+ * find. So ui/konami.js appends the <link> at the moment the code lands and
+ * the sheet is fetched then, which also means the skin does not work offline
+ * until it has been turned on once. That is the trade, and it is written here
+ * rather than left as a hole in the list, so that a file appearing in this set
+ * is a decision somebody made rather than one somebody forgot.
+ */
+const ON_DEMAND = new Set(['assets/css/skin90.css']);
+
 test('SHELL lists every asset that ships', () => {
   const onDisk = [
     ...walk(join(WEB, 'assets', 'js'), ['.js']),
@@ -45,8 +58,16 @@ test('SHELL lists every asset that ships', () => {
     ...walk(join(WEB, 'assets', 'fonts'), ['.woff2']),
   ];
   const listed = new Set(shell.map(p => p.replace(/^\.\//, '')));
-  const missing = onDisk.filter(f => !listed.has(f));
+  const missing = onDisk.filter(f => !listed.has(f) && !ON_DEMAND.has(f));
   assert.deepEqual(missing, [], `not precached, so unavailable offline:\n  ${missing.join('\n  ')}`);
+});
+
+test('nothing in the shell is also marked on-demand', () => {
+  // The two lists disagreeing would mean a file both is and is not part of the
+  // offline app, and the exemption above quietly doing nothing.
+  const listed = new Set(shell.map(p => p.replace(/^\.\//, '')));
+  const both = [...ON_DEMAND].filter(f => listed.has(f));
+  assert.deepEqual(both, [], 'precached and exempted at once');
 });
 
 test('SHELL has no entries pointing at files that are gone', () => {
