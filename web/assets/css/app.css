@@ -133,8 +133,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
   cursor: grab;
   user-select: none;
   -webkit-user-select: none;
-  outline: 0 solid var(--select);
-  outline-offset: calc(var(--sel-gap) * var(--iz));
+  /* How far the selection ring's *outer* edge sits from the item box. The ring
+     and the corner marks are both placed off this one number, so they cannot
+     drift apart. */
+  --sel-edge: calc((var(--sel-gap) + var(--sel-line)) * var(--iz));
   /* The lift and the tilt are zero at the plain end of the whimsy axis, so the
      same declaration covers "springs up to meet you" and "does not move". */
   translate: 0 calc(var(--lift) * var(--iz));
@@ -143,8 +145,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   --lift: 0px;
   --tilt: 0deg;
   --grow: 1;
-  transition: outline-width var(--dur-fast) var(--ease),
-              box-shadow var(--dur-base) var(--ease),
+  transition: box-shadow var(--dur-base) var(--ease),
               translate var(--dur-base) var(--ease-back),
               rotate var(--dur-base) var(--ease-back),
               scale var(--dur-base) var(--ease-back);
@@ -163,7 +164,27 @@ button, input, select, textarea { font: inherit; color: inherit; }
   --tilt: var(--tilt-drag);
   --grow: var(--grow-hover);
 }
-.item.is-selected { outline-width: calc(var(--sel-line) * var(--iz)); }
+/* The selection ring, drawn rather than outlined.
+   `outline` would be the obvious tool and is the wrong one: engines disagree
+   about whether outline-offset grows the outline's corner radius along with
+   it. Firefox keeps the element's radius, Blink adds the offset - so a ring
+   and a corner mark computed from the same numbers still came out as two
+   different curves, doubling visibly at every corner. A border on a
+   pseudo-element has one interpretation everywhere.
+   The box's outer edge is --sel-edge out from the item and the border grows
+   inwards from it, so the ring occupies exactly --sel-gap to --sel-edge - and
+   its radius is the item's own, offset by the same amount, which is the same
+   expression the corner marks use. */
+.item::before {
+  content: '';
+  position: absolute;
+  inset: calc(-1 * var(--sel-edge));
+  border: 0 solid var(--select);
+  border-radius: calc(var(--own-radius) + var(--sel-edge));
+  pointer-events: none;
+  transition: border-width var(--dur-fast) var(--ease);
+}
+.item.is-selected::before { border-width: calc(var(--sel-line) * var(--iz)); }
 
 .item-body {
   position: absolute;
@@ -336,13 +357,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
    size on screen and remain grabbable at any zoom instead of shrinking away.
 
    The grip itself is an invisible hit area; the only thing drawn is a heavier
-   stretch of the selection outline at each corner. */
+   stretch of the selection ring at each corner - see .item::before, which the
+   marks share their geometry with. */
 .grip {
   position: absolute;
-  /* How far the selection outline's *outer* edge sits from the item box. Every
-     handle is placed off this one number, so the marks land on the outline
-     however the whimsy axis has set it. */
-  --sel-edge: calc((var(--sel-gap) + var(--sel-line)) * var(--iz));
   width:  calc(var(--sel-reach) * var(--iz));
   height: calc(var(--sel-reach) * var(--iz));
   display: none;
@@ -351,13 +369,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .item.is-selected .grip { display: block; }
 #world.zoom-far .grip { display: none; }
 
-/* The corner mark. Not a separate line near the outline - the *same* line,
-   drawn heavier for a stretch either side of each corner.
-   The outline's outer edge sits (--sel-gap + --sel-line) out from the item, so
-   this box is inset by exactly that much and its border grows inwards from the
-   same edge. The two are flush, and a corner reads as the outline swelling.
-   Only the two outward-facing borders are drawn; the inward pair would close
-   it into a box floating around the handle. */
+/* The corner mark. Not a separate line near the ring - the *same* line, drawn
+   heavier for a stretch either side of each corner.
+   The ring's outer edge sits --sel-edge out from the item, so this box is
+   inset by exactly that much and its border grows inwards from the same edge,
+   over the same radius. The two are flush, and a corner reads as the ring
+   swelling. Only the two outward-facing borders are drawn; the inward pair
+   would close it into a box floating around the handle. */
 .grip:not(.grip-edge)::after {
   content: '';
   position: absolute;
@@ -391,7 +409,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 
 /* Straddling the corner: the box's outer corner lands exactly on the
-   outline's, so the drawn mark and the grab area are the same place. */
+   ring's, so the drawn mark and the grab area are the same place. */
 .grip[data-g="nw"] { left:  calc(-1 * var(--sel-edge)); top:    calc(-1 * var(--sel-edge)); cursor: nwse-resize; }
 .grip[data-g="ne"] { right: calc(-1 * var(--sel-edge)); top:    calc(-1 * var(--sel-edge)); cursor: nesw-resize; }
 .grip[data-g="sw"] { left:  calc(-1 * var(--sel-edge)); bottom: calc(-1 * var(--sel-edge)); cursor: nesw-resize; }
@@ -399,7 +417,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* Edge handles are invisible strips running between the corners. Drawing them
    would put eight marks around a small item and make the selection read as a
-   dotted outline; leaving them bare keeps the corners as the only marks while
+   dotted ring; leaving them bare keeps the corners as the only marks while
    the sides are still grabbable. They stop short of the corners so a corner
    drag is never stolen by the edge next to it. */
 .grip-edge { background: none; }
@@ -577,13 +595,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
               transform var(--dur-base) var(--ease-back),
               color var(--dur-fast) var(--ease);
 }
+/* Every control reacts by the same budget, set by the whimsy axis: it springs
+   towards you on hover and squashes under a press at the playful end, and does
+   neither at the plain end, without either end needing its own rule. */
 .btn-row button:hover {
   background: var(--paper-2);
   border-color: var(--accent);
   color: var(--accent-deep);
-  transform: translateY(-1px);
+  transform: translateY(var(--btn-lift)) scale(var(--btn-grow));
 }
-.btn-row button:active { transform: translateY(0) scale(0.985); background: var(--paper-3); }
+.btn-row button:active { transform: scale(var(--btn-press)); background: var(--paper-3); }
 .btn-row button.primary {
   background: var(--accent);
   border-color: var(--accent-deep);
@@ -802,11 +823,12 @@ kbd {
 #zoom-ctl button:disabled { color: var(--ink-3); cursor: default; background: none; }
 #zoom-ctl svg {
   width: 15px; height: 15px;
-  /* The glyph takes the press, not the button: scaling the button itself would
-     drag the hairline dividers between them around. */
-  transition: transform var(--dur-fast) var(--ease);
+  /* The glyph takes the reaction, not the button: scaling the button itself
+     would drag the hairline dividers between them around. */
+  transition: transform var(--dur-base) var(--ease-back);
 }
-#zoom-ctl button:active:not(:disabled) svg { transform: scale(0.8); }
+#zoom-ctl button:hover:not(:disabled) svg { transform: scale(var(--btn-grow)) translateY(var(--btn-lift)); }
+#zoom-ctl button:active:not(:disabled) svg { transform: scale(calc(var(--btn-press) - 0.08)); }
 /* The readout doubles as the reset-to-100% button, so it needs to be wide
    enough that 12% and 1600% don't shove the + and - around as you zoom. */
 #zoom-level {
