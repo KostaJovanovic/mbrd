@@ -1,10 +1,10 @@
-/* mbrd - service worker
+﻿/* mbrd - service worker
    Precaches the app shell so the board works with no network at all, which is
    the point: everything already runs locally, the only thing a reload needs is
    the shell itself. Boards live in IndexedDB and in .mbrd files - the SW never
    touches user data. */
 
-const VERSION = 'mbrd-v0';
+const VERSION = 'mbrd-v9';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) turns the
 // SW into a pass-through, so a single refresh always shows the latest edit and
