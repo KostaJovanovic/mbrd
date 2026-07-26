@@ -187,11 +187,16 @@
 }
 /* The caption sits outside the picture rather than over it, small and in the
    mid blue - the one real difference from how mbrd draws a label. */
-:root[data-skin="90s"] .item-label {
-  position: static;
+:root[data-skin="90s"] .item-bar {
   background: none;
   backdrop-filter: none;
   border-top: 0;
+}
+/* Long-winded on purpose: the rule that draws this divider tests the caption
+   with :has(), whose argument counts towards specificity, and a shorter
+   selector here loses to it however late it is loaded. */
+:root[data-skin="90s"] .item .item-bar .item-menu { border-left: 0; }
+:root[data-skin="90s"] .item-label {
   padding: 3px 0 0;
   font-size: 0.75em;
   color: var(--ink-3);
