@@ -100,6 +100,13 @@ function itemEntries(id, count, at) {
     { sep: true, hidden: !editable && !renamable && !coverable && !flippable && !turnable },
     { label: 'Bring to front', action: () => cmds.raise() },
     { label: 'Send to back', action: () => cmds.lower() },
+    // The way back from a corner dragged too far. With the stacking pair rather
+    // than in the group above, because those are all edits to what a card *is*
+    // and this is one to how it sits on the board - the same kind of thing as
+    // raising it or zooming to it. Works on a group: unlike renaming or setting
+    // a picture, "put these back to their own size" means one thing for nine
+    // cards as clearly as for one.
+    { label: many ? `Reset ${count} sizes` : 'Reset size', action: () => cmds.resetSize() },
     { sep: true },
     { label: `Duplicate ${what}`, accel: 'Ctrl D', action: () => cmds.duplicate() },
     { label: 'Zoom to it', accel: 'dbl-click', action: () => cmds.zoomToSelection(), hidden: many },

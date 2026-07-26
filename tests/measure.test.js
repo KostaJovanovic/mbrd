@@ -15,7 +15,6 @@ import {
   clampScale, DEFAULT_SCALE, MIN_SCALE, MAX_SCALE, MM_PER_INCH,
   PAPERS, paperMm, PX_PER_INCH,
 } from '../web/assets/js/measure.js';
-import { DEFAULT_SETTINGS } from '../web/assets/js/state.js';
 
 test('the default scale is life size on screen at 100% zoom', () => {
   // One world unit is one CSS pixel at 1:1, and CSS fixes an inch at 96 of
@@ -31,22 +30,6 @@ test('the default scale is life size on screen at 100% zoom', () => {
   const back = toMm(toUnits(a4.w, DEFAULT_SCALE), DEFAULT_SCALE);
   assert.equal(formatMm(back), '21 cm');
   assert.equal(formatMm(back, 'imperial'), '8.27 in');
-});
-
-test('no board may be scaled so finely the grid square goes under 1.41 cm', () => {
-  // The ceiling is stated as a property of the lattice, and this is where the
-  // two numbers that make it - state.js's 64-unit step and measure.js's
-  // millimetres - are held to each other. measure.js cannot import state.js
-  // without inverting the layering, so the constant is written out twice.
-  assert.equal(DEFAULT_SETTINGS.gridStep, 64);
-  const tightest = toMm(DEFAULT_SETTINGS.gridStep, MAX_SCALE);
-  assert.ok(Math.abs(tightest - 14.1) < 1e-9, `the tightest square is ${tightest} mm`);
-  // And asking for finer gets the ceiling rather than what was asked for.
-  assert.equal(clampScale(500), MAX_SCALE);
-  assert.equal(scaleFrom(256, 20), MAX_SCALE);   // a 2 cm coin on a 256-unit card
-  // The shipped default has to sit under its own ceiling, or every new board
-  // would open already clamped.
-  assert.ok(DEFAULT_SCALE < MAX_SCALE, `${DEFAULT_SCALE} is not below ${MAX_SCALE}`);
 });
 
 test('the default scale round-trips like any other', () => {

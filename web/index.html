@@ -109,23 +109,6 @@
         <button type="button" data-cmd="add-files">Add files</button>
         <button type="button" data-cmd="add-note">Write a note</button>
       </div>
-      <!-- The one import setting, folded away because it is off and stays off
-           for anybody who does not go looking. See import/lastfm.js: no key
-           means no request, ever. -->
-      <details class="advanced">
-        <summary>Missing album art</summary>
-        <p class="hint">
-          Audio usually carries its own cover. When it does not, mbrd can ask
-          Last.fm for one - the artist and album name go out, nothing else, and
-          only if you put a key here. Everything else in mbrd stays offline
-          either way.
-        </p>
-        <label class="field">
-          <span>Last.fm API key<output id="lastfm-state"></output></span>
-          <input id="opt-lastfm" type="text" maxlength="64" placeholder="Blank: never ask"
-                 autocomplete="off" spellcheck="false" aria-label="Last.fm API key">
-        </label>
-      </details>
     </section>
 
 

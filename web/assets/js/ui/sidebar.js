@@ -7,7 +7,6 @@ import { VERSION } from '../version.js';
 import { el, readPref, writePref } from '../util.js';
 import { itemBounds } from '../geometry.js';
 import { toUnits, formatLength, paperMm, PAPERS } from '../measure.js';
-import { lastfmKey, setLastfmKey } from '../import/lastfm.js';
 
 let sidebar, menuBtn;
 
@@ -55,7 +54,6 @@ export function initSidebar(cmds) {
 
   wirePaper();
   wireScale();
-  wireLastfm();
   wireTitle();
 
   el('version').textContent = 'v' + VERSION;
@@ -129,41 +127,6 @@ function wirePaper() {
 function wireScale() {
   const units = el('opt-units');
   units.addEventListener('change', () => setSetting('units', units.value));
-}
-
-/**
- * The Last.fm key, and the only feedback it can honestly give.
- *
- * It says whether the key is the right *shape* - 32 hex characters - and never
- * whether it works, because finding that out means making a request, and making
- * a request to check whether we are allowed to make requests is the thing this
- * setting exists to stop happening by itself. The first import that needs it is
- * where a wrong key shows up, and it shows up as a card with no cover, which is
- * the card it would have been anyway.
- *
- * Not part of the board and not in `settings`: a key is a credential, a .mbrd
- * is a file you hand to somebody, and those two facts settle where it lives.
- */
-function wireLastfm() {
-  const field = el('opt-lastfm');
-  field.value = lastfmKey();
-  const state = el('lastfm-state');
-  const paintState = () => {
-    const raw = field.value.trim();
-    state.textContent = !raw ? '' : lastfmKey() === raw ? 'saved' : 'not a key';
-  };
-  paintState();
-  field.addEventListener('change', () => {
-    setLastfmKey(field.value);
-    // Rewritten from what was stored rather than left as typed, so a key that
-    // failed the shape test does not sit in the box looking accepted.
-    field.value = lastfmKey();
-    paintState();
-  });
-  field.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); field.blur(); }
-    else if (e.key === 'Escape') { field.value = lastfmKey(); paintState(); }
-  });
 }
 
 /**
