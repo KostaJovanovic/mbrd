@@ -148,7 +148,7 @@
 :root[data-skin="90s"] #bin-btn,
 :root[data-skin="90s"] #bin-empty,
 :root[data-skin="90s"] #zoom-ctl button,
-:root[data-skin="90s"] .yt-play {
+:root[data-skin="90s"] .embed-go {
   border: 2px outset var(--paper-3);
   background: var(--paper-3);
   color: var(--ink);
@@ -158,7 +158,7 @@
 :root[data-skin="90s"] #menu-btn:active,
 :root[data-skin="90s"] #bin-btn:active,
 :root[data-skin="90s"] #zoom-ctl button:active,
-:root[data-skin="90s"] .yt-play:active {
+:root[data-skin="90s"] .embed-go:active {
   border-style: inset;
   background: var(--paper-card);
 }

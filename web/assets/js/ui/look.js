@@ -30,6 +30,7 @@
 export const TOKENS = new Set([
   '--accent', '--accent-deep', '--accent-fg', '--accent-warm',
   '--btn-grow', '--btn-lift', '--btn-press', '--card-rule-gap',
+  '--chrome-button-h', '--chrome-button-touch', '--chrome-button-w',
   '--danger', '--density', '--display-italic', '--dur-base',
   '--dur-fast', '--dur-palette', '--dur-travel', '--dur-zoom', '--ease', '--ease-back',
   '--font-body', '--font-display', '--font-mono', '--grid-alpha',
@@ -42,7 +43,8 @@ export const TOKENS = new Set([
   '--paper', '--paper-2', '--paper-3', '--paper-card', '--radius',
   '--radius-sm', '--radius-xs', '--rule', '--rule-2', '--sel-corner',
   '--sel-gap', '--sel-line', '--sel-reach', '--select', '--select-fill',
-  '--shadow-1', '--shadow-2', '--sidebar-w', '--stock', '--t-body',
+  '--shadow-1', '--shadow-2', '--sheet-fill', '--sheet-grip', '--sheet-line',
+  '--sidebar-w', '--stock', '--t-body',
   '--t-display', '--t-small', '--t-tiny', '--t-title', '--tilt-drag',
   '--tilt-max', '--wash', '--web-line', '--web-weight',
 ]);

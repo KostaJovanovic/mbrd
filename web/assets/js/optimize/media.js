@@ -1,4 +1,14 @@
-// Sound and moving pictures, through ffmpeg.
+// Moving pictures, through ffmpeg.
+//
+// Sound used to come through here too and no longer does: the browser can
+// encode Opus by itself, and the only thing it was missing was a container, so
+// opus.js writes one. Demuxing an MP4 is a much larger problem than muxing an
+// Ogg, so video is still ffmpeg's - but that means a board of photographs and
+// music now optimises with nothing downloaded at all, and this module is only
+// woken by a board that actually has a clip on it.
+//
+// It stays the audio path's fallback for a browser with no WebCodecs, which in
+// practice means one old enough that this is a theoretical case.
 //
 // This is the one place in the whole app that depends on somebody else's code,
 // and it is written to keep that fact contained:
@@ -8,9 +18,9 @@
 //     first third-party request in an app whose first promise is that nothing
 //     leaves the machine, and it would put the feature behind a network.
 //   - it is **loaded on demand**. Nothing here is touched until somebody
-//     presses Optimize on a board that actually has sound or video on it, and
-//     it is deliberately *not* in sw.js's SHELL: thirty megabytes has no
-//     business in the cache of an app that is otherwise under two.
+//     presses Optimize on a board that actually has video on it, and it is
+//     deliberately *not* in sw.js's SHELL: thirty megabytes has no business in
+//     the cache of an app that is otherwise under two.
 //   - it is **single-threaded**. The threaded core needs SharedArrayBuffer,
 //     which needs COOP/COEP, which would break the YouTube embeds - the one
 //     third-party thing the app does offer, and only on request. Slower and
@@ -18,9 +28,9 @@
 //   - it runs in a **worker**. A single-threaded encoder on the main thread is
 //     a frozen board for the length of a song.
 //
-// Everything degrades to "left alone": if the files are not there, sound and
-// video are skipped, the pictures still shrink, and the dialog says so before
-// anything starts.
+// Everything degrades to "left alone": if the files are not there, video is
+// skipped, the pictures and the sound still shrink, and the dialog says so
+// before anything starts.
 
 /** Where the core lives, relative to the page. */
 const CORE_DIR = './assets/vendor/ffmpeg/';

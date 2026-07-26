@@ -30,15 +30,62 @@ const RAD = Math.PI / 180;
  * 48 is where the eight resize grips stop fitting around a box - below it the
  * corners overlap, the edge strips collapse, and an item dragged down to a
  * speck could never be dragged back out. It is still well under half a note
- * (120x120) and a third of the shortest default card (250x140), so a
- * deliberate shrink never runs into it.
+ * (120x120) and under half the short side of the smallest default card
+ * (200x112), so a deliberate shrink never runs into it.
  *
- * 20000 is eighty default cards wide - far past anything a board wants, while
+ * 20000 is a hundred default cards wide - far past anything a board wants, while
  * still spanning 400 screen pixels at the furthest zoom out, so even an item
  * used as a deliberate backdrop stays inside it.
  */
 export const MIN_SIZE = 48;
 export const MAX_SIZE = 20000;
+
+/**
+ * How much of a cell a snapped item gives back, so that two of them side by side
+ * have a seam between them instead of meeting.
+ *
+ * A board laid exactly on the lattice is a board where every neighbour touches:
+ * the cell boundary is one line, and an item on each side of it fills right up
+ * to it, so two photographs read as one wide photograph with a crease. The fix
+ * is not to move anything - positions stay on the lattice, which is the whole
+ * point of snapping - but to leave a sliver of each cell unpainted.
+ *
+ * A fraction of the step rather than a fixed distance, because the step is not
+ * fixed: it doubles and halves with the zoom and the user can set the base. At
+ * 8% the seam is a shade under a fifth of the smallest gap between two cards a
+ * layout would leave, which is small enough to read as a join rather than as
+ * space, and it stays that way at every step size.
+ */
+export const CELL_GAP = 0.08;
+
+/**
+ * A box laid on the lattice: low edges on lines, sides a whole number of cells
+ * less the seam above.
+ *
+ * The one place this arithmetic lives. Both callers need exactly it - state.js
+ * when snapping is switched on and the whole board is laid out at once, and
+ * canvas/input.js on every gesture that has to keep it that way - and they
+ * differ only in the step they pass: the base step for geometry that is being
+ * stored, the on-screen step for something being dragged against the dots.
+ *
+ * Sizes are clamped, and a clamp can cost the box its whole number of cells.
+ * That is accepted rather than worked around: the limits are absolute and the
+ * lattice is a preference, and an item at either limit is far outside the range
+ * where sitting flush in a cell is what anybody is looking at.
+ */
+export function latticeBox(box, step) {
+  const gap = step * CELL_GAP;
+  const side = v => {
+    const cells = Math.max(Math.round((v + gap) / step), 1);
+    return Math.min(Math.max(cells * step - gap, MIN_SIZE), MAX_SIZE);
+  };
+  const w = side(box.w), h = side(box.h);
+  return {
+    x: Math.round((box.x - box.w / 2) / step) * step + w / 2,
+    y: Math.round((box.y - box.h / 2) / step) * step + h / 2,
+    w, h,
+  };
+}
 
 /**
  * Half-extents of the axis-aligned box that contains a rotated item.
@@ -94,6 +141,58 @@ export function itemInRect(it, x0, y0, x1, y1) {
   const { hw, hh } = rotatedExtents(it);
   return it.x + hw >= x0 && it.x - hw <= x1 &&
          it.y + hh >= y0 && it.y - hh <= y1;
+}
+
+/**
+ * Where a point sits relative to a rectangle, as four bits.
+ *
+ * Cohen and Sutherland's, from 1967, and still the cheapest way to ask this:
+ * one comparison per edge, and the answers compose. Two codes ORed to nothing
+ * means both ends are inside; two codes ANDed to anything means both ends are
+ * beyond the same edge, and a straight line between them cannot have visited
+ * the rectangle in between.
+ */
+const OUT_LEFT = 1, OUT_RIGHT = 2, OUT_BELOW = 4, OUT_ABOVE = 8;
+
+const outcode = (x, y, r) =>
+  (x < r.x0 ? OUT_LEFT : x > r.x1 ? OUT_RIGHT : 0) |
+  (y < r.y0 ? OUT_BELOW : y > r.y1 ? OUT_ABOVE : 0);
+
+/**
+ * Does the segment a-b touch the rectangle `r` ({x0,y0,x1,y1})?
+ *
+ * Exact, where the obvious test - does the segment's bounding box meet the
+ * rectangle - is not. The two agree on everything axis-aligned and part company
+ * on the diagonal, which is the case that matters: a thread from one corner of
+ * a board to the other has a bounding box covering the whole board, so it
+ * passes a box test from every view there is while actually crossing almost
+ * none of them.
+ *
+ * The loop is the classic clip, stopped one step early. Each turn takes an
+ * endpoint that is outside, moves it onto the edge it is outside of, and asks
+ * again; an endpoint can be outside on at most two edges, so this settles in
+ * four turns at the very worst. The clipped points are thrown away - the
+ * question here is only whether anything survived.
+ *
+ * No division by zero. The vertical branches are reached only when exactly one
+ * endpoint is above or below, which cannot happen with both ends at the same y
+ * - that case has already left through the shared-edge rejection.
+ */
+export function segmentMeetsRect(a, b, r) {
+  let x0 = a.x, y0 = a.y, x1 = b.x, y1 = b.y;
+  let c0 = outcode(x0, y0, r), c1 = outcode(x1, y1, r);
+  for (;;) {
+    if (!(c0 | c1)) return true;
+    if (c0 & c1) return false;
+    const out = c0 || c1;
+    let x, y;
+    if (out & OUT_ABOVE)      { x = x0 + (x1 - x0) * (r.y1 - y0) / (y1 - y0); y = r.y1; }
+    else if (out & OUT_BELOW) { x = x0 + (x1 - x0) * (r.y0 - y0) / (y1 - y0); y = r.y0; }
+    else if (out & OUT_RIGHT) { y = y0 + (y1 - y0) * (r.x1 - x0) / (x1 - x0); x = r.x1; }
+    else                      { y = y0 + (y1 - y0) * (r.x0 - x0) / (x1 - x0); x = r.x0; }
+    if (out === c0) { x0 = x; y0 = y; c0 = outcode(x0, y0, r); }
+    else            { x1 = x; y1 = y; c1 = outcode(x1, y1, r); }
+  }
 }
 
 /**

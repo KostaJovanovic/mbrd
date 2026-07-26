@@ -128,6 +128,32 @@ Anything that would throw away unsaved work — **New**, or opening another boar
 Escape, the backdrop and Cancel are all the harmless answer, and the harmless
 one is what has focus when it opens.
 
+### Making a board smaller
+
+**Optimize…** in the sidebar trims a board down to what a board actually needs.
+Nothing about it is automatic: it is a button, it tells you what it is about to
+do and what it weighs, and it is one undo away from being taken back.
+
+Pictures are capped at 1200px on the long side and rewritten as WebP. Sound
+becomes Opus at 96 kbit/s, keeping its tags and its album art. A 13 MB FLAC
+comes out around 1.8 MB and still sounds like the record on a board; a 3 MB
+photograph drawn on a 300px card comes out under 100 KB. Nothing is touched
+unless it gets at least ten percent smaller, because a re-encode that saves four
+percent has still spent a generation of quality on a rounding error. Animated
+GIFs, SVGs and anything already efficient are left exactly alone.
+
+Both of those are the browser's own codecs — a canvas writes the WebP, and
+WebCodecs plus a hand-written Ogg muxer writes the Opus — so this works offline
+with nothing downloaded. Video is the exception: shrinking one needs ffmpeg, and
+ffmpeg is 30 MB of vendored WebAssembly that is deliberately not part of the app
+shell. Until it is there, video is skipped and the dialog says so.
+
+The originals stay in the browser under `meta.was` until you discard them, which
+is what makes the undo real rather than nominal — but they are stripped from an
+export, so a `.mbrd` written after optimising carries only the small files.
+**Discard originals** is its own question, because it is the one part of this
+that cannot be taken back.
+
 ### Keeping boards in a synced folder
 
 There is no sign-in and no cloud account, and there does not need to be. Export

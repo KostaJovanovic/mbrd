@@ -18,7 +18,7 @@
 // side also runs on a debounce after every edit, so an unsaved board survives
 // a closed tab regardless.
 
-import { toast, isDev, itemHashes } from '../util.js';
+import { toast, busy, isDev, itemHashes, clearPrefs } from '../util.js';
 import {
   board, serializeBoard, loadBoard, markDirty, isDirty, setTitle, bus,
 } from '../state.js';
@@ -110,16 +110,27 @@ export async function exportBoard({ pickNew = false } = {}) {
     }
     if (picking) setTitle(stripExt(fileHandle.name));
 
-    const data = serializeBoard();
-    const { blob, manifest } = await packBoard(data, { created });
-    created = manifest.created;
+    // Everything past the picker is the slow half - deflating every asset on
+    // the board into one archive - and on a board of video it is a long slow
+    // half with no other sign of life. The strip goes up after the picker on
+    // purpose: while that dialog is open the app is waiting on a person, not
+    // on itself, and saying "working" over a file browser would be a lie.
+    const job = busy('Packing the board');
+    try {
+      const data = serializeBoard();
+      const { blob, manifest } = await packBoard(data, { created });
+      created = manifest.created;
 
-    if (picking) {
-      const writable = await fileHandle.createWritable();
-      await writable.write(blob);
-      await writable.close();
-    } else {
-      download(blob, fileNameFor(data.title));
+      if (picking) {
+        job.label('Writing the file');
+        const writable = await fileHandle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+      } else {
+        download(blob, fileNameFor(data.title));
+      }
+    } finally {
+      job.end();
     }
 
     // Exporting is also a save: the bytes are on disk now, and telling someone
@@ -210,14 +221,19 @@ export async function openFile(file, handle = null) {
     // object URLs revoked, the new file's bytes registered, and the old items
     // still on screen pointing at nothing. Now nothing is committed until the
     // board itself is in.
-    return await withFreshAssets(async () => {
-      const { manifest, board: data } = await unpackBoard(file);
-      loadBoard({ ...data, title: data.title || stripExt(file.name) });
-      fileHandle = handle;
-      created = manifest.created || null;
-      toast('Opened ' + file.name);
-      return true;
-    });
+    const job = busy('Opening ' + file.name);
+    try {
+      return await withFreshAssets(async () => {
+        const { manifest, board: data } = await unpackBoard(file);
+        loadBoard({ ...data, title: data.title || stripExt(file.name) });
+        fileHandle = handle;
+        created = manifest.created || null;
+        toast('Opened ' + file.name);
+        return true;
+      });
+    } finally {
+      job.end();
+    }
   } catch (err) {
     console.error(err);
     toast('Could not open that file: ' + err.message, 'error');
@@ -351,7 +367,7 @@ async function confirmDiscard(what) {
     const answer = await ask({
       title: 'Unsaved changes',
       body: `This board has changes that are not in a file. ${what} will discard them.`,
-      keep: 'Export first…',
+      keep: 'Export first',
       cancel: 'Cancel',
       go: 'Discard',
     });
@@ -373,11 +389,41 @@ let cacheOk = true;
 /** Whether the "some bytes are missing" toast has already been shown. */
 let warnedIncomplete = false;
 
-/** Debounced snapshot of the board + any assets not already cached. */
+/**
+ * Debounced snapshot of the board + any assets not already cached.
+ *
+ * Announces itself on the way out, and only when the save answered something
+ * the user did. Two gates, because there are two ways to save nothing worth
+ * mentioning:
+ *
+ * `isDirty` catches the clean board - panning about emits 'view', which is
+ * snapshotted so the board reopens where you left it, and is not an edit.
+ *
+ * `quiet` catches the load. A board arriving emits 'board:load', which arms
+ * this like anything else - and a session restored from IndexedDB comes back
+ * carrying the dirty flag it went down with, so the first gate lets it through
+ * and every visit would open by announcing a save of a board nobody had
+ * touched. One suppressed snapshot per board is the whole of it.
+ *
+ * Nothing is said about a failure here. autosave() already toasts the two ways
+ * it can go wrong, and both are loud - a quiet mark in the corner going quietly
+ * absent is not how you tell someone their board is not being kept.
+ */
+let quiet = true;
+const hushNextSave = () => { quiet = true; };
+
 function scheduleAutosave() {
   if (!cacheOk) return;
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => { autosave().catch(() => {}); }, 1200);
+  saveTimer = setTimeout(async () => {
+    // Read before the write: a save that finds nothing missing leaves the flag
+    // exactly as it was, so there would be nothing left to read afterwards.
+    const had = isDirty();
+    const announce = had && !quiet;
+    quiet = false;
+    const ok = await autosave().catch(() => false);
+    if (ok && announce) bus.emit('autosaved');
+  }, 1200);
 }
 
 /**
@@ -541,10 +587,21 @@ export async function restoreSession() {
     // lost; nothing asked for them.
     const needed = referencedHashes(session.board);
     let lost = 0;
-    for (const hash of needed) {
-      const rec = await idbGet('assets', hash);
-      if (rec?.blob) putAsset(hash, rec.blob, { ext: rec.ext, mime: rec.mime, name: rec.name });
-      else lost++;
+    // One read per asset, and on a heavy board that is the whole of the wait
+    // between opening the tab and seeing anything. Counted, because it is the
+    // one wait a person meets before they have done anything at all, and a
+    // blank board with no explanation reads as a board that was lost.
+    const job = busy('Restoring your board');
+    let n = 0;
+    try {
+      for (const hash of needed) {
+        job.step(n++, needed.length);
+        const rec = await idbGet('assets', hash);
+        if (rec?.blob) putAsset(hash, rec.blob, { ext: rec.ext, mime: rec.mime, name: rec.name });
+        else lost++;
+      }
+    } finally {
+      job.end();
     }
     created = session.created || null;
     loadBoard(session.board);
@@ -569,6 +626,60 @@ export async function clearSession() {
   try { await idbClear('kv'); await idbClear('assets'); } catch { /* nothing to clear */ }
 }
 
+/**
+ * Everything this app has ever put in this browser, gone.
+ *
+ * Wider than New on purpose. New replaces the board and leaves the person
+ * behind it - the palette, the whimsy level, the volume, whether the panel is
+ * open - which is right, because starting a new board is not disowning the way
+ * you like to work. This is the other request: hand the machine back, or start
+ * from nothing after a look you cannot undo your way out of. So it takes the
+ * preferences too, and the answer to "what is left?" is "the files you
+ * exported", which the dialog says.
+ *
+ * Two things it deliberately does *not* touch.
+ *
+ * The service worker's caches. Those hold the application - the scripts, the
+ * fonts, the stylesheets - and none of it is anybody's data. Deleting them
+ * would leave a phone in a field with no app to open, which is the one thing
+ * this project is built not to do.
+ *
+ * Anything on disk. A .mbrd is a file the user owns and put somewhere; no
+ * button in a web page is going to go looking for those.
+ *
+ * The reload is the honest ending. Half a dozen modules hold state that came
+ * out of the store - registered faces, custom properties written onto :root by
+ * the boot script, the viewport's own position - and reconstructing a
+ * first-run app from inside a running one is a list nobody keeps correct.
+ * Starting the page again *is* the first run, so it cannot drift.
+ */
+export async function clearAllData() {
+  const answer = await ask({
+    title: 'Clear everything?',
+    body: 'The board kept in this browser, everything in it and the look you '
+      + 'set are all deleted, and mbrd starts over. Boards you exported to a '
+      + 'file are not touched.',
+    keep: board.items.length ? 'Export first' : '',
+    cancel: 'Cancel',
+    go: 'Delete it all',
+  });
+  if (answer === 'cancel') return false;
+  // Exporting can fail or be cancelled at the picker, and somebody who asked to
+  // keep the board and did not keep it has not answered the question yet.
+  if (answer === 'keep') return (await exportBoard()) ? clearAllData() : false;
+
+  // Before the wipe, not after: the debounce is armed by every edit, and a
+  // snapshot landing between the clear and the reload would put the board
+  // straight back. The latch is what holds it down - flushEdits() on the way
+  // out of the page calls autosave() directly, past any timer.
+  clearTimeout(saveTimer);
+  cacheOk = false;
+  await clearSession();
+  clearPrefs();
+  location.reload();
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // Wiring
 // ---------------------------------------------------------------------------
@@ -585,6 +696,10 @@ export function initStorage() {
   for (const evt of ['items', 'geom', 'item', 'settings', 'board', 'trash', 'view']) {
     bus.on(evt, scheduleAutosave);
   }
+  // A board replacing the one that was here is not an edit to it - see the note
+  // on `quiet` above. Both doors: opened from a file, and started from nothing.
+  bus.on('board:load', hushNextSave);
+  bus.on('board:new', hushNextSave);
   // "Leave site?" on every refresh is worse than useless while developing: the
   // autosave below has already put the board in IndexedDB, and restoreSession()
   // brings it straight back, so the prompt guards nothing and costs a click on

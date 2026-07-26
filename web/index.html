@@ -43,6 +43,10 @@
        viewport's own background instead. First child, so it is under the axes,
        the origin mark and every item. -->
   <canvas id="grid-ink" aria-hidden="true"></canvas>
+  <!-- A standard sheet outlined round the origin, off unless View asks for one.
+       Over the lattice and under the axes, the way a page sits on a desk with
+       the rules drawn across it. See canvas/paper.js. -->
+  <div id="paper" hidden aria-hidden="true"><span id="paper-label"></span></div>
   <div id="axis-x" class="axis"></div>
   <div id="axis-y" class="axis"></div>
   <svg id="origin-mark" viewBox="0 0 36 36" fill="none" stroke="currentColor" aria-hidden="true">
@@ -55,7 +59,9 @@
     <rect class="om-ring-sq" x="8" y="8" width="20" height="20" stroke-width="1.3"/>
     <circle class="om-pip" cx="18" cy="18" r="2" fill="currentColor" stroke="none"/>
     <rect class="om-pip-sq" x="16" y="16" width="4" height="4" fill="currentColor" stroke="none"/>
-    <path d="M18 2v5M18 29v5M2 18h5M29 18h5" stroke-width="1.3" stroke-linecap="round"/>
+    <!-- The four ticks that used to radiate out to the edge of this box are
+         gone. They drew a crosshair on top of the one the axes already make -
+         the same cross, twice, a few pixels thick in the middle of the board. -->
   </svg>
   <div id="world"></div>
   <div id="marquee" hidden></div>
@@ -88,16 +94,11 @@
              autocomplete="off" spellcheck="false">
       <div class="btn-row">
         <button type="button" data-cmd="new">New</button>
-        <button type="button" data-cmd="open">Open&hellip;</button>
+        <button type="button" data-cmd="open">Open</button>
       </div>
       <div class="btn-row">
         <button type="button" data-cmd="save" class="primary">Save</button>
-        <button type="button" data-cmd="export">Export&hellip;</button>
-      </div>
-      <!-- Ellipsis: it asks first, and it says what it is about to do and how
-           much it would save before anything is touched. -->
-      <div class="btn-row">
-        <button type="button" data-cmd="optimize">Optimize&hellip;</button>
+        <button type="button" data-cmd="export">Export</button>
       </div>
     </section>
 
@@ -105,9 +106,26 @@
     <section class="side-sec">
       <h2>Content</h2>
       <div class="btn-row">
-        <button type="button" data-cmd="add-files">Add files&hellip;</button>
+        <button type="button" data-cmd="add-files">Add files</button>
         <button type="button" data-cmd="add-note">Write a note</button>
       </div>
+      <!-- The one import setting, folded away because it is off and stays off
+           for anybody who does not go looking. See import/lastfm.js: no key
+           means no request, ever. -->
+      <details class="advanced">
+        <summary>Missing album art</summary>
+        <p class="hint">
+          Audio usually carries its own cover. When it does not, mbrd can ask
+          Last.fm for one - the artist and album name go out, nothing else, and
+          only if you put a key here. Everything else in mbrd stays offline
+          either way.
+        </p>
+        <label class="field">
+          <span>Last.fm API key<output id="lastfm-state"></output></span>
+          <input id="opt-lastfm" type="text" maxlength="64" placeholder="Blank: never ask"
+                 autocomplete="off" spellcheck="false" aria-label="Last.fm API key">
+        </label>
+      </details>
     </section>
 
 
@@ -167,7 +185,7 @@
       </label>
       <label class="field">
         <span>Spacing <output id="spacing-out"></output></span>
-        <input id="spacing" type="range" min="0" max="200" step="4" value="32">
+        <input id="spacing" type="range" min="0" max="200" step="4" value="12">
       </label>
       <div class="btn-row">
         <button type="button" data-cmd="rearrange">Rearrange everything</button>
@@ -186,11 +204,62 @@
       <label class="check"><input type="checkbox" id="opt-axes" checked> Show axes</label>
       <label class="check"><input type="checkbox" id="opt-snap"> Snap to grid</label>
       <label class="check"><input type="checkbox" id="opt-hud" checked> Show readout</label>
+      <!-- A sheet of paper drawn round the middle of the board, at the size it
+           really is under the scale set below. The orientation is two buttons
+           rather than a third entry per size, because "A4 landscape" is A4
+           turned, not another size - and because turning it is the thing you do
+           repeatedly while the size is chosen once. -->
+      <label class="field">
+        <span>Paper outline</span>
+        <select id="opt-paper">
+          <option value="">None</option>
+        </select>
+      </label>
+      <div class="btn-row" id="paper-orient" role="group" aria-label="Paper orientation">
+        <button type="button" data-orient="portrait" aria-pressed="true">Portrait</button>
+        <button type="button" data-orient="landscape" aria-pressed="false">Landscape</button>
+      </div>
+      <!-- Off by default: what the corners drag is not the sheet but the whole
+           board's scale, and a sheet put up to check a layout against should not
+           arrive with that armed on its corners. -->
+      <label class="check"><input type="checkbox" id="opt-paper-resize"> Resize by its corners</label>
+      <!-- The way back. Dragging the corners is how the scale gets set, which
+           means it is also how the scale gets lost - and the scale is not on
+           the undo stack, because no setting is. One button that puts it back
+           where every board starts. -->
+      <div class="btn-row">
+        <button type="button" data-cmd="reset-scale">Reset size</button>
+      </div>
+      <p class="hint" id="paper-hint"></p>
       <!-- One volume for the whole board. See canvas/audio.js. -->
       <label class="field">
         <span>Volume<output id="opt-volume-out">60%</output></span>
         <input id="opt-volume" type="range" min="0" max="100" step="1" value="60">
       </label>
+    </section>
+
+
+    <!-- What the board's coordinates mean in the world. Nothing here moves
+         anything: the geometry is the same unitless floats it always was, and
+         these two settings decide how it is read back. See measure.js. -->
+    <section class="side-sec">
+      <h2>Real size</h2>
+      <label class="field">
+        <span>Units</span>
+        <select id="opt-units">
+          <option value="metric">Millimetres, centimetres, metres</option>
+          <option value="imperial">Inches and feet</option>
+        </select>
+      </label>
+      <!-- The scale is set by matching something, never by typing a
+           units-per-millimetre figure. Two ways in, and both are the same
+           gesture: drag the paper outline above until a known sheet looks the
+           right size against what is on the board, or point at an item whose
+           real size you already know and say what it is. -->
+      <div class="btn-row">
+        <button type="button" data-cmd="scale-from-item">Set from selection…</button>
+      </div>
+      <p class="hint" id="scale-hint"></p>
     </section>
 
 
@@ -214,6 +283,27 @@
         <li><kbd>ctrl</kbd>+<kbd>shift</kbd>+<kbd>S</kbd><span>export a .mbrd</span></li>
       </ul>
     </section>
+
+
+    <!-- Last, and below the keyboard legend rather than beside the Board
+         buttons at the top. Neither of these is part of anybody's working day,
+         and the second is the way out - which belongs at the far end of the
+         panel where it cannot be hit on the way to Save.
+
+         Optimize sits here rather than under Board for the first of those
+         reasons: it is housekeeping on the copy kept in this browser, done
+         once in a while and not while you are working. It asks first either
+         way, and says what it is about to do and how much it would save
+         before anything is touched. -->
+    <section class="side-sec">
+      <h2>This browser</h2>
+      <div class="btn-row">
+        <button type="button" data-cmd="optimize">Optimize</button>
+      </div>
+      <div class="btn-row">
+        <button type="button" data-cmd="clear-data" class="danger">Clear everything</button>
+      </div>
+    </section>
   </div>
 
   <!-- The credit sits at the quiet end on purpose. An anchor and nothing else:
@@ -223,7 +313,7 @@
        in this app does. -->
   <footer class="side-foot">
     <span id="version"></span>
-    <a class="by" href="https://valjdakosta.com" target="_blank" rel="noopener noreferrer">valjdakosta</a>
+    <a class="by" href="https://link.valjdakosta.com" target="_blank" rel="noopener noreferrer">valjdakosta</a>
   </footer>
 </aside>
 
@@ -244,20 +334,68 @@
     <p id="bin-none">Nothing thrown away yet.</p>
     <p id="bin-hint">Drag anything back onto the board.</p>
   </div>
-  <!-- Named as empty here because that is what it is before any board has
-       loaded, and it matches the muted look the button starts in; ui/trash.js
-       rewrites both the label and the tooltip every time the bin changes. -->
-  <button type="button" id="bin-btn" aria-label="Trash, empty" aria-expanded="false" aria-controls="bin-panel" title="Trash, empty">
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M2.5 4h11"/>
-      <path d="M6 4V2.5h4V4"/>
-      <path d="M3.8 4l.6 9a1 1 0 0 0 1 1h5.2a1 1 0 0 0 1-1l.6-9"/>
-      <path d="M6.6 6.5v5M9.4 6.5v5"/>
+  <!-- The autosave, saying so. Absolutely placed rather than stacked in the
+       column, because it comes and goes: a slot held open for it would be a
+       permanent gap above the bin for the sake of something visible two seconds
+       in every minute. aria-hidden because this is a reassurance and not an
+       announcement - a screen reader hearing "Saved" every few seconds while
+       you work is the same information turned into an interruption. The
+       explicit Save still says so out loud, because that one was a question. -->
+  <div id="saved" aria-hidden="true">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3.5 8.5l3 3 6-7"/>
     </svg>
-  </button>
+    <span>Saved</span>
+  </div>
+  <!-- One row along the bottom of the corner. The bin keeps the corner itself,
+       because that is where it has always been and where the panel above it is
+       anchored; undo and redo are added to its right rather than around it. -->
+  <div class="bin-row">
+    <!-- Named as empty here because that is what it is before any board has
+         loaded, and it matches the muted look the button starts in; ui/trash.js
+         rewrites both the label and the tooltip every time the bin changes. -->
+    <button type="button" id="bin-btn" aria-label="Trash, empty" aria-expanded="false" aria-controls="bin-panel" title="Trash, empty">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M2.5 4h11"/>
+        <path d="M6 4V2.5h4V4"/>
+        <path d="M3.8 4l.6 9a1 1 0 0 0 1 1h5.2a1 1 0 0 0 1-1l.6-9"/>
+        <path d="M6.6 6.5v5M9.4 6.5v5"/>
+      </svg>
+    </button>
+    <!-- Undo and redo. Beside the bin because they belong to the same thought -
+         the bin is the one mistake you can walk back by hand, and these are
+         every other one - and a segmented pair like the zoom cluster opposite,
+         because that is what this app's furniture looks like.
+
+         Both start disabled: a freshly loaded board has no history, and the
+         titles are rewritten by main.js with the name of what would actually
+         happen ("Undo Add 3 items"). -->
+    <div id="history-ctl">
+      <button type="button" data-history="undo" aria-label="Undo" title="Nothing to undo" disabled>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 6.5h6.2a3.4 3.4 0 0 1 0 6.8H6.4"/>
+          <path d="M5.6 3.6 2.7 6.5l2.9 2.9"/>
+        </svg>
+      </button>
+      <button type="button" data-history="redo" aria-label="Redo" title="Nothing to redo" disabled>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M13 6.5H6.8a3.4 3.4 0 0 0 0 6.8h2.8"/>
+          <path d="M10.4 3.6l2.9 2.9-2.9 2.9"/>
+        </svg>
+      </button>
+    </div>
+  </div>
 </div>
 
 <div id="corner">
+  <!-- A stick of known length, the way a map carries one. See ui/scalebar.js
+       for why this is a drawn bar and not a printed ratio. Hidden by the module
+       when no round length fits, so it has no [hidden] here - it starts visible
+       and the first paint decides. -->
+  <div id="scale-bar" aria-hidden="true">
+    <span id="scale-bar-label">1 cm</span>
+    <span id="scale-bar-stick"></span>
+  </div>
   <div id="zoom-ctl">
     <button type="button" data-zoom="out" aria-label="Zoom out" title="Zoom out  −">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
@@ -288,7 +426,55 @@
   </div>
 </div>
 
+<!-- Phones only; app.css keeps it out of the way at every other width. Getting
+     something onto the board is the one thing you come here to do, and on a
+     phone it was two taps into a panel that covers the screen - while the four
+     corners were spent on view controls you need only once something is
+     already there. So it is one bar along the bottom edge, under the thumb.
+
+     Split, because "add" is honestly two verbs: bring something in, or write
+     something down. One button would have had to pick a default, and the other
+     half is not a secondary action - a moodboard is as often a sentence as a
+     photograph.
+
+     Files on the left, note on the right. Swapped in the markup rather than
+     with row-reverse, so the tab order and the reading order stay the same as
+     what is on screen. -->
+<div id="add-bar">
+  <button type="button" data-add="files">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
+      <path d="M8 3.2v9.6M3.2 8h9.6"/>
+    </svg>
+    <span>Files</span>
+  </button>
+  <button type="button" data-add="note">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M11.4 2.6a1.6 1.6 0 0 1 2.2 2.2L6.3 12.1l-3 .8.8-3z"/>
+    </svg>
+    <span>Note</span>
+  </button>
+</div>
+
 <div id="drop-overlay" hidden><div>let it fall</div></div>
+
+<!-- The waiting strip. Driven by busy() in util.js; see the note there for why
+     it lives in the same file as the toast and how the two differ.
+
+     Pinned at the top, opposite the toast at the foot, and the split is the
+     point: what is happening arrives at one edge, what happened arrives at the
+     other, so a report never overwrites a progress bar and the two can be on
+     screen at once without either being in the way.
+
+     aria-live=polite rather than assertive - a screen reader should hear "this
+     is going to take a moment" when it reaches a pause, not have the sentence
+     it is currently reading cut in half. -->
+<div id="busy" role="status" aria-live="polite" hidden>
+  <div class="busy-head">
+    <span id="busy-label"></span>
+    <span id="busy-count"></span>
+  </div>
+  <div id="busy-track"><div id="busy-fill"></div></div>
+</div>
 
 <!-- role=status + aria-live: "Saved in this browser", "Export failed" and the
      missing-asset warnings are the app's only reply to a save, and without
@@ -305,6 +491,10 @@
 <dialog id="ask" aria-labelledby="ask-title">
   <h2 id="ask-title"></h2>
   <p id="ask-body"></p>
+  <!-- Only some questions want an answer typed rather than picked. Hidden
+       unless ask() was handed a `field`, in which case the dialog resolves to
+       what was typed instead of to which button was pressed. -->
+  <input id="ask-field" type="text" autocomplete="off" hidden>
   <div class="ask-row">
     <!-- The way out that loses nothing sits apart from the other two, at the
          far end of the row, so it is not one of a pair of near-identical

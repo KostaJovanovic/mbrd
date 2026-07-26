@@ -16,10 +16,26 @@
 //   Harsh             a <canvas>. See drawCrosses() for why nothing else works.
 
 import { board } from '../state.js';
+import { deviceRatio } from './viewport.js';
 
-const MIN_PX = 26;    // on-screen spacing below which we step up to a coarser grid
-const MAX_PX = 104;   // ...and above which we step down to a finer one
-const MAJOR = 4;      // major line every N minor steps
+// The on-screen window a minor step is allowed to live in. Outside it the
+// world-space step doubles or halves and the lattice re-tiers.
+//
+// Both numbers were raised by half - 26..104 became 40..160 - and the ratio of
+// four between them is kept, because it is MAJOR: at the tight end of the
+// window a minor lattice is exactly as dense as a major one at the loose end,
+// so the board never gets tighter than the tier below it has already been.
+//
+// Raising them moves *when* the change happens in the useful direction at both
+// ends. Zooming out, the step-up comes sooner, so the marks never crowd down to
+// 26px before the lattice thins out; zooming in, the halving comes later, so a
+// fresh crop of marks is not introduced the moment there is room for it. Both
+// were the same complaint: it went dense right at the tier boundary.
+// Exported so the test that guards the band asserts against the band itself
+// rather than against a copy of two numbers that has to be edited twice.
+export const MIN_PX = 40;    // spacing below which we step up to a coarser grid
+export const MAX_PX = 160;   // ...and above which we step down to a finer one
+const MAJOR = 4;             // major line every N minor steps
 
 /** World-space grid step whose on-screen spacing lands inside [MIN_PX, MAX_PX]. */
 export function gridStep(base, zoom) {
@@ -39,15 +55,21 @@ export function paintGrid(vp) {
   const canvas = ensureCanvas(el);
 
   if (!s.grid) {
-    el.style.backgroundImage = 'none';
+    clearTiles(canvas);
     clearCanvas(canvas);
     return;
   }
 
-  const step = gridStep(s.gridStep, vp.zoom);
-  const minor = step * vp.zoom;
+  // What is drawn is always a *coarse* lattice at full strength plus the marks
+  // that sit between its own, at whatever the fade has reached - see tierFade().
+  // Outside a fade the two collapse to one: alpha is 0 or 1 and the pair is
+  // exactly the lattice gridStep() asked for.
+  const { coarse, alpha } = tierFade(gridStep(s.gridStep, vp.zoom), vp);
+  const minor = coarse * vp.zoom;
   const major = minor * MAJOR;
-  const o = vp.toScreen(0, 0);
+  // The origin the axis rules use, not the raw one - see Viewport.axisOrigin().
+  // The fallback is for the render harnesses, which pass a viewport stub.
+  const o = vp.axisOrigin ? vp.axisOrigin() : vp.toScreen(0, 0);
   // An attribute read, not getComputedStyle. This function runs on every frame
   // of every pan and pinch, and asking for a computed value in here would force
   // a synchronous style flush per frame for a value that changes about once an
@@ -58,8 +80,8 @@ export function paintGrid(vp) {
   if (harsh) {
     // The two painters are exclusive. Leaving the gradients up under the canvas
     // would show a dot inside every cross.
-    el.style.backgroundImage = 'none';
-    drawCrosses(canvas, vp, o, minor, major);
+    clearTiles(canvas);
+    drawCrosses(canvas, vp, o, minor, major, alpha);
     return;
   }
 
@@ -77,19 +99,192 @@ export function paintGrid(vp) {
     }
   };
 
+  /**
+   * The three marks a finer lattice adds inside each of this one's tiles.
+   *
+   * Three layers rather than one lattice at half the tile, and that is the
+   * whole reason this is not two lines of code: a half-tile lattice includes
+   * the coarse positions, and these colours are translucent - a mark painted
+   * twice is twice as dark. Every marked point has to be drawn exactly once,
+   * so the ones that already exist are stepped over by construction.
+   */
+  const between = (layers, size, ox, oy) => {
+    const h = size / 2;
+    for (const [dx, dy] of [[h, 0], [0, h], [h, h]]) push(layers, size, ox + dx, oy + dy);
+  };
+
   // Marks, never ruled lines. Lines were an option here and were the wrong one
   // on an infinite board: at any fractional zoom a full-bleed line grid beats
   // against the pixel grid into moire, and it competes with the world axes for
   // the same reading. A mark at each intersection states the same lattice and
   // stays quiet.
-  // First layer paints on top, so majors are listed before minors.
+  // First layer paints on top, so majors are listed before minors, and each
+  // lattice before the fainter one arriving underneath it.
   push(dot('var(--grid-major)', 1.5), major, o.x - major / 2, o.y - major / 2);
+  if (alpha > 0.002) {
+    between(dot(faded('var(--grid-major)', alpha), 1.5), major, o.x - major / 2, o.y - major / 2);
+  }
   push(dot('var(--grid-minor)', 1), minor, o.x - minor / 2, o.y - minor / 2);
+  if (alpha > 0.002) {
+    between(dot(faded('var(--grid-minor)', alpha), 1), minor, o.x - minor / 2, o.y - minor / 2);
+  }
 
-  el.style.backgroundImage = images.join(', ');
-  el.style.backgroundSize = sizes.join(', ');
-  el.style.backgroundPosition = positions.join(', ');
+  // On #grid-ink, not on #viewport, and that is a deliberate move rather than
+  // tidiness. The middle of the board needs the mark at the origin taken out -
+  // the origin mark is already standing there - and a tiled background cannot
+  // skip one of its own tiles. A mask can cut a hole in one, but a mask applies
+  // to an element's children as well, and #viewport's children are the axes,
+  // the origin mark and every item on the board. #grid-ink has none: it is the
+  // full-bleed layer the plain tier already draws its crosses on, empty at this
+  // tier, aria-hidden and childless. So the tiles move down onto it and the
+  // hole is cut there, where there is nothing else to cut.
+  // Only the position actually changes on a pan.
+  //
+  // The layers are built from `var()` colours and a calc() off --grid-dot, so
+  // the image list is the same string on every frame unless the tier fade is
+  // running; the size list is the same string unless the zoom moved. Assigning
+  // them anyway is not free - eight radial gradients have to be parsed and
+  // compared against what is already there before the browser can conclude
+  // nothing happened - and this runs on every frame of every pan on a board
+  // that may have a few hundred cards competing for the same frame.
+  //
+  // Compared as strings rather than tracked with flags, because the inputs are
+  // several (zoom, the fade, the weight slider, the palette) and a flag per
+  // input is a flag somebody forgets to set. The string is the answer itself.
+  const image = images.join(', ');
+  const size = sizes.join(', ');
+  if (image !== lastImage) { canvas.style.backgroundImage = image; lastImage = image; }
+  if (size !== lastSize) { canvas.style.backgroundSize = size; lastSize = size; }
+  canvas.style.backgroundPosition = positions.join(', ');
+  punchHole(canvas, o, vp);
 }
+
+/**
+ * What was last written to the tiled layer.
+ *
+ * Only so the writes above can be skipped when nothing moved - see paintGrid().
+ * Every path that writes these properties has to keep them honest, which is why
+ * clearTiles() below sets them rather than merely clearing the element: a cache
+ * that says "already none" while the element says otherwise is a grid that
+ * never comes back.
+ */
+let lastImage = '', lastSize = '', lastMask = '';
+
+/** Take the tiled marks - and any hole in them - back off. */
+function clearTiles(canvas) {
+  canvas.style.backgroundImage = 'none';
+  canvas.style.maskImage = '';
+  canvas.style.webkitMaskImage = '';
+  lastImage = 'none';
+  lastSize = '';
+  lastMask = '';
+}
+
+/**
+ * Cut the origin out of the tiled lattice.
+ *
+ * Sized in CSS rather than here: the layer inherits --grid-dot from :root, so
+ * the hole is a function of the weight slider and needs no repaint of its own
+ * when that slider moves. Big enough for the major mark, which is the largest
+ * thing that can be sitting there.
+ *
+ * Dropped entirely whenever the origin is off screen, which is most of the time
+ * on a board anybody has panned. A full-screen mask is real compositor work and
+ * this one is doing nothing at all out there.
+ */
+function punchHole(canvas, o, vp) {
+  const near = originHole()
+    && o.x > -20 && o.y > -20 && o.x < vp.width + 20 && o.y < vp.height + 20;
+  const mask = near
+    ? `radial-gradient(circle at ${o.x.toFixed(1)}px ${o.y.toFixed(1)}px,`
+      + ' transparent 0 calc(var(--grid-dot) * 1.5 + 1px),'
+      + ' #000 calc(var(--grid-dot) * 1.5 + 2px))'
+    : '';
+  // Skipped when it has not moved, which is nearly always: the origin is one
+  // point on an infinite board, so on the overwhelming majority of frames this
+  // is writing the same empty string over the same empty string - and a mask is
+  // one of the more expensive properties to hand a browser, because changing it
+  // invalidates the layer it applies to.
+  if (mask === lastMask) return;
+  lastMask = mask;
+  canvas.style.maskImage = mask;
+  canvas.style.webkitMaskImage = mask;
+}
+
+/** A grid colour at a fraction of itself. Takes a var() as happily as a hex. */
+const faded = (color, a) =>
+  `color-mix(in srgb, ${color} ${(a * 100).toFixed(1)}%, transparent)`;
+
+// ---------------------------------------------------------------------------
+// Re-tiering
+// ---------------------------------------------------------------------------
+
+/** How long a lattice takes to arrive or leave. */
+const TIER_MS = 100;
+
+/**
+ * Where a re-tier has got to.
+ *
+ *   step    the step gridStep() last asked for
+ *   from    the step before it, or 0 for "nothing to come from"
+ *   at      when the change happened
+ */
+let tier = { step: 0, from: 0, at: 0 };
+let tierRaf = 0;
+
+/**
+ * Turn "the step is now X" into "draw this lattice solid and this one at a".
+ *
+ * A re-tier is a doubling or a halving, so the two lattices either side of one
+ * are always a coarse one and the same coarse one with a mark added between
+ * each pair. That is the only shape this needs to express, and it is the same
+ * shape in both directions:
+ *
+ *   zooming out  the coarse lattice is the new one; the marks between it are
+ *                the ones being dropped, and they go 1 -> 0
+ *   zooming in   the coarse lattice is the old one; the marks between it are
+ *                the ones arriving, and they go 0 -> 1
+ *
+ * So the caller never has to know which way the zoom went, and at either end of
+ * the animation what it draws is exactly one lattice at full strength.
+ *
+ * A jump of more than one tier - a fit, a board load, the zoom readout being
+ * clicked back to 100% - is not faded. There is no pair of lattices to cross
+ * between when the step changes by eight, and half a second of a grid dissolving
+ * would be a strange thing to have asked for by pressing "zoom to fit".
+ */
+function tierFade(step, vp) {
+  const now = performance.now();
+  if (step !== tier.step) {
+    const adjacent = tier.step > 0 && (step === tier.step * 2 || step === tier.step / 2);
+    // A second change mid-fade abandons the first rather than queueing behind
+    // it. Pinching through three tiers should land on the third, not play two
+    // animations of somewhere it no longer is.
+    tier = { step, from: adjacent && !still() ? tier.step : 0, at: now };
+  }
+  if (!tier.from) return { coarse: step, alpha: 0 };
+
+  const t = Math.min(1, (now - tier.at) / TIER_MS);
+  const coarse = Math.max(step, tier.from);
+  // Fine is always coarse/2 - the marks between - so one number says which way
+  // this is going: finer than we were means they are arriving.
+  const alpha = step < tier.from ? t : 1 - t;
+
+  if (t >= 1) {
+    tier = { step, from: 0, at: now };
+    return { coarse: step, alpha: 0 };
+  }
+  // A pan repaints on its own, but a fade that outlives the gesture that
+  // started it - and every fade does, since a wheel notch is over in a frame -
+  // has nothing else asking for frames. One loop, dropped as soon as it lands.
+  if (!tierRaf && typeof requestAnimationFrame === 'function') {
+    tierRaf = requestAnimationFrame(() => { tierRaf = 0; paintGrid(vp); });
+  }
+  return { coarse, alpha };
+}
+
+/** The reader asked for less motion, so a lattice arrives rather than fades. */
+const still = () => !!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 /**
  * The whimsy level that draws crosses. Compared as a string because that is
@@ -170,7 +365,7 @@ const ARM_THICK = 0.5;
  * One Path2D and one fill() per lattice, measured at well under a frame - and
  * only this tier pays it. The other two never enter this function.
  */
-function drawCrosses(canvas, vp, o, minor, major) {
+function drawCrosses(canvas, vp, o, minor, major, alpha) {
   const ctx = sizeCanvas(canvas, vp);
   if (!ctx) return;
   const dpr = canvas._dpr;
@@ -179,9 +374,34 @@ function drawCrosses(canvas, vp, o, minor, major) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   // Minor first, then major over it: the heavier mark wins where they coincide,
   // which is every major intersection.
+  //
+  // The half-strength passes are the lattice arriving or leaving, and they are
+  // faded with globalAlpha rather than with a weaker colour: these colours are
+  // already a low-alpha mix of the ink, and re-mixing a mix in a string is how
+  // you end up multiplying two alphas and wondering where the marks went.
   lattice(ctx, minor, o, dpr, canvas, ink.minor, ink.dot, 1);
   lattice(ctx, major, o, dpr, canvas, ink.major, ink.dot, 1.5);
+  if (alpha > 0.002) {
+    ctx.globalAlpha = alpha;
+    lattice(ctx, minor, o, dpr, canvas, ink.minor, ink.dot, 1, true);
+    lattice(ctx, major, o, dpr, canvas, ink.major, ink.dot, 1.5, true);
+    ctx.globalAlpha = 1;
+  }
 }
+
+/**
+ * Whether the lattice leaves its middle mark out.
+ *
+ * It does whenever the origin mark is on screen, because that spot already has
+ * something on it: a ring, a pip and four ticks, all of them saying "this is
+ * 0,0" - and a registration cross underneath is a second, fainter mark trying
+ * to say the same thing inside the first one. The mark is the statement; the
+ * grid should get out of its way.
+ *
+ * Conditional rather than always, because "Show axes" takes the origin mark
+ * with it - and with nothing there, a missing mark is just a hole in the grid.
+ */
+const originHole = () => !!board.settings.axes;
 
 /**
  * One lattice of crosses, as a single filled path.
@@ -194,8 +414,12 @@ function drawCrosses(canvas, vp, o, minor, major) {
  * what stops every crossing point reading as a bright dot with whiskers, which
  * is exactly how the two-gradient version failed.
  */
-function lattice(ctx, tileCss, o, dpr, canvas, color, dotPx, scale) {
-  const tile = tileCss * dpr;
+function lattice(ctx, tileCss, o, dpr, canvas, color, dotPx, scale, between = false) {
+  // `between` halves the tile and skips every mark the full-strength pass has
+  // already drawn, which is the pair of even indices. Same reason the gradient
+  // painter lists three offset layers instead of one denser lattice: these
+  // colours are translucent and a mark drawn twice is twice as dark.
+  const tile = tileCss * dpr / (between ? 2 : 1);
   if (!(tile > 3)) return;         // gridStep() should never allow this
 
   // Snapped to whole device pixels, and never thinner than one. An arm under a
@@ -205,24 +429,50 @@ function lattice(ctx, tileCss, o, dpr, canvas, color, dotPx, scale) {
   const arm = Math.max(1, Math.round(Math.min(dotPx * ARM_LONG * scale, ARM_LONG_MAX * scale) * dpr));
   const thick = Math.max(1, Math.round(dotPx * ARM_THICK * 2 * scale * dpr));
   const half = Math.floor(thick / 2);
+  // A bar `thick` wide drawn from `cx - half` has its middle at
+  // `cx - half + thick/2`, which is half a pixel past cx whenever thick is odd
+  // - and thick is 1 at every ordinary weight and resolution. So the integer
+  // the mark is drawn from is not the point it marks, and asking for the point
+  // means asking for the integer half a pixel before it. Without this the whole
+  // lattice sits half a device pixel down and to the right of the axes.
+  const bias = half - thick / 2;
+  // An odd bar cannot be centred on an even span, so the arms take the parity
+  // of the bar they cross. One pixel of length, in exchange for a cross whose
+  // two strokes actually intersect at their middles.
+  const span = arm * 2 + (thick % 2);
 
   const W = canvas.width, H = canvas.height;
   const path = new Path2D();
 
-  // Positions accumulate in floats and are rounded per mark, so the lattice
-  // keeps its exact spacing over the whole screen instead of drifting by the
-  // rounding error a stepped integer would compound.
-  let x0 = (o.x * dpr) % tile;
-  if (x0 > 0) x0 -= tile;
-  let y0 = (o.y * dpr) % tile;
-  if (y0 > 0) y0 -= tile;
+  // Indexed from the origin rather than accumulated across the screen. The
+  // index is what carries the parity `between` needs - i and j are counted from
+  // the mark at 0,0, so "even in both" is the coarse lattice wherever the board
+  // has been panned to - and computing each position outright also drops the
+  // rounding drift a repeated `+= tile` compounds towards the far edge.
+  const ox = o.x * dpr, oy = o.y * dpr;
+  const i0 = Math.ceil((-arm - ox) / tile), i1 = Math.floor((W + arm - ox) / tile);
+  const j0 = Math.ceil((-arm - oy) / tile), j1 = Math.floor((H + arm - oy) / tile);
 
-  for (let y = y0; y < H + arm; y += tile) {
-    const cy = Math.round(y);
-    for (let x = x0; x < W + arm; x += tile) {
-      const cx = Math.round(x);
-      path.rect(cx - arm, cy - half, arm * 2, thick);
-      path.rect(cx - half, cy - arm, thick, arm * 2);
+  const hole = originHole();
+
+  // The column positions, worked out once for the whole lattice rather than
+  // once per mark. A mark's x does not depend on which row it is in, so the
+  // inner loop below was rounding the same handful of numbers over and over -
+  // on a wide screen at a tight tile that is a few thousand roundings a frame
+  // to arrive at the sixty-odd values in here.
+  const cols = new Int32Array(Math.max(0, i1 - i0 + 1));
+  for (let i = i0; i <= i1; i++) cols[i - i0] = Math.round(ox + i * tile + bias);
+
+  for (let j = j0; j <= j1; j++) {
+    const cy = Math.round(oy + j * tile + bias);
+    const rowEven = !(j & 1);
+    for (let i = i0; i <= i1; i++) {
+      if (between && rowEven && !(i & 1)) continue;
+      // Indexed from the origin, so the middle of the board is simply 0,0.
+      if (hole && i === 0 && j === 0) continue;
+      const cx = cols[i - i0];
+      path.rect(cx - arm, cy - half, span, thick);
+      path.rect(cx - half, cy - arm, thick, span);
     }
   }
 
@@ -245,6 +495,11 @@ function ensureCanvas(el) {
     canvas.id = 'grid-ink';
     canvas.setAttribute('aria-hidden', 'true');
     el.prepend(canvas);
+    // A new element carries none of the styles the last one was written, so
+    // what paintGrid() remembers writing is now a memory of a different node.
+    // Left alone, the first paint onto a fresh canvas would skip the very
+    // writes that put the lattice there.
+    lastImage = lastSize = lastMask = '';
   }
   return canvas;
 }
@@ -258,7 +513,10 @@ function ensureCanvas(el) {
  * replacing.
  */
 function sizeCanvas(canvas, vp) {
-  const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+  // The same ratio the axis rules snap to, from the same place - see
+  // deviceRatio(). Two roundings of two different numbers is how the lattice
+  // and the axes came to disagree in the first place.
+  const dpr = deviceRatio();
   const w = Math.round(vp.width * dpr);
   const h = Math.round(vp.height * dpr);
   if (!(w > 0 && h > 0)) return null;

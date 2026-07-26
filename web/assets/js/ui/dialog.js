@@ -15,7 +15,7 @@
 // own name. Like toast(), it reaches for `document` only inside a function, so
 // storage.js can import it and stay loadable without a browser.
 
-const DEFAULTS = { title: 'Are you sure?', body: '', go: 'Yes', cancel: 'Cancel', keep: '' };
+const DEFAULTS = { title: 'Are you sure?', body: '', go: 'Yes', cancel: 'Cancel', keep: '', field: null };
 
 /** Nothing is open twice: a second ask() while one is up waits for it. */
 let current = null;
@@ -31,6 +31,13 @@ let current = null;
  * throwing. Same bargain toast() makes, with the safe default chosen
  * deliberately: an unanswerable question about discarding somebody's work is
  * answered "don't".
+ *
+ * **With a `field`** the contract changes, and it changes on purpose rather
+ * than by accident: the question is no longer "which of these" but "what", so
+ * it resolves to the trimmed string that was typed, or to null for every way
+ * out. A caller that passes a field knows it passed one, and null reads as "no
+ * answer" in a way that a 'cancel' string sitting where a number should be does
+ * not. `field` is `{ value, placeholder, type }`, all optional.
  */
 export async function ask(opts = {}) {
   if (typeof document === 'undefined') return 'cancel';
@@ -57,6 +64,7 @@ function openWith(el, o) {
   const go = document.getElementById('ask-go');
   const cancel = document.getElementById('ask-cancel');
   const keep = document.getElementById('ask-keep');
+  const field = document.getElementById('ask-field');
 
   title.textContent = o.title;
   body.textContent = o.body;
@@ -67,6 +75,16 @@ function openWith(el, o) {
   // The third way is optional, and a button with no words in it is still a
   // button you can tab to and press.
   keep.hidden = !o.keep;
+
+  field.hidden = !o.field;
+  field.value = o.field?.value ?? '';
+  field.placeholder = o.field?.placeholder ?? '';
+  field.type = o.field?.type ?? 'text';
+  // A question that wants something typed is not a destructive one - nothing
+  // has been decided by the time it opens - so the "go" button loses the danger
+  // dressing it wears for the delete-everything cases this dialog was built
+  // for. Leaving it red would make "what size is this?" look like a threat.
+  go.classList.toggle('danger', !o.field);
 
   return new Promise(resolve => {
     let answer = 'cancel';
@@ -87,19 +105,28 @@ function openWith(el, o) {
     // Escape, which the browser handles by firing this and closing on its own.
     const onCancelEvent = () => { answer = 'cancel'; };
 
+    // Enter in the field is the same press as the go button. Without it the
+    // only way to answer a one-box question is to reach for the mouse, having
+    // just been typing.
+    const onKey = e => { if (e.key === 'Enter') { e.preventDefault(); close('go'); } };
+
     const onClose = () => {
       go.removeEventListener('click', onGo);
       cancel.removeEventListener('click', onCancel);
       keep.removeEventListener('click', onKeep);
+      field.removeEventListener('keydown', onKey);
       el.removeEventListener('click', onClick);
       el.removeEventListener('cancel', onCancelEvent);
       el.removeEventListener('close', onClose);
-      resolve(answer);
+      // A field question answers with what was typed; a button question answers
+      // with which button. See the note on ask().
+      resolve(o.field ? (answer === 'go' ? field.value.trim() : null) : answer);
     };
 
     go.addEventListener('click', onGo);
     cancel.addEventListener('click', onCancel);
     keep.addEventListener('click', onKeep);
+    field.addEventListener('keydown', onKey);
     el.addEventListener('click', onClick);
     el.addEventListener('cancel', onCancelEvent);
     el.addEventListener('close', onClose);
@@ -109,6 +136,11 @@ function openWith(el, o) {
     // dialog can arrive under a finger already on its way to Enter - it is
     // opened by a keyboard shortcut as often as by a click - and the difference
     // between the two buttons is a board.
-    cancel.focus();
+    //
+    // Unless there is a field, where the whole point is to type: nothing is
+    // destroyed by this kind of question, and landing on Cancel would mean
+    // every use of it began with a click into the box.
+    if (o.field) field.focus();
+    else cancel.focus();
   });
 }

@@ -5,12 +5,15 @@
 // each file, and asks the arrangement engine where to put them - so a drop of
 // forty photos lands as a spiral around the cursor rather than a stack.
 
-import { toast, extOf } from '../util.js';
+import { toast, busy, extOf } from '../util.js';
 import { board, bus, addItems, select, setItemCover, NOTE_MAX } from '../state.js';
 import { addFile } from '../storage/assets.js';
 import { classify, defaultSize, measureSize, linkURL, linkDraft } from '../canvas/renderers.js';
+import { iframeURL, embedFor } from '../canvas/embed.js';
 import { arrange } from '../arrange/arrangements.js';
 import { coverArt, mayHaveArt } from './artwork.js';
+import { lastfmArt, lastfmOn } from './lastfm.js';
+import { makeThumb } from '../optimize/picture.js';
 import { looksLikeMbrd } from '../storage/mbrd.js';
 import { openFile } from '../storage/storage.js';
 
@@ -113,7 +116,22 @@ export function initDrop(vp) {
       // else. linkURL() is strict, so a paragraph that merely mentions a link
       // still lands as the note it is.
       const url = linkURL(text);
-      if (url) addLink(centre, url);
+      if (url) { addLink(centre, url); return; }
+      // An `<iframe>` block is the second shape of text that means a link and
+      // nothing else. YouTube and Spotify both hand out markup rather than an
+      // address from their Share menus, so pasting that block is a thing people
+      // do - and landing it as a sticky note full of angle brackets is the app
+      // refusing to understand something it plainly understands. See
+      // iframeURL(): the pasted string is never parsed as HTML, only searched.
+      //
+      // Canonicalised here and *only* here. A pasted address is left exactly as
+      // written, on linkURL()'s principle that guessing at what somebody meant
+      // silently rewrites it - a `?t=90` on a YouTube link is the timestamp
+      // they wanted. An embed URL is different: nobody typed it, it is the
+      // machine-facing half of a share block, and a card whose address reads
+      // open.spotify.com/embed/track/… is showing plumbing.
+      const framed = iframeURL(text, linkURL);
+      if (framed) addLink(centre, embedPage(framed));
       else addNote(centre, text.trim());
     }
   });
@@ -246,7 +264,13 @@ export async function importFiles(files, centre) {
   // files arrived in rather than the order they happened to finish.
   const prepared = new Array(files.length).fill(null);
   const failed = [];
+  let firstError = null;
   let next = 0;
+  // Counted rather than indexed: six of these run at once and finish out of
+  // order, so `next` is how many have been *started* and says nothing about how
+  // many are done.
+  let settled = 0;
+  const job = busy(files.length > 1 ? `Reading ${files.length} files` : 'Reading');
   const worker = async () => {
     for (;;) {
       const i = next++;
@@ -256,17 +280,32 @@ export async function importFiles(files, centre) {
         prepared[i] = await prepareFile(file);
       } catch (err) {
         console.error('[mbrd] import failed for', file.name, err);
+        firstError ??= err;
         failed.push(file.name);
       }
+      job.step(++settled, files.length);
     }
   };
-  await Promise.all(
-    Array.from({ length: Math.min(IMPORT_WORKERS, files.length) }, worker)
-  );
+  try {
+    await Promise.all(
+      Array.from({ length: Math.min(IMPORT_WORKERS, files.length) }, worker)
+    );
+  } finally {
+    // In a finally, and every busy() in this app is: a throw that skipped it
+    // would leave the strip up over a board that is doing nothing, for the rest
+    // of the session, with no way to take it down.
+    job.end();
+  }
   const drafts = prepared.filter(Boolean);
 
   if (!drafts.length) {
-    toast('Nothing could be imported', 'error');
+    // When every single file failed the same way it is almost never the files,
+    // and the bare sentence sent people looking at their photos. It is worth
+    // the console: one of these was `crypto.subtle` missing on a page served
+    // over plain http, which broke every import on a phone and said nothing at
+    // all about why. Truncated because a toast is a line, not a stack.
+    const why = String(firstError?.message || '').slice(0, 80);
+    toast(why ? `Nothing could be imported - ${why}` : 'Nothing could be imported', 'error');
     return [];
   }
 
@@ -300,6 +339,20 @@ export async function importFiles(files, centre) {
   return added;
 }
 
+/**
+ * A picture's thumbnail, registered as an asset, or null.
+ *
+ * The import module is held to loading without a browser (tests/imports.test.js)
+ * and makeThumb() reaches for OffscreenCanvas - which is fine, because it does
+ * so inside the call rather than at module scope. Same bargain the rest of this
+ * file makes with `document`.
+ */
+export async function thumbFor(blob) {
+  const small = await makeThumb(blob);
+  if (!small) return null;
+  return addFile(new File([small.blob], 'thumb.webp', { type: 'image/webp' }));
+}
+
 /** One file, classified, measured, hashed and turned into a draft item. */
 async function prepareFile(file) {
   let type = classify(file);
@@ -320,8 +373,31 @@ async function prepareFile(file) {
   // copy of it. Tried before the item exists rather than after it mounts, so
   // the card is never briefly the plain one; null is the common answer and
   // costs a single 16-byte read.
-  const cover = type === 'audio' && mayHaveArt(file.name)
+  let cover = type === 'audio' && mayHaveArt(file.name)
     ? await coverArt(file).then(art => art && addFile(art)).catch(() => null)
+    : null;
+  // Nothing in the tags, so ask Last.fm - but only if somebody has said it may.
+  // Off unless a key has been entered, one request per album rather than per
+  // track, and a failure of any kind is the plain card this would have been
+  // anyway. See import/lastfm.js for the terms.
+  if (!cover && type === 'audio' && lastfmOn()) {
+    cover = await lastfmArt(file).then(art => art && addFile(art)).catch(() => null);
+  }
+  // The hundred-pixel copy the board shows once it is zoomed out past the
+  // detail rung - see makeThumb() for why a hundred, and canvas/stills.js for
+  // the swap, which this reuses wholesale rather than inventing a second one.
+  //
+  // Here, at import, rather than lazily on the first far-out view: it is one
+  // decode of bytes that are already in hand and already decoded once for the
+  // measurement above, and doing it later means doing it for a whole board at
+  // the exact moment somebody has just asked to see the whole board.
+  //
+  // Its own asset, deduplicated by content like everything else, so the same
+  // photograph dropped twice has one thumbnail. Failure is silent and total:
+  // no thumbnail simply means the card keeps drawing its full-size picture,
+  // which is what it did before any of this existed.
+  const thumb = type === 'image'
+    ? await thumbFor(file).catch(() => null)
     : null;
   return {
     type,
@@ -331,6 +407,7 @@ async function prepareFile(file) {
     asset: { hash, embedded: true },
     meta: {
       ...(cover ? { cover } : {}),
+      ...(thumb ? { thumb } : {}),
       mime: file.type || '',
       ext: extOf(file.name),
       size: file.size,
@@ -383,6 +460,18 @@ export function addNote(centre, text = '') {
  * take in at a glance, and an address is not a thought - it is one value, and
  * half of one is not a shorter link but a broken one.
  */
+/**
+ * The page an embed URL is the embed of, when a provider recognises it.
+ *
+ * Falls through to the URL itself for everything else, including a provider URL
+ * that is already a page - so callers can hand it anything.
+ */
+function embedPage(url) {
+  const spec = embedFor(url);
+  if (!spec) return url;
+  try { return new URL(spec.page); } catch { return url; }
+}
+
 export function addLink(centre, url) {
   const [item] = addItems([{ ...linkDraft(url), x: centre.x, y: centre.y }], 'Add link');
   select([item.id]);

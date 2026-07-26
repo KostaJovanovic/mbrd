@@ -115,6 +115,75 @@ button, input, select, textarea { font: inherit; color: inherit; }
   pointer-events: none;
 }
 
+/* The paper outline, positioned in screen space by canvas/paper.js for the same
+   reason the axes are: a border inside the transformed #world would be scaled
+   by the zoom, and a page edge is one device pixel at every zoom or it is not a
+   drawn edge. The faint fill is what makes it read as a surface rather than as
+   four more rules on a board that already has plenty. */
+#paper {
+  position: absolute;
+  border: var(--hairline) solid var(--sheet-line);
+  background: var(--sheet-fill);
+  pointer-events: none;
+}
+
+/* The four corner grips, which is how the board's scale is actually set: drag
+   an A4 until it looks right against the photographs, and the scale follows
+   from where you let go. See canvas/paper.js.
+
+   pointer-events go back on for these alone - the sheet itself must stay
+   transparent to the pan, the marquee and every card sitting on it, and only
+   these four squares are allowed to intercept anything. */
+.paper-grip {
+  position: absolute;
+  width: var(--sheet-grip);
+  height: var(--sheet-grip);
+  margin: calc(var(--sheet-grip) / -2) 0 0 calc(var(--sheet-grip) / -2);
+  box-sizing: border-box;
+  border: var(--hairline) solid var(--sheet-line);
+  border-radius: var(--radius-xs);
+  background: var(--paper-card);
+  pointer-events: auto;
+  touch-action: none;
+  transition: background var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease),
+              transform var(--dur-base) var(--ease-back);
+}
+.paper-grip:hover {
+  background: var(--accent);
+  border-color: var(--accent-deep);
+  transform: scale(1.25);
+}
+/* Placed by their own corner so the margin above centres each one on the edge
+   it belongs to, rather than hanging off it. */
+.paper-grip[data-grip="nw"] { left: 0; top: 0; cursor: nwse-resize; }
+.paper-grip[data-grip="ne"] { left: 100%; top: 0; cursor: nesw-resize; }
+.paper-grip[data-grip="sw"] { left: 0; top: 100%; cursor: nesw-resize; }
+.paper-grip[data-grip="se"] { left: 100%; top: 100%; cursor: nwse-resize; }
+/* A sheet too small on screen for four separate targets. The outline stays -
+   it is legible as a rectangle long before it is grabbable - and only the
+   handles go, rather than the whole thing disappearing at a zoom threshold. */
+#paper.no-grips .paper-grip { display: none; }
+
+/* Held for the length of the drag, so the resize cursor survives the pointer
+   leaving the eleven pixels it started in - which it does immediately. */
+:root.is-sizing-paper,
+:root.is-sizing-paper * { cursor: nwse-resize !important; }
+/* Outside the sheet, above its top-left corner, so it labels the edge without
+   sitting on the area the edge is drawn to enclose - the one part of the board
+   that has to stay clear for what is being laid out on it. */
+#paper-label {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 4px;
+  font-size: var(--t-tiny);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: calc(0.04em * var(--ls-scale));
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
 /* World axes, drawn in screen space so they stay hairline at any zoom. */
 .axis {
   position: absolute;
@@ -201,32 +270,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
   cursor: grab;
   user-select: none;
   -webkit-user-select: none;
-  /* The selection ring's geometry, derived once here so that the ring and its
-     corner marks cannot drift apart - which they had, in two separate ways.
-       --sel-edge    how far the ring's outer edge sits from the item box
-       --mark-radius the curve both of them trace: the item's own corner,
-                     pushed outwards by that gap. A curve of radius R offset
-                     outwards by d is a curve of radius R + d, and both terms
-                     are in the item's own units, so it holds at any zoom
-       --mark-size   how big a corner mark has to be. Not merely --sel-reach:
-                     a border-radius larger than its own box is scaled down by
-                     the browser, which flattened the marks on a heavily
-                     rounded card while a note's - with a much smaller radius -
-                     came out true. Sized from the curve *plus* the straight
-                     run, so --sel-reach now means what it says: how far the
-                     heavy part continues past the end of the curve.
-
-     R + d is the true parallel of a *rounded* corner. A square corner's true
-     parallel is an arc of radius d - geometrically correct, and visibly wrong:
-     a rounded ring around a sharp card reads as a mistake in a language whose
-     whole premise is that corners are square. So the growth is switched off
-     when there is no corner to grow. Multiplying by a large factor saturates
-     to R + d for any real radius and collapses to zero at exactly zero, which
-     is a branch CSS has no other way to express. */
-  --sel-edge: calc((var(--sel-gap) + var(--sel-line)) * var(--iz));
-  --mark-radius: min(calc(var(--own-radius) + var(--sel-edge)),
-                     calc(var(--own-radius) * 1000));
-  --mark-size: calc(var(--mark-radius) + var(--sel-reach) * var(--iz));
+  /* The selection ring's geometry, collapsed flat. A card that is not selected
+     wears its ring against its own edge, at no thickness, where nothing can be
+     seen and nothing has to be worked out - see .item.is-selected below, which
+     is where these three mean something and why they are not simply written
+     there once. */
+  --sel-edge: 0px;
+  --mark-radius: var(--own-radius);
+  --mark-size: 0px;
   /* The lift and the tilt are zero at the plain end of the whimsy axis, so the
      same declaration covers "springs up to meet you" and "does not move".
      The resting tilt is each item's own factor in [-1, 1] (written by
@@ -244,6 +295,22 @@ button, input, select, textarea { font: inherit; color: inherit; }
               rotate var(--dur-base) var(--ease-back),
               scale var(--dur-base) var(--ease-back);
 }
+/* Snapped to the grid: nothing leans, at any whimsy tier.
+
+   A lattice is a promise about edges, and a card resting a degree and a half
+   off square breaks it more visibly than being a few pixels out of place ever
+   did - two neighbours in adjacent cells make a wedge between them that reads
+   as a mistake in the snapping rather than as charm. So the same switch that
+   lines the board up also stands the cards up.
+
+   `rotate` outright rather than zeroing --tilt-max: the tilt tokens are on the
+   Appearance panel's list and can be written inline on :root, which no selector
+   can outrank. This is on .item instead, where nothing inline competes - and it
+   still leaves item.rot alone, which lives in `transform` (see below). It also
+   inherits the rotate transition above, so switching snapping on straightens
+   the board rather than jumping it. */
+:root[data-snap] .item { rotate: 0deg; }
+
 /* translate/rotate/scale rather than transform, because items.js already owns
    `transform` for the item's own rotation - these are independent properties
    and compose with it instead of fighting over one declaration. */
@@ -276,9 +343,60 @@ button, input, select, textarea { font: inherit; color: inherit; }
   border: 0 solid var(--select);
   border-radius: var(--mark-radius);
   pointer-events: none;
+  /* The delays are what let the ring stand off the card while it is being worn
+     and lie flat against it the rest of the time, without the change ever being
+     seen. A transition is written on the state it is going *to*, so this rule
+     governs the trip back to unselected: the border thins over --dur-fast, and
+     the offset and the curve are held at their old values until it is over, then
+     drop. By that point the border has no width, so there is nothing on screen
+     for the drop to move. The rule below has no such delay, so selecting still
+     puts the ring in its proper place at once and merely thickens it. */
+  transition: border-width var(--dur-fast) var(--ease),
+              inset 0s var(--dur-fast),
+              border-radius 0s var(--dur-fast);
+}
+.item.is-selected::before {
+  border-width: calc(var(--sel-line) * var(--iz));
   transition: border-width var(--dur-fast) var(--ease);
 }
-.item.is-selected::before { border-width: calc(var(--sel-line) * var(--iz)); }
+
+/* The ring's geometry, in two versions of the same three names.
+     --sel-edge    how far the ring's outer edge sits from the item box
+     --mark-radius the curve both it and the corner marks trace: the item's own
+                   corner, pushed outwards by that gap. A curve of radius R
+                   offset outwards by d is a curve of radius R + d, and both
+                   terms are in the item's own units, so it holds at any zoom
+     --mark-size   how big a corner mark has to be. Not merely --sel-reach: a
+                   border-radius larger than its own box is scaled down by the
+                   browser, which flattened the marks on a heavily rounded card
+                   while a note's - with a much smaller radius - came out true.
+                   Sized from the curve *plus* the straight run, so --sel-reach
+                   means what it says: how far the heavy part continues past the
+                   end of the curve.
+
+   R + d is the true parallel of a *rounded* corner. A square corner's true
+   parallel is an arc of radius d - geometrically correct, and visibly wrong: a
+   rounded ring around a sharp card reads as a mistake in a language whose whole
+   premise is that corners are square. So the growth is switched off when there
+   is no corner to grow. Multiplying by a large factor saturates to R + d for any
+   real radius and collapses to zero at exactly zero, which is a branch CSS has
+   no other way to express.
+
+   The unselected version is the whole point of the split, and it is a
+   performance one. Every one of these is written in terms of --iz, which changes
+   on every frame of a zoom - so a card that is not selected was re-deriving
+   three values it does not use, and re-laying out a pseudo-element whose offset
+   is one of them, for every card on the board sixty times a second. Collapsed to
+   constants, an unselected card has nothing here that the zoom can move, and its
+   ring simply lies flat against its edge where it cannot be seen. The version
+   that means something arrives with the selection, which is also the only time
+   anything reads it: the ring and the grips, and neither is drawn otherwise. */
+.item.is-selected {
+  --sel-edge: calc((var(--sel-gap) + var(--sel-line)) * var(--iz));
+  --mark-radius: min(calc(var(--own-radius) + var(--sel-edge)),
+                     calc(var(--own-radius) * 1000));
+  --mark-size: calc(var(--mark-radius) + var(--sel-reach) * var(--iz));
+}
 
 .item-body {
   position: absolute;
@@ -303,14 +421,22 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .item[data-fit="contain"] .item-body img,
 .item[data-fit="contain"] .item-body video { object-fit: contain; }
 
-/* Frozen GIFs (canvas/stills.js). The twin is out of the flow until it holds a
-   decoded frame - is-ready, not merely [src], because the attribute lands the
-   moment it is assigned and swapping then would show a blank where the picture
-   was. Until it is ready the GIF just keeps playing, which is the harmless
-   failure. */
+/* The zoomed-out stand-in. Two things arrive here by the same door: a frozen
+   GIF frame shot by canvas/stills.js, and a photograph's hundred-pixel
+   thumbnail made at import. Both are a sibling <img class="still">, and both
+   are swapped in by the same pair of rules - see the note in the image
+   renderer.
+
+   is-ready, not merely [src]: the attribute lands the moment it is assigned but
+   the bytes still have to decode, and swapping then would show a blank where
+   the picture was. Until it is ready the full picture stays up, which is the
+   harmless failure in both cases.
+
+   The primary is matched as :not(.still) rather than by [data-gif], so a still
+   photograph gets the swap as well as an animated one. */
 .item-body img.still { display: none; }
 #world.is-stilled .item-body img.still.is-ready { display: block; }
-#world.is-stilled .item-body img[data-gif]:has(+ .still.is-ready) { display: none; }
+#world.is-stilled .item-body img:not(.still):has(+ .still.is-ready) { display: none; }
 
 /* Cards for the non-visual types: audio, text, and the generic fallback.
    Ruled just inside the edge, the way a plate or a bookplate is. */
@@ -318,7 +444,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
   position: relative;
   width: 100%;
   height: 100%;
-  padding: 15px 16px;
+  /* Named, because the sleeve on an audio card is positioned against the
+     padding box and has to sit *inside* the padding rather than on its edge.
+     Absolute positioning measures from that edge, so the inset has to be the
+     padding itself - and a number repeated in two rules is a number that drifts
+     apart in two rules. */
+  --card-pad-y: 15px;
+  --card-pad-x: 16px;
+  padding: var(--card-pad-y) var(--card-pad-x);
   display: flex;
   flex-direction: column;
   gap: 7px;
@@ -409,8 +542,104 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 
 /* The kicker earns its place on a card that is only words. Above a picture of
-   the record it is labelling a card AUDIO that is plainly a record sleeve. */
-.card.has-cover .card-icon { display: none; }
+   the record it is labelling a card AUDIO that is plainly a record sleeve.
+
+   Not on an audio card, where the sleeve is a stamp in the corner rather than
+   the top half of the card: there the kicker is still the only thing naming the
+   type, and hiding it made a row of records where some said AUDIO and some did
+   not, for a reason - whether the file happened to carry artwork - that is
+   invisible from the outside. */
+.card:not(.card-audio).has-cover .card-icon { display: none; }
+
+/* An audio card's sleeve: square, and up in the corner.
+
+   Square because that is what a record is, and because the alternative is what
+   this used to do - hand the picture a full-width band and let it be whatever
+   shape it liked. Album art is square often enough that the band was mostly
+   empty card, and the one time it is not - a wide still off a video, a tall
+   poster - a card of this kind still wants a stamp rather than a header.
+
+   Cropped to the square rather than fitted inside it. A sleeve is legible from
+   its middle; letterboxing it would put the white bars back that the band had.
+
+   Out of the flow, so the words keep the full height of the card and the
+   transport stays where it was. The room it needs is bought back as padding on
+   the three text lines below, which is what keeps a long title from running
+   under it. */
+.card-audio .card-cover {
+  position: absolute;
+  top: var(--card-pad-y);
+  right: var(--card-pad-x);
+  width: var(--sleeve);
+  height: var(--sleeve);
+  flex: none;
+}
+.card-audio {
+  /* Half the card's short side, so the sleeve is a stamp on a big card and most
+     of a small one, with a floor and a ceiling: below about 40px it is a smudge,
+     and above 108 it stops being a corner and starts being the card. */
+  --sleeve: clamp(40px, calc(var(--half-min, 100px) * 0.5), 108px);
+  /* Room at the foot for the ⋮, which is not part of the card but sits over its
+     bottom-right corner - it is the item's own handle and every type has it. On
+     a card whose last row is a control of its own, the two crowded each other,
+     so the strip is reserved rather than shared. */
+  padding-bottom: calc(var(--card-pad-y) + 16px);
+  /* Queried by the rules further down, which is how the card decides what to
+     drop as it gets shorter. Its own size is fixed by the item it fills, so
+     containing it costs nothing: `size` containment says the box does not
+     depend on its contents, and this one never did. */
+  container: audio-card / size;
+}
+.card-audio.has-cover .card-icon,
+.card-audio.has-cover .card-name,
+.card-audio.has-cover .card-meta {
+  padding-right: calc(var(--sleeve) + 10px);
+}
+
+/* The title is clamped rather than left to wrap.
+   The transport is pinned to the foot of the card by `margin-top: auto`, which
+   only works while there is a foot left to pin it to: a name that wrapped to
+   five or six lines pushed the play button out through the bottom of the card,
+   which clips. So it gets a line budget and an ellipsis after it. */
+.card-audio .card-name {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+          line-clamp: 3;
+}
+/* The transport keeps its height whatever else is on the card. */
+.card-audio .transport { flex: none; }
+
+/* What a shrinking card gives up, and in what order.
+
+   The name is the card. Everything else on it is either recoverable from
+   somewhere else or not worth the room: the size and the format are a
+   footnote about the file rather than about the music, and the kicker is
+   labelling something the play button and the waveform have already said. So
+   those two go first, in that order, and the name keeps the space they leave
+   instead of being clamped to one line while a byte count sits underneath it.
+
+   Heights rather than widths, because it is height the layout runs out of -
+   the title is what grows when a card is narrowed, and the transport at the
+   foot is a fixed strip that the growth pushes against.
+
+   Written with the same selectors as the rules above rather than the short
+   ones they could be: a container query carries no specificity of its own, so
+   `.card-name` inside one loses to `.card-audio .card-name` outside it and the
+   clamp would never move. */
+@container audio-card (max-height: 190px) {
+  .card-audio .card-meta { display: none; }
+}
+@container audio-card (max-height: 148px) {
+  .card-audio .card-icon { display: none; }
+  .card-audio .card-name { -webkit-line-clamp: 2; line-clamp: 2; }
+}
+@container audio-card (max-height: 116px) {
+  .card-audio .card-name { -webkit-line-clamp: 1; line-clamp: 1; }
+}
 
 /* The native player is a fixed-height control, so it is pinned to the foot of
    the card rather than left to be squeezed by the text above it. */
@@ -472,7 +701,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
   min-width: 1px;
   border-radius: min(var(--radius-xs), 2px);
 }
-.wave-base i { background: color-mix(in srgb, var(--ink) 22%, transparent); }
+/* Enough ink to read as a waveform on paper. At 22% it was a grey suggestion
+   next to a play button in full accent, and the two did not look like parts of
+   one control; a track that is visible is also a target that looks clickable,
+   which this one has always been. */
+.wave-base i { background: color-mix(in srgb, var(--ink) 38%, transparent); }
 .wave-fill {
   clip-path: inset(0 100% 0 0);
   will-change: clip-path;
@@ -537,6 +770,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
 #world.zoom-far .card-audio.has-cover .card-cover {
   position: absolute;
   inset: 0;
+  /* Both, and not only the height: the corner sleeve above sets a width, and a
+     box given left, right and width at once resolves the conflict by throwing
+     away `right` - so the picture would have filled the card's height and kept
+     the corner stamp's width. */
+  width: 100%;
   height: 100%;
   border-radius: inherit;
   box-shadow: none;
@@ -929,12 +1167,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
    expensive thing on the card. Same rung as every other detail (viewport.js). */
 #world.zoom-far .model-stage { visibility: hidden; }
 
-/* ---- The one link that can become a player (canvas/embed.js) -------------
+/* ---- The links that can become players (canvas/embed.js) -----------------
    The button is a standing offer, not a state: nothing has been requested from
    anyone until it is pressed, and it is styled to say so - the same accent a
    link wears, on the card's own paper, rather than the filled red of a control
-   that is already doing something. */
-.yt-play {
+   that is already doing something. One rule for both providers: a card that
+   dressed itself in YouTube red or Spotify green would be two more palettes on
+   a board whose whole premise is that you chose the pigments. */
+.embed-go {
   align-self: flex-start;
   display: inline-flex;
   align-items: center;
@@ -952,28 +1192,60 @@ button, input, select, textarea { font: inherit; color: inherit; }
   pointer-events: auto;   /* same bargain the anchor above makes */
   transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
 }
-.yt-play:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
-.yt-play svg { width: 11px; height: 11px; }
+.embed-go:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.embed-go svg { width: 11px; height: 11px; }
 /* Far out, the offer is unreadable and un-pressable, and it would be the only
    thing left saying anything on a card whose text has already stood down. */
-#world.zoom-far .yt-play { display: none; }
+#world.zoom-far .embed-go { display: none; }
 
 /* Taken. The name row survives as the only part of the card still ours to
    grab - see embed.js - and the frame takes everything under it. */
 .card.has-embed { gap: 6px; }
 .card.has-embed .card-name { flex: none; }
-.yt-frame {
+.embed-frame {
   flex: 1;
   min-height: 0;
   width: 100%;
   border: 0;
   border-radius: var(--radius-xs);
-  background: #000;
   pointer-events: auto;
 }
-/* Nothing to see at a distance but a black rectangle, and a cross-origin frame
-   is the most expensive thing on the board to keep composited. */
-#world.zoom-far .yt-frame { visibility: hidden; }
+/* A video is letterboxed against black because that is what a film is shown
+   against, and any other colour reads as a bug in the player. */
+.embed-frame[data-provider="youtube"] { background: #000; }
+
+/* Spotify's player, made to sit on this board rather than on Spotify.
+   ---------------------------------------------------------------------------
+   Only so much of this is ours to decide, and it is worth being exact about
+   which: inside the frame is Spotify's document on Spotify's origin, and no
+   stylesheet of ours reaches across that boundary - by design, and there is no
+   version of the web where it does not. `?theme=0` in the src is the one lever
+   the player offers, and it swaps their black slab for a light variant that at
+   least shares this board's brightness.
+
+   Everything else here is the ring around it, which is all ours: the card's own
+   paper behind the frame so the corners are this app's radius and not the
+   twelve-pixel one their generator writes inline, the hairline that every other
+   card wears, and a height chosen so the player's own compact layout lands
+   exactly in the box with no dead band above or below it. The result is a
+   Spotify card that reads as one of ours holding a player, rather than a
+   rectangle of somebody else's interface pasted on top. */
+.embed-frame[data-provider="spotify"] {
+  background: var(--paper-2);
+  border-radius: var(--leaf);
+  /* The player draws its own rounded corners at a radius it picked. Clipping to
+     ours means the two never disagree at the corner, which is the single most
+     obviously-foreign thing about an embed at rest. */
+  overflow: hidden;
+}
+/* The card behind a Spotify player closes up: their layout carries its own
+   padding, so ours on top of it reads as a mat around a picture that did not
+   ask for one. */
+.card.has-embed[data-provider="spotify"] { gap: 4px; }
+
+/* Nothing to see at a distance, and a cross-origin frame is the most expensive
+   thing on the board to keep composited. */
+#world.zoom-far .embed-frame { visibility: hidden; }
 
 /* The anchor stands down at far zoom, for the reason the grips and the caption
 plates do: below a third of size a card is a coloured tile, and a click on
@@ -1073,11 +1345,52 @@ plates do: below a third of size a card is a coloured tile, and a click on
   border-top: 0;
   backdrop-filter: none;
   border-radius: 0;
+  /* Inside the card's inner rule, not on it.
+     A captioned bar is a plate along the foot and belongs flush to the edge;
+     this one is a bare button standing on the card's own paper, so it owes that
+     paper the same margin everything else inside the card keeps.
+     The number is the distance the rule has moved in from the width these
+     fittings were drawn against - the 5px of Middle and Harsh. It is zero at
+     both of those, and 3px at Softish, where the rule stands 8px in and the
+     dots stood 8.8px in: eight tenths of a pixel of daylight, which is not
+     daylight, and the dots read as sitting on the line rather than beside it.
+     Written as a difference rather than as the gap itself because the handle
+     was never flush to begin with - the icon is 13px centred in a 30px button,
+     so it already stands most of the way clear on its own. */
+  right: max(0px, calc(var(--card-rule-gap) - 5px));
+  bottom: max(0px, calc(var(--card-rule-gap) - 5px));
 }
 /* :not(), rather than an override that unhides it again - winning on
    specificity here would also unhide the plates that particular item types
    hide on purpose. A plate being typed into is the one that must survive. */
 #world.zoom-far .item:not(.is-editing) .item-label { display: none; }
+
+/* ---------------------------------------------------------------------------
+   Cheap mode: what the board stops paying for while it is being moved.
+
+   Set by canvas/viewport.js for as long as the view keeps changing, and taken
+   off 140ms after it stops. Everything here is an effect that is free on a
+   still board and priced per item per frame on a moving one - so what it buys
+   scales with exactly the thing that makes zooming heavy, which is how many
+   cards are on screen.
+
+   `backdrop-filter` is the whole reason this exists. Every photograph and every
+   video on the board carries a caption plate that blurs what is behind it, and
+   a backdrop blur cannot be composited once and reused the way a shadow can:
+   the pixels behind the box change on every frame of a zoom, so every plate on
+   screen is re-blurred every frame. The plate keeps its translucent paper and
+   its rule, so it is still a plate - it simply stops sampling through itself
+   for the tenth of a second nobody is reading it.
+
+   The blur returning is not animated. A transition here would put the cost back
+   on the frame after the gesture, spread over a few hundred milliseconds, which
+   is precisely the frames a zoom lands on and the user is looking at. */
+#world.is-viewing .item-bar,
+#world.is-viewing .transport-video,
+#world.is-viewing .vbig,
+#world.is-viewing .card-audio.has-cover .play {
+  backdrop-filter: none;
+}
 
 /* Resize handles. Everything on the board takes all eight - four corners that
    move both axes, four edges that move one.
@@ -1277,26 +1590,35 @@ plates do: below a third of size a card is a coloured tile, and a click on
    would put eight marks around a small item and make the selection read as a
    dotted ring; leaving them bare keeps the corners as the only marks while
    the sides are still grabbable. They stop short of the corners so a corner
-   drag is never stolen by the edge next to it. */
+   drag is never stolen by the edge next to it.
+
+   Laid *outside* the item, for the reason the corner squares above are: these
+   used to be anchored at the ring and run inward, so the outer ten pixels of a
+   card's own face resized it while the corners of the same card dragged. One
+   card, two rules, and nothing on screen to say where the line was. Now both
+   end where the item does, and the whole face is always a drag.
+
+   One length for the thickness and the offset, so the touch block at the foot
+   of this file widens the strip without sliding it back over the card. */
 .grip-edge { background: none; }
 .grip[data-g="n"], .grip[data-g="s"] {
   left:  min(var(--mark-size), 40%);
   right: min(var(--mark-size), 40%);
   width: auto;
-  height: calc(14px * var(--iz));
+  height: calc(var(--grip-edge, 14px) * var(--iz));
   cursor: ns-resize;
 }
-.grip[data-g="n"] { top: calc(-1 * var(--sel-edge)); }
-.grip[data-g="s"] { bottom: calc(-1 * var(--sel-edge)); }
+.grip[data-g="n"] { top:    calc(-1 * var(--grip-edge, 14px) * var(--iz)); }
+.grip[data-g="s"] { bottom: calc(-1 * var(--grip-edge, 14px) * var(--iz)); }
 .grip[data-g="w"], .grip[data-g="e"] {
   top:    min(var(--mark-size), 40%);
   bottom: min(var(--mark-size), 40%);
   height: auto;
-  width: calc(14px * var(--iz));
+  width: calc(var(--grip-edge, 14px) * var(--iz));
   cursor: ew-resize;
 }
-.grip[data-g="w"] { left: calc(-1 * var(--sel-edge)); }
-.grip[data-g="e"] { right: calc(-1 * var(--sel-edge)); }
+.grip[data-g="w"] { left:  calc(-1 * var(--grip-edge, 14px) * var(--iz)); }
+.grip[data-g="e"] { right: calc(-1 * var(--grip-edge, 14px) * var(--iz)); }
 
 /* ---------------------------------------------------------
    Menu button + sidebar
@@ -1307,8 +1629,8 @@ plates do: below a third of size a card is a coloured tile, and a click on
   top: max(16px, env(safe-area-inset-top));
   left: max(16px, env(safe-area-inset-left));
   z-index: 30;
-  width: 42px;
-  height: 40px;
+  width: var(--chrome-button-w);
+  height: var(--chrome-button-h);
   display: grid;
   align-content: center;
   justify-items: center;
@@ -1319,7 +1641,9 @@ plates do: below a third of size a card is a coloured tile, and a click on
   background: var(--paper-card);
   box-shadow: var(--shadow-1);
   cursor: pointer;
-  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease),
+              opacity var(--dur-base) var(--ease);
 }
 #menu-btn:hover { background: var(--paper-2); border-color: var(--accent); }
 #menu-btn span {
@@ -1328,6 +1652,20 @@ plates do: below a third of size a card is a coloured tile, and a click on
   border-radius: var(--radius-xs);
   background: var(--ink);
 }
+/* The wordmark, set in whatever the display face is - and when that face is a
+   sans, set as heavy as it goes.
+
+   900 rather than 700, and it is not a typo. Geist is a variable font with a
+   weight axis that stops at 700, and asking a variable face for more than its
+   axis holds clamps to the axis - so this asks for "the top of whatever this
+   font has" and gets 700 from Geist, 900 from a dropped face that carries one,
+   and the same synthetic bold either number would have produced from a face
+   with a single master. There is no way to read a face's maximum in CSS, and
+   this is the question phrased so it does not need to be read.
+   ui/appearance.js sets the attribute; see markDisplayFace() for how a stack is
+   judged to be a sans. */
+:root[data-display-sans] .wordmark h1 { font-weight: 900; }
+
 #sidebar.is-open ~ #menu-btn { opacity: 0; pointer-events: none; }
 
 /* A panel of paper laid over the board. Deliberately NOT modal: no scrim, no
@@ -1374,6 +1712,9 @@ plates do: below a third of size a card is a coloured tile, and a click on
   margin: 0;
   font-size: 30px;
   font-weight: 400;
+  /* 400 is right for the serif: Fraunces at 30px is a display cut already, and
+     bolding a high-contrast face thickens the stems without making it any more
+     of a title. A sans has nothing else to give - see the override below. */
   letter-spacing: calc(0.14em * var(--ls-scale));
   line-height: 1;
   color: var(--ink);
@@ -1544,6 +1885,26 @@ plates do: below a third of size a card is a coloured tile, and a click on
   letter-spacing: calc(0.03em * var(--ls-scale));
 }
 .btn-row button.primary:hover { background: var(--accent-deep); color: var(--accent-fg); }
+/* A pair of buttons behaving as a radio group - Portrait / Landscape. Filled
+   rather than merely outlined, because the question these answer is "which of
+   these two is it", and an outline reads as a hover on the wrong one just as
+   readily as it reads as a selection. The hover rule above would otherwise
+   repaint the chosen one as unchosen the moment the pointer crossed it. */
+.btn-row button[aria-pressed="true"],
+.btn-row button[aria-pressed="true"]:hover {
+  background: var(--accent);
+  border-color: var(--accent-deep);
+  color: var(--accent-fg);
+}
+/* The same bargain the dialog's destructive button strikes, and worn for the
+   same reason: outlined until you are over it, so it reads as available rather
+   than as the thing the panel wants you to press. */
+.btn-row button.danger { border-color: var(--danger); color: var(--danger); }
+.btn-row button.danger:hover {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--paper-card);
+}
 
 .field { display: block; margin-bottom: 11px; }
 .field > span {
@@ -1556,10 +1917,48 @@ plates do: below a third of size a card is a coloured tile, and a click on
   margin-bottom: 5px;
 }
 .field output { font-family: var(--font-mono); font-style: normal; color: var(--ink); }
+/* The chevron on a menu, drawn rather than left to the browser.
+
+   Padding was tried first and cannot do it: the native dropmarker is part of
+   the widget, and Firefox places it at its own fixed distance from the border
+   edge no matter what padding-right says. So it sat about eight pixels off the
+   frame - and at the soft end of the axis, where a 35px control with a 20px
+   radius is very nearly a pill, the curve is still turning at that point and
+   the arrow reads as falling out of the side of its own button.
+
+   `appearance: none` drops the widget's arrow and this puts one back where it
+   was asked for. A mask rather than a background image, because a data URI
+   cannot see currentColor and this app has four palettes: the mark is the
+   shape, and --ink-2 is the ink, so it belongs to whichever sheet it is on. */
+.field:has(select) {
+  position: relative;
+  /* How far the mark's own box sits from the frame. Follows the corner, so the
+     rounder the control the further in it comes. */
+  --lane: max(13px, calc(var(--leaf) * 0.75));
+}
+.field:has(select)::after {
+  content: '';
+  position: absolute;
+  right: var(--lane);
+  bottom: 0;
+  width: 11px;
+  height: calc(35px * var(--density));   /* the select's own height, so centred */
+  background: var(--ink-2);
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.5 2.4 6 6.2 10.5 2.4'/%3E%3C/svg%3E");
+  -webkit-mask: var(--chevron) center / 11px 7px no-repeat;
+  mask: var(--chevron) center / 11px 7px no-repeat;
+  /* The menu underneath still takes the click, including on the arrow. */
+  pointer-events: none;
+  transition: background var(--dur-fast) var(--ease);
+}
+.field:has(select):hover::after { background: var(--accent); }
 .field select {
   width: 100%;
   min-height: calc(35px * var(--density));
-  padding: 0 10px;
+  /* The lane, the mark, and a word's worth of air before the text runs into it. */
+  padding: 0 calc(var(--lane) + 19px) 0 10px;
+  appearance: none;
+  -webkit-appearance: none;
   border: var(--hairline) solid var(--rule-2);
   border-radius: var(--leaf);
   background: var(--paper);
@@ -1740,6 +2139,7 @@ kbd {
   align-items: flex-end;
   gap: 8px;
   user-select: none;
+  transition: opacity var(--dur-base) var(--ease);
 }
 
 #zoom-ctl {
@@ -1787,6 +2187,128 @@ kbd {
 /* A hairline gap before the fit/home pair - they move the view, not the zoom. */
 #zoom-ctl button[data-zoom="fit"] { border-left-width: 3px; border-left-style: double; }
 
+/* The phone's add bar. Nothing but its own shape here - where it is pinned, and
+   the fact that it exists at all, are both in the width query at the foot of
+   this sheet. A mouse has the whole sidebar a click away and does not need the
+   bottom edge of the window spent on two of its buttons. */
+#add-bar {
+  display: none;
+  position: fixed;
+  z-index: 20;
+  align-items: stretch;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--ogee);
+  overflow: hidden;
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
+  user-select: none;
+  transition: opacity var(--dur-base) var(--ease), visibility 0s;
+}
+#add-bar button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  /* 54, not 44. This is the one control on the screen that is aimed at rather
+     than pressed on the way past, and it is the bottom of a phone - the strip
+     a browser's own chrome shares with the home indicator. */
+  min-height: 54px;
+  padding: 0 14px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font-size: var(--t-small);
+  letter-spacing: calc(0.02em * var(--ls-scale));
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+/* The two halves are one object, so the seam is a rule and not a gap. */
+#add-bar button + button { border-left: 1px solid var(--rule); }
+#add-bar button:active { background: var(--paper-3); color: var(--accent-deep); }
+#add-bar svg { width: 19px; height: 19px; color: var(--accent); }
+/* Same bargain as #bin: the panel covers this whole bar at this width, and a
+   control you cannot see should not still be in the tab order underneath it. */
+#sidebar.is-open ~ #add-bar {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity var(--dur-base) var(--ease), visibility 0s var(--dur-base);
+}
+
+/* Idle - fifteen seconds of nothing, and the furniture goes.
+   ui/idle.js puts the class on and takes it off; what counts as "something
+   happened" is decided there.
+
+   pointer-events with it, and that pairing is the whole safety of this: a
+   control faded to nothing that could still be pressed would be a mine, and
+   the first tap has to be the one that brings the bar back rather than one
+   that lands on an invisible Empty.
+
+   Much slower going than coming, and the gap is the point. Leaving is the app
+   getting out of the way: a drift long enough that the eye never catches the
+   moment it starts, so the board is simply clear rather than visibly emptied.
+   Arriving answers something the user just did, and an answer is late at a
+   quarter of a second - the base rules on each element carry that quick half.
+   A multiple of --dur-base rather than a fixed time, so the three whimsy tiers
+   keep their own tempo instead of all drifting off at the middle one's. */
+:root.is-idle #menu-btn,
+:root.is-idle #bin,
+:root.is-idle #corner,
+:root.is-idle #add-bar {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity calc(var(--dur-base) * 6) var(--ease);
+}
+
+/* The scale bar. A label over a stick, both right-aligned, so the stick's right
+   end lines up with the edge of the zoom control beneath it - the eye then has
+   a straight edge to measure from rather than a floating rule.
+
+   No card, no background: it is a measurement laid on the board, not another
+   control sitting on top of it. That also keeps the corner from becoming three
+   stacked panels. */
+#scale-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  padding: 0 2px 2px;
+  user-select: none;
+  pointer-events: none;
+}
+#scale-bar[hidden] { display: none; }
+#scale-bar-label {
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+  /* Enough of the paper behind it to stay legible over a photograph, without
+     drawing a box: the label sits in a wash, the stick does not need one. */
+  padding: 0 3px;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--paper-card) 78%, transparent);
+}
+/* Serifed at both ends, the way a scale bar on a drawing is: the two tick marks
+   are what make it a measurement between two points rather than a line of
+   unclear extent. Borders rather than pseudo-elements so the whole thing is one
+   element whose width is the only thing the module writes. */
+#scale-bar-stick {
+  height: 7px;
+  border: solid var(--ink-2);
+  border-width: 0 var(--hairline);
+  position: relative;
+}
+#scale-bar-stick::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--hairline);
+  background: var(--ink-2);
+}
+
 #hud {
   display: flex;
   align-items: stretch;
@@ -1800,7 +2322,10 @@ kbd {
   color: var(--ink-2);
   pointer-events: none;
 }
-#hud span { padding: 6px 11px; }
+/* Nowrap because each slot now carries both readings - board units and the real
+   measurement - and a pair broken across two lines reads as four numbers. The
+   strip grows sideways instead; it is hidden outright on a narrow screen. */
+#hud span { padding: 6px 11px; white-space: nowrap; }
 #hud span + span { border-left: 1px solid var(--rule); }
 #hud-xy { color: var(--accent-deep); }
 #hud[hidden] { display: none; }
@@ -1841,8 +2366,8 @@ kbd {
 #bin-btn {
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
+  width: var(--chrome-button-w);
+  height: var(--chrome-button-h);
   border: var(--hairline) solid var(--rule-2);
   border-radius: var(--leaf);
   background: var(--paper-card);
@@ -1876,6 +2401,94 @@ kbd {
    by being visibly not empty. The icon inherits currentColor, so this carries
    the state without anything extra being drawn on top of it. */
 #bin-btn.has-things { color: var(--accent-deep); border-color: var(--accent); }
+
+/* The autosave mark. Sits above the row, out of the flow, so it can appear and
+   go without anything else on the glass moving an inch.
+
+   Deliberately the quietest thing in the corner: no card, no shadow, no border
+   - it is a note to yourself, not a control, and the moment it looks like a
+   button somebody will try to press it. It leaves slowly and arrives quickly,
+   the same asymmetry #add-bar uses when the furniture idles away: arriving
+   answers something you just did and is late at a quarter of a second, whereas
+   leaving is only the app getting out of the way again. */
+#saved {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px 3px 6px;
+  border-radius: var(--leaf);
+  background: color-mix(in oklab, var(--paper-card) 82%, transparent);
+  color: var(--ink-3);
+  font-size: var(--t-tiny);
+  letter-spacing: calc(0.02em * var(--ls-scale));
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  /* visibility with it, so a mark faded to nothing is not still a hit target
+     over the board - the same pairing #bin makes when the panel covers it. */
+  visibility: hidden;
+  transition: opacity 640ms var(--ease), visibility 0s 640ms;
+}
+#saved.is-on {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity var(--dur-fast) var(--ease), visibility 0s;
+}
+#saved svg { width: 12px; height: 12px; color: var(--accent); }
+
+/* The bin and the history pair, on one line. The bin stays flush in the corner
+   and the pair grows to its right, so nothing that was already there moves. */
+.bin-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+/* The same segmented pill as #zoom-ctl in the opposite corner - one object with
+   a hairline seam, not two buttons that happen to be adjacent. Each half takes
+   exactly the space of one permanent chrome button, so the bin, undo, redo and
+   menu all carry the same visual weight. */
+#history-ctl {
+  display: flex;
+  align-items: stretch;
+  width: calc(var(--chrome-button-w) + var(--chrome-button-w));
+  height: var(--chrome-button-h);
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  overflow: hidden;
+  background: var(--paper-card);
+  box-shadow: var(--shadow-1);
+}
+#history-ctl button {
+  display: grid;
+  place-items: center;
+  flex: 1 1 50%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+#history-ctl button + button { border-left: 1px solid var(--rule); }
+#history-ctl button:hover:not(:disabled) { background: var(--paper-2); color: var(--accent-deep); }
+#history-ctl button:active:not(:disabled) { background: var(--paper-3); }
+/* Nothing to take back. The faintest ink and no pointer reaction, which is the
+   disabled treatment the zoom controls already use - and unlike the empty bin
+   this one really is inert, so it says so. */
+#history-ctl button:disabled { color: var(--ink-3); cursor: default; }
+#history-ctl svg {
+  width: 16px; height: 16px;
+  /* The glyph takes the reaction, not the button: scaling the button would drag
+     the seam between the two around. Same bargain as #zoom-ctl. */
+  transition: transform var(--dur-base) var(--ease-back);
+}
+#history-ctl button:hover:not(:disabled) svg { transform: scale(var(--btn-grow)) translateY(var(--btn-lift)); }
+#history-ctl button:active:not(:disabled) svg { transform: scale(calc(var(--btn-press) - 0.08)); }
 
 /* Open while a drag is in flight: you are dragging *out* of the panel and onto
    the board, so the panel must not shut the moment the pointer leaves it. */
@@ -2191,6 +2804,108 @@ kbd {
   background: var(--rule);
 }
 
+/* ---------------------------------------------------------
+   The waiting strip (busy() in util.js)
+
+   A card of the same stock as everything else, slid down from the top edge
+   while the app cannot answer. Deliberately not a modal, not a veil over the
+   board and not a spinner in the middle of the screen: none of the work it
+   covers stops you from panning, reading what is already there, or writing a
+   note while it finishes. It reports; it does not detain.
+
+   Top centre, opposite the toast at the foot - see the note in index.html.
+   --------------------------------------------------------- */
+#busy {
+  position: fixed;
+  z-index: 55;
+  top: max(14px, env(safe-area-inset-top));
+  left: 50%;
+  width: min(330px, calc(100vw - 28px));
+  padding: 10px 14px 11px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
+  /* The entrance and the exit are one declaration: is-up moves it to rest and
+     removing the class sends it back up under the top edge it came from. */
+  translate: -50% -14px;
+  opacity: 0;
+  transition: translate var(--dur-base) var(--ease-back),
+              opacity var(--dur-base) var(--ease);
+}
+#busy.is-up { translate: -50% 0; opacity: 1; }
+#busy[hidden] { display: none; }
+
+.busy-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+#busy-label {
+  min-width: 0;
+  /* One line, and the end cut rather than wrapped: the strip is a fixed shape
+     and a filename long enough to wrap would change its height mid-job. */
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--t-small);
+  font-style: var(--display-italic);
+  color: var(--ink);
+}
+#busy-count {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+}
+
+#busy-track {
+  position: relative;
+  overflow: hidden;
+  height: 3px;
+  border-radius: var(--radius-xs);
+  background: var(--rule);
+}
+#busy-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+/* Not counting: a short bar sliding the length of the track and back.
+
+   A CSS animation rather than anything this app drives, and that is the whole
+   reason this element exists in two modes instead of one. Most of what the
+   strip covers - hashing a video by hand where crypto.subtle is missing,
+   decoding a folder of images, packing an archive - is synchronous work on the
+   thread that draws. Anything animated from JavaScript stops dead underneath
+   it, at precisely the moment somebody is watching the bar to find out whether
+   the app has hung. A transform animation is the compositor's to run, so it
+   keeps moving while this thread is fully occupied, which is the one honest
+   thing it can do.
+
+   Which also decides the shape: `translate` and nothing else. Animating width
+   or left would put it back on the main thread and undo the point. */
+#busy:not(.is-counting) #busy-fill {
+  width: 38%;
+  animation: busy-slide 1.15s var(--ease) infinite;
+}
+@keyframes busy-slide {
+  0%   { translate: -100% 0; }
+  50%  { translate: 163% 0; }
+  100% { translate: -100% 0; }
+}
+
+/* Counting: a width this app sets, eased so a batch that finishes several files
+   between frames fills smoothly instead of jumping. */
+#busy.is-counting #busy-fill {
+  width: 0%;
+  transition: width var(--dur-base) var(--ease);
+}
+
 /* A slip of paper, pinned briefly at the foot of the sheet. */
 #toast {
   position: fixed;
@@ -2252,6 +2967,25 @@ kbd {
   text-wrap: pretty;
 }
 #ask p[hidden] { display: none; }
+/* The box on the questions that want a value rather than a choice. Dressed as
+   the panel's own controls are, and given the row of buttons' full width -
+   there is only ever one of these, and a short box beside a long sentence reads
+   as an afterthought. */
+#ask-field {
+  display: block;
+  width: 100%;
+  min-height: calc(35px * var(--density));
+  margin: 0 0 14px;
+  padding: 0 10px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+#ask-field:focus { outline: none; border-color: var(--accent); }
+#ask-field[hidden] { display: none; }
+
 .ask-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 /* Pushes the two paired answers to the far end, away from the one that keeps
    your work. Collapses to nothing when the row wraps on a narrow screen. */
@@ -2305,6 +3039,20 @@ kbd {
 
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+
+  /* One exception, and it is about honesty rather than about motion. The
+     indeterminate bar is a short block that means "something is happening"
+     only because it is travelling; stopped dead by the rule above it becomes a
+     short block sitting at 38%, which is a progress reading, and a false one.
+     So with motion off it is drawn as a full dim track instead - the label and
+     the strip's presence carry the message, and nothing on screen claims to
+     know how far along the work is. The counting bar is unaffected: its width
+     is a fact and it can be shown standing still. */
+  #busy:not(.is-counting) #busy-fill {
+    width: 100%;
+    opacity: 0.4;
+    animation: none;
+  }
 }
 
 /* ---------------------------------------------------------
@@ -2326,17 +3074,26 @@ kbd {
    --------------------------------------------------------- */
 
 @media (pointer: coarse) {
+  :root {
+    --chrome-button-w: var(--chrome-button-touch);
+    --chrome-button-h: var(--chrome-button-touch);
+    /* Still not 44px: four of these sit on the corners of a rectangle you are
+       looking *through*, so a target that size would hide a card each. Grown to
+       where a finger can find it without the sheet becoming mostly handle. */
+    --sheet-grip: 20px;
+  }
+
   /* Marks keep their drawn size and the targets around them grow. A finger is
      not a pointer: 9px of slop each way on the edge strips, and a corner square
      of 40 rather than 24 - still laid outside the item, so a thumb on the card
      is still a drag. */
-  .item { --grip-slop: 9px; --grip-corner: 40px; }
+  /* The edge strips are pure hit area, so --grip-edge is the target itself -
+     and it sets the offset as well as the thickness, so a wider strip grows
+     away from the card rather than over it. */
+  .item { --grip-slop: 9px; --grip-corner: 40px; --grip-edge: 24px; }
   /* Nothing to hover with, and a swollen mark under a finger is a mark under a
      finger. It stays for the drag, which is the part you can see. */
   .grip:not(.grip-edge):hover { --grip-swell: 1; }
-  /* The edge strips are pure hit area, so these are the targets themselves. */
-  .grip[data-g="n"], .grip[data-g="s"] { height: calc(24px * var(--iz)); }
-  .grip[data-g="w"], .grip[data-g="e"] { width:  calc(24px * var(--iz)); }
 
   /* A video's transport is revealed by hovering the card, which on a touch
      screen means it is revealed by nothing at all. Selection is the touch
@@ -2362,9 +3119,7 @@ kbd {
   /* 44px, everywhere a finger has to land. This is the *input* question, so it
      is here rather than in the width query below: a 10" tablet has all the room
      in the world and the same finger. */
-  #menu-btn { width: 46px; height: 46px; }
   #menu-btn span { width: 19px; }
-  #bin-btn { width: 46px; height: 46px; }
   #bin-btn svg { width: 20px; height: 20px; }
   #zoom-ctl button { min-width: 40px; height: 46px; }
   #zoom-ctl svg { width: 17px; height: 17px; }
@@ -2377,30 +3132,71 @@ kbd {
 }
 
 @media (max-width: 700px) {
-  /* One bar along the bottom edge instead of four corners: menu and bin on the
-     left, the view controls on the right, all of it inside the reach of a
-     thumb. The menu button in particular was diagonally opposite the hand.
+  /* Two bands instead of four corners.
+
+     The foot is for the hand: the add bar along the very bottom, with the menu
+     on the left of the row above it and the bin on the right. The view
+     controls go up to the top edge on their own, because they are the odd one
+     out - zoom is something you set and then leave, not something you reach
+     for mid-gesture, and it was the piece most often pressed by accident while
+     dragging an item towards the bottom of the screen.
 
      Nothing moves in the markup - these are four independently fixed elements
      and always were, so this is only a question of where each one is pinned. */
+  /* The add bar takes the bottom edge and everything else steps up over it.
+     One number for the step, declared once: the bar's own 54px plus the 12
+     between the two rows. Written on :root rather than on each of them so the
+     three cannot drift apart, which is exactly what happened to the four
+     corners this bar replaced. */
+  :root { --bar-lift: 66px; }
+
+  #add-bar {
+    display: flex;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    left: max(12px, env(safe-area-inset-left));
+    right: max(12px, env(safe-area-inset-right));
+  }
+
   #menu-btn {
     top: auto;
-    bottom: max(12px, env(safe-area-inset-bottom));
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--bar-lift));
     left: max(12px, env(safe-area-inset-left));
   }
 
+  /* Opposite end of the same row as the menu, where the view controls used to
+     be. Two buttons at the two far corners of a phone is the one arrangement
+     that cannot be fat-fingered into the wrong one. */
   #bin {
-    bottom: max(12px, env(safe-area-inset-bottom));
-    /* Clear of the menu button, which is now its neighbour rather than its
-       diagonal opposite. */
-    left: calc(max(12px, env(safe-area-inset-left)) + 56px);
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--bar-lift));
+    left: auto;
+    right: max(12px, env(safe-area-inset-right));
+    /* The panel hangs off the button, so it has to hang the other way now or
+       its 268px would start at the right edge and end off the screen. */
+    align-items: flex-end;
   }
-  /* Pinned 56px in from the left edge now, so its fixed 268px could run off a
-     narrow screen. */
-  #bin-panel { width: min(268px, calc(100vw - 84px)); max-height: min(60vh, 420px); }
+  /* Undo and redo first, the bin at the end of the row.
+     The row is pinned to the right edge here rather than the left, so "the far
+     end of the group" is the right-hand end - and the bin wants that end for
+     two reasons: it is where the bin lived before this row existed, and it is
+     what keeps the panel, which hangs off the bin and is also right-aligned at
+     this width, lined up with the button that opens it.
 
+     row-reverse rather than a reordered markup, and the choice is which
+     breakpoint gets the seam between reading order and tab order. Leaving the
+     markup in the desktop's order puts that seam on the phone, which is the
+     width least likely to have a keyboard plugged into it. */
+  .bin-row { flex-direction: row-reverse; }
+  #bin-panel { width: min(268px, calc(100vw - 24px)); max-height: min(60vh, 420px); }
+  /* The column hangs off the right edge here, so the mark has to hang with it -
+     pinned left, it would start at the bin and run off the screen. */
+  #saved { left: auto; right: 0; }
+
+  /* Up at the top edge, clear of everything the thumb is doing. Right-aligned
+     rather than centred: #corner is a column that grows downwards from its
+     pin, and the top right is the one part of the screen nothing else claims. */
   #corner {
-    bottom: max(12px, env(safe-area-inset-bottom));
+    top: max(12px, env(safe-area-inset-top));
+    bottom: auto;
     right: max(12px, env(safe-area-inset-right));
   }
   /* The readout can afford to be tighter than it is on a desktop: there is no
@@ -2408,9 +3204,53 @@ kbd {
      crosses 100% matters less than the whole bar fitting. */
   #zoom-level { min-width: 46px; }
 
+  /* The ruler goes under the view controls here rather than over them, and it
+     turns over with the move.
+
+     Both halves are the same decision. #corner grows downwards from a pin at
+     the top of the screen at this width, where on a desktop it grows upwards
+     from the bottom - so what was the outside edge of the group is now the
+     inside one, and a stick drawn with its baseline at the bottom and its
+     serifs rising into the pill above reads as a bracket around the wrong
+     thing. Turned over, the baseline is the edge it shares with the controls,
+     the serifs hang from it, and the number sits at the foot: controls, rule,
+     reading, which is the order a scale bar has under a drawing. */
+  #corner { flex-direction: column; }
+  #scale-bar { order: 1; flex-direction: column-reverse; padding: 2px 2px 0; }
+  #scale-bar-stick::before { bottom: auto; top: 0; }
+
   /* The coordinate readout is the first thing to go. It is a thing to glance
      at while working with a mouse, and there is no cursor to report. */
   #hud { display: none; }
+
+  /* And with the panel open, the view controls go too - so nothing is left on
+     the glass but the panel.
+
+     Only at this width, and that is the whole of the reasoning. On a desktop
+     the sidebar is a sheet laid over one edge of a board you can still see and
+     still use, so the zoom controls in the far corner are as live as they ever
+     were. Here the panel *is* the screen: the board behind it is not visible,
+     the scale bar is measuring something nobody can look at, and a zoom control
+     floating over a full-screen panel reads as a piece of the panel - one that
+     does nothing you would expect a control on this screen to do. The menu
+     button, the bin and the add bar already leave for exactly this reason; this
+     is the last corner that stayed.
+
+     visibility with the opacity, and delayed by the fade's own length, so the
+     controls finish fading before they leave the tab order and come back the
+     instant the panel starts to close. The same pairing #bin and #add-bar use -
+     a control faded to nothing that can still be pressed is worse than one that
+     is simply there. */
+  #sidebar.is-open ~ #corner {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity var(--dur-base) var(--ease), visibility 0s var(--dur-base);
+  }
+
+  /* Under the view controls rather than beside them: at this width a centred
+     330px strip and a right-pinned zoom bar are the same piece of screen. */
+  #busy { top: calc(max(12px, env(safe-area-inset-top)) + 46px); }
 
   /* The panel becomes the screen rather than a sheet laid on it. At this width
      the board behind it is not usable anyway, and half a panel is worse than a
@@ -2428,6 +3268,14 @@ kbd {
     left: max(10px, env(safe-area-inset-left));
     right: max(10px, env(safe-area-inset-right));
     width: auto;
+    /* Just a fade here. The slide-with-overshoot is a sheet arriving from off
+       to the left, which reads only while there is board either side of it to
+       arrive over; at this width the panel *is* the screen, so the same motion
+       is the whole view lurching sideways. Closed state keeps the transform at
+       none so nothing is being animated but the opacity. */
+    transform: none;
+    transition: opacity var(--dur-base) var(--ease),
+                visibility 0s linear var(--dur-base);
   }
   /* A flick that runs off the end of the panel would otherwise carry on into
      the page behind it, which on a phone is the browser's own overscroll. */
@@ -2451,6 +3299,12 @@ kbd {
 @media (max-width: 900px) and (max-height: 480px) {
   #sidebar { top: 6px; bottom: 6px; }
   .side-head { padding: 10px 14px 8px; }
+  /* Height is the scarce thing here, and 54px of it is a tenth of the screen.
+     The finger has not changed size, so this stops at 44 rather than going
+     further. Harmless above 700px, where there is no bar to make room for and
+     nothing reads the step. */
+  :root { --bar-lift: 56px; }
+  #add-bar button { min-height: 44px; }
 }
 
 /* ---------------------------------------------------------

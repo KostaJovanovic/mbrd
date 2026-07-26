@@ -16,7 +16,9 @@
 // serialise an item through a DataTransfer just to hand it back to the same
 // page it started on.
 
-import { board, bus, restoreItems, emptyTrash, select } from '../state.js';
+import {
+  board, bus, selection, removeItems, restoreItems, emptyTrash, select,
+} from '../state.js';
 import { assetURL } from '../storage/assets.js';
 import { extOf, baseName, el } from '../util.js';
 
@@ -34,7 +36,14 @@ export function initTrash(viewport) {
   emptyBtn = el('bin-empty');
   if (!panel || !button) return;
 
-  button.addEventListener('click', () => setOpen(panel.hidden));
+  button.addEventListener('click', () => {
+    if (selection.size) {
+      setOpen(false);
+      removeItems([...selection]);
+      return;
+    }
+    setOpen(panel.hidden);
+  });
   emptyBtn.addEventListener('click', emptyTrash);
   list.addEventListener('pointerdown', startDrag);
   list.addEventListener('keydown', restoreByKey);
@@ -46,6 +55,7 @@ export function initTrash(viewport) {
 
   bus.on('trash', paint);
   bus.on('board:load', paint);
+  bus.on('selection', paintButton);
   paint();
 }
 
@@ -57,21 +67,28 @@ function setOpen(want) {
 function paint() {
   const entries = board.trash;
   button.classList.toggle('has-things', entries.length > 0);
-  // The button carries its state as colour alone, which a screen reader cannot
-  // see, so the name has to carry the same fact in words - and it may as well
-  // carry the exact number while it is there, since that is the one thing the
-  // muted-or-not look genuinely cannot say.
-  const name = entries.length
-    ? `Trash, ${entries.length} ${entries.length === 1 ? 'item' : 'items'}`
-    : 'Trash, empty';
-  button.setAttribute('aria-label', name);
-  button.title = name;
+  paintButton();
   emptyBtn.disabled = !entries.length;
   none.hidden = entries.length > 0;
   hint.hidden = entries.length === 0;
 
   list.replaceChildren();
   for (const entry of entries) list.append(binRow(entry));
+}
+
+function paintButton() {
+  const entries = board.trash;
+  // The button carries its state as colour alone, which a screen reader cannot
+  // see, so the name has to carry the same fact in words - and it may as well
+  // carry the exact number while it is there, since that is the one thing the
+  // muted-or-not look genuinely cannot say.
+  const name = selection.size
+    ? `Delete ${selection.size} selected ${selection.size === 1 ? 'item' : 'items'}`
+    : entries.length
+    ? `Trash, ${entries.length} ${entries.length === 1 ? 'item' : 'items'}`
+    : 'Trash, empty';
+  button.setAttribute('aria-label', name);
+  button.title = name;
 }
 
 function binRow(entry) {

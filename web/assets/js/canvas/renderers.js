@@ -4,11 +4,12 @@
 
 import { extOf, baseName, formatBytes } from '../util.js';
 import { assetURL, getAsset, readText } from '../storage/assets.js';
-import { byId, bus, markDirty } from '../state.js';
+import { byId, bus, markDirty, board } from '../state.js';
+import { latticeBox } from '../geometry.js';
 import { describeExt, PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS } from '../import/formats.js';
 import { buildTransport, registerPlayer } from './audio.js';
 import { buildVideoPlayer } from './video.js';
-import { youTubeId, embedOffer } from './embed.js';
+import { embedFor, embedOffer } from './embed.js';
 import { buildModelCard } from './model.js';
 import { meshKind } from '../import/mesh.js';
 
@@ -60,25 +61,40 @@ export function classify(file) {
   return 'generic';
 }
 
-/** Starting size in world units. Media items refine this once they load. */
+/**
+ * Starting size in world units. Media items refine this once they load.
+ *
+ * Every box here except the two noted below was taken in by a fifth on each
+ * side - a dropped folder arrived too heavy, each card claiming more of the
+ * board than the glance it is worth. Card type stays fixed while the box
+ * shrinks, so a smaller card is genuinely a smaller card and not a scaled
+ * photograph of one; that is the point, but it does mean the head of a card
+ * (badge, name, size) now costs proportionally more of it, which is why the
+ * two types whose whole value is the body they show are left alone.
+ */
 export function defaultSize(type) {
   switch (type) {
-    case 'image':   return { w: 320, h: 240 };
-    case 'video':   return { w: 360, h: 203 };
-    case 'audio':   return { w: 330, h: 196 };
+    case 'image':   return { w: 256, h: 192 };
+    case 'video':   return { w: 288, h: 162 };
+    case 'audio':   return { w: 264, h: 157 };
+    // Not shrunk. A text card is a wall of words at a fixed size, so taking a
+    // fifth off each side would show a third less of the file - the one thing
+    // the card is for.
     case 'text':    return { w: 300, h: 360 };
     // Square-ish, because a model has no aspect of its own until it is read -
     // it is framed from its bounding sphere, so it fills whatever box it gets.
-    case 'model':   return { w: 280, h: 280 };
+    case 'model':   return { w: 224, h: 224 };
     // Square: a sticky comes off a square pad. Small, too - a note is an
     // annotation on the board, not a thing on it, and at the old 240 it
     // outweighed most of the photos it was written about. Well clear of
     // MIN_SIZE (48) in canvas/input.js, so the resize floor is unchanged.
+    // Already the small one, and left at 120 while everything around it came
+    // down - the gap it was written to hold has simply closed a little.
     case 'note':    return { w: 120, h: 120 };
     // Wide and short: an address is a wide thing, and there is no body under
     // it - a link card is a name, a URL, and nothing else.
-    case 'link':    return { w: 320, h: 132 };
-    default:        return { w: 250, h: 140 };
+    case 'link':    return { w: 256, h: 106 };
+    default:        return { w: 200, h: 112 };
   }
 }
 
@@ -201,18 +217,42 @@ const RENDERERS = {
     img.addEventListener('load', () => adoptAspect(item, img.naturalWidth, img.naturalHeight), { once: true });
     const url = item.asset && assetURL(item.asset.hash);
     if (url) img.src = url;
-    if (!isAnimated(item)) return img;
 
-    // An animated picture travels with a twin that canvas/stills.js paints a
-    // frame into when the board is zoomed out. Empty and hidden until then;
-    // the pair is returned as a fragment so both land as siblings inside
-    // .item-body and pick up the same sizing rules.
-    img.dataset.gif = '';
+    // Both kinds of picture can travel with a twin, and the twin works the
+    // same way either way: a sibling <img class="still"> that app.css shows
+    // instead of this one once #world is marked zoomed-out. Two sources for
+    // it, and they are the two halves of the same idea.
+    //
+    // An animation's twin is shot live by canvas/stills.js, because what
+    // should freeze is the frame that was on screen - not frame one.
+    //
+    // A still photograph's twin is the hundred-pixel copy made at import
+    // (see thumbFor() in import/drop.js). It is the cheap half of the feature:
+    // zoomed out past the rung, a board of two hundred photographs draws two
+    // hundred hundred-pixel WebPs instead of two hundred full-size decodes,
+    // at a size where the difference is not visible because a card is under a
+    // hundred pixels wide there.
+    //
+    // Never both. An animated file with a thumbnail would have stills.js
+    // overwrite the thumbnail's src on the first pass, so the thumbnail is
+    // simply not made for one - makeThumb() refuses animated input.
+    const animated = isAnimated(item);
+    const thumb = !animated && item.meta?.thumb && assetURL(item.meta.thumb);
+    if (!animated && !thumb) return img;
+
+    if (animated) img.dataset.gif = '';
     const still = document.createElement('img');
     still.className = 'still';
     still.alt = '';
     still.decoding = 'async';
     still.draggable = false;
+    // is-ready gates the swap, and it is set on load rather than here for both
+    // sources alike: the attribute lands at once but the bytes still have to
+    // decode, and swapping early shows a blank square where the picture was.
+    if (thumb) {
+      still.addEventListener('load', () => still.classList.add('is-ready'), { once: true });
+      still.src = thumb;
+    }
     const pair = document.createDocumentFragment();
     pair.append(img, still);
     return pair;
@@ -371,12 +411,13 @@ const RENDERERS = {
 
     card.append(icon, name);
 
-    // The one link that can be more than a link. The offer only - see
+    // The links that can be more than a link. The offer only - see
     // canvas/embed.js for why nothing is loaded until it is taken.
-    const yt = u && youTubeId(u);
-    if (yt) {
-      card.classList.add('card-yt');
-      card.append(embedOffer(item, yt, card));
+    const spec = u && embedFor(u);
+    if (spec) {
+      card.classList.add('card-embed');
+      card.dataset.provider = spec.provider;
+      card.append(embedOffer(item, spec, card));
     }
 
     const dest = u ? linkDest(u) : '';
@@ -555,6 +596,24 @@ function isAnimated(item) {
 }
 
 /** Icon badge + name + size - the shared head of every non-visual card. */
+/**
+ * What to print as a card's title.
+ *
+ * The extension goes, as it always did, and so does whatever punctuation the
+ * name ended on once it has. Files come off a phone, a downloader or a ripper
+ * ending in an underscore, a dash or a run of dots - "001 - Clairo - Hello_" -
+ * and a trailing separator is not part of anybody's title; it is the seam where
+ * the extension used to be, or where a character the filesystem would not take
+ * got replaced. Leading ones go for the same reason.
+ *
+ * Only the edges. Separators *inside* the name are how the person who saved it
+ * wrote it down, and are none of this function's business.
+ */
+function titleOf(item) {
+  const stem = baseName(item.name) || item.name || '';
+  return stem.replace(/^[\s._-]+|[\s._-]+$/g, '') || stem || 'untitled';
+}
+
 function cardShell(item, kind) {
   const card = document.createElement('div');
   card.className = 'card';
@@ -565,15 +624,23 @@ function cardShell(item, kind) {
 
   const name = document.createElement('div');
   name.className = 'card-name';
-  name.textContent = baseName(item.name) || item.name || 'untitled';
+  name.textContent = titleOf(item);
 
   const meta = document.createElement('div');
   meta.className = 'card-meta';
   const asset = item.asset && getAsset(item.asset.hash);
-  // Prefer what the format catalog knows the file *is* over its MIME type,
-  // which is usually blank for anything interesting.
-  const known = describeExt(item.meta.ext || extOf(item.name));
-  const what = known ? `${known.label} · ${known.categoryLabel}` : item.meta.mime;
+  // The extension, not the family and its category. Those two were printed
+  // together and on a great many files they say the same thing twice - "Sound ·
+  // Audio" on every mp3, over a kicker already reading AUDIO. The format is the
+  // part that is not already on the card: what kind of thing this is has been
+  // said by the kicker, the icon and the shape of the card itself.
+  //
+  // The family label is the fallback rather than the first choice, for the
+  // extensions the catalog knows by name but that mean nothing read aloud, and
+  // the MIME type is the last resort it always was.
+  const ext = (item.meta.ext || extOf(item.name) || '').replace(/^\./, '');
+  const known = describeExt(ext);
+  const what = ext ? ext.toUpperCase() : (known ? known.label : item.meta.mime);
   meta.textContent = [asset && formatBytes(asset.size), what].filter(Boolean).join(' · ');
 
   card.append(icon, name, meta);
@@ -603,6 +670,15 @@ function adoptAspect(item, nw, nh) {
   let h = Math.sqrt(area / ratio);
   const over = Math.max(w, h) / cap;
   if (over > 1) { w /= over; h /= over; }
+
+  // Back onto the lattice if the board is snapped. addItems() already put this
+  // item in a cell on the way in; without this, the one class of media that
+  // could not be measured before it landed would quietly step off the grid a
+  // moment later, in front of the person who just dropped it.
+  if (board.settings.snap) {
+    const box = latticeBox({ x: live.x, y: live.y, w, h }, board.settings.gridStep > 0 ? board.settings.gridStep : 64);
+    w = box.w; h = box.h;
+  }
 
   live.w = Math.round(w);
   live.h = Math.round(h);

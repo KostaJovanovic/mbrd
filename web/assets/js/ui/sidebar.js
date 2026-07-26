@@ -5,6 +5,9 @@ import { board, bus, markDirty, setSetting, setArrangement, setTitle } from '../
 import { ARRANGEMENTS } from '../arrange/arrangements.js';
 import { VERSION } from '../version.js';
 import { el, readPref, writePref } from '../util.js';
+import { itemBounds } from '../geometry.js';
+import { toUnits, formatLength, paperMm, PAPERS } from '../measure.js';
+import { lastfmKey, setLastfmKey } from '../import/lastfm.js';
 
 let sidebar, menuBtn;
 
@@ -50,6 +53,9 @@ export function initSidebar(cmds) {
   bindCheck('opt-snap', 'snap');
   bindCheck('opt-hud', 'hud');
 
+  wirePaper();
+  wireScale();
+  wireLastfm();
   wireTitle();
 
   el('version').textContent = 'v' + VERSION;
@@ -64,6 +70,100 @@ function bindCheck(id, key) {
   const box = el(id);
   box.checked = !!board.settings[key];
   box.addEventListener('change', () => setSetting(key, box.checked));
+}
+
+/**
+ * The sheet picker and its two orientation buttons.
+ *
+ * The sizes are built from PAPERS rather than listed in the markup, the same
+ * way the arrangement menu is built from ARRANGEMENTS: a size that exists in
+ * the menu and not in the renderer - or the reverse - is a bug that can only
+ * happen if the list is written down twice.
+ *
+ * Orientation is a pair of buttons rather than a checkbox saying "landscape",
+ * because both states are equally ordinary and a checkbox makes one of them the
+ * default and the other the deviation. It is a radio group in behaviour, drawn
+ * with aria-pressed so the pressed one reads as the current state to a screen
+ * reader as well as to the eye.
+ */
+function wirePaper() {
+  const pick = el('opt-paper');
+  for (const p of PAPERS) {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = p.label;
+    pick.append(opt);
+  }
+  pick.addEventListener('change', () => setSetting('paper', pick.value));
+  bindCheck('opt-paper-resize', 'paperResize');
+
+  for (const btn of el('paper-orient').querySelectorAll('[data-orient]')) {
+    btn.addEventListener('click', () => {
+      // Choosing an orientation with no sheet chosen would be setting a state
+      // nothing can show, so it puts a sheet up as well. A4 because it is the
+      // one everybody means by "a page", and because the alternative - a dead
+      // button until a dropdown two rows up has been touched - is worse.
+      if (!board.settings.paper) setSetting('paper', 'a4');
+      setSetting('paperLandscape', btn.dataset.orient === 'landscape');
+    });
+  }
+}
+
+/**
+ * The one control here that is still a control.
+ *
+ * `settings.scale` used to have a number field in this section - "one grid
+ * square is [6.4] cm" - and it is gone, replaced by the paper outline's corner
+ * grips. The field was a workaround for the same problem the sheet now solves
+ * properly: scale is world units per millimetre, a quantity nobody has an
+ * intuition about, so it has to be set by matching something rather than by
+ * being typed. A grid square was the best reference available before there was
+ * a sheet of paper on the board; a sheet of A4 is a better one, because it is
+ * an object people have held rather than a spacing they have configured, and
+ * because dragging it is one gesture against the actual photographs instead of
+ * a number typed and then checked.
+ *
+ * So what remains is the unit family, which is a display setting and nothing
+ * more - it changes how every measurement is *said* and no geometry at all.
+ */
+function wireScale() {
+  const units = el('opt-units');
+  units.addEventListener('change', () => setSetting('units', units.value));
+}
+
+/**
+ * The Last.fm key, and the only feedback it can honestly give.
+ *
+ * It says whether the key is the right *shape* - 32 hex characters - and never
+ * whether it works, because finding that out means making a request, and making
+ * a request to check whether we are allowed to make requests is the thing this
+ * setting exists to stop happening by itself. The first import that needs it is
+ * where a wrong key shows up, and it shows up as a card with no cover, which is
+ * the card it would have been anyway.
+ *
+ * Not part of the board and not in `settings`: a key is a credential, a .mbrd
+ * is a file you hand to somebody, and those two facts settle where it lives.
+ */
+function wireLastfm() {
+  const field = el('opt-lastfm');
+  field.value = lastfmKey();
+  const state = el('lastfm-state');
+  const paintState = () => {
+    const raw = field.value.trim();
+    state.textContent = !raw ? '' : lastfmKey() === raw ? 'saved' : 'not a key';
+  };
+  paintState();
+  field.addEventListener('change', () => {
+    setLastfmKey(field.value);
+    // Rewritten from what was stored rather than left as typed, so a key that
+    // failed the shape test does not sit in the box looking accepted.
+    field.value = lastfmKey();
+    paintState();
+  });
+  field.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); field.blur(); }
+    else if (e.key === 'Escape') { field.value = lastfmKey(); paintState(); }
+  });
 }
 
 /**
@@ -115,6 +215,51 @@ function paint() {
   for (const [id, key] of [['opt-grid', 'grid'], ['opt-axes', 'axes'], ['opt-snap', 'snap'], ['opt-hud', 'hud']]) {
     el(id).checked = !!board.settings[key];
   }
+
+  paintSheet();
+
+  el('opt-units').value = board.settings.units;
+  // The sentence under the controls is what makes the scale legible: it states
+  // it against the biggest reference the board has, so a mistake of a factor of
+  // ten shows up as "this board is forty metres across" rather than hiding in a
+  // decimal nobody was going to check.
+  el('scale-hint').textContent = board.items.length
+    ? `Everything on this board fits in ${formatLength(spread(), board.settings.scale, board.settings.units)}.`
+    : 'Drop something in, then measure the board from it.';
+}
+
+/**
+ * The sheet controls, and the sentence that makes them mean something.
+ *
+ * The hint gives the sheet's size in *board units*, which is the one number
+ * that connects this section to the one above it. A page is only useful as a
+ * boundary if the scale is right, and "A4 is 210 x 297 units across" is how you
+ * catch a scale that is out by a factor of ten - the sheet either swallows the
+ * whole board or vanishes into a card, and the number says which before you
+ * have to go and look.
+ */
+function paintSheet() {
+  const s = board.settings;
+  el('opt-paper').value = s.paper;
+  el('opt-paper-resize').checked = !!s.paperResize;
+  for (const btn of el('paper-orient').querySelectorAll('[data-orient]')) {
+    btn.setAttribute('aria-pressed', String((btn.dataset.orient === 'landscape') === !!s.paperLandscape));
+  }
+  const mm = paperMm(s.paper, s.paperLandscape);
+  // The invitation to drag is only printed when dragging is switched on. A hint
+  // describing a gesture the corners will not answer is worse than no hint.
+  const drag = s.paperResize
+    ? ' Drag a corner to match it against the board - that is what sets the scale.'
+    : '';
+  el('paper-hint').textContent = mm
+    ? `${Math.round(toUnits(mm.w, s.scale))} × ${Math.round(toUnits(mm.h, s.scale))} px, centred on 0,0.${drag}`
+    : 'Outlines a sheet in the middle of the board, at the size it really is.';
+}
+
+/** The long side of the box round every item - the board's own extent. */
+function spread() {
+  const box = itemBounds(board.items);
+  return box ? Math.max(box.x1 - box.x0, box.y1 - box.y0) : 0;
 }
 
 // Deliberately non-modal: no scrim, nothing disabled behind it. The board keeps

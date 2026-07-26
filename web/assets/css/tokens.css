@@ -89,6 +89,19 @@
   --grid-axis:  color-mix(in srgb, var(--accent) 55%, transparent);
   --grid-dot:   1.7px;
 
+  /* ---- the paper outline (canvas/paper.js) ----
+     Derived from the ink rather than from the accent, and that is the whole
+     decision: a page is a surface the board is arranged *on*, so it has to sit
+     behind everything without competing with the accent the axes already own.
+     The fill is barely there - enough to read as a lit rectangle at a glance,
+     not enough to change the colour of anything laid on it. */
+  --sheet-line: color-mix(in srgb, var(--ink) 26%, transparent);
+  --sheet-fill: color-mix(in srgb, var(--ink) 3.5%, transparent);
+  /* The corner handles the sheet is resized by. Small, because they sit on a
+     board full of things that are not them and are only aimed at deliberately;
+     a coarse pointer gets a bigger one further down this sheet. */
+  --sheet-grip: 11px;
+
   /* ---- the web between items (canvas/web.js) ----
      Deliberately a true neutral grey rather than a mix of this palette's ink,
      which is the one exception on this whole sheet. The threads run *under*
@@ -119,6 +132,11 @@
   --btn-lift:  -1px;
   --btn-grow:  1;
   --btn-press: 0.985;
+  /* Permanent controls on the glass. Width and height differ slightly on a
+     precise pointer; touch uses one square target for both. */
+  --chrome-button-w:     42px;
+  --chrome-button-h:     40px;
+  --chrome-button-touch: 46px;
   /* How far off square an item may come to rest. Each one gets its own factor
      in [-1, 1] from canvas/items.js and multiplies it by this, so the whole
      board straightens up or scatters as the axis moves, with no JS involved. */
@@ -369,18 +387,27 @@
 }
 
 :root[data-palette="tearose"] {
-  --paper:      #fdeee9;
-  --paper-2:    #f9dfd6;
-  --paper-3:    #f1cdc0;
-  --paper-card: #fff8f6;
-  --ink:        #3b2725;
-  --ink-2:      #75564f;
-  --ink-3:      #a5827a;
-  --rule:       #e6c2b4;
-  --rule-2:     #cb9c8c;
-  --accent:      #b4574f;
-  --accent-warm: #d98f7a;
-  --accent-deep: #82352f;
+  /* Rosier than it was, and the move is a hue rather than more colour: the
+     sheet sat at h≈40 in OKLCH, which is apricot, while the accent was already
+     down at 27 - so the palette read as peach with a red flower on it rather
+     than as one rose. Everything is at 18-22 now, with a quarter more chroma on
+     the papers to stop the shift reading as grey. Every lightness is untouched,
+     which is what keeps the contrast ratios exactly where they were. */
+  --paper:      #ffedec;
+  --paper-2:    #ffdcd9;
+  --paper-3:    #fac8c5;
+  --paper-card: #fff8f7;
+  --ink:        #3c2626;
+  --ink-2:      #775454;
+  --ink-3:      #a8807f;
+  --rule:       #efbdba;
+  --rule-2:     #d49693;
+  --accent:      #b95158;
+  --accent-warm: #df8a84;
+  --accent-deep: #862f37;
+  /* The one thing that does not move. It is the counterweight - a leaf against
+     the flower - and rosying it would leave the palette with nothing to be
+     rosy against. */
   --leafy:       #7c8466;
 }
 
@@ -583,7 +610,7 @@
   --shadow-1: none;
   --shadow-2: 0 8px 28px color-mix(in srgb, var(--ink) 18%, transparent);
 
-  /* Nothing moves on its own, and nothing rests off square. */
+  /* Nothing moves on its own. */
   --lift-hover: 0px;
   --grow-hover: 1;
   --lift-drag:  0px;
@@ -591,7 +618,19 @@
   --btn-lift:  0px;
   --btn-grow:  1;
   --btn-press: 1;
-  --tilt-max: 0deg;
+
+  /* Things do still rest off square, though - the middle's 1.5deg, unchanged
+     at this end.
+     This tier used to zero it, and that was the wrong thing to cut. Every other
+     removal here takes away something the interface *does*: a lift on hover, a
+     spring, a shadow - motion and depth that a plain board can say it does not
+     need. A resting lean is not the interface doing anything; it is what the
+     board is made of, a sheet with things laid on it rather than a diagram with
+     things positioned in it. Take it away and the tier stopped being austere
+     and started being a spreadsheet. What actually wants square cards is a
+     board with a grid switched on, and that is now where it comes from - see
+     the [data-snap] rule in app.css, which zeroes the lean at any tier. */
+  --tilt-max: 1.5deg;
 
   /* 0px, not 0. These are lengths, and a bare 0 is a *number*: calc() cannot
      add a number to a length, so an unsuffixed zero here silently invalidated

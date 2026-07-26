@@ -8,6 +8,7 @@
 // Gesture map:
 //   left-drag empty space ....... pan            (an infinite board pans more than it marquees)
 //   shift / ctrl + drag empty ... marquee select
+//   double-tap + drag empty ..... marquee select on touch
 //   middle-drag or space+drag ... pan, from anywhere
 //   drag an item ................ move the whole selection, plus anything stuck to it
 //   drag a corner grip .......... resize (aspect-locked for media, shift to free it)
@@ -21,17 +22,49 @@ import {
   snapshotGeom, applyGeom, commitGeom, bus, stuckFollowers,
   copyItems, cutItems, pasteItems, clipboardSize, clipboardBounds, clipboardHasOurs,
 } from '../state.js';
-import { zoomMs, travelMs } from './viewport.js';
-import { itemInRect, MIN_SIZE, MAX_SIZE } from '../geometry.js';
+import { zoomMs, travelMs, lodZoom } from './viewport.js';
+import { itemInRect, latticeBox, CELL_GAP, MIN_SIZE, MAX_SIZE } from '../geometry.js';
 import { itemIdFromEvent, ensureMounted, sync as syncItems, editItemName } from './items.js';
 import { gridStep } from './grid.js';
 import { noteFloor } from './notes.js';
 
 const DRAG_SLOP = 3;      // screen px before a press becomes a drag
+const DOUBLE_TAP_MS = 350;
+const DOUBLE_TAP_SLOP = 28;
+const TAP_MOVE_SLOP = 12;
 // How long a finger has to rest before the press means "show me the menu".
 // Long enough not to fire on a slow tap, short enough to feel deliberate;
 // it is the interval both mobile platforms use for the same gesture.
 const LONG_PRESS_MS = 480;
+
+/** Whether two touch points form the two taps of one deliberate gesture. */
+export function isDoubleTap(previous, current) {
+  if (!previous || !current) return false;
+  const elapsed = current.at - previous.at;
+  return elapsed >= 0 && elapsed <= DOUBLE_TAP_MS
+    && Math.hypot(current.x - previous.x, current.y - previous.y) <= DOUBLE_TAP_SLOP;
+}
+
+/**
+ * How many cells shift+arrow covers on a snapped board.
+ *
+ * Shift has to keep meaning "further", and on a snapped board one cell is
+ * already what a bare arrow does - so it becomes a decade of them rather than
+ * the grid step it means when nothing is snapped.
+ */
+const NUDGE_LEAP = 10;
+
+/**
+ * How close to a grid line still counts as being on it, in cells.
+ *
+ * A board's coordinates come out of divisions and accumulated drags, so an item
+ * sitting exactly on a line is routinely at 3.9999999 cells rather than 4. That
+ * matters here and nowhere else: the direction logic below asks "which line is
+ * the next one along", and without a tolerance the answer for 3.9999999 going
+ * right is the line it is already on, which reads as an arrow key that did
+ * nothing.
+ */
+const ON_LINE = 1e-6;
 
 // MIN_SIZE and MAX_SIZE are the resize limits, in world units, and they live in
 // geometry.js - a resize handle stopped being the only thing that sets a size
@@ -63,7 +96,40 @@ export function initInput(vp, cmds) {
   // finger arriving) and be cancelled by it.
   let pressTimer = 0;
   let pressAt = null;
+  let lastEmptyTap = null;
+  let emptyTapCandidate = null;
+  // A finger resting on an unpicked item while the board is zoomed out - see
+  // needsTapFirst(). The gesture is a pan; this is what lets the lift still
+  // count as a tap if the finger never went anywhere.
+  let armSelect = null;
   const cancelPress = () => { clearTimeout(pressTimer); pressTimer = 0; pressAt = null; };
+
+  /**
+   * Whether a finger landing on this item should pan the board rather than
+   * pick the item up.
+   *
+   * Below the detail rung a card on a phone is a fraction of a fingertip, and
+   * the board at that zoom is something you are *looking at* - the gesture
+   * anyone is making across it is a pan. Starting a move from the first press
+   * meant that pan quietly dragged whatever happened to be under the finger,
+   * usually without being noticed until the composition was already wrong, and
+   * the smaller the cards got the likelier it was.
+   *
+   * So at that zoom an item has to be picked first: one tap selects it, and a
+   * press on something already selected drags as it always did. That is the
+   * same two-step every phone photo library uses for the same reason, and it
+   * costs nothing at any zoom where a card is big enough to aim at.
+   *
+   * Touch only. A mouse pointer is one pixel wide and lands where it is sent,
+   * so there is no ambiguity to resolve and no reason to make a desk user tap
+   * twice. Held-modifier presses are excluded too: those are deliberate
+   * selection gestures and already say what they mean.
+   */
+  const needsTapFirst = (e, id) =>
+    e.pointerType === 'touch'
+    && vp.zoom < lodZoom()
+    && !selection.has(id)
+    && !(e.shiftKey || e.ctrlKey || e.metaKey);
 
   // ---- helpers ----------------------------------------------------------
 
@@ -72,6 +138,31 @@ export function initInput(vp, cmds) {
     const step = gridStep(board.settings.gridStep, vp.zoom);
     return Math.round(v / step) * step;
   };
+
+  /** The lattice actually on screen, which is what a gesture aims at. */
+  const stepNow = () => gridStep(board.settings.gridStep, vp.zoom);
+
+  /**
+   * A box laid on the lattice - see latticeBox() in geometry.js.
+   *
+   * The same shape snapAll() in state.js gives the board when snapping is
+   * switched on, and deliberately so: that is the arrangement everything here
+   * then has to preserve. An item is flush in the grid only when *both* halves
+   * hold, the position and the size - an edge on a line is not enough if the
+   * side is one and a half cells long, because then the opposite edge is off by
+   * half a cell whatever you do to the position.
+   */
+  const ontoLattice = box => latticeBox(box, stepNow());
+
+  /**
+   * The seam a snapped item leaves at its high edges, in world units.
+   *
+   * Only the high edges carry it: an item's low edges sit on lines and its high
+   * ones stop just short of the next, so the space between two neighbours is one
+   * seam rather than two halves of one. That asymmetry is why the snapping below
+   * has to know which edge the pointer is holding.
+   */
+  const gapNow = () => (board.settings.snap ? stepNow() * CELL_GAP : 0);
 
   /**
    * One axis of a resize: the extent it should end up with, given the box the
@@ -89,6 +180,12 @@ export function initInput(vp, cmds) {
    * back to the edge that stayed put, which is why the anchor is derived here
    * rather than the size being adjusted afterwards.
    *
+   * `bias` is the seam, and it is what makes the two directions different. A low
+   * edge belongs on a line, so it rounds to one; a high edge belongs a seam short
+   * of the next line, so the seam is added before the rounding and taken off
+   * after. Get this the same way round on both and neighbours either overlap by a
+   * seam or stand two seams apart, depending which one you picked.
+   *
    * The limits are applied before the snap so the rounding is handed an edge
    * that is already legal, and repaired after it by stepping one grid line the
    * other way: rounding can only move the edge by half a step, so one line
@@ -103,11 +200,13 @@ export function initInput(vp, cmds) {
     let size = clamp(extent + sign * travel, MIN_SIZE, MAX_SIZE);
     if (board.settings.snap) {
       const anchor = centre - sign * extent / 2;
-      const step = gridStep(board.settings.gridStep, vp.zoom);
-      const k = Math.round((anchor + sign * size) / step);
-      size = sign * (k * step - anchor);
-      if (size < MIN_SIZE) size = sign * ((k + sign) * step - anchor);
-      else if (size > MAX_SIZE) size = sign * ((k - sign) * step - anchor);
+      const step = stepNow();
+      const bias = sign > 0 ? gapNow() : 0;
+      const edge = k => sign * (k * step - bias - anchor);
+      const k = Math.round((anchor + sign * size + bias) / step);
+      size = edge(k);
+      if (size < MIN_SIZE) size = edge(k + sign);
+      else if (size > MAX_SIZE) size = edge(k - sign);
     }
     return clamp(size, MIN_SIZE, MAX_SIZE);
   }
@@ -118,7 +217,53 @@ export function initInput(vp, cmds) {
 
   function startPan(e) {
     g = { kind: 'pan', lastX: e.clientX, lastY: e.clientY };
+    // Only a finger throws the board - see flingFrom(). A mouse drag stops
+    // where the button came up, which is what every desk-bound tool does and
+    // what a pointer that can be held perfectly still makes possible.
+    if (e.pointerType === 'touch') g.track = [];
     el.classList.add('is-panning');
+  }
+
+  /**
+   * The last few positions a panning finger passed through, and when.
+   *
+   * A flick's speed cannot be read off the final pointermove: the last event
+   * before a lift is often a stray pixel or two over a millisecond, which is
+   * either a stationary finger or one moving at two thousand pixels a second
+   * depending on which side of the noise it fell. So the speed is measured
+   * across a window of the recent past instead, which is long enough to average
+   * the jitter out and short enough that it is still describing the throw rather
+   * than the whole drag.
+   */
+  const FLING_WINDOW_MS = 90;
+  /** A finger that has been still this long before lifting is not throwing. */
+  const FLING_IDLE_MS = 70;
+
+  function trackPan(g, e) {
+    g.track.push({ x: e.clientX, y: e.clientY, t: e.timeStamp });
+    // Anything older than the window can no longer be the start of the throw.
+    // One at a time from the front: the array only ever holds a few events.
+    while (g.track.length > 2 && e.timeStamp - g.track[0].t > FLING_WINDOW_MS) g.track.shift();
+  }
+
+  /**
+   * The speed to hand the board as the finger leaves it, or null for a lift
+   * that was not a throw.
+   *
+   * Two ways to be not a throw, and they are different. A finger that paused
+   * before lifting has placed the board somewhere deliberately, and carrying on
+   * would take it back off the spot it was just put on - so the gap between the
+   * last movement and the lift is what disqualifies that one. A finger that was
+   * moving slowly the whole way is caught by glide()'s own floor instead.
+   */
+  function flingFrom(g, at) {
+    if (!g.track || g.track.length < 2) return null;
+    const last = g.track[g.track.length - 1];
+    if (at - last.t > FLING_IDLE_MS) return null;
+    const first = g.track[0];
+    const dt = (last.t - first.t) / 1000;
+    if (!(dt > 0)) return null;
+    return { vx: (last.x - first.x) / dt, vy: (last.y - first.y) / dt };
   }
 
   function startMarquee(e) {
@@ -161,7 +306,9 @@ export function initInput(vp, cmds) {
     const start = vp.toWorld(e.clientX, e.clientY);
     g = {
       kind: 'move', id, moving, before, start,
-      origin: before.map(b => ({ id: b.id, x: b.x, y: b.y })),
+      // The sides come along as well as the corner: snapping puts the lead's low
+      // edges on lines, and an edge is its centre less half its size.
+      origin: before.map(b => ({ id: b.id, x: b.x, y: b.y, w: b.w, h: b.h })),
       moved: false,
       // What the pointer has hold of, as against what it is towing. Only these
       // ask again what they are stuck to when the drag ends - a note carried
@@ -209,6 +356,24 @@ export function initInput(vp, cmds) {
     // still dragging it.
     const node = e.target instanceof Element ? e.target.closest('.item') : null;
     node?.classList.add('is-resizing');
+    // Squared up before the drag begins, if snapping is on and this box was
+    // never on the lattice - a photograph imported at its own proportions, a
+    // paste, anything a layout placed. Everything below rounds the edge under
+    // the pointer to a line, and that only yields a whole number of cells if the
+    // edge left behind is on one too; without this the far side is off by
+    // whatever fraction the picture happened to arrive at and the item can never
+    // sit flush however carefully it is dragged.
+    //
+    // Done here rather than on arrival because a resize is where it shows and
+    // where it is asked for, and because `before` above was taken first - so the
+    // correction is inside the same undo entry as the drag that prompted it, and
+    // one Ctrl+Z puts back the picture's own shape.
+    const box = board.settings.snap
+      ? ontoLattice(it)
+      : { x: it.x, y: it.y, w: it.w, h: it.h };
+    if (box.x !== it.x || box.y !== it.y || box.w !== it.w || box.h !== it.h) {
+      applyGeom([{ id, ...box, rot: it.rot, z: it.z }]);
+    }
     g = {
       kind: 'resize', id, corner, before, node,
       // Resizing a note changes how much of it is over what it is lying on, so
@@ -237,11 +402,20 @@ export function initInput(vp, cmds) {
 
   el.addEventListener('pointerdown', e => {
     if (e.button > 1 && e.pointerType === 'mouse') return;   // right/aux: leave alone
+    // A hand on the board stops the board, before anything else is decided.
+    // That is true of a glide let go of a moment ago and of a commanded flight
+    // to Home or to Fit alike: catching a moving board has to work the first
+    // time, not on the first frame it is dragged - a finger put down to stop
+    // something is often a finger that then does not move at all.
+    vp.stopAnim();
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
     // A second finger always converts the gesture into a pinch.
     if (pointers.size === 2) {
       cancelPress();
+      emptyTapCandidate = null;
+      lastEmptyTap = null;
+      armSelect = null;
       abortGesture();
       const [a, b] = [...pointers.values()];
       g = {
@@ -266,6 +440,15 @@ export function initInput(vp, cmds) {
     // has to claim the gesture the way the audio scrubber does, or the card
     // would move out from under the hand instead.
     const widget = target?.closest('audio, video[controls], input, button, a, .wave, .vtrack, .model-stage, [contenteditable="true"], [contenteditable="plaintext-only"]');
+    const tap = { x: e.clientX, y: e.clientY, at: e.timeStamp };
+    const doubleTapDrag = e.pointerType === 'touch' && !id && !widget
+      && isDoubleTap(lastEmptyTap, tap);
+    if (e.pointerType === 'touch') {
+      if (doubleTapDrag || id || widget) lastEmptyTap = null;
+      emptyTapCandidate = !doubleTapDrag && !id && !widget
+        ? { pointerId: e.pointerId, x: e.clientX, y: e.clientY }
+        : null;
+    }
 
     if (widget && !spaceDown && e.button !== 1) {
       if (id) select([id]);
@@ -280,6 +463,18 @@ export function initInput(vp, cmds) {
       startPan(e);
     } else if (grip && id) {
       startResize(e, id, grip.dataset.g);
+    } else if (doubleTapDrag) {
+      // Wait for movement before showing or applying the marquee. A plain
+      // double tap keeps its existing "fit board" meaning in the dblclick
+      // handler below; holding and dragging the second tap turns into select.
+      const p = vp.toWorld(e.clientX, e.clientY);
+      g = { kind: 'touch-marquee', clientX: e.clientX, clientY: e.clientY, x0: p.x, y0: p.y };
+    } else if (id && needsTapFirst(e, id)) {
+      // Pan now, decide on the lift. Nothing is selected here: a press that
+      // turns into a drag has to leave the board exactly as a press on empty
+      // space would, or the gate would still be moving the selection about.
+      armSelect = { pointerId: e.pointerId, id, x: e.clientX, y: e.clientY };
+      startPan(e);
     } else if (id) {
       const additive = e.shiftKey || e.ctrlKey || e.metaKey;
       if (additive) select([id], true);
@@ -302,6 +497,8 @@ export function initInput(vp, cmds) {
         const p = pressAt;
         cancelPress();
         if (!p) return;
+        emptyTapCandidate = null;
+        lastEmptyTap = null;
         // Whatever the finger had started - a move, a pan, a marquee - it was
         // not that. Dropped rather than committed, since nothing moved.
         abortGesture();
@@ -318,9 +515,23 @@ export function initInput(vp, cmds) {
     if (e.pointerType !== 'touch') hover = { x: e.clientX, y: e.clientY };
     if (!pointers.has(e.pointerId)) return;
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (emptyTapCandidate?.pointerId === e.pointerId
+        && Math.hypot(e.clientX - emptyTapCandidate.x, e.clientY - emptyTapCandidate.y) > TAP_MOVE_SLOP) {
+      emptyTapCandidate = null;
+      lastEmptyTap = null;
+    }
+    // The same slop, for the same reason: a finger that has travelled this far
+    // was panning, and a pan must not leave a selection behind it.
+    if (armSelect?.pointerId === e.pointerId
+        && Math.hypot(e.clientX - armSelect.x, e.clientY - armSelect.y) > TAP_MOVE_SLOP) {
+      armSelect = null;
+    }
     // A finger that has travelled is dragging, not pressing. The same slop the
     // move gesture uses, so the two agree about when a press has become a drag.
-    if (pressAt && Math.hypot(e.clientX - pressAt.x, e.clientY - pressAt.y) > DRAG_SLOP) cancelPress();
+    if (pressAt && Math.hypot(e.clientX - pressAt.x, e.clientY - pressAt.y) > DRAG_SLOP) {
+      cancelPress();
+      if (e.pointerType === 'touch') lastEmptyTap = null;
+    }
     if (!g) return;
 
     if (g.kind === 'pinch') {
@@ -339,6 +550,17 @@ export function initInput(vp, cmds) {
       vp.panByScreen(e.clientX - g.lastX, e.clientY - g.lastY);
       g.lastX = e.clientX;
       g.lastY = e.clientY;
+      if (g.track) trackPan(g, e);
+      return;
+    }
+
+    if (g.kind === 'touch-marquee') {
+      if (Math.hypot(e.clientX - g.clientX, e.clientY - g.clientY) <= DRAG_SLOP) return;
+      const p = vp.toWorld(e.clientX, e.clientY);
+      g = { kind: 'marquee', x0: g.x0, y0: g.y0, x1: p.x, y1: p.y, additive: false };
+      marquee.hidden = false;
+      drawMarquee();
+      applyMarquee();
       return;
     }
 
@@ -360,9 +582,18 @@ export function initInput(vp, cmds) {
       g.moved = true;
       // Snap the dragged item; everything else keeps its offset from it, so a
       // multi-selection moves rigidly instead of collapsing onto the grid.
+      //
+      // The item's *low edges* land on lines, not its centre. Centres were the
+      // obvious thing to round and the wrong one: an item an odd number of cells
+      // wide has its centre half a cell off the lattice by construction - that
+      // is what being an odd width means - so rounding the centre to a line
+      // pushed both its sides half a cell off instead. Edges are also what
+      // snapAll() lines up when snapping is switched on, so this is the same
+      // arrangement being kept rather than a second one being imposed.
       const lead = g.origin.find(o => o.id === g.id) || g.origin[0];
-      const sx = snapVal(lead.x + dx) - (lead.x + dx);
-      const sy = snapVal(lead.y + dy) - (lead.y + dy);
+      const low = { x: lead.x + dx - lead.w / 2, y: lead.y + dy - lead.h / 2 };
+      const sx = snapVal(low.x) - low.x;
+      const sy = snapVal(low.y) - low.y;
       applyGeom(g.origin.map(o => {
         const it = byId(o.id);
         return { id: o.id, x: o.x + dx + sx, y: o.y + dy + sy, w: it.w, h: it.h, rot: it.rot, z: it.z };
@@ -382,10 +613,9 @@ export function initInput(vp, cmds) {
       let w = resizeAxis(signX, g.box.x, g.box.w, dx);
       let h = resizeAxis(signY, g.box.y, g.box.h, dy);
       if (g.lockAspect !== e.shiftKey) {          // XOR: shift inverts the default
-        // A fixed ratio and both edges on the lattice are not both achievable,
-        // so with snap on the dominant side is the one that lands on the grid
-        // and the follower goes wherever the ratio puts it. That is the right
-        // way round: the side you are watching move is the side that clicks.
+        // The dragged side leads and the other follows it at the picture's own
+        // proportion. The side you are watching move is the right one to lead:
+        // it is the one being aimed.
         const ratio = g.box.w / g.box.h;
         if (Math.abs(w - g.box.w) > Math.abs(h - g.box.h)) h = w / ratio;
         else w = h * ratio;
@@ -399,6 +629,19 @@ export function initInput(vp, cmds) {
         k = Math.max(k, MIN_SIZE / Math.min(w, h));
         w *= k;
         h *= k;
+        // Both sides back onto the lattice afterwards, because a proportion is
+        // a real number and the grid is not: the follower came out of a
+        // division and would otherwise be the one side of the box left hanging
+        // between two lines, which is exactly the thing that made a photograph
+        // impossible to fit. The shape is then kept as closely as whole cells
+        // allow - within half a cell of the picture's own - and the grid wins
+        // the remainder. Snapping is off most of the time and this does
+        // nothing then; the proportion is exact again the moment it is.
+        if (board.settings.snap) {
+          const lattice = ontoLattice({ x: 0, y: 0, w, h });
+          w = lattice.w;
+          h = lattice.h;
+        }
       }
       // A note may not be dragged smaller than its own text. The floor is
       // measured at the width being proposed, not the one on screen, because
@@ -411,7 +654,17 @@ export function initInput(vp, cmds) {
       // ever raise the height, so it never threatens the floor.
       const it = byId(g.id);
       if (it.type === 'note') {
-        const floor = noteFloor(g.id, w);
+        let floor = noteFloor(g.id, w);
+        // Up to the next whole cell rather than to the bare floor, so the one
+        // height this file sets from something other than the pointer still
+        // leaves the note sitting in the grid. Up and never down: rounding to
+        // the nearest line could land under the floor, which is the one thing
+        // the floor is for - and for the same reason it is not capped at
+        // MAX_SIZE, which the floor is already allowed to overrule.
+        if (board.settings.snap) {
+          const step = stepNow(), gap = gapNow();
+          floor = Math.ceil((floor + gap) / step) * step - gap;
+        }
         if (floor > h) {
           h = floor;
           // The height was forced, so the aspect lock no longer holds and the
@@ -433,17 +686,44 @@ export function initInput(vp, cmds) {
   });
 
   const endPointer = e => {
+    const tap = e.type === 'pointerup' && emptyTapCandidate?.pointerId === e.pointerId
+      ? { x: emptyTapCandidate.x, y: emptyTapCandidate.y, at: e.timeStamp }
+      : null;
+    if (emptyTapCandidate?.pointerId === e.pointerId) emptyTapCandidate = null;
+    // The lift that turns a held-still press into a pick. pointerup only: a
+    // pointercancel is the system taking the gesture away - a notification
+    // shade, a call - and nothing a person did.
+    if (armSelect?.pointerId === e.pointerId) {
+      if (e.type === 'pointerup') select([armSelect.id]);
+      armSelect = null;
+    }
     cancelPress();
     pointers.delete(e.pointerId);
     if (el.hasPointerCapture?.(e.pointerId)) el.releasePointerCapture(e.pointerId);
     if (!g) return;
     if (g.kind === 'pinch' && pointers.size >= 1) {
       // One finger lifted mid-pinch: fall back to a pan with the survivor.
+      //
+      // No `track`, so this pan cannot throw the board. Lifting one finger of a
+      // pinch is how a pinch ends, and the survivor is usually still travelling
+      // outwards from the zoom rather than pushing the board anywhere - so a
+      // throw here would be the board running off on its own after a gesture
+      // that was about the zoom. A finger that then deliberately drags is a
+      // finger that can lift and start again.
       const [p] = [...pointers.values()];
       g = { kind: 'pan', lastX: p.x, lastY: p.y };
       return;
     }
+    // Read while the gesture is still standing, spent once it is not.
+    // pointerup only: a pointercancel is the system taking the gesture away, and
+    // a board that carried on gliding after a notification pulled the finger off
+    // it would be moving on nobody's instruction.
+    const thrown = e.type === 'pointerup' && g.kind === 'pan'
+      ? flingFrom(g, e.timeStamp)
+      : null;
     finishGesture();
+    if (thrown) vp.glide(thrown.vx, thrown.vy);
+    if (tap) lastEmptyTap = tap;
     setPanCursor();
   };
   el.addEventListener('pointerup', endPointer);
@@ -575,15 +855,61 @@ export function initInput(vp, cmds) {
   function nudge(e) {
     if (!selection.size) return;
     e.preventDefault();
-    const step = e.shiftKey ? gridStep(board.settings.gridStep, vp.zoom) : 1;
-    const dx = (e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0) * step;
-    const dy = (e.key === 'ArrowUp' ? 1 : e.key === 'ArrowDown' ? -1 : 0) * step;
+    const sx = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+    const sy = e.key === 'ArrowUp' ? 1 : e.key === 'ArrowDown' ? -1 : 0;
     // The arrow keys are a drag by another route, so they carry the same stuck
     // notes. No z-bump here: a nudge does not raise anything, and the pair are
     // already in the right order relative to each other.
     const before = snapshotGeom([...selection, ...stuckFollowers(selection)]);
+    const { dx, dy } = nudgeBy(sx, sy, e.shiftKey, before);
+    if (!dx && !dy) return;
     applyGeom(before.map(b => ({ ...b, x: b.x + dx, y: b.y + dy })));
     commitGeom('Nudge', before, [...selection]);
+  }
+
+  /**
+   * How far one press of an arrow key moves the selection.
+   *
+   * Snapped and unsnapped are two different questions rather than one question
+   * with a different step size, which is the thing this used to get wrong: it
+   * added a fixed distance either way, so on a snapped board every arrow key
+   * took the item straight off the lattice that dragging it had just put it on,
+   * and the only way to line it up again was to pick it up with the mouse.
+   *
+   * Snapped, the answer is a grid line rather than a distance - the next one
+   * along in the direction pressed. An item that is already flush moves exactly
+   * one cell; one that is not is pulled onto the lattice by the first press and
+   * then moves a cell at a time like everything else. Deriving it from lines
+   * rather than from a delta is also what makes the two agree at any zoom: the
+   * lattice on screen coarsens as you pull back, and a distance computed from
+   * the old step would land between the dots you are looking at.
+   *
+   * One delta for the whole selection, taken from the lead - the same bargain
+   * the drag makes. Snapping each item to its own nearest line would collapse a
+   * carefully spaced group onto the grid the first time somebody tapped an
+   * arrow key, which is a rearrangement rather than a nudge.
+   */
+  function nudgeBy(sx, sy, far, before) {
+    if (!board.settings.snap) {
+      const step = far ? stepNow() : 1;
+      return { dx: sx * step, dy: sy * step };
+    }
+    const step = stepNow();
+    const cells = far ? NUDGE_LEAP : 1;
+    const lead = before.find(b => selection.has(b.id)) || before[0];
+    // The item's *low edges* land on lines, not its centre - see the move
+    // gesture above for why, and snapAll() in state.js for the arrangement this
+    // is keeping rather than imposing.
+    const axis = (sign, low) => {
+      if (!sign) return 0;
+      const k = low / step;
+      const near = Math.round(k);
+      const next = Math.abs(k - near) < ON_LINE
+        ? near + sign                                   // flush already: move on
+        : (sign > 0 ? Math.ceil(k) : Math.floor(k));    // adrift: come aboard
+      return (next + sign * (cells - 1)) * step - low;
+    };
+    return { dx: axis(sx, lead.x - lead.w / 2), dy: axis(sy, lead.y - lead.h / 2) };
   }
 
   // ---- clipboard --------------------------------------------------------

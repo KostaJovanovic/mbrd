@@ -1,7 +1,7 @@
 // A palette read off the pictures on the board.
 //
 // The rule this follows is not 60-30-10. That was tried on the four presets,
-// measured, and abandoned - see research/decisions-2026-07-25.md - because the
+// measured, and abandoned - see research/old/decisions-2026-07-25.md - because the
 // "30" band on this surface is text and hairlines, a few percent of the pixels
 // whatever colour they are printed in. What is followed instead is the scheme
 // the presets were built on, with the one addition every colour-theory account

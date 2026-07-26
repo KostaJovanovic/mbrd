@@ -457,7 +457,7 @@ item claims — without that, a dropped face was deleted by the next autosave.
 rather than taken.** Item 14 turned out to be pure writing with one open
 question at the end, so it is written: `docs/mbrd-format.md`. The other six —
 items 15, 16, 17, 18, 21, 23 — each have a brief in
-`research/decisions-2026-07-25.md`: what is actually true in the code today,
+`research/old/decisions-2026-07-25.md`: what is actually true in the code today,
 the options, and a recommendation. Four of the six close with little or no
 code. Nothing was built for any of them.
 

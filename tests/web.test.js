@@ -13,7 +13,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { threads, denseLimitNow } from '../web/assets/js/canvas/web.js';
+import {
+  threads, denseLimitNow, denseLimitFor, nextDenseLimit,
+} from '../web/assets/js/canvas/web.js';
 
 /**
  * Deliberately not the module's own predicate.
@@ -166,20 +168,84 @@ test('the second pass adds threads the tree alone does not have', () => {
 // climb, and the web would change shape every few frames while you dragged -
 // which is far worse than a web that is permanently a little sparse.
 
-test('the dense limit stays inside its bounds and settles', () => {
+// The limit is decided by two ordinary functions of their arguments -
+// denseLimitFor() solves the budget, nextDenseLimit() applies the deadband - so
+// the settling is tested against those and not against a stopwatch. It used to
+// be checked by running the real thing fifty times and asserting the answer had
+// stopped moving, which asserts that the machine was quiet for the duration:
+// that failed roughly one run in three, always because something else on the
+// box got busy. The property is about the arithmetic; test the arithmetic.
+
+test('a solved limit is always inside its bounds', () => {
+  // Ten orders of magnitude either side of a real measurement, because the
+  // costs are learned from a live machine and a single scheduling stall can put
+  // one of them anywhere.
+  for (const tree of [1e-9, 4.5e-6, 1e-3, 1, 1e3]) {
+    for (const pass of [0, 1e-6, 0.009, 1, 1e4]) {
+      const n = denseLimitFor(tree, pass);
+      assert.ok(Number.isInteger(n), `${tree}/${pass} gave ${n}`);
+      assert.ok(n >= 60 && n <= 700, `${tree}/${pass} gave ${n}`);
+    }
+  }
+});
+
+test('a cost that is not a cost moves nothing', () => {
+  // Both halves have to hold: a failed measurement must not be solved from, and
+  // must not be applied if something else produces one.
+  for (const bad of [0, -1, NaN]) assert.equal(denseLimitFor(bad, 0.009), null);
+  for (const bad of [null, NaN, undefined, Infinity]) {
+    assert.equal(nextDenseLimit(300, bad), 300);
+  }
+});
+
+test('a faster machine gets a higher limit', () => {
+  // The direction the whole mechanism exists for. Strictly monotonic would be
+  // wrong to assert - the clamp flattens both ends - so this is the ordering
+  // across the range where the budget actually binds.
+  const fast = denseLimitFor(1e-6, 0.002);
+  const slow = denseLimitFor(1e-4, 0.05);
+  assert.ok(fast > slow, `fast ${fast} was not above slow ${slow}`);
+});
+
+test('the limit converges: a steady reading moves it at most once', () => {
+  // The failure this guards against is not slowness, it is *instability*. A
+  // limit that chased would drop, skip the second pass, measure a fast frame,
+  // climb, and the web would change shape every few frames while you dragged.
+  for (const want of [60, 61, 100, 349, 350, 351, 699, 700]) {
+    let n = 700, moves = 0;
+    for (let i = 0; i < 50; i++) {
+      const next = nextDenseLimit(n, want);
+      if (next !== n) moves++;
+      n = next;
+    }
+    assert.ok(moves <= 1, `want=${want} moved ${moves} times`);
+  }
+});
+
+test('the deadband absorbs the noise it is there for', () => {
+  // A machine whose measurements wander by a few percent - which every machine
+  // does - must not take the web's shape with it. A sixth is the band; a tenth
+  // is comfortably inside it and has to be ignored, every time, forever.
+  let n = 300;
+  for (let i = 0; i < 200; i++) {
+    // Deterministic jitter rather than Math.random(), so a failure is a failure
+    // and not a seed nobody can reproduce.
+    n = nextDenseLimit(n, 300 + Math.round(30 * Math.sin(i)));
+  }
+  assert.equal(n, 300, 'the limit followed noise inside its own deadband');
+});
+
+test('the live limit stays inside its bounds', () => {
+  // What is left of the original: not that the number settles, but that the
+  // wiring is real - that learnTree() and learnPass() reach settle() at all,
+  // and that whatever a genuinely loaded machine reports, the limit it produces
+  // is one the web can be drawn with.
   const pts = uniform(200, 31);
-  const seen = new Set();
   for (let i = 0; i < 40; i++) {
     threads(pts);
-    seen.add(denseLimitNow());
     assert.ok(denseLimitNow() >= 60, 'fell below the floor');
     assert.ok(denseLimitNow() <= 700, 'climbed past the ceiling');
   }
-  // The last ten runs are the settled ones: whatever it converged to, it should
-  // not still be moving by then.
-  const tail = [];
-  for (let i = 0; i < 10; i++) { threads(pts); tail.push(denseLimitNow()); }
-  assert.equal(new Set(tail).size, 1, `still moving: ${tail.join(' ')}`);
 });
 
 test('a board past the limit still gets a connected web', () => {

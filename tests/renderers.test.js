@@ -78,7 +78,7 @@ test('a sticky note is square and small', () => {
 });
 
 test('text files get a card taller than it is wide', () => {
-  // A page is portrait. The generic card is 250x140, which is the shape this
+  // A page is portrait. The generic card is landscape, which is the shape this
   // was falling back to, and it fits about two lines.
   const { w, h } = defaultSize('text');
   assert.ok(h > w, `text cards should be portrait, got ${w}x${h}`);

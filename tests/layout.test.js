@@ -9,8 +9,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { arrange, ARRANGEMENTS } from '../web/assets/js/arrange/arrangements.js';
-import { gridStep } from '../web/assets/js/canvas/grid.js';
-import { FAR_ZOOM, STILL_ZOOM, MIN_ZOOM, MAX_ZOOM } from '../web/assets/js/canvas/viewport.js';
+import { gridStep, MIN_PX, MAX_PX } from '../web/assets/js/canvas/grid.js';
+import { farZoom, stillZoom, webZoom, thumbZoom, MIN_ZOOM, MAX_ZOOM } from '../web/assets/js/canvas/viewport.js';
 import { item } from './helpers.js';
 
 const items = n => Array.from({ length: n }, (_, i) => item({ id: `i${i}`, w: 100, h: 80 }));
@@ -229,7 +229,7 @@ test('the on-screen grid step stays inside its band at any zoom', () => {
   // single line zoomed in.
   for (let z = 0.02; z <= 32; z *= 1.35) {
     const px = gridStep(64, z) * z;
-    assert.ok(px >= 26 && px <= 104, `step is ${px.toFixed(1)}px at zoom ${z.toFixed(3)}`);
+    assert.ok(px >= MIN_PX && px <= MAX_PX, `step is ${px.toFixed(1)}px at zoom ${z.toFixed(3)}`);
   }
 });
 
@@ -257,8 +257,16 @@ test('chrome and motion drop out at the same zoom', () => {
   // names because two modules import them for two purposes; if a future change
   // means them to differ, that is a decision and this test is where to record
   // it rather than a number to quietly edit.
-  assert.equal(FAR_ZOOM, STILL_ZOOM, 'the ladder has grown a second rung');
-  assert.ok(FAR_ZOOM > MIN_ZOOM && FAR_ZOOM < MAX_ZOOM, 'the rung is outside the zoom range');
+  //
+  // Read through the functions rather than off constants, because the rung is
+  // not one number any more: it sits higher under a finger than under a mouse.
+  // Node has no matchMedia, so what these see is the desktop rung - which is
+  // the point, since a fallback that quietly answered "touch" would move the
+  // whole ladder on every machine that runs the suite.
+  assert.equal(farZoom(), stillZoom(), 'the ladder has grown a second rung');
+  assert.equal(farZoom(), webZoom(), 'the ladder has grown a second rung');
+  assert.equal(farZoom(), thumbZoom(), 'the ladder has grown a second rung');
+  assert.ok(farZoom() > MIN_ZOOM && farZoom() < MAX_ZOOM, 'the rung is outside the zoom range');
 });
 
 // ---------------------------------------------------------------------------

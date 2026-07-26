@@ -1,9 +1,15 @@
-// Cover art out of an audio file's own tags.
+// What an audio file says about itself: its cover art, and its tags.
 //
 // Three container formats, parsed by hand: ID3v2 for .mp3, the MP4 atom tree
 // for .m4a/.mp4/.aac, and FLAC's metadata blocks. No dependency, the same way
 // storage/zip.js is no dependency - these are header formats, and a parser that
 // only has to find one field in each is a short one.
+//
+// Both readers live here rather than one per caller, because they are the same
+// walk through the same containers and only differ in which field they stop at.
+// coverArt() is what the importer wants - see import/drop.js. audioTags() is
+// what the optimiser wants, so that a track re-encoded to Opus arrives at the
+// other end still knowing who made it - see optimize/opus.js.
 //
 // Everything here is read through Blob.slice(), never by pulling the file into
 // memory. An album is routinely 40 MB of audio wrapped around 200 KB of
@@ -67,6 +73,57 @@ export async function coverArt(file) {
 export const mayHaveArt = name =>
   ['mp3', 'm4a', 'm4b', 'mp4', 'aac', 'alac', 'flac'].includes(extOf(name));
 
+/**
+ * The tags on an audio file, as Vorbis-comment pairs: `[['ARTIST', 'Talk Talk']]`.
+ *
+ * Vorbis keys because that is what the destination speaks - an Opus stream
+ * carries its metadata as a Vorbis comment header, so translating on the way
+ * out of ID3 and MP4 here means the writer in optimize/opus.js has one shape to
+ * write and no opinions about where a title came from.
+ *
+ * Meek in exactly the way coverArt() is: an unparseable file, a container with
+ * no tags at all, a tagger that wrote something strange - all of them answer
+ * with an empty list, because a re-encoded track with no title is still a track
+ * and failing the whole optimisation over a missing field would be absurd.
+ */
+export async function audioTags(file) {
+  try {
+    const head = await bytes(file, 0, 16);
+    const pairs = isID3(head) ? await id3Tags(file, head)
+                : isFLAC(head) ? await flacTags(file)
+                : isMP4(head) ? await mp4Tags(file)
+                : null;
+    return clean(pairs);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The longest a single tag value is allowed to be.
+ *
+ * Lyrics and liner notes live in these fields too, and a comment header is read
+ * in full by every player before a note of the audio plays. A title is a title.
+ */
+const MAX_TAG = 400;
+
+/** Drop the empty, trim the long, and keep the first of any repeated key. */
+function clean(pairs) {
+  const seen = new Set();
+  const out = [];
+  for (const [key, value] of pairs || []) {
+    const k = String(key || '').toUpperCase();
+    // '=' is the separator inside a comment string, so a key containing one
+    // could not be read back; a key is ASCII printable by the specification.
+    if (!/^[A-Z0-9_-]{1,32}$/.test(k) || seen.has(k)) continue;
+    const v = String(value || '').replace(/\0/g, '').trim().slice(0, MAX_TAG);
+    if (!v) continue;
+    seen.add(k);
+    out.push([k, v]);
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Reading
 // ---------------------------------------------------------------------------
@@ -110,11 +167,25 @@ const extFor = type => ({
 const isID3 = h => h.length >= 10 && ascii(h, 0, 3) === 'ID3' && h[3] < 5;
 
 /**
- * The APIC frame of an ID3v2 tag.
+ * The whole ID3v2 tag, unsynchronised if it said it was.
  *
- * The tag sits at the very front of the file and states its own length, so the
- * whole of it is read at once and walked in memory - it is kilobytes plus the
+ * The tag sits at the very front of the file and states its own length, so all
+ * of it is read at once and walked in memory - it is kilobytes plus the
  * picture, and the picture is what we came for anyway.
+ */
+async function id3Body(file, head) {
+  const size = syncsafe(head, 6);
+  if (size <= 0) return null;
+  const footer = (head[5] & 0x10) ? 10 : 0;
+  const tag = await bytes(file, 10, size + footer);
+  // Tag-level unsynchronisation: every 0xFF in the body was followed by a
+  // padding 0x00 so that no byte pair could look like an audio frame header.
+  // Undone first, because it is applied to the frames and their sizes alike.
+  return (head[5] & 0x80) ? desync(tag) : tag;
+}
+
+/**
+ * Every frame in a tag, in order, as `(id, body)`. Return false to stop.
  *
  * Three revisions are in the wild and they disagree about the frame header:
  * v2.2 uses a 3-character id and a 3-byte size, v2.3 a 4-character id and a
@@ -122,20 +193,9 @@ const isID3 = h => h.length >= 10 && ascii(h, 0, 3) === 'ID3' && h[3] < 5;
  * v2.3 sizes are common enough that the size is sanity-checked rather than
  * trusted, and a frame that runs past the end of the tag ends the walk.
  */
-async function id3Art(file, head) {
-  const size = syncsafe(head, 6);
-  if (size <= 0) return null;
-  const footer = (head[5] & 0x10) ? 10 : 0;
-  let tag = await bytes(file, 10, size + footer);
-  // Tag-level unsynchronisation: every 0xFF in the body was followed by a
-  // padding 0x00 so that no byte pair could look like an audio frame header.
-  // Undone first, because it is applied to the frames and their sizes alike.
-  if (head[5] & 0x80) tag = desync(tag);
-
-  const major = head[3];
+function eachID3Frame(tag, major, visit) {
   const idLen = major <= 2 ? 3 : 4;
   const headLen = major <= 2 ? 6 : 10;
-  const want = major <= 2 ? 'PIC' : 'APIC';
 
   let at = 0;
   while (at + headLen <= tag.length) {
@@ -154,23 +214,94 @@ async function id3Art(file, head) {
     }
     if (len <= 0 || at + headLen + len > tag.length) break;
     let start = at + headLen;
-    let end = start + len;
+    const end = start + len;
+    let body = null;
     if (major >= 3) {
       const flags = tag[at + headLen - 1];
       // A data-length indicator adds four bytes in front of the frame body.
       if (major === 4 && (flags & 0x01)) start += 4;
       // Per-frame unsynchronisation, v2.4's replacement for the tag-wide flag.
-      if (major === 4 && (flags & 0x02)) {
-        const body = desync(tag.subarray(start, end));
-        if (id === want) return readAPIC(body, major);
-        at = end;
-        continue;
-      }
+      if (major === 4 && (flags & 0x02)) body = desync(tag.subarray(start, end));
     }
-    if (id === want) return readAPIC(tag.subarray(start, end), major);
+    if (visit(id, body || tag.subarray(start, end)) === false) return;
     at = end;
   }
-  return null;
+}
+
+/** The APIC (v2.3+) or PIC (v2.2) frame of an ID3v2 tag. */
+async function id3Art(file, head) {
+  const tag = await id3Body(file, head);
+  if (!tag) return null;
+  const major = head[3];
+  const want = major <= 2 ? 'PIC' : 'APIC';
+  let art = null;
+  eachID3Frame(tag, major, (id, body) => {
+    if (id !== want) return;
+    art = readAPIC(body, major);
+    return false;
+  });
+  return art;
+}
+
+/**
+ * ID3's text frames, under their Vorbis names.
+ *
+ * Both spellings of each field, because v2.2's three-letter ids are still in
+ * circulation on anything ripped before about 2005 - which is most of what
+ * anybody has a FLAC or a 320k MP3 of in the first place.
+ */
+const ID3_TAGS = {
+  TIT2: 'TITLE', TT2: 'TITLE',
+  TPE1: 'ARTIST', TP1: 'ARTIST',
+  TPE2: 'ALBUMARTIST', TP2: 'ALBUMARTIST',
+  TALB: 'ALBUM', TAL: 'ALBUM',
+  TRCK: 'TRACKNUMBER', TRK: 'TRACKNUMBER',
+  TPOS: 'DISCNUMBER', TPA: 'DISCNUMBER',
+  TCON: 'GENRE', TCO: 'GENRE',
+  TCOM: 'COMPOSER', TCM: 'COMPOSER',
+  TDRC: 'DATE', TYER: 'DATE', TYE: 'DATE',
+};
+
+async function id3Tags(file, head) {
+  const tag = await id3Body(file, head);
+  if (!tag) return [];
+  const major = head[3];
+  const out = [];
+  eachID3Frame(tag, major, (id, body) => {
+    const key = ID3_TAGS[id];
+    if (key) out.push([key, id3Text(body)]);
+  });
+  return out;
+}
+
+/**
+ * A text frame's body: one encoding byte, then the string in that encoding.
+ *
+ * The awkward one is 1 - UTF-16 with a byte order mark, which is the default
+ * for anything Windows wrote and which is little-endian about as often as it is
+ * big-endian. The mark is what says which, so it is read rather than assumed,
+ * and then stepped over so it does not survive as a zero-width character at the
+ * front of every title.
+ */
+function id3Text(body) {
+  if (!body || body.length < 2) return '';
+  const enc = body[0];
+  let raw = body.subarray(1);
+  let label = 'windows-1252';
+  if (enc === 3) label = 'utf-8';
+  else if (enc === 2) label = 'utf-16be';
+  else if (enc === 1) {
+    const be = raw[0] === 0xfe && raw[1] === 0xff;
+    label = be ? 'utf-16be' : 'utf-16le';
+    if (be || (raw[0] === 0xff && raw[1] === 0xfe)) raw = raw.subarray(2);
+  }
+  try {
+    // A text frame may hold several values separated by nulls. The first is the
+    // one a player shows, and it is the one worth carrying over.
+    return new TextDecoder(label).decode(raw).split('\0')[0];
+  } catch {
+    return '';
+  }
 }
 
 /** Undo unsynchronisation: a 0x00 inserted after every 0xFF comes back out. */
@@ -249,6 +380,56 @@ async function flacArt(file) {
   return null;
 }
 
+/**
+ * FLAC's VORBIS_COMMENT, block type 4 - the same walk, one block earlier.
+ *
+ * The one container here that already speaks the language the optimiser writes
+ * in, so the pairs come straight back out with nothing translated.
+ */
+async function flacTags(file) {
+  let at = 4;
+  for (let n = 0; n < MAX_ATOMS; n++) {
+    const head = await bytes(file, at, 4);
+    if (head.length < 4) return [];
+    const last = (head[0] & 0x80) !== 0;
+    const type = head[0] & 0x7f;
+    const len = be24(head, 1);
+    if (type === 4) return readVorbis(await bytes(file, at + 4, Math.min(len, MAX_COMMENT)));
+    if (last) return [];
+    at += 4 + len;
+  }
+  return [];
+}
+
+/** As much of a comment block as is worth reading. Lyrics live in these. */
+const MAX_COMMENT = 256 * 1024;
+
+/**
+ * A Vorbis comment block: a vendor string, a count, then `KEY=value` strings.
+ *
+ * Little-endian lengths, which is the one thing to keep hold of - every other
+ * length in this file is big-endian, because every other format here came from
+ * somewhere else.
+ */
+function readVorbis(b) {
+  const le32 = i => (b[i] | (b[i + 1] << 8) | (b[i + 2] << 16) | (b[i + 3] << 24)) >>> 0;
+  const dec = new TextDecoder();
+  const out = [];
+  let at = 0;
+  if (b.length < 8) return out;
+  at += 4 + le32(at);                           // the vendor string, stepped over
+  if (at + 4 > b.length) return out;
+  const count = le32(at); at += 4;
+  for (let i = 0; i < count && at + 4 <= b.length; i++) {
+    const len = le32(at); at += 4;
+    if (len > b.length - at) break;
+    const s = dec.decode(b.subarray(at, at + len)); at += len;
+    const eq = s.indexOf('=');
+    if (eq > 0) out.push([s.slice(0, eq), s.slice(eq + 1)]);
+  }
+  return out;
+}
+
 function readFlacPicture(b) {
   // type(4) | mimeLen(4) mime | descLen(4) desc | w h depth colours (16) | len(4) data
   let at = 4;
@@ -298,6 +479,67 @@ async function mp4Art(file) {
   // favour of sniffing the bytes, which cannot disagree with themselves.
   const len = data.end - data.start - 8;
   if (len <= 0 || len > MAX_ART) return null;
+  return await bytes(file, data.start + 8, len);
+}
+
+/**
+ * iTunes' metadata atoms, under their Vorbis names.
+ *
+ * The four-character names beginning 0xA9 are the copyright sign - '©nam' and
+ * friends - which ascii() hands back as '\xa9nam' because it reads bytes, not
+ * UTF-8. Written here the same way so the two sides compare equal.
+ */
+const MP4_TAGS = {
+  '\xa9nam': 'TITLE',
+  '\xa9ART': 'ARTIST',
+  aART: 'ALBUMARTIST',
+  '\xa9alb': 'ALBUM',
+  '\xa9day': 'DATE',
+  '\xa9gen': 'GENRE',
+  '\xa9wrt': 'COMPOSER',
+};
+
+/**
+ * The ilst atoms, down the same path 'covr' lives on.
+ *
+ * Each field is looked up by name rather than by enumerating the children,
+ * which is a scan per field through a list that holds a dozen - and reuses the
+ * walker that already works instead of adding a second one that might not.
+ */
+async function mp4Tags(file) {
+  const moov = await findAtom(file, 0, file.size, 'moov');
+  if (!moov) return [];
+  const udta = await findAtom(file, moov.start, moov.end, 'udta');
+  if (!udta) return [];
+  const meta = await findAtom(file, udta.start, udta.end, 'meta');
+  if (!meta) return [];
+  const ilst = await findAtom(file, meta.start + 4, meta.end, 'ilst');
+  if (!ilst) return [];
+
+  const out = [];
+  for (const [name, key] of Object.entries(MP4_TAGS)) {
+    const value = await mp4Value(file, ilst, name);
+    if (value) out.push([key, new TextDecoder().decode(value)]);
+  }
+  // 'trkn' is the odd one: a binary field, not a string. Two reserved bytes,
+  // then the track as a 16-bit number, then the total.
+  const trkn = await mp4Value(file, ilst, 'trkn');
+  if (trkn && trkn.length >= 4) {
+    const n = (trkn[2] << 8) | trkn[3];
+    if (n) out.push(['TRACKNUMBER', String(n)]);
+  }
+  return out;
+}
+
+/** The payload of one named field's 'data' atom, capped. */
+async function mp4Value(file, ilst, name) {
+  const box = await findAtom(file, ilst.start, ilst.end, name);
+  if (!box) return null;
+  const data = await findAtom(file, box.start, box.end, 'data');
+  if (!data) return null;
+  // version+flags(4) then reserved(4), the same shape 'covr' uses.
+  const len = Math.min(data.end - data.start - 8, MAX_TAG * 4);
+  if (len <= 0) return null;
   return await bytes(file, data.start + 8, len);
 }
 
