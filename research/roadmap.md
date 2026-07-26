@@ -374,9 +374,15 @@ Last because it is the only item that changes what this project is made of.
 
 ## Parked
 
-- **Finalise the serif.** Fraunces is a placeholder chosen for its optical-size
-  axis. Newsreader, Literata and Source Serif 4 are downloaded and their axes
-  checked; the comparison page was never built. Item 6 would settle it faster.
+- ~~**Finalise the serif.**~~ **Settled 2026-07-26: Fraunces is the display
+  serif.** It arrived as a placeholder chosen for its optical-size axis and it
+  has been the face on every board since, at every stop on the whimsy axis,
+  which is the comparison the question was really asking for. Newsreader,
+  Literata and Source Serif 4 were never in the repository and could not be
+  fetched without breaking the no-third-party rule; the drop-in path makes them
+  a drag-and-drop away for anyone who wants to argue the point, and the menu
+  keeps four operating-system serifs beside Fraunces for the same reason.
+  Nothing further is owed by the code.
 - **Drag a selected-text URL onto the board.** Deliberately not supported —
   gating on `text/plain` would raise the drop overlay for every text drag
   across the window. Only `text/uri-list` is accepted.
@@ -427,15 +433,18 @@ spend them all and then hand back blank cards.
 
 ## Not done, and why
 
-**Item 12's parked question — finalising the display serif — is no longer
-blocked, though it is still open.** Newsreader, Literata and Source Serif 4 are
-still not in `web/assets/fonts/`; the scratchpad this document said they were
-downloaded to is gone, and nothing here can fetch them without breaking the
-no-third-party rule. What changed on 2026-07-26 is that they no longer need to
-be *shipped* to be *tried*: dropping a woff2 onto the board registers it as a
-face and puts it in both type menus, so the comparison this question needs can
-be made by dragging three files in. Deciding to ship one is still a separate
-step — an `@font-face` in fonts.css, the files, and a line in sw.js's SHELL.
+**Item 12's parked question — finalising the display serif — was closed on
+2026-07-26: Fraunces stays.** Newsreader, Literata and Source Serif 4 were never
+in `web/assets/fonts/`; the scratchpad this document said they were downloaded
+to is gone, and nothing here can fetch them without breaking the no-third-party
+rule. What changed first is that they stopped needing to be *shipped* to be
+*tried* — dropping a woff2 onto the board registers it as a face and puts it in
+both type menus — and then the question was answered on the evidence actually
+available: Fraunces has been the face on every board at every stop of the whimsy
+axis for the whole build, which is the comparison the question wanted. Shipping
+a different one later is still four edits (the files, an `@font-face` in
+fonts.css, an entry in `DISPLAY_FACES`, a line in sw.js's SHELL) and no
+architecture.
 
 Worth knowing about the drop-in path, since it is where a filename becomes CSS:
 the family name is rebuilt rather than taken (`isFamily` in util.js is the
@@ -536,9 +545,10 @@ below.
 - **Item 6 / Parked "finalise the serif": Newsreader, Literata and Source Serif 4
   are not in the repository.** `web/assets/fonts/` holds Fraunces and Geist and
   nothing else. The live font switcher exists and works, but it can only compare
-  Fraunces against faces the operating system already has. Someone has to fetch
-  those three woff2 files and their licences before the parked question can
-  actually be settled.
+  Fraunces against faces the operating system already has. *Superseded
+  2026-07-26: the question was settled in Fraunces' favour without them, and
+  anyone who wants to reopen it can drop the three files onto a board rather
+  than add them to the repository.*
 - **Item 5 said the fix was to vary the seed.** The seed was already being
   varied; `scatter` was the only layout that read it. All seven read it now.
 

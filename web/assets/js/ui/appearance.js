@@ -25,7 +25,7 @@ import { board, bus, markDirty, setSetting } from '../state.js';
 import { clamp, readPrefJSON, toast, writePref } from '../util.js';
 import { assetURL } from '../storage/assets.js';
 import {
-  extractPalette, paletteFromAccent, samplePixels, MAX_SOURCES, PALETTE_TOKENS,
+  extractPalette, oklch, paletteFromAccent, samplePixels, MAX_SOURCES, PALETTE_TOKENS,
 } from './pigments.js';
 // What a board is allowed to ask for. Kept in its own module because this one
 // touches document at import time and that one must stay testable - see look.js.
@@ -84,13 +84,13 @@ const AXIS_TOKENS = ['--radius', '--grid-alpha', '--grid-dot'];
  * is also why the list is short: these are the faces a board can actually be
  * set in today, not a catalogue.
  *
- * Which means this settles the serif only as far as it can. **Newsreader,
- * Literata and Source Serif 4 are not in web/assets/fonts/** - the roadmap
- * records them as downloaded to a scratchpad and that scratchpad is gone, so
- * what is offered compares Fraunces against the faces already on the machine
- * and no further. Adding one is an entry here, an @font-face in fonts.css, the
- * files themselves and a line in sw.js's SHELL; nothing else in this module
- * changes.
+ * The choice itself is made: **Fraunces is the display serif**, settled on
+ * 2026-07-26 after a whole build's worth of boards in it at all three stops of
+ * the whimsy axis. The list stays because trying another one is the point - the
+ * four operating-system serifs below it are there to be compared against, and a
+ * face dropped onto the board joins them. Shipping a different one is an entry
+ * here, an @font-face in fonts.css, the files themselves and a line in sw.js's
+ * SHELL; nothing else in this module changes.
  *
  * '' is not a face. It removes the inline property and lets the whimsy level
  * have the type back, which is the state every board starts in - so trying
@@ -263,7 +263,42 @@ function setWhimsy(level) {
   apply(current);
   persist();
   syncControls();          // computed radii, fonts and durations all moved
+  reshade();
   axisMoved(n);
+}
+
+/**
+ * Take the sheet again at the level the axis has just moved to.
+ *
+ * The paper is a function of the axis as well as of the pictures - the plain
+ * end wants a nearly white sheet whatever the photographs said, see PLAIN_PAPER
+ * in pigments.js - and these tokens are written inline, so no stylesheet rule
+ * can answer for them. Without this, moving the slider changed the shapes and
+ * the type and left the board wearing the sheet the old level asked for.
+ *
+ * A board on a named palette has nothing inline and needs nothing done: the
+ * [data-whimsy] blocks in tokens.css are the whole story there.
+ */
+function reshade() {
+  if (!PALETTE_TOKENS.some(key => key in current.vars)) return;
+  if (autoOn(current)) {
+    recolourFromBoard({ silent: true }).catch(() => {});
+    return;
+  }
+  // Off, with a colour somebody picked by hand: the pick stands and the sheet
+  // is rebuilt around it, exactly as picking it did.
+  const sheet = current.vars['--accent']
+    ? paletteFromAccent(current.vars['--accent'], { plain: current.whimsy === HARSH })
+    : null;
+  if (!sheet) return;
+  for (const [key, value] of Object.entries(sheet)) {
+    current.vars[key] = value;
+    root.style.setProperty(key, value);
+    applied.add(key);
+  }
+  paintThemeColour();
+  persist();
+  followFade();
 }
 
 /**
@@ -329,6 +364,51 @@ export function setPigments(vars) {
   paintThemeColour();
   persist();
   syncControls();
+  followFade();
+}
+
+/** How long a fade lasts if --dur-palette cannot be read. */
+const FADE_MS = 700;
+
+let fadeEnd = 0, fading = false;
+
+/**
+ * Repaint the board for the length of a palette fade.
+ *
+ * The panel and the sheet fade on their own - they are CSS, reading registered
+ * custom properties that the engine now interpolates, see tokens.css. The board
+ * is a canvas and cannot: canvas/grid.js resolves its ink once and holds it,
+ * because reading computed style per frame is the thing that function exists to
+ * avoid. So the fade is the one time it has to be asked repeatedly, and this
+ * asks - onChange() is what drops the cached ink and repaints.
+ *
+ * Re-entrant on purpose: a second change part-way through the first simply
+ * pushes the end back rather than starting a second loop.
+ */
+function followFade() {
+  if (typeof requestAnimationFrame !== 'function') return;
+  // No transition to follow when the reader asked for less motion - the colours
+  // change at once, and a repaint loop would be chasing something instant.
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+  const raw = getComputedStyle(root).getPropertyValue('--dur-palette').trim();
+  const ms = raw.endsWith('ms') ? parseFloat(raw)
+    : raw.endsWith('s') ? parseFloat(raw) * 1000 : NaN;
+  fadeEnd = performance.now() + (Number.isFinite(ms) ? ms : FADE_MS);
+  if (fading) return;
+  fading = true;
+  // Everything else stops animating for the length of this - see .is-fading in
+  // tokens.css. A button with a transition of its own is a second animation
+  // reading the same colour, and the two crossing is what flashes.
+  root.classList.add('is-fading');
+  const step = () => {
+    onChange();
+    if (performance.now() < fadeEnd) requestAnimationFrame(step);
+    else {
+      fading = false;
+      root.classList.remove('is-fading');
+    }
+  };
+  requestAnimationFrame(step);
 }
 
 /**
@@ -352,31 +432,43 @@ export function setPigments(vars) {
  * board go on wearing the pictures' colours is not an answer anybody reads as
  * "off", and the way back was a menu the user had to know to go and use.
  *
- * Only the machine's own colours are dropped. An extraction is all fourteen
- * tokens at once and undoing it is exactly what this switch means, while a
- * hand-picked accent is somebody's own decision and is not this switch's to
- * throw away.
+ * Every pigment goes, not only the ones this module can prove it wrote. The
+ * `derived` flag was the obvious guard and the wrong one: a look carried in
+ * from an older version, or from somebody else's .mbrd, holds pigment tokens
+ * with no flag on them at all - and on exactly those boards the switch did
+ * nothing, which is the report that found this. "Return to the palette in the
+ * menu" has to mean that on every board or it means nothing on any of them.
+ * Type, radius and the rest of the look are untouched; this is a colour switch.
  */
 function setAutoPalette(on) {
   if (on) delete current.auto;
   else {
     current.auto = false;
-    if (current.derived) {
-      for (const key of PALETTE_TOKENS) {
-        delete current.vars[key];
-        root.style.removeProperty(key);
-      }
-      delete current.derived;
-      // The named palette is still on :root as [data-palette] and has been
-      // underneath the whole time - so taking the inline tokens off is the
-      // whole of the way back, and paintThemeColour() re-reads the sheet that
-      // is now showing.
-      paintThemeColour();
-    }
+    dropPigments();
   }
   persist();
   syncControls();
   if (on) recolourFromBoard().catch(() => {});
+}
+
+/**
+ * Take every extracted pigment back off and let the named palette answer again.
+ *
+ * The named palette is still on :root as [data-palette] and has been underneath
+ * the whole time - so removing the inline tokens is the whole of the way back,
+ * and paintThemeColour() re-reads the sheet that is now showing. Returns
+ * whether anything was actually there to remove.
+ */
+function dropPigments() {
+  if (!PALETTE_TOKENS.some(key => key in current.vars)) return false;
+  for (const key of PALETTE_TOKENS) {
+    delete current.vars[key];
+    root.style.removeProperty(key);
+  }
+  delete current.derived;
+  paintThemeColour();
+  followFade();
+  return true;
 }
 
 /**
@@ -420,14 +512,21 @@ function sourceKey() {
 /** The pictures the palette standing on screen was taken from - see sourceKey(). */
 let lastSources = null;
 
+/** The last reason an automatic run gave up, so it is said once and not on loop. */
+let lastFailure = null;
+
 /**
  * Take the colours off the board's own pictures.
  *
- * Silent when it fires itself after the board changes, loud when the switch
- * asks for it, because those are two different questions: an edit wants to be
- * told nothing unless something happened, and the switch was just turned on by
- * somebody waiting for an answer - including the answer "these pictures have no
- * colour in them".
+ * Quiet about *success* when it fires itself after the board changes, loud when
+ * the switch asks for it: an edit that repaints the board has already shown you
+ * what it did, while the switch was turned on by somebody waiting for an answer.
+ *
+ * Failure is announced either way, which it was not, and that cost an evening:
+ * a switch sitting on with nothing happening looks identical to a switch that
+ * is on and working on a board whose palette happens to be stable. Said once
+ * per reason - `lastFailure` - so a board that genuinely has no colour in it
+ * does not nag on every single edit.
  */
 async function recolourFromBoard({ silent = false } = {}) {
   const urls = pictureURLs();
@@ -436,21 +535,53 @@ async function recolourFromBoard({ silent = false } = {}) {
   // say. Recording it afterwards would leave a board whose pictures have no
   // colour in them re-running the whole extraction on every subsequent edit.
   lastSources = sourceKey();
+  const failed = why => {
+    if (!silent || lastFailure !== why) toast(why);
+    lastFailure = why;
+    return false;
+  };
   // One picture is enough now, where the silent version of this wanted three.
   // That floor existed because the feature fired unasked and a whole interface
   // turning over on a single dropped file reads as a fault; asked for by a
   // switch, it is the thing that was asked for, and refusing until the third
   // photograph arrives is the fault.
+  // An empty board has no colours of its own, so it stops wearing the ones it
+  // used to have. Leaving them standing was defensible while they were "the
+  // board's colours now" - but on a board you have just cleared they are the
+  // colours of pictures that are not there, which is the one case where the
+  // palette is provably not a representation of anything.
   if (!urls.length) {
-    if (!silent) toast('No pictures on the board to take colours from');
-    return false;
+    if (dropPigments()) {
+      persist();
+      syncControls();
+      return failed('No pictures left - back to the chosen palette');
+    }
+    return failed('No pictures on the board to take colours from');
   }
 
-  const vars = extractPalette(await samplePixels(urls));
-  if (!vars) {
-    if (!silent) toast('No colour to take from these pictures');
-    return false;
-  }
+  const pixels = await samplePixels(urls);
+  // One line per attempt, in the house style of main.js's "ready". This is a
+  // feature whose every failure mode is a picture quietly not being read, and
+  // the count of pictures found against pictures actually decoded is the whole
+  // diagnosis - without it the answer to "why has nothing changed?" is a
+  // browser-by-browser guess, which is exactly what it was.
+  console.info(`[mbrd] palette: ${urls.length} picture${urls.length === 1 ? '' : 's'} on the board, ${pixels.length} read`);
+  // Told apart from "no colour in them" on purpose. Pictures that are on the
+  // board and cannot be read at all is a fault in this app, not a fact about
+  // the photographs, and the two failures used to arrive as one message.
+  if (!pixels.length) return failed(`Could not read ${urls.length === 1 ? 'the picture' : 'any of the pictures'} on the board`);
+
+  const vars = extractPalette(pixels, { plain: current.whimsy === HARSH });
+  if (!vars) return failed('No colour to take from these pictures');
+  lastFailure = null;
+  // The hues, not only the swatches: "is this the colour of my photographs?" is
+  // the question this feature is actually judged on, and two hex codes do not
+  // answer it. Read back off the palette rather than passed out of the
+  // extractor, so it costs nothing and cannot disagree with what was applied.
+  const hueOf = c => Math.round(oklch(...[1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16))).h);
+  console.info(`[mbrd] palette: sheet ${vars['--paper']} (hue ${hueOf(vars['--paper'])}), `
+    + `accent ${vars['--accent']} (hue ${hueOf(vars['--accent'])}), `
+    + `wash ${vars['--leafy']} (hue ${hueOf(vars['--leafy'])})`);
   // Nothing written when the answer has not moved. Deleting one of twelve
   // pictures usually leaves the same hues standing, and setPigments() persists
   // - which marks the board dirty - so an extraction that agrees with what is
@@ -507,6 +638,11 @@ function apply(look) {
   }
   applied = new Set(Object.keys(vars));
   paintThemeColour();
+  // Every other way a look changes wholesale - the palette menu, the axis, a
+  // board arriving with its own colours - and each of them is a change the
+  // canvas has to be walked through as well. Free at boot: main.js has not
+  // wired onChange() yet, so the loop runs against a no-op.
+  followFade();
 }
 
 /**
@@ -563,7 +699,8 @@ function setVar(name, value) {
   // Written straight rather than through setPigments(), which would mark the
   // look `derived` - the machine's to overwrite. This is the opposite: it is
   // the most deliberate colour decision the panel offers.
-  const sheet = name === '--accent' ? paletteFromAccent(value) : null;
+  const sheet = name === '--accent'
+    ? paletteFromAccent(value, { plain: current.whimsy === HARSH }) : null;
   for (const [key, hue] of Object.entries(sheet || {})) {
     current.vars[key] = hue;
     root.style.setProperty(key, hue);

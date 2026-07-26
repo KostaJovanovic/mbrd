@@ -318,8 +318,19 @@ function collectWaveforms(items) {
  */
 function withoutPeaks(boardData, waveforms) {
   const strip = item => {
-    if (!item?.meta || !waveforms.has(item.asset?.hash)) return item;
-    const { peaks, ...meta } = item.meta;
+    if (!item?.meta) return item;
+    // The optimiser's originals. They are kept in the browser so that undoing an
+    // optimisation has something to put back (see swapAssets in state.js), but
+    // an export is the thing the optimising was *for* - the archive carries the
+    // small copies alone, and a `was` spelled into it would name bytes the
+    // packer never wrote. Dropped here rather than at the item, so a board that
+    // has been exported still has its undo.
+    const drop = 'was' in item.meta || 'wasCover' in item.meta;
+    if (!drop && !waveforms.has(item.asset?.hash)) return item;
+    const { peaks, was, wasCover, ...meta } = item.meta;
+    // Only the readings that were actually written to a sidecar come out; a
+    // board whose audio has no waveform file keeps them inline as before.
+    if (!waveforms.has(item.asset?.hash) && item.meta.peaks) meta.peaks = item.meta.peaks;
     return { ...item, meta };
   };
   const out = { ...boardData, items: boardData.items.map(strip) };

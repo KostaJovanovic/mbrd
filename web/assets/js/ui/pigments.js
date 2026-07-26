@@ -12,13 +12,14 @@
 //   - a tinted sheet and a dark ink of the *dominant* hue, which is what makes
 //     a palette read as a palette rather than as a grey page with a colour on
 //     it, and what keeps the 60 in one family;
-//   - the accent opposite it - the pictures' own opposite hue when they have
-//     one, and a split-complement of the sheet when they do not. Split rather
-//     than the true complement at 180, which vibrates against its own base at
-//     these chromas and is the standard reason interfaces do not use one;
-//   - --leafy for the analogous second voice, --accent-warm for a third when
-//     the pictures have one, and a lightness split between any two voices that
-//     land too close to tell apart by hue alone;
+//   - every other pigment taken from the photographs too, never constructed:
+//     the accent is the board's own second colour, the one furthest from the
+//     sheet, and a board of one colour gets a palette in one colour. Contrast
+//     between the button and the page is the standard advice and was tried -
+//     see rolesFor() for why an accent nobody photographed lost to one they
+//     did;
+//   - --leafy for whatever colour is left over, and a lightness split between
+//     any two voices that land too close to tell apart by hue alone;
 //   - chroma and sheet lightness bent by what the photographs actually are -
 //     vivid pictures get a stronger palette, dark ones a deeper sheet - but
 //     bent within bounds measured off the presets, never freely;
@@ -173,6 +174,28 @@ const MIN_L = 0.12;
 const MAX_L = 0.95;
 
 /**
+ * How much of a picture has to be coloured before its vote counts for anything,
+ * and how much before it counts in full. Fractions of the pixels that are not
+ * transparent.
+ *
+ * One picture, one vote is the rule, and this is the sentence it was missing.
+ * Measured on a real board: a screenshot of a dark grey interface had exactly
+ * *one* pixel above the neutral floor, an olive one, and a whole vote to spend
+ * on it - the same vote as a spectrogram with 771 coloured pixels. It won the
+ * accent, because the accent goes to the hue furthest from the sheet and noise
+ * is as far from the sheet as anything else. The palette on that board was
+ * therefore chosen by a single pixel.
+ *
+ * A ramp rather than a cliff, so nothing hangs on which side of a line a
+ * picture falls: below 0.5% coloured a picture is a grey picture and does not
+ * vote, above 2% it votes in full, and between the two its vote is worth what
+ * it looks like it is worth. The grey street with one red door survives - a
+ * door is a few percent of a frame, and 200 red pixels in 4200 is 4.8%.
+ */
+const COLOUR_MIN = 0.005;
+const COLOUR_FULL = 0.02;
+
+/**
  * How far apart two accepted hues have to be, in degrees.
  *
  * Below this they read as one colour with a bit of variation in it, and a
@@ -182,8 +205,20 @@ const MAX_L = 0.95;
  */
 const MIN_SEP = 40;
 
-/** A second or third hue has to be worth this much of the leader to count. */
-const MIN_SHARE = 0.22;
+/**
+ * A second or third hue has to be worth this much of the leader to count.
+ *
+ * 0.15, down from 0.22, and the two changes that came before it are the reason.
+ * Under one-picture-one-vote a colour that owns two photographs out of seven
+ * polls 0.29 against a leader that owns four - but a colour that owns *one*
+ * polls 0.14 and used to be thrown away, and with it the only real accent the
+ * board had. A palette that takes its colours from the pictures cannot afford
+ * to be that fussy about which pictures: a single strong photograph is a colour
+ * on the board, and the alternative is a monochrome palette in the hue of the
+ * majority. Still high enough that a smoothed histogram's shoulder does not
+ * qualify - that lands nearer 0.05.
+ */
+const MIN_SHARE = 0.15;
 
 /** A hue can be one, two or three voices, never more. */
 const MAX_HUES = 3;
@@ -262,9 +297,13 @@ function census(chunks, floor) {
     }
     if (opaque) { keySum += lSum / opaque; lit++; }
     if (!weight) continue;
-    for (let i = 0; i < BINS; i++) votes[i] += one[i] / weight;
-    vividSum += weight / coloured;
-    voters++;
+    // What this picture's vote is worth: a full one if it is a colour
+    // photograph, none at all if it is a grey frame with a stray pixel in it.
+    const trust = clamp((coloured / opaque - COLOUR_MIN) / (COLOUR_FULL - COLOUR_MIN), 0, 1);
+    if (!trust) continue;
+    for (let i = 0; i < BINS; i++) votes[i] += trust * one[i] / weight;
+    vividSum += trust * (weight / coloured);
+    voters += trust;
   }
   return {
     votes,
@@ -395,28 +434,6 @@ const LEAFY = { L: 0.587, C: 0.071 };
 // the hue came from the photographs, and one hue rotated is one design.
 
 /**
- * How far the accent stands from the sheet when it has to be constructed.
- *
- * 150, not 180. The true complement is the textbook answer and the wrong one
- * here: two opposite hues at these chromas vibrate against each other, and the
- * standard fix - the split-complement, one of the two hues flanking the
- * opposite - keeps the contrast and drops the tension. Which of the two flanks
- * is chosen is decided by whatever else is on the board, below.
- */
-const SPLIT = 150;
-
-/**
- * How far a hue has to be from the sheet before it counts as an opposite.
- *
- * Above this, a hue the photographs actually contain is used as the accent
- * instead of a constructed one - the pictures' own answer beats a formula, and
- * a board that holds both a slate blue and a rust already has its button colour
- * in it. Below it, the hue is a second voice: near enough to the sheet to wash
- * it without arguing, which is what --leafy does.
- */
-const OPPOSITE = 110;
-
-/**
  * Two voices closer than this cannot be told apart by hue, so they are told
  * apart by lightness instead - which is the standing advice for an analogous
  * pair and the one lever left once hue is spoken for. Only --leafy moves: the
@@ -428,40 +445,47 @@ const LEAFY_DROP = 0.07;
 /**
  * Which hue does which job, from one to three of them.
  *
- * The order within `pool` is the point of the two filters: an analogous hue is
- * preferred for --leafy even when a further one polled better, because --leafy
- * washes the sheet and a wash that argues with the paper is a stain. The
- * strongest of what is left takes --accent-warm.
+ * Every hue here came out of the photographs. That is the whole rule, and it
+ * was briefly not: the accent used to be *constructed*, a split-complement 150
+ * degrees off the sheet, on the standard advice that the thing you click should
+ * contrast with the page it sits on. The advice is sound and the result was
+ * not - a warm board of warm photographs got a blue button that appeared in
+ * none of them, which is a good palette and somebody else's board. Between "the
+ * colours are the pictures' colours" and "the accent contrasts", the first is
+ * the feature; the second is a preference about buttons.
+ *
+ * What survives of it: among the hues that are not the sheet's, the accent
+ * takes the one furthest from it. That is the most visible button available
+ * *within* the colours the photographs actually hold, and it costs nothing,
+ * because every hue that got this far is already MIN_SEP from every other.
+ *
+ * A board with one hue in it gets a palette in one hue - sheet, ink and accent
+ * together. Which is what three of the four presets do, and what a board of
+ * photographs that are all one colour honestly is.
  */
 function rolesFor(hues) {
   const [sheet, ...rest] = hues;
-  const far = rest.filter(h => apart(h, sheet) >= OPPOSITE);
-  const near = rest.filter(h => apart(h, sheet) < OPPOSITE);
-  const accent = far.length ? far[0] : splitComplement(sheet, near[0]);
-  const pool = [...near, ...far.slice(1)];
+  // Furthest from the sheet first, rather than strongest first: both are real
+  // colours off the board, and of the two the further one makes the better
+  // button. --leafy takes what is left, and washes the sheet.
+  const ranked = [...rest].sort((a, b) => apart(b, sheet) - apart(a, sheet));
   return {
     sheet,
-    accent,
-    leafy: pool.length ? pool[0] : (sheet + LEAFY_SOLO_TURN) % 360,
-    // The third hue, when the pictures have one, takes --accent-warm outright.
-    // That token is the only pigment slot with a job in app.css that is not
-    // already spoken for - it washes the sheet, tints note 1 and carries the
-    // highlight - so a third colour put here is one that is actually seen,
-    // which was the condition for having a third at all. Otherwise it stays a
-    // relative of the sheet it washes.
-    warm: pool.length > 1 ? pool[1] : warmer(sheet),
+    accent: ranked.length ? ranked[0] : sheet,
+    // A third photographed hue if the board has one. With two, the wash sits
+    // *between* them rather than at a turn of its own: on a board of rose and
+    // magenta, +85 degrees is an olive that nothing on the board is, and the
+    // ornament is no better a place to invent a colour than the button was.
+    // Only a board with a single hue has nothing to sit between, and there the
+    // turn stands - a wash that is its own accent is not a second voice at all.
+    leafy: ranked.length > 1 ? ranked[1]
+      : ranked.length ? midHue(sheet, ranked[0])
+        : (sheet + LEAFY_SOLO_TURN) % 360,
+    // --accent-warm has no photograph left to take by this point - the vote
+    // yields three hues at the most and the other two are spoken for - so it
+    // stays a relative of the sheet it washes.
+    warm: warmer(sheet),
   };
-}
-
-/**
- * One of the two hues flanking the opposite of `h`, whichever leaves more room
- * between itself and `other` - so on a board with a second voice the accent
- * goes round the far side of the wheel from it rather than crowding it.
- */
-function splitComplement(h, other) {
-  const a = (h + SPLIT) % 360, b = (h - SPLIT + 360) % 360;
-  if (other == null) return a;
-  return apart(a, other) >= apart(b, other) ? a : b;
 }
 
 // ---------------------------------------------------------------------------
@@ -485,13 +509,23 @@ const REF_KEY = 0.62;
 /**
  * How far chroma may be scaled by how vivid the pictures are.
  *
- * The ceiling is the honest limit: --accent at 1.35 is 0.155, which is above
- * the 0.13 the presets cap at but below where a large field of it stops being a
- * tint. Past that a sheet reads as a painted panel rather than as paper, which
- * is a change to what the app is rather than to what colour it is.
+ * The old ceiling was 1.35, chosen to sit near the presets' own cap of 0.13 -
+ * and the complaint that followed was the correct one: a board of saturated
+ * photographs came out at chroma 0.019 on the sheet while the photographs
+ * themselves averaged 0.12, six times more colour than the palette they
+ * produced. A palette that faint is a preset with a hue setting, and it does
+ * not look like anybody's board.
+ *
+ * 1.9 puts a vivid board's paper at 0.032 and its --paper-3 at 0.070, which is
+ * a plainly tinted sheet rather than a hint of one, and its accent at 0.219 -
+ * beyond sRGB for some hues, where hex() gives up chroma and the palette simply
+ * takes what the gamut allows. The floor drops further too, so a board of
+ * concrete and fog reads as one.
+ *
+ * This is the axis to reach for first if boards still come out too polite.
  */
-const VIVID_FLOOR = 0.70;
-const VIVID_CEIL = 1.35;
+const VIVID_FLOOR = 0.55;
+const VIVID_CEIL = 1.90;
 
 /**
  * How far the sheet's lightness may follow the pictures' own.
@@ -506,10 +540,27 @@ const VIVID_CEIL = 1.35;
  * narrowing it - the repair pass below is a floor, not a substitute for not
  * walking towards it.
  */
-const KEY_GAIN = 0.15;
-const KEY_DOWN = 0.045;
-const KEY_UP = 0.02;
+const KEY_GAIN = 0.22;
+const KEY_DOWN = 0.070;
+const KEY_UP = 0.025;
 const PAPERS = ['--paper', '--paper-2', '--paper-3', '--paper-card', '--rule', '--rule-2'];
+
+/**
+ * Where the sheet goes at the plain end of the whimsy axis, and how much of its
+ * tint it keeps once it is there.
+ *
+ * Harsh is the level where the board stops being a scrapbook and starts being a
+ * drawing - it is already where the grid turns to crosses and where things snap
+ * to a lattice - and a drawing is made on white paper. So at that end the sheet
+ * returns to nearly white however dark or vivid the photographs were, keeping a
+ * third of its tint, which is enough that it is still recognisably this board's
+ * white rather than the browser's.
+ *
+ * The pigments are untouched: the accent, the wash and the ink are what the
+ * pictures said, and this is a statement about paper, not about colour.
+ */
+const PLAIN_PAPER = 0.985;
+const PLAIN_TINT = 0.3;
 
 /**
  * The tables, bent by what the photographs are. Null traits leaves them be.
@@ -520,14 +571,26 @@ const PAPERS = ['--paper', '--paper-2', '--paper-3', '--paper-card', '--rule', '
  * boards, three of them pinned. Under a root the middle stays responsive and
  * the extremes arrive slowly, which is also the honest shape, since twice the
  * chroma in a photograph is nothing like twice the colour in a palette.
+ *
+ * Every field of `traits` is optional and independently so - a hand-picked
+ * colour brings no photographs with it but is still subject to the axis.
  */
 function temper(traits) {
-  const scale = traits
+  const scale = traits?.vivid != null
     ? clamp(Math.sqrt(traits.vivid / REF_VIVID), VIVID_FLOOR, VIVID_CEIL) : 1;
-  const shift = traits ? clamp((traits.key - REF_KEY) * KEY_GAIN, -KEY_DOWN, KEY_UP) : 0;
+  const key = traits?.key != null
+    ? clamp((traits.key - REF_KEY) * KEY_GAIN, -KEY_DOWN, KEY_UP) : 0;
+  // The axis overrules the photographs about the paper, and only about the
+  // paper: at the plain end the sheet is white because that is what that end
+  // of the axis *is*, not because the pictures were bright.
+  const shift = traits?.plain ? PLAIN_PAPER - SHEET['--paper'].L : key;
+  const sheetScale = traits?.plain ? scale * PLAIN_TINT : scale;
   const sheet = {}, pigment = {};
   for (const [key, { L, C }] of Object.entries(SHEET)) {
-    sheet[key] = { L: PAPERS.includes(key) ? clamp(L + shift, 0, 1) : L, C: C * scale };
+    sheet[key] = {
+      L: PAPERS.includes(key) ? clamp(L + shift, 0, 1) : L,
+      C: C * sheetScale,
+    };
   }
   for (const [key, { L, C }] of Object.entries(PIGMENT)) pigment[key] = { L, C: C * scale };
   return { sheet, pigment, leafy: { L: LEAFY.L, C: LEAFY.C * scale } };
@@ -685,7 +748,7 @@ function repair(vars, roles, sheet, pigment) {
  * does would answer a question nobody asked - somebody reaching for the picker
  * is choosing the board's colour, not commissioning a scheme around it.
  */
-export function paletteFromAccent(picked) {
+export function paletteFromAccent(picked, { plain = false } = {}) {
   if (!/^#[0-9a-f]{6}$/i.test(picked)) return null;
   const chosen = picked.toLowerCase();
   const { C, h } = oklch(...parseHex(chosen));
@@ -694,12 +757,22 @@ export function paletteFromAccent(picked) {
   if (C < NEUTRAL_C) return null;
 
   const vars = build(
-    { sheet: h, accent: h, leafy: (h + LEAFY_SOLO_TURN) % 360, warm: warmer(h) }, null);
+    { sheet: h, accent: h, leafy: (h + LEAFY_SOLO_TURN) % 360, warm: warmer(h) },
+    // The axis applies to a colour chosen by hand exactly as it does to one
+    // read off the photographs: the sheet a pick brings with it is still the
+    // sheet, and at the plain end of the axis the sheet is white.
+    { plain });
   vars['--accent'] = chosen;
   const light = mixHex(vars['--paper'], '#ffffff', 0.55);
   vars['--accent-fg'] =
     contrast(chosen, light) >= contrast(chosen, vars['--ink']) ? light : vars['--ink'];
   return vars;
+}
+
+/** Halfway between two hues, the short way round the wheel. */
+function midHue(a, b) {
+  const d = ((b - a + 540) % 360) - 180;
+  return (a + d / 2 + 360) % 360;
 }
 
 /** A hue turned towards the ambers, by WARM_TURN at most. */
@@ -725,11 +798,11 @@ function mixHex(a, b, t) {
  * all. The caller's right move then is to leave the look alone, and null says
  * that in a way an all-neutral palette does not.
  */
-export function extractPalette(chunks) {
+export function extractPalette(chunks, { plain = false } = {}) {
   const { votes, voters, vivid, key } = readBoard(chunks);
   const hues = peaksOf(votes, voters);
   if (!hues.length) return null;
-  return paletteFor(hues, { vivid, key });
+  return paletteFor(hues, { vivid, key, plain });
 }
 
 // ---------------------------------------------------------------------------
@@ -760,17 +833,67 @@ const SAMPLE = 48;
  * decode should cost its own vote and nothing else.
  */
 export async function samplePixels(urls) {
+  const ctx = sampler();
+  if (!ctx) return [];
   const out = [];
   for (const url of urls.slice(0, MAX_SOURCES)) {
     try {
-      const img = new Image();
-      img.src = url;
-      await img.decode();
-      const canvas = new OffscreenCanvas(SAMPLE, SAMPLE);
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      ctx.drawImage(img, 0, 0, SAMPLE, SAMPLE);
+      const src = await frameFor(url);
+      // One canvas for all of them, so it is cleared between pictures: a
+      // transparent PNG drawn over the last one would otherwise vote with
+      // whatever was underneath it.
+      ctx.clearRect(0, 0, SAMPLE, SAMPLE);
+      ctx.drawImage(src, 0, 0, SAMPLE, SAMPLE);
       out.push(ctx.getImageData(0, 0, SAMPLE, SAMPLE).data);
+      src.close?.();
     } catch { /* one picture, one lost vote */ }
   }
   return out;
+}
+
+/**
+ * Somewhere to draw 48x48, whatever the browser has.
+ *
+ * OffscreenCanvas first because it puts nothing in the document, and a real
+ * <canvas> when there is no OffscreenCanvas - which used to mean the whole
+ * feature failed silently rather than falling back, since the throw landed in
+ * the same catch as "this one PNG is corrupt".
+ */
+function sampler() {
+  try {
+    if (typeof OffscreenCanvas === 'function') {
+      const ctx = new OffscreenCanvas(SAMPLE, SAMPLE)
+        .getContext('2d', { willReadFrequently: true });
+      if (ctx) return ctx;
+    }
+  } catch { /* fall through to the DOM */ }
+  if (typeof document === 'undefined') return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = SAMPLE;
+  return canvas.getContext('2d', { willReadFrequently: true });
+}
+
+/**
+ * The picture at `url`, as something drawImage() will take.
+ *
+ * The bytes are fetched and decoded as a blob rather than handed to an <img>
+ * src, because an <img> decides what it is decoding from the MIME type on the
+ * URL: Chrome sniffs the bytes when that type is missing or wrong, Firefox does
+ * not, and an asset that arrived without a type therefore extracted perfectly
+ * in one browser and not at all in the other - silently, since a picture that
+ * cannot be decoded is one lost vote and eleven lost votes are no palette.
+ * createImageBitmap() takes the bytes themselves and has no such opinion.
+ *
+ * The <img> path stays as the fallback for anything without createImageBitmap.
+ */
+async function frameFor(url) {
+  if (typeof createImageBitmap === 'function' && typeof fetch === 'function') {
+    try {
+      return await createImageBitmap(await (await fetch(url)).blob());
+    } catch { /* fall through to the element */ }
+  }
+  const img = new Image();
+  img.src = url;
+  await img.decode();
+  return img;
 }

@@ -932,6 +932,96 @@ export function setItemCover(id, hash) {
 }
 
 /**
+ * Point a run of items at smaller copies of their own files, reversibly.
+ *
+ * One commit for the whole board rather than one per card, because that is what
+ * the gesture was: you asked to optimise a board, and one Ctrl+Z has to undo a
+ * board. Two hundred separate entries would also be two hundred of the history
+ * limit, which is to say the rest of the session's undo thrown away to record a
+ * single button press.
+ *
+ * Each swap is `{ id, asset, cover }` - either field may be absent, and an
+ * absent one is left exactly as it was.
+ *
+ * The id that was there goes into `meta.was` / `meta.wasCover`, and that is not
+ * bookkeeping for undo's sake: undo closes over the old ids already. It is for
+ * the *autosave sweep*, which deletes any bytes no item claims and would
+ * otherwise collect the originals the moment the board saved itself - leaving an
+ * undo entry that could only put back a hash with nothing behind it. See
+ * referencedHashes() in storage/storage.js, and packBoard() in storage/mbrd.js,
+ * which drops both fields on the way into a .mbrd so an export carries the small
+ * files alone.
+ */
+export function swapAssets(swaps, label = 'Optimize board') {
+  const list = (swaps || []).filter(s => s && byId(s.id));
+  if (!list.length) return 0;
+
+  const before = list.map(({ id }) => {
+    const it = byId(id);
+    return { id, asset: it.asset ? { ...it.asset } : null, meta: { ...it.meta } };
+  });
+
+  const forward = () => {
+    for (const { id, asset, cover } of list) {
+      const it = byId(id);
+      if (!it) continue;
+      const meta = { ...it.meta };
+      if (isHash(asset) && it.asset?.hash && asset !== it.asset.hash) {
+        // Only the first swap records an original. Optimising twice must not
+        // leave `was` pointing at the *previous* optimisation, or undoing once
+        // would restore a file that is itself already re-encoded.
+        if (!isHash(meta.was)) meta.was = it.asset.hash;
+        it.asset = { ...it.asset, hash: asset };
+      }
+      if (isHash(cover) && isHash(meta.cover) && cover !== meta.cover) {
+        if (!isHash(meta.wasCover)) meta.wasCover = meta.cover;
+        meta.cover = cover;
+      }
+      it.meta = meta;
+      bus.emit('item', id);
+    }
+  };
+
+  const back = () => {
+    for (const snap of before) {
+      const it = byId(snap.id);
+      if (!it) continue;
+      it.asset = snap.asset ? { ...snap.asset } : null;
+      it.meta = { ...snap.meta };
+      bus.emit('item', snap.id);
+    }
+  };
+
+  commit(label, forward, back);
+  return list.length;
+}
+
+/**
+ * Let go of the files the optimiser replaced.
+ *
+ * Undoable in the sense that matters - the *board* is unchanged either way, so
+ * this is not on the history at all. What it changes is what the next autosave
+ * sweep is allowed to collect: with `was` gone, nothing claims the originals and
+ * the browser gets the space back. It is a one-way door and the caller says so
+ * before opening it.
+ */
+export function discardOriginals() {
+  let n = 0;
+  for (const it of board.items) {
+    if (!isHash(it.meta?.was) && !isHash(it.meta?.wasCover)) continue;
+    const { was, wasCover, ...rest } = it.meta;
+    it.meta = rest;
+    n++;
+  }
+  if (n) markDirty();
+  return n;
+}
+
+/** How many items are still holding a pre-optimisation original. */
+export const originalsHeld = () =>
+  board.items.filter(it => isHash(it.meta?.was) || isHash(it.meta?.wasCover)).length;
+
+/**
  * Which way up a model file is read.
  *
  * 'z' or 'y'. Anything else clears the override and hands the decision back to
