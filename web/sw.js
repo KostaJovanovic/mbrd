@@ -1,4 +1,4 @@
-﻿/* mbrd - service worker
+/* mbrd - service worker
    Precaches the app shell so the board works with no network at all, which is
    the point: everything already runs locally, the only thing a reload needs is
    the shell itself. Boards live in IndexedDB and in .mbrd files - the SW never
@@ -12,7 +12,7 @@
 // Written out in full rather than composed from PREFIX, because save.bat bumps
 // this line by regex on every commit and would not recognise an expression.
 // tests/sw.test.js holds the two together.
-const VERSION = 'mbrd-v44';
+const VERSION = 'mbrd-v45';
 const PREFIX = 'mbrd-';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) turns the
@@ -35,12 +35,15 @@ const SHELL = [
   './assets/js/state.js',
   './assets/js/util.js',
   './assets/js/geometry.js',
+  './assets/js/measure.js',
   './assets/js/version.js',
   './assets/js/canvas/viewport.js',
   './assets/js/canvas/grid.js',
+  './assets/js/canvas/paper.js',
   './assets/js/canvas/items.js',
   './assets/js/canvas/input.js',
   './assets/js/import/drop.js',
+  './assets/js/import/lastfm.js',
   './assets/js/import/artwork.js',
   './assets/js/import/formats.js',
   './assets/js/arrange/arrangements.js',
@@ -68,6 +71,19 @@ const SHELL = [
   './assets/js/ui/pigments.js',
   './assets/js/ui/menu.js',
   './assets/js/ui/trash.js',
+  './assets/js/ui/idle.js',
+  './assets/js/ui/scalebar.js',
+  // Optimising a board of photographs and music must work on a plane. Pictures
+  // and sound are done by the browser itself, so they are all here - the ffmpeg
+  // core the last two reach for is thirty megabytes and is deliberately *not*;
+  // video alone is skipped offline until it has been fetched once, and the
+  // dialog says so.
+  './assets/js/optimize/optimize.js',
+  './assets/js/optimize/picture.js',
+  './assets/js/optimize/opus.js',
+  './assets/js/optimize/ui.js',
+  './assets/js/optimize/media.js',
+  './assets/js/optimize/media-worker.js',
   './assets/css/fonts.css',
   // Every face, not a subset. Geist is --font-body in every look, and at the
   // plain end of the whimsy axis it is --font-display and Geist Mono is

@@ -30,17 +30,24 @@
 
 import { board, bus } from '../state.js';
 import { rafThrottle } from '../util.js';
+import { webZoom } from './viewport.js';
+import { segmentMeetsRect } from '../geometry.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 /**
- * How far outside the viewport a thread is still drawn, in world px.
+ * How far outside the viewport a thread is still drawn, in *screen* px.
  *
- * The same 400 that items.js culls with, and for the same reason: the pan that
- * brings a thread on screen is the frame that would otherwise have to draw it,
- * and a margin means the work happened a frame or two earlier instead.
+ * The same margin items.js mounts cards with, in the same unit and for the same
+ * two reasons: the pan that brings a thread on screen is the frame that would
+ * otherwise have to draw it, so a margin means the work happened a frame or two
+ * earlier - and a margin measured on the board rather than on the screen stops
+ * meaning anything as soon as you zoom, since the visible slice of board halves
+ * with every doubling while the margin does not.
  */
-const CULL_MARGIN = 400;
+const CULL_MARGIN_PX = 300;
+/** Capped in world units at the flat margin this used to be - see items.js. */
+const CULL_MARGIN_MAX = 400;
 
 /**
  * A thread appears and disappears by fading, which needs two things this file
@@ -64,6 +71,34 @@ const CULL_MARGIN = 400;
 const FADE_IN_MS = 400;
 const FADE_OUT_MS = 300;
 
+/**
+ * How far out the web is worth drawing at all.
+ *
+ * The stroke is non-scaling, so a thread stays the same hairline however far
+ * out you go while the board it is drawn over shrinks. Zoomed right out, a few
+ * hundred hairlines over a board the size of a postage stamp stop reading as
+ * connections between things and become a grey scribble laid across the one
+ * view whose whole purpose is to show the shape of the board.
+ *
+ * So it goes, and it goes in a band rather than at a line: full strength a
+ * band's width above the rung, thinning to nothing at the rung itself, and
+ * below that not drawn at all - which is the half that also gives the work
+ * back, since the furthest-out view is the one with every thread inside it and
+ * nothing culled.
+ *
+ * The floor is the board's own detail rung, imported rather than written again
+ * here, so the threads leave at the same moment the labels and the grips do
+ * rather than at a number of this file's own choosing four hundredths away.
+ *
+ * Which is why this is a width and not a second threshold. The rung is higher
+ * under a finger than under a mouse, and a fixed ceiling written here would
+ * have been *below* the floor on a phone - a band of negative width, which
+ * divides by zero on the way to an opacity. Expressed as the distance above the
+ * rung, the fade is the same fifteen hundredths of travel wherever the rung
+ * happens to be.
+ */
+const WEB_FADE_BAND = 0.15;
+
 let svg = null;
 let path = null;         // every settled thread, as subpaths of one `d`
 let fadeLayer = null;    // <g> holding only the threads currently fading
@@ -71,8 +106,12 @@ let vp = null;           // for the visible rect; absent in tests, which then dr
 
 /** The last built geometry, reused by every paint until an item moves. */
 let builtPts = [];
+/** The box `builtPts` describes, kept by build() so paint() need not re-derive it. */
+let settledBox = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
 /** The box last written to the <svg>, so an unchanged one is not rewritten. */
 let lastBox = '';
+/** The padded rectangle the drawing on screen was culled against - see paint(). */
+let paintedRect = null;
 
 /** key -> { el, dir, timer, seg } for the threads mid-fade. */
 const animating = new Map();
@@ -103,13 +142,19 @@ const keyOf = (a, b) => (a < b ? a + '\0' + b : b + '\0' + a);
  * old edges, and the build throttle would then have to schedule a third frame.
  */
 let wantBuild = false;
+/** A repaint that has to happen whatever the view is doing - see paint(). */
+let wantPaint = false;
 let frame = () => {};
-const requestBuild = () => { wantBuild = true; frame(); };
-const requestPaint = () => frame();
+const requestBuild = () => { wantBuild = true; wantPaint = true; frame(); };
+const requestPaint = () => { wantPaint = true; frame(); };
+/** The eye moved, which on its own may well leave the drawing untouched. */
+const viewMoved = () => frame();
 
 function tick() {
   if (wantBuild) { wantBuild = false; build(); }
-  paint();
+  const forced = wantPaint;
+  wantPaint = false;
+  paint(forced);
 }
 
 export function initWeb(worldEl, viewport) {
@@ -133,10 +178,10 @@ export function initWeb(worldEl, viewport) {
   bus.on('board:load', requestBuild);
   // Panning and zooming change which threads are worth drawing and nothing
   // else, so they ask for a paint and never for a build.
-  if (vp) vp.onChange(requestPaint);
+  if (vp) vp.onChange(viewMoved);
 
   build();
-  paint();
+  paint(true);
 }
 
 /**
@@ -205,6 +250,21 @@ function centres() {
 function build() {
   if (!svg) return;
   const pts = builtPts = centres();
+  // The box these points describe, worked out here rather than in paint().
+  //
+  // It is a property of where the items are, and the items do not move when the
+  // view does - so re-deriving it from every centre on the board was a loop
+  // over the whole board on every frame of every pan, to arrive at the number
+  // it arrived at last frame. Panning is the case that matters: build() runs
+  // when something is dragged, added or deleted, and paint() runs whenever the
+  // eye moves.
+  settledBox = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  for (const p of pts) {
+    if (p.x < settledBox.minX) settledBox.minX = p.x;
+    if (p.y < settledBox.minY) settledBox.minY = p.y;
+    if (p.x > settledBox.maxX) settledBox.maxX = p.x;
+    if (p.y > settledBox.maxY) settledBox.maxY = p.y;
+  }
   // One item has nothing to connect to, and zero items have nothing at all -
   // but the threads that were there a moment ago still have a fade to finish,
   // so this is an empty edge set rather than an early return.
@@ -220,7 +280,7 @@ function build() {
   // to mint eleven hundred <line> elements at once and animate every one of
   // them, almost all outside the viewport; off screen, a thread now simply is
   // or is not, and only the ones on screen get the courtesy of fading.
-  const vis = visibleBox();
+  const vis = visibleBox(cullMargin());
   const onScreen = seg => !vis || !seg ||
     !(Math.max(seg.a.x, seg.b.x) < vis.x0 || Math.min(seg.a.x, seg.b.x) > vis.x1 ||
       Math.max(seg.a.y, seg.b.y) < vis.y0 || Math.min(seg.a.y, seg.b.y) > vis.y1);
@@ -254,32 +314,80 @@ function build() {
 }
 
 /**
- * The visible rect in the web's own coordinates, widened by the cull margin.
+ * The visible rect in the web's own coordinates, widened by `margin` world px.
  *
  * World y points up and this layer is laid out with y down, so the rect flips:
  * the top edge of the box is the *largest* world y.
  */
-function visibleBox() {
+function visibleBox(margin = 0) {
   if (!vp) return null;
-  const r = vp.visibleRect(CULL_MARGIN);
+  const r = vp.visibleRect(margin);
   return { x0: r.x0, x1: r.x1, y0: -r.y1, y1: -r.y0 };
 }
+
+/** The cull margin in world units at the current zoom. */
+const cullMargin = () => Math.min(CULL_MARGIN_PX / (vp ? vp.zoom : 1), CULL_MARGIN_MAX);
+
+/** Is `inner` wholly within `outer`? */
+const within = (inner, outer) =>
+  inner.x0 >= outer.x0 && inner.x1 <= outer.x1 &&
+  inner.y0 >= outer.y0 && inner.y1 <= outer.y1;
 
 /**
  * Which threads are drawn. Runs on a build and on every view change.
  *
- * A thread is kept if its bounding box meets the visible one - conservative on
- * a long diagonal, which passes the test while barely clipping the corner, and
- * that is the right way round: over-drawing a handful of threads costs two
- * numbers each, and under-drawing one is a hole in the web.
+ * A thread is kept if the thread itself meets the visible rect, not if its
+ * bounding box does. The two differ on exactly the case a web is full of: the
+ * long diagonal. Its bounding box is most of the board, so a box test passes it
+ * from almost anywhere and it is emitted into `d` on every frame of every pan,
+ * having never come near the screen. On a dense board that is the majority of
+ * the path string - work done to draw nothing, and paid for again each frame
+ * because the string is rebuilt.
+ *
+ * Still conservative in the direction that matters: the test is exact about the
+ * segment and the rect is already widened by CULL_MARGIN, so a thread arrives a
+ * few hundred world units before it is needed rather than popping in at the
+ * edge.
  */
-function paint() {
+function paint(forced = false) {
   if (!svg) return;
-  if (!settled.size && !animating.size) {
+  // Nothing to draw, or too far out for it to mean anything. Both answers are
+  // the same answer, and taking it here means the whole `d` string below is
+  // never built at the zoom where it would be longest.
+  const z = vp ? vp.zoom : 1;
+  if ((!settled.size && !animating.size) || z < webZoom()) {
     svg.style.display = 'none';
+    // Nothing was drawn, so nothing below is true of what is on screen.
+    paintedRect = null;
     return;
   }
   svg.style.display = '';
+  // Linear across the band. Not eased: this tracks a continuous gesture rather
+  // than playing on its own, so what it has to be is proportional to the pinch,
+  // and any curve on it reads as the web lagging the fingers.
+  const floor = webZoom();
+  svg.style.opacity = z >= floor + WEB_FADE_BAND
+    ? ''
+    : ((z - floor) / WEB_FADE_BAND).toFixed(3);
+
+  // Everything from here down is a function of where the *threads* are, not of
+  // where the eye is - the only thing the view decides is which of them are
+  // worth putting in the string. So while the screen stays inside the padded
+  // rectangle the last pass culled against, the string it would build is the
+  // string that is already there, and a pan can return without touching it.
+  //
+  // Which is the whole of the saving. The `d` below is one long line of
+  // coordinates for every thread on screen, rebuilt from scratch and handed to
+  // the browser to re-parse; on a board with a few hundred threads that was
+  // several milliseconds, spent on every frame of every pan, to arrive at what
+  // it arrived at last frame. A thread does not move when you look somewhere
+  // else.
+  //
+  // A fade starting or landing, or the threads themselves changing, comes
+  // through as `forced` - those genuinely do change the string.
+  const tight = visibleBox(0);
+  if (!forced && paintedRect && tight && within(tight, paintedRect)) return;
+  paintedRect = tight ? visibleBox(cullMargin()) : null;
 
   // The box has to hold the fading threads too. One of them may be anchored to
   // an item that has just been deleted, sitting outside the box the surviving
@@ -290,14 +398,15 @@ function paint() {
   // would move its origin on every pan, which means re-emitting every
   // coordinate in `d` for threads that had not moved at all - the opposite of
   // what the culling is for.
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  // The settled half is build()'s answer and does not move with the view; only
+  // the fading threads are added here, and there are rarely any.
+  let { minX, minY, maxX, maxY } = settledBox;
   const stretch = p => {
     if (p.x < minX) minX = p.x;
     if (p.y < minY) minY = p.y;
     if (p.x > maxX) maxX = p.x;
     if (p.y > maxY) maxY = p.y;
   };
-  for (const p of builtPts) stretch(p);
   for (const entry of animating.values()) { stretch(entry.seg.a); stretch(entry.seg.b); }
   // A board whose items all sit on one row has a zero-height box, and an SVG
   // with a zero extent renders nothing at all - so the box never closes fully.
@@ -314,7 +423,7 @@ function paint() {
     svg.setAttribute('viewBox', `0 0 ${w.toFixed(2)} ${h.toFixed(2)}`);
   }
 
-  const vis = visibleBox();
+  const vis = paintedRect;
 
   // One path of many subpaths rather than one element per thread: swapping a
   // single `d` attribute beats reconciling a few hundred nodes. Only the
@@ -325,8 +434,7 @@ function paint() {
   for (const key of settled) {
     const seg = lastSeg.get(key);
     if (!seg) continue;
-    if (vis && (Math.max(seg.a.x, seg.b.x) < vis.x0 || Math.min(seg.a.x, seg.b.x) > vis.x1 ||
-                Math.max(seg.a.y, seg.b.y) < vis.y0 || Math.min(seg.a.y, seg.b.y) > vis.y1)) continue;
+    if (vis && !segmentMeetsRect(seg.a, seg.b, vis)) continue;
     d += `M${(seg.a.x - minX).toFixed(2)} ${(seg.a.y - minY).toFixed(2)}` +
          `L${(seg.b.x - minX).toFixed(2)} ${(seg.b.y - minY).toFixed(2)}`;
   }
@@ -530,14 +638,43 @@ function learnPass(n, ms) {
  * The largest n whose whole rebuild fits the budget: solve a*n^2 + b*n = budget
  * for n, which is the quadratic formula and nothing cleverer.
  *
+ * Pure, and exported, because the property that matters here cannot be tested
+ * any other way. What this code has to get right is that the limit *converges*
+ * - a version that chases its own tail would drop, skip the second pass,
+ * measure a fast frame, climb, and change the web's shape every few frames
+ * while you dragged. Asserting that by running the real thing forty times and
+ * checking the answer stopped moving is asserting that the machine was quiet
+ * for the duration, which on a laptop compiling something else it is not: that
+ * test failed about one run in three, and every failure was the room and not
+ * the code. Split in two - the solve here, the deadband below - both halves are
+ * ordinary functions of their arguments and the convergence is provable rather
+ * than observed.
+ */
+export function denseLimitFor(tree, pass) {
+  if (!(tree > 0)) return null;
+  const root = Math.sqrt(pass * pass + 4 * tree * FRAME_BUDGET_MS);
+  return clampi(Math.round((root - pass) / (2 * tree)), DENSE_FLOOR, DENSE_CEILING);
+}
+
+/**
+ * Where the limit goes next, given where it is and where the maths points.
+ *
  * Moved only when the answer differs by a sixth, so the limit sits still
  * instead of trembling around a boundary and taking the web's shape with it.
+ * That deadband is also what makes convergence a fact rather than a hope: a
+ * steady `want` moves the limit at most once and then never again, because
+ * after the move the difference is zero.
+ *
+ * A non-finite `want` holds. It arrives when a cost estimate has gone to NaN,
+ * which is a measurement that failed, not a board that got faster.
  */
+export function nextDenseLimit(current, want) {
+  if (!Number.isFinite(want)) return current;
+  return Math.abs(want - current) > current / 6 ? want : current;
+}
+
 function settle() {
-  if (!(treeCost > 0)) return;
-  const root = Math.sqrt(passCost * passCost + 4 * treeCost * FRAME_BUDGET_MS);
-  const want = clampi(Math.round((root - passCost) / (2 * treeCost)), DENSE_FLOOR, DENSE_CEILING);
-  if (Math.abs(want - denseLimit) > denseLimit / 6) denseLimit = want;
+  denseLimit = nextDenseLimit(denseLimit, denseLimitFor(treeCost, passCost));
 }
 
 const pair = (a, b, n) => (a < b ? a * n + b : b * n + a);

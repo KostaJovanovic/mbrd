@@ -84,10 +84,8 @@ function itemEntries(id, count, at) {
     // actually type into should offer to type into it before anything else.
     { label: 'Edit text', accel: 'dbl-click', hidden: !editable,
       action: () => cmds.editNote(id) },
-    // No ellipsis: nothing opens. The name goes editable where it already sits.
     { label: 'Rename', accel: 'F2', hidden: !renamable, action: () => editItemName(id) },
-    // Ellipsis: a file dialog opens.
-    { label: covered ? 'Change picture…' : 'Set a picture…', hidden: !coverable,
+    { label: covered ? 'Change picture' : 'Set a picture', hidden: !coverable,
       action: () => cmds.setCover(id) },
     { label: 'Remove picture', hidden: !covered, action: () => cmds.clearCover(id) },
     // OBJ says nothing about which way is up and both readings are common, so
@@ -116,9 +114,9 @@ function itemEntries(id, count, at) {
 function canvasEntries(at) {
   return [
     { label: 'Add a note here', action: () => cmds.addNoteAt(at) },
-    { label: 'Add files…', action: () => cmds.addFiles() },
+    { label: 'Add files', action: () => cmds.addFiles() },
     { sep: true },
-    { label: 'Find…', accel: 'Ctrl K', action: () => cmds.find() },
+    { label: 'Find', accel: 'Ctrl K', action: () => cmds.find() },
     { label: 'Select all', accel: 'Ctrl A', action: () => cmds.selectAll() },
     { label: 'Rearrange everything', action: () => cmds.rearrange() },
     { sep: true },

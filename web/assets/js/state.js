@@ -12,7 +12,7 @@
 //   board      - a whole new board was loaded, or the title/dirty flag changed
 //   trash      - something was thrown away, restored, or purged
 
-import { emitter, uid, isFamily, isHash, toast } from './util.js';
+import { emitter, uid, isFamily, isHash, itemHashes, toast } from './util.js';
 // The asset registry remembers the filename each item arrived under, which is
 // what a cleared name falls back to - see renameItem(). One-way: assets.js
 // depends on nothing but util.js, so this cannot close a cycle.
@@ -21,7 +21,12 @@ import { getAsset } from './storage/assets.js';
 // this item and what does it cover" has exactly one answer in this app. Kept
 // at the top level rather than under canvas/ because it depends on nothing and
 // belongs to no one layer - see geometry.js.
-import { itemBounds, overlapFraction, MIN_SIZE, MAX_SIZE } from './geometry.js';
+import { itemBounds, overlapFraction, latticeBox, MIN_SIZE, MAX_SIZE } from './geometry.js';
+// The board's link to real-world sizes. Pure arithmetic with no state of its
+// own, at the same level as geometry.js and imported here for the same reason:
+// the default belongs with the rest of the defaults, and the clamp has to run
+// on every board that arrives from a file.
+import { DEFAULT_SCALE, clampScale, PAPERS } from './measure.js';
 
 export const bus = emitter();
 
@@ -29,10 +34,37 @@ export const DEFAULT_SETTINGS = {
   grid: true,
   axes: true,
   snap: false,
-  hud: true,
+  // Off to begin with. It is a working instrument - where the pointer is, how
+  // big the selected thing is - and a board you have just opened is a thing you
+  // are looking at rather than working on. The scale bar covers the question a
+  // first glance actually has, and this is one checkbox away in View.
+  hud: false,
   gridStyle: 'dots',   // the only style; kept so old .mbrd files still load
   gridStep: 64,        // world px between minor grid lines, before zoom quantisation
-  spacing: 32,         // gap used by the arrangement engine
+  // Gap used by the arrangement engine. 12 rather than the 32 it was: a
+  // moodboard is a board of things read against each other, and a third of a
+  // card's width of empty paper between every pair is the layout arguing that
+  // they are separate. Close enough to compare, far enough that the edges still
+  // read as edges - and the slider is right there for anyone who disagrees.
+  spacing: 12,
+  // What the board's coordinates mean in the world: world units per millimetre,
+  // and which family of unit names to say it in. Geometry never reads either -
+  // they are a lens over numbers that were always unitless. See measure.js.
+  scale: DEFAULT_SCALE,
+  units: 'metric',     // or 'imperial'
+  // A sheet of standard paper outlined around the origin, sized through the
+  // scale above - see canvas/paper.js. An id out of PAPERS, or '' for none.
+  // Two flat keys rather than one { size, landscape } object, because
+  // setSetting() compares with === and no two objects are ever equal: an object
+  // here would emit on every write and never on the one that mattered.
+  paper: '',
+  paperLandscape: false,
+  // Whether the sheet carries the four grips that resize it. Off, because
+  // resizing it is not resizing it: the sheet is always exactly A4, and what
+  // the drag moves is the board's scale - every measurement on the board at
+  // once. That is a deliberate act, not something to leave armed on the corners
+  // of a rectangle somebody put up to check a layout against.
+  paperResize: false,
   appearance: { palette: '', vars: {} },
   fonts: [],           // faces dropped onto this board - see ui/fonts.js
 };
@@ -100,17 +132,25 @@ export function makeItem(partial) {
 
 /**
  * `meta` is the open field - anything a renderer wants to remember about an
- * item lives in it and nothing here reads most of it. `cover` is the exception,
- * because it is a *second* content id: it names bytes, gets spelled into an
- * archive path by storage/mbrd.js and decides what the autosave sweep is
- * allowed to delete. So it goes through the same gate item.asset.hash does, and
- * a cover that is not a digest is dropped rather than carried.
+ * item lives in it and nothing here reads most of it. The content ids are the
+ * exception, because they are *second* names for bytes: they get spelled into
+ * an archive path by storage/mbrd.js and they decide what the autosave sweep is
+ * allowed to delete. So each goes through the same gate item.asset.hash does,
+ * and one that is not a digest is dropped rather than carried.
+ *
+ * The list is the same one itemHashes() in util.js reports, less the item's own
+ * asset. Anything added there wants adding here too.
  */
+const META_HASHES = ['cover', 'shot', 'thumb'];
+
 function normalizeMeta(meta) {
-  if (!('cover' in meta)) return meta;
-  if (isHash(meta.cover)) return meta;
-  const { cover, ...rest } = meta;
-  return rest;
+  let out = meta;
+  for (const key of META_HASHES) {
+    if (!(key in out) || isHash(out[key])) continue;
+    const { [key]: _drop, ...rest } = out;
+    out = rest;
+  }
+  return out;
 }
 
 /**
@@ -138,6 +178,29 @@ const undoStack = [];
 const redoStack = [];
 const HISTORY_LIMIT = 200;
 
+/**
+ * What each half of the history would do next, by name, or null for nothing.
+ *
+ * The labels are the ones commit() was given - "Add 3 items", "Nudge",
+ * "Optimize" - so a control built on this can say what it is about to take
+ * back rather than only whether it can.
+ */
+export const historyState = () => ({
+  undo: undoStack.at(-1)?.label || null,
+  redo: redoStack.at(-1)?.label || null,
+});
+
+/**
+ * The stacks changed.
+ *
+ * Its own event rather than something riding on 'board', and it has to be:
+ * markDirty() only emits when dirtiness *changes*, so on an already-dirty board
+ * - which is every board after the first edit - it goes quiet, and anything
+ * watching for history through it would light up once and then never move
+ * again.
+ */
+const historyChanged = () => bus.emit('history');
+
 /** Run `redo` now and remember how to reverse it. */
 export function commit(label, redo, undo) {
   redo();
@@ -145,6 +208,7 @@ export function commit(label, redo, undo) {
   if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
   redoStack.length = 0;
   markDirty();
+  historyChanged();
 }
 
 export function undo() {
@@ -153,6 +217,7 @@ export function undo() {
   cmd.undo();
   redoStack.push(cmd);
   markDirty();
+  historyChanged();
   return true;
 }
 
@@ -162,12 +227,14 @@ export function redo() {
   cmd.redo();
   undoStack.push(cmd);
   markDirty();
+  historyChanged();
   return true;
 }
 
 function clearHistory() {
   undoStack.length = 0;
   redoStack.length = 0;
+  historyChanged();
 }
 
 // ---------------------------------------------------------------------------
@@ -191,7 +258,7 @@ export function addItems(items, label = 'Add') {
   // items that already have one and must come back exactly where they were.
   let z = topZ();
   const added = items.map(partial =>
-    makeItem(partial.z != null ? partial : { ...partial, z: ++z }));
+    onLattice(makeItem(partial.z != null ? partial : { ...partial, z: ++z })));
   commit(label,
     () => { board.items.push(...added.filter(a => !byId(a.id))); bus.emit('items'); },
     () => { const ids = new Set(added.map(a => a.id));
@@ -199,6 +266,55 @@ export function addItems(items, label = 'Add') {
             ids.forEach(id => selection.delete(id));
             bus.emit('items'); bus.emit('selection'); });
   return added;
+}
+
+/**
+ * Whatever the lattice is measured in, with the fallback in one place.
+ *
+ * The *base* step, never the on-screen one. gridStep() in canvas/grid.js picks
+ * a spacing from the zoom so the dots never become a fill, which is right for
+ * something drawn and wrong for something stored - see snapAll() below.
+ *
+ * Exported because main.js's Rearrange lays the whole board out at once and has
+ * to size the slots on the same lattice snapAll() would - and a second copy of
+ * `gridStep > 0 ? gridStep : 64` in another file is how the two would come to
+ * disagree about a board whose step is missing.
+ */
+export function baseStep() {
+  return board.settings.gridStep > 0 ? board.settings.gridStep : 64;
+}
+
+/**
+ * A new item laid on the lattice, if the board is snapped.
+ *
+ * Without this, snapping only governed items that were already on the board
+ * when it was switched on, plus anything dragged afterwards - so a snapped
+ * board grew a photograph at 320x240 sitting a few pixels off every line it was
+ * meant to sit on, and the only way to line it up was to switch snapping off
+ * and on again. Arriving is a placement like any other.
+ *
+ * Sizes as well as positions, because a box on the lattice that is not a whole
+ * number of cells is only snapped along two of its four edges, and it is the
+ * ragged right and bottom that a person actually sees.
+ *
+ * The presnap memo is what makes this reversible: unsnapAll() puts every item
+ * carrying one back to the geometry it had before the lattice, and an imported
+ * item that never had a life before the lattice would otherwise be stranded at
+ * its snapped size when snapping is turned off. An existing memo is left alone
+ * - a duplicated or pasted item brings its own, and it is a memo of life before
+ * the *first* snap, not of the copy's.
+ */
+function onLattice(it) {
+  if (!board.settings.snap) return it;
+  const box = latticeBox(it, baseStep());
+  if (box.x === it.x && box.y === it.y && box.w === it.w && box.h === it.h) return it;
+  return {
+    ...it,
+    x: box.x, y: box.y, w: box.w, h: box.h,
+    meta: it.meta?.presnap
+      ? it.meta
+      : { ...it.meta, presnap: { x: it.x, y: it.y, w: it.w, h: it.h } },
+  };
 }
 
 /**
@@ -360,27 +476,27 @@ export function commitGeom(label, before, driven) {
  *   zoom would otherwise commit a board to a coarser geometry than snapping at
  *   100%, and the same click would do two different things depending on how far
  *   out you happened to be.
- * - **Edges land on lines, not centres.** A drag snaps the centre and a resize
- *   snaps the moving edge; laying out the whole board is the resize case, since
- *   what makes a snapped board look snapped is items sitting flush in cells. An
+ * - **Edges land on lines, not centres**, and the arithmetic is latticeBox() in
+ *   geometry.js, shared with the gestures in canvas/input.js so that laying the
+ *   board out and then dragging one item across it agree about where things go.
+ *   What makes a snapped board look snapped is items sitting flush in cells; an
  *   item whose size is an odd number of cells therefore ends up with its centre
  *   on a half-step, which is correct and is not a rounding error.
  */
 function snapAll() {
-  const step = board.settings.gridStep > 0 ? board.settings.gridStep : 64;
+  const step = baseStep();
   const before = [], after = [];
   for (const it of board.items) {
     const pre = it.meta?.presnap || null;
     before.push({ id: it.id, x: it.x, y: it.y, w: it.w, h: it.h, pre });
 
-    const w = Math.min(Math.max(Math.round(it.w / step), 1) * step, MAX_SIZE);
-    const h = Math.min(Math.max(Math.round(it.h / step), 1) * step, MAX_SIZE);
+    const box = latticeBox(it, step);
     after.push({
       id: it.id,
-      x: Math.round((it.x - it.w / 2) / step) * step + w / 2,
-      y: Math.round((it.y - it.h / 2) / step) * step + h / 2,
-      w: Math.max(w, MIN_SIZE),
-      h: Math.max(h, MIN_SIZE),
+      x: box.x,
+      y: box.y,
+      w: box.w,
+      h: box.h,
       // A board snapped, unsnapped and snapped again remembers the first
       // position, not the second - the memo is of life before the lattice.
       pre: pre || { x: it.x, y: it.y, w: it.w, h: it.h },
@@ -932,6 +1048,28 @@ export function setItemCover(id, hash) {
 }
 
 /**
+ * Attach the hundred-pixel copy the board draws when it is zoomed out.
+ *
+ * Not undoable, and unlike setItemCover() that is not an oversight. A cover is
+ * a choice somebody made about what a card looks like; a thumbnail is a derived
+ * copy of the picture the item already holds, and there is no state of the
+ * board in which having one is a change worth being able to take back. Made at
+ * import (import/drop.js) and repaired by the optimiser (optimize/optimize.js);
+ * absent simply means the card draws full size at every zoom.
+ *
+ * Marks the board dirty, because the id has to be saved - the bytes are pinned
+ * by itemHashes() and would otherwise be swept the next time the autosave
+ * collected whatever nothing points at.
+ */
+export function setItemThumb(id, hash) {
+  const it = byId(id);
+  if (!it || !isHash(hash) || it.meta?.thumb === hash) return;
+  it.meta = { ...it.meta, thumb: hash };
+  bus.emit('item', id);
+  markDirty();
+}
+
+/**
  * Point a run of items at smaller copies of their own files, reversibly.
  *
  * One commit for the whole board rather than one per card, because that is what
@@ -941,7 +1079,9 @@ export function setItemCover(id, hash) {
  * single button press.
  *
  * Each swap is `{ id, asset, cover }` - either field may be absent, and an
- * absent one is left exactly as it was.
+ * absent one is left exactly as it was. Items that were *considered* and left
+ * alone belong in the list too, with neither field: they still get marked, and
+ * marking them is the whole point of listing them.
  *
  * The id that was there goes into `meta.was` / `meta.wasCover`, and that is not
  * bookkeeping for undo's sake: undo closes over the old ids already. It is for
@@ -951,6 +1091,15 @@ export function setItemCover(id, hash) {
  * referencedHashes() in storage/storage.js, and packBoard() in storage/mbrd.js,
  * which drops both fields on the way into a .mbrd so an export carries the small
  * files alone.
+ *
+ * `meta.opt` is the other half: the ids this item held when the optimiser last
+ * looked at it. A second run compares against it and skips what it finds, which
+ * is what keeps a re-encode from happening twice - once for the wasted minute,
+ * and once because a lossy format encoded from its own output is a second
+ * generation of loss for no gain. It is written *inside the commit*, so undoing
+ * an optimisation takes the mark back with it and the restored originals are
+ * offered again. Hashes rather than a flag, so replacing an item's picture by
+ * hand also un-marks it, without anything having to remember to.
  */
 export function swapAssets(swaps, label = 'Optimize board') {
   const list = (swaps || []).filter(s => s && byId(s.id));
@@ -960,6 +1109,27 @@ export function swapAssets(swaps, label = 'Optimize board') {
     const it = byId(id);
     return { id, asset: it.asset ? { ...it.asset } : null, meta: { ...it.meta } };
   });
+
+  // A run that found nothing worth rewriting still learned something, and the
+  // marks are how it remembers - but they are bookkeeping about work done, not
+  // a change to the board, so they go on outside the undo stack. Committing
+  // them would put an entry on the history that looks like nothing happened,
+  // because nothing did, and spend one of the steps the user has left.
+  const swapping = list.some(({ id, asset, cover }) => {
+    const it = byId(id);
+    return (isHash(asset) && it.asset?.hash && asset !== it.asset.hash) ||
+           (isHash(cover) && isHash(it.meta?.cover) && cover !== it.meta.cover);
+  });
+  if (!swapping) {
+    for (const { id } of list) {
+      const it = byId(id);
+      // No event: nothing about the item is drawn differently for having been
+      // looked at, and a rebuild per card would be a flicker for nothing.
+      if (it) it.meta = { ...it.meta, opt: [...itemHashes(it)] };
+    }
+    markDirty();
+    return 0;
+  }
 
   const forward = () => {
     for (const { id, asset, cover } of list) {
@@ -978,6 +1148,8 @@ export function swapAssets(swaps, label = 'Optimize board') {
         meta.cover = cover;
       }
       it.meta = meta;
+      // Marked last, so what is recorded is what the item ended up holding.
+      meta.opt = [...itemHashes(it)];
       bus.emit('item', id);
     }
   };
@@ -1232,6 +1404,21 @@ function normalizeBoard(data) {
       // inside a CSS declaration, and both arrive inside a file somebody else
       // wrote. See normalizeFonts().
       fonts: normalizeFonts(settings.fonts),
+      // A scale of zero, a negative one or a NaN would turn every measurement
+      // on the board into Infinity or a blank, in a readout that is meant to be
+      // the trustworthy part. Clamped rather than rejected: a board carrying a
+      // silly scale is still a board, and the geometry it holds is untouched by
+      // this number either way.
+      scale: clampScale(settings.scale),
+      units: settings.units === 'imperial' ? 'imperial' : 'metric',
+      // Checked against the list rather than taken on trust, so a board naming
+      // a size this version does not have - a newer one, or a typo - draws no
+      // sheet instead of drawing nothing while the menu insists something is
+      // selected. Falls back to '', which is a state the whole feature already
+      // handles because it is the default.
+      paper: PAPERS.some(p => p.id === settings.paper) ? settings.paper : '',
+      paperLandscape: !!settings.paperLandscape,
+      paperResize: !!settings.paperResize,
     },
     arrangement: typeof src.arrangement === 'string' && src.arrangement
       ? src.arrangement : 'spiral',

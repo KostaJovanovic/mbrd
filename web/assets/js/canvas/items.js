@@ -18,8 +18,34 @@ const nodes = new Map();
 let worldEl = null;
 let vp = null;
 
-/** World-space margin around the viewport kept mounted, to hide pop-in. */
-const CULL_MARGIN = 400;
+/**
+ * How much board is kept mounted beyond the edge of the screen, to hide pop-in.
+ *
+ * In *screen* pixels, converted to world units per call - and that conversion is
+ * the whole point. It was a flat 400 world units, which is a margin that does
+ * not shrink as you zoom in: at 100% it meant holding about two and a half
+ * screens' worth of cards, and at 200% five, because the visible world rectangle
+ * halves with every doubling of the zoom while a world-space margin stays the
+ * size it was. The pop-in it is hiding happens in screen pixels - you see a card
+ * arrive a certain distance from the edge of the display, not a certain distance
+ * across the board - so this is the unit it should have been in all along.
+ */
+const CULL_MARGIN_PX = 300;
+
+/**
+ * And a ceiling on it in world units, which is the number this used to be.
+ *
+ * Below about three-quarter zoom a constant screen margin is *wider* on the
+ * board than the flat 400 was, and out there it would be buying nothing: the
+ * visible slice of board is already enormous, cards are a few pixels across, and
+ * their chrome has been dropped entirely. So the screen-space rule applies where
+ * it helps - at 100% and in - and the old world-space one caps it beyond that.
+ * The result is never worse than what was here before at any zoom.
+ */
+const CULL_MARGIN_MAX = 400;
+
+/** That margin in world units at the current zoom. */
+const cullMargin = () => Math.min(CULL_MARGIN_PX / vp.zoom, CULL_MARGIN_MAX);
 
 export function initItems(world, viewport) {
   worldEl = world;
@@ -28,7 +54,9 @@ export function initItems(world, viewport) {
   bus.on('geom', ids => { for (const id of ids) placeNode(id); sync(); });
   bus.on('item', id => rebuild(id));
   bus.on('selection', paintSelection);
-  vp.onChange(sync);
+  // Arrow rather than the function itself: onChange hands its listener the
+  // viewport, and sync() reads its argument.
+  vp.onChange(() => syncView());
   reconcile();
   sync();
 }
@@ -98,10 +126,67 @@ function reconcile() {
   worldEl.classList.toggle('is-empty', board.items.length === 0);
 }
 
+/**
+ * How many cards may be built from nothing in one frame.
+ *
+ * Building is the expensive half of this function by a wide margin - a card is
+ * a few dozen elements, and a photograph's is an <img> the browser then has to
+ * decode - where re-attaching a node that was merely detached is nearly free.
+ * Zooming out is the case that matters: one notch of the wheel can bring two
+ * hundred items inside the viewport at once, and building all of them between
+ * two frames is one long stall exactly when the board is supposed to be
+ * gliding.
+ *
+ * So a frame builds a handful and asks for another frame. The rest of that
+ * zoom stays smooth and the board fills in over the next few frames, which
+ * reads as loading rather than as juddering. Twelve is about what fits in the
+ * slack of a frame on a mid-range laptop; the number is not delicate, and
+ * anything from about eight to twenty behaves the same way.
+ */
+const BUILD_BUDGET = 12;
+
+/** Set when a sync ran out of budget, so the next frame knows to carry on. */
+let catchUp = 0;
+
+/**
+ * The padded rectangle the last sync mounted against, and the reason a pan is
+ * not a walk over the whole board every frame.
+ *
+ * Everything inside this rectangle is already mounted. So while the part of the
+ * board you can actually *see* stays within it, the answer this function would
+ * arrive at is the answer it arrived at last time, and there is nothing to do -
+ * which is the case on almost every frame of a pan, because the margin is a
+ * couple of hundred pixels wide and a pan moves a few pixels per frame.
+ *
+ * Containment, with no slack of its own: the moment a visible edge reaches
+ * ground the last sync did not cover, a card there would be missing, so that is
+ * exactly when this has to run again. Zooming out grows the visible rectangle
+ * and escapes almost at once; zooming in shrinks it and stays inside, which is
+ * the right way round - zooming in never reveals anything new.
+ *
+ * Dropped on every path that changes what is mounted or where it is: an item
+ * moving, arriving or leaving all come in through sync() itself, which forces.
+ */
+let syncedRect = null;
+
+/** The view moved. Re-mount only if the screen has left what we last covered. */
+function syncView() {
+  if (!worldEl) return;
+  if (syncedRect) {
+    const v = vp.visibleRect(0);
+    if (v.x0 >= syncedRect.x0 && v.x1 <= syncedRect.x1 &&
+        v.y0 >= syncedRect.y0 && v.y1 <= syncedRect.y1) return;
+  }
+  sync();
+}
+
 /** Mount everything inside the padded viewport, detach everything outside it. */
 export function sync() {
   if (!worldEl) return;
-  const r = vp.visibleRect(CULL_MARGIN);
+  const r = vp.visibleRect(cullMargin());
+  syncedRect = r;
+  let built = 0;
+  let owed = false;
   for (const item of board.items) {
     // The circumscribed radius rather than the tight box: it costs no trig,
     // it is right at any rotation, and erring towards mounting something just
@@ -111,6 +196,14 @@ export function sync() {
                     item.y + half >= r.y0 && item.y - half <= r.y1;
     const el = nodes.get(item.id);
     if (visible) {
+      // Only a *new* node is rationed. Detaching is what the loop below does to
+      // everything that left the viewport, and putting one of those back is a
+      // single append - so a pan across ground already visited costs nothing
+      // and is never deferred.
+      if (!el) {
+        if (built >= BUILD_BUDGET) { owed = true; continue; }
+        built++;
+      }
       const node = el || build(item);
       if (!node.isConnected) worldEl.append(node);
     } else if (el && el.isConnected) {
@@ -130,6 +223,16 @@ export function sync() {
         el.remove();
       }
     }
+  }
+  // Come back for the rest. One frame at a time and never more than one in
+  // flight: another view change between now and then runs its own sync, which
+  // is this same pass against a newer rectangle, and two of them queued would
+  // build the same cards twice.
+  if (owed) {
+    if (!catchUp) catchUp = requestAnimationFrame(() => { catchUp = 0; sync(); });
+  } else if (catchUp) {
+    cancelAnimationFrame(catchUp);
+    catchUp = 0;
   }
 }
 
@@ -171,19 +274,48 @@ function build(item) {
   // survive until the first redraw and then quietly vanish.
   el.append(bottomBar(item));
 
-  // Eight handles: four corners, and four edges for resizing one axis alone.
-  // The single-letter ones are the edges (see .grip-edge in app.css).
-  for (const g of ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']) {
+  nodes.set(item.id, el);
+  place(el, item);
+  if (selection.has(item.id)) { el.classList.add('is-selected'); setGrips(el, true); }
+  return el;
+}
+
+/**
+ * The eight resize handles: four corners, and four edges for resizing one axis
+ * alone. The single-letter ones are the edges (see .grip-edge in app.css).
+ *
+ * They exist for exactly as long as the card is selected, which is exactly as
+ * long as they are drawn - CSS hides them otherwise, and there is no grabbing
+ * one that is not on screen. They used to be built with the card and kept for
+ * its life, which made them the largest single part of an item's DOM and the
+ * least used: on a full screen of cards, a few hundred elements the browser
+ * walked past on every style recalculation for nothing. That bill falls due on
+ * every frame of a zoom, since the zoom is what item chrome is sized against.
+ *
+ * Built and dropped rather than built once and left, because a board is
+ * something you sweep a marquee across: keeping them would mean every card the
+ * marquee ever touched carrying its eight for the rest of the session, which is
+ * the state this was trying to get out of. The churn is not per frame - a card
+ * only changes hands when its selection actually changes, which is once per
+ * sweep - so it is eight elements per card touched, not eight per card per
+ * gesture.
+ */
+const GRIPS = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+
+function setGrips(el, want) {
+  if (!!el.dataset.grips === want) return;
+  if (!want) {
+    delete el.dataset.grips;
+    for (const grip of el.querySelectorAll(':scope > .grip')) grip.remove();
+    return;
+  }
+  el.dataset.grips = '1';
+  for (const g of GRIPS) {
     const grip = document.createElement('div');
     grip.className = g.length === 1 ? 'grip grip-edge' : 'grip';
     grip.dataset.g = g;
     el.append(grip);
   }
-
-  nodes.set(item.id, el);
-  place(el, item);
-  el.classList.toggle('is-selected', selection.has(item.id));
-  return el;
 }
 
 /**
@@ -431,7 +563,11 @@ function placeNode(id) {
 }
 
 function paintSelection() {
-  for (const [id, el] of nodes) el.classList.toggle('is-selected', selection.has(id));
+  for (const [id, el] of nodes) {
+    const on = selection.has(id);
+    setGrips(el, on);
+    el.classList.toggle('is-selected', on);
+  }
 }
 
 /** Repaint every mounted node from scratch - used after loading a board. */

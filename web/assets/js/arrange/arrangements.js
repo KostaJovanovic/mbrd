@@ -17,12 +17,15 @@
 // stays evenly packed, `date` stays in date order. See variation() below.
 
 export const ARRANGEMENTS = [
+  // First because it is the default a new board carries, and a menu whose top
+  // entry is not what the thing is currently set to reads as a menu you have
+  // to go looking through.
+  { id: 'spiral',  label: 'Spiral' },
   // Not "keep positions" any more: a drop under Free falls back to the grid
   // (see import/drop.js) and Rearrange shakes the board loose, so the only
   // promise Free still makes is that it will not impose a shape on you.
   { id: 'free',    label: 'Free (no layout)' },
   { id: 'grid',    label: 'Grid rings' },
-  { id: 'spiral',  label: 'Spiral' },
   { id: 'masonry', label: 'Masonry' },
   { id: 'type',    label: 'Cluster by type' },
   { id: 'date',    label: 'By date' },
@@ -36,7 +39,7 @@ export const ARRANGEMENTS = [
  * in. `free` is exempt - it hands back real world coordinates untouched.
  */
 export function arrange(items, opts = {}) {
-  const o = { center: { x: 0, y: 0 }, spacing: 32, ...opts };
+  const o = { center: { x: 0, y: 0 }, spacing: 12, ...opts };
   const name = o.name || 'grid';
   const fn = LAYOUTS[name] || LAYOUTS.grid;
   if (!items.length) return [];

@@ -2,16 +2,22 @@
 // session, and expose the command set the sidebar and keyboard both drive.
 
 import { toast, el, shuffle } from './util.js';
+import {
+  formatLength, formatSize, scaleFrom, DEFAULT_SCALE, MAX_SCALE, MM_PER_INCH,
+} from './measure.js';
+import { ask } from './ui/dialog.js';
 import { VERSION } from './version.js';
 import {
   board, bus, selection, selectAll, removeItems, setSetting,
   snapshotGeom, applyGeom, commitGeom, undo, redo, byId,
   raiseSelection, lowerSelection, duplicateItems, select, setItemCover,
-  setItemUpAxis,
+  setItemUpAxis, historyState, baseStep,
 } from './state.js';
+import { latticeBox } from './geometry.js';
 import { defaultUpAxis, meshKind } from './import/mesh.js';
 import { Viewport, MIN_ZOOM, MAX_ZOOM, zoomMs, travelMs } from './canvas/viewport.js';
 import { paintGrid, resetGridInk } from './canvas/grid.js';
+import { initPaper, paintPaper } from './canvas/paper.js';
 import { initItems, resetItems } from './canvas/items.js';
 import { isTurning, resetModels, rotateModel } from './canvas/model.js';
 import { initWeb } from './canvas/web.js';
@@ -21,6 +27,7 @@ import { initDrop, pickFiles, pickCover, addNote } from './import/drop.js';
 import { arrange } from './arrange/arrangements.js';
 import {
   initStorage, restoreSession, saveBoard, exportBoard, openBoard, newBoard, openFile, autosave,
+  clearAllData,
 } from './storage/storage.js';
 import { flushNoteEdit } from './canvas/notes.js';
 import { initAssets, getAsset } from './storage/assets.js';
@@ -28,6 +35,8 @@ import { initSidebar, close as closeSidebar } from './ui/sidebar.js';
 import { initMenu, openContextMenu, close as closeMenu } from './ui/menu.js';
 import { initSearch, open as openSearch } from './ui/search.js';
 import { initKonami } from './ui/konami.js';
+import { initIdle } from './ui/idle.js';
+import { initScaleBar } from './ui/scalebar.js';
 import { initTrash } from './ui/trash.js';
 import { initAppearance, resetAppearance } from './ui/appearance.js';
 import { initFonts } from './ui/fonts.js';
@@ -44,9 +53,14 @@ const vp = new Viewport(el('viewport'), el('world'), el('axis-x'), el('axis-y'),
 const cmds = {
   new: () => newBoard(),
   open: () => openBoard(),
-  save: () => saveBoard(),
+  save: () => saveWithCooldown(),
   export: () => exportBoard(),
   exportAs: () => exportBoard({ pickNew: true }),
+  // Strictly asked for, never automatic - see optimize/optimize.js. Loaded on
+  // demand as well as run on demand: the encoder behind it is thirty megabytes
+  // and a board of photographs never needs it.
+  optimize: () => import('./optimize/ui.js').then(m => m.optimizeBoard()),
+  discardOriginals: () => import('./optimize/ui.js').then(m => m.discardOptimizeOriginals()),
 
   addFiles: () => pickFiles(),
   addNote: () => {
@@ -54,7 +68,20 @@ const cmds = {
     requestAnimationFrame(() => cmds.editNote(item.id));
   },
 
+  clearData: () => clearAllData(),
+
   rearrange,
+  scaleFromItem,
+  // Resetting the sheet's size and resetting the board's scale are the same
+  // act: the sheet is drawn at whatever A4 works out to under the current
+  // scale, so there is nothing else its size could be stored in. Named for the
+  // scale rather than for the paper because it also puts the readout, the
+  // scale bar and every item's measurement back.
+  resetScale: () => {
+    if (board.settings.scale === DEFAULT_SCALE) return;
+    setSetting('scale', DEFAULT_SCALE);
+    toast('Back to the default size');
+  },
   fit: () => vp.fit(board.items, 80, travelMs()),
   recenter: () => vp.recenter(travelMs()),
   resetAppearance,
@@ -155,10 +182,16 @@ initSidebar(cmds);
 initItems(el('world'), vp);
 initWeb(el('world'), vp);
 initStills(el('world'), vp);
+initScaleBar(vp);
+// Its own listeners rather than a call from the paint block below: the sheet is
+// also a control - it is dragged by the corners to set the board's scale - so
+// it owns an event surface as well as a drawing, the way every other init* does.
+initPaper(vp);
 initInput(vp, cmds);
 initMenu(vp, cmds);
 initSearch(vp);
 initKonami();
+initIdle(vp);
 initTrash(vp);
 initDrop(vp);
 initStorage();
@@ -205,14 +238,100 @@ el('zoom-ctl').addEventListener('click', e => {
   }
 });
 
+// The phone's add bar (index.html, and the width query in app.css). Wired here
+// beside the zoom controls rather than in ui/sidebar.js, because it is chrome on
+// the glass and not part of the panel - the same reason those are here.
+el('add-bar').addEventListener('click', e => {
+  const btn = e.target.closest('[data-add]');
+  if (!btn) return;
+  if (btn.dataset.add === 'note') cmds.addNote();
+  else cmds.addFiles();
+});
+
+// Undo and redo on the glass, next to the bin. Here beside the zoom controls
+// and the add bar rather than in ui/trash.js: they share that corner but not
+// its subject, and the bin module has no business knowing about the history.
+//
+// Through cmds, not through state's undo() directly - the keyboard, the context
+// menu and these three now all press the same button.
+el('history-ctl').addEventListener('click', e => {
+  const btn = e.target.closest('[data-history]');
+  if (!btn) return;
+  if (btn.dataset.history === 'undo') cmds.undo(); else cmds.redo();
+});
+
+/**
+ * What the pair can do, and what it would do.
+ *
+ * The label is the point of naming it rather than only enabling it: "Undo Add 3
+ * items" tells you whether the thing you are about to take back is the thing
+ * you meant, which on a board where the last four actions were drags is the
+ * only way to know without trying it.
+ */
+function paintHistory() {
+  const state = historyState();
+  for (const btn of el('history-ctl').querySelectorAll('[data-history]')) {
+    const kind = btn.dataset.history;
+    const label = state[kind];
+    btn.disabled = !label;
+    const verb = kind === 'undo' ? 'Undo' : 'Redo';
+    const keys = kind === 'undo' ? 'Ctrl+Z' : 'Ctrl+Shift+Z';
+    btn.title = label ? `${verb} ${label}  ${keys}` : `Nothing to ${kind}`;
+  }
+}
+/**
+ * The autosave, acknowledged.
+ *
+ * A mark rather than a toast, and that is the whole design decision here. The
+ * board saves itself about once a second while you are working, and a toast per
+ * save would be the interface talking over the work continuously to report that
+ * nothing is wrong. This appears where the board's other state lives, says one
+ * word, and leaves.
+ *
+ * The timer is restarted rather than stacked, so a run of edits holds the mark
+ * up throughout instead of flickering once per save.
+ */
+const SAVED_MS = 1500;
+let savedTimer = 0;
+bus.on('autosaved', () => {
+  const mark = el('saved');
+  mark.classList.add('is-on');
+  clearTimeout(savedTimer);
+  savedTimer = setTimeout(() => mark.classList.remove('is-on'), SAVED_MS);
+});
+
+bus.on('history', paintHistory);
+// A board arriving replaces the stacks wholesale, and clearHistory() announces
+// that - but 'board:load' is also what a fresh New has to be heard through.
+bus.on('board:load', paintHistory);
+paintHistory();
+
+/** The readout last written, so a pan does not rewrite it sixty times a second. */
+let zoomShown = '';
+
 function paintZoom() {
   const pct = vp.zoom * 100;
   // Below 10% a rounded percentage flickers between 6 and 7 as you pinch, so
   // give the small end a decimal instead.
-  el('zoom-level').textContent = (pct < 10 ? pct.toFixed(1) : Math.round(pct)) + '%';
+  const text = (pct < 10 ? pct.toFixed(1) : Math.round(pct)) + '%';
+  const maxed = vp.zoom >= MAX_ZOOM - 1e-6;
+  const mined = vp.zoom <= MIN_ZOOM + 1e-9;
+  // This runs on every view change, and a pan is a view change that cannot
+  // possibly have moved the zoom - so on the whole of a drag the answer is the
+  // corner already on screen, and writing it again is a layout per frame for
+  // nothing.
+  //
+  // The two buttons are in the key rather than behind the readout, because the
+  // readout is rounded and they are not: the last hundredth of the way to the
+  // floor reads as 2.0% for a while before it arrives, and hanging their state
+  // off the text alone would leave the button enabled at the end of its travel.
+  const key = text + (maxed ? '+' : '') + (mined ? '-' : '');
+  if (key === zoomShown) return;
+  zoomShown = key;
+  el('zoom-level').textContent = text;
   for (const btn of el('zoom-ctl').querySelectorAll('[data-zoom]')) {
-    if (btn.dataset.zoom === 'in') btn.disabled = vp.zoom >= MAX_ZOOM - 1e-6;
-    if (btn.dataset.zoom === 'out') btn.disabled = vp.zoom <= MIN_ZOOM + 1e-9;
+    if (btn.dataset.zoom === 'in') btn.disabled = maxed;
+    if (btn.dataset.zoom === 'out') btn.disabled = mined;
   }
 }
 
@@ -222,9 +341,29 @@ bus.on('settings', key => {
   if (key === 'appearance') resetGridInk();
   paintGrid(vp);
   if (key === 'hud') el('hud').hidden = !board.settings.hud;
+  if (key === 'snap') paintSnap();
 });
 
+/**
+ * Snapping, published to CSS.
+ *
+ * The setting has a look as well as a behaviour: a snapped board stands its
+ * cards up square, because a lattice is about edges and a lean spoils the one
+ * thing lining everything up was for. That is a stylesheet's decision to make,
+ * not a renderer's, so the flag goes on the root element and app.css takes it
+ * from there - the same shape as data-palette and data-whimsy.
+ */
+function paintSnap() {
+  document.documentElement.toggleAttribute('data-snap', !!board.settings.snap);
+}
+
 bus.on('items', paintCount);
+// The readout's right-hand slot is the count *or* the selected item's real
+// size, so the three things that can change which of those it is all repaint
+// it: what is on the board, what is picked, and how the board is measured.
+bus.on('selection', paintCount);
+bus.on('geom', paintCount);
+bus.on('settings', paintCount);
 // A note can arrive with text already in it - pasted, duplicated, or loaded
 // from a file saved before it grew - so it is sized for what it says as soon
 // as it has a node to measure.
@@ -241,26 +380,223 @@ bus.on('board:load', () => {
   requestAnimationFrame(() => {
     for (const it of board.items) if (it.type === 'note') growNote(it.id);
   });
-  vp.setView(board.view.pan, board.view.zoom);
+  openingView();
   el('hud').hidden = !board.settings.hud;
+  paintSnap();
   paintCount();
+  // A different board has never been saved, whatever the last one's button
+  // said. Leaving the countdown up would be the new board claiming a write that
+  // happened to something else.
+  resetSave();
 });
+
+/**
+ * How a board is framed the moment it appears, wherever it came from - a
+ * restored session, a file opened, a file dropped on the window.
+ *
+ * Fit, not the stored view. A saved pan and zoom is a record of where somebody
+ * was standing when they stopped, and that is not the same question as where
+ * to start: it can be a corner, a single card filling the screen, or - after a
+ * board is opened on a narrower screen than it was saved on - somewhere off the
+ * edge of everything, which reads as an empty board with the work missing.
+ * Framing the whole thing always answers "what is on here", and getting back to
+ * a detail is one gesture away.
+ *
+ * fit() falls back to the origin at 1:1 by itself when there is nothing to
+ * frame, so a brand new board still opens where a new board should.
+ *
+ * ms = 0 deliberately: the travel animation is for a Fit somebody *asked* for,
+ * where the movement says which way the board went. There is nothing to travel
+ * from at load.
+ */
+function openingView() {
+  vp.fit(board.items, 80, 0);
+}
+
+/**
+ * Tell the board how big one thing really is, and every other measurement on it
+ * follows.
+ *
+ * The way a board about real objects actually gets calibrated. A scale in world
+ * units per millimetre is not a number anybody holds an opinion about; "that
+ * chair is 80 cm wide" is. One known object is enough, because the board's
+ * geometry is already internally consistent - it only ever needed one anchor to
+ * the world.
+ *
+ * Width rather than height, and always: it is the dimension a person quotes for
+ * furniture, prints, screens and doors alike, and asking for whichever is
+ * longer would mean the question changing shape depending on what was selected.
+ */
+async function scaleFromItem() {
+  if (selection.size !== 1) {
+    toast('Select one item whose real width you know');
+    return;
+  }
+  const it = byId([...selection][0]);
+  if (!it) return;
+  const { scale, units } = board.settings;
+  const unit = units === 'imperial' ? 'inches' : 'centimetres';
+  const answer = await ask({
+    title: 'How wide is it really?',
+    body: `Right now “${it.name || 'this item'}” measures ` +
+      `${formatLength(it.w, scale, units)}. Say what it is in real life, in ${unit}, ` +
+      'and the whole board is measured from it.',
+    field: { value: '', placeholder: units === 'imperial' ? 'e.g. 31.5' : 'e.g. 80' },
+    cancel: 'Cancel',
+    go: 'Set the scale',
+  });
+  if (answer === 'cancel' || answer == null) return;
+  const said = parseFloat(answer);
+  if (!(said > 0)) { toast('That is not a width', 'error'); return; }
+  const mm = said * (units === 'imperial' ? MM_PER_INCH : 10);
+  const want = it.w / mm;
+  setSetting('scale', scaleFrom(it.w, mm));
+  // Said out loud rather than clamped in silence. Hitting the ceiling means the
+  // board has been asked to measure something smaller than its own grid square
+  // can describe, and the readouts will all be off by the ratio - which is
+  // exactly the kind of quiet wrongness the whole measuring feature exists to
+  // prevent. See MAX_SCALE.
+  if (want > MAX_SCALE) {
+    toast(`That is finer than this board measures - it now reads `
+      + `${formatLength(it.w, board.settings.scale, units)}`, 'error');
+    return;
+  }
+  toast(`Measured from ${it.name || 'that item'}`);
+}
 
 el('viewport').addEventListener('pointerdown', () => closeMenu());
 
 el('viewport').addEventListener('pointermove', e => {
   const p = vp.toWorld(e.clientX, e.clientY);
-  el('hud-xy').textContent = `${Math.round(p.x)}, ${Math.round(p.y)}`;
+  const { scale, units } = board.settings;
+  el('hud-xy').textContent =
+    `${px(p.x)}, ${px(p.y)} px · ${formatLength(p.x, scale, units)}, ${formatLength(p.y, scale, units)}`;
 }, { passive: true });
 
+/**
+ * Both readings, always, in that order.
+ *
+ * Board units first and the real measurement after, because they answer two
+ * different questions and neither replaces the other. The units are what the
+ * board is actually made of - what a nudge moves, what the grid step counts,
+ * what a size typed anywhere else in the app means - and for a board that is
+ * not about physical objects they are the only meaningful number there is. The
+ * real measurement is the one you can hold a tape up to.
+ *
+ * They were briefly not both here: the physical reading replaced the raw floats
+ * when the scale feature went in, on the argument that an offset from an origin
+ * nobody chose tells you nothing. That was half right. Rounded and labelled,
+ * the raw pair is the board's own coordinate system, and hiding it made the app
+ * lie about what it is - a canvas of unitless floats with a lens over it.
+ */
+const px = n => Math.round(n);
+
+/**
+ * The right-hand half of the readout: how many things, or - when exactly one is
+ * selected - how big that one is.
+ *
+ * One, not many: the size of a single item is a fact about a thing you are
+ * looking at, and the combined size of nine is a fact about a bounding box
+ * nobody drew. The count comes back the moment the selection is anything else,
+ * so the slot never goes empty.
+ */
 function paintCount() {
   const n = board.items.length;
+  if (selection.size === 1) {
+    const it = byId([...selection][0]);
+    if (it) {
+      const { scale, units } = board.settings;
+      el('hud-count').textContent =
+        `${px(it.w)} × ${px(it.h)} px · ${formatSize(it.w, it.h, scale, units)}`;
+      return;
+    }
+  }
   el('hud-count').textContent = n === 0 ? 'nothing yet' : n + (n === 1 ? ' thing' : ' things');
 }
 
 // ---------------------------------------------------------------------------
 // Commands that need more than a one-liner
 // ---------------------------------------------------------------------------
+
+/**
+ * Save, then stand down for half a minute.
+ *
+ * Saving writes the whole board - every asset, every note - into IndexedDB, and
+ * on a board of photographs that is real work. The button invites repetition in
+ * a way the work does not deserve: it is the one control whose effect is
+ * invisible, so the honest response to "did that save?" is to press it again,
+ * and a few of those in a row is the same megabytes written three times while
+ * the board stutters.
+ *
+ * A cooldown answers the question the second press was asking. The button says
+ * how long ago it saved, which is the information that was missing - not a
+ * refusal so much as a receipt that stays up.
+ *
+ * Only the button. The autosave debounce behind every edit is untouched: that
+ * is the board's own safety net and rate-limiting it would be rate-limiting the
+ * thing that stops work being lost. This governs a human pressing a control,
+ * which is the only place repetition is a problem.
+ */
+const SAVE_COOLDOWN_MS = 30_000;
+let saveReadyAt = 0;
+let saveTick = 0;
+let saving = false;
+
+async function saveWithCooldown() {
+  // Two guards, not one. The cooldown is the deliberate half; `saving` covers
+  // the gap the cooldown cannot, which is the double click that arrives while
+  // the first write is still in flight and before there is anything to cool
+  // down from.
+  if (saving || saveReadyAt > Date.now()) return;
+  saving = true;
+  paintSave();
+  let ok = false;
+  try {
+    ok = await saveBoard();
+  } finally {
+    saving = false;
+  }
+  // A failure is not a save and there is nothing to stand down from. Whatever
+  // went wrong is worth another try immediately - it may be a permission that
+  // has just been granted.
+  if (!ok) { paintSave(); return; }
+  saveReadyAt = Date.now() + SAVE_COOLDOWN_MS;
+  clearInterval(saveTick);
+  saveTick = setInterval(paintSave, 1000);
+  paintSave();
+}
+
+/** Back to an ordinary Save button, cooldown abandoned. Used by a board load. */
+function resetSave() {
+  saveReadyAt = 0;
+  clearInterval(saveTick);
+  saveTick = 0;
+  paintSave();
+}
+
+function paintSave() {
+  const btn = document.querySelector('[data-cmd="save"]');
+  if (!btn) return;
+  if (saving) {
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    return;
+  }
+  const left = Math.ceil((saveReadyAt - Date.now()) / 1000);
+  if (left <= 0) {
+    clearInterval(saveTick);
+    saveTick = 0;
+    btn.disabled = false;
+    btn.textContent = 'Save';
+    btn.removeAttribute('title');
+    return;
+  }
+  btn.disabled = true;
+  // Counting up rather than down, because what somebody wants to know is how
+  // stale the save is, not how long until a button will let them press it.
+  btn.textContent = `Saved ${SAVE_COOLDOWN_MS / 1000 - left}s ago`;
+  btn.title = 'Everything is already written. Edits keep saving on their own.';
+}
 
 function rearrange() {
   const items = board.items;
@@ -280,7 +616,29 @@ function rearrange() {
   // which from any distance is the same picture - and zoomed out far enough to
   // see a whole rearrangement at once, cards are shapes and not subjects.
   const order = shuffle(items.map((_, i) => i));
-  const spots = arrange(order.map(i => items[i]), {
+
+  // On a snapped board a rearrangement is a *re-lay*, sizes included. Placing
+  // cards on the lattice and leaving them at 320x240 is the thing snapping is
+  // for and does not do: the edges still miss every line, and the one gesture
+  // that touches the whole board at once is the natural place to fix it.
+  //
+  // Sized before the layout runs rather than after, and that ordering is the
+  // whole of it. The arrangements read each item's w and h to decide how much
+  // room its slot needs, so resizing afterwards would hand a spiral built for
+  // 320-wide cards a board of 340-wide ones - a layout with its spacing quietly
+  // spent. Sizing first means the engine is laying out the cards that will
+  // actually exist.
+  // Sizes only. latticeBox() answers with a whole box, and the position half of
+  // that answer is where the item *already* is - so spreading the whole thing
+  // over a freshly chosen slot puts every card back exactly where it started,
+  // which is a Rearrange button that does nothing at all.
+  const step = baseStep();
+  const sized = board.settings.snap
+    ? items.map(it => { const b = latticeBox(it, step); return { w: b.w, h: b.h }; })
+    : null;
+  const laid = order.map(i => (sized ? { ...items[i], ...sized[i] } : items[i]));
+
+  const spots = arrange(laid, {
     name: board.arrangement,
     center: { x: 0, y: 0 },
     spacing: board.settings.spacing,
@@ -290,7 +648,15 @@ function rearrange() {
   // in that slot, not to the item at the same index in board.items.
   const target = new Array(items.length);
   order.forEach((itemIndex, slot) => { target[itemIndex] = spots[slot]; });
-  applyGeom(before.map((g, i) => ({ ...g, x: target[i].x, y: target[i].y })));
+  applyGeom(before.map((g, i) => {
+    const at = { ...g, x: target[i].x, y: target[i].y };
+    if (!sized) return at;
+    // Through latticeBox a second time, now with the slot the engine chose and
+    // the size it laid out for. The sizes are already on the lattice and it
+    // leaves them there; what this pass is for is the position, which an
+    // arrangement had no reason to land on a line.
+    return { ...at, ...latticeBox({ ...at, ...sized[i] }, step) };
+  }));
   // Every item was placed by this, none of them towed - so every note asks
   // again what it landed on. A rearrangement that left the old piles recorded
   // would have notes travelling with photographs they are now nowhere near.
@@ -328,14 +694,12 @@ addEventListener('visibilitychange', () => {
 
 const started = (async function start() {
   const restored = await restoreSession();
-  if (restored) {
-    vp.setView(board.view.pan, board.view.zoom);
-    toast('Restored your last board');
-  } else {
-    vp.recenter();
-  }
+  openingView();
+  if (restored) toast('Restored your last board');
   el('hud').hidden = !board.settings.hud;
+  paintSnap();
   paintGrid(vp);
+  paintPaper();
   paintCount();
   vp.apply();
   console.log('[mbrd] v' + VERSION + ' ready');

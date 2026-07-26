@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 
 import {
   rotatedExtents, itemBounds, itemInRect, itemRadius, pointInItem, topEdge,
-  corners, overlapFraction,
+  corners, overlapFraction, segmentMeetsRect,
 } from '../web/assets/js/geometry.js';
 import { item } from './helpers.js';
 
@@ -270,4 +270,65 @@ test('the ends of the top edge lie on the item', () => {
       assert.ok(pointInItem(p.x * inset, p.y * inset, it), `corner off the item at ${rot} degrees`);
     }
   }
+});
+
+
+// ---------------------------------------------------------------------------
+// segmentMeetsRect - what the web culls threads with
+//
+// The reason it is not a bounding-box test is the whole of what these check.
+// A box test and an exact one agree on everything axis-aligned; they part
+// company on the diagonal, and a web is mostly diagonals.
+// ---------------------------------------------------------------------------
+
+const R = { x0: 0, y0: 0, x1: 10, y1: 10 };
+const seg = (ax, ay, bx, by) => segmentMeetsRect({ x: ax, y: ay }, { x: bx, y: by }, R);
+
+test('a segment inside the rect meets it', () => {
+  assert.ok(seg(2, 2, 8, 8));
+  assert.ok(seg(5, 5, 5, 5), 'a degenerate segment inside is still inside');
+});
+
+test('a segment crossing the rect meets it, whichever way it enters', () => {
+  assert.ok(seg(-5, 5, 15, 5), 'straight through, left to right');
+  assert.ok(seg(5, -5, 5, 15), 'straight through, bottom to top');
+  assert.ok(seg(-5, -5, 15, 15), 'corner to corner');
+  assert.ok(seg(-1, 5, 5, 5), 'one end outside, one in');
+  assert.ok(seg(5, 5, 50, 50), 'one end inside, one far out');
+});
+
+test('a segment wholly beyond one edge does not', () => {
+  assert.ok(!seg(-5, -5, -5, 15), 'left of it');
+  assert.ok(!seg(15, -5, 15, 15), 'right of it');
+  assert.ok(!seg(-5, -1, 15, -1), 'below it');
+  assert.ok(!seg(-5, 11, 15, 11), 'above it');
+});
+
+test('the diagonal a box test gets wrong', () => {
+  // The line x+y = -2, which passes clean under the rect's near corner without
+  // ever reaching it. Its bounding box is (-10,-22)-(20,8), which overlaps the
+  // rect on both axes - so the box test the web used to do says yes, and the
+  // thread was emitted on every frame of every pan without ever touching the
+  // screen.
+  const a = { x: 20, y: -22 }, b = { x: -10, y: 8 };
+  const boxSays = Math.max(a.x, b.x) >= R.x0 && Math.min(a.x, b.x) <= R.x1 &&
+                  Math.max(a.y, b.y) >= R.y0 && Math.min(a.y, b.y) <= R.y1;
+  assert.ok(boxSays, 'the box test would have kept it');
+  assert.ok(!segmentMeetsRect(a, b, R), 'but the line never enters the rect');
+});
+
+test('touching an edge or a corner counts', () => {
+  assert.ok(seg(-5, 0, 5, 0), 'along the bottom edge');
+  assert.ok(seg(10, 10, 20, 20), 'starting exactly on the far corner');
+  assert.ok(seg(-5, 15, 15, -5), 'the anti-diagonal through both corners');
+});
+
+test('it never loops, however far out the ends are', () => {
+  // Cohen-Sutherland settles in four turns; a wrong loop condition hangs
+  // rather than failing, so the assertion here is that it returns at all.
+  const far = 1e9;
+  for (const [ax, ay, bx, by] of [
+    [-far, -far, far, far], [far, -far, -far, far], [-far, 5, far, 5],
+    [5, -far, 5, far], [-far, -far, -far, far], [far, far, far + 1, far + 1],
+  ]) assert.equal(typeof seg(ax, ay, bx, by), 'boolean');
 });

@@ -17,16 +17,23 @@ import { join } from 'node:path';
 import { JS, walk } from './helpers.js';
 
 /**
- * The two documented exceptions, both of which are entry points rather than
- * units: they exist to wire the page together and have nothing to say without
- * one.
+ * The three documented exceptions, none of which is a unit.
  *
- *   main.js            constructs the Viewport against real elements
- *   ui/appearance.js   holds :root and the theme-colour <meta> at module scope
+ *   main.js                     constructs the Viewport against real elements
+ *   ui/appearance.js            holds :root and the theme-colour <meta> at
+ *                               module scope
+ *   optimize/media-worker.js    is not a module at all. It is a *classic*
+ *                               worker, because the vendored ffmpeg core is an
+ *                               Emscripten bundle that wants importScripts and
+ *                               a global factory - so it installs `self.onmessage`
+ *                               at the top level and cannot be imported by
+ *                               anything, in a browser or out of one.
  *
  * Anything else appearing here is a regression, not a new exception.
  */
-const DOM_ENTRY_POINTS = new Set(['main.js', 'ui/appearance.js']);
+const DOM_ENTRY_POINTS = new Set([
+  'main.js', 'ui/appearance.js', 'optimize/media-worker.js',
+]);
 
 const modules = walk(JS, ['.js'], JS)
   .filter(m => m !== 'import/formats.js');       // generated, 358 lines of data
