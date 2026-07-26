@@ -7,6 +7,13 @@
 //
 // opts: { center: {x, y}, spacing: number, seed?: number }
 //
+// `spacing` has exactly one meaning everywhere below: the gap left between two
+// neighbouring cards, edge to edge, in world units. Every layout asks for room
+// the same way - `item + spacing` - so the slider means the same thing whichever
+// arrangement is in force, and a board relaid from one to another comes back
+// equally tight. Where a layout needs a second distance it derives it from this
+// one by a named constant, and each of those says what it is a multiple of.
+//
 // `seed` is permission to move the slots, not just to fill them differently.
 // Without one every layout below is a pure function of the items it is handed,
 // which is what makes an import reproducible: the same drop lands the same way
@@ -15,6 +22,20 @@
 // a different arrangement of the *same* kind. What varies is chosen per layout
 // so that the layout's own identity survives it: a grid stays square, a spiral
 // stays evenly packed, `date` stays in date order. See variation() below.
+//
+// No layout returns overlapping cards, and every one of them gets that the same
+// way: by never placing a card where it would overlap. The four laid out on
+// structure get it from the structure - see lattice() - and the two that have
+// no structure get it from slideOut(), which finds each card the nearest place
+// it actually fits. Nothing here separates cards after the fact.
+//
+// A card is a rectangle, and that is a working assumption rather than a
+// remark. A layout that reasons in radii is reasoning about the circle around
+// the card, which on an ordinary card is three times its area, and the board
+// comes out mostly gap however tight the spacing is set.
+//
+// `free` is the one exception, and only because the positions it starts from
+// are yours: two cards you deliberately stacked stay stacked.
 
 export const ARRANGEMENTS = [
   // First because it is the default a new board carries, and a menu whose top
@@ -55,6 +76,66 @@ export function arrange(items, opts = {}) {
  */
 const FREE_SHAKE = 0.5;
 
+/**
+ * The seam between two clusters, in gaps.
+ *
+ * A multiple of `spacing` rather than a distance of its own, so the whole
+ * layout still answers to the one slider - but it has to be a multiple bigger
+ * than one, because a block seam the width of the gaps inside a block is not a
+ * seam. Three is the smallest that reads as a gutter at every spacing the
+ * slider offers.
+ */
+const BLOCK_GAP = 3;
+
+/**
+ * How much of its disc a scatter aims to cover before anything is placed.
+ *
+ * A target rather than a result: cards are thrown at this disc and any that
+ * land on one another slide outward until they do not, so what comes out is
+ * always looser than what was asked for. Asking for a disc that is already
+ * full is what makes the scatter read as a heap rather than as a ring - the
+ * crowding in the middle is what pushes the overflow to the edge, which is
+ * where a heap's overflow goes.
+ *
+ * It replaces a fudge factor on the radius, and it is the better of the two
+ * knobs to have: a radius grown as sqrt(count) assumed every card was the size
+ * of the largest, so one big photograph blew up the whole disc. Area adds up
+ * honestly whatever the mix.
+ */
+const SCATTER_FILL = 1;
+
+/**
+ * How much wider than tall a block of items should come out.
+ *
+ * Screens are wider than they are tall and so is the room a board has to grow
+ * into, so a block of items squared off exactly wastes the width and then runs
+ * off the bottom. Masonry gets the gentler figure because its columns already
+ * ragged the bottom edge; a page of dated items gets the fuller one because it
+ * is read in rows and long rows are what reading wants.
+ */
+const MASONRY_ASPECT = 1.4;
+const PAGE_ASPECT = 1.6;
+
+/**
+ * How far either side of its own angle a card in the spiral may look for
+ * somewhere to sit, and how many directions it tries in there.
+ *
+ * A quarter turn each way. Wide enough that a card blocked straight ahead can
+ * see round the obstruction, narrow enough that it is still going roughly where
+ * the golden angle sent it - which is the whole of what makes this a spiral
+ * rather than a heap. Let it look all the way round and every card simply goes
+ * to the nearest hole, the angles stop meaning anything, and the arrangement
+ * comes out no tighter for it.
+ *
+ * Seven tries, fifteen degrees apart. Packing greedily is not monotonic in how
+ * hard you look - a card that squeezes nearer the middle can be the reason two
+ * later ones do not - and measured across boards of identical cards, mixed
+ * cards and wildly mixed ones, thirteen and nineteen tries were no better than
+ * seven and sometimes worse. Seven is also the cheap answer, which settles it.
+ */
+const SPIRAL_SWEEP = Math.PI / 2;
+const SPIRAL_TRIES = 7;
+
 const LAYOUTS = {
   /**
    * Free imposes no structure, so unseeded it hands back exactly what the items
@@ -65,9 +146,10 @@ const LAYOUTS = {
    * position, nothing collected anywhere. Free that gathered the board into a
    * disc round a centre would be `scatter` under a second name, and would throw
    * away the arrangement you made by hand - which is the one thing a layout
-   * called Free must not do. This is also the only layout that may overlap
-   * items, and that is not a lapse: the positions it starts from are yours and
-   * may already overlap, so refusing to would mean tidying, not shaking.
+   * called Free must not do. This is also the only layout that may hand back
+   * overlapping items, and that is not a lapse: the positions it starts from
+   * are yours and may already overlap, so refusing to would mean tidying, not
+   * shaking.
    */
   free(items, o) {
     const rnd = variation(o);
@@ -80,10 +162,8 @@ const LAYOUTS = {
     });
   },
 
-  /** Square spiral of uniform cells, filling ring by ring outward from centre. */
+  /** Square spiral of cells, filling ring by ring outward from centre. */
   grid(items, o) {
-    const cw = maxBy(items, i => i.w) + o.spacing;
-    const ch = maxBy(items, i => i.h) + o.spacing;
     // A quarter turn of the ring pattern. A ring that is completely full maps
     // onto itself under it, so a grid that comes out square comes out square
     // again - what moves is the last, unfinished ring, which is the only part
@@ -91,55 +171,96 @@ const LAYOUTS = {
     // without the result ceasing to be a grid.
     const rnd = variation(o);
     const turn = rnd ? Math.floor(rnd() * 4) : 0;
-    return items.map((_, n) => {
-      const [col, row] = spin(ringCell(n), turn);
-      return { x: o.center.x + col * cw, y: o.center.y + row * ch };
-    });
+    // Cell (0, 0) is the origin of the lattice, so the first item lands exactly
+    // on the point asked for - which for an import is the point you dropped on.
+    const { pos } = lattice(items.map((_, n) => spin(ringCell(n), turn)), items, o.spacing);
+    return pos.map(p => ({ x: o.center.x + p.x, y: o.center.y + p.y }));
   },
 
-  /** Phyllotaxis: the golden angle, so nothing lines up into visual rows. */
+  /**
+   * Phyllotaxis: the golden angle, so nothing lines up into visual rows.
+   *
+   * The textbook form is r = c*sqrt(n) for a fixed c, and it is written for
+   * points. Giving each card the slot that form implies means giving it a
+   * *circle* big enough to hold it whichever way its neighbour lies - and a
+   * card is a rectangle, so three quarters of that circle is thrown away. On a
+   * board of 320x240 cards it came out a quarter covered with the spacing at
+   * zero, which is not what "no gap" is supposed to look like.
+   *
+   * So only the angles come from the phyllotaxis now. The radius is asked
+   * rather than computed: each card slides out from the centre and stops at the
+   * first distance where its rectangle is clear of every rectangle already
+   * down. Cards fall into the gaps their neighbours leave, and no two of them
+   * can overlap - not because a pass afterwards pulled them apart, but because
+   * no card was ever put anywhere it would have to be pulled from.
+   *
+   * And it looks a little either side of its own angle before choosing, which
+   * is where most of the tightening comes from. One fixed ray is one degree of
+   * freedom: a card whose ray happens to point down a corridor between two
+   * others rides it all the way out, past pockets a few degrees round that it
+   * would have dropped straight into. Trying a fan of directions and taking
+   * whichever comes to rest nearest the middle is the difference between a
+   * board a quarter covered and one nearly two thirds covered.
+   */
   spiral(items, o) {
-    // In a phyllotaxis the nearest-neighbour distance is ~c, so c has to clear
-    // the items themselves or the first ring self-overlaps. Sized off the
-    // largest item, not the average, so one big photo can't sit on the rest.
-    const c = (maxBy(items, i => i.w) + maxBy(items, i => i.h)) / 2 + o.spacing;
     const golden = Math.PI * (3 - Math.sqrt(5));
     // The whole spiral turned on its centre. Rotation is the one change a
-    // phyllotaxis cannot be spoiled by: every distance in it is preserved, so
-    // the rearranged spiral is packed exactly as evenly as the first one.
+    // phyllotaxis cannot be spoiled by: it deals the same sequence of
+    // directions starting somewhere else, so the packing is exactly as good.
     const rnd = variation(o);
     const phase = rnd ? rnd() * Math.PI * 2 : 0;
-    return items.map((_, n) => {
-      const r = c * Math.sqrt(n);
-      const a = n * golden + phase;
-      return { x: o.center.x + r * Math.cos(a), y: o.center.y + r * Math.sin(a) };
+    const placed = [];
+    return items.map((it, n) => {
+      const box = roomFor(it, o.spacing);
+      let best = null, near = Infinity;
+      for (let k = 0; k < SPIRAL_TRIES; k++) {
+        const a = n * golden + phase + SPIRAL_SWEEP * (k / (SPIRAL_TRIES - 1) - 0.5);
+        const at = slideOut({ x: Math.cos(a), y: Math.sin(a) }, box, placed);
+        const r = Math.hypot(at.x, at.y);
+        if (r < near) { near = r; best = at; }
+      }
+      placed.push({ ...box, x: best.x, y: best.y });
+      return { x: o.center.x + best.x, y: o.center.y + best.y };
     });
   },
 
-  /** Fixed-width columns, each item dropped into the currently shortest one. */
+  /** Columns, each item dropped into the currently shortest one. */
   masonry(items, o) {
     // One column wider or narrower re-flows every item, because which column
     // is shortest changes the moment the first one does. It is the only change
     // masonry can make that is still masonry: the columns are the whole of it,
     // so moving items inside them would read as drift rather than as a layout.
     const rnd = variation(o);
-    let cols = Math.max(1, Math.round(Math.sqrt(items.length * 1.4)));
+    let cols = Math.max(1, Math.round(Math.sqrt(items.length * MASONRY_ASPECT)));
     if (rnd) cols = reflow(cols, items.length, rnd);
-    const colW = maxBy(items, i => i.w) + o.spacing;
+    cols = Math.min(cols, items.length);
+
+    // Which column an item lands in depends only on heights, so the widths can
+    // be gathered on the way past and spent afterwards - each column exactly as
+    // wide as the widest thing that chose it.
     const heights = new Array(cols).fill(0);
-    const out = items.map(it => {
+    const widths = new Array(cols).fill(0);
+    const placed = items.map(it => {
       let c = 0;
       for (let k = 1; k < cols; k++) if (heights[k] < heights[c]) c = k;
       const y = heights[c] + it.h / 2;
       heights[c] += it.h + o.spacing;
-      return { x: (c - (cols - 1) / 2) * colW, y };
+      widths[c] = Math.max(widths[c], it.w + o.spacing);
+      return { c, y };
     });
+
+    const mid = [];
+    let edge = 0;
+    for (const w of widths) { mid.push(edge + w / 2); edge += w; }
     // Centre the whole block on the target point.
     const tallest = Math.max(...heights) - o.spacing;
-    return out.map(p => ({ x: o.center.x + p.x, y: o.center.y + p.y - tallest / 2 }));
+    return placed.map(p => ({
+      x: o.center.x + mid[p.c] - edge / 2,
+      y: o.center.y + p.y - tallest / 2,
+    }));
   },
 
-  /** One grid block per type, blocks laid side by side in a stable order. */
+  /** One block per type, blocks laid side by side in a stable order. */
   type(items, o) {
     const groups = new Map();
     items.forEach((it, i) => {
@@ -153,11 +274,11 @@ const LAYOUTS = {
     const rnd = variation(o);
     const order = [...groups.keys()].sort();
     if (rnd) shuffleWith(order, rnd);
-    const blocks = order.map(k => groups.get(k));
-    const gap = o.spacing * 3;
 
-    // Size every block first so they can be centred as one row.
-    const laid = blocks.map(idx => {
+    // Lay every block first, so they can be spaced by the width each one
+    // actually came out at rather than by a cell count times a shared cell.
+    const laid = order.map(key => {
+      const idx = groups.get(key);
       const sub = idx.map(i => items[i]);
       // Each block reshapes as well as moving. Needed on its own account: a
       // board of one type is a single block, and shuffling a list of one
@@ -165,72 +286,227 @@ const LAYOUTS = {
       // there is would be the one board Rearrange could not rearrange.
       let cols = Math.max(1, Math.ceil(Math.sqrt(sub.length)));
       if (rnd) cols = reflow(cols, sub.length, rnd);
-      const cw = maxBy(sub, i => i.w) + o.spacing;
-      const ch = maxBy(sub, i => i.h) + o.spacing;
-      const rows = Math.ceil(sub.length / cols);
-      return { idx, cols, cw, ch, width: cols * cw, height: rows * ch };
+      const cells = sub.map((_, n) => [n % cols, Math.floor(n / cols)]);
+      return { idx, ...lattice(cells, sub, o.spacing) };
     });
-    const total = laid.reduce((s, b) => s + b.width, 0) + gap * (laid.length - 1);
+    const seam = o.spacing * BLOCK_GAP;
+    const width = b => b.box.x1 - b.box.x0;
+    const total = laid.reduce((s, b) => s + width(b), 0) + seam * (laid.length - 1);
 
     const out = new Array(items.length);
     let cursor = o.center.x - total / 2;
     for (const b of laid) {
+      const mid = (b.box.y0 + b.box.y1) / 2;
       b.idx.forEach((itemIndex, n) => {
-        const col = n % b.cols, row = Math.floor(n / b.cols);
         out[itemIndex] = {
-          x: cursor + col * b.cw + b.cw / 2,
-          y: o.center.y - b.height / 2 + row * b.ch + b.ch / 2,
+          x: cursor + b.pos[n].x - b.box.x0,
+          y: o.center.y + b.pos[n].y - mid,
         };
       });
-      cursor += b.width + gap;
+      cursor += width(b) + seam;
     }
     return out;
   },
 
-  /** Oldest first, reading order. Falls back to import order when undated. */
+  /** Oldest first, reading order. */
   date(items, o) {
-    const order = items.map((it, i) => i)
-      .sort((a, b) => (items[a].meta?.mtime || 0) - (items[b].meta?.mtime || 0) || a - b);
+    const order = dateOrder(items);
     // Oldest-first is the entire meaning of this layout, so unlike every other
     // one here the items may not be re-dealt - `order` is not the caller's to
     // vary. What can change is the shape of the page they are read on: a
     // wider or narrower block reflows every row while leaving the reading
     // order exactly where it was.
     const rnd = variation(o);
-    let cols = Math.max(1, Math.ceil(Math.sqrt(items.length * 1.6)));
+    let cols = Math.max(1, Math.ceil(Math.sqrt(items.length * PAGE_ASPECT)));
     if (rnd) cols = reflow(cols, items.length, rnd);
-    const cw = maxBy(items, i => i.w) + o.spacing;
-    const ch = maxBy(items, i => i.h) + o.spacing;
-    const rows = Math.ceil(items.length / cols);
-    const out = new Array(items.length);
-    order.forEach((itemIndex, n) => {
-      const col = n % cols, row = Math.floor(n / cols);
-      out[itemIndex] = {
-        x: o.center.x + (col - (cols - 1) / 2) * cw,
-        y: o.center.y + (row - (rows - 1) / 2) * ch,
-      };
-    });
-    return out;
+    const cells = new Array(items.length);
+    order.forEach((itemIndex, n) => { cells[itemIndex] = [n % cols, Math.floor(n / cols)]; });
+    const { pos, box } = lattice(cells, items, o.spacing);
+    const mx = (box.x0 + box.x1) / 2, my = (box.y0 + box.y1) / 2;
+    return pos.map(p => ({ x: o.center.x + p.x - mx, y: o.center.y + p.y - my }));
   },
 
-  /** Loose scatter in a disc whose area grows with the item count. */
+  /** Loose scatter in a disc whose area grows with what is in it. */
   scatter(items, o) {
-    const avg = items.reduce((s, i) => s + Math.max(i.w, i.h), 0) / items.length;
-    const R = Math.sqrt(items.length) * (avg + o.spacing) * 0.72;
+    const area = items.reduce((s, i) => s + (i.w + o.spacing) * (i.h + o.spacing), 0);
+    const R = Math.sqrt(area / (Math.PI * SCATTER_FILL));
     // Seeded, so one scatter is reproducible - but the seed is the caller's to
     // choose. An import wants the default (the same drop lands the same way);
     // "Rearrange everything" passes a fresh one, because there the whole point
     // is that it comes out different.
     const rnd = mulberry32(o.seed ?? (items.length * 2654435761 >>> 0));
-    return items.map(() => {
+    const placed = [];
+    return items.map(it => {
       const a = rnd() * Math.PI * 2;
       const r = Math.sqrt(rnd()) * R;   // sqrt keeps the density even across the disc
-      return { x: o.center.x + r * Math.cos(a), y: o.center.y + r * Math.sin(a) };
+      const dir = { x: Math.cos(a), y: Math.sin(a) };
+      const box = roomFor(it, o.spacing);
+      // Outward from where it fell, never back towards the middle: the drawn
+      // point is what makes this a scatter and moving a card inward would take
+      // it somewhere it was not thrown. So a card lands where it was thrown
+      // unless somebody is already there, and then it lands just past them.
+      const at = slideOut(dir, box, placed, r);
+      placed.push({ ...box, x: at.x, y: at.y });
+      return { x: o.center.x + at.x, y: o.center.y + at.y };
     });
   },
 };
 
-const maxBy = (arr, fn) => arr.reduce((m, v) => Math.max(m, fn(v)), 0);
+// ---------------------------------------------------------------------------
+// Room
+// ---------------------------------------------------------------------------
+
+/**
+ * Positions for items dealt onto integer cells, on a lattice whose columns and
+ * rows are each only as wide and as tall as what actually landed in them.
+ *
+ * `cells` is one `[col, row]` per item, parallel to `items`. Cell (0, 0) is
+ * centred on the origin; the block's own extent comes back as `box` so a caller
+ * that would rather centre the whole thing can.
+ *
+ * The uniform alternative - one cell for the board, sized from the largest item
+ * on it - is what this replaces, and its failure is any board with one big
+ * photograph on it: every note is given a photograph's worth of room, and what
+ * you get back is a board that is mostly gap. Per column and per row, that
+ * photograph widens the one column and heightens the one row it is in, and
+ * nothing else on the board moves at all.
+ *
+ * Non-overlap comes free and exactly: two items in the same column are in
+ * different rows and each sits inside its own row's height, and the other way
+ * about. That is why the four layouts built on this need no separation pass.
+ */
+function lattice(cells, items, gap) {
+  const colW = new Map(), rowH = new Map();
+  let c0 = 0, c1 = 0, r0 = 0, r1 = 0;
+  cells.forEach(([c, r], i) => {
+    colW.set(c, Math.max(colW.get(c) || 0, items[i].w + gap));
+    rowH.set(r, Math.max(rowH.get(r) || 0, items[i].h + gap));
+    if (c < c0) c0 = c; else if (c > c1) c1 = c;
+    if (r < r0) r0 = r; else if (r > r1) r1 = r;
+  });
+  const [colX, xs] = track(colW, c0, c1);
+  const [rowY, ys] = track(rowH, r0, r1);
+  return {
+    pos: cells.map(([c, r]) => ({ x: colX.get(c), y: rowY.get(r) })),
+    box: { x0: xs[0], x1: xs[1], y0: ys[0], y1: ys[1] },
+  };
+}
+
+/**
+ * Centres of every track along one axis, and the two outer edges.
+ *
+ * Walked outward from track 0 in both directions rather than accumulated from
+ * the low end, because track 0 has to straddle the origin whatever is on either
+ * side of it - that is what lets `grid` promise the first item the exact point
+ * it was given while the ring around it sizes itself freely.
+ */
+function track(span, lo, hi) {
+  const mid = new Map();
+  const first = span.get(0) || 0;
+  let edge = -first / 2;
+  for (let k = 0; k <= hi; k++) {
+    const s = span.get(k) || 0;
+    mid.set(k, edge + s / 2);
+    edge += s;
+  }
+  const high = edge;
+  edge = -first / 2;
+  for (let k = -1; k >= lo; k--) {
+    const s = span.get(k) || 0;
+    edge -= s;
+    mid.set(k, edge + s / 2);
+  }
+  return [mid, [edge, high]];
+}
+
+/** The room an item wants: its own rectangle with half a gap all round. */
+const roomFor = (it, gap) => ({ hw: (it.w + gap) / 2, hh: (it.h + gap) / 2 });
+
+/**
+ * Slide a box out along a ray from the origin and stop at the first distance
+ * where it is clear of every box already placed.
+ *
+ * This is the whole of how the two unstructured layouts avoid overlap, and it
+ * is worth being exact rather than iterative. A box travelling along the ray
+ * is at (t*dx, t*dy), so it clashes with a placed box while both
+ * `|t*dx - X| < W` and `|t*dy - Y| < H` hold - each of which is an interval of
+ * t, and the clash is where the two intervals meet. Every placed box therefore
+ * bans one interval of the ray, and the answer is the first point at or after
+ * `from` that no interval covers: sort by where they open, walk, and jump to
+ * the far end of each one still covering you.
+ *
+ * The intervals are open, so a box may come to rest exactly touching - which is
+ * what a spacing of zero is supposed to mean. An axis the ray does not move
+ * along (dx or dy of zero) is a standing yes or no rather than an interval, and
+ * a standing no rules that box out of the question entirely.
+ *
+ * Exact, so there is no residue to clean up afterwards and no cap to hit. The
+ * cost is a pass over what is already down, per direction tried, per item: a
+ * board of 500 - which is also the most a single drop may bring - lays out in
+ * about 40ms, a board of 2000 in half a second. Both are paid once, by a
+ * gesture that already animates every card on the board to somewhere new.
+ */
+function slideOut(dir, box, placed, from = 0) {
+  const bans = [];
+  for (const p of placed) {
+    const span = (d, c, reach) => {
+      if (d === 0) return Math.abs(c) < reach ? [-Infinity, Infinity] : null;
+      const a = (c - reach) / d, b = (c + reach) / d;
+      return a < b ? [a, b] : [b, a];
+    };
+    const sx = span(dir.x, p.x, box.hw + p.hw);
+    if (!sx) continue;
+    const sy = span(dir.y, p.y, box.hh + p.hh);
+    if (!sy) continue;
+    const lo = Math.max(sx[0], sy[0]), hi = Math.min(sx[1], sy[1]);
+    if (hi > lo && hi > from) bans.push([lo, hi]);
+  }
+  bans.sort((a, b) => a[0] - b[0]);
+  let t = from;
+  for (const [lo, hi] of bans) {
+    if (lo > t) break;          // clear from here on out
+    if (hi > t) t = hi;
+  }
+  return { x: dir.x * t, y: dir.y * t };
+}
+
+// A note on what is deliberately *not* here: a pass that walks each card back
+// towards the centre after it lands, axis by axis, until something stops it.
+// It is the obvious next idea and it was written, measured and taken out again.
+// Packing greedily from the middle outward is not helped by pulling each card
+// as far in as it will go: the middle clogs, later cards are pushed further
+// out than they would otherwise have been, and every board tried came out
+// looser than leaving them where they first fitted - identical cards worst, at
+// 46% covered down to 40%.
+
+// ---------------------------------------------------------------------------
+// Order
+// ---------------------------------------------------------------------------
+
+/**
+ * Item indices, oldest first.
+ *
+ * Undated items go last rather than first. A missing modification time is not a
+ * time of zero, and treating it as one put every note and every pasted link
+ * ahead of a photograph from 1912 - a "By date" layout whose first row is the
+ * things that have no date reads as broken from the first glance.
+ *
+ * Equal times fall through to the name, naturally, so that a burst of frames
+ * written in the same second comes out 2, 3, 10 rather than 10, 2, 3; and equal
+ * names fall through to the order they arrived in, which is stable and is the
+ * order the caller chose.
+ */
+function dateOrder(items) {
+  const when = i => items[i].meta?.mtime || 0;
+  const named = i => items[i].name || '';
+  return items.map((_, i) => i).sort((a, b) => {
+    const ta = when(a), tb = when(b);
+    if (!ta !== !tb) return ta ? -1 : 1;
+    return ta - tb
+      || named(a).localeCompare(named(b), undefined, { numeric: true })
+      || a - b;
+  });
+}
 
 /**
  * A layout's licence to come out differently, or null for the canonical one.

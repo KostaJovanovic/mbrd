@@ -110,6 +110,10 @@ of the last three directories is looking at a perfectly valid older board.
   },
   "arrangement": "spiral",
   "items": [ … ],
+  "layouts": {
+    "desktop": [ { "id": "k3f9a2", "x": 120, "y": -40, "w": 320, "h": 240, "rot": 0, "z": 7 } ],
+    "mobile":  [ { "id": "k3f9a2", "x": 0, "y": -120, "w": 320, "h": 240, "rot": 0, "z": 7 } ]
+  },
   "trash": [ { "at": 1753440000000, "item": { … } } ]
 }
 ```
@@ -129,6 +133,21 @@ browser as code**, and it is gated accordingly — see **Safety**.
 Item coordinates and sizes are rounded to two decimals on the way out. A board
 is a place things sit, not a measurement, and the third decimal of a drag is
 noise that costs bytes in every item.
+
+`layouts` gives each live item independent Desktop and Mobile geometry while
+its content, assets, name, metadata, and all board settings remain shared. Each
+record is keyed by `id` and carries `x`, `y`, `w`, `h`, `rot`, `z`, plus an
+optional layout-specific `presnap`. Mobile is a vertical board exactly
+`6 × settings.gridStep` world units wide. Its upper edge is
+`y = 10 × settings.gridStep`; it has no lower edge. The Mobile viewport leaves
+a small gutter outside the side edges and suppresses the world axes, origin
+marker, and relationship web. Those are presentation rules, not saved settings.
+The top-level geometry in `items` duplicates Desktop deliberately: older
+readers see the Desktop arrangement, and files without `layouts` acquire one
+from those fields.
+
+The currently selected layout is not saved. It is a local device preference,
+so one file can stay in Mobile mode on a phone and Desktop mode on a computer.
 
 `trash` is the bin, and its items carry their assets. That is deliberate: a bin
 that cannot restore anything after a save is not a bin.

@@ -86,7 +86,11 @@
   --grid-alpha: 0.14;
   --grid-minor: color-mix(in srgb, var(--ink) calc(var(--grid-alpha) * 100%), transparent);
   --grid-major: color-mix(in srgb, var(--ink) calc(var(--grid-alpha) * 190%), transparent);
-  --grid-axis:  color-mix(in srgb, var(--accent) 55%, transparent);
+  /* The axes take the accent at full strength, unlike the lattice. They are not
+     another layer of grid - they are the one statement on the board about where
+     nought is, and a rule at half strength under a lattice of marks reads as the
+     heaviest of the marks rather than as a different kind of thing. */
+  --grid-axis:  var(--accent);
   --grid-dot:   1.7px;
 
   /* ---- the paper outline (canvas/paper.js) ----

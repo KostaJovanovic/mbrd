@@ -115,18 +115,33 @@ export async function measureSize(type, file) {
     // An image the browser cannot decode (HEIC, JXL, camera RAW) is reported
     // so the importer can fall back to a named card instead of a broken <img>.
     if (!natural) return { ...box, decodable: false };
-    // Preserve the placeholder's area, adopt the real aspect ratio.
-    const area = box.w * box.h;
-    const ratio = natural.w / natural.h;
-    return {
-      w: Math.round(Math.sqrt(area * ratio)),
-      h: Math.round(Math.sqrt(area / ratio)),
-      measured: true,
-      decodable: true,
-    };
+    return { ...fitToBox(type, natural.w, natural.h), measured: true, decodable: true };
   } catch {
     return { ...box, decodable: false };
   }
+}
+
+/**
+ * A type's placeholder box, reshaped to a known aspect ratio without changing
+ * how much of the board it takes up.
+ *
+ * Area-preserving rather than width- or height-preserving, so a portrait clip
+ * and a landscape one that arrive together read as the same *amount* of thing,
+ * which is what makes a mixed drop lay out evenly.
+ *
+ * Split out of measureSize() because the ratio does not always come from the
+ * browser. A video this browser cannot open has no dimensions to offer - but a
+ * frame pulled out of it with ffmpeg does, and that frame is measured after the
+ * fact by a different path (see import/drop.js). Both have to land on the same
+ * arithmetic or the same clip would be a different size depending on which route
+ * discovered its shape.
+ */
+export function fitToBox(type, w, h) {
+  const box = defaultSize(type);
+  if (!(w > 0 && h > 0)) return box;
+  const area = box.w * box.h;
+  const ratio = w / h;
+  return { w: Math.round(Math.sqrt(area * ratio)), h: Math.round(Math.sqrt(area / ratio)) };
 }
 
 async function imageSize(file) {
@@ -276,6 +291,15 @@ const RENDERERS = {
     v.playsInline = true;
     v.draggable = false;
     v.addEventListener('loadedmetadata', () => adoptAspect(item, v.videoWidth, v.videoHeight), { once: true });
+    // A frame pulled out of the file at import, for a clip this browser cannot
+    // open at all - H.265 is the case, see firstFrame() in optimize/media.js.
+    // Set as the poster rather than drawn as a card cover, because a video *is*
+    // its picture: the card then shows the clip, full bleed and the right shape,
+    // instead of the black rectangle a refused codec leaves behind. It costs
+    // nothing on a clip the browser can play, since the first frame it decodes
+    // paints straight over the poster.
+    const poster = item.meta?.cover ? assetURL(item.meta.cover) : null;
+    if (poster) v.poster = poster;
     const url = item.asset && assetURL(item.asset.hash);
     // #t=0.1 pulls a real frame as the poster instead of a black rectangle.
     if (url) v.src = url + '#t=0.1';

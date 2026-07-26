@@ -107,6 +107,13 @@ function itemEntries(id, count, at) {
     // a picture, "put these back to their own size" means one thing for nine
     // cards as clearly as for one.
     { label: many ? `Reset ${count} sizes` : 'Reset size', action: () => cmds.resetSize() },
+    // The board's arrangement, applied to these and nowhere else. Only offered
+    // for a group, because one card has nothing to be arranged against - and it
+    // says "these" rather than "everything" because that is the difference:
+    // the selection is relaid about its own centre and the rest of the board
+    // does not move. The whole-board one is on the canvas menu.
+    { label: `Rearrange these ${count}`, hidden: !many,
+      action: () => cmds.rearrangeSelection() },
     { sep: true },
     { label: `Duplicate ${what}`, accel: 'Ctrl D', action: () => cmds.duplicate() },
     { label: 'Zoom to it', accel: 'dbl-click', action: () => cmds.zoomToSelection(), hidden: many },

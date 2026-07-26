@@ -41,48 +41,80 @@ export const MIN_SIZE = 48;
 export const MAX_SIZE = 20000;
 
 /**
- * How much of a cell a snapped item gives back, so that two of them side by side
- * have a seam between them instead of meeting.
+ * How much of a cell a snapped item gives back at *each* of its four sides, so
+ * that two of them side by side have a seam between them instead of meeting.
  *
  * A board laid exactly on the lattice is a board where every neighbour touches:
  * the cell boundary is one line, and an item on each side of it fills right up
  * to it, so two photographs read as one wide photograph with a crease. The fix
- * is not to move anything - positions stay on the lattice, which is the whole
- * point of snapping - but to leave a sliver of each cell unpainted.
+ * is not to move anything - the block of cells an item occupies is still chosen
+ * on the lattice, which is the whole point of snapping - but to leave a sliver
+ * of that block unpainted.
+ *
+ * Four sides rather than two, and that is the correction worth writing down.
+ * The seam used to be taken off the high edges alone: the whole of it, so the
+ * space *between* two neighbours came out the same, but an item sat flush
+ * against the lines on its left and bottom and short of them on its right and
+ * top. Two items in one row read correctly and everything else did not - a lone
+ * card was visibly off-centre in its cells, a row and the row above it were
+ * spaced differently from a column and the column beside it, and an item against
+ * the edge of a group had a margin on one side only. Halving the seam and
+ * putting it on every side costs nothing anywhere the old rule looked right and
+ * fixes it everywhere it did not.
  *
  * A fraction of the step rather than a fixed distance, because the step is not
  * fixed: it doubles and halves with the zoom and the user can set the base. At
- * 8% the seam is a shade under a fifth of the smallest gap between two cards a
- * layout would leave, which is small enough to read as a join rather than as
- * space, and it stays that way at every step size.
+ * 4% a side - so 8% between two neighbours, exactly what it was - the seam is a
+ * shade under a fifth of the smallest gap between two cards a layout would
+ * leave, which is small enough to read as a join rather than as space, and it
+ * stays that way at every step size.
  */
-export const CELL_GAP = 0.08;
+export const CELL_GAP = 0.04;
+
+/** The seam itself, in world units, for a given cell size. */
+export const cellInset = step => step * CELL_GAP;
 
 /**
- * A box laid on the lattice: low edges on lines, sides a whole number of cells
- * less the seam above.
+ * A low edge laid on the lattice: a grid line, plus the seam.
  *
- * The one place this arithmetic lives. Both callers need exactly it - state.js
- * when snapping is switched on and the whole board is laid out at once, and
- * canvas/input.js on every gesture that has to keep it that way - and they
+ * The offset is what makes the sides uniform, and it has to be applied by
+ * everything that puts an edge on the grid - the drag gesture and the arrow keys
+ * as well as the two callers of latticeBox() below - or an item dragged across a
+ * snapped board would come to rest half a seam off the one that was laid there.
+ */
+export const latticeLow = (v, step) => {
+  const inset = cellInset(step);
+  return Math.round((v - inset) / step) * step + inset;
+};
+
+/**
+ * A side laid on the lattice: a whole number of cells, less a seam at each end.
+ *
+ * Clamped, and a clamp can cost the box its whole number of cells. That is
+ * accepted rather than worked around: the limits are absolute and the lattice is
+ * a preference, and an item at either limit is far outside the range where
+ * sitting flush in a cell is what anybody is looking at.
+ */
+export const latticeSide = (v, step) => {
+  const gap = 2 * cellInset(step);
+  const cells = Math.max(Math.round((v + gap) / step), 1);
+  return Math.min(Math.max(cells * step - gap, MIN_SIZE), MAX_SIZE);
+};
+
+/**
+ * A box laid on the lattice, both halves at once.
+ *
+ * The one place this arithmetic is assembled. Both callers need exactly it -
+ * state.js when snapping is switched on and the whole board is laid out at once,
+ * and canvas/input.js on every gesture that has to keep it that way - and they
  * differ only in the step they pass: the base step for geometry that is being
  * stored, the on-screen step for something being dragged against the dots.
- *
- * Sizes are clamped, and a clamp can cost the box its whole number of cells.
- * That is accepted rather than worked around: the limits are absolute and the
- * lattice is a preference, and an item at either limit is far outside the range
- * where sitting flush in a cell is what anybody is looking at.
  */
 export function latticeBox(box, step) {
-  const gap = step * CELL_GAP;
-  const side = v => {
-    const cells = Math.max(Math.round((v + gap) / step), 1);
-    return Math.min(Math.max(cells * step - gap, MIN_SIZE), MAX_SIZE);
-  };
-  const w = side(box.w), h = side(box.h);
+  const w = latticeSide(box.w, step), h = latticeSide(box.h, step);
   return {
-    x: Math.round((box.x - box.w / 2) / step) * step + w / 2,
-    y: Math.round((box.y - box.h / 2) / step) * step + h / 2,
+    x: latticeLow(box.x - box.w / 2, step) + w / 2,
+    y: latticeLow(box.y - box.h / 2, step) + h / 2,
     w, h,
   };
 }

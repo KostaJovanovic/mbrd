@@ -32,6 +32,8 @@
 // skipped, the pictures and the sound still shrink, and the dialog says so
 // before anything starts.
 
+import { extOf } from '../util.js';
+
 /** Where the core lives, relative to the page. */
 const CORE_DIR = './assets/vendor/ffmpeg/';
 const CORE_JS = CORE_DIR + 'ffmpeg-core.js';
@@ -87,6 +89,84 @@ export async function loadMedia(say = () => {}) {
   }
   await ready;
   return (asset, kind) => encode(asset, kind);
+}
+
+/** The long edge of an extracted poster frame. A card, not a screening. */
+const FRAME_MAX_SIDE = 1280;
+
+/**
+ * The first frame of a clip this browser cannot open, as a picture it can.
+ *
+ * The case is H.265. A phone shoots HEVC by default and every desktop browser
+ * except Safari refuses to decode it, so the file arrives, is registered, is
+ * saved into the .mbrd - and shows on the board as a black rectangle with a
+ * play button that does nothing. The bytes are all there and none of them can
+ * be seen. Anything else the browser will not open lands here too - AV1 on an
+ * older build, ProRes, a raw stream - because the test that sends work this way
+ * is "did the browser manage to read it", not "which codec is this". That is
+ * both easier to be right about and the question that actually matters.
+ *
+ * A poster rather than a conversion, and that is the whole restraint of it. The
+ * clip is untouched: it stays exactly the file that was dropped, so it plays the
+ * day the browser learns to, it exports as itself, and Optimize can still turn
+ * it into something this machine can play if that is what somebody wants. What
+ * this buys is that the card looks like the thing it is in the meantime.
+ *
+ * Null whenever anything is not right - the core is not vendored, the file is
+ * not readable, the encoder is missing a format. The caller treats that as "no
+ * poster", which is the black rectangle it was already going to be.
+ */
+export async function firstFrame(file, say = () => {}) {
+  if (!(await mediaAvailable())) return null;
+  if (!ready) {
+    say(`Loading the media decoder (${MEDIA_MB} MB, once)…`);
+    ready = spawn();
+  }
+  await ready;
+
+  const ext = extOf(file.name);
+  const inName = 'in' + (ext ? '.' + ext : '');
+  // Two ways of writing a still, tried in order. mjpeg is the one worth having -
+  // a poster is a photograph and JPEG is a tenth the size - but a core can be
+  // built without that encoder, and png is in every one of them.
+  const attempts = [
+    { out: 'frame.jpg', type: 'image/jpeg', codec: 'mjpeg', extra: ['-q:v', '3'] },
+    { out: 'frame.png', type: 'image/png', codec: 'png', extra: [] },
+  ];
+
+  for (const attempt of attempts) {
+    // Read again per attempt rather than holding one copy: the bytes are
+    // *transferred* into the worker, not copied, so the buffer from the first
+    // attempt is detached by the time a second one would want it. Reading a file
+    // twice is cheaper than keeping forty megabytes alive to avoid it.
+    let bytes;
+    try {
+      bytes = new Uint8Array(await file.arrayBuffer());
+    } catch {
+      return null;
+    }
+    let res = null;
+    try {
+      res = await ask({
+        type: 'run',
+        inName,
+        out: attempt.out,
+        bytes,
+        argv: [
+          '-i', inName,
+          // One frame, no sound, no attached pictures - just the picture stream.
+          '-frames:v', '1', '-an', '-map', '0:v:0',
+          '-vf', `scale='min(${FRAME_MAX_SIDE},iw)':-2:flags=lanczos`,
+          '-c:v', attempt.codec, ...attempt.extra,
+          '-f', 'image2', attempt.out,
+        ],
+      });
+    } catch {
+      // A refused format is not a failure of the feature; try the next writer.
+    }
+    if (res?.bytes?.byteLength) return new Blob([res.bytes], { type: attempt.type });
+  }
+  return null;
 }
 
 function spawn() {

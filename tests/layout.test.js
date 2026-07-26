@@ -222,6 +222,99 @@ test('spacing widens the layout', () => {
   assert.ok(width(loose) > width(tight));
 });
 
+test('date puts undated items last, not in 1970', () => {
+  // A missing modification time is not a time of zero. Notes and pasted links
+  // have none, and sorting those to the front made the first row of a "By
+  // date" layout the things that have no date.
+  const src = [
+    item({ id: 'note' }),
+    item({ id: 'old', meta: { mtime: 1000 } }),
+    item({ id: 'new', meta: { mtime: 9000 } }),
+    item({ id: 'link' }),
+  ];
+  const out = arrange(src, { name: 'date', center: { x: 0, y: 0 }, spacing: 10 });
+  const at = id => out[src.findIndex(i => i.id === id)];
+  // Reading order runs down the page and +y is up, so later means lower.
+  const after = (a, b) => at(a).y < at(b).y || (at(a).y === at(b).y && at(a).x > at(b).x);
+  assert.ok(after('note', 'new'), 'an undated item sorted ahead of a dated one');
+  assert.ok(after('link', 'new'), 'an undated item sorted ahead of a dated one');
+  assert.ok(after('new', 'old'), 'the dated pair lost its order');
+});
+
+test('date breaks a tie on the name, naturally', () => {
+  // One camera burst, one second, ten frames: without this they come out in
+  // whatever order the file system listed them.
+  const src = ['IMG_10', 'IMG_2', 'IMG_1'].map(name =>
+    item({ id: name, name, meta: { mtime: 5000 } }));
+  const out = arrange(src, { name: 'date', center: { x: 0, y: 0 }, spacing: 10 });
+  const at = name => out[src.findIndex(i => i.name === name)];
+  assert.ok(at('IMG_1').x < at('IMG_2').x, 'IMG_1 should read before IMG_2');
+  assert.ok(at('IMG_2').x < at('IMG_10').x, 'IMG_2 should read before IMG_10 - 2 is not 20');
+});
+
+// ---------------------------------------------------------------------------
+// Room
+//
+// Two properties that used to be neither held nor tested. No layout may return
+// overlapping cards, and one big card must cost the board its own size rather
+// than multiplying every cell on it. `free` is the only exception, and only
+// because the positions it starts from are the ones you made: two cards you
+// deliberately stacked stay stacked, and there is nothing to make bigger.
+// ---------------------------------------------------------------------------
+
+/** A mixed board: notes, cards, one panorama, one poster. */
+const mixed = n => Array.from({ length: n }, (_, i) => item({
+  id: `m${i}`,
+  type: ['image', 'note', 'video', 'audio'][i % 4],
+  name: `m${i}`,
+  meta: { mtime: 1000 + i * 60_000 },
+  ...(i === 3 ? { w: 1200, h: 260 }        // panorama
+    : i === 7 ? { w: 300, h: 900 }         // poster
+    : i % 4 === 1 ? { w: 120, h: 120 }     // note
+    : { w: 320, h: 240 }),
+}));
+
+const placing = named.filter(n => n !== 'free');
+
+for (const name of placing) {
+  test(`${name} never leaves two cards closer than the spacing`, () => {
+    const gap = 24;
+    const src = mixed(23);
+    const out = arrange(src, { name, center: { x: 0, y: 0 }, spacing: gap });
+    for (let a = 0; a < src.length; a++) {
+      for (let b = a + 1; b < src.length; b++) {
+        // Boxes grown by half a gap each: overlapping those is the same
+        // statement as being closer than one gap apart.
+        const dx = Math.abs(out[a].x - out[b].x) - (src[a].w + src[b].w) / 2 - gap;
+        const dy = Math.abs(out[a].y - out[b].y) - (src[a].h + src[b].h) / 2 - gap;
+        assert.ok(dx >= -1e-9 || dy >= -1e-9,
+          `${name}: ${src[a].id} and ${src[b].id} are ${(-Math.max(dx, dy)).toFixed(1)} too close`);
+      }
+    }
+  });
+
+  test(`${name} charges a big card for itself, not for the whole board`, () => {
+    // The failure this catches is a layout that gives every item a cell the
+    // size of the largest one: drop a poster on a board of notes and the notes
+    // spread out across a poster's worth of room each.
+    const small = Array.from({ length: 25 }, (_, i) => item({ id: `s${i}`, w: 100, h: 80 }));
+    const giant = item({ id: 'giant', w: 1200, h: 900 });
+    const area = out => {
+      const w = Math.max(...out.map(p => p.x)) - Math.min(...out.map(p => p.x));
+      const h = Math.max(...out.map(p => p.y)) - Math.min(...out.map(p => p.y));
+      return (w + 100) * (h + 80);   // outer edges, roughly
+    };
+    const opts = { name, center: { x: 0, y: 0 }, spacing: 24 };
+    const without = area(arrange(small, opts));
+    const with_ = area(arrange([...small.slice(0, 24), giant], opts));
+    // Generous, because a lattice pays for a wide card across its whole column
+    // and a tall one down its whole row. What it rules out is the old cost:
+    // twenty-five cells of 1200x900, which is nearly ninety times the board.
+    assert.ok(with_ < (without + 1200 * 900) * 4,
+      `${name}: one big card took the board from ${(without / 1e6).toFixed(2)}M to ${(with_ / 1e6).toFixed(2)}M`);
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Grid quantisation
 // ---------------------------------------------------------------------------

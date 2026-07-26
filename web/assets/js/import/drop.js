@@ -8,7 +8,7 @@
 import { toast, busy, extOf } from '../util.js';
 import { board, bus, addItems, select, setItemCover, NOTE_MAX } from '../state.js';
 import { addFile } from '../storage/assets.js';
-import { classify, defaultSize, measureSize, linkURL, linkDraft } from '../canvas/renderers.js';
+import { classify, defaultSize, measureSize, fitToBox, linkURL, linkDraft } from '../canvas/renderers.js';
 import { iframeURL, embedFor } from '../canvas/embed.js';
 import { arrange } from '../arrange/arrangements.js';
 import { coverArt, mayHaveArt } from './artwork.js';
@@ -352,6 +352,37 @@ export async function thumbFor(blob) {
   return addFile(new File([small.blob], 'thumb.webp', { type: 'image/webp' }));
 }
 
+/**
+ * A still out of a clip this browser refused, registered as an asset.
+ *
+ * Dynamically imported, and that is deliberate rather than incidental. The
+ * decoder behind it is thirty megabytes of vendored ffmpeg that most boards
+ * never need, and the module here is only reached by a file the browser has
+ * already failed to open - so an import of ordinary MP4s never touches it, and
+ * a machine without the core vendored answers "no" from a HEAD request before
+ * anything is loaded.
+ *
+ * Everything about this is allowed to fail. No decoder, no frame, a format the
+ * encoder will not write - all of them come back null, and null means the clip
+ * is exactly what it was before: a video card with nothing to show yet, which
+ * is what every unplayable clip looked like until now.
+ */
+async function posterFor(file) {
+  try {
+    const { firstFrame } = await import('../optimize/media.js');
+    const frame = await firstFrame(file, msg => toast(msg));
+    if (!frame) return null;
+    const named = new File([frame], 'poster.' + (frame.type === 'image/png' ? 'png' : 'jpg'),
+                           { type: frame.type });
+    // Measured as a picture, which it now is, and hashed like any other asset -
+    // so two copies of the same clip share one poster.
+    const [shape, hash] = await Promise.all([measureSize('image', named), addFile(named)]);
+    return { hash, w: shape.measured ? shape.w : 0, h: shape.measured ? shape.h : 0 };
+  } catch {
+    return null;
+  }
+}
+
 /** One file, classified, measured, hashed and turned into a draft item. */
 async function prepareFile(file) {
   let type = classify(file);
@@ -366,6 +397,17 @@ async function prepareFile(file) {
     size = defaultSize('generic');
   }
   const hash = await addFile(file);
+  // A clip this browser will not open - an iPhone's H.265, most of the time -
+  // gets a still pulled out of it instead of being left as a black rectangle.
+  // See posterFor() below, and firstFrame() in optimize/media.js.
+  const poster = type === 'video' && !size.decodable ? await posterFor(file) : null;
+  if (poster) {
+    // The frame knows the shape of the clip, which is the one thing the failed
+    // measurement above could not find out. Without this an upright phone video
+    // would sit on the board as a landscape box with an upright picture letter-
+    // boxed inside it.
+    if (poster.w && poster.h) size = { ...size, ...fitToBox('video', poster.w, poster.h), measured: true };
+  }
   // An audio file usually carries its own picture, and the card has a slot for
   // one already - see setItemCover() in state.js. Registered as an ordinary
   // asset, so an album's twelve tracks embedding the identical cover cost one
@@ -398,7 +440,12 @@ async function prepareFile(file) {
     h: size.h,
     asset: { hash, embedded: true },
     meta: {
-      ...(cover ? { cover } : {}),
+      // One slot, two sources. An audio card wears the picture out of its own
+      // tags; a video that cannot be played wears a frame out of itself. Both
+      // are "the picture this item shows", and the renderers already know what
+      // to do with one - a card draws it in the corner, a video makes it the
+      // poster.
+      ...(cover ? { cover } : poster?.hash ? { cover: poster.hash } : {}),
       ...(thumb ? { thumb } : {}),
       mime: file.type || '',
       ext: extOf(file.name),

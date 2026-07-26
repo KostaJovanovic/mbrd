@@ -35,6 +35,9 @@ import { segmentMeetsRect } from '../geometry.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
+/** A relationship web belongs to the spatial Desktop arrangement only. */
+export const webVisible = (mode = board.layoutMode) => mode !== 'mobile';
+
 /**
  * How far outside the viewport a thread is still drawn, in *screen* px.
  *
@@ -176,6 +179,7 @@ export function initWeb(worldEl, viewport) {
   bus.on('items', requestBuild);
   bus.on('geom', requestBuild);
   bus.on('board:load', requestBuild);
+  bus.on('layout', requestBuild);
   // Panning and zooming change which threads are worth drawing and nothing
   // else, so they ask for a paint and never for a build.
   if (vp) vp.onChange(viewMoved);
@@ -249,6 +253,25 @@ function centres() {
  */
 function build() {
   if (!svg) return;
+  // Mobile is a reading-order feed, not a spatial map. Do not merely hide its
+  // web: release the settled/fading geometry so a large board spends no time
+  // rebuilding connections that this layout never shows.
+  if (!webVisible()) {
+    for (const entry of animating.values()) {
+      clearTimeout(entry.timer);
+      entry.el.remove();
+    }
+    animating.clear();
+    settled.clear();
+    lastSeg.clear();
+    builtPts = [];
+    settledBox = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+    paintedRect = null;
+    lastBox = '';
+    path.setAttribute('d', '');
+    svg.style.display = 'none';
+    return;
+  }
   const pts = builtPts = centres();
   // The box these points describe, worked out here rather than in paint().
   //
@@ -351,6 +374,11 @@ const within = (inner, outer) =>
  */
 function paint(forced = false) {
   if (!svg) return;
+  if (!webVisible()) {
+    svg.style.display = 'none';
+    paintedRect = null;
+    return;
+  }
   // Nothing to draw, or too far out for it to mean anything. Both answers are
   // the same answer, and taking it here means the whole `d` string below is
   // never built at the zoom where it would be longest.
