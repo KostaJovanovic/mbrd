@@ -13,7 +13,7 @@ import { defaultUpAxis, meshKind } from './import/mesh.js';
 import { Viewport, MIN_ZOOM, MAX_ZOOM, zoomMs, travelMs } from './canvas/viewport.js';
 import { paintGrid, resetGridInk } from './canvas/grid.js';
 import { initItems, resetItems } from './canvas/items.js';
-import { resetModels } from './canvas/model.js';
+import { isTurning, resetModels, rotateModel } from './canvas/model.js';
 import { initWeb } from './canvas/web.js';
 import { initStills } from './canvas/stills.js';
 import { initInput } from './canvas/input.js';
@@ -118,6 +118,18 @@ const cmds = {
     setItemUpAxis(id, now === 'z' ? 'y' : 'z');
     toast(now === 'z' ? 'Read as Y-up' : 'Read as Z-up');
   },
+  // Every model card is a photograph of itself until this is asked for - see
+  // canvas/model.js. Offered on any model, including one that has never been
+  // photographed and is already live: the entry is how somebody learns the card
+  // can be turned at all, and asking for it while it is already turning is a
+  // no-op rather than a wrong answer. Not offered on a card that is mid-turn,
+  // which would be a menu item that does nothing visible.
+  canRotateModel: id => byId(id)?.type === 'model' && !isTurning(id),
+  rotateModel: id => {
+    rotateModel(id);
+    toast('Drag the model to turn it. It settles when you click away.');
+  },
+
   // On the command surface as well as on Ctrl+K, because a keyboard shortcut
   // nothing mentions is a feature only the person who wrote it has.
   find: () => openSearch(),

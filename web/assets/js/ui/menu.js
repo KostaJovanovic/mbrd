@@ -76,6 +76,9 @@ function itemEntries(id, count, at) {
   const coverable = !many && cmds.canCoverItem(id);
   const covered = coverable && cmds.itemHasCover(id);
   const flippable = !many && cmds.canFlipUpAxis(id);
+  // A model card is a photograph of a model until somebody asks for the model.
+  // Single-item for the same reason as the rest: you turn one thing over.
+  const turnable = !many && cmds.canRotateModel(id);
   return [
     // First, and only on a note: right-clicking the one item type you can
     // actually type into should offer to type into it before anything else.
@@ -93,7 +96,10 @@ function itemEntries(id, count, at) {
     // Z-up scan and a Y-up export at the same time.
     { label: 'Turn it upright', hidden: !flippable,
       action: () => cmds.flipUpAxis(id) },
-    { sep: true, hidden: !editable && !renamable && !coverable && !flippable },
+    // Above the upright toggle would put the rare fix in front of the ordinary
+    // gesture; below it, this is the last thing on the model's own group.
+    { label: 'Rotate model', hidden: !turnable, action: () => cmds.rotateModel(id) },
+    { sep: true, hidden: !editable && !renamable && !coverable && !flippable && !turnable },
     { label: 'Bring to front', action: () => cmds.raise() },
     { label: 'Send to back', action: () => cmds.lower() },
     { sep: true },

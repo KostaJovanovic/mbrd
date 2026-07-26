@@ -269,6 +269,12 @@ Which changed four things:
   non-token fields carried through `clone()`. `derived` narrowed to what it
   actually is — provenance, read only by the palette menu deciding whether to
   drop two tokens or fourteen.
+
+  Stored inverted, since (later the same evening) the switch was made **on by
+  default**: `auto: false` means off, and absence means on. A board that has
+  never been near the setting has no field for it, and that has to mean the same
+  thing as one that was switched on — otherwise the default would only ever
+  apply to boards made after the day it changed.
 - **The three-picture floor went.** It existed because the feature fired unasked,
   and a whole interface turning over on one dropped file reads as a fault. Asked
   for by a switch, it *is* what was asked for, and refusing until the third

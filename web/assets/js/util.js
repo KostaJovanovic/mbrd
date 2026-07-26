@@ -142,8 +142,9 @@ export const isFamily = v =>
   typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9 _-]{0,39}$/.test(v);
 
 /**
- * Every content id an item depends on: its own bytes, and the picture it was
- * given (see setItemCover in state.js).
+ * Every content id an item depends on: its own bytes, the picture it was given
+ * (see setItemCover in state.js), and - for a model - the still that stands in
+ * for it until somebody asks to turn it over (see canvas/model.js).
  *
  * Here beside isHash for the same reason isHash is here - the packer, the
  * autosave sweep, that sweep's error message and the session restore all need
@@ -159,7 +160,7 @@ export const isFamily = v =>
  * hole instead.
  */
 export const itemHashes = item =>
-  [item?.asset?.hash, item?.meta?.cover].filter(Boolean);
+  [item?.asset?.hash, item?.meta?.cover, item?.meta?.shot].filter(Boolean);
 
 /** SHA-256 hex of an ArrayBuffer/Uint8Array - the content id for assets. */
 export async function sha256(buf) {

@@ -160,22 +160,16 @@ function build(item) {
   body.append(buildContent(item));
   el.append(body);
 
-  // Inside .item-body, not .item: the body is what clips to the rounded
-  // corners now that .item lets the resize handles hang outside it, and a
-  // caption plate across the foot has to be clipped by that same curve.
-  if (item.name) body.append(nameplate(item));
-
-  // Every card's way into its own menu. Right-click is otherwise the only one,
-  // and a touchscreen does not have a right-click - so the actions on an item
-  // were unreachable on a phone entirely.
+  // The strip across the foot: the caption, and the handle that opens this
+  // item's menu. One element holding both, because they share an edge and two
+  // absolutely positioned boxes guessing at each other's height is how you get
+  // a one-pixel step between them - which is exactly what the first attempt at
+  // this looked like.
   //
-  // Three dots drawn rather than typed: the glyph is not centred in its line
-  // box, so a "…" sits low and drifts as the type scales with the whimsy axis.
-  //
-  // On .item and not .item-body, which matters: re-rendering an item calls
-  // replaceChildren() on the body, so a handle put in there would survive until
-  // the first time the card redrew itself and then quietly vanish.
-  el.append(menuHandle());
+  // On .item rather than in .item-body, and that is load-bearing: re-rendering
+  // an item calls replaceChildren() on the body, so a bar built in there would
+  // survive until the first redraw and then quietly vanish.
+  el.append(bottomBar(item));
 
   // Eight handles: four corners, and four edges for resizing one axis alone.
   // The single-letter ones are the edges (see .grip-edge in app.css).
@@ -190,6 +184,21 @@ function build(item) {
   place(el, item);
   el.classList.toggle('is-selected', selection.has(item.id));
   return el;
+}
+
+/**
+ * The strip across the foot of a card: caption on the left, handle on the right.
+ *
+ * Always built, for every type. Which types show a *caption* is still a
+ * question app.css answers - a sticky note has a name nothing draws - but the
+ * handle is on every item, because right-click is otherwise the only way to an
+ * item's actions and a touchscreen has no right-click.
+ */
+function bottomBar(item) {
+  const bar = document.createElement('div');
+  bar.className = 'item-bar';
+  bar.append(nameplate(item), menuHandle());
+  return bar;
 }
 
 /** The three-dot handle. A real <button>, so it is tabbable and not draggable. */
@@ -214,11 +223,19 @@ function menuHandle() {
   return btn;
 }
 
-/** The caption plate itself. Built in one place because a rename rebuilds it. */
+/**
+ * The caption itself. Built in one place because a rename rebuilds it.
+ *
+ * Always present, empty when there is no name - so the bar has something to
+ * lay out against, and [hidden] rather than absence is what makes the strip
+ * shrink to just the handle. A rename can then fill it without the bar being
+ * rebuilt around it.
+ */
 function nameplate(item) {
   const label = document.createElement('div');
   label.className = 'item-label';
-  label.textContent = item.name;
+  label.textContent = item.name || '';
+  label.hidden = !item.name;
   return label;
 }
 
@@ -276,12 +293,16 @@ function rebuild(id) {
   // <audio> registered under the volume control and holding its stream, once
   // per rename.
   releasePlayers(body);
-  // The caption plate is a child of .item-body too, so replaceChildren takes it
-  // with the content and it has to be put back rather than patched. That is
-  // also what lets a rename add or remove a plate: it exists exactly when there
-  // is a name to put on it, which is the same rule build() applies.
   body.replaceChildren(buildContent(item));
-  if (item.name) body.append(nameplate(item));
+  // The bar is a sibling of the body, so replaceChildren above does not touch
+  // it - only the caption inside it needs the new name. Patched rather than
+  // rebuilt so the handle beside it keeps its identity, and with it any focus
+  // the keyboard had put there.
+  const label = el.querySelector('.item-bar > .item-label');
+  if (label) {
+    label.textContent = item.name || '';
+    label.hidden = !item.name;
+  }
 }
 
 /**
@@ -322,15 +343,14 @@ export function editItemName(id) {
   const body = el?.querySelector('.item-body');
   if (!body) return;
 
-  let field = el.querySelector('.card-name') || el.querySelector('.item-label');
-  // A picture that has lost its name has no plate to type on, so one is
-  // conjured for the duration of the edit and taken away again if nothing
-  // comes of it.
-  const conjured = !field;
-  if (conjured) {
-    field = nameplate(item);
-    body.append(field);
-  }
+  const field = el.querySelector('.card-name') || el.querySelector('.item-label');
+  if (!field) return;
+  // A picture that has lost its name still has its caption element - the bar
+  // always builds one - but it is hidden, and typing into a hidden element is
+  // typing into nothing. Shown for the length of the edit, and hidden again
+  // below if nothing came of it.
+  const wasHidden = field.hidden;
+  field.hidden = false;
 
   el.classList.add('is-editing');
   // plaintext-only keeps pasted markup out of a name; not every engine has it.
@@ -366,7 +386,7 @@ export function editItemName(id) {
     // A name that comes back unchanged commits nothing and so fires no rebuild,
     // and without this the half-finished text would simply stay on screen.
     field.textContent = item.name;
-    if (conjured && !item.name) field.remove();
+    if (wasHidden && !item.name) field.hidden = true;
     // Escape abandons, and must not travel through renameItem() as an empty
     // string: empty means "put the original filename back", which is an edit of
     // its own and the opposite of cancelling one.

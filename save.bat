@@ -102,13 +102,7 @@ powershell -NoProfile -Command "(Get-Content 'web/sw.js' -Encoding UTF8) -replac
 
 echo [git]  stage
 git add .
-echo.
-echo [git]  what is about to be committed on %BRANCH%:
-git status --short
-echo.
-git diff --cached --stat
-echo.
-echo        Everything above is staged. Close this window to abort.
+git status
 
 echo.
 set /p MSG=commit message [v%VERLABEL%]:

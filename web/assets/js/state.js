@@ -962,6 +962,38 @@ export function setItemUpAxis(id, axis) {
   commit('Turn model upright', () => write(next), () => write(prev));
 }
 
+/**
+ * The still a model card shows instead of running WebGL, and the angle it was
+ * taken from.
+ *
+ * Deliberately *not* undoable, which is the one decision here worth arguing.
+ * Everything else that writes to `meta` is a thing somebody did; this is the
+ * app putting the kettle on. Taking a fresh photograph of a model you just
+ * turned is not an edit to step back through, and if it were, Ctrl+Z would walk
+ * you backwards through a stack of pictures of the same object rather than
+ * through the work you were doing.
+ *
+ * It still marks the board dirty, because the bytes it points at have to be
+ * saved or the next open has a card pointing at nothing.
+ */
+export function setModelShot(id, { hash, ink, view } = {}) {
+  const it = byId(id);
+  if (!it || it.type !== 'model') return;
+  const meta = { ...it.meta };
+  if (isHash(hash)) meta.shot = hash; else delete meta.shot;
+  // What the model was shaded in when the picture was taken. A model with no
+  // colours of its own is drawn in the board's ink, so a change of palette
+  // leaves every still a shade out of date - and this is what lets the card
+  // notice. Absent means the model brought its own colours and never goes stale.
+  if (typeof ink === 'string' && ink) meta.shotInk = ink; else delete meta.shotInk;
+  if (view && typeof view === 'object') {
+    meta.view = { yaw: +view.yaw || 0, pitch: +view.pitch || 0, zoom: +view.zoom || 1 };
+  }
+  it.meta = meta;
+  markDirty();
+  bus.emit('item', id);
+}
+
 // ---------------------------------------------------------------------------
 // Selection
 // ---------------------------------------------------------------------------

@@ -19,8 +19,34 @@
 // something asks it to - which for a still model on a moodboard is what you
 // want anyway.
 
-import { allAssets, getAsset, readText } from '../storage/assets.js';
+import { addFile, allAssets, assetURL, getAsset, readText } from '../storage/assets.js';
 import { applyMaterials, meshKind, parseMesh, parseMTL, MeshError } from '../import/mesh.js';
+import { board, bus, byId, selection, setModelShot } from '../state.js';
+
+/**
+ * A model card is a photograph until you ask it to be a model.
+ *
+ * Every card holding live geometry costs a blit from the shared context on
+ * every resize, every palette change and every redraw, and a board is mostly
+ * models sitting still. So a card that is not being turned shows a still - a
+ * WebP taken the last time anybody moved it - and the geometry is only loaded,
+ * parsed and drawn for the one card you asked to rotate.
+ *
+ * Held as a runtime Set rather than a field on the item, deliberately: which
+ * card you happen to be turning right now is not a property of the board, and
+ * saving it would mean a .mbrd could arrive with a card already spinning.
+ */
+const turning = new Set();
+
+/** The still's long edge, in device pixels. */
+const SHOT_MAX = 450;
+
+/**
+ * How much bigger than its still a card has to be drawn before the still stops
+ * being good enough. Below this it is indistinguishable; above it, the card
+ * goes back to live geometry rather than showing somebody a soft picture.
+ */
+const SHOT_SLACK = 1.35;
 
 /** The shared context, built on first use and never torn down. */
 let gl = null;
@@ -176,6 +202,25 @@ export function buildModelCard(item) {
   const card = document.createElement('div');
   card.className = 'card card-model';
 
+  // The cheap path, and the one nearly every card takes: a picture of the
+  // model, taken the last time it was turned. No geometry parsed, no context
+  // touched, no redraw on resize - it is an <img>, and the browser has been
+  // scaling those well for thirty years.
+  const still = stillFor(item);
+  if (still) {
+    card.classList.add('is-loaded', 'is-still');
+    const img = document.createElement('img');
+    img.className = 'model-still';
+    img.src = still;
+    img.alt = item.name || 'model';
+    img.draggable = false;
+    const name = document.createElement('div');
+    name.className = 'card-name';
+    name.textContent = item.name || 'model';
+    card.append(img, name);
+    return card;
+  }
+
   const stage = document.createElement('canvas');
   stage.className = 'model-stage';
   // The colour the model is shaded in, taken from the palette rather than
@@ -194,7 +239,10 @@ export function buildModelCard(item) {
 
   card.append(stage, note, name);
 
-  const view = { yaw: 0.6, pitch: 0.5, zoom: 1 };
+  // One view object per item, shared with orbit() and with the snapshot below,
+  // so the picture is taken from the angle that is actually on screen rather
+  // than from whatever was last written to the item.
+  const view = liveView(item);
   let mesh = null;
 
   const paint = () => {
@@ -214,6 +262,11 @@ export function buildModelCard(item) {
     note.remove();
     card.classList.add('is-loaded');
     paint();
+    // A model nobody has asked to turn gets its photograph taken as soon as it
+    // is on screen, and the card becomes a still. That is what makes this the
+    // one-off cost it is meant to be: without it a board of models that have
+    // never been rotated stays a board of live WebGL for ever.
+    if (!turning.has(item.id)) takeShot(item.id).catch(() => {});
   }).catch(err => {
     note.textContent = err instanceof MeshError ? err.message : 'This model could not be read';
     note.classList.add('is-error');
@@ -295,7 +348,182 @@ async function paint(mesh) {
 const MTL_MAX = 256 * 1024;
 
 /** Drop every cached mesh - the board has been replaced. */
-export function resetModels() { meshes.clear(); }
+export function resetModels() {
+  meshes.clear();
+  turning.clear();
+  views.clear();
+}
+
+// ---------------------------------------------------------------------------
+// The still
+// ---------------------------------------------------------------------------
+
+/** id -> the live view object, shared between the card and the snapshot. */
+const views = new Map();
+
+const DEFAULT_VIEW = { yaw: 0.6, pitch: 0.5, zoom: 1 };
+
+/**
+ * The angle this model is being looked at, as one object per item.
+ *
+ * Seeded from what the board remembers and then mutated in place by orbit(),
+ * which is what lets takeShot() photograph the angle actually on screen rather
+ * than the one last written down.
+ */
+function liveView(item) {
+  const held = views.get(item.id);
+  if (held) return held;
+  const m = item.meta?.view;
+  const view = m && typeof m === 'object'
+    ? { yaw: +m.yaw || 0, pitch: +m.pitch || 0, zoom: +m.zoom || 1 }
+    : { ...DEFAULT_VIEW };
+  views.set(item.id, view);
+  return view;
+}
+
+/**
+ * The URL of the still to show for this item, or null to draw it live.
+ *
+ * Null for four different reasons, and each one is a case that would otherwise
+ * show somebody the wrong picture: the card is being turned, there is no still
+ * yet, the bytes have gone, or the palette has moved since it was taken.
+ */
+function stillFor(item) {
+  if (turning.has(item.id)) return null;
+  if (outgrewStill(item)) return null;
+  const hash = item.meta?.shot;
+  if (!hash) return null;
+  // A model with no colours of its own is drawn in the board's ink, so a change
+  // of palette leaves its photograph a shade out of date. Models that brought
+  // their own colours carry no shotInk and never go stale this way.
+  const ink = item.meta.shotInk;
+  if (ink && ink !== boardInk()) return null;
+  return assetURL(hash);
+}
+
+/**
+ * A card dragged so much bigger than its still that the picture would show.
+ *
+ * Measured against the item's own size in world units and not against what is
+ * on screen, on purpose: zoom does not rebuild cards, so a rule that read the
+ * zoom would be answered once at mount and then be wrong for the rest of the
+ * session - and a card that flipped between a photograph and live geometry as
+ * you scrolled the wheel would be worse than either.
+ *
+ * The same test guards the photographing below, which is what stops the two
+ * from arguing: a card this size is never given a still it would refuse, and a
+ * shot is never taken that nothing would show.
+ */
+const outgrewStill = item =>
+  Math.max(+item.w || 0, +item.h || 0) > SHOT_MAX * SHOT_SLACK;
+
+/**
+ * The colour an uncoloured model is shaded in, resolved to plain rgb().
+ *
+ * Read off a probe rather than off the root's custom property, because
+ * getPropertyValue hands back whatever the token literally says - a color-mix,
+ * an oklch, an inline override - and none of those compare equal across a
+ * palette change that lands on the same colour. `color` is resolved by the
+ * engine before getComputedStyle sees it.
+ */
+function boardInk() {
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:absolute;visibility:hidden;color:var(--ink-2)';
+  document.body.append(probe);
+  const ink = getComputedStyle(probe).color;
+  probe.remove();
+  return ink;
+}
+
+/**
+ * Turn this model over by hand. The card swaps to live geometry until it is
+ * deselected, and then photographs itself again.
+ */
+export function rotateModel(id) {
+  const it = byId(id);
+  if (!it || it.type !== 'model') return;
+  turning.add(id);
+  bus.emit('item', id);
+}
+
+export const isTurning = id => turning.has(id);
+
+/**
+ * Photograph a model as it currently sits.
+ *
+ * At most SHOT_MAX on the long edge, in WebP - which is the whole point of the
+ * exercise: a card showing a 40KB picture costs nothing to keep on screen,
+ * where a card holding geometry costs a blit from the one shared context every
+ * time anything moves.
+ *
+ * Silent on failure. A model that cannot be photographed - no WebGL, a mesh
+ * that will not parse, a browser without WebP - simply keeps drawing itself
+ * live, which is what it did before any of this existed.
+ */
+async function takeShot(id) {
+  const item = byId(id);
+  if (!item || item.type !== 'model') return false;
+  // Nothing would show it - see outgrewStill(). Encoding a WebP for a card that
+  // is going to draw itself live anyway is the one cost this whole file exists
+  // to avoid paying.
+  if (outgrewStill(item)) return false;
+  const mesh = await load(item);
+
+  // The card's own proportions, so the still drops straight into the same box
+  // without letterboxing. Falls back to square for an item with no size yet.
+  const aspect = (+item.w > 0 && +item.h > 0) ? item.w / item.h : 1;
+  const w = Math.max(1, Math.round(aspect >= 1 ? SHOT_MAX : SHOT_MAX * aspect));
+  const h = Math.max(1, Math.round(aspect >= 1 ? SHOT_MAX / aspect : SHOT_MAX));
+
+  const ink = boardInk();
+  const view = liveView(item);
+  if (!renderShared(mesh, view, w, h, ink)) return false;
+
+  // Copied off the shared canvas rather than encoded from it: that one is the
+  // WebGL drawing buffer and the next card to draw will overwrite it, so the
+  // bytes have to be taken now.
+  const flat = new OffscreenCanvas(w, h);
+  flat.getContext('2d').drawImage(glCanvas, 0, 0, w, h, 0, 0, w, h);
+  const blob = await flat.convertToBlob({ type: 'image/webp', quality: 0.9 });
+  if (!blob || !/webp/.test(blob.type)) return false;
+
+  const hash = await addFile(new File([blob], `${id}-still.webp`, { type: 'image/webp' }));
+  setModelShot(id, { hash, ink: mesh.colors ? '' : ink, view });
+  return true;
+}
+
+/**
+ * Put the camera down when the card is no longer selected.
+ *
+ * Deselection is the end of the gesture: you asked to turn it, you turned it,
+ * you looked away. Taking the picture on every drag instead would encode a
+ * WebP on every frame.
+ */
+bus.on('selection', () => {
+  for (const id of [...turning]) {
+    if (selection.has(id)) continue;
+    turning.delete(id);
+    takeShot(id).catch(() => {})
+      // Whether or not the photograph worked, the card has to come back - it is
+      // showing live geometry because this set said so.
+      .finally(() => bus.emit('item', id));
+  }
+});
+
+/**
+ * A palette change makes every still of an uncoloured model a shade wrong.
+ *
+ * Not re-photographed here, deliberately - that would parse and draw every
+ * model on the board the moment somebody nudged a colour slider. stillFor()
+ * simply stops offering the stale one, the card falls back to live geometry,
+ * and the load path photographs it again on its way past.
+ */
+bus.on('settings', key => {
+  if (key !== 'appearance') return;
+  for (const it of board.items) {
+    if (it.type === 'model' && it.meta?.shotInk) bus.emit('item', it.id);
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Turning it over

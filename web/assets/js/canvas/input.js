@@ -201,8 +201,15 @@ export function initInput(vp, cmds) {
     const it = byId(id);
     if (!it) return;
     const before = snapshotGeom([id]);
+    // The card being resized, so its corner marks can stay swollen for the
+    // length of the drag. Hover alone will not do it: the pointer is captured by
+    // #viewport the moment this starts, and it leaves the handle behind as soon
+    // as the corner moves - so the mark would thin out under a hand that is
+    // still dragging it.
+    const node = e.target instanceof Element ? e.target.closest('.item') : null;
+    node?.classList.add('is-resizing');
     g = {
-      kind: 'resize', id, corner, before,
+      kind: 'resize', id, corner, before, node,
       // Resizing a note changes how much of it is over what it is lying on, so
       // it is as much a reason to ask again as moving it is.
       driven: [id],
@@ -434,6 +441,7 @@ export function initInput(vp, cmds) {
     if (g.kind === 'marquee') marquee.hidden = true;
     if (g.kind === 'move' && g.moved) commitGeom('Move', g.before, g.driven);
     if (g.kind === 'resize') commitGeom('Resize', g.before, g.driven);
+    g.node?.classList.remove('is-resizing');
     el.classList.remove('is-panning');
     g = null;
     syncItems();
@@ -445,6 +453,7 @@ export function initInput(vp, cmds) {
     if (g.kind === 'move' && g.moved) commitGeom('Move', g.before, g.driven);
     if (g.kind === 'resize') commitGeom('Resize', g.before, g.driven);
     if (g.kind === 'marquee') marquee.hidden = true;
+    g.node?.classList.remove('is-resizing');
     el.classList.remove('is-panning');
     g = null;
   }
