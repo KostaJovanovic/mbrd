@@ -231,7 +231,113 @@
      axis as the interface's - not in a JS constant that ignores it. */
   --dur-zoom:   190ms;
   --dur-travel: 400ms;
+  /* How long a change of palette takes. Longer than anything else here on
+     purpose: this is the whole surface changing colour at once, and at
+     --dur-base it reads as a flicker rather than as a change. */
+  --dur-palette: 700ms;
 }
+
+/* =========================================================
+   1b. Fading between palettes.
+
+   A custom property is a string as far as the engine is concerned, so it
+   cannot be interpolated: swapping --paper is a jump, and thirteen of them
+   jumping together is the board blinking. @property gives the engine the one
+   thing it was missing - that these hold *colours* - and a colour is something
+   it knows how to travel through. The transition then lives on :root, where
+   the values are written, and everything that reads them through var() comes
+   along for free, including the color-mix() tints in the notes and --danger,
+   which is left unregistered on purpose so that it keeps re-resolving against
+   an --ink that is now moving. The board is a canvas and cannot follow a CSS
+   transition at all: followFade() in ui/appearance.js repaints it for the
+   length of this duration.
+
+   Every initial-value here is Papyrus's own, which is what renders before any
+   script runs. They are never the value in use - :root sets all of these
+   unconditionally, three lines up - but a registered property must declare one,
+   and if it is ever seen it should be the default look rather than white.
+   ========================================================= */
+
+@property --paper      { syntax: "<color>"; inherits: true; initial-value: #fbf8f1; }
+@property --paper-2    { syntax: "<color>"; inherits: true; initial-value: #f4efe4; }
+@property --paper-3    { syntax: "<color>"; inherits: true; initial-value: #ebe3d4; }
+@property --paper-card { syntax: "<color>"; inherits: true; initial-value: #fffdf8; }
+@property --ink        { syntax: "<color>"; inherits: true; initial-value: #372a1d; }
+@property --ink-2      { syntax: "<color>"; inherits: true; initial-value: #6f5b45; }
+@property --ink-3      { syntax: "<color>"; inherits: true; initial-value: #9a866c; }
+@property --rule       { syntax: "<color>"; inherits: true; initial-value: #e6dcc8; }
+@property --rule-2     { syntax: "<color>"; inherits: true; initial-value: #cdbfa2; }
+@property --accent     { syntax: "<color>"; inherits: true; initial-value: #c25c2b; }
+@property --accent-warm{ syntax: "<color>"; inherits: true; initial-value: #e0983f; }
+@property --accent-deep{ syntax: "<color>"; inherits: true; initial-value: #8d3c17; }
+@property --accent-fg  { syntax: "<color>"; inherits: true; initial-value: #fdfcf9; }
+@property --leafy      { syntax: "<color>"; inherits: true; initial-value: #75855f; }
+
+/* Not on the first paint: an element has no before-change style the first time
+   it is rendered, so nothing fades in from the initial values above - the board
+   arrives already dressed and only *changes* travel. */
+@media (prefers-reduced-motion: no-preference) {
+  :root {
+    transition:
+      --paper      var(--dur-palette) var(--ease),
+      --paper-2    var(--dur-palette) var(--ease),
+      --paper-3    var(--dur-palette) var(--ease),
+      --paper-card var(--dur-palette) var(--ease),
+      --ink        var(--dur-palette) var(--ease),
+      --ink-2      var(--dur-palette) var(--ease),
+      --ink-3      var(--dur-palette) var(--ease),
+      --rule       var(--dur-palette) var(--ease),
+      --rule-2     var(--dur-palette) var(--ease),
+      --accent     var(--dur-palette) var(--ease),
+      --accent-warm var(--dur-palette) var(--ease),
+      --accent-deep var(--dur-palette) var(--ease),
+      --leafy      var(--dur-palette) var(--ease);
+  }
+}
+
+/* While the sheet is travelling, nothing else animates.
+
+   Every button on this page has a transition of its own - a background, a
+   border, a shadow - and each of those reads a custom property that is now
+   moving under it. So on every frame the button's own transition is handed a
+   new destination and restarts from wherever it had got to, which is a
+   property chasing a property: it lags the sheet by its own duration, and at
+   the moment the two cross it reads as a flash. Chrome absorbs the combination;
+   Firefox and Safari are documented as not.
+
+   Zero duration rather than `transition: none`, so nothing is disabled and no
+   rule is overridden - the declarations stay exactly as written and simply take
+   no time, which means every element tracks the sheet frame for frame instead
+   of chasing it. ui/appearance.js hangs .is-fading on :root for the length of
+   the fade and takes it off again, so this is in force for 700ms and never
+   while anybody is using the interface.
+
+   :root is untouched by the universal selector - the fade itself is declared
+   there, and it is the one transition that must survive. */
+:root.is-fading *,
+:root.is-fading *::before,
+:root.is-fading *::after {
+  transition-duration: 0s !important;
+}
+
+/* --accent-fg is registered above but deliberately not in that list, and the
+   difference matters. It is a color-mix() of --paper, so while --paper travels
+   its target moves every frame and its own transition restarts against the new
+   one - a property chasing a moving target arrives by a curve nobody chose, and
+   on a button, whose background is --accent and whose label is this, the two
+   drift out of step and read as a flash. Left untransitioned it is simply
+   recomputed from whatever --paper is worth this frame, which is the same fade
+   arriving for free and in step. --danger is the same shape and gets the same
+   treatment by never having been registered at all: a token built out of
+   another token does not need its own transition, it needs its input to have
+   one.
+
+   One case is knowingly left standing: at the plain end of the axis --paper is
+   itself a color-mix() of --accent, so it retargets there the way --accent-fg
+   did. It survives because it is only ever reached by a single change - a
+   palette chosen from the menu - rather than by the stream of them an
+   extraction produces, and because an extracted palette writes --paper inline,
+   where nothing is derived from anything. */
 
 /* =========================================================
    2. Palettes. Same paper-and-ink logic, different pigment.

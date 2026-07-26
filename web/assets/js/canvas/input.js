@@ -11,6 +11,7 @@
 //   middle-drag or space+drag ... pan, from anywhere
 //   drag an item ................ move the whole selection, plus anything stuck to it
 //   drag a corner grip .......... resize (aspect-locked for media, shift to free it)
+//   drag an edge grip ........... resize that axis alone, media included
 //   wheel ....................... zoom to cursor;  shift+wheel pans horizontally
 //   two fingers ................. pan + pinch zoom
 
@@ -215,8 +216,20 @@ export function initInput(vp, cmds) {
       driven: [id],
       start: vp.toWorld(e.clientX, e.clientY),
       box: { x: it.x, y: it.y, w: it.w, h: it.h },
-      // Media keeps its aspect unless shift says otherwise; cards resize freely.
-      lockAspect: it.type === 'image' || it.type === 'video',
+      // Media keeps its aspect on a corner unless shift says otherwise; cards
+      // resize freely. An *edge* is free for everything, media included, and
+      // that is the whole of "fit this picture to the grid": dragging the bar
+      // along the bottom of a photograph used to scale it uniformly, which
+      // moved the side you were not touching and made landing both edges on
+      // the lattice impossible. The picture is not distorted by it - the body
+      // is object-fit: cover, so a box in a new proportion crops rather than
+      // stretches - so the only thing given up is the framing, which is the
+      // thing somebody dragging one edge of a photograph is choosing.
+      //
+      // Shift still inverts, and it still means something at both ends: on a
+      // corner it frees the aspect, on an edge it locks it and scales the whole
+      // picture from that side.
+      lockAspect: (it.type === 'image' || it.type === 'video') && corner.length === 2,
     };
   }
 
