@@ -290,9 +290,12 @@ export async function importFiles(files, centre) {
   // which is what keeps the import pipeline testable in node at all. So this
   // says what happened and ui/ decides what that is worth.
   //
-  // Its own event rather than riding on 'items', because 'items' also fires for
-  // a drag, an undo and a delete, and none of those are a board acquiring new
-  // pictures to take its colours from.
+  // Its own event rather than riding on 'items', which fires for a drag, an
+  // undo and a delete as well: "an import happened, and this is what it
+  // brought" is a thing worth being able to hear on its own. The palette no
+  // longer listens for it - a delete changes the board's colours as surely as
+  // an import does, so ui/appearance.js watches 'items' and compares the
+  // pictures itself - but the announcement stands on its own terms.
   bus.emit('imported', added);
   return added;
 }

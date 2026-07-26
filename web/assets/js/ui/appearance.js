@@ -24,7 +24,9 @@
 import { board, bus, markDirty, setSetting } from '../state.js';
 import { clamp, readPrefJSON, toast, writePref } from '../util.js';
 import { assetURL } from '../storage/assets.js';
-import { extractPalette, paletteFromAccent, samplePixels, PALETTE_TOKENS } from './pigments.js';
+import {
+  extractPalette, paletteFromAccent, samplePixels, MAX_SOURCES, PALETTE_TOKENS,
+} from './pigments.js';
 // What a board is allowed to ask for. Kept in its own module because this one
 // touches document at import time and that one must stay testable - see look.js.
 import { safeVars } from './look.js';
@@ -202,24 +204,32 @@ export function initAppearance(handlers = {}) {
   // way through - so an unguarded handler would re-apply the current look on
   // every keystroke that renames a board.
   // A new board starts where a first-run board starts - Papyrus, the middle of
-  // the axis, no overrides, the extraction off. The stored preference goes with
+  // the axis, no overrides, the extraction on. The stored preference goes with
   // it, because these two are one value kept in two places and letting them
   // disagree is what the whole of readStored()/persist() exists to avoid.
   bus.on('board:new', () => resetAppearance());
 
-  // While the switch is on, every picture that lands changes the answer, so the
-  // palette is taken again rather than left at whatever the first few pictures
-  // said. Not awaited and its rejection swallowed: this is a decoration on an
-  // import that has already succeeded, and it has no business turning into an
-  // unhandled rejection in somebody's console because one PNG would not decode.
+  // While the switch is on, the palette follows whatever is on the board rather
+  // than staying at whatever the pictures said the first time. Every way that
+  // set can change goes through 'items': a picture arriving, a picture deleted,
+  // the undo of either, and everything the bin does. Deleting used to be the
+  // gap - a colour thrown off the board went on tinting the board it was thrown
+  // off, which is the one case where the palette is demonstrably not a
+  // representation of the pictures any more.
   //
-  // Guarded on the import actually having brought a picture. Dropping a text
-  // file or a model on the board cannot have changed what the pictures say, and
-  // re-running the extraction to arrive at the same palette would repaint the
-  // whole interface and mark the board dirty for nothing.
-  bus.on('imported', items => {
-    if (!current.auto) return;
-    if (!(items || []).some(it => it.type === 'image' || it.meta?.cover)) return;
+  // Guarded on the *sampled* pictures actually differing, which is stricter
+  // than "something happened": 'items' also fires for a note, a drag, a
+  // duplicate, a text file, a board load - and for the thirteenth picture on a
+  // board where only twelve are ever read. Re-running the extraction to arrive
+  // at the same palette would repaint the whole interface and mark the board
+  // dirty for nothing.
+  //
+  // Not awaited and its rejection swallowed: this is a decoration on an edit
+  // that has already succeeded, and it has no business turning into an
+  // unhandled rejection in somebody's console because one PNG would not decode.
+  bus.on('items', () => {
+    if (!autoOn(current)) return;
+    if (sourceKey() === lastSources) return;
     recolourFromBoard({ silent: true }).catch(() => {});
   });
 
@@ -335,36 +345,52 @@ export function setPigments(vars) {
  * Turning it on extracts immediately. Waiting for the next import would mean
  * the switch appeared to do nothing, which is indistinguishable from broken.
  *
- * Turning it off changes nothing on screen - it only stops the recalculating.
- * The colours already taken stay, because they are the board's colours now and
- * throwing them away is not what "stop updating this" means. The way back to a
- * named palette is the menu directly above, which drops them all.
+ * Turning it off hands the sheet back to the palette named in the menu above.
+ * It used to leave the extracted colours standing on the grounds that they were
+ * the board's colours by then - which left the switch looking broken from the
+ * other direction: unticking "take colours from the pictures" and watching the
+ * board go on wearing the pictures' colours is not an answer anybody reads as
+ * "off", and the way back was a menu the user had to know to go and use.
+ *
+ * Only the machine's own colours are dropped. An extraction is all fourteen
+ * tokens at once and undoing it is exactly what this switch means, while a
+ * hand-picked accent is somebody's own decision and is not this switch's to
+ * throw away.
  */
 function setAutoPalette(on) {
-  if (on) current.auto = true;
-  else delete current.auto;
+  if (on) delete current.auto;
+  else {
+    current.auto = false;
+    if (current.derived) {
+      for (const key of PALETTE_TOKENS) {
+        delete current.vars[key];
+        root.style.removeProperty(key);
+      }
+      delete current.derived;
+      // The named palette is still on :root as [data-palette] and has been
+      // underneath the whole time - so taking the inline tokens off is the
+      // whole of the way back, and paintThemeColour() re-reads the sheet that
+      // is now showing.
+      paintThemeColour();
+    }
+  }
   persist();
   syncControls();
   if (on) recolourFromBoard().catch(() => {});
 }
 
 /**
- * Take the colours off the board's own pictures.
+ * The pictures the palette is taken from, newest first.
  *
- * Silent when it fires itself after an import, loud when the switch asks for
- * it, because those are two different questions: the import wants to be told
- * nothing unless something happened, and the switch was just turned on by
- * somebody waiting for an answer - including the answer "these pictures have no
- * colour in them".
+ * Newest first because a board that grows past MAX_SOURCES should follow what
+ * is being added to it rather than stay pinned to whatever was dropped first.
  *
  * The covers count as pictures. A board of audio cards is a board full of album
  * art, and reading the sleeve of every record on it is exactly what somebody
- * pressing this button means.
+ * pressing the button means.
  */
-async function recolourFromBoard({ silent = false } = {}) {
+function pictureURLs() {
   const urls = [];
-  // Newest first: a board that grows past MAX_SOURCES should follow what is
-  // being added to it rather than stay pinned to whatever was dropped first.
   for (const it of [...board.items].reverse()) {
     // Pictures only, named explicitly rather than taken from itemHashes(): that
     // helper also returns a video's or an audio file's asset, and handing those
@@ -376,6 +402,40 @@ async function recolourFromBoard({ silent = false } = {}) {
       if (url) urls.push(url);
     }
   }
+  return urls;
+}
+
+/**
+ * The pictures an extraction would actually read, as one comparable string.
+ *
+ * Sliced to MAX_SOURCES, because the question this answers is "would running
+ * the extraction again give a different answer?" and a picture past the cap is
+ * never read. Order is part of it: the same twelve pictures reordered so that a
+ * different one falls off the end are a different twelve.
+ */
+function sourceKey() {
+  return pictureURLs().slice(0, MAX_SOURCES).join('\n');
+}
+
+/** The pictures the palette standing on screen was taken from - see sourceKey(). */
+let lastSources = null;
+
+/**
+ * Take the colours off the board's own pictures.
+ *
+ * Silent when it fires itself after the board changes, loud when the switch
+ * asks for it, because those are two different questions: an edit wants to be
+ * told nothing unless something happened, and the switch was just turned on by
+ * somebody waiting for an answer - including the answer "these pictures have no
+ * colour in them".
+ */
+async function recolourFromBoard({ silent = false } = {}) {
+  const urls = pictureURLs();
+  // Recorded before the pixels are read, not after: the answer to "which
+  // pictures is the palette standing on" is these, whatever they turn out to
+  // say. Recording it afterwards would leave a board whose pictures have no
+  // colour in them re-running the whole extraction on every subsequent edit.
+  lastSources = sourceKey();
   // One picture is enough now, where the silent version of this wanted three.
   // That floor existed because the feature fired unasked and a whole interface
   // turning over on a single dropped file reads as a fault; asked for by a
@@ -391,7 +451,12 @@ async function recolourFromBoard({ silent = false } = {}) {
     if (!silent) toast('No colour to take from these pictures');
     return false;
   }
-  setPigments(vars);
+  // Nothing written when the answer has not moved. Deleting one of twelve
+  // pictures usually leaves the same hues standing, and setPigments() persists
+  // - which marks the board dirty - so an extraction that agrees with what is
+  // already on screen would flag a board as edited for having been recounted.
+  const moved = Object.entries(vars).some(([k, v]) => current.vars[k] !== v);
+  if (moved) setPigments(vars);
   if (!silent) toast('Palette taken from the pictures');
   return true;
 }
@@ -480,7 +545,7 @@ function setVar(name, value) {
   // off is still a decision about the look.
   if (PALETTE_TOKENS.includes(name)) {
     delete current.derived;
-    delete current.auto;
+    current.auto = false;
     syncAutoBox();
   }
   if (value === '') {
@@ -575,15 +640,24 @@ const clone = look => withProvenance(look, {
  *   auto     whether to take the colours again on the next import. The user's
  *            setting, and the only thing the switch writes.
  *
- * Both are held to exactly `true`, and `derived` additionally to there being
+ * `auto` is stored inverted - present and false means off, absent means on -
+ * because on is the default. A board that has never been near this setting has
+ * no field for it, and that has to mean the same thing as a board that was
+ * switched on, or the default would only apply to boards made after it changed.
+ * The only value written is `false`; turning it back on deletes the field.
+ *
+ * Both are held to an exact value, and `derived` additionally to there being
  * something for it to be true *of* - so a .mbrd claiming a derived look with no
  * pigments in it cannot make the palette menu throw away tokens it never wrote.
  */
 function withProvenance(from, look) {
   if (from?.derived === true && Object.keys(look.vars).length) look.derived = true;
-  if (from?.auto === true) look.auto = true;
+  if (from?.auto === false) look.auto = false;
   return look;
 }
+
+/** Whether the extraction is on. Absent means on - see withProvenance(). */
+const autoOn = look => look?.auto !== false;
 
 // Both sides put through clone() first, which is what makes a string compare
 // safe here: it fixes the key order. `current` is mutated in place all over this
@@ -701,13 +775,13 @@ function syncControls() {
  */
 function syncAutoBox() {
   const box = document.getElementById('opt-auto-palette');
-  if (box) box.checked = current.auto === true;
+  if (box) box.checked = autoOn(current);
 }
 
 function wireAutoPalette() {
   const input = document.getElementById('opt-auto-palette');
   if (!input) return;
-  input.checked = current.auto === true;
+  input.checked = autoOn(current);
   input.addEventListener('change', () => setAutoPalette(input.checked));
 }
 
@@ -751,7 +825,7 @@ function wirePalette() {
     // switch with it for the same reason picking a pigment by hand does - see
     // setVar(). This is also the way back from an extracted palette: it is the
     // one control that drops all fourteen tokens at once.
-    delete current.auto;
+    current.auto = false;
     current.palette = sel.value;
     apply(current);
     persist();

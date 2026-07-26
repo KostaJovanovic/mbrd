@@ -520,12 +520,17 @@ export async function restoreSession() {
   try {
     const session = await idbGet('kv', SESSION_KEY);
     if (!session?.board?.items) return false;
-    // The bin's items need their bytes back too, or restoring one would put an
-    // empty frame on the board.
-    const needed = new Set([
-      ...session.board.items,
-      ...(session.board.trash || []).map(t => t?.item).filter(Boolean),
-    ].map(i => i.asset?.hash).filter(Boolean));
+    // Exactly what the autosave sweep decided was worth keeping, asked the same
+    // way - the bin's items included, or restoring one would put an empty frame
+    // on the board.
+    //
+    // The same question, and it used to be asked differently here: `asset.hash`
+    // alone, which is one of the three ids an item can hold. So the sweep wrote
+    // an album cover to disk and the restore never read it back, and the picture
+    // on a music card - or the still on a model, or the face a board is set in -
+    // was there until the first reload and gone after it. The bytes were never
+    // lost; nothing asked for them.
+    const needed = referencedHashes(session.board);
     let lost = 0;
     for (const hash of needed) {
       const rec = await idbGet('assets', hash);

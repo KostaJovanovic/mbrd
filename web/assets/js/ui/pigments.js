@@ -161,6 +161,23 @@ const MAX_HUES = 3;
 /**
  * The hues a set of pixels is made of, strongest first.
  *
+ * One picture, one vote. Each chunk is counted into its own histogram and that
+ * histogram is normalised to a total of 1 before it joins the board's, so a
+ * palette is a representation of every photograph on the board rather than of
+ * the loudest one. Pooling the pixels instead - which is what this did - let a
+ * single vivid picture outvote ten quiet ones and decide the whole look, and a
+ * board of ten pictures that comes out the colour of one of them is not a
+ * palette taken from the board.
+ *
+ * Chroma still weights pixels *within* a picture, which is a different claim
+ * and still the right one: the grey street with one red door is a red picture.
+ * Normalising afterwards means it arrives as one red vote, not as however much
+ * red the door happened to contain.
+ *
+ * A picture with no colour in it - a black-and-white photograph, a page of
+ * text - sums to nothing and is skipped rather than counted as an empty vote,
+ * so it dilutes nobody.
+ *
  * Smoothed before peaks are looked for, because a single real colour lands
  * across two or three neighbouring bins and an unsmoothed histogram would offer
  * both halves of it as separate peaks - MIN_SEP would then throw the second one
@@ -171,16 +188,18 @@ export function huesOf(chunks) {
   const votes = new Float64Array(BINS);
   let counted = 0;
   for (const px of chunks) {
+    const one = new Float64Array(BINS);
+    let weight = 0;
     for (let i = 0; i + 3 < px.length; i += 4) {
       if (px[i + 3] < 128) continue;
       const { L, C, h } = oklch(px[i], px[i + 1], px[i + 2]);
       if (L < MIN_L || L > MAX_L || C < NEUTRAL_C) continue;
-      // Weighted by chroma, so a small vivid thing counts for more than a large
-      // washed-out one. A photograph of a grey street with one red door should
-      // extract red, and by pixel count it never would.
-      votes[Math.floor(h / 360 * BINS) % BINS] += C;
-      counted++;
+      one[Math.floor(h / 360 * BINS) % BINS] += C;
+      weight += C;
     }
+    if (!weight) continue;
+    for (let i = 0; i < BINS; i++) votes[i] += one[i] / weight;
+    counted++;
   }
   if (!counted) return [];
 
@@ -468,8 +487,14 @@ export function extractPalette(chunks) {
 // Reading the board
 // ---------------------------------------------------------------------------
 
-/** How many pictures to look at, newest first. */
-const MAX_SOURCES = 12;
+/**
+ * How many pictures to look at, newest first.
+ *
+ * A cap and not a sample of the whole board: past this the newest twelve are
+ * what the palette is a representation of. Each of the twelve counts the same
+ * whatever its size or how vivid it is - see huesOf().
+ */
+export const MAX_SOURCES = 12;
 
 /** Each one drawn this big. 48x48 is 2304 pixels, and enough to vote with. */
 const SAMPLE = 48;

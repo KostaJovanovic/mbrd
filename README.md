@@ -197,9 +197,9 @@ in and the whole palette — paper, ink and pigment — is read off them: one to
 three hues, clustered in OKLCh, held to the same lightness and chroma the four
 presets were built on, and repaired afterwards so the ink still clears its
 contrast ratio on the sheet. **Take colours from pictures** in the Appearance
-panel switches it on: it reads them straight away and again every time a picture
+panel is on to begin with: the palette is taken again every time a picture
 lands, so the board keeps up with what is actually on it. Picking a colour by
-hand — or a named palette — switches it back off and leaves your choice alone.
+hand — or a named palette — switches it off and leaves your choice alone.
 The colours already taken stay put; the palette menu is the way back. Nothing is
 uploaded — the pixels are read from a 48×48 canvas in your own browser.
 

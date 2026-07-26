@@ -675,11 +675,29 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* The caption plate and the control bar want the same strip of card, so they
    take turns: the name while you are looking, the transport while you are
-   using it. */
-.item[data-type="video"] .item-label { transition: opacity var(--dur-fast) var(--ease); }
+   using it.
+
+   The caption goes, and the sheet under it with it - the handle stays, because
+   it is the only way into the item's menu on a touchscreen and a playing video
+   is no reason to take it away. The `:has()` tests .item and not .item-body:
+   the bar is a sibling of the body, not a child of it. */
+.item[data-type="video"] .item-label,
+.item[data-type="video"] .item-bar {
+  transition: opacity var(--dur-fast) var(--ease),
+              background var(--dur-fast) var(--ease);
+}
 .item[data-type="video"]:hover .item-label,
 .item[data-type="video"]:focus-within .item-label,
-.item-body:has(.vplayer.is-playing) .item-label { opacity: 0; }
+.item:has(.vplayer.is-playing) .item-label { opacity: 0; }
+.item[data-type="video"]:hover .item-bar,
+.item[data-type="video"]:focus-within .item-bar,
+.item:has(.vplayer.is-playing) .item-bar {
+  background: none;
+  border-top-color: transparent;
+  backdrop-filter: none;
+}
+/* The divider goes with the sheet - see the exceptions under .item-menu, which
+   is where it has to be written to outrank the rule that draws it. */
 
 /* Far zoom leaves the same thing behind that an audio card is left with: the
    one control worth hitting from across the board. The bar's type and its
@@ -869,6 +887,23 @@ button, input, select, textarea { font: inherit; color: inherit; }
   touch-action: none;
 }
 .model-stage.is-turning { cursor: grabbing; }
+/* The photograph the card shows when nobody is turning it - see
+   canvas/model.js. It stands in the stage's place and has to sit in the box the
+   same way: the still was taken at the card's own proportions, so `contain`
+   changes nothing on a card that has not been reshaped since, and keeps the
+   model whole rather than cropping it on one that has.
+   No cursor and no pointer: this is a picture, and a drag on it moves the card
+   like a drag on any other picture does. Turning it over is a menu away. */
+.model-still {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  object-fit: contain;
+  /* The stage draws on a transparent buffer, so a still of a pale model on a
+     pale card is the same picture the canvas would have shown. */
+  background: none;
+}
+#world.zoom-far .model-still { visibility: hidden; }
 .card-model .card-name {
   flex: none;
   font-size: var(--t-tiny);
@@ -964,29 +999,81 @@ plates do: below a third of size a card is a coloured tile, and a click on
 
 /* Caption plate: a strip of paper across the foot of a picture, not a black
    gradient. Reads like a museum label. */
-.item-label {
+/* The strip across the foot of a card: caption on the left, menu handle on the
+   right, one sheet under both.
+
+   It is a flex row and not two absolutely positioned boxes, and that is the
+   whole fix: the first version sized the handle to the caption's height by
+   copying its padding and line-height into a magic 28px, which was off by the
+   caption's own border and drew a one-pixel step between two things that are
+   meant to be one bar. A row cannot disagree with itself.
+
+   Anchored right rather than stretched, so an item with no caption gets a strip
+   the width of the handle instead of an empty bar across the whole card. */
+.item-bar {
   position: absolute;
-  /* Stops where the menu handle starts, so a long name is ellipsised at the
-     bar's edge instead of running underneath the dots. */
-  left: 0; right: 28px; bottom: 0;
+  right: 0; bottom: 0;
+  max-width: 100%;
+  display: flex;
+  align-items: stretch;
+  /* The plate. It is here rather than on the captioned bar alone because it is
+     not only the caption that needs holding off the picture - an unnamed
+     photograph gets three dots laid straight on it otherwise. The card types
+     that draw their own name inside the card take it back off again below:
+     their background is opaque paper already, and there the plate was a pale
+     tab bolted into the corner, ruled off at a curve of its own, cutting
+     whatever the card had drawn along its own foot. */
+  background: color-mix(in srgb, var(--paper-card) 88%, transparent);
+  border-top: 1px solid var(--rule);
+  backdrop-filter: blur(3px);
+  border-radius: var(--radius-xs) 0 var(--radius) 0;
+  overflow: hidden;
+}
+/* With a caption, the bar spans the card and squares off on the left. */
+.item-bar:has(> .item-label:not([hidden])) {
+  left: 0;
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+.item-label {
+  flex: 1;
+  min-width: 0;
   padding: 6px 11px 7px;
   font-size: 12px;
   font-style: var(--display-italic);
   line-height: 1.25;
   color: var(--ink-2);
-  background: color-mix(in srgb, var(--paper-card) 88%, transparent);
-  border-top: 1px solid var(--rule);
-  backdrop-filter: blur(3px);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   pointer-events: none;
 }
+.item-label[hidden] { display: none; }
+
+/* The types that draw their own name inside the card, and so want no caption on
+   the bar - only the handle. A sticky note is the clearest case: it carries a
+   name (the first line of its text) that nothing on the board ever draws. */
 .item[data-type="audio"] .item-label,
 .item[data-type="text"] .item-label,
 .item[data-type="note"] .item-label,
 .item[data-type="link"] .item-label,
+.item[data-type="model"] .item-label,
 .item[data-type="generic"] .item-label { display: none; }
+/* ...and the bar goes back to being a bare handle with them. The `:has()` above
+   tests the `hidden` attribute, which these do not set - they are painted out by
+   type, not by having no name - so without this they would take the plate, span
+   the whole card, and strand the dots at the end of an empty strip. */
+.item[data-type="audio"] .item-bar,
+.item[data-type="text"] .item-bar,
+.item[data-type="note"] .item-bar,
+.item[data-type="link"] .item-bar,
+.item[data-type="model"] .item-bar,
+.item[data-type="generic"] .item-bar {
+  left: auto;
+  background: none;
+  border-top: 0;
+  backdrop-filter: none;
+  border-radius: 0;
+}
 /* :not(), rather than an override that unhides it again - winning on
    specificity here would also unhide the plates that particular item types
    hide on purpose. A plate being typed into is the one that must survive. */
@@ -1008,45 +1095,68 @@ plates do: below a third of size a card is a coloured tile, and a click on
    and this is the *only* route to an item's actions there. A control that is
    the sole way to do something cannot be one you have to discover.
 
-   It sits flush in the bottom-right corner and wears the caption plate's own
-   height, background and rule, so on a card that has a name the two form a
-   single bar across the foot. Hidden below the far-zoom threshold with
-   everything else, because at that scale a card is a swatch, not a thing you
-   operate. */
+   It is the right-hand end of the bar above, so it takes its height from the
+   row rather than naming one. */
 .item-menu {
-  position: absolute;
-  right: 0; bottom: 0;
-  z-index: 3;
+  flex: none;
   display: grid;
   place-items: center;
-  /* The caption plate's own height, arrived at the same way it is: 12px of type
-     at 1.25, plus its 6px and 7px of padding. The two share an edge, so they
-     have to agree - and they are both in the item's units, which is why this
-     one is not scaled by --iz like the resize marks are. A control that is part
-     of the card scales with the card. */
-  width: 28px;
-  height: 28px;
+  /* The width, and a floor under the height. The height itself comes from the
+     row, which takes it from the caption beside it - so where there is a
+     caption the two agree by construction rather than by arithmetic. Where
+     there is not, the row has nothing to take a height from and collapsed onto
+     the icon: a 30x15 sliver on every sticky note. The floor makes a bar with
+     no caption square, and it is the same 30 as the captioned bar ends up at,
+     so the handle is one size wherever it appears. */
+  width: 30px;
+  min-height: 30px;
   padding: 0;
   border: 0;
-  border-left: 1px solid var(--rule);
-  border-top: 1px solid var(--rule);
-  border-radius: 0;
-  /* Matched to .item-label, so on anything carrying a caption the two read as
-     one bar across the foot of the card rather than as a button parked on top
-     of a plate. */
-  background: color-mix(in srgb, var(--paper-card) 88%, transparent);
-  backdrop-filter: blur(3px);
-  color: var(--ink-2);
+  background: none;
+  color: var(--ink-3);
   cursor: pointer;
-  transition: color var(--dur-fast) var(--ease),
-              background var(--dur-fast) var(--ease);
+  transition: color var(--dur-fast) var(--ease);
 }
-.item-menu svg { width: 14px; height: 14px; }
-.item-menu:hover { color: var(--accent-deep); background: var(--paper-card); }
-.item-menu:focus-visible { outline: var(--sel-line) solid var(--select); outline-offset: var(--sel-gap); }
-#world.zoom-far .item-menu { display: none; }
+/* Only when there is something to be divided from. */
+.item-bar:has(> .item-label:not([hidden])) .item-menu {
+  border-left: 1px solid var(--rule);
+}
+/* ...and on the types whose caption is painted out by type rather than by
+   having no name, there is not. `:has()` above tests the attribute, which those
+   do not set, so it matches on a note and ruled a line down the side of the
+   dots with nothing on the other side of it.
+   Written through .item-bar and placed after the rule it answers, because it
+   has to beat it: the `:has()` argument counts towards specificity, and the
+   plain type selector came out lower. */
+.item[data-type="audio"] .item-bar .item-menu,
+.item[data-type="text"] .item-bar .item-menu,
+.item[data-type="note"] .item-bar .item-menu,
+.item[data-type="link"] .item-bar .item-menu,
+.item[data-type="model"] .item-bar .item-menu,
+.item[data-type="generic"] .item-bar .item-menu { border-left: 0; }
+/* And a video whose transport has taken the strip: the sheet went with it, and
+   a rule with nothing either side of it would be all that was left. */
+.item[data-type="video"]:hover .item-bar .item-menu,
+.item[data-type="video"]:focus-within .item-bar .item-menu,
+.item:has(.vplayer.is-playing) .item-bar .item-menu { border-left: 0; }
+.item-menu svg { width: 13px; height: 13px; }
+/* Ink only, hovered and pressed alike - no fill behind the dots.
+   A fill would be a 30px block sitting in the corner of the bar, and the bar's
+   bottom-right corner is cut to the card's own 13px curve: on a bar with no
+   caption that is nearly half the box, so the fill came out as a quarter-disc
+   swept across the plate. The dots changing colour says the same thing and has
+   no shape to get wrong.
+   The lift-and-squash every other control uses is out for a different reason -
+   this sits on a card that is itself being dragged, so a moving button reads as
+   the card moving. */
+.item-menu:hover { color: var(--accent-deep); }
+.item-menu:active,
+.item-menu[aria-expanded="true"] { color: var(--accent); }
+.item-menu:focus-visible { outline: var(--sel-line) solid var(--select); outline-offset: calc(var(--sel-gap) * -1); }
+/* At that scale a card is a swatch, not a thing you operate. */
+#world.zoom-far .item-bar { display: none; }
 /* Nothing but the text while a name or a note is being edited. */
-.item.is-editing > .item-menu { display: none; }
+.item.is-editing .item-menu { display: none; }
 
 .grip {
   position: absolute;
@@ -1073,9 +1183,18 @@ plates do: below a third of size a card is a coloured tile, and a click on
   content: '';
   position: absolute;
   inset: 0;
-  border: calc(var(--sel-corner) * var(--iz)) solid var(--select);
+  border: calc(var(--sel-corner) * var(--grip-swell, 1) * var(--iz)) solid var(--select);
   pointer-events: none;
+  transition: border-width var(--dur-fast) var(--ease);
 }
+/* Under the pointer, and for as long as it is being dragged. The mark grows
+   inwards from the ring's outer edge, so thickening it does not move it - the
+   line the eye is following stays exactly where it was and simply gets heavier.
+   Written as a multiplier on the whole corner rather than as a border-width of
+   its own, because the four corners each blank two of their own borders and a
+   `border-width` here would put those back. */
+.grip:not(.grip-edge):hover,
+.item.is-resizing .grip:not(.grip-edge) { --grip-swell: 1.6; }
 /* The mark follows the corner it traces rather than turning a hard 90 degrees
    against a rounded item. A curve of radius R offset outwards by d is a curve
    of radius R + d, so the two stay concentric - and because both terms are in
@@ -1109,17 +1228,50 @@ plates do: below a third of size a card is a coloured tile, and a click on
 .grip[data-g="se"] { right: calc(-1 * var(--sel-edge)); bottom: calc(-1 * var(--sel-edge)); cursor: nwse-resize; }
 
 /* The grab area, which is not the mark.
-   A finger is not a pointer, and the honest fix is to make the target bigger
-   without making the drawing bigger - so the slop is an invisible box hanging
-   outside the grip rather than a larger grip. Zero here; the touch block at the
-   foot of this file is the only thing that opens it. In --iz units like
-   everything else in the ring, so it is a constant number of screen pixels at
-   any zoom. */
+   The honest fix for a target that is hard to hit is to make the target bigger
+   without making the drawing bigger - so the grab area is an invisible box of
+   its own, and .grip itself takes no pointer at all. In --iz units like
+   everything else in the ring, so every number here is a constant size on
+   screen at any zoom. */
+.grip { pointer-events: none; }
 .grip::before {
   content: '';
   position: absolute;
-  inset: calc(-1 * var(--grip-slop, 0px) * var(--iz));
+  /* Edges only; the corner rule below replaces this outright. Non-zero on a
+     mouse now: four pixels of forgiveness costs nothing and a hairline strip
+     that has to be hit exactly is a strip people miss. The touch block at the
+     foot of this file opens it further. */
+  inset: calc(-1 * var(--grip-slop, 4px) * var(--iz));
+  pointer-events: auto;
 }
+
+/* The corner target: a constant square, laid *outside* the item.
+   Two things wrong with using the mark's own box, which is what this used to
+   do. It was sized from --mark-size, which is built out of the item's own
+   corner radius - so the same handle on the same card was a 30px target when
+   the whimsy axis rounded it and a 10px one at the plain end, where the radius
+   is zero. And it straddled the corner, so the outer third of the card was a
+   resize and the rest of it a drag, with nothing to tell you where the line
+   was.
+   Now it ends where the item does. The inner corner of this square sits
+   exactly on the item's corner, so what you grab to resize is the outline and
+   the space beyond it, and the card itself is always the card. Placed by
+   geometry rather than by putting the box behind the card, because "behind"
+   depends on what is painted in front - a transparent PNG, a card with no
+   background - and this does not. */
+.grip:not(.grip-edge)::before {
+  inset: auto;
+  width:  calc(var(--grip-corner, 24px) * var(--iz));
+  height: calc(var(--grip-corner, 24px) * var(--iz));
+}
+.grip[data-g="nw"]::before,
+.grip[data-g="sw"]::before { left: calc(var(--sel-edge) - var(--grip-corner, 24px) * var(--iz)); }
+.grip[data-g="ne"]::before,
+.grip[data-g="se"]::before { right: calc(var(--sel-edge) - var(--grip-corner, 24px) * var(--iz)); }
+.grip[data-g="nw"]::before,
+.grip[data-g="ne"]::before { top: calc(var(--sel-edge) - var(--grip-corner, 24px) * var(--iz)); }
+.grip[data-g="sw"]::before,
+.grip[data-g="se"]::before { bottom: calc(var(--sel-edge) - var(--grip-corner, 24px) * var(--iz)); }
 
 /* Edge handles are invisible strips running between the corners. Drawing them
    would put eight marks around a small item and make the selection read as a
@@ -2174,10 +2326,14 @@ kbd {
    --------------------------------------------------------- */
 
 @media (pointer: coarse) {
-  /* Corner marks keep their drawn size and gain a ring of slop around them.
-     9px each way turns a 12px mark into a 30px target without putting a
-     heavier ring on the board. */
-  .item { --grip-slop: 9px; }
+  /* Marks keep their drawn size and the targets around them grow. A finger is
+     not a pointer: 9px of slop each way on the edge strips, and a corner square
+     of 40 rather than 24 - still laid outside the item, so a thumb on the card
+     is still a drag. */
+  .item { --grip-slop: 9px; --grip-corner: 40px; }
+  /* Nothing to hover with, and a swollen mark under a finger is a mark under a
+     finger. It stays for the drag, which is the part you can see. */
+  .grip:not(.grip-edge):hover { --grip-swell: 1; }
   /* The edge strips are pure hit area, so these are the targets themselves. */
   .grip[data-g="n"], .grip[data-g="s"] { height: calc(24px * var(--iz)); }
   .grip[data-g="w"], .grip[data-g="e"] { width:  calc(24px * var(--iz)); }
@@ -2371,24 +2527,26 @@ kbd {
      the print would have. */
   box-shadow: 0 0 0 var(--hairline) color-mix(in srgb, var(--ink) 10%, transparent);
 }
-/* The caption plate stops being a strip laid across the foot of the picture
-   and becomes what is written on the chin. It needs no moving to get there:
-   .item-label is a child of .item-body and positions against *its* edges, not
-   the picture's, so insetting the picture has already left it sitting on the
-   mat. All it has to do is stop looking like a plate - the translucent paper,
-   the rule and the blur were all there to hold it off a photograph, and there
-   is no photograph behind it now.
-
-   line-height rather than a flex centre, because the plate keeps its ellipsis
+/* The caption stops being a strip laid across the foot of the picture and
+   becomes what is written on the chin. It needs no moving to get there: the bar
+   sits against .item's own edges, not the picture's, so insetting the picture
+   has already left it on the mat. All it has to do is stop looking like a plate
+   - the translucent paper, the rule, the blur and the divider between caption
+   and handle were all there to hold the bar off a photograph, and there is no
+   photograph behind it now. */
+:root[data-whimsy="0"] .item[data-type="image"] .item-bar {
+  background: none;
+  border-top: 0;
+  backdrop-filter: none;
+}
+:root[data-whimsy="0"] .item[data-type="image"] .item-menu { border-left: 0; }
+/* line-height rather than a flex centre, because the caption keeps its ellipsis
    and its single line, and both of those want it to stay a block. */
 :root[data-whimsy="0"] .item[data-type="image"] .item-label {
   height: var(--chin);
   line-height: var(--chin);
   padding: 0 var(--mat);
   text-align: center;
-  background: none;
-  border-top: 0;
-  backdrop-filter: none;
   font-size: clamp(11px, calc(var(--half-min, 120px) * 0.09), 20px);
 }
 
