@@ -11,7 +11,7 @@
 //   double-tap + drag empty ..... marquee select on touch
 //   middle-drag or space+drag ... pan, from anywhere
 //   drag an item ................ move the whole selection, plus anything stuck to it
-//   drag a corner grip .......... resize (aspect-locked for media, shift to free it)
+//   drag a corner grip .......... resize freely;  shift holds the proportion
 //   drag an edge grip ........... resize that axis alone, media included
 //   wheel ....................... zoom to cursor;  shift+wheel pans horizontally
 //   two fingers ................. pan + pinch zoom
@@ -23,7 +23,7 @@ import {
   copyItems, cutItems, pasteItems, clipboardSize, clipboardBounds, clipboardHasOurs,
 } from '../state.js';
 import { zoomMs, travelMs, lodZoom } from './viewport.js';
-import { itemInRect, latticeBox, CELL_GAP, MIN_SIZE, MAX_SIZE } from '../geometry.js';
+import { itemInRect, latticeBox, latticeLow, cellInset, MIN_SIZE, MAX_SIZE } from '../geometry.js';
 import { itemIdFromEvent, ensureMounted, sync as syncItems, editItemName } from './items.js';
 import { gridStep } from './grid.js';
 import { noteFloor } from './notes.js';
@@ -133,11 +133,8 @@ export function initInput(vp, cmds) {
 
   // ---- helpers ----------------------------------------------------------
 
-  const snapVal = v => {
-    if (!board.settings.snap) return v;
-    const step = gridStep(board.settings.gridStep, vp.zoom);
-    return Math.round(v / step) * step;
-  };
+  /** A low edge onto the lattice, or left alone when snapping is off. */
+  const snapLow = v => (board.settings.snap ? latticeLow(v, stepNow()) : v);
 
   /** The lattice actually on screen, which is what a gesture aims at. */
   const stepNow = () => gridStep(board.settings.gridStep, vp.zoom);
@@ -155,14 +152,15 @@ export function initInput(vp, cmds) {
   const ontoLattice = box => latticeBox(box, stepNow());
 
   /**
-   * The seam a snapped item leaves at its high edges, in world units.
+   * The seam a snapped item leaves at each of its four edges, in world units.
    *
-   * Only the high edges carry it: an item's low edges sit on lines and its high
-   * ones stop just short of the next, so the space between two neighbours is one
-   * seam rather than two halves of one. That asymmetry is why the snapping below
+   * Every edge carries the same one - see CELL_GAP in geometry.js - so the space
+   * between two neighbours is two halves of a seam rather than one whole one.
+   * The sign is what differs: a low edge sits a seam *past* its grid line and a
+   * high edge a seam short of the next, which is why the snapping below still
    * has to know which edge the pointer is holding.
    */
-  const gapNow = () => (board.settings.snap ? stepNow() * CELL_GAP : 0);
+  const insetNow = () => (board.settings.snap ? cellInset(stepNow()) : 0);
 
   /**
    * One axis of a resize: the extent it should end up with, given the box the
@@ -180,11 +178,12 @@ export function initInput(vp, cmds) {
    * back to the edge that stayed put, which is why the anchor is derived here
    * rather than the size being adjusted afterwards.
    *
-   * `bias` is the seam, and it is what makes the two directions different. A low
-   * edge belongs on a line, so it rounds to one; a high edge belongs a seam short
-   * of the next line, so the seam is added before the rounding and taken off
-   * after. Get this the same way round on both and neighbours either overlap by a
-   * seam or stand two seams apart, depending which one you picked.
+   * `bias` is the seam, signed, and it is what makes the two directions
+   * different. A high edge belongs a seam short of its line, so the seam is added
+   * before the rounding and taken off after; a low edge belongs a seam past its
+   * line, so the same happens the other way about. Both by half the old seam, so
+   * two neighbours stand exactly as far apart as they always did while a single
+   * item now sits centred in its cells instead of shoved into a corner of them.
    *
    * The limits are applied before the snap so the rounding is handed an edge
    * that is already legal, and repaired after it by stepping one grid line the
@@ -201,7 +200,7 @@ export function initInput(vp, cmds) {
     if (board.settings.snap) {
       const anchor = centre - sign * extent / 2;
       const step = stepNow();
-      const bias = sign > 0 ? gapNow() : 0;
+      const bias = sign * insetNow();
       const edge = k => sign * (k * step - bias - anchor);
       const k = Math.round((anchor + sign * size + bias) / step);
       size = edge(k);
@@ -381,20 +380,25 @@ export function initInput(vp, cmds) {
       driven: [id],
       start: vp.toWorld(e.clientX, e.clientY),
       box: { x: it.x, y: it.y, w: it.w, h: it.h },
-      // Media keeps its aspect on a corner unless shift says otherwise; cards
-      // resize freely. An *edge* is free for everything, media included, and
-      // that is the whole of "fit this picture to the grid": dragging the bar
-      // along the bottom of a photograph used to scale it uniformly, which
-      // moved the side you were not touching and made landing both edges on
-      // the lattice impossible. The picture is not distorted by it - the body
-      // is object-fit: cover, so a box in a new proportion crops rather than
-      // stretches - so the only thing given up is the framing, which is the
-      // thing somebody dragging one edge of a photograph is choosing.
+      // Nothing is aspect-locked by default any more, media included. A corner
+      // used to hold a photograph's proportion and let shift free it, on the
+      // reasoning that the shape a picture arrived in is the shape it wants -
+      // which is true of the *picture* and not of the box it is shown in. The
+      // body is object-fit: cover, so a box in a new proportion crops rather
+      // than stretches: what a corner drag actually chooses is framing, and a
+      // grip that refuses to give you the framing you are dragging towards is
+      // a grip that fights you. It also cost the same thing an edge drag cost
+      // before it was freed - a photograph could not be landed on the lattice
+      // by its corner, because the followed side came out of a division.
       //
-      // Shift still inverts, and it still means something at both ends: on a
-      // corner it frees the aspect, on an edge it locks it and scales the whole
-      // picture from that side.
-      lockAspect: (it.type === 'image' || it.type === 'video') && corner.length === 2,
+      // Shift is the lock now, at both ends and for everything: on a corner it
+      // holds the proportion, on an edge it holds it and scales the whole
+      // picture from that side. The way back from a box dragged out of shape is
+      // Ctrl+Z, or "Reset size", which restores the size it was born at.
+      //
+      // Kept as a field rather than folded into the XOR below because it is the
+      // *default* for this grip, and a future one may well want its own.
+      lockAspect: false,
     };
   }
 
@@ -583,7 +587,7 @@ export function initInput(vp, cmds) {
       // Snap the dragged item; everything else keeps its offset from it, so a
       // multi-selection moves rigidly instead of collapsing onto the grid.
       //
-      // The item's *low edges* land on lines, not its centre. Centres were the
+      // The item's *low edges* land on the lattice, not its centre. Centres were the
       // obvious thing to round and the wrong one: an item an odd number of cells
       // wide has its centre half a cell off the lattice by construction - that
       // is what being an odd width means - so rounding the centre to a line
@@ -592,8 +596,8 @@ export function initInput(vp, cmds) {
       // arrangement being kept rather than a second one being imposed.
       const lead = g.origin.find(o => o.id === g.id) || g.origin[0];
       const low = { x: lead.x + dx - lead.w / 2, y: lead.y + dy - lead.h / 2 };
-      const sx = snapVal(low.x) - low.x;
-      const sy = snapVal(low.y) - low.y;
+      const sx = snapLow(low.x) - low.x;
+      const sy = snapLow(low.y) - low.y;
       applyGeom(g.origin.map(o => {
         const it = byId(o.id);
         return { id: o.id, x: o.x + dx + sx, y: o.y + dy + sy, w: it.w, h: it.h, rot: it.rot, z: it.z };
@@ -662,7 +666,9 @@ export function initInput(vp, cmds) {
         // the floor is for - and for the same reason it is not capped at
         // MAX_SIZE, which the floor is already allowed to overrule.
         if (board.settings.snap) {
-          const step = stepNow(), gap = gapNow();
+          // A whole number of cells less a seam at each end - the same shape
+          // latticeSide() gives, rounded up rather than to the nearest.
+          const step = stepNow(), gap = 2 * insetNow();
           floor = Math.ceil((floor + gap) / step) * step - gap;
         }
         if (floor > h) {
@@ -757,6 +763,12 @@ export function initInput(vp, cmds) {
     e.preventDefault();
     // deltaMode 1 = lines, 2 = pages: normalise to something pixel-ish.
     const scale = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? vp.height : 1;
+    // Mobile is a fixed-width feed: the wheel follows the only axis that
+    // remains navigable instead of changing its locked-to-width zoom.
+    if (vp.isMobile) {
+      vp.panByScreen(0, -e.deltaY * scale);
+      return;
+    }
     if (e.shiftKey && !e.ctrlKey) {
       vp.panByScreen(-e.deltaY * scale, 0);
       return;
@@ -895,19 +907,21 @@ export function initInput(vp, cmds) {
       return { dx: sx * step, dy: sy * step };
     }
     const step = stepNow();
+    const inset = cellInset(step);
     const cells = far ? NUDGE_LEAP : 1;
     const lead = before.find(b => selection.has(b.id)) || before[0];
-    // The item's *low edges* land on lines, not its centre - see the move
+    // The item's *low edges* land on the lattice, not its centre - see the move
     // gesture above for why, and snapAll() in state.js for the arrangement this
-    // is keeping rather than imposing.
+    // is keeping rather than imposing. Measured from the seam rather than from
+    // the line, so "flush already" means the same thing here as it does there.
     const axis = (sign, low) => {
       if (!sign) return 0;
-      const k = low / step;
+      const k = (low - inset) / step;
       const near = Math.round(k);
       const next = Math.abs(k - near) < ON_LINE
         ? near + sign                                   // flush already: move on
         : (sign > 0 ? Math.ceil(k) : Math.floor(k));    // adrift: come aboard
-      return (next + sign * (cells - 1)) * step - low;
+      return (next + sign * (cells - 1)) * step + inset - low;
     };
     return { dx: axis(sx, lead.x - lead.w / 2), dy: axis(sy, lead.y - lead.h / 2) };
   }

@@ -9,6 +9,7 @@
 //   item       - one item's content/name changed (payload: id)
 //   selection  - the selection set changed
 //   settings   - a setting changed (payload: key)
+//   layout     - desktop/mobile geometry profile changed (payload: mode)
 //   board      - a whole new board was loaded, or the title/dirty flag changed
 //   trash      - something was thrown away, restored, or purged
 
@@ -69,6 +70,10 @@ export const DEFAULT_SETTINGS = {
   fonts: [],           // faces dropped onto this board - see ui/fonts.js
 };
 
+export const BOARD_MODES = ['desktop', 'mobile'];
+export const MOBILE_COLUMNS = 6;
+export const MOBILE_TOP_ROWS = 10;
+
 export const board = {
   title: 'Untitled board',
   view: { pan: { x: 0, y: 0 }, zoom: 1 },
@@ -77,6 +82,12 @@ export const board = {
   // defaults every later board is built from.
   settings: { ...DEFAULT_SETTINGS, appearance: { palette: '', vars: {} }, fonts: [] },
   arrangement: 'spiral',
+  // The mode is local UI state and is deliberately omitted from board.json:
+  // a phone remembers Mobile and a laptop remembers Desktop without the last
+  // device to save forcing its choice onto the other. `layouts` is the part
+  // that travels - two sets of geometry over one shared set of items.
+  layoutMode: 'desktop',
+  layouts: { desktop: [], mobile: [] },
   items: [],
   // Thrown away but not gone. Entries are { item, at }, newest first.
   trash: [],
@@ -258,7 +269,7 @@ export function addItems(items, label = 'Add') {
   // items that already have one and must come back exactly where they were.
   let z = topZ();
   const added = items.map(partial =>
-    onLattice(makeItem(partial.z != null ? partial : { ...partial, z: ++z })));
+    fitBoardMode(onLattice(makeItem(partial.z != null ? partial : { ...partial, z: ++z }))));
   commit(label,
     () => { board.items.push(...added.filter(a => !byId(a.id))); bus.emit('items'); },
     () => { const ids = new Set(added.map(a => a.id));
@@ -377,7 +388,7 @@ export function restoreItems(ids, at = null, label = 'Restore') {
   const entries = board.trash.filter(t => set.has(t.item.id));
   if (!entries.length) return [];
   let z = topZ();
-  const items = entries.map(e => ({
+  const items = entries.map(e => fitBoardMode({
     ...e.item,
     ...(at ? { x: at.x, y: at.y } : null),
     z: ++z,
@@ -405,6 +416,141 @@ export function emptyTrash() {
 
 const GEOM_KEYS = ['x', 'y', 'w', 'h', 'rot', 'z'];
 
+/** The fixed width of the Mobile board in world units. */
+export function mobileBoardWidth() {
+  return MOBILE_COLUMNS * baseStep();
+}
+
+/** The highest world-space edge of the Mobile board. It has no lower edge. */
+export function mobileBoardTop() {
+  return MOBILE_TOP_ROWS * baseStep();
+}
+
+const geometryOf = it => {
+  const out = { id: it.id };
+  for (const key of GEOM_KEYS) out[key] = it[key];
+  const presnap = usableMemo(it.meta?.presnap);
+  if (presnap) out.presnap = { ...presnap };
+  return out;
+};
+
+function normalizeLayout(raw, items) {
+  if (!Array.isArray(raw)) return [];
+  const ids = new Set(items.map(it => it.id));
+  const seen = new Set();
+  const out = [];
+  for (const value of raw) {
+    if (!value || typeof value !== 'object' || !ids.has(value.id) || seen.has(value.id)) continue;
+    if (!GEOM_KEYS.every(key => Number.isFinite(+value[key]))) continue;
+    const w = Math.min(Math.max(+value.w, MIN_SIZE), MAX_SIZE);
+    const h = Math.min(Math.max(+value.h, MIN_SIZE), MAX_SIZE);
+    out.push({
+      id: value.id,
+      x: +value.x, y: +value.y, w, h,
+      rot: +value.rot, z: +value.z,
+      ...(usableMemo(value.presnap) ? { presnap: { ...value.presnap } } : {}),
+    });
+    seen.add(value.id);
+  }
+  return out;
+}
+
+function layoutMap(layout) {
+  return new Map((layout || []).map(geometry => [geometry.id, geometry]));
+}
+
+/** Keep an item inside the six-column Mobile strip. */
+function fitMobile(it, scaleHeight = false) {
+  const width = mobileBoardWidth();
+  const oldWidth = Math.min(Math.max(Number.isFinite(it.w) ? it.w : MIN_SIZE, MIN_SIZE), MAX_SIZE);
+  const ratio = oldWidth > width ? width / oldWidth : 1;
+  const w = Math.min(oldWidth, width);
+  const h0 = Math.min(Math.max(Number.isFinite(it.h) ? it.h : MIN_SIZE, MIN_SIZE), MAX_SIZE);
+  const h = scaleHeight ? Math.max(MIN_SIZE, h0 * ratio) : h0;
+  const half = w / 2;
+  const x = Math.min(Math.max(Number.isFinite(it.x) ? it.x : 0, -width / 2 + half), width / 2 - half);
+  const y0 = Number.isFinite(it.y) ? it.y : 0;
+  const y = Math.min(y0, mobileBoardTop() - h / 2);
+  return { ...it, x, y, w, h };
+}
+
+const fitBoardMode = (it, scaleHeight = false) =>
+  board.layoutMode === 'mobile' ? fitMobile(it, scaleHeight) : it;
+
+/**
+ * Complete one profile for every live item.
+ *
+ * New items have no geometry in the inactive profile yet. Desktop inherits the
+ * place where the item was added; Mobile appends it below the existing feed so
+ * switching modes never drops a new card on top of an old one.
+ */
+function completeLayout(mode) {
+  const map = layoutMap(board.layouts[mode]);
+  let bottom = mode === 'mobile' ? mobileBoardTop() : 0;
+  if (mode === 'mobile' && map.size) {
+    bottom = Math.min(...[...map.values()].map(g => g.y - g.h / 2)) - baseStep();
+  }
+  const out = [];
+  for (const it of board.items) {
+    let geometry = map.get(it.id);
+    if (!geometry && mode === 'mobile') {
+      const fitted = fitMobile({ ...it, x: 0, y: 0, rot: 0 }, true);
+      geometry = geometryOf({ ...fitted, y: bottom - fitted.h / 2 });
+      bottom = geometry.y - geometry.h / 2 - baseStep();
+    } else if (!geometry) {
+      geometry = geometryOf(it);
+    }
+    if (mode === 'mobile') {
+      const presnap = geometry.presnap;
+      geometry = {
+        ...geometryOf(fitMobile(geometry)),
+        ...(presnap ? { presnap: { ...presnap } } : {}),
+      };
+    }
+    out.push(geometry);
+  }
+  board.layouts[mode] = out;
+  return out;
+}
+
+function captureLayout(mode = board.layoutMode) {
+  board.layouts[mode] = board.items.map(geometryOf);
+}
+
+function writeLayout(layout) {
+  const map = layoutMap(layout);
+  const ids = [];
+  for (const it of board.items) {
+    const saved = map.get(it.id);
+    if (!saved) continue;
+    const next = fitBoardMode({ ...it, ...saved });
+    for (const key of GEOM_KEYS) it[key] = next[key];
+    if (saved.presnap) it.meta = { ...it.meta, presnap: { ...saved.presnap } };
+    else forgetPresnap(it);
+    ids.push(it.id);
+  }
+  if (ids.length) bus.emit('geom', ids);
+}
+
+/**
+ * Switch which geometry profile is live.
+ *
+ * Content and settings never move: only x/y/w/h/rotation/stacking and the
+ * layout-specific pre-snap memo are exchanged. History is cleared because a
+ * geometry undo captured in one profile must never replay into the other.
+ */
+export function setBoardMode(mode) {
+  if (!BOARD_MODES.includes(mode) || mode === board.layoutMode) return false;
+  captureLayout();
+  const generated = mode === 'mobile' && !(board.layouts.mobile || []).length && board.items.length;
+  board.layoutMode = mode;
+  writeLayout(completeLayout(mode));
+  clearHistory();
+  if (generated) markDirty();
+  bus.emit('layout', mode);
+  return true;
+}
+
 /** Geometry snapshot for a set of ids - the before/after pair of a drag. */
 export function snapshotGeom(ids) {
   return [...ids].map(id => {
@@ -422,7 +568,8 @@ export function applyGeom(snap) {
   for (const g of snap) {
     const it = byId(g.id);
     if (!it) continue;
-    for (const k of GEOM_KEYS) it[k] = g[k];
+    const next = fitBoardMode({ ...it, ...g });
+    for (const k of GEOM_KEYS) it[k] = next[k];
     ids.push(g.id);
   }
   bus.emit('geom', ids);
@@ -476,7 +623,7 @@ export function commitGeom(label, before, driven) {
  *   zoom would otherwise commit a board to a coarser geometry than snapping at
  *   100%, and the same click would do two different things depending on how far
  *   out you happened to be.
- * - **Edges land on lines, not centres**, and the arithmetic is latticeBox() in
+ * - **Edges land on the lattice, not centres**, and the arithmetic is latticeBox() in
  *   geometry.js, shared with the gestures in canvas/input.js so that laying the
  *   board out and then dragging one item across it agree about where things go.
  *   What makes a snapped board look snapped is items sitting flush in cells; an
@@ -535,7 +682,8 @@ function writeSnapState(list) {
   for (const g of list) {
     const it = byId(g.id);
     if (!it) continue;
-    for (const k of SNAP_KEYS) it[k] = g[k];
+    const next = fitBoardMode({ ...it, ...g });
+    for (const k of SNAP_KEYS) it[k] = next[k];
     if (g.pre) it.meta = { ...it.meta, presnap: g.pre };
     else forgetPresnap(it);
     ids.push(g.id);
@@ -1321,13 +1469,17 @@ export function setTitle(title) {
  * outcome an open must not have.
  */
 export function loadBoard(data) {
+  const layoutMode = board.layoutMode;
   const next = normalizeBoard(data);
   board.title = next.title;
   board.view = next.view;
   board.settings = next.settings;
   board.arrangement = next.arrangement;
+  board.layouts = next.layouts;
   board.items = next.items;
   board.trash = next.trash;
+  board.layoutMode = layoutMode;
+  writeLayout(completeLayout(layoutMode));
   selection.clear();
   clearHistory();
   // Stuckness is remembered rather than recomputed, so it has to be dropped
@@ -1366,6 +1518,11 @@ function normalizeBoard(data) {
     ? settings.appearance : {};
   const items = Array.isArray(src.items) ? src.items : [];
   const trash = Array.isArray(src.trash) ? src.trash : [];
+  const normalizedItems = items.filter(it => it && typeof it === 'object').map(makeItem);
+  const rawLayouts = src.layouts && typeof src.layouts === 'object' ? src.layouts : {};
+  const desktop = normalizeLayout(rawLayouts.desktop, normalizedItems);
+  const mobile = normalizeLayout(rawLayouts.mobile, normalizedItems);
+  const desktopById = layoutMap(desktop);
 
   return {
     title: typeof src.title === 'string' && src.title ? src.title : 'Untitled board',
@@ -1422,7 +1579,14 @@ function normalizeBoard(data) {
     },
     arrangement: typeof src.arrangement === 'string' && src.arrangement
       ? src.arrangement : 'spiral',
-    items: items.filter(it => it && typeof it === 'object').map(makeItem),
+    layouts: {
+      // `items` remains the Desktop-compatible representation. A file written
+      // before profiles existed therefore already contains its desktop layout,
+      // and an older reader opening a new file still sees the desktop board.
+      desktop: normalizedItems.map(it => desktopById.get(it.id) || geometryOf(it)),
+      mobile,
+    },
+    items: normalizedItems,
     trash: trash
       .filter(t => t && t.item && typeof t.item === 'object')
       .map(t => ({ item: makeItem(t.item), at: +t.at || 0 })),
@@ -1460,12 +1624,28 @@ const MAX_FONTS = 8;
 
 /** The serialisable board, exactly as it lands in board.json. */
 export function serializeBoard() {
+  captureLayout();
+  const desktop = completeLayout('desktop');
+  const mobile = completeLayout('mobile');
+  const desktopById = layoutMap(desktop);
+  const itemIn = (item, geometry) => {
+    const meta = { ...item.meta };
+    if (geometry?.presnap) meta.presnap = { ...geometry.presnap };
+    else delete meta.presnap;
+    return { ...item, ...(geometry || null), meta };
+  };
   return {
     title: board.title,
     view: { pan: { ...board.view.pan }, zoom: board.view.zoom },
     settings: board.settings,
     arrangement: board.arrangement,
-    items: board.items.map(serializeItem),
+    // Desktop stays in the traditional item fields for readers predating
+    // profiles. New readers take the active geometry from `layouts`.
+    items: board.items.map(item => serializeItem(itemIn(item, desktopById.get(item.id)))),
+    layouts: {
+      desktop: desktop.map(serializeGeometry),
+      mobile: mobile.map(serializeGeometry),
+    },
     // The bin travels with the board. Saving is the moment a board becomes a
     // file you might not open again for a month, and a bin that emptied itself
     // at exactly that moment would be a trapdoor rather than a safety net.
@@ -1478,6 +1658,19 @@ const serializeItem = i => ({
   x: round(i.x), y: round(i.y), w: round(i.w), h: round(i.h),
   rot: round(i.rot), z: i.z,
   name: i.name, asset: i.asset, meta: i.meta,
+});
+
+const serializeGeometry = geometry => ({
+  id: geometry.id,
+  x: round(geometry.x), y: round(geometry.y),
+  w: round(geometry.w), h: round(geometry.h),
+  rot: round(geometry.rot), z: geometry.z,
+  ...(geometry.presnap ? {
+    presnap: {
+      x: round(geometry.presnap.x), y: round(geometry.presnap.y),
+      w: round(geometry.presnap.w), h: round(geometry.presnap.h),
+    },
+  } : {}),
 });
 
 const round = n => Math.round(n * 100) / 100;

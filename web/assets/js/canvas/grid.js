@@ -69,6 +69,10 @@ export const MIN_PX_TOUCH = Math.ceil(TOUCH_MIN_MM * PX_PER_INCH / MM_PER_INCH);
 /** The band keeps its factor of four, which is MAJOR - see the note above. */
 export const MAX_PX_TOUCH = MIN_PX_TOUCH * MAJOR;
 
+/** Axes are a Desktop spatial aid; Mobile keeps only the quieter lattice. */
+export const axesVisible = (settings = board.settings, mode = board.layoutMode) =>
+  !!settings.axes && mode !== 'mobile';
+
 /**
  * World-space grid step whose on-screen spacing lands inside the band in force.
  *
@@ -90,7 +94,11 @@ export function paintGrid(vp) {
   const el = vp.el;
   const s = board.settings;
 
-  el.classList.toggle('no-axes', !s.axes);
+  el.classList.toggle('no-axes', !axesVisible());
+
+  // Before the early return below: the axes are not part of the grid and do not
+  // leave with it. "Show grid" and "Show axes" are two settings.
+  paintAxes(vp);
 
   const canvas = ensureCanvas(el);
 
@@ -233,7 +241,24 @@ function clearTiles(canvas) {
  * this one is doing nothing at all out there.
  */
 function punchHole(canvas, o, vp) {
-  const near = originHole()
+  // ...and dropped while the board is moving, wherever the origin is.
+  //
+  // The comment below is right that this is usually the same string twice, and
+  // wrong about the case that matters. The origin sits in the middle of the
+  // screen on a board nobody has panned yet - which is every board at the moment
+  // it is opened, and the whole of an empty one - and there the position in this
+  // string changes on every single frame. Rewriting a mask is not a cheap write:
+  // it invalidates the layer it applies to, which here is the full screen, so
+  // the one case where the guard below never fires is also the case where the
+  // cost is highest. On a phone that alone was the difference between a smooth
+  // pinch and a visibly stepping one, on a board with nothing on it.
+  //
+  // What is given up is a grid mark peeping out from behind the origin ring for
+  // as long as a gesture lasts, under a mark that is drawn over the top of it
+  // anyway. It comes back the moment the board settles - Viewport announces the
+  // stop, which repaints this - and a still board is the only one anybody is
+  // looking at closely enough to see a dot under a ring.
+  const near = originHole() && !vp.moving
     && o.x > -20 && o.y > -20 && o.x < vp.width + 20 && o.y < vp.height + 20;
   const mask = near
     ? `radial-gradient(circle at ${o.x.toFixed(1)}px ${o.y.toFixed(1)}px,`
@@ -249,6 +274,124 @@ function punchHole(canvas, o, vp) {
   lastMask = mask;
   canvas.style.maskImage = mask;
   canvas.style.webkitMaskImage = mask;
+}
+
+// ---------------------------------------------------------------------------
+// The world axes
+// ---------------------------------------------------------------------------
+
+/**
+ * How thick a world axis is, in CSS pixels.
+ *
+ * Stated in CSS pixels rather than device ones so the rule is the same weight on
+ * every screen: two device pixels is a bold line on a laptop and an invisible
+ * one on a phone at 3x.
+ *
+ * It does not have to be a whole number, and that is worth saying because it is
+ * exactly what a <div> could not do. A canvas fill of 1.2 rows paints one row
+ * solid and a fifth of the next, every frame, because that is what was asked for
+ * - there is no layout rounding between the number and the pixels, so a
+ * fractional weight is stable rather than something that comes and goes as the
+ * board moves. On a display at 100% this reads as a hairline with a shade of
+ * weight under it; at 2x and 3x it is 2.4 and 3.6 rows, which is the same line.
+ */
+const AXIS_PX = 1.2;
+
+/**
+ * Where the two rules were last drawn, in device pixels, so the next frame can
+ * wipe those two bands and no more.
+ *
+ * A full clear of a phone-sized canvas is a few million pixels memset on every
+ * frame of every pan, to erase two lines. The thickness is remembered with the
+ * positions because a window dragged to a screen of another density changes it,
+ * and a band cleared at the wrong width leaves a stripe behind. The width and
+ * height come along so that a canvas which has just been resized - and therefore
+ * blanked - is not asked to clear rows out of a bitmap that no longer has them.
+ */
+let axisWas = { x: null, y: null, t: 0, w: 0, h: 0 };
+
+/**
+ * The two world axes, in whole device pixels.
+ *
+ * This used to be two absolutely-positioned <div>s one device pixel thick, and
+ * it could not be made to work. A browser lays out in sixty-fourths of a CSS
+ * pixel, and one device pixel is a whole number of those only when the display
+ * is at 100% or 200% - at 125%, at 150%, or on a phone at 3x, the closest
+ * expressible height is a fraction under a full row. Standing still that is
+ * invisible; the rasteriser paints 99% of a row and nobody can tell. But the
+ * *position* moves with every pan, and wherever that missing fraction happened
+ * to straddle a pixel boundary the row could round away to nothing, so the axis
+ * blinked out and came back a few pixels later.
+ *
+ * There is no arithmetic that fixes it, because the problem is that the unit
+ * being asked for does not exist in the units the answer is given in. A canvas
+ * has no such gap: a pixel is filled or it is not, and fillRect on integer
+ * coordinates fills exactly the row it names. So the rules are drawn rather
+ * than laid out, and the question stops being asked.
+ *
+ * Its own canvas rather than the grid's, and that is not tidiness either. The
+ * grid cuts a hole in itself where the origin mark stands, and it does it with
+ * a CSS mask - which applies to the whole element. Drawn on that canvas, both
+ * rules would have a notch taken out of them exactly where they cross.
+ */
+function paintAxes(vp) {
+  const canvas = ensureAxisCanvas(vp.el);
+  const ctx = sizeCanvas(canvas, vp);
+  if (!ctx) return;
+  const W = canvas.width, H = canvas.height;
+
+  // A resize blanks the bitmap, so there is nothing left to wipe - and the rows
+  // named in axisWas may not even exist any more.
+  // null rather than a negative number for "not drawn": a rule running off the
+  // top of the screen is drawn at a negative row, and a sentinel it could be
+  // mistaken for would leave that one on the canvas for good.
+  if (axisWas.w !== W || axisWas.h !== H) axisWas = { x: null, y: null, t: 0, w: W, h: H };
+  // Cleared to a whole pixel, though it is drawn to a fraction of one. A
+  // clearRect over four fifths of a row removes four fifths of what is in it and
+  // leaves the rest, so a fractional wipe would build up a faint stripe along
+  // every path the axis had ever taken. Erasing a hair more than was drawn costs
+  // nothing, since the rule is about to be redrawn anyway.
+  if (axisWas.y !== null) ctx.clearRect(0, axisWas.y, W, Math.ceil(axisWas.t));
+  if (axisWas.x !== null) ctx.clearRect(axisWas.x, 0, Math.ceil(axisWas.t), H);
+  axisWas.x = axisWas.y = null;
+
+  if (!axesVisible()) return;
+
+  // The same origin the grid lattice lands on - see Viewport.axisOrigin(), and
+  // the note there about the two having once rounded it differently. It hands
+  // back the centre of a device pixel, and the band is laid symmetrically about
+  // that point - so a rule of any thickness still has the crossing at its middle
+  // and the origin mark, which is centred on the same point, sits true on it.
+  const o = vp.axisOrigin ? vp.axisOrigin() : vp.toScreen(0, 0);
+  const d = canvas._dpr;
+  // Not rounded to a whole row - see AXIS_PX. The *start* is, so the first row
+  // is solid and only the overhang is soft.
+  const t = Math.max(1, AXIS_PX * d);
+  const y = Math.round(o.y * d - t / 2);
+  const x = Math.round(o.x * d - t / 2);
+  axisWas.t = t;
+
+  ctx.fillStyle = gridInk().axis;
+  // Tested against the band rather than against a single row, so a rule half off
+  // the top of the screen still draws the half that is on it.
+  if (y + t > 0 && y < H) { ctx.fillRect(0, y, W, t); axisWas.y = y; }
+  if (x + t > 0 && x < W) { ctx.fillRect(x, 0, t, H); axisWas.x = x; }
+}
+
+/** The axis layer, made if it is not there - see ensureCanvas() for why. */
+function ensureAxisCanvas(el) {
+  let canvas = el.querySelector(':scope > #axis-ink');
+  if (!canvas) {
+    canvas = document.createElement('canvas');
+    canvas.id = 'axis-ink';
+    canvas.setAttribute('aria-hidden', 'true');
+    // Over the lattice and under the board, which is where index.html puts it.
+    // Appending would put the rules on top of every item.
+    const world = el.querySelector(':scope > #world');
+    if (world) el.insertBefore(canvas, world); else el.append(canvas);
+    axisWas = { x: -1, y: -1, w: 0, h: 0 };
+  }
+  return canvas;
 }
 
 /** A grid colour at a fraction of itself. Takes a var() as happily as a hex. */
@@ -441,7 +584,7 @@ function drawCrosses(canvas, vp, o, minor, major, alpha) {
  * Conditional rather than always, because "Show axes" takes the origin mark
  * with it - and with nothing there, a missing mark is just a hole in the grid.
  */
-const originHole = () => !!board.settings.axes;
+const originHole = () => axesVisible();
 
 /**
  * One lattice of crosses, as a single filled path.
@@ -591,6 +734,10 @@ function gridInk() {
   ink = {
     major: s.getPropertyValue('--grid-major').trim() || 'currentColor',
     minor: s.getPropertyValue('--grid-minor').trim() || 'currentColor',
+    // The axes are drawn rather than styled now, so their colour has to be
+    // resolved here with the rest of them - and is given back by the same
+    // resetGridInk() when a look changes.
+    axis: s.getPropertyValue('--grid-axis').trim() || 'currentColor',
     dot: Number.isFinite(dot) ? dot : 1.5,
   };
   return ink;

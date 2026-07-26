@@ -91,7 +91,7 @@ A `.mbrd` is a ZIP with a different extension — the same trick `.3mf` and
 ```
 myboard.mbrd
 ├── manifest.json        { format, version, app, created, modified, title }
-├── board.json           { view, settings, arrangement, items[] }
+├── board.json           { view, settings, arrangement, items[], layouts }
 ├── assets/<hash>.<ext>  the embedded bytes, deduped by content hash
 ├── notes/<slug>--<id>.md      one sticky note, as readable Markdown
 └── waveforms/<hash>.json      one audio file's measured readings
