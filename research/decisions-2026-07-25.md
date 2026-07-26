@@ -131,16 +131,48 @@ chooses — it is whatever photographs somebody dropped.
    the canvas out of it. Coherent, and much smaller.
 3. **Drop it.** Keep the two-hue palettes and state that as the system.
 
+### What happened when it was tried
+
+Option 1 was built and measured before being thrown away, so the argument above
+is no longer only an argument.
+
+Absinthe, Tea rose and Peacock were rebuilt on the reading that puts the
+palette's hue in the ink and hands the accent to a contrasting one. Then every
+painted pixel of a screenshot was assigned to its nearest token family, sidebar
+open, three items on the board:
+
+| | 60 band | 30 band | 10 band |
+| - | ---- | ---- | ---- |
+| Papyrus, untouched | 91.3% | 8.1% | 0.5% |
+| Absinthe, rebuilt | 96.6% | 2.9% | 0.5% |
+| Tea rose, rebuilt | 97.1% | 2.3% | 0.6% |
+| Peacock, rebuilt | 97.4% | 2.1% | 0.5% |
+
+**The rebuild landed further from 60-30-10 than the palette nobody touched.**
+Two reasons, and neither is a tuning error:
+
+- **The 30 band is text and hairlines.** Glyphs and one-pixel rules cover a few
+  percent of a screen whatever colour they are printed in. No choice of pigment
+  moves that number. A real 30 needs a large *filled* surface — the sidebar as a
+  panel of colour rather than a sheet of paper — which is a change to what the
+  app looks like, not to what it is coloured.
+- **A near-neutral sheet makes it worse.** Tinting the paper down to let the ink
+  carry the hue moved more pixels into the paper family and grew the 60.
+
+And it looked wrong, which the numbers do not say on their own: with the paper
+that neutral, Absinthe read as Papyrus with a rust accent rather than as a green
+board.
+
 ### Recommendation
 
-**Option 3, and write down the rule that is already being followed**: two hues,
-chroma capped near 0.13, accent for action and `--leafy` for the second voice.
-That is a real system, it is the one the palettes were built on, and naming it
-is worth more than swapping it for a rule borrowed from a different kind of
-page.
+**Option 3, and it is now measured rather than argued.** Keep the two-hue rule
+the palettes were built on: two hues, chroma capped near 0.13, accent for action
+and `--leafy` for the second voice.
 
-If the itch is specifically "the accent is over-used", that is option 2 and it is
-a much narrower conversation about `app.css`.
+The four presets are back to exactly what they were, and 60-30-10 is off the
+list — for the presets *and* for extraction, where it would have been the
+obvious rule to reach for next. The constraint the attempt uncovered is written
+up under item 4, because that is where it still bites.
 
 ---
 
@@ -168,7 +200,113 @@ is never seen.
 **When it fires.** A button, a one-time offer after an import, or silently on
 import.
 
-### Recommendation
+### One constraint, found the hard way
+
+Extraction sets `--accent`. **Setting `--accent` repaints every sticky note on
+the board**, because the note pack is derived from it:
+
+```css
+--note-1: color-mix(in srgb, var(--accent-warm) 34%, var(--paper-card));
+--note-2: color-mix(in srgb, var(--accent) 17%, var(--paper-card));
+--note-3: color-mix(in srgb, var(--leafy) 26%, var(--paper-card));
+```
+
+That derivation is right for the presets — it is what stops a note turning into
+a stray office-yellow rectangle on a sage-green board — and it is wrong the
+moment the accent stops being the board's own hue. Item 3's rebuild moved the
+accent to a contrasting one and turned a green board's stickies peach, which is
+the single most visible thing that went wrong with it.
+
+The tint numbers are a note's *identity* — a board is written with tint 2 meaning
+one thing and tint 3 another — so extraction repainting them is not a palette
+change, it is an edit to the user's notes.
+
+The fix is small and should land with extraction rather than before it: name the
+note pigments in their own slots (`--note-a` … `--note-d`, defaulting to
+`var(--accent-warm)`, `var(--accent)`, `var(--leafy)`, `var(--accent-warm)`) and
+let a palette or an extraction pin them. Two things to know if it is built:
+
+- `--note-1` … `--note-4` are declared **twice** — the base block and again at
+  the plain end of the whimsy axis. Both have to move, or the plain end silently
+  keeps the old derivation.
+- Every token declared in `tokens.css` must also appear in `TOKENS` in
+  `ui/look.js`, or `tests/appearance.test.js` fails. That test is doing its job;
+  it caught exactly this.
+
+### Settled, and built
+
+Decided 2026-07-25 and in the tree: `web/assets/js/ui/pigments.js`, wired through
+`recolourFromBoard()` in `ui/appearance.js`, with `tests/pigments.test.js`.
+
+- **Scope: everything.** Paper, ink and pigment — thirteen tokens. An extracted
+  palette is a whole palette, not a tint on top of Papyrus.
+- **Hues: one to three, whatever the pictures hold.** The first takes the sheet,
+  the ink and the accent; the second takes `--leafy`; a third takes
+  `--accent-warm` outright instead of staying a relative of the accent. With one
+  hue, `--leafy` turns 85° away, because a board whose ornamental wash is its own
+  accent has no second voice.
+- **Rule: the presets' own.** Every lightness and chroma in the tables comes from
+  measuring the four presets — `tools/preset-oklch.mjs` prints the measurement —
+  so an extracted palette and a chosen one sit in the same place on every axis.
+- **Trigger: a switch, and then every picture.** *Revised the same day — see
+  below. It shipped first as "silent while the look is presets-only, plus a
+  button", gated on an inferred `isPresetOnly()`.*
+
+#### The gate became a switch
+
+Kosta, on seeing it: *"'take colours from pictures' should be a toggle, and
+recalculate every time a picture is put in."* Right, and for a reason worth
+writing down: the inferred gate meant the honest answer to "will importing a
+photograph repaint my board?" was a paragraph about provenance. A switch the
+user can see is a better answer than a rule they have to be told — and it fixes
+what the inference got wrong in *both* directions. Somebody who wants their
+hand-tuned board recoloured anyway can now say so, and somebody who never wanted
+it is no longer relying on having happened to touch a slider.
+
+Which changed four things:
+
+- **`appearance.auto`**, the user's setting, alongside `derived`. Both are
+  non-token fields carried through `clone()`. `derived` narrowed to what it
+  actually is — provenance, read only by the palette menu deciding whether to
+  drop two tokens or fourteen.
+- **The three-picture floor went.** It existed because the feature fired unasked,
+  and a whole interface turning over on one dropped file reads as a fault. Asked
+  for by a switch, it *is* what was asked for, and refusing until the third
+  photograph arrives is the fault.
+- **The named palette is no longer cleared.** Checked rather than assumed: the
+  `[data-palette]` blocks declare exactly the thirteen tokens `SHEET` +
+  `PIGMENT` + `--leafy` cover, so an extraction overrides the named palette
+  completely and nothing leaks through from underneath. Leaving it standing is
+  what gives the switch somewhere to fall back to.
+- **Only a *pigment* set by hand switches it off**, via `PALETTE_TOKENS`. Setting
+  any control used to, which meant choosing a display face silently stopped the
+  colour extraction.
+
+Turning it on extracts at once — waiting for the next import would look
+identical to broken. Turning it off changes nothing on screen: it only stops
+recalculating, because the colours already taken are the board's colours now.
+The palette menu is the way back, and it is the one control that drops all
+fourteen tokens at once.
+
+Three things are worth knowing about the implementation:
+
+- **Only lightness is repaired.** Hue is the answer the photographs gave; chroma
+  is what keeps a board tinted rather than saturated. Contrast is made of
+  lightness, which is why the whole file works in OKLab and not HSL. A test
+  walks all 360° and asserts ink-on-paper ≥ 7 and accent-fg-on-accent ≥ 4.5.
+- **Gamut clipping gives up chroma, never lightness or hue.** Clipping channels
+  instead — the obvious thing — drags a too-blue blue towards cyan, and the
+  palette stops being the one that was chosen.
+- **The vote is chroma-weighted and skips near-neutrals.** A photograph is mostly
+  near-grey, and letting those pixels vote makes every board extract to the same
+  faint beige. A grey street with one red door extracts red, which is also what
+  anybody would call the colour of that picture.
+
+`import/drop.js` announces `bus.emit('imported')` rather than calling any of
+this, because `ui/appearance.js` reaches for `document` at import time and
+`tests/imports.test.js` holds the import pipeline to loading without a browser.
+
+### The recommendation this replaced
 
 **Two hues, and a button.**
 
@@ -295,8 +433,8 @@ On the two remaining sub-questions:
 | - | ---- | -------------- | ----------- |
 | 1 | Quality modes | Close it; the ladder covers it. Optionally make `DENSE_LIMIT` adaptive. | ~none |
 | 2 | Sidebar reform | Pin commands, drop the duplicated Trash section. Inspector later. | small |
-| 3 | 60-30-10 | Drop it; write down the two-hue rule that is already in force. | none |
-| 4 | Palette extraction | Two hues, fired by a button in Appearance. | large |
+| 3 | 60-30-10 | **Settled: dropped.** Built, measured at 97-2-0.5, reverted. Two-hue rule stands. | none |
+| 4 | Palette extraction | **Settled: built.** One to three hues, whole palette, silent on import while the look is presets-only, plus a button. | done |
 | 5 | Cloud sync | Synced folder. Document it and close the item. | none |
 | 6 | Optimize board | Non-destructive "export a compact copy" instead. | large |
 

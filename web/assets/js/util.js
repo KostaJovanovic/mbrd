@@ -125,6 +125,23 @@ export function formatBytes(n) {
 export const isHash = v => typeof v === 'string' && /^[0-9a-f]{64}$/.test(v);
 
 /**
+ * A CSS family name a board is allowed to carry, for a face dropped into it.
+ *
+ * Here beside isHash for exactly the same reason: state.js holds the field to
+ * this shape on the way in from a file, ui/fonts.js builds names that satisfy
+ * it, and those two do not import each other.
+ *
+ * The alphabet is the point. This string is substituted into a real declaration
+ * - `--font-display: "Name", serif` - and it is the only part of that
+ * declaration that came out of a filename, which is to say out of a .mbrd
+ * somebody else wrote. No quote to close the string early, no `;` or `}` to end
+ * the declaration, no backslash to escape its way past either. Length-capped
+ * because a family name is a name.
+ */
+export const isFamily = v =>
+  typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9 _-]{0,39}$/.test(v);
+
+/**
  * Every content id an item depends on: its own bytes, and the picture it was
  * given (see setItemCover in state.js).
  *

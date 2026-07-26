@@ -840,11 +840,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
   font-style: normal;
   overflow-wrap: anywhere;
   /* Two lines of address is as much orientation as anyone wants, and the whole
-     of it is on the anchor's tooltip for the rare time it is not. */
+     of it is on the anchor's tooltip for the rare time it is not.
+
+     Prefixed only, deliberately. The unprefixed `line-clamp` was here as
+     future-proofing and bought nothing: there is no engine that supports it and
+     not the -webkit- form, Firefox aliases the prefixed one, and the unprefixed
+     declaration's only observable effect was a dropped-declaration warning in
+     every Firefox console that opened this page. */
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-          line-clamp: 2;
   overflow: hidden;
 }
 /* ---- A model on a card (canvas/model.js) ---------------------------------
@@ -961,7 +966,9 @@ plates do: below a third of size a card is a coloured tile, and a click on
    gradient. Reads like a museum label. */
 .item-label {
   position: absolute;
-  left: 0; right: 0; bottom: 0;
+  /* Stops where the menu handle starts, so a long name is ellipsised at the
+     bar's edge instead of running underneath the dots. */
+  left: 0; right: 28px; bottom: 0;
   padding: 6px 11px 7px;
   font-size: 12px;
   font-style: var(--display-italic);
@@ -993,6 +1000,54 @@ plates do: below a third of size a card is a coloured tile, and a click on
    The grip itself is an invisible hit area; the only thing drawn is a heavier
    stretch of the selection ring at each corner - see .item::before, which the
    marks share their geometry with. */
+/* The three-dot handle: every item's way into its own menu, and the only way in
+   at all without a right-click.
+
+   Always on, never revealed by hover. It was hover-only first, which is the
+   habit, and the habit is wrong here: hover does not exist on a touchscreen,
+   and this is the *only* route to an item's actions there. A control that is
+   the sole way to do something cannot be one you have to discover.
+
+   It sits flush in the bottom-right corner and wears the caption plate's own
+   height, background and rule, so on a card that has a name the two form a
+   single bar across the foot. Hidden below the far-zoom threshold with
+   everything else, because at that scale a card is a swatch, not a thing you
+   operate. */
+.item-menu {
+  position: absolute;
+  right: 0; bottom: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  /* The caption plate's own height, arrived at the same way it is: 12px of type
+     at 1.25, plus its 6px and 7px of padding. The two share an edge, so they
+     have to agree - and they are both in the item's units, which is why this
+     one is not scaled by --iz like the resize marks are. A control that is part
+     of the card scales with the card. */
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--rule);
+  border-top: 1px solid var(--rule);
+  border-radius: 0;
+  /* Matched to .item-label, so on anything carrying a caption the two read as
+     one bar across the foot of the card rather than as a button parked on top
+     of a plate. */
+  background: color-mix(in srgb, var(--paper-card) 88%, transparent);
+  backdrop-filter: blur(3px);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease),
+              background var(--dur-fast) var(--ease);
+}
+.item-menu svg { width: 14px; height: 14px; }
+.item-menu:hover { color: var(--accent-deep); background: var(--paper-card); }
+.item-menu:focus-visible { outline: var(--sel-line) solid var(--select); outline-offset: var(--sel-gap); }
+#world.zoom-far .item-menu { display: none; }
+/* Nothing but the text while a name or a note is being edited. */
+.item.is-editing > .item-menu { display: none; }
+
 .grip {
   position: absolute;
   /* Capped at half the *ring*, not half the item: opposite marks then meet
@@ -1222,14 +1277,88 @@ plates do: below a third of size a card is a coloured tile, and a click on
   color: var(--ink-3);
 }
 
+/* The board's name, which is also the field you rename it in.
+   Chromeless until you reach for it: an input that draws itself as a text field
+   at rest would make the panel's first line look like a form to fill in, when
+   almost always it is a label to read. The affordance arrives on hover and the
+   box on focus, which is the same bargain the item labels on the board make. */
 .board-title {
+  display: block;
+  width: 100%;
   margin: 0 0 11px;
+  padding: 3px 6px;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-xs);
+  background: none;
+  font: inherit;
   font-size: 18px;
-  word-break: break-word;
+  color: inherit;
+  cursor: text;
+  transition: border-color var(--dur-fast) var(--ease),
+              background-color var(--dur-fast) var(--ease);
 }
-.board-title em { color: var(--ink-3); }
+/* An unnamed board reads as an aside, not as a filename. This is the placeholder
+   now rather than an <em>, so the field is empty and typing starts a name
+   instead of editing the words "Untitled board". */
+.board-title::placeholder { color: var(--ink-3); font-style: var(--display-italic); opacity: 1; }
+.board-title:hover { border-color: var(--rule); }
+.board-title:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--paper-card);
+}
 
-.btn-row { display: flex; gap: 8px; margin-bottom: 8px; }
+/* Two controls that are one decision. Equal columns rather than auto, so the
+   pair does not jump about as the face names change length - and `minmax(0,1fr)`
+   rather than `1fr`, because a grid track's default minimum is the content's
+   own width and a <select> holding "Times New Roman" would otherwise push the
+   column past its share and out of the panel. */
+.field-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0 10px;
+}
+
+/* The fold. Everything here is something you set once - or never - and it was
+   crowding the three controls that get used. */
+.advanced { margin-top: 4px; }
+.advanced > summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 0;
+  cursor: pointer;
+  list-style: none;
+  font-size: var(--t-tiny);
+  font-style: var(--display-italic);
+  letter-spacing: calc(0.24em * var(--ls-scale));
+  text-transform: uppercase;
+  color: var(--ink-3);
+  transition: color var(--dur-fast) var(--ease);
+}
+.advanced > summary::-webkit-details-marker { display: none; }
+.advanced > summary:hover { color: var(--accent); }
+/* A drawn caret, so it turns with the disclosure rather than depending on a
+   glyph whose ink is not centred in its line box. */
+.advanced > summary::before {
+  content: "";
+  flex: none;
+  width: 0; height: 0;
+  border-left: 4px solid currentColor;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  transition: transform var(--dur-fast) var(--ease);
+}
+.advanced[open] > summary::before { transform: rotate(90deg) translateX(1px); }
+.advanced[open] > summary { margin-bottom: 7px; }
+
+/* Wraps, because the buttons do not. Every one of these is `white-space:
+   nowrap` on purpose - a command broken across two lines reads as two commands -
+   and the row had no way to give, so a label longer than its share of the panel
+   pushed its neighbour out past the edge and clipped it. The panel is also
+   user-resizable down to 260px, which turns that from an unlucky label into a
+   drag anybody can do. Wrapping costs nothing while the row fits. */
+.btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 .btn-row:last-child { margin-bottom: 0; }
 .btn-row button {
   flex: 1;
@@ -1933,6 +2062,91 @@ kbd {
      disagreeing is worse than neither following the axis. */
   transition: opacity 300ms var(--ease);
 }
+/* The question dialog. Dressed as the app rather than as the browser: the same
+   sheet, hairline, leaf radius and lift budget every other surface uses, so the
+   one moment this thing interrupts you it still looks like the thing you were
+   using. */
+#ask {
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 22px 24px 18px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--ogee);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
+  color: var(--ink);
+  /* A <dialog> in the top layer is centred by its own margin:auto, which the
+     reset's `margin: 0` takes away. */
+  margin: auto;
+  animation: ask-in var(--dur-base) var(--ease-back);
+}
+#ask::backdrop {
+  /* Tinted with the board's own ink rather than plain black, so the sheet
+     behind it dims into the palette instead of going grey. */
+  background: color-mix(in srgb, var(--ink) 42%, transparent);
+  backdrop-filter: blur(2px);
+}
+#ask h2 {
+  margin: 0 0 8px;
+  font-family: var(--font-display);
+  font-size: var(--t-title);
+  font-style: var(--display-italic);
+  font-weight: 400;
+  color: var(--ink);
+}
+#ask p {
+  margin: 0 0 18px;
+  font-size: var(--t-body);
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+#ask p[hidden] { display: none; }
+.ask-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* Pushes the two paired answers to the far end, away from the one that keeps
+   your work. Collapses to nothing when the row wraps on a narrow screen. */
+.ask-gap { flex: 1 1 0; min-width: 0; }
+.ask-row button {
+  min-height: calc(35px * var(--density));
+  padding: 0 14px;
+  color: var(--ink);
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease),
+              transform var(--dur-base) var(--ease-back),
+              color var(--dur-fast) var(--ease);
+}
+.ask-row button:hover {
+  background: var(--paper-2);
+  border-color: var(--accent);
+  color: var(--accent-deep);
+  transform: translateY(var(--btn-lift)) scale(var(--btn-grow));
+}
+.ask-row button:active { transform: scale(var(--btn-press)); background: var(--paper-3); }
+/* The dialog opens with a button already focused, so whatever ring this is
+   lands on screen every single time rather than only for people who tab - which
+   made the browser's default black outline the most prominent thing in the
+   panel. Suppressed for the plain case and drawn in the app's own ring when the
+   focus is one somebody navigated to. Same ring the search hits and the context
+   menu use. */
+.ask-row button:focus { outline: none; }
+.ask-row button:focus-visible {
+  outline: var(--sel-line) solid var(--select);
+  outline-offset: var(--sel-gap);
+}
+.ask-row button[hidden] { display: none; }
+/* The irreversible one is the only thing in the panel wearing the danger
+   colour, and it is not the one that has focus when the dialog opens. */
+.ask-row button.danger { border-color: var(--danger); color: var(--danger); }
+.ask-row button.danger:hover {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--paper-card);
+}
+@keyframes ask-in { from { opacity: 0; transform: translateY(8px) scale(0.97); } }
+
 #toast.is-going { opacity: 0; }
 #toast.is-error { border-color: var(--danger); color: var(--danger); }
 @keyframes rise { from { opacity: 0; transform: translate(-50%, 10px) rotate(-3deg); } }
@@ -2044,12 +2258,17 @@ kbd {
 
   /* The panel becomes the screen rather than a sheet laid on it. At this width
      the board behind it is not usable anyway, and half a panel is worse than a
-     whole one. It keeps the inset at the top so the notch does not eat the
-     title, and it stops short of the bar so the menu button it came from is
-     still visible underneath. */
+     whole one. Insets on all four sides so a notch or a home indicator does not
+     eat anything.
+
+     It used to stop 58px short of the bottom to leave the zoom bar showing.
+     That was the wrong trade twice over: it spent the scarcest thing on a phone
+     - vertical room in a panel that is mostly a scrolling list - on a strip of
+     controls that do nothing while the panel is up, and it left a band of live
+     board at the foot of a screen you are scrolling with your thumb. */
   #sidebar {
     top: max(10px, env(safe-area-inset-top));
-    bottom: calc(max(12px, env(safe-area-inset-bottom)) + 58px);
+    bottom: max(10px, env(safe-area-inset-bottom));
     left: max(10px, env(safe-area-inset-left));
     right: max(10px, env(safe-area-inset-right));
     width: auto;

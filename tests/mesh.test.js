@@ -10,7 +10,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  parseSTL, parseOBJ, parseGLB, parseMesh, meshKind, MeshError, MAX_TRIANGLES,
+  parseSTL, parseOBJ, parseGLB, parseMesh, parseMTL, applyMaterials,
+  defaultUpAxis, meshKind, MeshError, MAX_TRIANGLES,
 } from '../web/assets/js/import/mesh.js';
 
 // A unit triangle in the z = 0 plane, wound anticlockwise so its normal is +z.
@@ -287,6 +288,248 @@ test('meshKind picks a parser from the extension', () => {
 test('parseMesh dispatches, and refuses a kind it does not have', () => {
   assert.equal(parseMesh('obj', new TextEncoder().encode('v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3').buffer).count, 3);
   assert.throws(() => parseMesh('ply', new ArrayBuffer(8)), MeshError);
+});
+
+// ---------------------------------------------------------------------------
+// Which way is up
+// ---------------------------------------------------------------------------
+//
+// STL is Z-up and the viewer is Y-up, so parseMesh() stands STL geometry up on
+// the way through and leaves the other two alone. This is the difference
+// between a part on its feet and a part on its back, and nothing else in the
+// app can tell - the renderer is handed points and draws them.
+
+test('parseMesh stands a Z-up STL upright, points and box together', () => {
+  // A triangle standing up the Z axis, which is what "up" means in an STL.
+  const tall = { a: [0, 0, 0], b: [1, 0, 0], c: [0, 0, 4], normal: [0, -1, 0] };
+  const m = parseMesh('stl', binarySTL([tall]));
+
+  // Negating a coordinate of zero gives -0, which is the same number and a
+  // different value to deepEqual. Flattened rather than worked around, because
+  // "the sign of nothing" is not a property this should be asserting.
+  const flat = a => [...a].map(n => (n === 0 ? 0 : n));
+
+  // (x, y, z) -> (x, z, -y): the height moves out of Z and into Y.
+  assert.deepEqual(flat(m.positions), [0, 0, 0, 1, 0, 0, 0, 4, 0]);
+  assert.deepEqual(flat(m.normals).slice(0, 3), [0, 0, 1]);
+
+  // The box has to travel with the points. The renderer frames the model from
+  // bounds alone, so a mesh whose geometry stood up and whose box did not would
+  // look right and be framed from the wrong place - centred on nothing, and
+  // clipped or tiny depending on the part.
+  assert.deepEqual(flat(m.bounds.min), [0, 0, 0]);
+  assert.deepEqual(flat(m.bounds.max), [1, 4, 0]);
+
+  // And the box must still be the box: every point inside it, on every axis.
+  for (let i = 0; i < m.positions.length; i += 3) {
+    for (const k of [0, 1, 2]) {
+      assert.ok(m.positions[i + k] >= m.bounds.min[k] - 1e-6
+             && m.positions[i + k] <= m.bounds.max[k] + 1e-6,
+        `point ${i / 3} is outside the bounds on axis ${k}`);
+    }
+  }
+});
+
+test('the rotation is a rotation: nothing is stretched or mirrored', () => {
+  const tri = { a: [1, 2, 3], b: [-4, 0.5, 2], c: [0, -3, 7], normal: [0, 1, 0] };
+  const raw = parseSTL(binarySTL([tri]));
+  const up = parseMesh('stl', binarySTL([tri]));
+  const edge = (p, i, j) => Math.hypot(
+    p[i * 3] - p[j * 3], p[i * 3 + 1] - p[j * 3 + 1], p[i * 3 + 2] - p[j * 3 + 2]);
+  for (const [i, j] of [[0, 1], [1, 2], [2, 0]]) {
+    near(edge(raw.positions, i, j), edge(up.positions, i, j), `edge ${i}-${j} changed length`);
+  }
+  // Normals stay unit length - they are rotated, not transformed by something
+  // with a scale hidden in it.
+  near(Math.hypot(up.normals[0], up.normals[1], up.normals[2]), 1, 'normal length');
+});
+
+test('OBJ defaults to Z-up, and the default can be overridden', () => {
+  // OBJ's up-axis is the one guess in this file: the format says nothing, CAD
+  // and scanning tools write Z-up, Blender's exporter writes Y-up. Z-up is the
+  // default because it is the company OBJ keeps beside STL, and because being
+  // wrong is recoverable - `meta.upAxis` reaches this argument.
+  const src = new TextEncoder().encode('v 0 0 0\nv 1 0 0\nv 0 0 5\nf 1 2 3').buffer;
+  const flat = a => [...a].map(n => (n === 0 ? 0 : n));
+
+  const guessed = parseMesh('obj', src);
+  assert.deepEqual(flat(guessed.positions), [0, 0, 0, 1, 0, 0, 0, 5, 0]);
+  assert.deepEqual(flat(guessed.bounds.max), [1, 5, 0]);
+
+  const asWritten = parseMesh('obj', src, 'y');
+  assert.deepEqual(flat(asWritten.positions), [0, 0, 0, 1, 0, 0, 0, 0, 5]);
+  assert.deepEqual(flat(asWritten.bounds.max), [1, 0, 5]);
+
+  // And an STL can be told it was Y-up all along, for the exporter that wrote
+  // one from a Y-up scene.
+  const stl = parseMesh('stl', binarySTL([{ a: [0, 0, 0], b: [1, 0, 0], c: [0, 0, 5] }]), 'y');
+  assert.deepEqual(flat(stl.positions), [0, 0, 0, 1, 0, 0, 0, 0, 5]);
+
+  // A value that is neither falls back to the format's default rather than
+  // doing something arbitrary - it arrives from meta in somebody's .mbrd.
+  for (const junk of [null, undefined, '', 'up', 42]) {
+    assert.deepEqual(flat(parseMesh('obj', src, junk).positions),
+      flat(guessed.positions), `upAxis ${JSON.stringify(junk)} was not ignored`);
+  }
+});
+
+test('glTF is left exactly as it was, because its spec settles the question', () => {
+  assert.equal(defaultUpAxis('glb'), 'y');
+  assert.equal(defaultUpAxis('obj'), 'z');
+  assert.equal(defaultUpAxis('stl'), 'z');
+});
+
+// ---------------------------------------------------------------------------
+// OBJ colour
+// ---------------------------------------------------------------------------
+//
+// Two independent sources, and a model may use either, both or neither. The
+// buffer they produce has to line up 1:1 with the positions - three floats per
+// triangle vertex, in the order the faces were emitted - because the renderer
+// draws the whole mesh in one call with no index of its own, so a colour array
+// that is merely the right *length* but the wrong order is a bug that renders
+// as plausible nonsense.
+
+const obj = s => parseOBJ(new TextEncoder().encode(s).buffer);
+
+test('embedded per-vertex colours are read off the v lines', () => {
+  // The unofficial `v x y z r g b`, which is what scanners and photogrammetry
+  // tools write. Three vertices, three colours, one triangle.
+  const m = obj([
+    'v 0 0 0 1 0 0',
+    'v 1 0 0 0 1 0',
+    'v 0 1 0 0 0 1',
+    'f 1 2 3',
+  ].join('\n'));
+  assert.equal(m.colors.length, m.positions.length);
+  assert.deepEqual([...m.colors], [1, 0, 0, 0, 1, 0, 0, 0, 1]);
+});
+
+test('a vertex without a colour is white, so the array stays parallel', () => {
+  // Mixed is the case that breaks a parser that only pushes when it sees six
+  // numbers: the colours then slide out of step with the vertices and every
+  // face after the first is painted with somebody else's colour.
+  const m = obj(['v 0 0 0', 'v 1 0 0 0 1 0', 'v 0 1 0', 'f 1 2 3'].join('\n'));
+  assert.deepEqual([...m.colors], [1, 1, 1, 0, 1, 0, 1, 1, 1]);
+});
+
+test('a plain OBJ has no colours at all', () => {
+  // Null rather than an array of white: it is what the renderer switches on, and
+  // a model that said nothing about colour has to come out in the board's ink.
+  const m = obj(['v 0 0 0', 'v 1 0 0', 'v 0 1 0', 'f 1 2 3'].join('\n'));
+  assert.equal(m.colors, null);
+  assert.equal(m.mtllib, null);
+  assert.equal(m.triMat, null);
+});
+
+test('colours follow a fan triangulation', () => {
+  // A quad becomes two triangles sharing vertex 1, so vertex 1's colour has to
+  // appear in both. This is the assertion that catches a colour buffer built
+  // per-vertex instead of per-triangle-corner.
+  const m = obj([
+    'v 0 0 0 1 0 0',
+    'v 1 0 0 0 1 0',
+    'v 1 1 0 0 0 1',
+    'v 0 1 0 1 1 0',
+    'f 1 2 3 4',
+  ].join('\n'));
+  assert.equal(m.count, 6);
+  assert.deepEqual([...m.colors].slice(0, 3), [1, 0, 0]);
+  assert.deepEqual([...m.colors].slice(9, 12), [1, 0, 0]);
+  assert.deepEqual([...m.colors].slice(15, 18), [1, 1, 0]);
+});
+
+test('usemtl and mtllib are carried out for the caller to resolve', () => {
+  const m = obj([
+    'mtllib parts.mtl',
+    'v 0 0 0', 'v 1 0 0', 'v 0 1 0', 'v 0 0 1',
+    'usemtl red',
+    'f 1 2 3',
+    'usemtl blue',
+    'f 1 2 4',
+  ].join('\n'));
+  assert.equal(m.mtllib, 'parts.mtl');
+  assert.deepEqual(m.triMat, ['red', 'blue']);
+  assert.equal(m.colors, null, 'a material name is not a colour on its own');
+});
+
+test('a .mtl yields its diffuse colours and skips what is not one', () => {
+  const mats = parseMTL([
+    'newmtl red',
+    'Ka 0.1 0.1 0.1',
+    'Kd 1 0 0',
+    'newmtl blue',
+    'Kd 0 0 1',
+    'newmtl textured',
+    'map_Kd wood.png',
+    'newmtl spectral',
+    'Kd spectral file.rfl 1.0',
+  ].join('\n'));
+  assert.deepEqual(mats.get('red'), [1, 0, 0]);
+  assert.deepEqual(mats.get('blue'), [0, 0, 1]);
+  // Present but colourless, which is different from absent - the mesh falls
+  // back to the board's ink for these rather than to black.
+  assert.equal(mats.get('textured'), null);
+  // `Kd spectral <file>` is legal and is not three floats. Parsed as one it
+  // would be NaN, which draws as black.
+  assert.equal(mats.get('spectral'), null);
+});
+
+test('materials bake into the mesh, one colour per triangle', () => {
+  const m = obj([
+    'mtllib p.mtl',
+    'v 0 0 0', 'v 1 0 0', 'v 0 1 0', 'v 0 0 1',
+    'usemtl red', 'f 1 2 3',
+    'usemtl blue', 'f 1 2 4',
+  ].join('\n'));
+  assert.ok(applyMaterials(m, parseMTL('newmtl red\nKd 1 0 0\nnewmtl blue\nKd 0 0 1')));
+  assert.equal(m.colors.length, m.positions.length);
+  // All three corners of triangle one are red, all three of triangle two blue.
+  assert.deepEqual([...m.colors].slice(0, 9), [1, 0, 0, 1, 0, 0, 1, 0, 0]);
+  assert.deepEqual([...m.colors].slice(9, 18), [0, 0, 1, 0, 0, 1, 0, 0, 1]);
+});
+
+test('a triangle whose material resolved to nothing stays white, not black', () => {
+  // Zero is the Float32Array's default and it is the one value that must not
+  // survive: an unmatched material would render as a black facet in the middle
+  // of a coloured part, which reads as a hole.
+  const m = obj([
+    'v 0 0 0', 'v 1 0 0', 'v 0 1 0', 'v 0 0 1',
+    'usemtl red', 'f 1 2 3',
+    'usemtl missing', 'f 1 2 4',
+  ].join('\n'));
+  assert.ok(applyMaterials(m, parseMTL('newmtl red\nKd 1 0 0')));
+  assert.deepEqual([...m.colors].slice(9, 18), [1, 1, 1, 1, 1, 1, 1, 1, 1]);
+});
+
+test('a library that colours nothing leaves the mesh alone', () => {
+  // False, and no colours attached - so the card falls back to the palette
+  // rather than to the grey a "default material" would give it.
+  const m = obj(['v 0 0 0', 'v 1 0 0', 'v 0 1 0', 'usemtl red', 'f 1 2 3'].join('\n'));
+  assert.equal(applyMaterials(m, parseMTL('newmtl other\nKd 1 0 0')), false);
+  assert.equal(m.colors, null);
+  assert.equal(applyMaterials(m, new Map()), false);
+});
+
+test('embedded colours win over a material library', () => {
+  // The file's own per-vertex answer is more specific than a name pointing at a
+  // second file, and parseOBJ attaches it - so applyMaterials is never reached
+  // for these. Asserted because the precedence is a decision, not an accident.
+  const m = obj([
+    'mtllib p.mtl',
+    'v 0 0 0 1 0 0', 'v 1 0 0 1 0 0', 'v 0 1 0 1 0 0',
+    'usemtl blue', 'f 1 2 3',
+  ].join('\n'));
+  assert.deepEqual([...m.colors].slice(0, 3), [1, 0, 0]);
+});
+
+test('colours outside 0-1 are clamped rather than passed to the shader', () => {
+  // 0-255 colours turn up in the wild, and a value of 255 in a float attribute
+  // is a facet that blows out to white and takes its neighbours' shading with
+  // it. Clamped, not rescaled: guessing the scale from the values would make
+  // a legitimately bright model dark.
+  const m = obj(['v 0 0 0 255 -3 0.5', 'v 1 0 0', 'v 0 1 0', 'f 1 2 3'].join('\n'));
+  assert.deepEqual([...m.colors].slice(0, 3), [1, 0, 0.5]);
 });
 
 test('the triangle ceiling is a number a card could plausibly be asked for', () => {

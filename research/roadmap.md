@@ -224,14 +224,33 @@ zoom ladder covers the common case.
 
 Cheap to build because the levers are built. The whole cost is deciding.
 
-### 17. Sidebar reform *(was B1)* *(discussion)*
-The sidebar has grown to six sections and keeps growing — search, optimize,
-fonts and quality modes all want a home. Worth settling what it *is* before
-adding more: a settings panel, a tool palette, or an inspector that changes
-with the selection.
+### 17. Sidebar reform *(was B1)* — **done, 2026-07-26**
+The premise expired before the item did. The pressure this predicted — "search,
+optimize, fonts and quality modes all want a home" — never arrived: search
+shipped as an overlay, quality modes went automatic, and fonts folded into
+Appearance. Nothing was queuing. So the problem was never what the sidebar *is*;
+it was that one section had grown a heap of controls in no order.
 
-Note the ordering pressure: items 6, 11, 16 and 23 all add a control. Either
-this happens before them or it happens to them.
+What was done instead, on Kosta's list:
+
+- **Appearance moved above Arrange**, and its section is Whimsy and Palette
+  alone. Everything else — the two type menus, the pigment, the extraction
+  switch, the grid, radius and panel sliders, Start over — sits under a closed
+  **Advanced** fold. Whimsy and Palette between them already move every token
+  the fold sets one at a time, which is the argument for the split.
+- **The two type menus share a row.** One decision seen two ways.
+- **Paper lost its control** and is derived from the pigment instead, with the
+  whole sheet. Two colour pickers that could be put out of tune were the one
+  mistake this panel made easiest to make.
+- **The board's name became a field.** Type in it to rename.
+- **Two hint paragraphs went**, and `--ls-scale` stopped moving with whimsy —
+  tracking that shifts under the reader mid-slider reads as a bug.
+- **Custom faces can be dropped in** (item 6's parked half, below).
+
+Left alone deliberately: the grid is still described in two places (Show grid in
+View, its strength and weight in Advanced), and Volume is still in View, where it
+is not really a view setting. Both were in the proposal and neither was asked
+for; recorded here rather than done.
 
 ### 18. Image palette extraction *(was B2)* *(discussion)*
 Partly discussed already. Settled so far: cluster in OKLCH not RGB, exclude
@@ -299,16 +318,22 @@ Whether this is a real reskin or a joke that lasts thirty seconds decides how
 much of it is worth wiring to the token system — and that answer swings the
 effort by an order of magnitude.
 
-### 21. Cloud sync *(was B5)* *(discussion)*
-See `research/gdrive implementation.md`. Recommendation there stands: try the
-synced-folder route first, because Save already writes a real file to a real
-path and a folder inside Drive/iCloud costs no code at all. The Drive API route
-needs OAuth, a registered origin, and re-consent roughly hourly without a
-backend. Decide conflict handling (last-writer-wins with a warning is cheap;
-merging is not, since positions are absolute and there is no CRDT).
+### 21. Cloud sync *(was B5)* — **closed as the cheap route, 2026-07-26**
+The answer was "a synced folder is fine", so this drops out of the tier
+entirely, and it needed no code: Export already writes a real file to a real
+path, and where the File System Access API exists it writes back to the *same*
+path on every later export. Put that path inside a folder Drive, iCloud, Dropbox
+or OneDrive already watches and the sync is done by the client that was
+installed to do it. Written up in the README under "Keeping boards in a synced
+folder".
 
-Sits in Tier 5 for the API route. **The cheap route is genuinely cheap** — if
-the answer is "a synced folder is fine", this drops out of the tier entirely.
+Not taken, and worth being explicit about why: the Drive API route needs OAuth,
+a registered origin — which breaks `file://` and every local dev port —
+re-consent roughly hourly with no backend, and a conflict policy written by
+hand. It also puts a third-party fetch inside an app whose first promise is that
+nothing leaves the machine. Conflicts are last-writer-wins, decided by the sync
+client. If simultaneous editing becomes a real need it wants solving properly
+(positions are absolute and there is no CRDT here), not approximated.
 
 ### 22. Mobile *(was C1)*
 Touch already works — `input.js` handles pinch and two-finger pan. What does
@@ -402,13 +427,22 @@ spend them all and then hand back blank cards.
 
 ## Not done, and why
 
-**Item 12's parked question — finalising the display serif — is blocked on
-files that do not exist.** Newsreader, Literata and Source Serif 4 are not in
-`web/assets/fonts/` and are not anywhere else on this machine; the scratchpad
-this document said they were downloaded to is gone. Only Fraunces and Geist
-ship. The live switcher works and can compare Fraunces against faces the
-operating system already has, which is not the comparison the question needs.
-Someone has to fetch those three woff2 files and their licences.
+**Item 12's parked question — finalising the display serif — is no longer
+blocked, though it is still open.** Newsreader, Literata and Source Serif 4 are
+still not in `web/assets/fonts/`; the scratchpad this document said they were
+downloaded to is gone, and nothing here can fetch them without breaking the
+no-third-party rule. What changed on 2026-07-26 is that they no longer need to
+be *shipped* to be *tried*: dropping a woff2 onto the board registers it as a
+face and puts it in both type menus, so the comparison this question needs can
+be made by dragging three files in. Deciding to ship one is still a separate
+step — an `@font-face` in fonts.css, the files, and a line in sw.js's SHELL.
+
+Worth knowing about the drop-in path, since it is where a filename becomes CSS:
+the family name is rebuilt rather than taken (`isFamily` in util.js is the
+alphabet, `familyFor` in ui/fonts.js is the rebuilder), the bytes live in the
+asset store under their own hash so they travel inside the `.mbrd`, and both the
+packer and the autosave sweep had to learn that `settings.fonts` names bytes no
+item claims — without that, a dropped face was deleted by the next autosave.
 
 **Tier 4 and the rest of tier 5 are decisions, and they have been written up
 rather than taken.** Item 14 turned out to be pure writing with one open

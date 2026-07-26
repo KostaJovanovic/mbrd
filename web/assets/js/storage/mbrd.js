@@ -121,6 +121,22 @@ export async function packBoard(boardData, { created = null } = {}) {
       else missing.push(nameOf(item, hash));
     }
   }
+
+  // The faces the board is set in, which are the one lot of bytes no item names.
+  //
+  // Missing here is not fatal, and that is the difference from the loop above.
+  // A photograph whose bytes are gone is a hole in the board where a picture
+  // should be; a face whose bytes are gone is a board that opens in the
+  // fallback stack, which is exactly what happens on any machine that never had
+  // the face - so the archive is written without it and the look degrades the
+  // way it was always going to degrade.
+  for (const font of boardData.settings?.fonts || []) {
+    if (!isHash(font?.hash) || seen.has(font.hash)) continue;
+    seen.add(font.hash);
+    const asset = getAsset(font.hash);
+    if (asset) assets.push({ hash: font.hash, asset });
+  }
+
   if (missing.length) {
     const shown = missing.slice(0, 3).join(', ');
     const rest = missing.length > 3 ? ` and ${missing.length - 3} more` : '';

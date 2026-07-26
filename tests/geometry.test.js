@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 
 import {
   rotatedExtents, itemBounds, itemInRect, itemRadius, pointInItem, topEdge,
+  corners, overlapFraction,
 } from '../web/assets/js/geometry.js';
 import { item } from './helpers.js';
 
@@ -168,6 +169,91 @@ test('the top edge stays the same length whatever the rotation', () => {
     const [a, b] = topEdge(item({ w: 100, h: 40, rot }));
     close(Math.hypot(b.x - a.x, b.y - a.y), 100, `length at ${rot} degrees`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// How much of one item lies over another
+// ---------------------------------------------------------------------------
+//
+// This decides whether a sticky note is stuck, against a threshold of a
+// twentieth - so what matters is that it is *exact*, including under rotation.
+// A sampled or bounding-box answer would put the same note on either side of
+// the line depending on how it happened to be turned.
+
+test('the corners wind anticlockwise and sit where they should', () => {
+  const c = corners(item({ x: 0, y: 0, w: 100, h: 40 }));
+  assert.deepEqual(c.map(p => [p.x, p.y]),
+    [[-50, -20], [50, -20], [50, 20], [-50, 20]]);
+  // Shoelace is positive for an anticlockwise polygon, which the clipper relies
+  // on to know which side of an edge is inside.
+  let sum = 0;
+  for (let i = 0, j = 3; i < 4; j = i++) sum += c[j].x * c[i].y - c[i].x * c[j].y;
+  assert.ok(sum > 0, 'corners wound the wrong way');
+});
+
+test('an item lies entirely over a bigger one', () => {
+  const small = item({ x: 0, y: 0, w: 50, h: 50 });
+  const big = item({ x: 0, y: 0, w: 400, h: 400 });
+  close(overlapFraction(small, big), 1, 'all of it');
+  // And the other way round is the ratio of the areas, which is what makes this
+  // a fraction *of the first argument* rather than a symmetric measure.
+  close(overlapFraction(big, small), 2500 / 160000, 'a sixty-fourth of it');
+});
+
+test('two items that miss overlap by nothing', () => {
+  const a = item({ x: 0, y: 0, w: 100, h: 100 });
+  assert.equal(overlapFraction(a, item({ x: 500, y: 0, w: 100, h: 100 })), 0);
+  // Edge to edge is zero area, not a sliver.
+  close(overlapFraction(a, item({ x: 100, y: 0, w: 100, h: 100 })), 0, 'touching');
+});
+
+test('a partial overlap is measured, not guessed', () => {
+  // x and y are the centre, so a 100-wide note at 0 spans -50 to 50 and a photo
+  // at 70 spans 20 to 120. The right 30 of the note sits on it: 30 x 100.
+  const note = item({ x: 0, y: 0, w: 100, h: 100 });
+  const pic = item({ x: 70, y: 0, w: 100, h: 100 });
+  close(overlapFraction(note, pic), 0.3, 'three tenths');
+  // One corner: 30 across and 40 up, which is 0.12 and not 0.3 x 0.4 read as a
+  // sum. Both the note and the photo are square, so a fraction of the note is
+  // the product of the two spans over its own area.
+  close(overlapFraction(note, item({ x: 70, y: 60, w: 100, h: 100 })), 0.12, 'a corner');
+});
+
+test('a square turned 45 degrees over another is exact, not its bounding box', () => {
+  // The diamond's corner reaches sqrt(2)*50 = 70.7 along each axis while its
+  // bounding box reaches the same - so a bounding-box answer would say these two
+  // overlap far more than they do.
+  const diamond = item({ x: 0, y: 0, w: 100, h: 100, rot: 45 });
+  const square = item({ x: 100, y: 100, w: 100, h: 100 });
+  // The diamond is every point with |x| + |y| <= 70.71. The square's nearest
+  // corner is (50, 50), where that sum is 100. Nothing of one is inside the
+  // other - while their bounding boxes, both reaching to 70.71 and starting at
+  // 50, overlap by a 20x20 square.
+  assert.equal(overlapFraction(diamond, square), 0);
+
+  // Turned the same way, a diamond centred on a square of equal size keeps the
+  // part of itself inside: an octagon. Checked against the closed form rather
+  // than a number somebody read off a screenshot.
+  const same = item({ x: 0, y: 0, w: 100, h: 100 });
+  const area = 2 * (Math.SQRT2 - 1) * 100 * 100;   // the classic 8-sided figure
+  close(overlapFraction(diamond, same), area / 10000, 'octagon');
+});
+
+test('overlap is never more than all of it', () => {
+  // Floating point on a clip that came back a hair larger than the box it
+  // started as would report just over 1, and this is compared against a
+  // threshold rather than used as an area.
+  for (const rot of [0, 13, 45, 90, 137, 271]) {
+    const a = item({ x: 3, y: -7, w: 100, h: 60, rot });
+    assert.ok(overlapFraction(a, a) <= 1);
+    close(overlapFraction(a, a), 1, `a shape over itself at ${rot} degrees`);
+  }
+});
+
+test('a degenerate item overlaps nothing', () => {
+  const a = item({ x: 0, y: 0, w: 0, h: 100 });
+  assert.equal(overlapFraction(a, item({ x: 0, y: 0, w: 100, h: 100 })), 0);
+  assert.equal(overlapFraction(item({ x: 0, y: 0, w: 100, h: 100 }), a), 0);
 });
 
 test('the ends of the top edge lie on the item', () => {

@@ -204,10 +204,15 @@
   /* Fraunces gets a display cut up top and a text cut down at 13px on its own.
      Blink needs telling; Gecko does it by default. */
   font-optical-sizing: auto;
-  /* Two knobs the whimsy axis turns rather than rewriting a dozen rules:
-     whether ornamental text is italic, and how wide the tracked small caps
-     are set. Each site multiplies its own em value by --ls-scale, so their
-     relative differences survive being scaled down. */
+  /* One knob the whimsy axis turns rather than rewriting a dozen rules:
+     whether ornamental text is italic.
+
+     --ls-scale multiplies the tracking on the ten small-caps sites that set
+     letter-spacing, each against its own em value, so their relative
+     differences survive. It deliberately stays at 1 at every whimsy level:
+     tracking is the one thing on the axis that moved type sideways under the
+     reader mid-sentence, and a heading that shifts when you nudge a slider
+     reads as a bug even when it is the point. A look may still set it. */
   --display-italic: italic;
   --ls-scale: 1;
 
@@ -335,7 +340,6 @@
   --ogee:      30px;
   --card-rule-gap: 8px;
 
-  --ls-scale: 1.2;
   --wash: 2.2;
   /* An actual highlighter pen: the warm accent rather than the primary one,
      and laid on heavier. This is the end of the axis where a board is a
@@ -505,7 +509,6 @@
   --font-body:    var(--font-display);
   --font-mono:    "Geist Mono", ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
   --display-italic: normal;
-  --ls-scale: 0.5;
   /* Swiss takes its contrast from weight and rule, not from size. These are
      the smallest of the three, and the type still reads as the loudest,
      because nothing around it is competing. */

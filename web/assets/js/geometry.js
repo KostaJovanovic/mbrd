@@ -139,6 +139,80 @@ export function pointInItem(px, py, it) {
          Math.abs(c * dy - s * dx) <= it.h / 2;
 }
 
+/** An item's four corners, in world coordinates, anticlockwise. */
+export function corners(it) {
+  const rad = (it.rot || 0) * RAD;
+  const c = Math.cos(rad), s = Math.sin(rad);
+  const hw = it.w / 2, hh = it.h / 2;
+  const at = (u, v) => ({ x: it.x + c * u - s * v, y: it.y + s * u + c * v });
+  return [at(-hw, -hh), at(hw, -hh), at(hw, hh), at(-hw, hh)];
+}
+
+/** Twice the signed area of a polygon. Positive when it winds anticlockwise. */
+function shoelace2(poly) {
+  let sum = 0;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    sum += poly[j].x * poly[i].y - poly[i].x * poly[j].y;
+  }
+  return sum;
+}
+
+/**
+ * How much of `a` lies over `b`, as a fraction of `a`'s own area.
+ *
+ * Exact rather than sampled, and rotation-aware, because it decides whether a
+ * sticky note is stuck: both boxes are convex, so `a` is clipped against each
+ * of `b`'s four edges in turn (Sutherland-Hodgman) and what survives is the
+ * intersection. Sampling would be simpler and would put the threshold in a
+ * different place for every note depending on where the samples happened to
+ * fall, which is not a thing to build a visible rule on.
+ *
+ * Returns a number in [0, 1]. Zero for a degenerate `a`, since "what fraction
+ * of nothing" has no answer worth having and the callers want a boolean.
+ */
+export function overlapFraction(a, b) {
+  const areaA = a.w * a.h;
+  if (!(areaA > 0) || !(b.w * b.h > 0)) return 0;
+  // Cheap reject, and on a real board it takes almost every pair: two boxes
+  // whose circumscribing circles miss cannot overlap, and this costs no trig.
+  const dx = a.x - b.x, dy = a.y - b.y;
+  const reach = itemRadius(a) + itemRadius(b);
+  if (dx * dx + dy * dy > reach * reach) return 0;
+
+  let poly = corners(a);
+  const bs = corners(b);
+  for (let i = 0, j = bs.length - 1; i < bs.length; j = i++) {
+    if (!poly.length) return 0;
+    // Inside is to the left of the directed edge j -> i, which holds because
+    // corners() winds anticlockwise for both.
+    const ex = bs[i].x - bs[j].x, ey = bs[i].y - bs[j].y;
+    const side = p => ex * (p.y - bs[j].y) - ey * (p.x - bs[j].x);
+    const next = [];
+    for (let k = 0, m = poly.length - 1; k < poly.length; m = k++) {
+      const cur = poly[k], prev = poly[m];
+      const dCur = side(cur), dPrev = side(prev);
+      if (dCur >= 0) {
+        // Crossing in: add the intersection first, then the point itself.
+        if (dPrev < 0) {
+          const t = dPrev / (dPrev - dCur);
+          next.push({ x: prev.x + (cur.x - prev.x) * t, y: prev.y + (cur.y - prev.y) * t });
+        }
+        next.push(cur);
+      } else if (dPrev >= 0) {
+        const t = dPrev / (dPrev - dCur);
+        next.push({ x: prev.x + (cur.x - prev.x) * t, y: prev.y + (cur.y - prev.y) * t });
+      }
+    }
+    poly = next;
+  }
+  if (poly.length < 3) return 0;
+  const frac = Math.abs(shoelace2(poly)) / 2 / areaA;
+  // Clamped rather than trusted: floating point on a clip that came out very
+  // slightly larger than the box it started as would otherwise report 1.0000001,
+  // which is only ever going to be compared against a threshold anyway.
+  return frac > 1 ? 1 : frac;
+}
+
 /** The two ends of an item's top edge, in world coordinates (+y is up). */
 export function topEdge(it) {
   const rad = (it.rot || 0) * RAD;

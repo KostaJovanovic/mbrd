@@ -7,7 +7,9 @@ import {
   board, bus, selection, selectAll, removeItems, setSetting,
   snapshotGeom, applyGeom, commitGeom, undo, redo, byId,
   raiseSelection, lowerSelection, duplicateItems, select, setItemCover,
+  setItemUpAxis,
 } from './state.js';
+import { defaultUpAxis, meshKind } from './import/mesh.js';
 import { Viewport, MIN_ZOOM, MAX_ZOOM, zoomMs, travelMs } from './canvas/viewport.js';
 import { paintGrid, resetGridInk } from './canvas/grid.js';
 import { initItems, resetItems } from './canvas/items.js';
@@ -21,13 +23,14 @@ import {
   initStorage, restoreSession, saveBoard, exportBoard, openBoard, newBoard, openFile, autosave,
 } from './storage/storage.js';
 import { flushNoteEdit } from './canvas/notes.js';
-import { initAssets } from './storage/assets.js';
+import { initAssets, getAsset } from './storage/assets.js';
 import { initSidebar, close as closeSidebar } from './ui/sidebar.js';
 import { initMenu, openContextMenu, close as closeMenu } from './ui/menu.js';
 import { initSearch, open as openSearch } from './ui/search.js';
 import { initKonami } from './ui/konami.js';
 import { initTrash } from './ui/trash.js';
 import { initAppearance, resetAppearance } from './ui/appearance.js';
+import { initFonts } from './ui/fonts.js';
 import { initAudio } from './canvas/audio.js';
 import { editNote, growNote } from './canvas/notes.js';
 
@@ -92,6 +95,29 @@ const cmds = {
   itemHasCover: id => !!byId(id)?.meta?.cover,
   setCover: id => pickCover(id),
   clearCover: id => setItemCover(id, null),
+
+  // Only models, and only the formats where the answer is not already written
+  // down: glTF fixes Y-up in its spec, so offering to argue with it would be
+  // offering to break it.
+  canFlipUpAxis: id => {
+    const it = byId(id);
+    if (it?.type !== 'model') return false;
+    const kind = meshKind(getAsset(it.asset?.hash)?.name || it.name || '');
+    return kind === 'obj' || kind === 'stl';
+  },
+  flipUpAxis: id => {
+    const it = byId(id);
+    if (!it) return;
+    const kind = meshKind(getAsset(it.asset?.hash)?.name || it.name || '');
+    // Written out rather than toggled between "set" and "unset", so the board
+    // records the reading it is actually using. A .mbrd that says nothing means
+    // "whatever this version guesses", and a guess that changed between
+    // versions would silently lie a model down that somebody had stood up.
+    const now = it.meta?.upAxis === 'z' || it.meta?.upAxis === 'y'
+      ? it.meta.upAxis : defaultUpAxis(kind);
+    setItemUpAxis(id, now === 'z' ? 'y' : 'z');
+    toast(now === 'z' ? 'Read as Y-up' : 'Read as Z-up');
+  },
   // On the command surface as well as on Ctrl+K, because a keyboard shortcut
   // nothing mentions is a feature only the person who wrote it has.
   find: () => openSearch(),
@@ -104,6 +130,9 @@ const cmds = {
 // ---------------------------------------------------------------------------
 
 initAssets();
+// Before initAppearance, so the type menus are built once with the board's own
+// faces already in them rather than built empty and rebuilt a tick later.
+initFonts();
 // The grid's marks at Harsh are drawn rather than composed from gradients, so
 // unlike every other tier they cannot follow a custom property on their own -
 // see canvas/grid.js. Every edit to a look hands the resolved colours back and
@@ -250,7 +279,10 @@ function rearrange() {
   const target = new Array(items.length);
   order.forEach((itemIndex, slot) => { target[itemIndex] = spots[slot]; });
   applyGeom(before.map((g, i) => ({ ...g, x: target[i].x, y: target[i].y })));
-  commitGeom('Rearrange', before);
+  // Every item was placed by this, none of them towed - so every note asks
+  // again what it landed on. A rearrangement that left the old piles recorded
+  // would have notes travelling with photographs they are now nowhere near.
+  commitGeom('Rearrange', before, before.map(g => g.id));
   // Every other layout rebuilds the board around the origin, so the view has
   // to follow it there or the rearrangement happens off screen. Free is the
   // exception: it shakes each item where it stands, and flying to fit the
