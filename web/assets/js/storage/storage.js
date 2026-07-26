@@ -396,6 +396,15 @@ function referencedHashes(data) {
   const add = it => { for (const h of itemHashes(it)) out.add(h); };
   for (const it of data.items || []) add(it);
   for (const t of data.trash || []) add(t?.item);
+  // The files the optimiser replaced. Not in itemHashes() on purpose - that one
+  // drives the *packer*, and an export is the artifact the optimising was for,
+  // so it carries the small copies alone. Here they are held, because this drives
+  // the sweep and the sweep would otherwise delete the very bytes the undo entry
+  // exists to put back. See swapAssets() and discardOriginals() in state.js.
+  for (const it of data.items || []) {
+    if (it?.meta?.was) out.add(it.meta.was);
+    if (it?.meta?.wasCover) out.add(it.meta.wasCover);
+  }
   // The faces the board is set in. Not on any item and so not in itemHashes(),
   // which makes them exactly the thing the sweep below would throw away: a face
   // dropped in would be gone by the next autosave, and the board would come

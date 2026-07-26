@@ -106,6 +106,23 @@ test('never more than three hues, however many colours are in the picture', () =
   assert.ok(huesOf(many.map(c => block(c))).length <= 3);
 });
 
+test('a grey screenshot with one stray coloured pixel does not vote', () => {
+  // From a real board. A dark interface screenshot had exactly one pixel above
+  // the neutral floor, and one-picture-one-vote handed it the same say as a
+  // spectrogram with 771 - so a single olive pixel took the accent and coloured
+  // the whole app. A picture has to be a coloured picture to vote like one.
+  const grey = block('#3a3a3a', 2303);
+  const stray = new Uint8ClampedArray(grey.length + 4);
+  stray.set(grey);
+  stray.set([0x87, 0x7e, 0x33, 255], grey.length);
+  assert.deepEqual(huesOf([stray]), [], `one pixel voted: ${huesOf([stray])}`);
+
+  // And the real board it came from: rose and magenta pictures outvote it, and
+  // the palette is theirs rather than the stray pixel's.
+  const real = huesOf([stray, block('#b0417f', 2304), block('#c25c4a', 2304)]);
+  assert.ok(real.every(h => apart(h, 102) > 30), `the stray hue survived: ${real}`);
+});
+
 test('a small vivid thing outvotes a large washed-out one', () => {
   // The grey street with one red door. By pixel count the street wins twenty to
   // one; by what anybody would call the colour of the picture, the door does.
@@ -138,47 +155,42 @@ test('every hue on the wheel produces a legible palette', () => {
 const hueOf = c => oklch(...[1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16))).h;
 const near = (a, b, tol = 10) => apart(a, b) < tol;
 
-test('the accent stands away from the sheet it sits on', () => {
-  // The scheme, and the thing that stops every extracted board looking like the
-  // same board: paper and ink take the dominant hue, and the colour on the
-  // thing you are meant to click is not that hue. Constructed at a split
-  // complement rather than the true opposite - see SPLIT.
-  for (const h of [0, 40, 110, 200, 285, 340]) {
-    const v = paletteFor([h]);
-    assert.ok(apart(hueOf(v['--accent']), h) >= 110,
-      `sheet ${h}: accent came out at ${hueOf(v['--accent']).toFixed(0)}`);
-    assert.ok(apart(hueOf(v['--accent']), h) <= 180 - 20,
-      `sheet ${h}: accent is the true complement, which vibrates`);
-    // --accent-deep is the accent darker and nothing else, in every preset.
-    assert.ok(near(hueOf(v['--accent-deep']), hueOf(v['--accent'])),
-      `--accent-deep left the accent: ${hueOf(v['--accent-deep']).toFixed(0)}`);
+test('every colour in the palette is a colour the pictures contain', () => {
+  // The whole feature, and the thing an earlier scheme got wrong by putting the
+  // accent 150 degrees off the sheet on general principle: a warm board came
+  // out with a blue button that was in none of its photographs. A hue that no
+  // picture holds may not appear in a palette taken from the pictures.
+  for (const hues of [[40, 200], [200, 260], [0, 170, 200], [95, 300, 20]]) {
+    const v = paletteFor(hues);
+    for (const key of ['--accent', '--accent-deep', '--paper', '--ink']) {
+      assert.ok(hues.some(h => apart(hueOf(v[key]), h) < 12),
+        `${key} came out at ${hueOf(v[key]).toFixed(0)}, which is in none of ${hues}`);
+    }
   }
 });
 
-test('the pictures own opposite hue beats a constructed one', () => {
-  // A board that holds both a slate blue and a rust already has its button
-  // colour in it, and a formula that ignored it would be inventing a third
-  // colour the photographs never contained.
+test('the accent is the board colour furthest from its sheet', () => {
+  // Of the colours actually on the board, the one that makes the most visible
+  // button. Which is as much of the contrast advice as can be had without
+  // inventing a colour.
   const two = paletteFor([200, 40]);
   assert.ok(near(hueOf(two['--accent']), 40), `--accent is ${hueOf(two['--accent'])}`);
+
+  const three = paletteFor([200, 260, 20]);
+  assert.ok(near(hueOf(three['--accent']), 20), `--accent is ${hueOf(three['--accent'])}`);
+  assert.ok(near(hueOf(three['--leafy']), 260), `--leafy is ${hueOf(three['--leafy'])}`);
 });
 
-test('a hue close to the sheet is a wash, not an accent', () => {
-  // Below OPPOSITE a second hue cannot carry the button - it would be a slightly
-  // different shade of the paper on a control that has to announce itself. It
-  // takes --leafy, and the accent is constructed away from both.
-  const two = paletteFor([200, 260]);
-  assert.ok(near(hueOf(two['--leafy']), 260), `--leafy is ${hueOf(two['--leafy'])}`);
-  assert.ok(apart(hueOf(two['--accent']), 200) >= 110);
-  assert.ok(apart(hueOf(two['--accent']), 260) >= 60,
-    'the accent crowded the second voice instead of going round the far side');
-
-  // Three analogous: the third takes --accent-warm outright, which is the only
-  // pigment slot with a job in app.css that is not already spoken for.
-  const three = paletteFor([200, 260, 150]);
-  assert.ok(near(hueOf(three['--leafy']), 260), `--leafy is ${hueOf(three['--leafy'])}`);
-  assert.ok(near(hueOf(three['--accent-warm']), 150),
-    `--accent-warm is ${hueOf(three['--accent-warm'])}`);
+test('a board of one colour gets a palette in one colour', () => {
+  // Three of the four presets put their accent within 13 degrees of their
+  // paper. A board whose photographs are all one colour honestly is that, and
+  // the alternative is a second hue nobody photographed.
+  const one = paletteFor([200]);
+  assert.ok(near(hueOf(one['--accent']), 200), `--accent is ${hueOf(one['--accent'])}`);
+  assert.ok(near(hueOf(one['--paper']), 200, 12), `--paper is ${hueOf(one['--paper'])}`);
+  // --leafy is still turned away: it is the ornamental wash, and a wash that is
+  // its own accent is not a second voice at all.
+  assert.ok(apart(hueOf(one['--leafy']), 200) > 45, `--leafy is ${hueOf(one['--leafy'])}`);
 });
 
 test('two voices too close to tell apart by hue are told apart by lightness', () => {
@@ -203,14 +215,18 @@ test('vivid pictures make a stronger palette than muted ones', () => {
   const muted = paletteFor([200], { vivid: 0.03, key: 0.62 });
   const plain = paletteFor([200], { vivid: 0.065, key: 0.62 });
   const loud = paletteFor([200], { vivid: 0.18, key: 0.62 });
-  assert.ok(chromaOf(muted['--accent']) < chromaOf(plain['--accent']));
-  assert.ok(chromaOf(plain['--accent']) < chromaOf(loud['--accent']));
+  // Measured on the paper rather than the accent, and that is not a dodge: a
+  // teal accent is pinned at chroma 0.091 by sRGB itself long before the dial
+  // runs out, so the accent would report the gamut's opinion and not this
+  // file's. The paper's chroma is an order of magnitude lower and never clipped.
+  assert.ok(chromaOf(muted['--paper']) < chromaOf(plain['--paper']));
+  assert.ok(chromaOf(plain['--paper']) < chromaOf(loud['--paper']));
   // Bounded at both ends, or a board of neon signs stops being a sheet of
   // tinted paper and becomes a painted panel.
-  assert.ok(chromaOf(loud['--accent']) <= 0.16, `${chromaOf(loud['--accent'])}`);
-  assert.ok(chromaOf(muted['--accent']) >= 0.07, `${chromaOf(muted['--accent'])}`);
+  assert.ok(chromaOf(loud['--paper']) <= 0.035, `${chromaOf(loud['--paper'])}`);
+  assert.ok(chromaOf(muted['--paper']) >= 0.009, `${chromaOf(muted['--paper'])}`);
   // The reference photograph leaves the tables exactly as measured.
-  assert.ok(Math.abs(chromaOf(plain['--accent']) - chromaOf(paletteFor([200])['--accent'])) < 0.002);
+  assert.ok(Math.abs(chromaOf(plain['--paper']) - chromaOf(paletteFor([200])['--paper'])) < 0.001);
 });
 
 test('dark pictures make a deeper sheet, and it is still a sheet', () => {
@@ -220,9 +236,37 @@ test('dark pictures make a deeper sheet, and it is still a sheet', () => {
   assert.ok(lightOf(night['--paper']) < lightOf(plain['--paper']) - 0.02);
   assert.ok(lightOf(beach['--paper']) > lightOf(plain['--paper']));
   // Never a dark palette by the back door: this is a light interface with a
-  // deeper sheet, and the floor is the bound that says so.
-  assert.ok(lightOf(night['--paper']) > 0.9, `paper went to ${lightOf(night['--paper'])}`);
+  // deeper sheet, and the floor is the bound that says so. 0.87 rather than the
+  // 0.9 this first held - the dial was widened deliberately, because at the old
+  // range a board of night photographs was indistinguishable from any other.
+  assert.ok(lightOf(night['--paper']) > 0.87, `paper went to ${lightOf(night['--paper'])}`);
   assert.ok(lightOf(beach['--paper']) < 1);
+});
+
+test('the plain end of the axis gets a white sheet whatever the pictures said', () => {
+  // Harsh is where the board becomes a drawing, and a drawing is made on white
+  // paper - so the axis overrules the photographs about the sheet, and only
+  // about the sheet.
+  for (const traits of [{ vivid: 0.2, key: 0.2 }, { vivid: 0.03, key: 0.9 }]) {
+    const scrapbook = paletteFor([30], traits);
+    const drawing = paletteFor([30], { ...traits, plain: true });
+    assert.ok(lightOf(drawing['--paper']) > 0.98,
+      `paper stayed at ${lightOf(drawing['--paper']).toFixed(3)}`);
+    assert.ok(chromaOf(drawing['--paper']) < chromaOf(scrapbook['--paper']),
+      'the plain sheet kept all of its tint');
+    // Still this board's white, not the browser's.
+    assert.ok(chromaOf(drawing['--paper']) > 0.002, 'the plain sheet lost all its tint');
+    // The pigments are what the pictures said, at either end of the axis. Hue,
+    // not the exact colour: the accent is repaired against the sheet it sits on
+    // and the sheet has just moved, so a whiter paper can cost it a little
+    // lightness. What it may not do is change colour.
+    assert.ok(near(hueOf(drawing['--accent']), hueOf(scrapbook['--accent'])),
+      `accent moved from ${hueOf(scrapbook['--accent'])} to ${hueOf(drawing['--accent'])}`);
+  }
+  // A hand-picked colour is subject to the axis too, and is still kept exactly.
+  const picked = paletteFromAccent('#c2410c', { plain: true });
+  assert.equal(picked['--accent'], '#c2410c');
+  assert.ok(lightOf(picked['--paper']) > 0.98, `paper is ${lightOf(picked['--paper'])}`);
 });
 
 test('every hue stays legible however the pictures bend the tables', () => {
