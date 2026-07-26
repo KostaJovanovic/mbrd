@@ -16,7 +16,8 @@
 //   Harsh             a <canvas>. See drawCrosses() for why nothing else works.
 
 import { board } from '../state.js';
-import { deviceRatio } from './viewport.js';
+import { deviceRatio, onTouch } from './viewport.js';
+import { MM_PER_INCH, PX_PER_INCH } from '../measure.js';
 
 // The on-screen window a minor step is allowed to live in. Outside it the
 // world-space step doubles or halves and the lattice re-tiers.
@@ -37,12 +38,51 @@ export const MIN_PX = 40;    // spacing below which we step up to a coarser grid
 export const MAX_PX = 160;   // ...and above which we step down to a finer one
 const MAJOR = 4;             // major line every N minor steps
 
-/** World-space grid step whose on-screen spacing lands inside [MIN_PX, MAX_PX]. */
-export function gridStep(base, zoom) {
+/**
+ * The same band for a finger, in the only unit that makes the question
+ * answerable: how far apart the dots are on the actual glass.
+ *
+ * 40px is a comfortable lattice on a desk and is not one on a phone, and the
+ * reason is not preference - it is that a CSS pixel is a different size on the
+ * two devices. A desktop panel runs near the spec's 96 CSS px to the inch, so
+ * 40px is about a centimetre; a phone packs closer to 150, so the identical
+ * number comes out under seven millimetres. Same code, same lattice, and on the
+ * screen where a fingertip covers ten millimetres it is drawn twice as fine.
+ *
+ * So the touch floor is stated as a distance and converted, rather than picked
+ * as a second pixel count that would drift from the first one. 1.41 cm is a
+ * lattice you can put a finger between.
+ *
+ * The nominal 96 is doing the conversion, which means this is still the
+ * spec's centimetre rather than a measured one - the browser gives no other -
+ * and on a phone it therefore lands short of a true 1.41 cm rather than over
+ * it. That is the right direction to be wrong in: it errs towards the grid the
+ * desktop already has, and every millimetre of the correction is one the old
+ * fixed number was not making at all.
+ */
+const TOUCH_MIN_MM = 14.1;
+// Up, not to nearest. This is a floor, and 53.29 rounded to 53 is a lattice
+// drawn at 1.402 cm by a constant that says 1.41 - which is the sort of
+// off-by-a-rounding that is invisible on screen and wrong in the one place
+// anybody would go looking for the number.
+export const MIN_PX_TOUCH = Math.ceil(TOUCH_MIN_MM * PX_PER_INCH / MM_PER_INCH);
+/** The band keeps its factor of four, which is MAJOR - see the note above. */
+export const MAX_PX_TOUCH = MIN_PX_TOUCH * MAJOR;
+
+/**
+ * World-space grid step whose on-screen spacing lands inside the band in force.
+ *
+ * `touch` is a parameter with a live default rather than a module constant, so
+ * a tablet with a keyboard folded onto it re-tiers when the pointer changes -
+ * and so the band can be named outright by a test, which cannot ask a browser.
+ */
+export function gridStep(base, zoom, touch = onTouch()) {
+  const min = touch ? MIN_PX_TOUCH : MIN_PX;
+  const max = touch ? MAX_PX_TOUCH : MAX_PX;
   let step = base > 0 ? base : 64;
   let guard = 0;
-  while (step * zoom < MIN_PX && guard++ < 64) step *= 2;
-  while (step * zoom > MAX_PX && guard++ < 64) step /= 2;
+  while (step * zoom < min && guard++ < 64) step *= 2;
+  while (step * zoom > max && guard++ < 64) step /= 2;
   return step;
 }
 

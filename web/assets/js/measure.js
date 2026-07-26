@@ -70,30 +70,18 @@ export const DEFAULT_SCALE = PX_PER_MM;
 const DEFAULT_GRID_UNITS = 64;
 
 /**
- * Guard rails, and the upper one is a real design decision rather than a sanity
- * check.
+ * Guard rails. A scale outside these is a typo, not a board.
  *
- * The board's lattice is a fixed 64 units per square whatever the scale says,
- * so scale is the only thing that decides how big a square *is* - and a large
- * scale makes it small. Past a point that stops being a fine measurement and
- * becomes a grid nobody can work against: snapping quantises to something under
- * a centimetre, the readout counts in tenths of a millimetre, and a sheet of A4
- * fills a screen and a half.
- *
- * So the ceiling is stated as the thing it actually protects - a grid square
- * never measures less than this - and the units-per-millimetre figure is
- * derived from it. 1.41 cm because it is a comfortable working square and
- * because it is close to the default the app already ships (1.69 cm), so the
- * cap sits just above ordinary use rather than across the middle of it.
- *
- * The cost is honest and worth stating: a board about small objects - a tray of
- * jewellery, a circuit board - cannot be measured as finely as its subject.
- * Calibrating from something 2 cm wide will hit this and stop, and
- * scaleFromItem() says so out loud rather than clamping in silence.
+ * Wide on purpose. These exist to stop a hand-edited file turning every readout
+ * into Infinity, and for nothing else - a board about a tray of jewellery is
+ * entitled to a scale that measures it, and a board about a building site is
+ * entitled to the other end. How *legible* the lattice is at a given scale is a
+ * rendering question with a rendering answer; see MIN_PX in canvas/grid.js,
+ * which sets a floor on how close two dots may be drawn rather than on what the
+ * board is allowed to mean.
  */
-const MIN_GRID_MM = 14.1;
 export const MIN_SCALE = 0.001;   // 1 unit = 1 metre
-export const MAX_SCALE = DEFAULT_GRID_UNITS / MIN_GRID_MM;
+export const MAX_SCALE = 1000;    // 1000 units = 1 millimetre
 
 export const clampScale = n =>
   Number.isFinite(+n) && +n > 0 ? Math.min(Math.max(+n, MIN_SCALE), MAX_SCALE) : DEFAULT_SCALE;
