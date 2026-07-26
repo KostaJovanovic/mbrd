@@ -19,23 +19,24 @@
 // frozen.
 
 import { bus } from '../state.js';
-import { STILL_ZOOM } from './viewport.js';
+import { stillZoom } from './viewport.js';
 
 /** Long edge of a captured frame. It is only ever shown at a third size. */
 const MAX_STILL = 640;
 
 let worldEl = null;
 let stilled = false;
+/** How many nodes were mounted at the last sweep - see the guard in update(). */
+let mounted = -1;
 
 export function initStills(world, vp) {
   worldEl = world;
 
   const update = () => {
-    // `<`, matching the zoom-far toggle in viewport.js. The two constants are
-    // now the same number, so the comparison has to agree as well or the one
-    // zoom that sits exactly on the rung would freeze the pictures while
-    // leaving the chrome up.
-    const want = vp.zoom < STILL_ZOOM;
+    // `<`, matching the zoom-far toggle in viewport.js. The two read the same
+    // rung, so the comparison has to agree as well or the one zoom that sits
+    // exactly on it would freeze the pictures while leaving the chrome up.
+    const want = vp.zoom < stillZoom();
     if (want !== stilled) {
       stilled = want;
       // Shoot before swapping, so what freezes is the frame that was on
@@ -46,9 +47,18 @@ export function initStills(world, vp) {
     }
     // Still zoomed out: catch anything that has been mounted since the last
     // pass. Culling remounts items as you pan, and a GIF that arrived after
-    // the freeze has no frame of its own yet. Cheap - on any pass where
-    // nothing is new this matches nothing.
-    if (want) capture(false);
+    // the freeze has no frame of its own yet.
+    //
+    // Guarded on the number of mounted nodes rather than run every time. The
+    // sweep is a querySelectorAll across the whole world, and this runs on
+    // every frame of every pan and zoom that happens to be below the freeze -
+    // which is a tree walk per frame to find, almost always, nothing. The
+    // count is what culling changes when it mounts something, so it answers
+    // "is there anything new to look at" for the price of reading a property.
+    if (!want) return;
+    if (world.childElementCount === mounted) return;
+    mounted = world.childElementCount;
+    capture(false);
   };
 
   vp.onChange(update);

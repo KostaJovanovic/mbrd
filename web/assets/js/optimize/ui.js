@@ -6,9 +6,10 @@
 // is made.
 
 import { ask } from '../ui/dialog.js';
-import { toast, formatBytes } from '../util.js';
+import { toast, busy, formatBytes } from '../util.js';
 import { discardOriginals, originalsHeld } from '../state.js';
 import { planOptimize, runOptimize, describeSaving } from './optimize.js';
+import { opusAvailable, OPUS_KBPS } from './opus.js';
 import { loadMedia, mediaReady, MEDIA_MB } from './media.js';
 
 /**
@@ -29,21 +30,36 @@ export async function optimizeBoard() {
   ].filter(([n]) => n);
 
   if (!counts.length) {
-    toast('There is nothing on this board to optimize');
+    // Two different nothings, and telling them apart is the difference between
+    // "this is done" and "this button does not work".
+    toast(plan.done
+      ? `Already optimized - ${plan.done} file${plan.done === 1 ? '' : 's'}, nothing left to do`
+      : 'There is nothing on this board to optimize');
     return;
   }
 
-  const media = plan.sounds.length + plan.videos.length;
   const lines = [
     counts.map(([n, word]) => `${n} ${word}${n === 1 ? '' : 's'}`).join(', ') +
       ` - ${formatBytes(plan.total)} in total.`,
-    'Pictures are capped at 1200px and rewritten as WebP.',
   ];
-  if (media) {
+  if (plan.pictures.length) lines.push('Pictures are capped at 1200px and rewritten as WebP.');
+  if (plan.sounds.length) {
+    lines.push(opusAvailable() || mediaReady()
+      ? `Sound becomes Opus at ${OPUS_KBPS}k, keeping its tags and its album art.`
+      : 'Sound is left alone - this browser has no Opus encoder.');
+  }
+  // Only video still waits on ffmpeg: sound is done by the browser itself now,
+  // so a board of music optimises with nothing downloaded at all.
+  if (plan.videos.length) {
     lines.push(mediaReady()
-      ? 'Sound becomes Opus at 96k and video becomes WebM. Tags and album art are kept.'
-      : `Sound and video need the media encoder (${MEDIA_MB} MB, kept on this machine). ` +
+      ? 'Video becomes WebM, capped at 1200px.'
+      : `Video needs the media encoder (${MEDIA_MB} MB, kept on this machine). ` +
         'It downloads the first time only.');
+  }
+  // Said out loud rather than left as a smaller number than expected: a board
+  // half of which has already been done should not look like half a board.
+  if (plan.done) {
+    lines.push(`${plan.done} more ${plan.done === 1 ? 'file has' : 'files have'} been optimized already and will be left alone.`);
   }
   lines.push('The originals stay here until you discard them, and one undo puts them back.');
 
@@ -55,31 +71,45 @@ export async function optimizeBoard() {
   });
   if (answer !== 'go') return;
 
+  // ffmpeg is only worth waking for what the browser cannot do itself.
+  const needsFfmpeg = plan.videos.length || (plan.sounds.length && !opusAvailable());
   let encodeMedia = null;
-  if (media) {
+  if (needsFfmpeg) {
     try {
       encodeMedia = await loadMedia(msg => toast(msg));
     } catch (err) {
       console.warn('[mbrd] media encoder unavailable:', err);
-      toast('Sound and video were left alone - the encoder could not be loaded', 'error');
+      toast(plan.videos.length
+        ? 'Video was left alone - the encoder could not be loaded'
+        : 'Sound was left alone - the encoder could not be loaded', 'error');
     }
   }
 
-  toast('Optimizing…');
+  // The waiting strip rather than a toast per file, which is what this was.
+  // A toast is a receipt and this is a state: forty of them in a row was the
+  // same sentence rewritten forty times, each one resetting its own dismissal
+  // timer, and the count buried in a line of prose. See busy() in util.js.
+  const job = busy('Optimizing');
   let report;
   try {
     report = await runOptimize({
       encodeMedia,
-      // Named rather than counted: "12 of 40" says how long, and the filename
-      // says which one is taking it.
-      onProgress: ({ done, total, name }) => {
-        if (done < total) toast(`Optimizing ${done + 1} of ${total}${name ? ` - ${name}` : ''}…`);
+      // Named as well as counted: the count says how long is left, the filename
+      // says which one is taking it, and the phase says which pass it is on -
+      // the thumbnail sweep at the end is its own pass over its own list, so
+      // without that the bar would appear to run twice for no stated reason.
+      onProgress: ({ done, total, name, phase }) => {
+        job.label(phase === 'thumbs' ? 'Making thumbnails' : 'Optimizing');
+        job.step(done, total);
+        if (name) job.label(`${phase === 'thumbs' ? 'Thumbnail' : 'Optimizing'} - ${name}`);
       },
     });
   } catch (err) {
     console.error('[mbrd] optimize failed:', err);
     toast('The board could not be optimized - nothing was changed', 'error');
     return;
+  } finally {
+    job.end();
   }
   toast(describeSaving(report));
 }

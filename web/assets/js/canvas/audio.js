@@ -385,7 +385,14 @@ export function buildTransport(item, sound) {
   const paint = () => {
     const at = sound.duration ? sound.currentTime / sound.duration : 0;
     fill.style.clipPath = `inset(0 ${((1 - at) * 100).toFixed(3)}% 0 0)`;
-    time.textContent = clock(sound.currentTime || 0);
+    // How long it is until it starts, where it is once it has. A card sitting
+    // at the top of a track has nothing to report about the playhead - it is at
+    // the beginning, which is where the playhead always is before you press
+    // anything - so every card on the board read 0:00 and the one number on it
+    // said nothing about the file. The length is what somebody scanning a board
+    // of records wants, and it is only in the way once there is a position to
+    // show instead.
+    time.textContent = clock(sound.currentTime || sound.duration || 0);
     // In seconds, with a spoken form beside it: "83" is not a position in a
     // recording, "1:23 of 4:10" is.
     wave.setAttribute('aria-valuemax', Math.round(sound.duration || 0));

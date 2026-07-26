@@ -19,3 +19,6 @@ src-tauri/gen/
 
 # Node, if tooling ever needs it
 node_modules/
+
+# Tool output: code-graph dumps, including session transcripts.
+graphify-out/

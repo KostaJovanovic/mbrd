@@ -387,28 +387,72 @@ let fadeEnd = 0, fading = false;
  */
 function followFade() {
   if (typeof requestAnimationFrame !== 'function') return;
-  // No transition to follow when the reader asked for less motion - the colours
-  // change at once, and a repaint loop would be chasing something instant.
-  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+  // Nothing to follow when the reader asked for less motion - app.css cuts every
+  // duration to a hundredth of a millisecond - but the loop is still entered for
+  // one frame, because the settle at the end of it is not decoration. See below.
+  const still = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   const raw = getComputedStyle(root).getPropertyValue('--dur-palette').trim();
   const ms = raw.endsWith('ms') ? parseFloat(raw)
     : raw.endsWith('s') ? parseFloat(raw) * 1000 : NaN;
-  fadeEnd = performance.now() + (Number.isFinite(ms) ? ms : FADE_MS);
+  fadeEnd = performance.now() + (still ? 0 : Number.isFinite(ms) ? ms : FADE_MS);
   if (fading) return;
   fading = true;
   // Everything else stops animating for the length of this - see .is-fading in
   // tokens.css. A button with a transition of its own is a second animation
   // reading the same colour, and the two crossing is what flashes.
-  root.classList.add('is-fading');
+  if (!still) root.classList.add('is-fading');
   const step = () => {
     onChange();
+    // The swatch travels with the board rather than jumping at either end of
+    // the fade, which costs one assignment a frame and is the honest picture:
+    // the value it is showing really is the value the interface is painted in
+    // at that instant.
+    paintPigment();
     if (performance.now() < fadeEnd) requestAnimationFrame(step);
     else {
       fading = false;
       root.classList.remove('is-fading');
+      settle();
     }
   };
   requestAnimationFrame(step);
+}
+
+/**
+ * Read the finished look back into the panel and the title bar.
+ *
+ * This exists because of one property of the fade, and it is the kind of thing
+ * that is obvious only once it has cost you an afternoon: the pigment tokens
+ * are registered with @property and transitioned on :root, so
+ * getComputedStyle() does not report what they were *set* to - it reports where
+ * the animation has got to. Every caller here changes a colour and then
+ * immediately reads it back, which is the one moment in the whole 700ms when
+ * the answer is still the previous palette.
+ *
+ * So the swatch under "Pigment" showed the colour you had just left, the theme
+ * bar of an installed PWA wore the paper before last, and both stayed that way
+ * until the next change pushed them one step further behind. Reading again once
+ * the transition has landed is the fix, and there is no synchronous way to ask
+ * for the target value instead.
+ *
+ * Every caller keeps its own immediate syncControls(): radii, faces, durations
+ * and the menus are not animated and want to be right now, not in 700ms.
+ */
+function settle() {
+  paintThemeColour();
+  syncControls();
+}
+
+/** The pigment swatch alone, which is the only animated control in the panel. */
+function paintPigment() {
+  const entry = inputs.get('--accent');
+  if (!entry) return;
+  // Never onto an input somebody is inside: a colour picker being assigned to
+  // while its own dialog is open is how a value jumps back under the pointer.
+  // A hand-picked colour is not a fade anyway - setVar() writes it straight.
+  if (document.activeElement === entry.input) return;
+  const now = toHex(getComputedStyle(root).getPropertyValue('--accent').trim());
+  if (now) entry.input.value = now;
 }
 
 /**
@@ -592,6 +636,26 @@ async function recolourFromBoard({ silent = false } = {}) {
   return true;
 }
 
+/**
+ * Back to how the app ships: Middle, Papyrus, no overrides, extraction on.
+ *
+ * The look object is replaced rather than edited, so every key goes with it -
+ * including `auto` and `derived`, which is what puts the extraction switch back
+ * on, since autoOn() reads an absent flag as on.
+ *
+ * And on is a promise the board then has to keep. Leaving it there would say
+ * "colours come from the pictures" over a Papyrus sheet taken from none of
+ * them, and it would stay that way until the next import happened to move the
+ * source list - the extraction remembers what it last read, so the same twelve
+ * pictures are not counted twice. That memory is part of what is being reset,
+ * so it goes too, and the count runs again. On a board with no pictures there
+ * is nothing to run and Papyrus is the answer already.
+ *
+ * Silent because this is a button about the whole look rather than about
+ * colour: somebody straightening the shapes and the type does not need a toast
+ * explaining that the photographs they have not added yet have no colours in
+ * them.
+ */
 export function resetAppearance() {
   const was = current.whimsy;
   // apply() takes the previous look's properties back off - see `applied`.
@@ -604,6 +668,9 @@ export function resetAppearance() {
   // unconditional so that resetting the pigments while already at the middle
   // is not also a silent way to switch someone's snapping off.
   if (was !== DEFAULT_WHIMSY) axisMoved(DEFAULT_WHIMSY);
+  lastSources = null;
+  lastFailure = null;
+  recolourFromBoard({ silent: true }).catch(() => {});
 }
 
 // ---------------------------------------------------------------------------
@@ -638,11 +705,38 @@ function apply(look) {
   }
   applied = new Set(Object.keys(vars));
   paintThemeColour();
+  markDisplayFace();
   // Every other way a look changes wholesale - the palette menu, the axis, a
   // board arriving with its own colours - and each of them is a change the
   // canvas has to be walked through as well. Free at boot: main.js has not
   // wired onChange() yet, so the loop runs against a no-op.
   followFade();
+}
+
+/**
+ * Say whether the display face is a sans, for the one rule that cares.
+ *
+ * The wordmark is set as heavy as the face allows when it is a sans and left at
+ * 400 when it is not - see `.wordmark h1` in app.css. CSS cannot ask what
+ * family it ended up with, so the question is answered here and left on :root
+ * as an attribute.
+ *
+ * The test is the *last* family in the stack, which is the one thing in a font
+ * stack that is always a promise about the kind of face rather than the name of
+ * one: every sans entry in the menus ends `sans-serif` and every serif entry
+ * ends `serif`, and customFaces() appends `system-ui, sans-serif` to a dropped
+ * face for exactly that reason. Read off the computed value rather than off
+ * `current.vars`, because most of the time nobody has chosen a face at all and
+ * the answer belongs to the whimsy level.
+ *
+ * Derived state, deliberately not a token: it is a fact *about* the look rather
+ * than part of it, so it is recomputed on every change and never persisted,
+ * never exported, and never carried inside somebody else's .mbrd.
+ */
+function markDisplayFace() {
+  const stack = getComputedStyle(root).getPropertyValue('--font-display');
+  if (/sans-serif\s*$/i.test(stack.trim())) root.dataset.displaySans = '';
+  else delete root.dataset.displaySans;
 }
 
 /**

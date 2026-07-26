@@ -16,7 +16,7 @@ import {
   stuckTo, stuckFollowers, restick, STICK_MIN, setItemText, renameItem, NOTE_MAX,
   setSetting, snapshotGeom, applyGeom, commitGeom,
 } from '../web/assets/js/state.js';
-import { overlapFraction } from '../web/assets/js/geometry.js';
+import { overlapFraction, CELL_GAP } from '../web/assets/js/geometry.js';
 import { hash } from './helpers.js';
 
 const fresh = (items = []) => loadBoard({ title: 'T', items });
@@ -699,15 +699,32 @@ test('turning snapping on lays the board on the lattice', () => {
   const [a] = addItems([boxAt(17, -23, 100, 100)]);
   setSetting('snap', true);
   const it = byId(a.id);
-  // Edges on grid lines, size a whole number of cells - the resize rule, since
-  // laying out a board is the resize case, not the drag case.
+  // Low edges on grid lines, sides a whole number of cells less the seam - the
+  // resize rule, since laying out a board is the resize case, not the drag case.
   const step = board.settings.gridStep;
+  const gap = step * CELL_GAP;
   // Math.abs, because a negative coordinate divides to -0 and assert.equal is
   // strict enough to tell the two zeroes apart.
   assert.equal(Math.abs((it.x - it.w / 2) % step), 0, 'left edge off the lattice');
   assert.equal(Math.abs((it.y - it.h / 2) % step), 0, 'bottom edge off the lattice');
-  assert.equal(it.w % step, 0);
-  assert.equal(it.h % step, 0);
+  assert.equal((it.w + gap) % step, 0);
+  assert.equal((it.h + gap) % step, 0);
+});
+
+test('two snapped neighbours have a seam between them', () => {
+  fresh();
+  const step = board.settings.gridStep;
+  // Two boxes a cell apart, so they land in adjoining blocks of cells.
+  const [a, b] = addItems([boxAt(0, 0, step, step), boxAt(step, 0, step, step)]);
+  setSetting('snap', true);
+  const left = byId(a.id), right = byId(b.id);
+  const seam = (right.x - right.w / 2) - (left.x + left.w / 2);
+  // The whole point of the seam: side by side is not the same as joined, or two
+  // photographs in adjoining cells read as one photograph with a crease in it.
+  assert.ok(seam > 0, 'neighbours are touching');
+  // Within a rounding error: the seam is a fraction of the step and comes back
+  // through two subtractions, so it lands on the last bit rather than exactly.
+  assert.ok(Math.abs(seam - step * CELL_GAP) < 1e-6, `seam was ${seam}`);
 });
 
 test('turning snapping off puts everything back where it was', () => {
