@@ -162,6 +162,12 @@ export function initInput(vp, cmds) {
       kind: 'move', id, moving, before, start,
       origin: before.map(b => ({ id: b.id, x: b.x, y: b.y })),
       moved: false,
+      // What the pointer has hold of, as against what it is towing. Only these
+      // ask again what they are stuck to when the drag ends - a note carried
+      // across the board by the photo underneath it has not moved relative to
+      // anything, and re-parenting it would take apart the pile you built by
+      // moving it. See restick() in state.js.
+      driven: [...selection],
     };
     for (const sid of moving) ensureMounted(sid);
   }
@@ -197,6 +203,9 @@ export function initInput(vp, cmds) {
     const before = snapshotGeom([id]);
     g = {
       kind: 'resize', id, corner, before,
+      // Resizing a note changes how much of it is over what it is lying on, so
+      // it is as much a reason to ask again as moving it is.
+      driven: [id],
       start: vp.toWorld(e.clientX, e.clientY),
       box: { x: it.x, y: it.y, w: it.w, h: it.h },
       // Media keeps its aspect unless shift says otherwise; cards resize freely.
@@ -423,8 +432,8 @@ export function initInput(vp, cmds) {
   function finishGesture() {
     if (!g) return;
     if (g.kind === 'marquee') marquee.hidden = true;
-    if (g.kind === 'move' && g.moved) commitGeom('Move', g.before);
-    if (g.kind === 'resize') commitGeom('Resize', g.before);
+    if (g.kind === 'move' && g.moved) commitGeom('Move', g.before, g.driven);
+    if (g.kind === 'resize') commitGeom('Resize', g.before, g.driven);
     el.classList.remove('is-panning');
     g = null;
     syncItems();
@@ -433,8 +442,8 @@ export function initInput(vp, cmds) {
   /** Drop the gesture without committing (used when a pinch takes over). */
   function abortGesture() {
     if (!g) return;
-    if (g.kind === 'move' && g.moved) commitGeom('Move', g.before);
-    if (g.kind === 'resize') commitGeom('Resize', g.before);
+    if (g.kind === 'move' && g.moved) commitGeom('Move', g.before, g.driven);
+    if (g.kind === 'resize') commitGeom('Resize', g.before, g.driven);
     if (g.kind === 'marquee') marquee.hidden = true;
     el.classList.remove('is-panning');
     g = null;
@@ -552,7 +561,7 @@ export function initInput(vp, cmds) {
     // already in the right order relative to each other.
     const before = snapshotGeom([...selection, ...stuckFollowers(selection)]);
     applyGeom(before.map(b => ({ ...b, x: b.x + dx, y: b.y + dy })));
-    commitGeom('Nudge', before);
+    commitGeom('Nudge', before, [...selection]);
   }
 
   // ---- clipboard --------------------------------------------------------
@@ -650,6 +659,25 @@ export function initInput(vp, cmds) {
   el.addEventListener('contextmenu', e => {
     e.preventDefault();
     openMenuAt(e.clientX, e.clientY, itemIdFromEvent(e.target));
+  });
+
+  // The same menu, for anyone not holding a mouse. Right-click is the only way
+  // to reach an item's actions, and it is a gesture a touchscreen does not
+  // have - so every card carries a handle that opens it. Anchored to the
+  // button rather than to the pointer, so it lands in the same place whether it
+  // was tapped or clicked.
+  //
+  // Here rather than in canvas/items.js because openMenuAt() is what retargets
+  // the selection first, and that rule belongs with the gesture, not with the
+  // element that happens to trigger it. The button is a <button>, so the
+  // `widget` branch in pointerdown already keeps it from starting a drag.
+  el.addEventListener('click', e => {
+    const btn = e.target instanceof Element ? e.target.closest('.item-menu') : null;
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const box = btn.getBoundingClientRect();
+    openMenuAt(box.right, box.bottom, itemIdFromEvent(btn));
   });
 
   function openMenuAt(x, y, id) {

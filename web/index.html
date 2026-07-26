@@ -78,7 +78,14 @@
   <div class="side-body">
     <section class="side-sec">
       <h2>Board</h2>
-      <p id="board-title" class="board-title"><em>Untitled board</em></p>
+      <!-- A real input rather than a <p> you can click into, so it is reachable
+           by tab and by touch without inventing a role. Empty rather than
+           carrying the words "Untitled board": that is the placeholder, which
+           is both the italic aside it used to be styled as and the thing
+           setTitle() already falls back to when handed nothing. -->
+      <input id="board-title" class="board-title" type="text" maxlength="120"
+             placeholder="Untitled board" aria-label="Board name"
+             autocomplete="off" spellcheck="false">
       <div class="btn-row">
         <button type="button" data-cmd="new">New</button>
         <button type="button" data-cmd="open">Open&hellip;</button>
@@ -87,7 +94,6 @@
         <button type="button" data-cmd="save" class="primary">Save</button>
         <button type="button" data-cmd="export">Export&hellip;</button>
       </div>
-      <p class="hint" id="save-hint"></p>
     </section>
 
 
@@ -97,7 +103,54 @@
         <button type="button" data-cmd="add-files">Add files&hellip;</button>
         <button type="button" data-cmd="add-note">Write a note</button>
       </div>
-      <p class="hint">Or drag anything onto the board &mdash; folders too &mdash; or just paste.</p>
+    </section>
+
+
+    <section class="side-sec">
+      <h2>Appearance</h2>
+      <!-- The whimsy axis. One dial from scrapbook to spec sheet - it moves
+           shape, type, motion, elevation, ornament and contrast together,
+           because those together are what makes a thing feel playful or
+           serious. See the third block of tokens.css. -->
+      <label class="field">
+        <span>Whimsy</span>
+        <!-- No <datalist> of stops here on purpose. It buys nothing - Chromium
+             ignores it once the track is custom-painted - and Firefox honours
+             it by drawing its own tick marks on the track, where the two end
+             ticks vanish into the rounded track ends and the middle one is
+             left sitting there as a stray dot. The three names below are the
+             stops, and they are legible in a way ticks are not. -->
+        <input id="opt-whimsy" type="range" min="0" max="2" step="1" value="1"
+               aria-describedby="whimsy-stop-labels">
+        <span class="field-stops" id="whimsy-stop-labels" aria-hidden="true">
+          <span>Softish</span><span>Middle</span><span>Harsh</span>
+        </span>
+      </label>
+      <label class="field">
+        <span>Palette</span>
+        <select id="opt-palette">
+          <option value="">Papyrus</option>
+          <option value="absinthe">Absinthe</option>
+          <option value="tearose">Tea rose</option>
+          <option value="peacock">Peacock</option>
+        </select>
+      </label>
+      <!-- Whimsy and Palette are the whole section until you open this. Between
+           them they move every token the rest of it sets one at a time, which
+           is what makes the rest of it advanced rather than merely secondary. -->
+      <details class="advanced" id="appearance-advanced">
+        <summary>Advanced</summary>
+        <!-- The two faces share a row: they are one decision seen two ways, and
+             stacked they read as unrelated menus that happen to be adjacent. -->
+        <div id="appearance-type" class="field-pair"></div>
+        <p class="hint">Drop a <code>.woff2</code>, <code>.ttf</code> or <code>.otf</code> on the board to add your own face.</p>
+        <div id="appearance-vars"></div>
+        <label class="check"><input type="checkbox" id="opt-auto-palette"> Take colours from pictures</label>
+        <div id="appearance-advanced-vars"></div>
+        <div class="btn-row">
+          <button type="button" data-cmd="reset-appearance">Start over</button>
+        </div>
+      </details>
     </section>
 
 
@@ -133,42 +186,6 @@
         <span>Volume<output id="opt-volume-out">60%</output></span>
         <input id="opt-volume" type="range" min="0" max="100" step="1" value="60">
       </label>
-    </section>
-
-
-    <section class="side-sec">
-      <h2>Appearance</h2>
-      <!-- The whimsy axis. One dial from scrapbook to spec sheet - it moves
-           shape, type, motion, elevation, ornament and contrast together,
-           because those together are what makes a thing feel playful or
-           serious. See the third block of tokens.css. -->
-      <label class="field">
-        <span>Whimsy</span>
-        <!-- No <datalist> of stops here on purpose. It buys nothing - Chromium
-             ignores it once the track is custom-painted - and Firefox honours
-             it by drawing its own tick marks on the track, where the two end
-             ticks vanish into the rounded track ends and the middle one is
-             left sitting there as a stray dot. The three names below are the
-             stops, and they are legible in a way ticks are not. -->
-        <input id="opt-whimsy" type="range" min="0" max="2" step="1" value="1"
-               aria-describedby="whimsy-stop-labels">
-        <span class="field-stops" id="whimsy-stop-labels" aria-hidden="true">
-          <span>Softish</span><span>Middle</span><span>Harsh</span>
-        </span>
-      </label>
-      <label class="field">
-        <span>Palette</span>
-        <select id="opt-palette">
-          <option value="">Papyrus</option>
-          <option value="absinthe">Absinthe</option>
-          <option value="tearose">Tea rose</option>
-          <option value="peacock">Peacock</option>
-        </select>
-      </label>
-      <div id="appearance-vars"></div>
-      <div class="btn-row">
-        <button type="button" data-cmd="reset-appearance">Start over</button>
-      </div>
     </section>
 
 
@@ -272,6 +289,27 @@
      missing-asset warnings are the app's only reply to a save, and without
      these a screen reader never hears any of them. -->
 <div id="toast" role="status" aria-live="polite" hidden></div>
+
+<!-- The one question this app stops to ask. A real <dialog>, opened with
+     showModal(), because that is what buys the focus trap, the Escape key, the
+     top layer and the inert background without any of it being written by
+     hand - and because the native confirm() it replaces is a browser chrome
+     box that says "localhost:6273 says" above the sentence.
+     Text and buttons are filled in by ui/dialog.js; the markup is here so the
+     first time it is needed is not also the first time it is built. -->
+<dialog id="ask" aria-labelledby="ask-title">
+  <h2 id="ask-title"></h2>
+  <p id="ask-body"></p>
+  <div class="ask-row">
+    <!-- The way out that loses nothing sits apart from the other two, at the
+         far end of the row, so it is not one of a pair of near-identical
+         buttons where the wrong one is unrecoverable. -->
+    <button type="button" id="ask-keep"></button>
+    <span class="ask-gap"></span>
+    <button type="button" id="ask-cancel"></button>
+    <button type="button" id="ask-go" class="danger"></button>
+  </div>
+</dialog>
 
 <input id="file-input" type="file" multiple hidden>
 

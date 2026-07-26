@@ -25,6 +25,10 @@ import {
 import { packBoard, unpackBoard, MIME } from './mbrd.js';
 import { allAssets, putAsset, clearAssets } from './assets.js';
 import { idbGet, idbSet, idbDel, idbClear, idbKeys } from './idb.js';
+// The only thing this module borrows from ui/, and on the same terms as
+// toast(): it reaches for `document` inside a function, never at import time,
+// so storage.js stays loadable without a browser. See tests/imports.test.js.
+import { ask } from '../ui/dialog.js';
 
 const PICKER_TYPES = [{
   description: 'mbrd board',
@@ -196,7 +200,7 @@ export async function openBoard() {
  * board's bytes behind it.
  */
 export async function openFile(file, handle = null) {
-  if (!(await confirmDiscard())) return false;
+  if (!(await confirmDiscard('Opening another board'))) return false;
   try {
     // Unpack *and* load inside the transaction. Loading used to sit outside
     // it, on the reading that unpacking was the risky half - but the board is
@@ -294,11 +298,26 @@ function pickViaInput() {
 // ---------------------------------------------------------------------------
 
 export async function newBoard() {
-  if (!(await confirmDiscard())) return false;
+  if (!(await confirmDiscard('Starting a new one'))) return false;
   clearAssets();
   fileHandle = null;
   created = null;
-  loadBoard({ title: 'Untitled board', settings: board.settings });
+  // Announced rather than acted on, because the look lives in ui/appearance.js
+  // and this module has to keep loading without a browser.
+  //
+  // Emitted *before* the load, and that ordering is the whole trick: resetting
+  // the look calls persist(), which marks the board dirty - and loadBoard()
+  // clears the flag on its way past. The other order leaves a board nobody has
+  // touched claiming unsaved changes, so the next New asks whether to discard
+  // an empty board.
+  bus.emit('board:new');
+  // Settings deliberately *not* carried over. A new board is a new board: grid,
+  // axes, snapping, spacing, the arrangement and the look all start where a
+  // first-run board starts, rather than inheriting whatever the last one drifted
+  // into. That matters more since a board can derive its palette from its own
+  // photographs - without this, every board after the first would open in the
+  // colours of the previous board's pictures.
+  loadBoard({ title: 'Untitled board' });
   await clearSession();
   // A fresh start is a fresh start. Both latches below are set by a failure
   // that belonged to the board just closed - a quota error raised by its
@@ -312,9 +331,36 @@ export async function newBoard() {
   return true;
 }
 
-async function confirmDiscard() {
+/**
+ * Stop and ask, when there is something to lose.
+ *
+ * Three answers rather than two, and the third is the point. Save keeps a board
+ * in *this browser* and there is exactly one slot - newBoard() calls
+ * clearSession() a few lines later, which wipes it - so "save it first" is not
+ * an option that exists here. Writing a file is. A dialog that announces
+ * unsaved changes and then offers no way to keep them is the one people
+ * complain about, and Export is the honest version of that offer.
+ *
+ * Looped, because exporting can fail or be cancelled at the picker. Coming back
+ * to the question is right: somebody who asked to keep the board and did not
+ * keep it has not answered yet.
+ */
+async function confirmDiscard(what) {
   if (!isDirty()) return true;
-  return confirm('This board has unsaved changes. Discard them?');
+  for (;;) {
+    const answer = await ask({
+      title: 'Unsaved changes',
+      body: `This board has changes that are not in a file. ${what} will discard them.`,
+      keep: 'Export first…',
+      cancel: 'Cancel',
+      go: 'Discard',
+    });
+    if (answer === 'cancel') return false;
+    if (answer === 'go') return true;
+    // exportBoard() clears the dirty flag when it writes, so a success here is
+    // the same state as never having been dirty.
+    if (await exportBoard()) return true;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -350,6 +396,11 @@ function referencedHashes(data) {
   const add = it => { for (const h of itemHashes(it)) out.add(h); };
   for (const it of data.items || []) add(it);
   for (const t of data.trash || []) add(t?.item);
+  // The faces the board is set in. Not on any item and so not in itemHashes(),
+  // which makes them exactly the thing the sweep below would throw away: a face
+  // dropped in would be gone by the next autosave, and the board would come
+  // back after a reload set in a family that no longer resolves.
+  for (const f of data.settings?.fonts || []) if (f?.hash) out.add(f.hash);
   return out;
 }
 

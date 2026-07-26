@@ -114,6 +114,28 @@ be cleared by the browser, a file cannot — but a file only exists if you asked
 for one. Either way the working board is mirrored into IndexedDB as you go, so
 closing the tab mid-edit doesn't lose anything.
 
+Anything that would throw away unsaved work — **New**, or opening another board
+— stops and asks first, and the dialog offers to export before it goes ahead.
+Escape, the backdrop and Cancel are all the harmless answer, and the harmless
+one is what has focus when it opens.
+
+### Keeping boards in a synced folder
+
+There is no sign-in and no cloud account, and there does not need to be. Export
+a board into a folder your Drive, iCloud, Dropbox or OneDrive client already
+watches, and it syncs — the sync client does the work it was installed to do.
+Where the File System Access API is available (Chrome, Edge), exporting the same
+board again writes back to that same file, so after the first time it is one
+keystroke and the copy in the cloud folder is current.
+
+That is deliberately the whole feature. A Drive API integration would need
+OAuth, a registered origin, re-consent roughly hourly with no backend, and a
+conflict policy written by hand — and it would put a third-party fetch in an app
+whose first promise is that nothing leaves the machine. Two people editing the
+same board at once is last-writer-wins, decided by the sync client rather than
+by mbrd. If that becomes a real problem, it is worth solving properly rather
+than approximately.
+
 ## Layout
 
 ```
@@ -169,6 +191,37 @@ radius and spacing value is a CSS custom property in `tokens.css`. The
 look is saved twice on purpose: to `localStorage` (follows you across boards)
 and into `board.json` (travels with the board, so someone else's board opens
 looking the way they made it).
+
+**A board can also take its colours from its own pictures.** Drop a few photos
+in and the whole palette — paper, ink and pigment — is read off them: one to
+three hues, clustered in OKLCh, held to the same lightness and chroma the four
+presets were built on, and repaired afterwards so the ink still clears its
+contrast ratio on the sheet. **Take colours from pictures** in the Appearance
+panel switches it on: it reads them straight away and again every time a picture
+lands, so the board keeps up with what is actually on it. Picking a colour by
+hand — or a named palette — switches it back off and leaves your choice alone.
+The colours already taken stay put; the palette menu is the way back. Nothing is
+uploaded — the pixels are read from a 48×48 canvas in your own browser.
+
+Picking a pigment by hand does the same thing from one colour: the paper, its
+three shades, the ink, the rules and the two other pigments are all rebuilt from
+that hue, so a board stays one palette rather than an accent and a sheet chosen
+at different times. The colour you picked is the colour you get — the sheet is
+built around it rather than it being nudged to fit the sheet.
+
+**And a board can be set in a face you supply.** Drop a `.woff2`, `.woff`,
+`.ttf` or `.otf` onto the board and it becomes an entry in the two type menus
+instead of a card. The bytes go into the asset store like a photograph, so the
+face travels *inside* the `.mbrd` and someone else opens the board seeing what
+you saw — which is the only way this can work in an app that fetches nothing.
+The family name is rebuilt from the filename rather than taken from it
+(`Fraunces[opsz,wght].woff2` becomes "Fraunces"), because that name ends up
+inside a CSS declaration.
+
+Whimsy and Palette are the whole panel until you open **Advanced**, which holds
+the type menus, the pigment, the extraction switch and the grid, radius and
+panel sliders. The board's name at the top of the panel is a field — type in it
+to rename the board.
 
 ## Status
 

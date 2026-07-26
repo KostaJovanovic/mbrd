@@ -46,12 +46,89 @@ export function meshKind(name = '') {
   return null;
 }
 
-/** Parse by kind. `bytes` is an ArrayBuffer. */
-export function parseMesh(kind, bytes) {
-  if (kind === 'stl') return parseSTL(bytes);
-  if (kind === 'obj') return parseOBJ(bytes);
-  if (kind === 'glb') return parseGLB(bytes);
-  throw new MeshError('Not a model file');
+/**
+ * Which way is up, per format.
+ *
+ * **STL is Z-up and the viewer is Y-up**, which is why an unrotated STL comes
+ * out lying on its back. The format has no header field saying so - it has no
+ * header worth the name at all, and no units either - but the entire CAD and
+ * 3D-printing world that writes STL is Z-up, so it is a fact about the format in
+ * every way except being written down in it.
+ *
+ * glTF is the opposite and is written down: the spec fixes Y-up. OBJ says
+ * nothing, and the exporters that matter for a moodboard - the design tools
+ * rather than the CAD ones - write Y-up, so it is left alone. If a Z-up OBJ ever
+ * turns up it will look exactly as wrong as STLs did, and the fix is one line
+ * here plus a way to say so per item.
+ */
+const Z_UP = new Set(['stl', 'obj']);
+
+/**
+ * Which way a format's files usually point.
+ *
+ * OBJ is a guess and the only one here that is. The format says nothing, and
+ * both answers are common in the wild - the CAD and scanning tools that also
+ * write STL are Z-up, and Blender's exporter converts to Y-up on the way out.
+ * Z-up is the default because it is the company OBJ keeps on a board that also
+ * takes STL, and because a guess that can be corrected in two clicks is a
+ * better deal than one that cannot: see `meta.upAxis`.
+ */
+export const defaultUpAxis = kind => (Z_UP.has(kind) ? 'z' : 'y');
+
+/**
+ * Parse by kind. `bytes` is an ArrayBuffer.
+ *
+ * `upAxis` overrides the format's default - 'z' or 'y', anything else ignored.
+ * It exists because OBJ's default is a guess and a wrong guess leaves a model
+ * on its back with no way out, which is worse than a menu entry.
+ *
+ * The conversion lives here rather than inside each parser on purpose: a
+ * parser's job is to say what is *in the file*, and parseSTL() returning STL
+ * coordinates is what makes it testable against a fixture somebody can compute
+ * by hand. This function's job is to hand the viewer geometry in the app's own
+ * space, which is a different question with a different answer.
+ */
+export function parseMesh(kind, bytes, upAxis) {
+  let mesh;
+  if (kind === 'stl') mesh = parseSTL(bytes);
+  else if (kind === 'obj') mesh = parseOBJ(bytes);
+  else if (kind === 'glb') mesh = parseGLB(bytes);
+  else throw new MeshError('Not a model file');
+  const up = upAxis === 'z' || upAxis === 'y' ? upAxis : defaultUpAxis(kind);
+  return up === 'z' ? standUp(mesh) : mesh;
+}
+
+/**
+ * Z-up geometry turned Y-up: a -90 degree rotation about X, or (x, y, z) ->
+ * (x, z, -y).
+ *
+ * Applied to the geometry rather than carried as a matrix into the renderer,
+ * because `bounds` is what the viewer frames the model from - it takes the
+ * centre and the radius off it - and a mesh whose points and whose box disagree
+ * about which way is up would be framed from the wrong place while looking
+ * right. Rotating both together keeps them one thing.
+ *
+ * In place: these arrays were minted by the parser a moment ago and have no
+ * other owner, and a 2-million-triangle STL is 72MB of positions that nobody
+ * needs a second copy of.
+ */
+function standUp(mesh) {
+  for (const a of [mesh.positions, mesh.normals]) {
+    for (let i = 0; i < a.length; i += 3) {
+      const y = a[i + 1];
+      a[i + 1] = a[i + 2];
+      a[i + 2] = -y;
+    }
+  }
+  // The box is axis-aligned and the rotation is a right angle, so it stays
+  // axis-aligned and its corners simply change places. Note the swap on Z:
+  // negating turns the old maximum into the new minimum.
+  const { min, max } = mesh.bounds;
+  mesh.bounds = {
+    min: [min[0], min[2], -max[1]],
+    max: [max[0], max[2], -min[1]],
+  };
+  return mesh;
 }
 
 // ---------------------------------------------------------------------------
@@ -167,30 +244,52 @@ function asciiSTL(text) {
  */
 export function parseOBJ(bytes) {
   const text = typeof bytes === 'string' ? bytes : new TextDecoder().decode(bytes);
-  const vx = [], vn = [];
-  const outP = [], outN = [];
+  const vx = [], vn = [], vc = [];
+  const outP = [], outN = [], outC = [];
+  const triMat = [];
+  let hasVC = false, mtllib = null, material = null;
   const box = newBox();
 
   for (const raw of text.split('\n')) {
     const line = raw.trim();
     if (!line || line[0] === '#') continue;
-    const sp = line.indexOf(' ');
+    const sp = line.search(/\s/);
     if (sp < 0) continue;
     const tag = line.slice(0, sp);
     if (tag === 'v') {
       const n = line.slice(sp + 1).trim().split(/\s+/);
       vx.push(+n[0], +n[1], +n[2]);
+      // The unofficial extension every scanner and photogrammetry tool writes:
+      // three more numbers on a vertex line are its colour. Not in the spec and
+      // universal in practice, which is the same standing "solid" has in STL.
+      //
+      // A vertex without them still gets an entry, so the array stays parallel
+      // to the positions - white, which is the identity when it is multiplied
+      // into a material or handed to a shader that is not using colours.
+      if (n.length >= 6) {
+        hasVC = true;
+        vc.push(clamp01(+n[3]), clamp01(+n[4]), clamp01(+n[5]));
+      } else vc.push(1, 1, 1);
     } else if (tag === 'vn') {
       const n = line.slice(sp + 1).trim().split(/\s+/);
       vn.push(+n[0], +n[1], +n[2]);
+    } else if (tag === 'usemtl') {
+      material = line.slice(sp + 1).trim() || null;
+    } else if (tag === 'mtllib') {
+      // The first one wins. Multiple libraries are legal and vanishingly rare,
+      // and resolving them needs a list where the caller has a single lookup.
+      if (!mtllib) mtllib = line.slice(sp + 1).trim() || null;
     } else if (tag === 'f') {
       const corners = line.slice(sp + 1).trim().split(/\s+/);
       if (corners.length < 3) continue;
       for (let i = 1; i + 1 < corners.length; i++) {
         if (outP.length / 9 >= MAX_TRIANGLES) throw new MeshError(tooBig(MAX_TRIANGLES));
-        emitCorner(corners[0], vx, vn, outP, outN, box);
-        emitCorner(corners[i], vx, vn, outP, outN, box);
-        emitCorner(corners[i + 1], vx, vn, outP, outN, box);
+        emitCorner(corners[0], vx, vn, vc, outP, outN, outC, box);
+        emitCorner(corners[i], vx, vn, vc, outP, outN, outC, box);
+        emitCorner(corners[i + 1], vx, vn, vc, outP, outN, outC, box);
+        // Which material was in force, per triangle rather than per face, so it
+        // stays in step with the triangles a fan actually emitted.
+        triMat.push(material);
         // A face that gave no normals gets the facet's own.
         if (!outN[outP.length - 1] && !outN[outP.length - 2] && !outN[outP.length - 3]) {
           fixFacetArrays(outP, outN, outP.length - 9);
@@ -199,11 +298,21 @@ export function parseOBJ(bytes) {
     }
   }
   if (!outP.length) throw new MeshError('This OBJ has no faces in it');
-  return finish(new Float32Array(outP), new Float32Array(outN), box);
+  const mesh = finish(new Float32Array(outP), new Float32Array(outN), box);
+  // Embedded colours are the file's own answer and need nothing else, so they
+  // are attached here. Material colours cannot be: they live in a second file
+  // this function has never seen. What is handed on instead is what it takes to
+  // ask - see applyMaterials().
+  mesh.colors = hasVC ? new Float32Array(outC) : null;
+  mesh.mtllib = mtllib;
+  mesh.triMat = triMat.some(Boolean) ? triMat : null;
+  return mesh;
 }
 
+const clamp01 = v => (Number.isFinite(v) ? (v < 0 ? 0 : v > 1 ? 1 : v) : 1);
+
 /** One `v/vt/vn` corner, resolved against what has been read so far. */
-function emitCorner(spec, vx, vn, outP, outN, box) {
+function emitCorner(spec, vx, vn, vc, outP, outN, outC, box) {
   const parts = spec.split('/');
   const pi = resolve(+parts[0], vx.length / 3);
   const ni = parts[2] ? resolve(+parts[2], vn.length / 3) : -1;
@@ -211,7 +320,87 @@ function emitCorner(spec, vx, vn, outP, outN, box) {
   outP.push(x, y, z);
   if (ni >= 0) outN.push(vn[ni * 3] || 0, vn[ni * 3 + 1] || 0, vn[ni * 3 + 2] || 0);
   else outN.push(0, 0, 0);
+  // Expanded to the triangle-vertex order the position buffer is already in, so
+  // the two are one array length and the renderer needs no index of its own.
+  const c = pi * 3;
+  outC.push(vc[c] ?? 1, vc[c + 1] ?? 1, vc[c + 2] ?? 1);
   grow(box, x, y, z);
+}
+
+// ---------------------------------------------------------------------------
+// .mtl
+// ---------------------------------------------------------------------------
+
+/**
+ * A material library, reduced to the one thing a card can show: diffuse colour.
+ *
+ * `map_Kd` and the rest of the PBR vocabulary are read past. A texture is
+ * another file again, and a moodboard card is a silhouette and some shading -
+ * the point of colour here is that a part which was authored red is red.
+ */
+export function parseMTL(bytes) {
+  const text = typeof bytes === 'string' ? bytes : new TextDecoder().decode(bytes);
+  const mats = new Map();
+  let cur = null;
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (!line || line[0] === '#') continue;
+    const sp = line.search(/\s/);
+    const tag = sp < 0 ? line : line.slice(0, sp);
+    const rest = sp < 0 ? '' : line.slice(sp + 1).trim();
+    if (tag === 'newmtl') {
+      cur = rest;
+      if (cur) mats.set(cur, null);
+    } else if (cur && tag === 'Kd') {
+      const n = rest.split(/\s+/);
+      // `Kd` can also name a spectral curve or an xyz triple, which start with a
+      // keyword rather than a number. Those are not three floats and are left
+      // alone rather than parsed into NaN and drawn as black.
+      if (n.length >= 3 && n.every(v => Number.isFinite(+v))) {
+        mats.set(cur, [clamp01(+n[0]), clamp01(+n[1]), clamp01(+n[2])]);
+      }
+    }
+  }
+  return mats;
+}
+
+/**
+ * Bake a material library's diffuse colours into the mesh, one per triangle.
+ *
+ * Baked rather than kept as a per-triangle material index and a palette,
+ * because the renderer draws the whole mesh in a single call and always will:
+ * splitting by material would mean a draw call per material and a book-keeping
+ * layer to go with it, for a card that is a couple of centimetres across.
+ *
+ * Returns whether anything was actually coloured. A library that resolved
+ * nothing - a name that does not match, a material with no Kd - leaves the mesh
+ * exactly as it was, so the card falls back to the palette's own ink rather than
+ * to the grey a "default material" would give it.
+ */
+export function applyMaterials(mesh, materials) {
+  if (!mesh?.triMat || !materials?.size) return false;
+  const colors = new Float32Array(mesh.count * 3);
+  let any = false;
+  for (let t = 0; t < mesh.triMat.length; t++) {
+    const kd = materials.get(mesh.triMat[t]);
+    if (!kd) continue;
+    any = true;
+    for (let k = 0; k < 9; k += 3) {
+      colors[t * 9 + k] = kd[0];
+      colors[t * 9 + k + 1] = kd[1];
+      colors[t * 9 + k + 2] = kd[2];
+    }
+  }
+  if (!any) return false;
+  // Triangles no material claimed are left at zero by the fill above, which
+  // would draw them black. White is the neutral: it is what an uncoloured
+  // vertex means everywhere else in this file.
+  for (let t = 0; t < mesh.triMat.length; t++) {
+    if (materials.get(mesh.triMat[t])) continue;
+    for (let k = 0; k < 9; k++) colors[t * 9 + k] = 1;
+  }
+  mesh.colors = colors;
+  return true;
 }
 
 /** One-based, or negative and counting back from the end. */

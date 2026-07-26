@@ -22,10 +22,13 @@
 // their contrast and sharpness say it belongs.
 
 import { board, bus, markDirty, setSetting } from '../state.js';
-import { clamp, readPrefJSON, writePref } from '../util.js';
+import { clamp, readPrefJSON, toast, writePref } from '../util.js';
+import { assetURL } from '../storage/assets.js';
+import { extractPalette, paletteFromAccent, samplePixels, PALETTE_TOKENS } from './pigments.js';
 // What a board is allowed to ask for. Kept in its own module because this one
 // touches document at import time and that one must stay testable - see look.js.
 import { safeVars } from './look.js';
+import { customFaces } from './fonts.js';
 
 const STORE_KEY = 'mbrd.appearance';
 
@@ -95,7 +98,7 @@ const AXIS_TOKENS = ['--radius', '--grid-alpha', '--grid-dot'];
  * in `settings.appearance.vars` and travel inside a .mbrd like any other token.
  */
 const DISPLAY_FACES = [
-  { label: 'As the level sets it', value: '' },
+  { label: 'Default', value: '' },
   { label: 'Fraunces',             value: '"Fraunces", Georgia, serif' },
   { label: 'Iowan Old Style',      value: '"Iowan Old Style", Palatino, serif' },
   { label: 'Palatino',             value: '"Palatino Linotype", "Book Antiqua", Palatino, serif' },
@@ -105,7 +108,7 @@ const DISPLAY_FACES = [
 ];
 
 const BODY_FACES = [
-  { label: 'As the level sets it', value: '' },
+  { label: 'Default', value: '' },
   { label: 'Geist',                value: '"Geist", system-ui, sans-serif' },
   { label: 'System sans',          value: 'system-ui, -apple-system, "Segoe UI", sans-serif' },
   { label: 'Helvetica',            value: '"Helvetica Neue", Helvetica, Arial, sans-serif' },
@@ -115,33 +118,56 @@ const BODY_FACES = [
   { label: 'Same as display',      value: 'var(--font-display)' },
 ];
 
-/** The curated set of tokens worth exposing. Everything else stays internal. */
+/**
+ * The curated set of tokens worth exposing. Everything else stays internal.
+ *
+ * `host` files each control into one of three places in the panel, all three of
+ * which now sit inside the Advanced fold:
+ *
+ *   type      the paired row of face menus, side by side
+ *   main      the pigment, which moves the whole sheet
+ *   advanced  the sliders, for the ones you set once and then leave
+ *
+ * Whimsy and Palette are the section above the fold, and nothing here joins
+ * them. Between those two they already move every token this list sets one at a
+ * time - which is the argument for the split: these are the controls for when
+ * the two dials did not land where you wanted, not the ones you start with.
+ *
+ * Deliberately not in AXIS_TOKENS, and that is the decision worth naming:
+ * sliding whimsy drops a hand-set radius back to the stylesheet, but a chosen
+ * face survives the move. Comparing one serif across all three tiers is the
+ * whole reason to have this, and a control that reset itself every time you
+ * looked at the other end of the axis could not do it.
+ *
+ * --font-mono is left out on purpose: it is spent on byte counts, coordinates
+ * and the text card's body, where the question is "does it line up in columns"
+ * rather than one of taste.
+ *
+ * There is no --paper control. Paper is derived from the pigment now - see
+ * setVar() - because the two were a pair anybody could put out of tune, and
+ * a sheet that does not belong to its accent is the one mistake this panel
+ * made easiest to make.
+ */
 const CONTROLS = [
-  // The type first, because these two are the controls somebody is trying to
-  // answer a question with, where the rest are adjustments.
-  //
-  // Deliberately not in AXIS_TOKENS, and that is the decision worth naming:
-  // sliding whimsy drops a hand-set radius back to the stylesheet, but a chosen
-  // face survives the move. Comparing one serif across all three tiers is the
-  // whole reason to have this, and a control that reset itself every time you
-  // looked at the other end of the axis could not do it.
-  //
-  // --font-mono is left out on purpose: it is spent on byte counts, coordinates
-  // and the text card's body, where the question is "does it line up in
-  // columns" rather than one of taste.
-  { var: '--font-display', label: 'Display type', type: 'font', options: DISPLAY_FACES },
-  { var: '--font-body',    label: 'Body type',    type: 'font', options: BODY_FACES },
-  { var: '--accent',      label: 'Pigment',       type: 'color' },
-  { var: '--paper',       label: 'Paper',         type: 'color' },
-  { var: '--radius',      label: 'Corner radius', type: 'range', min: 0,   max: 28,  step: 1,    unit: 'px' },
+  { var: '--font-display', label: 'Display', type: 'font', options: DISPLAY_FACES, host: 'type' },
+  { var: '--font-body',    label: 'Body',    type: 'font', options: BODY_FACES,    host: 'type' },
+  { var: '--accent',      label: 'Pigment',       type: 'color', host: 'main' },
   // Floored well above zero. The bottom of this range used to be an invisible
   // grid, which is a second, hidden "off" switch sitting next to the real one
   // in View - and one that gives no hint of what turned the dots off.
-  { var: '--grid-alpha',  label: 'Grid strength', type: 'range', min: 0.04, max: 0.4, step: 0.01 },
-  { var: '--grid-dot',    label: 'Grid weight',   type: 'range', min: 0.5, max: 4,   step: 0.1,  unit: 'px' },
-  { var: '--density',     label: 'Panel density', type: 'range', min: 0.8, max: 1.5, step: 0.05 },
-  { var: '--sidebar-w',   label: 'Panel width',   type: 'range', min: 260, max: 460, step: 4,    unit: 'px' },
+  { var: '--grid-alpha',  label: 'Grid strength', type: 'range', min: 0.04, max: 0.4, step: 0.01, host: 'advanced' },
+  { var: '--grid-dot',    label: 'Grid weight',   type: 'range', min: 0.5, max: 4,   step: 0.1,  unit: 'px', host: 'advanced' },
+  { var: '--radius',      label: 'Corner radius', type: 'range', min: 0,   max: 28,  step: 1,    unit: 'px', host: 'advanced' },
+  { var: '--density',     label: 'Panel density', type: 'range', min: 0.8, max: 1.5, step: 0.05, host: 'advanced' },
+  { var: '--sidebar-w',   label: 'Panel width',   type: 'range', min: 260, max: 460, step: 4,    unit: 'px', host: 'advanced' },
 ];
+
+/** Where each `host` renders. Missing element = that group is simply not built. */
+const HOSTS = {
+  type: 'appearance-type',
+  main: 'appearance-vars',
+  advanced: 'appearance-advanced-vars',
+};
 
 const root = document.documentElement;
 const themeColour = document.querySelector('meta[name="theme-color"]');
@@ -160,6 +186,7 @@ export function initAppearance(handlers = {}) {
 
   buildControls();
   wirePalette();
+  wireAutoPalette();
   wireWhimsy();
 
   // A board's look on the way in, and the user's own back again on the way out.
@@ -174,6 +201,34 @@ export function initAppearance(handlers = {}) {
   // title change and for every dirty-flag flip, and persist() emits it on the
   // way through - so an unguarded handler would re-apply the current look on
   // every keystroke that renames a board.
+  // A new board starts where a first-run board starts - Papyrus, the middle of
+  // the axis, no overrides, the extraction off. The stored preference goes with
+  // it, because these two are one value kept in two places and letting them
+  // disagree is what the whole of readStored()/persist() exists to avoid.
+  bus.on('board:new', () => resetAppearance());
+
+  // While the switch is on, every picture that lands changes the answer, so the
+  // palette is taken again rather than left at whatever the first few pictures
+  // said. Not awaited and its rejection swallowed: this is a decoration on an
+  // import that has already succeeded, and it has no business turning into an
+  // unhandled rejection in somebody's console because one PNG would not decode.
+  //
+  // Guarded on the import actually having brought a picture. Dropping a text
+  // file or a model on the board cannot have changed what the pictures say, and
+  // re-running the extraction to arrive at the same palette would repaint the
+  // whole interface and mark the board dirty for nothing.
+  bus.on('imported', items => {
+    if (!current.auto) return;
+    if (!(items || []).some(it => it.type === 'image' || it.meta?.cover)) return;
+    recolourFromBoard({ silent: true }).catch(() => {});
+  });
+
+  // A face arrived, or a board load changed which ones are registered. The
+  // menus are built from a list that just changed under them, so they are built
+  // again - syncControls() at the end of buildControls() puts the current
+  // choice back, including a choice the new list has just made selectable.
+  bus.on('fonts', () => buildControls());
+
   bus.on('board', () => {
     const look = board.settings.appearance;
     const next = hasLook(look) ? clone(look) : readStored();
@@ -240,7 +295,16 @@ function axisMoved(level) {
  * pictures on the board. Pass any subset of the pigment tokens.
  */
 export function setPigments(vars) {
-  current.palette = '';    // a derived palette is nobody's named palette
+  // The named palette is deliberately left alone, field and attribute both.
+  //
+  // PALETTE_TOKENS covers every token the [data-palette] blocks in tokens.css
+  // declare - checked, not assumed: the blocks set thirteen, and SHEET plus
+  // PIGMENT plus --leafy are those same thirteen. So an extraction overrides the
+  // named palette completely and nothing leaks through from underneath, which
+  // is what makes it safe to leave standing. And leaving it standing is what
+  // gives the switch something to fall back to: turning the extraction off hands
+  // the sheet back to the palette that was chosen, rather than to Papyrus.
+  //
   // Through the same filter as anything else, because the eventual caller is
   // pigments read out of whatever pictures were dropped on the board.
   for (const [key, value] of Object.entries(safeVars(vars))) {
@@ -248,9 +312,88 @@ export function setPigments(vars) {
     root.style.setProperty(key, value);
     applied.add(key);
   }
+  // Marked as the machine's work, which is what lets the next import replace it
+  // without asking. Set after the loop rather than before, so a call that
+  // filtered down to nothing does not claim a look it did not write.
+  if (Object.keys(current.vars).length) current.derived = true;
   paintThemeColour();
   persist();
   syncControls();
+}
+
+/**
+ * Turn the extraction on or off.
+ *
+ * This is the whole gate. It used to be inferred - "has anybody been in here by
+ * hand?" - which meant the honest answer to "will importing a photograph
+ * repaint my board?" was a paragraph about provenance. A switch the user can
+ * see is a better answer than a rule they have to be told, and it also settles
+ * the case the inference got wrong in both directions: somebody who wants their
+ * hand-tuned board recoloured anyway can now say so, and somebody who never
+ * wanted it is not relying on having happened to touch a slider.
+ *
+ * Turning it on extracts immediately. Waiting for the next import would mean
+ * the switch appeared to do nothing, which is indistinguishable from broken.
+ *
+ * Turning it off changes nothing on screen - it only stops the recalculating.
+ * The colours already taken stay, because they are the board's colours now and
+ * throwing them away is not what "stop updating this" means. The way back to a
+ * named palette is the menu directly above, which drops them all.
+ */
+function setAutoPalette(on) {
+  if (on) current.auto = true;
+  else delete current.auto;
+  persist();
+  syncControls();
+  if (on) recolourFromBoard().catch(() => {});
+}
+
+/**
+ * Take the colours off the board's own pictures.
+ *
+ * Silent when it fires itself after an import, loud when the switch asks for
+ * it, because those are two different questions: the import wants to be told
+ * nothing unless something happened, and the switch was just turned on by
+ * somebody waiting for an answer - including the answer "these pictures have no
+ * colour in them".
+ *
+ * The covers count as pictures. A board of audio cards is a board full of album
+ * art, and reading the sleeve of every record on it is exactly what somebody
+ * pressing this button means.
+ */
+async function recolourFromBoard({ silent = false } = {}) {
+  const urls = [];
+  // Newest first: a board that grows past MAX_SOURCES should follow what is
+  // being added to it rather than stay pinned to whatever was dropped first.
+  for (const it of [...board.items].reverse()) {
+    // Pictures only, named explicitly rather than taken from itemHashes(): that
+    // helper also returns a video's or an audio file's asset, and handing those
+    // to an <img> costs a decode that fails and a source slot that produced no
+    // vote. A video's cover art is still wanted, and is picked up below.
+    const hash = it.type === 'image' ? it.asset?.hash : null;
+    for (const h of [hash, it.meta?.cover]) {
+      const url = h && assetURL(h);
+      if (url) urls.push(url);
+    }
+  }
+  // One picture is enough now, where the silent version of this wanted three.
+  // That floor existed because the feature fired unasked and a whole interface
+  // turning over on a single dropped file reads as a fault; asked for by a
+  // switch, it is the thing that was asked for, and refusing until the third
+  // photograph arrives is the fault.
+  if (!urls.length) {
+    if (!silent) toast('No pictures on the board to take colours from');
+    return false;
+  }
+
+  const vars = extractPalette(await samplePixels(urls));
+  if (!vars) {
+    if (!silent) toast('No colour to take from these pictures');
+    return false;
+  }
+  setPigments(vars);
+  if (!silent) toast('Palette taken from the pictures');
+  return true;
 }
 
 export function resetAppearance() {
@@ -326,6 +469,20 @@ function setVar(name, value) {
   // the initial value and still beats the stylesheet, so the whimsy level
   // would never get its type back and the Default entry would be a one-way
   // door. Removal is the only thing that actually hands it back.
+  // Picking a colour by hand is a decision about the same thing the extraction
+  // decides, so it takes the switch off with it - otherwise the next imported
+  // picture would quietly paint over the colour that was just chosen, and the
+  // only clue would be a checkbox nobody was looking at. Scoped to the pigments
+  // on purpose: choosing a display face or a corner radius says nothing about
+  // colour, and used to switch the extraction off anyway.
+  //
+  // Cleared on the way out as well as the way in, since taking an override back
+  // off is still a decision about the look.
+  if (PALETTE_TOKENS.includes(name)) {
+    delete current.derived;
+    delete current.auto;
+    syncAutoBox();
+  }
   if (value === '') {
     delete current.vars[name];
     root.style.removeProperty(name);
@@ -333,10 +490,29 @@ function setVar(name, value) {
     persist();
     return;
   }
+  // The pigment carries the whole sheet with it. Paper, its three shades, the
+  // ink, the rules and the two other pigments are all built from the hue that
+  // was just picked, so the board stays one palette instead of an accent and a
+  // sheet that were chosen at different times.
+  //
+  // Written straight rather than through setPigments(), which would mark the
+  // look `derived` - the machine's to overwrite. This is the opposite: it is
+  // the most deliberate colour decision the panel offers.
+  const sheet = name === '--accent' ? paletteFromAccent(value) : null;
+  for (const [key, hue] of Object.entries(sheet || {})) {
+    current.vars[key] = hue;
+    root.style.setProperty(key, hue);
+    applied.add(key);
+  }
+
   current.vars[name] = value;
   root.style.setProperty(name, value);
   applied.add(name);
-  if (name === '--paper') paintThemeColour();
+  // The paper moved, so the installed-PWA title bar did too. No syncControls()
+  // to go with it, deliberately: this runs on every frame of a colour drag, and
+  // the only control whose value changed is the one under the pointer. Nothing
+  // else in the panel reads a pigment.
+  if (sheet) paintThemeColour();
   persist();
 }
 
@@ -365,7 +541,7 @@ const clampWhimsy = v => clamp(Math.round(+v) || 0, 0, WHIMSY.length - 1);
 // the one a control just edited - is built here, which is what makes this the
 // one place the rules have to hold. `vars` is filtered rather than rejected
 // wholesale: a board with one bad token should lose that token, not its look.
-const clone = look => ({
+const clone = look => withProvenance(look, {
   whimsy: look?.whimsy == null ? DEFAULT_WHIMSY : clampWhimsy(look.whimsy),
   // Becomes an attribute value that stylesheet rules match on, so it is held to
   // the shape a palette name has rather than trusted to be one.
@@ -384,7 +560,38 @@ const clone = look => ({
   vars: safeVars(look?.vars),
 });
 
-const sameLook = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+/**
+ * The two fields of a look that are not tokens.
+ *
+ * Neither is ever applied to :root - they describe the look rather than being
+ * part of it - but both have to survive clone(), because clone() is what every
+ * look in this module passes through. A flag dropped here is dropped on every
+ * save, every reload and every board that travels with an extracted palette.
+ *
+ *   derived  who wrote these pigments. Provenance, set by setPigments() and
+ *            cleared the moment a pigment is set by hand. Only wirePalette()
+ *            reads it, to decide whether switching palette drops two tokens or
+ *            all fourteen.
+ *   auto     whether to take the colours again on the next import. The user's
+ *            setting, and the only thing the switch writes.
+ *
+ * Both are held to exactly `true`, and `derived` additionally to there being
+ * something for it to be true *of* - so a .mbrd claiming a derived look with no
+ * pigments in it cannot make the palette menu throw away tokens it never wrote.
+ */
+function withProvenance(from, look) {
+  if (from?.derived === true && Object.keys(look.vars).length) look.derived = true;
+  if (from?.auto === true) look.auto = true;
+  return look;
+}
+
+// Both sides put through clone() first, which is what makes a string compare
+// safe here: it fixes the key order. `current` is mutated in place all over this
+// module - setPigments() adds `derived` at the end, the switch adds `auto` -
+// so two looks that are equal can serialise differently depending on which flag
+// happened to be set second, and this would then re-apply a look identical to
+// the one already on screen every time the board emitted an event.
+const sameLook = (a, b) => JSON.stringify(clone(a)) === JSON.stringify(clone(b));
 
 // ---------------------------------------------------------------------------
 // Controls
@@ -393,11 +600,16 @@ const sameLook = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const inputs = new Map();
 
 function buildControls() {
-  const host = document.getElementById('appearance-vars');
-  if (!host) return;
-  host.replaceChildren();
+  const hosts = {};
+  for (const [name, id] of Object.entries(HOSTS)) {
+    const node = document.getElementById(id);
+    if (node) { node.replaceChildren(); hosts[name] = node; }
+  }
+  if (!Object.keys(hosts).length) return;
 
   for (const c of CONTROLS) {
+    const host = hosts[c.host];
+    if (!host) continue;
     const label = document.createElement('label');
     label.className = 'field';
 
@@ -412,7 +624,13 @@ function buildControls() {
     const input = c.type === 'font' ? document.createElement('select')
                                     : document.createElement('input');
     if (c.type === 'font') {
-      for (const f of c.options) {
+      // The board's own faces first, above the shipped list: a face somebody
+      // went and dropped in is the one they are looking for, and burying it
+      // under six they did not choose is how a feature reads as missing.
+      const faces = [...c.options];
+      const own = customFaces();
+      if (own.length) faces.splice(1, 0, ...own);
+      for (const f of faces) {
         const opt = document.createElement('option');
         opt.value = f.value;
         opt.textContent = f.label;
@@ -467,6 +685,30 @@ function syncControls() {
 
   const whimsy = document.getElementById('opt-whimsy');
   if (whimsy) whimsy.value = current.whimsy;
+
+  syncAutoBox();
+}
+
+/**
+ * The switch on its own, because setVar() can turn it off and must not run the
+ * full sync to say so.
+ *
+ * syncControls() writes every control's value back from the look, including the
+ * colour input that is mid-drag when this fires - and a colour picker being
+ * assigned to while the pointer is down is how you get a value that jumps back
+ * a frame after each move. The checkbox is the only thing that changed, so the
+ * checkbox is the only thing rewritten.
+ */
+function syncAutoBox() {
+  const box = document.getElementById('opt-auto-palette');
+  if (box) box.checked = current.auto === true;
+}
+
+function wireAutoPalette() {
+  const input = document.getElementById('opt-auto-palette');
+  if (!input) return;
+  input.checked = current.auto === true;
+  input.addEventListener('change', () => setAutoPalette(input.checked));
 }
 
 function wireWhimsy() {
@@ -493,10 +735,23 @@ function wirePalette() {
     // A palette switch replaces the pigments wholesale, so per-token colour
     // tweaks are dropped - otherwise the old accent would stick to the new
     // paper and every palette after the first would look muddy.
-    for (const key of ['--accent', '--paper']) {
+    //
+    // Two of them when they were hand-picked, because those are the two the
+    // panel offers and dropping more would throw away something the user cannot
+    // see to put back. All thirteen when they were extracted from photographs,
+    // because a derived look is not a set of tweaks to keep on top of a chosen
+    // palette - it *is* a palette, and leaving eleven of its tokens inline
+    // would leave the named one outvoted on its own sheet.
+    for (const key of current.derived ? Object.keys(current.vars) : ['--accent', '--paper']) {
       delete current.vars[key];
       root.style.removeProperty(key);
     }
+    delete current.derived;
+    // Choosing a palette by name is a decision about colour, and it takes the
+    // switch with it for the same reason picking a pigment by hand does - see
+    // setVar(). This is also the way back from an extracted palette: it is the
+    // one control that drops all fourteen tokens at once.
+    delete current.auto;
     current.palette = sel.value;
     apply(current);
     persist();

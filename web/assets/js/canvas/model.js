@@ -19,8 +19,8 @@
 // something asks it to - which for a still model on a moodboard is what you
 // want anyway.
 
-import { getAsset } from '../storage/assets.js';
-import { meshKind, parseMesh, MeshError } from '../import/mesh.js';
+import { allAssets, getAsset, readText } from '../storage/assets.js';
+import { applyMaterials, meshKind, parseMesh, parseMTL, MeshError } from '../import/mesh.js';
 
 /** The shared context, built on first use and never torn down. */
 let gl = null;
@@ -52,10 +52,12 @@ const MAX_BUFFER = 1024;
 const VERT = `
 attribute vec3 aPos;
 attribute vec3 aNormal;
+attribute vec3 aColor;
 uniform mat4 uProj;
 uniform mat4 uView;
 varying vec3 vNormal;
 varying vec3 vEye;
+varying vec3 vColor;
 void main() {
   vec4 eye = uView * vec4(aPos, 1.0);
   vEye = eye.xyz;
@@ -63,6 +65,7 @@ void main() {
   // the normal needs no separate inverse transpose here. The model's own
   // transforms were already baked in by the parser.
   vNormal = mat3(uView) * aNormal;
+  vColor = aColor;
   gl_Position = uProj * eye;
 }`;
 
@@ -71,11 +74,18 @@ void main() {
 // a hole. Backfaces are lit by the flipped normal rather than left black -
 // plenty of real STLs have inconsistent winding, and a model with black patches
 // looks broken where a model shaded from the wrong side merely looks soft.
+// uOwnColor is 1 when the file brought colours of its own and 0 when it did not.
+// A mix rather than a multiply: a model that says it is red should be red, not
+// red filtered through the board's ink - but a model that says nothing has to
+// come out in the palette, which is what makes an uncoloured card belong to the
+// board it is pinned to.
 const FRAG = `
 precision mediump float;
 varying vec3 vNormal;
 varying vec3 vEye;
+varying vec3 vColor;
 uniform vec3 uColor;
+uniform float uOwnColor;
 void main() {
   vec3 n = normalize(vNormal);
   if (!gl_FrontFacing) n = -n;
@@ -84,7 +94,7 @@ void main() {
   // A touch of rim, so a silhouette against paper keeps an edge.
   float rim = pow(1.0 - max(dot(n, normalize(-vEye)), 0.0), 2.5);
   float light = 0.26 + key * 0.72 + fill * 0.18 + rim * 0.22;
-  gl_FragColor = vec4(uColor * light, 1.0);
+  gl_FragColor = vec4(mix(uColor, vColor, uOwnColor) * light, 1.0);
 }`;
 
 function ensureGL() {
@@ -127,13 +137,18 @@ function ensureProgram() {
   gl.linkProgram(p);
   if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { contextDead = true; return null; }
   program = p;
-  attribs = { pos: gl.getAttribLocation(p, 'aPos'), normal: gl.getAttribLocation(p, 'aNormal') };
+  attribs = {
+    pos: gl.getAttribLocation(p, 'aPos'),
+    normal: gl.getAttribLocation(p, 'aNormal'),
+    color: gl.getAttribLocation(p, 'aColor'),
+  };
   uniforms = {
     proj: gl.getUniformLocation(p, 'uProj'),
     view: gl.getUniformLocation(p, 'uView'),
     color: gl.getUniformLocation(p, 'uColor'),
+    ownColor: gl.getUniformLocation(p, 'uOwnColor'),
   };
-  buffers = { pos: gl.createBuffer(), normal: gl.createBuffer(), of: null };
+  buffers = { pos: gl.createBuffer(), normal: gl.createBuffer(), color: gl.createBuffer(), of: null };
   return program;
 }
 
@@ -211,12 +226,17 @@ export function buildModelCard(item) {
 async function load(item) {
   const hash = item.asset?.hash;
   if (!hash) throw new MeshError('This model has no file behind it');
-  const hit = meshes.get(hash);
+  // Keyed by the up-axis as well as the bytes. Standing a mesh up rewrites its
+  // points in place, so one cache entry cannot serve both readings - and two
+  // cards on the same file, flipped differently, is exactly what somebody does
+  // to decide which way round it goes.
+  const key = `${hash}:${item.meta?.upAxis === 'y' ? 'y' : item.meta?.upAxis === 'z' ? 'z' : '-'}`;
+  const hit = meshes.get(key);
   if (hit) {
     // Touch: re-inserting moves it to the end of the Map's own ordering, which
     // is what makes the eviction below least-recently-used rather than random.
-    meshes.delete(hash);
-    meshes.set(hash, hit);
+    meshes.delete(key);
+    meshes.set(key, hit);
     return hit;
   }
 
@@ -225,11 +245,54 @@ async function load(item) {
   const kind = meshKind(asset.name || item.name || '');
   if (!kind) throw new MeshError('This is not a model file');
 
-  const mesh = parseMesh(kind, await asset.blob.arrayBuffer());
-  meshes.set(hash, mesh);
+  const mesh = parseMesh(kind, await asset.blob.arrayBuffer(), item.meta?.upAxis);
+  await paint(mesh);
+  meshes.set(key, mesh);
   while (meshes.size > MESH_CACHE_MAX) meshes.delete(meshes.keys().next().value);
   return mesh;
 }
+
+/**
+ * An OBJ's material library, if it was dropped alongside the model.
+ *
+ * A `mtllib` line names a second file, and until now that was the end of it -
+ * the parser's own comment said a drop does not carry the .mtl. It does: a drop
+ * is a whole folder as often as it is one file, and importFiles() takes up to
+ * five hundred of them, so the library is usually sitting in the asset store
+ * already under its own name.
+ *
+ * Matched on the basename only. Exporters write `mtllib` with whatever path
+ * they had at the time - `../materials/part.mtl`, a Windows path with
+ * backslashes - and none of that survives a drop, which flattens everything to
+ * a filename. Case-insensitively, because the file came off somebody else's
+ * filesystem and half of those do not care either.
+ *
+ * Silent when it finds nothing, which is the common case and not a failure: a
+ * model with no colours is drawn in the board's ink, which is what every model
+ * did before this existed.
+ */
+async function paint(mesh) {
+  if (!mesh.mtllib || mesh.colors) return;
+  const want = mesh.mtllib.replace(/\\/g, '/').split('/').pop().toLowerCase();
+  if (!want) return;
+  for (const [hash, a] of allAssets()) {
+    if ((a.name || '').toLowerCase() !== want) continue;
+    try {
+      applyMaterials(mesh, parseMTL(await readText(hash, MTL_MAX)));
+    } catch { /* an unreadable library is a model without colours */ }
+    return;
+  }
+}
+
+/**
+ * How much of a .mtl to read.
+ *
+ * A material library is a few lines per material and these are read in full;
+ * the cap is here because readText() takes one and the alternative is trusting
+ * that a file named `.mtl` is one. 256KB is a library with thousands of
+ * materials in it and a model that has no business being on a moodboard.
+ */
+const MTL_MAX = 256 * 1024;
 
 /** Drop every cached mesh - the board has been replaced. */
 export function resetModels() { meshes.clear(); }
@@ -324,6 +387,10 @@ function renderShared(mesh, view, w, h, cssColor) {
     gl.bufferData(gl.ARRAY_BUFFER, mesh.positions, gl.STATIC_DRAW);
     gl.bindBuffer(gl.ARRAY_BUFFER, buffers.normal);
     gl.bufferData(gl.ARRAY_BUFFER, mesh.normals, gl.STATIC_DRAW);
+    if (mesh.colors) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffers.color);
+      gl.bufferData(gl.ARRAY_BUFFER, mesh.colors, gl.STATIC_DRAW);
+    }
     buffers.of = mesh;
   }
   gl.bindBuffer(gl.ARRAY_BUFFER, buffers.pos);
@@ -332,6 +399,19 @@ function renderShared(mesh, view, w, h, cssColor) {
   gl.bindBuffer(gl.ARRAY_BUFFER, buffers.normal);
   gl.enableVertexAttribArray(attribs.normal);
   gl.vertexAttribPointer(attribs.normal, 3, gl.FLOAT, false, 0, 0);
+  // An uncoloured mesh gets a constant attribute rather than a buffer full of
+  // the same three numbers: one call instead of a megabyte of white, and it
+  // means an STL costs nothing for a feature only OBJ has. The array has to be
+  // *disabled* for the constant to be read at all - a stale enabled pointer
+  // from the last mesh would otherwise still be feeding this one.
+  if (mesh.colors) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.color);
+    gl.enableVertexAttribArray(attribs.color);
+    gl.vertexAttribPointer(attribs.color, 3, gl.FLOAT, false, 0, 0);
+  } else {
+    gl.disableVertexAttribArray(attribs.color);
+    gl.vertexAttrib3f(attribs.color, 1, 1, 1);
+  }
 
   const { min, max } = mesh.bounds;
   const centre = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
@@ -345,6 +425,7 @@ function renderShared(mesh, view, w, h, cssColor) {
     perspective(0.79, w / h, radius * 0.02, dist + radius * 4));
   gl.uniformMatrix4fv(uniforms.view, false, orbitView(centre, dist, view.yaw, view.pitch));
   gl.uniform3fv(uniforms.color, rgbOf(cssColor));
+  gl.uniform1f(uniforms.ownColor, mesh.colors ? 1 : 0);
 
   gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
   return true;
@@ -374,17 +455,38 @@ function perspective(fovy, aspect, near, far) {
  * A camera at (yaw, pitch, dist) around `centre`, looking back at it.
  *
  * Written out rather than composed from a lookAt: the eye is on a sphere, so
- * its basis vectors fall straight out of the two angles and there is no
- * cross-product to get the handedness of wrong.
+ * its basis vectors fall straight out of the two angles.
+ *
+ * Exported for the tests, which is the whole reason the mirroring below is
+ * caught now and was not before. Nothing else in the file is reachable from
+ * node - it is all WebGL calls on a context that does not exist there - and a
+ * matrix is the one part of a renderer that can be checked by arithmetic rather
+ * than by looking at a picture and deciding it seems about right.
  */
-function orbitView(centre, dist, yaw, pitch) {
+export function orbitView(centre, dist, yaw, pitch) {
   const cp = Math.cos(pitch), sp = Math.sin(pitch);
   const cy = Math.cos(yaw), sy = Math.sin(yaw);
   // Forward: from the eye towards the centre.
-  const fx = -cp * sy, fy = sp, fz = -cp * cy;
+  //
+  // Both signs here are the drag convention rather than free choices, and both
+  // were wrong in the opposite direction. You are turning the object, not
+  // flying a camera around it: swipe right and its front face goes right, pull
+  // down and its top comes over towards you. That means the *camera* goes the
+  // other way in both axes, which is what these two negations buy.
+  const fx = cp * sy, fy = -sp, fz = -cp * cy;
   // Right and up, orthonormal with it by construction.
-  const rx = cy, ry = 0, rz = -sy;
-  const ux = -sp * sy, uy = -cp, uz = -sp * cy;
+  //
+  // up is r x f, and the order matters: f x r is the same axis negated, and
+  // both are perpendicular to the forward direction, so "orthonormal by
+  // construction" is true of the wrong one too. It was the wrong one - at
+  // pitch 0 it came out (0, -1, 0), a camera whose up points at the floor.
+  //
+  // That does not render upside down, which is why it survived a look: (r, -u,
+  // -f) is left-handed, so the picture was *mirrored* down the vertical. On a
+  // roughly symmetric part that reads as nothing much until you notice the
+  // model turns the wrong way under the pointer.
+  const rx = cy, ry = 0, rz = sy;
+  const ux = sp * sy, uy = cp, uz = -sp * cy;
   const ex = centre[0] - fx * dist, ey = centre[1] - fy * dist, ez = centre[2] - fz * dist;
   return new Float32Array([
     rx, ux, -fx, 0,
