@@ -6,13 +6,24 @@
 // forty photos lands as a spiral around the cursor rather than a stack.
 
 import { toast, extOf } from '../util.js';
-import { board, addItems, select, setItemCover, NOTE_MAX } from '../state.js';
+import { board, bus, addItems, select, setItemCover, NOTE_MAX } from '../state.js';
 import { addFile } from '../storage/assets.js';
 import { classify, defaultSize, measureSize, linkURL, linkDraft } from '../canvas/renderers.js';
 import { arrange } from '../arrange/arrangements.js';
 import { coverArt, mayHaveArt } from './artwork.js';
 import { looksLikeMbrd } from '../storage/mbrd.js';
 import { openFile } from '../storage/storage.js';
+
+/**
+ * Extensions a browser can turn into a FontFace.
+ *
+ * Here rather than in ui/fonts.js because this is the question "what kind of
+ * file is this", which is this layer's job - and because naming it there and
+ * importing it from here is the import edge the bus exists to avoid. Not in
+ * formats.js either: that file is generated from the sibling catalog and would
+ * lose a hand-written addition on the next run.
+ */
+const FONT_EXTS = new Set(['woff2', 'woff', 'ttf', 'otf']);
 
 /** Guard against someone dropping a whole photo library by accident. */
 const MAX_FILES = 500;
@@ -197,6 +208,20 @@ export async function importFiles(files, centre) {
     return [];
   }
 
+  // A font is not a thing to put on a board, it is a thing to set the board in.
+  // Taken out here rather than turned into a card and reclassified later,
+  // because everything below this line is about producing items.
+  //
+  // Announced rather than handled: registering a face means FontFace and
+  // document.fonts, and this module has to stay loadable without a browser -
+  // see tests/imports.test.js. ui/fonts.js is listening.
+  const fonts = files.filter(f => FONT_EXTS.has(extOf(f.name)));
+  if (fonts.length) {
+    bus.emit('fonts:add', fonts);
+    files = files.filter(f => !FONT_EXTS.has(extOf(f.name)));
+    if (!files.length) return [];
+  }
+
   let trimmed = false;
   if (files.length > MAX_FILES) {
     files = files.slice(0, MAX_FILES);
@@ -258,6 +283,17 @@ export async function importFiles(files, centre) {
   if (trimmed) msg += ` (capped at ${MAX_FILES})`;
   if (failed.length) msg += `, ${failed.length} failed`;
   toast(msg, failed.length ? 'error' : '');
+
+  // Announced rather than acted on, and that is a layering constraint rather
+  // than a preference: ui/appearance.js reaches for `document` at import time,
+  // and tests/imports.test.js holds this file to loading without a browser -
+  // which is what keeps the import pipeline testable in node at all. So this
+  // says what happened and ui/ decides what that is worth.
+  //
+  // Its own event rather than riding on 'items', because 'items' also fires for
+  // a drag, an undo and a delete, and none of those are a board acquiring new
+  // pictures to take its colours from.
+  bus.emit('imported', added);
   return added;
 }
 

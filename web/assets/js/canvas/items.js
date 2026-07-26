@@ -165,6 +165,18 @@ function build(item) {
   // caption plate across the foot has to be clipped by that same curve.
   if (item.name) body.append(nameplate(item));
 
+  // Every card's way into its own menu. Right-click is otherwise the only one,
+  // and a touchscreen does not have a right-click - so the actions on an item
+  // were unreachable on a phone entirely.
+  //
+  // Three dots drawn rather than typed: the glyph is not centred in its line
+  // box, so a "…" sits low and drifts as the type scales with the whimsy axis.
+  //
+  // On .item and not .item-body, which matters: re-rendering an item calls
+  // replaceChildren() on the body, so a handle put in there would survive until
+  // the first time the card redrew itself and then quietly vanish.
+  el.append(menuHandle());
+
   // Eight handles: four corners, and four edges for resizing one axis alone.
   // The single-letter ones are the edges (see .grip-edge in app.css).
   for (const g of ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']) {
@@ -178,6 +190,28 @@ function build(item) {
   place(el, item);
   el.classList.toggle('is-selected', selection.has(item.id));
   return el;
+}
+
+/** The three-dot handle. A real <button>, so it is tabbable and not draggable. */
+function menuHandle() {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'item-menu';
+  btn.setAttribute('aria-label', 'Actions');
+  btn.title = 'Actions';
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('aria-hidden', 'true');
+  for (const cy of [4, 8, 12]) {
+    const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    dot.setAttribute('cx', '8');
+    dot.setAttribute('cy', String(cy));
+    dot.setAttribute('r', '1.5');
+    dot.setAttribute('fill', 'currentColor');
+    svg.append(dot);
+  }
+  btn.append(svg);
+  return btn;
 }
 
 /** The caption plate itself. Built in one place because a rename rebuilds it. */

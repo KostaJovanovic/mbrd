@@ -12,7 +12,7 @@
 //   board      - a whole new board was loaded, or the title/dirty flag changed
 //   trash      - something was thrown away, restored, or purged
 
-import { emitter, uid, isHash, toast } from './util.js';
+import { emitter, uid, isFamily, isHash, toast } from './util.js';
 // The asset registry remembers the filename each item arrived under, which is
 // what a cleared name falls back to - see renameItem(). One-way: assets.js
 // depends on nothing but util.js, so this cannot close a cycle.
@@ -21,7 +21,7 @@ import { getAsset } from './storage/assets.js';
 // this item and what does it cover" has exactly one answer in this app. Kept
 // at the top level rather than under canvas/ because it depends on nothing and
 // belongs to no one layer - see geometry.js.
-import { pointInItem, topEdge, itemBounds, MIN_SIZE, MAX_SIZE } from './geometry.js';
+import { itemBounds, overlapFraction, MIN_SIZE, MAX_SIZE } from './geometry.js';
 
 export const bus = emitter();
 
@@ -34,12 +34,16 @@ export const DEFAULT_SETTINGS = {
   gridStep: 64,        // world px between minor grid lines, before zoom quantisation
   spacing: 32,         // gap used by the arrangement engine
   appearance: { palette: '', vars: {} },
+  fonts: [],           // faces dropped onto this board - see ui/fonts.js
 };
 
 export const board = {
   title: 'Untitled board',
   view: { pan: { x: 0, y: 0 }, zoom: 1 },
-  settings: { ...DEFAULT_SETTINGS, appearance: { palette: '', vars: {} } },
+  // Both containers rebuilt rather than spread through: DEFAULT_SETTINGS holds
+  // them by reference, and a board mutating one in place would be editing the
+  // defaults every later board is built from.
+  settings: { ...DEFAULT_SETTINGS, appearance: { palette: '', vars: {} }, fonts: [] },
   arrangement: 'spiral',
   items: [],
   // Thrown away but not gone. Entries are { item, at }, newest first.
@@ -312,10 +316,16 @@ export function applyGeom(snap) {
  * Close a live drag/resize into one undo entry. `before` is the snapshot taken
  * when the gesture started; the current geometry becomes the redo state.
  */
-export function commitGeom(label, before) {
+export function commitGeom(label, before, driven) {
   const after = snapshotGeom(before.map(b => b.id));
   const changed = after.some((a, i) => GEOM_KEYS.some(k => a[k] !== before[i][k]));
   if (!changed) return;
+  // What the gesture actually had hold of, as opposed to what came along for
+  // the ride. Only these ask again where they are stuck; see restick(). Left
+  // out entirely by callers that move things without anybody touching them -
+  // Bring to front, the embed's fit - which change no note's position relative
+  // to anything and so change no answer.
+  if (driven) restick(driven);
   // Placed by hand while snapping was on: this *is* where the item belongs
   // now, so it gives up its memory of where it sat before the board was laid
   // on the lattice. Turning snapping off later leaves it exactly here.
@@ -666,22 +676,52 @@ export function pasteItems(at = null) {
 // Sticky notes that stick
 //
 // A note is stuck to whatever it is lying on, and a stuck note travels with its
-// host. Nothing about that is stored. Stuckness is a fact about where two
-// things are, and an edge recorded on the item would have to be invalidated by
-// every move, resize, undo and redo at either end - all of which can happen
-// without the pair ever being touched together. So it is measured from live
-// geometry, once per gesture, and a board file never mentions it.
+// host. Nothing about that is stored *in the board file*: stuckness is a fact
+// about where two things are, and a file that also recorded it could disagree
+// with its own geometry - a hazard with no upside, since the geometry is right
+// there and the answer falls out of it.
+//
+// It is not recomputed on demand either, and that is the part worth naming. The
+// relation is worked out from live geometry the first time anything asks, and
+// then *remembered* until the note itself is handled. Which means moving a
+// photo, resizing it, or dropping something else on top of it cannot quietly
+// re-parent the notes lying on it - the pile you built stays the pile you
+// built. Only picking up the note itself asks the question again.
+//
+// The memo is a runtime Map, not a field. A board that has just loaded has an
+// empty one and answers every question by measuring, which is exactly what the
+// old always-measure version did, so a .mbrd needs no new key and one written
+// by an older version is not missing anything.
 // ---------------------------------------------------------------------------
+
+/**
+ * How much of a note has to be over an item before it counts as stuck.
+ *
+ * A twentieth of the note. Low on purpose: a sticky pressed onto the corner of
+ * a photograph is stuck to that photograph, and anybody who put it there thinks
+ * so. The floor exists to rule out the note that merely *touches* while it is
+ * being dragged past, which at zero would grab a host for one frame and let go
+ * again.
+ */
+export const STICK_MIN = 0.05;
+
+/**
+ * noteId -> hostId or null. Null is a real answer, "measured, and it is stuck to
+ * nothing", and it has to survive as one: falling through to a fresh
+ * measurement every time would make a loose note the one case that *does* get
+ * re-parented by things moving underneath it.
+ */
+const sticks = new Map();
 
 /**
  * The item a sticky note is stuck to, or null.
  *
- * Two ways to be stuck, either sufficient: the note's centre is over the item,
- * or its whole top edge is - the strip a real sticky is pressed down by, which
- * is why a note hanging off the bottom of a photo still counts and one hanging
- * off the top does not. The top-edge test only checks the two ends of that
- * edge, and that is exact rather than an approximation: an item's box is
- * convex, so a segment with both ends inside it lies inside it entirely.
+ * Measured by area: more than STICK_MIN of the note's own surface lying over
+ * the item. Area rather than the note's centre or its top corners, because
+ * those are questions about three particular points and this is a question
+ * about a sheet of paper lying on something - a note overlapping a photo's
+ * corner by a third of itself is obviously stuck to it, and no test of the
+ * centre will ever say so.
  *
  * Only notes stick, and only to something below them in the stack. A note
  * hidden behind the thing it claims to be stuck to would be a relationship
@@ -693,16 +733,47 @@ export function pasteItems(at = null) {
  */
 export function stuckTo(note) {
   if (!note || note.type !== 'note') return null;
-  const [a, b] = topEdge(note);
+  if (sticks.has(note.id)) {
+    const id = sticks.get(note.id);
+    if (id === null) return null;
+    const host = byId(id);
+    // A remembered host that is no longer on the board - deleted, or undone
+    // back out of existence. Measuring again is the lesser evil: the note did
+    // not move, so the rule says leave it, but leaving it means a note that can
+    // never stick to anything again until somebody happens to drag it.
+    if (host) return host;
+    sticks.delete(note.id);
+  }
+  const host = measureStick(note);
+  sticks.set(note.id, host ? host.id : null);
+  return host;
+}
+
+function measureStick(note) {
   let best = null;
   for (const it of board.items) {
     if (it.id === note.id || (it.z || 0) >= (note.z || 0)) continue;
     if (best && (it.z || 0) < (best.z || 0)) continue;
-    if (pointInItem(note.x, note.y, it) ||
-        (pointInItem(a.x, a.y, it) && pointInItem(b.x, b.y, it))) best = it;
+    if (overlapFraction(note, it) > STICK_MIN) best = it;
   }
   return best;
 }
+
+/**
+ * Forget what these notes were stuck to, so the next question measures again.
+ *
+ * Called with the ids a gesture *drove* - what the pointer or the arrow keys
+ * actually had hold of - and never with the followers those ids dragged along.
+ * That distinction is the feature: a note carried across the board by the photo
+ * underneath it has not been moved relative to anything and must not be
+ * re-parented, while a note you picked up and put down has been, and must.
+ */
+export function restick(ids) {
+  for (const id of ids) sticks.delete(id);
+}
+
+/** Nothing on the old board is a fact about the new one. */
+export const forgetSticks = () => sticks.clear();
 
 /**
  * The ids of the notes that have to come along when `ids` are moved.
@@ -860,6 +931,37 @@ export function setItemCover(id, hash) {
   commit(next ? 'Set picture' : 'Remove picture', () => write(next), () => write(prev));
 }
 
+/**
+ * Which way up a model file is read.
+ *
+ * 'z' or 'y'. Anything else clears the override and hands the decision back to
+ * the format's own default, which is what a board that has never been told
+ * carries - see defaultUpAxis() in import/mesh.js.
+ *
+ * Its own setter rather than a general "write anything into meta", for the same
+ * reason setItemCover has one: `meta` is the open field precisely because
+ * nothing polices it, and the two things in there that this app itself reads
+ * are better off with a door each than with a hole.
+ *
+ * Undoable, because it is a visible change to an item and every other visible
+ * change to an item is.
+ */
+export function setItemUpAxis(id, axis) {
+  const it = byId(id);
+  if (!it) return;
+  const next = axis === 'z' || axis === 'y' ? axis : null;
+  const prev = it.meta?.upAxis === 'z' || it.meta?.upAxis === 'y' ? it.meta.upAxis : null;
+  if (next === prev) return;
+  const write = value => {
+    const item = byId(id);
+    if (!item) return;
+    if (value) item.meta = { ...item.meta, upAxis: value };
+    else { const { upAxis, ...rest } = item.meta || {}; item.meta = rest; }
+    bus.emit('item', id);
+  };
+  commit('Turn model upright', () => write(next), () => write(prev));
+}
+
 // ---------------------------------------------------------------------------
 // Selection
 // ---------------------------------------------------------------------------
@@ -934,6 +1036,10 @@ export function loadBoard(data) {
   board.trash = next.trash;
   selection.clear();
   clearHistory();
+  // Stuckness is remembered rather than recomputed, so it has to be dropped
+  // here or a note on the new board would inherit an answer measured on the old
+  // one - and ids from two different files can be the same string.
+  forgetSticks();
   // The clipboard cannot cross a board. Opening one calls clearAssets(), so a
   // copy taken from the old board would paste an item whose asset hash no
   // longer resolves to any bytes - a card with a hole in it, which is worse
@@ -999,6 +1105,11 @@ function normalizeBoard(data) {
         vars: appearance.vars && typeof appearance.vars === 'object'
           ? { ...appearance.vars } : {},
       },
+      // Held to shape here rather than where it is read, for the same reason
+      // `vars` is filtered rather than trusted: both name bytes and both end up
+      // inside a CSS declaration, and both arrive inside a file somebody else
+      // wrote. See normalizeFonts().
+      fonts: normalizeFonts(settings.fonts),
     },
     arrangement: typeof src.arrangement === 'string' && src.arrangement
       ? src.arrangement : 'spiral',
@@ -1008,6 +1119,35 @@ function normalizeBoard(data) {
       .map(t => ({ item: makeItem(t.item), at: +t.at || 0 })),
   };
 }
+
+/**
+ * The faces a board carries, reduced to the ones it may.
+ *
+ * `{ hash, family }` and nothing else - the hash names bytes in the asset store
+ * and the family becomes a CSS family name, so a bad one of either is a bad
+ * declaration or a dangling reference. Filtered entry by entry rather than
+ * rejected wholesale, which is how everything else in this function behaves: a
+ * board carrying four faces and one broken record should open with four.
+ *
+ * Capped, because this list is walked by the packer and registered against the
+ * document, and neither wants a thousand entries out of a hand-written file.
+ */
+function normalizeFonts(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const f of raw) {
+    if (!f || typeof f !== 'object') continue;
+    if (!isHash(f.hash) || seen.has(f.hash) || !isFamily(f.family)) continue;
+    seen.add(f.hash);
+    out.push({ hash: f.hash, family: f.family });
+    if (out.length >= MAX_FONTS) break;
+  }
+  return out;
+}
+
+/** Matches MAX_FONTS in ui/fonts.js - the two are one limit in two layers. */
+const MAX_FONTS = 8;
 
 /** The serialisable board, exactly as it lands in board.json. */
 export function serializeBoard() {

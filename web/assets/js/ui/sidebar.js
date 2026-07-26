@@ -1,9 +1,8 @@
 // The slide-in sidebar: board actions, import, arrangement, view toggles.
 // It only reads state and calls commands - all the actual work lives elsewhere.
 
-import { board, bus, setSetting, setArrangement } from '../state.js';
+import { board, bus, markDirty, setSetting, setArrangement, setTitle } from '../state.js';
 import { ARRANGEMENTS } from '../arrange/arrangements.js';
-import { canPickFiles, currentFileName } from '../storage/storage.js';
 import { VERSION } from '../version.js';
 import { el, readPref, writePref } from '../util.js';
 
@@ -51,11 +50,9 @@ export function initSidebar(cmds) {
   bindCheck('opt-snap', 'snap');
   bindCheck('opt-hud', 'hud');
 
+  wireTitle();
+
   el('version').textContent = 'v' + VERSION;
-  // Two different promises, so they get two different sentences.
-  el('save-hint').textContent = canPickFiles()
-    ? 'Save keeps this board in the browser. Export writes a .mbrd you can keep anywhere.'
-    : 'Save keeps this board in the browser. Export downloads a .mbrd, and Open takes it back.';
 
   bus.on('board', paint);
   bus.on('settings', paint);
@@ -69,15 +66,49 @@ function bindCheck(id, key) {
   box.addEventListener('change', () => setSetting(key, box.checked));
 }
 
+/**
+ * Rename the board by typing in its name.
+ *
+ * `change` rather than `input`, so a rename is one undoable event and one dirty
+ * flag rather than one per keystroke - it fires on Enter and on blur, and only
+ * when the value actually moved.
+ *
+ * The field edits `board.title` and paint() now shows `board.title`, where it
+ * used to prefer the open file's name. Those two only ever differed by an
+ * extension - opening a .mbrd sets the title from the file's stem - right up
+ * until somebody renames one, which is the whole of this feature. Preferring
+ * the file name would have made the field look broken: you type, and the old
+ * name stays on screen.
+ *
+ * setTitle() is deliberately not the thing that marks the board dirty. It is
+ * also called by the save picker, straight after a save, where re-dirtying the
+ * board it has just cleaned would be wrong.
+ */
+function wireTitle() {
+  const input = el('board-title');
+  input.addEventListener('change', () => {
+    const next = input.value.trim();
+    if (next === titleValue()) return;
+    setTitle(next);
+    markDirty();
+  });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    // Put the old name back before the global handler blurs us, so escaping
+    // out of a half-typed name leaves the board called what it was called.
+    else if (e.key === 'Escape') input.value = titleValue();
+  });
+}
+
+/** The title as the field holds it: empty for a board that has no name yet. */
+const titleValue = () => (board.title === 'Untitled board' ? '' : board.title);
+
 /** Push state back into the controls (after opening a board, or an undo). */
 function paint() {
-  const name = currentFileName();
-  const title = name || board.title;
-  // An unnamed board reads as an aside, not a filename.
-  el('board-title').innerHTML = '';
-  const node = title === 'Untitled board' ? document.createElement('em') : document.createElement('span');
-  node.textContent = title;
-  el('board-title').append(node);
+  const title = el('board-title');
+  // Never while it is being typed into: 'board' fires on every dirty-flag flip,
+  // and rewriting the field mid-word would move the caret to the end of it.
+  if (document.activeElement !== title) title.value = titleValue();
   el('arrangement').value = board.arrangement;
   el('spacing').value = board.settings.spacing;
   el('spacing-out').textContent = board.settings.spacing + 'px';

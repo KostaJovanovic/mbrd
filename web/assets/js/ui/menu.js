@@ -75,6 +75,7 @@ function itemEntries(id, count, at) {
   // reading of "set the picture" for a group of nine.
   const coverable = !many && cmds.canCoverItem(id);
   const covered = coverable && cmds.itemHasCover(id);
+  const flippable = !many && cmds.canFlipUpAxis(id);
   return [
     // First, and only on a note: right-clicking the one item type you can
     // actually type into should offer to type into it before anything else.
@@ -86,7 +87,13 @@ function itemEntries(id, count, at) {
     { label: covered ? 'Change picture…' : 'Set a picture…', hidden: !coverable,
       action: () => cmds.setCover(id) },
     { label: 'Remove picture', hidden: !covered, action: () => cmds.clearCover(id) },
-    { sep: true, hidden: !editable && !renamable && !coverable },
+    // OBJ says nothing about which way is up and both readings are common, so
+    // the format's default is a guess. This is the way out of a wrong one - and
+    // it is on the item rather than in Appearance because a board can hold a
+    // Z-up scan and a Y-up export at the same time.
+    { label: 'Turn it upright', hidden: !flippable,
+      action: () => cmds.flipUpAxis(id) },
+    { sep: true, hidden: !editable && !renamable && !coverable && !flippable },
     { label: 'Bring to front', action: () => cmds.raise() },
     { label: 'Send to back', action: () => cmds.lower() },
     { sep: true },

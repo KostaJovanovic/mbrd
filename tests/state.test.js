@@ -13,9 +13,10 @@ import {
   restoreItems, emptyTrash, undo, redo, isDirty, markDirty, byId, topZ,
   select, clearSelection, selectAll, duplicateItems,
   copyItems, cutItems, pasteItems, clipboardSize, clipboardHasOurs, clipboardBounds,
-  stuckTo, stuckFollowers, setItemText, renameItem, NOTE_MAX,
-  setSetting, snapshotGeom, commitGeom,
+  stuckTo, stuckFollowers, restick, STICK_MIN, setItemText, renameItem, NOTE_MAX,
+  setSetting, snapshotGeom, applyGeom, commitGeom,
 } from '../web/assets/js/state.js';
+import { overlapFraction } from '../web/assets/js/geometry.js';
 import { hash } from './helpers.js';
 
 const fresh = (items = []) => loadBoard({ title: 'T', items });
@@ -443,6 +444,133 @@ test('something already moving is not also a follower', () => {
   assert.deepEqual(stuckFollowers([pic.id, n.id]), [], 'it would be moved twice');
 });
 
+// ---- how much overlap counts ----------------------------------------------
+
+test('a twentieth of the note over the item is enough, and less is not', () => {
+  // The threshold is a fraction of the *note*, so the arithmetic is exact and
+  // the test can sit either side of it by a pixel rather than by a guess.
+  //
+  // A 100x100 note beside a 200x200 photo whose right edge is at x = 100:
+  // overlapping by `d` in x and fully in y gives d/100 of the note.
+  const overlapping = d => {
+    fresh();
+    addItems([photo({ x: 0, y: 0, w: 200, h: 200 })]);
+    const [n] = addItems([note({ x: 100 + 50 - d, y: 0, w: 100, h: 100 })]);
+    return stuckTo(byId(n.id));
+  };
+  assert.equal(overlapping(100 * STICK_MIN + 1)?.type, 'image', 'just over should stick');
+  assert.equal(overlapping(100 * STICK_MIN - 1), null, 'just under should not');
+  // Exactly at the threshold is not "more than", which is the documented rule.
+  assert.equal(overlapping(100 * STICK_MIN), null);
+});
+
+test('a corner overlap sticks, where a centre test would say nothing', () => {
+  // The case the old rule got wrong and the reason for measuring area. The
+  // photo spans -100 to 100; the note spans 60 to 160, so 40 x 40 of its own
+  // 100 x 100 lies on the photo - well over the twentieth - while its centre,
+  // at (110, 110), is off the photo entirely and always was.
+  fresh();
+  const [pic] = addItems([photo({ x: 0, y: 0, w: 200, h: 200 })]);
+  const [n] = addItems([note({ x: 110, y: 110, w: 100, h: 100 })]);
+  assert.equal(overlapFraction(n, pic), 0.16);
+  assert.equal(stuckTo(byId(n.id))?.id, pic.id);
+});
+
+// ---- when the question is asked again --------------------------------------
+
+test('moving the host does not re-parent the notes lying on it', () => {
+  // The whole point of remembering. Two photos side by side, a note on the
+  // first; slide the *second* photo under the note. The note has not moved, so
+  // it is still stuck to the one it was put on.
+  fresh();
+  const [first] = addItems([photo({ x: 0, y: 0, w: 200, h: 200 })]);
+  const [second] = addItems([photo({ x: 600, y: 0, w: 200, h: 200 })]);
+  const [n] = addItems([note({ x: 0, y: 0, w: 80, h: 80 })]);
+  assert.equal(stuckTo(byId(n.id))?.id, first.id, 'stuck to the one it was put on');
+
+  const before = snapshotGeom([second.id]);
+  applyGeom([{ ...before[0], x: 0, y: 0 }]);
+  commitGeom('Move', before, [second.id]);
+
+  // `second` is now directly under the note and is higher in the stack than
+  // `first`, so a fresh measurement would hand the note over. It must not.
+  assert.ok(second.z > first.z);
+  assert.equal(stuckTo(byId(n.id))?.id, first.id, 'the pile stayed the pile');
+});
+
+test('moving the note itself asks again', () => {
+  fresh();
+  const [first] = addItems([photo({ x: 0, y: 0, w: 200, h: 200 })]);
+  const [second] = addItems([photo({ x: 600, y: 0, w: 200, h: 200 })]);
+  const [n] = addItems([note({ x: 0, y: 0, w: 80, h: 80 })]);
+  assert.equal(stuckTo(byId(n.id))?.id, first.id);
+
+  const before = snapshotGeom([n.id]);
+  applyGeom([{ ...before[0], x: 600, y: 0 }]);
+  commitGeom('Move', before, [n.id]);
+  assert.equal(stuckTo(byId(n.id))?.id, second.id, 'it was put down somewhere else');
+});
+
+test('a note towed by its host keeps its host', () => {
+  // The follower case, and the arrangement is chosen so that re-measuring would
+  // give a *different* answer - otherwise the test passes either way.
+  //
+  // `pic` is at the bottom, `under` above it, the note above both. Nearest
+  // underneath wins, so once the pair is towed on top of `under`, a fresh
+  // measurement hands the note to `under`. It must stay with `pic`.
+  fresh();
+  const [pic] = addItems([photo({ x: 0, y: 0, w: 200, h: 200 })]);
+  const [under] = addItems([photo({ x: 900, y: 0, w: 400, h: 400 })]);
+  const [n] = addItems([note({ x: 0, y: 0, w: 80, h: 80 })]);
+  assert.ok(under.z > pic.z && n.z > under.z, 'the stack the test depends on');
+  assert.equal(stuckTo(byId(n.id))?.id, pic.id);
+
+  const towed = [pic.id, ...stuckFollowers([pic.id])];
+  assert.deepEqual(towed, [pic.id, n.id]);
+  const before = snapshotGeom(towed);
+  applyGeom(before.map(g => ({ ...g, x: g.x + 900 })));
+  commitGeom('Move', before, [pic.id]);
+
+  assert.equal(stuckTo(byId(n.id))?.id, pic.id, 'towing is not putting down');
+  // And the note really is over the other photo now, so the memo is what kept
+  // it - not a lack of a candidate.
+  restick([n.id]);
+  assert.equal(stuckTo(byId(n.id))?.id, under.id, 'asked again, it would have moved');
+});
+
+test('a note stuck to nothing stays stuck to nothing until it is moved', () => {
+  // Null is a remembered answer too. Without that, a loose note would be the
+  // one case that still gets re-parented by things sliding underneath it.
+  //
+  // The photo goes down first so it is below the note in the stack and is a
+  // legitimate host the moment it arrives under it.
+  fresh();
+  const [pic] = addItems([photo({ x: 900, y: 0, w: 300, h: 300 })]);
+  const [n] = addItems([note({ x: 0, y: 0, w: 80, h: 80 })]);
+  assert.ok(pic.z < n.z);
+  assert.equal(stuckTo(byId(n.id)), null, 'nowhere near it yet');
+
+  const before = snapshotGeom([pic.id]);
+  applyGeom([{ ...before[0], x: 0, y: 0 }]);
+  commitGeom('Move', before, [pic.id]);
+  assert.equal(stuckTo(byId(n.id)), null, 'the photo came to the note, so no');
+
+  restick([n.id]);
+  assert.equal(stuckTo(byId(n.id))?.id, pic.id, 'and asked again, yes');
+});
+
+test('a host that leaves the board lets its note find another', () => {
+  // Not "the note moved", but the alternative is a note that can never stick to
+  // anything again until somebody happens to drag it.
+  fresh();
+  const [big] = addItems([photo({ x: 0, y: 0, w: 400, h: 400 })]);
+  const [small] = addItems([photo({ x: 0, y: 0, w: 300, h: 300 })]);
+  const [n] = addItems([note({ x: 0, y: 0, w: 80, h: 80 })]);
+  assert.equal(stuckTo(byId(n.id))?.id, small.id);
+  removeItems([small.id]);
+  assert.equal(stuckTo(byId(n.id))?.id, big.id);
+});
+
 // ---------------------------------------------------------------------------
 // Load and serialise
 // ---------------------------------------------------------------------------
@@ -646,4 +774,70 @@ test('a memo that is not a box is ignored rather than written onto the item', ()
   setSetting('snap', false);
   assert.equal(byId(a.id).x, 40);
   assert.ok(!byId(a.id).meta.presnap, 'the bad memo should have been dropped');
+});
+
+// ---------------------------------------------------------------------------
+// The faces a board carries
+// ---------------------------------------------------------------------------
+
+const FONT_HASH = 'a'.repeat(64);
+const FONT_HASH_2 = 'b'.repeat(64);
+
+test('a board with no font list gets an empty one, not undefined', () => {
+  fresh();
+  assert.deepEqual(board.settings.fonts, []);
+  // And it survives the round trip out, so the packer has something to walk.
+  assert.deepEqual(serializeBoard().settings.fonts, []);
+});
+
+test('a well-formed font list is carried through', () => {
+  loadBoard({ title: 'T', items: [], settings: { fonts: [
+    { hash: FONT_HASH, family: 'Test Face' },
+    { hash: FONT_HASH_2, family: 'Other' },
+  ] } });
+  assert.deepEqual(board.settings.fonts, [
+    { hash: FONT_HASH, family: 'Test Face' },
+    { hash: FONT_HASH_2, family: 'Other' },
+  ]);
+});
+
+test('a font entry that could break a stylesheet is dropped', () => {
+  // The family becomes a CSS family name inside a real declaration, out of a
+  // .mbrd somebody else wrote. One bad entry costs its own entry - the same
+  // bargain `vars` gets - rather than costing the board its other faces.
+  loadBoard({ title: 'T', items: [], settings: { fonts: [
+    { hash: FONT_HASH, family: 'a", monospace; display: none; "' },
+    { hash: FONT_HASH_2, family: 'Good' },
+    { hash: 'not-a-hash', family: 'Good' },
+    { hash: FONT_HASH_2, family: 'Duplicate hash' },
+    { family: 'No hash' },
+    { hash: 'c'.repeat(64) },
+    'not an object',
+    null,
+  ] } });
+  assert.deepEqual(board.settings.fonts, [{ hash: FONT_HASH_2, family: 'Good' }]);
+});
+
+test('a font list is not a list', () => {
+  for (const junk of ['fonts', 42, { hash: FONT_HASH }, null]) {
+    loadBoard({ title: 'T', items: [], settings: { fonts: junk } });
+    assert.deepEqual(board.settings.fonts, []);
+  }
+});
+
+test('a board cannot carry a thousand faces', () => {
+  const many = Array.from({ length: 50 }, (_, i) => ({
+    hash: String(i).padStart(64, '0'), family: 'Face ' + i,
+  }));
+  loadBoard({ title: 'T', items: [], settings: { fonts: many } });
+  assert.equal(board.settings.fonts.length, 8);
+});
+
+test('the defaults are not shared between boards', () => {
+  // DEFAULT_SETTINGS holds `fonts` by reference, so a board that pushed onto it
+  // in place would be editing the defaults every later board is built from.
+  fresh();
+  board.settings.fonts.push({ hash: FONT_HASH, family: 'Leaked' });
+  fresh();
+  assert.deepEqual(board.settings.fonts, []);
 });
