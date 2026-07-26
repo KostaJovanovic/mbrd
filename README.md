@@ -56,8 +56,17 @@ does not draw with no help but does draw with about six hundred lines of it.
 `web/assets/js/import/mesh.js` and drawn by `web/assets/js/canvas/model.js`,
 which holds **one** WebGL context for the whole app and blits it into each
 card's own 2D canvas — contexts are capped per page at around sixteen, and a
-board that mounts and unmounts cards as you pan would spend them all. Drag a
-model to turn it over, wheel to zoom it.
+board that mounts and unmounts cards as you pan would spend them all.
+
+**A model card is a photograph of a model until you ask for the model.** The
+first time one is drawn it takes its own picture — 450px on the long side, WebP,
+kept in the board like any other asset — and from then on the card is an `<img>`.
+**Rotate model** in its right-click menu hands the geometry back: drag to turn it
+over, wheel to zoom, and when you click away it photographs itself again from
+wherever you left it. The picture is retaken when the card is resized, and it is
+ignored — geometry redrawn instead — when the card is dragged bigger than a still
+can honestly serve, or when a palette change leaves an uncoloured model shaded a
+shade out of date.
 
 A YouTube link can become a player, and does so only when you press the button
 on the card. Nothing is requested from anyone before that, the choice is not
