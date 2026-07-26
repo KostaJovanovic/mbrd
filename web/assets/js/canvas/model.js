@@ -75,6 +75,18 @@ const MESH_CACHE_MAX = 12;
  */
 const MAX_BUFFER = 1024;
 
+/** Vertical field of view, in radians. About 45 degrees. */
+const FOV = 0.79;
+
+/**
+ * How much of the frame the model's bounding sphere is allowed to fill.
+ *
+ * 1 is an exact fit and touches the edge on every side. The sphere is the
+ * *diagonal* of the bounding box, so a model rarely reaches it - but a cube
+ * seen corner-on does, and that is the one that came out clipped.
+ */
+const FIT_MARGIN = 1.12;
+
 const VERT = `
 attribute vec3 aPos;
 attribute vec3 aNormal;
@@ -352,6 +364,9 @@ export function resetModels() {
   meshes.clear();
   turning.clear();
   views.clear();
+  shotSize.clear();
+  for (const t of pending.values()) clearTimeout(t);
+  pending.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -488,6 +503,9 @@ async function takeShot(id) {
   if (!blob || !/webp/.test(blob.type)) return false;
 
   const hash = await addFile(new File([blob], `${id}-still.webp`, { type: 'image/webp' }));
+  // Recorded before the item is told, so the rebuild this triggers does not read
+  // it back as a card that still owes a picture.
+  shotSize.set(id, sizeOf(item));
   setModelShot(id, { hash, ink: mesh.colors ? '' : ink, view });
   return true;
 }
@@ -522,6 +540,54 @@ bus.on('settings', key => {
   if (key !== 'appearance') return;
   for (const it of board.items) {
     if (it.type === 'model' && it.meta?.shotInk) bus.emit('item', it.id);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Resize
+// ---------------------------------------------------------------------------
+
+/**
+ * The size each model card was last photographed at, so a *move* can be told
+ * from a *resize*. 'geom' says both, and the still only goes stale for one of
+ * them.
+ *
+ * Runtime, not saved: it is seeded from the card the first time one is built,
+ * so after a reload the first resize retakes the picture whether or not it
+ * needed to. One WebP is the right price for not putting a second size field in
+ * the file format.
+ */
+const shotSize = new Map();
+const sizeOf = item => `${Math.round(+item.w || 0)}x${Math.round(+item.h || 0)}`;
+
+/** Retakes in flight, so a drag does not queue one per frame. */
+const pending = new Map();
+const RESIZE_QUIET_MS = 260;
+
+/**
+ * A model dragged to a new size is a model whose photograph is the wrong shape:
+ * the still is drawn `contain`, so a card made much wider than the shot leaves
+ * the model marooned in the middle of it at the old proportions.
+ *
+ * Waited out rather than answered per frame - 'geom' fires all the way through
+ * a drag, and each answer is a mesh parse, a WebGL draw and a WebP encode.
+ */
+bus.on('geom', ids => {
+  for (const id of ids || []) {
+    const it = byId(id);
+    if (!it || it.type !== 'model' || turning.has(id)) continue;
+    if (shotSize.get(id) === sizeOf(it)) continue;
+    clearTimeout(pending.get(id));
+    pending.set(id, setTimeout(() => {
+      pending.delete(id);
+      const item = byId(id);
+      if (!item || turning.has(id)) return;
+      shotSize.set(id, sizeOf(item));
+      // Past the point where a still would be shown at all, there is nothing to
+      // retake - the card just has to be told to go back to live geometry.
+      if (outgrewStill(item)) { bus.emit('item', id); return; }
+      takeShot(id).catch(() => {});
+    }, RESIZE_QUIET_MS));
   }
 });
 
@@ -645,12 +711,21 @@ function renderShared(mesh, view, w, h, cssColor) {
   const centre = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
   const radius = Math.max(1e-6, Math.hypot(max[0] - min[0], max[1] - min[1], max[2] - min[2]) / 2);
   // Framed from the model's own size, so a 3mm screw and a 3m bridge both
-  // arrive filling the card. 2.4 radii back gives a little air around it at a
-  // 45 degree field.
-  const dist = (radius * 2.4) / view.zoom;
+  // arrive filling the card.
+  //
+  // Backed off far enough that the model's bounding sphere fits the *narrow*
+  // axis. The field of view is vertical and the projection widens it by the
+  // aspect, so a flat 2.4 radii framed the height and let a card taller than it
+  // is wide crop the model at the sides - which is what cut the corner off a
+  // model on a portrait card. And 2.4 radii was the exact fit even then: at a
+  // 45 degree field the half-height at that distance is one radius, so the
+  // sphere touched the edge and any rounding took a pixel off it. FIT_MARGIN is
+  // the air around it.
+  const fit = Math.min(1, w / h);
+  const dist = (radius * FIT_MARGIN) / (Math.tan(FOV / 2) * fit * view.zoom);
 
   gl.uniformMatrix4fv(uniforms.proj, false,
-    perspective(0.79, w / h, radius * 0.02, dist + radius * 4));
+    perspective(FOV, w / h, radius * 0.02, dist + radius * 4));
   gl.uniformMatrix4fv(uniforms.view, false, orbitView(centre, dist, view.yaw, view.pitch));
   gl.uniform3fv(uniforms.color, rgbOf(cssColor));
   gl.uniform1f(uniforms.ownColor, mesh.colors ? 1 : 0);
