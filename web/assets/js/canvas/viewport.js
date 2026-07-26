@@ -24,6 +24,14 @@ import { itemBounds } from '../geometry.js';
 
 export const MIN_ZOOM = 0.02;
 export const MAX_ZOOM = 32;
+export const MOBILE_SIDE_PAD = 32;
+export const MOBILE_TOP_PAD = 32;
+
+/** Fixed zoom that seats a Mobile board in the viewport without enlarging it. */
+export function mobileZoom(viewWidth, worldWidth, pad = MOBILE_SIDE_PAD) {
+  const available = Math.max(1, viewWidth - pad * 2);
+  return clamp(Math.min(1, available / Math.max(1, worldWidth)), MIN_ZOOM, MAX_ZOOM);
+}
 
 /** How long after the last view change the board counts as still. See _moving(). */
 const VIEW_SETTLE_MS = 140;
@@ -83,6 +91,7 @@ const GLIDE_STOP = 8;
  */
 export const deviceRatio = () =>
   Math.max(1, Math.min(3, (typeof window === 'object' && window.devicePixelRatio) || 1));
+
 // One detail ladder with one rung on it: below it the board is a composition
 // rather than a set of things you are reading, so item chrome (labels, grips)
 // becomes noise and an animation is movement with nothing to see in it. These
@@ -169,14 +178,28 @@ const reducedMotion = () =>
   typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export class Viewport {
-  constructor(viewportEl, worldEl, axisX, axisY, originMark) {
+  constructor(viewportEl, worldEl, originMark) {
     this.el = viewportEl;
     this.world = worldEl;
-    this.axisX = axisX;
-    this.axisY = axisY;
     this.originMark = originMark || null;
     this.pan = { x: 0, y: 0 };
     this.zoom = 1;
+    // The padlock in the corner controls. Not a board setting and not saved
+    // with one. A board does record the view it was left at, but deliberately
+    // does not open at it - openingView() in main.js frames the whole thing
+    // instead, for the reasons written there - so a lock restored from a file
+    // would be holding a magnification the board had already declined to
+    // reopen at. It lasts as long as the sitting does, which is also what it is
+    // for: you lock the zoom because of what you are doing this afternoon.
+    //
+    // What it stops is the *zoom*, never the pan: the board still moves under
+    // the hand, and travelling to an item or fitting the whole board still
+    // works - they arrive at the locked magnification instead of choosing their
+    // own. See the gates in zoomAt/zoomAnimAt/viewTo.
+    this.zoomLocked = false;
+    this.boardMode = 'desktop';
+    this.mobileWorldWidth = 0;
+    this.mobileWorldTop = 0;
     this.width = 0;
     this.height = 0;
     this.left = 0;
@@ -186,7 +209,7 @@ export class Viewport {
     this._anim = null;              // rAF id of a view animation in flight
     this._still = 0;                // timer that ends the cheap mode - see _moving()
     this._iz = 0;                   // what --iz was last written as
-    this._hair = 0;                 // ...and the axis thickness, likewise
+    this.moving = false;            // is the view mid-gesture? - see _moving()
 
     this.measure();
     const ro = new ResizeObserver(() => { this.measure(); this.apply(); });
@@ -200,10 +223,43 @@ export class Viewport {
     this.top = r.top;
     this.width = r.width;
     this.height = r.height;
+    if (this.boardMode === 'mobile') {
+      this.zoom = this._mobileZoom();
+      this._constrainMobile();
+    }
   }
 
   get cx() { return this.width / 2; }
   get cy() { return this.height / 2; }
+  get isMobile() { return this.boardMode === 'mobile'; }
+
+  _mobileZoom() {
+    return mobileZoom(this.width, this.mobileWorldWidth);
+  }
+
+  /** Highest pan that keeps the finite top edge just inside the viewport. */
+  _mobileTopPan() {
+    return this.mobileWorldTop + (MOBILE_TOP_PAD - this.cy) / this.zoom;
+  }
+
+  _constrainMobile() {
+    if (!this.isMobile) return;
+    this.pan.x = 0;
+    this.pan.y = Math.min(this.pan.y, this._mobileTopPan());
+  }
+
+  /** Constrain the viewport to the fixed-width, downward-infinite board. */
+  setBoardMode(mode, worldWidth = this.mobileWorldWidth, worldTop = this.mobileWorldTop) {
+    this.stopAnim();
+    this.boardMode = mode === 'mobile' ? 'mobile' : 'desktop';
+    this.mobileWorldWidth = Math.max(1, +worldWidth || 1);
+    this.mobileWorldTop = Number.isFinite(+worldTop) ? +worldTop : 0;
+    if (this.isMobile) {
+      this.zoom = this._mobileZoom();
+      this._constrainMobile();
+    }
+    this.apply();
+  }
 
   /** World point -> position within the viewport element, in CSS px. */
   toScreen(wx, wy) {
@@ -254,6 +310,7 @@ export class Viewport {
    * catching a gliding board simply stops it where the hand landed.
    */
   glide(vx, vy) {
+    if (this.isMobile) vx = 0;
     const speed = Math.hypot(vx, vy);
     if (speed < GLIDE_MIN || reducedMotion()) return;
     this.stopAnim();
@@ -265,10 +322,12 @@ export class Viewport {
       // How far the finger's speed has carried the board by now, in screen px:
       // the integral of v0 * e^(-t/tau), which is v0 * tau * (1 - e^(-t/tau)).
       const travelled = GLIDE_TAU * (1 - decay);
-      this.pan.x = x0 - vx * travelled / z;
-      this.pan.y = y0 + vy * travelled / z;   // screen y is down, world y is up
+      this.pan.x = this.isMobile ? 0 : x0 - vx * travelled / z;
+      const nextY = y0 + vy * travelled / z;
+      this.pan.y = this.isMobile ? Math.min(nextY, this._mobileTopPan()) : nextY;
       this.apply();
-      this._anim = speed * decay > GLIDE_STOP ? requestAnimationFrame(tick) : null;
+      const hitTop = this.isMobile && nextY > this.pan.y;
+      this._anim = !hitTop && speed * decay > GLIDE_STOP ? requestAnimationFrame(tick) : null;
     };
     this._anim = requestAnimationFrame(tick);
   }
@@ -276,13 +335,15 @@ export class Viewport {
   /** Move the view by a screen-space delta (drag). */
   panByScreen(dx, dy) {
     this.stopAnim();
-    this.pan.x -= dx / this.zoom;
+    this.pan.x = this.isMobile ? 0 : this.pan.x - dx / this.zoom;
     this.pan.y += dy / this.zoom;   // screen y is down, world y is up
+    this._constrainMobile();
     this.apply();
   }
 
   /** Zoom by `factor`, keeping the world point under (clientX, clientY) fixed. */
   zoomAt(clientX, clientY, factor) {
+    if (this.zoomLocked || this.isMobile) return;
     this.stopAnim();
     const z = clamp(this.zoom * factor, MIN_ZOOM, MAX_ZOOM);
     if (z === this.zoom) return;
@@ -297,9 +358,10 @@ export class Viewport {
 
   setView(pan, zoom) {
     this.stopAnim();
-    this.pan.x = +pan?.x || 0;
+    this.pan.x = this.isMobile ? 0 : +pan?.x || 0;
     this.pan.y = +pan?.y || 0;
-    this.zoom = clamp(+zoom || 1, MIN_ZOOM, MAX_ZOOM);
+    this.zoom = this.isMobile ? this._mobileZoom() : clamp(+zoom || 1, MIN_ZOOM, MAX_ZOOM);
+    this._constrainMobile();
     this.apply();
   }
 
@@ -343,6 +405,7 @@ export class Viewport {
    * ends. `ms = 0` snaps.
    */
   zoomAnimAt(clientX, clientY, factor, ms = 200) {
+    if (this.zoomLocked || this.isMobile) return;
     const z0 = this.zoom;
     const z1 = clamp(z0 * factor, MIN_ZOOM, MAX_ZOOM);
     if (z1 === z0) return;
@@ -365,16 +428,30 @@ export class Viewport {
     this.zoomAnimAt(this.left + this.cx, this.top + this.cy, factor, ms);
   }
 
-  /** Travel to an absolute view. `ms = 0` is setView(). */
+  /**
+   * Travel to an absolute view. `ms = 0` is setView().
+   *
+   * With the zoom locked this becomes a pure journey: the destination keeps its
+   * pan and takes the magnification we are already at. That is what makes Fit,
+   * Back to 0,0 and "go to this item" stay useful under the lock rather than
+   * turning into dead buttons - you can still be taken somewhere, you just are
+   * not resized on arrival. setView() below is left ungated on purpose: it is
+   * the raw primitive, and the only thing that should be able to seat a view
+   * wholesale is a board being opened.
+   */
   viewTo(pan, zoom, ms = 0) {
-    const x1 = +pan?.x || 0, y1 = +pan?.y || 0;
-    const z1 = clamp(+zoom || 1, MIN_ZOOM, MAX_ZOOM);
+    const x1 = this.isMobile ? 0 : +pan?.x || 0;
+    const z1 = this.isMobile
+      ? this._mobileZoom()
+      : this.zoomLocked ? this.zoom : clamp(+zoom || 1, MIN_ZOOM, MAX_ZOOM);
+    const requestedY = +pan?.y || 0;
+    const y1 = this.isMobile ? Math.min(requestedY, this._mobileTopPan()) : requestedY;
     if (!(ms > 0)) return this.setView({ x: x1, y: y1 }, z1);
     const x0 = this.pan.x, y0 = this.pan.y, z0 = this.zoom;
     if (x1 === x0 && y1 === y0 && z1 === z0) return;
     this._animate(ms, e => {
       this.zoom = e === 1 ? z1 : z0 * Math.pow(z1 / z0, e);
-      this.pan.x = x0 + (x1 - x0) * e;
+      this.pan.x = this.isMobile ? 0 : x0 + (x1 - x0) * e;
       this.pan.y = y0 + (y1 - y0) * e;
       this.apply();
     });
@@ -382,9 +459,12 @@ export class Viewport {
 
   /**
    * Fit `items` (anything with x/y/w/h at its centre) in view with a margin.
-   * With nothing to fit, falls back to the origin at 1:1.
-   */
+  * With nothing to fit, falls back to the origin at 1:1.
+  */
   fit(items, pad = 80, ms = 0) {
+    if (this.isMobile) {
+      return this.viewTo({ x: 0, y: this._mobileTopPan() }, this._mobileZoom(), ms);
+    }
     const box = items && items.length ? itemBounds(items) : null;
     if (!box) return this.recenter(ms);
     const { x0, y0, x1, y1 } = box;
@@ -447,13 +527,24 @@ export class Viewport {
    */
   _moving() {
     if (!this._still) this.world.classList.add('is-viewing');
+    // The same fact as the class, in a form a module can read without asking the
+    // DOM. canvas/grid.js is the caller, and it runs inside the frame - a
+    // classList test there would be a style read per frame to learn something
+    // this object already knows.
+    this.moving = true;
     clearTimeout(this._still);
     this._still = setTimeout(() => {
       this._still = 0;
+      this.moving = false;
       this.world.classList.remove('is-viewing');
       // And the board is still, so chrome goes back to being exactly the size
       // it claims to be rather than within a rung of it - see IZ_STEP.
       this._setIz(1 / this.zoom);
+      // One more pass over everything that draws the view, now that it has
+      // stopped: this is the frame where the cheap versions are exchanged for
+      // the proper ones. Announced directly rather than through apply(), which
+      // would call this method again and restart the timer it is ending.
+      this.bus.emit('change', this);
     }, VIEW_SETTLE_MS);
   }
 
@@ -466,6 +557,12 @@ export class Viewport {
 
   _paint() {
     const z = this.zoom;
+    const mobileWidth = this.mobileWorldWidth * z;
+    const mobileTop = (this.pan.y - this.mobileWorldTop) * z + this.cy;
+    this.el.style.setProperty('--mobile-board-left', `${this.cx - mobileWidth / 2}px`);
+    this.el.style.setProperty('--mobile-board-width', `${mobileWidth}px`);
+    this.el.style.setProperty('--mobile-board-top', `${mobileTop}px`);
+    this.el.style.setProperty('--mobile-board-ceiling-opacity', mobileTop >= 0 ? '1' : '0');
     // +panY (not -panY): items are laid out at cssY = -worldY, so the vertical
     // translate has to undo that flip as well as apply the pan.
     this.world.style.transform =
@@ -478,38 +575,15 @@ export class Viewport {
     this.world.classList.toggle('zoom-far', z < farZoom());
     this._moving();
 
-    // Axis placement, with two things to get right at once.
+    // The origin mark, centred on the point the axes cross.
     //
-    // Crispness: a rule at a fractional offset is antialiased across two device
-    // columns and reads as a soft grey smudge, so the rules snap - to device
-    // pixels, and they are one device pixel thick. (The world transform stays
-    // fractional - panning is smooth.)
-    //
-    // One device pixel, not one CSS pixel, and that is the fix for a rule whose
-    // weight flickered between hairline and heavy as the board moved: at 125%
-    // scaling a 1px rule is 1.25 device rows, which the screen has to render as
-    // one row or two depending on where the fractional quarter falls. There is
-    // no way to draw 1.25 rows, so the honest answer is to ask for one.
-    //
-    // Alignment: a rule positioned at `top: N` spans N..N+its height, so its
-    // *visual* centre is half a thickness lower. Placing it at the raw origin
-    // therefore puts it off the very point it is meant to mark. axisOrigin()
-    // returns the centre, the rules are backed off by half, and the origin mark
-    // is centred on it - which makes the crosshair pass exactly through the
-    // middle of the ring at every pan.
+    // The rules themselves are not placed here any more. They are drawn, in
+    // whole device pixels, by canvas/grid.js - see paintAxes() there for the
+    // rounding problem that made an element the wrong tool for a hairline. What
+    // is left is this: axisOrigin() hands back the *centre* of the device pixel
+    // the crossing falls in, and the mark is centred on the same point, so the
+    // crosshair passes exactly through the middle of the ring at every pan.
     const a = this.axisOrigin();
-    const hair = 1 / deviceRatio();
-    // The offsets move on every pan; the thickness only changes when the window
-    // is dragged to a screen of a different density, which is to say almost
-    // never. Writing it anyway is a style invalidation per frame for a value
-    // that is already there.
-    if (hair !== this._hair) {
-      this._hair = hair;
-      this.axisX.style.height = hair + 'px';
-      this.axisY.style.width = hair + 'px';
-    }
-    this.axisX.style.top = (a.y - hair / 2) + 'px';
-    this.axisY.style.left = (a.x - hair / 2) + 'px';
     if (this.originMark) {
       this.originMark.style.left = a.x + 'px';
       this.originMark.style.top = a.y + 'px';

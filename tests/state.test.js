@@ -15,6 +15,7 @@ import {
   copyItems, cutItems, pasteItems, clipboardSize, clipboardHasOurs, clipboardBounds,
   stuckTo, stuckFollowers, restick, STICK_MIN, setItemText, renameItem, NOTE_MAX,
   setSetting, snapshotGeom, applyGeom, commitGeom,
+  setBoardMode, mobileBoardWidth, mobileBoardTop,
 } from '../web/assets/js/state.js';
 import { overlapFraction, CELL_GAP } from '../web/assets/js/geometry.js';
 import { hash } from './helpers.js';
@@ -24,7 +25,10 @@ const fresh = (items = []) => loadBoard({ title: 'T', items });
 const note = (props = {}) => ({ type: 'note', w: 100, h: 100, meta: { text: 'n' }, ...props });
 const photo = (props = {}) => ({ type: 'image', w: 200, h: 200, ...props });
 
-beforeEach(() => fresh());
+beforeEach(() => {
+  setBoardMode('desktop');
+  fresh();
+});
 
 // ---------------------------------------------------------------------------
 // Items and history
@@ -600,6 +604,72 @@ test('serialising and reloading preserves the items', () => {
   assert.equal(board.items[1].meta.text, 'hi');
 });
 
+test('Mobile is a six-column vertical layout', () => {
+  fresh([
+    photo({ id: 'wide', x: 300, y: 200, w: 800, h: 400 }),
+    note({ id: 'note', x: -500, y: 100 }),
+  ]);
+
+  assert.ok(setBoardMode('mobile'));
+  assert.equal(mobileBoardWidth(), 384);
+  assert.equal(mobileBoardTop(), 640);
+  const [wide, noteItem] = board.items;
+  assert.equal(wide.w, mobileBoardWidth());
+  assert.equal(wide.h, 192, 'a wide item keeps its aspect ratio when first fitted');
+  for (const item of board.items) {
+    assert.ok(item.x - item.w / 2 >= -mobileBoardWidth() / 2);
+    assert.ok(item.x + item.w / 2 <= mobileBoardWidth() / 2);
+    assert.equal(item.rot, 0);
+  }
+  assert.equal(wide.y + wide.h / 2, mobileBoardTop(), 'the feed starts at its top edge');
+  assert.ok(noteItem.y + noteItem.h / 2 < wide.y - wide.h / 2);
+});
+
+test('Mobile has a finite top and no lower geometry bound', () => {
+  fresh([photo({ id: 'card', w: 200, h: 100 })]);
+  setBoardMode('mobile');
+
+  applyGeom([{ ...snapshotGeom(['card'])[0], y: 100000 }]);
+  assert.equal(byId('card').y + byId('card').h / 2, mobileBoardTop());
+  applyGeom([{ ...snapshotGeom(['card'])[0], y: -100000 }]);
+  assert.equal(byId('card').y, -100000);
+});
+
+test('Desktop and Mobile keep independent geometry in one file', () => {
+  fresh([photo({ id: 'card', x: 120, y: 40, w: 200, h: 100 })]);
+
+  setBoardMode('mobile');
+  applyGeom([{ ...snapshotGeom(['card'])[0], x: 0, y: -700, w: 300, h: 180 }]);
+  setBoardMode('desktop');
+  assert.equal(byId('card').x, 120);
+  applyGeom([{ ...snapshotGeom(['card'])[0], x: 500, y: 80 }]);
+
+  setBoardMode('mobile');
+  assert.equal(byId('card').y, -700);
+  const data = serializeBoard();
+  assert.equal(data.items[0].x, 500, 'the legacy item geometry stays Desktop');
+  assert.equal(data.layouts.desktop[0].x, 500);
+  assert.equal(data.layouts.mobile[0].y, -700);
+  assert.equal('layoutMode' in data, false, 'the device choice does not travel');
+
+  loadBoard(data);
+  assert.equal(byId('card').y, -700);
+  setBoardMode('desktop');
+  assert.equal(byId('card').x, 500);
+});
+
+test('content and settings are shared between both layouts', () => {
+  fresh([note({ id: 'shared', name: 'before', meta: { text: 'same note' } })]);
+  setBoardMode('mobile');
+  renameItem('shared', 'after');
+  setSetting('spacing', 36);
+  setBoardMode('desktop');
+
+  assert.equal(byId('shared').name, 'after');
+  assert.equal(byId('shared').meta.text, 'same note');
+  assert.equal(board.settings.spacing, 36);
+});
+
 // ---------------------------------------------------------------------------
 // Loading a board that is not one
 //
@@ -699,16 +769,38 @@ test('turning snapping on lays the board on the lattice', () => {
   const [a] = addItems([boxAt(17, -23, 100, 100)]);
   setSetting('snap', true);
   const it = byId(a.id);
-  // Low edges on grid lines, sides a whole number of cells less the seam - the
-  // resize rule, since laying out a board is the resize case, not the drag case.
+  // Low edges a seam past a grid line, sides a whole number of cells less a seam
+  // at each end - the resize rule, since laying out a board is the resize case,
+  // not the drag case.
   const step = board.settings.gridStep;
-  const gap = step * CELL_GAP;
+  const inset = step * CELL_GAP;
   // Math.abs, because a negative coordinate divides to -0 and assert.equal is
   // strict enough to tell the two zeroes apart.
-  assert.equal(Math.abs((it.x - it.w / 2) % step), 0, 'left edge off the lattice');
-  assert.equal(Math.abs((it.y - it.h / 2) % step), 0, 'bottom edge off the lattice');
-  assert.equal((it.w + gap) % step, 0);
-  assert.equal((it.h + gap) % step, 0);
+  assert.equal(Math.abs((it.x - it.w / 2 - inset) % step), 0, 'left edge off the lattice');
+  assert.equal(Math.abs((it.y - it.h / 2 - inset) % step), 0, 'bottom edge off the lattice');
+  assert.equal((it.w + 2 * inset) % step, 0);
+  assert.equal((it.h + 2 * inset) % step, 0);
+});
+
+test('a snapped item is inset by the same seam on all four sides', () => {
+  fresh();
+  const step = board.settings.gridStep;
+  const [a] = addItems([boxAt(0, 0, step * 3, step * 2)]);
+  setSetting('snap', true);
+  const it = byId(a.id);
+  const inset = step * CELL_GAP;
+  // Each edge's distance from the grid line just outside it. The old rule gave
+  // the whole seam to the high edges and nothing to the low ones, so an item was
+  // flush left and bottom and short right and top; every one of these is the
+  // same number now.
+  const off = (edge, sign) => {
+    const line = Math.round((edge + sign * inset) / step) * step;
+    return Math.abs(edge - line);
+  };
+  for (const gap of [
+    off(it.x - it.w / 2, -1), off(it.x + it.w / 2, 1),
+    off(it.y - it.h / 2, -1), off(it.y + it.h / 2, 1),
+  ]) assert.ok(Math.abs(gap - inset) < 1e-6, `side was inset by ${gap}, wanted ${inset}`);
 });
 
 test('two snapped neighbours have a seam between them', () => {
@@ -722,9 +814,13 @@ test('two snapped neighbours have a seam between them', () => {
   // The whole point of the seam: side by side is not the same as joined, or two
   // photographs in adjoining cells read as one photograph with a crease in it.
   assert.ok(seam > 0, 'neighbours are touching');
+  // Two halves of a seam, one from each item - which is the same total distance
+  // the whole-seam-on-one-edge rule used to leave, and that is deliberate: the
+  // change was to where the gap sits, not to how much of it there is.
+  //
   // Within a rounding error: the seam is a fraction of the step and comes back
   // through two subtractions, so it lands on the last bit rather than exactly.
-  assert.ok(Math.abs(seam - step * CELL_GAP) < 1e-6, `seam was ${seam}`);
+  assert.ok(Math.abs(seam - 2 * step * CELL_GAP) < 1e-6, `seam was ${seam}`);
 });
 
 test('turning snapping off puts everything back where it was', () => {

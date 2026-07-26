@@ -14,7 +14,10 @@
 <meta name="theme-color" content="#fbf8f1">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="assets/img/icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="assets/img/icon.svg">
+<!-- A PNG, and it has to be: iOS does not read an SVG here, so the home-screen
+     icon of an app added from Safari was falling back to a screenshot of the
+     page. The 192 is scaled down to whatever the device wants. -->
+<link rel="apple-touch-icon" href="assets/img/icon-192.png">
 <link rel="stylesheet" href="assets/css/fonts.css">
 <link rel="stylesheet" href="assets/css/tokens.css">
 <link rel="stylesheet" href="assets/css/app.css">
@@ -47,8 +50,22 @@
        Over the lattice and under the axes, the way a page sits on a desk with
        the rules drawn across it. See canvas/paper.js. -->
   <div id="paper" hidden aria-hidden="true"><span id="paper-label"></span></div>
-  <div id="axis-x" class="axis"></div>
-  <div id="axis-y" class="axis"></div>
+  <!-- The world axes. A canvas rather than two 1px <div>s, and the reason is
+       the one thing an element cannot promise: that it covers exactly one
+       device pixel. Layout works in sixty-fourths of a CSS pixel, and one
+       device pixel is a whole number of those only at 100% and 200% scaling -
+       at 125%, 150% or a phone's 3x it is not, so the rule came out a hair
+       under a full row, and at the offsets where that shortfall straddled a
+       boundary the row rounded away to nothing and the axis blinked out while
+       the board was panned. On a canvas a pixel is set or it is not.
+       Its own layer, separate from the grid, because the grid cuts a hole in
+       itself where the origin mark stands and the axes must not be cut by it. -->
+  <canvas id="axis-ink" aria-hidden="true"></canvas>
+  <!-- Screen-space edges of the fixed six-column Mobile board. Its width is
+       published by viewport.js, while the items remain in the ordinary world
+       layer and therefore use exactly the same renderers and settings. -->
+  <div id="mobile-board-frame" aria-hidden="true"></div>
+  <div id="mobile-board-ceiling" aria-hidden="true"></div>
   <svg id="origin-mark" viewBox="0 0 36 36" fill="none" stroke="currentColor" aria-hidden="true">
     <!-- The ring and the pip come in both shapes, and the whimsy axis picks
          one. A circle cannot be squared off with a border-radius the way a box
@@ -157,6 +174,16 @@
           <button type="button" data-cmd="reset-appearance">Start over</button>
         </div>
       </details>
+    </section>
+
+
+    <section class="side-sec">
+      <h2>Board layout</h2>
+      <div class="btn-row">
+        <button type="button" id="board-mode" data-cmd="toggle-board-mode"
+                aria-pressed="false">Mobile board</button>
+      </div>
+      <p class="hint" id="board-mode-hint">Desktop is the free two-dimensional arrangement.</p>
     </section>
 
 
@@ -400,6 +427,24 @@
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
         <circle cx="8" cy="8" r="4"/>
         <path d="M8 1v2.4M8 12.6V15M1 8h2.4M12.6 8H15"/>
+      </svg>
+    </button>
+    <!-- Hold the magnification. Last in the row and pressed rather than pushed,
+         because it is the only control here that changes what the other four
+         do rather than doing something itself.
+
+         The body of the padlock is one path and the shackle is two, of which
+         app.css shows whichever matches aria-pressed - an open shackle leaning
+         off its post when the zoom is free, closed on it when it is not. Two
+         paths rather than a rotation, because the shape a padlock makes when it
+         opens is not the shape it makes when it is turned. main.js writes the
+         pressed state, the label and the title together. -->
+    <button type="button" id="zoom-lock" data-zoom="lock" aria-pressed="false"
+            aria-label="Lock zoom" title="Lock the zoom">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect class="lock-body" x="3.25" y="7.25" width="9.5" height="6.5" rx="1.4"/>
+        <path class="lock-open" d="M5.75 7.25V5.1a2.6 2.6 0 0 1 5.15-.5"/>
+        <path class="lock-shut" d="M5.75 7.25V5.1a2.25 2.25 0 0 1 4.5 0v2.15"/>
       </svg>
     </button>
   </div>

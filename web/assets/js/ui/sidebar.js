@@ -9,6 +9,7 @@ import { itemBounds } from '../geometry.js';
 import { toUnits, formatLength, paperMm, PAPERS } from '../measure.js';
 
 let sidebar, menuBtn;
+const MODE_PREF = 'mbrd.boardMode';
 
 export function initSidebar(cmds) {
   sidebar = el('sidebar');
@@ -24,6 +25,11 @@ export function initSidebar(cmds) {
     const fn = cmds[camel(btn.dataset.cmd)];
     if (fn) fn();
   });
+
+  // The file carries both arrangements, while each device remembers which one
+  // it wants to work in. This lets the same board open Mobile on a phone and
+  // Desktop on a laptop without either save changing the other's preference.
+  cmds.setBoardMode(readPref(MODE_PREF, 'desktop'));
 
   // --- arrangement ---
   const arrSel = el('arrangement');
@@ -60,6 +66,10 @@ export function initSidebar(cmds) {
 
   bus.on('board', paint);
   bus.on('settings', paint);
+  bus.on('layout', mode => {
+    writePref(MODE_PREF, mode);
+    paint();
+  });
   paint();
   restoreOpen();
 }
@@ -175,6 +185,15 @@ function paint() {
   el('arrangement').value = board.arrangement;
   el('spacing').value = board.settings.spacing;
   el('spacing-out').textContent = board.settings.spacing + 'px';
+  const mobile = board.layoutMode === 'mobile';
+  const mode = el('board-mode');
+  mode.setAttribute('aria-pressed', String(mobile));
+  mode.title = mobile ? 'Switch to the Desktop arrangement' : 'Switch to the Mobile arrangement';
+  el('board-mode-hint').textContent = mobile
+    ? 'Mobile is six spaces wide, starts ten above 0,0, and continues downward.'
+    : 'Desktop is the free two-dimensional arrangement.';
+  const fit = sidebar.querySelector('[data-cmd="fit"]');
+  if (fit) fit.textContent = mobile ? 'Back to top' : 'Zoom to fit';
   for (const [id, key] of [['opt-grid', 'grid'], ['opt-axes', 'axes'], ['opt-snap', 'snap'], ['opt-hud', 'hud']]) {
     el(id).checked = !!board.settings[key];
   }

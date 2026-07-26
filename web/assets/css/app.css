@@ -184,15 +184,57 @@ button, input, select, textarea { font: inherit; color: inherit; }
   white-space: nowrap;
 }
 
-/* World axes, drawn in screen space so they stay hairline at any zoom. */
-.axis {
+/* World axes, drawn in screen space so they stay hairline at any zoom - and on
+   a canvas, in whole device pixels, so a hairline is a hairline rather than a
+   fraction of a row the rasteriser is free to round away. canvas/grid.js draws
+   it; index.html says why it is not two <div>s. Sized in device pixels there
+   and stretched back to CSS ones here, exactly like #grid-ink. */
+#axis-ink {
   position: absolute;
-  background: var(--grid-axis);
+  inset: 0;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
 }
-#axis-x { left: 0; width: 100%; height: 1px; }
-#axis-y { top: 0; height: 100%; width: 1px; }
-#viewport.no-axes .axis { display: none; }
+
+/* Mobile is still the same infinite canvas, but interaction is constrained to
+   this six-column strip. viewport.js keeps these screen-space edges aligned
+   with the fixed world width as the window changes size. */
+#mobile-board-frame {
+  display: none;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--mobile-board-left, 0);
+  width: var(--mobile-board-width, 0);
+  box-sizing: border-box;
+  border-inline: var(--hairline) dashed var(--grid-axis);
+  background: color-mix(in srgb, var(--paper-card) 8%, transparent);
+  box-shadow: 0 0 0 100vmax color-mix(in srgb, var(--ink) 4%, transparent);
+  pointer-events: none;
+}
+#mobile-board-ceiling {
+  display: none;
+  position: absolute;
+  inset: 0 0 auto;
+  height: max(0px, var(--mobile-board-top, 0px));
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+  pointer-events: none;
+}
+#mobile-board-ceiling::after {
+  content: "";
+  position: absolute;
+  left: var(--mobile-board-left, 0);
+  bottom: 0;
+  width: var(--mobile-board-width, 0);
+  border-top: var(--hairline) dashed var(--grid-axis);
+  opacity: var(--mobile-board-ceiling-opacity, 0);
+}
+:root[data-board-mode="mobile"] #mobile-board-frame,
+:root[data-board-mode="mobile"] #mobile-board-ceiling { display: block; }
+:root[data-board-mode="mobile"] #axis-ink,
+:root[data-board-mode="mobile"] #origin-mark,
+:root[data-board-mode="mobile"] #web { display: none !important; }
 
 /* The origin, marked like a compass rose rather than just a crossing. Drawn a
    shade stronger than the axes so (0,0) reads as a place, not an accident. */
@@ -260,6 +302,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
      browser quietly flattened to 10. */
   --shape-radius: var(--radius);
   --own-radius: min(var(--shape-radius), var(--half-min, 9999px));
+  /* The three-dot handle's width, named because two things need it: the handle
+     itself, and anything drawn along the foot of a card that has to stop before
+     reaching it. It is a corner of every card that is already spoken for. */
+  --handle-w: 30px;
   border-radius: var(--own-radius);
   box-shadow: var(--item-shadow);
   /* Deliberately not clipped: the resize handles and their brackets sit
@@ -579,11 +625,18 @@ button, input, select, textarea { font: inherit; color: inherit; }
      of a small one, with a floor and a ceiling: below about 40px it is a smudge,
      and above 108 it stops being a corner and starts being the card. */
   --sleeve: clamp(40px, calc(var(--half-min, 100px) * 0.5), 108px);
-  /* Room at the foot for the ⋮, which is not part of the card but sits over its
-     bottom-right corner - it is the item's own handle and every type has it. On
-     a card whose last row is a control of its own, the two crowded each other,
-     so the strip is reserved rather than shared. */
-  padding-bottom: calc(var(--card-pad-y) + 16px);
+  /* The ⋮ is not part of the card but sits over its bottom-right corner - it is
+     the item's own handle and every type has it - and on a card whose last row
+     is a control of its own the two crowded each other. This used to be settled
+     by reserving 16px of *height* at the foot, which worked and cost the one
+     thing an audio card has least of: the transport is pinned to the bottom by
+     margin-top: auto, so the reservation showed as an empty band under the
+     waveform on every card, and it is height that decides what the card can
+     still afford to say about itself.
+     The room is taken sideways instead, the way a video's transport does it -
+     the bar stops short of the corner and the handle stands beside the time
+     rather than under it. Same collision, same fix, and 16px of card back. */
+  padding-bottom: var(--card-pad-y);
   /* Queried by the rules further down, which is how the card decides what to
      drop as it gets shorter. Its own size is fixed by the item it fills, so
      containing it costs nothing: `size` containment says the box does not
@@ -610,17 +663,27 @@ button, input, select, textarea { font: inherit; color: inherit; }
   -webkit-line-clamp: 3;
           line-clamp: 3;
 }
-/* The transport keeps its height whatever else is on the card. */
-.card-audio .transport { flex: none; }
+/* The transport keeps its height whatever else is on the card, and stops short
+   of the corner the handle owns - see the padding note on .card-audio above. */
+.card-audio .transport {
+  flex: none;
+  padding-right: var(--handle-w);
+}
 
 /* What a shrinking card gives up, and in what order.
 
    The name is the card. Everything else on it is either recoverable from
-   somewhere else or not worth the room: the size and the format are a
-   footnote about the file rather than about the music, and the kicker is
-   labelling something the play button and the waveform have already said. So
-   those two go first, in that order, and the name keeps the space they leave
+   somewhere else or not worth the room, and the name keeps the space they leave
    instead of being clamped to one line while a byte count sits underneath it.
+
+   The kicker goes first. It reads AUDIO over a play button, a waveform and a
+   running time, on a card shaped like nothing else on the board - it is the one
+   line here that says something already said three times. The size and the
+   format are a footnote, but they are a footnote nothing else on the card
+   carries, so they outlast it. That is the reverse of the order this dropped
+   them in for a long time, and the reason given for that order was the argument
+   against it: the kicker was described as the redundant one and then kept the
+   longer.
 
    Heights rather than widths, because it is height the layout runs out of -
    the title is what grows when a card is narrowed, and the transport at the
@@ -631,11 +694,18 @@ button, input, select, textarea { font: inherit; color: inherit; }
    `.card-name` inside one loses to `.card-audio .card-name` outside it and the
    clamp would never move. */
 @container audio-card (max-height: 190px) {
-  .card-audio .card-meta { display: none; }
+  .card-audio .card-icon { display: none; }
 }
 @container audio-card (max-height: 148px) {
-  .card-audio .card-icon { display: none; }
   .card-audio .card-name { -webkit-line-clamp: 2; line-clamp: 2; }
+}
+/* Just under the clamp above, and that is deliberate rather than a near miss.
+   By this height the name is on two lines, not three, which hands back a line's
+   worth of room - so the footnote survives a little way past the point a
+   three-line card would have had to drop it. Below here a two-line name, a
+   footnote and the transport genuinely do not fit between the paddings. */
+@container audio-card (max-height: 140px) {
+  .card-audio .card-meta { display: none; }
 }
 @container audio-card (max-height: 116px) {
   .card-audio .card-name { -webkit-line-clamp: 1; line-clamp: 1; }
@@ -746,6 +816,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
   flex: 1;
   margin-top: 0;           /* nothing above it left to be pushed away from */
   justify-content: center;
+  /* The handle is hidden down here (see #world.zoom-far .item-bar), so there is
+     no corner to keep clear - and the reservation would push the one button
+     left on the card off the middle of it, which is the one place it has to be. */
+  padding-right: 0;
 }
 #world.zoom-far .card-audio .play {
   width:  calc(var(--half-min, 98px) * 0.86);
@@ -843,7 +917,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
   position: absolute;
   left: 0; right: 0; bottom: 0;
   margin: 0;                 /* the audio bar's margin-top: auto means nothing here */
-  padding: 6px 9px;
+  /* Stops short of the handle rather than running under it. The three dots are
+     pinned to the card's bottom-right corner and this bar spans the whole foot,
+     so the mute button and the item menu were sharing one square: the pointer
+     got whichever was on top, which is the handle, and the volume control was
+     simply unreachable on every video on the board.
+     The bar gives way rather than the handle moving, because the handle is in
+     the same corner on every card of every type and a video is not a reason for
+     it to be somewhere else. --handle-w rather than a 30 written again here, so
+     the reservation cannot drift away from the thing being reserved for. */
+  padding: 6px var(--handle-w) 6px 9px;
   gap: 8px;
   background: color-mix(in srgb, var(--paper-card) 88%, transparent);
   border-top: var(--hairline) solid var(--rule);
@@ -1356,7 +1439,11 @@ plates do: below a third of size a card is a coloured tile, and a click on
      daylight, and the dots read as sitting on the line rather than beside it.
      Written as a difference rather than as the gap itself because the handle
      was never flush to begin with - the icon is 13px centred in a 30px button,
-     so it already stands most of the way clear on its own. */
+     so it already stands most of the way clear on its own.
+
+     This measures along the straight edges, which is the whole of the answer
+     only while the corner is tight. Softish overrides it - see the whimsy
+     section at the foot of this file for why a 26px radius needs more. */
   right: max(0px, calc(var(--card-rule-gap) - 5px));
   bottom: max(0px, calc(var(--card-rule-gap) - 5px));
 }
@@ -1421,8 +1508,8 @@ plates do: below a third of size a card is a coloured tile, and a click on
      the icon: a 30x15 sliver on every sticky note. The floor makes a bar with
      no caption square, and it is the same 30 as the captioned bar ends up at,
      so the handle is one size wherever it appears. */
-  width: 30px;
-  min-height: 30px;
+  width: var(--handle-w);
+  min-height: var(--handle-w);
   padding: 0;
   border: 0;
   background: none;
@@ -2186,6 +2273,20 @@ kbd {
 }
 /* A hairline gap before the fit/home pair - they move the view, not the zoom. */
 #zoom-ctl button[data-zoom="fit"] { border-left-width: 3px; border-left-style: double; }
+/* And the same double rule again before the padlock, for the same reason read
+   the other way: everything to its left does something, and it decides whether
+   they can. Three groups in one pill - zoom, view, and the switch over both. */
+#zoom-lock { border-left-width: 3px; border-left-style: double; }
+/* Only one shackle is ever drawn. */
+#zoom-lock .lock-shut, #zoom-lock[aria-pressed="true"] .lock-open { display: none; }
+#zoom-lock[aria-pressed="true"] .lock-shut { display: inline; }
+/* Pressed is a state and not a hover, so it is the ink that carries it rather
+   than a wash: the accent at full strength against the muted grey the rest of
+   the row sits at, which is the same way the bin says it has something in it.
+   No fill behind it - the row is one pill on glass, and a filled segment in the
+   middle of it reads as a second object. */
+#zoom-lock[aria-pressed="true"] { color: var(--accent-deep); }
+#zoom-lock[aria-pressed="true"] .lock-body { fill: color-mix(in srgb, var(--accent) 18%, transparent); }
 
 /* The phone's add bar. Nothing but its own shape here - where it is pinned, and
    the fact that it exists at all, are both in the width query at the foot of
@@ -3171,27 +3272,35 @@ kbd {
     left: max(12px, env(safe-area-inset-left));
   }
 
-  /* The whole of the row above the add bar, where the view controls used to be.
-     It has the strip to itself now that the menu has gone back up to the top:
-     three controls at one end of a row a thumb can reach without stretching,
-     and nothing at the other end to hit by mistake. */
+  /* The row above the add bar, where the view controls used to be. It has the
+     strip to itself now that the menu has gone back up to the top edge.
+
+     The bin takes the left corner, which is the one it holds at every other
+     width. It sat on the right here for a while, from back when the menu button
+     owned the bottom left and the two could not share the strip; the menu has
+     since moved, so the only thing the right-hand pin still bought was a bin
+     that changes sides between a phone and the laptop it syncs with. */
   #bin {
     bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--bar-lift));
-    left: auto;
-    right: max(12px, env(safe-area-inset-right));
-    /* The panel hangs off the button, so it has to hang the other way now or
-       its 268px would start at the right edge and end off the screen. */
-    align-items: flex-end;
+    left: max(12px, env(safe-area-inset-left));
   }
-  /* The row reads the same way it does on a desktop - bin, then undo and redo.
-     It was reversed here for a while so the bin took the outside end, which is
-     a real argument and a smaller one than having the same three controls in
-     the same order at every width: a hand that has learnt this row on a laptop
-     should not have to learn it again on a phone. */
+  /* And undo and redo stay at the other end, which is the one thing about this
+     row that does not match the desktop. On a laptop they sit against the bin
+     because they are the same thought - the bin is the one mistake you can walk
+     back by hand and these are every other one - and the pointer costs nothing
+     to move between them. Here the cost is a thumb: both ends of this strip are
+     comfortable and the middle is the stretch, so a pair pressed as often as
+     these belongs in a corner rather than beside one.
+     It stays a child of #bin, so the idle fade and the sidebar-open hide still
+     take it with everything else; only where it is pinned changes. */
+  #history-ctl {
+    position: fixed;
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--bar-lift));
+    right: max(12px, env(safe-area-inset-right));
+  }
+  /* Only the width is narrowed - the panel hangs off the left edge here just as
+     it does on a desktop, so nothing about which way it opens changes. */
   #bin-panel { width: min(268px, calc(100vw - 24px)); max-height: min(60vh, 420px); }
-  /* The column hangs off the right edge here, so the mark has to hang with it -
-     pinned left, it would start at the bin and run off the screen. */
-  #saved { left: auto; right: 0; }
 
   /* Up at the top edge, clear of everything the thumb is doing. Right-aligned
      rather than centred: #corner is a column that grows downwards from its
@@ -3404,6 +3513,38 @@ kbd {
   padding: 0 var(--mat);
   text-align: center;
   font-size: clamp(11px, calc(var(--half-min, 120px) * 0.09), 20px);
+}
+
+/* The handle on the card types that have no caption, at this tier only.
+   A song card is the clearest case, and the reason is geometry rather than
+   taste. The offset those types take is measured along the straight edges: the
+   dots stand 8.5px inside a bar pushed (--card-rule-gap - 5px) off the corner,
+   which at Middle leaves them comfortably within the card's inner rule. At this
+   end the radius is twice Middle's, and a rounded corner curves away faster
+   than its edges suggest - so the *corner* of the dots' box crossed back out
+   through the rule while all four of its sides were still inside it. What you
+   saw was three dots wedged into the crescent between two curves at the tightest
+   point of the card, reading as something that had slipped off the panel.
+
+   So the corner is measured instead of the edges. The rule's arc has radius
+   (own-radius - gap) about a centre own-radius in from each side; the nearest
+   point of that arc to the corner stands (own-radius * (1 - 1/root2) + gap/root2)
+   in, which is the 0.293 and the 0.707. Then 3px of daylight past it, less the
+   8.5px the icon is already inset inside its own button.
+
+   Read off --own-radius rather than the tier's 26, so the Corner radius slider
+   carries it, and so a card small enough for the browser to have flattened its
+   corners gets the flattened figure and not the asked-for one. */
+:root[data-whimsy="0"] .item[data-type="audio"] .item-bar,
+:root[data-whimsy="0"] .item[data-type="text"] .item-bar,
+:root[data-whimsy="0"] .item[data-type="note"] .item-bar,
+:root[data-whimsy="0"] .item[data-type="link"] .item-bar,
+:root[data-whimsy="0"] .item[data-type="model"] .item-bar,
+:root[data-whimsy="0"] .item[data-type="generic"] .item-bar {
+  --handle-inset: max(0px, calc(
+    var(--own-radius) * 0.293 + var(--card-rule-gap) * 0.707 + 3px - 8.5px));
+  right: var(--handle-inset);
+  bottom: var(--handle-inset);
 }
 
 /* A card at radius 0 with a hairline border already reads as ruled - a second

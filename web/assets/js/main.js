@@ -9,9 +9,10 @@ import {
   board, bus, selection, selectAll, removeItems, setSetting,
   snapshotGeom, applyGeom, commitGeom, undo, redo, byId,
   raiseSelection, lowerSelection, duplicateItems, select, setItemCover,
-  setItemUpAxis, historyState, baseStep,
+  setItemUpAxis, historyState, baseStep, mobileBoardWidth, mobileBoardTop,
+  setBoardMode as selectBoardMode,
 } from './state.js';
-import { latticeBox } from './geometry.js';
+import { latticeBox, itemBounds } from './geometry.js';
 import { defaultUpAxis, meshKind } from './import/mesh.js';
 import { Viewport, MIN_ZOOM, MAX_ZOOM, zoomMs, travelMs } from './canvas/viewport.js';
 import { paintGrid, resetGridInk } from './canvas/grid.js';
@@ -42,7 +43,7 @@ import { initFonts } from './ui/fonts.js';
 import { initAudio } from './canvas/audio.js';
 import { editNote, growNote } from './canvas/notes.js';
 
-const vp = new Viewport(el('viewport'), el('world'), el('axis-x'), el('axis-y'), el('origin-mark'));
+const vp = new Viewport(el('viewport'), el('world'), el('origin-mark'));
 
 // ---------------------------------------------------------------------------
 // Commands - the single surface the sidebar buttons and the keyboard share.
@@ -69,7 +70,19 @@ const cmds = {
 
   clearData: () => clearAllData(),
 
-  rearrange,
+  // Two commands rather than one that reads the selection, so that neither can
+  // lie about what it is going to touch: the sidebar button says "Rearrange
+  // everything" and does, whatever happens to be selected at the time.
+  rearrange: () => rearrange(board.items),
+  rearrangeSelection: () => rearrange(board.items.filter(i => selection.has(i.id))),
+  setBoardMode: mode => selectBoardMode(mode),
+  toggleBoardMode: () => {
+    const next = board.layoutMode === 'mobile' ? 'desktop' : 'mobile';
+    if (!selectBoardMode(next)) return;
+    toast(next === 'mobile'
+      ? 'Mobile board: six columns, vertical scroll'
+      : 'Desktop board');
+  },
   scaleFromItem,
   // Resetting the sheet's size and resetting the board's scale are the same
   // act: the sheet is drawn at whatever A4 works out to under the current
@@ -83,6 +96,18 @@ const cmds = {
   },
   fit: () => vp.fit(board.items, 80, travelMs()),
   recenter: () => vp.recenter(travelMs()),
+  // Hold the magnification where it is. A command rather than two lines in the
+  // click handler, because that is what a user-facing action is here - the one
+  // surface a key binding or a menu row would bind to if either ever wants it.
+  lockZoom: () => {
+    if (vp.isMobile) {
+      toast('Mobile zoom follows the six-column width');
+      return;
+    }
+    vp.zoomLocked = !vp.zoomLocked;
+    paintZoom(true);
+    toast(vp.zoomLocked ? `Zoom locked at ${zoomText()}` : 'Zoom unlocked');
+  },
   resetAppearance,
 
   selectAll,
@@ -178,6 +203,8 @@ initFonts();
 // repaints; the other tiers repaint for nothing, which is four gradients.
 initAppearance({ onChange: () => { resetGridInk(); paintGrid(vp); } });
 initAudio();
+bus.on('layout', () => syncBoardMode(true));
+syncBoardMode();
 initSidebar(cmds);
 initItems(el('world'), vp);
 initWeb(el('world'), vp);
@@ -235,6 +262,7 @@ el('zoom-ctl').addEventListener('click', e => {
     case 'reset': vp.viewTo(vp.pan, 1, travelMs()); break;
     case 'fit':   cmds.fit(); break;
     case 'home':  cmds.recenter(); break;
+    case 'lock':  cmds.lockZoom(); break;
   }
 });
 
@@ -309,13 +337,22 @@ paintHistory();
 /** The readout last written, so a pan does not rewrite it sixty times a second. */
 let zoomShown = '';
 
-function paintZoom() {
+/** The zoom as the corner prints it. Its own function because the lock's toast
+ *  quotes the same number, and two roundings of one value is two answers. */
+function zoomText() {
   const pct = vp.zoom * 100;
   // Below 10% a rounded percentage flickers between 6 and 7 as you pinch, so
   // give the small end a decimal instead.
-  const text = (pct < 10 ? pct.toFixed(1) : Math.round(pct)) + '%';
-  const maxed = vp.zoom >= MAX_ZOOM - 1e-6;
-  const mined = vp.zoom <= MIN_ZOOM + 1e-9;
+  return (pct < 10 ? pct.toFixed(1) : Math.round(pct)) + '%';
+}
+
+function paintZoom(force = false) {
+  const text = zoomText();
+  const fixed = vp.isMobile;
+  const locked = vp.zoomLocked || fixed;
+  // Locked, the two ends stop being the reason a button is dead - the lock is.
+  const maxed = locked || vp.zoom >= MAX_ZOOM - 1e-6;
+  const mined = locked || vp.zoom <= MIN_ZOOM + 1e-9;
   // This runs on every view change, and a pan is a view change that cannot
   // possibly have moved the zoom - so on the whole of a drag the answer is the
   // corner already on screen, and writing it again is a layout per frame for
@@ -325,20 +362,40 @@ function paintZoom() {
   // readout is rounded and they are not: the last hundredth of the way to the
   // floor reads as 2.0% for a while before it arrives, and hanging their state
   // off the text alone would leave the button enabled at the end of its travel.
-  const key = text + (maxed ? '+' : '') + (mined ? '-' : '');
-  if (key === zoomShown) return;
+  const key = text + (maxed ? '+' : '') + (mined ? '-' : '') +
+    (vp.zoomLocked ? 'L' : '') + (fixed ? 'M' : '');
+  if (key === zoomShown && !force) return;
   zoomShown = key;
   el('zoom-level').textContent = text;
   for (const btn of el('zoom-ctl').querySelectorAll('[data-zoom]')) {
     if (btn.dataset.zoom === 'in') btn.disabled = maxed;
     if (btn.dataset.zoom === 'out') btn.disabled = mined;
+    // The readout is a button too - it goes back to 100% - so under the lock it
+    // is as dead as the two beside it, and says so rather than sitting there
+    // looking pressable. Fit and Back to 0,0 stay live: with the zoom held they
+    // are journeys rather than zooms, which is still the thing you want when
+    // you have lost the board at a magnification you have chosen to keep.
+    if (btn.dataset.zoom === 'reset') btn.disabled = locked;
   }
+  const fit = el('zoom-ctl').querySelector('[data-zoom="fit"]');
+  fit.title = fixed ? 'Back to the top  F'
+    : locked ? 'Bring everything into view  F' : 'Zoom to fit  F';
+  fit.setAttribute('aria-label', fixed ? 'Back to the top'
+    : locked ? 'Bring everything into view' : 'Zoom to fit');
+  const lock = el('zoom-lock');
+  lock.disabled = fixed;
+  lock.setAttribute('aria-pressed', String(vp.zoomLocked));
+  lock.setAttribute('aria-label', fixed ? 'Zoom fixed to Mobile board width'
+    : vp.zoomLocked ? 'Unlock zoom' : 'Lock zoom');
+  lock.title = fixed ? 'Mobile board always fits its six-column width'
+    : vp.zoomLocked ? `Zoom held at ${text}` : 'Lock the zoom';
 }
 
 bus.on('settings', key => {
   // The whimsy slider arrives here, and it moves the grid's colours as well as
   // its mark - so the resolved copy the Harsh crosses hold has to go back.
   if (key === 'appearance') resetGridInk();
+  if (key === 'gridStep') syncBoardMode();
   paintGrid(vp);
   if (key === 'hud') el('hud').hidden = !board.settings.hud;
   if (key === 'snap') paintSnap();
@@ -377,6 +434,7 @@ bus.on('board:load', () => {
   resetItems();
   // Parsed geometry is keyed by asset hash and the old board's assets are gone.
   resetModels();
+  syncBoardMode();
   requestAnimationFrame(() => {
     for (const it of board.items) if (it.type === 'note') growNote(it.id);
   });
@@ -411,6 +469,16 @@ bus.on('board:load', () => {
  */
 function openingView() {
   vp.fit(board.items, 80, 0);
+}
+
+/**
+ * Publish the active geometry profile to the viewport and CSS. The choice is a
+ * local device preference; state.js keeps both arrangements in the board.
+ */
+function syncBoardMode(frame = false) {
+  document.documentElement.dataset.boardMode = board.layoutMode;
+  vp.setBoardMode(board.layoutMode, mobileBoardWidth(), mobileBoardTop());
+  if (frame) openingView();
 }
 
 /**
@@ -645,9 +713,23 @@ function paintSave() {
   btn.title = 'Everything is already written. Edits keep saving on their own.';
 }
 
-function rearrange() {
-  const items = board.items;
+/**
+ * Lay `items` out again under the board's current arrangement.
+ *
+ * The whole board or a selection of it, and the difference is more than which
+ * ids move. A rearrangement of everything is entitled to rebuild the board
+ * around the origin and fly the view to it, because there is nothing else on
+ * the board to be in the way. A rearrangement of nine cards is not: those nine
+ * are somewhere for a reason, the rest of the board is around them, and hauling
+ * them to 0,0 would be a move you did not ask for wearing a layout's clothes.
+ * So a subset is relaid about its own centre and covers its own ground, and the
+ * view stays where it is - the cards rearrange in front of you, which is the
+ * plainest feedback there is and the reason a Fit would only get in the way.
+ */
+function rearrange(items) {
   if (!items.length) return;
+  const whole = items.length === board.items.length;
+  const at = whole ? { x: 0, y: 0 } : middleOf(items);
   const before = snapshotGeom(items.map(i => i.id));
 
   // Two things vary here, and neither is enough on its own.
@@ -687,7 +769,7 @@ function rearrange() {
 
   const spots = arrange(laid, {
     name: board.arrangement,
-    center: { x: 0, y: 0 },
+    center: at,
     spacing: board.settings.spacing,
     seed: (Math.random() * 0xffffffff) >>> 0,
   });
@@ -707,13 +789,20 @@ function rearrange() {
   // Every item was placed by this, none of them towed - so every note asks
   // again what it landed on. A rearrangement that left the old piles recorded
   // would have notes travelling with photographs they are now nowhere near.
-  commitGeom('Rearrange', before, before.map(g => g.id));
-  // Every other layout rebuilds the board around the origin, so the view has
-  // to follow it there or the rearrangement happens off screen. Free is the
-  // exception: it shakes each item where it stands, and flying to fit the
-  // whole board afterwards would move things on screen far more than the
-  // shake did - hiding the change inside a much larger one.
-  if (board.arrangement !== 'free') vp.fit(board.items, 80, travelMs());
+  commitGeom(whole ? 'Rearrange' : `Rearrange ${items.length} items`,
+    before, before.map(g => g.id));
+  // A whole-board layout rebuilds around the origin, so the view has to follow
+  // it there or the rearrangement happens off screen. Free is the exception:
+  // it shakes each item where it stands, and flying to fit the whole board
+  // afterwards would move things on screen far more than the shake did -
+  // hiding the change inside a much larger one.
+  if (whole && board.arrangement !== 'free') vp.fit(board.items, 80, travelMs());
+}
+
+/** The centre of what a set of items covers. */
+function middleOf(items) {
+  const b = itemBounds(items);
+  return { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 };
 }
 
 // A console handle, deliberately public: `mbrd.board` to inspect state,

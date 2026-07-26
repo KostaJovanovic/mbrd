@@ -12,7 +12,7 @@
 // Written out in full rather than composed from PREFIX, because save.bat bumps
 // this line by regex on every commit and would not recognise an expression.
 // tests/sw.test.js holds the two together.
-const VERSION = 'mbrd-v47';
+const VERSION = 'mbrd-v48';
 const PREFIX = 'mbrd-';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) turns the
@@ -30,6 +30,18 @@ const SHELL = [
   './assets/css/app.css',
   './assets/img/icon.svg',
   './assets/img/icon-maskable.svg',
+  // The same two icons as bitmaps, because not every place an installed icon
+  // turns up can read an SVG: iOS wants a PNG for the home screen, and a
+  // handful of Android launchers and desktop shells still rasterise nothing.
+  // Small enough that carrying both costs a few tens of kilobytes once.
+  //
+  // No apostrophes anywhere inside this array. tests/sw.test.js reads the list
+  // by pulling every single-quoted run out of the source, so one in a comment
+  // becomes half a filename and the whole list stops parsing.
+  './assets/img/icon-192.png',
+  './assets/img/icon-512.png',
+  './assets/img/icon-maskable-192.png',
+  './assets/img/icon-maskable-512.png',
   './404.html',
   './assets/js/main.js',
   './assets/js/state.js',
