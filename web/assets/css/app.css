@@ -3134,20 +3134,22 @@ kbd {
 @media (max-width: 700px) {
   /* Two bands instead of four corners.
 
-     The foot is for the hand: the add bar along the very bottom, with the menu
-     on the left of the row above it and the bin on the right. The view
-     controls go up to the top edge on their own, because they are the odd one
-     out - zoom is something you set and then leave, not something you reach
-     for mid-gesture, and it was the piece most often pressed by accident while
-     dragging an item towards the bottom of the screen.
+     The foot is for the hand: the add bar along the very bottom, with the bin,
+     undo and redo on the row above it. The view controls go up to the top
+     edge, because they are the odd one out - zoom is something you set and
+     then leave, not something you reach for mid-gesture, and it was the piece
+     most often pressed by accident while dragging an item towards the bottom
+     of the screen. The menu shares that top edge from the other corner, for
+     the reason written over its own rule below.
 
      Nothing moves in the markup - these are four independently fixed elements
      and always were, so this is only a question of where each one is pinned. */
-  /* The add bar takes the bottom edge and everything else steps up over it.
-     One number for the step, declared once: the bar's own 54px plus the 12
-     between the two rows. Written on :root rather than on each of them so the
-     three cannot drift apart, which is exactly what happened to the four
-     corners this bar replaced. */
+  /* The add bar takes the bottom edge and the row above steps up over it.
+     One number for the step: the bar's own 54px plus the 12 between the two
+     rows. On :root rather than written into the rule that uses it, because
+     this is the bar's height and not the bin's offset - anything else that
+     ever has to clear the bar wants the same number, and two copies of it is
+     exactly how the four corners this bar replaced drifted apart. */
   :root { --bar-lift: 66px; }
 
   #add-bar {
@@ -3157,15 +3159,22 @@ kbd {
     right: max(12px, env(safe-area-inset-right));
   }
 
+  /* The menu goes back to the top left, which is where it is at every other
+     width. It came down here to be reachable by a thumb, and the row it came
+     down into has since filled up: the bin brought undo and redo with it, and
+     three controls plus the menu at the two far ends of the same strip is a
+     row you have to aim at. The panel it opens is a two-handed job anyway -
+     you go to it to rename a board or change the look, not mid-gesture - so it
+     is the one thing in the corner that can afford the reach. */
   #menu-btn {
-    top: auto;
-    bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--bar-lift));
+    top: max(12px, env(safe-area-inset-top));
     left: max(12px, env(safe-area-inset-left));
   }
 
-  /* Opposite end of the same row as the menu, where the view controls used to
-     be. Two buttons at the two far corners of a phone is the one arrangement
-     that cannot be fat-fingered into the wrong one. */
+  /* The whole of the row above the add bar, where the view controls used to be.
+     It has the strip to itself now that the menu has gone back up to the top:
+     three controls at one end of a row a thumb can reach without stretching,
+     and nothing at the other end to hit by mistake. */
   #bin {
     bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--bar-lift));
     left: auto;
@@ -3174,18 +3183,11 @@ kbd {
        its 268px would start at the right edge and end off the screen. */
     align-items: flex-end;
   }
-  /* Undo and redo first, the bin at the end of the row.
-     The row is pinned to the right edge here rather than the left, so "the far
-     end of the group" is the right-hand end - and the bin wants that end for
-     two reasons: it is where the bin lived before this row existed, and it is
-     what keeps the panel, which hangs off the bin and is also right-aligned at
-     this width, lined up with the button that opens it.
-
-     row-reverse rather than a reordered markup, and the choice is which
-     breakpoint gets the seam between reading order and tab order. Leaving the
-     markup in the desktop's order puts that seam on the phone, which is the
-     width least likely to have a keyboard plugged into it. */
-  .bin-row { flex-direction: row-reverse; }
+  /* The row reads the same way it does on a desktop - bin, then undo and redo.
+     It was reversed here for a while so the bin took the outside end, which is
+     a real argument and a smaller one than having the same three controls in
+     the same order at every width: a hand that has learnt this row on a laptop
+     should not have to learn it again on a phone. */
   #bin-panel { width: min(268px, calc(100vw - 24px)); max-height: min(60vh, 420px); }
   /* The column hangs off the right edge here, so the mark has to hang with it -
      pinned left, it would start at the bin and run off the screen. */

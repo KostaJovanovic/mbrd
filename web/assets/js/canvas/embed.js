@@ -1,7 +1,6 @@
 // The links that can become players, if you ask them to.
 //
-// This is one of only two places in mbrd that will ever talk to a third party -
-// the other is import/lastfm.js, which is opt-in for the same reasons - and the
+// This is the only place in mbrd that will ever talk to a third party, and the
 // whole file is arranged around making that a choice rather than a default.
 //
 // The rule everywhere else is that a board renders the same with the network

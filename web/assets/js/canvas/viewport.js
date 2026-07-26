@@ -120,7 +120,7 @@ const LOD_ZOOM_TOUCH = 0.55;
  * runs these modules, and the desktop rung is the one the tests describe.
  */
 let coarse = null;
-function onTouch() {
+export function onTouch() {
   if (typeof matchMedia !== 'function') return false;
   coarse ??= matchMedia('(pointer: coarse)');
   return coarse.matches;

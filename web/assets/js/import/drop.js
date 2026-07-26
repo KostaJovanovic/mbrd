@@ -12,7 +12,6 @@ import { classify, defaultSize, measureSize, linkURL, linkDraft } from '../canva
 import { iframeURL, embedFor } from '../canvas/embed.js';
 import { arrange } from '../arrange/arrangements.js';
 import { coverArt, mayHaveArt } from './artwork.js';
-import { lastfmArt, lastfmOn } from './lastfm.js';
 import { makeThumb } from '../optimize/picture.js';
 import { looksLikeMbrd } from '../storage/mbrd.js';
 import { openFile } from '../storage/storage.js';
@@ -373,16 +372,9 @@ async function prepareFile(file) {
   // copy of it. Tried before the item exists rather than after it mounts, so
   // the card is never briefly the plain one; null is the common answer and
   // costs a single 16-byte read.
-  let cover = type === 'audio' && mayHaveArt(file.name)
+  const cover = type === 'audio' && mayHaveArt(file.name)
     ? await coverArt(file).then(art => art && addFile(art)).catch(() => null)
     : null;
-  // Nothing in the tags, so ask Last.fm - but only if somebody has said it may.
-  // Off unless a key has been entered, one request per album rather than per
-  // track, and a failure of any kind is the plain card this would have been
-  // anyway. See import/lastfm.js for the terms.
-  if (!cover && type === 'audio' && lastfmOn()) {
-    cover = await lastfmArt(file).then(art => art && addFile(art)).catch(() => null);
-  }
   // The hundred-pixel copy the board shows once it is zoomed out past the
   // detail rung - see makeThumb() for why a hundred, and canvas/stills.js for
   // the swap, which this reuses wholesale rather than inventing a second one.

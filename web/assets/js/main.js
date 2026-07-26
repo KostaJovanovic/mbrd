@@ -2,9 +2,7 @@
 // session, and expose the command set the sidebar and keyboard both drive.
 
 import { toast, el, shuffle } from './util.js';
-import {
-  formatLength, formatSize, scaleFrom, DEFAULT_SCALE, MAX_SCALE, MM_PER_INCH,
-} from './measure.js';
+import { formatLength, formatSize, scaleFrom, DEFAULT_SCALE, MM_PER_INCH } from './measure.js';
 import { ask } from './ui/dialog.js';
 import { VERSION } from './version.js';
 import {
@@ -25,11 +23,12 @@ import { initStills } from './canvas/stills.js';
 import { initInput } from './canvas/input.js';
 import { initDrop, pickFiles, pickCover, addNote } from './import/drop.js';
 import { arrange } from './arrange/arrangements.js';
+import { defaultSize, measureSize } from './canvas/renderers.js';
 import {
   initStorage, restoreSession, saveBoard, exportBoard, openBoard, newBoard, openFile, autosave,
   clearAllData,
 } from './storage/storage.js';
-import { flushNoteEdit } from './canvas/notes.js';
+import { flushNoteEdit, noteFloor } from './canvas/notes.js';
 import { initAssets, getAsset } from './storage/assets.js';
 import { initSidebar, close as closeSidebar } from './ui/sidebar.js';
 import { initMenu, openContextMenu, close as closeMenu } from './ui/menu.js';
@@ -112,6 +111,7 @@ const cmds = {
     requestAnimationFrame(() => cmds.editNote(item.id));
   },
   canEditNote: id => byId(id)?.type === 'note',
+  resetSize,
   // Image and video cards are already a picture; everything else can be given
   // one. Asked of the item rather than of the renderer because this is about
   // what the card *is*, not about which module happens to draw it.
@@ -449,18 +449,7 @@ async function scaleFromItem() {
   const said = parseFloat(answer);
   if (!(said > 0)) { toast('That is not a width', 'error'); return; }
   const mm = said * (units === 'imperial' ? MM_PER_INCH : 10);
-  const want = it.w / mm;
   setSetting('scale', scaleFrom(it.w, mm));
-  // Said out loud rather than clamped in silence. Hitting the ceiling means the
-  // board has been asked to measure something smaller than its own grid square
-  // can describe, and the readouts will all be off by the ratio - which is
-  // exactly the kind of quiet wrongness the whole measuring feature exists to
-  // prevent. See MAX_SCALE.
-  if (want > MAX_SCALE) {
-    toast(`That is finer than this board measures - it now reads `
-      + `${formatLength(it.w, board.settings.scale, units)}`, 'error');
-    return;
-  }
   toast(`Measured from ${it.name || 'that item'}`);
 }
 
@@ -566,6 +555,64 @@ async function saveWithCooldown() {
   paintSave();
 }
 
+/**
+ * Every selected item back to the size it came in at.
+ *
+ * The size an item is *born* at, which is not its file's pixel dimensions:
+ * measureSize() gives each type a standard area and lets the media supply only
+ * the aspect, so a 6000px photograph and a 400px one arrive as cards of the
+ * same weight and the board stays a board. Reproducing that here rather than
+ * remembering it on the item is what makes this survive a `.mbrd` written by an
+ * older version, and what stops a second field having to be kept true through
+ * every crop, cover swap and optimise.
+ *
+ * Centres and rotations are kept. A reset is an answer to "I dragged this
+ * corner and now it is wrong", and moving the card while fixing its size would
+ * be answering a question nobody asked.
+ *
+ * Measured from the bytes, so it is asynchronous, and the whole selection is
+ * measured before anything moves: half a group resized is not a state the board
+ * should be seen in, and it would be one undo step per item to get out of.
+ */
+async function resetSize() {
+  const items = board.items.filter(i => selection.has(i.id));
+  if (!items.length) return;
+
+  const step = baseStep();
+  const sized = await Promise.all(items.map(async it => {
+    const blob = getAsset(it.asset?.hash)?.blob;
+    // measureSize only reads the file for the two types with an aspect of their
+    // own; everything else answers from the type alone, so a card whose bytes
+    // have gone still resets.
+    const size = blob
+      ? await measureSize(it.type, blob).catch(() => defaultSize(it.type))
+      : defaultSize(it.type);
+    let { w, h } = size;
+    // A note may not be smaller than its own text - the same floor the resize
+    // grips respect. Measured at the width being proposed, because narrowing a
+    // note rewraps it and makes it taller.
+    if (it.type === 'note') h = Math.max(h, noteFloor(it.id, w));
+    // On a snapped board the size the item was born at is not on the lattice,
+    // and a card that came back off the grid would be a fix that broke
+    // something else. Same pass Rearrange makes, for the same reason.
+    return board.settings.snap ? latticeBox({ ...it, w, h }, step) : { w, h };
+  }));
+
+  const before = snapshotGeom(items.map(i => i.id));
+  // Tested before anything is applied, so a run that changes nothing leaves no
+  // history entry behind - an undo step that restores the state it was already
+  // in is a step somebody has to press twice to get anywhere. Said out loud for
+  // the same reason: a menu item that does nothing is indistinguishable from
+  // one that is broken.
+  if (before.every((g, i) => g.w === sized[i].w && g.h === sized[i].h)) {
+    toast(items.length === 1 ? 'That is already its own size' : 'Those are already their own size');
+    return;
+  }
+  applyGeom(before.map((g, i) => ({ ...g, w: sized[i].w, h: sized[i].h })));
+  commitGeom(items.length === 1 ? 'Reset size' : `Reset ${items.length} sizes`,
+    before, items.map(i => i.id));
+}
+
 /** Back to an ordinary Save button, cooldown abandoned. Used by a board load. */
 function resetSave() {
   saveReadyAt = 0;
@@ -617,7 +664,7 @@ function rearrange() {
   // see a whole rearrangement at once, cards are shapes and not subjects.
   const order = shuffle(items.map((_, i) => i));
 
-  // On a snapped board a rearrangement is a *re-lay*, sizes included. Placing
+// On a snapped board a rearrangement is a *re-lay*, sizes included. Placing
   // cards on the lattice and leaving them at 320x240 is the thing snapping is
   // for and does not do: the edges still miss every line, and the one gesture
   // that touches the whole board at once is the natural place to fix it.

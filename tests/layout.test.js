@@ -9,7 +9,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { arrange, ARRANGEMENTS } from '../web/assets/js/arrange/arrangements.js';
-import { gridStep, MIN_PX, MAX_PX } from '../web/assets/js/canvas/grid.js';
+import {
+  gridStep, MIN_PX, MAX_PX, MIN_PX_TOUCH, MAX_PX_TOUCH,
+} from '../web/assets/js/canvas/grid.js';
 import { farZoom, stillZoom, webZoom, thumbZoom, MIN_ZOOM, MAX_ZOOM } from '../web/assets/js/canvas/viewport.js';
 import { item } from './helpers.js';
 
@@ -226,11 +228,31 @@ test('spacing widens the layout', () => {
 
 test('the on-screen grid step stays inside its band at any zoom', () => {
   // The property that stops the grid becoming a solid fill zoomed out, or a
-  // single line zoomed in.
-  for (let z = 0.02; z <= 32; z *= 1.35) {
-    const px = gridStep(64, z) * z;
-    assert.ok(px >= MIN_PX && px <= MAX_PX, `step is ${px.toFixed(1)}px at zoom ${z.toFixed(3)}`);
+  // single line zoomed in. Both bands, because a phone has its own - and the
+  // touch one is passed outright rather than detected, since node has no
+  // pointer to ask about.
+  for (const [touch, min, max] of [[false, MIN_PX, MAX_PX], [true, MIN_PX_TOUCH, MAX_PX_TOUCH]]) {
+    for (let z = 0.02; z <= 32; z *= 1.35) {
+      const px = gridStep(64, z, touch) * z;
+      assert.ok(px >= min && px <= max,
+        `${touch ? 'touch' : 'mouse'} step is ${px.toFixed(1)}px at zoom ${z.toFixed(3)}`);
+    }
   }
+});
+
+test('two grid dots are never closer than 1.41 cm under a finger', () => {
+  // The whole point of the touch band, stated in the unit it was chosen in. A
+  // CSS pixel is 1/96 inch by the spec, which is the only conversion a browser
+  // offers - so this is the nominal centimetre, the same one measure.js uses.
+  const cmPerPx = 2.54 / 96;
+  assert.ok(MIN_PX_TOUCH * cmPerPx >= 1.41 - 1e-9,
+    `${(MIN_PX_TOUCH * cmPerPx).toFixed(3)} cm is under the floor`);
+  // And it really is a rise: the desktop band would have drawn them closer.
+  assert.ok(MIN_PX_TOUCH > MIN_PX);
+  // The factor of four between the ends is MAJOR, and both bands keep it - so
+  // the minor lattice at its tightest is exactly as dense as the major lattice
+  // at its loosest, and the board never gets tighter than the tier below it.
+  assert.equal(MAX_PX / MIN_PX, MAX_PX_TOUCH / MIN_PX_TOUCH);
 });
 
 test('the grid step is a power-of-two multiple of the base', () => {
