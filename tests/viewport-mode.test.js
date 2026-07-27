@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 import {
-  Viewport, mobileZoom, mobileHeaderHeight, MOBILE_HEADER_MIN,
+  Viewport, mobileZoom, mobileHeaderHeight,
 } from '../web/assets/js/canvas/viewport.js';
 import { axesVisible } from '../web/assets/js/canvas/grid.js';
 import { webVisible } from '../web/assets/js/canvas/web.js';
@@ -34,7 +34,11 @@ after(() => {
 });
 
 /** Where the board's top edge comes to rest: the pad plus the masthead. */
-const topEdgeY = (height = 720) => 32 + mobileHeaderHeight(height);
+const topEdgeY = (viewWidth = 360, boardWidth = 384) =>
+  32 + mobileHeaderHeight(boardWidth * mobileZoom(viewWidth, boardWidth));
+const assertNear = (actual, expected, message) =>
+  assert.ok(Math.abs(actual - expected) < 1e-9,
+    message || `${actual} should be approximately ${expected}`);
 
 const style = () => ({ setProperty() {} });
 const element = (width = 360, height = 720) => ({
@@ -109,13 +113,54 @@ test('Mobile masthead leaves descender room and its finite board follows the sty
   const rule = id => css.match(new RegExp(`#${id}\\s*\\{([^}]+)\\}`))?.[1] || '';
 
   assert.match(rule('mobile-board-title'), /line-height:\s*normal;/);
-  assert.match(rule('mobile-board-title'), /padding-bottom:\s*0\.2em;/);
+  // More below than above: overflow:hidden clips at the padding edge, and the
+  // descenders of g/j/y hang past the last line box - further when the Line
+  // height dial tightens it.
+  assert.match(rule('mobile-board-title'), /padding-block:\s*0\.2em\s+0\.45em;/);
   assert.match(rule('mobile-board-title'), /overflow-wrap:\s*anywhere;/);
   assert.match(rule('mobile-board-frame'), /top:\s*var\(--mobile-board-top,\s*0\);/);
   assert.match(rule('mobile-board-frame'), /height:\s*max\(0px,\s*calc\(/);
   assert.match(rule('mobile-board-frame'), /border-radius:\s*var\(--radius\);/);
+  assert.match(rule('mobile-board-frame'),
+    /background:\s*color-mix\(in srgb,\s*var\(--accent\)\s*var\(--mobile-board-accent\),\s*#fff\);/);
+  assert.match(rule('mobile-board-frame'),
+    /box-shadow:[^;]*color-mix\(in srgb,\s*var\(--ink\)\s*6%,\s*transparent\);/);
+  assert.match(css,
+    /data-whimsy="0"[^{}]*#mobile-board-frame\s*\{\s*--mobile-board-accent:\s*7%;\s*\}/);
+  assert.match(css,
+    /data-whimsy="2"[^{}]*#mobile-board-frame\s*\{\s*--mobile-board-accent:\s*4\.5%;\s*\}/);
   assert.match(grid, /topRadius:\s*r\.top\s*>=\s*0\s*\?\s*'var\(--radius\)'\s*:\s*'0px'/);
   assert.match(grid, /bottomRadius:\s*r\.bottom\s*<=\s*vp\.height\s*\?\s*'var\(--radius\)'\s*:\s*'0px'/);
+});
+
+test('Mobile masthead title preserves a trailing space while it is edited', async () => {
+  const main = await readFile(new URL('../web/assets/js/main.js', import.meta.url), 'utf8');
+  assert.match(main, /cleanBoardTitleDraft\(field\.textContent\)/);
+  assert.doesNotMatch(main, /cleanBoardTitleDraft\(field\.innerText\)/);
+});
+
+test('the top-stop pen opens persisted header typography controls', async () => {
+  const [html, css, module] = await Promise.all([
+    readFile(new URL('../web/index.html', import.meta.url), 'utf8'),
+    readFile(new URL('../web/assets/css/app.css', import.meta.url), 'utf8'),
+    readFile(new URL('../web/assets/js/ui/mobile-header.js', import.meta.url), 'utf8'),
+  ]);
+  assert.match(html, /id="mobile-header-edit-btn"[\s\S]*aria-controls="header-panel"/);
+  assert.match(html, /id="mobile-header-settings"/);
+  for (const id of [
+    'mobile-header-font', 'mobile-header-weight', 'mobile-header-size',
+    'mobile-header-stretch', 'mobile-header-italic', 'mobile-header-axes',
+  ]) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+  assert.match(css, /#mobile-header-edit-btn\s*\{[\s\S]*var\(--chrome-button-h\)/);
+  assert.match(module, /viewport\?\.atMobileTop\?\.\(\)/);
+  assert.match(module, /headerFontAxes/);
+  assert.match(module, /fontVariationSettings/);
+  // A hair below the box's centre, which is where the ink's own middle is - see
+  // app.css. Off by more than that and the title walks along the band.
+  assert.match(css,
+    /transform:\s*scaleY\(var\(--mobile-title-stretch,\s*1\)\);[\s\S]*transform-origin:\s*50%\s*52%;/);
 });
 
 test('Mobile viewport permits vertical movement only', () => {
@@ -143,35 +188,43 @@ test('fitting Mobile returns to the top without fitting the whole height', () =>
   ], 80);
 
   assert.equal(vp.pan.x, 0);
-  assert.equal(vp.toScreen(0, 384).y, topEdgeY());
+  assertNear(vp.toScreen(0, 384).y, topEdgeY());
 });
 
 test('Mobile viewport has side gutters and finite vertical bounds', () => {
   const vp = new Viewport(element(), element());
   vp.setBoardMode('mobile', 384, 384, -1216);
   vp.fit([]);
+  assert.equal(vp.atMobileTop(), true);
 
   assert.equal(vp.toScreen(-192, 0).x, 16);
   assert.equal(vp.toScreen(192, 0).x, 344);
   vp.panByScreen(0, 100000);
-  assert.equal(vp.toScreen(0, 384).y, topEdgeY(),
+  assertNear(vp.toScreen(0, 384).y, topEdgeY(),
     'the board cannot scroll past its top edge');
   vp.panByScreen(0, -100000);
+  assert.equal(vp.atMobileTop(), false);
   assert.equal(vp.toScreen(0, -1216).y, 688,
     'the board cannot scroll past its bottom edge');
 });
 
-test('the Mobile masthead is a third of the window, above the top edge', () => {
-  assert.equal(mobileHeaderHeight(720), 240);
-  assert.equal(mobileHeaderHeight(300), MOBILE_HEADER_MIN, 'a short window keeps a floor');
+test('the Mobile masthead keeps a 3:2 ratio with the board, above its top edge', () => {
+  assert.equal(mobileHeaderHeight(330), 220);
 
   const vp = new Viewport(element(), element());
   vp.setBoardMode('mobile', 384, 384, -1216);
   vp.fit([]);
-  assert.equal(vp.mobileHeaderPx(), 240);
+  assert.equal(vp.mobileScreenRect().width, 328);
+  assertNear(vp.mobileHeaderPx(), 328 / (3 / 2));
+  assertNear(vp.mobileScreenRect().width / vp.mobileHeaderPx(), 3 / 2);
   // The band stands on the top edge: its own top is the head of the viewport,
   // a pad down, and the board begins where it ends.
-  assert.equal(vp.toScreen(0, 384).y - vp.mobileHeaderPx(), 32);
+  assertNear(vp.toScreen(0, 384).y - vp.mobileHeaderPx(), 32);
+
+  const shortVp = new Viewport(element(360, 300), element(360, 300));
+  shortVp.setBoardMode('mobile', 384, 384, -1216);
+  assert.equal(shortVp.mobileHeaderPx(), vp.mobileHeaderPx(),
+    'screen height does not change the masthead');
 
   vp.setBoardMode('desktop');
   assert.equal(vp.mobileHeaderPx(), 0, 'Desktop has no masthead to make room for');
@@ -195,4 +248,13 @@ test('Mobile suppresses Desktop spatial guides without changing their settings',
   assert.equal(settings.axes, true);
   assert.equal(axesVisible(settings, 'desktop'), true);
   assert.equal(webVisible('desktop'), true);
+});
+
+test('Mobile board mode hides the ruler and zoom controls at every screen width', async () => {
+  const css = await readFile(new URL('../web/assets/css/app.css', import.meta.url), 'utf8');
+  const rule = /:root\[data-board-mode="mobile"\] #zoom-ctl,\s*:root\[data-board-mode="mobile"\] #scale-bar \{\s*display:\s*none;\s*\}/;
+  const match = css.match(rule);
+  assert.ok(match, 'visibility follows the selected board mode');
+  assert.ok(css.indexOf(match[0]) < css.indexOf('@media (max-width: 700px)'),
+    'the rule is not limited to a phone-sized viewport');
 });

@@ -68,6 +68,10 @@ const TOUCH_MIN_MM = 14.1;
 export const MIN_PX_TOUCH = Math.ceil(TOUCH_MIN_MM * PX_PER_INCH / MM_PER_INCH);
 /** The band keeps its factor of four, which is MAJOR - see the note above. */
 export const MAX_PX_TOUCH = MIN_PX_TOUCH * MAJOR;
+// At the supported 4px maximum weight, the largest dot reaches 6.7px from its
+// centre and the largest Harsh cross reaches 6.3px. Pulling Mobile's ink box in
+// by seven clips the complete marks centred on the physical board boundary.
+export const MOBILE_GRID_EDGE_CLEARANCE = 7;
 
 /** Axes are a Desktop spatial aid; Mobile keeps only the quieter lattice. */
 export const axesVisible = (settings = board.settings, mode = board.layoutMode) =>
@@ -126,20 +130,25 @@ export function boardGridStep(base, viewport, touch = onTouch()) {
  * intersection - the board entirely above or below the window - comes back with
  * a zero side, and paintGrid() draws nothing at all.
  */
-function inkBox(vp) {
+export function inkBox(vp) {
   const full = {
     x: 0, y: 0, w: vp.width, h: vp.height,
     topRadius: '0px', bottomRadius: '0px',
   };
   if (!vp.isMobile || !vp.mobileScreenRect) return full;
   const r = vp.mobileScreenRect();
-  const x = Math.max(0, r.left);
-  const y = Math.max(0, r.top);
+  const inset = MOBILE_GRID_EDGE_CLEARANCE;
+  const left = r.left + inset;
+  const top = r.top + inset;
+  const right = r.left + r.width - inset;
+  const bottom = r.bottom - inset;
+  const x = Math.max(0, left);
+  const y = Math.max(0, top);
   return {
     x,
     y,
-    w: Math.max(0, Math.min(vp.width, r.left + r.width) - x),
-    h: Math.max(0, Math.min(vp.height, r.bottom) - y),
+    w: Math.max(0, Math.min(vp.width, right) - x),
+    h: Math.max(0, Math.min(vp.height, bottom) - y),
     // Only round a physical board edge. When that edge has scrolled outside
     // the viewport, the canvas is clipped to the glass and must stay square
     // there instead of inventing a second pair of corners.

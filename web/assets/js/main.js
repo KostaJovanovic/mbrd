@@ -12,7 +12,7 @@ import {
   duplicateItems, select, setItemCover,
   setItemUpAxis, historyState, baseStep, mobileBoardWidth, mobileBoardTop,
   mobileBoardBottom, placeMobileItems, setTitle, markDirty,
-  recheckBoardGeometry, cleanBoardTitle,
+  recheckBoardGeometry, cleanBoardTitle, cleanBoardTitleDraft,
   setBoardMode as selectBoardMode,
 } from './state.js';
 import { latticeBox, itemBounds } from './geometry.js';
@@ -43,6 +43,7 @@ import { initScaleBar } from './ui/scalebar.js';
 import { initTrash } from './ui/trash.js';
 import { initAppearance, resetAppearance } from './ui/appearance.js';
 import { initFonts } from './ui/fonts.js';
+import { initMobileHeaderEditor, closePanel as closeHeaderPanel } from './ui/mobile-header.js';
 import { initAudio } from './canvas/audio.js';
 import { editNote, growNote } from './canvas/notes.js';
 
@@ -113,6 +114,7 @@ const cmds = {
   },
   resetAppearance,
   reload: reloadBoard,
+  restart: () => restartApp(),
 
   selectAll,
   undo, redo,
@@ -120,7 +122,10 @@ const cmds = {
     if (!selection.size) return;
     removeItems([...selection]);
   },
-  closeSidebar,
+  // Escape means "put the sheets away", and there are two of them now - the
+  // main panel and the masthead's. One command rather than two, because the key
+  // that closes a panel should not have to be told which panel is up.
+  closeSidebar: () => { closeSidebar(); closeHeaderPanel(); },
   editNote,
 
   // --- right-click menu ---
@@ -211,6 +216,7 @@ initAudio();
 bus.on('layout', () => syncBoardMode(true));
 syncBoardMode();
 initSidebar(cmds);
+initMobileHeaderEditor(vp);
 initItems(el('world'), vp);
 initWeb(el('world'), vp);
 initStills(el('world'), vp);
@@ -553,7 +559,10 @@ function editMobileTitle() {
   };
 
   const onInput = () => {
-    const clean = cleanBoardTitle(field.innerText);
+    // innerText omits a trailing space in a contenteditable. Reading it here
+    // made the sanitizer erase the separator before a second word could start;
+    // textContent keeps the character that the editor actually owns.
+    const clean = cleanBoardTitleDraft(field.textContent);
     if (clean === field.textContent) return;
     field.textContent = clean;
     const caret = document.createRange();
@@ -670,6 +679,47 @@ function reloadBoard() {
   paintPaper();
   vp.apply();
   toast('Board reloaded');
+}
+
+/**
+ * Start the page over.
+ *
+ * The refresh a phone does not have. Pull-to-refresh is off by design - the page
+ * does not scroll and `overscroll-behavior: none` in app.css sees to the rest,
+ * because every downward swipe on this board is a pan - and added to a home
+ * screen there is no address bar to reload from either. Without a button, a
+ * phone has no way back to a fresh page at all, which is the way to pick up a
+ * new version of the app and the way out of any state the repair paths below do
+ * not cover.
+ *
+ * Not the same act as "Reload board", and deliberately named apart from it:
+ * that one rebuilds the live board in place and keeps the session, the history
+ * and the view. This throws the page away, so the undo history goes with it and
+ * the board comes back through restoreSession().
+ *
+ * Which is why the write comes first and the reload only follows a write that
+ * worked. The autosave debounce is armed by every edit and a reload does not
+ * run it; pressing this a second after typing would otherwise lose that second.
+ * A save that fails asks before going anywhere - the answer to "your last edits
+ * are not stored" is not to reload on top of them.
+ */
+async function restartApp() {
+  flushNoteEdit();
+  if (!(await autosave())) {
+    const answer = await ask({
+      title: 'Restart anyway?',
+      body: 'This board could not be stored in this browser, so reloading the '
+        + 'page would come back to the last snapshot that was. Export it to a '
+        + 'file first if you want to keep what is on screen.',
+      keep: board.items.length ? 'Export first' : '',
+      cancel: 'Cancel',
+      go: 'Restart anyway',
+    });
+    if (answer === 'cancel') return false;
+    if (answer === 'keep') return (await exportBoard()) ? restartApp() : false;
+  }
+  location.reload();
+  return true;
 }
 
 /**

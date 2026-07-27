@@ -50,6 +50,52 @@ const MAX_FONTS = 8;
  */
 const live = new Map();
 
+const BUILTIN_HEADER_FACES = [
+  { label: 'Default', value: '', stack: '' },
+  {
+    label: 'Fraunces',
+    value: 'Fraunces',
+    stack: '"Fraunces", Georgia, serif',
+    axes: [
+      { tag: 'wght', min: 100, default: 700, max: 900 },
+      { tag: 'opsz', min: 9, default: 72, max: 144 },
+    ],
+  },
+  {
+    label: 'Iowan Old Style',
+    value: 'Iowan Old Style',
+    stack: '"Iowan Old Style", Palatino, serif',
+  },
+  {
+    label: 'Palatino',
+    value: 'Palatino Linotype',
+    stack: '"Palatino Linotype", "Book Antiqua", Palatino, serif',
+  },
+  { label: 'Georgia', value: 'Georgia', stack: 'Georgia, "Times New Roman", serif' },
+  {
+    label: 'Times New Roman',
+    value: 'Times New Roman',
+    stack: '"Times New Roman", Times, serif',
+  },
+  {
+    label: 'Geist (sans)',
+    value: 'Geist',
+    stack: '"Geist", system-ui, sans-serif',
+    axes: [{ tag: 'wght', min: 300, default: 700, max: 700 }],
+  },
+];
+
+const AXIS_FALLBACKS = {
+  wght: { min: 100, default: 400, max: 900 },
+  wdth: { min: 50, default: 100, max: 200 },
+  opsz: { min: 6, default: 14, max: 144 },
+  slnt: { min: -15, default: 0, max: 0 },
+  ital: { min: 0, default: 0, max: 1 },
+  GRAD: { min: -200, default: 0, max: 150 },
+  SOFT: { min: 0, default: 0, max: 100 },
+  WONK: { min: 0, default: 0, max: 1 },
+};
+
 export function initFonts() {
   bus.on('fonts:add', files => { addFontFiles(files).catch(() => {}); });
   // A board load replaces the faces wholesale, the same way it replaces the
@@ -75,6 +121,190 @@ export function customFaces() {
     value: `"${family}", system-ui, sans-serif`,
   }));
 }
+
+/** Faces offered by the Mobile masthead, including the board's own files. */
+export function headerFontOptions() {
+  const own = [...live.values()]
+    .sort((a, b) => a.family.localeCompare(b.family))
+    .map(({ family }) => ({
+      label: family,
+      value: family,
+      stack: `"${family}", system-ui, sans-serif`,
+    }));
+  return [
+    BUILTIN_HEADER_FACES[0],
+    ...own,
+    ...BUILTIN_HEADER_FACES.slice(1),
+  ].map(face => ({ ...face, axes: face.axes?.map(axis => ({ ...axis })) }));
+}
+
+/** A safe CSS stack for one value stored in `settings.mobileHeader.font`. */
+export function headerFontStack(value) {
+  if (!value) return '';
+  const builtin = BUILTIN_HEADER_FACES.find(face => face.value === value);
+  if (builtin) return builtin.stack;
+  return live.size && [...live.values()].some(entry => entry.family === value)
+    ? `"${value}", system-ui, sans-serif`
+    : '';
+}
+
+/**
+ * Variable axes belonging to a header face.
+ *
+ * An empty value follows the current display face, so the computed stack is
+ * used only to decide which bundled descriptor applies.
+ */
+export function headerFontAxes(value, computedStack = '') {
+  const chosen = value || computedStack;
+  const builtin = BUILTIN_HEADER_FACES.find(face =>
+    face.value && chosen.toLowerCase().includes(face.value.toLowerCase()));
+  if (builtin) return (builtin.axes || []).map(axis => ({ ...axis }));
+  const own = (board.settings.fonts || []).find(font =>
+    font.family === value ||
+    (!value && computedStack.toLowerCase().includes(font.family.toLowerCase())));
+  return Array.isArray(own?.axes) ? own.axes.map(axis => ({ ...axis })) : [];
+}
+
+/**
+ * The two cuts a family that is not variable can honestly be set in.
+ *
+ * Regular and Bold, because that is what a text face ships. The five-name list
+ * this replaced - Regular, Medium, Semibold, Bold, Black - offered three
+ * weights that no system serif has: the browser answers for them by picking
+ * the nearest real cut, so Medium and Semibold both painted the Regular and
+ * Black painted the Bold. Three controls that did nothing, and a stored weight
+ * that did not describe what was on the screen.
+ */
+export const STATIC_WEIGHTS = Object.freeze([
+  Object.freeze({ value: 400, label: 'Regular' }),
+  Object.freeze({ value: 700, label: 'Bold' }),
+]);
+
+/**
+ * The weights a header face offers when it has no `wght` axis to sweep.
+ *
+ * Empty means the control has no question to ask, and the caller takes it down
+ * rather than showing a dial with one stop on it. Two cases end up there:
+ *
+ *   A variable face, which is not this control's business at all - its weight
+ *   is a continuous axis and headerFontAxes() already describes it.
+ *
+ *   A face dropped onto this board with no axes, which is one static instance
+ *   of somebody's family. Its own weight is the only real one in the file;
+ *   every other value would be the browser drawing a fake bold over it, and a
+ *   slider that fakes its own effect is worse than no slider.
+ */
+export function headerFontWeights(value, computedStack = '') {
+  if (headerFontAxes(value, computedStack).some(axis => axis.tag === 'wght')) return [];
+  const own = (board.settings.fonts || []).find(font =>
+    font.family === value ||
+    (!value && computedStack.toLowerCase().includes(font.family.toLowerCase())));
+  if (own) return [];
+  return STATIC_WEIGHTS.map(weight => ({ ...weight }));
+}
+
+/** Axis tags carried in the conventional `Family[opsz,wght].woff2` filename. */
+export function axesFromFilename(filename) {
+  const tags = String(filename || '').match(/\[([^\]]+)\]/)?.[1]?.split(',') || [];
+  const seen = new Set();
+  const axes = [];
+  for (const raw of tags) {
+    const tag = raw.trim();
+    if (!/^[A-Za-z0-9 ]{4}$/.test(tag) || seen.has(tag)) continue;
+    seen.add(tag);
+    axes.push({ tag, ...(AXIS_FALLBACKS[tag] || { min: 0, default: 0, max: 100 }) });
+  }
+  return axes;
+}
+
+/**
+ * Read a font's OpenType `fvar` table.
+ *
+ * SFNT/OTF tables are direct slices. WOFF may deflate each table independently;
+ * WOFF2 transforms the entire stream and has no browser decoder API, so its
+ * normal bracketed filename is the honest fallback.
+ */
+export async function fontAxes(file) {
+  const fallback = axesFromFilename(file?.name);
+  if (!file?.arrayBuffer) return fallback;
+  try {
+    const found = findFvar(await file.arrayBuffer());
+    if (!found) return fallback;
+    let bytes = found.bytes;
+    if (found.compressed) {
+      if (typeof DecompressionStream !== 'function') return fallback;
+      const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate'));
+      bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+    }
+    return parseFvar(bytes) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function findFvar(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const view = new DataView(buffer);
+  if (bytes.length < 12) return null;
+  const magic = tagAt(bytes, 0);
+  if (magic === 'wOF2') return null;
+  if (magic === 'wOFF') {
+    if (bytes.length < 44) return null;
+    const count = view.getUint16(12);
+    if (count > 128 || 44 + count * 20 > bytes.length) return null;
+    for (let i = 0; i < count; i++) {
+      const at = 44 + i * 20;
+      if (tagAt(bytes, at) !== 'fvar') continue;
+      const offset = view.getUint32(at + 4);
+      const length = view.getUint32(at + 8);
+      const original = view.getUint32(at + 12);
+      if (!tableFits(bytes, offset, length) || original > 1024 * 1024) return null;
+      return {
+        bytes: bytes.slice(offset, offset + length),
+        compressed: length < original,
+      };
+    }
+    return null;
+  }
+
+  const count = view.getUint16(4);
+  if (count > 128 || 12 + count * 16 > bytes.length) return null;
+  for (let i = 0; i < count; i++) {
+    const at = 12 + i * 16;
+    if (tagAt(bytes, at) !== 'fvar') continue;
+    const offset = view.getUint32(at + 8);
+    const length = view.getUint32(at + 12);
+    if (!tableFits(bytes, offset, length) || length > 1024 * 1024) return null;
+    return { bytes: bytes.slice(offset, offset + length), compressed: false };
+  }
+  return null;
+}
+
+function parseFvar(bytes) {
+  if (bytes.length < 16) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const offset = view.getUint16(4);
+  const count = view.getUint16(8);
+  const size = view.getUint16(10);
+  if (!count || count > 16 || size < 20 || offset + count * size > bytes.length) return null;
+  const axes = [];
+  for (let i = 0; i < count; i++) {
+    const at = offset + i * size;
+    const tag = tagAt(bytes, at);
+    const min = fixed(view.getInt32(at + 4));
+    const fallback = fixed(view.getInt32(at + 8));
+    const max = fixed(view.getInt32(at + 12));
+    if (!/^[A-Za-z0-9 ]{4}$/.test(tag) || !(max > min)) continue;
+    axes.push({ tag, min, default: Math.max(min, Math.min(max, fallback)), max });
+  }
+  return axes.length ? axes : null;
+}
+
+const tableFits = (bytes, offset, length) =>
+  Number.isSafeInteger(offset) && Number.isSafeInteger(length) &&
+  offset >= 0 && length >= 0 && offset + length <= bytes.length;
+const tagAt = (bytes, at) => String.fromCharCode(...bytes.subarray(at, at + 4));
+const fixed = value => value / 65536;
 
 /**
  * A filename, reduced to something that can be a CSS family name.
@@ -114,17 +344,21 @@ async function addFontFiles(files) {
       toast(`${file.name} is too big to travel with a board`, 'error');
       continue;
     }
-    const hash = await addFile(file);
+    const [hash, axes] = await Promise.all([addFile(file), fontAxes(file)]);
     // Same bytes, already here. Nothing to add and nothing to say - dropping a
     // face twice is not an error, it is somebody making sure.
     if (list.some(f => f.hash === hash)) continue;
 
     const family = uniqueFamily(familyFor(file.name), list);
-    if (!(await register(hash, family))) {
+    if (!(await register(hash, family, axes))) {
       toast(`${file.name} is not a font this browser can read`, 'error');
       continue;
     }
-    setSetting('fonts', [...list, { hash, family }]);
+    setSetting('fonts', [...list, {
+      hash,
+      family,
+      ...(axes.length ? { axes } : {}),
+    }]);
     added++;
   }
   if (!added) return;
@@ -149,7 +383,7 @@ async function syncFonts() {
     document.fonts.delete(live.get(hash).face);
     live.delete(hash);
   }
-  for (const { hash, family } of want) await register(hash, family);
+  for (const { hash, family, axes } of want) await register(hash, family, axes);
   bus.emit('fonts');
 }
 
@@ -174,14 +408,18 @@ const fontList = () =>
  * would let the second silently replace the first in every menu that named it.
  * uniqueFamily() below is what stops that; this only has to be idempotent.
  */
-async function register(hash, family) {
+async function register(hash, family, axes = []) {
   if (live.has(hash)) return true;
   const url = assetURL(hash);
   if (!url) return false;
   try {
     // Loaded before it is added, so a file that is not a font is a caught
     // rejection here rather than a family in the menus that paints nothing.
-    const face = new FontFace(family, `url("${url}")`);
+    const weight = axes.find(axis => axis.tag === 'wght');
+    const descriptors = weight
+      ? { weight: `${Math.max(1, weight.min)} ${Math.min(1000, weight.max)}` }
+      : {};
+    const face = new FontFace(family, `url("${url}")`, descriptors);
     await face.load();
     document.fonts.add(face);
     live.set(hash, { face, family });
