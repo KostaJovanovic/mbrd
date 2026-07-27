@@ -21,7 +21,8 @@
 // on it, extracting their pigments into `vars` and parking `whimsy` where
 // their contrast and sharpness say it belongs.
 
-import { board, bus, markDirty, setSetting } from '../state.js';
+import { board, bus, setAppearance, setSetting } from '../state.js';
+import { whimsyControlsSnap } from '../layout-settings.js';
 import { clamp, readPrefJSON, toast, writePref } from '../util.js';
 import { assetURL } from '../storage/assets.js';
 import {
@@ -39,7 +40,7 @@ const STORE_KEY = 'mbrd.appearance';
  * the names are the ones printed under the track in index.html - what each
  * stop *does* is visible the moment you move it, so nothing here is captioned.
  */
-export const WHIMSY = ['Softish', 'Middle', 'Harsh'];
+export const WHIMSY = ['Softish', 'Middle', 'Harsh.'];
 
 /** Where a board starts: the middle, which is also the bare stylesheet. */
 const DEFAULT_WHIMSY = 1;
@@ -239,14 +240,18 @@ export function initAppearance(handlers = {}) {
   // choice back, including a choice the new list has just made selectable.
   bus.on('fonts', () => buildControls());
 
-  bus.on('board', () => {
+  const syncFromBoard = () => {
     const look = board.settings.appearance;
     const next = hasLook(look) ? clone(look) : readStored();
     if (sameLook(next, current)) return;
     current = next;
     apply(current);
     syncControls();
-  });
+  };
+  bus.on('board', syncFromBoard);
+  // Color and whimsy are shared, while advanced overrides are layout-local.
+  // Switching profiles therefore needs the same reconciliation as opening one.
+  bus.on('layout', syncFromBoard);
 }
 
 /** Slide the whole interface along the playful-to-plain axis. 0, 1 or 2. */
@@ -311,11 +316,10 @@ function reshade() {
  * main.js already repaints the grid on, and the payload is honest rather than
  * invented: persist() has just rewritten board.settings.appearance.
  *
- * The second is snapping. Harsh is the level where the board stops being a
- * scrapbook and starts being a drawing, and things landing on the lattice is
- * part of that - so the axis owns `snap` the same way it owns the tokens
- * above. Moving the slider sets it; toggling the checkbox afterwards is still
- * the user's call and stands until the slider moves again.
+ * The second is Desktop snapping. Harsh is the level where the Desktop board
+ * stops being a scrapbook and starts being a drawing, and things landing on
+ * the lattice is part of that. Mobile begins snapped independently and, once
+ * created, only its own checkbox may change that setting.
  *
  * Worth naming the straddle, because it is the one place this module reaches
  * outside appearance: whimsy follows the *user* across boards, while `snap` is
@@ -327,7 +331,7 @@ function reshade() {
  * board dirty before it has been touched.
  */
 function axisMoved(level) {
-  setSetting('snap', level === HARSH);
+  if (whimsyControlsSnap(board.layoutMode)) setSetting('snap', level === HARSH);
   // setSetting is silent when the value already matches, and it often will:
   // whenever the checkbox was hand-toggled to where the new level wants it, or
   // the move was between two levels that agree about snapping. So the repaint
@@ -753,8 +757,7 @@ function paintThemeColour() {
 
 function persist() {
   writePref(STORE_KEY, JSON.stringify(current));
-  board.settings.appearance = clone(current);
-  markDirty();
+  setAppearance(clone(current));
   onChange();
 }
 

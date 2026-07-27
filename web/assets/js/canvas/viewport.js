@@ -24,8 +24,9 @@ import { itemBounds } from '../geometry.js';
 
 export const MIN_ZOOM = 0.02;
 export const MAX_ZOOM = 32;
-export const MOBILE_SIDE_PAD = 32;
+export const MOBILE_SIDE_PAD = 16;
 export const MOBILE_TOP_PAD = 32;
+export const MOBILE_BOTTOM_PAD = 32;
 
 /** Fixed zoom that seats a Mobile board in the viewport without enlarging it. */
 export function mobileZoom(viewWidth, worldWidth, pad = MOBILE_SIDE_PAD) {
@@ -200,6 +201,7 @@ export class Viewport {
     this.boardMode = 'desktop';
     this.mobileWorldWidth = 0;
     this.mobileWorldTop = 0;
+    this.mobileWorldBottom = 0;
     this.width = 0;
     this.height = 0;
     this.left = 0;
@@ -242,22 +244,51 @@ export class Viewport {
     return this.mobileWorldTop + (MOBILE_TOP_PAD - this.cy) / this.zoom;
   }
 
+  /** Lowest pan that keeps the finite bottom edge just inside the viewport. */
+  _mobileBottomPan() {
+    return this.mobileWorldBottom + (this.cy - MOBILE_BOTTOM_PAD) / this.zoom;
+  }
+
   _constrainMobile() {
     if (!this.isMobile) return;
     this.pan.x = 0;
-    this.pan.y = Math.min(this.pan.y, this._mobileTopPan());
+    const top = this._mobileTopPan();
+    // If the whole board fits vertically, pin it to the top instead of giving
+    // it a small, meaningless travel range between two competing edges.
+    const bottom = Math.min(this._mobileBottomPan(), top);
+    this.pan.y = clamp(this.pan.y, bottom, top);
   }
 
-  /** Constrain the viewport to the fixed-width, downward-infinite board. */
-  setBoardMode(mode, worldWidth = this.mobileWorldWidth, worldTop = this.mobileWorldTop) {
-    this.stopAnim();
-    this.boardMode = mode === 'mobile' ? 'mobile' : 'desktop';
+  _setMobileBounds(worldWidth, worldTop, worldBottom) {
     this.mobileWorldWidth = Math.max(1, +worldWidth || 1);
     this.mobileWorldTop = Number.isFinite(+worldTop) ? +worldTop : 0;
+    const bottom = Number.isFinite(+worldBottom) ? +worldBottom : this.mobileWorldTop;
+    this.mobileWorldBottom = Math.min(bottom, this.mobileWorldTop);
+  }
+
+  /** Constrain the viewport to the content-sized Mobile board. */
+  setBoardMode(
+    mode,
+    worldWidth = this.mobileWorldWidth,
+    worldTop = this.mobileWorldTop,
+    worldBottom = this.mobileWorldBottom,
+  ) {
+    this.stopAnim();
+    this.boardMode = mode === 'mobile' ? 'mobile' : 'desktop';
+    this._setMobileBounds(worldWidth, worldTop, worldBottom);
     if (this.isMobile) {
       this.zoom = this._mobileZoom();
       this._constrainMobile();
     }
+    this.apply();
+  }
+
+  /** Refresh a Mobile board whose content has changed its lower edge. */
+  setMobileBounds(worldWidth, worldTop, worldBottom) {
+    this._setMobileBounds(worldWidth, worldTop, worldBottom);
+    if (!this.isMobile) return;
+    this.zoom = this._mobileZoom();
+    this._constrainMobile();
     this.apply();
   }
 
@@ -324,10 +355,11 @@ export class Viewport {
       const travelled = GLIDE_TAU * (1 - decay);
       this.pan.x = this.isMobile ? 0 : x0 - vx * travelled / z;
       const nextY = y0 + vy * travelled / z;
-      this.pan.y = this.isMobile ? Math.min(nextY, this._mobileTopPan()) : nextY;
+      this.pan.y = nextY;
+      this._constrainMobile();
       this.apply();
-      const hitTop = this.isMobile && nextY > this.pan.y;
-      this._anim = !hitTop && speed * decay > GLIDE_STOP ? requestAnimationFrame(tick) : null;
+      const hitEdge = this.isMobile && nextY !== this.pan.y;
+      this._anim = !hitEdge && speed * decay > GLIDE_STOP ? requestAnimationFrame(tick) : null;
     };
     this._anim = requestAnimationFrame(tick);
   }
@@ -445,7 +477,11 @@ export class Viewport {
       ? this._mobileZoom()
       : this.zoomLocked ? this.zoom : clamp(+zoom || 1, MIN_ZOOM, MAX_ZOOM);
     const requestedY = +pan?.y || 0;
-    const y1 = this.isMobile ? Math.min(requestedY, this._mobileTopPan()) : requestedY;
+    let y1 = requestedY;
+    if (this.isMobile) {
+      const top = this._mobileTopPan();
+      y1 = clamp(requestedY, Math.min(this._mobileBottomPan(), top), top);
+    }
     if (!(ms > 0)) return this.setView({ x: x1, y: y1 }, z1);
     const x0 = this.pan.x, y0 = this.pan.y, z0 = this.zoom;
     if (x1 === x0 && y1 === y0 && z1 === z0) return;
@@ -559,10 +595,13 @@ export class Viewport {
     const z = this.zoom;
     const mobileWidth = this.mobileWorldWidth * z;
     const mobileTop = (this.pan.y - this.mobileWorldTop) * z + this.cy;
+    const mobileBottom = (this.pan.y - this.mobileWorldBottom) * z + this.cy;
     this.el.style.setProperty('--mobile-board-left', `${this.cx - mobileWidth / 2}px`);
     this.el.style.setProperty('--mobile-board-width', `${mobileWidth}px`);
     this.el.style.setProperty('--mobile-board-top', `${mobileTop}px`);
+    this.el.style.setProperty('--mobile-board-bottom', `${mobileBottom}px`);
     this.el.style.setProperty('--mobile-board-ceiling-opacity', mobileTop >= 0 ? '1' : '0');
+    this.el.style.setProperty('--mobile-board-floor-opacity', mobileBottom <= this.height ? '1' : '0');
     // +panY (not -panY): items are laid out at cssY = -worldY, so the vertical
     // translate has to undo that flip as well as apply the pan.
     this.world.style.transform =

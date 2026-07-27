@@ -1,7 +1,10 @@
 // The slide-in sidebar: board actions, import, arrangement, view toggles.
 // It only reads state and calls commands - all the actual work lives elsewhere.
 
-import { board, bus, markDirty, setSetting, setArrangement, setTitle } from '../state.js';
+import {
+  board, bus, markDirty, setSetting, setArrangement, setTitle,
+  MOBILE_COLUMN_OPTIONS,
+} from '../state.js';
 import { ARRANGEMENTS } from '../arrange/arrangements.js';
 import { VERSION } from '../version.js';
 import { el, readPref, writePref } from '../util.js';
@@ -10,6 +13,12 @@ import { toUnits, formatLength, paperMm, PAPERS } from '../measure.js';
 
 let sidebar, menuBtn;
 const MODE_PREF = 'mbrd.boardMode';
+const MOBILE_LAYOUT_QUERY = '(max-width: 700px)';
+
+/** Match the same narrow-screen breakpoint used by app.css. */
+export function mobileLayoutDetected(media = query => globalThis.matchMedia?.(query)) {
+  return typeof media === 'function' && !!media(MOBILE_LAYOUT_QUERY)?.matches;
+}
 
 export function initSidebar(cmds) {
   sidebar = el('sidebar');
@@ -29,7 +38,8 @@ export function initSidebar(cmds) {
   // The file carries both arrangements, while each device remembers which one
   // it wants to work in. This lets the same board open Mobile on a phone and
   // Desktop on a laptop without either save changing the other's preference.
-  cmds.setBoardMode(readPref(MODE_PREF, 'desktop'));
+  const detected = mobileLayoutDetected() ? 'mobile' : 'desktop';
+  cmds.setBoardMode(readPref(MODE_PREF, detected));
 
   // --- arrangement ---
   const arrSel = el('arrangement');
@@ -51,6 +61,15 @@ export function initSidebar(cmds) {
     showSpacing();
     setSetting('spacing', +spacing.value);
   });
+
+  const columns = el('mobile-columns');
+  for (const count of MOBILE_COLUMN_OPTIONS) {
+    const option = document.createElement('option');
+    option.value = String(count);
+    option.textContent = `${count} spaces`;
+    columns.append(option);
+  }
+  columns.addEventListener('change', () => setSetting('mobileColumns', +columns.value));
 
   // --- view toggles ---
   bindCheck('opt-grid', 'grid');
@@ -186,11 +205,14 @@ function paint() {
   el('spacing').value = board.settings.spacing;
   el('spacing-out').textContent = board.settings.spacing + 'px';
   const mobile = board.layoutMode === 'mobile';
+  el('spacing').closest('.field').hidden = mobile;
+  el('mobile-columns-field').hidden = !mobile;
+  el('mobile-columns').value = String(board.settings.mobileColumns);
   const mode = el('board-mode');
   mode.setAttribute('aria-pressed', String(mobile));
   mode.title = mobile ? 'Switch to the Desktop arrangement' : 'Switch to the Mobile arrangement';
   el('board-mode-hint').textContent = mobile
-    ? 'Mobile is six spaces wide, starts ten above 0,0, and continues downward.'
+    ? `Mobile is ${board.settings.mobileColumns} spaces wide, starts six above 0,0, and grows with its contents.`
     : 'Desktop is the free two-dimensional arrangement.';
   const fit = sidebar.querySelector('[data-cmd="fit"]');
   if (fit) fit.textContent = mobile ? 'Back to top' : 'Zoom to fit';
@@ -222,6 +244,20 @@ function paint() {
  */
 function paintSheet() {
   const s = board.settings;
+  // A sheet is a Desktop question. Mobile is a narrow strip with a fixed width and
+  // no page to fit anything onto, and setSetting() refuses these three keys
+  // there - so the controls come down rather than sitting there doing nothing.
+  const mobile = board.layoutMode === 'mobile';
+  for (const node of [
+    el('opt-paper').closest('.field'),
+    el('paper-orient'),
+    el('opt-paper-resize').closest('.check'),
+    el('paper-hint'),
+  ]) {
+    if (node) node.hidden = mobile;
+  }
+  if (mobile) return;
+
   el('opt-paper').value = s.paper;
   el('opt-paper-resize').checked = !!s.paperResize;
   for (const btn of el('paper-orient').querySelectorAll('[data-orient]')) {

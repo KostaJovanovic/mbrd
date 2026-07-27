@@ -11,13 +11,15 @@ import assert from 'node:assert/strict';
 import {
   board, selection, loadBoard, serializeBoard, addItems, removeItems,
   restoreItems, emptyTrash, undo, redo, isDirty, markDirty, byId, topZ,
-  select, clearSelection, selectAll, duplicateItems,
+  select, deselect, clearSelection, selectAll, duplicateItems,
   copyItems, cutItems, pasteItems, clipboardSize, clipboardHasOurs, clipboardBounds,
   stuckTo, stuckFollowers, restick, STICK_MIN, setItemText, renameItem, NOTE_MAX,
   setSetting, snapshotGeom, applyGeom, commitGeom,
-  setBoardMode, mobileBoardWidth, mobileBoardTop,
+  setBoardMode, mobileBoardWidth, mobileBoardTop, mobileBoardBottom,
+  recheckBoardGeometry, baseStep, placeMobileItems,
+  raiseSelection, lowerSelection, visualStackOrder, selectionHasStackOverlap,
 } from '../web/assets/js/state.js';
-import { overlapFraction, CELL_GAP } from '../web/assets/js/geometry.js';
+import { itemBounds, overlapFraction, CELL_GAP } from '../web/assets/js/geometry.js';
 import { hash } from './helpers.js';
 
 const fresh = (items = []) => loadBoard({ title: 'T', items });
@@ -218,6 +220,14 @@ test('select all takes everything, clear takes nothing', () => {
   assert.equal(selection.size, 0);
 });
 
+test('deselect removes one selected item and leaves the rest', () => {
+  const [a, b] = addItems([photo(), photo()]);
+  select([a.id, b.id]);
+  assert.equal(deselect(a.id), true);
+  assert.deepEqual([...selection], [b.id]);
+  assert.equal(deselect(a.id), false);
+});
+
 test('deleting an item drops it from the selection', () => {
   const [a] = addItems([photo()]);
   select([a.id]);
@@ -398,6 +408,51 @@ test('a note over a photo is stuck to it', () => {
   const [pic] = addItems([photo({ x: 0, y: 0, w: 300, h: 300 })]);
   const [n] = addItems([note({ x: 0, y: 0, w: 80, h: 80 })]);
   assert.equal(stuckTo(byId(n.id))?.id, pic.id);
+});
+
+test('a sticky layer shares one external stack position', () => {
+  const [pic] = addItems([photo({ x: 0, y: 0, w: 300, h: 300 })]);
+  const [other] = addItems([photo({ x: 600, y: 0, w: 200, h: 200 })]);
+  const [n] = addItems([note({ x: 0, y: 0, w: 80, h: 80 })]);
+  assert.equal(stuckTo(byId(n.id))?.id, pic.id);
+
+  // Put an unrelated item between host and note in raw z, then move it across
+  // the pair without moving the note. The remembered sticky relation must make
+  // both members sit behind it, while the note remains above its host.
+  applyGeom([{ ...snapshotGeom([other.id])[0], x: 0 }]);
+  assert.ok(pic.z < other.z && other.z < n.z);
+  assert.deepEqual(visualStackOrder(), [pic.id, n.id, other.id]);
+});
+
+test('front and back move an entire sticky layer when its note is selected', () => {
+  const [pic] = addItems([photo({ x: 0, y: 0, w: 300, h: 300 })]);
+  const [other] = addItems([photo({ x: 600, y: 0, w: 200, h: 200 })]);
+  const [n] = addItems([note({ x: 0, y: 0, w: 80, h: 80 })]);
+  assert.equal(stuckTo(byId(n.id))?.id, pic.id);
+  applyGeom([{ ...snapshotGeom([other.id])[0], x: 0 }]);
+
+  select([n.id]);
+  raiseSelection();
+  assert.deepEqual(visualStackOrder(), [other.id, pic.id, n.id]);
+  assert.ok(pic.z > other.z && n.z > pic.z, 'the host and note rose together');
+
+  lowerSelection();
+  assert.deepEqual(visualStackOrder(), [pic.id, n.id, other.id]);
+  assert.ok(pic.z < n.z && n.z < other.z, 'the host and note fell together');
+});
+
+test('stack actions are useful only across another overlapping layer', () => {
+  const [pic] = addItems([photo({ x: 0, y: 0, w: 300, h: 300 })]);
+  const [n] = addItems([note({ x: 0, y: 0, w: 80, h: 80 })]);
+  assert.equal(stuckTo(byId(n.id))?.id, pic.id);
+  select([n.id]);
+  assert.equal(selectionHasStackOverlap(), false,
+    'a note covering its own host is overlap inside one layer');
+
+  const [other] = addItems([photo({ x: 0, y: 0, w: 100, h: 100 })]);
+  assert.equal(selectionHasStackOverlap(), true);
+  applyGeom([{ ...snapshotGeom([other.id])[0], x: 1000 }]);
+  assert.equal(selectionHasStackOverlap(), false);
 });
 
 test('a note nowhere near anything is stuck to nothing', () => {
@@ -604,7 +659,7 @@ test('serialising and reloading preserves the items', () => {
   assert.equal(board.items[1].meta.text, 'hi');
 });
 
-test('Mobile is a six-column vertical layout', () => {
+test('Mobile is a six-column grid layout', () => {
   fresh([
     photo({ id: 'wide', x: 300, y: 200, w: 800, h: 400 }),
     note({ id: 'note', x: -500, y: 100 }),
@@ -612,27 +667,267 @@ test('Mobile is a six-column vertical layout', () => {
 
   assert.ok(setBoardMode('mobile'));
   assert.equal(mobileBoardWidth(), 384);
-  assert.equal(mobileBoardTop(), 640);
+  assert.equal(mobileBoardTop(), 384);
   const [wide, noteItem] = board.items;
-  assert.equal(wide.w, mobileBoardWidth());
-  assert.equal(wide.h, 192, 'a wide item keeps its aspect ratio when first fitted');
+  const inset = baseStep() * CELL_GAP;
+  assert.equal(wide.w + 2 * inset, mobileBoardWidth());
+  assert.equal(wide.meta.presnap.w + 2 * inset, mobileBoardWidth());
+  assert.equal(
+    wide.meta.presnap.h,
+    wide.meta.presnap.w / 2,
+    'the pre-grid fit keeps the original aspect ratio',
+  );
+  assert.equal((wide.h + 2 * inset) / baseStep(), 3, 'the visible item spans three rows');
   for (const item of board.items) {
     assert.ok(item.x - item.w / 2 >= -mobileBoardWidth() / 2);
     assert.ok(item.x + item.w / 2 <= mobileBoardWidth() / 2);
     assert.equal(item.rot, 0);
   }
-  assert.equal(wide.y + wide.h / 2, mobileBoardTop(), 'the feed starts at its top edge');
-  assert.ok(noteItem.y + noteItem.h / 2 < wide.y - wide.h / 2);
+  assert.equal(
+    wide.y + wide.h / 2,
+    mobileBoardTop() - inset,
+    'the first item starts at the first inset grid edge',
+  );
+  assert.ok(Math.abs(
+    wide.y - wide.h / 2 - (noteItem.y + noteItem.h / 2) - 2 * inset,
+  ) < 1e-9, 'adjacent grid spans keep the lattice seam');
 });
 
-test('Mobile has a finite top and no lower geometry bound', () => {
+test('Mobile can switch between six- and eight-column grids', () => {
+  fresh(Array.from({ length: 4 }, (_, index) =>
+    photo({ id: `card-${index}`, w: 100, h: 100 })));
+  setBoardMode('mobile');
+  assert.equal(board.settings.mobileColumns, 6);
+  assert.equal(mobileBoardWidth(), 384);
+  assert.notEqual(byId('card-0').y, byId('card-3').y,
+    'six columns fit three two-cell cards per row');
+
+  setSetting('mobileColumns', 8);
+  assert.equal(board.settings.mobileColumns, 8);
+  assert.equal(mobileBoardWidth(), 512);
+  assert.equal(new Set(board.items.map(item => item.y)).size, 1,
+    'eight columns fit four two-cell cards in the first row');
+  for (let i = 0; i < board.items.length; i++) {
+    assert.ok(board.items[i].x - board.items[i].w / 2 >= -mobileBoardWidth() / 2);
+    assert.ok(board.items[i].x + board.items[i].w / 2 <= mobileBoardWidth() / 2);
+    for (let j = i + 1; j < board.items.length; j++) {
+      assert.equal(overlapFraction(board.items[i], board.items[j]), 0);
+    }
+  }
+
+  setBoardMode('desktop');
+  assert.equal(board.settings.mobileColumns, 6, 'Desktop does not inherit the Mobile width');
+  setSetting('mobileColumns', 8);
+  assert.equal(board.settings.mobileColumns, 6, 'Desktop cannot change the Mobile-only setting');
+  setBoardMode('mobile');
+  assert.equal(board.settings.mobileColumns, 8, 'the Mobile profile keeps its choice');
+});
+
+test('missing or invalid Mobile grid widths fall back to six columns', () => {
+  setBoardMode('mobile');
+  setSetting('mobileColumns', 8);
+  loadBoard({ items: [] });
+  assert.equal(board.settings.mobileColumns, 6,
+    'a new board does not inherit the previous board width');
+
+  loadBoard({
+    items: [],
+    layouts: {
+      mobile: { items: [], settings: { mobileColumns: 7 } },
+    },
+  });
+  assert.equal(board.settings.mobileColumns, 6);
+});
+
+test('a new Mobile board starts with grid snapping on', () => {
+  fresh();
+  assert.equal(board.settings.snap, false);
+  setBoardMode('mobile');
+  assert.equal(board.settings.snap, true);
+  fresh();
+  assert.equal(board.settings.snap, true, 'New keeps the Mobile default');
+  loadBoard({ title: 'Saved choice', settings: { snap: false } });
+  assert.equal(board.settings.snap, false, 'an opened board keeps its explicit choice');
+});
+
+test('a Mobile folder import is appended without overlaps', () => {
+  fresh();
+  setBoardMode('mobile');
+  addItems([photo({ id: 'existing', x: 0, y: 0, w: 300, h: 220 })]);
+  const imported = addItems([
+    photo({ x: 900, y: 100, w: 800, h: 400 }),
+    note({ x: -900, y: 100, w: 260, h: 180 }),
+    photo({ x: 0, y: 100, w: 320, h: 500 }),
+  ], 'Add folder', { avoidOverlap: true });
+
+  const all = [byId('existing'), ...imported];
+  for (let i = 0; i < all.length; i++) {
+    for (let j = i + 1; j < all.length; j++) {
+      assert.equal(overlapFraction(all[i], all[j]), 0,
+        `${all[i].id} overlaps ${all[j].id}`);
+    }
+  }
+  for (const item of imported) {
+    assert.ok(item.x - item.w / 2 >= -mobileBoardWidth() / 2);
+    assert.ok(item.x + item.w / 2 <= mobileBoardWidth() / 2);
+  }
+
+  setSetting('snap', false);
+  for (let i = 0; i < board.items.length; i++) {
+    for (let j = i + 1; j < board.items.length; j++) {
+      assert.equal(overlapFraction(board.items[i], board.items[j]), 0,
+        'leaving the grid restored an overlapping import');
+    }
+  }
+});
+
+test('Mobile placement packs a large batch into grid rows and columns', () => {
+  fresh();
+  setBoardMode('mobile');
+  const batch = Array.from({ length: 60 }, (_, i) =>
+    photo({ id: `dense-${i}`, x: 0, y: 0, w: [100, 164, 228][i % 3], h: 100 }));
+  const placed = placeMobileItems(batch, []);
+
+  for (let i = 0; i < placed.length; i++) {
+    for (let j = i + 1; j < placed.length; j++) {
+      assert.ok(overlapFraction(placed[i], placed[j]) < 1e-12,
+        `${placed[i].id} overlaps ${placed[j].id}`);
+    }
+  }
+
+  const step = baseStep();
+  const inset = step * CELL_GAP;
+  for (const item of placed) {
+    const bounds = itemBounds([item]);
+    assert.ok(Math.abs((bounds.x0 - inset) / step -
+      Math.round((bounds.x0 - inset) / step)) < 1e-9);
+    assert.ok(Math.abs((bounds.y0 - inset) / step -
+      Math.round((bounds.y0 - inset) / step)) < 1e-9);
+    assert.ok(Math.abs((item.w + 2 * inset) / step -
+      Math.round((item.w + 2 * inset) / step)) < 1e-9);
+    assert.ok(Math.abs((item.h + 2 * inset) / step -
+      Math.round((item.h + 2 * inset) / step)) < 1e-9);
+  }
+  assert.equal(placed[0].y, placed[1].y, 'compatible spans share a row');
+  assert.ok(placed[0].x < placed[1].x, 'the shared row fills left to right');
+  assert.ok(new Set(placed.slice(0, 6).map(item => item.x)).size > 1,
+    'packing uses more than the centre column');
+});
+
+test('Mobile rearrangement preserves visible sizes and stays inside cell seams', () => {
+  fresh();
+  setBoardMode('mobile');
+  const step = baseStep();
+  const inset = step * CELL_GAP;
+  const latticeSizes = [
+    { w: 2 * step - 2 * inset, h: step - 2 * inset },
+    { w: step - 2 * inset, h: 2 * step - 2 * inset },
+    { w: 3 * step - 2 * inset, h: 2 * step - 2 * inset },
+  ];
+  const items = latticeSizes.map((size, index) => photo({
+    id: `stable-${index}`,
+    ...size,
+    meta: {
+      presnap: {
+        x: 800 - index * 300,
+        y: index * 90,
+        w: 91 + index * 17,
+        h: 73 + index * 13,
+      },
+    },
+  }));
+
+  const first = placeMobileItems(items, [], { preserveSize: true });
+  const second = placeMobileItems(first, [], { preserveSize: true });
+  assert.deepEqual(
+    second.map(item => ({ w: item.w, h: item.h })),
+    latticeSizes,
+    'repeated rearrangement must not rebuild visible sizes from presnap',
+  );
+
+  for (const item of second) {
+    const bounds = itemBounds([item]);
+    assert.ok(Math.abs((bounds.x0 - inset) / step -
+      Math.round((bounds.x0 - inset) / step)) < 1e-9);
+    assert.ok(Math.abs((bounds.y1 + inset) / step -
+      Math.round((bounds.y1 + inset) / step)) < 1e-9);
+    assert.ok(bounds.x0 >= -mobileBoardWidth() / 2 + inset - 1e-9);
+    assert.ok(bounds.x1 <= mobileBoardWidth() / 2 - inset + 1e-9);
+  }
+  for (let i = 0; i < second.length; i++) {
+    for (let j = i + 1; j < second.length; j++) {
+      assert.equal(overlapFraction(second[i], second[j]), 0);
+    }
+  }
+});
+
+test('Mobile keeps freely moved items clear of the board border', () => {
+  fresh();
+  setBoardMode('mobile');
+  setSetting('snap', false);
+  const step = baseStep();
+  const inset = step * CELL_GAP;
+  const [item] = addItems([photo({
+    id: 'edge',
+    x: -10000,
+    y: 10000,
+    w: mobileBoardWidth(),
+    h: 100,
+  })]);
+  const bounds = itemBounds([item]);
+
+  assert.equal(item.w, mobileBoardWidth() - 2 * inset);
+  assert.ok(Math.abs(bounds.x0 - (-mobileBoardWidth() / 2 + inset)) < 1e-9);
+  assert.ok(Math.abs(bounds.x1 - (mobileBoardWidth() / 2 - inset)) < 1e-9);
+  assert.ok(Math.abs(bounds.y1 - (mobileBoardTop() - inset)) < 1e-9);
+});
+
+test('a Mobile rearrangement can restore its collision-free unsnapped grid', () => {
+  fresh([
+    photo({ id: 'left', x: 900, y: 0, w: 100, h: 100 }),
+    photo({ id: 'right', x: -900, y: 0, w: 164, h: 100 }),
+  ]);
+  setBoardMode('mobile');
+  const before = snapshotGeom(['left', 'right']);
+  const packed = placeMobileItems(board.items, []);
+  applyGeom(before.map((geometry, index) => ({
+    ...geometry,
+    x: packed[index].x,
+    y: packed[index].y,
+    w: packed[index].w,
+    h: packed[index].h,
+    rot: packed[index].rot,
+    presnap: packed[index].meta.presnap,
+  })));
+  commitGeom('Rearrange', before, ['left', 'right'], { preservePresnap: true });
+
+  const packedX = byId('left').x;
+  undo();
+  assert.equal(byId('left').x, before[0].x);
+  assert.deepEqual(byId('left').meta.presnap, before[0].presnap);
+  redo();
+  assert.equal(byId('left').x, packedX);
+
+  setSetting('snap', false);
+  assert.equal(byId('left').y, byId('right').y, 'the raw spans still share a row');
+  assert.equal(overlapFraction(byId('left'), byId('right')), 0);
+});
+
+test('Mobile is at least twenty-five rows tall and follows its lowest item', () => {
   fresh([photo({ id: 'card', w: 200, h: 100 })]);
   setBoardMode('mobile');
 
+  const step = baseStep();
+  const inset = step * CELL_GAP;
+  assert.equal(mobileBoardTop() - mobileBoardBottom(), 25 * step);
   applyGeom([{ ...snapshotGeom(['card'])[0], y: 100000 }]);
-  assert.equal(byId('card').y + byId('card').h / 2, mobileBoardTop());
+  assert.equal(byId('card').y + byId('card').h / 2, mobileBoardTop() - inset);
   applyGeom([{ ...snapshotGeom(['card'])[0], y: -100000 }]);
   assert.equal(byId('card').y, -100000);
+  assert.equal(
+    mobileBoardBottom(),
+    byId('card').y - byId('card').h / 2 - 15 * step,
+  );
 });
 
 test('Desktop and Mobile keep independent geometry in one file', () => {
@@ -648,8 +943,8 @@ test('Desktop and Mobile keep independent geometry in one file', () => {
   assert.equal(byId('card').y, -700);
   const data = serializeBoard();
   assert.equal(data.items[0].x, 500, 'the legacy item geometry stays Desktop');
-  assert.equal(data.layouts.desktop[0].x, 500);
-  assert.equal(data.layouts.mobile[0].y, -700);
+  assert.equal(data.layouts.desktop.items[0].x, 500);
+  assert.equal(data.layouts.mobile.items[0].y, -700);
   assert.equal('layoutMode' in data, false, 'the device choice does not travel');
 
   loadBoard(data);
@@ -658,16 +953,45 @@ test('Desktop and Mobile keep independent geometry in one file', () => {
   assert.equal(byId('card').x, 500);
 });
 
-test('content and settings are shared between both layouts', () => {
+test('content is shared between both layouts, settings are not', () => {
   fresh([note({ id: 'shared', name: 'before', meta: { text: 'same note' } })]);
   setBoardMode('mobile');
   renameItem('shared', 'after');
   setSetting('spacing', 36);
   setBoardMode('desktop');
 
+  // One set of items under two arrangements: a rename made in either is a
+  // rename of the same note.
   assert.equal(byId('shared').name, 'after');
   assert.equal(byId('shared').meta.text, 'same note');
-  assert.equal(board.settings.spacing, 36);
+
+  // Desktop spacing is private. Mobile has no spacing control and always packs
+  // edge-to-edge - see docs/layout-settings.md.
+  assert.equal(board.settings.spacing, 12, 'Desktop keeps its own spacing');
+  setBoardMode('mobile');
+  assert.equal(board.settings.spacing, 0, 'Mobile refuses a spacing value');
+});
+
+test('Mobile refuses a paper sheet however it is asked', () => {
+  fresh([photo({ id: 'card', w: 200, h: 100 })]);
+  setSetting('paper', 'a4');
+  setSetting('paperResize', true);
+
+  setBoardMode('mobile');
+  assert.equal(board.settings.paper, '', 'the switch takes the sheet down');
+  assert.equal(board.settings.paperResize, false);
+
+  // The switch-time fixup runs once; this is the write that used to get past it.
+  setSetting('paper', 'letter');
+  setSetting('paperLandscape', true);
+  setSetting('paperResize', true);
+  assert.equal(board.settings.paper, '');
+  assert.equal(board.settings.paperLandscape, false);
+  assert.equal(board.settings.paperResize, false);
+
+  setBoardMode('desktop');
+  assert.equal(board.settings.paper, 'a4', 'Desktop still has the sheet it had');
+  assert.equal(board.settings.paperResize, true);
 });
 
 // ---------------------------------------------------------------------------
@@ -778,6 +1102,24 @@ test('turning snapping on lays the board on the lattice', () => {
   // strict enough to tell the two zeroes apart.
   assert.equal(Math.abs((it.x - it.w / 2 - inset) % step), 0, 'left edge off the lattice');
   assert.equal(Math.abs((it.y - it.h / 2 - inset) % step), 0, 'bottom edge off the lattice');
+  assert.equal((it.w + 2 * inset) % step, 0);
+  assert.equal((it.h + 2 * inset) % step, 0);
+});
+
+test('rechecking a snapped board repairs geometry that drifted off the lattice', () => {
+  const [a] = addItems([boxAt(17, -23, 100, 100)]);
+  setSetting('snap', true);
+  const it = byId(a.id);
+  it.x += 13;
+  it.y -= 9;
+  it.w += 7;
+
+  recheckBoardGeometry();
+
+  const step = board.settings.gridStep;
+  const inset = step * CELL_GAP;
+  assert.equal(Math.abs((it.x - it.w / 2 - inset) % step), 0);
+  assert.equal(Math.abs((it.y - it.h / 2 - inset) % step), 0);
   assert.equal((it.w + 2 * inset) % step, 0);
   assert.equal((it.h + 2 * inset) % step, 0);
 });

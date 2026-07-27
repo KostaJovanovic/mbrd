@@ -18,11 +18,11 @@
 
 import { clamp } from '../util.js';
 import {
-  board, byId, selection, select, clearSelection, topZ, stackOrder,
+  board, byId, selection, select, deselect, clearSelection, topZ, stackOrder,
   snapshotGeom, applyGeom, commitGeom, bus, stuckFollowers,
   copyItems, cutItems, pasteItems, clipboardSize, clipboardBounds, clipboardHasOurs,
 } from '../state.js';
-import { zoomMs, travelMs, lodZoom } from './viewport.js';
+import { zoomMs, travelMs } from './viewport.js';
 import { itemInRect, latticeBox, latticeLow, cellInset, MIN_SIZE, MAX_SIZE } from '../geometry.js';
 import { itemIdFromEvent, ensureMounted, sync as syncItems, editItemName } from './items.js';
 import { gridStep } from './grid.js';
@@ -36,6 +36,8 @@ const TAP_MOVE_SLOP = 12;
 // Long enough not to fire on a slow tap, short enough to feel deliberate;
 // it is the interval both mobile platforms use for the same gesture.
 const LONG_PRESS_MS = 480;
+const LONG_PRESS_CONTEXT_GUARD_MS = 900;
+const LONG_PRESS_CONTEXT_GUARD_PX = 24;
 
 /** Whether two touch points form the two taps of one deliberate gesture. */
 export function isDoubleTap(previous, current) {
@@ -43,6 +45,58 @@ export function isDoubleTap(previous, current) {
   const elapsed = current.at - previous.at;
   return elapsed >= 0 && elapsed <= DOUBLE_TAP_MS
     && Math.hypot(current.x - previous.x, current.y - previous.y) <= DOUBLE_TAP_SLOP;
+}
+
+/** A selected item is the only item a drag may move. */
+export function needsSelectionBeforeMove(selected, id) {
+  return !selected.has(id);
+}
+
+/** Whether a native contextmenu repeats the menu a touch hold already opened. */
+export function repeatsLongPressContextMenu(opened, event) {
+  if (!opened || !event) return false;
+  const elapsed = event.at - opened.at;
+  return elapsed >= 0 && elapsed <= LONG_PRESS_CONTEXT_GUARD_MS
+    && Math.hypot(event.x - opened.x, event.y - opened.y) <= LONG_PRESS_CONTEXT_GUARD_PX;
+}
+
+/**
+ * Decide whether a press on a resize grip is still a tap or has become a drag.
+ *
+ * The southeast target shares the item's bottom-right corner with its menu
+ * button, so releasing it without a drag means "open actions". Every grip waits
+ * for real movement before resize starts, which also keeps a tap from snapping
+ * or committing geometry.
+ */
+export function resizeHandleAction(corner, start, current, released = false) {
+  if (!start || !current) return 'wait';
+  if (Math.hypot(current.x - start.x, current.y - start.y) >= DRAG_SLOP) {
+    return 'resize';
+  }
+  return released && corner === 'se' ? 'menu' : 'wait';
+}
+
+/**
+ * Release capture without trusting a separate hasPointerCapture() check.
+ *
+ * Capture is implicitly released when a pointer ends. Some engines can report
+ * it as held and then invalidate the pointer before releasePointerCapture()
+ * runs, so the check and release are necessarily one guarded operation.
+ */
+export function releasePointerSafely(element, pointerId) {
+  if (!element?.releasePointerCapture) return false;
+  try {
+    if (element.hasPointerCapture && !element.hasPointerCapture(pointerId)) {
+      return false;
+    }
+    element.releasePointerCapture(pointerId);
+    return true;
+  } catch (error) {
+    if (typeof DOMException !== 'undefined' && error instanceof DOMException) {
+      return false;
+    }
+    throw error;
+  }
 }
 
 /**
@@ -96,40 +150,24 @@ export function initInput(vp, cmds) {
   // finger arriving) and be cancelled by it.
   let pressTimer = 0;
   let pressAt = null;
+  let longPressMenu = null;
   let lastEmptyTap = null;
   let emptyTapCandidate = null;
-  // A finger resting on an unpicked item while the board is zoomed out - see
-  // needsTapFirst(). The gesture is a pan; this is what lets the lift still
-  // count as a tap if the finger never went anywhere.
+  // A pointer resting on an unpicked item - see needsTapFirst(). The gesture is
+  // a pan; this is what lets the lift still count as a tap if it never moved.
   let armSelect = null;
   const cancelPress = () => { clearTimeout(pressTimer); pressTimer = 0; pressAt = null; };
 
   /**
-   * Whether a finger landing on this item should pan the board rather than
+   * Whether a pointer landing on this item should pan the board rather than
    * pick the item up.
    *
-   * Below the detail rung a card on a phone is a fraction of a fingertip, and
-   * the board at that zoom is something you are *looking at* - the gesture
-   * anyone is making across it is a pan. Starting a move from the first press
-   * meant that pan quietly dragged whatever happened to be under the finger,
-   * usually without being noticed until the composition was already wrong, and
-   * the smaller the cards got the likelier it was.
-   *
-   * So at that zoom an item has to be picked first: one tap selects it, and a
-   * press on something already selected drags as it always did. That is the
-   * same two-step every phone photo library uses for the same reason, and it
-   * costs nothing at any zoom where a card is big enough to aim at.
-   *
-   * Touch only. A mouse pointer is one pixel wide and lands where it is sent,
-   * so there is no ambiguity to resolve and no reason to make a desk user tap
-   * twice. Held-modifier presses are excluded too: those are deliberate
-   * selection gestures and already say what they mean.
+   * Moving is always a two-step action: first select, then drag. That keeps a
+   * navigation gesture from quietly rearranging the board merely because it
+   * began over a card. A tap still selects on lift; movement cancels that
+   * pending selection and remains a pan.
    */
-  const needsTapFirst = (e, id) =>
-    e.pointerType === 'touch'
-    && vp.zoom < lodZoom()
-    && !selection.has(id)
-    && !(e.shiftKey || e.ctrlKey || e.metaKey);
+  const needsTapFirst = id => needsSelectionBeforeMove(selection, id);
 
   // ---- helpers ----------------------------------------------------------
 
@@ -344,7 +382,7 @@ export function initInput(vp, cmds) {
     bus.emit('geom', ids);
   }
 
-  function startResize(e, id, corner) {
+  function startResize(e, id, corner, origin = null) {
     const it = byId(id);
     if (!it) return;
     const before = snapshotGeom([id]);
@@ -353,7 +391,8 @@ export function initInput(vp, cmds) {
     // #viewport the moment this starts, and it leaves the handle behind as soon
     // as the corner moves - so the mark would thin out under a hand that is
     // still dragging it.
-    const node = e.target instanceof Element ? e.target.closest('.item') : null;
+    const node = origin?.node
+      || (e.target instanceof Element ? e.target.closest('.item') : null);
     node?.classList.add('is-resizing');
     // Squared up before the drag begins, if snapping is on and this box was
     // never on the lattice - a photograph imported at its own proportions, a
@@ -378,7 +417,7 @@ export function initInput(vp, cmds) {
       // Resizing a note changes how much of it is over what it is lying on, so
       // it is as much a reason to ask again as moving it is.
       driven: [id],
-      start: vp.toWorld(e.clientX, e.clientY),
+      start: vp.toWorld(origin?.x ?? e.clientX, origin?.y ?? e.clientY),
       box: { x: it.x, y: it.y, w: it.w, h: it.h },
       // Nothing is aspect-locked by default any more, media included. A corner
       // used to hold a photograph's proportion and let shift free it, on the
@@ -466,18 +505,34 @@ export function initInput(vp, cmds) {
       e.preventDefault();
       startPan(e);
     } else if (grip && id) {
-      startResize(e, id, grip.dataset.g);
+      // A grip press is only a candidate. Waiting for movement lets the
+      // southeast target double as the menu button it visually shares a corner
+      // with, and avoids touching snapped geometry on a plain tap.
+      g = {
+        kind: 'resize-pending',
+        id,
+        corner: grip.dataset.g,
+        x: e.clientX,
+        y: e.clientY,
+        node: target.closest('.item'),
+      };
     } else if (doubleTapDrag) {
       // Wait for movement before showing or applying the marquee. A plain
       // double tap keeps its existing "fit board" meaning in the dblclick
       // handler below; holding and dragging the second tap turns into select.
       const p = vp.toWorld(e.clientX, e.clientY);
       g = { kind: 'touch-marquee', clientX: e.clientX, clientY: e.clientY, x0: p.x, y0: p.y };
-    } else if (id && needsTapFirst(e, id)) {
+    } else if (id && needsTapFirst(id)) {
       // Pan now, decide on the lift. Nothing is selected here: a press that
       // turns into a drag has to leave the board exactly as a press on empty
       // space would, or the gate would still be moving the selection about.
-      armSelect = { pointerId: e.pointerId, id, x: e.clientX, y: e.clientY };
+      armSelect = {
+        pointerId: e.pointerId,
+        id,
+        x: e.clientX,
+        y: e.clientY,
+        additive: e.shiftKey || e.ctrlKey || e.metaKey,
+      };
       startPan(e);
     } else if (id) {
       const additive = e.shiftKey || e.ctrlKey || e.metaKey;
@@ -503,9 +558,11 @@ export function initInput(vp, cmds) {
         if (!p) return;
         emptyTapCandidate = null;
         lastEmptyTap = null;
+        armSelect = null;
         // Whatever the finger had started - a move, a pan, a marquee - it was
         // not that. Dropped rather than committed, since nothing moved.
         abortGesture();
+        longPressMenu = { x: p.x, y: p.y, at: performance.now() };
         openMenuAt(p.x, p.y, p.id);
       }, LONG_PRESS_MS);
     }
@@ -537,6 +594,18 @@ export function initInput(vp, cmds) {
       if (e.pointerType === 'touch') lastEmptyTap = null;
     }
     if (!g) return;
+
+    if (g.kind === 'resize-pending') {
+      const pending = g;
+      const action = resizeHandleAction(
+        pending.corner,
+        { x: pending.x, y: pending.y },
+        { x: e.clientX, y: e.clientY },
+      );
+      if (action !== 'resize') return;
+      cancelPress();
+      startResize(e, pending.id, pending.corner, pending);
+    }
 
     if (g.kind === 'pinch') {
       const [a, b] = [...pointers.values()];
@@ -700,12 +769,12 @@ export function initInput(vp, cmds) {
     // pointercancel is the system taking the gesture away - a notification
     // shade, a call - and nothing a person did.
     if (armSelect?.pointerId === e.pointerId) {
-      if (e.type === 'pointerup') select([armSelect.id]);
+      if (e.type === 'pointerup') select([armSelect.id], armSelect.additive);
       armSelect = null;
     }
     cancelPress();
     pointers.delete(e.pointerId);
-    if (el.hasPointerCapture?.(e.pointerId)) el.releasePointerCapture(e.pointerId);
+    releasePointerSafely(el, e.pointerId);
     if (!g) return;
     if (g.kind === 'pinch' && pointers.size >= 1) {
       // One finger lifted mid-pinch: fall back to a pan with the survivor.
@@ -727,7 +796,28 @@ export function initInput(vp, cmds) {
     const thrown = e.type === 'pointerup' && g.kind === 'pan'
       ? flingFrom(g, e.timeStamp)
       : null;
+    // A selected item is armed for movement on press. If the pointer never
+    // crossed the drag slop, the second click was a toggle instead: remove only
+    // that item so a group can be peeled back one card at a time.
+    const unpick = e.type === 'pointerup' && g.kind === 'move' && !g.moved
+      ? g.id
+      : null;
+    const menuTap = e.type === 'pointerup' && g.kind === 'resize-pending'
+      && resizeHandleAction(
+        g.corner,
+        { x: g.x, y: g.y },
+        { x: e.clientX, y: e.clientY },
+        true,
+      ) === 'menu'
+      ? { id: g.id, node: g.node, x: e.clientX, y: e.clientY }
+      : null;
     finishGesture();
+    if (unpick) deselect(unpick);
+    if (menuTap) {
+      const btn = menuTap.node?.querySelector('.item-menu');
+      const box = btn?.getBoundingClientRect();
+      openMenuAt(box?.right ?? menuTap.x, box?.bottom ?? menuTap.y, menuTap.id);
+    }
     if (thrown) vp.glide(thrown.vx, thrown.vy);
     if (tap) lastEmptyTap = tap;
     setPanCursor();
@@ -1020,6 +1110,21 @@ export function initInput(vp, cmds) {
   // and the browser's menu can't express any of them.
   el.addEventListener('contextmenu', e => {
     e.preventDefault();
+    // Some touch engines synthesize this before our hold timer, others after.
+    // Whichever arrives first owns the gesture; cancelling here prevents the
+    // other path from closing and rebuilding the same menu a moment later.
+    cancelPress();
+    armSelect = null;
+    abortGesture();
+    if (repeatsLongPressContextMenu(longPressMenu, {
+      x: e.clientX,
+      y: e.clientY,
+      at: performance.now(),
+    })) {
+      longPressMenu = null;
+      return;
+    }
+    longPressMenu = null;
     openMenuAt(e.clientX, e.clientY, itemIdFromEvent(e.target));
   });
 
