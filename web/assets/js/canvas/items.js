@@ -185,11 +185,23 @@ function syncView() {
     if (v.x0 >= syncedRect.x0 && v.x1 <= syncedRect.x1 &&
         v.y0 >= syncedRect.y0 && v.y1 <= syncedRect.y1) return;
   }
-  sync();
+  // No restack: looking around cannot change one item's rank against another, so
+  // the whole-board paintStack() the event paths run would be O(n log n) of
+  // arithmetic and a zIndex write per mounted node, spent every zoom frame to
+  // arrive at the order that is already there. Fresh mounts still get their
+  // rank from the cached index below.
+  sync(false);
 }
 
-/** Mount everything inside the padded viewport, detach everything outside it. */
-export function sync() {
+/**
+ * Mount everything inside the padded viewport, detach everything outside it.
+ *
+ * `restack` is false on the pure view-change path (see syncView): stacking is a
+ * fact about the items, not about where the eye is, so it is recomputed only
+ * when an item moves, arrives or leaves - the callers that emit 'items'/'geom' -
+ * and left alone on every frame of a pan or zoom.
+ */
+export function sync(restack = true) {
   if (!worldEl) return;
   const r = vp.visibleRect(cullMargin());
   syncedRect = r;
@@ -213,6 +225,10 @@ export function sync() {
         built++;
       }
       const node = el || build(item);
+      // A node built during a view change carries no restack behind it, so it
+      // takes its rank from the last one. Harmless on the restack path too - the
+      // paintStack() below overwrites it a moment later with the fresh order.
+      if (!el) node.style.zIndex = stackIndex.get(item.id) ?? 0;
       if (!node.isConnected) worldEl.append(node);
       const shadow = shadows.get(item.id);
       if (shadow && !shadow.isConnected) shadowLayerEl.append(shadow);
@@ -236,13 +252,13 @@ export function sync() {
       }
     }
   }
-  paintStack();
+  if (restack) paintStack();
   // Come back for the rest. One frame at a time and never more than one in
   // flight: another view change between now and then runs its own sync, which
   // is this same pass against a newer rectangle, and two of them queued would
   // build the same cards twice.
   if (owed) {
-    if (!catchUp) catchUp = requestAnimationFrame(() => { catchUp = 0; sync(); });
+    if (!catchUp) catchUp = requestAnimationFrame(() => { catchUp = 0; sync(restack); });
   } else if (catchUp) {
     cancelAnimationFrame(catchUp);
     catchUp = 0;
@@ -606,9 +622,19 @@ function placeBox(el, item) {
  * layer it crosses changes relative rank even though those items emitted no
  * geometry event of their own.
  */
+/**
+ * id -> effective z-index, cached from the last restack.
+ *
+ * Read when sync() mounts a fresh node on a view-change frame, which does not
+ * restack (see syncView): the new node still needs a rank, and the ranks did
+ * not change, so it takes the one this remembers rather than forcing the whole
+ * board to be recomputed for the sake of one card scrolling into view.
+ */
+let stackIndex = new Map();
+
 function paintStack() {
-  const order = new Map(visualStackOrder().map((id, index) => [id, index]));
-  for (const [id, el] of nodes) el.style.zIndex = order.get(id) ?? 0;
+  stackIndex = new Map(visualStackOrder().map((id, index) => [id, index]));
+  for (const [id, el] of nodes) el.style.zIndex = stackIndex.get(id) ?? 0;
 }
 
 function placeNode(id) {
