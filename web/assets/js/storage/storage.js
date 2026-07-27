@@ -20,7 +20,7 @@
 
 import { toast, busy, isDev, itemHashes, clearPrefs } from '../util.js';
 import {
-  board, serializeBoard, loadBoard, markDirty, isDirty, setTitle, bus,
+  board, serializeBoard, loadBoard, markDirty, isDirty, setTitle, bus, cleanBoardTitle,
 } from '../state.js';
 import { packBoard, unpackBoard, MIME } from './mbrd.js';
 import { allAssets, putAsset, clearAssets } from './assets.js';
@@ -715,9 +715,9 @@ export function initStorage() {
 
 // ---------------------------------------------------------------------------
 
-function fileNameFor(title) {
-  const base = (title || 'board').replace(/[\\/:*?"<>|]+/g, '-').trim() || 'board';
-  return base.replace(/\.mbrd$/i, '') + '.mbrd';
+export function fileNameFor(title) {
+  const base = cleanBoardTitle(title) || 'board';
+  return base.replace(/\.mbrd$/i, '').replace(/ /g, '_') + '.mbrd';
 }
 
 function stripExt(name) {

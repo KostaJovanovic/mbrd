@@ -65,15 +65,22 @@
        viewport.js publishes its live bounds while the items remain in the
        ordinary world layer and use the same renderers and settings. -->
   <div id="mobile-board-frame" aria-hidden="true"></div>
-  <div id="mobile-board-ceiling" aria-hidden="true"></div>
-  <div id="mobile-board-floor" aria-hidden="true"></div>
+  <!-- The Mobile masthead. A screen-space band standing on the strip's top
+       edge, a third of the window tall, with the board's name set across it.
+       The room above the edge is made by the pan clamp - see
+       mobileHeaderHeight() in canvas/viewport.js - so this is real space at the
+       head of the board rather than a plate laid over the first row of items,
+       and scrolling down carries it away like anything else on the board. -->
+  <div id="mobile-board-header"><h1 id="mobile-board-title"></h1></div>
   <svg id="origin-mark" viewBox="0 0 36 36" fill="none" stroke="currentColor" aria-hidden="true">
-    <!-- The ring and the pip come in both shapes, and the whimsy axis picks
-         one. A circle cannot be squared off with a border-radius the way a box
-         can - an SVG shape is the shape it is - so the plain end of the axis
-         gets its own geometry rather than a rounding of this one. Both are
-         inert markup; app.css shows exactly one pair. -->
+    <!-- The ring comes in all three shapes and the whimsy axis picks one: a
+         circle at the soft end, a rounded square in the middle where the cards
+         are rounded too, a hard square at the plain end. An SVG shape is the
+         shape it is - a circle cannot be squared off with a border-radius the
+         way a box can - so each stop gets its own geometry rather than a
+         rounding of one. All are inert markup; app.css shows exactly one. -->
     <circle class="om-ring" cx="18" cy="18" r="10" stroke-width="1.3"/>
+    <rect class="om-ring-rd" x="8" y="8" width="20" height="20" rx="5" stroke-width="1.3"/>
     <rect class="om-ring-sq" x="8" y="8" width="20" height="20" stroke-width="1.3"/>
     <circle class="om-pip" cx="18" cy="18" r="2" fill="currentColor" stroke="none"/>
     <rect class="om-pip-sq" x="16" y="16" width="4" height="4" fill="currentColor" stroke="none"/>
@@ -112,7 +119,7 @@
            carrying the words "Untitled board": that is the placeholder, which
            is both the italic aside it used to be styled as and the thing
            setTitle() already falls back to when handed nothing. -->
-      <input id="board-title" class="board-title" type="text" maxlength="120"
+      <input id="board-title" class="board-title" type="text" maxlength="16"
              placeholder="Untitled board" aria-label="Board name"
              autocomplete="off" spellcheck="false">
       <div class="btn-row">

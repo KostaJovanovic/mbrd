@@ -28,6 +28,32 @@ export const MOBILE_SIDE_PAD = 16;
 export const MOBILE_TOP_PAD = 32;
 export const MOBILE_BOTTOM_PAD = 32;
 
+/**
+ * The masthead above a Mobile board, as a share of the window's height.
+ *
+ * A third, and measured against the *screen* rather than the board: it is a
+ * title page, and what makes one work is that it fills the view you open on,
+ * whatever that view happens to be. A world-space band would have been a third
+ * of the screen on the phone it was sized for and a stripe on anything else.
+ *
+ * The room is made here, in the pan clamp, rather than by moving the board's
+ * top edge - the strip still starts exactly where mobileBoardTop() says, items
+ * still pack from its first row, and nothing in state.js has to know that a
+ * header exists. What the clamp does is stop the scroll a header lower, so the
+ * band above the edge is real space rather than something drawn over the items.
+ *
+ * The floor is for a short window - a laptop in Mobile mode with the browser
+ * chrome taking half of it - where a third of very little is not enough to set
+ * a name in and the header may as well be a fixed height instead.
+ */
+export const MOBILE_HEADER_FRACTION = 1 / 3;
+export const MOBILE_HEADER_MIN = 160;
+
+/** Height in screen px of the Mobile masthead, for a viewport `height` tall. */
+export function mobileHeaderHeight(height) {
+  return Math.max(MOBILE_HEADER_MIN, Math.round((+height || 0) * MOBILE_HEADER_FRACTION));
+}
+
 /** Fixed zoom that seats a Mobile board in the viewport without enlarging it. */
 export function mobileZoom(viewWidth, worldWidth, pad = MOBILE_SIDE_PAD) {
   const available = Math.max(1, viewWidth - pad * 2);
@@ -239,9 +265,20 @@ export class Viewport {
     return mobileZoom(this.width, this.mobileWorldWidth);
   }
 
-  /** Highest pan that keeps the finite top edge just inside the viewport. */
+  /** Screen-space height of the masthead standing above the board's top edge. */
+  mobileHeaderPx() {
+    return this.isMobile ? mobileHeaderHeight(this.height) : 0;
+  }
+
+  /**
+   * Highest pan that keeps the finite top edge just inside the viewport.
+   *
+   * A header lower than the edge itself: the top of a Mobile board is the
+   * masthead, and the strip begins under it.
+   */
   _mobileTopPan() {
-    return this.mobileWorldTop + (MOBILE_TOP_PAD - this.cy) / this.zoom;
+    return this.mobileWorldTop
+      + (MOBILE_TOP_PAD + this.mobileHeaderPx() - this.cy) / this.zoom;
   }
 
   /** Lowest pan that keeps the finite bottom edge just inside the viewport. */
@@ -591,17 +628,40 @@ export class Viewport {
     this.world.style.setProperty('--iz', iz);
   }
 
+  /**
+   * Where the finite Mobile board falls on the screen right now, in CSS px.
+   *
+   * `top` and `bottom` are the two horizontal edges as screen rows, which is
+   * why they are not a height: either can be off the screen, above it or below
+   * it, and the chrome that reads them cares which.
+   *
+   * Public because the grid needs the same rectangle - a lattice is drawn
+   * inside the board and nowhere else (see inkBox() in canvas/grid.js), and it
+   * used to arrive at these four numbers by repeating the arithmetic below.
+   */
+  mobileScreenRect() {
+    const z = this.zoom;
+    const width = this.mobileWorldWidth * z;
+    return {
+      left: this.cx - width / 2,
+      width,
+      top: (this.pan.y - this.mobileWorldTop) * z + this.cy,
+      bottom: (this.pan.y - this.mobileWorldBottom) * z + this.cy,
+    };
+  }
+
   _paint() {
     const z = this.zoom;
-    const mobileWidth = this.mobileWorldWidth * z;
-    const mobileTop = (this.pan.y - this.mobileWorldTop) * z + this.cy;
-    const mobileBottom = (this.pan.y - this.mobileWorldBottom) * z + this.cy;
-    this.el.style.setProperty('--mobile-board-left', `${this.cx - mobileWidth / 2}px`);
+    const { left: mobileLeft, width: mobileWidth, top: mobileTop, bottom: mobileBottom }
+      = this.mobileScreenRect();
+    this.el.style.setProperty('--mobile-board-left', `${mobileLeft}px`);
     this.el.style.setProperty('--mobile-board-width', `${mobileWidth}px`);
     this.el.style.setProperty('--mobile-board-top', `${mobileTop}px`);
     this.el.style.setProperty('--mobile-board-bottom', `${mobileBottom}px`);
-    this.el.style.setProperty('--mobile-board-ceiling-opacity', mobileTop >= 0 ? '1' : '0');
-    this.el.style.setProperty('--mobile-board-floor-opacity', mobileBottom <= this.height ? '1' : '0');
+    // The masthead hangs off the top edge, so it needs no position of its own -
+    // app.css subtracts this from --mobile-board-top and the band travels with
+    // the board as it scrolls away.
+    this.el.style.setProperty('--mobile-header-height', `${this.mobileHeaderPx()}px`);
     // +panY (not -panY): items are laid out at cssY = -worldY, so the vertical
     // translate has to undo that flip as well as apply the pan.
     this.world.style.transform =
@@ -624,8 +684,34 @@ export class Viewport {
     // crosshair passes exactly through the middle of the ring at every pan.
     const a = this.axisOrigin();
     if (this.originMark) {
-      this.originMark.style.left = a.x + 'px';
-      this.originMark.style.top = a.y + 'px';
+      // Moved with a transform, not with left/top, and that is the whole fix
+      // for a mark that sat visibly off its own crosshair.
+      //
+      // axisOrigin() lands on the *centre* of a device pixel, so the mark's box
+      // - 36 wide, centred by a -18px margin - starts on a half pixel. A
+      // browser does not paint a box on a half pixel: it snaps the border box
+      // to the device grid, rounding half away from zero, so the ring and the
+      // pip both moved half a pixel right and down of the crossing while the
+      // rule stayed put. Half a pixel does not sound like much until you count
+      // the clear space either side of the rule inside a 20px ring: eight
+      // pixels on one side and nine on the other, at every zoom and every pan,
+      // which is exactly the sort of thing the eye reads as "not centred"
+      // without being able to say why.
+      //
+      // A transform is not snapped - it is applied to the paint context rather
+      // than to a layout position - so the fractional part survives, and the
+      // box itself sits at a whole pixel where the browser has nothing to
+      // round.
+      //
+      // The centring rides along in the transform rather than staying behind
+      // as the -18px margin it used to be, and that is not tidiness: a margin
+      // is layout, so it is snapped too, and eighteen CSS pixels is twenty-two
+      // and a half device ones at the 125% that half of Windows runs at. Half
+      // a pixel back, by a different door. As a percentage of the element's own
+      // box it is the same eighteen pixels without the size being restated
+      // here, and it is spent inside the transform where nothing rounds it.
+      this.originMark.style.transform =
+        `translate(${a.x}px, ${a.y}px) translate(-50%, -50%)`;
     }
 
     this.bus.emit('change', this);

@@ -1,10 +1,16 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 
-import { Viewport, mobileZoom } from '../web/assets/js/canvas/viewport.js';
+import {
+  Viewport, mobileZoom, mobileHeaderHeight, MOBILE_HEADER_MIN,
+} from '../web/assets/js/canvas/viewport.js';
 import { axesVisible } from '../web/assets/js/canvas/grid.js';
 import { webVisible } from '../web/assets/js/canvas/web.js';
-import { mobileLayoutDetected } from '../web/assets/js/ui/sidebar.js';
+import {
+  createMobileSliderFocus,
+  mobileLayoutDetected,
+} from '../web/assets/js/ui/sidebar.js';
 
 const saved = {};
 
@@ -27,6 +33,9 @@ after(() => {
   }
 });
 
+/** Where the board's top edge comes to rest: the pad plus the masthead. */
+const topEdgeY = (height = 720) => 32 + mobileHeaderHeight(height);
+
 const style = () => ({ setProperty() {} });
 const element = (width = 360, height = 720) => ({
   style: style(),
@@ -45,6 +54,68 @@ test('the Mobile board follows the responsive layout on first use', () => {
     matches: query === '(max-width: 700px)',
   })), true);
   assert.equal(mobileLayoutDetected(() => ({ matches: false })), false);
+});
+
+test('Mobile sidebar isolates a range only for the active pointer gesture', () => {
+  const classes = () => {
+    const values = new Set();
+    return {
+      add: value => values.add(value),
+      remove: value => values.delete(value),
+      contains: value => values.has(value),
+    };
+  };
+  const root = { classList: classes() };
+  const range = {
+    classList: classes(),
+    matches: selector => selector === 'input[type="range"]',
+  };
+  const button = { matches: () => false };
+  const focus = createMobileSliderFocus(root, {
+    isMobile: () => true,
+  });
+
+  assert.equal(focus.begin(button, 4), false, 'non-range controls are untouched');
+  assert.equal(focus.begin(range, 4), true);
+  assert.equal(root.classList.contains('is-slider-focus'), true);
+  assert.equal(range.classList.contains('is-slider-active'), true);
+  assert.equal(focus.end(9), false, 'another pointer cannot finish the gesture');
+  assert.equal(focus.end(4), true);
+  assert.equal(root.classList.contains('is-slider-focus'), false,
+    'release restores the sidebar without a hold');
+  assert.equal(range.classList.contains('is-slider-active'), false);
+
+  assert.equal(focus.begin(range, 5), true);
+  focus.clear();
+  assert.equal(root.classList.contains('is-slider-focus'), false);
+  assert.equal(range.classList.contains('is-slider-active'), false);
+});
+
+test('sidebar slider focus is disabled above the Mobile breakpoint', () => {
+  const root = { classList: { add() {}, remove() {} } };
+  const range = {
+    classList: { add() {}, remove() {} },
+    matches: () => true,
+  };
+  const focus = createMobileSliderFocus(root, { isMobile: () => false });
+  assert.equal(focus.begin(range, 1), false);
+});
+
+test('Mobile masthead leaves descender room and its finite board follows the style radius', async () => {
+  const [css, grid] = await Promise.all([
+    readFile(new URL('../web/assets/css/app.css', import.meta.url), 'utf8'),
+    readFile(new URL('../web/assets/js/canvas/grid.js', import.meta.url), 'utf8'),
+  ]);
+  const rule = id => css.match(new RegExp(`#${id}\\s*\\{([^}]+)\\}`))?.[1] || '';
+
+  assert.match(rule('mobile-board-title'), /line-height:\s*normal;/);
+  assert.match(rule('mobile-board-title'), /padding-bottom:\s*0\.2em;/);
+  assert.match(rule('mobile-board-title'), /overflow-wrap:\s*anywhere;/);
+  assert.match(rule('mobile-board-frame'), /top:\s*var\(--mobile-board-top,\s*0\);/);
+  assert.match(rule('mobile-board-frame'), /height:\s*max\(0px,\s*calc\(/);
+  assert.match(rule('mobile-board-frame'), /border-radius:\s*var\(--radius\);/);
+  assert.match(grid, /topRadius:\s*r\.top\s*>=\s*0\s*\?\s*'var\(--radius\)'\s*:\s*'0px'/);
+  assert.match(grid, /bottomRadius:\s*r\.bottom\s*<=\s*vp\.height\s*\?\s*'var\(--radius\)'\s*:\s*'0px'/);
 });
 
 test('Mobile viewport permits vertical movement only', () => {
@@ -72,7 +143,7 @@ test('fitting Mobile returns to the top without fitting the whole height', () =>
   ], 80);
 
   assert.equal(vp.pan.x, 0);
-  assert.equal(vp.toScreen(0, 384).y, 32);
+  assert.equal(vp.toScreen(0, 384).y, topEdgeY());
 });
 
 test('Mobile viewport has side gutters and finite vertical bounds', () => {
@@ -83,10 +154,27 @@ test('Mobile viewport has side gutters and finite vertical bounds', () => {
   assert.equal(vp.toScreen(-192, 0).x, 16);
   assert.equal(vp.toScreen(192, 0).x, 344);
   vp.panByScreen(0, 100000);
-  assert.equal(vp.toScreen(0, 384).y, 32, 'the board cannot scroll past its top edge');
+  assert.equal(vp.toScreen(0, 384).y, topEdgeY(),
+    'the board cannot scroll past its top edge');
   vp.panByScreen(0, -100000);
   assert.equal(vp.toScreen(0, -1216).y, 688,
     'the board cannot scroll past its bottom edge');
+});
+
+test('the Mobile masthead is a third of the window, above the top edge', () => {
+  assert.equal(mobileHeaderHeight(720), 240);
+  assert.equal(mobileHeaderHeight(300), MOBILE_HEADER_MIN, 'a short window keeps a floor');
+
+  const vp = new Viewport(element(), element());
+  vp.setBoardMode('mobile', 384, 384, -1216);
+  vp.fit([]);
+  assert.equal(vp.mobileHeaderPx(), 240);
+  // The band stands on the top edge: its own top is the head of the viewport,
+  // a pad down, and the board begins where it ends.
+  assert.equal(vp.toScreen(0, 384).y - vp.mobileHeaderPx(), 32);
+
+  vp.setBoardMode('desktop');
+  assert.equal(vp.mobileHeaderPx(), 0, 'Desktop has no masthead to make room for');
 });
 
 test('Mobile viewport follows a changing content bottom', () => {

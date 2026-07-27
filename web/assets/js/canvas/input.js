@@ -25,7 +25,7 @@ import {
 import { zoomMs, travelMs } from './viewport.js';
 import { itemInRect, latticeBox, latticeLow, cellInset, MIN_SIZE, MAX_SIZE } from '../geometry.js';
 import { itemIdFromEvent, ensureMounted, sync as syncItems, editItemName } from './items.js';
-import { gridStep } from './grid.js';
+import { boardGridStep } from './grid.js';
 import { noteFloor } from './notes.js';
 
 const DRAG_SLOP = 3;      // screen px before a press becomes a drag
@@ -175,7 +175,7 @@ export function initInput(vp, cmds) {
   const snapLow = v => (board.settings.snap ? latticeLow(v, stepNow()) : v);
 
   /** The lattice actually on screen, which is what a gesture aims at. */
-  const stepNow = () => gridStep(board.settings.gridStep, vp.zoom);
+  const stepNow = () => boardGridStep(board.settings.gridStep, vp);
 
   /**
    * A box laid on the lattice - see latticeBox() in geometry.js.
