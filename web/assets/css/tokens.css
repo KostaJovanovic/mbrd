@@ -208,11 +208,19 @@
 
      Fraunces is self-hosted (see fonts.css); the stack behind it is the old
      system-serif list, so a board still sets sensibly before the file lands
-     or if it never does. */
-  --font-display: "Fraunces", "Iowan Old Style", "Palatino Linotype", Palatino,
-                  "Book Antiqua", "URW Palladio L", Georgia, "Times New Roman", serif;
-  --font-body:    "Geist", -apple-system, "Helvetica Neue", Helvetica,
-                  "Liberation Sans", system-ui, sans-serif;
+     or if it never does.
+
+     The two faces are also named on their own, once, and never redefined by a
+     tier: --font-display and --font-body move along the axis, but the whimsy
+     stop labels have to name each face directly - a specimen typeset in
+     whatever the slider currently resolves to shows the same font three times
+     at the plain end, which is the one thing those labels exist not to do. */
+  --font-serif: "Fraunces", "Iowan Old Style", "Palatino Linotype", Palatino,
+                "Book Antiqua", "URW Palladio L", Georgia, "Times New Roman", serif;
+  --font-sans:  "Geist", -apple-system, "Helvetica Neue", Helvetica,
+                "Liberation Sans", system-ui, sans-serif;
+  --font-display: var(--font-serif);
+  --font-body:    var(--font-sans);
   --font-mono:    ui-monospace, "Cascadia Mono", "SF Mono", Consolas, "DejaVu Sans Mono", monospace;
   /* The display sizes are tokens rather than numbers in app.css because they
      are the axis's loudest lever: three steps above the body here, closer to
@@ -652,9 +660,11 @@
   --sel-corner: 3.2px;
   --sel-reach:  14px;
 
-  /* One sans, top to bottom - and the serif is not merely unused here, it is
-     unnamed, so a board left at this end never downloads it. */
-  --font-display: "Geist", -apple-system, "Helvetica Neue", Helvetica, "Liberation Sans", system-ui, sans-serif;
+  /* One sans, top to bottom. The serif stays named in --font-serif, but the
+     only thing set in it at this end is the "Softish" stop label under the
+     whimsy slider - one word, so the italic subset is all a board left here
+     ever pulls, and the service worker has precached it anyway. */
+  --font-display: var(--font-sans);
   --font-body:    var(--font-display);
   --font-mono:    "Geist Mono", ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
   --display-italic: normal;

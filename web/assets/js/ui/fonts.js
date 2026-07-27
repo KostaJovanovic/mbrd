@@ -23,7 +23,7 @@
 //   unless it is taken back off - and the menu would offer a face the board
 //   does not carry, which then vanishes for whoever it is sent to.
 
-import { board, bus, markDirty } from '../state.js';
+import { board, bus, setSetting } from '../state.js';
 import { addFile, assetURL } from '../storage/assets.js';
 import { isFamily, toast } from '../util.js';
 
@@ -55,6 +55,7 @@ export function initFonts() {
   // A board load replaces the faces wholesale, the same way it replaces the
   // items. Not awaited: the menus repaint when each face resolves.
   bus.on('board:load', () => { syncFonts().catch(() => {}); });
+  bus.on('layout', () => { syncFonts().catch(() => {}); });
   syncFonts().catch(() => {});
 }
 
@@ -123,15 +124,13 @@ async function addFontFiles(files) {
       toast(`${file.name} is not a font this browser can read`, 'error');
       continue;
     }
-    board.settings.fonts = [...list, { hash, family }];
+    setSetting('fonts', [...list, { hash, family }]);
     added++;
   }
   if (!added) return;
-  markDirty();
   // Two signals, because two different things changed: the menus have new
   // entries, and the board now has bytes in it that were not there before.
   bus.emit('fonts');
-  bus.emit('settings', 'fonts');
   toast(added === 1 ? 'Face added' : `${added} faces added`);
 }
 

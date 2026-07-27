@@ -8,8 +8,11 @@ import { VERSION } from './version.js';
 import {
   board, bus, selection, selectAll, removeItems, setSetting,
   snapshotGeom, applyGeom, commitGeom, undo, redo, byId,
-  raiseSelection, lowerSelection, duplicateItems, select, setItemCover,
+  raiseSelection, lowerSelection, selectionHasStackOverlap,
+  duplicateItems, select, setItemCover,
   setItemUpAxis, historyState, baseStep, mobileBoardWidth, mobileBoardTop,
+  mobileBoardBottom, placeMobileItems,
+  recheckBoardGeometry,
   setBoardMode as selectBoardMode,
 } from './state.js';
 import { latticeBox, itemBounds } from './geometry.js';
@@ -101,7 +104,7 @@ const cmds = {
   // surface a key binding or a menu row would bind to if either ever wants it.
   lockZoom: () => {
     if (vp.isMobile) {
-      toast('Mobile zoom follows the six-column width');
+      toast(`Mobile zoom follows the ${board.settings.mobileColumns}-column width`);
       return;
     }
     vp.zoomLocked = !vp.zoomLocked;
@@ -109,6 +112,7 @@ const cmds = {
     toast(vp.zoomLocked ? `Zoom locked at ${zoomText()}` : 'Zoom unlocked');
   },
   resetAppearance,
+  reload: reloadBoard,
 
   selectAll,
   undo, redo,
@@ -121,6 +125,7 @@ const cmds = {
 
   // --- right-click menu ---
   contextMenu: (x, y, id, count) => openContextMenu(x, y, id, count),
+  selectionHasStackOverlap,
   raise: raiseSelection,
   lower: lowerSelection,
   duplicate: () => {
@@ -387,7 +392,7 @@ function paintZoom(force = false) {
   lock.setAttribute('aria-pressed', String(vp.zoomLocked));
   lock.setAttribute('aria-label', fixed ? 'Zoom fixed to Mobile board width'
     : vp.zoomLocked ? 'Unlock zoom' : 'Lock zoom');
-  lock.title = fixed ? 'Mobile board always fits its six-column width'
+  lock.title = fixed ? `Mobile board always fits its ${board.settings.mobileColumns}-column width`
     : vp.zoomLocked ? `Zoom held at ${text}` : 'Lock the zoom';
 }
 
@@ -395,7 +400,7 @@ bus.on('settings', key => {
   // The whimsy slider arrives here, and it moves the grid's colours as well as
   // its mark - so the resolved copy the Harsh crosses hold has to go back.
   if (key === 'appearance') resetGridInk();
-  if (key === 'gridStep') syncBoardMode();
+  if (key === 'gridStep' || key === 'mobileColumns') syncBoardMode();
   paintGrid(vp);
   if (key === 'hud') el('hud').hidden = !board.settings.hud;
   if (key === 'snap') paintSnap();
@@ -420,6 +425,8 @@ bus.on('items', paintCount);
 // it: what is on the board, what is picked, and how the board is measured.
 bus.on('selection', paintCount);
 bus.on('geom', paintCount);
+bus.on('items', syncMobileBoardBounds);
+bus.on('geom', syncMobileBoardBounds);
 bus.on('settings', paintCount);
 // A note can arrive with text already in it - pasted, duplicated, or loaded
 // from a file saved before it grew - so it is sized for what it says as soon
@@ -477,8 +484,42 @@ function openingView() {
  */
 function syncBoardMode(frame = false) {
   document.documentElement.dataset.boardMode = board.layoutMode;
-  vp.setBoardMode(board.layoutMode, mobileBoardWidth(), mobileBoardTop());
+  vp.setBoardMode(
+    board.layoutMode,
+    mobileBoardWidth(),
+    mobileBoardTop(),
+    mobileBoardBottom(),
+  );
   if (frame) openingView();
+}
+
+/** Follow the lowest Mobile item without resetting or reframing the view. */
+function syncMobileBoardBounds() {
+  if (board.layoutMode !== 'mobile') return;
+  vp.setMobileBounds(mobileBoardWidth(), mobileBoardTop(), mobileBoardBottom());
+}
+
+/**
+ * Rebuild the live board without replacing its state or clearing its history.
+ *
+ * This is the deliberate repair path for stale DOM measurements, viewport
+ * constraints, cached model renderings, and geometry that no longer agrees
+ * with an enabled snap lattice.
+ */
+function reloadBoard() {
+  flushNoteEdit();
+  recheckBoardGeometry();
+  resetGridInk();
+  resetModels();
+  resetItems();
+  syncBoardMode();
+  bus.emit('items');
+  bus.emit('selection');
+  bus.emit('settings', 'reload');
+  paintGrid(vp);
+  paintPaper();
+  vp.apply();
+  toast('Board reloaded');
 }
 
 /**
@@ -729,6 +770,7 @@ function paintSave() {
 function rearrange(items) {
   if (!items.length) return;
   const whole = items.length === board.items.length;
+  const mobile = board.layoutMode === 'mobile';
   const at = whole ? { x: 0, y: 0 } : middleOf(items);
   const before = snapshotGeom(items.map(i => i.id));
 
@@ -762,7 +804,7 @@ function rearrange(items) {
   // over a freshly chosen slot puts every card back exactly where it started,
   // which is a Rearrange button that does nothing at all.
   const step = baseStep();
-  const sized = board.settings.snap
+  const sized = board.settings.snap && !mobile
     ? items.map(it => { const b = latticeBox(it, step); return { w: b.w, h: b.h }; })
     : null;
   const laid = order.map(i => (sized ? { ...items[i], ...sized[i] } : items[i]));
@@ -770,15 +812,50 @@ function rearrange(items) {
   const spots = arrange(laid, {
     name: board.arrangement,
     center: at,
-    spacing: board.settings.spacing,
+    spacing: mobile ? 0 : board.settings.spacing,
     seed: (Math.random() * 0xffffffff) >>> 0,
   });
+  let placed = laid.map((item, slot) => ({
+    ...item,
+    x: spots[slot].x,
+    y: spots[slot].y,
+  }));
+  if (mobile) {
+    const moving = new Set(items.map(item => item.id));
+    const obstacles = whole ? [] : board.items.filter(item => !moving.has(item.id));
+    // The chosen arrangement still decides reading order on a narrow board:
+    // turn its slots into top-to-bottom, then left-to-right order before the
+    // Mobile packer fits that sequence into the selected-width lattice.
+    placed.sort((a, b) => b.y - a.y || a.x - b.x || a.id.localeCompare(b.id));
+    // Rearrangement changes order and position, not the sizes already visible
+    // on this layout. In particular, do not rebuild them from meta.presnap:
+    // that is the geometry to restore when snapping is disabled, not a sizing
+    // source for every later press of Rearrange.
+    placed = placeMobileItems(placed, obstacles, { preserveSize: true });
+  }
   // spots came back in shuffled order, so each one goes to the item that was
   // in that slot, not to the item at the same index in board.items.
   const target = new Array(items.length);
-  order.forEach((itemIndex, slot) => { target[itemIndex] = spots[slot]; });
+  if (mobile) {
+    const byItem = new Map(placed.map(item => [item.id, item]));
+    items.forEach((item, i) => { target[i] = byItem.get(item.id); });
+  } else {
+    order.forEach((itemIndex, slot) => { target[itemIndex] = placed[slot]; });
+  }
   applyGeom(before.map((g, i) => {
-    const at = { ...g, x: target[i].x, y: target[i].y };
+    const at = {
+      ...g,
+      x: target[i].x,
+      y: target[i].y,
+      ...(mobile ? {
+        w: target[i].w,
+        h: target[i].h,
+        rot: target[i].rot,
+        presnap: target[i].meta?.presnap
+          ? { ...target[i].meta.presnap }
+          : null,
+      } : {}),
+    };
     if (!sized) return at;
     // Through latticeBox a second time, now with the slot the engine chose and
     // the size it laid out for. The sizes are already on the lattice and it
@@ -790,13 +867,13 @@ function rearrange(items) {
   // again what it landed on. A rearrangement that left the old piles recorded
   // would have notes travelling with photographs they are now nowhere near.
   commitGeom(whole ? 'Rearrange' : `Rearrange ${items.length} items`,
-    before, before.map(g => g.id));
+    before, before.map(g => g.id), mobile ? { preservePresnap: true } : {});
   // A whole-board layout rebuilds around the origin, so the view has to follow
   // it there or the rearrangement happens off screen. Free is the exception:
   // it shakes each item where it stands, and flying to fit the whole board
   // afterwards would move things on screen far more than the shake did -
   // hiding the change inside a much larger one.
-  if (whole && board.arrangement !== 'free') vp.fit(board.items, 80, travelMs());
+  if (whole && (mobile || board.arrangement !== 'free')) vp.fit(board.items, 80, travelMs());
 }
 
 /** The centre of what a set of items covers. */
