@@ -45,7 +45,9 @@ export const DEFAULT_SETTINGS = {
   hud: false,
   gridStyle: 'dots',   // the only style; kept so old .mbrd files still load
   gridStep: 64,        // world px between minor grid lines, before zoom quantisation
-  mobileColumns: 6,    // Mobile-only strip width; validated to 6 or 8
+  // Desktop's inert compatibility value. Mobile profiles override this to the
+  // eight-space default below, while still accepting an explicit six.
+  mobileColumns: 6,
   // Gap used by the arrangement engine. 12 rather than the 32 it was: a
   // moodboard is a board of things read against each other, and a third of a
   // card's width of empty paper between every pair is the layout arguing that
@@ -75,11 +77,38 @@ export const DEFAULT_SETTINGS = {
 };
 
 export const BOARD_MODES = ['desktop', 'mobile'];
-export const MOBILE_COLUMNS = 6;
+export const BOARD_TITLE_MAX = 16;
+export const MOBILE_COLUMNS = 8;
 export const MOBILE_COLUMN_OPTIONS = [6, 8];
 export const MOBILE_TOP_ROWS = 6;
 export const MOBILE_MIN_ROWS = 25;
 export const MOBILE_BOTTOM_ROWS = 15;
+export const MOBILE_APPEARANCE_VARS = Object.freeze({
+  '--grid-alpha': '0.20',
+  '--grid-dot': '1px',
+});
+
+/**
+ * A short board name that can also be used as a portable filename stem.
+ *
+ * Windows has the narrowest ordinary filename alphabet, so its forbidden
+ * punctuation and device names define the shared rule. Spaces remain readable
+ * on the board; storage.js changes them to underscores only in exported files.
+ */
+export function cleanBoardTitle(value) {
+  let title = typeof value === 'string' ? value : '';
+  title = title
+    .replace(/\s+/g, ' ')
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, BOARD_TITLE_MAX)
+    .replace(/[. ]+$/g, '');
+  if (/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(title)) {
+    title = ('_' + title).slice(0, BOARD_TITLE_MAX);
+  }
+  return title;
+}
 
 function cloneSettings(settings) {
   return {
@@ -110,12 +139,16 @@ function defaultLayoutSettings(mode) {
     ...DEFAULT_SETTINGS,
     snap: mode === 'mobile',
     spacing: mode === 'mobile' ? 0 : DEFAULT_SETTINGS.spacing,
-    appearance: { palette: '', vars: {} },
+    mobileColumns: mode === 'mobile' ? MOBILE_COLUMNS : DEFAULT_SETTINGS.mobileColumns,
+    appearance: {
+      palette: '',
+      vars: mode === 'mobile' ? { ...MOBILE_APPEARANCE_VARS } : {},
+    },
     fonts: [],
   });
 }
 
-/** The only supported Mobile strip widths, with six as the safe fallback. */
+/** The only supported Mobile strip widths, with eight as the safe fallback. */
 export function mobileColumnCount(value = board.settings.mobileColumns) {
   return MOBILE_COLUMN_OPTIONS.includes(+value) ? +value : MOBILE_COLUMNS;
 }
@@ -1877,7 +1910,7 @@ export function setArrangement(name) {
 }
 
 export function setTitle(title) {
-  board.title = title || 'Untitled board';
+  board.title = cleanBoardTitle(title) || 'Untitled board';
   bus.emit('board');
 }
 
@@ -1962,7 +1995,7 @@ function normalizeBoard(data) {
     ? src.arrangement : 'spiral';
 
   return {
-    title: typeof src.title === 'string' && src.title ? src.title : 'Untitled board',
+    title: cleanBoardTitle(src.title) || 'Untitled board',
     view: {
       pan: { x: +src.view?.pan?.x || 0, y: +src.view?.pan?.y || 0 },
       zoom: +src.view?.zoom || 1,
@@ -2026,15 +2059,17 @@ function normalizeSettings(raw, mode) {
   const settings = raw && typeof raw === 'object' ? raw : {};
   const appearance = settings.appearance && typeof settings.appearance === 'object'
     ? settings.appearance : {};
-  const vars = appearance.vars && typeof appearance.vars === 'object'
-    ? { ...appearance.vars } : {};
+  const vars = {
+    ...(mode === 'mobile' ? MOBILE_APPEARANCE_VARS : {}),
+    ...(appearance.vars && typeof appearance.vars === 'object' ? appearance.vars : {}),
+  };
   return {
     ...DEFAULT_SETTINGS,
     snap: mode === 'mobile',
     ...settings,
     mobileColumns: mode === 'mobile'
       ? mobileColumnCount(settings.mobileColumns ?? MOBILE_COLUMNS)
-      : MOBILE_COLUMNS,
+      : DEFAULT_SETTINGS.mobileColumns,
     appearance: {
       ...(appearance.whimsy != null ? { whimsy: appearance.whimsy } : {}),
       palette: typeof appearance.palette === 'string' ? appearance.palette : '',

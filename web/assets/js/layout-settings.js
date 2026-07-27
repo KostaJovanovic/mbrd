@@ -19,6 +19,10 @@ const paletteToken = new Set([...PALETTE_TOKENS, ...TYPOGRAPHY_TOKENS]);
  */
 export const whimsyControlsSnap = mode => mode !== 'mobile';
 
+/** Some layout-local appearance controls still make sense on Desktop alone. */
+export const appearanceControlVisible = (name, mode) =>
+  name !== '--sidebar-w' || mode === 'desktop';
+
 /** Split one complete look into its board-wide and layout-local halves. */
 export function splitAppearance(look = {}) {
   const source = look && typeof look === 'object' ? look : {};
