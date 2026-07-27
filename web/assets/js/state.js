@@ -13,7 +13,7 @@
 //   board      - a whole new board was loaded, or the title/dirty flag changed
 //   trash      - something was thrown away, restored, or purged
 
-import { emitter, uid, isFamily, isHash, itemHashes, toast } from './util.js';
+import { clamp, emitter, uid, isFamily, isHash, itemHashes, toast } from './util.js';
 // The asset registry remembers the filename each item arrived under, which is
 // what a cleared name falls back to - see renameItem(). One-way: assets.js
 // depends on nothing but util.js, so this cannot close a cycle.
@@ -33,6 +33,31 @@ import { DEFAULT_SCALE, clampScale, PAPERS } from './measure.js';
 import { splitAppearance, mergeAppearance } from './layout-settings.js';
 
 export const bus = emitter();
+
+// `size` is the type's size, as a percentage of the strip's own width - see
+// #mobile-board-title in app.css. `stretch` is a percentage of that size taken
+// vertically only: 100 is the face as drawn, 160 is the same letters a little
+// over half again as tall and exactly as wide. Two numbers rather than one
+// because they are two questions - how big the name is set, and how tall the
+// letters stand in it - and a single control could only ever answer the first.
+// `leading` is the line height, and 100 is not "one em" - it is `normal`, the
+// face's own ascent and descent, which is what the masthead is set in until
+// somebody says otherwise. Off that stop the number is a straight multiple of
+// the font size, so 140 is 1.4. The one value that cannot be dialled is the
+// face's normal expressed as a number, because no face publishes it.
+export const DEFAULT_MOBILE_HEADER = Object.freeze({
+  font: '',
+  size: 13,
+  stretch: 100,
+  leading: 100,
+  weight: 700,
+  italic: false,
+  // On, because a name that runs off the side of the board is a name nobody can
+  // read. Off is for the case the wrap cannot answer: a long name set as one
+  // line on purpose, running to the board's edges and clipped by the band.
+  wrap: true,
+  axes: Object.freeze({}),
+});
 
 export const DEFAULT_SETTINGS = {
   grid: true,
@@ -74,6 +99,7 @@ export const DEFAULT_SETTINGS = {
   paperResize: false,
   appearance: { palette: '', vars: {} },
   fonts: [],           // faces dropped onto this board - see ui/fonts.js
+  mobileHeader: DEFAULT_MOBILE_HEADER,
 };
 
 export const BOARD_MODES = ['desktop', 'mobile'];
@@ -89,6 +115,22 @@ export const MOBILE_APPEARANCE_VARS = Object.freeze({
 });
 
 /**
+ * Clean a title while somebody is still typing it.
+ *
+ * Keep one trailing space: removing it on every input event makes entering a
+ * second word impossible. Final-only filename rules live in cleanBoardTitle().
+ */
+export function cleanBoardTitleDraft(value) {
+  let title = typeof value === 'string' ? value : '';
+  return title
+    .replace(/\s+/g, ' ')
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trimStart()
+    .slice(0, BOARD_TITLE_MAX);
+}
+
+/**
  * A short board name that can also be used as a portable filename stem.
  *
  * Windows has the narrowest ordinary filename alphabet, so its forbidden
@@ -96,13 +138,8 @@ export const MOBILE_APPEARANCE_VARS = Object.freeze({
  * on the board; storage.js changes them to underscores only in exported files.
  */
 export function cleanBoardTitle(value) {
-  let title = typeof value === 'string' ? value : '';
-  title = title
-    .replace(/\s+/g, ' ')
-    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '')
-    .replace(/\s+/g, ' ')
+  let title = cleanBoardTitleDraft(value)
     .trim()
-    .slice(0, BOARD_TITLE_MAX)
     .replace(/[. ]+$/g, '');
   if (/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(title)) {
     title = ('_' + title).slice(0, BOARD_TITLE_MAX);
@@ -117,7 +154,21 @@ function cloneSettings(settings) {
       ...(settings?.appearance || {}),
       vars: { ...(settings?.appearance?.vars || {}) },
     },
-    fonts: Array.isArray(settings?.fonts) ? settings.fonts.map(font => ({ ...font })) : [],
+    fonts: Array.isArray(settings?.fonts)
+      ? settings.fonts.map(font => {
+          const copy = { ...font };
+          if (Array.isArray(font?.axes) && font.axes.length) {
+            copy.axes = font.axes.map(axis => ({ ...axis }));
+          } else {
+            delete copy.axes;
+          }
+          return copy;
+        })
+      : [],
+    mobileHeader: {
+      ...(settings?.mobileHeader || DEFAULT_MOBILE_HEADER),
+      axes: { ...(settings?.mobileHeader?.axes || {}) },
+    },
   };
 }
 
@@ -145,6 +196,7 @@ function defaultLayoutSettings(mode) {
       vars: mode === 'mobile' ? { ...MOBILE_APPEARANCE_VARS } : {},
     },
     fonts: [],
+    mobileHeader: DEFAULT_MOBILE_HEADER,
   });
 }
 
@@ -1866,11 +1918,16 @@ export function setSetting(key, value) {
     if (board.layoutMode !== 'mobile') return;
     value = mobileColumnCount(value);
   }
+  if (key === 'mobileHeader') {
+    if (board.layoutMode !== 'mobile') return;
+    value = normalizeMobileHeader(value);
+    if (JSON.stringify(board.settings.mobileHeader) === JSON.stringify(value)) return;
+  }
   if (key === 'fonts') {
-    const fonts = Array.isArray(value) ? value.map(font => ({ ...font })) : [];
+    const fonts = normalizeFonts(value);
     board.settings.fonts = fonts;
-    board.layoutSettings.desktop.fonts = fonts.map(font => ({ ...font }));
-    board.layoutSettings.mobile.fonts = fonts.map(font => ({ ...font }));
+    board.layoutSettings.desktop.fonts = cloneSettings({ fonts }).fonts;
+    board.layoutSettings.mobile.fonts = cloneSettings({ fonts }).fonts;
     markDirty();
     bus.emit('settings', key);
     return;
@@ -2079,6 +2136,7 @@ function normalizeSettings(raw, mode) {
     },
     // Both names and hashes become declarations or asset paths downstream.
     fonts: normalizeFonts(settings.fonts),
+    mobileHeader: normalizeMobileHeader(settings.mobileHeader),
     scale: clampScale(settings.scale),
     units: settings.units === 'imperial' ? 'imperial' : 'metric',
     paper: PAPERS.some(p => p.id === settings.paper) ? settings.paper : '',
@@ -2107,14 +2165,65 @@ function normalizeFonts(raw) {
     if (!f || typeof f !== 'object') continue;
     if (!isHash(f.hash) || seen.has(f.hash) || !isFamily(f.family)) continue;
     seen.add(f.hash);
-    out.push({ hash: f.hash, family: f.family });
+    const font = { hash: f.hash, family: f.family };
+    const axes = normalizeFontAxes(f.axes);
+    if (axes.length) font.axes = axes;
+    out.push(font);
     if (out.length >= MAX_FONTS) break;
   }
   return out;
 }
 
+/** Variable axes a font record may carry from its OpenType `fvar` table. */
+function normalizeFontAxes(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const axis of raw) {
+    const tag = typeof axis?.tag === 'string' ? axis.tag : '';
+    const min = +axis?.min, max = +axis?.max, fallback = +axis?.default;
+    if (!/^[A-Za-z0-9 ]{4}$/.test(tag) || seen.has(tag)) continue;
+    if (![min, max, fallback].every(Number.isFinite) || !(max > min)) continue;
+    seen.add(tag);
+    out.push({ tag, min, default: clamp(fallback, min, max), max });
+    if (out.length >= MAX_FONT_AXES) break;
+  }
+  return out;
+}
+
+/** The Mobile title style, held to values its controls and CSS can represent. */
+function normalizeMobileHeader(raw) {
+  const header = raw && typeof raw === 'object' ? raw : {};
+  const axes = {};
+  if (header.axes && typeof header.axes === 'object') {
+    for (const [tag, value] of Object.entries(header.axes)) {
+      if (!/^[A-Za-z0-9 ]{4}$/.test(tag) || !Number.isFinite(+value)) continue;
+      axes[tag] = +value;
+      if (Object.keys(axes).length >= MAX_FONT_AXES) break;
+    }
+  }
+  return {
+    font: header.font === '' || isFamily(header.font) ? header.font : '',
+    size: clamp(+header.size || DEFAULT_MOBILE_HEADER.size, 7, 24),
+    // Half height to five times it. The top of that range already fills the
+    // band and spills past what its overflow will show, which is a thing
+    // somebody may well want on a title page; the floor is a floor because a
+    // scaleY heading for 0 erases the name rather than styling it.
+    stretch: clamp(+header.stretch || DEFAULT_MOBILE_HEADER.stretch, 50, 500),
+    // 100 is `normal` - the face's own line height. See the default above.
+    leading: clamp(+header.leading || DEFAULT_MOBILE_HEADER.leading, 60, 250),
+    weight: clamp(Math.round(+header.weight || DEFAULT_MOBILE_HEADER.weight), 1, 1000),
+    italic: !!header.italic,
+    // Absent means on. Every board written before this setting existed wrapped
+    // its name, and !!undefined would quietly turn that off for all of them.
+    wrap: header.wrap !== false,
+    axes,
+  };
+}
+
 /** Matches MAX_FONTS in ui/fonts.js - the two are one limit in two layers. */
 const MAX_FONTS = 8;
+const MAX_FONT_AXES = 16;
 
 /** The serialisable board, exactly as it lands in board.json. */
 export function serializeBoard() {

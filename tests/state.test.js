@@ -18,7 +18,7 @@ import {
   setBoardMode, mobileBoardWidth, mobileBoardTop, mobileBoardBottom,
   recheckBoardGeometry, baseStep, placeMobileItems,
   raiseSelection, lowerSelection, visualStackOrder, selectionHasStackOverlap,
-  setTitle, cleanBoardTitle, BOARD_TITLE_MAX,
+  setTitle, cleanBoardTitle, cleanBoardTitleDraft, BOARD_TITLE_MAX,
 } from '../web/assets/js/state.js';
 import { itemBounds, overlapFraction, CELL_GAP } from '../web/assets/js/geometry.js';
 import { hash } from './helpers.js';
@@ -35,7 +35,11 @@ beforeEach(() => {
 
 test('board names are short portable filename stems wherever they enter state', () => {
   assert.equal(BOARD_TITLE_MAX, 16);
+  assert.equal(cleanBoardTitleDraft('Mood '), 'Mood ',
+    'live editing keeps the trailing space needed to type another word');
+  assert.equal(cleanBoardTitleDraft('Mood Board'), 'Mood Board');
   assert.equal(cleanBoardTitle('  My / Board:*?  '), 'My Board');
+  assert.equal(cleanBoardTitle('Mood Board'), 'Mood Board');
   assert.equal(cleanBoardTitle('12345678901234567'), '1234567890123456');
   assert.equal(cleanBoardTitle('CON'), '_CON', 'Windows device names are not filenames');
   assert.equal(cleanBoardTitle('A title.  '), 'A title');
@@ -991,6 +995,49 @@ test('content is shared between both layouts, settings are not', () => {
   assert.equal(board.settings.spacing, 0, 'Mobile refuses a spacing value');
 });
 
+test('Mobile header typography stays with the Mobile layout and round-trips', () => {
+  fresh();
+  setBoardMode('mobile');
+  setSetting('mobileHeader', {
+    font: 'Fraunces',
+    size: 17.5,
+    stretch: 135,
+    weight: 625,
+    italic: true,
+    axes: { opsz: 72, BAD: 4, 'TOO-LONG': 9 },
+  });
+  assert.deepEqual(board.settings.mobileHeader, {
+    font: 'Fraunces',
+    size: 17.5,
+    stretch: 135,
+    // Not written above, so these land on their defaults - and 100 is the face's
+    // own line height rather than a multiple of anything, while wrap is on for
+    // every board that has never said otherwise. See DEFAULT_MOBILE_HEADER.
+    leading: 100,
+    weight: 625,
+    italic: true,
+    wrap: true,
+    axes: { opsz: 72 },
+  });
+
+  const data = serializeBoard();
+  setBoardMode('desktop');
+  assert.equal(board.settings.mobileHeader.size, 13,
+    'Desktop retains its untouched profile');
+  setSetting('mobileHeader', { size: 24 });
+  assert.equal(board.settings.mobileHeader.size, 13,
+    'Desktop cannot write a Mobile-only setting');
+
+  loadBoard(data);
+  setBoardMode('mobile');
+  assert.equal(board.settings.mobileHeader.size, 17.5);
+  assert.equal(board.settings.mobileHeader.stretch, 135);
+  assert.equal(board.settings.mobileHeader.leading, 100);
+  assert.equal(board.settings.mobileHeader.weight, 625);
+  assert.equal(board.settings.mobileHeader.italic, true);
+  assert.deepEqual(board.settings.mobileHeader.axes, { opsz: 72 });
+});
+
 test('Mobile refuses a paper sheet however it is asked', () => {
   fresh([photo({ id: 'card', w: 200, h: 100 })]);
   setSetting('paper', 'a4');
@@ -1273,6 +1320,28 @@ test('a well-formed font list is carried through', () => {
     { hash: FONT_HASH, family: 'Test Face' },
     { hash: FONT_HASH_2, family: 'Other' },
   ]);
+});
+
+test('custom font axes survive but malformed axis metadata does not', () => {
+  loadBoard({ title: 'T', items: [], settings: { fonts: [
+    {
+      hash: FONT_HASH,
+      family: 'Variable Face',
+      axes: [
+        { tag: 'wght', min: 100, default: 425, max: 900 },
+        { tag: 'bad', min: 0, default: 0, max: 1 },
+        { tag: 'opsz', min: 9, default: 500, max: 144 },
+      ],
+    },
+  ] } });
+  assert.deepEqual(board.settings.fonts, [{
+    hash: FONT_HASH,
+    family: 'Variable Face',
+    axes: [
+      { tag: 'wght', min: 100, default: 425, max: 900 },
+      { tag: 'opsz', min: 9, default: 144, max: 144 },
+    ],
+  }]);
 });
 
 test('a font entry that could break a stylesheet is dropped', () => {

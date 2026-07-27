@@ -10,13 +10,35 @@ import assert from 'node:assert/strict';
 
 import { arrange, ARRANGEMENTS } from '../web/assets/js/arrange/arrangements.js';
 import {
-  gridStep, boardGridStep, MIN_PX, MAX_PX, MIN_PX_TOUCH, MAX_PX_TOUCH,
+  gridStep, boardGridStep, inkBox, MOBILE_GRID_EDGE_CLEARANCE,
+  MIN_PX, MAX_PX, MIN_PX_TOUCH, MAX_PX_TOUCH,
 } from '../web/assets/js/canvas/grid.js';
 import { farZoom, stillZoom, webZoom, thumbZoom, MIN_ZOOM, MAX_ZOOM } from '../web/assets/js/canvas/viewport.js';
 import { item } from './helpers.js';
 
 const items = n => Array.from({ length: n }, (_, i) => item({ id: `i${i}`, w: 100, h: 80 }));
 const named = ARRANGEMENTS.map(a => a.id);
+
+test('Mobile grid ink excludes complete marks centred on board edges', () => {
+  const box = inkBox({
+    width: 400,
+    height: 800,
+    isMobile: true,
+    mobileScreenRect: () => ({
+      left: 20,
+      top: 30,
+      width: 320,
+      height: 900,
+      bottom: 930,
+    }),
+  });
+
+  assert.equal(MOBILE_GRID_EDGE_CLEARANCE, 7);
+  assert.equal(box.x, 27);
+  assert.equal(box.y, 37);
+  assert.equal(box.w, 306);
+  assert.equal(box.h, 763);
+});
 
 // ---------------------------------------------------------------------------
 // Arrangements

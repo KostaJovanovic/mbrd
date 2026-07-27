@@ -237,6 +237,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
    in tone between the sheet and the surround, which is what says "off the
    board" without drawing anything at all. */
 #mobile-board-frame {
+  /* Middle: a white sheet still carrying enough of the palette to belong to
+     the board. Softish and Harsh adjust only this share below. */
+  --mobile-board-accent: 6%;
   display: none;
   position: absolute;
   top: var(--mobile-board-top, 0);
@@ -245,14 +248,19 @@ button, input, select, textarea { font: inherit; color: inherit; }
   height: max(0px, calc(var(--mobile-board-bottom, 0px) - var(--mobile-board-top, 0px)));
   box-sizing: border-box;
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--paper-card) 8%, transparent);
-  box-shadow: 0 0 0 100vmax color-mix(in srgb, var(--ink) 4%, transparent);
+  background: color-mix(in srgb, var(--accent) var(--mobile-board-accent), #fff);
+  /* One shade over the whole surround. Six percent is a small step from the
+     old four, but enough to keep a near-white sheet legible at every palette. */
+  box-shadow: 0 0 0 100vmax color-mix(in srgb, var(--ink) 6%, transparent);
   pointer-events: none;
 }
-/* The masthead standing on the board's top edge - see viewport.js for how the
-   room above the edge is made. Hung off --mobile-board-top rather than pinned
-   to the window, so it travels with the board and scrolls away for good; the
-   ceiling's wash is already behind it, and this adds no background of its own.
+:root[data-whimsy="0"] #mobile-board-frame { --mobile-board-accent: 7%; }
+:root[data-whimsy="2"] #mobile-board-frame { --mobile-board-accent: 4.5%; }
+/* The 3:2 masthead standing on the board's top edge - viewport.js derives its
+   height from the board width, so the same board has the same title page in
+   short and tall windows. Hung off --mobile-board-top rather than pinned to the
+   window, so it travels with the board and scrolls away for good; the ceiling's
+   wash is already behind it, and this adds no background of its own.
    Inert to the pointer: a title page is not a control, and a finger that lands
    on it is a finger scrolling the board. */
 #mobile-board-header {
@@ -264,7 +272,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
   top: calc(var(--mobile-board-top, 0px) - var(--mobile-header-height, 0px));
   align-items: center;
   justify-content: center;
-  padding: 24px 12px;
+  /* No side padding, and that is the wrap rule: the name breaks when it reaches
+     the board's own edge and not a dozen pixels short of it. The 12px used to
+     be a margin of comfort and read as a mistake instead - a word with room for
+     it dropping to a second line while there was still visible board either
+     side. Top and bottom keep theirs: that is the band's own breathing room
+     above and below the title, not a limit on how wide it may be set. */
+  padding: 24px 0;
   overflow: hidden;
   pointer-events: none;
 }
@@ -289,12 +303,40 @@ button, input, select, textarea { font: inherit; color: inherit; }
   pointer-events: auto;
   cursor: text;
   font-family: var(--font-display);
-  font-size: clamp(26px, calc(var(--mobile-board-width, 0px) * 0.13), 68px);
+  /* --mobile-title-fit is the shrink that keeps an unwrapped name inside the
+     board, and it is 1 for every other case. Nothing in CSS can ask "is this
+     line wider than its container" - the wrap is the only fitting the language
+     does, and turning the wrap off takes it away - so fitTitle() in
+     ui/mobile-header.js measures it and writes the ratio here. Applied to the
+     whole clamp rather than inside it, so the fit outranks the 20px floor: a
+     name that has to go under twenty pixels to fit is still a name that has to
+     fit. */
+  font-size: calc(clamp(20px,
+    calc(var(--mobile-board-width, 0px) * var(--mobile-title-scale, 0.13)),
+    96px) * var(--mobile-title-fit, 1));
+  /* Font height is a vertical-only scale: it changes neither width nor wrapping.
+     A hair below centre. Even growth is the middle of the *box*, and 50% is what
+     that means - but the box is not the name: a line box reserves descender room
+     whether or not the name has a descender in it, so the ink sits a little
+     above the middle and a stretch about it reads as drifting down. Two percent
+     is the correction, arrived at against a real title after 30%, 70% and 55%
+     had each overdone it in their own direction. It is a correction for the line
+     box, so it moves if the padding or the leading around it ever does. */
+  transform: scaleY(var(--mobile-title-stretch, 1));
+  transform-origin: 50% 52%;
   /* `normal` follows the active face's own ascent and descent instead of
      assuming every bundled or custom font fits one numeric line box. The
      padding is inside the clamped box, leaving its last line room for g/j/y. */
   line-height: normal;
-  padding-bottom: 0.2em;
+  /* Room above, and more of it below, because the two edges are not asked the
+     same question. `overflow: hidden` is here to serve -webkit-line-clamp and
+     it clips at the padding edge, so whatever hangs below the last line box has
+     exactly this much to hang into. A descender does hang below it: on a line
+     box tightened by the Line height dial it hangs a long way below, and on
+     `normal` it is already close. 0.2em was the whole of it and the tails of
+     g, j and y were being cut square. In em, so it is the same room at every
+     size the size dial reaches. */
+  padding-block: 0.2em 0.45em;
   text-align: center;
   text-wrap: balance;
   overflow-wrap: anywhere;
@@ -312,6 +354,39 @@ button, input, select, textarea { font: inherit; color: inherit; }
   outline: var(--sel-line) solid var(--select);
   outline-offset: var(--sel-gap);
   border-radius: var(--radius-sm);
+  /* And the whitespace stops collapsing while the caret is in here, which is
+     what makes a space at the end of the name typeable. Under `normal` a
+     trailing space is not rendered at all: the editor answers by inserting a
+     non-breaking space so that something moves, the sanitizer turns that back
+     into an ordinary one - it has to, a name is not stored with U+00A0 in it -
+     and the ordinary one is invisible again. Press space at the end of a word
+     and nothing whatever happens, three times over. pre-wrap renders the
+     character the editor actually owns; the resting title is left on `normal`,
+     because a name that has been committed has no trailing space to show. */
+  white-space: pre-wrap;
+}
+/* Wrapping turned off - ui/mobile-header.js sets the attribute from
+   `settings.mobileHeader.wrap`.
+
+   Three declarations, and none of them is optional. `pre` is the no-wrap that
+   also keeps the spaces, and it is written here rather than inline so that it
+   outranks the `pre-wrap` above by coming after it at equal specificity -
+   inline it would have won even while the name was being renamed, and the
+   trailing space would stop being typeable again.
+
+   The other two are what keeps a name that no longer fits centred. Left alone
+   the title is an ordinary flex item: `max-width: 100%` and the default
+   shrink hold its box to the width of the band, so a line too long to fit
+   starts at the left edge and runs off the right - which is what this looked
+   like. Free of both it takes its content's own width, and the header's
+   `justify-content: center` then centres a box that is wider than its
+   container, so the overflow falls equally either side and the band's
+   `overflow: hidden` trims the same amount off each end. The name stays on the
+   board's middle, whatever the size dial does. */
+#mobile-board-title[data-nowrap] {
+  white-space: pre;
+  flex: none;
+  max-width: none;
 }
 /* A board nobody has named yet still gets its page - the space is reserved
    either way, and an empty band reads as something failing to load. The name
@@ -320,6 +395,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
 :root[data-board-mode="mobile"] #axis-ink,
 :root[data-board-mode="mobile"] #origin-mark,
 :root[data-board-mode="mobile"] #web { display: none !important; }
+/* These belong to the Desktop board, not to a desktop-sized screen. Keeping
+   the rule outside a width query also hides them when Mobile is selected in a
+   wide browser, while a narrow screen showing the Desktop board keeps them. */
+:root[data-board-mode="mobile"] #zoom-ctl,
+:root[data-board-mode="mobile"] #scale-bar { display: none; }
 
 /* The origin, marked like a compass rose rather than just a crossing. Drawn a
    shade stronger than the axes so (0,0) reads as a place, not an accident. */
@@ -1844,7 +1924,8 @@ plates do: below a third of size a card is a coloured tile, and a click on
    Menu button + sidebar
    --------------------------------------------------------- */
 
-#menu-btn {
+#menu-btn,
+#mobile-header-edit-btn {
   position: fixed;
   top: max(16px, env(safe-area-inset-top));
   left: max(16px, env(safe-area-inset-left));
@@ -1865,7 +1946,42 @@ plates do: below a third of size a card is a coloured tile, and a click on
               border-color var(--dur-fast) var(--ease),
               opacity var(--dur-base) var(--ease);
 }
-#menu-btn:hover { background: var(--paper-2); border-color: var(--accent); }
+#menu-btn:hover,
+#mobile-header-edit-btn:hover { background: var(--paper-2); border-color: var(--accent); }
+/* The far corner, level with the menu button rather than stacked under it. This
+   one comes and goes with the top of the Mobile board - paintButton() in
+   ui/mobile-header.js - and a control that appears and vanishes directly below
+   the one control that is always there reads as the menu sprouting a second
+   row. The opposite corner is empty at that stop, #corner being the bottom one,
+   so it arrives where nothing else is claiming space.
+
+   And it fades, which is why `hidden` is dressed here rather than left to the
+   UA's display:none: display does not transition, and the id rule above
+   already outranks [hidden] anyway. visibility carries the delay, so the
+   button leaves the tab order and the accessibility tree only once the fade
+   has finished - the same bargain #add-bar makes a few hundred lines down.
+
+   0.3s flat rather than a multiple of --dur-base, which means this one fade
+   does not slow down or speed up with the whimsy axis the way the rest of the
+   furniture does. Asked for as a number. */
+#mobile-header-edit-btn {
+  right: max(16px, env(safe-area-inset-right));
+  left: auto;
+  transition: background var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease),
+              opacity 0.3s var(--ease),
+              visibility 0s;
+}
+#mobile-header-edit-btn[hidden] {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: background var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease),
+              opacity 0.3s var(--ease),
+              visibility 0s 0.3s;
+}
+#mobile-header-edit-btn svg { width: 18px; height: 18px; color: var(--accent); }
 #menu-btn span {
   width: 17px;
   height: 1.5px;
@@ -1886,7 +2002,8 @@ plates do: below a third of size a card is a coloured tile, and a click on
    judged to be a sans. */
 :root[data-display-sans] .wordmark h1 { font-weight: 900; }
 
-#sidebar.is-open ~ #menu-btn { opacity: 0; pointer-events: none; }
+#sidebar.is-open ~ #menu-btn,
+#sidebar.is-open ~ #mobile-header-edit-btn { opacity: 0; pointer-events: none; }
 
 /* A panel of paper laid over the board. Deliberately NOT modal: no scrim, no
    blocked canvas - you can pan, drop and drag with it open, which is the whole
@@ -1918,6 +2035,45 @@ plates do: below a third of size a card is a coloured tile, and a click on
   transition-delay: 0s;
 }
 
+/* The masthead's panel: the same sheet, arriving from the other side.
+   Everything it is made of is shared - .side-head, .side-body, .side-sec, the
+   fields - so this rule is only the four things that make it a panel and the
+   one thing that makes it a different panel from the sidebar: which edge it
+   comes from. The right, because the pen that opens it is in that corner and a
+   sheet should arrive from where you pressed. That also settles what happens
+   when both are open, which is that both are open and neither is under the
+   other. */
+#header-panel {
+  position: fixed;
+  z-index: 40;
+  top: max(14px, env(safe-area-inset-top));
+  bottom: max(14px, env(safe-area-inset-bottom));
+  right: max(14px, env(safe-area-inset-right));
+  width: min(var(--sidebar-w), calc(100vw - 28px));
+  display: flex;
+  flex-direction: column;
+  background: var(--paper-card);
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--ogee);
+  box-shadow: var(--shadow-2);
+  transform: translateX(calc(100% + 22px));
+  opacity: 0;
+  visibility: hidden;
+  transition: transform var(--dur-base) var(--ease-back),
+              opacity var(--dur-fast) var(--ease),
+              visibility 0s linear var(--dur-base);
+}
+#header-panel.is-open {
+  transform: none;
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
+/* The panel stands where the pen stands, so the pen goes: leaving it lit under
+   a sheet that covers it would be a button pointing at itself. Its own fade
+   already runs at 0.3s - see the corner rule above - and this borrows it. */
+#header-panel.is-open ~ #mobile-header-edit-btn { opacity: 0; pointer-events: none; }
+
 .side-head {
   position: relative;
   display: flex;
@@ -1948,7 +2104,8 @@ plates do: below a third of size a card is a coloured tile, and a click on
   text-transform: uppercase;
   color: var(--ink-3);
 }
-#side-close {
+#side-close,
+#header-close {
   flex: none;
   width: 30px; height: 30px;
   display: grid; place-items: center;
@@ -1962,8 +2119,10 @@ plates do: below a third of size a card is a coloured tile, and a click on
 }
 /* The cross is symmetric about the middle of its viewBox, so the default
    50%/50% origin spins it in place. */
-#side-close svg { width: 15px; height: 15px; display: block; }
-#side-close:hover { color: var(--accent); background: var(--paper-2); transform: rotate(90deg); }
+#side-close svg,
+#header-close svg { width: 15px; height: 15px; display: block; }
+#side-close:hover,
+#header-close:hover { color: var(--accent); background: var(--paper-2); transform: rotate(90deg); }
 
 .side-body {
   flex: 1;
@@ -2064,6 +2223,14 @@ plates do: below a third of size a card is a coloured tile, and a click on
 }
 .advanced[open] > summary::before { transform: rotate(90deg) translateX(1px); }
 .advanced[open] > summary { margin-bottom: 7px; }
+
+/* The keyboard legend's fold is a whole section rather than a tail inside one,
+   so its summary stands where an h2 stands: no 4px lead-in above it, and the
+   same 11px under it that .side-sec h2 sets. Everything else - the face, the
+   tracking, the caret - it already inherits from .advanced. */
+#keys-fold { margin-top: 0; }
+#keys-fold > summary { padding-top: 0; }
+#keys-fold[open] > summary { margin-bottom: 11px; }
 
 /* Wraps, because the buttons do not. Every one of these is `white-space:
    nowrap` on purpose - a command broken across two lines reads as two commands -
@@ -2496,6 +2663,7 @@ kbd {
    A multiple of --dur-base rather than a fixed time, so the three whimsy tiers
    keep their own tempo instead of all drifting off at the middle one's. */
 :root.is-idle #menu-btn,
+:root.is-idle #mobile-header-edit-btn,
 :root.is-idle #bin,
 :root.is-idle #corner,
 :root.is-idle #add-bar {
@@ -3350,8 +3518,8 @@ kbd {
      screen and then sticks until something else is tapped, so a bin button
      stays lit long after you have finished with it. The reactions are
      decoration; the pressed state below is the one that carries information. */
-  #menu-btn:hover, #bin-btn:hover, #zoom-ctl button:hover,
-  .btn-row button:hover, #side-close:hover {
+  #menu-btn:hover, #mobile-header-edit-btn:hover, #bin-btn:hover, #zoom-ctl button:hover,
+  .btn-row button:hover, #side-close:hover, #header-close:hover {
     background: var(--paper-card);
     border-color: var(--rule-2);
     color: inherit;
@@ -3359,13 +3527,14 @@ kbd {
   }
   #zoom-ctl button:hover:not(:disabled) svg,
   #bin-btn:hover svg { transform: none; }
-  #menu-btn:active, #bin-btn:active, #zoom-ctl button:active,
+  #menu-btn:active, #mobile-header-edit-btn:active, #bin-btn:active, #zoom-ctl button:active,
   .btn-row button:active { background: var(--paper-3); }
 
   /* 44px, everywhere a finger has to land. This is the *input* question, so it
      is here rather than in the width query below: a 10" tablet has all the room
      in the world and the same finger. */
   #menu-btn span { width: 19px; }
+  #mobile-header-edit-btn svg { width: 20px; height: 20px; }
   #bin-btn svg { width: 20px; height: 20px; }
   #zoom-ctl button { min-width: 40px; height: 46px; }
   #zoom-ctl svg { width: 17px; height: 17px; }
@@ -3378,11 +3547,6 @@ kbd {
 }
 
 @media (max-width: 700px) {
-  /* Mobile fixes its zoom to the selected board width, so this toolbar has no
-     useful action here. Desktop keeps the complete control cluster. */
-  #zoom-ctl,
-  #scale-bar { display: none; }
-
   /* Two bands instead of four corners.
 
      The foot is for the hand: the add bar along the very bottom, with the bin,
@@ -3420,6 +3584,11 @@ kbd {
   #menu-btn {
     top: max(12px, env(safe-area-inset-top));
     left: max(12px, env(safe-area-inset-left));
+  }
+  #mobile-header-edit-btn {
+    top: max(12px, env(safe-area-inset-top));
+    right: max(12px, env(safe-area-inset-right));
+    left: auto;
   }
 
   /* The row above the add bar, where the view controls used to be. It has the
@@ -3502,7 +3671,8 @@ kbd {
      instant the panel starts to close. The same pairing #bin and #add-bar use -
      a control faded to nothing that can still be pressed is worse than one that
      is simply there. */
-  #sidebar.is-open ~ #corner {
+  #sidebar.is-open ~ #corner,
+  #header-panel.is-open ~ #corner {
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
@@ -3523,7 +3693,8 @@ kbd {
      - vertical room in a panel that is mostly a scrolling list - on a strip of
      controls that do nothing while the panel is up, and it left a band of live
      board at the foot of a screen you are scrolling with your thumb. */
-  #sidebar {
+  #sidebar,
+  #header-panel {
     top: max(10px, env(safe-area-inset-top));
     bottom: max(10px, env(safe-area-inset-bottom));
     left: max(10px, env(safe-area-inset-left));
@@ -3547,27 +3718,27 @@ kbd {
      the active track stays exactly where the gesture began. Ancestors of that
      input remain laid out but lose their own decoration; every other branch
      fades completely. Releasing the pointer removes the state immediately. */
-  #sidebar.is-slider-focus {
+  :is(#sidebar, #header-panel).is-slider-focus {
     background: transparent;
     border-color: transparent;
     box-shadow: none;
   }
-  #sidebar.is-slider-focus .side-head,
-  #sidebar.is-slider-focus .side-foot,
-  #sidebar.is-slider-focus .side-body :where(*):not(:has(.is-slider-active)):not(.is-slider-active) {
+  :is(#sidebar, #header-panel).is-slider-focus .side-head,
+  :is(#sidebar, #header-panel).is-slider-focus .side-foot,
+  :is(#sidebar, #header-panel).is-slider-focus .side-body :where(*):not(:has(.is-slider-active)):not(.is-slider-active) {
     opacity: 0;
     pointer-events: none;
     transition: opacity var(--dur-fast) var(--ease);
   }
-  #sidebar.is-slider-focus .side-body {
+  :is(#sidebar, #header-panel).is-slider-focus .side-body {
     scrollbar-color: transparent transparent;
   }
-  #sidebar.is-slider-focus .side-body :where(*):has(.is-slider-active) {
+  :is(#sidebar, #header-panel).is-slider-focus .side-body :where(*):has(.is-slider-active) {
     background: transparent;
     border-color: transparent;
     box-shadow: none;
   }
-  #sidebar.is-slider-focus input[type="range"].is-slider-active {
+  :is(#sidebar, #header-panel).is-slider-focus input[type="range"].is-slider-active {
     position: relative;
     z-index: 2;
     opacity: 1;
@@ -3593,7 +3764,7 @@ kbd {
 /* Landscape on a phone: the bar is still at the bottom but there is barely any
    bottom to put it in, so the panel gives up the inset and takes the height. */
 @media (max-width: 900px) and (max-height: 480px) {
-  #sidebar { top: 6px; bottom: 6px; }
+  #sidebar, #header-panel { top: 6px; bottom: 6px; }
   .side-head { padding: 10px 14px 8px; }
   /* Height is the scarce thing here, and 54px of it is a tenth of the screen.
      The finger has not changed size, so this stops at 44 rather than going
@@ -3771,7 +3942,8 @@ kbd {
 @keyframes rise-plain { from { opacity: 0; transform: translate(-50%, 6px); } }
 
 /* The close button stops spinning; it still lights up. */
-:root[data-whimsy="2"] #side-close:hover { transform: none; }
+:root[data-whimsy="2"] #side-close:hover,
+:root[data-whimsy="2"] #header-close:hover { transform: none; }
 
 /* The stop labels under the whimsy slider. Not a legend - the ends of a scale,
    which is the only way a three-position slider says what it does.
@@ -3788,18 +3960,24 @@ kbd {
   color: var(--ink-3);
   font-size: var(--t-tiny);
 }
-.field-stops span:nth-child(1) {
+/* Pinned to the whimsy dial by id, not to .field-stops at large. The row itself
+   is a general thing - any slider whose stops have names can print them, and the
+   masthead's weight dial does - but these three declarations are specimens of
+   the three whimsy tiers and belong to nothing else. Left unscoped, "Regular"
+   and "Bold" under the weight slider came out set in a serif italic and a sans
+   italic, which is the one thing a weight specimen must not do. */
+#whimsy-stop-labels span:nth-child(1) {
   font-family: var(--font-serif);
   font-style: italic;
   font-weight: 400;
 }
-.field-stops span:nth-child(2) {
+#whimsy-stop-labels span:nth-child(2) {
   color: var(--ink-2);
   font-family: var(--font-sans);
   font-style: italic;
   font-weight: 400;
 }
-.field-stops span:nth-child(3) {
+#whimsy-stop-labels span:nth-child(3) {
   color: var(--ink);
   font-family: var(--font-sans);
   font-style: normal;

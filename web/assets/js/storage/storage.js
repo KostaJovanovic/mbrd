@@ -108,7 +108,7 @@ export async function exportBoard({ pickNew = false } = {}) {
         types: PICKER_TYPES,
       });
     }
-    if (picking) setTitle(stripExt(fileHandle.name));
+    if (picking) setTitle(titleFromFileName(fileHandle.name));
 
     // Everything past the picker is the slow half - deflating every asset on
     // the board into one archive - and on a board of video it is a long slow
@@ -225,7 +225,7 @@ export async function openFile(file, handle = null) {
     try {
       return await withFreshAssets(async () => {
         const { manifest, board: data } = await unpackBoard(file);
-        loadBoard({ ...data, title: data.title || stripExt(file.name) });
+        loadBoard({ ...data, title: titleForOpenedBoard(data.title, file.name) });
         fileHandle = handle;
         created = manifest.created || null;
         toast('Opened ' + file.name);
@@ -718,6 +718,19 @@ export function initStorage() {
 export function fileNameFor(title) {
   const base = cleanBoardTitle(title) || 'board';
   return base.replace(/\.mbrd$/i, '').replace(/ /g, '_') + '.mbrd';
+}
+
+export function titleFromFileName(name) {
+  return stripExt(name).replace(/_/g, ' ');
+}
+
+export function titleForOpenedBoard(storedTitle, fileName) {
+  const title = typeof storedTitle === 'string' && storedTitle
+    ? storedTitle
+    : titleFromFileName(fileName);
+  // Older exports could pack the picker-safe filename back into board.json.
+  // Decode that title as well as the fallback filename when the file is opened.
+  return title.replace(/_/g, ' ');
 }
 
 function stripExt(name) {

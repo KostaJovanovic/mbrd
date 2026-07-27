@@ -29,12 +29,12 @@ export const MOBILE_TOP_PAD = 32;
 export const MOBILE_BOTTOM_PAD = 32;
 
 /**
- * The masthead above a Mobile board, as a share of the window's height.
+ * The masthead above a Mobile board, sized from the board itself.
  *
- * A third, and measured against the *screen* rather than the board: it is a
- * title page, and what makes one work is that it fills the view you open on,
- * whatever that view happens to be. A world-space band would have been a third
- * of the screen on the phone it was sized for and a stripe on anything else.
+ * Its width and height form a 3:2 landscape rectangle. Measuring the masthead
+ * from the fitted board width keeps that shape identical on a short phone, a
+ * tall phone, and a desktop window in Mobile mode; viewport height has no say
+ * in where the board starts.
  *
  * The room is made here, in the pan clamp, rather than by moving the board's
  * top edge - the strip still starts exactly where mobileBoardTop() says, items
@@ -42,16 +42,12 @@ export const MOBILE_BOTTOM_PAD = 32;
  * header exists. What the clamp does is stop the scroll a header lower, so the
  * band above the edge is real space rather than something drawn over the items.
  *
- * The floor is for a short window - a laptop in Mobile mode with the browser
- * chrome taking half of it - where a third of very little is not enough to set
- * a name in and the header may as well be a fixed height instead.
  */
-export const MOBILE_HEADER_FRACTION = 1 / 3;
-export const MOBILE_HEADER_MIN = 160;
+export const MOBILE_HEADER_ASPECT = 3 / 2;
 
-/** Height in screen px of the Mobile masthead, for a viewport `height` tall. */
-export function mobileHeaderHeight(height) {
-  return Math.max(MOBILE_HEADER_MIN, Math.round((+height || 0) * MOBILE_HEADER_FRACTION));
+/** Height in screen px of a 3:2 Mobile masthead `boardWidth` px wide. */
+export function mobileHeaderHeight(boardWidth) {
+  return Math.max(0, (+boardWidth || 0) / MOBILE_HEADER_ASPECT);
 }
 
 /** Fixed zoom that seats a Mobile board in the viewport without enlarging it. */
@@ -267,7 +263,15 @@ export class Viewport {
 
   /** Screen-space height of the masthead standing above the board's top edge. */
   mobileHeaderPx() {
-    return this.isMobile ? mobileHeaderHeight(this.height) : 0;
+    return this.isMobile
+      ? mobileHeaderHeight(this.mobileWorldWidth * this._mobileZoom())
+      : 0;
+  }
+
+  /** Whether the Mobile strip is resting at its upper travel limit. */
+  atMobileTop(tolerance = 0.5) {
+    if (!this.isMobile) return false;
+    return Math.abs((this.pan.y - this._mobileTopPan()) * this.zoom) <= tolerance;
   }
 
   /**
