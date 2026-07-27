@@ -3,6 +3,7 @@
 
 import {
   board, bus, markDirty, setSetting, setArrangement, setTitle, cleanBoardTitle,
+  cleanBoardTitleDraft,
   MOBILE_COLUMN_OPTIONS,
 } from '../state.js';
 import { ARRANGEMENTS } from '../arrange/arrangements.js';
@@ -231,7 +232,7 @@ function wireScale() {
 function wireTitle() {
   const input = el('board-title');
   input.addEventListener('input', () => {
-    const clean = cleanBoardTitle(input.value);
+    const clean = cleanBoardTitleDraft(input.value);
     if (clean !== input.value) input.value = clean;
   });
   input.addEventListener('change', () => {

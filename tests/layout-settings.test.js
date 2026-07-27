@@ -18,6 +18,10 @@ import {
   setSetting,
   serializeBoard,
 } from '../web/assets/js/state.js';
+import { hash } from './helpers.js';
+
+const desktopFontHash = hash('desktop-font');
+const mobileFontHash = hash('mobile-font');
 
 test('appearance settings share palette and typography but keep local styling', () => {
   const look = {
@@ -120,7 +124,7 @@ test('Desktop and Mobile retain independent settings and local appearance', () =
   setSetting('paper', 'a4');
   setSetting('paperLandscape', true);
   setSetting('paperResize', true);
-  setSetting('fonts', [{ family: 'Desktop Face', hash: 'desktop-font' }]);
+  setSetting('fonts', [{ family: 'Desktop Face', hash: desktopFontHash }]);
   setArrangement('grid');
   setAppearance({
     whimsy: 2,
@@ -143,7 +147,7 @@ test('Desktop and Mobile retain independent settings and local appearance', () =
   assert.equal(board.settings.paperLandscape, false);
   assert.equal(board.settings.paperResize, false);
   assert.deepEqual(board.settings.fonts, [
-    { family: 'Desktop Face', hash: 'desktop-font' },
+    { family: 'Desktop Face', hash: desktopFontHash },
   ]);
   assert.equal(board.arrangement, 'spiral');
   assert.equal(board.settings.appearance.whimsy, 2);
@@ -167,7 +171,7 @@ test('Desktop and Mobile retain independent settings and local appearance', () =
   setSetting('spacing', 20);
   assert.equal(board.settings.spacing, 0, 'Mobile has no configurable gap');
   setSetting('hud', false);
-  setSetting('fonts', [{ family: 'Mobile Face', hash: 'mobile-font' }]);
+  setSetting('fonts', [{ family: 'Mobile Face', hash: mobileFontHash }]);
   setArrangement('masonry');
   setAppearance({
     ...board.settings.appearance,
@@ -188,7 +192,7 @@ test('Desktop and Mobile retain independent settings and local appearance', () =
   assert.equal(board.settings.paperLandscape, true);
   assert.equal(board.settings.paperResize, true);
   assert.deepEqual(board.settings.fonts, [
-    { family: 'Mobile Face', hash: 'mobile-font' },
+    { family: 'Mobile Face', hash: mobileFontHash },
   ]);
   assert.equal(board.arrangement, 'grid');
   assert.equal(board.settings.appearance.vars['--paper'], '#f4efe5');
@@ -200,7 +204,7 @@ test('Desktop and Mobile retain independent settings and local appearance', () =
   assert.equal(board.settings.mobileColumns, 8);
   assert.equal(board.settings.spacing, 0);
   assert.deepEqual(board.settings.fonts, [
-    { family: 'Mobile Face', hash: 'mobile-font' },
+    { family: 'Mobile Face', hash: mobileFontHash },
   ]);
   assert.equal(board.arrangement, 'masonry');
   assert.equal(board.settings.appearance.vars['--paper'], '#f4efe5');
