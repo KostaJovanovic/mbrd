@@ -11,8 +11,8 @@ import {
   raiseSelection, lowerSelection, selectionHasStackOverlap,
   duplicateItems, select, setItemCover,
   setItemUpAxis, historyState, baseStep, mobileBoardWidth, mobileBoardTop,
-  mobileBoardBottom, placeMobileItems,
-  recheckBoardGeometry,
+  mobileBoardBottom, placeMobileItems, setTitle, markDirty,
+  recheckBoardGeometry, cleanBoardTitle,
   setBoardMode as selectBoardMode,
 } from './state.js';
 import { latticeBox, itemBounds } from './geometry.js';
@@ -71,7 +71,7 @@ const cmds = {
     requestAnimationFrame(() => cmds.editNote(item.id));
   },
 
-  clearData: () => clearAllData(),
+  clearData: () => armClear(),
 
   // Two commands rather than one that reads the selection, so that neither can
   // lie about what it is going to touch: the sidebar button says "Rearrange
@@ -83,7 +83,7 @@ const cmds = {
     const next = board.layoutMode === 'mobile' ? 'desktop' : 'mobile';
     if (!selectBoardMode(next)) return;
     toast(next === 'mobile'
-      ? 'Mobile board: six columns, vertical scroll'
+      ? `Mobile board: ${board.settings.mobileColumns} columns, vertical scroll`
       : 'Desktop board');
   },
   scaleFromItem,
@@ -493,6 +493,156 @@ function syncBoardMode(frame = false) {
   if (frame) openingView();
 }
 
+/**
+ * The name across the Mobile masthead.
+ *
+ * The band itself is positioned entirely in CSS, off the custom properties the
+ * viewport already publishes, so this is the only part that needs saying in
+ * JavaScript. Written whatever the mode: a header that is display:none has
+ * nothing to gain from being stale when Mobile is switched back on.
+ *
+ * A board with no name of its own still gets its page - see the [data-untitled]
+ * rule in app.css for why it is dressed down rather than left blank.
+ */
+function paintMobileTitle() {
+  const header = el('mobile-board-header');
+  if (!header) return;
+  const field = el('mobile-board-title');
+  // Never over a rename in progress. 'board' fires on every dirty-flag flip as
+  // well as on a real rename, and rewriting the field mid-word would take the
+  // caret with it - the same guard the sidebar's name field keeps.
+  if (!field.isContentEditable) field.textContent = board.title;
+  header.toggleAttribute('data-untitled', board.title === 'Untitled board');
+}
+
+/**
+ * Rename the board by tapping its name on the masthead.
+ *
+ * The same bargain a sticky note and an item's caption strike - see
+ * editItemName() in canvas/items.js, which this follows down to the Escape
+ * handling: the edit happens where you are already looking rather than in a
+ * dialog thrown over the top of it, and on a phone the sidebar's name field is
+ * three taps away behind a menu.
+ *
+ * A tap rather than a double click. The masthead is not a card, nothing else
+ * can be done to it, and there is no drag or selection for a single tap to be
+ * competing with - so the cheapest gesture is free to be the one that works.
+ * Panning is not competing either: the field only takes the pointer while it is
+ * standing still, and once it is editable input.js recognises a contenteditable
+ * and leaves the gesture alone.
+ */
+function editMobileTitle() {
+  const field = el('mobile-board-title');
+  if (!field || field.isContentEditable) return;
+
+  // plaintext-only keeps pasted markup out of a name; not every engine has it.
+  try { field.contentEditable = 'plaintext-only'; }
+  catch { field.contentEditable = 'true'; }
+  if (!field.isContentEditable) field.contentEditable = 'true';
+  // The stored name, not the shown one - they are the same string today, and
+  // this is the line that keeps them the same if the masthead ever dresses it.
+  field.textContent = board.title;
+
+  let done = false;
+  let keep = true;
+
+  const onKey = e => {
+    e.stopPropagation();          // the canvas must not see Delete, space or Escape
+    if (e.key === 'Enter') { e.preventDefault(); finish(); }
+    else if (e.key === 'Escape') { keep = false; finish(); }
+  };
+
+  const onInput = () => {
+    const clean = cleanBoardTitle(field.innerText);
+    if (clean === field.textContent) return;
+    field.textContent = clean;
+    const caret = document.createRange();
+    caret.selectNodeContents(field);
+    caret.collapse(false);
+    const selection = getSelection();
+    selection.removeAllRanges();
+    selection.addRange(caret);
+  };
+
+  function finish() {
+    if (done) return;
+    done = true;
+    // Read before the teardown: innerText is what the field renders, and a name
+    // is one line, so a pasted paragraph is flattened rather than refused.
+    const typed = cleanBoardTitle(field.innerText);
+    field.removeEventListener('keydown', onKey);
+    field.removeEventListener('input', onInput);
+    field.removeEventListener('blur', finish);
+    field.contentEditable = 'false';
+    field.blur();
+    // Put the stored name back first. A name that comes back unchanged commits
+    // nothing and emits nothing, and without this the half-typed text would
+    // simply stay on screen.
+    paintMobileTitle();
+    if (!keep || typed === board.title) return;
+    setTitle(typed);
+    // setTitle() deliberately does not dirty the board - it is also called by
+    // the save picker - so the rename says so itself, as the sidebar's field
+    // does.
+    markDirty();
+    paintMobileTitle();
+  }
+
+  field.addEventListener('keydown', onKey);
+  field.addEventListener('input', onInput);
+  field.addEventListener('blur', finish);
+  // Selected rather than merely focused: a rename usually replaces the name,
+  // and an untitled board is holding a placeholder nobody typed.
+  field.focus();
+  const range = document.createRange();
+  range.selectNodeContents(field);
+  const sel = getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+/**
+ * A tap on the name, told apart from a drag across it.
+ *
+ * Not a `click` listener, and that is the whole of this. A press anywhere the
+ * canvas considers empty - which the masthead is, since it is not a card and
+ * not one of the widgets input.js knows by name - has #viewport take pointer
+ * capture on the way down and start a pan. Capture retargets the rest of the
+ * gesture, the compatibility mouse events with it, so the lift is delivered to
+ * the viewport and the name is never clicked at all. It looked like the rename
+ * had simply stopped working.
+ *
+ * So the two ends are heard separately: the press on the name itself, the lift
+ * on the window in the capture phase, which runs before the viewport's own
+ * handlers and cannot be redirected. The name is left out of input.js's widget
+ * list deliberately - a third of the screen that cannot be dragged is worse
+ * than no shortcut at all - so the slop below is what separates the two: a
+ * finger that travelled was panning, and a pan must not open an editor when it
+ * happens to stop where it started.
+ */
+const TITLE_TAP_SLOP = 6;
+let titleTap = null;
+
+el('mobile-board-title').addEventListener('pointerdown', e => {
+  // Already editing: the caret owns the pointer, and re-entering the edit would
+  // reselect the whole name out from under somebody aiming at one word of it.
+  titleTap = e.currentTarget.isContentEditable
+    ? null
+    : { id: e.pointerId, x: e.clientX, y: e.clientY };
+});
+window.addEventListener('pointerup', e => {
+  const tap = titleTap;
+  titleTap = null;
+  if (!tap || e.pointerId !== tap.id) return;
+  if (Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > TITLE_TAP_SLOP) return;
+  editMobileTitle();
+}, true);
+window.addEventListener('pointercancel', () => { titleTap = null; }, true);
+
+bus.on('board', paintMobileTitle);
+bus.on('board:load', paintMobileTitle);
+paintMobileTitle();
+
 /** Follow the lowest Mobile item without resetting or reframing the view. */
 function syncMobileBoardBounds() {
   if (board.layoutMode !== 'mobile') return;
@@ -752,6 +902,74 @@ function paintSave() {
   // stale the save is, not how long until a button will let them press it.
   btn.textContent = `Saved ${SAVE_COOLDOWN_MS / 1000 - left}s ago`;
   btn.title = 'Everything is already written. Edits keep saving on their own.';
+}
+
+// ---------------------------------------------------------------------------
+// Clear everything - the countdown in front of the dialog
+// ---------------------------------------------------------------------------
+
+/**
+ * Presses left before "Clear everything" asks its real question, and how long
+ * a half-finished countdown survives.
+ *
+ * The button wipes the browser's copy of the board, everything in it and the
+ * look with it, and it sits in the same panel as Save and Optimize, a row away
+ * from buttons that are safe to press out of curiosity. A confirmation dialog
+ * on the first press is not much of a gate either: a dialog that appears is a
+ * dialog that gets dismissed, and the one that matters looks like all the
+ * others. So the press is spent before the question is asked - three of them,
+ * counted down on the button's own face, and the fourth opens the dialog.
+ *
+ * Ten seconds of quiet puts it back. Somebody who armed it and walked away has
+ * not half-agreed to anything, and coming back to a button already holding "1"
+ * would be the worst state this could leave behind.
+ */
+const CLEAR_PRESSES = 3;
+const CLEAR_IDLE_MS = 10000;
+
+let clearLeft = 0;
+let clearTimer = 0;
+
+/**
+ * One press of "Clear everything": count it, and open the dialog once the
+ * countdown is spent.
+ */
+function armClear() {
+  if (clearLeft > 0) clearLeft -= 1;
+  else clearLeft = CLEAR_PRESSES;
+
+  clearTimeout(clearTimer);
+  if (clearLeft <= 0) {
+    resetClear();
+    return clearAllData();
+  }
+  clearTimer = setTimeout(resetClear, CLEAR_IDLE_MS);
+  paintClear();
+  return undefined;
+}
+
+/** Back to an ordinary button, countdown abandoned. */
+function resetClear() {
+  clearLeft = 0;
+  clearTimeout(clearTimer);
+  clearTimer = 0;
+  paintClear();
+}
+
+function paintClear() {
+  const btn = document.querySelector('[data-cmd="clear-data"]');
+  if (!btn) return;
+  if (clearLeft <= 0) {
+    btn.textContent = 'Clear everything';
+    btn.removeAttribute('title');
+    delete btn.dataset.arming;
+    return;
+  }
+  // The number is presses remaining, not a clock: a countdown in seconds would
+  // be a button that fires itself, which is the one thing this must never do.
+  btn.textContent = `Press ${clearLeft} more time${clearLeft === 1 ? '' : 's'}`;
+  btn.title = 'Then it will ask, and then it will wipe this browser’s copy.';
+  btn.dataset.arming = '';
 }
 
 /**

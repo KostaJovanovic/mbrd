@@ -18,6 +18,7 @@ import {
   setBoardMode, mobileBoardWidth, mobileBoardTop, mobileBoardBottom,
   recheckBoardGeometry, baseStep, placeMobileItems,
   raiseSelection, lowerSelection, visualStackOrder, selectionHasStackOverlap,
+  setTitle, cleanBoardTitle, BOARD_TITLE_MAX,
 } from '../web/assets/js/state.js';
 import { itemBounds, overlapFraction, CELL_GAP } from '../web/assets/js/geometry.js';
 import { hash } from './helpers.js';
@@ -30,6 +31,21 @@ const photo = (props = {}) => ({ type: 'image', w: 200, h: 200, ...props });
 beforeEach(() => {
   setBoardMode('desktop');
   fresh();
+});
+
+test('board names are short portable filename stems wherever they enter state', () => {
+  assert.equal(BOARD_TITLE_MAX, 16);
+  assert.equal(cleanBoardTitle('  My / Board:*?  '), 'My Board');
+  assert.equal(cleanBoardTitle('12345678901234567'), '1234567890123456');
+  assert.equal(cleanBoardTitle('CON'), '_CON', 'Windows device names are not filenames');
+  assert.equal(cleanBoardTitle('A title.  '), 'A title');
+
+  setTitle('An / invalid : board title');
+  assert.equal(board.title, 'An invalid board');
+
+  loadBoard({ title: 'A far too long loaded board', items: [] });
+  assert.equal(board.title, 'A far too long l',
+    'opened boards obey the same limit as names typed in the UI');
 });
 
 // ---------------------------------------------------------------------------
@@ -659,13 +675,14 @@ test('serialising and reloading preserves the items', () => {
   assert.equal(board.items[1].meta.text, 'hi');
 });
 
-test('Mobile is a six-column grid layout', () => {
+test('Mobile can use a six-column grid layout', () => {
   fresh([
     photo({ id: 'wide', x: 300, y: 200, w: 800, h: 400 }),
     note({ id: 'note', x: -500, y: 100 }),
   ]);
 
   assert.ok(setBoardMode('mobile'));
+  setSetting('mobileColumns', 6);
   assert.equal(mobileBoardWidth(), 384);
   assert.equal(mobileBoardTop(), 384);
   const [wide, noteItem] = board.items;
@@ -697,6 +714,8 @@ test('Mobile can switch between six- and eight-column grids', () => {
   fresh(Array.from({ length: 4 }, (_, index) =>
     photo({ id: `card-${index}`, w: 100, h: 100 })));
   setBoardMode('mobile');
+  assert.equal(board.settings.mobileColumns, 8, 'eight columns are the Mobile default');
+  setSetting('mobileColumns', 6);
   assert.equal(board.settings.mobileColumns, 6);
   assert.equal(mobileBoardWidth(), 384);
   assert.notEqual(byId('card-0').y, byId('card-3').y,
@@ -723,11 +742,11 @@ test('Mobile can switch between six- and eight-column grids', () => {
   assert.equal(board.settings.mobileColumns, 8, 'the Mobile profile keeps its choice');
 });
 
-test('missing or invalid Mobile grid widths fall back to six columns', () => {
+test('missing or invalid Mobile grid widths fall back to eight columns', () => {
   setBoardMode('mobile');
-  setSetting('mobileColumns', 8);
+  setSetting('mobileColumns', 6);
   loadBoard({ items: [] });
-  assert.equal(board.settings.mobileColumns, 6,
+  assert.equal(board.settings.mobileColumns, 8,
     'a new board does not inherit the previous board width');
 
   loadBoard({
@@ -736,7 +755,7 @@ test('missing or invalid Mobile grid widths fall back to six columns', () => {
       mobile: { items: [], settings: { mobileColumns: 7 } },
     },
   });
-  assert.equal(board.settings.mobileColumns, 6);
+  assert.equal(board.settings.mobileColumns, 8);
 });
 
 test('a new Mobile board starts with grid snapping on', () => {

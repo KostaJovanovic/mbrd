@@ -21,8 +21,10 @@
 // on it, extracting their pigments into `vars` and parking `whimsy` where
 // their contrast and sharpness say it belongs.
 
-import { board, bus, setAppearance, setSetting } from '../state.js';
-import { whimsyControlsSnap } from '../layout-settings.js';
+import {
+  board, bus, setAppearance, setSetting, MOBILE_APPEARANCE_VARS,
+} from '../state.js';
+import { appearanceControlVisible, whimsyControlsSnap } from '../layout-settings.js';
 import { clamp, readPrefJSON, toast, writePref } from '../util.js';
 import { assetURL } from '../storage/assets.js';
 import {
@@ -161,7 +163,6 @@ const CONTROLS = [
   { var: '--grid-alpha',  label: 'Grid strength', type: 'range', min: 0.04, max: 0.4, step: 0.01, host: 'advanced' },
   { var: '--grid-dot',    label: 'Grid weight',   type: 'range', min: 0.5, max: 4,   step: 0.1,  unit: 'px', host: 'advanced' },
   { var: '--radius',      label: 'Corner radius', type: 'range', min: 0,   max: 28,  step: 1,    unit: 'px', host: 'advanced' },
-  { var: '--density',     label: 'Panel density', type: 'range', min: 0.8, max: 1.5, step: 0.05, host: 'advanced' },
   { var: '--sidebar-w',   label: 'Panel width',   type: 'range', min: 260, max: 460, step: 4,    unit: 'px', host: 'advanced' },
 ];
 
@@ -251,7 +252,10 @@ export function initAppearance(handlers = {}) {
   bus.on('board', syncFromBoard);
   // Color and whimsy are shared, while advanced overrides are layout-local.
   // Switching profiles therefore needs the same reconciliation as opening one.
-  bus.on('layout', syncFromBoard);
+  bus.on('layout', () => {
+    syncFromBoard();
+    syncControlVisibility();
+  });
 }
 
 /** Slide the whole interface along the playful-to-plain axis. 0, 1 or 2. */
@@ -663,7 +667,11 @@ async function recolourFromBoard({ silent = false } = {}) {
 export function resetAppearance() {
   const was = current.whimsy;
   // apply() takes the previous look's properties back off - see `applied`.
-  current = { whimsy: DEFAULT_WHIMSY, palette: '', vars: {} };
+  current = {
+    whimsy: DEFAULT_WHIMSY,
+    palette: '',
+    vars: board.layoutMode === 'mobile' ? { ...MOBILE_APPEARANCE_VARS } : {},
+  };
   apply(current);
   persist();
   syncControls();
@@ -963,12 +971,19 @@ function buildControls() {
 
     label.append(head, input);
     host.append(label);
-    inputs.set(c.var, { input, out, spec: c });
+    inputs.set(c.var, { input, out, label, spec: c });
   }
   syncControls();
 }
 
+function syncControlVisibility() {
+  for (const [name, { label }] of inputs) {
+    label.hidden = !appearanceControlVisible(name, board.layoutMode);
+  }
+}
+
 function syncControls() {
+  syncControlVisibility();
   const computed = getComputedStyle(root);
   for (const [name, { input, out, spec }] of inputs) {
     const raw = (current.vars[name] ?? computed.getPropertyValue(name)).trim();

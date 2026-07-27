@@ -99,3 +99,9 @@ test('the allowlist is exactly the tokens tokens.css declares', () => {
   assert.deepEqual(missing, [], 'declared in tokens.css but not allowed in a look');
   assert.deepEqual(stale, [], 'allowed in a look but no longer in tokens.css');
 });
+
+test('the appearance panel no longer builds a density slider', () => {
+  const source = read(join(WEB, 'assets', 'js', 'ui', 'appearance.js'));
+  assert.ok(!source.includes("label: 'Panel density'"));
+  assert.ok(source.includes("label: 'Panel width'"));
+});

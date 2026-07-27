@@ -90,6 +90,85 @@ export function gridStep(base, zoom, touch = onTouch()) {
   return step;
 }
 
+/**
+ * Grid step used by both the painter and pointer gestures for this viewport.
+ *
+ * Desktop may coarsen its unbounded grid as zoom changes. Mobile cannot: its
+ * selected width is explicitly measured in six or eight spaces, so doubling
+ * the step at the fitted 8-wide zoom silently turns that choice into four.
+ */
+export function boardGridStep(base, viewport, touch = onTouch()) {
+  const step = base > 0 ? base : 64;
+  return viewport?.isMobile
+    ? step
+    : gridStep(step, viewport?.zoom > 0 ? viewport.zoom : 1, touch);
+}
+
+/**
+ * The screen-space box the lattice is drawn in.
+ *
+ * Desktop has no edges to speak of - the board is unbounded, the grid is the
+ * background, and the box is simply the viewport. Mobile does: the strip is a
+ * finite sheet with paper above it and below it, and a mark out there is not a
+ * grid mark, it is a grid mark on nothing.
+ *
+ * Cutting it here rather than covering it up is the point. The lattice at two
+ * of the three tiers is a tiled background and at the third it is a canvas, and
+ * both draw exactly as far as this element reaches - so a box that stops at the
+ * board's edge is a lattice that was never painted outside it. A mask or a
+ * clip would have been a rectangle's worth of compositor work every frame to
+ * throw away pixels that had already been rasterised, on the device least able
+ * to afford it.
+ *
+ * Clipped to the viewport as well as to the board, because the two overlap in
+ * whatever way the pan has left them: scrolled to the head of a long board, the
+ * box starts under the masthead and runs off the bottom of the screen. An empty
+ * intersection - the board entirely above or below the window - comes back with
+ * a zero side, and paintGrid() draws nothing at all.
+ */
+function inkBox(vp) {
+  const full = {
+    x: 0, y: 0, w: vp.width, h: vp.height,
+    topRadius: '0px', bottomRadius: '0px',
+  };
+  if (!vp.isMobile || !vp.mobileScreenRect) return full;
+  const r = vp.mobileScreenRect();
+  const x = Math.max(0, r.left);
+  const y = Math.max(0, r.top);
+  return {
+    x,
+    y,
+    w: Math.max(0, Math.min(vp.width, r.left + r.width) - x),
+    h: Math.max(0, Math.min(vp.height, r.bottom) - y),
+    // Only round a physical board edge. When that edge has scrolled outside
+    // the viewport, the canvas is clipped to the glass and must stay square
+    // there instead of inventing a second pair of corners.
+    topRadius: r.top >= 0 ? 'var(--radius)' : '0px',
+    bottomRadius: r.bottom <= vp.height ? 'var(--radius)' : '0px',
+  };
+}
+
+/** What was last written to the ink layer's box, so a still board writes none. */
+let lastBox = '';
+
+/** Stand the lattice layer on the box it is allowed to draw in. */
+function placeInk(canvas, box) {
+  const next = `${box.x},${box.y},${box.w},${box.h},${box.topRadius},${box.bottomRadius}`;
+  if (next === lastBox) return;
+  lastBox = next;
+  canvas.style.left = `${box.x}px`;
+  canvas.style.top = `${box.y}px`;
+  canvas.style.width = `${box.w}px`;
+  canvas.style.height = `${box.h}px`;
+  canvas.style.borderRadius =
+    `${box.topRadius} ${box.topRadius} ${box.bottomRadius} ${box.bottomRadius}`;
+  // app.css pins the layer with inset:0, and left+right+width over-constrains a
+  // box - the browser drops one of them, and which one it drops is not a thing
+  // to leave to the writing direction.
+  canvas.style.right = 'auto';
+  canvas.style.bottom = 'auto';
+}
+
 export function paintGrid(vp) {
   const el = vp.el;
   const s = board.settings;
@@ -101,8 +180,10 @@ export function paintGrid(vp) {
   paintAxes(vp);
 
   const canvas = ensureCanvas(el);
+  const box = inkBox(vp);
+  placeInk(canvas, box);
 
-  if (!s.grid) {
+  if (!s.grid || !(box.w > 0 && box.h > 0)) {
     clearTiles(canvas);
     clearCanvas(canvas);
     return;
@@ -112,12 +193,17 @@ export function paintGrid(vp) {
   // that sit between its own, at whatever the fade has reached - see tierFade().
   // Outside a fade the two collapse to one: alpha is 0 or 1 and the pair is
   // exactly the lattice gridStep() asked for.
-  const { coarse, alpha } = tierFade(gridStep(s.gridStep, vp.zoom), vp);
+  const { coarse, alpha } = tierFade(boardGridStep(s.gridStep, vp), vp);
   const minor = coarse * vp.zoom;
   const major = minor * MAJOR;
   // The origin the axis rules use, not the raw one - see Viewport.axisOrigin().
   // The fallback is for the render harnesses, which pass a viewport stub.
-  const o = vp.axisOrigin ? vp.axisOrigin() : vp.toScreen(0, 0);
+  const screenOrigin = vp.axisOrigin ? vp.axisOrigin() : vp.toScreen(0, 0);
+  // ...moved into the ink layer's own coordinates, because the layer no longer
+  // starts at the corner of the viewport. Everything below - the tile offsets,
+  // the cross positions, the hole - is measured from the box, and the world
+  // origin is the one point they all have to agree on.
+  const o = { x: screenOrigin.x - box.x, y: screenOrigin.y - box.y };
   // An attribute read, not getComputedStyle. This function runs on every frame
   // of every pan and pinch, and asking for a computed value in here would force
   // a synchronous style flush per frame for a value that changes about once an
@@ -129,7 +215,7 @@ export function paintGrid(vp) {
     // The two painters are exclusive. Leaving the gradients up under the canvas
     // would show a dot inside every cross.
     clearTiles(canvas);
-    drawCrosses(canvas, vp, o, minor, major, alpha);
+    drawCrosses(canvas, box, o, minor, major, alpha);
     return;
   }
 
@@ -204,7 +290,7 @@ export function paintGrid(vp) {
   if (image !== lastImage) { canvas.style.backgroundImage = image; lastImage = image; }
   if (size !== lastSize) { canvas.style.backgroundSize = size; lastSize = size; }
   canvas.style.backgroundPosition = positions.join(', ');
-  punchHole(canvas, o, vp);
+  punchHole(canvas, o, vp, box);
 }
 
 /**
@@ -240,7 +326,7 @@ function clearTiles(canvas) {
  * on a board anybody has panned. A full-screen mask is real compositor work and
  * this one is doing nothing at all out there.
  */
-function punchHole(canvas, o, vp) {
+function punchHole(canvas, o, vp, box) {
   // ...and dropped while the board is moving, wherever the origin is.
   //
   // The comment below is right that this is usually the same string twice, and
@@ -259,7 +345,7 @@ function punchHole(canvas, o, vp) {
   // stop, which repaints this - and a still board is the only one anybody is
   // looking at closely enough to see a dot under a ring.
   const near = originHole() && !vp.moving
-    && o.x > -20 && o.y > -20 && o.x < vp.width + 20 && o.y < vp.height + 20;
+    && o.x > -20 && o.y > -20 && o.x < box.w + 20 && o.y < box.h + 20;
   const mask = near
     ? `radial-gradient(circle at ${o.x.toFixed(1)}px ${o.y.toFixed(1)}px,`
       + ' transparent 0 calc(var(--grid-dot) * 1.5 + 1px),'
@@ -336,7 +422,7 @@ let axisWas = { x: null, y: null, t: 0, w: 0, h: 0 };
  */
 function paintAxes(vp) {
   const canvas = ensureAxisCanvas(vp.el);
-  const ctx = sizeCanvas(canvas, vp);
+  const ctx = sizeCanvas(canvas, { w: vp.width, h: vp.height });
   if (!ctx) return;
   const W = canvas.width, H = canvas.height;
 
@@ -351,8 +437,8 @@ function paintAxes(vp) {
   // leaves the rest, so a fractional wipe would build up a faint stripe along
   // every path the axis had ever taken. Erasing a hair more than was drawn costs
   // nothing, since the rule is about to be redrawn anyway.
-  if (axisWas.y !== null) ctx.clearRect(0, axisWas.y, W, Math.ceil(axisWas.t));
-  if (axisWas.x !== null) ctx.clearRect(axisWas.x, 0, Math.ceil(axisWas.t), H);
+  if (axisWas.y !== null) ctx.clearRect(0, Math.floor(axisWas.y), W, Math.ceil(axisWas.t) + 1);
+  if (axisWas.x !== null) ctx.clearRect(Math.floor(axisWas.x), 0, Math.ceil(axisWas.t) + 1, H);
   axisWas.x = axisWas.y = null;
 
   if (!axesVisible()) return;
@@ -364,11 +450,25 @@ function paintAxes(vp) {
   // and the origin mark, which is centred on the same point, sits true on it.
   const o = vp.axisOrigin ? vp.axisOrigin() : vp.toScreen(0, 0);
   const d = canvas._dpr;
-  // Not rounded to a whole row - see AXIS_PX. The *start* is, so the first row
-  // is solid and only the overhang is soft.
+  // Not rounded to a whole row - see AXIS_PX - and the *start* is not rounded
+  // either, which it used to be.
+  //
+  // Rounding it looked like the way to keep the first row solid, and it did,
+  // but it bought that by pushing the whole band onto the low side of the
+  // crossing: at 1x the rule sat in the row the origin is in plus a fifth of
+  // the next one down, so its weight was left of centre and above it. The
+  // origin mark is symmetric about the crossing, so the two disagreed by about
+  // a fifth of a pixel on top of whatever the mark's own placement was doing,
+  // and the crosshair ran visibly nearer one wall of the ring than the other.
+  //
+  // Laid symmetrically instead, and nothing is lost by it: o is the *centre* of
+  // a device pixel and the band is at least one pixel thick, so the pixel the
+  // origin is in is still covered end to end. What was one solid row and one
+  // soft one is now one solid row with a matched shade either side of it -
+  // same weight, same hairline, and it is centred on the point it marks.
   const t = Math.max(1, AXIS_PX * d);
-  const y = Math.round(o.y * d - t / 2);
-  const x = Math.round(o.x * d - t / 2);
+  const y = o.y * d - t / 2;
+  const x = o.x * d - t / 2;
   axisWas.t = t;
 
   ctx.fillStyle = gridInk().axis;
@@ -548,8 +648,8 @@ const ARM_THICK = 0.5;
  * One Path2D and one fill() per lattice, measured at well under a frame - and
  * only this tier pays it. The other two never enter this function.
  */
-function drawCrosses(canvas, vp, o, minor, major, alpha) {
-  const ctx = sizeCanvas(canvas, vp);
+function drawCrosses(canvas, box, o, minor, major, alpha) {
+  const ctx = sizeCanvas(canvas, box);
   if (!ctx) return;
   const dpr = canvas._dpr;
   const ink = gridInk();
@@ -682,30 +782,35 @@ function ensureCanvas(el) {
     // what paintGrid() remembers writing is now a memory of a different node.
     // Left alone, the first paint onto a fresh canvas would skip the very
     // writes that put the lattice there.
-    lastImage = lastSize = lastMask = '';
+    lastImage = lastSize = lastMask = lastBox = '';
   }
   return canvas;
 }
 
 /**
- * Match the backing store to the viewport in device pixels.
+ * Match the backing store to a CSS-pixel box in device pixels.
+ *
+ * A box rather than the viewport, because the lattice layer is no longer
+ * viewport-sized - on Mobile it is the board, and a bitmap wider than the
+ * element it is stretched into is the marks drawn at the wrong pitch. The axis
+ * layer passes the viewport itself, which is still what it covers.
  *
  * Only on a real change: assigning width or height clears the canvas even when
  * the value is identical, so doing it unconditionally would blank the lattice
  * every frame and draw it again - which looks exactly like the flicker this is
  * replacing.
  */
-function sizeCanvas(canvas, vp) {
+function sizeCanvas(canvas, { w, h }) {
   // The same ratio the axis rules snap to, from the same place - see
   // deviceRatio(). Two roundings of two different numbers is how the lattice
   // and the axes came to disagree in the first place.
   const dpr = deviceRatio();
-  const w = Math.round(vp.width * dpr);
-  const h = Math.round(vp.height * dpr);
-  if (!(w > 0 && h > 0)) return null;
-  if (canvas.width !== w || canvas.height !== h) {
-    canvas.width = w;
-    canvas.height = h;
+  const px = Math.round(w * dpr);
+  const py = Math.round(h * dpr);
+  if (!(px > 0 && py > 0)) return null;
+  if (canvas.width !== px || canvas.height !== py) {
+    canvas.width = px;
+    canvas.height = py;
   }
   canvas._dpr = dpr;
   return canvas.getContext('2d');

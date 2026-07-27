@@ -128,12 +128,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 :root[data-snap] .item-shadow { rotate: 0deg; }
 
-/* The Harsh lattice. Empty at the other two tiers, where #viewport's own
-   background-image draws the dots - so this is either the whole grid or
-   nothing, never a second layer under one.
-   Sized in device pixels by canvas/grid.js and stretched back to CSS pixels
-   here, which is what lets a mark be snapped to the device grid rather than to
-   a CSS pixel that may be two thirds of one. */
+/* The lattice layer: the Harsh crosses are drawn on it and the other two tiers
+   tile their dots onto it as a background image, so it is either the whole grid
+   or nothing, never a second layer under one.
+   Sized in device pixels by canvas/grid.js and stretched back to CSS pixels,
+   which is what lets a mark be snapped to the device grid rather than to a CSS
+   pixel that may be two thirds of one. The box below is only where it starts:
+   canvas/grid.js writes left/top/width/height on every paint, because on a
+   Mobile board the layer is the board rather than the window - see inkBox(). */
 #grid-ink {
   position: absolute;
   inset: 0;
@@ -226,68 +228,112 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* Mobile is a finite, content-sized selected-width strip. viewport.js keeps these
    screen-space edges aligned with its live world bounds as the window and the
-   lowest item change. */
+   lowest item change.
+   The four dashed rules that used to trace those edges - two down the sides,
+   one along the head and one along the foot - are gone. The lattice now stops
+   at the board (see inkBox() in canvas/grid.js), so the edge is already drawn
+   by the dots ending: a ruled line over the top of that is the same statement
+   made twice, in the heavier of the two hands. What remains is the difference
+   in tone between the sheet and the surround, which is what says "off the
+   board" without drawing anything at all. */
 #mobile-board-frame {
   display: none;
   position: absolute;
-  top: 0;
-  bottom: 0;
+  top: var(--mobile-board-top, 0);
   left: var(--mobile-board-left, 0);
   width: var(--mobile-board-width, 0);
+  height: max(0px, calc(var(--mobile-board-bottom, 0px) - var(--mobile-board-top, 0px)));
   box-sizing: border-box;
-  border-inline: var(--hairline) dashed var(--grid-axis);
+  border-radius: var(--radius);
   background: color-mix(in srgb, var(--paper-card) 8%, transparent);
   box-shadow: 0 0 0 100vmax color-mix(in srgb, var(--ink) 4%, transparent);
   pointer-events: none;
 }
-#mobile-board-ceiling {
+/* The masthead standing on the board's top edge - see viewport.js for how the
+   room above the edge is made. Hung off --mobile-board-top rather than pinned
+   to the window, so it travels with the board and scrolls away for good; the
+   ceiling's wash is already behind it, and this adds no background of its own.
+   Inert to the pointer: a title page is not a control, and a finger that lands
+   on it is a finger scrolling the board. */
+#mobile-board-header {
   display: none;
   position: absolute;
-  inset: 0 0 auto;
-  height: max(0px, var(--mobile-board-top, 0px));
-  background: color-mix(in srgb, var(--ink) 4%, transparent);
+  left: var(--mobile-board-left, 0px);
+  width: var(--mobile-board-width, 0px);
+  height: var(--mobile-header-height, 0px);
+  top: calc(var(--mobile-board-top, 0px) - var(--mobile-header-height, 0px));
+  align-items: center;
+  justify-content: center;
+  padding: 24px 12px;
+  overflow: hidden;
   pointer-events: none;
 }
-#mobile-board-ceiling::after {
-  content: "";
-  position: absolute;
-  left: var(--mobile-board-left, 0);
-  bottom: 0;
-  width: var(--mobile-board-width, 0);
-  border-top: var(--hairline) dashed var(--grid-axis);
-  opacity: var(--mobile-board-ceiling-opacity, 0);
+:root[data-board-mode="mobile"] #mobile-board-frame { display: block; }
+:root[data-board-mode="mobile"] #mobile-board-header { display: flex; }
+/* Sized against the strip's own width rather than the window's, because the
+   strip is what the name is set across - on a wide window in Mobile mode the
+   board stays 384 world px and a vw-sized title would run out of it. Four
+   lines is where it stops growing downwards; a name longer than that is a
+   sentence, and it gets to be small. */
+#mobile-board-title {
+  margin: 0;
+  /* A flex item whose display is -webkit-box does not get an automatic minimum
+     size worth the name: left alone it sits at its max-content width and a
+     two-word name runs off the side of the board rather than taking a second
+     line. These two are what put the wrap back. */
+  min-width: 0;
+  max-width: 100%;
+  /* The one live thing in the band: tapping the name renames the board - see
+     editMobileTitle() in main.js. Auto against the header's `none`, so a drag
+     that crosses the name still pans the board. */
+  pointer-events: auto;
+  cursor: text;
+  font-family: var(--font-display);
+  font-size: clamp(26px, calc(var(--mobile-board-width, 0px) * 0.13), 68px);
+  /* `normal` follows the active face's own ascent and descent instead of
+     assuming every bundled or custom font fits one numeric line box. The
+     padding is inside the clamped box, leaving its last line room for g/j/y. */
+  line-height: normal;
+  padding-bottom: 0.2em;
+  text-align: center;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
-#mobile-board-floor {
-  display: none;
-  position: absolute;
-  inset: auto 0 0;
-  height: max(0px, calc(100% - var(--mobile-board-bottom, 100%)));
-  background: color-mix(in srgb, var(--ink) 4%, transparent);
-  pointer-events: none;
+/* Under the caret: the same ring the rest of the app puts round the thing it is
+   listening to, so a rename in progress looks like one. */
+#mobile-board-title:focus { outline: none; }
+#mobile-board-title[contenteditable="true"],
+#mobile-board-title[contenteditable="plaintext-only"] {
+  outline: var(--sel-line) solid var(--select);
+  outline-offset: var(--sel-gap);
+  border-radius: var(--radius-sm);
 }
-#mobile-board-floor::before {
-  content: "";
-  position: absolute;
-  left: var(--mobile-board-left, 0);
-  top: 0;
-  width: var(--mobile-board-width, 0);
-  border-top: var(--hairline) dashed var(--grid-axis);
-  opacity: var(--mobile-board-floor-opacity, 0);
-}
-:root[data-board-mode="mobile"] #mobile-board-frame,
-:root[data-board-mode="mobile"] #mobile-board-ceiling,
-:root[data-board-mode="mobile"] #mobile-board-floor { display: block; }
+/* A board nobody has named yet still gets its page - the space is reserved
+   either way, and an empty band reads as something failing to load. The name
+   it is given is just held more quietly than one somebody chose. */
+#mobile-board-header[data-untitled] #mobile-board-title { opacity: 0.45; }
 :root[data-board-mode="mobile"] #axis-ink,
 :root[data-board-mode="mobile"] #origin-mark,
 :root[data-board-mode="mobile"] #web { display: none !important; }
 
 /* The origin, marked like a compass rose rather than just a crossing. Drawn a
    shade stronger than the axes so (0,0) reads as a place, not an accident. */
+/* Placed by a transform - viewport.js writes it, and says there why left/top
+   and a negative margin could not do this job. Both stay at zero so the box
+   the browser lays out sits at the viewport's own corner, on the device grid,
+   with nothing to snap; the transform carries the whole journey, centring
+   included. */
 #origin-mark {
   position: absolute;
+  left: 0;
+  top: 0;
   width: 36px;
   height: 36px;
-  margin: -18px 0 0 -18px;
   color: var(--accent);
   opacity: 0.7;
   pointer-events: none;
@@ -2079,6 +2125,15 @@ plates do: below a third of size a card is a coloured tile, and a click on
   border-color: var(--danger);
   color: var(--paper-card);
 }
+/* Armed, with presses left to count down - see armClear() in main.js. It fills
+   in and stays filled rather than pulsing: the label is already saying the
+   number out loud, and a button that flashes is a button people press again to
+   make it stop, which is exactly the reflex the countdown is there to break. */
+.btn-row button.danger[data-arming] {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--paper-card);
+}
 
 .field { display: block; margin-bottom: 11px; }
 .field > span {
@@ -3481,7 +3536,42 @@ kbd {
        none so nothing is being animated but the opacity. */
     transform: none;
     transition: opacity var(--dur-base) var(--ease),
-                visibility 0s linear var(--dur-base);
+                visibility 0s linear var(--dur-base),
+                background-color var(--dur-fast) var(--ease),
+                border-color var(--dur-fast) var(--ease),
+                box-shadow var(--dur-fast) var(--ease);
+  }
+
+  /* A range is the only visible thing while a finger is tuning it. The panel
+     itself dissolves as well as its controls, exposing the board beneath while
+     the active track stays exactly where the gesture began. Ancestors of that
+     input remain laid out but lose their own decoration; every other branch
+     fades completely. Releasing the pointer removes the state immediately. */
+  #sidebar.is-slider-focus {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+  }
+  #sidebar.is-slider-focus .side-head,
+  #sidebar.is-slider-focus .side-foot,
+  #sidebar.is-slider-focus .side-body :where(*):not(:has(.is-slider-active)):not(.is-slider-active) {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--dur-fast) var(--ease);
+  }
+  #sidebar.is-slider-focus .side-body {
+    scrollbar-color: transparent transparent;
+  }
+  #sidebar.is-slider-focus .side-body :where(*):has(.is-slider-active) {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+  }
+  #sidebar.is-slider-focus input[type="range"].is-slider-active {
+    position: relative;
+    z-index: 2;
+    opacity: 1;
+    pointer-events: auto;
   }
   /* A flick that runs off the end of the panel would otherwise carry on into
      the page behind it, which on a phone is the browser's own overscroll. */
@@ -3644,12 +3734,19 @@ kbd {
 
 /* A card at radius 0 with a hairline border already reads as ruled - a second
    rule inside it is just noise. */
-/* The origin stops being a compass rose and becomes a registration mark: the
-   ring squares off to match the crosses the lattice is drawn with at this end
-   of the axis, and the pip with it. The square pair is inert everywhere else. */
+/* The origin takes the shape its tier gives everything else. The middle is a
+   rounded square, like the cards, and it is what the bare stylesheet renders
+   because an unset whimsy is the middle - so only the two ends speak up here:
+   Softish keeps the compass ring, and Harsh squares the corners off into a
+   registration mark to match the crosses the lattice is drawn with at that end
+   of the axis, taking the pip with it. The pip stays a dot until then; a dot is
+   a dot at any radius. Each shape is inert wherever it is not the chosen one. */
+#origin-mark .om-ring,
 #origin-mark .om-ring-sq,
 #origin-mark .om-pip-sq { display: none; }
-:root[data-whimsy="2"] #origin-mark .om-ring,
+:root[data-whimsy="0"] #origin-mark .om-ring-rd { display: none; }
+:root[data-whimsy="0"] #origin-mark .om-ring { display: inline; }
+:root[data-whimsy="2"] #origin-mark .om-ring-rd,
 :root[data-whimsy="2"] #origin-mark .om-pip { display: none; }
 :root[data-whimsy="2"] #origin-mark .om-ring-sq,
 :root[data-whimsy="2"] #origin-mark .om-pip-sq { display: inline; }

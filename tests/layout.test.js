@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 
 import { arrange, ARRANGEMENTS } from '../web/assets/js/arrange/arrangements.js';
 import {
-  gridStep, MIN_PX, MAX_PX, MIN_PX_TOUCH, MAX_PX_TOUCH,
+  gridStep, boardGridStep, MIN_PX, MAX_PX, MIN_PX_TOUCH, MAX_PX_TOUCH,
 } from '../web/assets/js/canvas/grid.js';
 import { farZoom, stillZoom, webZoom, thumbZoom, MIN_ZOOM, MAX_ZOOM } from '../web/assets/js/canvas/viewport.js';
 import { item } from './helpers.js';
@@ -346,6 +346,17 @@ test('two grid dots are never closer than 1.41 cm under a finger', () => {
   // the minor lattice at its tightest is exactly as dense as the major lattice
   // at its loosest, and the board never gets tighter than the tier below it.
   assert.equal(MAX_PX / MIN_PX, MAX_PX_TOUCH / MIN_PX_TOUCH);
+});
+
+test('an eight-wide Mobile board keeps all eight snap spaces', () => {
+  const fittedZoom = 328 / 512;
+  const mobile = { isMobile: true, zoom: fittedZoom };
+  const desktop = { isMobile: false, zoom: fittedZoom };
+
+  assert.equal(boardGridStep(64, mobile, true), 64);
+  assert.equal(512 / boardGridStep(64, mobile, true), 8);
+  assert.equal(boardGridStep(64, desktop, true), 128,
+    'Desktop still coarsens a touch grid at the same zoom');
 });
 
 test('the grid step is a power-of-two multiple of the base', () => {

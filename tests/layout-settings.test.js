@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  appearanceControlVisible,
   PALETTE_TOKENS,
   TYPOGRAPHY_TOKENS,
   mergeAppearance,
@@ -69,6 +70,12 @@ test('whimsy never changes the Mobile profile snap choice', () => {
   assert.equal(whimsyControlsSnap('mobile'), false);
 });
 
+test('panel width is exposed only by the Desktop appearance controls', () => {
+  assert.equal(appearanceControlVisible('--sidebar-w', 'desktop'), true);
+  assert.equal(appearanceControlVisible('--sidebar-w', 'mobile'), false);
+  assert.equal(appearanceControlVisible('--grid-alpha', 'mobile'), true);
+});
+
 test('the shared appearance allowlist contains only palette colors', () => {
   assert.ok(PALETTE_TOKENS.includes('--paper'));
   assert.ok(PALETTE_TOKENS.includes('--accent'));
@@ -76,6 +83,31 @@ test('the shared appearance allowlist contains only palette colors', () => {
   assert.ok(!PALETTE_TOKENS.includes('--font-body'));
   assert.ok(!PALETTE_TOKENS.includes('--grid-alpha'));
   assert.deepEqual(TYPOGRAPHY_TOKENS, ['--font-display', '--font-body']);
+});
+
+test('new Mobile profiles use the compact grid defaults and eight spaces', () => {
+  setBoardMode('mobile');
+  loadBoard({ items: [] });
+
+  assert.equal(board.settings.mobileColumns, 8);
+  assert.equal(board.settings.appearance.vars['--grid-alpha'], '0.20');
+  assert.equal(board.settings.appearance.vars['--grid-dot'], '1px');
+
+  setSetting('mobileColumns', 6);
+  setAppearance({
+    ...board.settings.appearance,
+    vars: {
+      ...board.settings.appearance.vars,
+      '--grid-alpha': '0.31',
+      '--grid-dot': '2.2px',
+    },
+  });
+  const saved = serializeBoard();
+  loadBoard(saved);
+
+  assert.equal(board.settings.mobileColumns, 6);
+  assert.equal(board.settings.appearance.vars['--grid-alpha'], '0.31');
+  assert.equal(board.settings.appearance.vars['--grid-dot'], '2.2px');
 });
 
 test('Desktop and Mobile retain independent settings and local appearance', () => {

@@ -2,7 +2,7 @@
 // It only reads state and calls commands - all the actual work lives elsewhere.
 
 import {
-  board, bus, markDirty, setSetting, setArrangement, setTitle,
+  board, bus, markDirty, setSetting, setArrangement, setTitle, cleanBoardTitle,
   MOBILE_COLUMN_OPTIONS,
 } from '../state.js';
 import { ARRANGEMENTS } from '../arrange/arrangements.js';
@@ -12,6 +12,7 @@ import { itemBounds } from '../geometry.js';
 import { toUnits, formatLength, paperMm, PAPERS } from '../measure.js';
 
 let sidebar, menuBtn;
+let sliderFocus;
 const MODE_PREF = 'mbrd.boardMode';
 const MOBILE_LAYOUT_QUERY = '(max-width: 700px)';
 
@@ -20,12 +21,63 @@ export function mobileLayoutDetected(media = query => globalThis.matchMedia?.(qu
   return typeof media === 'function' && !!media(MOBILE_LAYOUT_QUERY)?.matches;
 }
 
+/**
+ * Temporarily isolate one range control while a finger is moving it.
+ *
+ * Kept independent of event registration so the pointer lifecycle stays
+ * headless-testable. Delegation in initSidebar means appearance controls built
+ * at runtime are covered without maintaining a second list of sliders here.
+ */
+export function createMobileSliderFocus(root, {
+  isMobile = mobileLayoutDetected,
+} = {}) {
+  let active = null;
+  let pointerId = null;
+
+  const restore = () => {
+    active?.classList.remove('is-slider-active');
+    root.classList.remove('is-slider-focus');
+    active = null;
+    pointerId = null;
+  };
+
+  const clear = () => restore();
+
+  const begin = (target, id = null) => {
+    if (!isMobile() || !target?.matches?.('input[type="range"]')) return false;
+    active?.classList.remove('is-slider-active');
+    active = target;
+    pointerId = id;
+    active.classList.add('is-slider-active');
+    root.classList.add('is-slider-focus');
+    return true;
+  };
+
+  const end = (id = null) => {
+    if (!active) return false;
+    if (pointerId !== null && id !== null && pointerId !== id) return false;
+    restore();
+    return true;
+  };
+
+  return { begin, end, clear };
+}
+
 export function initSidebar(cmds) {
   sidebar = el('sidebar');
   menuBtn = el('menu-btn');
+  sliderFocus = createMobileSliderFocus(sidebar);
 
   menuBtn.addEventListener('click', () => (isOpen() ? close() : open()));
   el('side-close').addEventListener('click', close);
+
+  sidebar.addEventListener('pointerdown', e => {
+    sliderFocus.begin(e.target, e.pointerId);
+  });
+  const endSliderFocus = e => sliderFocus.end(e.pointerId);
+  globalThis.addEventListener('pointerup', endSliderFocus);
+  globalThis.addEventListener('pointercancel', endSliderFocus);
+  sidebar.addEventListener('lostpointercapture', endSliderFocus, true);
 
   // Every action button in the panel is a data-cmd; the map is the whole API.
   sidebar.addEventListener('click', e => {
@@ -178,8 +230,12 @@ function wireScale() {
  */
 function wireTitle() {
   const input = el('board-title');
+  input.addEventListener('input', () => {
+    const clean = cleanBoardTitle(input.value);
+    if (clean !== input.value) input.value = clean;
+  });
   input.addEventListener('change', () => {
-    const next = input.value.trim();
+    const next = cleanBoardTitle(input.value);
     if (next === titleValue()) return;
     setTitle(next);
     markDirty();
@@ -296,6 +352,7 @@ export function open() {
 
 export function close() {
   if (!sidebar) return;
+  sliderFocus?.clear();
   setOpen(false);
 }
 
