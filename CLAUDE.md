@@ -36,15 +36,31 @@ item's DOM belongs under `canvas/` — that is why `renderers.js`, `notes.js`,
 ### state.js is the only door
 
 Every board mutation goes through `state.js`, which emits on a shared `bus`
-(`items`, `geom`, `item`, `selection`, `settings`, `board`, `board:load`,
-`trash`). Subsystems subscribe; they never call each other. Undo/redo is
-command-based — `commit(label, redo, undo)` — so a new mutating operation must
-push its own inverse rather than relying on a diff.
+(`items`, `geom`, `item`, `selection`, `settings`, `layout`, `board`,
+`board:load`, `trash`). Subsystems subscribe; they never call each other.
+Undo/redo is command-based — `commit(label, redo, undo)` — so a new mutating
+operation must push its own inverse rather than relying on a diff.
 
 `main.js` is the wiring point: it builds the `Viewport`, calls every `init*()`,
 and owns `cmds`, the single command surface that sidebar buttons
 (`data-cmd="…"`), the keyboard and the context menu all drive. A new user-facing
 action is an entry in `cmds`, not a second event listener.
+
+### Two layouts, one board
+
+Desktop and Mobile share **items** and differ in everything spatial. `board`
+carries `layouts` (mode → geometry per item), `layoutSettings` (mode →
+settings), `arrangements` (mode → name) and `sharedAppearance`; `board.settings`
+and `board.arrangement` are the *active* mode's, rebuilt by `setBoardMode()`.
+`board.layoutMode` is local UI state and is deliberately not persisted, so a
+phone and a laptop each remember their own choice.
+
+`layout-settings.js` is the pure split: `splitAppearance()` / `mergeAppearance()`
+send palette and typography tokens board-wide and keep radius, density, grid ink
+and panel dimensions layout-local. Paper is Desktop-only. Adding a setting means
+deciding which half it belongs to. `docs/layout-settings.md` is the reference,
+and the `.mbrd` schema keeps top-level `items`/`settings`/`arrangement`
+describing Desktop for older readers.
 
 ### Coordinates and rendering
 
@@ -70,6 +86,21 @@ screen) or discarded. Assume an item's node may not be in the DOM;
 each card's 2D canvas; browsers cap contexts around sixteen and a panning board
 would spend them all. Model cards are stored as self-photographed WebP stills
 until "Rotate model" hands the geometry back.
+
+### Size and arrangement
+
+`measure.js` sits beside `util`/`geometry` at the bottom — pure, no DOM, no
+`state` import. It defines the board's one link to reality: `settings.scale` is
+**world units per millimetre**, and `settings.units` only chooses the names the
+numbers are dressed in. Geometry never reads either. `canvas/paper.js` draws a
+real A4/A3/Letter outline through that scale, and dragging its corners sets the
+scale — that is the intended way to set it, not typing a number.
+
+`arrange/arrangements.js` is likewise pure: every arrangement is
+`(items, opts) => [{x, y}]` in input order, so a fresh import and "Rearrange
+all" share one code path. `spacing` always means edge-to-edge gap; passing a
+`seed` is what makes a layout move its slots, so seedless calls stay
+reproducible.
 
 ### Assets and persistence
 
@@ -116,6 +147,11 @@ cache changes explicitly.
 
 ## Notes
 
-`PLAN.md` is the full design, `REFACTOR.md` and `research/` the reasoning behind
-past decisions, `HANDOFF.md` the state of in-flight work. `window.mbrd` is a
+`PLAN.md` is the full design; `research/` holds the reasoning behind past
+decisions (`research/REFACTOR.md`, plus dated audits). `docs/` holds the two
+specs worth reading before touching their subsystems —
+`docs/mbrd-format.md` and `docs/layout-settings.md`. `window.mbrd` is a
 deliberate console handle (`mbrd.board`, `mbrd.cmds.fit()`, `mbrd.vp`).
+
+Module headers in this codebase carry the *why*, often at length — read the top
+of a file before changing it, and keep that convention when adding one.

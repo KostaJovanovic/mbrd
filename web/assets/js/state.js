@@ -22,12 +22,15 @@ import { getAsset } from './storage/assets.js';
 // this item and what does it cover" has exactly one answer in this app. Kept
 // at the top level rather than under canvas/ because it depends on nothing and
 // belongs to no one layer - see geometry.js.
-import { itemBounds, overlapFraction, latticeBox, MIN_SIZE, MAX_SIZE } from './geometry.js';
+import {
+  itemBounds, overlapFraction, latticeBox, cellInset, MIN_SIZE, MAX_SIZE,
+} from './geometry.js';
 // The board's link to real-world sizes. Pure arithmetic with no state of its
 // own, at the same level as geometry.js and imported here for the same reason:
 // the default belongs with the rest of the defaults, and the clamp has to run
 // on every board that arrives from a file.
 import { DEFAULT_SCALE, clampScale, PAPERS } from './measure.js';
+import { splitAppearance, mergeAppearance } from './layout-settings.js';
 
 export const bus = emitter();
 
@@ -42,6 +45,7 @@ export const DEFAULT_SETTINGS = {
   hud: false,
   gridStyle: 'dots',   // the only style; kept so old .mbrd files still load
   gridStep: 64,        // world px between minor grid lines, before zoom quantisation
+  mobileColumns: 6,    // Mobile-only strip width; validated to 6 or 8
   // Gap used by the arrangement engine. 12 rather than the 32 it was: a
   // moodboard is a board of things read against each other, and a third of a
   // card's width of empty paper between every pair is the layout arguing that
@@ -72,7 +76,55 @@ export const DEFAULT_SETTINGS = {
 
 export const BOARD_MODES = ['desktop', 'mobile'];
 export const MOBILE_COLUMNS = 6;
-export const MOBILE_TOP_ROWS = 10;
+export const MOBILE_COLUMN_OPTIONS = [6, 8];
+export const MOBILE_TOP_ROWS = 6;
+export const MOBILE_MIN_ROWS = 25;
+export const MOBILE_BOTTOM_ROWS = 15;
+
+function cloneSettings(settings) {
+  return {
+    ...settings,
+    appearance: {
+      ...(settings?.appearance || {}),
+      vars: { ...(settings?.appearance?.vars || {}) },
+    },
+    fonts: Array.isArray(settings?.fonts) ? settings.fonts.map(font => ({ ...font })) : [],
+  };
+}
+
+function layoutSettingsOf(settings) {
+  const cloned = cloneSettings(settings);
+  const { local } = splitAppearance(cloned.appearance);
+  cloned.appearance = local;
+  return cloned;
+}
+
+function settingsFor(layoutSettings, sharedAppearance) {
+  const cloned = cloneSettings(layoutSettings);
+  cloned.appearance = mergeAppearance(sharedAppearance, cloned.appearance);
+  return cloned;
+}
+
+function defaultLayoutSettings(mode) {
+  return layoutSettingsOf({
+    ...DEFAULT_SETTINGS,
+    snap: mode === 'mobile',
+    spacing: mode === 'mobile' ? 0 : DEFAULT_SETTINGS.spacing,
+    appearance: { palette: '', vars: {} },
+    fonts: [],
+  });
+}
+
+/** The only supported Mobile strip widths, with six as the safe fallback. */
+export function mobileColumnCount(value = board.settings.mobileColumns) {
+  return MOBILE_COLUMN_OPTIONS.includes(+value) ? +value : MOBILE_COLUMNS;
+}
+
+const initialSharedAppearance = splitAppearance(DEFAULT_SETTINGS.appearance).shared;
+const initialLayoutSettings = {
+  desktop: defaultLayoutSettings('desktop'),
+  mobile: defaultLayoutSettings('mobile'),
+};
 
 export const board = {
   title: 'Untitled board',
@@ -80,8 +132,11 @@ export const board = {
   // Both containers rebuilt rather than spread through: DEFAULT_SETTINGS holds
   // them by reference, and a board mutating one in place would be editing the
   // defaults every later board is built from.
-  settings: { ...DEFAULT_SETTINGS, appearance: { palette: '', vars: {} }, fonts: [] },
+  sharedAppearance: initialSharedAppearance,
+  layoutSettings: initialLayoutSettings,
+  settings: settingsFor(initialLayoutSettings.desktop, initialSharedAppearance),
   arrangement: 'spiral',
+  arrangements: { desktop: 'spiral', mobile: 'spiral' },
   // The mode is local UI state and is deliberately omitted from board.json:
   // a phone remembers Mobile and a laptop remembers Desktop without the last
   // device to save forcing its choice onto the other. `layouts` is the part
@@ -252,7 +307,7 @@ function clearHistory() {
 // Item mutations (all undoable)
 // ---------------------------------------------------------------------------
 
-export function addItems(items, label = 'Add') {
+export function addItems(items, label = 'Add', options = {}) {
   // The stack is dealt here rather than left to makeItem().
   //
   // makeItem() defaults `z` to topZ() + 1, which reads the *live* board - and
@@ -268,8 +323,13 @@ export function addItems(items, label = 'Add') {
   // An explicit z is still honoured, because loadBoard() and the bin restore
   // items that already have one and must come back exactly where they were.
   let z = topZ();
-  const added = items.map(partial =>
-    fitBoardMode(onLattice(makeItem(partial.z != null ? partial : { ...partial, z: ++z }))));
+  let added = items.map(partial =>
+    makeItem(partial.z != null ? partial : { ...partial, z: ++z }));
+  if (options.avoidOverlap && board.layoutMode === 'mobile') {
+    added = placeMobileItems(added);
+  } else {
+    added = added.map(item => fitBoardMode(onLattice(item)));
+  }
   commit(label,
     () => { board.items.push(...added.filter(a => !byId(a.id))); bus.emit('items'); },
     () => { const ids = new Set(added.map(a => a.id));
@@ -277,6 +337,157 @@ export function addItems(items, label = 'Add') {
             ids.forEach(id => selection.delete(id));
             bus.emit('items'); bus.emit('selection'); });
   return added;
+}
+
+const MOBILE_PACK_EPSILON = 1e-9;
+
+/** Number of Mobile grid cells needed to contain one unrotated side. */
+function mobileCellSpan(side, step, maximum = Number.POSITIVE_INFINITY) {
+  const seam = 2 * cellInset(step);
+  return Math.min(
+    Math.max(Math.ceil((side + seam) / step - MOBILE_PACK_EPSILON), 1),
+    maximum,
+  );
+}
+
+/** First full grid row below every item that is staying where it is. */
+function mobilePackStartRow(obstacles, step) {
+  const bounds = itemBounds(obstacles);
+  if (!bounds) return 0;
+  return Math.max(
+    0,
+    Math.ceil((MOBILE_TOP_ROWS * step - bounds.y0) / step - MOBILE_PACK_EPSILON),
+  );
+}
+
+/** Compact row-major packing into the selected Mobile occupancy grid. */
+function packMobileGrid(items, obstacles, step, columns) {
+  const occupied = new Set();
+  const startRow = mobilePackStartRow(obstacles, step);
+  const inset = cellInset(step);
+  const open = (col, row, cols, rows) => {
+    for (let y = row; y < row + rows; y++) {
+      for (let x = col; x < col + cols; x++) {
+        if (occupied.has(`${x}:${y}`)) return false;
+      }
+    }
+    return true;
+  };
+  const claim = (col, row, cols, rows) => {
+    for (let y = row; y < row + rows; y++) {
+      for (let x = col; x < col + cols; x++) occupied.add(`${x}:${y}`);
+    }
+  };
+
+  return items.map(item => {
+    const cols = mobileCellSpan(item.w, step, columns);
+    const rows = mobileCellSpan(item.h, step);
+    let row = startRow;
+    let col = 0;
+    let found = false;
+    while (!found) {
+      for (col = 0; col <= columns - cols; col++) {
+        if (open(col, row, cols, rows)) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) row++;
+    }
+    claim(col, row, cols, rows);
+    const left = (-columns / 2 + col) * step;
+    const top = (MOBILE_TOP_ROWS - row) * step;
+    return {
+      ...item,
+      // Anchor the visible box, not its centre, to the cell seam. Centring an
+      // off-lattice size inside its claimed span can leave either edge a pixel
+      // across a grid or board rule; the top-left seam is deterministic and
+      // keeps the whole box inside the cells it owns.
+      x: left + inset + item.w / 2,
+      y: top - inset - item.h / 2,
+      rot: 0,
+    };
+  });
+}
+
+/**
+ * Append items to Mobile as a compact selected-width grid without overlap.
+ *
+ * The incoming order still comes from the selected arrangement. Each item's
+ * fitted dimensions become a rectangular cell span, then a row-major first-fit
+ * search puts compatible spans beside one another before moving downward.
+ * Existing items set the first available row, so imports and partial
+ * rearrangements stay below content that was not part of the operation.
+ *
+ * Snapped and unsnapped geometry are packed separately. The snapped copy uses
+ * the lattice's normal inset seam; its presnap memo therefore restores another
+ * collision-free grid layout if the user later turns snapping off.
+ */
+export function placeMobileItems(items, obstacles = board.items, options = {}) {
+  const step = options.step > 0 ? options.step : baseStep();
+  const snap = options.snap ?? board.settings.snap;
+  const preserveSize = options.preserveSize === true;
+  const columns = mobileColumnCount(options.columns ?? board.settings.mobileColumns);
+  const clean = item => {
+    const presnap = usableMemo(item.meta?.presnap);
+    const { presnap: _oldPresnap, ...meta } = item.meta || {};
+    const source = presnap ? { ...item, ...presnap } : item;
+    return fitMobile({ ...source, meta, rot: 0 }, true, step, columns);
+  };
+  const rawItems = items.map(clean);
+  const rawObstacles = obstacles.map(item => {
+    const pre = usableMemo(item.meta?.presnap);
+    return fitMobile(pre ? { ...item, ...pre } : item, false, step, columns);
+  });
+  const raw = packMobileGrid(rawItems, rawObstacles, step, columns);
+  if (!snap) return raw;
+
+  const liveItems = preserveSize
+    ? items.map(item => {
+        const { presnap: _oldPresnap, ...meta } = item.meta || {};
+        return fitMobile({ ...item, meta, rot: 0 }, true, step, columns);
+      })
+    : rawItems.map(item => {
+        const box = latticeBox(item, step);
+        return fitMobile({ ...item, w: box.w, h: box.h }, false, step, columns);
+      });
+  const liveObstacles = obstacles.map(item => fitMobile(item, false, step, columns));
+  return packMobileGrid(liveItems, liveObstacles, step, columns).map((item, index) => ({
+    ...item,
+    meta: {
+      ...item.meta,
+      presnap: {
+        x: raw[index].x,
+        y: raw[index].y,
+        w: raw[index].w,
+        h: raw[index].h,
+      },
+    },
+  }));
+}
+
+/** Reflow the live Mobile board after its column count changes. */
+function repackMobileBoard() {
+  if (!board.items.length) return;
+  const ordered = [...board.items].sort((a, b) =>
+    b.y - a.y || a.x - b.x || a.id.localeCompare(b.id));
+  const before = snapshotGeom(ordered.map(item => item.id));
+  const target = new Map(placeMobileItems(ordered, []).map(item => [item.id, item]));
+  applyGeom(before.map(geometry => {
+    const item = target.get(geometry.id);
+    return {
+      ...geometry,
+      x: item.x,
+      y: item.y,
+      w: item.w,
+      h: item.h,
+      rot: item.rot,
+      presnap: item.meta?.presnap ? { ...item.meta.presnap } : null,
+    };
+  }));
+  commitGeom('Change Mobile grid width', before, ordered.map(item => item.id), {
+    preservePresnap: true,
+  });
 }
 
 /**
@@ -417,13 +628,30 @@ export function emptyTrash() {
 const GEOM_KEYS = ['x', 'y', 'w', 'h', 'rot', 'z'];
 
 /** The fixed width of the Mobile board in world units. */
-export function mobileBoardWidth() {
-  return MOBILE_COLUMNS * baseStep();
+export function mobileBoardWidth(
+  step = baseStep(),
+  columns = mobileColumnCount(),
+) {
+  return mobileColumnCount(columns) * step;
 }
 
-/** The highest world-space edge of the Mobile board. It has no lower edge. */
-export function mobileBoardTop() {
-  return MOBILE_TOP_ROWS * baseStep();
+/** The highest world-space edge of the Mobile board. */
+export function mobileBoardTop(step = baseStep()) {
+  return MOBILE_TOP_ROWS * step;
+}
+
+/**
+ * The content-sized lower edge of the Mobile board.
+ *
+ * A new or sparse board is still twenty-five rows tall. Once an item reaches
+ * below that minimum, the board grows just far enough to keep fifteen clear
+ * rows beneath its lowest rendered edge.
+ */
+export function mobileBoardBottom(items = board.items) {
+  const step = baseStep();
+  const minimum = mobileBoardTop() - MOBILE_MIN_ROWS * step;
+  const bounds = itemBounds(items);
+  return bounds ? Math.min(minimum, bounds.y0 - MOBILE_BOTTOM_ROWS * step) : minimum;
 }
 
 const geometryOf = it => {
@@ -459,18 +687,28 @@ function layoutMap(layout) {
   return new Map((layout || []).map(geometry => [geometry.id, geometry]));
 }
 
-/** Keep an item inside the six-column Mobile strip. */
-function fitMobile(it, scaleHeight = false) {
-  const width = mobileBoardWidth();
+/** Keep an item inside the selected-width Mobile strip. */
+function fitMobile(
+  it,
+  scaleHeight = false,
+  step = baseStep(),
+  columns = mobileColumnCount(),
+) {
+  const width = mobileBoardWidth(step, columns);
+  const inset = cellInset(step);
+  const contentWidth = Math.max(MIN_SIZE, width - 2 * inset);
   const oldWidth = Math.min(Math.max(Number.isFinite(it.w) ? it.w : MIN_SIZE, MIN_SIZE), MAX_SIZE);
-  const ratio = oldWidth > width ? width / oldWidth : 1;
-  const w = Math.min(oldWidth, width);
+  const ratio = oldWidth > contentWidth ? contentWidth / oldWidth : 1;
+  const w = Math.min(oldWidth, contentWidth);
   const h0 = Math.min(Math.max(Number.isFinite(it.h) ? it.h : MIN_SIZE, MIN_SIZE), MAX_SIZE);
   const h = scaleHeight ? Math.max(MIN_SIZE, h0 * ratio) : h0;
   const half = w / 2;
-  const x = Math.min(Math.max(Number.isFinite(it.x) ? it.x : 0, -width / 2 + half), width / 2 - half);
+  const x = Math.min(
+    Math.max(Number.isFinite(it.x) ? it.x : 0, -width / 2 + inset + half),
+    width / 2 - inset - half,
+  );
   const y0 = Number.isFinite(it.y) ? it.y : 0;
-  const y = Math.min(y0, mobileBoardTop() - h / 2);
+  const y = Math.min(y0, mobileBoardTop(step) - inset - h / 2);
   return { ...it, x, y, w, h };
 }
 
@@ -486,27 +724,47 @@ const fitBoardMode = (it, scaleHeight = false) =>
  */
 function completeLayout(mode) {
   const map = layoutMap(board.layouts[mode]);
-  let bottom = mode === 'mobile' ? mobileBoardTop() : 0;
-  if (mode === 'mobile' && map.size) {
-    bottom = Math.min(...[...map.values()].map(g => g.y - g.h / 2)) - baseStep();
+  if (mode === 'mobile') {
+    const profile = board.layoutSettings.mobile || defaultLayoutSettings('mobile');
+    const step = profile.gridStep > 0 ? profile.gridStep : DEFAULT_SETTINGS.gridStep;
+    const columns = mobileColumnCount(profile.mobileColumns);
+    const known = [];
+    const missing = [];
+    for (const it of board.items) {
+      const saved = map.get(it.id);
+      if (!saved) {
+        missing.push(it);
+        continue;
+      }
+      const presnap = saved.presnap;
+      const geometry = {
+        ...geometryOf(fitMobile(saved, false, step, columns)),
+        ...(presnap ? { presnap: { ...presnap } } : {}),
+      };
+      map.set(it.id, geometry);
+      known.push({
+        ...it,
+        ...geometry,
+        meta: geometry.presnap
+          ? { ...it.meta, presnap: { ...geometry.presnap } }
+          : it.meta,
+      });
+    }
+    const packed = placeMobileItems(missing, known, {
+      step,
+      snap: profile.snap,
+      columns,
+    });
+    for (const item of packed) map.set(item.id, geometryOf(item));
+    const out = board.items.map(item => map.get(item.id));
+    board.layouts.mobile = out;
+    return out;
   }
+
   const out = [];
   for (const it of board.items) {
     let geometry = map.get(it.id);
-    if (!geometry && mode === 'mobile') {
-      const fitted = fitMobile({ ...it, x: 0, y: 0, rot: 0 }, true);
-      geometry = geometryOf({ ...fitted, y: bottom - fitted.h / 2 });
-      bottom = geometry.y - geometry.h / 2 - baseStep();
-    } else if (!geometry) {
-      geometry = geometryOf(it);
-    }
-    if (mode === 'mobile') {
-      const presnap = geometry.presnap;
-      geometry = {
-        ...geometryOf(fitMobile(geometry)),
-        ...(presnap ? { presnap: { ...presnap } } : {}),
-      };
-    }
+    if (!geometry) geometry = geometryOf(it);
     out.push(geometry);
   }
   board.layouts[mode] = out;
@@ -515,6 +773,35 @@ function completeLayout(mode) {
 
 function captureLayout(mode = board.layoutMode) {
   board.layouts[mode] = board.items.map(geometryOf);
+}
+
+/** Save the active layout's private settings and refresh the shared look. */
+function captureLayoutSettings(mode = board.layoutMode) {
+  const { shared } = splitAppearance(board.settings.appearance);
+  board.sharedAppearance = cloneSettings({ appearance: shared }).appearance;
+  board.layoutSettings[mode] = layoutSettingsOf(board.settings);
+  board.arrangements[mode] = board.arrangement;
+}
+
+/** Make one layout's settings and arrangement the live compatibility surface. */
+function activateLayoutSettings(mode) {
+  if (mode === 'mobile') {
+    // '' rather than 'none': that is what DEFAULT_SETTINGS holds, what the
+    // select's None option carries, and what PAPERS has no entry for. A second
+    // spelling would read as truthy everywhere `settings.paper` is tested.
+    board.layoutSettings.mobile.paper = '';
+    board.layoutSettings.mobile.paperLandscape = false;
+    board.layoutSettings.mobile.paperResize = false;
+    board.layoutSettings.mobile.spacing = 0;
+  }
+  const fonts = (board.layoutSettings.desktop.fonts || [])
+    .map(font => ({ ...font }));
+  board.layoutSettings.desktop.fonts = fonts.map(font => ({ ...font }));
+  board.layoutSettings.mobile.fonts = fonts.map(font => ({ ...font }));
+  const profile = board.layoutSettings[mode] || defaultLayoutSettings(mode);
+  board.layoutSettings[mode] = cloneSettings(profile);
+  board.settings = settingsFor(profile, board.sharedAppearance);
+  board.arrangement = board.arrangements[mode] || 'spiral';
 }
 
 function writeLayout(layout) {
@@ -535,19 +822,22 @@ function writeLayout(layout) {
 /**
  * Switch which geometry profile is live.
  *
- * Content and settings never move: only x/y/w/h/rotation/stacking and the
- * layout-specific pre-snap memo are exchanged. History is cleared because a
- * geometry undo captured in one profile must never replay into the other.
+ * Content and the board-wide color identity never move. Geometry, arrangement,
+ * and every other setting are exchanged as one profile. History is cleared
+ * because neither geometry nor setting undo may replay into the other layout.
  */
 export function setBoardMode(mode) {
   if (!BOARD_MODES.includes(mode) || mode === board.layoutMode) return false;
   captureLayout();
+  captureLayoutSettings();
   const generated = mode === 'mobile' && !(board.layouts.mobile || []).length && board.items.length;
   board.layoutMode = mode;
+  activateLayoutSettings(mode);
   writeLayout(completeLayout(mode));
   clearHistory();
   if (generated) markDirty();
   bus.emit('layout', mode);
+  bus.emit('settings', 'profile');
   return true;
 }
 
@@ -558,6 +848,8 @@ export function snapshotGeom(ids) {
     if (!it) return null;
     const g = { id };
     for (const k of GEOM_KEYS) g[k] = it[k];
+    const presnap = usableMemo(it.meta?.presnap);
+    g.presnap = presnap ? { ...presnap } : null;
     return g;
   }).filter(Boolean);
 }
@@ -570,6 +862,11 @@ export function applyGeom(snap) {
     if (!it) continue;
     const next = fitBoardMode({ ...it, ...g });
     for (const k of GEOM_KEYS) it[k] = next[k];
+    if ('presnap' in g) {
+      const presnap = usableMemo(g.presnap);
+      if (presnap) it.meta = { ...it.meta, presnap: { ...presnap } };
+      else forgetPresnap(it);
+    }
     ids.push(g.id);
   }
   bus.emit('geom', ids);
@@ -579,8 +876,8 @@ export function applyGeom(snap) {
  * Close a live drag/resize into one undo entry. `before` is the snapshot taken
  * when the gesture started; the current geometry becomes the redo state.
  */
-export function commitGeom(label, before, driven) {
-  const after = snapshotGeom(before.map(b => b.id));
+export function commitGeom(label, before, driven, options = {}) {
+  let after = snapshotGeom(before.map(b => b.id));
   const changed = after.some((a, i) => GEOM_KEYS.some(k => a[k] !== before[i][k]));
   if (!changed) return;
   // What the gesture actually had hold of, as opposed to what came along for
@@ -592,10 +889,11 @@ export function commitGeom(label, before, driven) {
   // Placed by hand while snapping was on: this *is* where the item belongs
   // now, so it gives up its memory of where it sat before the board was laid
   // on the lattice. Turning snapping off later leaves it exactly here.
-  if (board.settings.snap) {
+  if (board.settings.snap && !options.preservePresnap) {
     for (let i = 0; i < after.length; i++) {
       if (GEOM_KEYS.some(k => after[i][k] !== before[i][k])) forgetPresnap(byId(after[i].id));
     }
+    after = snapshotGeom(before.map(b => b.id));
   }
   commit(label, () => applyGeom(after), () => applyGeom(before));
 }
@@ -650,6 +948,19 @@ function snapAll() {
     });
   }
   applySnapState(before, after, 'Snap to grid');
+}
+
+/**
+ * Re-assert the geometry rules that can drift from their rendered result.
+ *
+ * A reload is not an edit by itself. Snapping only records history and dirties
+ * the board when it actually repairs a box; the final event also makes every
+ * renderer re-read positions when nothing in the data needed changing.
+ */
+export function recheckBoardGeometry() {
+  if (board.settings.snap) snapAll();
+  const ids = board.items.map(item => item.id);
+  if (ids.length) bus.emit('geom', ids);
 }
 
 /** Put back what snapAll() remembered, for everything still carrying a memo. */
@@ -710,28 +1021,105 @@ function bottomZ() {
 }
 
 export function raiseSelection() {
-  const before = snapshotGeom(selection);
+  const layer = stackLayerIds(selection);
+  const before = snapshotGeom(layer);
   if (!before.length) return;
   let z = topZ();
-  // Walk in current stacking order so a multi-selection keeps its internal
-  // arrangement instead of being reshuffled by Set iteration order.
-  for (const id of stackOrder(selection)) byId(id).z = ++z;
-  bus.emit('geom', [...selection]);
+  // Walk in current stacking order so a multi-selection and every sticky layer
+  // keep their internal arrangement instead of being reshuffled by Set
+  // iteration order.
+  for (const id of stackOrder(layer)) byId(id).z = ++z;
+  bus.emit('geom', layer);
   commitGeom('Bring to front', before);
 }
 
 export function lowerSelection() {
-  const before = snapshotGeom(selection);
+  const layer = stackLayerIds(selection);
+  const before = snapshotGeom(layer);
   if (!before.length) return;
   let z = bottomZ();
-  for (const id of stackOrder(selection).reverse()) byId(id).z = --z;
-  bus.emit('geom', [...selection]);
+  for (const id of stackOrder(layer).reverse()) byId(id).z = --z;
+  bus.emit('geom', layer);
   commitGeom('Send to back', before);
 }
 
 /** The given ids, sorted bottom-to-top by their current z. */
 export function stackOrder(ids) {
   return [...ids].sort((a, b) => (byId(a)?.z || 0) - (byId(b)?.z || 0));
+}
+
+/**
+ * The visual stack, bottom-to-top, with each sticky chain kept as one layer.
+ *
+ * Raw z still records the host-before-note order that lets a board rediscover
+ * sticky relations after loading. For presentation, though, the root host owns
+ * the layer: every note attached to it must be behind and in front of exactly
+ * the same outside items. Members retain their raw order inside that layer, so
+ * the notes remain visible on top of the thing they are stuck to.
+ */
+export function visualStackOrder() {
+  return stackGroups().flatMap(group => group.items.map(item => item.id));
+}
+
+/**
+ * Expand ids to every member of their sticky layers, in visual stack order.
+ *
+ * This goes both directions. Selecting a host includes all its notes; selecting
+ * one of those notes also includes the host and its sibling notes for a z-order
+ * change, even though an ordinary spatial move may still peel that note away.
+ */
+export function stackLayerIds(ids) {
+  const wanted = new Set([...ids].map(id => byId(id)).filter(Boolean).map(stackRoot).map(item => item.id));
+  if (!wanted.size) return [];
+  return stackGroups()
+    .filter(group => wanted.has(group.root.id))
+    .flatMap(group => group.items.map(item => item.id));
+}
+
+/**
+ * Whether a z-order action could change what the current layer covers.
+ *
+ * Overlap within a sticky layer does not count: the note and host deliberately
+ * cover one another and already move through the external stack as one object.
+ */
+export function selectionHasStackOverlap(ids = selection) {
+  const selected = new Set(stackLayerIds(ids));
+  if (!selected.size) return false;
+  const inside = board.items.filter(item => selected.has(item.id));
+  const outside = board.items.filter(item => !selected.has(item.id));
+  return inside.some(a => outside.some(b => overlapFraction(a, b) > 0));
+}
+
+/** The bottom-most non-sticky ancestor that owns an item's external layer. */
+function stackRoot(item) {
+  let root = item;
+  const seen = new Set();
+  while (root?.type === 'note' && !seen.has(root.id)) {
+    seen.add(root.id);
+    const host = stuckTo(root);
+    if (!host) break;
+    root = host;
+  }
+  return root;
+}
+
+/** Sticky layers ordered externally by their root, internally by raw z. */
+function stackGroups() {
+  const boardOrder = new Map(board.items.map((item, index) => [item.id, index]));
+  const groups = new Map();
+  for (const item of board.items) {
+    const root = stackRoot(item);
+    let group = groups.get(root.id);
+    if (!group) {
+      group = { root, items: [] };
+      groups.set(root.id, group);
+    }
+    group.items.push(item);
+  }
+  const compare = (a, b) =>
+    (a.z || 0) - (b.z || 0) || boardOrder.get(a.id) - boardOrder.get(b.id);
+  for (const group of groups.values()) group.items.sort(compare);
+  return [...groups.values()].sort((a, b) => compare(a.root, b.root));
 }
 
 /**
@@ -1420,6 +1808,13 @@ export function clearSelection() {
   bus.emit('selection');
 }
 
+/** Remove one item from the current selection, leaving the rest intact. */
+export function deselect(id) {
+  if (!selection.delete(id)) return false;
+  bus.emit('selection');
+  return true;
+}
+
 export function selectAll() {
   select(board.items.map(i => i.id));
 }
@@ -1429,19 +1824,54 @@ export function selectAll() {
 // ---------------------------------------------------------------------------
 
 export function setSetting(key, value) {
+  // Paper is Desktop-only, and this is where that is actually enforced: the
+  // fixup in activateLayoutSettings() runs once, at the moment of the switch,
+  // so without this a later write would put a sheet on the Mobile board.
+  if (board.layoutMode === 'mobile' &&
+      ['paper', 'paperLandscape', 'paperResize', 'spacing'].includes(key)) return;
+  if (key === 'mobileColumns') {
+    if (board.layoutMode !== 'mobile') return;
+    value = mobileColumnCount(value);
+  }
+  if (key === 'fonts') {
+    const fonts = Array.isArray(value) ? value.map(font => ({ ...font })) : [];
+    board.settings.fonts = fonts;
+    board.layoutSettings.desktop.fonts = fonts.map(font => ({ ...font }));
+    board.layoutSettings.mobile.fonts = fonts.map(font => ({ ...font }));
+    markDirty();
+    bus.emit('settings', key);
+    return;
+  }
+  if (key === 'appearance') {
+    setAppearance(value);
+    return;
+  }
   if (board.settings[key] === value) return;
   board.settings[key] = value;
   // Snapping is not only a rule for the next drag - it moves the board. Done
   // here rather than at the checkbox because the whimsy axis flips this setting
   // too (Harsh means snapped), and both routes have to behave the same.
   if (key === 'snap') value ? snapAll() : unsnapAll();
+  if (key === 'mobileColumns') repackMobileBoard();
+  board.layoutSettings[board.layoutMode] = layoutSettingsOf(board.settings);
   markDirty();
   bus.emit('settings', key);
+}
+
+/** Replace the shared color/whimsy half and the active layout's local look. */
+export function setAppearance(appearance) {
+  const { shared, local } = splitAppearance(appearance);
+  board.sharedAppearance = cloneSettings({ appearance: shared }).appearance;
+  board.settings.appearance = mergeAppearance(board.sharedAppearance, local);
+  board.layoutSettings[board.layoutMode] = layoutSettingsOf(board.settings);
+  markDirty();
+  bus.emit('settings', 'appearance');
 }
 
 export function setArrangement(name) {
   if (board.arrangement === name) return;
   board.arrangement = name;
+  board.arrangements[board.layoutMode] = name;
   markDirty();
   bus.emit('settings', 'arrangement');
 }
@@ -1473,12 +1903,14 @@ export function loadBoard(data) {
   const next = normalizeBoard(data);
   board.title = next.title;
   board.view = next.view;
-  board.settings = next.settings;
-  board.arrangement = next.arrangement;
+  board.sharedAppearance = next.sharedAppearance;
+  board.layoutSettings = next.layoutSettings;
+  board.arrangements = next.arrangements;
   board.layouts = next.layouts;
   board.items = next.items;
   board.trash = next.trash;
   board.layoutMode = layoutMode;
+  activateLayoutSettings(layoutMode);
   writeLayout(completeLayout(layoutMode));
   selection.clear();
   clearHistory();
@@ -1513,16 +1945,21 @@ export function loadBoard(data) {
  */
 function normalizeBoard(data) {
   const src = data && typeof data === 'object' ? data : {};
-  const settings = src.settings && typeof src.settings === 'object' ? src.settings : {};
-  const appearance = settings.appearance && typeof settings.appearance === 'object'
-    ? settings.appearance : {};
+  const rawSettings = src.settings && typeof src.settings === 'object' ? src.settings : {};
+  const desktopSettings = normalizeSettings(rawSettings, 'desktop');
+  const mobileSettings = normalizeSettings(rawSettings, 'mobile');
+  const { shared: sharedAppearance } = splitAppearance(desktopSettings.appearance);
   const items = Array.isArray(src.items) ? src.items : [];
   const trash = Array.isArray(src.trash) ? src.trash : [];
   const normalizedItems = items.filter(it => it && typeof it === 'object').map(makeItem);
   const rawLayouts = src.layouts && typeof src.layouts === 'object' ? src.layouts : {};
-  const desktop = normalizeLayout(rawLayouts.desktop, normalizedItems);
-  const mobile = normalizeLayout(rawLayouts.mobile, normalizedItems);
+  const desktopRecord = layoutRecord(rawLayouts.desktop);
+  const mobileRecord = layoutRecord(rawLayouts.mobile);
+  const desktop = normalizeLayout(desktopRecord.items, normalizedItems);
+  const mobile = normalizeLayout(mobileRecord.items, normalizedItems);
   const desktopById = layoutMap(desktop);
+  const legacyArrangement = typeof src.arrangement === 'string' && src.arrangement
+    ? src.arrangement : 'spiral';
 
   return {
     title: typeof src.title === 'string' && src.title ? src.title : 'Untitled board',
@@ -1530,55 +1967,19 @@ function normalizeBoard(data) {
       pan: { x: +src.view?.pan?.x || 0, y: +src.view?.pan?.y || 0 },
       zoom: +src.view?.zoom || 1,
     },
-    settings: {
-      ...DEFAULT_SETTINGS,
-      ...settings,
-      appearance: {
-        // Carried through explicitly, and this is the line whose absence lost
-        // it. Rebuilding this object key by key overrides the spread above, so
-        // an axis position written out with the rest of settings was dropped by
-        // every load path there is - a reopened session, an opened .mbrd,
-        // somebody else's board. It only ever looked like it worked because
-        // ui/appearance.js keeps its own copy in localStorage, which masks the
-        // loss until the two disagree.
-        //
-        // Spread conditionally rather than written as a plain key: an explicit
-        // `whimsy: undefined` still puts the property there, and hasLook()
-        // tests `whimsy != null`, so a board that genuinely brought no look
-        // would start claiming it had one and would override the user's own
-        // saved axis with a default. Left unclamped, because ui/appearance.js
-        // clamps whatever it is handed - which is the right place for it, this
-        // value also arriving from files this app did not write. Same for
-        // `vars`: ui/appearance.js is what decides which tokens a board is
-        // allowed to set, and it applies that rule to every look it is given.
-        ...(appearance.whimsy != null ? { whimsy: appearance.whimsy } : {}),
-        palette: typeof appearance.palette === 'string' ? appearance.palette : '',
-        vars: appearance.vars && typeof appearance.vars === 'object'
-          ? { ...appearance.vars } : {},
-      },
-      // Held to shape here rather than where it is read, for the same reason
-      // `vars` is filtered rather than trusted: both name bytes and both end up
-      // inside a CSS declaration, and both arrive inside a file somebody else
-      // wrote. See normalizeFonts().
-      fonts: normalizeFonts(settings.fonts),
-      // A scale of zero, a negative one or a NaN would turn every measurement
-      // on the board into Infinity or a blank, in a readout that is meant to be
-      // the trustworthy part. Clamped rather than rejected: a board carrying a
-      // silly scale is still a board, and the geometry it holds is untouched by
-      // this number either way.
-      scale: clampScale(settings.scale),
-      units: settings.units === 'imperial' ? 'imperial' : 'metric',
-      // Checked against the list rather than taken on trust, so a board naming
-      // a size this version does not have - a newer one, or a typo - draws no
-      // sheet instead of drawing nothing while the menu insists something is
-      // selected. Falls back to '', which is a state the whole feature already
-      // handles because it is the default.
-      paper: PAPERS.some(p => p.id === settings.paper) ? settings.paper : '',
-      paperLandscape: !!settings.paperLandscape,
-      paperResize: !!settings.paperResize,
+    sharedAppearance,
+    layoutSettings: {
+      desktop: desktopRecord.settings
+        ? normalizeLayoutSettings(desktopRecord.settings, 'desktop', desktopSettings)
+        : layoutSettingsOf(desktopSettings),
+      mobile: mobileRecord.settings
+        ? normalizeLayoutSettings(mobileRecord.settings, 'mobile', mobileSettings)
+        : layoutSettingsOf(mobileSettings),
     },
-    arrangement: typeof src.arrangement === 'string' && src.arrangement
-      ? src.arrangement : 'spiral',
+    arrangements: {
+      desktop: desktopRecord.arrangement || legacyArrangement,
+      mobile: mobileRecord.arrangement || legacyArrangement,
+    },
     layouts: {
       // `items` remains the Desktop-compatible representation. A file written
       // before profiles existed therefore already contains its desktop layout,
@@ -1590,6 +1991,64 @@ function normalizeBoard(data) {
     trash: trash
       .filter(t => t && t.item && typeof t.item === 'object')
       .map(t => ({ item: makeItem(t.item), at: +t.at || 0 })),
+  };
+}
+
+function layoutRecord(raw) {
+  if (Array.isArray(raw)) return { items: raw, settings: null, arrangement: '' };
+  if (!raw || typeof raw !== 'object') return { items: [], settings: null, arrangement: '' };
+  return {
+    items: Array.isArray(raw.items) ? raw.items : [],
+    settings: raw.settings && typeof raw.settings === 'object' ? raw.settings : null,
+    arrangement: typeof raw.arrangement === 'string' && raw.arrangement
+      ? raw.arrangement : '',
+  };
+}
+
+function normalizeLayoutSettings(raw, mode, fallback) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const base = settingsFor(layoutSettingsOf(fallback), {});
+  const baseLook = base.appearance || {};
+  const sourceLook = source.appearance && typeof source.appearance === 'object'
+    ? source.appearance : {};
+  return layoutSettingsOf(normalizeSettings({
+    ...base,
+    ...source,
+    appearance: {
+      ...baseLook,
+      ...sourceLook,
+      vars: { ...(baseLook.vars || {}), ...(sourceLook.vars || {}) },
+    },
+  }, mode));
+}
+
+function normalizeSettings(raw, mode) {
+  const settings = raw && typeof raw === 'object' ? raw : {};
+  const appearance = settings.appearance && typeof settings.appearance === 'object'
+    ? settings.appearance : {};
+  const vars = appearance.vars && typeof appearance.vars === 'object'
+    ? { ...appearance.vars } : {};
+  return {
+    ...DEFAULT_SETTINGS,
+    snap: mode === 'mobile',
+    ...settings,
+    mobileColumns: mode === 'mobile'
+      ? mobileColumnCount(settings.mobileColumns ?? MOBILE_COLUMNS)
+      : MOBILE_COLUMNS,
+    appearance: {
+      ...(appearance.whimsy != null ? { whimsy: appearance.whimsy } : {}),
+      palette: typeof appearance.palette === 'string' ? appearance.palette : '',
+      vars,
+      ...(appearance.auto === false ? { auto: false } : {}),
+      ...(appearance.derived === true && Object.keys(vars).length ? { derived: true } : {}),
+    },
+    // Both names and hashes become declarations or asset paths downstream.
+    fonts: normalizeFonts(settings.fonts),
+    scale: clampScale(settings.scale),
+    units: settings.units === 'imperial' ? 'imperial' : 'metric',
+    paper: PAPERS.some(p => p.id === settings.paper) ? settings.paper : '',
+    paperLandscape: !!settings.paperLandscape,
+    paperResize: !!settings.paperResize,
   };
 }
 
@@ -1625,8 +2084,10 @@ const MAX_FONTS = 8;
 /** The serialisable board, exactly as it lands in board.json. */
 export function serializeBoard() {
   captureLayout();
+  captureLayoutSettings();
   const desktop = completeLayout('desktop');
   const mobile = completeLayout('mobile');
+  const desktopSettings = settingsFor(board.layoutSettings.desktop, board.sharedAppearance);
   const desktopById = layoutMap(desktop);
   const itemIn = (item, geometry) => {
     const meta = { ...item.meta };
@@ -1637,14 +2098,24 @@ export function serializeBoard() {
   return {
     title: board.title,
     view: { pan: { ...board.view.pan }, zoom: board.view.zoom },
-    settings: board.settings,
-    arrangement: board.arrangement,
+    // Legacy readers see the Desktop half, matching the Desktop geometry kept in
+    // items. New readers use each layout record below.
+    settings: desktopSettings,
+    arrangement: board.arrangements.desktop,
     // Desktop stays in the traditional item fields for readers predating
     // profiles. New readers take the active geometry from `layouts`.
     items: board.items.map(item => serializeItem(itemIn(item, desktopById.get(item.id)))),
     layouts: {
-      desktop: desktop.map(serializeGeometry),
-      mobile: mobile.map(serializeGeometry),
+      desktop: {
+        items: desktop.map(serializeGeometry),
+        settings: cloneSettings(board.layoutSettings.desktop),
+        arrangement: board.arrangements.desktop,
+      },
+      mobile: {
+        items: mobile.map(serializeGeometry),
+        settings: cloneSettings(board.layoutSettings.mobile),
+        arrangement: board.arrangements.mobile,
+      },
     },
     // The bin travels with the board. Saving is the moment a board becomes a
     // file you might not open again for a month, and a bin that emptied itself

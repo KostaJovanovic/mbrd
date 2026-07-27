@@ -79,6 +79,10 @@ function itemEntries(id, count, at) {
   // A model card is a photograph of a model until somebody asks for the model.
   // Single-item for the same reason as the rest: you turn one thing over.
   const turnable = !many && cmds.canRotateModel(id);
+  // Z-order only has a visible meaning where this selection's sticky layer
+  // crosses another layer. A note covering its own host is intentionally one
+  // layer and does not make these actions useful by itself.
+  const stackable = cmds.selectionHasStackOverlap();
   return [
     // First, and only on a note: right-clicking the one item type you can
     // actually type into should offer to type into it before anything else.
@@ -98,8 +102,8 @@ function itemEntries(id, count, at) {
     // gesture; below it, this is the last thing on the model's own group.
     { label: 'Rotate model', hidden: !turnable, action: () => cmds.rotateModel(id) },
     { sep: true, hidden: !editable && !renamable && !coverable && !flippable && !turnable },
-    { label: 'Bring to front', action: () => cmds.raise() },
-    { label: 'Send to back', action: () => cmds.lower() },
+    { label: 'Bring to front', hidden: !stackable, action: () => cmds.raise() },
+    { label: 'Send to back', hidden: !stackable, action: () => cmds.lower() },
     // The way back from a corner dragged too far. With the stacking pair rather
     // than in the group above, because those are all edits to what a card *is*
     // and this is one to how it sits on the board - the same kind of thing as
@@ -114,6 +118,7 @@ function itemEntries(id, count, at) {
     // does not move. The whole-board one is on the canvas menu.
     { label: `Rearrange these ${count}`, hidden: !many,
       action: () => cmds.rearrangeSelection() },
+    { label: 'Reload board', action: () => cmds.reload() },
     { sep: true },
     { label: `Duplicate ${what}`, accel: 'Ctrl D', action: () => cmds.duplicate() },
     { label: 'Zoom to it', accel: 'dbl-click', action: () => cmds.zoomToSelection(), hidden: many },
@@ -133,6 +138,7 @@ function canvasEntries(at) {
     { label: 'Find', accel: 'Ctrl K', action: () => cmds.find() },
     { label: 'Select all', accel: 'Ctrl A', action: () => cmds.selectAll() },
     { label: 'Rearrange everything', action: () => cmds.rearrange() },
+    { label: 'Reload board', action: () => cmds.reload() },
     { sep: true },
     { label: 'Zoom to fit', accel: 'F', action: () => cmds.fit() },
     { label: 'Back to 0,0', accel: '0', action: () => cmds.recenter() },

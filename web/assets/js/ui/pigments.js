@@ -32,6 +32,9 @@
 // extractPalette() the pixels directly, which is also how a failing board can
 // be reproduced from its colours rather than from its photographs.
 
+import { PALETTE_TOKENS } from '../layout-settings.js';
+export { PALETTE_TOKENS };
+
 // ---------------------------------------------------------------------------
 // Colour
 // ---------------------------------------------------------------------------
@@ -628,10 +631,6 @@ const ACCENT_FLOOR = 4.5;
  * hand-picked accent is one, choosing a display face is not, and only the first
  * has any business switching the extraction off.
  */
-export const PALETTE_TOKENS = [
-  ...Object.keys(SHEET), ...Object.keys(PIGMENT), '--leafy', '--accent-fg',
-];
-
 /**
  * A full set of pigment tokens from one to three hues.
  *

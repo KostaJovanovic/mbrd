@@ -7,7 +7,9 @@
 // away otherwise, because rebuilding a still card costs a few DOM nodes while
 // holding one costs whatever it had decoded. See disposable() and discard().
 
-import { board, byId, selection, bus, renameItem } from '../state.js';
+import {
+  board, byId, selection, bus, renameItem, visualStackOrder,
+} from '../state.js';
 import { shuffle } from '../util.js';
 import { itemRadius } from '../geometry.js';
 import { buildContent, fitMode } from './renderers.js';
@@ -15,7 +17,10 @@ import { releasePlayers } from './audio.js';
 
 /** id -> element, including elements currently detached by culling. */
 const nodes = new Map();
+/** id -> lightweight geometry twin painted below the complete item stack. */
+const shadows = new Map();
 let worldEl = null;
+let shadowLayerEl = null;
 let vp = null;
 
 /**
@@ -49,6 +54,7 @@ const cullMargin = () => Math.min(CULL_MARGIN_PX / vp.zoom, CULL_MARGIN_MAX);
 
 export function initItems(world, viewport) {
   worldEl = world;
+  shadowLayerEl = world.querySelector('#item-shadows');
   vp = viewport;
   bus.on('items', () => { reconcile(); sync(); });
   bus.on('geom', ids => { for (const id of ids) placeNode(id); sync(); });
@@ -122,6 +128,8 @@ function reconcile() {
     if (live.has(id)) continue;
     discard(el);
     nodes.delete(id);
+    shadows.get(id)?.remove();
+    shadows.delete(id);
   }
   worldEl.classList.toggle('is-empty', board.items.length === 0);
 }
@@ -206,6 +214,8 @@ export function sync() {
       }
       const node = el || build(item);
       if (!node.isConnected) worldEl.append(node);
+      const shadow = shadows.get(item.id);
+      if (shadow && !shadow.isConnected) shadowLayerEl.append(shadow);
     } else if (el && el.isConnected) {
       // Off screen. Detached either way; the question is whether the node is
       // kept for its media state or let go of.
@@ -216,14 +226,17 @@ export function sync() {
       // all thousand were still held, decoded, for the life of the tab. The
       // cache only ever earned its keep for media that is mid-playback, so
       // that is now all it holds.
+      shadows.get(item.id)?.remove();
       if (disposable(el)) {
         discard(el);
         nodes.delete(item.id);
+        shadows.delete(item.id);
       } else {
         el.remove();
       }
     }
   }
+  paintStack();
   // Come back for the rest. One frame at a time and never more than one in
   // flight: another view change between now and then runs its own sync, which
   // is this same pass against a newer rectangle, and two of them queued would
@@ -242,6 +255,9 @@ export function ensureMounted(id) {
   if (!item) return null;
   const el = nodes.get(id) || build(item);
   if (!el.isConnected) worldEl.append(el);
+  const shadow = shadows.get(id);
+  if (shadow && !shadow.isConnected) shadowLayerEl.append(shadow);
+  paintStack();
   return el;
 }
 
@@ -256,7 +272,8 @@ function build(item) {
   // How far off square this one rests, as a fraction of whatever the whimsy
   // axis currently allows (--tilt-max). Presentational, so it stays out of
   // item.rot and the geometry model - see tiltFactor().
-  el.style.setProperty('--item-tilt', tiltFactor().toFixed(3));
+  const tilt = tiltFactor().toFixed(3);
+  el.style.setProperty('--item-tilt', tilt);
 
   const body = document.createElement('div');
   body.className = 'item-body';
@@ -275,8 +292,26 @@ function build(item) {
   el.append(bottomBar(item));
 
   nodes.set(item.id, el);
+  shadows.set(item.id, buildShadow(item, tilt));
   place(el, item);
   if (selection.has(item.id)) { el.classList.add('is-selected'); setGrips(el, true); }
+  return el;
+}
+
+/**
+ * A content-free copy of an item's outer geometry.
+ *
+ * All copies share #item-shadows, a layer below every real item. Keeping these
+ * separate from the item stacking contexts is what prevents a high card's
+ * shadow from being painted across a lower card.
+ */
+function buildShadow(item, tilt) {
+  const el = document.createElement('div');
+  el.className = 'item-shadow';
+  el.dataset.id = item.id;
+  el.dataset.type = item.type;
+  el.style.setProperty('--item-tilt', tilt);
+  placeBox(el, item);
   return el;
 }
 
@@ -322,9 +357,9 @@ function setGrips(el, want) {
  * The strip across the foot of a card: caption on the left, handle on the right.
  *
  * Always built, for every type. Which types show a *caption* is still a
- * question app.css answers - a sticky note has a name nothing draws - but the
- * handle is on every item, because right-click is otherwise the only way to an
- * item's actions and a touchscreen has no right-click.
+ * question app.css answers - a sticky note has a name nothing draws - and CSS
+ * reveals the handle only while this item is selected. Touch also has the
+ * long-press route, so hiding the resting handle does not strand its actions.
  */
 function bottomBar(item) {
   const bar = document.createElement('div');
@@ -542,6 +577,12 @@ export function editItemName(id) {
 // Rotation is negated for the same reason: a positive angle is anticlockwise in
 // the world, clockwise in CSS.
 function place(el, item) {
+  placeBox(el, item);
+  el.style.zIndex = Math.round(item.z);
+}
+
+/** Apply the outer geometry shared by an item and its shadow twin. */
+function placeBox(el, item) {
   el.style.left = (item.x - item.w / 2).toFixed(2) + 'px';
   el.style.top = (-item.y - item.h / 2).toFixed(2) + 'px';
   el.style.width = item.w.toFixed(2) + 'px';
@@ -553,13 +594,29 @@ function place(el, item) {
   // known. See --own-radius in app.css.
   el.style.setProperty('--half-min', (Math.min(item.w, item.h) / 2).toFixed(2) + 'px');
   el.style.transform = item.rot ? `rotate(${-item.rot}deg)` : '';
-  el.style.zIndex = Math.round(item.z);
+}
+
+/**
+ * Paint effective z-order for every mounted or cached node.
+ *
+ * Raw item.z remains the persisted order used to infer that a note lies on a
+ * lower host. visualStackOrder() folds each inferred sticky chain into one
+ * external layer, then orders its members internally so notes still draw above
+ * their host. Repainting all nodes is necessary when one layer moves: every
+ * layer it crosses changes relative rank even though those items emitted no
+ * geometry event of their own.
+ */
+function paintStack() {
+  const order = new Map(visualStackOrder().map((id, index) => [id, index]));
+  for (const [id, el] of nodes) el.style.zIndex = order.get(id) ?? 0;
 }
 
 function placeNode(id) {
   const el = nodes.get(id);
+  const shadow = shadows.get(id);
   const item = byId(id);
   if (el && item) place(el, item);
+  if (shadow && item) placeBox(shadow, item);
 }
 
 function paintSelection() {
@@ -574,6 +631,8 @@ function paintSelection() {
 export function resetItems() {
   for (const el of nodes.values()) discard(el);
   nodes.clear();
+  shadows.clear();
+  shadowLayerEl.replaceChildren();
   // A new board gets a new pack, so its first three items carry a full set of
   // leans rather than whatever was left over from the last one.
   tiltBag.length = 0;

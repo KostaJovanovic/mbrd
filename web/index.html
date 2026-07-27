@@ -61,11 +61,12 @@
        Its own layer, separate from the grid, because the grid cuts a hole in
        itself where the origin mark stands and the axes must not be cut by it. -->
   <canvas id="axis-ink" aria-hidden="true"></canvas>
-  <!-- Screen-space edges of the fixed six-column Mobile board. Its width is
-       published by viewport.js, while the items remain in the ordinary world
-       layer and therefore use exactly the same renderers and settings. -->
+  <!-- Screen-space edges of the selected-width, content-sized Mobile board.
+       viewport.js publishes its live bounds while the items remain in the
+       ordinary world layer and use the same renderers and settings. -->
   <div id="mobile-board-frame" aria-hidden="true"></div>
   <div id="mobile-board-ceiling" aria-hidden="true"></div>
+  <div id="mobile-board-floor" aria-hidden="true"></div>
   <svg id="origin-mark" viewBox="0 0 36 36" fill="none" stroke="currentColor" aria-hidden="true">
     <!-- The ring and the pip come in both shapes, and the whimsy axis picks
          one. A circle cannot be squared off with a border-radius the way a box
@@ -80,7 +81,12 @@
          gone. They drew a crosshair on top of the one the axes already make -
          the same cross, twice, a few pixels thick in the middle of the board. -->
   </svg>
-  <div id="world"></div>
+  <div id="world">
+    <!-- Shadows live in one underlay so a front card cannot cast its shadow
+         across the face of a card behind it. canvas/items.js mirrors each
+         mounted item's geometry here. -->
+    <div id="item-shadows" aria-hidden="true"></div>
+  </div>
   <div id="marquee" hidden></div>
 </div>
 
@@ -146,7 +152,7 @@
         <input id="opt-whimsy" type="range" min="0" max="2" step="1" value="1"
                aria-describedby="whimsy-stop-labels">
         <span class="field-stops" id="whimsy-stop-labels" aria-hidden="true">
-          <span>Softish</span><span>Middle</span><span>Harsh</span>
+          <span>Softish</span><span>Middle</span><span>Harsh.</span>
         </span>
       </label>
       <label class="field">
@@ -183,6 +189,10 @@
         <button type="button" id="board-mode" data-cmd="toggle-board-mode"
                 aria-pressed="false">Mobile board</button>
       </div>
+      <label class="field" id="mobile-columns-field" hidden>
+        <span>Grid width</span>
+        <select id="mobile-columns"></select>
+      </label>
       <p class="hint" id="board-mode-hint">Desktop is the free two-dimensional arrangement.</p>
     </section>
 

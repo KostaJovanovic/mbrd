@@ -134,14 +134,20 @@ Item coordinates and sizes are rounded to two decimals on the way out. A board
 is a place things sit, not a measurement, and the third decimal of a drag is
 noise that costs bytes in every item.
 
-`layouts` gives each live item independent Desktop and Mobile geometry while
-its content, assets, name, metadata, and all board settings remain shared. Each
-record is keyed by `id` and carries `x`, `y`, `w`, `h`, `rot`, `z`, plus an
-optional layout-specific `presnap`. Mobile is a vertical board exactly
-`6 × settings.gridStep` world units wide. Its upper edge is
-`y = 10 × settings.gridStep`; it has no lower edge. The Mobile viewport leaves
-a small gutter outside the side edges and suppresses the world axes, origin
-marker, and relationship web. Those are presentation rules, not saved settings.
+`layouts` gives each live item independent Desktop and Mobile geometry and
+settings while its content, assets, name, metadata, palette, whimsy, typography,
+and custom fonts remain shared. Each geometry record is keyed by `id` and
+carries `x`, `y`, `w`, `h`, `rot`, `z`, plus an optional layout-specific
+`presnap`. Mobile is a vertical board either 6 or 8 grid spaces wide, selected
+by its layout-specific `settings.mobileColumns` value; missing or invalid
+values fall back to 6. Its upper edge is `y = 6 × settings.gridStep`; it is at
+least 25 grid spaces tall and extends to 15 spaces below its lowest item. Mobile
+arrangements have no configurable spacing: fitted items occupy rectangular
+spans in the selected grid, fill rows from left to right where they fit, and use
+the grid's normal inset seam. The same packing resolves import collisions. The
+Mobile viewport leaves a small gutter outside the side edges and suppresses the
+world axes, origin marker, and relationship web. Those are presentation rules,
+not saved settings.
 The top-level geometry in `items` duplicates Desktop deliberately: older
 readers see the Desktop arrangement, and files without `layouts` acquire one
 from those fields.

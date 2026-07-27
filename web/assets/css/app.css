@@ -101,6 +101,33 @@ button, input, select, textarea { font: inherit; color: inherit; }
   --iz: 1;
 }
 
+/* Every item shadow is painted here, below every item.
+
+   A box-shadow on .item belongs to that item's stacking context, so a card in
+   front necessarily casts over the face of a card behind it. Geometry twins in
+   this shared underlay preserve the same silhouette while keeping the complete
+   item stack above the complete shadow stack. */
+#item-shadows {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: visible;
+  pointer-events: none;
+}
+.item-shadow {
+  position: absolute;
+  --shape-radius: var(--radius);
+  --own-radius: min(var(--shape-radius), var(--half-min, 9999px));
+  border-radius: var(--own-radius);
+  box-shadow: var(--item-shadow);
+  rotate: calc(var(--item-tilt, 0) * var(--tilt-max));
+}
+.item-shadow[data-type="note"] {
+  --item-shadow: var(--note-shadow);
+  --shape-radius: var(--note-radius);
+}
+:root[data-snap] .item-shadow { rotate: 0deg; }
+
 /* The Harsh lattice. Empty at the other two tiers, where #viewport's own
    background-image draws the dots - so this is either the whole grid or
    nothing, never a second layer under one.
@@ -197,9 +224,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
   pointer-events: none;
 }
 
-/* Mobile is still the same infinite canvas, but interaction is constrained to
-   this six-column strip. viewport.js keeps these screen-space edges aligned
-   with the fixed world width as the window changes size. */
+/* Mobile is a finite, content-sized selected-width strip. viewport.js keeps these
+   screen-space edges aligned with its live world bounds as the window and the
+   lowest item change. */
 #mobile-board-frame {
   display: none;
   position: absolute;
@@ -230,8 +257,26 @@ button, input, select, textarea { font: inherit; color: inherit; }
   border-top: var(--hairline) dashed var(--grid-axis);
   opacity: var(--mobile-board-ceiling-opacity, 0);
 }
+#mobile-board-floor {
+  display: none;
+  position: absolute;
+  inset: auto 0 0;
+  height: max(0px, calc(100% - var(--mobile-board-bottom, 100%)));
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+  pointer-events: none;
+}
+#mobile-board-floor::before {
+  content: "";
+  position: absolute;
+  left: var(--mobile-board-left, 0);
+  top: 0;
+  width: var(--mobile-board-width, 0);
+  border-top: var(--hairline) dashed var(--grid-axis);
+  opacity: var(--mobile-board-floor-opacity, 0);
+}
 :root[data-board-mode="mobile"] #mobile-board-frame,
-:root[data-board-mode="mobile"] #mobile-board-ceiling { display: block; }
+:root[data-board-mode="mobile"] #mobile-board-ceiling,
+:root[data-board-mode="mobile"] #mobile-board-floor { display: block; }
 :root[data-board-mode="mobile"] #axis-ink,
 :root[data-board-mode="mobile"] #origin-mark,
 :root[data-board-mode="mobile"] #web { display: none !important; }
@@ -260,13 +305,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* The web of threads between items (canvas/web.js). Inside #world, so pan and
    zoom are the layer's transform rather than anything this has to redraw.
-   Negative z-index puts it under every item; #world paints no background of
-   its own, so there is nothing for it to disappear behind. */
+   It sits below the shared item-shadow underlay; #world paints no background
+   of its own, so there is nothing for either backdrop to disappear behind. */
 #web {
   position: absolute;
   overflow: visible;
   pointer-events: none;
-  z-index: -1;
+  z-index: -2;
 }
 /* Two kinds of element, one appearance. The bulk <path> carries every settled
    thread as subpaths of a single `d`, which is what keeps a redraw to one
@@ -307,7 +352,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
      reaching it. It is a corner of every card that is already spoken for. */
   --handle-w: 30px;
   border-radius: var(--own-radius);
-  box-shadow: var(--item-shadow);
+  box-shadow: none;
   /* Deliberately not clipped: the resize handles and their brackets sit
      *outside* this box, and a clip here would slice every one of them in half.
      .item-body does the clipping instead - it fills the item and carries the
@@ -361,7 +406,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
    `transform` for the item's own rotation - these are independent properties
    and compose with it instead of fighting over one declaration. */
 .item:hover {
-  box-shadow: var(--item-shadow), 0 0 0 calc(1px * var(--iz)) var(--rule-2);
+  box-shadow: 0 0 0 calc(1px * var(--iz)) var(--rule-2);
   --lift: var(--lift-hover);
   --grow: var(--grow-hover);
 }
@@ -370,6 +415,41 @@ button, input, select, textarea { font: inherit; color: inherit; }
   --lift: var(--lift-drag);
   --tilt: var(--tilt-drag);
   --grow: var(--grow-hover);
+}
+/* A selected card holds still under the pointer.
+   The hover lift says "this is the one you are pointing at", which is worth
+   having while you are looking along a board and actively harmful the moment
+   the card has eight resize targets pinned to its edges: the targets are
+   children of the card, so they move with it, and a target that moves when you
+   point at it is one you cannot hit.
+
+   It is a real loop rather than a nuisance, and only at the soft end of the
+   whimsy axis - the other two tiers set --lift-hover to 0 and --grow-hover to 1,
+   so there is nothing there to move. Softish lifts 6px and scales 1.03, and the
+   scale is about the item's centre, so the further a corner is from the middle
+   the further it travels: on a 600px photograph the top corners jump about 15px
+   against a 24px grab square, and on a 1200px one about 25px, which is further
+   than the square is wide. The pointer is then outside it, so the card is no
+   longer hovered, so it springs back over 0.4s on an easing that deliberately
+   overshoots - and lands under the pointer, and jumps again.
+
+   Growth was also lying about the geometry while it was held. A card drawn 3%
+   larger than the box the resize arithmetic uses puts the corner you can see up
+   to 18px from the corner being dragged, so a grab that did land snapped.
+
+   Not while it is being dragged: picking a card up should still lift and tilt
+   it, and the grips are not what is under the pointer then. The `:not` is what
+   keeps this rule out of that case - on specificity alone it would outrank
+   .item.is-dragging above and flatten the drag.
+
+   The resting tilt is left alone. It has the same mismatch in miniature - the
+   lean is drawn but not stored, so a corner drag tracks the pointer a few
+   degrees off - but it is static, it does not chase the pointer, and
+   straightening cards as they were selected would be a louder change to the
+   look than the problem is worth. */
+.item.is-selected:not(.is-dragging):hover {
+  --lift: 0px;
+  --grow: 1;
 }
 /* The selection ring, drawn rather than outlined.
    `outline` would be the obvious tool and is the wrong one: engines disagree
@@ -1224,7 +1304,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
      pale card is the same picture the canvas would have shown. */
   background: none;
 }
-#world.zoom-far .model-still { visibility: hidden; }
+/* And it stays visible however far out the board goes. The stage below hides
+   at the detail rung because a WebGL canvas is the most expensive thing on the
+   card and a turned model is a grey smudge out there - but the still is an
+   <img> of at most 450px, the cheapest picture on the board and cheaper than
+   any photograph beside it, none of which are hidden either. Taking it away
+   turned every model into an empty card at exactly the zoom where the board
+   stops being a set of things to read and becomes a composition to look at,
+   which is the one job a picture of the model still has out there. */
 .card-model .card-name {
   flex: none;
   font-size: var(--t-tiny);
@@ -1487,19 +1574,18 @@ plates do: below a third of size a card is a coloured tile, and a click on
    The grip itself is an invisible hit area; the only thing drawn is a heavier
    stretch of the selection ring at each corner - see .item::before, which the
    marks share their geometry with. */
-/* The three-dot handle: every item's way into its own menu, and the only way in
-   at all without a right-click.
+/* The three-dot handle: every selected item's way into its own menu.
 
-   Always on, never revealed by hover. It was hover-only first, which is the
-   habit, and the habit is wrong here: hover does not exist on a touchscreen,
-   and this is the *only* route to an item's actions there. A control that is
-   the sole way to do something cannot be one you have to discover.
+   Selection is the reveal on mouse and touch alike. This keeps a board of
+   resting cards free of repeated controls, while a tap still exposes the
+   handle without relying on hover. Right-click and long-press remain direct
+   routes to the same menu.
 
    It is the right-hand end of the bar above, so it takes its height from the
    row rather than naming one. */
 .item-menu {
   flex: none;
-  display: grid;
+  display: none;
   place-items: center;
   /* The width, and a floor under the height. The height itself comes from the
      row, which takes it from the caption beside it - so where there is a
@@ -1517,6 +1603,7 @@ plates do: below a third of size a card is a coloured tile, and a click on
   cursor: pointer;
   transition: color var(--dur-fast) var(--ease);
 }
+.item.is-selected .item-menu { display: grid; }
 /* Only when there is something to be divided from. */
 .item-bar:has(> .item-label:not([hidden])) .item-menu {
   border-left: 1px solid var(--rule);
@@ -2718,6 +2805,9 @@ kbd {
 }
 /* An explicit display value beats the UA's [hidden] rule, so it needs saying. */
 #drop-overlay[hidden] { display: none; }
+/* Same reason, for the three sidebar wrappers that carry one: a control hidden
+   by script (the Desktop-only paper block) would otherwise stay on screen. */
+.field[hidden], .check[hidden], .btn-row[hidden] { display: none; }
 #drop-overlay div {
   padding: 16px 30px;
   border: 2px dashed var(--accent);
@@ -3233,6 +3323,11 @@ kbd {
 }
 
 @media (max-width: 700px) {
+  /* Mobile fixes its zoom to the selected board width, so this toolbar has no
+     useful action here. Desktop keeps the complete control cluster. */
+  #zoom-ctl,
+  #scale-bar { display: none; }
+
   /* Two bands instead of four corners.
 
      The foot is for the hand: the add bar along the very bottom, with the bin,
@@ -3582,13 +3677,34 @@ kbd {
 :root[data-whimsy="2"] #side-close:hover { transform: none; }
 
 /* The stop labels under the whimsy slider. Not a legend - the ends of a scale,
-   which is the only way a three-position slider says what it does. */
+   which is the only way a three-position slider says what it does.
+
+   Each name is a specimen of its own tier, so all three are pinned to a fixed
+   face and style: serif italic, sans italic, sans bold. None of them may read
+   off --font-display or --display-italic, because those are exactly what the
+   slider moves - at the plain end the whole row would collapse into one font
+   and the labels would stop showing the difference they name. */
 .field-stops {
   display: flex;
   justify-content: space-between;
   margin-top: 3px;
   color: var(--ink-3);
   font-size: var(--t-tiny);
-  font-style: var(--display-italic);
 }
-.field-stops span:nth-child(2) { color: var(--ink-2); }
+.field-stops span:nth-child(1) {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 400;
+}
+.field-stops span:nth-child(2) {
+  color: var(--ink-2);
+  font-family: var(--font-sans);
+  font-style: italic;
+  font-weight: 400;
+}
+.field-stops span:nth-child(3) {
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-style: normal;
+  font-weight: 700;
+}

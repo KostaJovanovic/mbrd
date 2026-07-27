@@ -82,7 +82,8 @@ export function initDrop(vp) {
     // offers the picture *and* the address it came from - and in that case the
     // picture is what was being dragged, with the URL along for the ride.
     if (hasFiles(e.dataTransfer)) {
-      await importFiles(await filesFrom(e.dataTransfer), at);
+      const incoming = await filesFrom(e.dataTransfer);
+      await importFiles(incoming.files, at, { avoidOverlap: incoming.fromFolder });
       return;
     }
     const urls = urlsFrom(e.dataTransfer);
@@ -216,7 +217,7 @@ async function applyCover(id, file) {
  * Turn a list of Files into board items around `centre`.
  * A lone .mbrd opens as a board instead of being embedded.
  */
-export async function importFiles(files, centre) {
+export async function importFiles(files, centre, { avoidOverlap = false } = {}) {
   files = [...files].filter(f => f && (f.size > 0 || f.type));
   if (!files.length) return [];
 
@@ -311,10 +312,21 @@ export async function importFiles(files, centre) {
   // "Free" preserves existing positions, but fresh imports have none - so a
   // drop under Free falls back to the grid instead of stacking at one point.
   const name = board.arrangement === 'free' ? 'grid' : board.arrangement;
-  const spots = arrange(drafts, { name, center: centre, spacing: board.settings.spacing });
+  const spots = arrange(drafts, {
+    name,
+    center: centre,
+    spacing: board.layoutMode === 'mobile' ? 0 : board.settings.spacing,
+  });
   drafts.forEach((d, i) => { d.x = spots[i].x; d.y = spots[i].y; });
+  if (board.layoutMode === 'mobile') {
+    drafts.sort((a, b) => b.y - a.y || a.x - b.x || a.name.localeCompare(b.name));
+  }
 
-  const added = addItems(drafts, drafts.length > 1 ? `Add ${drafts.length} items` : 'Add item');
+  const added = addItems(
+    drafts,
+    drafts.length > 1 ? `Add ${drafts.length} items` : 'Add item',
+    { avoidOverlap: avoidOverlap || board.layoutMode === 'mobile' }
+  );
   select(added.map(i => i.id));
 
   let msg = `Added ${added.length} item${added.length === 1 ? '' : 's'}`;
@@ -533,7 +545,11 @@ export function addLinks(at, urls) {
     x: at.x + i * LINK_STEP.x,
     y: at.y + i * LINK_STEP.y,
   }));
-  const made = addItems(drafts, drafts.length > 1 ? `Add ${drafts.length} links` : 'Add link');
+  const made = addItems(
+    drafts,
+    drafts.length > 1 ? `Add ${drafts.length} links` : 'Add link',
+    { avoidOverlap: board.layoutMode === 'mobile' },
+  );
   select(made.map(i => i.id));
   return made;
 }
@@ -588,15 +604,19 @@ function urlsFrom(dt) {
 async function filesFrom(dt) {
   const items = [...(dt.items || [])];
   const canWalk = items.length && typeof items[0].webkitGetAsEntry === 'function';
-  if (!canWalk) return [...dt.files];
+  if (!canWalk) {
+    const files = [...dt.files];
+    return { files, fromFolder: files.some(file => !!file.webkitRelativePath) };
+  }
 
   const entries = items.map(i => i.webkitGetAsEntry()).filter(Boolean);
+  const fromFolder = entries.some(entry => entry.isDirectory);
   const out = [];
   for (const entry of entries) {
     await walkEntry(entry, out);
     if (out.length >= MAX_FILES) break;
   }
-  return out.length ? out : [...dt.files];
+  return { files: out.length ? out : [...dt.files], fromFolder };
 }
 
 async function walkEntry(entry, out) {
