@@ -4,6 +4,11 @@
   "type": "module",
   "description": "Dev-only test harness. The app itself has no dependencies and no build step - the browser loads web/ directly.",
   "scripts": {
-    "test": "node --test \"tests/**/*.test.js\""
+    "test": "node --test \"tests/**/*.test.js\"",
+    "deploy": "wrangler deploy",
+    "preview": "wrangler dev"
+  },
+  "devDependencies": {
+    "wrangler": "^4.114.0"
   }
 }

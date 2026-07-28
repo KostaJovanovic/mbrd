@@ -22,3 +22,10 @@ node_modules/
 
 # Tool output: code-graph dumps, including session transcripts.
 graphify-out/
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example
