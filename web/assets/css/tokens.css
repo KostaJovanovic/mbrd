@@ -124,12 +124,13 @@
      generic-web-app thing you can do; a brown one on a green board is worse. */
   --item-shadow: 0 1px 1px color-mix(in srgb, var(--ink) 11%, transparent),
                  0 10px 22px -10px color-mix(in srgb, var(--ink) 34%, transparent);
-  /* How much the interface reacts to being touched. Every one of these is
-     zero (or 1x) at the plain end, where nothing should move on its own, so
-     the same declarations cover "springs up to meet you" and "sits still".
-     Items, on the board: */
-  --lift-hover: 0px;
-  --grow-hover: 1;
+  /* How much the interface reacts to being touched. Drag/tilt are zero at this
+     middle - nothing leans on its own - but the hover carries a softer version
+     of Softish's spring: 60% of its lift and grow, enough to say "this is the
+     one you are pointing at" without the full scrapbook bounce. Harsh zeroes
+     these again. Items, on the board: */
+  --lift-hover: -3.6px;
+  --grow-hover: 1.018;
   --lift-drag:  0px;
   --tilt-drag:  0deg;
   /* Controls, in the panels: */
@@ -509,11 +510,18 @@
   --t-display: 28px;
   --t-title:   20px;
 
-  --item-shadow: 0 2px 3px color-mix(in srgb, var(--ink) 13%, transparent),
-                 0 20px 38px -14px color-mix(in srgb, var(--ink) 44%, transparent);
-  --note-shadow: 0 2px 2px color-mix(in srgb, var(--ink) 18%, transparent),
-                 0 8px 14px -6px color-mix(in srgb, var(--ink) 34%, transparent),
-                 0 18px 22px -16px color-mix(in srgb, var(--ink) 30%, transparent);
+  /* The card drop shadows match the Middle tier's exactly. The soft end used to
+     sit its cards on a deeper, further-thrown shadow (20px down at 44% ink), and
+     paired with the hover lift below it read as a whole second card sliding out
+     from under the first: the shadow is a separate twin in #item-shadows that
+     the lift does not move, so the wide offset showed as a card, not a shadow.
+     Middle's tighter throw (10px, 34%) stays under the lifted card as a shadow -
+     the hover lift keeps its spring without exposing a twin. */
+  --item-shadow: 0 1px 1px color-mix(in srgb, var(--ink) 11%, transparent),
+                 0 10px 22px -10px color-mix(in srgb, var(--ink) 34%, transparent);
+  --note-shadow: 0 1px 1px color-mix(in srgb, var(--ink) 17%, transparent),
+                 0 5px 9px -5px color-mix(in srgb, var(--ink) 32%, transparent),
+                 0 13px 16px -13px color-mix(in srgb, var(--ink) 28%, transparent);
   --shadow-1: 0 2px 3px color-mix(in srgb, var(--ink) 16%, transparent);
   --shadow-2: 0 24px 56px -20px color-mix(in srgb, var(--ink) 52%, transparent);
 

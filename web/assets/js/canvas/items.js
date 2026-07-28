@@ -8,7 +8,7 @@
 // holding one costs whatever it had decoded. See disposable() and discard().
 
 import {
-  board, byId, selection, bus, renameItem, visualStackOrder,
+  board, byId, selection, bus, renameItem, visualStackOrder, stuckFollowers,
 } from '../state.js';
 import { shuffle } from '../util.js';
 import { itemRadius } from '../geometry.js';
@@ -23,6 +23,29 @@ const shadows = new Map();
 let worldEl = null;
 let shadowLayerEl = null;
 let vp = null;
+
+/**
+ * The set of ids currently carrying the hover lift.
+ *
+ * A hover raises the item and everything stuck on top of it - a photo lifts
+ * its stickies with it, so the pile reads as one object - but never its host,
+ * so pointing at one note in a stack lifts that note and its own riders while
+ * the card beneath stays put. stuckFollowers() is exactly that upward set.
+ */
+let lastHoverId = null;
+let hoverGroup = new Set();
+function setHoverLift(id, on) {
+  nodes.get(id)?.classList.toggle('is-hover', on);
+  shadows.get(id)?.classList.toggle('is-hover', on);
+}
+function setHoverGroup(id) {
+  if (id === lastHoverId) return;
+  lastHoverId = id;
+  const next = new Set(id ? [id, ...stuckFollowers([id])] : []);
+  for (const gid of hoverGroup) if (!next.has(gid)) setHoverLift(gid, false);
+  for (const gid of next) if (!hoverGroup.has(gid)) setHoverLift(gid, true);
+  hoverGroup = next;
+}
 
 /**
  * How much board is kept mounted beyond the edge of the screen, to hide pop-in.
@@ -111,6 +134,14 @@ export function initItems(world, viewport) {
   // sure the index that sync reads is the one the new layout put things in.
   bus.on('layout', () => { reindex(); sync(); });
   bus.on('selection', paintSelection);
+  // The shadow twin lives in its own layer, so no CSS :hover on the card can
+  // reach it. Mirror the hover onto it here: one delegated pair on the world,
+  // tracking which item the pointer is over, so the twin lifts with the card
+  // instead of being left behind as a second card (see .item-shadow.is-hover).
+  world.addEventListener('pointerover', e => setHoverGroup(itemIdFromEvent(e.target)));
+  world.addEventListener('pointerout', e => {
+    if (!itemIdFromEvent(e.relatedTarget)) setHoverGroup(null);
+  });
   // Arrow rather than the function itself: onChange hands its listener the
   // viewport, and sync() reads its argument.
   vp.onChange(() => syncView());
@@ -776,6 +807,9 @@ function paintSelection() {
     const on = selection.has(id);
     setGrips(el, on);
     el.classList.toggle('is-selected', on);
+    // The twin tracks selection too, so a selected card's shadow holds still
+    // under the pointer exactly as the card does (see .item-shadow in app.css).
+    shadows.get(id)?.classList.toggle('is-selected', on);
   }
 }
 
