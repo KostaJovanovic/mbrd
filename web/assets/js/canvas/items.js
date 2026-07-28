@@ -14,6 +14,7 @@ import { shuffle } from '../util.js';
 import { itemRadius } from '../geometry.js';
 import { buildContent, fitMode } from './renderers.js';
 import { releasePlayers } from './audio.js';
+import * as spatial from './spatial.js';
 
 /** id -> element, including elements currently detached by culling. */
 const nodes = new Map();
@@ -52,18 +53,69 @@ const CULL_MARGIN_MAX = 400;
 /** That margin in world units at the current zoom. */
 const cullMargin = () => Math.min(CULL_MARGIN_PX / vp.zoom, CULL_MARGIN_MAX);
 
+/**
+ * An item's entry in the spatial cull index: a circumscribed square, centre and
+ * full size, matching the precise test sync() runs (itemRadius + 2). Registering
+ * by the circumscribed radius rather than the tight box is what makes a rotated
+ * card index by the corner it actually reaches, so the grid never drops an item
+ * the precise test would have kept - see canvas/spatial.js.
+ */
+const cullBox = item => {
+  const r = itemRadius(item) + 2;
+  return { id: item.id, x: item.x, y: item.y, w: 2 * r, h: 2 * r };
+};
+
+/**
+ * Bring the spatial cull index up to date with a membership change.
+ *
+ * A delta names exactly what arrived and left, so the index touches only those;
+ * without one - a load, or any emitter that names no change - it rebuilds from
+ * the whole board, which is always right if slower. Either way it is off the
+ * per-frame path: this runs on 'items' and 'layout', never on a pan or zoom,
+ * where the whole point of the index is to avoid walking every item.
+ */
+function reindex(delta) {
+  if (delta && (delta.added || delta.removed)) {
+    for (const id of delta.removed || []) spatial.remove(id);
+    for (const id of delta.added || []) {
+      const item = byId(id);
+      if (item) spatial.update(id, cullBox(item));
+    }
+  } else {
+    spatial.rebuild(board.items.map(cullBox));
+  }
+}
+
 export function initItems(world, viewport) {
   worldEl = world;
   shadowLayerEl = world.querySelector('#item-shadows');
   vp = viewport;
-  bus.on('items', () => { reconcile(); sync(); });
-  bus.on('geom', ids => { for (const id of ids) placeNode(id); sync(); });
+  bus.on('items', delta => { reconcile(delta); reindex(delta); sync(); });
+  bus.on('geom', ids => {
+    for (const id of ids) {
+      placeNode(id);
+      // The one per-item index write on a hot path: a moved card has to change
+      // cells or the next cull would look for it where it no longer is. byId is
+      // O(1) now (state.js), and a null item just removes it from the index.
+      const item = byId(id);
+      spatial.update(id, item && cullBox(item));
+    }
+    sync();
+  });
   bus.on('item', id => rebuild(id));
+  // A layout-mode switch rewrites every item's geometry through writeLayout()
+  // and announces it with 'layout' alone - no 'geom' per id, no 'items'. The old
+  // whole-board scan read board.items fresh and never noticed; the index has to
+  // be told, or the next cull would hunt the new layout in the old layout's
+  // cells. The view change the switch also fires runs its own sync(); this makes
+  // sure the index that sync reads is the one the new layout put things in.
+  bus.on('layout', () => { reindex(); sync(); });
   bus.on('selection', paintSelection);
   // Arrow rather than the function itself: onChange hands its listener the
   // viewport, and sync() reads its argument.
   vp.onChange(() => syncView());
   reconcile();
+  reindex();
   sync();
 }
 
@@ -121,15 +173,29 @@ function disposable(el) {
   return true;
 }
 
-/** Drop cached nodes for items that no longer exist. */
-function reconcile() {
-  const live = new Set(board.items.map(i => i.id));
-  for (const [id, el] of nodes) {
-    if (live.has(id)) continue;
-    discard(el);
-    nodes.delete(id);
-    shadows.get(id)?.remove();
-    shadows.delete(id);
+/** Let go of one item's node and shadow, mounted or merely cached. */
+function dropNode(id, el = nodes.get(id)) {
+  if (!el) return;
+  discard(el);
+  nodes.delete(id);
+  shadows.get(id)?.remove();
+  shadows.delete(id);
+}
+
+/**
+ * Drop cached nodes for items that are gone.
+ *
+ * A delta names the removed ids, so only their nodes are discarded - the common
+ * case, an add or a delete of a handful, no longer walks the whole cache. Without
+ * a delta (a load, or an emitter that names no change) it falls back to the diff
+ * against the live board, which needs no payload to be correct.
+ */
+function reconcile(delta) {
+  if (delta && delta.removed) {
+    for (const id of delta.removed) dropNode(id);
+  } else {
+    const live = new Set(board.items.map(i => i.id));
+    for (const [id, el] of nodes) if (!live.has(id)) dropNode(id, el);
   }
   worldEl.classList.toggle('is-empty', board.items.length === 0);
 }
@@ -207,49 +273,62 @@ export function sync(restack = true) {
   syncedRect = r;
   let built = 0;
   let owed = false;
-  for (const item of board.items) {
+  // Which items are on screen this pass. Filled by the mount loop and read by
+  // the detach loop; the two used to be one loop over the whole board, and
+  // splitting them is the point of the spatial index - the mount loop now visits
+  // only what is near the viewport, and the detach loop only what is mounted.
+  const onScreen = new Set();
+  // Mount pass. queryRect() narrows the field from the whole board to the cells
+  // the padded viewport touches; the precise test below is the same one the old
+  // whole-board scan ran, now paid only for that handful of candidates.
+  for (const id of spatial.queryRect(r)) {
+    const item = byId(id);
+    if (!item) continue;
     // The circumscribed radius rather than the tight box: it costs no trig,
     // it is right at any rotation, and erring towards mounting something just
     // off screen is free where erring the other way is a visible pop-in.
     const half = itemRadius(item) + 2;
     const visible = item.x + half >= r.x0 && item.x - half <= r.x1 &&
                     item.y + half >= r.y0 && item.y - half <= r.y1;
-    const el = nodes.get(item.id);
-    if (visible) {
-      // Only a *new* node is rationed. Detaching is what the loop below does to
-      // everything that left the viewport, and putting one of those back is a
-      // single append - so a pan across ground already visited costs nothing
-      // and is never deferred.
-      if (!el) {
-        if (built >= BUILD_BUDGET) { owed = true; continue; }
-        built++;
-      }
-      const node = el || build(item);
-      // A node built during a view change carries no restack behind it, so it
-      // takes its rank from the last one. Harmless on the restack path too - the
-      // paintStack() below overwrites it a moment later with the fresh order.
-      if (!el) node.style.zIndex = stackIndex.get(item.id) ?? 0;
-      if (!node.isConnected) worldEl.append(node);
-      const shadow = shadows.get(item.id);
-      if (shadow && !shadow.isConnected) shadowLayerEl.append(shadow);
-    } else if (el && el.isConnected) {
-      // Off screen. Detached either way; the question is whether the node is
-      // kept for its media state or let go of.
-      //
-      // Keeping every one of them made memory proportional to the board a
-      // person had *visited* rather than to what was on screen, which is the
-      // opposite of what the culling is for: pan across a thousand photos and
-      // all thousand were still held, decoded, for the life of the tab. The
-      // cache only ever earned its keep for media that is mid-playback, so
-      // that is now all it holds.
-      shadows.get(item.id)?.remove();
-      if (disposable(el)) {
-        discard(el);
-        nodes.delete(item.id);
-        shadows.delete(item.id);
-      } else {
-        el.remove();
-      }
+    if (!visible) continue;   // in a shared cell, but its box misses the screen
+    onScreen.add(id);
+    const el = nodes.get(id);
+    // Only a *new* node is rationed. Re-attaching one the detach loop merely
+    // detached is a single append, so a pan across ground already visited costs
+    // nothing and is never deferred. A deferred card has no node yet, so its
+    // absence from a mounted state is nothing for the detach loop to undo.
+    if (!el) {
+      if (built >= BUILD_BUDGET) { owed = true; continue; }
+      built++;
+    }
+    const node = el || build(item);
+    // A node built during a view change carries no restack behind it, so it
+    // takes its rank from the last one. Harmless on the restack path too - the
+    // paintStack() below overwrites it a moment later with the fresh order.
+    if (!el) node.style.zIndex = stackIndex.get(id) ?? 0;
+    if (!node.isConnected) worldEl.append(node);
+    const shadow = shadows.get(id);
+    if (shadow && !shadow.isConnected) shadowLayerEl.append(shadow);
+  }
+  // Detach pass. Walk what is mounted - bounded by the screen, not the board -
+  // and let go of everything no longer on it. Detached either way; the question
+  // is whether the node is kept for its media state or discarded.
+  //
+  // Keeping every one of them made memory proportional to the board a person had
+  // *visited* rather than to what was on screen, which is the opposite of what
+  // the culling is for: pan across a thousand photos and all thousand were still
+  // held, decoded, for the life of the tab. The cache only ever earned its keep
+  // for media that is mid-playback, so that is now all it holds - the nodes with
+  // isConnected already false are that cache, and they are skipped, not rescanned.
+  for (const [id, el] of nodes) {
+    if (onScreen.has(id) || !el.isConnected) continue;
+    shadows.get(id)?.remove();
+    if (disposable(el)) {
+      discard(el);
+      nodes.delete(id);
+      shadows.delete(id);
+    } else {
+      el.remove();
     }
   }
   if (restack) paintStack();
@@ -663,5 +742,6 @@ export function resetItems() {
   // leans rather than whatever was left over from the last one.
   tiltBag.length = 0;
   reconcile();
+  reindex();
   sync();
 }
