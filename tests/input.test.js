@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   isDoubleTap, needsSelectionBeforeMove, repeatsLongPressContextMenu,
-  releasePointerSafely, resizeHandleAction,
+  releasePointerSafely, resizeHandleAction, shortcutsSuppressed,
 } from '../web/assets/js/canvas/input.js';
 
 test('double taps match within the touch timing and distance windows', () => {
@@ -23,6 +23,15 @@ test('an item must already be selected before a drag may move it', () => {
   const selected = new Set(['picked']);
   assert.equal(needsSelectionBeforeMove(selected, 'picked'), false);
   assert.equal(needsSelectionBeforeMove(selected, 'resting'), true);
+});
+
+test('canvas shortcuts stand down when handled or an overlay owns the keyboard', () => {
+  // Nothing in the way: the shortcut runs.
+  assert.equal(shortcutsSuppressed(false, false), false);
+  // Already handled - e.g. the context menu's capture listener took the arrow key.
+  assert.equal(shortcutsSuppressed(true, false), true);
+  // A modal dialog or the open menu owns the keyboard.
+  assert.equal(shortcutsSuppressed(false, true), true);
 });
 
 test('a native context menu does not reopen a freshly opened touch menu', () => {

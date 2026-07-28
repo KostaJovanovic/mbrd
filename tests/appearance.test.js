@@ -100,6 +100,31 @@ test('the allowlist is exactly the tokens tokens.css declares', () => {
   assert.deepEqual(stale, [], 'allowed in a look but no longer in tokens.css');
 });
 
+test('the pre-paint anti-flash guard carries look.js\'s grammar and function allowlist', () => {
+  // The inline script in index.html applies a saved look before ui/look.js can
+  // load, so it must filter the same way - a poisoned localStorage could
+  // otherwise apply display:none or a url() token before first paint (AUD-15).
+  // It cannot import the module, so it carries the same grammar and function
+  // list by hand; this holds the two together, like the dev-host regex does for
+  // sw.js and util.js.
+  const html = read(join(WEB, 'index.html'));
+  const look = read(join(WEB, 'assets', 'js', 'ui', 'look.js'));
+
+  const SAFE_VALUE_SRC = "/^[-a-z0-9#%.,()/+*_'\" ]{1,160}$/i";
+  assert.ok(look.includes(SAFE_VALUE_SRC), 'look.js SAFE_VALUE moved - update the anti-flash guard');
+  assert.ok(html.includes(SAFE_VALUE_SRC), 'the anti-flash guard lost the shared value grammar');
+
+  const lookBlock = look.match(/SAFE_FN = new Set\(\[([\s\S]*?)\]\)/)[1];
+  const lookFns = [...lookBlock.matchAll(/'([a-z0-9-]+)'/g)].map(m => m[1]).sort();
+  const htmlAlt = html.match(/SAFE_FN = \/\^\(([a-z0-9|-]+)\)\$\//)[1];
+  const htmlFns = htmlAlt.split('|').sort();
+  assert.deepEqual(htmlFns, lookFns, 'the anti-flash guard and look.js name different functions');
+
+  // And the guard must also require a custom-property key, so display:none, which
+  // is not a token url() can hide behind, cannot be applied either.
+  assert.match(html, /\^--\[a-z0-9-\]\+\$/i, 'the anti-flash guard no longer requires a custom-property key');
+});
+
 test('the appearance panel no longer builds a density slider', () => {
   const source = read(join(WEB, 'assets', 'js', 'ui', 'appearance.js'));
   assert.ok(!source.includes("label: 'Panel density'"));

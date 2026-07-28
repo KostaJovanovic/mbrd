@@ -31,7 +31,28 @@
     /* != null, not truthiness: 0 is Softish, a real level with its own rules. */
     if (s.whimsy != null) document.documentElement.dataset.whimsy = s.whimsy;
     if (s.palette) document.documentElement.dataset.palette = s.palette;
-    for (var k in s.vars || {}) document.documentElement.style.setProperty(k, s.vars[k]);
+    /* The per-token overrides are the only part of a saved look that reaches the
+       page as CSS, and this runs before ui/look.js can filter them - so it
+       carries the same guard inline. A poisoned same-origin store could
+       otherwise apply { "display": "none" } or a token holding url(...) and fire
+       an outbound request before first paint; the module re-filters through
+       safeVars() a moment later, and this closes the window before it. Key must
+       be a custom property, value must match the token grammar, and every
+       function it calls must be an arithmetic or colour one. Held in step with
+       look.js by tests/appearance.test.js. See AUD-15. */
+    var SAFE_VALUE = /^[-a-z0-9#%.,()/+*_'" ]{1,160}$/i;
+    var SAFE_FN = /^(rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color|color-mix|calc|min|max|clamp|var|cubic-bezier|steps|linear)$/;
+    var vars = s.vars || {};
+    for (var k in vars) {
+      if (!/^--[a-z0-9-]+$/i.test(k)) continue;
+      var v = vars[k];
+      if (typeof v !== 'string' || !SAFE_VALUE.test(v)) continue;
+      var fns = v.match(/[a-z][a-z0-9-]*\s*\(/gi) || [], ok = true;
+      for (var i = 0; i < fns.length; i++) {
+        if (!SAFE_FN.test(fns[i].replace(/\s*\($/, '').toLowerCase())) { ok = false; break; }
+      }
+      if (ok) document.documentElement.style.setProperty(k, v);
+    }
   } catch (e) {}
 </script>
 </head>

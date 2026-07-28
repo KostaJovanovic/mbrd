@@ -229,3 +229,14 @@ test('crc32 matches known vectors', () => {
   assert.equal(crc32(enc.encode('123456789')), 0xcbf43926);
   assert.equal(crc32(enc.encode('The quick brown fox jumps over the lazy dog')), 0x414fa339);
 });
+
+test('an oversized Blob is rejected on its size, before it is ever allocated', async () => {
+  // A Blob-like whose arrayBuffer() would blow up if called: the point of the
+  // fix is that its cheap `.size` is checked first, so a file provably too large
+  // never gets pulled into memory. See AUD-04. 768 MiB is the archive ceiling.
+  const oversize = {
+    size: 768 * 1024 ** 2 + 1,
+    arrayBuffer() { throw new Error('must not allocate an over-limit archive'); },
+  };
+  await assert.rejects(readZip(oversize), /too large to open/);
+});
