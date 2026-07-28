@@ -54,6 +54,7 @@ const SHELL = [
   './assets/js/canvas/grid.js',
   './assets/js/canvas/paper.js',
   './assets/js/canvas/items.js',
+  './assets/js/canvas/spatial.js',
   './assets/js/canvas/input.js',
   './assets/js/import/drop.js',
   './assets/js/import/artwork.js',
