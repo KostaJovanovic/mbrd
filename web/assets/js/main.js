@@ -1097,7 +1097,8 @@ function rearrange(items) {
   // over a freshly chosen slot puts every card back exactly where it started,
   // which is a Rearrange button that does nothing at all.
   const step = baseStep();
-  const sized = board.settings.snap && !mobile
+  const snapDesktop = board.settings.snap && !mobile;
+  const sized = snapDesktop
     ? free.map(it => { const b = latticeBox(it, step); return { w: b.w, h: b.h }; })
     : null;
   const laid = order.map(i => (sized ? { ...free[i], ...sized[i] } : free[i]));
@@ -1106,6 +1107,9 @@ function rearrange(items) {
     name: board.arrangement,
     center: at,
     spacing: mobile ? 0 : board.settings.spacing,
+    // Snapping reserves whole cells so the per-item lattice snap below cannot
+    // round two tight cards into an overlap - see arrange()/toCells.
+    cellStep: snapDesktop ? step : 0,
     seed: (Math.random() * 0xffffffff) >>> 0,
   });
   let placed = laid.map((item, slot) => ({

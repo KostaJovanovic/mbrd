@@ -37,6 +37,8 @@
 // `free` is the one exception, and only because the positions it starts from
 // are yours: two cards you deliberately stacked stay stacked.
 
+import { cellInset } from '../geometry.js';
+
 export const ARRANGEMENTS = [
   // First because it is the default a new board carries, and a menu whose top
   // entry is not what the thing is currently set to reads as a menu you have
@@ -65,8 +67,67 @@ export function arrange(items, opts = {}) {
   const fn = LAYOUTS[name] || LAYOUTS.grid;
   if (!items.length) return [];
   if (name === 'free') return fn(items, o);
-  const out = fn(items, { ...o, center: { x: o.center.x, y: -o.center.y } });
-  return out.map(p => ({ x: p.x, y: -p.y }));
+  // When a caller is about to snap the result to a grid (`cellStep` is that
+  // grid's cell size), the layout reserves each item a whole number of cells
+  // instead of its bare rectangle - see toCells(). Without it, two cards packed
+  // a hair under a cell apart are each snapped to the lattice independently
+  // afterwards and both round toward the same line, so a tight Rearrange or a
+  // snapped drop came back with cards overlapping. The positions returned are
+  // still the real items' - only the room set aside for them grew.
+  const laid = o.cellStep > 0 ? items.map(it => toCells(it, o.cellStep)) : items;
+  const out = fn(laid, { ...o, center: { x: o.center.x, y: -o.center.y } });
+  const world = out.map(p => ({ x: p.x, y: -p.y }));
+  // `obstacles` are boxes already on the board that the fresh block must not land
+  // on - a folder dropped onto a busy board. The layout above knows nothing of
+  // them, so this pushes only the newcomers that would have overlapped outward
+  // until they clear, leaving the rest exactly where the layout put them. See
+  // avoidObstacles().
+  return o.obstacles?.length ? avoidObstacles(laid, world, o) : world;
+}
+
+/**
+ * Slide each freshly laid item out past what is already on the board.
+ *
+ * The layout has placed the new items among themselves without overlap; this
+ * only has to keep them off the `obstacles` - the items already there. Each is
+ * pushed straight out from the drop point along the ray it already sits on,
+ * stopping at the first distance clear of every obstacle and every newcomer
+ * placed before it, exactly as slideOut() packs an unstructured layout. One that
+ * was already clear does not move at all - `from` is its current distance and a
+ * clear ray returns it untouched - so the block keeps its shape and only what
+ * would have collided flows around the things in the way.
+ */
+function avoidObstacles(items, world, o) {
+  const c = o.center;
+  const placed = o.obstacles.map(r => ({ x: r.x - c.x, y: r.y - c.y, hw: r.w / 2, hh: r.h / 2 }));
+  return world.map((p, i) => {
+    const box = roomFor(items[i], o.spacing);
+    const dx = p.x - c.x, dy = p.y - c.y;
+    const from = Math.hypot(dx, dy);
+    const dir = from < 1e-6 ? { x: 0, y: -1 } : { x: dx / from, y: dy / from };
+    const at = slideOut(dir, box, placed, from);
+    placed.push({ ...box, x: at.x, y: at.y });
+    return { x: c.x + at.x, y: c.y + at.y };
+  });
+}
+
+/**
+ * An item's box grown to the whole number of grid cells it occupies once
+ * snapped: the same cell count latticeSide() in geometry.js lands on, times the
+ * step. A snapped body is `cells*step` less a seam at each end and stays centred
+ * in those cells, so a layout that keeps whole-cell gaps between footprints keeps
+ * non-overlapping bodies after each is snapped to the lattice - a whole-cell
+ * separation survives two independent edge-snaps where a body-width one is
+ * rounded away.
+ *
+ * This holds where a cell is at least the smallest a card may be (MIN_SIZE),
+ * which every real grid is - the default step is 64. A grid finer than that is
+ * degenerate (a card cannot fit one cell) and is not a board the app offers.
+ */
+function toCells(it, step) {
+  const gap = 2 * cellInset(step);
+  const cells = v => Math.max(Math.round((v + gap) / step), 1);
+  return { ...it, w: cells(it.w) * step, h: cells(it.h) * step };
 }
 
 /**

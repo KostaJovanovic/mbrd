@@ -9,6 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { arrange, ARRANGEMENTS } from '../web/assets/js/arrange/arrangements.js';
+import { latticeBox } from '../web/assets/js/geometry.js';
 import {
   gridStep, boardGridStep, inkBox, MOBILE_GRID_EDGE_CLEARANCE,
   MIN_PX, MAX_PX, MIN_PX_TOUCH, MAX_PX_TOUCH,
@@ -98,6 +99,63 @@ test('layouts spread out rather than stacking', () => {
     const out = arrange(items(12), { name, center: { x: 0, y: 0 }, spacing: 32 });
     const distinct = new Set(out.map(p => `${p.x.toFixed(3)},${p.y.toFixed(3)}`));
     assert.ok(distinct.size > 1, `${name} stacked everything on one point`);
+  }
+});
+
+/** Do the interiors of two centred boxes intersect? Touching does not count. */
+const boxesOverlap = (a, b) =>
+  Math.abs(a.x - b.x) < (a.w + b.w) / 2 - 1e-6 &&
+  Math.abs(a.y - b.y) < (a.h + b.h) / 2 - 1e-6;
+
+test('a snapped layout does not overlap once every card is snapped to the grid', () => {
+  // The overlap that only ever showed with snapping on: the layout reserves the
+  // seam-inset body, then each card's edge is snapped to the lattice on its own,
+  // and two tight cards round toward the same cells and cross. `cellStep` makes
+  // the engine reserve whole cells, which survives the snap. Sizes are chosen
+  // *not* to be whole cells, so the rounding is exercised. The step is the
+  // board's default (64) - which, like any usable grid, is at least the smallest
+  // a card may be (MIN_SIZE 48), so a card always fills the cells it reserves.
+  // See arrange()/toCells and main.js/rearrange.
+  const step = 64;
+  const sizes = [[100, 80], [130, 90], [70, 70], [210, 140], [305, 240], [90, 190], [160, 60], [64, 96]];
+  const src = sizes.map(([w, h], i) => item({ id: `s${i}`, w, h }));
+  for (const spacing of [0, 8, 12]) {
+    for (const name of named.filter(n => n !== 'free')) {
+      // Body sizes on the lattice, exactly as main.js/rearrange derives them.
+      const sized = src.map(it => { const b = latticeBox(it, step); return { ...it, w: b.w, h: b.h }; });
+      const spots = arrange(sized, { name, center: { x: 0, y: 0 }, spacing, cellStep: step, seed: 7 });
+      // Then each card's edge is snapped to the grid, the last thing rearrange does.
+      const boxes = spots.map((p, i) => latticeBox({ x: p.x, y: p.y, w: sized[i].w, h: sized[i].h }, step));
+      for (let a = 0; a < boxes.length; a++) {
+        for (let b = a + 1; b < boxes.length; b++) {
+          assert.ok(!boxesOverlap(boxes[a], boxes[b]),
+            `${name} at spacing ${spacing}: snapped cards ${a} and ${b} overlap`);
+        }
+      }
+    }
+  }
+});
+
+test('obstacles keep a fresh block off what is already on the board', () => {
+  // A folder dropped onto a busy board flows around the existing items rather
+  // than landing on top of them. See arrange()/avoidObstacles and drop.js.
+  const obstacles = [
+    { x: 0, y: 0, w: 300, h: 300 },
+    { x: 260, y: -120, w: 200, h: 160 },
+    { x: -220, y: 140, w: 180, h: 180 },
+  ];
+  const src = items(10);
+  for (const name of named.filter(n => n !== 'free')) {
+    const spots = arrange(src, { name, center: { x: 0, y: 0 }, spacing: 12, obstacles, seed: 5 });
+    const boxes = spots.map((p, i) => ({ x: p.x, y: p.y, w: src[i].w, h: src[i].h }));
+    for (const [i, box] of boxes.entries()) {
+      for (const ob of obstacles) {
+        assert.ok(!boxesOverlap(box, ob), `${name}: dropped card ${i} landed on an existing item`);
+      }
+      for (let j = i + 1; j < boxes.length; j++) {
+        assert.ok(!boxesOverlap(box, boxes[j]), `${name}: dropped cards ${i} and ${j} overlap`);
+      }
+    }
   }
 });
 

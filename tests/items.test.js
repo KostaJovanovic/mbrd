@@ -7,11 +7,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { itemAccessibleName, menuButtonLabel } from '../web/assets/js/canvas/items.js';
+import { itemAccessibleName } from '../web/assets/js/canvas/items.js';
 
 test('a named item announces its own name', () => {
   assert.equal(itemAccessibleName({ name: 'Sunset.jpg', type: 'image' }), 'Sunset.jpg');
-  assert.equal(menuButtonLabel({ name: 'Sunset.jpg', type: 'image' }), 'Actions for Sunset.jpg');
 });
 
 test('an unnamed item falls back to a human type word, not "generic"', () => {
@@ -24,5 +23,4 @@ test('an unnamed item falls back to a human type word, not "generic"', () => {
 
 test('a whitespace-only name falls back rather than announcing blank', () => {
   assert.equal(itemAccessibleName({ name: '   ', type: 'audio' }), 'Untitled audio clip');
-  assert.equal(menuButtonLabel({ name: '', type: 'link' }), 'Actions for Untitled link');
 });

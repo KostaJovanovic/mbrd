@@ -6,7 +6,7 @@
 // forty photos lands as a spiral around the cursor rather than a stack.
 
 import { toast, busy, extOf } from '../util.js';
-import { board, bus, addItems, select, setItemCover, NOTE_MAX } from '../state.js';
+import { board, bus, addItems, select, setItemCover, NOTE_MAX, baseStep } from '../state.js';
 import { addFile } from '../storage/assets.js';
 import { makeByteBudget, overPixelBudget } from './budget.js';
 import { classify, defaultSize, measureSize, fitToBox, linkURL, linkDraft } from '../canvas/renderers.js';
@@ -330,10 +330,22 @@ export async function importFiles(files, centre, { avoidOverlap = false } = {}) 
   // "Free" preserves existing positions, but fresh imports have none - so a
   // drop under Free falls back to the grid instead of stacking at one point.
   const name = board.arrangement === 'free' ? 'grid' : board.arrangement;
+  const desktop = board.layoutMode !== 'mobile';
   const spots = arrange(drafts, {
     name,
     center: centre,
-    spacing: board.layoutMode === 'mobile' ? 0 : board.settings.spacing,
+    spacing: desktop ? board.settings.spacing : 0,
+    // A snapped Desktop drop is snapped item-by-item on the way in (onLattice in
+    // state.js), so the layout has to reserve whole cells or the same rounding
+    // that overlaps a tight Rearrange overlaps a tight drop - see arrange().
+    cellStep: board.settings.snap && desktop ? baseStep() : 0,
+    // A folder dropped onto a Desktop board flows around what is already there
+    // rather than landing on top of it. The Mobile board packs around existing
+    // items itself (placeMobileItems), so this is Desktop's half of the same
+    // promise; a paste or a bare-file drop still stacks at the cursor as before.
+    obstacles: avoidOverlap && desktop
+      ? board.items.map(it => ({ x: it.x, y: it.y, w: it.w, h: it.h }))
+      : undefined,
   });
   drafts.forEach((d, i) => { d.x = spots[i].x; d.y = spots[i].y; });
   if (board.layoutMode === 'mobile') {

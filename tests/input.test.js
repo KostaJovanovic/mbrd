@@ -41,17 +41,16 @@ test('a native context menu does not reopen a freshly opened touch menu', () => 
   assert.equal(repeatsLongPressContextMenu(opened, { x: 130, y: 200, at: 1_100 }), false);
 });
 
-test('the southeast resize handle opens the item menu on a tap', () => {
+test('a tap on a resize handle waits until it crosses the drag slop', () => {
   const start = { x: 100, y: 200 };
-  assert.equal(resizeHandleAction('se', start, { x: 102, y: 201 }), 'wait');
-  assert.equal(resizeHandleAction('se', start, { x: 102, y: 201 }, true), 'menu');
-  assert.equal(resizeHandleAction('nw', start, { x: 102, y: 201 }, true), 'wait');
+  assert.equal(resizeHandleAction(start, { x: 102, y: 201 }), 'wait');
+  assert.equal(resizeHandleAction(start, null), 'wait');
 });
 
-test('dragging the southeast resize handle still starts a resize', () => {
+test('dragging a resize handle past the slop starts a resize', () => {
   const start = { x: 100, y: 200 };
-  assert.equal(resizeHandleAction('se', start, { x: 103, y: 200 }), 'resize');
-  assert.equal(resizeHandleAction('se', start, { x: 120, y: 230 }, true), 'resize');
+  assert.equal(resizeHandleAction(start, { x: 103, y: 200 }), 'resize');
+  assert.equal(resizeHandleAction(start, { x: 120, y: 230 }), 'resize');
 });
 
 test('a pointer invalidated during capture release is already released', () => {

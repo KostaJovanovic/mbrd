@@ -37,7 +37,7 @@ item's DOM belongs under `canvas/` — that is why `renderers.js`, `notes.js`,
 
 Every board mutation goes through `state.js`, which emits on a shared `bus`
 (`items`, `geom`, `item`, `selection`, `settings`, `layout`, `board`,
-`board:load`, `trash`). Subsystems subscribe; they never call each other.
+`board:load`, `trash`, `history`). Subsystems subscribe; they never call each other.
 Undo/redo is command-based — `commit(label, redo, undo)` — so a new mutating
 operation must push its own inverse rather than relying on a diff.
 
@@ -148,10 +148,17 @@ cache changes explicitly.
 ## Notes
 
 `PLAN.md` is the full design; `research/` holds the reasoning behind past
-decisions (`research/REFACTOR.md`, plus dated audits). `docs/` holds the two
-specs worth reading before touching their subsystems —
-`docs/mbrd-format.md` and `docs/layout-settings.md`. `window.mbrd` is a
-deliberate console handle (`mbrd.board`, `mbrd.cmds.fit()`, `mbrd.vp`).
+decisions (`research/old/REFACTOR.md`, plus dated audits — the Safari,
+scalability and Tauri-readiness ones are the recent ones). `docs/` holds three
+references worth reading before touching their subsystems: `docs/mbrd-format.md`
+and `docs/layout-settings.md` are the specs, `docs/browser-support.md` records
+the browser floor. `window.mbrd` is a deliberate console handle (`mbrd.board`,
+`mbrd.cmds.fit()`, `mbrd.vp`).
+
+`tools/` has two scripts: `gen-formats.mjs` regenerates the generated
+`import/formats.js` (regenerate, never hand-edit); `preset-oklch.mjs` reads
+`tokens.css` and prints the OKLCh ranges the `SHEET`/`PIGMENT` tables in
+`ui/pigments.js` were built from — analysis only, writes nothing.
 
 Module headers in this codebase carry the *why*, often at length — read the top
 of a file before changing it, and keep that convention when adding one.

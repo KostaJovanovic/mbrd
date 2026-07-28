@@ -314,23 +314,25 @@ function shaBlock(H, w, view, off) {
   H[4] = (H[4] + e) | 0; H[5] = (H[5] + f) | 0; H[6] = (H[6] + g) | 0; H[7] = (H[7] + h) | 0;
 }
 
-let toastTimer = 0;
-let toastHide = 0;
 /**
- * How long the toast takes to fade, paired with the `transition` on #toast in
- * app.css. The element is only hidden once the fade has run - hiding it on the
- * old schedule would cut the fade off at its first frame.
+ * How long a toast takes to fade, paired with the `transition` on .toast-line in
+ * app.css. A line is only removed once the fade has run - removing it on the old
+ * schedule would cut the fade off at its first frame.
  */
 const TOAST_FADE_MS = 300;
-/**
- * A sequence number, so a fade that is already in flight cannot hide a message
- * that arrived after it. Clearing the timers is not enough on its own: the
- * inner timeout is scheduled by the outer one, so the moment between them
- * belongs to no timer this call can see.
- */
-let toastSeq = 0;
 
-/** One-line status message at the bottom of the screen. */
+/**
+ * The most lines kept on screen at once.
+ *
+ * They stack rather than replace one another now, so a sequence - "Loading the
+ * encoder…", then what it did - can be read in order instead of the last word
+ * wiping out the one that explained it. A cap so a burst (an import that touches
+ * forty files) cannot paper the screen; the oldest drops when a new one would
+ * push past it.
+ */
+const TOAST_MAX = 5;
+
+/** One-line status message at the foot of the screen. Newest at the bottom. */
 export function toast(msg, kind = '') {
   // Same bargain isDev() makes below: nothing in this file may assume a
   // browser is present, or the modules that import it stop being loadable
@@ -338,25 +340,23 @@ export function toast(msg, kind = '') {
   // it is a no-op - so state.js can leave a receipt without every caller
   // having to know whether there is a screen to leave it on.
   if (typeof document === 'undefined') return;
-  const el = document.getElementById('toast');
-  if (!el) return;
-  const mine = ++toastSeq;
-  clearTimeout(toastTimer);
-  clearTimeout(toastHide);
-  el.textContent = msg;
-  el.classList.toggle('is-error', kind === 'error');
-  // Back to full strength before anything else. A message arriving while the
-  // last one is on its way out would otherwise inherit its dying opacity and
-  // read as a flicker rather than as something new being said.
-  el.classList.remove('is-going');
-  el.hidden = false;
-  toastTimer = setTimeout(() => {
-    el.classList.add('is-going');
-    toastHide = setTimeout(() => {
-      if (mine !== toastSeq) return;
-      el.hidden = true;
-      el.classList.remove('is-going');
-    }, TOAST_FADE_MS);
+  const host = document.getElementById('toast');
+  if (!host) return;
+  // A line of its own rather than the host's text, so a new message rises under
+  // the last instead of overwriting it. The host is a bottom-anchored column, so
+  // appending puts the newest at the foot and lifts the older ones above it.
+  const line = document.createElement('div');
+  line.className = kind === 'error' ? 'toast-line is-error' : 'toast-line';
+  line.textContent = msg;
+  host.append(line);
+  // Over the cap: the oldest goes at once, before it has finished its own life.
+  while (host.children.length > TOAST_MAX) host.firstChild.remove();
+  // Each line keeps its own clock - errors linger, the rest are receipts - and
+  // fades then removes itself. A line dropped early by the cap is already off the
+  // DOM, so remove() on it is a harmless no-op when the timer comes round.
+  setTimeout(() => {
+    line.classList.add('is-going');
+    setTimeout(() => line.remove(), TOAST_FADE_MS);
   }, kind === 'error' ? 6000 : 2600);
 }
 

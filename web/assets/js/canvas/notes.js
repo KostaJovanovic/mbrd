@@ -354,7 +354,15 @@ export function editNote(id) {
   // to the top of a narrow board; desktop floats it just above the note and
   // clamps it to the viewport so an edge note's bar cannot fall off screen.
   const viewportEl = document.getElementById('viewport');
-  const mobile = board.layoutMode === 'mobile';
+  // Pin the bar to the top of the screen on the Mobile board, and on any screen
+  // too narrow to hold the floating bar without it running off an edge - which
+  // is a phone showing a *Desktop* board, where layoutMode is still 'desktop'
+  // but the viewport is a phone's. The float is a fixed run of five control
+  // groups; below roughly a phone's width it cannot fit, so it takes the top
+  // strip the same way the Mobile board's does. matchMedia is read here, in the
+  // handler, never at module load - see tests/imports.test.js.
+  const narrow = typeof matchMedia === 'function' && matchMedia('(max-width: 640px)').matches;
+  const mobile = board.layoutMode === 'mobile' || narrow;
   if (mobile) {
     toolbar.el.classList.add('is-mobile');
     // The bar takes the foot of the screen for the duration of the edit, in

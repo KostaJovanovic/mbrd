@@ -19,11 +19,11 @@
 import { clamp } from '../util.js';
 import {
   board, byId, selection, select, deselect, clearSelection, topZ, stackOrder,
-  snapshotGeom, applyGeom, commitGeom, bus, stuckFollowers, wouldStick,
+  snapshotGeom, applyGeom, commitGeom, bus, stuckFollowers, stuckPlacement, wouldStick,
   copyItems, cutItems, pasteItems, clipboardSize, clipboardBounds, clipboardHasOurs,
   baseStep,
 } from '../state.js';
-import { zoomMs, travelMs } from './viewport.js';
+import { zoomMs } from './viewport.js';
 import { itemInRect, latticeBox, latticeLow, cellInset, MIN_SIZE, MAX_SIZE } from '../geometry.js';
 import { itemIdFromEvent, ensureMounted, nodeFor, sync as syncItems, editItemName } from './items.js';
 import { noteFloor } from './notes.js';
@@ -75,17 +75,16 @@ export function repeatsLongPressContextMenu(opened, event) {
 /**
  * Decide whether a press on a resize grip is still a tap or has become a drag.
  *
- * The southeast target shares the item's bottom-right corner with its menu
- * button, so releasing it without a drag means "open actions". Every grip waits
- * for real movement before resize starts, which also keeps a tap from snapping
- * or committing geometry.
+ * A grip waits for real movement before a resize starts, which keeps a plain tap
+ * from snapping or committing geometry. A tap that never crosses the slop does
+ * nothing - the three-dot menu that a southeast tap used to open is gone, and
+ * the context menu is reached by right-click or long-press instead.
  */
-export function resizeHandleAction(corner, start, current, released = false) {
+export function resizeHandleAction(start, current) {
   if (!start || !current) return 'wait';
-  if (Math.hypot(current.x - start.x, current.y - start.y) >= DRAG_SLOP) {
-    return 'resize';
-  }
-  return released && corner === 'se' ? 'menu' : 'wait';
+  return Math.hypot(current.x - start.x, current.y - start.y) >= DRAG_SLOP
+    ? 'resize'
+    : 'wait';
 }
 
 /**
@@ -428,10 +427,29 @@ export function initInput(vp, cmds) {
     if (box.x !== it.x || box.y !== it.y || box.w !== it.w || box.h !== it.h) {
       applyGeom([{ id, ...box, rot: it.rot, z: it.z }]);
     }
+    // Notes stuck to this card ride the resize. Shrinking a photo under a sticky
+    // used to leave the note hanging in mid-air - still "stuck" by the record but
+    // no longer physically over the card. Each follower is carried at the same
+    // fractional spot on the card (stuckPlacement, per frame below), so the edge
+    // that moves takes the note with it and it stays on the card.
+    //
+    // Snapshotted into `before` so one undo puts the whole group back, but
+    // deliberately left out of `driven`: a note that kept its place on the card
+    // has not changed what it is stuck to, so it must not be re-measured on
+    // release - the same reasoning startMove() gives for a towed follower.
+    const riders = stuckFollowers([id]);
+    const followers = riders.map(rid => {
+      const r = byId(rid);
+      return { id: rid, box: { x: r.x, y: r.y, w: r.w, h: r.h, rot: r.rot, z: r.z } };
+    });
+    for (const rid of riders) ensureMounted(rid);
     g = {
-      kind: 'resize', id, corner, before, node,
+      kind: 'resize', id, corner, node,
+      before: followers.length ? before.concat(snapshotGeom(riders)) : before,
+      followers,
       // Resizing a note changes how much of it is over what it is lying on, so
-      // it is as much a reason to ask again as moving it is.
+      // it is as much a reason to ask again as moving it is. Only the resized
+      // item is driven; its riders keep their stick (see above).
       driven: [id],
       start: vp.toWorld(origin?.x ?? e.clientX, origin?.y ?? e.clientY),
       box: { x: it.x, y: it.y, w: it.w, h: it.h },
@@ -533,9 +551,9 @@ export function initInput(vp, cmds) {
         node: target.closest('.item'),
       };
     } else if (doubleTapDrag) {
-      // Wait for movement before showing or applying the marquee. A plain
-      // double tap keeps its existing "fit board" meaning in the dblclick
-      // handler below; holding and dragging the second tap turns into select.
+      // Wait for movement before showing or applying the marquee. A plain double
+      // tap does nothing now (it used to fit the board); holding and dragging the
+      // second tap turns into select.
       const p = vp.toWorld(e.clientX, e.clientY);
       g = { kind: 'touch-marquee', clientX: e.clientX, clientY: e.clientY, x0: p.x, y0: p.y };
     } else if (id && needsTapFirst(id)) {
@@ -614,7 +632,6 @@ export function initInput(vp, cmds) {
     if (g.kind === 'resize-pending') {
       const pending = g;
       const action = resizeHandleAction(
-        pending.corner,
         { x: pending.x, y: pending.y },
         { x: e.clientX, y: e.clientY },
       );
@@ -716,6 +733,18 @@ export function initInput(vp, cmds) {
       const signY = c.includes('n') ? 1 : c.includes('s') ? -1 : 0;
       let w = resizeAxis(signX, g.box.x, g.box.w, dx);
       let h = resizeAxis(signY, g.box.y, g.box.h, dy);
+      // Apply the card and carry its stuck notes with it. Each note is placed at
+      // the fraction of the card it held when the drag began (g.box is that start
+      // box), so a note near a moving edge is dragged along by that edge and none
+      // is left hanging off the shrunk card. No followers -> a plain one-item write.
+      const applyResize = host => {
+        if (!g.followers.length) return applyGeom([host]);
+        const riders = g.followers.map(f => {
+          const at = stuckPlacement(f.box, g.box, host);
+          return { id: f.id, x: at.x, y: at.y, w: f.box.w, h: f.box.h, rot: f.box.rot, z: f.box.z };
+        });
+        applyGeom([host, ...riders]);
+      };
       if (g.lockAspect !== e.shiftKey) {          // XOR: shift inverts the default
         // The dragged side leads and the other follows it at the picture's own
         // proportion. The side you are watching move is the right one to lead:
@@ -775,19 +804,19 @@ export function initInput(vp, cmds) {
           h = floor;
           // The height was forced, so the aspect lock no longer holds and the
           // centre has to be recomputed from the height we actually got.
-          if (!signY) return applyGeom([{ id: g.id, x: g.box.x + signX * (w - g.box.w) / 2, y: g.box.y, w, h, rot: it.rot, z: it.z }]);
+          if (!signY) return applyResize({ id: g.id, x: g.box.x + signX * (w - g.box.w) / 2, y: g.box.y, w, h, rot: it.rot, z: it.z });
         }
       }
       // The opposite edge stays put, so the centre shifts by half the growth -
       // and on the axis an edge handle doesn't touch, signY is 0 and the item
       // grows symmetrically about its centre, which is what an aspect-locked
       // side drag should do.
-      applyGeom([{
+      applyResize({
         id: g.id,
         x: g.box.x + signX * (w - g.box.w) / 2,
         y: g.box.y + signY * (h - g.box.h) / 2,
         w, h, rot: it.rot, z: it.z,
-      }]);
+      });
     }
   });
 
@@ -833,22 +862,8 @@ export function initInput(vp, cmds) {
     const unpick = e.type === 'pointerup' && g.kind === 'move' && !g.moved
       ? g.id
       : null;
-    const menuTap = e.type === 'pointerup' && g.kind === 'resize-pending'
-      && resizeHandleAction(
-        g.corner,
-        { x: g.x, y: g.y },
-        { x: e.clientX, y: e.clientY },
-        true,
-      ) === 'menu'
-      ? { id: g.id, node: g.node, x: e.clientX, y: e.clientY }
-      : null;
     finishGesture();
     if (unpick) deselect(unpick);
-    if (menuTap) {
-      const btn = menuTap.node?.querySelector('.item-menu');
-      const box = btn?.getBoundingClientRect();
-      openMenuAt(box?.right ?? menuTap.x, box?.bottom ?? menuTap.y, menuTap.id);
-    }
     if (thrown) vp.glide(thrown.vx, thrown.vy);
     if (tap) lastEmptyTap = tap;
     setPanCursor();
@@ -913,18 +928,14 @@ export function initInput(vp, cmds) {
 
   // ---- double click -----------------------------------------------------
 
+  // Double click no longer touches the zoom - not on empty space (it used to fit
+  // the whole board) and not on a card (it used to zoom to that card). The one
+  // meaning left is opening a note to edit, which is not a zoom and stays. Zoom
+  // to fit is still on the F key and in the menu.
   el.addEventListener('dblclick', e => {
     const id = itemIdFromEvent(e.target);
-    if (!id) { cmds.fit(); return; }
-    const it = byId(id);
-    if (!it) return;
-    // Video used to be a case here, toggling playback - the only way a clip
-    // could be played at all, and an invisible one. Now that a video carries a
-    // play button of its own it goes back to meaning what a double click means
-    // on everything else on the board, which is zoom to fit. One gesture, one
-    // meaning, and the special case disappears.
-    if (it.type === 'note') cmds.editNote(id);
-    else vp.fit([it], 120, travelMs());
+    if (!id) return;
+    if (byId(id)?.type === 'note') cmds.editNote(id);
   });
 
   // ---- keyboard ---------------------------------------------------------
@@ -1181,25 +1192,6 @@ export function initInput(vp, cmds) {
     }
     longPressMenu = null;
     openMenuAt(e.clientX, e.clientY, itemIdFromEvent(e.target));
-  });
-
-  // The same menu, for anyone not holding a mouse. Right-click is the only way
-  // to reach an item's actions, and it is a gesture a touchscreen does not
-  // have - so every card carries a handle that opens it. Anchored to the
-  // button rather than to the pointer, so it lands in the same place whether it
-  // was tapped or clicked.
-  //
-  // Here rather than in canvas/items.js because openMenuAt() is what retargets
-  // the selection first, and that rule belongs with the gesture, not with the
-  // element that happens to trigger it. The button is a <button>, so the
-  // `widget` branch in pointerdown already keeps it from starting a drag.
-  el.addEventListener('click', e => {
-    const btn = e.target instanceof Element ? e.target.closest('.item-menu') : null;
-    if (!btn) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const box = btn.getBoundingClientRect();
-    openMenuAt(box.right, box.bottom, itemIdFromEvent(btn));
   });
 
   function openMenuAt(x, y, id) {

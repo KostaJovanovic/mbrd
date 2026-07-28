@@ -22,9 +22,26 @@ async function boot(url) {
     importScripts(url);
     // 0.12-style cores export a factory; older ones assign the module directly.
     const factory = self.createFFmpegCore || self.Module;
-    core = typeof factory === 'function'
-      ? await factory({ locateFile: name => new URL(name, url).href })
-      : factory;
+    if (typeof factory !== 'function') {
+      core = factory;
+    } else {
+      // Hand the core the wasm *bytes* rather than let it fetch the file itself.
+      //
+      // The reason is a trap this walked straight into: the UMD core, loaded by
+      // importScripts in a classic worker, resolves `ffmpeg-core.wasm` against the
+      // worker's own origin and fetches it there, ignoring the locateFile below.
+      // That path does not exist on this origin, so a dev server answers its 404
+      // or SPA fallback - an HTML page - and Emscripten compiles the HTML as wasm
+      // and dies with "failed to match magic number". Fetching the bytes from the
+      // CDN ourselves and passing them as `wasmBinary` (which Emscripten consumes
+      // before it would fetch anything) makes the source unambiguous. locateFile
+      // stays for any other file the core resolves the same way.
+      const wasmURL = new URL('ffmpeg-core.wasm', url).href;
+      const res = await fetch(wasmURL);
+      if (!res.ok) throw new Error(`wasm ${res.status} at ${wasmURL}`);
+      const wasmBinary = await res.arrayBuffer();
+      core = await factory({ wasmBinary, locateFile: name => new URL(name, url).href });
+    }
     if (!core?.FS || typeof core.callMain !== 'function') {
       throw new Error('this build exposes neither FS nor callMain');
     }
