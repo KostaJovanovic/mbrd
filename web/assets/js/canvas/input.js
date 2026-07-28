@@ -21,11 +21,11 @@ import {
   board, byId, selection, select, deselect, clearSelection, topZ, stackOrder,
   snapshotGeom, applyGeom, commitGeom, bus, stuckFollowers, wouldStick,
   copyItems, cutItems, pasteItems, clipboardSize, clipboardBounds, clipboardHasOurs,
+  baseStep,
 } from '../state.js';
 import { zoomMs, travelMs } from './viewport.js';
 import { itemInRect, latticeBox, latticeLow, cellInset, MIN_SIZE, MAX_SIZE } from '../geometry.js';
 import { itemIdFromEvent, ensureMounted, nodeFor, sync as syncItems, editItemName } from './items.js';
-import { boardGridStep } from './grid.js';
 import { noteFloor } from './notes.js';
 
 const DRAG_SLOP = 3;      // screen px before a press becomes a drag
@@ -186,8 +186,12 @@ export function initInput(vp, cmds) {
   /** A low edge onto the lattice, or left alone when snapping is off. */
   const snapLow = v => (board.settings.snap ? latticeLow(v, stepNow()) : v);
 
-  /** The lattice actually on screen, which is what a gesture aims at. */
-  const stepNow = () => boardGridStep(board.settings.gridStep, vp);
+  // The base lattice - the grid as it stands at 100% - never the zoom-tiered
+  // spacing on screen. gridStep() in grid.js coarsens the *drawn* dots as you
+  // zoom out so they never become a fill, but a gesture must land on the same
+  // lattice snapAll()/onLattice() use however far the board is zoomed, or an
+  // item dragged at one zoom would sit off the lines it snapped to at another.
+  const stepNow = () => baseStep();
 
   /**
    * A box laid on the lattice - see latticeBox() in geometry.js.
