@@ -25,10 +25,16 @@ import {
 import { packBoard, unpackBoard, MIME } from './mbrd.js';
 import { allAssets, putAsset, clearAssets } from './assets.js';
 import { idbGet, idbSet, idbDel, idbClear, idbKeys } from './idb.js';
-// The only thing this module borrows from ui/, and on the same terms as
-// toast(): it reaches for `document` inside a function, never at import time,
-// so storage.js stays loadable without a browser. See tests/imports.test.js.
-import { ask } from '../ui/dialog.js';
+// The confirmation dialogs below - discard-unsaved and clear-everything - are
+// the one thing this module needs from the interface, and ui/ sits *above*
+// storage in the layering (AUD-12). So the prompt is injected rather than
+// imported: main.js wires setPrompt() to ui/dialog's ask() at startup. Left
+// unset - in a test, or before wiring - it answers 'cancel', which is the safe
+// default here: nothing is discarded and nothing is wiped without a real answer.
+let prompt = async () => 'cancel';
+export function setPrompt(fn) {
+  prompt = typeof fn === 'function' ? fn : async () => 'cancel';
+}
 
 const PICKER_TYPES = [{
   description: 'mbrd board',
@@ -46,6 +52,35 @@ export const currentFileName = () => fileHandle?.name || null;
 // ---------------------------------------------------------------------------
 // Save
 // ---------------------------------------------------------------------------
+
+/**
+ * Ask the engine to keep this origin's storage durable, once.
+ *
+ * WebKit stores an origin in best-effort mode by default and may evict it under
+ * overall quota pressure, device storage pressure, or inactivity - so a board a
+ * person was told was "saved in this browser" can later be gone with no
+ * application-level delete (Safari audit S1). navigator.storage.persist() asks
+ * the engine to exempt this origin from that eviction; WebKit grants it on
+ * heuristics such as installed-web-app use.
+ *
+ * Asked on the first explicit Save rather than at boot, so the request is tied
+ * to a real intent to keep something. Its answer only ever changes what the
+ * receipt claims - never whether the save counts as a success - because the
+ * durable copy is, and remains, the exported .mbrd file.
+ */
+let persistent = null;   // null: not asked yet; true/false: the engine's answer
+
+async function ensurePersistence() {
+  if (persistent !== null) return persistent;
+  const store = navigator.storage;
+  if (!store || typeof store.persist !== 'function') { persistent = false; return persistent; }
+  try {
+    persistent = (await store.persisted?.()) || (await store.persist());
+  } catch {
+    persistent = false;   // an engine that refuses to answer is not a durable one
+  }
+  return persistent;
+}
 
 /**
  * Keep the board in this browser. Nothing leaves the machine and no file is
@@ -67,7 +102,14 @@ export async function saveBoard() {
     return false;
   }
   markDirty(false);
-  toast('Saved in this browser');
+  // The receipt tells the truth about how safe "saved" is. Where the engine
+  // granted persistence the browser copy will not be evicted from under the
+  // user; where it did not - the common case on default Safari - saying so
+  // plainly keeps the export as the copy they can actually rely on.
+  const durable = await ensurePersistence();
+  toast(durable
+    ? 'Saved in this browser'
+    : 'Saved in this browser — export a file to keep a durable copy');
   return true;
 }
 
@@ -375,7 +417,7 @@ export async function newBoard() {
 async function confirmDiscard(what) {
   if (!isDirty()) return true;
   for (;;) {
-    const answer = await ask({
+    const answer = await prompt({
       title: 'Unsaved changes',
       body: `This board has changes that are not in a file. ${what} will discard them.`,
       keep: 'Export first',
@@ -740,7 +782,7 @@ export async function clearSession() {
  * Starting the page again *is* the first run, so it cannot drift.
  */
 export async function clearAllData() {
-  const answer = await ask({
+  const answer = await prompt({
     title: 'Clear everything?',
     body: 'The board kept in this browser, everything in it and the look you '
       + 'set are all deleted, and mbrd starts over. Boards you exported to a '

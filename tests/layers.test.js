@@ -8,17 +8,17 @@
 // catalog. That direction is what keeps the dependency graph a DAG and keeps
 // the lower modules loadable and testable without the ones above them. But a
 // sentence in a guide is not enforced by anything, and AUD-12 found the arrows
-// already bent in a handful of places.
+// already bent in a handful of places - since fixed.
 //
 // This makes the two halves of that policy executable. First, the property the
 // whole layering exists to protect: the import graph has no cycle. That one is
 // objective and needs no judgement calls. Second, the directional rules the
 // guide states plainly - state sits below the services, storage does not reach
 // up into the interface, canvas touches import only through the generated
-// catalog. The inversions that exist today are pinned in DEBT below with the
-// audit's recommended fix for each; a *new* one fails this test, and paying one
-// off (removing the edge) without also removing its DEBT line fails it too, so
-// the list can only shrink.
+// catalog. The DEBT map below is the ledger of known inversions; AUD-12 cleared
+// it to empty, and the two tests keep it honest - a *new* inversion must be
+// entered there or the first fails, and an entry whose edge is already gone
+// fails the second. The list can only shrink.
 //
 // optimize/ is deliberately not ranked here. It is dynamically imported, half
 // leaf-helpers and half orchestrators (CLAUDE.md: "it is a button"), and
@@ -140,23 +140,16 @@ function inverted(from, to) {
 }
 
 /**
- * The inversions that exist today (AUD-12), each with the audit's recommended
- * fix. Removing one of these edges from the code must come with removing its
- * line here; adding a new inversion anywhere must come with a line here or the
- * test fails. The direction of travel is down to zero.
+ * Known inversions, each with the fix that would clear it. AUD-12 opened with
+ * three - state importing the asset registry, storage opening the discard
+ * dialog, and canvas decoding meshes through import/ - and all three are now
+ * paid off: the mesh core moved to a neutral module, and state and storage take
+ * their one interface dependency by injection (setAssetNameLookup, setPrompt)
+ * rather than by import. So this map is empty, and the two tests below keep it
+ * that way: a *new* inversion must be entered here or the first fails, and an
+ * entry whose edge no longer exists fails the second. The direction is down.
  */
-const DEBT = new Map([
-  // state reads the asset registry directly. Fix: inject an asset interface
-  // into state rather than importing the storage module.
-  ['state.js -> storage/assets.js', 'AUD-12: asset interface supplied to state'],
-  // the discard confirmation is opened from inside the save path. Fix: storage
-  // returns a decision/error and the caller in ui/ owns the dialog.
-  ['storage/storage.js -> ui/dialog.js', 'AUD-12: storage returns decisions, ui opens dialogs'],
-  // model and renderer cards decode glTF through the mesh module, which is not
-  // the generated catalog. Fix: a pure mesh core in a neutral module.
-  ['canvas/model.js -> import/mesh.js', 'AUD-12: pure mesh core in a neutral module'],
-  ['canvas/renderers.js -> import/mesh.js', 'AUD-12: pure mesh core in a neutral module'],
-]);
+const DEBT = new Map([]);
 
 test('the only layering inversions are the ones on record', () => {
   const found = edges
