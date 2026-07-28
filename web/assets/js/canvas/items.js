@@ -121,6 +121,9 @@ export function initItems(world, viewport) {
 
 export function nodeFor(id) { return nodes.get(id); }
 
+/** Subscribe to view changes (pan/zoom); returns the unsubscribe. */
+export function onViewChange(fn) { return vp?.onChange(fn); }
+
 /** The item id owning a DOM node, or null for canvas chrome. */
 export function itemIdFromEvent(target) {
   const el = target instanceof Element ? target.closest('.item') : null;

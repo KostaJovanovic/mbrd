@@ -28,7 +28,7 @@
 // the board, and only paint reads the viewport, so panning across a board never
 // recomputes a spanning tree and moving an item never waits on one.
 
-import { board, bus } from '../state.js';
+import { board, bus, isRider } from '../state.js';
 import { rafThrottle } from '../util.js';
 import { webZoom } from './viewport.js';
 import { segmentMeetsRect } from '../geometry.js';
@@ -245,7 +245,13 @@ function land(key) {
  * and the only conversion this module needs.
  */
 function centres() {
-  return board.items.map(i => ({ id: i.id, x: i.x, y: -i.y }));
+  // A stuck note is part of the thing it is pinned to, not a node of its own: it
+  // sits on top of its host, so a thread run out to it would double back on the
+  // host's own and read as a tether on the sticky. Riders are left out; the host
+  // carries the web for the pair.
+  return board.items
+    .filter(i => !isRider(i))
+    .map(i => ({ id: i.id, x: i.x, y: -i.y }));
 }
 
 /**

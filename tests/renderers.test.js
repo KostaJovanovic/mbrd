@@ -14,7 +14,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { classify, defaultSize, hasRenderer } from '../web/assets/js/canvas/renderers.js';
+import {
+  classify, defaultSize, hasRenderer,
+  parseNoteText, normalizeNoteRich, flattenNoteRich,
+} from '../web/assets/js/canvas/renderers.js';
 
 const file = (name, type = '') => ({ name, type });
 
@@ -82,4 +85,52 @@ test('text files get a card taller than it is wide', () => {
   // was falling back to, and it fits about two lines.
   const { w, h } = defaultSize('text');
   assert.ok(h > w, `text cards should be portrait, got ${w}x${h}`);
+});
+
+// ---------------------------------------------------------------------------
+// The note formatting model
+// ---------------------------------------------------------------------------
+
+test('a legacy note reads its first line as a title', () => {
+  // No meta.rich, no markers: the first line was the title and stays one, so an
+  // old board does not lose its headings the day this shipped.
+  const blocks = parseNoteText('Shopping\nmilk\neggs');
+  assert.deepEqual(blocks.map(b => b.tag), ['h1', 'p', 'p']);
+  assert.equal(blocks[0].text, 'Shopping');
+});
+
+test('markdown markers set the kind and are stripped from the text', () => {
+  const blocks = parseNoteText('# Title\n## Heading\nbody');
+  assert.deepEqual(blocks.map(b => b.tag), ['h1', 'h2', 'p']);
+  assert.deepEqual(blocks.map(b => b.text), ['Title', 'Heading', 'body']);
+});
+
+test('rich flattens to the markdown it parses from', () => {
+  const text = '# Title\n## Heading\nbody';
+  const rich = normalizeNoteRich(undefined, text);
+  assert.equal(flattenNoteRich(rich), text, 'the plaintext round-trips');
+});
+
+test('rich is authoritative when present, and is sanitised', () => {
+  const rich = normalizeNoteRich({
+    font: 'nope', size: 99, valign: 'sideways',
+    blocks: [{ tag: 'h9', align: 'justify', text: 'a' }, { tag: 'p', align: 'right', text: 'b' }],
+  }, 'ignored fallback');
+  assert.equal(rich.font, 'sheet', 'an unknown font falls back');
+  assert.ok(rich.size <= 1.8 && rich.size >= 0.7, 'size is clamped');
+  assert.equal(rich.valign, 'top', 'an unknown vertical align falls back');
+  assert.deepEqual(rich.blocks[0], { tag: 'p', align: 'left', text: 'a' }, 'bad tag/align repaired');
+  assert.deepEqual(rich.blocks[1], { tag: 'p', align: 'right', text: 'b' });
+});
+
+test('a note cannot hold more than NOTE_MAX characters', () => {
+  const long = 'x'.repeat(2000);
+  const rich = normalizeNoteRich({ blocks: [{ tag: 'p', align: 'left', text: long }] });
+  assert.ok(flattenNoteRich(rich).length <= 512, 'the flattened text fits the cap');
+});
+
+test('an empty note is a single empty heading', () => {
+  const rich = normalizeNoteRich(undefined, '');
+  assert.equal(rich.blocks.length, 1);
+  assert.deepEqual(rich.blocks[0], { tag: 'h1', align: 'left', text: '' });
 });
