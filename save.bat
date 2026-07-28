@@ -124,10 +124,9 @@ if "%COMMIT_ONLY%"=="1" goto committed
 
 rem No remote yet is the normal state for a fresh repo - commit and say so
 rem rather than failing a push that was never going to work.
-git remote get-url origin >nul 2>nul
-if errorlevel 1 (
+if "%REMOTE%"=="" (
   echo.
-  echo [git]  committed v%VERLABEL% - no 'origin' remote, nothing pushed
+  echo [git]  committed v%VERLABEL% - no remote configured, nothing pushed
   echo        add one with: git remote add origin ^<url^>
   goto end
 )
@@ -136,10 +135,10 @@ if "%FORCE_MODE%"=="1" goto forcepush
 
 if "%BRANCH%"=="" goto nobranch
 echo.
-set /p DOPUSH=push to origin/%BRANCH%? (y/n):
+set /p DOPUSH=push to %REMOTE%/%BRANCH%? (y/n):
 if /i not "%DOPUSH%"=="y" goto skipped
 
-git push -u origin %BRANCH%
+git push -u %REMOTE% %BRANCH%
 if not errorlevel 1 goto pushed
 
 echo.
@@ -149,7 +148,7 @@ set /p FETCH=pull + merge remote first? (y/n):
 if /i "%FETCH%"=="y" goto fetch
 
 echo.
-echo [warn] a force push discards whatever is on origin/%BRANCH% that you do
+echo [warn] a force push discards whatever is on %REMOTE%/%BRANCH% that you do
 echo        not have. If anyone else has pushed, their work goes with it.
 set /p FORCE=force push instead? (y/n):
 if /i "%FORCE%"=="y" goto forcepush
@@ -159,7 +158,7 @@ set SAVE_ERROR=1
 goto end
 
 :fetch
-git pull origin %BRANCH%
+git pull %REMOTE% %BRANCH%
 if errorlevel 1 set SAVE_ERROR=1
 echo.
 echo [git]  pulled - resolve any conflicts, then re-run
@@ -169,15 +168,15 @@ goto end
 if "%BRANCH%"=="" goto nobranch
 rem --force-with-lease, not --force: it refuses when the remote has moved since
 rem the last fetch, which is the one case a force push is actually destructive.
-git push origin %BRANCH% --force-with-lease
+git push %REMOTE% %BRANCH% --force-with-lease
 if errorlevel 1 set SAVE_ERROR=1
 echo.
-echo [git]  force pushed origin/%BRANCH%
+echo [git]  force pushed %REMOTE%/%BRANCH%
 goto end
 
 :pushed
 echo.
-echo [git]  pushed origin/%BRANCH%
+echo [git]  pushed %REMOTE%/%BRANCH%
 goto end
 
 :skipped
@@ -197,14 +196,15 @@ echo === git: push ===
 echo.
 set SAVE_ERROR=0
 if "%BRANCH%"=="" goto nobranch
-git push origin %BRANCH%
+if "%REMOTE%"=="" goto noremote
+git push %REMOTE% %BRANCH%
 if errorlevel 1 (
   echo.
-  echo [warn] a force push discards whatever is on origin/%BRANCH% that you do
+  echo [warn] a force push discards whatever is on %REMOTE%/%BRANCH% that you do
   echo        not have. If anyone else has pushed, their work goes with it.
   set /p FORCE=push failed. force push? (y/n):
   if /i "!FORCE!"=="y" (
-    git push origin %BRANCH% --force-with-lease
+    git push %REMOTE% %BRANCH% --force-with-lease
     if errorlevel 1 set SAVE_ERROR=1
   ) else (
     set SAVE_ERROR=1
@@ -219,7 +219,8 @@ echo === git: pull ===
 echo.
 set SAVE_ERROR=0
 if "%BRANCH%"=="" goto nobranch
-git pull origin %BRANCH%
+if "%REMOTE%"=="" goto noremote
+git pull %REMOTE% %BRANCH%
 if errorlevel 1 set SAVE_ERROR=1
 goto end
 
@@ -231,11 +232,33 @@ rem is not a state to push from.
 set BRANCH=
 for /f "delims=" %%b in ('git rev-parse --abbrev-ref HEAD 2^>nul') do set BRANCH=%%b
 if /i "%BRANCH%"=="HEAD" set BRANCH=
+call :resolveremote
+exit /b 0
+
+rem Resolve the remote to push/pull against into %REMOTE%. This used to be the
+rem literal "origin" everywhere, which silently did nothing on a repo whose only
+rem remote is named something else (this one's is "mbrd") - the push check found
+rem no "origin" and reported success for having pushed nothing. Prefer the
+rem branch's own upstream remote, fall back to origin, then to the first remote
+rem defined. Empty only when the repo has no remotes at all.
+:resolveremote
+set REMOTE=
+if not "%BRANCH%"=="" for /f "delims=" %%r in ('git config branch.%BRANCH%.remote 2^>nul') do set REMOTE=%%r
+if not "%REMOTE%"=="" exit /b 0
+git remote get-url origin >nul 2>nul
+if not errorlevel 1 (set REMOTE=origin & exit /b 0)
+for /f "delims=" %%r in ('git remote 2^>nul') do if "!REMOTE!"=="" set REMOTE=%%r
 exit /b 0
 
 :nobranch
 echo.
 echo [err]  no branch checked out (detached HEAD?) - not pushing
+set SAVE_ERROR=1
+goto end
+
+:noremote
+echo.
+echo [err]  no remote configured - add one with: git remote add origin ^<url^>
 set SAVE_ERROR=1
 goto end
 
