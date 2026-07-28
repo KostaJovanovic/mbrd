@@ -31,12 +31,17 @@
 import { board, bus, isRider } from '../state.js';
 import { rafThrottle } from '../util.js';
 import { webZoom } from './viewport.js';
-import { segmentMeetsRect } from '../geometry.js';
+import { segmentMeetsRect, corners, pointInItem } from '../geometry.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-/** A relationship web belongs to the spatial Desktop arrangement only. */
-export const webVisible = (mode = board.layoutMode) => mode !== 'mobile';
+/**
+ * A relationship web belongs to the spatial Desktop arrangement only, and only
+ * when the board asks for one. `settings.web` is layout-local (Desktop's own
+ * checkbox); its absence in an older `.mbrd` reads as on.
+ */
+export const webVisible = (mode = board.layoutMode) =>
+  mode !== 'mobile' && board.settings.web !== false;
 
 /**
  * How far outside the viewport a thread is still drawn, in *screen* px.
@@ -180,6 +185,9 @@ export function initWeb(worldEl, viewport) {
   bus.on('geom', requestBuild);
   bus.on('board:load', requestBuild);
   bus.on('layout', requestBuild);
+  // Only the web toggle changes the geometry; other settings (spacing, units)
+  // fire the same event and must not drag a spanning tree in with them.
+  bus.on('settings', key => { if (key === 'web') requestBuild(); });
   // Panning and zooming change which threads are worth drawing and nothing
   // else, so they ask for a paint and never for a build.
   if (vp) vp.onChange(viewMoved);
@@ -249,9 +257,13 @@ function centres() {
   // sits on top of its host, so a thread run out to it would double back on the
   // host's own and read as a tether on the sticky. Riders are left out; the host
   // carries the web for the pair.
+  // Size and rotation ride along so the second pass can treat each card as an
+  // obstacle, not just its centre a node. World y points up and this layer lays
+  // y down, so a card turned by `rot` in the world is turned by `-rot` here -
+  // the reflection that takes (x, y) to (x, -y) flips the sense of the angle.
   return board.items
     .filter(i => !isRider(i))
-    .map(i => ({ id: i.id, x: i.x, y: -i.y }));
+    .map(i => ({ id: i.id, x: i.x, y: -i.y, w: i.w, h: i.h, rot: -(i.rot || 0) }));
 }
 
 /**
@@ -635,8 +647,17 @@ export function threads(pts) {
   const grid = new EdgeGrid(pts);
   for (const [a, b] of edges) grid.add(a, b);
 
+  // Cards are obstacles too, not only their centres nodes. The spanning tree is
+  // left to run through them where it must - dropping a tree edge could split
+  // the web into islands, and one connected piece is the tree's whole job - but
+  // an *extra* thread is a luxury, so it is refused if it passes through any
+  // card that is not one of its own two endpoints. Built once: the cards do not
+  // move while the pass runs.
+  const cards = new CardGrid(pts);
+
   for (const [, a, b] of candidates) {
     if (grid.blocks(pts[a], pts[b])) continue;
+    if (cards.blocks(pts[a], pts[b], a, b)) continue;
     edges.push([a, b]);
     grid.add(a, b);
     taken.add(pair(a, b, n));
@@ -804,6 +825,107 @@ class EdgeGrid {
         }
       }
     }
+    return false;
+  }
+}
+
+/**
+ * The cards, bucketed by the cells their bounding box covers - the same trick
+ * EdgeGrid plays for threads, so a candidate thread is tested against the
+ * handful of cards near it rather than all of them.
+ *
+ * A card is a rectangle, possibly turned, so the test is not the segment-segment
+ * one threads use: a thread crosses a card if either of its ends lands inside
+ * the card (two cards overlapping) or it cuts one of the card's four edges. A
+ * thread always runs from one card centre to another, so its own two endpoint
+ * cards are skipped - it starts and ends inside them by construction.
+ *
+ * Points with no size (the tests hand in bare centres) contribute no card, so
+ * this whole structure is empty and `blocks` falls straight through - the pass
+ * behaves exactly as it did before card avoidance existed.
+ */
+class CardGrid {
+  constructor(pts) {
+    this.idx = [];       // pts index of each card, to skip a thread's own two
+    this.quads = [];     // four corners each, in web space
+    this.items = [];     // {x,y,w,h,rot} for the point-inside test
+    this.bx0 = []; this.by0 = []; this.bx1 = []; this.by1 = [];  // card boxes
+    this.marks = [];
+    this.cells = new Map();
+    this.wide = [];
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      if (!(p.w > 0) || !(p.h > 0)) continue;
+      const item = { x: p.x, y: p.y, w: p.w, h: p.h, rot: p.rot || 0 };
+      const cs = corners(item);
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const c of cs) {
+        if (c.x < x0) x0 = c.x; if (c.y < y0) y0 = c.y;
+        if (c.x > x1) x1 = c.x; if (c.y > y1) y1 = c.y;
+      }
+      this.idx.push(i); this.quads.push(cs); this.items.push(item);
+      this.bx0.push(x0); this.by0.push(y0); this.bx1.push(x1); this.by1.push(y1);
+      this.marks.push(0);
+      if (x0 < minX) minX = x0; if (y0 < minY) minY = y0;
+      if (x1 > maxX) maxX = x1; if (y1 > maxY) maxY = y1;
+    }
+    this.n = this.idx.length;
+    this.minX = minX; this.minY = minY;
+    const side = Math.max(1, Math.round(Math.sqrt(this.n || 1)));
+    this.gw = side; this.gh = side;
+    this.cw = Math.max((maxX - minX) / side, 1e-6);
+    this.ch = Math.max((maxY - minY) / side, 1e-6);
+    for (let c = 0; c < this.n; c++) this._register(c);
+  }
+
+  _col(x) { return clampi(Math.floor((x - this.minX) / this.cw), 0, this.gw - 1); }
+  _row(y) { return clampi(Math.floor((y - this.minY) / this.ch), 0, this.gh - 1); }
+
+  _register(c) {
+    const c0 = this._col(this.bx0[c]), c1 = this._col(this.bx1[c]);
+    const r0 = this._row(this.by0[c]), r1 = this._row(this.by1[c]);
+    if ((c1 - c0 + 1) * (r1 - r0 + 1) > MAX_CELLS_PER_EDGE) { this.wide.push(c); return; }
+    for (let col = c0; col <= c1; col++) {
+      for (let r = r0; r <= r1; r++) {
+        const key = col * this.gh + r;
+        const bucket = this.cells.get(key);
+        if (bucket) bucket.push(c); else this.cells.set(key, [c]);
+      }
+    }
+  }
+
+  /** Does any card but the two at ea/eb lie across the thread a-b? */
+  blocks(a, b, ea, eb) {
+    if (!this.n) return false;
+    for (const c of this.wide) if (this._cross1(a, b, ea, eb, c)) return true;
+    const c0 = this._col(Math.min(a.x, b.x)), c1 = this._col(Math.max(a.x, b.x));
+    const r0 = this._row(Math.min(a.y, b.y)), r1 = this._row(Math.max(a.y, b.y));
+    const stamp = ++mark;
+    for (let col = c0; col <= c1; col++) {
+      for (let r = r0; r <= r1; r++) {
+        const bucket = this.cells.get(col * this.gh + r);
+        if (!bucket) continue;
+        for (const c of bucket) {
+          if (this.marks[c] === stamp) continue;
+          this.marks[c] = stamp;
+          if (this._cross1(a, b, ea, eb, c)) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  _cross1(a, b, ea, eb, c) {
+    const i = this.idx[c];
+    if (i === ea || i === eb) return false;
+    if (Math.max(a.x, b.x) < this.bx0[c] || Math.min(a.x, b.x) > this.bx1[c] ||
+        Math.max(a.y, b.y) < this.by0[c] || Math.min(a.y, b.y) > this.by1[c]) return false;
+    const item = this.items[c];
+    if (pointInItem(a.x, a.y, item) || pointInItem(b.x, b.y, item)) return true;
+    const q = this.quads[c];
+    for (let k = 0; k < 4; k++) if (crosses(a, b, q[k], q[(k + 1) & 3])) return true;
     return false;
   }
 }

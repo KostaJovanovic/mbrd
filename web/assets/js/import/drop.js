@@ -99,7 +99,12 @@ export function initDrop(vp) {
   addEventListener('paste', async e => {
     const target = e.target;
     if (target instanceof HTMLElement && (target.isContentEditable || /INPUT|TEXTAREA/.test(target.tagName))) return;
-    const centre = vp.toWorld(vp.left + vp.cx, vp.top + vp.cy);
+    // Under the cursor when there is one (a mouse has moved over the board),
+    // the centre of the view otherwise - a touch device, or a paste before the
+    // pointer has been anywhere. vp.cursor is screen space, set by input.js.
+    const centre = vp.cursor
+      ? vp.toWorld(vp.cursor.x, vp.cursor.y)
+      : vp.toWorld(vp.left + vp.cx, vp.top + vp.cy);
     const files = [...(e.clipboardData?.files || [])];
     if (files.length) {
       e.preventDefault();

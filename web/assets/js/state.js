@@ -59,6 +59,9 @@ export const DEFAULT_MOBILE_HEADER = Object.freeze({
   stretch: 100,
   leading: 100,
   weight: 700,
+  // Nudge up or down the band, as a percentage of the band's own height so the
+  // move keeps its proportion whatever the font size is. 0 is centred.
+  offset: 0,
   italic: false,
   // On, because a name that runs off the side of the board is a name nobody can
   // read. Off is for the case the wrap cannot answer: a long name set as one
@@ -71,6 +74,9 @@ export const DEFAULT_SETTINGS = {
   grid: true,
   axes: true,
   snap: false,
+  // The relationship web behind the cards. Desktop-only and layout-local, on by
+  // default; an older board with no such key reads as on - see canvas/web.js.
+  web: true,
   // Off to begin with. It is a working instrument - where the pointer is, how
   // big the selected thing is - and a board you have just opened is a thing you
   // are looking at rather than working on. The scale bar covers the question a
@@ -111,7 +117,7 @@ export const DEFAULT_SETTINGS = {
 };
 
 export const BOARD_MODES = ['desktop', 'mobile'];
-export const BOARD_TITLE_MAX = 16;
+export const BOARD_TITLE_MAX = 32;
 export const MOBILE_COLUMNS = 8;
 export const MOBILE_COLUMN_OPTIONS = [6, 8];
 export const MOBILE_TOP_ROWS = 6;
@@ -153,6 +159,37 @@ export function cleanBoardTitle(value) {
     title = ('_' + title).slice(0, BOARD_TITLE_MAX);
   }
   return title;
+}
+
+/**
+ * The name a brand-new board is born with.
+ *
+ * A dated "New board Jul 28" rather than the bare "Untitled board" sentinel, so
+ * a board reads as itself in the file list from the moment it exists instead of
+ * sharing one anonymous name with every other fresh board. 'Untitled board'
+ * stays the single value that means *no* title - the placeholder, and the
+ * fallback for a loaded file that carries none.
+ *
+ * Three-letter months, written out rather than taken from toLocaleDateString,
+ * so the name does not shift with the browser's locale and a test can pin it
+ * with a fixed date.
+ */
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+export function defaultBoardTitle(now = new Date()) {
+  return `New board ${MONTHS[now.getMonth()]} ${now.getDate()}`;
+}
+
+/**
+ * Whether a title is one nobody has actually typed - the bare sentinel or a
+ * `defaultBoardTitle()` a fresh board was handed. The interface treats these as
+ * "unnamed": the sidebar field stays empty and shows the name as a faint,
+ * italic placeholder instead of a value, and the Mobile header dims it. Rename
+ * to anything else and it reads as a real name.
+ */
+const AUTO_TITLE = new RegExp(`^New board (?:${MONTHS.join('|')}) \\d{1,2}$`);
+export function isDefaultTitle(title) {
+  return title === 'Untitled board' || AUTO_TITLE.test(title);
 }
 
 function cloneSettings(settings) {
@@ -220,7 +257,7 @@ const initialLayoutSettings = {
 };
 
 export const board = {
-  title: 'Untitled board',
+  title: defaultBoardTitle(),
   view: { pan: { x: 0, y: 0 }, zoom: 1 },
   // Both containers rebuilt rather than spread through: DEFAULT_SETTINGS holds
   // them by reference, and a board mutating one in place would be editing the
@@ -2482,6 +2519,11 @@ function normalizeMobileHeader(raw) {
     // 100 is `normal` - the face's own line height. See the default above.
     leading: clamp(+header.leading || DEFAULT_MOBILE_HEADER.leading, 60, 250),
     weight: clamp(Math.round(+header.weight || DEFAULT_MOBILE_HEADER.weight), 1, 1000),
+    // Signed, so `|| 0` cannot swallow a real value - only 0 itself falls back
+    // to 0, which is where it belongs. Half the band either way is enough to sit
+    // the name against the top or bottom edge; further only pushes it out under
+    // the band's own overflow clip.
+    offset: clamp(Number.isFinite(+header.offset) ? +header.offset : 0, -50, 50),
     italic: !!header.italic,
     // Absent means on. Every board written before this setting existed wrapped
     // its name, and !!undefined would quietly turn that off for all of them.

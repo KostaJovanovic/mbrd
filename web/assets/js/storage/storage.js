@@ -21,6 +21,7 @@
 import { toast, busy, isDev, itemHashes, clearPrefs } from '../util.js';
 import {
   board, serializeBoard, loadBoard, markDirty, isDirty, setTitle, bus, cleanBoardTitle,
+  defaultBoardTitle,
 } from '../state.js';
 import { packBoard, unpackBoard, MIME } from './mbrd.js';
 import { allAssets, putAsset, clearAssets } from './assets.js';
@@ -381,7 +382,7 @@ export async function newBoard() {
   // into. That matters more since a board can derive its palette from its own
   // photographs - without this, every board after the first would open in the
   // colours of the previous board's pictures.
-  loadBoard({ title: 'Untitled board' });
+  loadBoard({ title: defaultBoardTitle() });
   // A failure here is self-healing: the session is one slot and the new board's
   // first autosave overwrites whatever stale bytes remain, so warn but do not
   // block starting fresh. clearAllData() is the path that must not paper over a

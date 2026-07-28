@@ -140,7 +140,7 @@
            carrying the words "Untitled board": that is the placeholder, which
            is both the italic aside it used to be styled as and the thing
            setTitle() already falls back to when handed nothing. -->
-      <input id="board-title" class="board-title" type="text" maxlength="16"
+      <input id="board-title" class="board-title" type="text" maxlength="32"
              placeholder="Untitled board" aria-label="Board name"
              autocomplete="off" spellcheck="false">
       <div class="btn-row">
@@ -252,6 +252,7 @@
       <label class="check"><input type="checkbox" id="opt-axes" checked> Show axes</label>
       <label class="check"><input type="checkbox" id="opt-snap"> Snap to grid</label>
       <label class="check"><input type="checkbox" id="opt-hud" checked> Show readout</label>
+      <label class="check"><input type="checkbox" id="opt-web" checked> Show web</label>
       <!-- A sheet of paper drawn round the middle of the board, at the size it
            really is under the scale set below. The orientation is two buttons
            rather than a third entry per size, because "A4 landscape" is A4
@@ -443,6 +444,10 @@
       <label class="field">
         <span>Line height <output id="mobile-header-leading-out">Auto</output></span>
         <input id="mobile-header-leading" type="range" min="60" max="250" step="1" value="100">
+      </label>
+      <label class="field">
+        <span>Vertical position <output id="mobile-header-offset-out">Center</output></span>
+        <input id="mobile-header-offset" type="range" min="-50" max="50" step="1" value="0">
       </label>
       <label class="check">
         <input type="checkbox" id="mobile-header-italic"> Italic

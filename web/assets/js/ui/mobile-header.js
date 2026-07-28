@@ -52,6 +52,8 @@ let stretchInput;
 let stretchOut;
 let leadingInput;
 let leadingOut;
+let offsetInput;
+let offsetOut;
 let italicInput;
 let wrapInput;
 let weightHost;
@@ -71,6 +73,8 @@ export function initMobileHeaderEditor(vp) {
   stretchOut = el('mobile-header-stretch-out');
   leadingInput = el('mobile-header-leading');
   leadingOut = el('mobile-header-leading-out');
+  offsetInput = el('mobile-header-offset');
+  offsetOut = el('mobile-header-offset-out');
   italicInput = el('mobile-header-italic');
   wrapInput = el('mobile-header-wrap');
   weightHost = el('mobile-header-weight');
@@ -104,6 +108,11 @@ export function initMobileHeaderEditor(vp) {
     const value = +leadingInput.value;
     update({ leading: value });
     leadingOut.textContent = leadingText(value);
+  });
+  offsetInput.addEventListener('input', () => {
+    const value = Math.round(+offsetInput.value);
+    update({ offset: value });
+    offsetOut.textContent = offsetText(value);
   });
   italicInput.addEventListener('change', () => update({ italic: italicInput.checked }));
   wrapInput.addEventListener('change', () => update({ wrap: wrapInput.checked }));
@@ -177,6 +186,10 @@ const snapStretch = value =>
 
 /** 100 is the face's own line height, and says so rather than showing "100%". */
 const leadingText = value => (+value === 100 ? 'Auto' : `${formatAxis(value)}%`);
+
+/** 0 sits the name in the middle of the band; either way of it reads as a way. */
+const offsetText = value =>
+  (+value === 0 ? 'Center' : `${+value < 0 ? 'Up' : 'Down'} ${Math.abs(+value)}%`);
 
 /** A useful slider step across small fractions and very broad design spaces. */
 export function axisStep(axis) {
@@ -422,6 +435,8 @@ function paint() {
   stretchOut.textContent = `${formatAxis(style.stretch)}%`;
   leadingInput.value = String(style.leading);
   leadingOut.textContent = leadingText(style.leading);
+  offsetInput.value = String(style.offset ?? 0);
+  offsetOut.textContent = offsetText(style.offset ?? 0);
   italicInput.checked = style.italic;
   wrapInput.checked = style.wrap;
 
@@ -447,6 +462,9 @@ function applyTitleStyle(style, axes) {
   else title.style.removeProperty('font-family');
   title.style.setProperty('--mobile-title-scale', formatAxis(style.size / 100));
   title.style.setProperty('--mobile-title-stretch', formatAxis(style.stretch / 100));
+  // A plain number; app.css turns it into a fraction of the band height so the
+  // nudge holds its proportion at any font size. See the transform there.
+  title.style.setProperty('--mobile-title-offset', String(style.offset ?? 0));
   // Cleared rather than set to a number at the default, so the stylesheet's
   // `line-height: normal` comes back and the masthead is spaced by the face's
   // own metrics again - which is the one value no number here can express.

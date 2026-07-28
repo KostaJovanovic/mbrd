@@ -250,6 +250,17 @@ export function initAppearance(handlers = {}) {
     syncControls();
   };
   bus.on('board', syncFromBoard);
+  // And on the load itself, ahead of the 'board' that trails it - loadBoard()
+  // emits 'board:load' then 'board' (state.js), so a look left to the second
+  // event lands a tick too late: every 'board:load' consumer that reads the
+  // resolved type - the Mobile masthead building its weight slider off
+  // --font-display is the one that showed it - rebuilds against the *previous*
+  // whimsy's face and is a face behind until something forces it again. This
+  // module is wired before those consumers (main.js init order), so applying the
+  // look here means the display font is already the board's own by the time they
+  // run. Idempotent with the trailing 'board': sameLook() makes the second a
+  // no-op.
+  bus.on('board:load', syncFromBoard);
   // Color and whimsy are shared, while advanced overrides are layout-local.
   // Switching profiles therefore needs the same reconciliation as opening one.
   bus.on('layout', () => {
