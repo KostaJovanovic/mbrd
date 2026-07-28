@@ -484,7 +484,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
      .item-body does the clipping instead - it fills the item and carries the
      same radius, so content still rounds off at the corners. */
   overflow: visible;
-  cursor: grab;
+  /* Default, not grab: the hand is a promise that this thing is ready to be
+     picked up, and it should only be made once the card is selected - which is
+     also the state its resize grips appear in. A plain hover invites a look, not
+     a drag, so the arrow stays an arrow until the card is chosen. Selecting it
+     sets the grab hand below; dragging turns it to grabbing (.item.is-dragging).
+     Any item is still draggable on press regardless - this is the affordance,
+     not the gate. */
+  cursor: default;
   user-select: none;
   -webkit-user-select: none;
   /* The selection ring's geometry, collapsed flat. A card that is not selected
@@ -536,6 +543,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
   --lift: var(--lift-hover);
   --grow: var(--grow-hover);
 }
+/* Selected: now the hand appears, because now the card is the one you are
+   working with. Hover alone no longer offers it (see cursor: default on .item). */
+.item.is-selected { cursor: grab; }
 .item.is-dragging {
   cursor: grabbing;
   --lift: var(--lift-drag);
@@ -1111,8 +1121,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   padding: 0;
   border: var(--hairline) solid var(--accent);
   border-radius: 50%;
-  background: color-mix(in srgb, var(--paper-card) 84%, transparent);
-  backdrop-filter: blur(3px);
+  background: var(--paper-card);
   color: var(--accent);
   cursor: pointer;
   pointer-events: auto;
@@ -1142,9 +1151,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
      the reservation cannot drift away from the thing being reserved for. */
   padding: 6px var(--handle-w) 6px 9px;
   gap: 8px;
-  background: color-mix(in srgb, var(--paper-card) 88%, transparent);
+  background: var(--paper-card);
   border-top: var(--hairline) solid var(--rule);
-  backdrop-filter: blur(3px);
   opacity: 0;
   transition: opacity var(--dur-fast) var(--ease);
 }
@@ -1229,7 +1237,20 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .item:has(.vplayer.is-playing) .item-bar {
   background: none;
   border-top-color: transparent;
-  backdrop-filter: none;
+  /* And it must stop catching the pointer, not only stop being seen. The plate
+     hangs off .item while the transport lives in .item-body, so the plate is the
+     later sibling and paints - and hit-tests - above the transport. Gone to
+     transparent it was still an invisible sheet over the play and mute buttons,
+     which is why a named video's controls did nothing: every click landed on the
+     plate. Let them through. The handle at the far right takes its own pointer
+     back below - it is the one thing on the plate still worth pressing here, and
+     it sits over the strip the transport keeps clear for it. */
+  pointer-events: none;
+}
+.item[data-type="video"]:hover .item-bar .item-menu,
+.item[data-type="video"]:focus-within .item-bar .item-menu,
+.item:has(.vplayer.is-playing) .item-bar .item-menu {
+  pointer-events: auto;
 }
 /* The divider goes with the sheet - see the exceptions under .item-menu, which
    is where it has to be written to outrank the rule that draws it. */
@@ -1693,19 +1714,17 @@ plates do: below a third of size a card is a coloured tile, and a click on
 
    `backdrop-filter` is the whole reason this exists. A backdrop blur cannot be
    composited once and reused the way a shadow can: the pixels behind the box
-   change on every frame of a zoom, so every blurred control on screen is
-   re-sampled every frame. What is left blurred is the media buttons alone - the
-   video and audio play controls that sit over a frame of the media itself.
-   There are at most a handful on screen at once, where caption plates were one
-   per photograph, so they keep their frosted look and pay their toll only while
-   moving; the caption plate gave its blur up entirely (see .item-bar) and needs
-   no toggle here any more.
+   change on every frame of a zoom, so a blurred control on screen is re-sampled
+   every frame. The only one left blurred is the audio play button when it sits
+   over cover art at far zoom - artwork is the one background this app does not
+   choose, so the button needs a plate to stay legible on a dark sleeve. It is
+   rare on screen and keeps its frosted look, paying the toll only while moving.
+   The caption plate and the video controls gave their blur up entirely (see
+   .item-bar, .vbig, .transport-video) and need no toggle here any more.
 
    The blur returning is not animated. A transition here would put the cost back
    on the frame after the gesture, spread over a few hundred milliseconds, which
    is precisely the frames a zoom lands on and the user is looking at. */
-#world.is-viewing .transport-video,
-#world.is-viewing .vbig,
 #world.is-viewing .card-audio.has-cover .play {
   backdrop-filter: none;
 }
@@ -1766,10 +1785,20 @@ plates do: below a third of size a card is a coloured tile, and a click on
 .item[data-type="model"] .item-bar .item-menu,
 .item[data-type="generic"] .item-bar .item-menu { border-left: 0; }
 /* And a video whose transport has taken the strip: the sheet went with it, and
-   a rule with nothing either side of it would be all that was left. */
+   a rule with nothing either side of it would be all that was left.
+
+   The handle also takes the transport's height here, so the dots sit on the same
+   line as the mute button rather than a few pixels below it. The plate the handle
+   hangs in is --handle-w (30) tall; the transport bar beside it is taller, its
+   25px play button plus 6px top and bottom, and with both pinned to bottom: 0 the
+   shorter one put the dots low. Matching that height lines the two controls up.
+   Only while the transport shows - at rest the handle keeps the plate's own 30. */
 .item[data-type="video"]:hover .item-bar .item-menu,
 .item[data-type="video"]:focus-within .item-bar .item-menu,
-.item:has(.vplayer.is-playing) .item-bar .item-menu { border-left: 0; }
+.item:has(.vplayer.is-playing) .item-bar .item-menu {
+  border-left: 0;
+  min-height: calc(25px + 2 * 6px);   /* .transport-video: .play + its padding */
+}
 .item-menu svg { width: 13px; height: 13px; }
 /* Ink only, hovered and pressed alike - no fill behind the dots.
    A fill would be a 30px block sitting in the corner of the bar, and the bar's

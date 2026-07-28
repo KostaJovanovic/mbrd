@@ -18,24 +18,47 @@ function open() {
       if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
       if (!db.objectStoreNames.contains('assets')) db.createObjectStore('assets');
     };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    req.onsuccess = () => {
+      const db = req.result;
+      // Another tab opening a newer schema version blocks on any connection
+      // still holding the old one. Step aside and drop the cached handle so the
+      // next operation reconnects, instead of deadlocking that upgrade forever.
+      db.onversionchange = () => { db.close(); dbPromise = null; };
+      resolve(db);
+    };
+    // A permanently rejected dbPromise would poison every later operation, so
+    // clear it on failure: the connection is worth retrying (private-mode
+    // toggles, transient quota, a blocking sibling tab that later closes).
+    req.onerror = () => { dbPromise = null; reject(req.error); };
+    req.onblocked = () => {
+      dbPromise = null;
+      reject(req.error || new Error('IndexedDB open blocked by another tab'));
+    };
   });
   return dbPromise;
 }
 
+// Resolve from `transaction.oncomplete`, never from `request.onsuccess`. A put,
+// delete or clear reports request success once the operation is *accepted*; the
+// transaction can still abort afterwards. Resolving early would let the caller
+// (autosave, cache sweep, "clear everything") treat not-yet-durable bytes as
+// saved. The request result is captured and handed back only once the whole
+// transaction commits. Reads take the same path - completion follows success,
+// so the captured value is ready.
 function tx(store, mode, fn) {
   return open().then(db => new Promise((resolve, reject) => {
     const t = db.transaction(store, mode);
+    let result;
+    let settled = false;
+    const fail = err => { if (!settled) { settled = true; reject(err); } };
     const req = fn(t.objectStore(store));
-    t.onerror = () => reject(t.error);
-    t.onabort = () => reject(t.error);
     if (req) {
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    } else {
-      t.oncomplete = () => resolve();
+      req.onsuccess = () => { result = req.result; };
+      req.onerror = () => fail(req.error);
     }
+    t.oncomplete = () => { if (!settled) { settled = true; resolve(result); } };
+    t.onerror = () => fail(t.error);
+    t.onabort = () => fail(t.error);
   }));
 }
 

@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 
 import {
   parseSTL, parseOBJ, parseGLB, parseMesh, parseMTL, applyMaterials,
-  defaultUpAxis, meshKind, MeshError, MAX_TRIANGLES,
+  defaultUpAxis, meshKind, MeshError, MAX_TRIANGLES, MAX_ELEMENTS,
 } from '../web/assets/js/import/mesh.js';
 
 // A unit triangle in the z = 0 plane, wound anticlockwise so its normal is +z.
@@ -535,4 +535,56 @@ test('colours outside 0-1 are clamped rather than passed to the shader', () => {
 test('the triangle ceiling is a number a card could plausibly be asked for', () => {
   // Not a behaviour so much as a guard against someone "tidying" it to 100.
   assert.ok(MAX_TRIANGLES >= 1_000_000);
+});
+
+// ---------------------------------------------------------------------------
+// glTF hostile-input guards (AUD-06)
+//
+// parseGLB accepts a bare glTF JSON document as well as a GLB container, so a
+// fixture is just an object encoded to bytes - no binary chunk to assemble.
+// ---------------------------------------------------------------------------
+
+const gltfBytes = doc => new TextEncoder().encode(JSON.stringify(doc)).buffer;
+
+test('a small embedded glTF still parses through the new guards', () => {
+  const pos = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+  const b64 = Buffer.from(pos.buffer).toString('base64');
+  const mesh = parseGLB(gltfBytes({
+    accessors: [{ type: 'VEC3', componentType: 5126, count: 3, bufferView: 0 }],
+    bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: 36 }],
+    buffers: [{ byteLength: 36, uri: 'data:application/octet-stream;base64,' + b64 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+    nodes: [{ mesh: 0 }],
+    scenes: [{ nodes: [0] }],
+  }));
+  assert.equal(mesh.positions.length, 9);
+});
+
+test('an accessor that declares an implausible count is refused before it allocates', () => {
+  assert.throws(() => parseGLB(gltfBytes({
+    accessors: [{ type: 'VEC3', componentType: 5126, count: MAX_ELEMENTS + 1, bufferView: 0 }],
+    bufferViews: [{ buffer: 0, byteLength: 12 }],
+    buffers: [{ byteLength: 12 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+    nodes: [{ mesh: 0 }],
+    scenes: [{ nodes: [0] }],
+  })), /implausible amount of geometry/);
+});
+
+test('a non-integer accessor count is refused rather than truncated', () => {
+  assert.throws(() => parseGLB(gltfBytes({
+    accessors: [{ type: 'VEC3', componentType: 5126, count: 1.5, bufferView: 0 }],
+    bufferViews: [{ buffer: 0, byteLength: 36 }],
+    buffers: [{ byteLength: 36 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+    nodes: [{ mesh: 0 }],
+    scenes: [{ nodes: [0] }],
+  })), /implausible amount of geometry/);
+});
+
+test('a deep acyclic node chain is refused instead of overflowing the stack', () => {
+  const N = 5000;   // past MAX_NODE_DEPTH; a recursion would have blown up here
+  const nodes = Array.from({ length: N }, (_, i) => (i < N - 1 ? { children: [i + 1] } : {}));
+  assert.throws(() => parseGLB(gltfBytes({ nodes, scenes: [{ nodes: [0] }] })),
+    /nested too deeply/);
 });

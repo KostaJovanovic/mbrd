@@ -34,6 +34,25 @@
  */
 export const MAX_TRIANGLES = 2_000_000;
 
+/**
+ * The most elements an accessor may declare, before any buffer is touched.
+ *
+ * `acc.count` is a number out of an untrusted file, and readAccessor() used to
+ * allocate `count * components` up front - so a lie of a few bytes bought a
+ * multi-gigabyte typed array. A 2M-triangle mesh needs at most 6M vertices, so
+ * nothing legitimate declares more than this. See AUD-06.
+ */
+export const MAX_ELEMENTS = MAX_TRIANGLES * 3;
+
+/** Decoded bytes of one embedded (data-URI) buffer. atob() allocates the whole
+ *  binary string, so this is checked from the base64 length before decoding. */
+const MAX_BUFFER_BYTES = 512 * 1024 ** 2;
+
+/** Node-graph ceilings: a deep chain would overflow the walk, a dense DAG would
+ *  revisit shared nodes far more often than any real scene. */
+const MAX_NODE_DEPTH = 4096;
+const MAX_NODE_VISITS = 1_000_000;
+
 export class MeshError extends Error {}
 
 /** Which parser a file wants, or null if it is not a model at all. */
@@ -471,7 +490,7 @@ export function parseGLB(bytes) {
   const roots = json.scenes?.length
     ? (json.scenes[json.scene ?? 0]?.nodes ?? [])
     : (json.nodes || []).map((_, i) => i);
-  for (const root of roots) walkNode(json, buffers, root, IDENTITY, outP, outN, box, new Set());
+  for (const root of roots) walkNode(json, buffers, root, outP, outN, box);
 
   if (!outP.length) throw new MeshError('This model has no geometry in it');
   return finish(new Float32Array(outP), new Float32Array(outN), box);
@@ -479,29 +498,48 @@ export function parseGLB(bytes) {
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
-function walkNode(json, buffers, index, parent, outP, outN, box, seen) {
-  const node = json.nodes?.[index];
-  if (!node) return;
-  // A glTF node graph is meant to be a tree, and a hand-written one is not
-  // always: a cycle here would recurse until the stack gave out.
-  if (seen.has(index)) return;
-  seen.add(index);
+// Iterative with an explicit stack, not recursion. A deep acyclic chain used to
+// spend one JavaScript frame per node and could overflow the call stack; a
+// hostile file is exactly where that happens. `seen` holds the current path -
+// added on enter, removed on exit - which is the same per-path cycle guard the
+// recursion had (a shared node reached down two branches is fine; a node that is
+// its own ancestor is not). The depth ceiling bounds a long chain and the visit
+// ceiling a dense DAG. See AUD-06.
+function walkNode(json, buffers, root, outP, outN, box) {
+  const seen = new Set();
+  let visits = 0;
+  const stack = [{ index: root, parent: IDENTITY, phase: 0 }];
+  while (stack.length) {
+    if (stack.length > MAX_NODE_DEPTH) throw new MeshError('This model is nested too deeply');
+    const frame = stack[stack.length - 1];
+    if (frame.phase === 0) {
+      const node = json.nodes?.[frame.index];
+      if (!node || seen.has(frame.index)) { stack.pop(); continue; }
+      if (++visits > MAX_NODE_VISITS) throw new MeshError('This model has too many nodes in it');
+      seen.add(frame.index);
 
-  const local = node.matrix ? node.matrix : trs(node);
-  const world = mul(parent, local);
+      const local = node.matrix ? node.matrix : trs(node);
+      frame.world = mul(frame.parent, local);
 
-  if (node.mesh !== undefined) {
-    for (const prim of json.meshes?.[node.mesh]?.primitives || []) {
-      // mode 4 is TRIANGLES and is the default. Strips, fans, lines and points
-      // are legal and are not what a solid model exports.
-      if (prim.mode !== undefined && prim.mode !== 4) continue;
-      addPrimitive(json, buffers, prim, world, outP, outN, box);
+      if (node.mesh !== undefined) {
+        for (const prim of json.meshes?.[node.mesh]?.primitives || []) {
+          // mode 4 is TRIANGLES and is the default. Strips, fans, lines and
+          // points are legal and are not what a solid model exports.
+          if (prim.mode !== undefined && prim.mode !== 4) continue;
+          addPrimitive(json, buffers, prim, frame.world, outP, outN, box);
+        }
+      }
+      frame.children = node.children || [];
+      frame.ci = 0;
+      frame.phase = 1;
+    }
+    if (frame.ci < frame.children.length) {
+      stack.push({ index: frame.children[frame.ci++], parent: frame.world, phase: 0 });
+    } else {
+      seen.delete(frame.index);
+      stack.pop();
     }
   }
-  for (const child of node.children || []) {
-    walkNode(json, buffers, child, world, outP, outN, box, seen);
-  }
-  seen.delete(index);
 }
 
 function addPrimitive(json, buffers, prim, m, outP, outN, box) {
@@ -557,6 +595,13 @@ function readAccessor(json, buffers, index) {
   const reader = READERS[acc.componentType];
   if (!comps || !reader) return null;
   const [Kind, size] = reader;
+  // Validate the count before allocating from it. It is attacker-controlled and
+  // the multiplication below feeds a typed-array length; an implausible or
+  // non-integer count is refused rather than turned into a giant allocation.
+  // See AUD-06.
+  if (!Number.isInteger(acc.count) || acc.count < 0 || acc.count > MAX_ELEMENTS) {
+    throw new MeshError('This model declares an implausible amount of geometry');
+  }
   const out = new (acc.componentType === 5126 ? Float32Array : Uint32Array)(acc.count * comps);
 
   const bv = json.bufferViews?.[acc.bufferView ?? -1];
@@ -587,6 +632,13 @@ function dataURIBytes(uri) {
   if (comma < 0) throw new MeshError('This model has a malformed data URI in it');
   const head = uri.slice(0, comma);
   const body = uri.slice(comma + 1);
+  // Cap before decoding. Base64 expands to about three quarters of its length,
+  // and atob() allocates the whole binary string in one go, so a huge embedded
+  // buffer is refused from the string length rather than after the allocation.
+  // See AUD-06.
+  if (body.length / 4 * 3 > MAX_BUFFER_BYTES) {
+    throw new MeshError('This model embeds more data than it is allowed to');
+  }
   if (!head.includes(';base64')) return new TextEncoder().encode(decodeURIComponent(body));
   const bin = atob(body);
   const out = new Uint8Array(bin.length);

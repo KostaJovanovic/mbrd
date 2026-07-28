@@ -285,6 +285,13 @@ export async function readZip(source) {
   } else if (source instanceof ArrayBuffer) {
     bytes = new Uint8Array(source);
   } else {
+    // Reject on the Blob's own cheap `.size` before allocating it. arrayBuffer()
+    // pulls the whole file into memory first, so an archive already provably too
+    // large could exhaust the tab before the length check below - the one it was
+    // meant to be stopped by - ever ran. See AUD-04.
+    if (typeof source.size === 'number' && source.size > LIMITS.archive) {
+      throw new Error(`Archive is too large to open (${source.size} bytes)`);
+    }
     bytes = new Uint8Array(await source.arrayBuffer());
   }
   const size = bytes.length;
