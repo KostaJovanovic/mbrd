@@ -653,11 +653,20 @@ button, input, select, textarea { font: inherit; color: inherit; }
    ring simply lies flat against its edge where it cannot be seen. The version
    that means something arrives with the selection, which is also the only time
    anything reads it: the ring and the grips, and neither is drawn otherwise. */
-.item.is-selected {
+.item.is-selected,
+.item.is-stick-target {
   --sel-edge: calc((var(--sel-gap) + var(--sel-line)) * var(--iz));
   --mark-radius: min(calc(var(--own-radius) + var(--sel-edge)),
                      calc(var(--own-radius) * 1000));
   --mark-size: calc(var(--mark-radius) + var(--sel-reach) * var(--iz));
+}
+
+/* While a note is dragged, the item it will stick to on release wears the very
+   same ring as a selected item - and nothing else: no grips, no menu, because it
+   is not selected, only aimed at. */
+.item.is-stick-target::before {
+  border-width: calc(var(--sel-line) * var(--iz));
+  transition: border-width var(--dur-fast) var(--ease);
 }
 
 .item-body {
@@ -1323,52 +1332,177 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* The filed-card inner rule has no business on a sticky. */
 .item[data-type="note"] .card::after { content: none; }
 
-/* Title and body are separate fields (renderers.js/note), ruled apart. The
-   rule is a hairline of the ink at very low strength rather than --rule: on
-   coloured pad paper the shared rule colour reads as a different, greyer
-   material laid across the sheet, where a tint of the note's own ink reads as
-   a line drawn on it. */
-.item[data-type="note"] .note-title {
+/* A note is a column of formatted block-lines (renderers.js/note). The column
+   carries the note's font, its size (through --note-scale) and its vertical
+   placement (justify-content); each line carries only its own kind and its
+   alignment. font-family is written inline by applyNoteStyle from an allowlist,
+   so the rule here is just the fallback before that runs. */
+.item[data-type="note"] .note-rich {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--note-gap);
+  overflow: hidden;
   font-family: var(--font-display);
-  font-size: var(--note-t-title);
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.item[data-type="note"] .note-rich[data-valign="top"] { justify-content: flex-start; }
+.item[data-type="note"] .note-rich[data-valign="middle"] { justify-content: center; }
+.item[data-type="note"] .note-rich[data-valign="bottom"] { justify-content: flex-end; }
+
+/* The three kinds. Each scales with the note (--note-t-* is a share of the
+   sticky's own size) and with the user's chosen multiplier (--note-scale,
+   default 1). h1/h2 inherit the note's font so a font change carries the whole
+   sheet; only weight and size set them apart. */
+.item[data-type="note"] .note-line { line-height: 1.4; }
+.item[data-type="note"] .note-line.note-h1 {
   font-weight: 700;
   line-height: 1.2;
   color: var(--ink);
-  padding-bottom: var(--note-gap);
-  border-bottom: var(--hairline) solid color-mix(in srgb, var(--ink) 14%, transparent);
-  word-break: break-word;
+  font-size: calc(var(--note-t-title) * var(--note-scale, 1));
 }
-.item[data-type="note"] .note-body {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  padding-top: var(--note-gap);
-  white-space: pre-wrap;
-  font-family: var(--font-display);
-  font-size: var(--note-t-body);
-  line-height: 1.45;
+.item[data-type="note"] .note-line.note-h2 {
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--ink);
+  font-size: calc((var(--note-t-title) + var(--note-t-body)) / 2 * var(--note-scale, 1));
+}
+.item[data-type="note"] .note-line.note-p {
   color: var(--ink-2);
-  word-break: break-word;
+  font-size: calc(var(--note-t-body) * var(--note-scale, 1));
 }
-/* A note that is only a title is only a title: no rule under it, and no empty
-   band of body below. While it is being edited the body has to stay reachable,
-   so the collapse waits until you are done. */
-.item[data-type="note"]:not(.is-editing) .note-body:empty { display: none; }
-.item[data-type="note"]:not(.is-editing) .note-title:has(+ .note-body:empty) {
-  padding-bottom: 0;
-  border-bottom: 0;
+.item[data-type="note"] .note-line.al-left { text-align: left; }
+.item[data-type="note"] .note-line.al-center { text-align: center; }
+.item[data-type="note"] .note-line.al-right { text-align: right; }
+
+/* The formatting toolbar floats above the note while it is edited. Outside .card
+   so the card's clip cannot cut it, and scaled by --iz like the rest of the item
+   chrome so it holds its size on screen at any zoom. */
+.note-toolbar {
+  /* Lives in screen space (#viewport), never in the item: positioned by JS for
+     the desktop float (.is-float) and pinned by CSS on mobile (.is-mobile), so
+     it is never scaled by zoom nor clipped by the item box. */
+  position: fixed;
+  display: flex;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md, 14px);
+  background: var(--paper-card);
+  box-shadow:
+    0 3px 10px color-mix(in srgb, var(--ink) 16%, transparent),
+    inset 0 0 0 var(--hairline) var(--item-border);
+  white-space: nowrap;
+  z-index: 6;
+  font-family: system-ui, sans-serif;
+  pointer-events: auto;
+  /* Its own compositor layer, so the note's growing shadow underneath cannot
+     bleed into the bar's and read as the bar's shadow deepening on each press. */
+  isolation: isolate;
 }
-/* A rule divides a title from a body, so with no title there is nothing to
-   divide and the line is just a stray mark across the top of the note.
-   No :not(.is-editing) here, and that falls out rather than being a
-   compromise: an empty field being typed into holds a <br>, so it stops
-   matching :empty the moment it has focus and the rule comes back to show
-   where the title goes. It is only gone when the title is genuinely left
-   empty, which is what was asked for. */
-.item[data-type="note"] .note-title:empty {
-  padding-bottom: 0;
-  border-bottom: 0;
+/* Desktop float: JS sets left/top (top-left the anchor point); centre on it. */
+.note-toolbar.is-float { transform: translateX(-50%); transform-origin: 50% 0; }
+
+.note-toolbar .ntb-group { display: flex; gap: 3px; align-items: center; }
+.note-toolbar .ntb-group + .ntb-group {
+  margin-left: 5px;
+  padding-left: 10px;
+  border-left: var(--hairline) solid color-mix(in srgb, var(--ink) 12%, transparent);
 }
+.note-toolbar .ntb-btn {
+  min-width: 36px;
+  height: 36px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-xs, 8px);
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 19px;
+  line-height: 36px;
+  cursor: pointer;
+}
+.note-toolbar .ntb-icon { display: inline-flex; align-items: center; justify-content: center; }
+
+/* On a phone the bar takes the foot of the screen for the length of the edit,
+   in place of the add bar and the bin/undo/redo strip (both hidden by the
+   :root.note-edit-mobile rule below). It spans the board on the same insets the
+   add bar used, and its groups wrap so the controls fall into two rows and stay
+   readable rather than shrinking to fit one. */
+.note-toolbar.is-mobile {
+  box-sizing: border-box;
+  z-index: 21;
+  top: auto;
+  left: max(12px, env(safe-area-inset-left));
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(12px, env(safe-area-inset-bottom));
+  width: auto;
+  transform: none;
+  flex-wrap: wrap;
+  justify-content: center;
+  row-gap: 6px;
+  padding: 8px;
+}
+.note-toolbar.is-mobile .ntb-btn { min-width: 34px; height: 36px; }
+
+/* While a note is edited on the phone, its bar owns the foot: the add bar and
+   the bin/undo/redo strip step aside so the two never stack. */
+:root.note-edit-mobile #add-bar,
+:root.note-edit-mobile #bin { display: none; }
+.note-toolbar .ntb-btn:hover {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  color: var(--ink);
+}
+.note-toolbar .ntb-btn.is-active {
+  background: var(--accent);
+  color: var(--paper-card);
+}
+.note-toolbar .ntb-select {
+  height: 36px;
+  border: 0;
+  border-radius: var(--radius-xs, 8px);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  color: var(--ink);
+  font: inherit;
+  font-size: 18px;
+  padding: 0 8px;
+  cursor: pointer;
+}
+
+/* The alignment and vertical-placement glyphs, drawn as bars rather than trusted
+   to a font. currentColor tracks the button, so they invert on the active one.
+   Alignment: three bars pushed to one side. Vertical: two bars grouped high,
+   centred or low in the box. */
+.note-toolbar .ntb-ico { display: inline-block; background-repeat: no-repeat; }
+.note-toolbar .ntb-ico-al-left,
+.note-toolbar .ntb-ico-al-center,
+.note-toolbar .ntb-ico-al-right {
+  width: 22px;
+  height: 16px;
+  background-image:
+    linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor);
+  background-size: 22px 2px, 14px 2px, 18px 2px;
+}
+.note-toolbar .ntb-ico-al-left { background-position: left 2px, left 8px, left 14px; }
+.note-toolbar .ntb-ico-al-center { background-position: center 2px, center 8px, center 14px; }
+.note-toolbar .ntb-ico-al-right { background-position: right 2px, right 8px, right 14px; }
+.note-toolbar .ntb-ico-va-top,
+.note-toolbar .ntb-ico-va-middle,
+.note-toolbar .ntb-ico-va-bottom {
+  width: 16px;
+  height: 18px;
+  background-image:
+    linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor);
+  background-size: 14px 2px, 10px 2px;
+}
+.note-toolbar .ntb-ico-va-top { background-position: center 1px, center 5px; }
+.note-toolbar .ntb-ico-va-middle { background-position: center 6px, center 10px; }
+.note-toolbar .ntb-ico-va-bottom { background-position: center 11px, center 15px; }
 
 /* How much room is left, while a note is being written. Outside .item-body so
    the body's clip cannot cut it off, and scaled by --iz like the rest of the
@@ -1586,16 +1720,14 @@ plates do: below a third of size a card is a coloured tile, and a click on
 .item.is-editing .card-text,
 .item.is-editing .card-name,
 .item.is-editing .item-label,
-.item.is-editing .note-title,
-.item.is-editing .note-body { outline: none; overflow: auto; cursor: text; }
+.item.is-editing .note-rich { outline: none; overflow: auto; cursor: text; }
 /* The caption plate refuses the pointer and ellipsises whatever it cannot fit -
    both right for a label, both wrong for a field. While it is being renamed it
    takes the caret and scrolls instead of truncating. */
 .item.is-editing .item-label { pointer-events: auto; text-overflow: clip; }
-/* An empty field collapses to nothing and becomes unclickable, so both keep a
+/* An empty line collapses to nothing and becomes unclickable, so each keeps a
    line's worth of height while the note is open for editing. */
-.item.is-editing .note-title:empty,
-.item.is-editing .note-body:empty { min-height: 1em; }
+.item.is-editing .note-line:empty { min-height: 1em; }
 
 /* Caption plate: a strip of paper across the foot of a picture, not a black
    gradient. Reads like a museum label. */
@@ -2038,7 +2170,12 @@ plates do: below a third of size a card is a coloured tile, and a click on
 #mobile-header-edit-btn svg { width: 18px; height: 18px; color: var(--accent); }
 #menu-btn span {
   width: 17px;
-  height: 1.5px;
+  /* A whole device pixel, not 1.5. Three separate bars each snap to the pixel
+     grid on their own, so a fractional height rounds unevenly - on a 1x display
+     (a 1080p panel at 100%) the middle bar landed on a boundary that rounded to
+     2px while the other two rounded to 1px. 2px renders identical at every
+     integer scale. */
+  height: 2px;
   border-radius: var(--radius-xs);
   background: var(--ink);
 }

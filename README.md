@@ -223,7 +223,7 @@ the sidebar is a floating sheet with a deckled edge. Light only for now.
 The sidebar is deliberately **not** modal — no scrim, nothing disabled behind
 it. Leave it open and keep panning, zooming, dropping and dragging.
 
-Four palettes ship (Papyrus, Absinthe, Tea rose, Peacock) and every colour,
+Four palettes ship (Papyrus, Absinthe, Tea rose, Orca) and every colour,
 radius and spacing value is a CSS custom property in `tokens.css`. The
 **Appearance** panel writes them straight onto `:root`, so changes are live. A
 look is saved twice on purpose: to `localStorage` (follows you across boards)

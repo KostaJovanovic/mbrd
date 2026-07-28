@@ -651,9 +651,19 @@ function repackMobileBoard() {
   const ordered = [...board.items].sort((a, b) =>
     b.y - a.y || a.x - b.x || a.id.localeCompare(b.id));
   const before = snapshotGeom(ordered.map(item => item.id));
-  const target = new Map(placeMobileItems(ordered, []).map(item => [item.id, item]));
+  // Stuck notes ride their host through a reflow instead of being repacked into
+  // their own column slot; they keep their size and follow the host to its new
+  // place. See attachRiders().
+  const packable = ordered.filter(it => !isRider(it));
+  const riders = ordered.filter(isRider);
+  const target = new Map(placeMobileItems(packable, []).map(item => [item.id, item]));
+  attachRiders(riders, target, (note, hostSrc, hostDst) => {
+    const at = stuckPlacement(note, hostSrc, hostDst);
+    return { ...note, x: at.x, y: at.y };
+  });
   applyGeom(before.map(geometry => {
     const item = target.get(geometry.id);
+    if (!item) return geometry;          // a rider whose host vanished: leave it
     return {
       ...geometry,
       x: item.x,
@@ -914,7 +924,14 @@ function completeLayout(mode) {
     const columns = mobileColumnCount(profile.mobileColumns);
     const known = [];
     const missing = [];
+    // A note stuck to something on the board rides it into the column rather than
+    // being packed as a card of its own, so a pinned sticky stays pinned when the
+    // board reflows for Mobile. It is neither packed nor an obstacle; its place is
+    // derived from the host once the host has one. A note whose host is gone falls
+    // through to being packed like anything else.
+    const riders = [];
     for (const it of board.items) {
+      if (isRider(it)) { riders.push(it); continue; }
       const saved = map.get(it.id);
       if (!saved) {
         missing.push(it);
@@ -940,6 +957,19 @@ function completeLayout(mode) {
       columns,
     });
     for (const item of packed) map.set(item.id, geometryOf(item));
+    const stranded = attachRiders(riders, map, (note, hostSrc, hostDst) => {
+      const at = stuckPlacement(note, hostSrc, hostDst);
+      return geometryOf({ ...fitMobile(note, false, step, columns), x: at.x, y: at.y });
+    });
+    // A rider whose host never resolved - deleted, or a stuck-to-stuck cycle -
+    // is packed after all, so it is at least visible somewhere.
+    if (stranded.size) {
+      const rest = riders.filter(r => stranded.has(r.id));
+      const extra = placeMobileItems(rest, [...known, ...packed], {
+        step, snap: profile.snap, columns,
+      });
+      for (const item of extra) map.set(item.id, geometryOf(item));
+    }
     const out = board.items.map(item => map.get(item.id));
     board.layouts.mobile = out;
     return out;
@@ -1596,6 +1626,25 @@ function measureStick(note) {
 }
 
 /**
+ * The item a prospective note box would stick to if let go as given, or null.
+ *
+ * The same rule as measureStick - the topmost item more than STICK_MIN covered -
+ * but asked of a box that is not on the board yet, so a drag can decide to skip
+ * the grid *before* it commits the move. No z compare is needed: startMove()
+ * raised the dragged note to the top when the gesture began, so every other item
+ * is already below it, and the box carries no z to compare anyway.
+ */
+export function wouldStick(box, excludeId) {
+  let best = null;
+  for (const it of board.items) {
+    if (it.id === excludeId) continue;
+    if (best && (it.z || 0) < (best.z || 0)) continue;
+    if (overlapFraction(box, it) > STICK_MIN) best = it;
+  }
+  return best;
+}
+
+/**
  * Forget what these notes were stuck to, so the next question measures again.
  *
  * Called with the ids a gesture *drove* - what the pointer or the arrow keys
@@ -1610,6 +1659,81 @@ export function restick(ids) {
 
 /** Nothing on the old board is a fact about the new one. */
 export const forgetSticks = () => sticks.clear();
+
+/**
+ * Seed the memo from what a loaded board wrote down.
+ *
+ * Stickiness is measured, not stored, everywhere *inside* a session - but a
+ * pixel of geometry drift across a save/reload, or a Mobile layout that parked a
+ * note a hair off its host, could drop the overlap under STICK_MIN and lose a
+ * relationship the author plainly made. `meta.stuckTo` is the durable record
+ * (stamped at serialize time); seeding it here makes the saved answer win over a
+ * fresh measurement, while an older board with no such key measures as before.
+ * A null is kept as the real answer "loose", exactly as the memo treats it.
+ */
+function seedSticks() {
+  sticks.clear();
+  for (const it of board.items) {
+    if (it.type === 'note' && it.meta && 'stuckTo' in it.meta) {
+      sticks.set(it.id, it.meta.stuckTo ?? null);
+    }
+  }
+}
+
+/**
+ * Where a note sits relative to its host, as a fraction of the host's size.
+ *
+ * Fractions rather than world units so the offset survives the host being a
+ * different size in the other layout: a note pinned to a photo's top-left stays
+ * at its top-left when Mobile shrinks the photo to fit a column. Read live at
+ * the moment a layout is generated, never stored - the current geometry is the
+ * truth, and freezing an offset would fight a note dragged around its host.
+ */
+function stuckOffset(note, host) {
+  return { fx: (note.x - host.x) / (host.w || 1), fy: (note.y - host.y) / (host.h || 1) };
+}
+
+/**
+ * The centre a stuck note takes in a target layout: its host's place there, plus
+ * the offset it holds in the source layout. `hostSrc`/`hostDst` are the same host
+ * measured in the two layouts.
+ */
+export function stuckPlacement(note, hostSrc, hostDst) {
+  const off = stuckOffset(note, hostSrc);
+  return { x: hostDst.x + off.fx * hostDst.w, y: hostDst.y + off.fy * hostDst.h };
+}
+
+/** A note stuck to something still on the board - one that rides, not packs. */
+export function isRider(it) {
+  return it.type === 'note' && !!stuckTo(it);
+}
+
+/**
+ * Place each rider on its host inside a target layout, in passes so a note stuck
+ * to a note resolves only once its own host has a place. `place` is the target
+ * geometry map, keyed by id; `build(note, hostSrc, hostDst)` returns the entry to
+ * store. Returns the ids that never resolved - a deleted host, or a cycle - for
+ * the caller to fall back on. hostSrc is read live (the source layout); hostDst
+ * is the host's entry in `place`.
+ */
+function attachRiders(riders, place, build) {
+  const pending = new Set(riders.map(r => r.id));
+  for (let grew = true; grew && pending.size;) {
+    grew = false;
+    for (const note of riders) {
+      if (!pending.has(note.id)) continue;
+      const host = stuckTo(note);
+      if (!host) { pending.delete(note.id); continue; }
+      if (pending.has(host.id)) continue;        // host is a rider, not placed yet
+      const hostDst = place.get(host.id);
+      if (!hostDst) continue;                     // host not laid out yet this pass
+      place.set(note.id, build(note, byId(host.id), hostDst));
+      pending.delete(note.id);
+      grew = true;
+    }
+  }
+  return pending;
+}
 
 /**
  * The ids of the notes that have to come along when `ids` are moved.
@@ -1661,6 +1785,31 @@ export function setItemText(id, text) {
   commit('Edit note',
     () => { byId(id).meta.text = text; bus.emit('item', id); },
     () => { byId(id).meta.text = prev; bus.emit('item', id); });
+}
+
+/**
+ * Commit a note's formatted content - the structured `meta.rich` and the
+ * plaintext `meta.text` it flattens to - as one undoable step, so a single Ctrl+Z
+ * takes back the whole edit rather than the two halves separately. A no-op when
+ * neither half moved, which is what keeps closing an editor you only looked at
+ * from spending a history slot. `rich` is trusted to be normalised by the caller
+ * (canvas/notes.js), and `text` is capped here the way setItemText caps its own.
+ */
+export function setNoteContent(id, rich, text) {
+  const it = byId(id);
+  if (!it || it.type !== 'note') return;
+  text = String(text ?? '').slice(0, NOTE_MAX);
+  const prevRich = it.meta.rich;
+  const prevText = it.meta.text;
+  if (prevText === text && JSON.stringify(prevRich) === JSON.stringify(rich)) return;
+  const write = (t, r) => {
+    const m = byId(id).meta;
+    m.text = t;
+    if (r === undefined) delete m.rich;
+    else m.rich = r;
+    bus.emit('item', id);
+  };
+  commit('Edit note', () => write(text, rich), () => write(prevText, prevRich));
 }
 
 /**
@@ -2099,14 +2248,14 @@ export function loadBoard(data) {
   board.items = next.items;
   board.trash = next.trash;
   board.layoutMode = layoutMode;
+  // Before completeLayout(): the Mobile carry below asks stuckTo() where each
+  // note belongs, so the memo has to hold *this* board's answers, not the last
+  // board's. Seeding also drops the old board's ids, which two files can share.
+  seedSticks();
   activateLayoutSettings(layoutMode);
   writeLayout(completeLayout(layoutMode));
   selection.clear();
   clearHistory();
-  // Stuckness is remembered rather than recomputed, so it has to be dropped
-  // here or a note on the new board would inherit an answer measured on the old
-  // one - and ids from two different files can be the same string.
-  forgetSticks();
   // The clipboard cannot cross a board. Opening one calls clearAssets(), so a
   // copy taken from the old board would paste an item whose asset hash no
   // longer resolves to any bytes - a card with a hole in it, which is worse
@@ -2346,6 +2495,10 @@ export function serializeBoard() {
     const meta = { ...item.meta };
     if (geometry?.presnap) meta.presnap = { ...geometry.presnap };
     else delete meta.presnap;
+    // Stamp the durable stick record. Measured now from live geometry, not read
+    // from a stale field, so the file records where the note actually sits; a
+    // load seeds the memo back from it. Null is a real answer and is kept.
+    if (item.type === 'note') meta.stuckTo = stuckTo(item)?.id ?? null;
     return { ...item, ...(geometry || null), meta };
   };
   return {

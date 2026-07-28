@@ -487,6 +487,32 @@ test('only notes stick', () => {
   assert.equal(stuckTo(byId(other.id)), null);
 });
 
+test('a pin is stamped into the file and restored from it', () => {
+  const [pic] = addItems([photo({ x: 0, y: 0, w: 300, h: 300 })]);
+  const [n] = addItems([note({ x: 0, y: 0, w: 80, h: 80 })]);
+  assert.equal(stuckTo(byId(n.id))?.id, pic.id);
+  const saved = serializeBoard().items.find(i => i.id === n.id);
+  assert.equal(saved.meta.stuckTo, pic.id, 'the pin is written down at save');
+
+  // A file that says pinned while the note lies nowhere near its host - a Mobile
+  // geometry that drifted, an older overlap lost to rounding. The stored pin has
+  // to win over a fresh measurement, which here would find nothing.
+  loadBoard({ title: 'T', items: [
+    { id: 'pic', type: 'image', x: 0, y: 0, w: 300, h: 300 },
+    { id: 'n', type: 'note', x: 5000, y: 5000, w: 80, h: 80, meta: { text: 'n', stuckTo: 'pic' } },
+  ] });
+  assert.equal(stuckTo(byId('n'))?.id, 'pic', 'the saved pin is honoured without overlap');
+});
+
+test('a stuck note rides its host into the Mobile layout', () => {
+  const [pic] = addItems([photo({ x: 0, y: 0, w: 300, h: 300 })]);
+  const [n] = addItems([note({ x: 20, y: 20, w: 80, h: 80 })]);
+  assert.equal(stuckTo(byId(n.id))?.id, pic.id);
+  setBoardMode('mobile');
+  assert.ok(overlapFraction(byId(n.id), byId(pic.id)) > STICK_MIN,
+    'the note still lies on its host after the board reflows for a phone');
+});
+
 test('a note under the thing it covers is not stuck to it', () => {
   // Being stuck requires being above: a relationship nobody can see is not one.
   const [n] = addItems([note({ x: 0, y: 0, w: 80, h: 80 })]);
