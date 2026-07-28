@@ -121,7 +121,22 @@ button, input, select, textarea { font: inherit; color: inherit; }
   border-radius: var(--own-radius);
   box-shadow: var(--item-shadow);
   rotate: calc(var(--item-tilt, 0) * var(--tilt-max));
+  /* The twin follows the card's hover/drag lift so it never slides out from
+     under it as a second card - the reveal Softish's spring used to show. The
+     card's own lift is in items.js via translate/scale on the .item; these
+     mirror it with the same tokens and the same spring. is-hover / is-selected
+     are toggled onto the twin from items.js alongside the card. */
+  translate: 0 calc(var(--sh-lift, 0px) * var(--iz));
+  scale: var(--sh-grow, 1);
+  transition: translate var(--dur-base) var(--ease-back),
+              scale var(--dur-base) var(--ease-back),
+              rotate var(--dur-base) var(--ease-back);
 }
+.item-shadow.is-hover { --sh-lift: var(--lift-hover); --sh-grow: var(--grow-hover); }
+/* A selected card holds still under the pointer (its grips must not move), so
+   its twin does too - matches .item.is-selected:not(.is-dragging):hover. */
+.item-shadow.is-hover.is-selected { --sh-lift: 0px; --sh-grow: 1; }
+.item-shadow.is-dragging { --sh-lift: var(--lift-drag); --sh-grow: var(--grow-hover); }
 .item-shadow[data-type="note"] {
   --item-shadow: var(--note-shadow);
   --shape-radius: var(--note-radius);
@@ -538,8 +553,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* translate/rotate/scale rather than transform, because items.js already owns
    `transform` for the item's own rotation - these are independent properties
    and compose with it instead of fighting over one declaration. */
+/* The ring is the pointer indicator - only the card actually under the pointer
+   gets it. The lift is separate: it is driven by .is-hover, which items.js puts
+   on the hovered card *and* every sticky riding on top of it, so a photo and its
+   notes rise as one object while only the photo carries the ring. */
 .item:hover {
   box-shadow: 0 0 0 calc(1px * var(--iz)) var(--rule-2);
+}
+.item.is-hover {
   --lift: var(--lift-hover);
   --grow: var(--grow-hover);
 }
@@ -583,7 +604,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
    degrees off - but it is static, it does not chase the pointer, and
    straightening cards as they were selected would be a louder change to the
    look than the problem is worth. */
-.item.is-selected:not(.is-dragging):hover {
+.item.is-selected:not(.is-dragging).is-hover {
   --lift: 0px;
   --grow: 1;
 }
@@ -1426,18 +1447,18 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .note-toolbar .ntb-icon { display: inline-flex; align-items: center; justify-content: center; }
 
-/* On a phone the bar takes the foot of the screen for the length of the edit,
-   in place of the add bar and the bin/undo/redo strip (both hidden by the
-   :root.note-edit-mobile rule below). It spans the board on the same insets the
-   add bar used, and its groups wrap so the controls fall into two rows and stay
-   readable rather than shrinking to fit one. */
+/* On a phone the bar takes the top of the screen for the length of the edit, in
+   place of the menu and edit-name buttons that live in the two top corners (both
+   hidden by the :root.note-edit-mobile rule below). It spans the board on the
+   same insets those buttons used, and its groups wrap so the controls fall into
+   two rows and stay readable rather than shrinking to fit one. */
 .note-toolbar.is-mobile {
   box-sizing: border-box;
   z-index: 21;
-  top: auto;
+  bottom: auto;
+  top: max(12px, env(safe-area-inset-top));
   left: max(12px, env(safe-area-inset-left));
   right: max(12px, env(safe-area-inset-right));
-  bottom: max(12px, env(safe-area-inset-bottom));
   width: auto;
   transform: none;
   flex-wrap: wrap;
@@ -1447,10 +1468,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .note-toolbar.is-mobile .ntb-btn { min-width: 34px; height: 36px; }
 
-/* While a note is edited on the phone, its bar owns the foot: the add bar and
-   the bin/undo/redo strip step aside so the two never stack. */
-:root.note-edit-mobile #add-bar,
-:root.note-edit-mobile #bin { display: none; }
+/* While a note is edited on the phone, its bar owns the top edge: the menu
+   (hamburger) and the edit-name (pen) buttons step aside so the two never stack. */
+:root.note-edit-mobile #menu-btn,
+:root.note-edit-mobile #mobile-header-edit-btn { display: none; }
 .note-toolbar .ntb-btn:hover {
   background: color-mix(in srgb, var(--ink) 8%, transparent);
   color: var(--ink);
