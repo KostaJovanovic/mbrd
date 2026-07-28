@@ -12,7 +12,7 @@ import {
   duplicateItems, select, setItemCover,
   setItemUpAxis, historyState, baseStep, mobileBoardWidth, mobileBoardTop,
   mobileBoardBottom, placeMobileItems, setTitle, markDirty,
-  recheckBoardGeometry, cleanBoardTitle, cleanBoardTitleDraft,
+  recheckBoardGeometry, cleanBoardTitle, cleanBoardTitleDraft, isDefaultTitle,
   setBoardMode as selectBoardMode, setAssetNameLookup,
   isRider, stuckTo, stuckPlacement,
 } from './state.js';
@@ -532,7 +532,7 @@ function paintMobileTitle() {
   // well as on a real rename, and rewriting the field mid-word would take the
   // caret with it - the same guard the sidebar's name field keeps.
   if (!field.isContentEditable) field.textContent = board.title;
-  header.toggleAttribute('data-untitled', board.title === 'Untitled board');
+  header.toggleAttribute('data-untitled', isDefaultTitle(board.title));
 }
 
 /**

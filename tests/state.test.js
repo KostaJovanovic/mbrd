@@ -34,21 +34,21 @@ beforeEach(() => {
 });
 
 test('board names are short portable filename stems wherever they enter state', () => {
-  assert.equal(BOARD_TITLE_MAX, 16);
+  assert.equal(BOARD_TITLE_MAX, 32);
   assert.equal(cleanBoardTitleDraft('Mood '), 'Mood ',
     'live editing keeps the trailing space needed to type another word');
   assert.equal(cleanBoardTitleDraft('Mood Board'), 'Mood Board');
   assert.equal(cleanBoardTitle('  My / Board:*?  '), 'My Board');
   assert.equal(cleanBoardTitle('Mood Board'), 'Mood Board');
-  assert.equal(cleanBoardTitle('12345678901234567'), '1234567890123456');
+  assert.equal(cleanBoardTitle('123456789012345678901234567890123'), '12345678901234567890123456789012');
   assert.equal(cleanBoardTitle('CON'), '_CON', 'Windows device names are not filenames');
   assert.equal(cleanBoardTitle('A title.  '), 'A title');
 
   setTitle('An / invalid : board title');
-  assert.equal(board.title, 'An invalid board');
+  assert.equal(board.title, 'An invalid board title');
 
-  loadBoard({ title: 'A far too long loaded board', items: [] });
-  assert.equal(board.title, 'A far too long l',
+  loadBoard({ title: 'A far too long loaded board name that keeps going', items: [] });
+  assert.equal(board.title, 'A far too long loaded board name',
     'opened boards obey the same limit as names typed in the UI');
 });
 
@@ -1068,6 +1068,8 @@ test('Mobile header typography stays with the Mobile layout and round-trips', ()
     // every board that has never said otherwise. See DEFAULT_MOBILE_HEADER.
     leading: 100,
     weight: 625,
+    // Unset above, so it centres - see DEFAULT_MOBILE_HEADER.
+    offset: 0,
     italic: true,
     wrap: true,
     axes: { opsz: 72 },

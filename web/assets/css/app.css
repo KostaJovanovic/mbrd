@@ -337,7 +337,15 @@ button, input, select, textarea { font: inherit; color: inherit; }
      is the correction, arrived at against a real title after 30%, 70% and 55%
      had each overdone it in their own direction. It is a correction for the line
      box, so it moves if the padding or the leading around it ever does. */
-  transform: scaleY(var(--mobile-title-stretch, 1));
+  /* translateY first so it is a plain shift of the whole name, unscaled by the
+     Font height dial - the panel's Vertical position, expressed as a percentage
+     of the band's own height (--mobile-header-height, published on #viewport and
+     inherited here) so the nudge keeps its proportion at any font size. 0 leaves
+     the name where the band's own centring put it; the band's overflow clips
+     whatever a large shift pushes past an edge. */
+  transform:
+    translateY(calc(var(--mobile-header-height, 0px) * var(--mobile-title-offset, 0) / 100))
+    scaleY(var(--mobile-title-stretch, 1));
   transform-origin: 50% 52%;
   /* `normal` follows the active face's own ascent and descent instead of
      assuming every bundled or custom font fits one numeric line box. The

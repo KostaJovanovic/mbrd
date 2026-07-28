@@ -149,7 +149,8 @@ test('the top-stop pen opens persisted header typography controls', async () => 
   assert.match(html, /id="mobile-header-settings"/);
   for (const id of [
     'mobile-header-font', 'mobile-header-weight', 'mobile-header-size',
-    'mobile-header-stretch', 'mobile-header-italic', 'mobile-header-axes',
+    'mobile-header-stretch', 'mobile-header-offset', 'mobile-header-italic',
+    'mobile-header-axes',
   ]) {
     assert.match(html, new RegExp(`id="${id}"`));
   }
@@ -157,10 +158,11 @@ test('the top-stop pen opens persisted header typography controls', async () => 
   assert.match(module, /viewport\?\.atMobileTop\?\.\(\)/);
   assert.match(module, /headerFontAxes/);
   assert.match(module, /fontVariationSettings/);
-  // A hair below the box's centre, which is where the ink's own middle is - see
+  // The title's vertical position dial rides ahead of the stretch, as a fraction
+  // of the band height, and the stretch keeps its hair-below-centre origin - see
   // app.css. Off by more than that and the title walks along the band.
   assert.match(css,
-    /transform:\s*scaleY\(var\(--mobile-title-stretch,\s*1\)\);[\s\S]*transform-origin:\s*50%\s*52%;/);
+    /transform:[\s\S]*translateY\(calc\(var\(--mobile-header-height[\s\S]*var\(--mobile-title-offset[\s\S]*scaleY\(var\(--mobile-title-stretch,\s*1\)\);[\s\S]*transform-origin:\s*50%\s*52%;/);
 });
 
 test('Mobile viewport permits vertical movement only', () => {

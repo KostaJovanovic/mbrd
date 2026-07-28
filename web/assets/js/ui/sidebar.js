@@ -3,7 +3,7 @@
 
 import {
   board, bus, markDirty, setSetting, setArrangement, setTitle, cleanBoardTitle,
-  cleanBoardTitleDraft,
+  cleanBoardTitleDraft, isDefaultTitle,
   MOBILE_COLUMN_OPTIONS,
 } from '../state.js';
 import { ARRANGEMENTS } from '../arrange/arrangements.js';
@@ -129,6 +129,7 @@ export function initSidebar(cmds) {
   bindCheck('opt-axes', 'axes');
   bindCheck('opt-snap', 'snap');
   bindCheck('opt-hud', 'hud');
+  bindCheck('opt-web', 'web');
 
   wirePaper();
   wireScale();
@@ -249,8 +250,10 @@ function wireTitle() {
   });
 }
 
-/** The title as the field holds it: empty for a board that has no name yet. */
-const titleValue = () => (board.title === 'Untitled board' ? '' : board.title);
+/** The title as the field holds it: empty for a board still on its auto name,
+ *  so the name shows through as the faint italic placeholder rather than as a
+ *  value nobody typed. */
+const titleValue = () => (isDefaultTitle(board.title) ? '' : board.title);
 
 /** Push state back into the controls (after opening a board, or an undo). */
 function paint() {
@@ -258,6 +261,10 @@ function paint() {
   // Never while it is being typed into: 'board' fires on every dirty-flag flip,
   // and rewriting the field mid-word would move the caret to the end of it.
   if (document.activeElement !== title) title.value = titleValue();
+  // The auto name lives in the placeholder, so an unnamed board shows its date
+  // faint and italic and a click starts from an empty field rather than from
+  // text to delete.
+  title.placeholder = isDefaultTitle(board.title) ? board.title : 'Untitled board';
   el('arrangement').value = board.arrangement;
   el('spacing').value = board.settings.spacing;
   el('spacing-out').textContent = board.settings.spacing + 'px';
@@ -273,9 +280,12 @@ function paint() {
     : 'Desktop is the free two-dimensional arrangement.';
   const fit = sidebar.querySelector('[data-cmd="fit"]');
   if (fit) fit.textContent = mobile ? 'Back to top' : 'Zoom to fit';
-  for (const [id, key] of [['opt-grid', 'grid'], ['opt-axes', 'axes'], ['opt-snap', 'snap'], ['opt-hud', 'hud']]) {
+  for (const [id, key] of [['opt-grid', 'grid'], ['opt-axes', 'axes'], ['opt-snap', 'snap'], ['opt-hud', 'hud'], ['opt-web', 'web']]) {
     el(id).checked = !!board.settings[key];
   }
+  // The web is a Desktop thing - Mobile is a reading feed with no spatial map to
+  // draw one over - so its checkbox comes down rather than sitting there inert.
+  el('opt-web').closest('.check').hidden = mobile;
 
   paintSheet();
 

@@ -148,12 +148,19 @@ export function initInput(vp, cmds) {
   const pointers = new Map();
   let g = null;            // the active gesture
   let spaceDown = false;
-  // Where the cursor is, and where it was when the last copy was taken - the
-  // two halves of "has the pointer moved since?", which is what decides where
-  // a paste lands. Both null on a touch device, and a null falls back to the
-  // old behaviour rather than guessing.
+  // Linux/X11 pastes the primary selection on a middle click. A middle *click*
+  // here should still paste - that is the platform's paste gesture - but a middle
+  // *drag* means "pan", and the paste it fires on release would dump the
+  // selection into the note being edited or the board's paste-to-import. So the
+  // press is tracked, and only a drag (moved past the slop) arms the guard that
+  // swallows the release paste (below). midDownAt is the press origin; midDragged
+  // is set once it travels far enough to be a pan and not a click.
+  let midButtonDown = false;
+  let midDownAt = null;
+  let midDragged = false;
+  // Where the cursor is - a paste lands under it. Null on a touch device, where
+  // pasteAt falls back to placing beside the original rather than guessing.
   let hover = null;
-  let copiedFrom = null;
   // A long press is the touch equivalent of a right-click, and without it the
   // context menu is unreachable with a finger - which is where duplicate,
   // delete, send to back and rename live. Held here rather than inside the
@@ -536,6 +543,11 @@ export function initInput(vp, cmds) {
     el.setPointerCapture(e.pointerId);
 
     if (spaceDown || e.button === 1) {
+      if (e.button === 1) {
+        midButtonDown = true;
+        midDragged = false;
+        midDownAt = { x: e.clientX, y: e.clientY };
+      }
       e.preventDefault();
       startPan(e);
     } else if (grip && id) {
@@ -607,7 +619,9 @@ export function initInput(vp, cmds) {
     // Before the gesture guard below, which drops every pointer that is not
     // pressed - and a hovering mouse is exactly that. Touch is excluded
     // because a finger that is not down is not anywhere.
-    if (e.pointerType !== 'touch') hover = { x: e.clientX, y: e.clientY };
+    // Mirrored onto the viewport so the import layer's paste (drop.js), which
+    // has no view into this module's `hover`, can land under the cursor too.
+    if (e.pointerType !== 'touch') hover = vp.cursor = { x: e.clientX, y: e.clientY };
     if (!pointers.has(e.pointerId)) return;
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (emptyTapCandidate?.pointerId === e.pointerId
@@ -657,6 +671,12 @@ export function initInput(vp, cmds) {
       g.lastX = e.clientX;
       g.lastY = e.clientY;
       if (g.track) trackPan(g, e);
+      // Once a middle-button pan clears the slop it is a drag, not a click, so
+      // the release paste is the pan's and gets swallowed rather than pasted.
+      if (midButtonDown && !midDragged && midDownAt
+          && Math.hypot(e.clientX - midDownAt.x, e.clientY - midDownAt.y) > DRAG_SLOP) {
+        midDragged = true;
+      }
       return;
     }
 
@@ -821,6 +841,11 @@ export function initInput(vp, cmds) {
   });
 
   const endPointer = e => {
+    // The middle-button paste fires on the *release* (mouseup/click), which
+    // lands in the same task as this pointerup - so clearing the guard now would
+    // uncover the very paste it exists to catch. Defer the clear to the next task
+    // instead, past the click that carries the paste.
+    if (e.button === 1) setTimeout(() => { midButtonDown = false; }, 0);
     const tap = e.type === 'pointerup' && emptyTapCandidate?.pointerId === e.pointerId
       ? { x: emptyTapCandidate.x, y: emptyTapCandidate.y, at: e.timeStamp }
       : null;
@@ -859,7 +884,13 @@ export function initInput(vp, cmds) {
     // A selected item is armed for movement on press. If the pointer never
     // crossed the drag slop, the second click was a toggle instead: remove only
     // that item so a group can be peeled back one card at a time.
+    //
+    // Only when there is a group to peel. On a lone selection this fired on
+    // every tap of the one selected card, so a tap that meant "keep this one"
+    // read as "drop it" - and reselecting then took a second tap. A single
+    // selection is cleared by tapping empty space, not by tapping itself.
     const unpick = e.type === 'pointerup' && g.kind === 'move' && !g.moved
+        && selection.size > 1
       ? g.id
       : null;
     finishGesture();
@@ -1018,7 +1049,20 @@ export function initInput(vp, cmds) {
     if (e.code === 'Space') { spaceDown = false; setPanCursor(); }
   });
   // A blur (alt-tab) never delivers the keyup, which would leave pan mode stuck.
-  addEventListener('blur', () => { spaceDown = false; setPanCursor(); });
+  // A pointercancel likewise reports no button, so the middle-button guard is
+  // cleared here too rather than trusting the lift to carry it.
+  addEventListener('blur', () => { spaceDown = false; midButtonDown = false; setPanCursor(); });
+
+  // Swallow the primary-selection paste a middle *drag* fires on release. Capture
+  // phase and window-wide, so it runs before the note editor's own paste and the
+  // board's paste-to-import below and can stop both. Only when the middle press
+  // became a pan: a plain middle click still pastes, and an ordinary Ctrl+V is
+  // untouched.
+  addEventListener('paste', e => {
+    if (!(midButtonDown && midDragged)) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }, true);
 
   function nudge(e) {
     if (!selection.size) return;
@@ -1105,7 +1149,6 @@ export function initInput(vp, cmds) {
     if (!canClip(e)) return;
     const text = copyItems(selection);
     if (!text) return;
-    copiedFrom = hover;
     e.preventDefault();
     e.clipboardData?.setData('text/plain', text);
   });
@@ -1114,7 +1157,6 @@ export function initInput(vp, cmds) {
     if (!canClip(e)) return;
     const text = cutItems(selection);
     if (!text) return;
-    copiedFrom = hover;
     e.preventDefault();
     e.clipboardData?.setData('text/plain', text);
   });
@@ -1139,32 +1181,19 @@ export function initInput(vp, cmds) {
   });
 
   /**
-   * How far the cursor has to have travelled since the copy before the paste
-   * follows it, in screen pixels. Small, because moving the mouse at all is
-   * already deliberate; not zero, because a mouse drifts a pixel or two under
-   * a hand that is only reaching for Ctrl+V, and a paste that jumped for that
-   * would be worse than one that never followed at all.
-   */
-  const MOVED_ENOUGH = 24;
-
-  /**
-   * Where a paste should land, in three cases.
+   * Where a paste should land, in two cases.
    *
-   * Under the cursor, if the cursor has gone somewhere since the copy was
-   * taken. Moving the mouse and then pasting is the plainest way there is of
-   * saying "put it here", and it costs nothing to answer.
+   * Under the cursor, whenever there is one. The cursor is where the eye is and
+   * where "here" means, so every paste follows it - Ctrl+V, the menu, a middle
+   * click - rather than second-guessing from how far the mouse has moved.
    *
-   * Otherwise nothing, meaning "beside the original" - unless the box the copy
-   * came from is nowhere in view, in which case the middle of the screen,
-   * because a paste you cannot see is indistinguishable from one that failed.
-   *
-   * A device with no cursor never reaches the first case: `hover` stays null,
-   * and the other two are what it had before.
+   * Otherwise - a device with no cursor, where `hover` stays null - nothing,
+   * meaning "beside the original", unless the box the copy came from is nowhere
+   * in view, in which case the middle of the screen, because a paste you cannot
+   * see is indistinguishable from one that failed.
    */
   function pasteAt() {
-    if (hover && copiedFrom && Math.hypot(hover.x - copiedFrom.x, hover.y - copiedFrom.y) > MOVED_ENOUGH) {
-      return vp.toWorld(hover.x, hover.y);
-    }
+    if (hover) return vp.toWorld(hover.x, hover.y);
     const box = clipboardBounds();
     const r = vp.visibleRect(0);
     const inView = box && box.x1 >= r.x0 && box.x0 <= r.x1 &&
