@@ -1,6 +1,6 @@
 // Drawing a 3D model on a card.
 //
-// import/mesh.js turns the bytes into triangles; this puts them on screen and
+// mesh.js turns the bytes into triangles; this puts them on screen and
 // lets you turn them over. WebGL by hand, which is the first graphics code in
 // this project and is here for the same reason the zip inflater and the ID3
 // reader are: a renderer is a shader pair and a matrix stack, and taking a
@@ -20,7 +20,7 @@
 // want anyway.
 
 import { addFile, allAssets, assetURL, getAsset, readText } from '../storage/assets.js';
-import { applyMaterials, meshKind, parseMesh, parseMTL, MeshError } from '../import/mesh.js';
+import { applyMaterials, meshKind, parseMesh, parseMTL, MeshError } from '../mesh.js';
 import { board, bus, byId, selection, setModelShot } from '../state.js';
 
 /**

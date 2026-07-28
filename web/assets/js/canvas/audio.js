@@ -55,12 +55,52 @@ export function initAudio() {
   const input = document.getElementById('opt-volume');
   const out = document.getElementById('opt-volume-out');
   if (!input) return;
+  // iPhone Safari keeps media volume under the hardware buttons: assigning
+  // HTMLMediaElement.volume is ignored and reading it always returns full. A
+  // slider that writes volume is then a lie - it would read "20%" while every
+  // clip plays at the system level (Safari audit S2). Where that is the case,
+  // hide the control and say how volume is actually set. iPadOS gained
+  // script-controlled volume in Safari 26, so this only hides the slider where
+  // it genuinely cannot work.
+  if (volumeLocked()) {
+    showVolumeLocked(input);
+    return;
+  }
   input.value = String(Math.round(volume * 100));
   if (out) out.textContent = Math.round(volume * 100) + '%';
   input.addEventListener('input', () => {
     setVolume(+input.value / 100);
     if (out) out.textContent = Math.round(volume * 100) + '%';
   });
+}
+
+/**
+ * Whether this engine ignores writes to media volume (iPhone Safari).
+ *
+ * Set a probe element's volume away from full and read it straight back: a
+ * browser that honours the property returns what was written, one that locks it
+ * to the hardware returns 1. Synchronous by spec - the volume attribute is not
+ * async - so no clip has to exist or play for this to be true.
+ */
+function volumeLocked() {
+  try {
+    const probe = new Audio();
+    probe.volume = 0.5;
+    return probe.volume === 1;
+  } catch {
+    return false;   // no Audio constructor to probe with: leave the control as it was
+  }
+}
+
+/** Replace the dead slider with the instruction that actually works. */
+function showVolumeLocked(input) {
+  const field = input.closest('.field') || input.parentElement;
+  if (!field) return;
+  field.hidden = true;
+  const note = document.createElement('p');
+  note.className = 'hint';
+  note.textContent = 'Use the device volume buttons to set playback volume.';
+  field.after(note);
 }
 
 export function setVolume(v) {

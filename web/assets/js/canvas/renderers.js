@@ -11,7 +11,7 @@ import { buildTransport, registerPlayer } from './audio.js';
 import { buildVideoPlayer } from './video.js';
 import { embedFor, embedOffer } from './embed.js';
 import { buildModelCard } from './model.js';
-import { meshKind } from '../import/mesh.js';
+import { meshKind } from '../mesh.js';
 
 
 /**

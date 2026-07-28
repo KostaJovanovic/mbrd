@@ -1,0 +1,79 @@
+# Browser support
+
+The one hard property of this project is that it ships no bundler, no build step
+and no runtime dependency — the browser loads the ES modules under `web/`
+directly. Everything below follows from that: the supported set is "browsers
+new enough to run the modules as written", stated here so "supported" is a
+contract rather than a guess. This file is what the startup capability check
+(`warnMissingCapabilities()` in `main.js`) points at when it finds a gap.
+
+## The floor and the target
+
+| Level | Safari | Meaning |
+|---|---|---|
+| **Best experience** | 26+ | SVG icons throughout, WebCodecs audio encoding, script-controlled media volume on iPadOS. |
+| **Supported target** | 18.4+ | The core app, with the iPhone volume exception below. Test releases here. |
+| **Compatibility floor** | 16.4 | Where WebKit added Compression Streams (`deflate-raw`) and OffscreenCanvas 2D. Runs, with the degradations listed. |
+| **Below the floor** | < 16.4 | Not supported. Cannot open a `.mbrd` a newer browser deflated; the OffscreenCanvas optimiser path is absent. |
+
+Chrome and Firefox: current and one prior major. Both clear the floor comfortably
+— the floor is set by WebKit, which is last to ship these features.
+
+## What sets the floor
+
+A `.mbrd` written by a modern browser deflates its entries (`storage/mbrd.js`),
+and the reader inflates only through `DecompressionStream('deflate-raw')`
+(`storage/zip.js`) — there is no JavaScript fallback. That is the single hard
+break below Safari 16.4 and the only capability the startup check raises a toast
+for. The rest degrade inside optional paths:
+
+- **OffscreenCanvas 2D** — image thumbnails and the optimiser (`optimize/picture.js`,
+  `canvas/model.js` still capture).
+- **`<dialog>.showModal()`** — the discard/clear question; `ui/dialog.js` already
+  feature-detects and defaults destructive answers to cancel when it is absent.
+- **CSS `:has()`, `@property`, `color-mix()`, modern colour** — the palette and a
+  handful of layout rules.
+
+## Safari behaviours the app already accommodates
+
+Documented so "Safari support" does not imply feature parity on every point release:
+
+- **iPhone volume is locked to the hardware buttons.** Assigning `media.volume`
+  is ignored; `canvas/audio.js` detects this and hides the volume slider, showing
+  "use the device volume buttons" instead. iPadOS gained script volume in Safari 26.
+- **No File System Access picker.** Safari has no `showOpenFilePicker` /
+  `showSaveFilePicker`; Open falls back to a hidden `<input>` and Export to a Blob
+  download (`storage/storage.js`).
+- **No `launchQueue` / `file_handlers`.** "Open with mbrd" from the OS is absent
+  rather than broken; the `launchQueue` use in `main.js` is guarded.
+- **Best-effort storage.** WebKit may evict the IndexedDB copy under pressure.
+  The first explicit Save requests `navigator.storage.persist()`, and the receipt
+  says "export a file to keep a durable copy" when persistence was not granted.
+  The exported `.mbrd` is always the durable path.
+- **Backdrop blur** needs `-webkit-backdrop-filter` before Safari 18; the two
+  blurred surfaces (audio play button over cover art, the dialog scrim) carry it.
+- **Optimiser codecs.** WebCodecs audio encoding needs Safari 26; Ogg Opus
+  playback needs 18.4; WebM on iOS needs 17.4. These only matter if the optional
+  ffmpeg core is bundled, which this repo does not ship.
+
+## Release checklist
+
+The Node suite (`npm test`) validates pure logic and structural invariants; it
+does not instantiate WebKit. Adopting a browser driver (Playwright/WebKit,
+`safaridriver`) would add the dev dependency and CI runner this project is
+deliberately built without — a maintainer's call, not a default. Until then, run
+this by hand on **current macOS Safari, the minimum supported Safari, and current
+iPhone + iPad Safari** before a release:
+
+1. Boot offline after a service-worker update (airplane mode, relaunch).
+2. Add files → autosave → reload → board restored.
+3. Pan / pinch-zoom / marquee-select / resize handles on touch and trackpad.
+4. Save, then Export a `.mbrd`; reopen it. Cross-check: export from Chromium,
+   open in Safari, and back.
+5. Clear everything → confirm the wipe, and that Cancel aborts it.
+6. Play an audio and a video card; confirm the volume slider is hidden on iPhone.
+7. Install to Home Screen / Dock; confirm the icon and a cold offline launch.
+8. VoiceOver over the dialog and the waveform seek slider.
+
+If a `safaridriver` suite is added later, flows 1–5 are the ones worth
+automating first; 3, 7 and 8 stay manual.
