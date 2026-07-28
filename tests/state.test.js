@@ -13,7 +13,7 @@ import {
   restoreItems, emptyTrash, undo, redo, isDirty, markDirty, byId, topZ,
   select, deselect, clearSelection, selectAll, duplicateItems,
   copyItems, cutItems, pasteItems, clipboardSize, clipboardHasOurs, clipboardBounds,
-  stuckTo, stuckFollowers, restick, STICK_MIN, setItemText, renameItem, NOTE_MAX,
+  stuckTo, stuckFollowers, stuckPlacement, restick, STICK_MIN, setItemText, renameItem, NOTE_MAX,
   setSetting, snapshotGeom, applyGeom, commitGeom,
   setBoardMode, mobileBoardWidth, mobileBoardTop, mobileBoardBottom,
   recheckBoardGeometry, baseStep, placeMobileItems,
@@ -430,18 +430,19 @@ test('a note over a photo is stuck to it', () => {
   assert.equal(stuckTo(byId(n.id))?.id, pic.id);
 });
 
-test('a sticky layer shares one external stack position', () => {
+test('a note rides above the other items whatever the raw z says', () => {
   const [pic] = addItems([photo({ x: 0, y: 0, w: 300, h: 300 })]);
   const [other] = addItems([photo({ x: 600, y: 0, w: 200, h: 200 })]);
   const [n] = addItems([note({ x: 0, y: 0, w: 80, h: 80 })]);
   assert.equal(stuckTo(byId(n.id))?.id, pic.id);
 
-  // Put an unrelated item between host and note in raw z, then move it across
-  // the pair without moving the note. The remembered sticky relation must make
-  // both members sit behind it, while the note remains above its host.
+  // Put an unrelated photo above the host in raw z and move it across the note.
+  // A note is never buried by a picture, so it stays on top of both photos - and
+  // still above the very host it is stuck to - however the raw z falls out. Raw
+  // z keeps the host-below-note order stickiness is measured from.
   applyGeom([{ ...snapshotGeom([other.id])[0], x: 0 }]);
   assert.ok(pic.z < other.z && other.z < n.z);
-  assert.deepEqual(visualStackOrder(), [pic.id, n.id, other.id]);
+  assert.deepEqual(visualStackOrder(), [pic.id, other.id, n.id]);
 });
 
 test('front and back move an entire sticky layer when its note is selected', () => {
@@ -456,8 +457,11 @@ test('front and back move an entire sticky layer when its note is selected', () 
   assert.deepEqual(visualStackOrder(), [other.id, pic.id, n.id]);
   assert.ok(pic.z > other.z && n.z > pic.z, 'the host and note rose together');
 
+  // The whole layer falls below `other` in raw z, and the host duly drops under
+  // it - but the note stays in the note band on top, since a note is never
+  // covered by a picture. Raw z still records the host-below-note order.
   lowerSelection();
-  assert.deepEqual(visualStackOrder(), [pic.id, n.id, other.id]);
+  assert.deepEqual(visualStackOrder(), [pic.id, other.id, n.id]);
   assert.ok(pic.z < n.z && n.z < other.z, 'the host and note fell together');
 });
 
@@ -541,6 +545,29 @@ test('sticking is transitive - a note on a note on a photo', () => {
   const followers = stuckFollowers([pic.id]);
   assert.equal(followers.length, 2, 'a pile of stickies reads as one object');
   assert.ok(followers.includes(n1.id) && followers.includes(n2.id));
+});
+
+test('a stuck note rides its host as it shrinks and stays on the card', () => {
+  // The resize bug: shrinking a card under a sticky left the note hanging in
+  // mid-air, still "stuck" by the record but no longer over the card. The gesture
+  // now carries each rider by stuckPlacement (input.js), which keeps the note at
+  // the same fraction of the card - so it lands on the shrunk card, not beside it.
+  fresh();
+  const hostBefore = { x: 0, y: 0, w: 300, h: 300 };
+  const [pic] = addItems([photo(hostBefore)]);
+  const [n] = addItems([note({ x: -120, y: 120, w: 60, h: 60 })]);
+  assert.equal(stuckTo(byId(n.id))?.id, pic.id, 'note starts stuck to the card');
+
+  // Card pulled down to a third of its size; the note keeps its -0.4/+0.4 fraction.
+  const hostAfter = { x: 0, y: 0, w: 100, h: 100 };
+  assert.deepEqual(stuckPlacement(byId(n.id), hostBefore, hostAfter), { x: -40, y: 40 });
+
+  // Left where it was (-120, 120) the note would be off a card now spanning only
+  // -50..50; carried to the placement it is still on it.
+  Object.assign(byId(pic.id), hostAfter);
+  Object.assign(byId(n.id), stuckPlacement({ x: -120, y: 120, w: 60, h: 60 }, hostBefore, hostAfter));
+  restick([pic.id, n.id]);
+  assert.equal(stuckTo(byId(n.id))?.id, pic.id, 'and it is still on the card afterwards');
 });
 
 test('something already moving is not also a follower', () => {

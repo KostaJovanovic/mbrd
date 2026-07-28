@@ -1263,16 +1263,27 @@ export function stackOrder(ids) {
 }
 
 /**
- * The visual stack, bottom-to-top, with each sticky chain kept as one layer.
+ * The visual stack, bottom-to-top, with each sticky chain kept as one layer and
+ * every note lifted above everything that is not a note.
  *
- * Raw z still records the host-before-note order that lets a board rediscover
- * sticky relations after loading. For presentation, though, the root host owns
- * the layer: every note attached to it must be behind and in front of exactly
- * the same outside items. Members retain their raw order inside that layer, so
- * the notes remain visible on top of the thing they are stuck to.
+ * A sticky note is a mark laid *on* the board's contents - a caption, a flag, a
+ * scrap - so it is never buried by the picture it annotates or by anything else;
+ * only another note may sit over it. The two bands are presentation alone. Raw z
+ * still records the host-below-note order that lets a board rediscover sticky
+ * relations after loading (see measureStick), so the band is not written back
+ * into z and nothing about stickiness changes. And because Bring-to-front /
+ * Send-to-back move an item by its raw z, splitting the visible stack into these
+ * bands is exactly what makes those actions reorder a note among notes and a
+ * non-note among non-notes without either ever crossing into the other's band.
+ *
+ * Within each band the group order is kept, so a note still sits above the very
+ * host it is stuck to, and a pile of notes keeps the order it was laid down in.
  */
 export function visualStackOrder() {
-  return stackGroups().flatMap(group => group.items.map(item => item.id));
+  const order = stackGroups().flatMap(group => group.items);
+  const notes = [], rest = [];
+  for (const item of order) (item.type === 'note' ? notes : rest).push(item.id);
+  return [...rest, ...notes];
 }
 
 /**

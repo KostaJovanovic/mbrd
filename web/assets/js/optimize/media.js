@@ -1,41 +1,42 @@
-// Moving pictures, through ffmpeg.
+// A still poster for a clip the browser cannot open, through ffmpeg.
 //
-// Sound used to come through here too and no longer does: the browser can
-// encode Opus by itself, and the only thing it was missing was a container, so
-// opus.js writes one. Demuxing an MP4 is a much larger problem than muxing an
-// Ogg, so video is still ffmpeg's - but that means a board of photographs and
-// music now optimises with nothing downloaded at all, and this module is only
-// woken by a board that actually has a clip on it.
+// This module used to encode sound and video too. It no longer does: the browser
+// makes Opus by itself (opus.js), and video is now deliberately left alone -
+// shrinking a clip needs a single-threaded wasm encoder that pins a core for the
+// length of the clip, hard enough on the machine that it is not a trade worth
+// making for a board you look at (see optimize.js). What remains is the one job
+// worth ffmpeg's weight: pulling the first frame out of a video no browser here
+// can decode, so its card is a picture of itself instead of a black rectangle.
 //
-// It stays the audio path's fallback for a browser with no WebCodecs, which in
-// practice means one old enough that this is a theoretical case.
+// The case is H.265. A phone shoots HEVC by default and every desktop browser
+// except Safari refuses it, so the clip saves fine and shows as a black
+// rectangle with a dead play button. firstFrame() extracts one frame as a
+// poster; the clip itself is never touched, so it still plays the day the
+// browser learns to.
 //
 // This is the one place in the whole app that depends on somebody else's code,
 // and it is written to keep that fact contained:
 //
 //   - it is **fetched from a CDN**, not vendored. The single-threaded ffmpeg
-//     core lives at jsdelivr and is pulled on first use. This is the one
-//     third-party request the optimiser makes, and the one exception to "nothing
-//     leaves the machine": asking for a video to be shrunk asks a script off the
-//     network to do it. Nothing about a *board* is sent - only the request for
-//     the core itself - and the browser caches it (immutable, a year) so it is
-//     asked for once. Offline, or with the CDN unreachable, video degrades to
-//     "left alone" exactly as if the core were missing.
-//   - it is **loaded on demand**. Nothing here is touched until somebody
-//     presses Optimize on a board that actually has video on it, and it is
-//     deliberately *not* in sw.js's SHELL: thirty megabytes has no business in
-//     the cache of an app that is otherwise under two, and being cross-origin
-//     the service worker steps aside for it anyway.
+//     core lives at jsdelivr and is pulled on first use. Nothing about a *board*
+//     is sent - only the request for the core itself - and the browser caches it
+//     (immutable, a year) so it is asked for once. Offline or CDN down, the
+//     poster is simply not made.
+//   - it is **loaded on demand**. Nothing here is touched until a clip the
+//     browser cannot open is imported, and it is deliberately *not* in sw.js's
+//     SHELL: thirty megabytes has no business in the cache of an app that is
+//     otherwise under two, and being cross-origin the service worker steps aside
+//     for it anyway.
 //   - it is **single-threaded**. The threaded core needs SharedArrayBuffer,
 //     which needs COOP/COEP, which would break the YouTube embeds - the one
 //     third-party thing the app does offer, and only on request. Slower and
 //     entirely worth it.
-//   - it runs in a **worker**. A single-threaded encoder on the main thread is
-//     a frozen board for the length of a song.
+//   - it runs in a **worker**. Even one frame is wasm, and wasm on the main
+//     thread is a frozen board.
 //
-// Everything degrades to "left alone": if the files are not there, video is
-// skipped, the pictures and the sound still shrink, and the dialog says so
-// before anything starts.
+// Everything degrades to "no poster": if the core cannot be reached or the frame
+// cannot be pulled, firstFrame() returns null and the card stays the rectangle
+// it already was.
 
 import { extOf } from '../util.js';
 
@@ -50,12 +51,6 @@ const CORE_JS = CORE_DIR + 'ffmpeg-core.js';
 
 /** Roughly what it weighs, for the sentence in the dialog. */
 export const MEDIA_MB = 32;
-
-/** Opus, in kbit/s. Smaller than a 192k MP3 and not tellable apart on a board. */
-const AUDIO_KBPS = 96;
-
-/** The long edge a clip keeps, matching the picture ceiling. */
-const VIDEO_MAX_SIDE = 1200;
 
 let worker = null;
 let ready = null;
@@ -91,43 +86,30 @@ function killWorker(err) {
 /**
  * Whether the encoder can be reached, without downloading its 30 MB.
  *
- * A HEAD request to the CDN: headers only, no body, so it costs nothing but a
- * round trip and tells us the core is there before the dialog promises to shrink
- * a video. Offline or CDN down, it throws, we answer false, and video is left
- * alone - the same graceful skip we gave when the core was expected locally and
- * was not there. Cached after the first answer so a dialog can ask freely.
+ * A one-byte ranged GET rather than a HEAD: the CDN and the proxies in front of
+ * it answer `Range: bytes=0-0` with a 206 and a single byte, which costs a round
+ * trip and nothing else - where HEAD is routinely met with a 405, a redirect, or
+ * a response stripped of CORS, every one of which reads as "unreachable" for a
+ * file that is sitting right there. `no-store` keeps that one byte from being
+ * mistaken for the whole core in the HTTP cache. Offline or CDN down, it throws,
+ * we answer false, and video is left alone - the same graceful skip we gave when
+ * the core was expected locally and was not there.
+ *
+ * Only a *true* is cached. A false is the answer to "right now", not "ever": the
+ * commonest false is a transient one - the poster probe firing during a blip of
+ * no network at import - and caching it would leave Optimize insisting the
+ * encoder cannot be loaded for the rest of the session with the network long
+ * back. So every negative is retried, and only success sticks.
  */
 export async function mediaAvailable() {
-  if (present !== null) return present;
+  if (present === true) return true;
   try {
-    const res = await fetch(CORE_JS, { method: 'HEAD' });
-    present = res.ok;
+    const res = await fetch(CORE_JS, { headers: { Range: 'bytes=0-0' }, cache: 'no-store' });
+    present = res.ok || res.status === 206;
   } catch {
     present = false;
   }
   return present;
-}
-
-/** What mediaAvailable() last answered, for a dialog that cannot wait. */
-export const mediaReady = () => present === true;
-
-/**
- * Bring the encoder up and hand back the function optimize.js wants:
- * `(asset, kind) => { blob } | null`.
- *
- * Throws if the files are not there. The caller treats that as "leave the sound
- * and video alone", which is what it is.
- */
-export async function loadMedia(say = () => {}) {
-  if (!(await mediaAvailable())) {
-    throw new Error('ffmpeg core could not be reached at ' + CORE_DIR);
-  }
-  if (!ready) {
-    say(`Loading the media encoder (${MEDIA_MB} MB, once)…`);
-    ready = spawn();
-  }
-  await ready;
-  return (asset, kind) => encode(asset, kind);
 }
 
 /** The long edge of an extracted poster frame. A card, not a screening. */
@@ -251,64 +233,6 @@ function spawn() {
 
     w.postMessage({ type: 'boot', core: new URL(CORE_JS, location.href).href });
   });
-}
-
-/** One file through the worker. Null when the result is not worth keeping. */
-async function encode(asset, kind) {
-  const inName = 'in' + (asset.ext ? '.' + asset.ext : '');
-  const out = kind === 'audio' ? 'out.opus' : 'out.webm';
-  const args = kind === 'audio' ? audioArgs(inName, out) : videoArgs(inName, out);
-  const bytes = new Uint8Array(await asset.blob.arrayBuffer());
-
-  const result = await run({ inName, out, args, bytes });
-  if (!result) return null;
-  const blob = new Blob([result], { type: kind === 'audio' ? 'audio/ogg' : 'video/webm' });
-  // The same rule the pictures follow: a re-encode that came out bigger is not
-  // an optimisation, and a lossless source that was already small stays.
-  if (blob.size >= asset.blob.size * 0.9) return null;
-  return { blob, from: asset.blob.size, to: blob.size };
-}
-
-/**
- * Sound: Opus, tags carried over, embedded artwork carried over where the
- * container will hold it.
- *
- * `-map 0` takes every stream, which is what keeps an attached picture; the
- * fallback below drops to the audio alone for the files where that combination
- * is refused, rather than failing the whole thing over a cover the board has
- * already extracted for itself anyway (see import/artwork.js).
- */
-const audioArgs = (inName, out) => ([
-  ['-i', inName, '-map', '0', '-map_metadata', '0', '-c:v', 'copy', '-disposition:v', 'attached_pic',
-    '-c:a', 'libopus', '-b:a', `${AUDIO_KBPS}k`, '-vbr', 'on', out],
-  ['-i', inName, '-map', '0:a', '-map_metadata', '0',
-    '-c:a', 'libopus', '-b:a', `${AUDIO_KBPS}k`, '-vbr', 'on', out],
-]);
-
-/**
- * Moving pictures: VP9 and Opus in WebM, capped on the long edge.
- *
- * `-crf` with `-b:v 0` is VP9's constant-quality mode; 36 is the "this is a
- * moodboard, not a screening" end of the useful range. `-cpu-used 4` is the
- * compromise that makes a single-threaded wasm encoder finish this decade.
- *
- * The scale expression only ever shrinks - `min(iw,1200)` - and `-2` keeps the
- * other axis even, which every block-based codec requires.
- */
-const videoArgs = (inName, out) => ([
-  ['-i', inName, '-map_metadata', '0',
-    '-vf', `scale='min(${VIDEO_MAX_SIDE},iw)':-2:flags=lanczos`,
-    '-c:v', 'libvpx-vp9', '-crf', '36', '-b:v', '0', '-deadline', 'good', '-cpu-used', '4',
-    '-c:a', 'libopus', '-b:a', `${AUDIO_KBPS}k`, out],
-]);
-
-/** Try each argument list in turn; the first that produces bytes wins. */
-async function run({ inName, out, args, bytes }) {
-  for (const argv of args) {
-    const res = await ask({ type: 'run', inName, out, argv, bytes });
-    if (res?.bytes?.byteLength) return res.bytes;
-  }
-  return null;
 }
 
 let seq = 0;

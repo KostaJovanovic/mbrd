@@ -17,13 +17,20 @@
 //     a card's worth of pixels, never dropped.
 //
 // Pictures and sound are the browser's own work - a canvas writes the WebP, and
-// WebCodecs plus ninety lines of Ogg writes the Opus (picture.js, opus.js).
-// Only video needs ffmpeg, which is a separate module and a separate 30 MB -
-// see media.js - and this file works entirely without it.
+// WebCodecs plus ninety lines of Ogg writes the Opus (picture.js, opus.js), so
+// the whole feature runs with nothing downloaded.
+//
+// Video is left alone. Shrinking a clip is the one thing the browser cannot do
+// itself - it needs ffmpeg, a 30 MB single-threaded wasm encoder that pins a
+// core for the length of the clip - and for a board you look at that is not a
+// trade worth making. Clips stay exactly the file that was dropped; a still
+// poster for one the browser cannot even open is a separate, lighter job
+// (firstFrame in media.js), not part of optimising.
 
 import { board, byId, swapAssets, setItemThumb } from '../state.js';
 import { addFile, getAsset } from '../storage/assets.js';
-import { formatBytes, itemHashes } from '../util.js';
+import { formatBytes, itemHashes, extOf } from '../util.js';
+import { PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS } from '../import/formats.js';
 import { coverArt, audioTags } from '../import/artwork.js';
 import { shrinkPicture, makeThumb, MAX_SIDE, MAX_SIDE_COVER, QUALITY } from './picture.js';
 import { toOpus, opusAvailable } from './opus.js';
@@ -38,7 +45,7 @@ import { toOpus, opusAvailable } from './opus.js';
  */
 export function planOptimize() {
   const seen = new Set();
-  const plan = { pictures: [], sounds: [], videos: [], skipped: [], done: 0, total: 0 };
+  const plan = { pictures: [], sounds: [], skipped: [], done: 0, total: 0 };
 
   for (const item of board.items) {
     // What this item held the last time the optimiser looked at it. Matching
@@ -61,15 +68,48 @@ export function planOptimize() {
       if (marked.has(hash)) { plan.done++; continue; }
       plan.total += asset.size;
       const isCover = hash !== item.asset?.hash;
-      const entry = { hash, size: asset.size, name: asset.name || item.name || '', isCover };
-      const mime = asset.mime || '';
-      if (/^image\//i.test(mime)) plan.pictures.push(entry);
-      else if (/^audio\//i.test(mime)) plan.sounds.push(entry);
-      else if (/^video\//i.test(mime)) plan.videos.push(entry);
+      const name = asset.name || item.name || '';
+      const kind = mediaKind({
+        mime: asset.mime || '',
+        ext: extOf(name) || item.meta?.ext || extOf(item.name) || '',
+        type: item.type,
+        isCover,
+      });
+      const entry = { hash, size: asset.size, name, isCover, kind };
+      if (kind === 'image') plan.pictures.push(entry);
+      else if (kind === 'audio') plan.sounds.push(entry);
+      // Video is bucketed with the skips - counted so a dialog can say how many
+      // clips it is leaving alone, but never encoded. See the module note.
       else plan.skipped.push(entry);
     }
   }
   return plan;
+}
+
+/**
+ * Which of the three encoders a file belongs to, or null to leave it alone.
+ *
+ * Extension leads over MIME for the audio/video split, and that is the whole
+ * point of this: an AAC track in an MP4 container is routinely handed over as
+ * `audio/mp4`, `video/mp4`, or nothing at all, and the last two used to send it
+ * to the ffmpeg-only video branch or to the skip pile - so a board of AAC music
+ * "optimised" without touching a single sound. A `.m4a`/`.aac` extension says
+ * "sound" plainly where the MIME is at best ambiguous, and the browser decodes
+ * it to Opus with nothing downloaded (see opus.js). MIME still has the first
+ * word for pictures, where it is reliable and an extension often absent.
+ *
+ * A cover is always a picture: it rides on an audio card, so the parent item's
+ * type describes the sound and not the art - hence `isCover` never falls through
+ * to the type check.
+ */
+function mediaKind({ mime, ext, type, isCover }) {
+  if (/^image\//i.test(mime) || SVG_EXTS.has(ext) || PHOTO_EXTS.has(ext)) return 'image';
+  if (ext && AUDIO_EXTS.has(ext)) return 'audio';
+  if (ext && VIDEO_EXTS.has(ext)) return 'video';
+  if (/^audio\//i.test(mime)) return 'audio';
+  if (/^video\//i.test(mime)) return 'video';
+  if (!isCover && (type === 'audio' || type === 'video' || type === 'image')) return type;
+  return null;
 }
 
 /**
@@ -88,9 +128,9 @@ export function planOptimize() {
  * commit - see swapAssets(). Half an optimisation is not a state the board
  * should ever be observed in.
  */
-export async function runOptimize({ onProgress = () => {}, encodeMedia = null } = {}) {
+export async function runOptimize({ onProgress = () => {} } = {}) {
   const plan = planOptimize();
-  const jobs = [...plan.pictures, ...plan.sounds, ...plan.videos];
+  const jobs = [...plan.pictures, ...plan.sounds];
   // hash -> the hash of the smaller file that replaces it. One entry per set of
   // bytes, not per card, so nine tracks sharing one cover re-encode it once.
   const replacement = new Map();
@@ -103,7 +143,7 @@ export async function runOptimize({ onProgress = () => {}, encodeMedia = null } 
     const asset = getAsset(job.hash);
     if (!asset) { report.skipped++; continue; }
     try {
-      const smaller = await encodeOne(asset, job, encodeMedia);
+      const smaller = await encodeOne(asset, job);
       report.done++;
       if (!smaller) { report.skipped++; continue; }
       const hash = await addFile(new File(
@@ -202,17 +242,16 @@ async function backfillThumbs(restaged, onProgress) {
 /**
  * One file, by kind.
  *
- * Pictures and sound are the browser's own job and are always available. Only
- * video is handed to whatever the caller passed in as `encodeMedia` - ffmpeg,
- * loaded on demand - and where that is absent it is simply left alone, which is
- * what keeps this module usable with nothing downloaded.
- *
- * Sound still falls back to ffmpeg when it is here and WebCodecs is not, which
- * is a browser old enough that it is a theoretical case rather than a real one.
+ * Pictures and sound are the browser's own job and are always available, so this
+ * needs nothing loaded and nothing off the network. A file whose only encoder
+ * would be ffmpeg - a video, or sound on a browser too old for WebCodecs Opus -
+ * returns null and is left exactly as it was.
  */
-async function encodeOne(asset, job, encodeMedia) {
-  const mime = asset.mime || '';
-  if (/^image\//i.test(mime)) {
+async function encodeOne(asset, job) {
+  // job.kind is the category planOptimize() resolved (see mediaKind), not a
+  // second read of asset.mime - so the AAC that reached the sound bucket by its
+  // extension is encoded as sound rather than being re-doubted here.
+  if (job.kind === 'image') {
     return shrinkPicture(asset.blob, {
       // A cover is drawn at a fraction of the card it sits on, so it gets the
       // smaller ceiling. It is never dropped - see the module note.
@@ -220,11 +259,9 @@ async function encodeOne(asset, job, encodeMedia) {
       quality: QUALITY,
     });
   }
-  if (/^audio\//i.test(mime)) {
-    if (opusAvailable()) return toOpus(asset.blob, await carried(asset));
-    return encodeMedia ? encodeMedia(asset, 'audio') : null;
-  }
-  if (/^video\//i.test(mime) && encodeMedia) return encodeMedia(asset, 'video');
+  // No WebCodecs Opus means no sound encoder at all now - a browser old enough
+  // that this is theoretical. Left alone rather than downloaded for.
+  if (job.kind === 'audio' && opusAvailable()) return toOpus(asset.blob, await carried(asset));
   return null;
 }
 
