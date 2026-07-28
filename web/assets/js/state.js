@@ -243,7 +243,40 @@ export function markDirty(v = true) {
   bus.emit('board');
 }
 
-export function byId(id) { return board.items.find(i => i.id === id); }
+/**
+ * id -> item, an index beside board.items rather than a replacement for it.
+ *
+ * byId was an O(n) `find`, and it is called on the hot paths - once per moved id
+ * per frame down the drag/`geom` route, and from the command surface all over -
+ * so on a board of a couple of thousand items it walked the whole array tens of
+ * times a frame to answer a question a Map answers in one step.
+ *
+ * The map is rebuilt lazily rather than patched at every mutation site, which is
+ * what keeps it honest: board.items is a mutable exported singleton pushed,
+ * spliced and filtered from eight places, and a hand-maintained index is one
+ * missed site away from returning a stale object. Instead the index is dropped
+ * whenever the *membership* of the board can have changed - the `items` event,
+ * which every add/remove/replace/load emits - and rebuilt on the next read. The
+ * events that fire far more often, `geom` while dragging, do not touch
+ * membership: the same item objects move, so the index stays valid across a
+ * whole drag and byId is O(1) for its entire length, which is the case this is
+ * for. Order-independent by construction - a stale read cannot happen because a
+ * listener ran before this invalidator, since the map simply rebuilds on demand.
+ */
+let itemIndex = null;
+
+export function byId(id) {
+  if (!itemIndex) {
+    itemIndex = new Map();
+    for (const item of board.items) itemIndex.set(item.id, item);
+  }
+  return itemIndex.get(id);
+}
+
+// Membership changed, so the index no longer describes the board. Dropped, not
+// rebuilt: the next byId() pays for it, and a burst of mutations in one tick
+// (a multi-item paste, a load) then rebuilds once rather than once per item.
+bus.on('items', () => { itemIndex = null; });
 
 export function topZ() {
   return board.items.reduce((m, i) => Math.max(m, i.z || 0), 0);
@@ -416,11 +449,13 @@ export function addItems(items, label = 'Add', options = {}) {
     added = added.map(item => fitBoardMode(onLattice(item)));
   }
   commit(label,
-    () => { board.items.push(...added.filter(a => !byId(a.id))); bus.emit('items'); },
+    () => { const fresh = added.filter(a => !byId(a.id));
+            board.items.push(...fresh);
+            bus.emit('items', { added: fresh.map(a => a.id), removed: [] }); },
     () => { const ids = new Set(added.map(a => a.id));
             board.items = board.items.filter(i => !ids.has(i.id));
             ids.forEach(id => selection.delete(id));
-            bus.emit('items'); bus.emit('selection'); });
+            bus.emit('items', { added: [], removed: [...ids] }); bus.emit('selection'); });
   return added;
 }
 
@@ -658,14 +693,16 @@ export function removeItems(ids, label = 'Delete') {
             set.forEach(id => selection.delete(id));
             board.trash.unshift(...binned);
             evicted = board.trash.splice(TRASH_LIMIT);   // [] while under the limit
-            bus.emit('items'); bus.emit('selection'); bus.emit('trash'); },
+            bus.emit('items', { added: [], removed: [...set] });
+            bus.emit('selection'); bus.emit('trash'); },
     () => { for (const r of removed) board.items.splice(r.index, 0, r.item);
             board.trash = board.trash.filter(t => !set.has(t.item.id));
             // Back on the end, which is where they were: the entries this
             // command added went on the front, and undo has just taken them off.
             board.trash.push(...evicted);
             evicted = [];
-            bus.emit('items'); bus.emit('trash'); });
+            bus.emit('items', { added: removed.map(r => r.item.id), removed: [] });
+            bus.emit('trash'); });
 }
 
 /**
@@ -691,13 +728,16 @@ export function restoreItems(ids, at = null, label = 'Restore') {
   }));
   const back = new Set(items.map(i => i.id));
   commit(label,
-    () => { board.items.push(...items.filter(i => !byId(i.id)));
+    () => { const fresh = items.filter(i => !byId(i.id));
+            board.items.push(...fresh);
             board.trash = board.trash.filter(t => !set.has(t.item.id));
-            bus.emit('items'); bus.emit('trash'); },
+            bus.emit('items', { added: fresh.map(i => i.id), removed: [] });
+            bus.emit('trash'); },
     () => { board.items = board.items.filter(i => !back.has(i.id));
             back.forEach(id => selection.delete(id));
             board.trash.unshift(...entries);
-            bus.emit('items'); bus.emit('selection'); bus.emit('trash'); });
+            bus.emit('items', { added: [], removed: [...back] });
+            bus.emit('selection'); bus.emit('trash'); });
   return items;
 }
 
@@ -1594,7 +1634,7 @@ export function retypeItem(id, next, label = 'Change item') {
     if (at < 0) return;
     board.items.splice(at, 1, into);
     if (selection.delete(out.id)) selection.add(into.id);
-    bus.emit('items');
+    bus.emit('items', { added: [into.id], removed: [out.id] });
     bus.emit('selection');
   };
   commit(label, () => swap(old, item), () => swap(item, old));
@@ -2021,6 +2061,10 @@ export function loadBoard(data) {
   // must never be treated as a reason to reset the view.
   bus.emit('board:load');
   bus.emit('board');
+  // No delta on purpose: a load replaces everything, and there is no add/remove
+  // list that captures "the board you had is gone". A payloadless 'items' is the
+  // agreed signal for "membership changed, extent unknown - rescan the board",
+  // which every delta-aware listener already falls back to.
   bus.emit('items');
   bus.emit('selection');
   bus.emit('trash');

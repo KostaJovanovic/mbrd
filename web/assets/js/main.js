@@ -437,8 +437,16 @@ bus.on('settings', paintCount);
 // A note can arrive with text already in it - pasted, duplicated, or loaded
 // from a file saved before it grew - so it is sized for what it says as soon
 // as it has a node to measure.
-bus.on('items', () => requestAnimationFrame(() => {
-  for (const it of board.items) if (it.type === 'note') growNote(it.id);
+bus.on('items', delta => requestAnimationFrame(() => {
+  // Only a note new to the board needs measuring - the rest already fit what
+  // they say. The delta names the arrivals; with none (a load) every note is new
+  // here, so all of them are grown. This used to re-grow every note on the board
+  // on every add, remove or reorder, which is the O(n)-per-event this delta ends.
+  if (delta && delta.added) {
+    for (const id of delta.added) if (byId(id)?.type === 'note') growNote(id);
+  } else {
+    for (const it of board.items) if (it.type === 'note') growNote(it.id);
+  }
 }));
 bus.on('board:load', () => {
   // A board can bring its own look, applied without going through persist() -

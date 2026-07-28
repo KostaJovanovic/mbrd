@@ -984,6 +984,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .wave-base i { background: color-mix(in srgb, var(--ink) 38%, transparent); }
 .wave-fill {
   clip-path: inset(0 100% 0 0);
+}
+/* will-change promotes a compositing layer and keeps it for as long as the rule
+   matches. Left on the bare .wave-fill it stood a layer per audio card up for
+   the life of the tab, playing or not; the clip-path only actually animates
+   while the playhead is moving, so the hint belongs behind the is-playing class
+   the transport already carries (canvas/audio.js). Idle cards give their layer
+   back, and a board that is audio-heavy stops paying for players nobody started. */
+.transport.is-playing .wave-fill {
   will-change: clip-path;
 }
 .wave-fill i { background: var(--accent); }
@@ -1591,9 +1599,18 @@ plates do: below a third of size a card is a coloured tile, and a click on
      their background is opaque paper already, and there the plate was a pale
      tab bolted into the corner, ruled off at a curve of its own, cutting
      whatever the card had drawn along its own foot. */
-  background: color-mix(in srgb, var(--paper-card) 88%, transparent);
+  /* Solid, and no backdrop-filter - the two halves of one change.
+     The plate used to be translucent paper with a blur behind it, and a
+     backdrop blur cannot be composited once and reused: the pixels behind it
+     change on every frame of a zoom, so every plate on screen was re-sampled
+     every frame, the single most expensive per-item effect on a moving board.
+     It also could not be kept while moving, so the board dropped it mid-gesture
+     and the un-blurred photo flashed through - the translucency-on-move flicker.
+     Opaque paper reads over any picture without sampling through it at all, costs
+     nothing per frame, and looks identical moving and still, so the flicker and
+     its cheap-mode toggle both go away with the blur that caused them. */
+  background: var(--paper-card);
   border-top: 1px solid var(--rule);
-  backdrop-filter: blur(3px);
   border-radius: var(--radius-xs) 0 var(--radius) 0;
   overflow: hidden;
 }
@@ -1674,18 +1691,19 @@ plates do: below a third of size a card is a coloured tile, and a click on
    scales with exactly the thing that makes zooming heavy, which is how many
    cards are on screen.
 
-   `backdrop-filter` is the whole reason this exists. Every photograph and every
-   video on the board carries a caption plate that blurs what is behind it, and
-   a backdrop blur cannot be composited once and reused the way a shadow can:
-   the pixels behind the box change on every frame of a zoom, so every plate on
-   screen is re-blurred every frame. The plate keeps its translucent paper and
-   its rule, so it is still a plate - it simply stops sampling through itself
-   for the tenth of a second nobody is reading it.
+   `backdrop-filter` is the whole reason this exists. A backdrop blur cannot be
+   composited once and reused the way a shadow can: the pixels behind the box
+   change on every frame of a zoom, so every blurred control on screen is
+   re-sampled every frame. What is left blurred is the media buttons alone - the
+   video and audio play controls that sit over a frame of the media itself.
+   There are at most a handful on screen at once, where caption plates were one
+   per photograph, so they keep their frosted look and pay their toll only while
+   moving; the caption plate gave its blur up entirely (see .item-bar) and needs
+   no toggle here any more.
 
    The blur returning is not animated. A transition here would put the cost back
    on the frame after the gesture, spread over a few hundred milliseconds, which
    is precisely the frames a zoom lands on and the user is looking at. */
-#world.is-viewing .item-bar,
 #world.is-viewing .transport-video,
 #world.is-viewing .vbig,
 #world.is-viewing .card-audio.has-cover .play {
