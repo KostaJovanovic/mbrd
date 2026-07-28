@@ -14,10 +14,6 @@
 //   trash      - something was thrown away, restored, or purged
 
 import { clamp, emitter, uid, isFamily, isHash, itemHashes, toast } from './util.js';
-// The asset registry remembers the filename each item arrived under, which is
-// what a cleared name falls back to - see renameItem(). One-way: assets.js
-// depends on nothing but util.js, so this cannot close a cycle.
-import { getAsset } from './storage/assets.js';
 // Pure geometry, shared with the canvas and the input layer so that "where is
 // this item and what does it cover" has exactly one answer in this app. Kept
 // at the top level rather than under canvas/ because it depends on nothing and
@@ -33,6 +29,18 @@ import { DEFAULT_SCALE, clampScale, PAPERS } from './measure.js';
 import { splitAppearance, mergeAppearance } from './layout-settings.js';
 
 export const bus = emitter();
+
+// The filename an asset first arrived under lives in the asset registry, which
+// sits *above* state in the layering - storage depends on state, not the other
+// way. So renameItem's oldest fallback is injected here rather than imported:
+// main.js wires this to storage/assets.js at startup. Left unset - in a test,
+// or before wiring - the fallback just skips to the item's current name, which
+// is the same answer the registry gives for an asset it has never seen. See
+// AUD-12.
+let assetName = () => undefined;
+export function setAssetNameLookup(fn) {
+  assetName = typeof fn === 'function' ? fn : () => undefined;
+}
 
 // `size` is the type's size, as a percentage of the strip's own width - see
 // #mobile-board-title in app.css. `stretch` is a percentage of that size taken
@@ -1721,7 +1729,7 @@ export function renameItem(id, name) {
   if (!it) return;
   const next = String(name ?? '').trim() ||
                it.meta?.origName ||
-               (it.asset && getAsset(it.asset.hash)?.name) || it.name;
+               (it.asset && assetName(it.asset.hash)) || it.name;
   if (it.name === next) return;
   const prev = it.name;
   commit('Rename',
@@ -1910,7 +1918,7 @@ export const originalsHeld = () =>
  *
  * 'z' or 'y'. Anything else clears the override and hands the decision back to
  * the format's own default, which is what a board that has never been told
- * carries - see defaultUpAxis() in import/mesh.js.
+ * carries - see defaultUpAxis() in mesh.js.
  *
  * Its own setter rather than a general "write anything into meta", for the same
  * reason setItemCover has one: `meta` is the open field precisely because

@@ -1085,6 +1085,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
    answer .vbig uses over a video's poster frame, and for the same reason. */
 #world.zoom-far .card-audio.has-cover .play {
   background: color-mix(in srgb, var(--paper-card) 84%, transparent);
+  /* -webkit- first: WebKit shipped backdrop-filter unprefixed only in Safari
+     18, so 16.4-17.x need the prefixed form to blur at all. */
+  -webkit-backdrop-filter: blur(3px);
   backdrop-filter: blur(3px);
 }
 
@@ -1677,6 +1680,7 @@ plates do: below a third of size a card is a coloured tile, and a click on
   left: auto;
   background: none;
   border-top: 0;
+  -webkit-backdrop-filter: none;
   backdrop-filter: none;
   border-radius: 0;
   /* Inside the card's inner rule, not on it.
@@ -1726,6 +1730,9 @@ plates do: below a third of size a card is a coloured tile, and a click on
    on the frame after the gesture, spread over a few hundred milliseconds, which
    is precisely the frames a zoom lands on and the user is looking at. */
 #world.is-viewing .card-audio.has-cover .play {
+  /* Cancels the prefixed blur above too, or Safari 16.4-17.x keeps re-sampling
+     it every frame of a moving board - the cost this whole block exists to shed. */
+  -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
 
@@ -3411,6 +3418,7 @@ kbd {
   /* Tinted with the board's own ink rather than plain black, so the sheet
      behind it dims into the palette instead of going grey. */
   background: color-mix(in srgb, var(--ink) 42%, transparent);
+  -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
 }
 #ask h2 {
@@ -3905,6 +3913,7 @@ kbd {
 :root[data-whimsy="0"] .item[data-type="image"] .item-bar {
   background: none;
   border-top: 0;
+  -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
 :root[data-whimsy="0"] .item[data-type="image"] .item-menu { border-left: 0; }

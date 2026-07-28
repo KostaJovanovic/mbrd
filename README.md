@@ -53,7 +53,7 @@ around the drop point using the layout picked in **Arrange**.
 Pictures, moving pictures, sound, text, links — and 3D models, which the browser
 does not draw with no help but does draw with about six hundred lines of it.
 `.stl`, `.obj` and `.glb`/`.gltf` are parsed by hand in
-`web/assets/js/import/mesh.js` and drawn by `web/assets/js/canvas/model.js`,
+`web/assets/js/mesh.js` and drawn by `web/assets/js/canvas/model.js`,
 which holds **one** WebGL context for the whole app and blits it into each
 card's own 2D canvas — contexts are capped per page at around sixteen, and a
 board that mounts and unmounts cards as you pan would spend them all.

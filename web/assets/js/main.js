@@ -13,10 +13,10 @@ import {
   setItemUpAxis, historyState, baseStep, mobileBoardWidth, mobileBoardTop,
   mobileBoardBottom, placeMobileItems, setTitle, markDirty,
   recheckBoardGeometry, cleanBoardTitle, cleanBoardTitleDraft,
-  setBoardMode as selectBoardMode,
+  setBoardMode as selectBoardMode, setAssetNameLookup,
 } from './state.js';
 import { latticeBox, itemBounds } from './geometry.js';
-import { defaultUpAxis, meshKind } from './import/mesh.js';
+import { defaultUpAxis, meshKind } from './mesh.js';
 import { Viewport, MIN_ZOOM, MAX_ZOOM, zoomMs, travelMs } from './canvas/viewport.js';
 import { paintGrid, resetGridInk } from './canvas/grid.js';
 import { initPaper, paintPaper } from './canvas/paper.js';
@@ -30,7 +30,7 @@ import { arrange } from './arrange/arrangements.js';
 import { defaultSize, measureSize } from './canvas/renderers.js';
 import {
   initStorage, restoreSession, saveBoard, exportBoard, openBoard, newBoard, openFile, autosave,
-  clearAllData,
+  clearAllData, setPrompt,
 } from './storage/storage.js';
 import { flushNoteEdit, noteFloor } from './canvas/notes.js';
 import { initAssets, getAsset } from './storage/assets.js';
@@ -203,6 +203,10 @@ const cmds = {
 // ---------------------------------------------------------------------------
 
 initAssets();
+// Hand state the asset registry's filename lookup, which it cannot import
+// (storage sits above state - AUD-12). This is the original-filename fallback
+// renameItem() uses when a name is cleared.
+setAssetNameLookup(hash => getAsset(hash)?.name);
 // Before initAppearance, so the type menus are built once with the board's own
 // faces already in them rather than built empty and rebuilt a tick later.
 initFonts();
@@ -230,6 +234,9 @@ initSearch(vp);
 initIdle(vp);
 initTrash(vp);
 initDrop(vp);
+// Hand storage the confirmation prompt it cannot import (ui sits above storage
+// - AUD-12): the discard-unsaved and clear-everything dialogs.
+setPrompt(ask);
 initStorage();
 
 // The grid is screen-space, so it repaints on every view change. Two tiers are
@@ -1190,7 +1197,46 @@ const started = (async function start() {
   paintCount();
   vp.apply();
   console.log('[mbrd] v' + VERSION + ' ready');
+  warnMissingCapabilities();
 })();
+
+/**
+ * A quiet floor check, run once the board is up (Safari audit S4).
+ *
+ * The app has a modern baseline: it opens a .mbrd by inflating deflate-raw
+ * streams, asks its one question through <dialog>.showModal(), and paints its
+ * palette with color-mix() - and below roughly Safari 16.4 one or more of those
+ * is missing. This does not block the app. Most of it still runs, and a person
+ * on an old browser told "unsupported" and shown nothing is worse off than one
+ * with a degraded board. So it names what will actually break, once, in the
+ * console and - for the one hard failure - a toast, so a later error reads as
+ * expected rather than as a bug.
+ *
+ * The one hard failure is file interchange: a modern .mbrd deflates its entries
+ * and there is no JavaScript inflate fallback, so a browser without
+ * DecompressionStream('deflate-raw') cannot open boards from a newer one. The
+ * rest degrade inside optional paths and are logged, not toasted.
+ */
+function warnMissingCapabilities() {
+  let inflate = false;
+  try { inflate = typeof DecompressionStream === 'function' && !!new DecompressionStream('deflate-raw'); }
+  catch { inflate = false; }
+
+  const degraded = [];
+  if (typeof HTMLDialogElement === 'undefined' ||
+      typeof HTMLDialogElement.prototype.showModal !== 'function') degraded.push('modal dialogs');
+  if (typeof OffscreenCanvas === 'undefined') degraded.push('image optimisation and thumbnails');
+  if (!(window.CSS && CSS.supports && CSS.supports('color', 'color-mix(in srgb, red, blue)'))) degraded.push('the full palette');
+
+  if (!inflate || degraded.length) {
+    console.warn('[mbrd] below the supported floor (Safari 16.4+). Unavailable: ' +
+      [...(inflate ? [] : ['opening .mbrd files from a newer browser']), ...degraded].join(', ') +
+      '. See docs/browser-support.md.');
+  }
+  if (!inflate) {
+    toast('This browser can’t open .mbrd files made by a newer one — update it, or use the latest Safari, Chrome or Firefox.', 'error');
+  }
+}
 
 // Installed as a PWA, "Open with mbrd" on a .mbrd hands us the file here
 // (manifest.json file_handlers). The desktop equivalent lands in M4 via Tauri.
