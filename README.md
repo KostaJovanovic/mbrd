@@ -145,8 +145,11 @@ GIFs, SVGs and anything already efficient are left exactly alone.
 Both of those are the browser's own codecs — a canvas writes the WebP, and
 WebCodecs plus a hand-written Ogg muxer writes the Opus — so this works offline
 with nothing downloaded. Video is the exception: shrinking one needs ffmpeg, and
-ffmpeg is 30 MB of vendored WebAssembly that is deliberately not part of the app
-shell. Until it is there, video is skipped and the dialog says so.
+ffmpeg is 30 MB of WebAssembly that is deliberately not part of the app shell —
+it is fetched from a CDN the first time you optimise a board with a video on it,
+then your browser keeps it. Offline, or with the CDN unreachable, video is
+skipped and the dialog says so. This is the one third-party request the app
+makes: only the core itself is asked for, never anything about a board.
 
 The originals stay in the browser under `meta.was` until you discard them, which
 is what makes the undo real rather than nominal — but they are stripped from an

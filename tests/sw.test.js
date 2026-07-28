@@ -38,36 +38,18 @@ const shellUrls = (() => {
 /** ...minus the bare navigation entry, which is not a file on disk. */
 const shell = shellUrls.filter(p => p !== './');
 
-/**
- * The one thing that ships and is deliberately *not* precached.
- *
- * The 90s skin is behind the Konami code and pulls four typefaces and a
- * wallpaper with it - about 450KB for an easter egg most boards will never
- * find. So ui/konami.js appends the <link> at the moment the code lands and
- * the sheet is fetched then, which also means the skin does not work offline
- * until it has been turned on once. That is the trade, and it is written here
- * rather than left as a hole in the list, so that a file appearing in this set
- * is a decision somebody made rather than one somebody forgot.
- */
-const ON_DEMAND = new Set(['assets/css/skin90.css']);
-
 test('SHELL lists every asset that ships', () => {
+  // Every shipped module, stylesheet and face is precached: there is nothing
+  // fetched on demand any more, so a missing entry is a shell that boots wrong
+  // offline, full stop.
   const onDisk = [
     ...walk(join(WEB, 'assets', 'js'), ['.js']),
     ...walk(join(WEB, 'assets', 'css'), ['.css']),
     ...walk(join(WEB, 'assets', 'fonts'), ['.woff2']),
   ];
   const listed = new Set(shell.map(p => p.replace(/^\.\//, '')));
-  const missing = onDisk.filter(f => !listed.has(f) && !ON_DEMAND.has(f));
+  const missing = onDisk.filter(f => !listed.has(f));
   assert.deepEqual(missing, [], `not precached, so unavailable offline:\n  ${missing.join('\n  ')}`);
-});
-
-test('nothing in the shell is also marked on-demand', () => {
-  // The two lists disagreeing would mean a file both is and is not part of the
-  // offline app, and the exemption above quietly doing nothing.
-  const listed = new Set(shell.map(p => p.replace(/^\.\//, '')));
-  const both = [...ON_DEMAND].filter(f => listed.has(f));
-  assert.deepEqual(both, [], 'precached and exempted at once');
 });
 
 test('SHELL has no entries pointing at files that are gone', () => {
@@ -96,8 +78,14 @@ test('SHELL has no entries pointing at files that are gone', () => {
  * `fails` names the URLs whose fetch should reject, standing in for one bad
  * response during an update.
  */
-function runWorker({ fails = [], existing = [] } = {}) {
+function runWorker({ fails = [], existing = [], seed = {},
+  net = async () => ({ ok: true, type: 'basic', body: 'network', clone() { return { body: 'network' }; } }),
+} = {}) {
   const store = new Map(existing.map(name => [name, new Map([['seed', 'seed']])]));
+  // Preload named caches with real url->response entries, for the runtime-fetch
+  // tests: this is how an *unrelated* origin cache holding the same URL is set up.
+  for (const [name, entries] of Object.entries(seed)) store.set(name, new Map(entries));
+  const keyOf = x => (typeof x === 'string' ? x : x.url);
   const caches = {
     open: async name => {
       if (!store.has(name)) store.set(name, new Map());
@@ -107,10 +95,15 @@ function runWorker({ fails = [], existing = [] } = {}) {
           if (fails.includes(url)) throw new Error(`404 ${url}`);
           entries.set(url, 'response');
         },
+        match: async x => entries.get(keyOf(x)),
+        put: async (x, res) => { entries.set(keyOf(x), res); },
       };
     },
     keys: async () => [...store.keys()],
     delete: async name => store.delete(name),
+    // Deliberately present but poisoned: the runtime path must never reach for
+    // the origin-wide match. If the fix regresses to caches.match(), this throws.
+    match: async () => { throw new Error('runtime lookup must be scoped to the version cache'); },
   };
 
   const handlers = new Map();
@@ -122,7 +115,7 @@ function runWorker({ fails = [], existing = [] } = {}) {
     skipped: false,
   };
 
-  const sandbox = { self, caches, console, URL, fetch: async () => ({}) };
+  const sandbox = { self, caches, console, URL, fetch: net };
   sandbox.addEventListener = self.addEventListener;
   vm.createContext(sandbox);
   vm.runInContext(sw, sandbox, { filename: 'sw.js' });
@@ -134,7 +127,20 @@ function runWorker({ fails = [], existing = [] } = {}) {
     return waited;
   };
 
-  return { store, self, fire };
+  /** Fire the fetch handler for one request; return the response it answered. */
+  const fireFetch = async request => {
+    let response, waited = Promise.resolve();
+    handlers.get('fetch')({
+      request: { method: 'GET', ...request },
+      respondWith: p => { response = p; },
+      waitUntil: p => { waited = p; },
+    });
+    const res = await response;
+    await waited;
+    return res;
+  };
+
+  return { store, self, fire, fireFetch };
 }
 
 const CURRENT = (() => {
@@ -209,6 +215,38 @@ test('activate clears older shells but nothing outside this app', async () => {
   const { store, fire } = runWorker({ existing: ['mbrd-v1', 'mbrd-v2', 'someone-else-v3'] });
   await fire('activate');
   assert.deepEqual([...store.keys()].sort(), ['someone-else-v3']);
+});
+
+// ---------------------------------------------------------------------------
+// Runtime fetch, scoped to the active cache (AUD-14)
+//
+// Cache Storage is origin-wide, so a global caches.match() can answer with a
+// response another app - or an older shell of this one - left behind. The fake
+// caches above throws from its global match(), so any regression to it fails
+// loudly here rather than shipping a stale asset.
+// ---------------------------------------------------------------------------
+
+test('a runtime hit comes from this version cache, not an unrelated one', async () => {
+  const url = 'https://mbrd.example/assets/js/app.js';
+  const { fireFetch } = runWorker({
+    seed: {
+      [CURRENT]: [[url, { ok: true, type: 'basic', body: 'ours' }]],
+      'someone-else-v9': [[url, { body: 'theirs' }]],
+    },
+  });
+  const res = await fireFetch({ url });
+  assert.equal(res.body, 'ours', 'answered from the wrong cache');
+});
+
+test('a runtime miss goes to the network and is cached under this version only', async () => {
+  const url = 'https://mbrd.example/assets/js/new.js';
+  const { store, fireFetch } = runWorker({
+    seed: { 'someone-else-v9': [[url, { body: 'stale' }]] },
+  });
+  const res = await fireFetch({ url });
+  assert.equal(res.body, 'network', 'a miss must not answer from an unrelated cache');
+  assert.equal(store.get(CURRENT).get(url).body, 'network', 'the put must land in the version cache');
+  assert.equal(store.get('someone-else-v9').get(url).body, 'stale', 'the other cache is left untouched');
 });
 
 test('the dev-host test still matches the one in util.js', () => {

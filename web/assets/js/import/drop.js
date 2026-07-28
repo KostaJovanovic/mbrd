@@ -8,6 +8,7 @@
 import { toast, busy, extOf } from '../util.js';
 import { board, bus, addItems, select, setItemCover, NOTE_MAX } from '../state.js';
 import { addFile } from '../storage/assets.js';
+import { makeByteBudget, overPixelBudget } from './budget.js';
 import { classify, defaultSize, measureSize, fitToBox, linkURL, linkDraft } from '../canvas/renderers.js';
 import { iframeURL, embedFor } from '../canvas/embed.js';
 import { arrange } from '../arrange/arrangements.js';
@@ -246,6 +247,23 @@ export async function importFiles(files, centre, { avoidOverlap = false } = {}) 
     trimmed = true;
   }
 
+  // Byte budget, applied in file order so the cut is deterministic. The 500-file
+  // cap above is a UX guard, not a memory boundary - five files can be five 4K
+  // videos. Files past the budget are dropped rather than failing the whole
+  // import, so a folder with one giant video still brings the rest in. See
+  // import/budget.js and AUD-05.
+  const budget = makeByteBudget();
+  let overBudget = 0;
+  files = files.filter(f => {
+    if (budget.take(f.size || 0)) return true;
+    overBudget++;
+    return false;
+  });
+  if (!files.length) {
+    toast('Those files are too large to import', 'error');
+    return [];
+  }
+
   // Prepared several at a time, in order.
   //
   // This was a plain sequential loop, and every file in it waits on two slow
@@ -331,6 +349,7 @@ export async function importFiles(files, centre, { avoidOverlap = false } = {}) 
 
   let msg = `Added ${added.length} item${added.length === 1 ? '' : 's'}`;
   if (trimmed) msg += ` (capped at ${MAX_FILES})`;
+  if (overBudget) msg += `, ${overBudget} too large`;
   if (failed.length) msg += `, ${failed.length} failed`;
   toast(msg, failed.length ? 'error' : '');
 
@@ -398,15 +417,25 @@ async function posterFor(file) {
 /** One file, classified, measured, hashed and turned into a draft item. */
 async function prepareFile(file) {
   let type = classify(file);
-  // Measured before the layout runs, so the arrangement reserves the cell
-  // the item will actually occupy (see renderers.measureSize).
-  let size = await measureSize(type, file);
-  // A photo this browser can't decode - HEIC, JPEG XL, camera RAW - would
-  // mount as a broken <img>. A named card is a better answer than a hole,
-  // and it upgrades itself for free the day a decoder lands.
-  if (type === 'image' && !size.decodable) {
+  let size;
+  // A decode bomb - a small file that declares enormous dimensions - is caught
+  // from its header before measureSize() hands it to createImageBitmap(), which
+  // would otherwise allocate gigabytes. Over budget it becomes a named card, the
+  // same fallback an undecodable image gets below. See import/budget.js.
+  if (type === 'image' && await overPixelBudget(file)) {
     type = 'generic';
     size = defaultSize('generic');
+  } else {
+    // Measured before the layout runs, so the arrangement reserves the cell
+    // the item will actually occupy (see renderers.measureSize).
+    size = await measureSize(type, file);
+    // A photo this browser can't decode - HEIC, JPEG XL, camera RAW - would
+    // mount as a broken <img>. A named card is a better answer than a hole,
+    // and it upgrades itself for free the day a decoder lands.
+    if (type === 'image' && !size.decodable) {
+      type = 'generic';
+      size = defaultSize('generic');
+    }
   }
   const hash = await addFile(file);
   // A clip this browser will not open - an iPhone's H.265, most of the time -

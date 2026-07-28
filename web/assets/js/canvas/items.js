@@ -362,6 +362,13 @@ function build(item) {
   el.dataset.id = item.id;
   el.dataset.type = item.type;
   el.dataset.fit = fitMode(item.type);
+  // A named, self-describing card for assistive technology. The full
+  // keyboard-selection model (roving tabindex, arrow navigation) is a separate,
+  // browser-verified change; naming and role are the part that is safe to ship
+  // without a focus-order regression. See AUD-09.
+  el.setAttribute('role', 'group');
+  el.setAttribute('aria-roledescription', 'board item');
+  el.setAttribute('aria-label', itemAccessibleName(item));
   // Which colour off the sticky pad. CSS picks the tint from this.
   if (item.meta.tint) el.dataset.tint = item.meta.tint;
   // How far off square this one rests, as a fraction of whatever the whimsy
@@ -456,20 +463,47 @@ function setGrips(el, want) {
  * reveals the handle only while this item is selected. Touch also has the
  * long-press route, so hiding the resting handle does not strand its actions.
  */
+/**
+ * A human word for an item's type, for the times it has no name of its own.
+ * "Untitled picture" reads; "generic" does not.
+ */
+const TYPE_LABEL = {
+  image: 'picture', video: 'video', audio: 'audio clip',
+  note: 'note', model: 'model', link: 'link', embed: 'embed',
+};
+
+/**
+ * The name assistive technology announces for a card.
+ *
+ * Cards were bare `<div class="item">` with no accessible name, and every
+ * item's menu button was called only "Actions" - so a board read out as a run
+ * of identical controls with no way to tell which was which. This gives each
+ * card its own name: the item's, or a typed fallback. See AUD-09.
+ */
+export function itemAccessibleName(item) {
+  const name = typeof item?.name === 'string' ? item.name.trim() : '';
+  if (name) return name;
+  return `Untitled ${TYPE_LABEL[item?.type] || 'item'}`;
+}
+
+/** The per-item name for the actions button, so it is not one of many "Actions". */
+export const menuButtonLabel = item => `Actions for ${itemAccessibleName(item)}`;
+
 function bottomBar(item) {
   const bar = document.createElement('div');
   bar.className = 'item-bar';
-  bar.append(nameplate(item), menuHandle());
+  bar.append(nameplate(item), menuHandle(item));
   return bar;
 }
 
 /** The three-dot handle. A real <button>, so it is tabbable and not draggable. */
-function menuHandle() {
+function menuHandle(item) {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'item-menu';
-  btn.setAttribute('aria-label', 'Actions');
-  btn.title = 'Actions';
+  const label = menuButtonLabel(item);
+  btn.setAttribute('aria-label', label);
+  btn.title = label;
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', '0 0 16 16');
   svg.setAttribute('aria-hidden', 'true');
@@ -564,6 +598,16 @@ function rebuild(id) {
   if (label) {
     label.textContent = item.name || '';
     label.hidden = !item.name;
+  }
+  // The accessible name and the menu button's name follow the caption, or a
+  // renamed card would keep announcing its old name (or "Untitled ..."). See
+  // AUD-09.
+  el.setAttribute('aria-label', itemAccessibleName(item));
+  const menuBtn = el.querySelector('.item-bar > .item-menu');
+  if (menuBtn) {
+    const ml = menuButtonLabel(item);
+    menuBtn.setAttribute('aria-label', ml);
+    menuBtn.title = ml;
   }
 }
 

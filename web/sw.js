@@ -57,6 +57,7 @@ const SHELL = [
   './assets/js/canvas/spatial.js',
   './assets/js/canvas/input.js',
   './assets/js/import/drop.js',
+  './assets/js/import/budget.js',
   './assets/js/import/artwork.js',
   './assets/js/import/formats.js',
   './assets/js/arrange/arrangements.js',
@@ -75,7 +76,6 @@ const SHELL = [
   './assets/js/canvas/model.js',
   './assets/js/import/mesh.js',
   './assets/js/ui/search.js',
-  './assets/js/ui/konami.js',
   './assets/js/ui/sidebar.js',
   './assets/js/ui/appearance.js',
   './assets/js/ui/dialog.js',
@@ -160,24 +160,36 @@ self.addEventListener('fetch', event => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
+  // Everything below looks in *this version's* cache by name, never through the
+  // origin-wide caches.match(). Cache Storage is shared across every worker on
+  // the origin, so a global match could answer with a stale response another
+  // app - or an older shell of this one - left behind. See AUD-14.
+
   // Navigations fall back to the cached shell so an offline launch still boots.
   if (req.mode === 'navigate') {
-    event.respondWith(
-      fetch(req).catch(() => caches.match('./index.html', { ignoreSearch: true }))
-        .then(res => res || fetch(req))
-    );
+    event.respondWith((async () => {
+      try {
+        return await fetch(req);
+      } catch {
+        const cache = await caches.open(VERSION);
+        return (await cache.match('./index.html', { ignoreSearch: true })) || fetch(req);
+      }
+    })());
     return;
   }
 
   // Cache-first: the cache is version-epoched, so a hit needs no revalidation
   // and a new VERSION (bumped by save.bat) is what ships fresh code.
   event.respondWith((async () => {
-    const hit = await caches.match(req, { ignoreSearch: true });
+    const cache = await caches.open(VERSION);
+    const hit = await cache.match(req, { ignoreSearch: true });
     if (hit) return hit;
     const res = await fetch(req);
     if (res.ok && res.type === 'basic') {
-      const cache = await caches.open(VERSION);
-      cache.put(req, res.clone());
+      // Kept alive past the response and scoped to this cache: a worker
+      // terminating mid-put would otherwise drop the write, and a bare promise
+      // could reject unhandled.
+      event.waitUntil(cache.put(req, res.clone()));
     }
     return res;
   })());

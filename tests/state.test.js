@@ -1113,6 +1113,47 @@ test('coordinates are rounded on the way out, not mangled', () => {
   assert.equal(data.items[0].y, -0.67);
 });
 
+// --- persisted-state invariants (AUD-07) -----------------------------------
+
+test('infinite and non-positive geometry is refused on load', () => {
+  loadBoard({ title: 'T', items: [{ id: 'a', x: Infinity, y: -Infinity, w: -5, h: 0, rot: NaN }] });
+  const [it] = board.items;
+  assert.equal(it.x, 0);
+  assert.equal(it.y, 0);
+  assert.equal(it.w, 240);
+  assert.equal(it.h, 180);
+  assert.equal(it.rot, 0);
+});
+
+test('a coordinate far past the range is clamped, not carried', () => {
+  loadBoard({ title: 'T', items: [{ id: 'a', x: 1e9, y: -1e9 }] });
+  const [it] = board.items;
+  assert.equal(it.x, 1e7);
+  assert.equal(it.y, -1e7);
+});
+
+test('duplicate item ids are made unique on load', () => {
+  loadBoard({ title: 'T', items: [
+    { id: 'dup', type: 'note' }, { id: 'dup', type: 'note' }, { id: 'dup', type: 'note' },
+  ] });
+  const ids = board.items.map(i => i.id);
+  assert.equal(new Set(ids).size, 3);
+  assert.equal(ids[0], 'dup');
+});
+
+test('a restored bin item cannot collide with a live id', () => {
+  loadBoard({ title: 'T',
+    items: [{ id: 'x', type: 'note' }],
+    trash: [{ at: 1, item: { id: 'x', type: 'note' } }] });
+  assert.notEqual(board.items[0].id, board.trash[0].item.id);
+});
+
+test('an over-long items array is capped on load', () => {
+  const many = Array.from({ length: 20050 }, (_, i) => ({ id: 'i' + i, type: 'note' }));
+  loadBoard({ title: 'T', items: many });
+  assert.equal(board.items.length, 20000);
+});
+
 test('the bin travels with the board', () => {
   const [a] = addItems([photo({ name: 'gone.png' })]);
   removeItems([a.id]);

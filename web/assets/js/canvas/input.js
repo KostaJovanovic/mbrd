@@ -52,6 +52,18 @@ export function needsSelectionBeforeMove(selected, id) {
   return !selected.has(id);
 }
 
+/**
+ * Whether a global canvas shortcut must stand down for this keystroke.
+ *
+ * True when the event was already handled (the context menu's capture listener
+ * preventDefault-s the keys it acts on) or an overlay owns the keyboard - a
+ * modal dialog or the open menu. Extracted from the keydown handler so the rule
+ * itself is testable without a DOM. See AUD-08.
+ */
+export function shortcutsSuppressed(defaultPrevented, overlayOwnsKeyboard) {
+  return !!(defaultPrevented || overlayOwnsKeyboard);
+}
+
 /** Whether a native contextmenu repeats the menu a touch hold already opened. */
 export function repeatsLongPressContextMenu(opened, event) {
   if (!opened || !event) return false;
@@ -901,11 +913,22 @@ export function initInput(vp, cmds) {
   const nativeKeyTarget = t =>
     t instanceof HTMLElement && !!t.closest('button, a[href], summary, [role="button"]');
 
+  // A modal dialog or the context menu owns the keyboard while it is up, and the
+  // canvas shortcuts must not fire behind it. Pressing ArrowRight on a dialog's
+  // Cancel button used to nudge the selected card behind the still-open dialog;
+  // Delete with the context menu up removed the selection under it. The menu's
+  // own capture listener preventDefault-s the keys it handles (Arrow, Escape),
+  // which `defaultPrevented` catches; this covers the rest, and the dialog.
+  // See AUD-08.
+  const overlayOwnsKeyboard = () =>
+    !!document.querySelector('dialog[open]') || !!document.getElementById('ctx-menu');
+
   addEventListener('keydown', e => {
     if (typingInto(e.target)) {
       if (e.key === 'Escape') e.target.blur();
       return;
     }
+    if (shortcutsSuppressed(e.defaultPrevented, overlayOwnsKeyboard())) return;
     const mod = e.ctrlKey || e.metaKey;
 
     // Let a focused control have its own keys. The shortcuts with a modifier

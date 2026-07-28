@@ -53,8 +53,8 @@ export async function optimizeBoard() {
   if (plan.videos.length) {
     lines.push(mediaReady()
       ? 'Video becomes WebM, capped at 1200px.'
-      : `Video needs the media encoder (${MEDIA_MB} MB, kept on this machine). ` +
-        'It downloads the first time only.');
+      : `Video needs the media encoder (${MEDIA_MB} MB). ` +
+        'It downloads once, then your browser keeps it.');
   }
   // Said out loud rather than left as a smaller number than expected: a board
   // half of which has already been done should not look like half a board.

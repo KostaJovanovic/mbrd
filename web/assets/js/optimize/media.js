@@ -13,14 +13,19 @@
 // This is the one place in the whole app that depends on somebody else's code,
 // and it is written to keep that fact contained:
 //
-//   - it is **vendored, not fetched**. `web/assets/vendor/ffmpeg/` is served
-//     from this origin like every other file here. A CDN pull would be the
-//     first third-party request in an app whose first promise is that nothing
-//     leaves the machine, and it would put the feature behind a network.
+//   - it is **fetched from a CDN**, not vendored. The single-threaded ffmpeg
+//     core lives at jsdelivr and is pulled on first use. This is the one
+//     third-party request the optimiser makes, and the one exception to "nothing
+//     leaves the machine": asking for a video to be shrunk asks a script off the
+//     network to do it. Nothing about a *board* is sent - only the request for
+//     the core itself - and the browser caches it (immutable, a year) so it is
+//     asked for once. Offline, or with the CDN unreachable, video degrades to
+//     "left alone" exactly as if the core were missing.
 //   - it is **loaded on demand**. Nothing here is touched until somebody
 //     presses Optimize on a board that actually has video on it, and it is
 //     deliberately *not* in sw.js's SHELL: thirty megabytes has no business in
-//     the cache of an app that is otherwise under two.
+//     the cache of an app that is otherwise under two, and being cross-origin
+//     the service worker steps aside for it anyway.
 //   - it is **single-threaded**. The threaded core needs SharedArrayBuffer,
 //     which needs COOP/COEP, which would break the YouTube embeds - the one
 //     third-party thing the app does offer, and only on request. Slower and
@@ -34,8 +39,13 @@
 
 import { extOf } from '../util.js';
 
-/** Where the core lives, relative to the page. */
-const CORE_DIR = './assets/vendor/ffmpeg/';
+// Where the core lives. The single-threaded UMD build - the one that exposes a
+// `createFFmpegCore` factory and loads through importScripts, which is what
+// media-worker.js drives. (The ESM build would need a module worker; the
+// threaded build would need SharedArrayBuffer, hence COOP/COEP, which would
+// break the YouTube embeds - see the note above.) `locateFile` in the worker
+// resolves ffmpeg-core.wasm against this same URL, so both come from here.
+const CORE_DIR = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/';
 const CORE_JS = CORE_DIR + 'ffmpeg-core.js';
 
 /** Roughly what it weighs, for the sentence in the dialog. */
@@ -51,12 +61,41 @@ let worker = null;
 let ready = null;
 let present = null;
 
+// Every in-flight job, id -> { resolve, reject, timer }. A worker that crashes
+// mid-encode used to leave its ask() promise pending forever, and a rejected
+// boot promise was retained so no later attempt could respawn. Both are settled
+// through this map and killWorker(). See AUD-10.
+const pending = new Map();
+
 /**
- * Whether the encoder is on this machine, without loading it.
+ * A single job's ceiling. Generous on purpose: a real settlement is the worker's
+ * reply or an error event, not the clock. This only catches a worker that has
+ * gone silent without either - a genuine wedge - so it must not fire on a long
+ * but healthy single-threaded wasm encode.
+ */
+const JOB_TIMEOUT_MS = 15 * 60_000;
+
+/**
+ * Reject every pending job, drop the worker, and reset `ready` so the next call
+ * spawns a fresh one. The one place a dead worker is cleaned up, whether the
+ * death was a crash, a decode error, or a timeout.
+ */
+function killWorker(err) {
+  for (const job of pending.values()) { clearTimeout(job.timer); job.reject(err); }
+  pending.clear();
+  if (worker) { try { worker.terminate(); } catch { /* already gone */ } }
+  worker = null;
+  ready = null;
+}
+
+/**
+ * Whether the encoder can be reached, without downloading its 30 MB.
  *
- * A HEAD request against our own origin - which the service worker answers from
- * cache once it has been fetched, and which costs nothing when it 404s because
- * the files were never put there.
+ * A HEAD request to the CDN: headers only, no body, so it costs nothing but a
+ * round trip and tells us the core is there before the dialog promises to shrink
+ * a video. Offline or CDN down, it throws, we answer false, and video is left
+ * alone - the same graceful skip we gave when the core was expected locally and
+ * was not there. Cached after the first answer so a dialog can ask freely.
  */
 export async function mediaAvailable() {
   if (present !== null) return present;
@@ -81,7 +120,7 @@ export const mediaReady = () => present === true;
  */
 export async function loadMedia(say = () => {}) {
   if (!(await mediaAvailable())) {
-    throw new Error('ffmpeg core is not vendored at ' + CORE_DIR);
+    throw new Error('ffmpeg core could not be reached at ' + CORE_DIR);
   }
   if (!ready) {
     say(`Loading the media encoder (${MEDIA_MB} MB, once)…`);
@@ -171,15 +210,46 @@ export async function firstFrame(file, say = () => {}) {
 
 function spawn() {
   return new Promise((resolve, reject) => {
-    worker = new Worker('./assets/js/optimize/media-worker.js');
-    const onMessage = e => {
+    let w;
+    try { w = new Worker('./assets/js/optimize/media-worker.js'); }
+    catch (err) { ready = null; reject(err); return; }
+    worker = w;
+
+    // The boot handshake. Removed once, because everything after it is a job.
+    const onBoot = e => {
       if (e.data?.type !== 'ready') return;
-      worker.removeEventListener('message', onMessage);
-      e.data.ok ? resolve() : reject(new Error(e.data.error || 'core failed to start'));
+      w.removeEventListener('message', onBoot);
+      if (e.data.ok) { resolve(); return; }
+      const err = new Error(e.data.error || 'core failed to start');
+      reject(err);
+      killWorker(err);
     };
-    worker.addEventListener('message', onMessage);
-    worker.addEventListener('error', err => reject(err));
-    worker.postMessage({ type: 'boot', core: new URL(CORE_JS, location.href).href });
+    w.addEventListener('message', onBoot);
+
+    // Job replies, for the life of the worker. ask() parks each job in `pending`
+    // keyed by id; this is where it is resolved and its timeout cleared.
+    w.addEventListener('message', e => {
+      const id = e.data?.id;
+      if (id == null) return;
+      const job = pending.get(id);
+      if (!job) return;
+      pending.delete(id);
+      clearTimeout(job.timer);
+      e.data.error ? job.reject(new Error(e.data.error)) : job.resolve(e.data);
+    });
+
+    // A crash or an undeliverable message settles the boot promise and every job
+    // at once, then tears the worker down so a later call respawns. Without this
+    // a crash mid-encode left the optimize UI busy forever.
+    const onDead = () => {
+      const err = new Error('the media worker stopped unexpectedly');
+      reject(err);            // no-op if boot already resolved
+      killWorker(err);
+    };
+    w.addEventListener('error', onDead);
+    w.addEventListener('messageerror', onDead);
+
+    w.postMessage({ type: 'boot', core: new URL(CORE_JS, location.href).href });
   });
 }
 
@@ -244,15 +314,27 @@ async function run({ inName, out, args, bytes }) {
 let seq = 0;
 function ask(msg) {
   return new Promise((resolve, reject) => {
+    if (!worker) { reject(new Error('the media worker is not running')); return; }
     const id = ++seq;
-    const onMessage = e => {
-      if (e.data?.id !== id) return;
-      worker.removeEventListener('message', onMessage);
-      e.data.error ? reject(new Error(e.data.error)) : resolve(e.data);
-    };
-    worker.addEventListener('message', onMessage);
-    // The bytes are transferred rather than copied: a 40MB file has no business
-    // existing twice while it is being handed over.
-    worker.postMessage({ ...msg, id }, [msg.bytes.buffer]);
+    // A wedge backstop: a worker that never replies and never errors would
+    // otherwise hold this promise forever. Firing it tears the worker down so
+    // the next attempt respawns.
+    const timer = setTimeout(() => {
+      if (!pending.has(id)) return;
+      pending.delete(id);
+      const err = new Error('the media worker timed out');
+      reject(err);
+      killWorker(err);
+    }, JOB_TIMEOUT_MS);
+    pending.set(id, { resolve, reject, timer });
+    try {
+      // The bytes are transferred rather than copied: a 40MB file has no business
+      // existing twice while it is being handed over.
+      worker.postMessage({ ...msg, id }, [msg.bytes.buffer]);
+    } catch (err) {
+      pending.delete(id);
+      clearTimeout(timer);
+      reject(err);
+    }
   });
 }

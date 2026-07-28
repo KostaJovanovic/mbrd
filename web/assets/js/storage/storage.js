@@ -315,6 +315,12 @@ function pickViaInput() {
 
 export async function newBoard() {
   if (!(await confirmDiscard('Starting a new one'))) return false;
+  // Stop the closing board's autosave from repopulating the store after it is
+  // cleared: drop the latch and drain any in-flight writer before touching the
+  // asset store or the session. See AUD-03.
+  clearTimeout(saveTimer);
+  cacheOk = false;
+  await drainSave();
   clearAssets();
   fileHandle = null;
   created = null;
@@ -334,7 +340,12 @@ export async function newBoard() {
   // photographs - without this, every board after the first would open in the
   // colours of the previous board's pictures.
   loadBoard({ title: 'Untitled board' });
-  await clearSession();
+  // A failure here is self-healing: the session is one slot and the new board's
+  // first autosave overwrites whatever stale bytes remain, so warn but do not
+  // block starting fresh. clearAllData() is the path that must not paper over a
+  // failed wipe; New is not.
+  try { await clearSession(); }
+  catch (err) { console.warn('[mbrd] could not clear the old session:', err); }
   // A fresh start is a fresh start. Both latches below are set by a failure
   // that belonged to the board just closed - a quota error raised by its
   // photographs, or an asset it had lost - and clearSession() has just deleted
@@ -413,6 +424,9 @@ let quiet = true;
 const hushNextSave = () => { quiet = true; };
 
 function scheduleAutosave() {
+  // Count the change before the latch check: even while caching is off the
+  // generation must advance, so a later save knows this edit is not yet on disk.
+  saveGen++;
   if (!cacheOk) return;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
@@ -459,6 +473,67 @@ function referencedHashes(data) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// Save coordinator (single-flight)
+// ---------------------------------------------------------------------------
+//
+// writeSnapshot() is multi-step - serialise, write assets, write the snapshot,
+// sweep - and used to be reachable twice at once: the debounce, an explicit
+// Save, and the pagehide flush all called it directly. Two overlapping runs
+// could finish out of order, landing an older snapshot on top of a newer one,
+// and an older run's sweep could delete an asset only the newer snapshot still
+// referenced. See AUD-02 in research/full-code-audit-2026-07-26.md.
+//
+// One writer fixes both. `saveGen` counts changes worth persisting; a run
+// captures the generation it is about to write and, if newer edits landed while
+// it wrote, loops once more for the newest. Every caller awaits a run that
+// covers the generation current when it asked, and no two runs ever overlap -
+// so no stale snapshot and no stale sweep.
+let saveGen = 0;         // bumped by every change worth a snapshot
+let committedGen = -1;   // saveGen of the last durable write (-1: nothing yet)
+let saving = null;       // in-flight run, a Promise<boolean>, or null
+let lastResult = false;  // result of the most recent completed run
+
+/**
+ * Persist the working state, coalescing concurrent callers into one writer.
+ *
+ * Resolves to whether a snapshot covering the caller's generation is durable.
+ * A change arriving mid-write is captured by a follow-up write, so the newest
+ * board is always what ends up on disk - never a stale snapshot that a slower,
+ * older run finished writing last.
+ */
+export function autosave() {
+  const wanted = saveGen;
+  if (!saving && committedGen >= wanted) return Promise.resolve(lastResult);
+  if (!saving) saving = runSaves();
+  return saving.then(() => (committedGen >= wanted ? lastResult : false));
+}
+
+async function runSaves() {
+  try {
+    for (;;) {
+      const gen = saveGen;
+      const ok = await writeSnapshot();
+      lastResult = ok;
+      if (ok) committedGen = gen;
+      // Stop on failure - a full disk must not spin - or when no newer edit
+      // landed while this write ran. Otherwise loop and write the newest.
+      if (!ok || saveGen === gen) return ok;
+    }
+  } finally {
+    saving = null;
+  }
+}
+
+/**
+ * Wait for any in-flight writer to finish. Used by the destructive paths before
+ * they clear the store, so a save already past its `cacheOk` gate cannot
+ * repopulate IndexedDB after the wipe. Its result is not ours to report.
+ */
+async function drainSave() {
+  if (saving) { try { await saving; } catch { /* not our result */ } }
+}
+
 /**
  * Write the working state to IndexedDB, and take out the rubbish.
  *
@@ -481,7 +556,7 @@ function referencedHashes(data) {
  * leaves the previous snapshot and its assets completely intact - the sweep
  * simply does not happen that time round.
  */
-export async function autosave() {
+async function writeSnapshot() {
   if (!cacheOk) {
     lastFailure = 'This browser will not store the board (full, or blocked) - export it to a file';
     return false;
@@ -622,8 +697,19 @@ export async function restoreSession() {
   }
 }
 
+/**
+ * Wipe the working-cache stores, and let a real failure be seen.
+ *
+ * It used to swallow every error and return nothing, so "Clear everything"
+ * could report success while user data survived the failed wipe (AUD-03). Now
+ * it throws on failure - and with the honest idb helper (AUD-01) a throw means
+ * the transaction genuinely did not commit. The one caller that must tolerate
+ * failure (newBoard) catches it; the one that must not (clearAllData) reports
+ * it.
+ */
 export async function clearSession() {
-  try { await idbClear('kv'); await idbClear('assets'); } catch { /* nothing to clear */ }
+  await idbClear('kv');
+  await idbClear('assets');
 }
 
 /**
@@ -670,11 +756,23 @@ export async function clearAllData() {
 
   // Before the wipe, not after: the debounce is armed by every edit, and a
   // snapshot landing between the clear and the reload would put the board
-  // straight back. The latch is what holds it down - flushEdits() on the way
-  // out of the page calls autosave() directly, past any timer.
+  // straight back. Dropping the latch stops a *new* save; draining the writer
+  // stops one already past the latch (flushEdits() on the way out of the page
+  // calls autosave() directly, past any timer) from repopulating the store.
   clearTimeout(saveTimer);
   cacheOk = false;
-  await clearSession();
+  await drainSave();
+  // Surface a failed wipe instead of reloading over it. A reload that claimed
+  // success while data remained is the exact privacy failure in AUD-03: the
+  // person asked for everything gone and would have been told it was.
+  try {
+    await clearSession();
+  } catch (err) {
+    console.error('[mbrd] clear everything failed:', err);
+    toast('Could not clear this browser’s storage: ' + (err?.message || err), 'error');
+    cacheOk = true;
+    return false;
+  }
   clearPrefs();
   location.reload();
   return true;
