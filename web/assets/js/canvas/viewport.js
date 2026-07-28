@@ -130,6 +130,16 @@ export const deviceRatio = () =>
 const LOD_ZOOM = 0.4;
 
 /**
+ * How far out a selected card still shows its resize grips.
+ *
+ * Well below the chrome rung (LOD_ZOOM): a card at a tenth of its size is a
+ * swatch with no room for a label, but its corners are still a thing you reach
+ * for to resize it - so the grips outlast the labels by two rungs and go only
+ * when the card is too small to aim at.
+ */
+const GRIP_MIN_ZOOM = 0.1;
+
+/**
  * And where it sits under a finger.
  *
  * Higher, because the same zoom factor is a smaller card on a phone: the screen
@@ -676,6 +686,12 @@ export class Viewport {
     // back.
     this._setIz(izRung(1 / z));
     this.world.classList.toggle('zoom-far', z < farZoom());
+    // A second, lower rung just for the resize grips. Labels and the item bar
+    // become noise once a card is a swatch (zoom-far, 40%), but the corners stay
+    // worth grabbing much further out - a card at 15% is still a thing you resize.
+    // So the grips ride their own threshold down to GRIP_MIN_ZOOM and vanish only
+    // below it.
+    this.world.classList.toggle('zoom-tiny', z < GRIP_MIN_ZOOM);
     this._moving();
 
     // The origin mark, centred on the point the axes cross.

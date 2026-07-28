@@ -520,37 +520,11 @@ export function itemAccessibleName(item) {
   return `Untitled ${TYPE_LABEL[item?.type] || 'item'}`;
 }
 
-/** The per-item name for the actions button, so it is not one of many "Actions". */
-export const menuButtonLabel = item => `Actions for ${itemAccessibleName(item)}`;
-
 function bottomBar(item) {
   const bar = document.createElement('div');
   bar.className = 'item-bar';
-  bar.append(nameplate(item), menuHandle(item));
+  bar.append(nameplate(item));
   return bar;
-}
-
-/** The three-dot handle. A real <button>, so it is tabbable and not draggable. */
-function menuHandle(item) {
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'item-menu';
-  const label = menuButtonLabel(item);
-  btn.setAttribute('aria-label', label);
-  btn.title = label;
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', '0 0 16 16');
-  svg.setAttribute('aria-hidden', 'true');
-  for (const cy of [4, 8, 12]) {
-    const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    dot.setAttribute('cx', '8');
-    dot.setAttribute('cy', String(cy));
-    dot.setAttribute('r', '1.5');
-    dot.setAttribute('fill', 'currentColor');
-    svg.append(dot);
-  }
-  btn.append(svg);
-  return btn;
 }
 
 /**
@@ -633,16 +607,9 @@ function rebuild(id) {
     label.textContent = item.name || '';
     label.hidden = !item.name;
   }
-  // The accessible name and the menu button's name follow the caption, or a
-  // renamed card would keep announcing its old name (or "Untitled ..."). See
-  // AUD-09.
+  // The accessible name follows the caption, or a renamed card would keep
+  // announcing its old name (or "Untitled ..."). See AUD-09.
   el.setAttribute('aria-label', itemAccessibleName(item));
-  const menuBtn = el.querySelector('.item-bar > .item-menu');
-  if (menuBtn) {
-    const ml = menuButtonLabel(item);
-    menuBtn.setAttribute('aria-label', ml);
-    menuBtn.title = ml;
-  }
 }
 
 /**
