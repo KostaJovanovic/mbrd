@@ -14,6 +14,7 @@ import {
   mobileBoardBottom, placeMobileItems, setTitle, markDirty,
   recheckBoardGeometry, cleanBoardTitle, cleanBoardTitleDraft,
   setBoardMode as selectBoardMode, setAssetNameLookup,
+  isRider, stuckTo, stuckPlacement,
 } from './state.js';
 import { latticeBox, itemBounds } from './geometry.js';
 import { defaultUpAxis, meshKind } from './mesh.js';
@@ -1052,9 +1053,20 @@ function rearrange(items) {
   if (!items.length) return;
   const whole = items.length === board.items.length;
   const mobile = board.layoutMode === 'mobile';
-  const at = whole ? { x: 0, y: 0 } : middleOf(items);
-  const before = snapshotGeom(items.map(i => i.id));
 
+  // A stuck note is not laid out; it rides its host to the host's new slot and
+  // keeps its place on it. So a pinned sticky stays pinned through a Rearrange,
+  // and a note whose host is not in this set rides a host that does not move -
+  // and so does not move either. Everything else is arranged as before.
+  const riders = items.filter(isRider);
+  const free = items.filter(it => !isRider(it));
+  const beforeAll = snapshotGeom(items.map(i => i.id));
+  // Nothing to lay out - the whole set was followers. There is no arrangement of
+  // riders alone; they stay on their hosts.
+  if (!free.length) return;
+
+  const at = whole ? { x: 0, y: 0 } : middleOf(free);
+  const before = snapshotGeom(free.map(i => i.id));
   // Two things vary here, and neither is enough on its own.
   //
   // The shuffle changes which item lands in which slot. Without it a layout is
@@ -1067,7 +1079,7 @@ function rearrange(items) {
   // board comes back in the identical shape with the cards swapped around,
   // which from any distance is the same picture - and zoomed out far enough to
   // see a whole rearrangement at once, cards are shapes and not subjects.
-  const order = shuffle(items.map((_, i) => i));
+  const order = shuffle(free.map((_, i) => i));
 
 // On a snapped board a rearrangement is a *re-lay*, sizes included. Placing
   // cards on the lattice and leaving them at 320x240 is the thing snapping is
@@ -1086,9 +1098,9 @@ function rearrange(items) {
   // which is a Rearrange button that does nothing at all.
   const step = baseStep();
   const sized = board.settings.snap && !mobile
-    ? items.map(it => { const b = latticeBox(it, step); return { w: b.w, h: b.h }; })
+    ? free.map(it => { const b = latticeBox(it, step); return { w: b.w, h: b.h }; })
     : null;
-  const laid = order.map(i => (sized ? { ...items[i], ...sized[i] } : items[i]));
+  const laid = order.map(i => (sized ? { ...free[i], ...sized[i] } : free[i]));
 
   const spots = arrange(laid, {
     name: board.arrangement,
@@ -1102,8 +1114,10 @@ function rearrange(items) {
     y: spots[slot].y,
   }));
   if (mobile) {
-    const moving = new Set(items.map(item => item.id));
-    const obstacles = whole ? [] : board.items.filter(item => !moving.has(item.id));
+    const moving = new Set(free.map(item => item.id));
+    // Riders are not obstacles - they overlap their host and would wall it off.
+    const obstacles = whole ? [] : board.items.filter(item =>
+      !moving.has(item.id) && !isRider(item));
     // The chosen arrangement still decides reading order on a narrow board:
     // turn its slots into top-to-bottom, then left-to-right order before the
     // Mobile packer fits that sequence into the selected-width lattice.
@@ -1116,10 +1130,10 @@ function rearrange(items) {
   }
   // spots came back in shuffled order, so each one goes to the item that was
   // in that slot, not to the item at the same index in board.items.
-  const target = new Array(items.length);
+  const target = new Array(free.length);
   if (mobile) {
     const byItem = new Map(placed.map(item => [item.id, item]));
-    items.forEach((item, i) => { target[i] = byItem.get(item.id); });
+    free.forEach((item, i) => { target[i] = byItem.get(item.id); });
   } else {
     order.forEach((itemIndex, slot) => { target[itemIndex] = placed[slot]; });
   }
@@ -1144,11 +1158,36 @@ function rearrange(items) {
     // arrangement had no reason to land on a line.
     return { ...at, ...latticeBox({ ...at, ...sized[i] }, step) };
   }));
-  // Every item was placed by this, none of them towed - so every note asks
-  // again what it landed on. A rearrangement that left the old piles recorded
-  // would have notes travelling with photographs they are now nowhere near.
+
+  // Hosts are now at their new slots; carry each rider to its host and keep the
+  // offset it had. Read the host's *old* geometry from the pre-move snapshot (so
+  // the offset is the one the author set) and its new geometry live. In passes,
+  // so a note stuck to a note follows only once its own host has moved.
+  if (riders.length) {
+    const beforeById = new Map(beforeAll.map(g => [g.id, g]));
+    const pending = new Set(riders.map(r => r.id));
+    for (let grew = true; grew && pending.size;) {
+      grew = false;
+      for (const note of riders) {
+        if (!pending.has(note.id)) continue;
+        const host = stuckTo(note);
+        if (!host) { pending.delete(note.id); continue; }
+        if (pending.has(host.id)) continue;         // host is a rider, not moved yet
+        const hostSrc = beforeById.get(host.id) || byId(host.id);
+        const pos = stuckPlacement(note, hostSrc, byId(host.id));
+        applyGeom([{ id: note.id, x: pos.x, y: pos.y }]);
+        pending.delete(note.id);
+        grew = true;
+      }
+    }
+  }
+
+  // driven = the free items only. Each was placed, none towed, so each of those
+  // notes asks again what it landed on. Riders are left out on purpose: they kept
+  // their host, so re-measuring them onto whatever they now sit beside would be
+  // the one thing that could tear a pinned pile apart.
   commitGeom(whole ? 'Rearrange' : `Rearrange ${items.length} items`,
-    before, before.map(g => g.id), mobile ? { preservePresnap: true } : {});
+    beforeAll, free.map(g => g.id), mobile ? { preservePresnap: true } : {});
   // A whole-board layout rebuilds around the origin, so the view has to follow
   // it there or the rearrangement happens off screen. Free is the exception:
   // it shakes each item where it stands, and flying to fit the whole board

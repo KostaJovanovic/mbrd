@@ -19,12 +19,12 @@
 import { clamp } from '../util.js';
 import {
   board, byId, selection, select, deselect, clearSelection, topZ, stackOrder,
-  snapshotGeom, applyGeom, commitGeom, bus, stuckFollowers,
+  snapshotGeom, applyGeom, commitGeom, bus, stuckFollowers, wouldStick,
   copyItems, cutItems, pasteItems, clipboardSize, clipboardBounds, clipboardHasOurs,
 } from '../state.js';
 import { zoomMs, travelMs } from './viewport.js';
 import { itemInRect, latticeBox, latticeLow, cellInset, MIN_SIZE, MAX_SIZE } from '../geometry.js';
-import { itemIdFromEvent, ensureMounted, sync as syncItems, editItemName } from './items.js';
+import { itemIdFromEvent, ensureMounted, nodeFor, sync as syncItems, editItemName } from './items.js';
 import { boardGridStep } from './grid.js';
 import { noteFloor } from './notes.js';
 
@@ -677,8 +677,23 @@ export function initInput(vp, cmds) {
       // arrangement being kept rather than a second one being imposed.
       const lead = g.origin.find(o => o.id === g.id) || g.origin[0];
       const low = { x: lead.x + dx - lead.w / 2, y: lead.y + dy - lead.h / 2 };
-      const sx = snapLow(low.x) - low.x;
-      const sy = snapLow(low.y) - low.y;
+      let sx = snapLow(low.x) - low.x;
+      let sy = snapLow(low.y) - low.y;
+      // A dragged note that would stick: show its would-be host wearing the
+      // selection ring so the target is unmistakable before release, and - when
+      // snapping is on - let the note land exactly where it was let go rather
+      // than on the nearest grid line, since it is being stuck to that host and a
+      // sticky that jumps a few pixels off the picture reads as a refusal. Only
+      // the note being dragged is measured; everything else keeps snapping.
+      const leadItem = byId(g.id);
+      const host = leadItem?.type === 'note'
+        ? wouldStick({ x: lead.x + dx, y: lead.y + dy, w: leadItem.w, h: leadItem.h }, g.id)
+        : null;
+      showStickTarget(host);
+      if (board.settings.snap && host) {
+        sx = 0;
+        sy = 0;
+      }
       applyGeom(g.origin.map(o => {
         const it = byId(o.id);
         return { id: o.id, x: o.x + dx + sx, y: o.y + dy + sy, w: it.w, h: it.h, rot: it.rot, z: it.z };
@@ -844,6 +859,7 @@ export function initInput(vp, cmds) {
     if (g.kind === 'resize') commitGeom('Resize', g.before, g.driven);
     g.node?.classList.remove('is-resizing');
     el.classList.remove('is-panning');
+    showStickTarget(null);
     g = null;
     syncItems();
   }
@@ -856,7 +872,19 @@ export function initInput(vp, cmds) {
     if (g.kind === 'marquee') marquee.hidden = true;
     g.node?.classList.remove('is-resizing');
     el.classList.remove('is-panning');
+    showStickTarget(null);
     g = null;
+  }
+
+  // The item a dragged note would stick to on release, wearing the selection
+  // ring while it is aimed at. Only one at a time; cleared when the drag ends.
+  let stickTargetId = null;
+  function showStickTarget(host) {
+    const id = host?.id ?? null;
+    if (id === stickTargetId) return;
+    if (stickTargetId) nodeFor(stickTargetId)?.classList.remove('is-stick-target');
+    stickTargetId = id;
+    if (id) nodeFor(id)?.classList.add('is-stick-target');
   }
 
   // ---- wheel ------------------------------------------------------------

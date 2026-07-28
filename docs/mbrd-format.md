@@ -195,7 +195,9 @@ promise 1 above,** and that is the open question at the bottom of this document.
 
 | key | on | what |
 | --- | -- | ---- |
-| `text`   | `note` | The note's whole text. First line is its title. Capped at 512 characters (`NOTE_MAX`). |
+| `text`   | `note` | The note's whole text, Markdown-flavoured: `# ` a title line, `## ` a heading line, anything else a paragraph. The plaintext half — what search, linkify and older readers read. Capped at 512 characters (`NOTE_MAX`). A note with no `#` markers reads its first line as the title, so a note written before `rich` existed still shows titled. |
+| `rich`   | `note` | The formatted content when present, and then authoritative over `text` (which it flattens to). `{ font, size, valign, blocks: [{ tag, align, text }] }` — `tag` is `h1`/`h2`/`p`, `align` is `left`/`center`/`right`, `font` is an allowlist key (`sheet`/`sans`/`serif`/`mono`), `size` a multiplier clamped to 0.7–1.8, `valign` is `top`/`middle`/`bottom`. Normalised on the way in (`normalizeNoteRich`): unknown values fall back, and the flattened text is held to `NOTE_MAX`. Absent on a legacy note, which is parsed back from `text`. |
+| `stuckTo`| `note` | The id of the item this sticky note is pinned to, or `null` for loose. Stamped from live geometry at save; a load seeds the runtime memo from it so the pin survives a reload and a Mobile reflow even when the note no longer visibly overlaps its host. A dangling id (host deleted) falls back to measuring overlap. |
 | `url`    | `link` | The address. **Revalidated on every render**, never trusted from the file. |
 | `peaks`  | `audio` | RMS readings in [0, 1]. Moved out to `waveforms/` when packing — see below. |
 | `cover`  | any | An asset hash for a chosen picture: album art, a diagram. |
