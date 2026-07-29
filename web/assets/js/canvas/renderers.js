@@ -4,7 +4,7 @@
 
 import { extOf, baseName, formatBytes } from '../util.js';
 import { assetURL, getAsset, readText } from '../storage/assets.js';
-import { byId, bus, markDirty, board, NOTE_MAX } from '../state.js';
+import { byId, bus, markDirty, board, NOTE_MAX, isDefaultTitle } from '../state.js';
 import { latticeBox } from '../geometry.js';
 import { describeExt, PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS } from '../import/formats.js';
 import { buildTransport, registerPlayer } from './audio.js';
@@ -94,6 +94,10 @@ export function defaultSize(type) {
     // Wide and short: an address is a wide thing, and there is no body under
     // it - a link card is a name, a URL, and nothing else.
     case 'link':    return { w: 256, h: 106 };
+    // Four grid spaces wide and 3:2 tall (256 * 2/3 = 170.67) - the masthead's
+    // aspect. Matches TITLE_SIZE in state.js, where the singleton is minted; the
+    // card visual is held to an exact 3:2 in CSS and snapping adds slack below.
+    case 'title':   return { w: 256, h: 171 };
     default:        return { w: 200, h: 112 };
   }
 }
@@ -641,6 +645,32 @@ const RENDERERS = {
    */
   model(item) {
     return buildModelCard(item);
+  },
+
+  /**
+   * The Desktop title card: the board's name, set in the shared masthead style.
+   *
+   * Bare on purpose - no `.card` shell, so no paper, no border, no cover - it is
+   * the same styled name the Mobile masthead shows, only movable. This renderer
+   * builds the structure and writes the current name; the typography (face,
+   * size, weight, axes) is painted by ui/mobile-header.js, which owns that style
+   * for both the masthead and this card and is the only layer that can resolve a
+   * board's own font faces. A singleton kept out of classify() - it is never a
+   * dropped file - and desktop-only, gated at mount in canvas/items.js.
+   */
+  title(item) {
+    const card = document.createElement('div');
+    card.className = 'title-card';
+    const name = document.createElement('div');
+    name.className = 'title-name';
+    name.textContent = board.title;
+    // Dim an unnamed board here, not only in main.js's paintMobileTitle: this
+    // runs on every build, so the card keeps its quiet grey across an unmount and
+    // remount (a layout switch to Mobile and back) where paintMobileTitle - which
+    // fires on 'board', not on the rebuild - would not reapply it.
+    name.classList.toggle('is-untitled', isDefaultTitle(board.title));
+    card.append(name);
+    return card;
   },
 
   generic(item) {

@@ -86,6 +86,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 #viewport.is-panning { cursor: grabbing; }
 #viewport.can-pan    { cursor: grab; }
+/* A card held mid-drag. #viewport captures the pointer, so the grabbing hand has
+   to be set here rather than on .item - the captured element owns the cursor. */
+#viewport.is-moving  { cursor: grabbing; }
 
 /* The one transformed layer. Sits at the viewport centre so world (0,0) is the
    centre of the screen at pan (0,0); viewport.js writes the transform and --iz
@@ -415,6 +418,212 @@ button, input, select, textarea { font: inherit; color: inherit; }
    either way, and an empty band reads as something failing to load. The name
    it is given is just held more quietly than one somebody chose. */
 #mobile-board-header[data-untitled] #mobile-board-title { opacity: 0.45; }
+
+/* The Desktop title card: the board name as a movable board item, set in the
+   same style as the Mobile masthead. ui/mobile-header.js writes the identical
+   --mobile-title-* custom properties onto .title-name that it writes onto
+   #mobile-board-title; the one thing that differs is what the size is measured
+   against - the strip's width there, this card's own width here (100cqw), so
+   the size dial means the same "percentage of the width it is set across" in
+   both. Bare on purpose: no paper, no border, no caption - see renderers.js. */
+/* The masthead's own rules, one for one, so the same style wraps the same on
+   both boards - the only thing that differs is what the size is measured
+   against: the strip's width there, this 3:2 card's own width (100cqw) here. So
+   the name wraps and sits the same *relative to its box* on both, at the card's
+   smaller absolute size. Every deviation from #mobile-board-title below was a
+   way the two came out different: no side padding (the name breaks at the
+   card's edge, not short of it), the same 20-96px clamp, and no overflow-wrap
+   that would break where the masthead would not. */
+.title-card {
+  position: relative;
+  /* The item's footprint can be taller than 3:2 once snapping rounds it up to
+     whole cells; the card holds its exact 3:2 and the .item-body grid below
+     parks it (top by default), so the extra height falls as slack around it. */
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* The same paper and hairline outline every card wears - see .card. An inset
+     shadow rather than a border so the item's corner clip does not shave it,
+     plus the shared drop shadow: on the card itself, not an #item-shadows twin,
+     because the twin would trace the taller item box and not this 3:2 card
+     (canvas/items.js skips the twin for the title). */
+  border-radius: inherit;
+  background: var(--paper-card);
+  box-shadow: inset 0 0 0 var(--hairline) var(--item-border), var(--item-shadow);
+  /* The size query the font-size reads. Content-box, so it is the card's width. */
+  container-type: size;
+  overflow: hidden;
+}
+/* The title's box is a grid of one stretched cell, so the 3:2 card can be parked
+   against the top, middle or bottom of whatever height the item has. data-valign
+   is written by canvas/items.js from the item's meta and set by dragging the
+   card on a snapped board (canvas/input.js). Top by default: slack below. */
+/* Every .item paints a card face (var(--item-bg)) across its whole box, which
+   content normally covers edge to edge. The 3:2 title card covers only the top
+   of its taller snapped box, so that face would show through the slack as a
+   second card - the "undercard". The card carries its own paper, so the item box
+   underneath it is transparent. */
+.item[data-type="title"] {
+  background: transparent;
+  /* A size container, so the selection ring below can read the item box in cqw /
+     cqh and pull its top and bottom in to the 3:2 card. The card's own
+     container-type:size still governs its text (nearest container wins), so this
+     only serves the ring. */
+  container-type: size;
+}
+/* The selection ring hugs the 3:2 card, not the taller 4:3 item hitbox. The card
+   is full item width, so left/right stay at the item edge; top and bottom pull
+   in by the slack the centring leaves - half the difference between the item
+   height (100cqh) and the card height (the card is 3:2, so 100cqw * 2/3, i.e.
+   200cqw/3). The radius is untouched: card and item share --own-radius. */
+.item[data-type="title"].is-selected::before,
+.item[data-type="title"].is-stick-target::before {
+  top: calc(50cqh - 100cqw / 3 - var(--sel-edge));
+  bottom: calc(50cqh - 100cqw / 3 - var(--sel-edge));
+  left: calc(-1 * var(--sel-edge));
+  right: calc(-1 * var(--sel-edge));
+}
+/* The hover ring (.item:hover) traces the full item box too, so it would ring
+   the slack as well as the card. Suppressed here - the card is what hover
+   should read on, and its own paint carries the pointer feedback. */
+.item[data-type="title"]:hover { box-shadow: none; }
+.item[data-type="title"] .item-body {
+  /* A flex column, not a grid: the card keeps its own 3:2 height and stays
+     centred in whatever height the item has. A grid item defaults to
+     align-self:stretch and would be pulled to the full box height, at which
+     point the explicit height wins over aspect-ratio and the card comes out 4:3.
+     In a column the card's main-axis size stays its content/aspect height
+     (flex-basis auto, no grow), while align-items:stretch gives it the full
+     width, and justify-content:center splits any snap slack evenly above and
+     below. */
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  /* Not clipped, unlike a normal item-body: the card's drop shadow is a CSS
+     box-shadow on .title-card (there is no shadow twin for the title), and the
+     body's overflow:hidden would cut it into a hard-edged block pooling in the
+     slack - the "undercard" look. The card is smaller than the body and rounds
+     its own content, so nothing here needs the clip. */
+  overflow: visible;
+}
+.title-name {
+  margin: 0;
+  /* min-width:0 puts the wrap back on a flex item that would otherwise sit at
+     its max-content width; max-width holds it inside the card. Both mirror
+     #mobile-board-title. */
+  min-width: 0;
+  max-width: 100%;
+  text-align: center;
+  font-family: var(--font-display);
+  color: var(--ink);
+  font-weight: 700;
+  /* A pure fraction of the card's own width - no screen-pixel clamp here. The
+     masthead's 20-96px clamp is folded into --mobile-title-ratio by
+     ui/mobile-header.js (the masthead's effective font over the board width), so
+     the card runs its text at exactly the masthead's ratio and wraps the same,
+     at any zoom. Falls back to the raw size dial before the ratio is written. */
+  font-size: calc(100cqw
+    * var(--mobile-title-ratio, var(--mobile-title-scale, 0.13))
+    * var(--mobile-title-fit, 1));
+  line-height: normal;
+  /* Font height is a vertical-only scale; the offset nudges the name up or down
+     the card as a fraction of its height (100cqh), as the masthead does against
+     its band height. */
+  transform:
+    translateY(calc(100cqh * var(--mobile-title-offset, 0) / 100))
+    scaleY(var(--mobile-title-stretch, 1));
+  transform-origin: 50% 52%;
+  /* The masthead's wrapping, one for one, so the same name breaks the same on
+     both boards. text-wrap:balance is what splits "New board Jul 29" into even
+     rows ("New board" / "Jul 29") rather than the greedy "New board Jul" / "29";
+     overflow-wrap:anywhere breaks a single word too long to fit rather than
+     letting it run off the edge; the -webkit-box line clamp caps it at four rows
+     and the padding-block gives the last row's descenders room, exactly as on
+     #mobile-board-title. */
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+  padding-block: 0.2em 0.45em;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* Not wrapping: one line - the Desktop echo of #mobile-board-title[data-nowrap].
+   flex:none + max-width:none let an over-long line take its own width so the
+   card's centring keeps it centred (and the card's overflow trims each end
+   evenly), the same reasoning the masthead gives; the fit shrink in
+   ui/mobile-header.js then pulls it back inside the card so it does not clip. */
+.title-name[data-nowrap] { white-space: pre; flex: none; max-width: none; }
+/* A board nobody has named yet, held more quietly - as on the masthead. */
+.title-name.is-untitled { opacity: 0.45; }
+/* No foot strip: the title card is a name and nothing else. */
+.item[data-type="title"] .item-bar { display: none; }
+
+/* The title card's two pop-up buttons, stacked off the RIGHT edge of the card:
+   the pen on top opens the shared style panel, the T below it drops into inline
+   rename of the board name. canvas/items.js builds both on the card and leaves
+   them there; they show on hover or while the card is selected (the rule below).
+   Sized and offset in --iz (= 1/zoom) so they hold a constant on-screen size and
+   gap the way the resize grips do. */
+.item-pen,
+.item-rename {
+  position: absolute;
+  top: 50%;
+  left: 100%;
+  margin-left: calc(10px * var(--iz, 1));
+  width: calc(30px * var(--iz, 1));
+  height: calc(30px * var(--iz, 1));
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: calc(9px * var(--iz, 1));
+  background: var(--paper-card);
+  box-shadow: var(--shadow-1);
+  color: var(--ink-2);
+  cursor: pointer;
+  z-index: 3;
+  /* Hidden until the card is hovered or selected - see the reveal below. */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+/* Straddle the card's mid-line: the pen sits half a button-and-gap above it, the
+   T the same below, so the pair is centred on the card's right edge. */
+.item-pen { transform: translateY(calc(-50% - 18px * var(--iz, 1))); }
+.item-rename {
+  transform: translateY(calc(-50% + 18px * var(--iz, 1)));
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: calc(16px * var(--iz, 1));
+  line-height: 1;
+}
+.item[data-type="title"]:hover .item-pen,
+.item[data-type="title"]:hover .item-rename,
+.item[data-type="title"].is-selected .item-pen,
+.item[data-type="title"].is-selected .item-rename {
+  opacity: 1;
+  pointer-events: auto;
+}
+.item-pen:hover,
+.item-rename:hover { background: var(--paper-2); color: var(--accent-deep); border-color: var(--accent); }
+.item-pen svg { width: calc(16px * var(--iz, 1)); height: calc(16px * var(--iz, 1)); }
+/* Gone once the card is too small to aim at, the same rung the grips vanish on. */
+#world.zoom-tiny .item-pen,
+#world.zoom-tiny .item-rename { display: none; }
+/* Inline rename in progress: the caret's ring, and pre-wrap so a trailing space
+   is typeable - the same treatment #mobile-board-title[contenteditable] gets. */
+.title-name[contenteditable="true"],
+.title-name[contenteditable="plaintext-only"] {
+  outline: var(--sel-line) solid var(--select);
+  outline-offset: var(--sel-gap);
+  border-radius: var(--radius-sm);
+  white-space: pre-wrap;
+}
+
 :root[data-board-mode="mobile"] #axis-ink,
 :root[data-board-mode="mobile"] #origin-mark,
 :root[data-board-mode="mobile"] #web { display: none !important; }
@@ -1291,6 +1500,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
    one control worth hitting from across the board. The bar's type and its
    3px line are both under a pixel down here. */
 #world.zoom-far .transport-video { display: none; }
+/* And the big centre play with it: past the chrome rung a clip is a swatch to
+   move around, not one to start, and a button sitting in the middle of it only
+   gets in the way of picking the card up. */
+#world.zoom-far .vbig { display: none; }
 
 /* Notes: the one item type born on the board, so it is drawn as a sticky
    rather than as a filed card - a square of coloured pad paper, cut corners,
@@ -1864,8 +2077,9 @@ plates do: below a third of size a card is a coloured tile, and a click on
   position: absolute;
   /* Capped at half the *ring*, not half the item: opposite marks then meet
      exactly at the middle of each side without crossing, and a small item at
-     low zoom - where the ring stands off further in world units than the item
-     is wide - still gets a box big enough to hold its own curve. */
+     low zoom still gets a box big enough to hold its own curve. This sizes the
+     drawn mark (::after); the grab (::before) no longer reads it - the grab lives
+     entirely outside the card now, so the whole face stays a move target. */
   width:  min(var(--mark-size), calc(50% + var(--sel-edge)));
   height: min(var(--mark-size), calc(50% + var(--sel-edge)));
   display: none;
@@ -1875,6 +2089,11 @@ plates do: below a third of size a card is a coloured tile, and a click on
 /* Grips outlast the labels: gone only when the card is too small to aim at, two
    rungs below where the chrome drops. See GRIP_MIN_ZOOM in viewport.js. */
 #world.zoom-tiny .grip { display: none; }
+/* Below the grab rung (zoom-grab, 25%) a corner resizes only from the part of its
+   hitbox outside the card, and the whole face becomes a move target; above the
+   rung the corner resizes normally, on-card lap included. Done by clipping the
+   hitbox geometry per zoom (see the zoom-grab .grip::before rule), so the face's
+   own cursor and move behaviour are correct on the first frame - no JS. */
 
 /* The corner mark. Not a separate line near the ring - the *same* line, drawn
    heavier for a stretch either side of each corner.
@@ -1973,25 +2192,55 @@ plates do: below a third of size a card is a coloured tile, and a click on
    depends on what is painted in front - a transparent PNG, a card with no
    background - and this does not. */
 .grip:not(.grip-edge)::before {
+  /* A constant square on screen, straddling the corner at ordinary zoom: it
+     reaches --grip-out past the ring and --grip-out back onto the card, centred on
+     the card's own corner, and its whole span resizes - the on-card lap included.
+     Below the chrome rung it is clipped to the outside half instead (see the
+     zoom-far rule below), which is where the move-vs-resize split lives. This is
+     only the corner; the outside strips along the edges are the edge grips. */
   inset: auto;
-  /* The grab square: a constant size on screen, but never more than the item's
-     own half (100% of this grip, which is capped at half the card). Zoomed in
-     the constant size wins; zoomed far out the half-card cap wins, so the box
-     stops at the card's edge instead of reaching across a neighbour. Both the
-     size and the offset use it, so the inner corner stays exactly on the card's
-     corner whichever wins. */
-  --grip-box: min(var(--grip-corner, 24px) * var(--grip-reach), 100%);
-  width:  var(--grip-box);
-  height: var(--grip-box);
+  --grip-out: calc(var(--grip-corner, 24px) * var(--grip-reach));
+  width:  calc(2 * var(--grip-out));
+  height: calc(2 * var(--grip-out));
 }
+/* Centred on the card's corner (--sel-edge is the ring's offset): --grip-out
+   reaches out past it, --grip-out laps back onto the card. */
 .grip[data-g="nw"]::before,
-.grip[data-g="sw"]::before { left: calc(var(--sel-edge) - var(--grip-box)); }
+.grip[data-g="sw"]::before { left:   calc(var(--sel-edge) - var(--grip-out)); }
 .grip[data-g="ne"]::before,
-.grip[data-g="se"]::before { right: calc(var(--sel-edge) - var(--grip-box)); }
+.grip[data-g="se"]::before { right:  calc(var(--sel-edge) - var(--grip-out)); }
 .grip[data-g="nw"]::before,
-.grip[data-g="ne"]::before { top: calc(var(--sel-edge) - var(--grip-box)); }
+.grip[data-g="ne"]::before { top:    calc(var(--sel-edge) - var(--grip-out)); }
 .grip[data-g="sw"]::before,
-.grip[data-g="se"]::before { bottom: calc(var(--sel-edge) - var(--grip-box)); }
+.grip[data-g="se"]::before { bottom: calc(var(--sel-edge) - var(--grip-out)); }
+
+/* Below the grab rung (zoom-grab, 25%) a card is a swatch its corners would
+   otherwise cover, so there the hitbox is clipped to just its outside half - the
+   inner corner lands exactly on the card's own corner and it reaches only outward
+   (width falls from 2*--grip-out to --grip-out, the offsets above hold the outer
+   corner in place). This is the whole fix, and it is geometry, not a JS patch:
+   with no hitbox over the face, the face itself takes every press and its own
+   cursor - so the card moves and reads as movable the instant it is drawn, no
+   pointermove needed to correct a cursor after the fact. And the corner mark's
+   hover swell cannot fire over the card either, because there is no grip there to
+   hover. Only the part sticking out past the card resizes, and shows the resize
+   cursor. Above the rung the hitbox straddles and its on-card lap resizes as
+   usual. */
+#world.zoom-grab .grip:not(.grip-edge)::before {
+  width:  var(--grip-out);
+  height: var(--grip-out);
+}
+
+/* Interior controls ride above the grips (z-index 2) so the corner mark and its
+   grab box, which straddle onto the card at ordinary zoom, do not tint them or
+   show a resize cursor over them - the control keeps the eye and the pointer. It
+   works without this too (input.js hands a grip press over a control back to it),
+   but the raise keeps the cursor honest. Only the ones sitting *inside* the card
+   face are raised: the big video play, a link's anchor, the two scrubbers. */
+.vbig,
+.wave,
+.vtrack,
+.card-link .card-name { position: relative; z-index: 3; }
 
 /* Edge handles are invisible strips running between the corners. Drawing them
    would put eight marks around a small item and make the selection read as a
@@ -2974,6 +3223,28 @@ kbd {
   gap: 8px;
 }
 
+/* The title card's way back, beside the bin. A square that carries the same
+   weight as the trash button next to it; ui/trash.js shows it only while the bin
+   is open and the card is gone. The accent edge says "there is a thing here to
+   press", the way a full bin does. */
+#title-restore {
+  display: grid;
+  place-items: center;
+  width: var(--chrome-button-w);
+  height: var(--chrome-button-h);
+  border: var(--hairline) solid var(--accent);
+  border-radius: var(--leaf);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-1);
+  color: var(--accent-deep);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease);
+}
+#title-restore[hidden] { display: none; }
+#title-restore:hover { background: var(--paper-2); }
+#title-restore svg { width: 17px; height: 17px; }
+
 /* The same segmented pill as #zoom-ctl in the opposite corner - one object with
    a hairline seam, not two buttons that happen to be adjacent. Each half takes
    exactly the space of one permanent chrome button, so the bin, undo, redo and
@@ -3630,9 +3901,10 @@ kbd {
   }
 
   /* Marks keep their drawn size and the targets around them grow. A finger is
-     not a pointer: 9px of slop each way on the edge strips, and a corner square
-     of 40 rather than 24 - still laid outside the item, so a thumb on the card
-     is still a drag. */
+     not a pointer: 9px of slop each way on the edge strips, and a corner reach of
+     40 past the ring rather than 24, so a thumb finds the corner without a
+     magnifying pinch. Only the outside of the corner resizes anyway (input.js),
+     so the reach onto the card is never in the way. */
   /* The edge strips are pure hit area, so --grip-edge is the target itself -
      and it sets the offset as well as the thickness, so a wider strip grows
      away from the card rather than over it. */

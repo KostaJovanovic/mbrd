@@ -529,6 +529,18 @@
         <path d="M6.6 6.5v5M9.4 6.5v5"/>
       </svg>
     </button>
+    <!-- The Desktop title card, when it has been thrown away, is not filed in the
+         bin among ordinary items - it is a singleton the board is meant to have.
+         So it gets its own way back: this small square appears in the dock while
+         the bin is open and the card is gone, and one press restores it. Hidden
+         to start and toggled by ui/trash.js. -->
+    <button type="button" id="title-restore" hidden
+            aria-label="Bring back the title card" title="Bring back the title card">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M4 4.5h8"/>
+        <path d="M8 4.5v7"/>
+      </svg>
+    </button>
     <!-- Undo and redo. Beside the bin because they belong to the same thought -
          the bin is the one mistake you can walk back by hand, and these are
          every other one - and a segmented pair like the zoom cluster opposite,

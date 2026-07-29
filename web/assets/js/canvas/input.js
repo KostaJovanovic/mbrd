@@ -39,6 +39,13 @@ const LONG_PRESS_MS = 480;
 const LONG_PRESS_CONTEXT_GUARD_MS = 900;
 const LONG_PRESS_CONTEXT_GUARD_PX = 24;
 
+// Controls a straddling corner hitbox can cover and must hand the press back to,
+// rather than resize over: buttons (play, mute, the big video play), a link's
+// anchor, the two scrubbers, a text field. Deliberately *not* the full-card
+// surfaces - a model stage, a picture, a note's editable body fill the card
+// corner to corner, and a corner over those is meant to resize. See onDown().
+const GRIP_YIELD = 'button, a[href], input, .wave, .vtrack';
+
 /** Whether two touch points form the two taps of one deliberate gesture. */
 export function isDoubleTap(previous, current) {
   if (!previous || !current) return false;
@@ -511,9 +518,41 @@ export function initInput(vp, cmds) {
     }
     if (pointers.size > 2) return;
 
-    const target = e.target instanceof Element ? e.target : null;
-    const grip = target?.closest('.grip') || null;
-    const id = itemIdFromEvent(e.target);
+    let target = e.target instanceof Element ? e.target : null;
+    let grip = target?.closest('.grip') || null;
+    // A corner hitbox straddles the corner and paints over the card (z-index 2),
+    // so a press on a control tucked into a corner - a play button, a scrubber, a
+    // link - arrives as the grip. Look past it: if the real element under the
+    // point is one of those controls, yield the corner and let the control take
+    // the press. Not the full-card surfaces (a model stage, a picture): a corner
+    // over those is meant to resize. Below the chrome rung the hitbox is clipped
+    // to outside the card (see .grip::before), so it covers no control there and
+    // this never fires - the on-card move behaviour is the CSS clip's, not this.
+    if (grip) {
+      for (const node of document.elementsFromPoint(e.clientX, e.clientY)) {
+        if (!(node instanceof Element) || node.classList.contains('grip')) continue;
+        if (node.closest(GRIP_YIELD)) { grip = null; target = node; }
+        break;
+      }
+    }
+    const id = itemIdFromEvent(target);
+    // The title card's pen. Caught before the generic widget branch below (a
+    // button would otherwise just select the card): it opens the shared style
+    // panel and claims the whole press, so the card underneath neither drags nor
+    // deselects. Selection is left as-is - the pen only exists while selected.
+    if (target?.closest('.item-pen')) {
+      cmds.editTitle?.();
+      pointers.delete(e.pointerId);
+      return;
+    }
+    // The title card's T button, caught the same way: it drops into inline rename
+    // of the board name and claims the press, so the card neither drags nor
+    // deselects underneath it.
+    if (target?.closest('.item-rename')) {
+      cmds.editTitleText?.();
+      pointers.delete(e.pointerId);
+      return;
+    }
     // A real control inside a card (the audio scrubber, a note being edited)
     // owns the whole gesture: no capture, no drag. Capturing here would redirect
     // every following pointermove to #viewport and leave the scrubber dead.
@@ -550,10 +589,16 @@ export function initInput(vp, cmds) {
       }
       e.preventDefault();
       startPan(e);
-    } else if (grip && id) {
-      // A grip press is only a candidate. Waiting for movement lets the
-      // southeast target double as the menu button it visually shares a corner
-      // with, and avoids touching snapped geometry on a plain tap.
+    } else if (grip && id && selection.size <= 1) {
+      // A grip press is only a candidate. Waiting for movement keeps a plain tap
+      // on a corner from touching snapped geometry, and leaves the tap free to
+      // mean select rather than a zero-distance resize.
+      //
+      // Resize is a single-card operation: it drives one item's geometry off one
+      // grip, and there is no defined answer for what a corner drag means across
+      // a whole selection. So with more than one card selected a grip press is
+      // not a resize at all - it falls through to the move branch below and picks
+      // the selection up, the same as a press anywhere else on the card.
       g = {
         kind: 'resize-pending',
         id,
@@ -568,7 +613,18 @@ export function initInput(vp, cmds) {
       // second tap turns into select.
       const p = vp.toWorld(e.clientX, e.clientY);
       g = { kind: 'touch-marquee', clientX: e.clientX, clientY: e.clientY, x0: p.x, y0: p.y };
-    } else if (id && needsTapFirst(id)) {
+    } else if (id && needsTapFirst(id) && (e.pointerType === 'touch' || vp.isMobile)) {
+      // Touch, or the mobile layout whatever the pointer. A finger - and the
+      // mobile board, which is a vertical feed you scroll far more than you
+      // rearrange - navigates more than it drags, so a press on an unpicked card
+      // pans and selects on lift: the two-step gate that keeps a scroll from
+      // quietly dragging a card.
+      //
+      // A mouse on the desktop board has no such tension: a left press on a card
+      // is a grab, and waiting for a select-then-drag felt broken. So there the
+      // pointer falls through to the move branch below, which selects and picks
+      // the card up at once.
+      //
       // Pan now, decide on the lift. Nothing is selected here: a press that
       // turns into a drag has to leave the board exactly as a press on empty
       // space would, or the gate would still be moving the selection about.
@@ -704,7 +760,13 @@ export function initInput(vp, cmds) {
       if (!g.moved && Math.hypot(dx * vp.zoom, dy * vp.zoom) < DRAG_SLOP) return;
       // The press has become a drag. Raise now, so the stack change belongs to
       // the move that is about to be committed - see raiseToFront.
-      if (!g.moved) raiseToFront(g.moving);
+      if (!g.moved) {
+        raiseToFront(g.moving);
+        // The pointer is captured by #viewport, so the cursor is #viewport's
+        // however far the card under it wants a grabbing hand. Mark the viewport
+        // for the length of the drag - see #viewport.is-moving in the CSS.
+        el.classList.add('is-moving');
+      }
       g.moved = true;
       // Snap the dragged item; everything else keeps its offset from it, so a
       // multi-selection moves rigidly instead of collapsing onto the grid.
@@ -908,7 +970,7 @@ export function initInput(vp, cmds) {
     if (g.kind === 'move' && g.moved) commitGeom('Move', g.before, g.driven);
     if (g.kind === 'resize') commitGeom('Resize', g.before, g.driven);
     g.node?.classList.remove('is-resizing');
-    el.classList.remove('is-panning');
+    el.classList.remove('is-panning', 'is-moving');
     showStickTarget(null);
     g = null;
     syncItems();
@@ -921,7 +983,7 @@ export function initInput(vp, cmds) {
     if (g.kind === 'resize') commitGeom('Resize', g.before, g.driven);
     if (g.kind === 'marquee') marquee.hidden = true;
     g.node?.classList.remove('is-resizing');
-    el.classList.remove('is-panning');
+    el.classList.remove('is-panning', 'is-moving');
     showStickTarget(null);
     g = null;
   }
@@ -967,6 +1029,9 @@ export function initInput(vp, cmds) {
     const id = itemIdFromEvent(e.target);
     if (!id) return;
     if (byId(id)?.type === 'note') cmds.editNote(id);
+    // A double-click on the title card renames the board inline, the same as its
+    // T button - the one gesture besides the note edit that survives here.
+    else if (byId(id)?.type === 'title') cmds.editTitleText?.();
   });
 
   // ---- keyboard ---------------------------------------------------------
@@ -1033,7 +1098,14 @@ export function initInput(vp, cmds) {
       case 'Delete': case 'Backspace': cmds.deleteSelection(); e.preventDefault(); break;
       // One item only: a rename has to put the caret somewhere, and a group
       // selection has no single name to put it in.
-      case 'F2': if (selection.size === 1) { editItemName([...selection][0]); e.preventDefault(); } break;
+      case 'F2': if (selection.size === 1) {
+        const only = [...selection][0];
+        // The title card has no item name of its own - F2 renames the board on
+        // it, the same as its T button, where every other card edits its caption.
+        if (byId(only)?.type === 'title') cmds.editTitleText?.();
+        else editItemName(only);
+        e.preventDefault();
+      } break;
       case '0': cmds.recenter(); break;
       case 'f': case 'F': cmds.fit(); break;
       case '+': case '=': vp.zoomBy(1.25, zoomMs()); break;

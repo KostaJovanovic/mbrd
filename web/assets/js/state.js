@@ -113,7 +113,6 @@ export const DEFAULT_SETTINGS = {
   paperResize: false,
   appearance: { palette: '', vars: {} },
   fonts: [],           // faces dropped onto this board - see ui/fonts.js
-  mobileHeader: DEFAULT_MOBILE_HEADER,
 };
 
 export const BOARD_MODES = ['desktop', 'mobile'];
@@ -210,10 +209,6 @@ function cloneSettings(settings) {
           return copy;
         })
       : [],
-    mobileHeader: {
-      ...(settings?.mobileHeader || DEFAULT_MOBILE_HEADER),
-      axes: { ...(settings?.mobileHeader?.axes || {}) },
-    },
   };
 }
 
@@ -241,7 +236,6 @@ function defaultLayoutSettings(mode) {
       vars: mode === 'mobile' ? { ...MOBILE_APPEARANCE_VARS } : {},
     },
     fonts: [],
-    mobileHeader: DEFAULT_MOBILE_HEADER,
   });
 }
 
@@ -274,9 +268,26 @@ export const board = {
   layoutMode: 'desktop',
   layouts: { desktop: [], mobile: [] },
   items: [],
+  // The board name's typography, styled by ui/mobile-header.js. Board-level
+  // rather than per-layout on purpose: the Mobile masthead and the Desktop
+  // title card (type 'title') are one identity set in one place, so a change
+  // on either shows on both. Older .mbrd files carry it under settings; load
+  // reads that as the fallback.
+  mobileHeader: DEFAULT_MOBILE_HEADER,
+  // The Desktop title card is present by default; deleting it sets this rather
+  // than filing it in the bin - see removeItems() and ui/trash.js's restore
+  // button. Persisted, so a board opens the way it was left.
+  titleHidden: false,
   // Thrown away but not gone. Entries are { item, at }, newest first.
   trash: [],
 };
+
+/**
+ * The Desktop title card is a singleton, so it carries a fixed id rather than a
+ * minted one - its geometry then travels in board.layouts like any item's, and
+ * a delete-then-restore lands the same card back rather than a new one.
+ */
+export const TITLE_ID = '__title__';
 
 export const selection = new Set();
 
@@ -691,7 +702,10 @@ function repackMobileBoard() {
   // Stuck notes ride their host through a reflow instead of being repacked into
   // their own column slot; they keep their size and follow the host to its new
   // place. See attachRiders().
-  const packable = ordered.filter(it => !isRider(it));
+  // The Desktop title card is not part of the Mobile board at all: it is neither
+  // packed into a column nor an obstacle for what is, and applyGeom below leaves
+  // its geometry untouched (it never lands in `target`).
+  const packable = ordered.filter(it => !isRider(it) && it.type !== 'title');
   const riders = ordered.filter(isRider);
   const target = new Map(placeMobileItems(packable, []).map(item => [item.id, item]));
   attachRiders(riders, target, (note, hostSrc, hostDst) => {
@@ -780,9 +794,16 @@ export function removeItems(ids, label = 'Delete') {
     .map((item, index) => ({ item, index }))
     .filter(r => set.has(r.item.id));
   if (!removed.length) return;
-  // Built once, outside the closures, so redoing a delete puts the *same*
-  // entries back in the bin rather than minting new ones with a later date.
-  const binned = removed.map(r => ({ item: r.item, at: Date.now() }));
+  // The Desktop title card does not go to the bin - it is a singleton the board
+  // is meant to have, so it is hidden and offered back by its own restore button
+  // (see ui/trash.js) rather than filed among thrown-away items. Only the rest
+  // are binned; deleting the title also flips the flag, and undo flips it back.
+  const titleGone = removed.some(r => r.item.type === 'title');
+  const wasHidden = board.titleHidden;
+  const binned = removed
+    .filter(r => r.item.type !== 'title')
+    .map(r => ({ item: r.item, at: Date.now() }));
+  const binIds = new Set(binned.map(b => b.item.id));
   // What this delete pushed out the bottom of the bin, so undo can put it back.
   //
   // Truncating used to be a one-liner on the grounds that the entries falling
@@ -797,18 +818,98 @@ export function removeItems(ids, label = 'Delete') {
   commit(label,
     () => { board.items = board.items.filter(i => !set.has(i.id));
             set.forEach(id => selection.delete(id));
+            if (titleGone) board.titleHidden = true;
             board.trash.unshift(...binned);
             evicted = board.trash.splice(TRASH_LIMIT);   // [] while under the limit
             bus.emit('items', { added: [], removed: [...set] });
             bus.emit('selection'); bus.emit('trash'); },
     () => { for (const r of removed) board.items.splice(r.index, 0, r.item);
-            board.trash = board.trash.filter(t => !set.has(t.item.id));
+            board.titleHidden = wasHidden;
+            board.trash = board.trash.filter(t => !binIds.has(t.item.id));
             // Back on the end, which is where they were: the entries this
             // command added went on the front, and undo has just taken them off.
             board.trash.push(...evicted);
             evicted = [];
             bus.emit('items', { added: removed.map(r => r.item.id), removed: [] });
             bus.emit('trash'); });
+}
+
+/**
+ * The Desktop title card: its fixed geometry and the two helpers that keep it a
+ * singleton. Defined here, below the item plumbing, so it can lean on makeItem.
+ */
+// Four grid spaces wide at the default 64px grid step, and 3:2 tall (256 * 2/3
+// = 170.67) - the Mobile masthead's own aspect (MOBILE_HEADER_ASPECT). The card
+// visual is held to an exact 3:2 in CSS; this is the item's footprint. Snapping
+// rounds it up to whole cells (4x3 = 256x192), and the card stays 3:2 and
+// top-aligned inside, so the extra height falls as slack below it.
+const TITLE_SIZE = Object.freeze({ w: 256, h: 171 });
+// Top-centre, above where a fresh board's items land: x centres it (item x is
+// the box centre), +y is up (world plane), so this sits the card over the origin.
+// One grid space (64) higher than it first sat, to clear the content below it.
+const TITLE_DEFAULT_POS = Object.freeze({ x: 0, y: 244 });
+
+function makeTitleItem(at = null) {
+  return makeItem({
+    id: TITLE_ID,
+    type: 'title',
+    x: at?.x ?? TITLE_DEFAULT_POS.x,
+    y: at?.y ?? TITLE_DEFAULT_POS.y,
+    w: TITLE_SIZE.w,
+    h: TITLE_SIZE.h,
+  });
+}
+
+/**
+ * Put the title card on the board if it belongs there and is missing. Board
+ * hydration, not a user edit: no commit, no history - it runs on load and at
+ * startup, the same way default settings are simply present. A board that threw
+ * the card away (titleHidden) keeps it away.
+ */
+export function ensureTitleCard() {
+  if (board.titleHidden) return;
+  if (board.items.some(i => i.type === 'title')) return;
+  board.items.push(makeTitleItem());
+}
+
+/** Whether the Desktop title card is currently thrown away (bin shows its button). */
+export const isTitleHidden = () => !!board.titleHidden;
+
+/**
+ * Send the title card back to its default spot (top-centre). The card is a
+ * movable singleton with no other way home short of deleting and restoring it,
+ * so this is its "Reset size" - one undoable step, and a no-op if it is already
+ * there. Uses the same geometry funnel a drag does, so it snaps and round-trips
+ * like any move.
+ */
+export function resetTitlePosition() {
+  const item = board.items.find(i => i.type === 'title');
+  if (!item) return;
+  if (item.x === TITLE_DEFAULT_POS.x && item.y === TITLE_DEFAULT_POS.y) return;
+  const before = snapshotGeom([item.id]);
+  applyGeom([{ id: item.id, x: TITLE_DEFAULT_POS.x, y: TITLE_DEFAULT_POS.y,
+               w: item.w, h: item.h, rot: item.rot, z: item.z }]);
+  commitGeom('Reset title position', before, [item.id]);
+}
+
+/**
+ * Bring the title card back from its deleted state - the bin's restore button.
+ * Undoable, unlike ensureTitleCard(): this is a user action, so it earns a
+ * history step the way restoring a binned item does.
+ */
+export function restoreTitleCard(at = null) {
+  if (!board.titleHidden && board.items.some(i => i.type === 'title')) return;
+  const item = makeTitleItem(at);
+  commit('Restore title',
+    () => { board.titleHidden = false;
+            if (!board.items.some(i => i.id === item.id)) board.items.push(item);
+            bus.emit('items', { added: [item.id], removed: [] });
+            bus.emit('trash'); },
+    () => { board.titleHidden = true;
+            board.items = board.items.filter(i => i.id !== item.id);
+            selection.delete(item.id);
+            bus.emit('items', { added: [], removed: [item.id] });
+            bus.emit('selection'); bus.emit('trash'); });
 }
 
 /**
@@ -968,6 +1069,9 @@ function completeLayout(mode) {
     // through to being packed like anything else.
     const riders = [];
     for (const it of board.items) {
+      // The Desktop title card carries no Mobile place - keep whatever geometry
+      // it had (never rendered on Mobile) and take it out of the packing sweep.
+      if (it.type === 'title') { map.set(it.id, map.get(it.id) || geometryOf(it)); continue; }
       if (isRider(it)) { riders.push(it); continue; }
       const saved = map.get(it.id);
       if (!saved) {
@@ -1394,7 +1498,14 @@ function stackGroups() {
  */
 function itemsIn(ids) {
   const set = ids instanceof Set ? ids : new Set(ids);
-  return board.items.filter(i => set.has(i.id)).sort((a, b) => (a.z || 0) - (b.z || 0));
+  // The title card is a board-bound singleton: it cannot be copied, cut,
+  // duplicated or pasted. Excluded here - the one funnel all four go through
+  // (copy, cut, duplicate; paste reads the clipboard this fills) - so a group
+  // that happens to include it simply leaves it behind rather than the whole
+  // operation refusing.
+  return board.items
+    .filter(i => set.has(i.id) && i.type !== 'title')
+    .sort((a, b) => (a.z || 0) - (b.z || 0));
 }
 
 /**
@@ -2215,9 +2326,14 @@ export function setSetting(key, value) {
     value = mobileColumnCount(value);
   }
   if (key === 'mobileHeader') {
-    if (board.layoutMode !== 'mobile') return;
+    // Board-level and editable from either layout: the Mobile masthead and the
+    // Desktop title card share this one style.
     value = normalizeMobileHeader(value);
-    if (JSON.stringify(board.settings.mobileHeader) === JSON.stringify(value)) return;
+    if (JSON.stringify(board.mobileHeader) === JSON.stringify(value)) return;
+    board.mobileHeader = value;
+    markDirty();
+    bus.emit('settings', key);
+    return;
   }
   if (key === 'fonts') {
     const fonts = normalizeFonts(value);
@@ -2294,8 +2410,13 @@ export function loadBoard(data) {
   board.arrangements = next.arrangements;
   board.layouts = next.layouts;
   board.items = next.items;
+  board.mobileHeader = next.mobileHeader;
+  board.titleHidden = next.titleHidden;
   board.trash = next.trash;
   board.layoutMode = layoutMode;
+  // The Desktop title card is seeded by the app (main.js, on 'board:load'), not
+  // here: keeping loadBoard() free of it lets state tests load and serialise a
+  // board of exactly the items they gave it. See ensureTitleCard().
   // Before completeLayout(): the Mobile carry below asks stuckTo() where each
   // note belongs, so the memo has to hold *this* board's answers, not the last
   // board's. Seeding also drops the old board's ids, which two files can share.
@@ -2364,6 +2485,10 @@ function normalizeBoard(data) {
       pan: { x: +src.view?.pan?.x || 0, y: +src.view?.pan?.y || 0 },
       zoom: +src.view?.zoom || 1,
     },
+    // Board-level now; a file written before it moved here carries the style
+    // under settings.mobileHeader, so that is the fallback source.
+    mobileHeader: normalizeMobileHeader(src.mobileHeader ?? rawSettings.mobileHeader),
+    titleHidden: !!src.titleHidden,
     sharedAppearance,
     layoutSettings: {
       desktop: desktopRecord.settings
@@ -2442,7 +2567,6 @@ function normalizeSettings(raw, mode) {
     },
     // Both names and hashes become declarations or asset paths downstream.
     fonts: normalizeFonts(settings.fonts),
-    mobileHeader: normalizeMobileHeader(settings.mobileHeader),
     scale: clampScale(settings.scale),
     units: settings.units === 'imperial' ? 'imperial' : 'metric',
     paper: PAPERS.some(p => p.id === settings.paper) ? settings.paper : '',
@@ -2557,9 +2681,14 @@ export function serializeBoard() {
   return {
     title: board.title,
     view: { pan: { ...board.view.pan }, zoom: board.view.zoom },
+    // Board-level: the one style behind the Mobile masthead and the Desktop
+    // title card. Also mirrored into settings below (see desktopSettings) so a
+    // reader predating the move still finds it.
+    mobileHeader: normalizeMobileHeader(board.mobileHeader),
+    titleHidden: !!board.titleHidden,
     // Legacy readers see the Desktop half, matching the Desktop geometry kept in
     // items. New readers use each layout record below.
-    settings: desktopSettings,
+    settings: { ...desktopSettings, mobileHeader: normalizeMobileHeader(board.mobileHeader) },
     arrangement: board.arrangements.desktop,
     // Desktop stays in the traditional item fields for readers predating
     // profiles. New readers take the active geometry from `layouts`.

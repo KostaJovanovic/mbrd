@@ -51,6 +51,20 @@ test('the fallback exists, since classify can always reach it', () => {
   assert.ok(hasRenderer('generic'));
 });
 
+test('the title card has a renderer and a ~3:2 default box, but is not a file type', () => {
+  // The Desktop title card is a singleton the board seeds, never a dropped
+  // file - so classify() must never produce it, yet it needs both a renderer
+  // and a size like any other item type. Four cells wide at the default step,
+  // and 3:2 tall to a whole pixel (256 * 2/3 = 170.67 -> 171), so the ratio is
+  // the masthead's within a pixel rather than exactly 1.5.
+  assert.ok(hasRenderer('title'));
+  const { w, h } = defaultSize('title');
+  assert.equal(w, 256, 'four grid spaces wide at the default step');
+  assert.ok(Math.abs(w / h - 3 / 2) < 0.01, `the masthead aspect, got ${w}x${h}`);
+  assert.equal(classify(file('title.title')), 'generic',
+    'nothing a person can drop is ever classified as a title');
+});
+
 // ---------------------------------------------------------------------------
 // Classification itself
 // ---------------------------------------------------------------------------

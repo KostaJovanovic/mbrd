@@ -53,10 +53,32 @@ export function close() {
 export function openContextMenu(clientX, clientY, itemId, selectionSize) {
   close();
   const at = vp.toWorld(clientX, clientY);
-  const entries = itemId
-    ? itemEntries(itemId, selectionSize, at)
-    : canvasEntries(at);
+  const entries = !itemId ? canvasEntries(at)
+    // The title card is a singleton with its own short menu - never the group
+    // menu's copy/duplicate/cover/stack actions. Only when it is the whole
+    // selection; right-clicked inside a larger group it takes the group menu,
+    // where it is already excluded from copy and duplicate (see itemsIn).
+    : selectionSize <= 1 && cmds.isTitleCard(itemId) ? titleEntries(itemId, at)
+    : itemEntries(itemId, selectionSize, at);
   render(entries, clientX, clientY);
+}
+
+/**
+ * The Desktop title card's menu. It is the board's name made movable, not a
+ * copyable card: no Duplicate, no Copy, no picture or stacking. Editing its
+ * style is the pen's action, offered here too; Reset position is its way home
+ * (it is a movable singleton); Delete hides it, and the bin's restore button
+ * brings it back.
+ */
+function titleEntries(id, at) {
+  return [
+    { label: 'Edit style', action: () => cmds.editTitle() },
+    { label: 'Reset position', action: () => cmds.resetTitlePosition() },
+    { sep: true },
+    { label: 'Zoom to it', action: () => cmds.zoomToSelection() },
+    { sep: true },
+    { label: 'Delete', accel: 'Del', danger: true, action: () => cmds.deleteSelection() },
+  ];
 }
 
 // ---------------------------------------------------------------------------

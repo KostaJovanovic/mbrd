@@ -318,6 +318,10 @@ export function sync(restack = true) {
   for (const id of spatial.queryRect(r)) {
     const item = byId(id);
     if (!item) continue;
+    // The title card is not culled with the rest - it is handled once, below,
+    // so it stays mounted off-screen (ui/mobile-header.js must always find its
+    // node to style it) and never appears on the Mobile board.
+    if (item.type === 'title') continue;
     // The circumscribed radius rather than the tight box: it costs no trig,
     // it is right at any rotation, and erring towards mounting something just
     // off screen is free where erring the other way is a visible pop-in.
@@ -343,6 +347,19 @@ export function sync(restack = true) {
     if (!node.isConnected) worldEl.append(node);
     const shadow = shadows.get(id);
     if (shadow && !shadow.isConnected) shadowLayerEl.append(shadow);
+  }
+  // The title card, kept mounted whatever the pan so its style always has a node
+  // to land on. Desktop only: on Mobile it is left out of onScreen, so the
+  // detach pass below unmounts it (the masthead is Mobile's title instead).
+  if (board.layoutMode !== 'mobile') {
+    const title = board.items.find(i => i.type === 'title');
+    if (title) {
+      onScreen.add(title.id);
+      const node = nodes.get(title.id) || build(title);
+      if (!node.isConnected) worldEl.append(node);
+      const shadow = shadows.get(title.id);
+      if (shadow && !shadow.isConnected) shadowLayerEl.append(shadow);
+    }
   }
   // Detach pass. Walk what is mounted - bounded by the screen, not the board -
   // and let go of everything no longer on it. Detached either way; the question
@@ -428,7 +445,14 @@ function build(item) {
   el.append(bottomBar(item));
 
   nodes.set(item.id, el);
-  shadows.set(item.id, buildShadow(item, tilt));
+  // The title card carries its own drop shadow in CSS (box-shadow on
+  // .title-card), because the 3:2 card is smaller than its snapped item box and
+  // a twin placed at the box would sit taller than the card it shadows.
+  if (item.type !== 'title') shadows.set(item.id, buildShadow(item, tilt));
+  // The title card's pen and rename buttons live for the card's whole life - CSS
+  // shows them on hover or selection. A child of .item, like the grips, so they
+  // ride its transform and hold a constant on-screen size through --iz.
+  if (item.type === 'title') buildTitleControls(el);
   place(el, item);
   if (selection.has(item.id)) { el.classList.add('is-selected'); setGrips(el, true); }
   return el;
@@ -474,6 +498,9 @@ function buildShadow(item, tilt) {
 const GRIPS = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 
 function setGrips(el, want) {
+  // The title card moves but does not resize: its size is the style's size dial,
+  // not a drag on a corner. So it never gets grips, however it is selected.
+  if (el.dataset.type === 'title') want = false;
   if (!!el.dataset.grips === want) return;
   if (!want) {
     delete el.dataset.grips;
@@ -487,6 +514,35 @@ function setGrips(el, want) {
     grip.dataset.g = g;
     el.append(grip);
   }
+}
+
+/**
+ * The title card's two pop-up buttons: a pen to the RIGHT that opens the shared
+ * masthead style panel, and a T to the LEFT that drops into inline rename of the
+ * board name. Only the title card has them, built once and kept - app.css shows
+ * them on hover or while the card is selected. Children of `.item` like the grips,
+ * so they ride the card's transform and hold a constant on-screen size through
+ * --iz. The clicks themselves are caught by canvas/input.js (which owns cmds),
+ * the way grip and widget hits are - this only draws the buttons.
+ */
+function buildTitleControls(el) {
+  if (el.querySelector(':scope > .item-pen')) return;
+  const pen = document.createElement('button');
+  pen.type = 'button';
+  pen.className = 'item-pen';
+  pen.setAttribute('aria-label', 'Edit title style');
+  pen.title = 'Edit title style';
+  pen.innerHTML =
+    '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M11.5 2.5l2 2L6 12l-3 1 1-3z"/><path d="M10 4l2 2"/></svg>';
+  const rename = document.createElement('button');
+  rename.type = 'button';
+  rename.className = 'item-rename';
+  rename.setAttribute('aria-label', 'Rename board');
+  rename.title = 'Rename board';
+  rename.textContent = 'T';
+  el.append(pen, rename);
 }
 
 /**

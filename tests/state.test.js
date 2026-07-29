@@ -19,6 +19,7 @@ import {
   recheckBoardGeometry, baseStep, placeMobileItems,
   raiseSelection, lowerSelection, visualStackOrder, selectionHasStackOverlap,
   setTitle, cleanBoardTitle, cleanBoardTitleDraft, BOARD_TITLE_MAX,
+  ensureTitleCard, restoreTitleCard, isTitleHidden, resetTitlePosition, TITLE_ID,
 } from '../web/assets/js/state.js';
 import { itemBounds, overlapFraction, CELL_GAP } from '../web/assets/js/geometry.js';
 import { hash } from './helpers.js';
@@ -1048,7 +1049,7 @@ test('content is shared between both layouts, settings are not', () => {
   assert.equal(board.settings.spacing, 0, 'Mobile refuses a spacing value');
 });
 
-test('Mobile header typography stays with the Mobile layout and round-trips', () => {
+test('The board name style is board-wide, editable from either layout, and round-trips', () => {
   fresh();
   setBoardMode('mobile');
   setSetting('mobileHeader', {
@@ -1059,16 +1060,16 @@ test('Mobile header typography stays with the Mobile layout and round-trips', ()
     italic: true,
     axes: { opsz: 72, BAD: 4, 'TOO-LONG': 9 },
   });
-  assert.deepEqual(board.settings.mobileHeader, {
+  // Board-level now (board.mobileHeader), not per-layout: the Mobile masthead
+  // and the Desktop title card are one style. Bad or over-long axis tags are
+  // dropped; the unwritten fields land on their defaults - 100 is the face's own
+  // line height, wrap is on, offset centres. See DEFAULT_MOBILE_HEADER.
+  assert.deepEqual(board.mobileHeader, {
     font: 'Fraunces',
     size: 17.5,
     stretch: 135,
-    // Not written above, so these land on their defaults - and 100 is the face's
-    // own line height rather than a multiple of anything, while wrap is on for
-    // every board that has never said otherwise. See DEFAULT_MOBILE_HEADER.
     leading: 100,
     weight: 625,
-    // Unset above, so it centres - see DEFAULT_MOBILE_HEADER.
     offset: 0,
     italic: true,
     wrap: true,
@@ -1076,21 +1077,131 @@ test('Mobile header typography stays with the Mobile layout and round-trips', ()
   });
 
   const data = serializeBoard();
-  setBoardMode('desktop');
-  assert.equal(board.settings.mobileHeader.size, 13,
-    'Desktop retains its untouched profile');
-  setSetting('mobileHeader', { size: 24 });
-  assert.equal(board.settings.mobileHeader.size, 13,
-    'Desktop cannot write a Mobile-only setting');
 
-  loadBoard(data);
+  // Shared, not per-layout: Desktop sees the very same style...
+  setBoardMode('desktop');
+  assert.equal(board.mobileHeader.size, 17.5, 'Desktop sees the shared style');
+  // ...and may edit it (the title card's pen), with Mobile then seeing the change.
+  setSetting('mobileHeader', { ...board.mobileHeader, size: 24 });
+  assert.equal(board.mobileHeader.size, 24, 'Desktop can edit the shared style');
   setBoardMode('mobile');
-  assert.equal(board.settings.mobileHeader.size, 17.5);
-  assert.equal(board.settings.mobileHeader.stretch, 135);
-  assert.equal(board.settings.mobileHeader.leading, 100);
-  assert.equal(board.settings.mobileHeader.weight, 625);
-  assert.equal(board.settings.mobileHeader.italic, true);
-  assert.deepEqual(board.settings.mobileHeader.axes, { opsz: 72 });
+  assert.equal(board.mobileHeader.size, 24, 'the edit crossed to the other layout');
+
+  // The serialised style comes back whole.
+  loadBoard(data);
+  assert.equal(board.mobileHeader.size, 17.5);
+  assert.equal(board.mobileHeader.stretch, 135);
+  assert.equal(board.mobileHeader.leading, 100);
+  assert.equal(board.mobileHeader.weight, 625);
+  assert.equal(board.mobileHeader.italic, true);
+  assert.deepEqual(board.mobileHeader.axes, { opsz: 72 });
+});
+
+test('A board that stored the name style under settings still loads it', () => {
+  fresh();
+  // Files written before the style moved to board level carry it inside
+  // settings; loadBoard reads that as the fallback source.
+  loadBoard({ settings: { mobileHeader: { font: 'Georgia', size: 20 } } });
+  assert.equal(board.mobileHeader.font, 'Georgia');
+  assert.equal(board.mobileHeader.size, 20);
+});
+
+test('the title card is a singleton the app seeds and holds to one', () => {
+  fresh();
+  // loadBoard leaves it to the app - a bare board of items carries none.
+  assert.equal(board.items.filter(i => i.type === 'title').length, 0);
+  ensureTitleCard();
+  const titles = board.items.filter(i => i.type === 'title');
+  assert.equal(titles.length, 1);
+  assert.equal(titles[0].id, TITLE_ID);
+  ensureTitleCard();
+  assert.equal(board.items.filter(i => i.type === 'title').length, 1, 'seeding twice adds nothing');
+});
+
+test('deleting the title card hides it rather than binning it, and undo reverses that', () => {
+  fresh();
+  ensureTitleCard();
+  const binned = board.trash.length;
+  removeItems([TITLE_ID]);
+  assert.equal(isTitleHidden(), true);
+  assert.equal(board.items.some(i => i.type === 'title'), false);
+  assert.equal(board.trash.length, binned, 'the title card never enters the bin');
+  undo();
+  assert.equal(isTitleHidden(), false);
+  assert.equal(board.items.some(i => i.id === TITLE_ID), true, 'undo puts it back');
+});
+
+test('a mixed delete bins the ordinary items and only hides the title card', () => {
+  fresh([photo({ id: 'p' })]);
+  ensureTitleCard();
+  removeItems(['p', TITLE_ID]);
+  assert.equal(isTitleHidden(), true);
+  assert.equal(board.trash.length, 1, 'the photo is binned');
+  assert.equal(board.trash[0].item.id, 'p');
+  assert.equal(board.trash.some(t => t.item.id === TITLE_ID), false);
+});
+
+test('restoreTitleCard brings the deleted card back', () => {
+  fresh();
+  ensureTitleCard();
+  removeItems([TITLE_ID]);
+  assert.equal(isTitleHidden(), true);
+  restoreTitleCard();
+  assert.equal(isTitleHidden(), false);
+  assert.equal(board.items.some(i => i.id === TITLE_ID), true);
+});
+
+test('the title card and its deleted state survive a save and reload', () => {
+  fresh();
+  ensureTitleCard();
+  loadBoard(serializeBoard());
+  assert.equal(board.items.filter(i => i.type === 'title').length, 1, 'the saved card comes back');
+  assert.equal(isTitleHidden(), false);
+
+  removeItems([TITLE_ID]);
+  loadBoard(serializeBoard());
+  assert.equal(isTitleHidden(), true, 'the deleted state persists');
+  ensureTitleCard();
+  assert.equal(board.items.some(i => i.type === 'title'), false,
+    'a board that threw the card away keeps it away');
+});
+
+test('the title card cannot be copied, cut or duplicated, and a group skips it', () => {
+  fresh([photo({ id: 'a', w: 100, h: 100 })]);
+  ensureTitleCard();
+
+  // On its own: nothing lands on the clipboard, nothing is duplicated.
+  assert.equal(copyItems([TITLE_ID]), '', 'the title card copies to nothing');
+  assert.equal(clipboardSize(), 0);
+  assert.equal(duplicateItems([TITLE_ID]).length, 0, 'the title card does not duplicate');
+  assert.equal(board.items.filter(i => i.type === 'title').length, 1, 'still a singleton');
+
+  // In a group: the ordinary card comes along, the title card is left behind.
+  copyItems(['a', TITLE_ID]);
+  assert.equal(clipboardSize(), 1, 'only the ordinary card is on the clipboard');
+  const copies = duplicateItems(['a', TITLE_ID]);
+  assert.equal(copies.length, 1, 'the group duplicates without the title card');
+  assert.equal(copies.every(c => c.type !== 'title'), true);
+
+  // Cutting a group leaves the title card on the board (not copied, not binned).
+  cutItems(['a', TITLE_ID]);
+  assert.equal(board.items.some(i => i.id === TITLE_ID), true, 'the title card survives a cut');
+});
+
+test('resetTitlePosition sends the card home, undoably, and no-ops when already there', () => {
+  fresh();
+  ensureTitleCard();
+  const title = () => board.items.find(i => i.type === 'title');
+  const home = { x: title().x, y: title().y };
+
+  resetTitlePosition();
+  assert.equal(undo(), false, 'already home: nothing to undo');
+
+  applyGeom([{ id: title().id, x: 500, y: -500, w: title().w, h: title().h, rot: 0, z: title().z }]);
+  resetTitlePosition();
+  assert.deepEqual({ x: title().x, y: title().y }, home, 'back to the default spot');
+  assert.ok(undo(), 'the reset is one undo step');
+  assert.deepEqual({ x: title().x, y: title().y }, { x: 500, y: -500 }, 'undo restores where it was');
 });
 
 test('Mobile refuses a paper sheet however it is asked', () => {

@@ -152,6 +152,12 @@ export function initMobileHeaderEditor(vp) {
       paint();
     }
   });
+  // The title card mounts, unmounts and remounts through the delete/restore
+  // button and layout switches; each time, its freshly-built node needs the
+  // style written onto it. Deferred a microtask because canvas/items.js mounts
+  // the node in its own 'items' handler, which runs after this one - so the node
+  // exists by the time this fires. Cheap: a querySelector and a few writes.
+  bus.on('items', () => queueMicrotask(() => styleTitleCard()));
 
   buildControls();
   paint();
@@ -421,13 +427,18 @@ function rangeControl(labelText, axis) {
 function paint() {
   const style = header();
   const axes = availableAxes();
-  applyTitleStyle(style, axes);
+  const masthead = el('mobile-board-title');
+  if (masthead) applyTitleStyle(masthead, style, axes);
+  // The name-fit shrink for both the masthead and the card (fitTitle does each),
+  // so an unwrapped name never runs off either box.
+  scheduleFit();
+  styleTitleCard(style, axes);
   paintButton();
 
-  // Desktop has no masthead, so it has no panel either. Closed rather than
-  // emptied: the controls stay wired and keep their values, and the sheet that
-  // styles a thing which is not on the board goes away with it.
-  if (board.layoutMode !== 'mobile') closePanel();
+  // The panel styles the board name, which now lives in both layouts - the
+  // masthead on Mobile, the title card on Desktop - so it is valid open in
+  // either. It is closed only by its own controls (Escape, the close button) and
+  // by leaving a mode that has neither, which never happens now.
   fontSelect.value = style.font;
   sizeInput.value = String(style.size);
   sizeOut.textContent = `${formatAxis(style.size)}%`;
@@ -455,8 +466,20 @@ function paint() {
   }
 }
 
-function applyTitleStyle(style, axes) {
-  const title = el('mobile-board-title');
+/** The Desktop title card's text node, or null when it is not on the board. */
+function titleCardEl() {
+  return document.querySelector('.item[data-type="title"] .title-name');
+}
+
+/**
+ * Write the shared masthead style onto whichever element is passed - the Mobile
+ * masthead or the Desktop title card's name. Both read the same custom
+ * properties; app.css turns them into a font size against each element's own
+ * context (the strip width for one, the card's own width for the other), which
+ * is the only part that differs. The name-fit shrink (fitTitle) applies to both
+ * now, and is scheduled by the caller, not written here.
+ */
+function applyTitleStyle(title, style, axes) {
   const stack = headerFontStack(style.font);
   if (stack) title.style.fontFamily = stack;
   else title.style.removeProperty('font-family');
@@ -480,8 +503,25 @@ function applyTitleStyle(style, axes) {
   // app.css, where the other two are what keeps an over-long name centred on
   // the board instead of starting at its left edge.
   title.toggleAttribute('data-nowrap', !style.wrap);
-  // Last, and after the attribute: every line above changes how wide the name
-  // is set, and the measurement is only worth taking once they have all landed.
+}
+
+/** Style the Desktop title card if it is on the board right now. */
+function styleTitleCard(style = header(), axes = availableAxes()) {
+  const card = titleCardEl();
+  if (!card) return;
+  applyTitleStyle(card, style, axes);
+  // Match the masthead's *effective* size, clamp and all. The masthead caps its
+  // font at 96px (and floors it at 20px) against the mobile board's width, so a
+  // wide board's name is smaller relative to its box than the raw size dial says
+  // - the 512-wide board caps, the 256-wide card would not, so the same dial ran
+  // the card's text larger and it wrapped where the masthead did not (measured:
+  // card ratio 0.20 vs masthead 0.1875). The card has no screen width of its own
+  // to clamp against, so the ratio is computed here against the mobile board's
+  // width and handed over as --mobile-title-ratio, which the card multiplies by
+  // its own width (100cqw) in app.css. The two then wrap identically.
+  const ref = viewport?.mobileWorldWidth || 512;
+  const px = Math.min(96, Math.max(20, ref * (style.size / 100)));
+  card.style.setProperty('--mobile-title-ratio', String(px / ref));
   scheduleFit();
 }
 
@@ -517,23 +557,33 @@ function scheduleFit() {
 }
 
 function fitTitle() {
-  const title = el('mobile-board-title');
-  const band = el('mobile-board-header');
-  if (!title || !band) return;
-  if (board.layoutMode !== 'mobile' || header().wrap) {
-    title.style.removeProperty('--mobile-title-fit');
-    return;
-  }
+  const wrap = header().wrap;
+  // The masthead fits only on Mobile; the card is Desktop-only. Both fit only
+  // when the wrap is off - a wrapped name fits itself. Same measure for each,
+  // against its own box: the strip for the masthead, the card for the card.
+  fitOne(el('mobile-board-title'), el('mobile-board-header'),
+    wrap || board.layoutMode !== 'mobile');
+  const cardName = titleCardEl();
+  fitOne(cardName, cardName?.closest('.title-card') ?? null, wrap);
+}
+
+/**
+ * Shrink one name to its box when the wrap is off, or clear the shrink. `skip`
+ * is the "leave it alone" case (wrapped, or the wrong layout). Measured with the
+ * fit at 1 so the ratio is between the unfitted line and the room - see fitTitle
+ * above for why. Floored rather than rounded so a line a fraction of a pixel too
+ * wide is not called a fit.
+ */
+function fitOne(title, box, skip) {
+  if (!title || !box) return;
+  if (skip) { title.style.removeProperty('--mobile-title-fit'); return; }
   title.style.setProperty('--mobile-title-fit', '1');
-  const room = band.clientWidth;
+  const room = box.clientWidth;
   const line = title.offsetWidth;
   if (!room || !line || line <= room) {
     title.style.removeProperty('--mobile-title-fit');
     return;
   }
-  // Floored rather than rounded, at three places: a ratio rounded up is a line
-  // a fraction of a pixel too wide, which is a name that still touches the edge
-  // it was measured to clear.
   const fit = Math.max(FIT_FLOOR, Math.floor((room / line) * 1000) / 1000);
   title.style.setProperty('--mobile-title-fit', String(fit));
 }
@@ -565,7 +615,9 @@ function update(patch) {
 }
 
 function header() {
-  return board.settings.mobileHeader || DEFAULT_MOBILE_HEADER;
+  // Board-level now, not per-layout: the Mobile masthead and the Desktop title
+  // card are one style set in one place. See state.js.
+  return board.mobileHeader || DEFAULT_MOBILE_HEADER;
 }
 
 function axisLabel(tag) {
