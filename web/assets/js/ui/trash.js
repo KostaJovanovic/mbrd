@@ -18,12 +18,13 @@
 
 import {
   board, bus, selection, removeItems, restoreItems, emptyTrash, select,
+  restoreTitleCard, isTitleHidden,
 } from '../state.js';
 import { assetURL } from '../storage/assets.js';
 import { extOf, baseName, el } from '../util.js';
 
 let vp = null;
-let panel, button, list, none, hint, emptyBtn;
+let panel, button, list, none, hint, emptyBtn, titleRestore;
 let ghost = null;
 
 export function initTrash(viewport) {
@@ -34,6 +35,7 @@ export function initTrash(viewport) {
   none = el('bin-none');
   hint = el('bin-hint');
   emptyBtn = el('bin-empty');
+  titleRestore = el('title-restore');
   if (!panel || !button) return;
 
   button.addEventListener('click', () => {
@@ -45,6 +47,9 @@ export function initTrash(viewport) {
     setOpen(panel.hidden);
   });
   emptyBtn.addEventListener('click', emptyTrash);
+  // Bring the deleted title card back. restoreTitleCard() emits 'trash', so the
+  // paint below hides this button again on its own.
+  titleRestore?.addEventListener('click', () => restoreTitleCard());
   list.addEventListener('pointerdown', startDrag);
   list.addEventListener('keydown', restoreByKey);
 
@@ -62,6 +67,17 @@ export function initTrash(viewport) {
 function setOpen(want) {
   panel.hidden = !want;
   button.setAttribute('aria-expanded', String(!!want));
+  paintTitleRestore();
+}
+
+/**
+ * The title card's restore button rides the bin panel: it is offered only while
+ * the bin is open (that is what "opening the trash" reveals it) and only while
+ * the card is actually gone.
+ */
+function paintTitleRestore() {
+  if (!titleRestore) return;
+  titleRestore.hidden = panel.hidden || !isTitleHidden();
 }
 
 function paint() {
@@ -74,6 +90,7 @@ function paint() {
 
   list.replaceChildren();
   for (const entry of entries) list.append(binRow(entry));
+  paintTitleRestore();
 }
 
 function paintButton() {

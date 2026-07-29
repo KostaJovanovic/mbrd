@@ -109,6 +109,8 @@ of the last three directories is looking at a perfectly valid older board.
     "appearance": { "palette": "papyrus", "vars": { "--accent": "#b4553a" } }
   },
   "arrangement": "spiral",
+  "mobileHeader": { "font": "", "size": 13, "stretch": 100, "leading": 100, "weight": 700, "offset": 0, "italic": false, "wrap": true, "axes": {} },
+  "titleHidden": false,
   "items": [ … ],
   "layouts": {
     "desktop": [ { "id": "k3f9a2", "x": 120, "y": -40, "w": 320, "h": 240, "rot": 0, "z": 7 } ],
@@ -129,6 +131,16 @@ working as intended.
 `settings.appearance` is the board's own look: a palette name and a bag of CSS
 custom properties. **`vars` is the only part of a `.mbrd` that reaches the
 browser as code**, and it is gated accordingly — see **Safety**.
+
+`mobileHeader` is the typography of the board's name, shared by the Mobile
+masthead and the Desktop title card. It is **board-level** (one style for both
+layouts). Files written before it moved here carry it under `settings.mobileHeader`
+instead; a reader takes the top-level value first and falls back to that. It is
+also mirrored back into `settings.mobileHeader` on save, so an older reader still
+finds it. `titleHidden` is `true` only when the Desktop title card has been
+deleted; a board without the key seeds the card on open. The card itself is an
+ordinary item of `type: "title"` in `items` (a singleton, id `__title__`), with
+its own Desktop geometry in `layouts.desktop`; it is never packed onto Mobile.
 
 Item coordinates and sizes are rounded to two decimals on the way out. A board
 is a place things sit, not a measurement, and the third decimal of a drag is

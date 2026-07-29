@@ -22,3 +22,6 @@ node_modules/
 
 # Tool output: code-graph dumps, including session transcripts.
 graphify-out/
+
+# Local tunnel binary - a 52MB vendored exe, not source.
+cloudflared.exe

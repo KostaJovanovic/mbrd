@@ -22,8 +22,8 @@
 import { clamp, rafThrottle, emitter } from '../util.js';
 import { itemBounds } from '../geometry.js';
 
-export const MIN_ZOOM = 0.02;
-export const MAX_ZOOM = 32;
+export const MIN_ZOOM = 0.1;
+export const MAX_ZOOM = 5;
 export const MOBILE_SIDE_PAD = 16;
 export const MOBILE_TOP_PAD = 32;
 export const MOBILE_BOTTOM_PAD = 32;
@@ -138,6 +138,17 @@ const LOD_ZOOM = 0.4;
  * when the card is too small to aim at.
  */
 const GRIP_MIN_ZOOM = 0.1;
+
+/**
+ * Where a corner grip stops lapping onto the card and clips to its outside half.
+ *
+ * Below this the card is small enough that a straddling corner would cover too
+ * much of its face to pick it up by, so the whole face becomes a move target and
+ * the corner resizes only from the part of its hitbox past the card's edge (see
+ * the zoom-grab rules in app.css). A rung of its own, between the chrome rung and
+ * the grips' own floor, because it is about size on screen, not legibility.
+ */
+const GRAB_ZOOM = 0.25;
 
 /**
  * And where it sits under a finger.
@@ -547,8 +558,15 @@ export class Viewport {
   /**
    * Fit `items` (anything with x/y/w/h at its centre) in view with a margin.
   * With nothing to fit, falls back to the origin at 1:1.
+  *
+  * `maxZoom` caps how far in the fit is allowed to zoom. Left at MAX_ZOOM the
+  * fit works as before, blowing a small board up to fill the screen. The
+  * opening view passes 1 instead: a board smaller than the window opens at
+  * actual size rather than magnified, so a couple of cards do not arrive as
+  * wall-sized posters - while a board larger than the window still zooms out to
+  * frame the whole of it, which is the case the cap never touches.
   */
-  fit(items, pad = 80, ms = 0) {
+  fit(items, pad = 80, ms = 0, maxZoom = MAX_ZOOM) {
     if (this.isMobile) {
       return this.viewTo({ x: 0, y: this._mobileTopPan() }, this._mobileZoom(), ms);
     }
@@ -556,7 +574,11 @@ export class Viewport {
     if (!box) return this.recenter(ms);
     const { x0, y0, x1, y1 } = box;
     const w = Math.max(x1 - x0, 1), h = Math.max(y1 - y0, 1);
-    const z = clamp(Math.min((this.width - pad * 2) / w, (this.height - pad * 2) / h), MIN_ZOOM, MAX_ZOOM);
+    const z = clamp(
+      Math.min((this.width - pad * 2) / w, (this.height - pad * 2) / h),
+      MIN_ZOOM,
+      Math.min(MAX_ZOOM, maxZoom),
+    );
     this.viewTo({ x: (x0 + x1) / 2, y: (y0 + y1) / 2 }, z, ms);
   }
 
@@ -701,6 +723,11 @@ export class Viewport {
     // So the grips ride their own threshold down to GRIP_MIN_ZOOM and vanish only
     // below it.
     this.world.classList.toggle('zoom-tiny', z < GRIP_MIN_ZOOM);
+    // Below this a corner grip clips to its outside half and the whole card face
+    // becomes a move target - see the zoom-grab rules in app.css. Its own rung
+    // (25%), lower than the chrome one, because it is about the card being too
+    // small to grab, not too small to read.
+    this.world.classList.toggle('zoom-grab', z < GRAB_ZOOM);
     this._moving();
 
     // The origin mark, centred on the point the axes cross.

@@ -15,6 +15,7 @@ import {
   recheckBoardGeometry, cleanBoardTitle, cleanBoardTitleDraft, isDefaultTitle,
   setBoardMode as selectBoardMode, setAssetNameLookup,
   isRider, stuckTo, stuckPlacement,
+  ensureTitleCard, restoreTitleCard, isTitleHidden, resetTitlePosition, TITLE_ID,
 } from './state.js';
 import { latticeBox, itemBounds } from './geometry.js';
 import { defaultUpAxis, meshKind } from './mesh.js';
@@ -43,7 +44,10 @@ import { initScaleBar } from './ui/scalebar.js';
 import { initTrash } from './ui/trash.js';
 import { initAppearance, resetAppearance } from './ui/appearance.js';
 import { initFonts } from './ui/fonts.js';
-import { initMobileHeaderEditor, closePanel as closeHeaderPanel } from './ui/mobile-header.js';
+import {
+  initMobileHeaderEditor, openPanel as openHeaderPanel, closePanel as closeHeaderPanel,
+  isPanelOpen as isHeaderPanelOpen,
+} from './ui/mobile-header.js';
 import { initAudio } from './canvas/audio.js';
 import { editNote, growNote } from './canvas/notes.js';
 
@@ -79,6 +83,18 @@ const cmds = {
   // everything" and does, whatever happens to be selected at the time.
   rearrange: () => rearrange(board.items),
   rearrangeSelection: () => rearrange(board.items.filter(i => selection.has(i.id))),
+  // The Desktop title card's pen: opens the same style panel the Mobile masthead
+  // uses. Routed through cmds so canvas/input.js (which has no business importing
+  // a ui/ module) can trigger it off the pen hit.
+  editTitle: () => openHeaderPanel(),
+  // Inline rename of the board name on the card: the T button, a double-click, or
+  // F2. Routed through cmds so canvas/input.js can reach it off those gestures.
+  editTitleText: () => editTitleCard(),
+  restoreTitle: () => restoreTitleCard(),
+  // The title card's own right-click menu keys off this - it is a singleton with
+  // a different set of actions (no copy, no duplicate; edit its style, reset it).
+  isTitleCard: id => byId(id)?.type === 'title',
+  resetTitlePosition: () => resetTitlePosition(),
   setBoardMode: mode => selectBoardMode(mode),
   toggleBoardMode: () => {
     const next = board.layoutMode === 'mobile' ? 'desktop' : 'mobile';
@@ -560,6 +576,14 @@ bus.on('items', paintCount);
 // it: what is on the board, what is picked, and how the board is measured.
 bus.on('selection', paintCount);
 bus.on('geom', paintCount);
+// The title card's edit menu is that card's own: deselect the card and the panel
+// styling it closes with it. Desktop only - on Mobile the same panel belongs to
+// the masthead and has no selection to follow.
+bus.on('selection', () => {
+  if (board.layoutMode !== 'mobile' && isHeaderPanelOpen() && !selection.has(TITLE_ID)) {
+    closeHeaderPanel();
+  }
+});
 bus.on('items', syncMobileBoardBounds);
 bus.on('geom', syncMobileBoardBounds);
 bus.on('settings', paintCount);
@@ -578,6 +602,11 @@ bus.on('items', delta => requestAnimationFrame(() => {
   }
 }));
 bus.on('board:load', () => {
+  // Seed the Desktop title card before the board is drawn. state.loadBoard()
+  // deliberately leaves it out (so its own tests load an exact item set); the
+  // app adds it here, and the payloadless 'items' emit that follows loadBoard()
+  // mounts it. A board that carries or deleted its card is left untouched.
+  ensureTitleCard();
   // A board can bring its own look, applied without going through persist() -
   // so this is the other door the grid's colours change behind.
   resetGridInk();
@@ -618,7 +647,14 @@ bus.on('board:load', () => {
  * from at load.
  */
 function openingView() {
-  vp.fit(board.items, 80, 0);
+  // An empty board - only the title card, which is furniture rather than
+  // content - opens at the origin at 100%, where a fresh board should. Fitting
+  // the title card alone would frame that one card and read as "this is all
+  // there is", which is exactly what a blank board is trying not to say.
+  if (!vp.isMobile && board.items.every(it => it.type === 'title')) return vp.recenter(0);
+  // Capped at 100%: a small board opens at actual size, not magnified. A board
+  // bigger than the window still zooms out to frame it - see fit()'s maxZoom.
+  vp.fit(board.items, 80, 0, 1);
 }
 
 /**
@@ -656,6 +692,16 @@ function paintMobileTitle() {
   // caret with it - the same guard the sidebar's name field keeps.
   if (!field.isContentEditable) field.textContent = board.title;
   header.toggleAttribute('data-untitled', isDefaultTitle(board.title));
+  // The Desktop title card carries the same name. It is not inline-editable, so
+  // no caret guard is needed - just keep it current and dim it while untitled,
+  // the way the masthead's [data-untitled] rule does.
+  const card = document.querySelector('.item[data-type="title"] .title-name');
+  if (card) {
+    // Not over an inline rename in progress on the card, the same caret guard the
+    // masthead gets above: rewriting the text mid-word would take the caret with it.
+    if (!card.isContentEditable) card.textContent = board.title;
+    card.classList.toggle('is-untitled', isDefaultTitle(board.title));
+  }
 }
 
 /**
@@ -675,7 +721,24 @@ function paintMobileTitle() {
  * and leaves the gesture alone.
  */
 function editMobileTitle() {
-  const field = el('mobile-board-title');
+  editBoardName(el('mobile-board-title'));
+}
+
+/**
+ * Inline rename of the board name, on the Desktop title card: the same editor
+ * the masthead uses, pointed at the card's own name node. Reached by the card's
+ * T button, a double-click on the card, or F2 while it is selected.
+ */
+function editTitleCard() {
+  editBoardName(document.querySelector('.item[data-type="title"] .title-name'));
+}
+
+/**
+ * The shared inline board-name editor. `field` is whichever element shows the
+ * name - the Mobile masthead or the Desktop card - and both edit board.title and
+ * repaint through paintMobileTitle, which keeps the two in step.
+ */
+function editBoardName(field) {
   if (!field || field.isContentEditable) return;
 
   // plaintext-only keeps pasted markup out of a name; not every engine has it.
@@ -1181,8 +1244,10 @@ function rearrange(items) {
   // keeps its place on it. So a pinned sticky stays pinned through a Rearrange,
   // and a note whose host is not in this set rides a host that does not move -
   // and so does not move either. Everything else is arranged as before.
+  // The title card is furniture, not content: Rearrange leaves it exactly where
+  // it was put, the same way a rider is left on its host.
   const riders = items.filter(isRider);
-  const free = items.filter(it => !isRider(it));
+  const free = items.filter(it => !isRider(it) && it.type !== 'title');
   const beforeAll = snapshotGeom(items.map(i => i.id));
   // Nothing to lay out - the whole set was followers. There is no arrangement of
   // riders alone; they stay on their hosts.
@@ -1360,6 +1425,14 @@ addEventListener('visibilitychange', () => {
 
 const started = (async function start() {
   const restored = await restoreSession();
+  // A restored or freshly-opened board runs ensureTitleCard() inside loadBoard();
+  // the very first blank session never calls loadBoard, so seed the title card
+  // here and mount it. initItems() has already run (module top), so its 'items'
+  // listener is live and this renders the card without a reload.
+  if (!restored) {
+    ensureTitleCard();
+    if (!isTitleHidden()) bus.emit('items', { added: [TITLE_ID], removed: [] });
+  }
   openingView();
   if (restored) toast('Restored your last board');
   el('hud').hidden = !board.settings.hud;

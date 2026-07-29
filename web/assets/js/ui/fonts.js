@@ -138,7 +138,7 @@ export function headerFontOptions() {
   ].map(face => ({ ...face, axes: face.axes?.map(axis => ({ ...axis })) }));
 }
 
-/** A safe CSS stack for one value stored in `settings.mobileHeader.font`. */
+/** A safe CSS stack for one value stored in `board.mobileHeader.font`. */
 export function headerFontStack(value) {
   if (!value) return '';
   const builtin = BUILTIN_HEADER_FACES.find(face => face.value === value);
