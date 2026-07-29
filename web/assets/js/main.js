@@ -244,6 +244,117 @@ initStorage();
 // four CSS gradients; Harsh draws its lattice, but only over the canvas, which
 // is the viewport - so both are bounded by the screen rather than the board.
 //
+// A dev-only profiler for the view-change frame, exposed as `mbrd.perf`.
+//
+// The point it measures is the whole premise of the grid performance work: on a
+// pan or zoom, how much of a frame is paintGrid() and how much is everything
+// else? `mbrd.perf.on()`, pan/zoom for a few seconds, `mbrd.perf.report()`. It
+// holds no browser globals and does no work until turned on - the caller above
+// reads `.active` and skips the two performance.now() marks when it is off, so
+// there is nothing to pay for on a board that never opens the console.
+const viewPerf = (() => {
+  let on = false, raf = 0, lastRaf = 0, moved = false;
+  // An on-screen readout, built lazily the first time it is asked for. The
+  // point of it is the phone: a device with no console the median frame rate can
+  // be read off, so a real touch device can be measured on the glass instead of
+  // over a debugging cable. Desktop gets it too - a live number beside the
+  // gesture is worth more than one printed after it.
+  let hud = null, hudAt = 0;
+  // JS cost of the main.js view listener, per view frame.
+  let gridMs = 0, restMs = 0, frames = 0, worstFrame = 0;
+  // True frame cadence: the interval between animation frames, but recorded only
+  // on frames where the view actually moved (a sample() landed since the last
+  // rAF). Idle frames between two gestures would otherwise read as enormous
+  // stalls and drown the real in-motion cadence - which was the trap in the
+  // first cut of this. Held as raw intervals so report() can take percentiles;
+  // the median is the honest frame rate, the tail is the jank.
+  const gaps = [];
+  const CAP = 8000;                 // ~a minute of 120fps motion; then it wraps
+  const reset = () => {
+    gridMs = restMs = frames = worstFrame = 0; gaps.length = 0; lastRaf = 0; moved = false;
+  };
+  const pct = (sorted, p) => sorted.length
+    ? sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))] : 0;
+  const stats = () => {
+    const sorted = [...gaps].sort((a, b) => a - b);
+    const median = pct(sorted, 0.5) || 0;
+    const janks = median ? gaps.filter(g => g > median * 1.5).length : 0;
+    return { sorted, median, janks };
+  };
+  const showHud = () => {
+    if (hud) return;
+    hud = document.createElement('div');
+    hud.id = 'perf-hud';
+    hud.style.cssText =
+      'position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:99999;'
+      + 'font:600 13px/1.3 ui-monospace,monospace;padding:6px 10px;border-radius:8px;'
+      + 'background:rgba(0,0,0,.8);color:#0f0;pointer-events:none;white-space:pre;text-align:center';
+    hud.textContent = 'perf — move the board';
+    document.body.appendChild(hud);
+  };
+  const hideHud = () => { hud?.remove(); hud = null; };
+  const paintHud = now => {
+    if (!hud || now - hudAt < 250) return;   // four updates a second is plenty
+    hudAt = now;
+    const { median, janks } = stats();
+    if (!gaps.length) return;
+    hud.textContent =
+      `${(1000 / median).toFixed(0)} fps   jank ${(100 * janks / gaps.length).toFixed(0)}%   n ${gaps.length}`;
+  };
+  const tick = now => {
+    if (!on) return;
+    // Only a moved frame counts. requestAnimationFrame still fires at the
+    // display rate on an idle board, and those intervals are not what we are
+    // measuring - the question is how fast frames come while something is
+    // actually happening.
+    if (lastRaf && moved) {
+      if (gaps.length >= CAP) gaps.shift();
+      gaps.push(now - lastRaf);
+    }
+    lastRaf = now;
+    moved = false;
+    paintHud(now);
+    raf = requestAnimationFrame(tick);
+  };
+  return {
+    get active() { return on; },
+    /** @param overlay  false to skip the on-screen readout (console only). */
+    on(overlay = true) {
+      reset(); on = true;
+      if (overlay) showHud();
+      raf = requestAnimationFrame(tick);
+      console.log('[perf] on — pan/zoom continuously, then mbrd.perf.report()');
+    },
+    off() { on = false; if (raf) cancelAnimationFrame(raf); raf = 0; hideHud(); console.log('[perf] off'); },
+    /** JS timings for one view frame, in ms: grid paint and the rest. */
+    sample(grid, rest) {
+      gridMs += grid; restMs += rest; frames++; moved = true;
+      const f = grid + rest;
+      if (f > worstFrame) worstFrame = f;
+    },
+    report() {
+      if (!gaps.length) { console.log('[perf] no motion sampled — mbrd.perf.on(), then pan'); return null; }
+      // Anything past 1.5x the median missed at least one refresh - the count of
+      // those, as a share, is the jank the eye actually reads.
+      const { sorted, janks } = stats();
+      const r = {
+        motionFrames: gaps.length,
+        fpsMedian: +(1000 / median).toFixed(1),
+        fpsP95Low: +(1000 / pct(sorted, 0.95)).toFixed(1),   // the slow tail
+        worstFrameGapMs: +pct(sorted, 1).toFixed(1),
+        jankPct: +(100 * janks / gaps.length).toFixed(1),
+        // The listener's own JS share, for contrast - this is what the grid
+        // rewrite would have touched, and it is tiny.
+        jsGridAvgMs: frames ? +(gridMs / frames).toFixed(3) : null,
+        jsRestAvgMs: frames ? +(restMs / frames).toFixed(3) : null,
+        jsWorstFrameMs: +worstFrame.toFixed(3),
+      };
+      console.table(r);
+      return r;
+    },
+  };
+})();
+
 // The view is board state and is saved with the board, but it changes on every
 // frame of a pan - so it is written here on each change and *announced* on a
 // trailing timer. Without the announcement nothing scheduled an autosave, and a
@@ -251,8 +362,9 @@ initStorage();
 // which is not where the user left it. Without the timer, every pan would queue
 // a snapshot per frame.
 let viewSettle = 0;
-vp.onChange(() => {
-  paintGrid(vp);
+// Everything the view-change frame does after the grid. Named so the profiler
+// below can time the grid alone against the rest without duplicating it.
+const afterGrid = () => {
   board.view.pan = { x: vp.pan.x, y: vp.pan.y };
   board.view.zoom = vp.zoom;
   paintZoom();
@@ -261,6 +373,17 @@ vp.onChange(() => {
   // and deliberately not markDirty(): looking around a board is not editing it,
   // and a pan that raised "unsaved changes" on the way out would be a lie.
   viewSettle = setTimeout(() => bus.emit('view'), 400);
+};
+vp.onChange(() => {
+  // The fast path a shipped board always takes: one boolean read, then the same
+  // work as ever. The performance.now() pair only runs once the dev handle asks
+  // for it, so profiling costs nothing until turned on.
+  if (!viewPerf.active) { paintGrid(vp); afterGrid(); return; }
+  const t0 = performance.now();
+  paintGrid(vp);
+  const t1 = performance.now();
+  afterGrid();
+  viewPerf.sample(t1 - t0, performance.now() - t1);
 });
 
 // ---------------------------------------------------------------------------
@@ -1207,8 +1330,14 @@ function middleOf(items) {
 }
 
 // A console handle, deliberately public: `mbrd.board` to inspect state,
-// `mbrd.cmds.fit()` to drive the app, `mbrd.vp` for the coordinate model.
-window.mbrd = { board, bus, vp, cmds, selection };
+// `mbrd.cmds.fit()` to drive the app, `mbrd.vp` for the coordinate model,
+// `mbrd.perf.on()` to profile the pan/zoom frame.
+window.mbrd = { board, bus, vp, cmds, selection, perf: viewPerf };
+
+// A phone has no console to type mbrd.perf.on() into, so the profiler can be
+// armed from the URL as well: open the board at `.../#perf` on the device and
+// the on-screen readout comes up on its own. Harmless anywhere else.
+if (location.hash.includes('perf')) viewPerf.on();
 
 // ---------------------------------------------------------------------------
 // Start

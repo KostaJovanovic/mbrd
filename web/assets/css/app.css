@@ -3811,6 +3811,18 @@ kbd {
     transition: opacity var(--dur-base) var(--ease), visibility 0s var(--dur-base);
   }
 
+  /* The masthead pen leaves with the rest when the sidebar becomes the screen.
+     Above (line ~2122) it rides over the sidebar at z-index 41, which is right
+     on Desktop where the sidebar is a left strip and the pen's own corner stays
+     clear - but here the panel is full-screen, so a pen floating on top of it is
+     a control pointing at a masthead nothing on this view is showing. */
+  #sidebar.is-open ~ #mobile-header-edit-btn {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity var(--dur-base) var(--ease), visibility 0s var(--dur-base);
+  }
+
   /* Under the view controls rather than beside them: at this width a centred
      330px strip and a right-pinned zoom bar are the same piece of screen. */
   #busy { top: calc(max(12px, env(safe-area-inset-top)) + 46px); }
