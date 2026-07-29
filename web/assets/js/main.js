@@ -86,7 +86,7 @@ const cmds = {
   // The Desktop title card's pen: opens the same style panel the Mobile masthead
   // uses. Routed through cmds so canvas/input.js (which has no business importing
   // a ui/ module) can trigger it off the pen hit.
-  editTitle: () => openHeaderPanel(),
+  editTitle: () => (isHeaderPanelOpen() ? closeHeaderPanel() : openHeaderPanel()),
   // Inline rename of the board name on the card: the T button, a double-click, or
   // F2. Routed through cmds so canvas/input.js can reach it off those gestures.
   editTitleText: () => editTitleCard(),
@@ -800,14 +800,23 @@ function editBoardName(field) {
   field.addEventListener('keydown', onKey);
   field.addEventListener('input', onInput);
   field.addEventListener('blur', finish);
-  // Selected rather than merely focused: a rename usually replaces the name,
-  // and an untitled board is holding a placeholder nobody typed.
-  field.focus();
-  const range = document.createRange();
-  range.selectNodeContents(field);
-  const sel = getSelection();
-  sel.removeAllRanges();
-  sel.addRange(range);
+  // Focus on the next frame, not now. On the Desktop card this opens from the
+  // T button's pointerdown, and the <button> then takes focus itself on the click
+  // that follows - which would blur the field the instant it was focused, run
+  // finish(), and close the editor. That is exactly why a single click used to
+  // open the rename and shut it again, needing a second. Focusing past the click
+  // lets the field win. Harmless on the masthead tap, which has no button to
+  // steal from. Selected rather than merely focused: a rename usually replaces
+  // the name, and an untitled board is holding a placeholder nobody typed.
+  requestAnimationFrame(() => {
+    if (done) return;
+    field.focus();
+    const range = document.createRange();
+    range.selectNodeContents(field);
+    const sel = getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  });
 }
 
 /**
@@ -1244,10 +1253,11 @@ function rearrange(items) {
   // keeps its place on it. So a pinned sticky stays pinned through a Rearrange,
   // and a note whose host is not in this set rides a host that does not move -
   // and so does not move either. Everything else is arranged as before.
-  // The title card is furniture, not content: Rearrange leaves it exactly where
-  // it was put, the same way a rider is left on its host.
+  // The title card takes a slot like any other: Rearrange gives it a place in
+  // the layout and sizes it to the lattice on a snapped board, so cards no
+  // longer land on top of it and it moves with the rest.
   const riders = items.filter(isRider);
-  const free = items.filter(it => !isRider(it) && it.type !== 'title');
+  const free = items.filter(it => !isRider(it));
   const beforeAll = snapshotGeom(items.map(i => i.id));
   // Nothing to lay out - the whole set was followers. There is no arrangement of
   // riders alone; they stay on their hosts.
@@ -1415,9 +1425,12 @@ if (location.hash.includes('perf')) viewPerf.on();
 // or reclaimed mid-sentence loses the sentence.
 //
 // visibilitychange is the reliable one - a phone discarding the page may never
-// run pagehide - and both are cheap, because flushNoteEdit() does nothing at
-// all unless a note is actually open.
-const flushEdits = () => { if (flushNoteEdit()) autosave().catch(() => {}); };
+// run pagehide. Both are cheap: flushNoteEdit() does nothing unless a note is
+// open, and autosave() is a no-op when nothing has changed since the last write.
+// The unconditional autosave matters now the background save is a 20s interval
+// rather than a per-edit debounce - without it, a tab closed mid-interval would
+// lose up to 20s of edits.
+const flushEdits = () => { flushNoteEdit(); autosave().catch(() => {}); };
 addEventListener('pagehide', flushEdits);
 addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') flushEdits();

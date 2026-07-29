@@ -619,7 +619,14 @@ async function recolourFromBoard({ silent = false } = {}) {
       syncControls();
       return failed('No pictures left - back to the chosen palette');
     }
-    return failed('No pictures on the board to take colours from');
+    // Empty or picture-less board with no derived palette to shed: a fresh
+    // board's resting state, not a fault. The automatic run (on load and on
+    // every edit) keeps quiet - it would otherwise nag an empty board with a
+    // message about pictures that were never there. Only the switch, turned on
+    // by someone waiting for an answer, is told why nothing happened.
+    lastFailure = 'No pictures on the board to take colours from';
+    if (!silent) toast(lastFailure);
+    return false;
   }
 
   const pixels = await samplePixels(urls);

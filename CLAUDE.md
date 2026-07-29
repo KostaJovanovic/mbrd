@@ -111,7 +111,7 @@ own `CompressionStream('deflate-raw')`; `storage/mbrd.js` is the `.mbrd`
 container on top of it (`docs/mbrd-format.md` is the spec).
 
 `storage/storage.js` keeps Save and Export deliberately separate: Save writes to
-IndexedDB (same store as the autosave debounce), Export packs the `.mbrd` file
+IndexedDB (same store as the autosave interval), Export packs the `.mbrd` file
 via the File System Access API where available. They fail differently, and the
 UI says which is which. Any path that can replace the current board must go
 through the discard confirmation.

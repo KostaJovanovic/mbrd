@@ -15,10 +15,10 @@
 // Export is the deliberate one, and the interface says which is which.
 //
 // Underneath, both serialise the same board through mbrd.js. The IndexedDB
-// side also runs on a debounce after every edit, so an unsaved board survives
-// a closed tab regardless.
+// side also runs on a timer every 20s (and flushes on the way out of the page),
+// so an unsaved board survives a closed tab regardless.
 
-import { toast, busy, isDev, itemHashes, clearPrefs } from '../util.js';
+import { toast, busy, itemHashes, clearPrefs } from '../util.js';
 import {
   board, serializeBoard, loadBoard, markDirty, isDirty, setTitle, bus, cleanBoardTitle,
   defaultBoardTitle,
@@ -89,7 +89,6 @@ async function ensurePersistence() {
  * rather than in a second and a bit, and the board marked clean.
  */
 export async function saveBoard() {
-  clearTimeout(saveTimer);
   const ok = await autosave();
   if (!ok) {
     // Always an answer, and this is the fix. autosave() deliberately says a
@@ -361,7 +360,6 @@ export async function newBoard() {
   // Stop the closing board's autosave from repopulating the store after it is
   // cleared: drop the latch and drain any in-flight writer before touching the
   // asset store or the session. See AUD-03.
-  clearTimeout(saveTimer);
   cacheOk = false;
   await drainSave();
   clearAssets();
@@ -438,13 +436,17 @@ async function confirmDiscard(what) {
 // ---------------------------------------------------------------------------
 
 const SESSION_KEY = 'session';
-let saveTimer = 0;
+/** How often the background autosave writes, if anything has changed. */
+const AUTOSAVE_MS = 20000;
 let cacheOk = true;
 /** Whether the "some bytes are missing" toast has already been shown. */
 let warnedIncomplete = false;
 
 /**
- * Debounced snapshot of the board + any assets not already cached.
+ * The background autosave, run on a fixed interval (AUTOSAVE_MS) rather than
+ * after every edit. Each board-mutating event only bumps the change generation
+ * (noteChange); this tick is the thing that actually writes, and only when
+ * there is something new to write.
  *
  * Announces itself on the way out, and only when the save answered something
  * the user did. Two gates, because there are two ways to save nothing worth
@@ -453,11 +455,11 @@ let warnedIncomplete = false;
  * `isDirty` catches the clean board - panning about emits 'view', which is
  * snapshotted so the board reopens where you left it, and is not an edit.
  *
- * `quiet` catches the load. A board arriving emits 'board:load', which arms
- * this like anything else - and a session restored from IndexedDB comes back
- * carrying the dirty flag it went down with, so the first gate lets it through
- * and every visit would open by announcing a save of a board nobody had
- * touched. One suppressed snapshot per board is the whole of it.
+ * `quiet` catches the load. A board arriving emits 'board:load', which bumps
+ * the generation like anything else - and a session restored from IndexedDB
+ * comes back carrying the dirty flag it went down with, so the first gate lets
+ * it through and every visit would open by announcing a save of a board nobody
+ * had touched. One suppressed snapshot per board is the whole of it.
  *
  * Nothing is said about a failure here. autosave() already toasts the two ways
  * it can go wrong, and both are loud - a quiet mark in the corner going quietly
@@ -466,21 +468,40 @@ let warnedIncomplete = false;
 let quiet = true;
 const hushNextSave = () => { quiet = true; };
 
-function scheduleAutosave() {
-  // Count the change before the latch check: even while caching is off the
-  // generation must advance, so a later save knows this edit is not yet on disk.
-  saveGen++;
-  if (!cacheOk) return;
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(async () => {
-    // Read before the write: a save that finds nothing missing leaves the flag
-    // exactly as it was, so there would be nothing left to read afterwards.
-    const had = isDirty();
-    const announce = had && !quiet;
-    quiet = false;
-    const ok = await autosave().catch(() => false);
-    if (ok && announce) bus.emit('autosaved');
-  }, 1200);
+// Bump the change generation so a later save knows this edit is not yet on disk.
+// This runs even while caching is off; the tick below is what gates on cacheOk.
+const noteChange = () => { saveGen++; };
+
+async function autosaveTick() {
+  if (committedGen >= saveGen || !cacheOk) return;   // nothing new, or caching off
+  const announce = isDirty() && !quiet;
+  quiet = false;
+  const ok = await autosave().catch(() => false);
+  if (ok && announce) bus.emit('autosaved');
+}
+
+// No two background autosaves closer together than this. It throttles the
+// per-commit save below: a burst of edits (place, move, delete in a row)
+// coalesces into one write on the cooldown's trailing edge rather than a write
+// apiece. The explicit Save (Ctrl+S) and the page-exit flush call autosave()
+// directly and are not subject to it - they are asked-for, not automatic.
+const AUTOSAVE_COOLDOWN_MS = 5000;
+let lastAutosaveAt = 0;
+let coolTimer = 0;
+
+function requestAutosave() {
+  const wait = AUTOSAVE_COOLDOWN_MS - (Date.now() - lastAutosaveAt);
+  if (wait <= 0) {
+    lastAutosaveAt = Date.now();
+    autosaveTick().catch(() => {});
+  } else if (!coolTimer) {
+    // Inside the cooldown: fire once when it lifts, catching the newest edit.
+    coolTimer = setTimeout(() => {
+      coolTimer = 0;
+      lastAutosaveAt = Date.now();
+      autosaveTick().catch(() => {});
+    }, wait);
+  }
 }
 
 /**
@@ -521,7 +542,7 @@ function referencedHashes(data) {
 // ---------------------------------------------------------------------------
 //
 // writeSnapshot() is multi-step - serialise, write assets, write the snapshot,
-// sweep - and used to be reachable twice at once: the debounce, an explicit
+// sweep - and used to be reachable twice at once: the interval tick, an explicit
 // Save, and the pagehide flush all called it directly. Two overlapping runs
 // could finish out of order, landing an older snapshot on top of a newer one,
 // and an older run's sweep could delete an asset only the newer snapshot still
@@ -649,8 +670,8 @@ async function writeSnapshot() {
 
     if (missing.length) {
       lastFailure = `${describeMissing(data, missing)} - the board cannot be saved complete`;
-      // Once per run of trouble, not once per debounce - autosave fires after
-      // every edit, and a board that has lost an asset would otherwise put a
+      // Once per run of trouble, not once per tick - autosave fires on the
+      // interval, and a board that has lost an asset would otherwise put a
       // red toast on screen for the rest of the session. saveBoard() says it
       // again regardless, because a press was a question.
       if (!warnedIncomplete) {
@@ -756,6 +777,26 @@ export async function clearSession() {
 }
 
 /**
+ * Delete the service worker's caches and drop its registration - the app's own
+ * code, not the user's data. Only clearAllData() reaches for this; it is
+ * best-effort and never throws, because a wipe that fails to bin re-downloadable
+ * scripts still succeeded at the part that mattered. The reload that follows
+ * pulls a fresh copy from the network.
+ */
+async function clearAppCaches() {
+  try {
+    if (typeof caches !== 'undefined') {
+      const names = await caches.keys();
+      await Promise.all(names.map(n => caches.delete(n)));
+    }
+    const regs = await navigator.serviceWorker?.getRegistrations?.() || [];
+    await Promise.all(regs.map(r => r.unregister()));
+  } catch (err) {
+    console.warn('[mbrd] could not clear app caches:', err);
+  }
+}
+
+/**
  * Everything this app has ever put in this browser, gone.
  *
  * Wider than New on purpose. New replaces the board and leaves the person
@@ -766,15 +807,18 @@ export async function clearSession() {
  * preferences too, and the answer to "what is left?" is "the files you
  * exported", which the dialog says.
  *
- * Two things it deliberately does *not* touch.
+ * It goes all the way: past the board and the preferences to the service
+ * worker's caches and its registration too - the application's own scripts,
+ * fonts and stylesheets. That is not anybody's *data*, and clearing it means an
+ * offline device has no app to open until it is next online; but this is the one
+ * request wide enough to mean "everything about this site", so it takes that as
+ * well. The reload re-fetches and re-registers when there is a network. Best
+ * effort, and never blocking the wipe: the app is re-downloadable, the data is
+ * the part that had to go.
  *
- * The service worker's caches. Those hold the application - the scripts, the
- * fonts, the stylesheets - and none of it is anybody's data. Deleting them
- * would leave a phone in a field with no app to open, which is the one thing
- * this project is built not to do.
- *
- * Anything on disk. A .mbrd is a file the user owns and put somewhere; no
- * button in a web page is going to go looking for those.
+ * One thing it deliberately does *not* touch: anything on disk. A .mbrd is a
+ * file the user owns and put somewhere; no button in a web page is going to go
+ * looking for those.
  *
  * The reload is the honest ending. Half a dozen modules hold state that came
  * out of the store - registered faces, custom properties written onto :root by
@@ -797,12 +841,11 @@ export async function clearAllData() {
   // keep the board and did not keep it has not answered the question yet.
   if (answer === 'keep') return (await exportBoard()) ? clearAllData() : false;
 
-  // Before the wipe, not after: the debounce is armed by every edit, and a
-  // snapshot landing between the clear and the reload would put the board
-  // straight back. Dropping the latch stops a *new* save; draining the writer
-  // stops one already past the latch (flushEdits() on the way out of the page
-  // calls autosave() directly, past any timer) from repopulating the store.
-  clearTimeout(saveTimer);
+  // Before the wipe, not after: a snapshot landing between the clear and the
+  // reload would put the board straight back. Dropping the latch stops a *new*
+  // save - the interval tick gates on cacheOk - and draining the writer stops
+  // one already past the latch (flushEdits() on the way out of the page calls
+  // autosave() directly) from repopulating the store.
   cacheOk = false;
   await drainSave();
   // Surface a failed wipe instead of reloading over it. A reload that claimed
@@ -817,6 +860,10 @@ export async function clearAllData() {
     return false;
   }
   clearPrefs();
+  // The app's own code goes too - this is the "everything about the site" wipe.
+  // After the session, because it is re-downloadable and its failure must not
+  // sink a wipe of the data that was the point.
+  await clearAppCaches();
   location.reload();
   return true;
 }
@@ -827,31 +874,32 @@ export async function clearAllData() {
 
 export function initStorage() {
   // 'trash' belongs here with the rest. Emptying the bin emits nothing else,
-  // and markDirty() is idempotent - so on an already-dirty board whose debounce
-  // had fired, purging the bin scheduled no snapshot at all and a reload
-  // brought every purged item back.
+  // and markDirty() is idempotent - so on an already-dirty board, purging the
+  // bin would bump no change generation at all and a reload brought every
+  // purged item back.
   // 'view' is emitted by main.js once a pan or zoom has settled. It does not
   // mark the board dirty - looking around is not editing - but it does have to
   // be snapshotted, or closing the tab after moving about restores the view the
   // board had before, which is not where it was left.
   for (const evt of ['items', 'geom', 'item', 'settings', 'board', 'trash', 'view']) {
-    bus.on(evt, scheduleAutosave);
+    bus.on(evt, noteChange);
   }
+  setInterval(requestAutosave, AUTOSAVE_MS);
+  // Don't wait out the interval for a committed action - a card placed, moved or
+  // removed should land on disk promptly. 'history' fires once per commit (and
+  // on undo/redo), after its mutation event has already bumped the generation,
+  // and never during a live drag - applyGeom() repaints without committing - so
+  // this is one request per finished gesture, not one per frame. requestAutosave
+  // holds it to the 5s cooldown, so a fast run of edits still writes just once.
+  bus.on('history', requestAutosave);
   // A board replacing the one that was here is not an edit to it - see the note
   // on `quiet` above. Both doors: opened from a file, and started from nothing.
   bus.on('board:load', hushNextSave);
   bus.on('board:new', hushNextSave);
-  // "Leave site?" on every refresh is worse than useless while developing: the
-  // autosave below has already put the board in IndexedDB, and restoreSession()
-  // brings it straight back, so the prompt guards nothing and costs a click on
-  // every edit-reload cycle. Off on the dev server, kept everywhere else, where
-  // a closed tab really can be the end of an unsaved board.
-  if (isDev()) return;
-  addEventListener('beforeunload', e => {
-    if (!isDirty()) return;
-    e.preventDefault();
-    e.returnValue = '';
-  });
+  // No "Leave site?" guard on close. The 20s autosave and the pagehide flush
+  // (main.js) have already put the board in IndexedDB, and restoreSession()
+  // brings it straight back on the next visit, so the prompt guarded nothing and
+  // cost a click on every reload.
 }
 
 // ---------------------------------------------------------------------------

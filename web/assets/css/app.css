@@ -608,6 +608,27 @@ button, input, select, textarea { font: inherit; color: inherit; }
   opacity: 1;
   pointer-events: auto;
 }
+/* A transparent bridge across the gap to the buttons. Without it the pointer
+   crosses dead space between the card's edge and the buttons, .item:hover drops,
+   and they vanish before they can be reached. A pseudo-element of the card, so
+   hovering it still counts as hovering the card - it spans the card's WHOLE
+   height (top:0/bottom:0 on the item box) and the full width out to past the
+   buttons, so you can strike out toward them from anywhere down the card's right
+   side, not just from the strip level with them. Inert until the buttons are
+   revealed, so it never eats a press on a resting card; it sits entirely to the
+   right of the card (left:100%), so it never covers the card's own content. */
+.item[data-type="title"]::after {
+  content: '';
+  position: absolute;
+  left: 100%;
+  top: 0;
+  bottom: 0;
+  width: calc(56px * var(--iz, 1));
+  pointer-events: none;
+  z-index: 1;
+}
+.item[data-type="title"]:hover::after,
+.item[data-type="title"].is-selected::after { pointer-events: auto; }
 .item-pen:hover,
 .item-rename:hover { background: var(--paper-2); color: var(--accent-deep); border-color: var(--accent); }
 .item-pen svg { width: calc(16px * var(--iz, 1)); height: calc(16px * var(--iz, 1)); }
@@ -1342,7 +1363,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
    Laid over the picture rather than under it, because on a video card the
    picture *is* the card - every row of chrome given its own space is a row of
    the thing you pinned up, taken away. So it floats, and it stays out of the
-   way until the pointer is on the card or the clip is running. */
+   way until the card is selected or the clip is running. */
 .vplayer {
   position: absolute;
   inset: 0;
@@ -1406,9 +1427,12 @@ button, input, select, textarea { font: inherit; color: inherit; }
   opacity: 0;
   transition: opacity var(--dur-fast) var(--ease);
 }
-/* :focus-within is not a nicety - without it the bar vanishes the moment the
+/* Shown when the card is the one being worked on - selected or running - not
+   merely hovered: a scrubber is a control you reach for, and a board of videos
+   should not sprout a bar under the pointer as it crosses each one.
+   :focus-within is not a nicety - without it the bar vanishes the moment the
    pointer leaves, taking the scrubber the keyboard is currently on with it. */
-.item:hover .transport-video,
+.item.is-selected .transport-video,
 .transport-video:focus-within,
 .transport-video.is-playing { opacity: 1; }
 /* Smaller than the audio card's, which is the only control on a card of its
@@ -1466,23 +1490,41 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .vmute:hover { color: var(--accent); }
 .vplayer.is-muted .vmute { color: var(--danger); }
 
-/* The caption plate and the control bar want the same strip of card, so they
-   take turns: the name while you are looking, the transport while you are
-   using it.
+/* The caption is hidden until you reach for the card, on images and video
+   alike: a name is a label, and at rest the picture should be the whole card
+   rather than a picture with a strip of paper across its foot. The whole
+   .item-bar fades - plate and label together - so an image at rest loses the
+   opaque strip and not only the text on it. Back on hover, on keyboard focus,
+   and while the caption itself is being edited. */
+.item[data-type="image"] .item-bar,
+.item[data-type="video"] .item-bar {
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease),
+              background var(--dur-fast) var(--ease);
+}
+.item[data-type="image"]:hover .item-bar,
+.item[data-type="image"]:focus-within .item-bar,
+.item[data-type="image"].is-editing .item-bar,
+.item[data-type="video"]:hover .item-bar,
+.item[data-type="video"]:focus-within .item-bar,
+.item[data-type="video"].is-editing .item-bar { opacity: 1; }
+
+/* On a video the caption plate and the control bar want the same strip of card,
+   so they take turns: the name on hover, the transport once the clip is the one
+   being worked on - selected or running. When the transport is up the name
+   steps aside: faded out, its plate gone transparent, and refusing the pointer.
 
    The caption goes, and the sheet under it with it - the handle stays, because
    it is the only way into the item's menu on a touchscreen and a playing video
    is no reason to take it away. The `:has()` tests .item and not .item-body:
-   the bar is a sibling of the body, not a child of it. */
-.item[data-type="video"] .item-label,
-.item[data-type="video"] .item-bar {
-  transition: opacity var(--dur-fast) var(--ease),
-              background var(--dur-fast) var(--ease);
-}
-.item[data-type="video"]:hover .item-label,
+   the bar is a sibling of the body, not a child of it.
+
+   Ordered after the hover reveal above so a card that is both selected and
+   hovered keeps the name down - the transport wins the foot. */
+.item[data-type="video"].is-selected .item-label,
 .item[data-type="video"]:focus-within .item-label,
 .item:has(.vplayer.is-playing) .item-label { opacity: 0; }
-.item[data-type="video"]:hover .item-bar,
+.item[data-type="video"].is-selected .item-bar,
 .item[data-type="video"]:focus-within .item-bar,
 .item:has(.vplayer.is-playing) .item-bar {
   background: none;
@@ -3223,9 +3265,21 @@ kbd {
   gap: 8px;
 }
 
-/* The title card's way back, beside the bin. A square that carries the same
-   weight as the trash button next to it; ui/trash.js shows it only while the bin
-   is open and the card is gone. The accent edge says "there is a thing here to
+/* The pop-up and its restore button in one row, the button to the right and
+   aligned to the panel's foot, so it sits beside the open trash pop-up and reads
+   as belonging to it. flex-end keeps it near the corner when the panel grows
+   tall upward. When the panel is hidden it is display:none and takes no space,
+   and the button is hidden by ui/trash.js in the same breath - so the row
+   collapses to nothing while the bin is shut. */
+.bin-pop {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+/* The title card's way back, beside the trash pop-up. A square that carries the
+   same weight as the chrome buttons; ui/trash.js shows it only while the bin is
+   open and the card is gone. The accent edge says "there is a thing here to
    press", the way a full bin does. */
 #title-restore {
   display: grid;
@@ -3233,7 +3287,9 @@ kbd {
   width: var(--chrome-button-w);
   height: var(--chrome-button-h);
   border: var(--hairline) solid var(--accent);
-  border-radius: var(--leaf);
+  /* Same corner as the trash pop-up it sits beside (#bin-panel), not the leaf
+     round the dock buttons wear. */
+  border-radius: var(--radius-sm);
   background: var(--paper-card);
   box-shadow: var(--shadow-1);
   color: var(--accent-deep);
@@ -3430,6 +3486,81 @@ kbd {
   animation: bloom var(--dur-base) var(--ease-back);
 }
 @keyframes bloom { from { opacity: 0; transform: scale(0.94) rotate(-1deg); } }
+
+/* ----------------------------------------------------------
+   The delete fly-out. A deleted card's node is discarded at once (state and
+   undo do not wait); what animates is a clone lifted into this screen-space
+   overlay by canvas/exit-anim.js. The overlay sits above the board but below
+   the panels and menus, and never takes a pointer - it only ever shows a ghost
+   on its way out.
+
+   Four feels: the whimsy tier picks fall/dissolve/shatter, and the title card
+   vacuums toward the bin button (--to-x/--to-y are set per-clone in JS). The
+   global prefers-reduced-motion rule collapses every duration below, so with
+   motion off these are effectively instant and exit-anim.js's timeout still
+   sweeps the clone up.
+   ---------------------------------------------------------- */
+#exit-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 24;
+  pointer-events: none;
+  overflow: hidden;
+}
+.exit-anim {
+  will-change: transform, opacity, filter;
+  transform-origin: center;
+}
+.exit-dissolve { animation: exit-dissolve var(--dur-base) var(--ease) forwards; }
+.exit-fall    { animation: exit-fall     var(--dur-base) var(--ease-in, ease-in) forwards; }
+.exit-shatter { animation: exit-shatter  var(--dur-base) var(--ease) forwards; }
+
+/* The title card leaves no clone - it just vanishes. This chip is the only
+   thing drawn: a scrap of card centred on the bin button (the negative margins
+   centre it on the point exit-anim.js parks it at) that appears just above the
+   bin, lifts a touch, then drops into it. The whole motion is local to the bin
+   - the chip does not travel from where the card was. */
+.exit-chip {
+  position: fixed;
+  width: 46px;
+  height: 30px;
+  margin-left: -23px;
+  margin-top: -15px;
+  background: var(--paper-card);
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  box-shadow: var(--item-shadow);
+  animation: exit-chip-fall calc(var(--dur-base) * 1.6) linear forwards;
+}
+/* Real projectile motion, not eased segments. The translateY stops below sample
+   an actual toss - height u(t) = 40 + 100.5t - 140.5t^2 under constant gravity -
+   and the timing is *linear*, so the parabola itself carries the physics: the
+   stops bunch near the apex (slow, the hangtime) and spread out toward the bin
+   (fast, accelerating in). Rises from just above the bin to an apex ~36% through,
+   then falls the longer way down into it, shrinking and fading as it enters. */
+@keyframes exit-chip-fall {
+  0%   { opacity: 0; transform: translateY(-40px) scale(1); }
+  6%   { opacity: 1; transform: translateY(-45px) scale(1); }
+  20%  {            transform: translateY(-54px) scale(1); }
+  36%  {            transform: translateY(-58px) scale(1); }   /* apex */
+  50%  {            transform: translateY(-55px) scale(1); }
+  60%  {            transform: translateY(-50px) scale(1); }
+  70%  {            transform: translateY(-41px) scale(0.96); }
+  80%  {            transform: translateY(-30px) scale(0.88); }
+  90%  { opacity: 1; transform: translateY(-16px) scale(0.74); }
+  100% { opacity: 0; transform: translateY(0)     scale(0.5); }
+}
+@keyframes exit-dissolve {
+  to { transform: scale(0.9); opacity: 0; }
+}
+@keyframes exit-fall {
+  to { transform: translateY(90px) rotate(7deg); opacity: 0; }
+}
+@keyframes exit-shatter {
+  0%   { transform: scale(1); filter: blur(0); }
+  20%  { transform: scale(1.06); filter: blur(0); }
+  100% { transform: scale(0); filter: blur(6px); opacity: 0; }
+}
 
 /* ---------------------------------------------------------
    Right-click menu
@@ -3913,11 +4044,6 @@ kbd {
      finger. It stays for the drag, which is the part you can see. */
   .grip:not(.grip-edge):hover { --grip-swell: 1; }
 
-  /* A video's transport is revealed by hovering the card, which on a touch
-     screen means it is revealed by nothing at all. Selection is the touch
-     equivalent of "the one I am working on", so it takes over the job. */
-  .item.is-selected .transport-video { opacity: 1; }
-
   /* Every hover reaction in the chrome fires on the *first* tap on a touch
      screen and then sticks until something else is tapped, so a bin button
      stays lit long after you have finished with it. The reactions are
@@ -4276,6 +4402,10 @@ kbd {
   border-top: 0;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
+  /* The name is written on the print's mat here, not laid over the picture, so
+     it is part of the photograph rather than a label reached for - it stays put
+     while the other tiers hide it until hover. Overrides the hover-only fade. */
+  opacity: 1;
 }
 /* line-height rather than a flex centre, because the caption keeps its ellipsis
    and its single line, and both of those want it to stay a block. */

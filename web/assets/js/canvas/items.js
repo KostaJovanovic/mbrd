@@ -14,7 +14,15 @@ import { shuffle } from '../util.js';
 import { itemRadius } from '../geometry.js';
 import { buildContent, fitMode } from './renderers.js';
 import { releasePlayers } from './audio.js';
+import { flyOut } from './exit-anim.js';
 import * as spatial from './spatial.js';
+
+/**
+ * Above this many items in one delete, the fly-out is skipped: a fifty-item
+ * delete should not spawn fifty animating clones, so past the cap they just
+ * vanish the way every delete used to.
+ */
+const EXIT_ANIM_CAP = 12;
 
 /** id -> element, including elements currently detached by culling. */
 const nodes = new Map();
@@ -226,6 +234,13 @@ function dropNode(id, el = nodes.get(id)) {
  */
 function reconcile(delta) {
   if (delta && delta.removed) {
+    // A user delete (or redo of one) is the only path that names removed ids;
+    // a load or clear reconciles by diff and reaches the else branch, so a
+    // board swap never animates. Animate before dropNode discards the node -
+    // flyOut clones it, so the snapshot survives the discard on the next line.
+    if (delta.removed.length <= EXIT_ANIM_CAP) {
+      for (const id of delta.removed) { const el = nodes.get(id); if (el) flyOut(el); }
+    }
     for (const id of delta.removed) dropNode(id);
   } else {
     const live = new Set(board.items.map(i => i.id));
@@ -519,11 +534,13 @@ function setGrips(el, want) {
 /**
  * The title card's two pop-up buttons: a pen to the RIGHT that opens the shared
  * masthead style panel, and a T to the LEFT that drops into inline rename of the
- * board name. Only the title card has them, built once and kept - app.css shows
- * them on hover or while the card is selected. Children of `.item` like the grips,
- * so they ride the card's transform and hold a constant on-screen size through
- * --iz. The clicks themselves are caught by canvas/input.js (which owns cmds),
- * the way grip and widget hits are - this only draws the buttons.
+ * board name (single tap). Renaming is also a double-tap of the card itself (see
+ * the dblclick handler in input.js). Only the title card has them, built once and
+ * kept - app.css shows them on hover or while the card is selected. Children of
+ * `.item` like the grips, so they ride the card's transform and hold a constant
+ * on-screen size through --iz. The clicks themselves are caught by
+ * canvas/input.js (which owns cmds), the way grip and widget hits are - this only
+ * draws the buttons.
  */
 function buildTitleControls(el) {
   if (el.querySelector(':scope > .item-pen')) return;

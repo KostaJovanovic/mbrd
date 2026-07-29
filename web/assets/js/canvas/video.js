@@ -89,7 +89,11 @@ export function buildVideoPlayer(item, video) {
     // scaleX off a left origin rather than a width: it is a compositor-only
     // property, and this runs on every frame of playback.
     fill.style.transform = `scaleX(${at.toFixed(4)})`;
-    time.textContent = clock(video.currentTime || 0);
+    // A parked clip shows how long it is; once it has started, where you are in
+    // it. The old readout was currentTime alone, so every unplayed video on the
+    // board said 0:00 and nothing anywhere gave its length.
+    const parked = video.paused && !video.currentTime;
+    time.textContent = clock(parked ? (video.duration || 0) : (video.currentTime || 0));
     track.setAttribute('aria-valuemax', Math.round(video.duration || 0));
     track.setAttribute('aria-valuenow', Math.round(video.currentTime || 0));
     track.setAttribute('aria-valuetext',
