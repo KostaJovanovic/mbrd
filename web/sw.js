@@ -12,7 +12,7 @@
 // Written out in full rather than composed from PREFIX, because save.bat bumps
 // this line by regex on every commit and would not recognise an expression.
 // tests/sw.test.js holds the two together.
-const VERSION = 'mbrd-v65';
+const VERSION = 'mbrd-v66';
 const PREFIX = 'mbrd-';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) turns the
@@ -54,6 +54,7 @@ const SHELL = [
   './assets/js/canvas/grid.js',
   './assets/js/canvas/paper.js',
   './assets/js/canvas/items.js',
+  './assets/js/canvas/exit-anim.js',
   './assets/js/canvas/spatial.js',
   './assets/js/canvas/input.js',
   './assets/js/import/drop.js',

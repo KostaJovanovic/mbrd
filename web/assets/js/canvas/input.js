@@ -178,6 +178,12 @@ export function initInput(vp, cmds) {
   let longPressMenu = null;
   let lastEmptyTap = null;
   let emptyTapCandidate = null;
+  // The previous tap on the title card, so a second one within the double-tap
+  // window opens its inline rename. Read here in the pointer pipeline rather than
+  // through a dblclick listener because #viewport takes pointer capture on press
+  // and that retargets the compatibility mouse events to the viewport - the same
+  // reason the masthead reads its taps directly (see editBoardName in main.js).
+  let lastTitleTap = null;
   // A pointer resting on an unpicked item - see needsTapFirst(). The gesture is
   // a pan; this is what lets the lift still count as a tap if it never moved.
   let armSelect = null;
@@ -552,6 +558,21 @@ export function initInput(vp, cmds) {
       cmds.editTitleText?.();
       pointers.delete(e.pointerId);
       return;
+    }
+    // Double-tap the title card itself → edit its name, the same as its T button.
+    // A second press within the double-tap window that has not wandered claims the
+    // gesture: no capture, no move, just the editor. The first press falls through
+    // and selects as usual, recording itself for the second to match against.
+    if (id && byId(id)?.type === 'title') {
+      const now = e.timeStamp;
+      if (lastTitleTap && now - lastTitleTap.at <= DOUBLE_TAP_MS
+          && Math.hypot(e.clientX - lastTitleTap.x, e.clientY - lastTitleTap.y) <= DOUBLE_TAP_SLOP) {
+        lastTitleTap = null;
+        cmds.editTitleText?.();
+        pointers.delete(e.pointerId);
+        return;
+      }
+      lastTitleTap = { x: e.clientX, y: e.clientY, at: now };
     }
     // A real control inside a card (the audio scrubber, a note being edited)
     // owns the whole gesture: no capture, no drag. Capturing here would redirect

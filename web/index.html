@@ -492,14 +492,32 @@
      kind of object: a small permanent affordance on the glass rather than
      something buried in the panel. Its list is built by ui/trash.js. -->
 <div id="bin">
-  <div id="bin-panel" hidden role="dialog" aria-label="Trash">
-    <header>
-      <h2>Trash</h2>
-      <button type="button" id="bin-empty" title="Throw it all out">Empty</button>
-    </header>
-    <div id="bin-list"></div>
-    <p id="bin-none">Nothing thrown away yet.</p>
-    <p id="bin-hint">Drag anything back onto the board.</p>
+  <!-- The pop-up and, beside it, the title card's restore button. The button
+       rides the panel rather than the dock below: it belongs to "what did I
+       throw away", which is what the open panel is, so it sits next to the
+       pop-up and not next to the trash button that opens it. -->
+  <div class="bin-pop">
+    <div id="bin-panel" hidden role="dialog" aria-label="Trash">
+      <header>
+        <h2>Trash</h2>
+        <button type="button" id="bin-empty" title="Throw it all out">Empty</button>
+      </header>
+      <div id="bin-list"></div>
+      <p id="bin-none">Nothing thrown away yet.</p>
+      <p id="bin-hint">Drag anything back onto the board.</p>
+    </div>
+    <!-- The Desktop title card, when it has been thrown away, is not filed in the
+         bin among ordinary items - it is a singleton the board is meant to have.
+         So it gets its own way back: this small square appears beside the open
+         pop-up while the card is gone, and one press restores it. Hidden to start
+         and toggled by ui/trash.js. -->
+    <button type="button" id="title-restore" hidden
+            aria-label="Bring back the title card" title="Bring back the title card">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M4 4.5h8"/>
+        <path d="M8 4.5v7"/>
+      </svg>
+    </button>
   </div>
   <!-- The autosave, saying so. Absolutely placed rather than stacked in the
        column, because it comes and goes: a slot held open for it would be a
@@ -527,18 +545,6 @@
         <path d="M6 4V2.5h4V4"/>
         <path d="M3.8 4l.6 9a1 1 0 0 0 1 1h5.2a1 1 0 0 0 1-1l.6-9"/>
         <path d="M6.6 6.5v5M9.4 6.5v5"/>
-      </svg>
-    </button>
-    <!-- The Desktop title card, when it has been thrown away, is not filed in the
-         bin among ordinary items - it is a singleton the board is meant to have.
-         So it gets its own way back: this small square appears in the dock while
-         the bin is open and the card is gone, and one press restores it. Hidden
-         to start and toggled by ui/trash.js. -->
-    <button type="button" id="title-restore" hidden
-            aria-label="Bring back the title card" title="Bring back the title card">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M4 4.5h8"/>
-        <path d="M8 4.5v7"/>
       </svg>
     </button>
     <!-- Undo and redo. Beside the bin because they belong to the same thought -
