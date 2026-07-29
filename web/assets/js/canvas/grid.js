@@ -544,6 +544,18 @@ let tierRaf = 0;
  * clicked back to 100% - is not faded. There is no pair of lattices to cross
  * between when the step changes by eight, and half a second of a grid dissolving
  * would be a strange thing to have asked for by pressing "zoom to fit".
+ *
+ * Nor is a tier crossed *during a live zoom*. The fade draws both lattices at
+ * once - on the gradient tiers that is up to fourteen radial gradients repainted
+ * full-viewport, on Harsh a doubled Path2D fill - and holds a repaint loop up
+ * for its whole hundred milliseconds. Standing still that is a nicety nobody
+ * notices paying for; under a continuous zoom, where the board crosses one tier
+ * after another and the fades overlap, it is a sustained double-paint that lands
+ * exactly as the lag you feel when the dots re-tier. The fade is invisible at
+ * that speed anyway - a hundred-millisecond dissolve cannot be seen inside a
+ * gesture that is already past it - so mid-motion the marks simply snap, and the
+ * fade is kept for the slow, settled crossing it was written for. `vp.moving` is
+ * already true by the time paintGrid runs inside a gesture (see _moving()).
  */
 function tierFade(step, vp) {
   const now = performance.now();
@@ -552,7 +564,7 @@ function tierFade(step, vp) {
     // A second change mid-fade abandons the first rather than queueing behind
     // it. Pinching through three tiers should land on the third, not play two
     // animations of somewhere it no longer is.
-    tier = { step, from: adjacent && !still() ? tier.step : 0, at: now };
+    tier = { step, from: adjacent && !still() && !vp.moving ? tier.step : 0, at: now };
   }
   if (!tier.from) return { coarse: step, alpha: 0 };
 

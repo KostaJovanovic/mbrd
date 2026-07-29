@@ -666,16 +666,25 @@ export class Viewport {
 
   _paint() {
     const z = this.zoom;
-    const { left: mobileLeft, width: mobileWidth, top: mobileTop, bottom: mobileBottom }
-      = this.mobileScreenRect();
-    this.el.style.setProperty('--mobile-board-left', `${mobileLeft}px`);
-    this.el.style.setProperty('--mobile-board-width', `${mobileWidth}px`);
-    this.el.style.setProperty('--mobile-board-top', `${mobileTop}px`);
-    this.el.style.setProperty('--mobile-board-bottom', `${mobileBottom}px`);
-    // The masthead hangs off the top edge, so it needs no position of its own -
-    // app.css subtracts this from --mobile-board-top and the band travels with
-    // the board as it scrolls away.
-    this.el.style.setProperty('--mobile-header-height', `${this.mobileHeaderPx()}px`);
+    // Only in Mobile mode. These five custom properties position the finite
+    // board frame, its rounded edges and the masthead - all of which are
+    // Desktop-hidden (#mobile-board-frame et al. are display:none off Mobile).
+    // Writing them on every Desktop pan frame was mobileScreenRect() arithmetic
+    // plus five style invalidations spent on props nothing reads. A switch into
+    // Mobile re-runs _paint through setBoardMode -> apply, so the values are
+    // current the moment they start being read again.
+    if (this.isMobile) {
+      const { left: mobileLeft, width: mobileWidth, top: mobileTop, bottom: mobileBottom }
+        = this.mobileScreenRect();
+      this.el.style.setProperty('--mobile-board-left', `${mobileLeft}px`);
+      this.el.style.setProperty('--mobile-board-width', `${mobileWidth}px`);
+      this.el.style.setProperty('--mobile-board-top', `${mobileTop}px`);
+      this.el.style.setProperty('--mobile-board-bottom', `${mobileBottom}px`);
+      // The masthead hangs off the top edge, so it needs no position of its own -
+      // app.css subtracts this from --mobile-board-top and the band travels with
+      // the board as it scrolls away.
+      this.el.style.setProperty('--mobile-header-height', `${this.mobileHeaderPx()}px`);
+    }
     // +panY (not -panY): items are laid out at cssY = -worldY, so the vertical
     // translate has to undo that flip as well as apply the pan.
     this.world.style.transform =
