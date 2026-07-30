@@ -191,6 +191,7 @@ export function initAppearance(handlers = {}) {
   buildControls();
   wirePalette();
   wireAutoPalette();
+  wirePaletteSources();
   wireWhimsy();
 
   // A board's look on the way in, and the user's own back again on the way out.
@@ -230,6 +231,19 @@ export function initAppearance(handlers = {}) {
   // that has already succeeded, and it has no business turning into an
   // unhandled rejection in somebody's console because one PNG would not decode.
   bus.on('items', () => {
+    if (!autoOn(current)) return;
+    if (sourceKey() === lastSources) return;
+    recolourFromBoard({ silent: true }).catch(() => {});
+  });
+
+  // Turning the "how many pictures" dial changes which pictures the palette is a
+  // representation of, so it re-derives - on the same terms as an edit: only
+  // when the switch is on and only when the sampled set actually differs (the
+  // count is part of sourceKey). syncPaletteSources() keeps the slider itself in
+  // step; this is the colour half of the same change.
+  bus.on('settings', key => {
+    if (key !== 'paletteSources') return;
+    syncPaletteSources();
     if (!autoOn(current)) return;
     if (sourceKey() === lastSources) return;
     recolourFromBoard({ silent: true }).catch(() => {});
@@ -561,15 +575,25 @@ function pictureURLs() {
 }
 
 /**
+ * How many pictures the palette is read from: the board's own setting, held
+ * inside the sampler's absolute ceiling. Defaults to the ceiling when unset.
+ */
+function sourceCount() {
+  const n = board.paletteSources;
+  return Number.isFinite(n) ? Math.max(1, Math.min(MAX_SOURCES, n)) : MAX_SOURCES;
+}
+
+/**
  * The pictures an extraction would actually read, as one comparable string.
  *
- * Sliced to MAX_SOURCES, because the question this answers is "would running
- * the extraction again give a different answer?" and a picture past the cap is
- * never read. Order is part of it: the same twelve pictures reordered so that a
- * different one falls off the end are a different twelve.
+ * Sliced to the source count, because the question this answers is "would
+ * running the extraction again give a different answer?" and a picture past the
+ * count is never read. Order is part of it, and so is the count itself: the same
+ * pictures with the dial turned down are a different, shorter list - which is
+ * what makes turning the dial re-derive the palette.
  */
 function sourceKey() {
-  return pictureURLs().slice(0, MAX_SOURCES).join('\n');
+  return pictureURLs().slice(0, sourceCount()).join('\n');
 }
 
 /** The pictures the palette standing on screen was taken from - see sourceKey(). */
@@ -629,7 +653,7 @@ async function recolourFromBoard({ silent = false } = {}) {
     return false;
   }
 
-  const pixels = await samplePixels(urls);
+  const pixels = await samplePixels(urls, sourceCount());
   // One line per attempt, in the house style of main.js's "ready". This is a
   // feature whose every failure mode is a picture quietly not being read, and
   // the count of pictures found against pictures actually decoded is the whole
@@ -1043,6 +1067,12 @@ function syncControls() {
 function syncAutoBox() {
   const box = document.getElementById('opt-auto-palette');
   if (box) box.checked = autoOn(current);
+  // The source-count dial only means anything while the switch is on - with it
+  // off the palette is the chosen one and no picture is read - so it comes down
+  // with the switch rather than sitting there inert.
+  const field = document.getElementById('palette-sources-field');
+  if (field) field.hidden = !autoOn(current);
+  syncPaletteSources();
 }
 
 function wireAutoPalette() {
@@ -1050,6 +1080,24 @@ function wireAutoPalette() {
   if (!input) return;
   input.checked = autoOn(current);
   input.addEventListener('change', () => setAutoPalette(input.checked));
+}
+
+/** The slider showing its own value, and the count it reflects. */
+function syncPaletteSources() {
+  const input = document.getElementById('opt-palette-sources');
+  const out = document.getElementById('opt-palette-sources-out');
+  const n = sourceCount();
+  if (input && document.activeElement !== input) input.value = String(n);
+  if (out) out.textContent = `${n} photo${n === 1 ? '' : 's'}`;
+}
+
+function wirePaletteSources() {
+  const input = document.getElementById('opt-palette-sources');
+  if (!input) return;
+  input.max = String(MAX_SOURCES);
+  input.value = String(sourceCount());
+  input.addEventListener('input', () => setSetting('paletteSources', +input.value));
+  syncPaletteSources();
 }
 
 function wireWhimsy() {

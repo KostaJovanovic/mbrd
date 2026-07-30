@@ -244,9 +244,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
   pointer-events: none;
 }
 
-/* Mobile is a finite, content-sized selected-width strip. viewport.js keeps these
-   screen-space edges aligned with its live world bounds as the window and the
-   lowest item change.
+/* Mobile is a finite, content-sized selected-width strip. canvas/mobile-frame.js
+   keeps these screen-space edges aligned with its live world bounds as the
+   window and the lowest item change.
    The four dashed rules that used to trace those edges - two down the sides,
    one along the head and one along the foot - are gone. The lattice now stops
    at the board (see inkBox() in canvas/grid.js), so the edge is already drawn
@@ -254,40 +254,62 @@ button, input, select, textarea { font: inherit; color: inherit; }
    made twice, in the heavier of the two hands. What remains is the difference
    in tone between the sheet and the surround, which is what says "off the
    board" without drawing anything at all. */
+
+/* That difference in tone, as a layer of its own.
+   It was a `box-shadow: 0 0 0 100vmax` on the sheet below, and as a picture
+   that was right: a shadow is clipped to outside its element's border box,
+   radius included, so the tint stopped exactly at the board and followed its
+   rounded corners. What it cost was a full-window repaint on every frame the
+   sheet moved, which is every frame of every scroll. The sheet is opaque, so a
+   wash underneath it is clipped to the same place by the sheet itself - and a
+   wash that covers the whole window never has to move. */
+#mobile-surround {
+  display: none;
+  position: absolute;
+  inset: 0;
+  /* One shade over the whole surround. Six percent is a small step from the
+     old four, but enough to keep a near-white sheet legible at every palette. */
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  pointer-events: none;
+}
+/* Its geometry is written by canvas/mobile-frame.js, clipped to the window, so
+   there is nothing here to position - only what the sheet is made of. */
 #mobile-board-frame {
   /* Middle: a white sheet still carrying enough of the palette to belong to
      the board. Softish and Harsh adjust only this share below. */
   --mobile-board-accent: 6%;
   display: none;
   position: absolute;
-  top: var(--mobile-board-top, 0);
-  left: var(--mobile-board-left, 0);
-  width: var(--mobile-board-width, 0);
-  height: max(0px, calc(var(--mobile-board-bottom, 0px) - var(--mobile-board-top, 0px)));
   box-sizing: border-box;
   border-radius: var(--radius);
+  /* Opaque, and the surround above depends on it being so: the wash is painted
+     across the whole window and this is what stops it at the board's edge. */
   background: color-mix(in srgb, var(--accent) var(--mobile-board-accent), #fff);
-  /* One shade over the whole surround. Six percent is a small step from the
-     old four, but enough to keep a near-white sheet legible at every palette. */
-  box-shadow: 0 0 0 100vmax color-mix(in srgb, var(--ink) 6%, transparent);
   pointer-events: none;
 }
 :root[data-whimsy="0"] #mobile-board-frame { --mobile-board-accent: 7%; }
 :root[data-whimsy="2"] #mobile-board-frame { --mobile-board-accent: 4.5%; }
-/* The 3:2 masthead standing on the board's top edge - viewport.js derives its
-   height from the board width, so the same board has the same title page in
-   short and tall windows. Hung off --mobile-board-top rather than pinned to the
-   window, so it travels with the board and scrolls away for good; the ceiling's
-   wash is already behind it, and this adds no background of its own.
+/* The 3:2 masthead standing on the board's top edge - canvas/mobile-frame.js
+   derives its height from the board width, so the same board has the same title
+   page in short and tall windows. It travels with the board and scrolls away
+   for good; the ceiling's wash is already behind it, and this adds no
+   background of its own.
+   Moved by transform from `top: 0`, not by a top that tracks the board's edge.
+   Its size answers to the window and the board's column count and its position
+   to every frame of a scroll, and only one of those is worth a layout - so the
+   travel is a transform on a layer of its own and the box underneath it holds
+   still. Small and bounded (the board width over 1.5), which is what makes the
+   promotion safe; the sheet is not, and is cached instead.
    Inert to the pointer: a title page is not a control, and a finger that lands
    on it is a finger scrolling the board. */
 #mobile-board-header {
   display: none;
   position: absolute;
-  left: var(--mobile-board-left, 0px);
-  width: var(--mobile-board-width, 0px);
-  height: var(--mobile-header-height, 0px);
-  top: calc(var(--mobile-board-top, 0px) - var(--mobile-header-height, 0px));
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  will-change: transform;
   align-items: center;
   justify-content: center;
   /* No side padding, and that is the wrap rule: the name breaks when it reaches
@@ -300,8 +322,15 @@ button, input, select, textarea { font: inherit; color: inherit; }
   overflow: hidden;
   pointer-events: none;
 }
+:root[data-board-mode="mobile"] #mobile-surround { display: block; }
 :root[data-board-mode="mobile"] #mobile-board-frame { display: block; }
 :root[data-board-mode="mobile"] #mobile-board-header { display: flex; }
+/* mbrd.perf.mobile({ chrome: false }). A dev switch, not a state the app can
+   reach on its own - see mobilePerfFlags in canvas/viewport.js, which is also
+   what stops the writes that would otherwise still be happening behind this. */
+:root.perf-no-mobile-chrome #mobile-surround,
+:root.perf-no-mobile-chrome #mobile-board-frame,
+:root.perf-no-mobile-chrome #mobile-board-header { display: none; }
 /* Sized against the strip's own width rather than the window's, because the
    strip is what the name is set across - on a wide window in Mobile mode the
    board stays 384 world px and a vw-sized title would run out of it. Four
@@ -342,8 +371,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
      box, so it moves if the padding or the leading around it ever does. */
   /* translateY first so it is a plain shift of the whole name, unscaled by the
      Font height dial - the panel's Vertical position, expressed as a percentage
-     of the band's own height (--mobile-header-height, published on #viewport and
-     inherited here) so the nudge keeps its proportion at any font size. 0 leaves
+     of the band's own height (--mobile-header-height, published on the masthead
+     itself and inherited here - it used to sit on #viewport, which meant every
+     card on the board was invalidated to move a title) so the nudge keeps its
+     proportion at any font size. 0 leaves
      the name where the band's own centring put it; the band's overflow clips
      whatever a large shift pushes past an edge. */
   transform:
@@ -2285,6 +2316,19 @@ plates do: below a third of size a card is a coloured tile, and a click on
 #world.zoom-grab .grip:not(.grip-edge)::before {
   width:  var(--grip-out);
   height: var(--grip-out);
+}
+
+/* Debug: paint the corner grab hitbox, which otherwise has no ink of its own.
+   The square straddles onto the card at ordinary zoom and clips to its outside
+   half below the grab rung (the two rules above), and none of that reach is
+   visible - so a hitbox that feels wrong cannot be checked by eye. Off for
+   everyone; toggled by mbrd.debugGrips() or opening the board at `.../#grips`,
+   which set data-debug-grips on <html>. Grips only show on a selected card, so
+   this appears there too. */
+[data-debug-grips] .grip:not(.grip-edge)::before {
+  background: color-mix(in srgb, var(--select) 28%, transparent);
+  outline: max(1px, calc(1px * var(--iz))) solid var(--select);
+  outline-offset: calc(-1 * max(1px, calc(1px * var(--iz))));
 }
 
 /* Interior controls ride above the grips (z-index 2) so the corner mark and its

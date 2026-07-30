@@ -284,6 +284,12 @@ export const board = {
   // rather than of a device's view. A single item can override it from its own
   // meta.fit - see fitMode() in canvas/renderers.js.
   mediaFit: 'contain',
+  // How many of the board's pictures the "take colours from pictures" palette is
+  // read from, newest first. Board-level like the palette itself (colour is
+  // shared across layouts), and clamped to [1, 24] - the 24 mirrors MAX_SOURCES
+  // in ui/pigments.js, the absolute ceiling the sampler enforces. Default 12,
+  // the count the feature used before it was made a dial.
+  paletteSources: 12,
   // Thrown away but not gone. Entries are { item, at }, newest first.
   trash: [],
 };
@@ -2392,6 +2398,15 @@ export function setSetting(key, value) {
     bus.emit('settings', key);
     return;
   }
+  if (key === 'paletteSources') {
+    // Board-level too, and read by ui/appearance.js's palette extraction.
+    const next = normalizePaletteSources(value);
+    if (board.paletteSources === next) return;
+    board.paletteSources = next;
+    markDirty();
+    bus.emit('settings', key);
+    return;
+  }
   if (key === 'fonts') {
     const fonts = normalizeFonts(value);
     board.settings.fonts = fonts;
@@ -2470,6 +2485,7 @@ export function loadBoard(data) {
   board.mobileHeader = next.mobileHeader;
   board.titleHidden = next.titleHidden;
   board.mediaFit = next.mediaFit;
+  board.paletteSources = next.paletteSources;
   board.trash = next.trash;
   board.layoutMode = layoutMode;
   // The Desktop title card is seeded by the app (main.js, on 'board:load'), not
@@ -2548,6 +2564,7 @@ function normalizeBoard(data) {
     mobileHeader: normalizeMobileHeader(src.mobileHeader ?? rawSettings.mobileHeader),
     titleHidden: !!src.titleHidden,
     mediaFit: normalizeMediaFit(src.mediaFit),
+    paletteSources: normalizePaletteSources(src.paletteSources),
     sharedAppearance,
     layoutSettings: {
       desktop: desktopRecord.settings
@@ -2686,6 +2703,12 @@ function normalizeMediaFit(value) {
   return value === 'cover' ? 'cover' : 'contain';
 }
 
+/** How many pictures the palette reads, clamped to [1, 24] (see MAX_SOURCES). */
+function normalizePaletteSources(value) {
+  const n = Math.round(+value);
+  return Number.isFinite(n) ? Math.max(1, Math.min(24, n)) : 12;
+}
+
 function normalizeMobileHeader(raw) {
   const header = raw && typeof raw === 'object' ? raw : {};
   const axes = {};
@@ -2751,6 +2774,7 @@ export function serializeBoard() {
     mobileHeader: normalizeMobileHeader(board.mobileHeader),
     titleHidden: !!board.titleHidden,
     mediaFit: normalizeMediaFit(board.mediaFit),
+    paletteSources: normalizePaletteSources(board.paletteSources),
     // Legacy readers see the Desktop half, matching the Desktop geometry kept in
     // items. New readers use each layout record below.
     settings: { ...desktopSettings, mobileHeader: normalizeMobileHeader(board.mobileHeader) },

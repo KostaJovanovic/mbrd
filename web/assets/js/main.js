@@ -19,9 +19,12 @@ import {
 } from './state.js';
 import { latticeBox, itemBounds } from './geometry.js';
 import { defaultUpAxis, meshKind } from './mesh.js';
-import { Viewport, MIN_ZOOM, MAX_ZOOM, BASE_ZOOM, zoomMs, travelMs } from './canvas/viewport.js';
+import {
+  Viewport, MIN_ZOOM, MAX_ZOOM, BASE_ZOOM, zoomMs, travelMs, mobilePerfFlags,
+} from './canvas/viewport.js';
 import { paintGrid, resetGridInk } from './canvas/grid.js';
 import { initPaper, paintPaper } from './canvas/paper.js';
+import { initMobileFrame, paintMobileFrame } from './canvas/mobile-frame.js';
 import { initItems, resetItems, cullProfile, viewStats } from './canvas/items.js';
 import { isTurning, resetModels, rotateModel } from './canvas/model.js';
 import { initWeb } from './canvas/web.js';
@@ -116,6 +119,15 @@ const cmds = {
   },
   fit: () => vp.fit(board.items, 80, travelMs()),
   recenter: () => vp.recenter(travelMs()),
+  // Dev: paint the resize corner grab zones, which have no ink of their own, so
+  // their reach can be checked by eye (see [data-debug-grips] in app.css). A
+  // toggle that reflects on its own sidebar button; also on mbrd.debugGrips()
+  // and the #grips URL. Grips only show on a selected card, so select one first.
+  debugGrips: () => {
+    const on = document.documentElement.toggleAttribute('data-debug-grips');
+    document.querySelector('[data-cmd="debug-grips"]')?.setAttribute('aria-pressed', String(on));
+    return on;
+  },
   // Hold the magnification where it is. A command rather than two lines in the
   // click handler, because that is what a user-facing action is here - the one
   // surface a key binding or a menu row would bind to if either ever wants it.
@@ -259,6 +271,9 @@ initScaleBar(vp);
 // also a control - it is dragged by the corners to set the board's scale - so
 // it owns an event surface as well as a drawing, the way every other init* does.
 initPaper(vp);
+// The Mobile sheet and masthead, which are screen-space chrome like the paper
+// sheet and are painted off the same event for the same reason.
+initMobileFrame(vp);
 initInput(vp, cmds);
 initMenu(vp, cmds);
 initSearch(vp);
@@ -364,6 +379,23 @@ const viewPerf = (() => {
       console.log('[perf] on — pan/zoom continuously, then mbrd.perf.report()');
     },
     off() { on = false; cullProfile.on = false; if (raf) cancelAnimationFrame(raf); raf = 0; hideHud(); console.log('[perf] off'); },
+    /**
+     * The three Mobile kill switches, as one call - see mobilePerfFlags.
+     *
+     * `mbrd.perf.mobile({ legacyVars: true })` and so on. The class is here
+     * rather than in the module because hiding the chrome is a stylesheet's job
+     * and skipping the writes is the module's; both hang off the one flag.
+     *
+     * Returns the resulting flags, which is what makes this usable from a phone
+     * - there is no console to read a global out of, so the call has to answer.
+     */
+    mobile(patch = {}) {
+      Object.assign(mobilePerfFlags, patch);
+      document.documentElement.classList.toggle(
+        'perf-no-mobile-chrome', !mobilePerfFlags.chrome);
+      vp.apply();
+      return { ...mobilePerfFlags };
+    },
     /** JS timings for one view frame, in ms: grid paint and the rest. */
     sample(grid, rest) {
       gridMs += grid; restMs += rest; frames++; moved = true;
@@ -377,6 +409,11 @@ const viewPerf = (() => {
       const { sorted, median, janks } = stats();
       const mem = viewStats();
       const r = {
+        // Which board and which layout, because two runs of this are only
+        // comparable if they were the same board in the same mode - and the
+        // Mobile work is measured by exactly that comparison.
+        boardMode: board.layoutMode,
+        items: board.items.length,
         motionFrames: gaps.length,
         fpsMedian: +(1000 / median).toFixed(1),
         fpsP95Low: +(1000 / pct(sorted, 0.95)).toFixed(1),   // the slow tail
@@ -709,10 +746,11 @@ function syncBoardMode(frame = false) {
 /**
  * The name across the Mobile masthead.
  *
- * The band itself is positioned entirely in CSS, off the custom properties the
- * viewport already publishes, so this is the only part that needs saying in
- * JavaScript. Written whatever the mode: a header that is display:none has
- * nothing to gain from being stale when Mobile is switched back on.
+ * The band itself is positioned by canvas/mobile-frame.js, off the same view
+ * change everything else in screen space paints on, so this is the only part
+ * that needs saying here. Written whatever the mode: a header that is
+ * display:none has nothing to gain from being stale when Mobile is switched
+ * back on.
  *
  * A board with no name of its own still gets its page - see the [data-untitled]
  * rule in app.css for why it is dressed down rather than left blank.
@@ -920,6 +958,7 @@ function reloadBoard() {
   bus.emit('settings', 'reload');
   paintGrid(vp);
   paintPaper();
+  paintMobileFrame();
   vp.apply();
   toast('Board reloaded');
 }
@@ -1440,13 +1479,16 @@ function middleOf(items) {
 
 // A console handle, deliberately public: `mbrd.board` to inspect state,
 // `mbrd.cmds.fit()` to drive the app, `mbrd.vp` for the coordinate model,
-// `mbrd.perf.on()` to profile the pan/zoom frame.
-window.mbrd = { board, bus, vp, cmds, selection, perf: viewPerf };
+// `mbrd.perf.on()` to profile the pan/zoom frame, `mbrd.debugGrips()` to see the
+// resize hitboxes.
+window.mbrd = { board, bus, vp, cmds, selection, perf: viewPerf, debugGrips: cmds.debugGrips };
 
 // A phone has no console to type mbrd.perf.on() into, so the profiler can be
 // armed from the URL as well: open the board at `.../#perf` on the device and
-// the on-screen readout comes up on its own. Harmless anywhere else.
+// the on-screen readout comes up on its own. Harmless anywhere else. The grip
+// overlay rides the same trick with `#grips`.
 if (location.hash.includes('perf')) viewPerf.on();
+if (location.hash.includes('grips')) cmds.debugGrips();
 
 // ---------------------------------------------------------------------------
 // Start
@@ -1486,6 +1528,7 @@ const started = (async function start() {
   paintSnap();
   paintGrid(vp);
   paintPaper();
+  paintMobileFrame();
   paintCount();
   vp.apply();
   console.log('[mbrd] v' + VERSION + ' ready');

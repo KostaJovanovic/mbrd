@@ -61,9 +61,15 @@
 <!-- The canvas. #viewport is fixed to the window and paints the grid; #world is
      the single transformed layer every item lives in (see canvas/viewport.js). -->
 <div id="viewport">
+  <!-- The tint outside the Mobile strip. It used to be a 100vmax spread shadow
+       on the sheet below, which meant the whole window was repainted every time
+       the board scrolled a pixel. A shadow is clipped to outside its element's
+       border box, radius included, so a wash laid under an opaque rounded sheet
+       is the same picture - and this one never moves. -->
+  <div id="mobile-surround" aria-hidden="true"></div>
   <!-- The finite Mobile sheet sits below the grid so its opaque near-white can
-       carry palette colour without washing the lattice out. viewport.js
-       publishes the live bounds while the items remain in #world. -->
+       carry palette colour without washing the lattice out. canvas/mobile-frame.js
+       positions it, clipped to the window, while the items remain in #world. -->
   <div id="mobile-board-frame" aria-hidden="true"></div>
   <!-- The lattice at the plain end of the whimsy axis, which is drawn rather
        than tiled - see canvas/grid.js for why a background image could not be
@@ -203,6 +209,12 @@
         <p class="hint">Drop a <code>.woff2</code>, <code>.ttf</code> or <code>.otf</code> on the board to add your own face.</p>
         <div id="appearance-vars"></div>
         <label class="check"><input type="checkbox" id="opt-auto-palette" checked> Take colours from pictures</label>
+        <!-- How many of the board's pictures the palette above is read from,
+             newest first. Only shown while the switch is on - see syncAutoBox(). -->
+        <label class="field" id="palette-sources-field">
+          <span>Pictures used <output id="opt-palette-sources-out"></output></span>
+          <input id="opt-palette-sources" type="range" min="1" max="24" step="1" value="12">
+        </label>
         <div id="appearance-advanced-vars"></div>
         <div class="btn-row">
           <button type="button" data-cmd="reset-appearance">Start over</button>
@@ -376,6 +388,21 @@
       </div>
       <div class="btn-row">
         <button type="button" data-cmd="clear-data" class="danger">Clear everything</button>
+      </div>
+    </section>
+
+
+    <!-- Development aids, last of all: none of this is part of using a board, it
+         is for checking the app itself. The grip overlay paints the resize
+         corner grab zones - invisible by design (see .grip::before in app.css) -
+         so their reach can be seen and checked. Grips only show on a selected
+         card, so select one first. The button is a toggle; aria-pressed is kept
+         in step by cmds.debugGrips, which the #grips URL and mbrd.debugGrips()
+         also drive. -->
+    <section class="side-sec">
+      <h2>Debug</h2>
+      <div class="btn-row">
+        <button type="button" data-cmd="debug-grips" aria-pressed="false">Highlight resize grips</button>
       </div>
     </section>
   </div>

@@ -594,8 +594,18 @@ function fitOne(title, box, skip) {
   title.style.setProperty('--mobile-title-fit', String(fit));
 }
 
+/** What the button was last set to, so a scroll writes nothing - see below. */
+let buttonShown = null;
+
 function paintButton() {
   const visible = board.layoutMode === 'mobile' && !!viewport?.atMobileTop?.();
+  // This runs on every view change, and the answer changes exactly twice in a
+  // scroll - on leaving the top stop and on returning to it. Writing it on
+  // every frame in between is two attribute sets a frame to arrive at the state
+  // already there, which is the one thing every other view listener in this app
+  // guards against (see paintZoom() in main.js and draw() in ui/scalebar.js).
+  if (visible === buttonShown) return;
+  buttonShown = visible;
   button.hidden = !visible;
   button.setAttribute('aria-hidden', String(!visible));
 }
