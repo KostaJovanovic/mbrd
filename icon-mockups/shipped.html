@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>mbrd - shipped icon</title>
+<!-- The source for shipped.png, which had none: the sheet was a one-off render
+     and went stale the moment the icon changed. It points at the real files in
+     web/assets/img/, so re-rendering it is the check that what ships still
+     reads at the sizes it is actually seen at.
+
+     Small first. The 16px tab favicon and the 48px launcher tile decide an
+     icon; the 512 is only ever seen in a store listing. The dark strip is
+     there because a browser tab is dark half the time and a paper ground has
+     nothing to separate it from a light one.
+
+     Render: 760x420 at the top-left of an oversized headless window. Edge's
+     --window-size is the window and not the viewport, so a shot taken at the
+     sheet's own size comes back cropped - that is the bug that left every
+     committed icon PNG stopping at 503x469 on a 512 canvas. -->
+<style>
+  html, body { margin: 0; padding: 0; }
+  body {
+    width: 760px; height: 420px; overflow: hidden;
+    background: #8a8a8a;
+    font: 13px/1.4 ui-sans-serif, system-ui, sans-serif; color: #1b1b1b;
+  }
+  .row { display: flex; align-items: center; gap: 22px; padding: 16px 0 0 14px; }
+  .label { width: 62px; font-weight: 600; }
+  .strip {
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px 16px; border-radius: 12px; background: #fff;
+  }
+  .strip.dark { background: #111; }
+  img { display: block; }
+
+  /* The OS mask, applied here rather than assumed: a maskable icon is only
+     correct if the safe zone survives the worst of them, and the circle is the
+     worst. */
+  .circle { border-radius: 50%; }
+  .squircle { border-radius: 24%; }
+</style>
+</head>
+<body>
+
+<div class="row">
+  <div class="label">shipped</div>
+  <img src="../web/assets/img/icon.svg" width="168" height="168" alt="">
+  <div class="strip">
+    <img src="../web/assets/img/icon.svg" width="64" height="64" alt="">
+    <img src="../web/assets/img/icon.svg" width="48" height="48" alt="">
+    <img src="../web/assets/img/icon.svg" width="32" height="32" alt="">
+    <img src="../web/assets/img/icon.svg" width="16" height="16" alt="">
+  </div>
+  <div class="strip dark">
+    <img src="../web/assets/img/icon.svg" width="48" height="48" alt="">
+    <img src="../web/assets/img/icon.svg" width="32" height="32" alt="">
+    <img src="../web/assets/img/icon.svg" width="16" height="16" alt="">
+  </div>
+</div>
+
+<div class="row">
+  <div class="label">maskable</div>
+  <img class="circle" src="../web/assets/img/icon-maskable.svg" width="150" height="150" alt="">
+  <img class="squircle" src="../web/assets/img/icon-maskable.svg" width="110" height="110" alt="">
+  <div class="strip">
+    <img class="circle" src="../web/assets/img/icon-maskable.svg" width="64" height="64" alt="">
+    <img class="circle" src="../web/assets/img/icon-maskable.svg" width="48" height="48" alt="">
+    <img class="circle" src="../web/assets/img/icon-maskable.svg" width="32" height="32" alt="">
+  </div>
+</div>
+
+</body>
+</html>

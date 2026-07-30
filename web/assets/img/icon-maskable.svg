@@ -1,21 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="mbrd">
-  <!-- Maskable variant. No corner radius of its own - the OS supplies the shape
-       - and no clip either, since the mask is the clip.
+  <!-- Maskable variant: same three cards, no corner radius of its own because
+       the OS supplies the shape, and the group scaled into the inner 80% safe
+       zone so a circle mask cannot clip a card. The dot grid stays full-bleed -
+       it is background, and losing its outer ring to a mask costs nothing.
 
-       The bleed is kept rather than scaled away: a card that runs off the edge is
-       the whole idea, and a mask cutting it is the same cut the squircle already
-       makes in icon.svg. What cannot survive a mask is the small card, so that
-       one moves inward. The safe zone is a circle of radius 204 about the
-       centre, and the absinthe card's far corner sat at radius 272 - outside it,
-       so a round mask clipped a corner off the one card that has corners to
-       spare. At x=112,y=128 that corner is at radius 193 and safe, and the card
-       keeps its size and its angle.
-
-       Pulling it in that far makes it overlap the big card, which it does not do
-       in icon.svg - there is no position inside the safe circle that clears the
-       big card's top edge. So the order is reversed here and the small card is
-       drawn on top: two cards stacked rather than two cards apart, which is the
-       same board either way. -->
+       0.74 rather than 0.8: the safe zone is a circle, so what has to fit is the
+       group's *diagonal* half-extent (241 units), not its width. 241 x 0.74 =
+       178, inside the 204-unit safe radius. -->
   <defs>
     <pattern id="dots" width="48" height="48" patternUnits="userSpaceOnUse">
       <circle cx="24" cy="24" r="2.8" fill="#372a1d" fill-opacity="0.16"/>
@@ -23,6 +14,9 @@
   </defs>
   <rect width="512" height="512" fill="#fbf8f1"/>
   <rect width="512" height="512" fill="url(#dots)"/>
-  <rect x="146" y="188" width="420" height="300" rx="26" fill="#c25c2b" transform="rotate(-6 356 338)"/>
-  <rect x="112" y="128" width="150" height="112" rx="18" fill="#76b583" transform="rotate(4 187 184)"/>
+  <g transform="translate(256 256) scale(0.74) translate(-256 -256)">
+    <rect x="76"  y="96"  width="210" height="148" rx="22" fill="#c25c2b" transform="rotate(-4 181 170)"/>
+    <rect x="300" y="140" width="136" height="210" rx="22" fill="#f4c2c2" transform="rotate(4 368 245)"/>
+    <rect x="100" y="282" width="176" height="134" rx="22" fill="#76b583" transform="rotate(3 188 349)"/>
+  </g>
 </svg>
