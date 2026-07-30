@@ -1,5 +1,52 @@
 # Mobile board scroll — root causes and plan (2026-07-30)
 
+## Results (measured on the phone, 2026-07-30 23:43)
+
+101-item Mobile board, 120Hz device. `fps` and `p95` are both frame rates, so
+higher is better; `p95` is the slow tail, `jank` the share of frames past 1.5x
+the median, `mnt` the mounted node count.
+
+| Run | fps | p95 | worst | jank | n | cull | mnt |
+|-----|-----|-----|-------|------|---|------|-----|
+| `#perf` shipped | 119.0 | 24.0 | 167ms | 28.3% | 727 | 0.16ms | 6 |
+| `#perf1` legacy | **60.2** | 29.9 | 142ms | 20.3% | 479 | 0.23ms | 5 |
+| `#perf2` nochrome | 120.5 | **59.9** | 117ms | **7.2%** | 889 | 0.13ms | 6 |
+| `#perf3` nogrid | 120.5 | **60.2** | 133ms | **5.8%** | 843 | 0.12ms | 5 |
+
+**M-1 was the whole of the first problem, and the fix is worth exactly what it
+looked like.** Putting the five `#viewport` custom properties back (`#perf1`)
+halves the frame rate, 119 → 60.2. That is not a gradual slowdown; it is the
+per-frame work crossing the 8.3ms budget and the display dropping to every
+second refresh. The difference between this board holding 120Hz and holding
+60Hz is one style invalidation per frame.
+
+**What is left is full-screen paint in the background layer.** The median is
+already at the refresh rate, so the remaining defect is entirely in the tail,
+and two independent switches move it by the same large amount: dropping the grid
+repaint takes jank from 28.3% to 5.8% and the tail from 24 to 60 fps, and
+dropping the Mobile chrome does almost exactly the same. Both remove one
+full-window rasterisation from the frame — `#grid-ink`'s tiled background in one
+case, `#mobile-surround`'s wash beneath it in the other. They are the same
+finding twice, which is why they measure the same.
+
+That is a direct indication for **step 4**: move the lattice by transform so its
+background stops being re-rasterised, and promote it, which also lifts the wash
+underneath out of the repainted region.
+
+**Two questions are answered and closed by `mnt`.** Six mounted nodes on a
+101-item board, and 6MB of decoded image. The cull is doing its job and there is
+nothing for a tighter cull margin to save, so the vertical-margin idea joins the
+axis-aware one as withdrawn — and the shadow-twin drop has six twins to remove,
+which is not a lever. **Step 5 is closed.**
+
+**One caveat on the baseline.** `#perf` was the first run of the session and has
+the smallest sample (n=727). Some of its 28.3% could be first-gesture cost -
+cards being built and images decoded for the first time - rather than steady
+state. A second `#perf` run taken last would settle it, and is worth the thirty
+seconds before building step 4 on top of the number.
+
+---
+
 ## Status (implemented 2026-07-30)
 
 Steps 1 and 2 of `research/2026-07-30-mobile-scroll-impl.md` are on `main`,
