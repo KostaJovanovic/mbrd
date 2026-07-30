@@ -11,6 +11,7 @@ import { buildTransport, registerPlayer } from './audio.js';
 import { buildVideoPlayer } from './video.js';
 import { embedFor, embedOffer } from './embed.js';
 import { buildModelCard } from './model.js';
+import { ensureDisplay, displayURLReady } from './display.js';
 import { meshKind } from '../mesh.js';
 
 
@@ -407,8 +408,33 @@ const RENDERERS = {
     img.decoding = 'async';
     img.draggable = false;
     img.addEventListener('load', () => adoptAspect(item, img.naturalWidth, img.naturalHeight), { once: true });
-    const url = item.asset && assetURL(item.asset.hash);
-    if (url) img.src = url;
+    // The picture is mounted at a bounded display resolution, not the native
+    // original: a full-res <img> is tens of megabytes of decode held for a
+    // card a few hundred pixels wide, and a whole board of them mounted at once
+    // (zoom-out) is what crashes Safari on a phone. canvas/display.js makes a
+    // card-sized copy once per session, serialized so only one full decode is
+    // ever live, and the original stays in the asset store for export/optimize.
+    //
+    // Animated and vector pictures keep the original - a downscaled GIF is a
+    // still, and an SVG is already resolution-free, so neither wants a raster
+    // copy. Those, and any picture whose copy is not made yet, fall back to the
+    // original URL; while a copy renders the card shows its thumbnail if it has
+    // one (set on the twin below), never the full-res original.
+    const hash = item.asset?.hash;
+    const vector = (getAsset(hash)?.mime || '').toLowerCase().includes('svg');
+    if (hash && !isAnimated(item) && !vector) {
+      const ready = displayURLReady(hash);
+      if (ready) {
+        img.src = ready;
+      } else {
+        const thumb = item.meta?.thumb && assetURL(item.meta.thumb);
+        if (thumb) img.src = thumb;   // crisp-enough stand-in while the copy renders
+        ensureDisplay(hash).then(u => { if (u && img.isConnected) img.src = u; });
+      }
+    } else {
+      const url = hash && assetURL(hash);
+      if (url) img.src = url;
+    }
 
     // Both kinds of picture can travel with a twin, and the twin works the
     // same way either way: a sibling <img class="still"> that app.css shows
