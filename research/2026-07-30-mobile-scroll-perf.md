@@ -1,57 +1,74 @@
 # Mobile board scroll — root causes and plan (2026-07-30)
 
-## Results (measured on the phone, 2026-07-30 23:43)
+## Results (measured on the phone, 2026-07-30 23:43-23:50)
 
 101-item Mobile board, 120Hz device. `fps` and `p95` are both frame rates, so
 higher is better; `p95` is the slow tail, `jank` the share of frames past 1.5x
-the median, `mnt` the mounted node count.
+the median, `mnt` the mounted node count. Runs are in the order they were taken.
 
-| Run | fps | p95 | worst | jank | n | cull | mnt |
-|-----|-----|-----|-------|------|---|------|-----|
-| `#perf` shipped | 119.0 | 24.0 | 167ms | 28.3% | 727 | 0.16ms | 6 |
-| `#perf1` legacy | **60.2** | 29.9 | 142ms | 20.3% | 479 | 0.23ms | 5 |
-| `#perf2` nochrome | 120.5 | **59.9** | 117ms | **7.2%** | 889 | 0.13ms | 6 |
-| `#perf3` nogrid | 120.5 | **60.2** | 133ms | **5.8%** | 843 | 0.12ms | 5 |
+| # | Run | fps | p95 | worst | jank | n | cull | mnt |
+|---|-----|-----|-----|-------|------|---|------|-----|
+| 1 | `#perf` shipped, **cold** | 119.0 | 24.0 | 167ms | 28.3% | 727 | 0.16ms | 6 |
+| 2 | `#perf1` legacy | **60.2** | 29.9 | 142ms | 20.3% | 479 | 0.23ms | 5 |
+| 3 | `#perf2` nochrome | 120.5 | 59.9 | 117ms | 7.2% | 889 | 0.13ms | 6 |
+| 4 | `#perf3` nogrid | 120.5 | 60.2 | 133ms | 5.8% | 843 | 0.12ms | 5 |
+| 5 | `#perf` shipped, **warm** | 120.5 | **117.6** | 133ms | **4.7%** | 1347 | 0.08ms | 6 |
 
-**M-1 was the whole of the first problem, and the fix is worth exactly what it
-looked like.** Putting the five `#viewport` custom properties back (`#perf1`)
-halves the frame rate, 119 → 60.2. That is not a gradual slowdown; it is the
-per-frame work crossing the 8.3ms budget and the display dropping to every
-second refresh. The difference between this board holding 120Hz and holding
-60Hz is one style invalidation per frame.
+### What this says
 
-**What is left is full-screen paint in the background layer.** The median is
-already at the refresh rate, so the remaining defect is entirely in the tail,
-and two independent switches move it by the same large amount: dropping the grid
-repaint takes jank from 28.3% to 5.8% and the tail from 24 to 60 fps, and
-dropping the Mobile chrome does almost exactly the same. Both remove one
-full-window rasterisation from the frame — `#grid-ink`'s tiled background in one
-case, `#mobile-surround`'s wash beneath it in the other. They are the same
-finding twice, which is why they measure the same.
+**M-1 was the whole of the problem, and the fix is worth what it looked like.**
+Putting the five `#viewport` custom properties back (run 2) halves the frame
+rate, 119 → 60.2. That is not a gradual slowdown; it is the per-frame work
+crossing the 8.3ms budget and the display dropping to every second refresh. The
+difference between this board holding 120Hz and holding 60Hz is one style
+invalidation per frame. This is the one result the session turns on, and it is
+unambiguous — nothing else in the table moves the *median* at all.
 
-That is a direct indication for **step 4**: move the lattice by transform so its
-background stops being re-rasterised, and promote it, which also lifts the wash
-underneath out of the repainted region.
+**Nothing else is worth fixing.** Run 5 is the shipped build measured warm, on
+the longest sample of the session, and it is at the ceiling: 120.5 median and a
+**117.6 p95**, meaning even the slow tail is landing inside the frame budget.
+There is no headroom left to buy. `cull` is 0.08ms and only 1% of frames reach a
+full sync.
 
-**Two questions are answered and closed by `mnt`.** Six mounted nodes on a
-101-item board, and 6MB of decoded image. The cull is doing its job and there is
-nothing for a tighter cull margin to save, so the vertical-margin idea joins the
-axis-aware one as withdrawn — and the shadow-twin drop has six twins to remove,
-which is not a lever. **Step 5 is closed.**
+**Runs 3 and 4 do not mean what they appear to.** Read against run 1 they look
+like the grid repaint and the Mobile chrome each costing a quarter of the frames
+— two independent switches moving the tail by the same large amount, which is a
+tidy story and the wrong one. Run 5 is the same build as run 1 and beats *both*
+of them on every figure. So what runs 3 and 4 were measuring was mostly the
+board getting warm: cards built, images decoded, the first pass over ground that
+had never been mounted. The switches were credited with a recovery that would
+have happened anyway.
 
-**One caveat on the baseline.** `#perf` was the first run of the session and has
-the smallest sample (n=727). Some of its 28.3% could be first-gesture cost -
-cards being built and images decoded for the first time - rather than steady
-state. A second `#perf` run taken last would settle it, and is worth the thirty
-seconds before building step 4 on top of the number.
+The lesson is cheap to state and was nearly expensive: **a cold first run is not
+a baseline.** Every reading in this table is a different point on a warm-up
+curve as much as a different switch, and only the two runs of the *same* build
+at either end of the session make that visible.
+
+### Decisions
+
+- **Step 4 (the lattice moved by transform) is not indicated. Not built.** The
+  case for it rested on runs 3 and 4 against a cold baseline. Warm, there is
+  nothing to recover: `#perf3` cannot beat a 117.6 p95, because 117.6 is the
+  display. It remains a reasonable idea for a *Desktop* board under a sustained
+  zoom, where the tier fade and the changing zoom keep the layer genuinely
+  dirty — but that is a different measurement on a different layout, and it is
+  not this work.
+- **Step 5 is closed.** Six mounted nodes on a 101-item board and 6MB of decoded
+  image: the cull is doing its job and there is nothing for a tighter cull
+  margin to save, so the vertical-margin idea joins the axis-aware one as
+  withdrawn. A shadow-twin drop has six twins to remove, which is not a lever.
+- **The work is done.** The flags stay in the tree as the regression check —
+  `#perf1` reproducing a 60fps board is the sharpest possible test that M-1 has
+  not come back.
 
 ---
 
-## Status (implemented 2026-07-30)
+## Status (closed 2026-07-30)
 
-Steps 1 and 2 of `research/2026-07-30-mobile-scroll-impl.md` are on `main`,
-600 unit tests pass, **not yet measured on the phone** — which is the one thing
-left, and the thing that decides whether steps 4–5 happen at all.
+Steps 1–3 of `research/2026-07-30-mobile-scroll-impl.md` are on `main`, 600 unit
+tests pass, and the measurement is in — see Results above. Steps 4 and 5 were
+**not built**, and the numbers are why. The board holds 120Hz with a 117.6 p95;
+there is nothing left to win on this layout.
 
 Shipped:
 
@@ -73,10 +90,11 @@ Shipped:
   inherited custom property to `#viewport` at all, so M-1 cannot come back
   quietly.
 
-**Not done:** M-3 (the lattice's `backgroundPosition` re-raster) and the
-conditional step-5 levers. Both are gated on the measurement below.
+**Not done, and deliberately so:** M-3 (the lattice's `backgroundPosition`
+re-raster) and the conditional step-5 levers. The measurement says neither is
+worth building — see Decisions above.
 
-### The measurement still to run
+### How the measurement is taken (kept for the next time)
 
 On the phone, at `…/#perf`, on the board that scrolls badly:
 
@@ -93,10 +111,16 @@ stay exactly as they were. Two readings taken that way differ by the switch and
 by nothing else.
 
 Each run: three slow full-screen drags, three flings, let the momentum settle,
-then read all three lines off the HUD (there is no console on the device, which
-is the whole reason the switches are in the URL). The third line names the run.
-Record fps, p95, jank%, `mnt`, `cull`. Run 3 is the decision on step 4; `mnt` is
-the decision on the vertical cull margin.
+then tap `copy` on the readout — one line, and four of them stack into the table
+above. There is no console on the device, which is the whole reason the switches
+are in the URL and the reading is on the glass.
+
+**Take `#perf` twice, first and last.** A cold first run is not a baseline: the
+first gesture over a board builds cards and decodes images that every later run
+inherits, so a switch measured second looks better than the build measured
+first, whatever the switch does. The two runs of the same build at either end of
+the session are what make the warm-up visible, and on 2026-07-30 they were the
+difference between shipping a grid rewrite and not needing one.
 
 ### What could not be checked without the device
 
