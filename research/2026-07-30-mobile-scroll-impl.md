@@ -431,20 +431,34 @@ Risk: cards visibly flatten during a scroll and lift again on settle. Look at it
 before keeping it — if it reads as a glitch rather than as motion, drop the idea
 rather than tuning it.
 
-**5b. Make the cull margin axis-aware.**
+**5b. ~~Make the cull margin axis-aware.~~ Checked and withdrawn.**
 
-`CULL_MARGIN_PX = 300` (`items.js:341`) is applied to both axes through
-`visibleRect(margin)` (`viewport.js:363-374`). A vertical-only pan
-(`viewport.js:435`) needs no horizontal margin at all, and on Mobile the board
-is barely wider than the screen, so the horizontal half is mounting cards that
-can never scroll into view from the side.
+The idea was that a vertical-only pan (`viewport.js:435`) needs no horizontal
+margin, so the horizontal half of `CULL_MARGIN_PX = 300` (`items.js:341`) was
+mounting cards that can never scroll in from the side. **It is not, because
+there are no such cards.** The arithmetic:
 
-Change `visibleRect` to take `{ mx, my }` or add a `visibleRectXY`, and have
-`cullMargin()` return zero horizontal margin on Mobile. Touches
-`items.js:330-376` and `web.js`'s `visibleBox` — check both callers.
+- The strip is `mobileColumns × baseStep()` = 8 × 64 = **512 world units** wide
+  (`state.js:975-979`, `:757-759`).
+- `mobileZoom()` fits that to the window less a 16px pad each side
+  (`viewport.js:83-88`), so on screen the board is `viewWidth - 32`.
+- The *unmargined* visible rectangle is `cx / zoom` either side of centre
+  (`viewport.js:363-374`), which exceeds the board's own half-width by
+  `16 / zoom` — about 23 world units at a typical fitted zoom of 0.7.
 
-Expected: a straight cut in `mountedNodes` on Mobile with no visible change,
-since nothing enters from the side.
+So the visible rectangle already spans the entire board width before any margin
+is added, and every item is inside the strip. Widening it horizontally reaches
+past the board into empty world. The only thing the horizontal margin costs is
+a wider `spatial.queryRect()` — cells are 512 units (`spatial.js:35`), so the
+strip is one cell across and the margin makes it about four — and those extra
+lookups are Map misses on a path that runs on a full sync, not on a frame.
+
+**The real lever, if `mountedNodes` says one is needed, is the vertical margin.**
+At the fitted zoom it works out at `min(300 / 0.7, 400)` = 400 world units, or
+roughly 280 screen px above *and* below — about six rows of a dense 8-column
+mosaic at each end. Cutting it cuts the mounted set directly. It trades against
+pop-in during a fling, which travels most of a screen, so it wants the measured
+number first and a look on the device after.
 
 **Commit:** one per lever, `Perf: …`.
 
