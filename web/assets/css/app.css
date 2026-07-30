@@ -1037,6 +1037,138 @@ button, input, select, textarea { font: inherit; color: inherit; }
   border-radius: max(0px, calc(var(--own-radius) - var(--card-rule-gap)));
   pointer-events: none;
 }
+/* ---------------------------------------------------------------------------
+   Ghost cards - the three hints a brand-new board opens with.
+
+   Two looks along the whimsy axis, and they are different *techniques* rather
+   than the same card with its numbers turned up, for the same reason the grid
+   has two: Middle and Harsh want an outline, which is a border; Softish wants
+   an object, which is a silhouette and a stack of gradients.
+
+   Common to both: no paper, no inset hairline and no inner rule. .card gives
+   every card all three (see .card and .card::after), and a hint that wears them
+   is just a card - the whole job here is to look like a card that is not there
+   yet. canvas/items.js also skips the #item-shadows twin for this type, since a
+   shadow under an outline fills it back in.
+   --------------------------------------------------------------------------- */
+.ghost-card {
+  background: none;
+  box-shadow: none;
+  /* The dashed rule is the card's own edge, not a second rectangle inside it. */
+  border: var(--ghost-weight) dashed var(--ghost-edge);
+  border-radius: inherit;
+  color: var(--ghost-ink);
+  justify-content: center;
+  gap: 5px;
+  /* Overriding .card's own inset, because that padding is sized for a card with
+     a badge and a caption in it and this one holds two lines of prose. */
+  --card-pad-x: 18px;
+  --card-pad-y: 16px;
+}
+/* .card::after is the inner rule every filed card wears. A hint has one edge. */
+.ghost-card::after { content: none; }
+
+/* The item box paints a card face across its whole extent (var(--item-bg)) on
+   the assumption that content covers it. A ghost is see-through by design, so
+   that face has to come off the box as well as off the card - the same move
+   .item[data-type="title"] makes, and for the same reason. */
+.item[data-type="ghost"] { background: transparent; }
+/* No caption strip: a hint has no filename, and the empty bar would still claim
+   its height at the foot of a card whose text is meant to sit centred. */
+.item[data-type="ghost"] .item-bar { display: none; }
+
+.ghost-title {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-style: var(--display-italic);
+  letter-spacing: calc(0.01em * var(--ls-scale));
+  color: var(--ghost-ink);
+}
+.ghost-line {
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.42;
+  /* The body is the second reading and steps back from the title, which at
+     Softish is already near-black on tan and cannot afford to be faded much. */
+  color: color-mix(in srgb, var(--ghost-ink) 86%, transparent);
+  text-wrap: pretty;
+}
+
+/* ---- Softish: old paper -------------------------------------------------
+   A pirate-map scrap. The silhouette is a clip-path polygon rather than an SVG
+   displacement filter, and that is a performance decision as much as a visual
+   one: #world is a single GPU-composited layer moved by one transform, and a
+   filter on a child of it forces a repaint on every pan. A clip-path does not.
+
+   The ageing is layered radial-gradients carrying var(), the same technique
+   canvas/grid.js uses for its two soft tiers - a palette change restyles them
+   with no repaint.
+
+   The three cards get three silhouettes. Three copies of one outline reads as a
+   repeated tile rather than as three scraps of paper, which is the same reason
+   the app icon's three cards are landscape, portrait, landscape. :nth-child on
+   .item, not randomness, so a board looks the same every time it opens. */
+:root[data-whimsy="0"] .ghost-card {
+  border: 0;
+  border-radius: 0;
+  /* Foxing, not blotches. The two darker blooms are mixed most of the way back
+     to the stock before they are laid on: at full strength they read as spilled
+     coffee rather than as paper that has aged unevenly, and they were also
+     fighting the text for the middle of the card. Both are pushed to the
+     corners for the same reason, and the lit bloom is the one allowed to be
+     broad, because a sheet lightens across its whole face and only stains in
+     patches. */
+  background:
+    radial-gradient(72% 58% at 26% 16%, var(--ghost-papyrus-lit) 0%, transparent 70%),
+    radial-gradient(34% 30% at 92% 88%,
+      color-mix(in srgb, var(--ghost-papyrus-dark) 55%, transparent) 0%, transparent 72%),
+    radial-gradient(26% 24% at 6% 92%,
+      color-mix(in srgb, var(--ghost-papyrus-dark) 42%, transparent) 0%, transparent 70%),
+    radial-gradient(22% 20% at 88% 12%,
+      color-mix(in srgb, var(--ghost-papyrus-dark) 34%, transparent) 0%, transparent 68%),
+    var(--ghost-papyrus);
+  /* The chipping eats into the box, so the text is held further off the edge
+     than a straight card would need. */
+  --card-pad-x: 24px;
+  --card-pad-y: 22px;
+  /* drop-shadow rather than box-shadow: the card is clipped to a ragged
+     polygon, and box-shadow traces the *box*, so it would draw a clean
+     rectangle behind a torn one. drop-shadow follows the clipped silhouette. */
+  filter: drop-shadow(0 6px 10px var(--ghost-papyrus-edge));
+  /* Chipped, not scalloped. The deviation from the edge is deliberately uneven -
+     long flush runs broken by the odd deep bite - because a constant amplitude
+     at a constant interval is a wave, and a wave reads as decoration. Paper
+     tears in a few places and stays straight in between. */
+  clip-path: polygon(
+    1% 5%, 10% 1%, 16% 4%, 30% 1%, 37% 3%, 49% 0%, 59% 4%, 67% 1%,
+    80% 5%, 89% 2%, 96% 6%, 100% 2%,
+    99% 15%, 97% 29%, 100% 40%, 98% 56%, 94% 67%, 99% 79%, 97% 91%, 100% 98%,
+    91% 99%, 80% 95%, 69% 100%, 60% 96%, 48% 100%, 37% 96%, 26% 99%,
+    15% 95%, 6% 99%, 1% 96%,
+    3% 84%, 0% 72%, 2% 60%, 5% 47%, 1% 35%, 3% 23%, 0% 12%
+  );
+}
+:root[data-whimsy="0"] .item[data-type="ghost"]:nth-child(3n+2) .ghost-card {
+  clip-path: polygon(
+    2% 2%, 12% 6%, 24% 1%, 33% 5%, 46% 1%, 54% 4%, 68% 0%, 77% 5%,
+    87% 1%, 94% 4%, 100% 1%,
+    98% 13%, 100% 26%, 96% 38%, 99% 51%, 97% 64%, 100% 77%, 95% 88%, 99% 99%,
+    88% 96%, 76% 100%, 65% 96%, 53% 99%, 41% 95%, 30% 100%, 19% 96%,
+    9% 100%, 2% 97%,
+    0% 86%, 4% 74%, 1% 63%, 3% 50%, 0% 38%, 4% 26%, 1% 14%
+  );
+}
+:root[data-whimsy="0"] .item[data-type="ghost"]:nth-child(3n) .ghost-card {
+  clip-path: polygon(
+    0% 3%, 8% 6%, 20% 2%, 29% 6%, 40% 2%, 52% 5%, 63% 1%, 74% 6%,
+    84% 2%, 92% 5%, 100% 3%,
+    97% 16%, 100% 28%, 95% 41%, 99% 54%, 96% 66%, 100% 80%, 97% 92%, 99% 97%,
+    89% 100%, 78% 96%, 67% 99%, 55% 95%, 44% 100%, 32% 96%, 21% 99%,
+    11% 96%, 3% 100%,
+    1% 88%, 5% 76%, 2% 64%, 4% 52%, 0% 40%, 3% 28%, 1% 16%
+  );
+}
+
 .card-icon {
   font-family: var(--font-display);
   font-size: 11px;

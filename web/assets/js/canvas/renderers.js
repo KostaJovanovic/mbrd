@@ -12,6 +12,7 @@ import { buildVideoPlayer } from './video.js';
 import { onTouch } from './viewport.js';
 import { embedFor, embedOffer } from './embed.js';
 import { buildModelCard } from './model.js';
+import { hintFor } from './ghosts.js';
 import { ensureDisplay, displayURLReady } from './display.js';
 import { meshKind } from '../mesh.js';
 
@@ -100,6 +101,11 @@ export function defaultSize(type) {
     // aspect. Matches TITLE_SIZE in state.js, where the singleton is minted; the
     // card visual is held to an exact 3:2 in CSS and snapping adds slack below.
     case 'title':   return { w: 256, h: 171 };
+    // A card with a sentence in it, so it is sized like a note that has been
+    // let out rather than like a picture. Matches GHOSTS in state.js, where the
+    // three are minted; this is here for the resize floor and for anything that
+    // asks a type how big it starts.
+    case 'ghost':   return { w: 208, h: 156 };
     default:        return { w: 200, h: 112 };
   }
 }
@@ -752,6 +758,34 @@ const RENDERERS = {
     // fires on 'board', not on the rebuild - would not reapply it.
     name.classList.toggle('is-untitled', isDefaultTitle(board.title));
     card.append(name);
+    return card;
+  },
+
+  /**
+   * A ghost card: one of the three hints a brand-new board opens with.
+   *
+   * Structure only. What it says comes from canvas/ghosts.js (the item carries
+   * a key, not prose - see the note there), and what it looks like is entirely
+   * app.css: a dashed outline at Middle and Harsh, yellowed papyrus with a
+   * chipped edge at Softish. Nothing here reads the whimsy level, because
+   * nothing here needs to - the level is on <html> as data-whimsy and CSS can
+   * see it.
+   *
+   * classify() is not involved and never will be. That function routes dropped
+   * *files*, and no file is ever a hint; these are minted by state.js on an
+   * empty board and by nothing else.
+   */
+  ghost(item) {
+    const card = document.createElement('div');
+    card.className = 'card ghost-card';
+    const { title, line } = hintFor(item.meta?.hint);
+    const head = document.createElement('div');
+    head.className = 'ghost-title';
+    head.textContent = title;
+    const body = document.createElement('div');
+    body.className = 'ghost-line';
+    body.textContent = line;
+    card.append(head, body);
     return card;
   },
 

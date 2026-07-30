@@ -261,8 +261,12 @@ function centres() {
   // obstacle, not just its centre a node. World y points up and this layer lays
   // y down, so a card turned by `rot` in the world is turned by `-rot` here -
   // the reflection that takes (x, y) to (x, -y) flips the sense of the angle.
+  // Ghost cards are not nodes. The web is a picture of how the things on a
+  // board relate to each other, and a hint relates to nothing - it is talking
+  // to the person, not to the board. Threading them would also draw a web on
+  // an empty board and then tear it down at the first import.
   return board.items
-    .filter(i => !isRider(i))
+    .filter(i => !isRider(i) && i.type !== 'ghost')
     .map(i => ({ id: i.id, x: i.x, y: -i.y, w: i.w, h: i.h, rot: -(i.rot || 0) }));
 }
 
