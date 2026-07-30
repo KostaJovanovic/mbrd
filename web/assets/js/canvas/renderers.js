@@ -9,6 +9,7 @@ import { latticeBox } from '../geometry.js';
 import { describeExt, PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS } from '../import/formats.js';
 import { buildTransport, registerPlayer } from './audio.js';
 import { buildVideoPlayer } from './video.js';
+import { onTouch } from './viewport.js';
 import { embedFor, embedOffer } from './embed.js';
 import { buildModelCard } from './model.js';
 import { ensureDisplay, displayURLReady } from './display.js';
@@ -504,8 +505,22 @@ const RENDERERS = {
     const poster = item.meta?.cover ? assetURL(item.meta.cover) : null;
     if (poster) v.poster = poster;
     const url = item.asset && assetURL(item.asset.hash);
-    // #t=0.1 pulls a real frame as the poster instead of a black rectangle.
-    if (url) v.src = url + '#t=0.1';
+    if (onTouch()) {
+      // On a touch device the source is held back until the first play. A <video>
+      // with a src (even preload=metadata, even just to paint a poster frame)
+      // holds a decoder, and iOS rations simultaneous video decoders hard - a
+      // board of parked clips all mounted at once, which is what zooming out
+      // does, exceeds the ceiling and crashes the tab. Parked here, a clip is an
+      // inert element with no decoder; buildVideoPlayer attaches the source on
+      // the first toggle. A poster shows the frame meanwhile if the clip has one;
+      // without one the card is its play button over black until tapped.
+      v.preload = 'none';
+      if (url) v.dataset.src = url;
+    } else {
+      v.preload = 'metadata';
+      // #t=0.1 pulls a real frame as the poster instead of a black rectangle.
+      if (url) v.src = url + '#t=0.1';
+    }
     // A fragment so both land as siblings inside .item-body, the same way an
     // animated picture travels with its still.
     const pair = document.createDocumentFragment();

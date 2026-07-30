@@ -112,6 +112,11 @@ export function buildVideoPlayer(item, video) {
   // ---- controls ---------------------------------------------------------
 
   const toggle = () => {
+    // On a touch device the renderer mounts the clip without a source, so a
+    // parked video holds no decoder (iOS rations them, and a whole board of live
+    // ones crashes the tab). Attach it on the first play; once video.src is set
+    // this is a no-op on every toggle after.
+    if (!video.src && video.dataset.src) video.src = video.dataset.src;
     if (!video.paused) { video.pause(); return; }
     video.play().catch(err => {
       // Never swallowed, for the reason audio.js spells out: a rejected play()
