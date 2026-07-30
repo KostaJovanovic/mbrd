@@ -342,7 +342,7 @@ const viewPerf = (() => {
   const paintHud = now => {
     if (!hud || now - hudAt < 250) return;   // four updates a second is plenty
     hudAt = now;
-    const { median, janks } = stats();
+    const { sorted, median, janks } = stats();
     if (!gaps.length) return;
     // A second line for the two things the fps number cannot show: the cull's own
     // per-frame cost (the zoom-out hot path) and what is mounted right now - live
@@ -350,9 +350,21 @@ const viewPerf = (() => {
     // an iPhone runs out of when the whole board is framed.
     const cullAvg = cullProfile.runs ? cullProfile.ms / cullProfile.runs : 0;
     const m = viewStats();
+    // ...and a third saying which run this is. Every one of these numbers is
+    // read off the glass and written down by hand, and a column of figures with
+    // no note of which switch was thrown is a column of figures that has to be
+    // taken again. The board and its size are here for the same reason: two
+    // runs only compare if they were the same board in the same mode.
+    const off = [
+      mobilePerfFlags.legacyVars && 'legacy',
+      !mobilePerfFlags.chrome && 'nochrome',
+      !mobilePerfFlags.gridPos && 'nogrid',
+    ].filter(Boolean);
     hud.textContent =
-      `${(1000 / median).toFixed(0)} fps   jank ${(100 * janks / gaps.length).toFixed(0)}%   n ${gaps.length}\n`
-      + `cull ${cullAvg.toFixed(2)}ms   mnt ${m.mounted}  vid ${m.videos}  img ${(m.imgBytes / 1048576).toFixed(0)}MB`;
+      `${(1000 / median).toFixed(0)} fps   p95 ${(1000 / pct(sorted, 0.95)).toFixed(0)}`
+      + `   jank ${(100 * janks / gaps.length).toFixed(0)}%   n ${gaps.length}\n`
+      + `cull ${cullAvg.toFixed(2)}ms   mnt ${m.mounted}  vid ${m.videos}  img ${(m.imgBytes / 1048576).toFixed(0)}MB\n`
+      + `${board.layoutMode} ${board.items.length} items   ${off.length ? off.join(' ') : 'shipped'}`;
   };
   const tick = now => {
     if (!on) return;
@@ -1487,7 +1499,27 @@ window.mbrd = { board, bus, vp, cmds, selection, perf: viewPerf, debugGrips: cmd
 // armed from the URL as well: open the board at `.../#perf` on the device and
 // the on-screen readout comes up on its own. Harmless anywhere else. The grip
 // overlay rides the same trick with `#grips`.
-if (location.hash.includes('perf')) viewPerf.on();
+//
+// The three Mobile kill switches ride it too, because they are for exactly the
+// device that cannot be typed into - see mobilePerfFlags in canvas/viewport.js.
+// One run is one address and a reload:
+//
+//   #perf            what shipped
+//   #perf,legacy     the five #viewport custom properties written again
+//   #perf,nochrome   the Mobile sheet and masthead gone entirely
+//   #perf,nogrid     the lattice's background-position write skipped
+//
+// Set before arming, so the first frame the readout counts is already the frame
+// being asked about.
+if (location.hash.includes('perf')) {
+  const h = location.hash;
+  viewPerf.mobile({
+    legacyVars: h.includes('legacy'),
+    chrome: !h.includes('nochrome'),
+    gridPos: !h.includes('nogrid'),
+  });
+  viewPerf.on();
+}
 if (location.hash.includes('grips')) cmds.debugGrips();
 
 // ---------------------------------------------------------------------------
