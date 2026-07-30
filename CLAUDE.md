@@ -29,9 +29,26 @@ Syntax checks worth running on a change: `node --check` on touched `.js`,
 
 `util`/`geometry` ← `state` ← {`import`, `storage`, `canvas`} ← `ui`, with
 `canvas` reaching into `import` only for the generated format catalog. A `ui/`
-module imported from `canvas/` is a layering regression. Anything that builds an
-item's DOM belongs under `canvas/` — that is why `renderers.js`, `notes.js`,
-`audio.js` and `model.js` live there rather than under `import/` or `ui/`.
+module imported from `canvas/` is a layering regression — `tests/layers.test.js`
+enforces the graph, so this is a test failure and not just a style note.
+Anything that builds an item's DOM belongs under `canvas/` — that is why
+`renderers.js`, `notes.js`, `audio.js` and `model.js` live there rather than
+under `import/` or `ui/`.
+
+The bottom of the graph is wider than `util`/`geometry`: `measure.js`,
+`mesh.js`, `arrange/arrangements.js`, `import/budget.js` and `canvas/spatial.js`
+are all pure — no DOM, no `state` import — and are meant to stay that way.
+`mesh.js` sits at the top level rather than under `canvas/` for exactly that
+reason: it is struct reading, and only `canvas/model.js` turns its output into
+pixels.
+
+### Nothing is a dependency
+
+`storage/zip.js` inflates its own entries, `mesh.js` reads STL/OBJ/GLB by hand,
+`import/artwork.js` walks ID3v2 / MP4 atoms / FLAC blocks itself, and
+`ui/pigments.js` does its own OKLCh. That is the repo's one real property: zero
+runtime dependencies. A new format is a few hundred lines of header reading in
+the same style, not an npm package.
 
 ### state.js is the only door
 
@@ -70,14 +87,29 @@ space). That sign flip lives in `canvas/viewport.js` and `canvas/items.js`
 
 `#world` is one absolutely-positioned layer moved by a single
 `translate(...) scale(...)`, so pan/zoom composite on the GPU and native
-`<img>`/`<video>`/`<audio>` keep working. The grid is painted in *screen* space
-as CSS gradients on `#viewport`, which is why it stays hairline-crisp at any
-zoom — and why it repaints on every view change.
+`<img>`/`<video>`/`<audio>` keep working. `canvas/grid.js` paints the grid in
+*screen* space on `#viewport`, not inside the transformed `#world`, which is why
+it stays hairline-crisp at any zoom — and why it repaints on every view change.
+Two tiers, two techniques: Softish and Middle are layered CSS radial gradients
+carrying `var()`, so a slider move restyles them with no repaint and a pan is
+one `background-position` write; Harsh is a `<canvas>`, because crosses are not
+circles. Spacing is quantised in powers of two so zooming out never degenerates
+into a solid fill.
 
 `canvas/items.js` culls: nodes outside the viewport (plus `CULL_MARGIN`) are
 detached, then either kept (media mid-playback, so a video survives leaving the
-screen) or discarded. Assume an item's node may not be in the DOM;
-`ensureMounted(id)` is the way in.
+screen) or discarded. Which items are near the screen is answered by
+`canvas/spatial.js`, a uniform grid over world space — the scan used to be O(all
+items) per view change, redone every frame of a zoom. Assume an item's node may
+not be in the DOM; `ensureMounted(id)` is the way in.
+
+`canvas/web.js` draws the threads between item centres, and its rule is that no
+two may cross: a Euclidean minimum spanning tree first (guarantees one connected
+piece, and an MST provably contains no crossing), then every other thread that
+fits, shortest first. `canvas/input.js` is one Pointer Events pipeline for
+mouse, pen and touch with exactly one active gesture (`g`); a second finger
+always wins and converts a drag into a pinch. Its header carries the full
+gesture map — read it before adding a binding.
 
 `canvas/renderers.js` is one entry per item type — `RENDERERS` plus a branch in
 `classify()`. Adding a type touches nothing else.
@@ -114,10 +146,32 @@ container on top of it (`docs/mbrd-format.md` is the spec).
 IndexedDB (same store as the autosave interval), Export packs the `.mbrd` file
 via the File System Access API where available. They fail differently, and the
 UI says which is which. Any path that can replace the current board must go
-through the discard confirmation.
+through the discard confirmation. `storage/idb.js` is the whole IndexedDB
+surface — two stores, `kv` for the board snapshot and `assets` for Blobs by
+hash — and it is crash recovery only. The durable artefact is always the `.mbrd`
+the user saved.
 
 `optimize/` is loaded by dynamic `import()` and never runs on its own — it is a
 button. Originals stay under `meta.was` so the undo is real.
+
+`import/budget.js` is the importer's memory boundary and the only one: the
+500-file cap in `import/drop.js` is a UX guard, not a limit on bytes, since one
+50 KB PNG can claim 30000×30000 and cost gigabytes at `createImageBitmap()`.
+New import paths take `IMPORT_LIMITS` and a byte budget, not a file count.
+
+### Two things that reach outside
+
+Everything else in mbrd renders the same with the network off, and opening a
+board tells nobody. Two modules are the exceptions and both are built so the
+exception is a choice:
+
+`canvas/embed.js` is the only code that talks to a third party — a link card
+becomes a YouTube or Spotify player per click, never by default, because loading
+an embed tells someone else's server what is on this board. `ui/fonts.js` takes
+a dropped `.woff2` into the type menus and inside the `.mbrd` as an asset rather
+than fetching a face, so a board keeps its look when it is sent to someone else.
+The family name there is *rebuilt* from the filename, never taken — it lands
+inside a CSS declaration.
 
 ### Look
 
@@ -128,6 +182,11 @@ through the `TOKENS` allowlist in `ui/look.js` — keep it that way.
 `ui/pigments.js` derives whole palettes in OKLCh from board pictures (48×48
 canvas, nothing uploaded) and repairs contrast afterwards.
 
+CSS is three files and no more: `tokens.css` (the properties), `fonts.css` (the
+bundled `@font-face` set) and `app.css` — one large stylesheet in load order, so
+a new rule goes next to the subsystem it styles rather than into a new file the
+service worker's `SHELL` would have to learn about.
+
 ## Invariants the tests enforce
 
 - **No browser globals at import time.** Reaching for `document` inside a
@@ -136,6 +195,10 @@ canvas, nothing uploaded) and repairs contrast afterwards.
   `tests/imports.test.js`. Adding a fourth is a regression.
 - **Every shipped asset appears in `SHELL` in `web/sw.js`** (`tests/sw.test.js`).
   That list drifted once and left a font uncached offline.
+- **The layering graph is executable** (`tests/layers.test.js`), not advice.
+- **Every bundled `woff2` family has its licence file beside it**
+  (`tests/fonts-license.test.js`). Geist shipped without one for several
+  versions; the OFL requires it.
 - `web/sw.js`'s `VERSION` and `web/assets/js/version.js` are bumped by regex in
   `save.bat` — do not hand-edit or reformat those lines.
 - `web/assets/js/import/formats.js` is generated. Regenerate it, never edit it.

@@ -111,6 +111,7 @@ of the last three directories is looking at a perfectly valid older board.
   "arrangement": "spiral",
   "mobileHeader": { "font": "", "size": 13, "stretch": 100, "leading": 100, "weight": 700, "offset": 0, "italic": false, "wrap": true, "axes": {} },
   "titleHidden": false,
+  "mediaFit": "contain",
   "items": [ … ],
   "layouts": {
     "desktop": [ { "id": "k3f9a2", "x": 120, "y": -40, "w": 320, "h": 240, "rot": 0, "z": 7 } ],
@@ -141,6 +142,12 @@ finds it. `titleHidden` is `true` only when the Desktop title card has been
 deleted; a board without the key seeds the card on open. The card itself is an
 ordinary item of `type: "title"` in `items` (a singleton, id `__title__`), with
 its own Desktop geometry in `layouts.desktop`; it is never packed onto Mobile.
+
+`mediaFit` is how photos and videos sit in their cards board-wide: `"contain"`
+(the default) fits the whole picture in and letterboxes; `"cover"` fills the
+card and crops. It is **board-level** (one value for both layouts). A single
+image or video can override it with `meta.fit` (`"cover"` / `"contain"`) — an
+absent or unrecognised `mediaFit` reads as `"contain"`.
 
 Item coordinates and sizes are rounded to two decimals on the way out. A board
 is a place things sit, not a measurement, and the third decimal of a drag is
@@ -213,6 +220,7 @@ promise 1 above,** and that is the open question at the bottom of this document.
 | `url`    | `link` | The address. **Revalidated on every render**, never trusted from the file. |
 | `peaks`  | `audio` | RMS readings in [0, 1]. Moved out to `waveforms/` when packing — see below. |
 | `cover`  | any | An asset hash for a chosen picture: album art, a diagram. |
+| `fit`    | `image`, `video` | This one card's fit, overriding the board-wide `mediaFit`: `"cover"` fills and crops, `"contain"` fits the whole picture in. Absent means follow the board default. |
 | `presnap`| any | Where the item was before snap-to-grid moved it, so turning snapping off can put it back. `{ x, y, w, h }`. |
 
 Unknown `meta` keys are carried through untouched. That is the extension point:

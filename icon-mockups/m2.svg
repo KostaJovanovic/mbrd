@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="mbrd">
+  <!-- M2 Scattered cards: the old icon's idea, rebuilt solid. No letter. -->
+  <defs>
+    <pattern id="d2" width="48" height="48" patternUnits="userSpaceOnUse">
+      <circle cx="24" cy="24" r="2.6" fill="#fbf8f1" fill-opacity="0.12"/>
+    </pattern>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#2b2118"/>
+  <rect width="512" height="512" rx="112" fill="url(#d2)"/>
+  <rect x="76"  y="96"  width="210" height="148" rx="22" fill="#c25c2b" transform="rotate(-4 181 170)"/>
+  <rect x="300" y="140" width="136" height="210" rx="22" fill="#fbf8f1" transform="rotate(4 368 245)"/>
+  <rect x="100" y="282" width="176" height="134" rx="22" fill="#e0983f" transform="rotate(3 188 349)"/>
+</svg>

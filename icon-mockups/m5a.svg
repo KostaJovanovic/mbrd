@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="mbrd">
+  <!-- M5a - M5 geometry, terracotta ground kept (the accent ground was M5's
+       whole idea). Top card absinthe, bleeding card papyrus. -->
+  <defs>
+    <pattern id="d5a" width="48" height="48" patternUnits="userSpaceOnUse">
+      <circle cx="24" cy="24" r="2.8" fill="#fbf8f1" fill-opacity="0.20"/>
+    </pattern>
+    <clipPath id="sq5a"><rect width="512" height="512" rx="112"/></clipPath>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#c25c2b"/>
+  <rect width="512" height="512" rx="112" fill="url(#d5a)"/>
+  <g clip-path="url(#sq5a)">
+    <rect x="56" y="72" width="150" height="112" rx="18" fill="#76b583" transform="rotate(4 131 128)"/>
+    <rect x="146" y="188" width="420" height="300" rx="26" fill="#d9cba3" transform="rotate(-6 356 338)"/>
+  </g>
+</svg>

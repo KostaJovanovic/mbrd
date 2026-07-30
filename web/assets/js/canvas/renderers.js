@@ -862,7 +862,14 @@ function adoptAspect(item, nw, nh) {
   markDirty();
 }
 
-/** Object-fit for a type. Media fills its card; anything else is contained. */
-export function fitMode(type) {
-  return type === 'image' || type === 'video' ? 'cover' : 'contain';
+/**
+ * Object-fit for an item. Only photos and videos are steerable: they take their
+ * own meta.fit if it is set, otherwise the board-wide default (board.mediaFit),
+ * otherwise fill. Everything else is always contained, as it has always been.
+ */
+export function fitMode(item) {
+  if (item.type !== 'image' && item.type !== 'video') return 'contain';
+  const own = item.meta?.fit;
+  if (own === 'cover' || own === 'contain') return own;
+  return board.mediaFit === 'contain' ? 'contain' : 'cover';
 }

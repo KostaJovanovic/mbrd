@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="mbrd">
+  <!-- M3 Origin: the maths plane the README leads with. Axes cross off-centre so
+       it reads as a coordinate origin rather than a plus sign, cards sit in the
+       quadrants, and the accent dot is (0,0). Light ground. -->
+  <defs>
+    <pattern id="d3" width="48" height="48" patternUnits="userSpaceOnUse">
+      <circle cx="24" cy="24" r="2.8" fill="#372a1d" fill-opacity="0.18"/>
+    </pattern>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#fbf8f1"/>
+  <rect width="512" height="512" rx="112" fill="url(#d3)"/>
+  <g stroke="#372a1d" stroke-width="18" stroke-linecap="round">
+    <path d="M56 312 H456"/>
+    <path d="M196 456 V56"/>
+  </g>
+  <rect x="246" y="112" width="184" height="136" rx="20" fill="#c25c2b" transform="rotate(-3 338 180)"/>
+  <rect x="74"  y="352" width="112" height="84"  rx="16" fill="#e0983f" transform="rotate(3 130 394)"/>
+  <circle cx="196" cy="312" r="21" fill="#c25c2b"/>
+</svg>

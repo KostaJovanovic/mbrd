@@ -10,7 +10,7 @@ import {
   snapshotGeom, applyGeom, commitGeom, undo, redo, byId,
   raiseSelection, lowerSelection, selectionHasStackOverlap,
   duplicateItems, select, setItemCover,
-  setItemUpAxis, historyState, baseStep, mobileBoardWidth, mobileBoardTop,
+  setItemUpAxis, setItemFit, historyState, baseStep, mobileBoardWidth, mobileBoardTop,
   mobileBoardBottom, placeMobileItems, setTitle, markDirty,
   recheckBoardGeometry, cleanBoardTitle, cleanBoardTitleDraft, isDefaultTitle,
   setBoardMode as selectBoardMode, setAssetNameLookup,
@@ -22,7 +22,7 @@ import { defaultUpAxis, meshKind } from './mesh.js';
 import { Viewport, MIN_ZOOM, MAX_ZOOM, zoomMs, travelMs } from './canvas/viewport.js';
 import { paintGrid, resetGridInk } from './canvas/grid.js';
 import { initPaper, paintPaper } from './canvas/paper.js';
-import { initItems, resetItems } from './canvas/items.js';
+import { initItems, resetItems, cullProfile, viewStats } from './canvas/items.js';
 import { isTurning, resetModels, rotateModel } from './canvas/model.js';
 import { initWeb } from './canvas/web.js';
 import { initStills } from './canvas/stills.js';
@@ -174,6 +174,20 @@ const cmds = {
   setCover: id => pickCover(id),
   clearCover: id => setItemCover(id, null),
 
+  // Fill (crop to the card) or fit (whole picture in) - only photos and videos.
+  // itemFit reports the *effective* fit (the item's own override, else the
+  // board-wide default), which is what the menu ticks; setItemFit pins it.
+  canSetFit: id => {
+    const type = byId(id)?.type;
+    return type === 'image' || type === 'video';
+  },
+  itemFit: id => {
+    const own = byId(id)?.meta?.fit;
+    if (own === 'cover' || own === 'contain') return own;
+    return board.mediaFit === 'contain' ? 'contain' : 'cover';
+  },
+  setItemFit: (id, fit) => setItemFit(id, fit),
+
   // Only models, and only the formats where the answer is not already written
   // down: glTF fixes Y-up in its spec, so offering to argue with it would be
   // offering to break it.
@@ -288,6 +302,7 @@ const viewPerf = (() => {
   const CAP = 8000;                 // ~a minute of 120fps motion; then it wraps
   const reset = () => {
     gridMs = restMs = frames = worstFrame = 0; gaps.length = 0; lastRaf = 0; moved = false;
+    cullProfile.reset();
   };
   const pct = (sorted, p) => sorted.length
     ? sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))] : 0;
@@ -314,8 +329,15 @@ const viewPerf = (() => {
     hudAt = now;
     const { median, janks } = stats();
     if (!gaps.length) return;
+    // A second line for the two things the fps number cannot show: the cull's own
+    // per-frame cost (the zoom-out hot path) and what is mounted right now - live
+    // node and video counts and the decoded-image megabytes, which is the budget
+    // an iPhone runs out of when the whole board is framed.
+    const cullAvg = cullProfile.runs ? cullProfile.ms / cullProfile.runs : 0;
+    const m = viewStats();
     hud.textContent =
-      `${(1000 / median).toFixed(0)} fps   jank ${(100 * janks / gaps.length).toFixed(0)}%   n ${gaps.length}`;
+      `${(1000 / median).toFixed(0)} fps   jank ${(100 * janks / gaps.length).toFixed(0)}%   n ${gaps.length}\n`
+      + `cull ${cullAvg.toFixed(2)}ms   mnt ${m.mounted}  vid ${m.videos}  img ${(m.imgBytes / 1048576).toFixed(0)}MB`;
   };
   const tick = now => {
     if (!on) return;
@@ -336,12 +358,12 @@ const viewPerf = (() => {
     get active() { return on; },
     /** @param overlay  false to skip the on-screen readout (console only). */
     on(overlay = true) {
-      reset(); on = true;
+      reset(); on = true; cullProfile.on = true;
       if (overlay) showHud();
       raf = requestAnimationFrame(tick);
       console.log('[perf] on — pan/zoom continuously, then mbrd.perf.report()');
     },
-    off() { on = false; if (raf) cancelAnimationFrame(raf); raf = 0; hideHud(); console.log('[perf] off'); },
+    off() { on = false; cullProfile.on = false; if (raf) cancelAnimationFrame(raf); raf = 0; hideHud(); console.log('[perf] off'); },
     /** JS timings for one view frame, in ms: grid paint and the rest. */
     sample(grid, rest) {
       gridMs += grid; restMs += rest; frames++; moved = true;
@@ -352,7 +374,8 @@ const viewPerf = (() => {
       if (!gaps.length) { console.log('[perf] no motion sampled — mbrd.perf.on(), then pan'); return null; }
       // Anything past 1.5x the median missed at least one refresh - the count of
       // those, as a share, is the jank the eye actually reads.
-      const { sorted, janks } = stats();
+      const { sorted, median, janks } = stats();
+      const mem = viewStats();
       const r = {
         motionFrames: gaps.length,
         fpsMedian: +(1000 / median).toFixed(1),
@@ -364,6 +387,15 @@ const viewPerf = (() => {
         jsGridAvgMs: frames ? +(gridMs / frames).toFixed(3) : null,
         jsRestAvgMs: frames ? +(restMs / frames).toFixed(3) : null,
         jsWorstFrameMs: +worstFrame.toFixed(3),
+        // The cull the grid profiler never saw: its per-frame cost, and how often
+        // a frame fell through to a full sync() (near 100% while zooming out).
+        cullAvgMs: cullProfile.runs ? +(cullProfile.ms / cullProfile.runs).toFixed(3) : null,
+        cullFullSyncPct: cullProfile.runs
+          ? +(100 * cullProfile.fullSyncs / cullProfile.runs).toFixed(1) : null,
+        // What is mounted at report time - the memory budget, not the frame time.
+        mountedNodes: mem.mounted,
+        liveVideos: mem.videos,
+        decodedImgMB: +(mem.imgBytes / 1048576).toFixed(1),
       };
       console.table(r);
       return r;

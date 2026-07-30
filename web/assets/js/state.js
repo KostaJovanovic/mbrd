@@ -278,6 +278,12 @@ export const board = {
   // than filing it in the bin - see removeItems() and ui/trash.js's restore
   // button. Persisted, so a board opens the way it was left.
   titleHidden: false,
+  // How photos and videos sit in their cards board-wide: 'contain' (the default)
+  // fits the whole picture inside and letterboxes; 'cover' fills the card and
+  // crops. Board-level, not per-layout, because it is a property of the media
+  // rather than of a device's view. A single item can override it from its own
+  // meta.fit - see fitMode() in canvas/renderers.js.
+  mediaFit: 'contain',
   // Thrown away but not gone. Entries are { item, at }, newest first.
   trash: [],
 };
@@ -965,6 +971,24 @@ export function mobileBoardWidth(
   columns = mobileColumnCount(),
 ) {
   return mobileColumnCount(columns) * step;
+}
+
+/**
+ * The Mobile board's width read from the Mobile layout's own settings, whatever
+ * layout is on screen.
+ *
+ * mobileBoardWidth() above answers for the *active* layout - its grid step and
+ * its column count - which while Desktop shows is the Desktop grid and the
+ * Desktop mobileColumns default (6, not the Mobile 8). The Desktop title card
+ * needs the true Mobile figure: the masthead caps its font at 96px against this
+ * width, so a card measuring 6x64=384 skipped the cap the 8x64=512 masthead
+ * hits, ran its text larger, and wrapped sooner than the masthead. Read-only -
+ * it does not touch the Mobile board. Same profile read repackMobileBoard makes.
+ */
+export function mobileBoardWorldWidth() {
+  const profile = board.layoutSettings.mobile || defaultLayoutSettings('mobile');
+  const step = profile.gridStep > 0 ? profile.gridStep : DEFAULT_SETTINGS.gridStep;
+  return mobileColumnCount(profile.mobileColumns) * step;
 }
 
 /** The highest world-space edge of the Mobile board. */
@@ -2253,6 +2277,29 @@ export function setItemUpAxis(id, axis) {
 }
 
 /**
+ * One image or video's own fit, overriding the board-wide default. 'cover' fills
+ * and crops, 'contain' fits the whole picture in; both are explicit, so once set
+ * the card no longer follows the board default (that is what an override is for).
+ * Undoable and emits 'item', which rebuilds the node so canvas/renderers.js's
+ * fitMode() reads the new value - the same shape setItemUpAxis uses.
+ */
+export function setItemFit(id, fit) {
+  const it = byId(id);
+  if (!it || (it.type !== 'image' && it.type !== 'video')) return;
+  const next = fit === 'cover' || fit === 'contain' ? fit : null;
+  const prev = it.meta?.fit === 'cover' || it.meta?.fit === 'contain' ? it.meta.fit : null;
+  if (next === prev) return;
+  const write = value => {
+    const item = byId(id);
+    if (!item) return;
+    if (value) item.meta = { ...item.meta, fit: value };
+    else { const { fit: _drop, ...rest } = item.meta || {}; item.meta = rest; }
+    bus.emit('item', id);
+  };
+  commit('Fit media', () => write(next), () => write(prev));
+}
+
+/**
  * The still a model card shows instead of running WebGL, and the angle it was
  * taken from.
  *
@@ -2335,6 +2382,16 @@ export function setSetting(key, value) {
     bus.emit('settings', key);
     return;
   }
+  if (key === 'mediaFit') {
+    // Board-level, like mobileHeader: one value for both layouts, so it lives on
+    // the board rather than in the per-layout settings the rest of this writes.
+    const next = normalizeMediaFit(value);
+    if (board.mediaFit === next) return;
+    board.mediaFit = next;
+    markDirty();
+    bus.emit('settings', key);
+    return;
+  }
   if (key === 'fonts') {
     const fonts = normalizeFonts(value);
     board.settings.fonts = fonts;
@@ -2412,6 +2469,7 @@ export function loadBoard(data) {
   board.items = next.items;
   board.mobileHeader = next.mobileHeader;
   board.titleHidden = next.titleHidden;
+  board.mediaFit = next.mediaFit;
   board.trash = next.trash;
   board.layoutMode = layoutMode;
   // The Desktop title card is seeded by the app (main.js, on 'board:load'), not
@@ -2489,6 +2547,7 @@ function normalizeBoard(data) {
     // under settings.mobileHeader, so that is the fallback source.
     mobileHeader: normalizeMobileHeader(src.mobileHeader ?? rawSettings.mobileHeader),
     titleHidden: !!src.titleHidden,
+    mediaFit: normalizeMediaFit(src.mediaFit),
     sharedAppearance,
     layoutSettings: {
       desktop: desktopRecord.settings
@@ -2622,6 +2681,11 @@ function normalizeFontAxes(raw) {
 }
 
 /** The Mobile title style, held to values its controls and CSS can represent. */
+/** The board-wide media fit, defaulting to fit (contain) - fill is opt-in. */
+function normalizeMediaFit(value) {
+  return value === 'cover' ? 'cover' : 'contain';
+}
+
 function normalizeMobileHeader(raw) {
   const header = raw && typeof raw === 'object' ? raw : {};
   const axes = {};
@@ -2686,6 +2750,7 @@ export function serializeBoard() {
     // reader predating the move still finds it.
     mobileHeader: normalizeMobileHeader(board.mobileHeader),
     titleHidden: !!board.titleHidden,
+    mediaFit: normalizeMediaFit(board.mediaFit),
     // Legacy readers see the Desktop half, matching the Desktop geometry kept in
     // items. New readers use each layout record below.
     settings: { ...desktopSettings, mobileHeader: normalizeMobileHeader(board.mobileHeader) },
