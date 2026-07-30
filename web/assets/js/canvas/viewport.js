@@ -22,8 +22,30 @@
 import { clamp, rafThrottle, emitter } from '../util.js';
 import { itemBounds } from '../geometry.js';
 
-export const MIN_ZOOM = 0.1;
-export const MAX_ZOOM = 5;
+/**
+ * What the corner calls 100%.
+ *
+ * `zoom` in this file is and stays the true world-to-screen scale: the transform
+ * multiplies by it, toScreen/toWorld divide by it, and a `view` saved in a board
+ * records it raw. What moved is only the label - a board sitting at scale 0.8
+ * now reads "100%", because the old 100% framed a card larger than anyone
+ * actually works at and every session started with a zoom out.
+ *
+ * So there are two numbers for one thing and they differ by this factor:
+ * `vp.zoom` is the scale, `vp.zoom / BASE_ZOOM` is the percentage the interface
+ * prints (see zoomText() in main.js, the one place that conversion happens).
+ * Everything below that reads as a percentage in prose - the clamps, the detail
+ * rungs - is written as a multiple of BASE_ZOOM so that those percentages stay
+ * the ones the interface shows. Anything measured in real screen pixels is not:
+ * the grid's MIN_PX/MAX_PX, paper.js's page outline and the scale bar all
+ * compose with the raw zoom and stay truthful by doing so.
+ *
+ * Set this to 1 and the app is back to its old numbering exactly.
+ */
+export const BASE_ZOOM = 0.8;
+
+export const MIN_ZOOM = 0.1 * BASE_ZOOM;   // 10% as printed
+export const MAX_ZOOM = 5 * BASE_ZOOM;     // 500% as printed
 export const MOBILE_SIDE_PAD = 16;
 export const MOBILE_TOP_PAD = 32;
 export const MOBILE_BOTTOM_PAD = 32;
@@ -50,7 +72,14 @@ export function mobileHeaderHeight(boardWidth) {
   return Math.max(0, (+boardWidth || 0) / MOBILE_HEADER_ASPECT);
 }
 
-/** Fixed zoom that seats a Mobile board in the viewport without enlarging it. */
+/**
+ * Fixed zoom that seats a Mobile board in the viewport without enlarging it.
+ *
+ * Deliberately not re-based on BASE_ZOOM, and neither is LOD_ZOOM_TOUCH below.
+ * Mobile has no zoom control and prints no percentage, so the label BASE_ZOOM
+ * moved does not exist here; this zoom is fit-derived, and the 1 is the literal
+ * 1:1 the name means - one world unit to one CSS pixel.
+ */
 export function mobileZoom(viewWidth, worldWidth, pad = MOBILE_SIDE_PAD) {
   const available = Math.max(1, viewWidth - pad * 2);
   return clamp(Math.min(1, available / Math.max(1, worldWidth)), MIN_ZOOM, MAX_ZOOM);
@@ -127,7 +156,7 @@ export const deviceRatio = () =>
 // silently coming with it.
 
 /** Where the rung sits with a mouse in hand. */
-const LOD_ZOOM = 0.4;
+const LOD_ZOOM = 0.4 * BASE_ZOOM;
 
 /**
  * How far out a selected card still shows its resize grips.
@@ -137,7 +166,7 @@ const LOD_ZOOM = 0.4;
  * for to resize it - so the grips outlast the labels by two rungs and go only
  * when the card is too small to aim at.
  */
-const GRIP_MIN_ZOOM = 0.1;
+const GRIP_MIN_ZOOM = 0.1 * BASE_ZOOM;
 
 /**
  * Where a corner grip stops lapping onto the card and clips to its outside half.
@@ -148,7 +177,7 @@ const GRIP_MIN_ZOOM = 0.1;
  * the zoom-grab rules in app.css). A rung of its own, between the chrome rung and
  * the grips' own floor, because it is about size on screen, not legibility.
  */
-const GRAB_ZOOM = 0.25;
+const GRAB_ZOOM = 0.25 * BASE_ZOOM;
 
 /**
  * And where it sits under a finger.
@@ -227,7 +256,7 @@ export class Viewport {
     this.world = worldEl;
     this.originMark = originMark || null;
     this.pan = { x: 0, y: 0 };
-    this.zoom = 1;
+    this.zoom = BASE_ZOOM;
     // The padlock in the corner controls. Not a board setting and not saved
     // with one. A board does record the view it was left at, but deliberately
     // does not open at it - openingView() in main.js frames the whole thing
@@ -454,13 +483,13 @@ export class Viewport {
     this.stopAnim();
     this.pan.x = this.isMobile ? 0 : +pan?.x || 0;
     this.pan.y = +pan?.y || 0;
-    this.zoom = this.isMobile ? this._mobileZoom() : clamp(+zoom || 1, MIN_ZOOM, MAX_ZOOM);
+    this.zoom = this.isMobile ? this._mobileZoom() : clamp(+zoom || BASE_ZOOM, MIN_ZOOM, MAX_ZOOM);
     this._constrainMobile();
     this.apply();
   }
 
   recenter(ms = 0) {
-    this.viewTo({ x: 0, y: 0 }, 1, ms);
+    this.viewTo({ x: 0, y: 0 }, BASE_ZOOM, ms);
   }
 
   // -------------------------------------------------------------------------
@@ -537,7 +566,7 @@ export class Viewport {
     const x1 = this.isMobile ? 0 : +pan?.x || 0;
     const z1 = this.isMobile
       ? this._mobileZoom()
-      : this.zoomLocked ? this.zoom : clamp(+zoom || 1, MIN_ZOOM, MAX_ZOOM);
+      : this.zoomLocked ? this.zoom : clamp(+zoom || BASE_ZOOM, MIN_ZOOM, MAX_ZOOM);
     const requestedY = +pan?.y || 0;
     let y1 = requestedY;
     if (this.isMobile) {
@@ -557,12 +586,12 @@ export class Viewport {
 
   /**
    * Fit `items` (anything with x/y/w/h at its centre) in view with a margin.
-  * With nothing to fit, falls back to the origin at 1:1.
+  * With nothing to fit, falls back to the origin at BASE_ZOOM - 100% as printed.
   *
   * `maxZoom` caps how far in the fit is allowed to zoom. Left at MAX_ZOOM the
   * fit works as before, blowing a small board up to fill the screen. The
-  * opening view passes 1 instead: a board smaller than the window opens at
-  * actual size rather than magnified, so a couple of cards do not arrive as
+  * opening view passes BASE_ZOOM instead: a board smaller than the window opens
+  * at 100% rather than magnified, so a couple of cards do not arrive as
   * wall-sized posters - while a board larger than the window still zooms out to
   * frame the whole of it, which is the case the cap never touches.
   */

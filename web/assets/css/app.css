@@ -1105,10 +1105,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
   flex: none;
 }
 .card-audio {
-  /* Half the card's short side, so the sleeve is a stamp on a big card and most
-     of a small one, with a floor and a ceiling: below about 40px it is a smudge,
-     and above 108 it stops being a corner and starts being the card. */
-  --sleeve: clamp(40px, calc(var(--half-min, 100px) * 0.5), 108px);
+  /* The sleeve grows to fill the empty height of the card rather than sitting as
+     a small corner stamp, because on a big card that stamp left most of the box
+     bare. Sized in the card's own container units (it is a size container, see
+     below): as tall as the card leaves once the top padding and the transport
+     strip at the foot are taken out (100cqh - 100px), but never more than a
+     just over half the width (100cqw * 0.52), so the title always keeps its
+     side. A floor so it does not vanish on a small card, and a ceiling so it
+     stops being art on a card and starts being the card. Square throughout - a
+     record is square - so width and height both read this. */
+  --sleeve: clamp(44px, min(100cqh - 76px, 100cqw * 0.52), 320px);
   /* The ⋮ is not part of the card but sits over its bottom-right corner - it is
      the item's own handle and every type has it - and on a card whose last row
      is a control of its own the two crowded each other. This used to be settled
@@ -1177,10 +1183,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
    ones they could be: a container query carries no specificity of its own, so
    `.card-name` inside one loses to `.card-audio .card-name` outside it and the
    clamp would never move. */
-@container audio-card (max-height: 190px) {
+@container audio-card (max-height: 150px) {
   .card-audio .card-icon { display: none; }
 }
-@container audio-card (max-height: 148px) {
+@container audio-card (max-height: 126px) {
   .card-audio .card-name { -webkit-line-clamp: 2; line-clamp: 2; }
 }
 /* Just under the clamp above, and that is deliberate rather than a near miss.
@@ -1188,10 +1194,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
    worth of room - so the footnote survives a little way past the point a
    three-line card would have had to drop it. Below here a two-line name, a
    footnote and the transport genuinely do not fit between the paddings. */
-@container audio-card (max-height: 140px) {
+@container audio-card (max-height: 116px) {
   .card-audio .card-meta { display: none; }
 }
-@container audio-card (max-height: 116px) {
+@container audio-card (max-height: 100px) {
   .card-audio .card-name { -webkit-line-clamp: 1; line-clamp: 1; }
 }
 

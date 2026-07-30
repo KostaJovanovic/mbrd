@@ -15,11 +15,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  classify, defaultSize, hasRenderer,
+  classify, defaultSize, hasRenderer, measureSize,
   parseNoteText, normalizeNoteRich, flattenNoteRich,
 } from '../web/assets/js/canvas/renderers.js';
 
 const file = (name, type = '') => ({ name, type });
+const svgBlob = markup => new Blob([markup], { type: 'image/svg+xml' });
 
 // ---------------------------------------------------------------------------
 // Every route ends somewhere real
@@ -49,6 +50,27 @@ test('every type defaultSize() knows about has a renderer', () => {
 test('the fallback exists, since classify can always reach it', () => {
   assert.equal(classify(file('a.sldprt')), 'generic');
   assert.ok(hasRenderer('generic'));
+});
+
+// SVG is measured from its own markup rather than by a decoder, so it stays an
+// image even in a browser that refuses to decode a viewBox-only vector - the
+// case that used to drop it to a named card. See measureSize().
+test('an SVG is measured from its viewBox and stays a decodable image', async () => {
+  const size = await measureSize('image', svgBlob('<svg viewBox="0 0 100 50"></svg>'));
+  assert.equal(size.decodable, true, 'a vector is never downgraded to a named card');
+  assert.equal(size.measured, true);
+  assert.ok(size.w > size.h, 'the 2:1 viewBox gives a landscape box');
+});
+
+test('an SVG with explicit width/height wins over its viewBox', async () => {
+  const size = await measureSize('image', svgBlob('<svg width="40" height="120" viewBox="0 0 100 50"></svg>'));
+  assert.ok(size.h > size.w, 'the 40x120 attributes give a portrait box');
+});
+
+test('an SVG that declares no size keeps the placeholder box, still an image', async () => {
+  const size = await measureSize('image', svgBlob('<svg xmlns="http://www.w3.org/2000/svg"></svg>'));
+  assert.equal(size.decodable, true);
+  assert.deepEqual({ w: size.w, h: size.h }, defaultSize('image'));
 });
 
 test('the title card has a renderer and a ~3:2 default box, but is not a file type', () => {

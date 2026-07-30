@@ -19,7 +19,7 @@ import {
 } from './state.js';
 import { latticeBox, itemBounds } from './geometry.js';
 import { defaultUpAxis, meshKind } from './mesh.js';
-import { Viewport, MIN_ZOOM, MAX_ZOOM, zoomMs, travelMs } from './canvas/viewport.js';
+import { Viewport, MIN_ZOOM, MAX_ZOOM, BASE_ZOOM, zoomMs, travelMs } from './canvas/viewport.js';
 import { paintGrid, resetGridInk } from './canvas/grid.js';
 import { initPaper, paintPaper } from './canvas/paper.js';
 import { initItems, resetItems, cullProfile, viewStats } from './canvas/items.js';
@@ -446,8 +446,8 @@ el('zoom-ctl').addEventListener('click', e => {
   switch (btn.dataset.zoom) {
     case 'in':    vp.zoomBy(ZOOM_STEP, zoomMs()); break;
     case 'out':   vp.zoomBy(1 / ZOOM_STEP, zoomMs()); break;
-    // 1:1, without moving the view.
-    case 'reset': vp.viewTo(vp.pan, 1, travelMs()); break;
+    // Back to 100%, without moving the view.
+    case 'reset': vp.viewTo(vp.pan, BASE_ZOOM, travelMs()); break;
     case 'fit':   cmds.fit(); break;
     case 'home':  cmds.recenter(); break;
     case 'lock':  cmds.lockZoom(); break;
@@ -528,7 +528,9 @@ let zoomShown = '';
 /** The zoom as the corner prints it. Its own function because the lock's toast
  *  quotes the same number, and two roundings of one value is two answers. */
 function zoomText() {
-  const pct = vp.zoom * 100;
+  // The one place the scale becomes a percentage. vp.zoom is the true
+  // world-to-screen scale; BASE_ZOOM is the scale the corner calls 100%.
+  const pct = (vp.zoom / BASE_ZOOM) * 100;
   // Below 10% a rounded percentage flickers between 6 and 7 as you pinch, so
   // give the small end a decimal instead.
   return (pct < 10 ? pct.toFixed(1) : Math.round(pct)) + '%';
@@ -686,7 +688,7 @@ function openingView() {
   if (!vp.isMobile && board.items.every(it => it.type === 'title')) return vp.recenter(0);
   // Capped at 100%: a small board opens at actual size, not magnified. A board
   // bigger than the window still zooms out to frame it - see fit()'s maxZoom.
-  vp.fit(board.items, 80, 0, 1);
+  vp.fit(board.items, 80, 0, BASE_ZOOM);
 }
 
 /**
