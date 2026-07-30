@@ -1,10 +1,13 @@
 # Mobile scroll performance — implementation plan (2026-07-30)
 
-> **Status: steps 1 and 2 are done** (600 tests pass; the Mobile chrome was
-> checked in headless Edge at the top stop). Step 3 — the measurement on the
-> phone — is the gate on everything after it and has not been run. See the
-> Status block in `research/2026-07-30-mobile-scroll-perf.md` for what shipped
-> and for the four runs to make.
+> **Status: closed.** Steps 1–3 are done. Step 2 fixed the defect — restoring
+> the `#viewport` writes halves the frame rate on the device, 119 → 60, and the
+> shipped build holds 120Hz with a 117.6 p95. **Steps 4 and 5 were not built,
+> and the measurement is why**: warm, there is no headroom left for the grid
+> rewrite to recover, and six mounted nodes on a 101-item board leave the two
+> step-5 levers nothing to save. The Results table and the reasoning are in
+> `research/2026-07-30-mobile-scroll-perf.md`; the step 4 and 5 sections below
+> are kept as written, for the Desktop case and for the next time.
 >
 > Two deviations from the plan below, both recorded here rather than quietly:
 >
