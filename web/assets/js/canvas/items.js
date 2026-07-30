@@ -13,6 +13,7 @@ import {
 import { shuffle } from '../util.js';
 import { itemRadius } from '../geometry.js';
 import { buildContent, fitMode } from './renderers.js';
+import { clearDisplay } from './display.js';
 import { releasePlayers } from './audio.js';
 import { flyOut } from './exit-anim.js';
 import * as spatial from './spatial.js';
@@ -928,6 +929,10 @@ export function resetItems() {
   nodes.clear();
   shadows.clear();
   shadowLayerEl.replaceChildren();
+  // The display copies are keyed by content hash and a new board is new content;
+  // release the ones this session made so a long-lived PWA does not accumulate
+  // them board after board (canvas/display.js).
+  clearDisplay();
   // A new board gets a new pack, so its first three items carry a full set of
   // leans rather than whatever was left over from the last one.
   tiltBag.length = 0;
