@@ -529,7 +529,11 @@ function build(item) {
   // The title card carries its own drop shadow in CSS (box-shadow on
   // .title-card), because the 3:2 card is smaller than its snapped item box and
   // a twin placed at the box would sit taller than the card it shadows.
-  if (item.type !== 'title') shadows.set(item.id, buildShadow(item, tilt));
+  // A ghost card is left out for a different reason: the hint tiers draw it as
+  // an outline with nothing behind it, and a twin cast under a dashed rectangle
+  // fills it back in - the card reads solid, which is the one thing it is not.
+  // Softish carries its own shadow in CSS, where the chipped silhouette is.
+  if (item.type !== 'title' && item.type !== 'ghost') shadows.set(item.id, buildShadow(item, tilt));
   // The title card's pen and rename buttons live for the card's whole life - CSS
   // shows them on hover or selection. A child of .item, like the grips, so they
   // ride its transform and hold a constant on-screen size through --iz.

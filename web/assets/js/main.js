@@ -16,6 +16,7 @@ import {
   setBoardMode as selectBoardMode, setAssetNameLookup,
   isRider, stuckTo, stuckPlacement,
   ensureTitleCard, restoreTitleCard, isTitleHidden, resetTitlePosition, TITLE_ID,
+  ensureGhostCards, hasGhosts, GHOST_IDS,
 } from './state.js';
 import { latticeBox, itemBounds } from './geometry.js';
 import { defaultUpAxis, meshKind } from './mesh.js';
@@ -28,6 +29,7 @@ import { initMobileFrame, paintMobileFrame } from './canvas/mobile-frame.js';
 import { initItems, resetItems, cullProfile, viewStats } from './canvas/items.js';
 import { isTurning, resetModels, rotateModel } from './canvas/model.js';
 import { initWeb } from './canvas/web.js';
+import { initGhosts } from './canvas/ghosts.js';
 import { initStills } from './canvas/stills.js';
 import { initInput } from './canvas/input.js';
 import { initDrop, pickFiles, pickCover, addNote } from './import/drop.js';
@@ -84,7 +86,10 @@ const cmds = {
   // Two commands rather than one that reads the selection, so that neither can
   // lie about what it is going to touch: the sidebar button says "Rearrange
   // everything" and does, whatever happens to be selected at the time.
-  rearrange: () => rearrange(board.items),
+  // Hints are left where they are. An arrangement is a statement about how the
+  // board's contents relate, and three cards that are about to leave are not
+  // contents - dealing them slots would also scatter them out of reading order.
+  rearrange: () => rearrange(board.items.filter(i => i.type !== 'ghost')),
   rearrangeSelection: () => rearrange(board.items.filter(i => selection.has(i.id))),
   // The Desktop title card's pen: opens the same style panel the Mobile masthead
   // uses. Routed through cmds so canvas/input.js (which has no business importing
@@ -265,6 +270,10 @@ initSidebar(cmds);
 initMobileHeaderEditor(vp);
 initItems(el('world'), vp);
 initWeb(el('world'), vp);
+// One 'items' subscriber that sweeps the hint cards the first time the board
+// holds anything of the user's. After initItems, so the nodes it animates out
+// are mounted by the time it can fire.
+initGhosts();
 initStills(el('world'), vp);
 initScaleBar(vp);
 // Its own listeners rather than a call from the paint block below: the sheet is
@@ -879,6 +888,11 @@ bus.on('board:load', () => {
   // app adds it here, and the payloadless 'items' emit that follows loadBoard()
   // mounts it. A board that carries or deleted its card is left untouched.
   ensureTitleCard();
+  // And the hint cards, on the same terms and for the same reason: state.js
+  // keeps loadBoard() free of both so its own tests can load and serialise an
+  // exact item set. A board arriving with anything on it gets none - the latch
+  // was set from its contents inside loadBoard().
+  ensureGhostCards();
   // A board can bring its own look, applied without going through persist() -
   // so this is the other door the grid's colours change behind.
   resetGridInk();
@@ -1282,7 +1296,10 @@ const px = n => Math.round(n);
  * so the slot never goes empty.
  */
 function paintCount() {
-  const n = board.items.length;
+  // Hints are not things. A blank board that announced "3 things" would be
+  // counting its own scaffolding, and the number is meant to answer "how much
+  // have I put here" - which on a new board is none.
+  const n = board.items.reduce((t, i) => t + (i.type === 'ghost' ? 0 : 1), 0);
   if (selection.size === 1) {
     const it = byId([...selection][0]);
     if (it) {
@@ -1751,7 +1768,12 @@ const started = (async function start() {
   // listener is live and this renders the card without a reload.
   if (!restored) {
     ensureTitleCard();
-    if (!isTitleHidden()) bus.emit('items', { added: [TITLE_ID], removed: [] });
+    ensureGhostCards();
+    const seeded = [
+      ...(isTitleHidden() ? [] : [TITLE_ID]),
+      ...(hasGhosts() ? GHOST_IDS : []),
+    ];
+    if (seeded.length) bus.emit('items', { added: seeded, removed: [] });
   }
   openingView();
   if (restored) toast('Restored your last board');

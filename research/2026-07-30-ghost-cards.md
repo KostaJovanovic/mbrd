@@ -1,6 +1,30 @@
 # Ghost cards
 
-Status: plan, nothing built yet. 2026-07-30.
+Status: **implemented**, 2026-07-31. Planned 2026-07-30.
+
+Built as designed below, with the four open questions in §6 resolved as
+recommended - hints are not threaded by the web, not dealt slots by "Rearrange
+all", and carry layout-neutral copy so one sentence is true on Desktop and
+Mobile alike. §6.1 (undo entries outliving their items) was checked before
+building and is a non-issue; the detail is in that entry.
+
+Two things came out differently from the plan and are worth knowing:
+
+- **Leaving needed no code at all.** `canvas/items.js` already flies out every
+  id named in a removed delta, so a ghost exits with the whimsy tier's own feel
+  the moment `dismissGhosts()` emits. The only requirement that placed on the
+  design was that the emit name the ids, which is why `dismissGhosts()` returns
+  them rather than emitting bare.
+- **The `packable` line at `state.js:720` is the wrong lever** and was reverted
+  during the build. That filter belongs to `repackMobileBoard()`, not to
+  "Rearrange all", and excluding hints there would strand them when the Mobile
+  column count changes - they *are* drawn on Mobile, unlike the title card.
+  Rearrange is filtered in `main.js` at the `cmds.rearrange` entry instead.
+
+Verified in a real browser as well as by the suite (617 pass): a fresh board
+opens `ghost, ghost, ghost, title`; adding a note leaves `note, title` with the
+three nodes still in `#exit-layer` mid-animation; undoing that note leaves
+`title` alone and the hints stay gone.
 
 Three cards that are already on a board the moment it is made, saying what a
 blank board cannot say for itself: drop things here, drag to move around, add a
@@ -226,21 +250,23 @@ load/new/undo, ghost slot geometry per layout mode, and — the one that matters
    comparison. Pre-existing, not reachable through ghosts — a ghost still
    exists at commit time — and out of scope here, but worth a note.
 
-2. **Do threads connect to ghosts?** `canvas/web.js` draws threads between item
-   centres and excludes only stuck riders. "Behave entirely like real cards"
-   argues for including them; against is that the web is a picture of how a
-   board's contents relate, and hints relate to nothing. Recommend excluding
-   them — a ghost is not a node — but it is a visible call either way and it is
-   yours.
+2. ~~**Do threads connect to ghosts?**~~ **Resolved: they do not.** `centres()`
+   in `canvas/web.js` excludes them alongside stuck riders. The web is a picture
+   of how a board's contents relate and a hint relates to nothing; it would also
+   have meant drawing a web on an empty board and tearing it down at the first
+   import.
 
-3. **Rearrange.** Plan excludes ghosts from `packable`, matching the title card.
-   Consistent with (2), slightly against "entirely like real cards".
+3. ~~**Rearrange.**~~ **Resolved: hints stay put**, filtered at `cmds.rearrange`
+   in `main.js`. See the note at the top of this file about why the `packable`
+   line named in §4 was the wrong place for it.
 
-4. **Mobile.** Two layouts, and Mobile is a reading-order column feed, not a
-   spatial map. Ghost slots need a Mobile answer — most likely the top three
-   cells of the column grid — and the copy may need to differ, since "drag to
-   pan, wheel to zoom" is a Desktop sentence. Worth deciding before writing the
-   copy rather than after.
+4. ~~**Mobile.**~~ **Resolved, and it needed less than expected.**
+   `completeLayout('mobile')` packs any item with no saved geometry, so ghosts
+   are dealt column slots by the ordinary path with no special case. The copy
+   problem was real and was solved by writing it layout-neutral: each line names
+   the outcome ("Drag the board to travel. Zoom to see more of it.") rather than
+   the device's gesture, so one sentence is true of a wheel and of a pinch. That
+   also keeps the renderer free of any mode-dependent DOM.
 
 5. **`worldEl.classList.toggle('is-empty', …)`** at `canvas/items.js:280` is set
    but matched by no CSS rule anywhere — a dead hook. It is also wrong already:

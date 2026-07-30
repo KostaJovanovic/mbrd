@@ -812,8 +812,12 @@ export function removeItems(ids, label = 'Delete') {
   // are binned; deleting the title also flips the flag, and undo flips it back.
   const titleGone = removed.some(r => r.item.type === 'title');
   const wasHidden = board.titleHidden;
+  // Ghost cards are not binned either, for a different reason than the title
+  // card: they are hints rather than anything of the user's, so a thrown-away
+  // one is finished rather than filed. Deleting one by hand is a dismissal like
+  // any other - see dismissGhosts() - and it does not come back.
   const binned = removed
-    .filter(r => r.item.type !== 'title')
+    .filter(r => r.item.type !== 'title' && r.item.type !== 'ghost')
     .map(r => ({ item: r.item, at: Date.now() }));
   const binIds = new Set(binned.map(b => b.item.id));
   // What this delete pushed out the bottom of the bin, so undo can put it back.
@@ -922,6 +926,106 @@ export function restoreTitleCard(at = null) {
             selection.delete(item.id);
             bus.emit('items', { added: [], removed: [item.id] });
             bus.emit('selection'); bus.emit('trash'); });
+}
+
+/**
+ * Ghost cards: the three hints a brand-new board opens with.
+ *
+ * A blank board cannot say what to do with itself, so it is handed three cards
+ * that do - drop things here, drag to move around, add a note. The moment real
+ * content arrives they leave, and that board never shows them again.
+ *
+ * They are furniture, not content, and the difference is enforced at exactly
+ * three places rather than by a special case sprinkled everywhere:
+ *
+ *   1. serializeBoard() strips them, so no .mbrd ever carries one and the
+ *      format does not have to learn the type;
+ *   2. dismissGhosts() is hydration, not a command - no commit, no history -
+ *      which is what makes their leaving survive an undo of the very import
+ *      that triggered it;
+ *   3. removeItems() does not bin them, the way it does not bin the title card.
+ *
+ * Everything else about a ghost is an ordinary card: it is selectable,
+ * draggable, resizable and rotatable, its geometry travels in board.layouts,
+ * and Mobile packs it into a column like anything else. That is deliberate -
+ * the alternative was a separate overlay layer outside board.items, which
+ * would have meant a second gesture pipeline beside canvas/input.js for the
+ * sake of three cards.
+ *
+ * What each one *says* is not decided here. state.js has no business holding
+ * user-facing prose, so an item carries only its key in meta.hint and
+ * canvas/ghosts.js maps that to words and pixels.
+ */
+export const GHOST_IDS = Object.freeze(['__ghost_drop__', '__ghost_move__', '__ghost_note__']);
+
+// Keyed by id so the two stay in step, and ordered the way they are read. The
+// sizes are a note's own proportions rather than a picture's - these are cards
+// with a sentence in them - and the positions sit below TITLE_DEFAULT_POS so a
+// fresh board reads top to bottom: name, then what to do. +y is up.
+const GHOSTS = Object.freeze([
+  { id: GHOST_IDS[0], hint: 'drop', x: -232, y:   40, w: 208, h: 156 },
+  { id: GHOST_IDS[1], hint: 'move', x:    0, y:  -40, w: 208, h: 156 },
+  { id: GHOST_IDS[2], hint: 'note', x:  232, y:   40, w: 208, h: 156 },
+]);
+
+/** Whether the board holds anything the user put there. */
+export function hasContent() {
+  return board.items.some(i => i.type !== 'title' && i.type !== 'ghost');
+}
+
+/** Whether any ghost card is currently on the board. */
+export const hasGhosts = () => board.items.some(i => i.type === 'ghost');
+
+// Session-scoped and deliberately never written anywhere. Its whole job is the
+// undo case: content arrives, the ghosts go, and undoing that import must not
+// bring them back. A board:new clears it (a new board earns its hints again);
+// a board:load sets it from whether the arriving board already has content.
+let ghostsDismissed = false;
+
+/**
+ * Put the ghost cards on the board if it has earned them - board hydration, not
+ * a user edit, so no commit and no history. Runs at startup and on load, the
+ * same way ensureTitleCard() does and for the same reason.
+ *
+ * A board with any content at all, or one already dismissed this session, gets
+ * nothing.
+ */
+export function ensureGhostCards() {
+  if (ghostsDismissed || hasContent() || hasGhosts()) return;
+  for (const g of GHOSTS) {
+    board.items.push(makeItem({
+      id: g.id, type: 'ghost', x: g.x, y: g.y, w: g.w, h: g.h,
+      meta: { hint: g.hint },
+    }));
+  }
+}
+
+/**
+ * Take the ghost cards off the board for good.
+ *
+ * No commit on purpose - see the note above. Returns the ids it removed so the
+ * caller can animate them out; an empty array means there was nothing to do,
+ * which is the common case once a board is in use.
+ */
+export function dismissGhosts() {
+  ghostsDismissed = true;
+  const gone = board.items.filter(i => i.type === 'ghost').map(i => i.id);
+  if (!gone.length) return gone;
+  board.items = board.items.filter(i => i.type !== 'ghost');
+  let dropped = false;
+  for (const id of gone) if (selection.delete(id)) dropped = true;
+  bus.emit('items', { added: [], removed: gone });
+  if (dropped) bus.emit('selection');
+  return gone;
+}
+
+/**
+ * Reset the latch for a board that is arriving. `content` is whether that board
+ * has any of its own - a board with things on it is dismissed before it is even
+ * drawn, so its first edit does not try to sweep hints that were never there.
+ */
+export function resetGhostLatch(content = false) {
+  ghostsDismissed = !!content;
 }
 
 /**
@@ -2481,13 +2585,23 @@ export function loadBoard(data) {
   board.layoutSettings = next.layoutSettings;
   board.arrangements = next.arrangements;
   board.layouts = next.layouts;
-  board.items = next.items;
   board.mobileHeader = next.mobileHeader;
   board.titleHidden = next.titleHidden;
   board.mediaFit = next.mediaFit;
   board.paletteSources = next.paletteSources;
   board.trash = next.trash;
   board.layoutMode = layoutMode;
+  // Nothing that arrives from outside is allowed to be a ghost. serializeBoard()
+  // never writes one, so a file carrying the type was hand-made or came from a
+  // future the app does not have; either way a hint the board did not mint is
+  // one nothing would ever clear, since a board holding it is not empty. Dropped
+  // here rather than trusted, which is the same treatment every other field in
+  // normalizeBoard() gets.
+  board.items = next.items.filter(i => i.type !== 'ghost');
+  // The latch travels with the board, not the session: one that arrives with
+  // content has already been past this point, and one that arrives empty earns
+  // its hints. See ensureGhostCards(), which main.js calls on 'board:load'.
+  resetGhostLatch(board.items.some(i => i.type !== 'title'));
   // The Desktop title card is seeded by the app (main.js, on 'board:load'), not
   // here: keeping loadBoard() free of it lets state tests load and serialise a
   // board of exactly the items they gave it. See ensureTitleCard().
@@ -2751,8 +2865,17 @@ const MAX_FONT_AXES = 16;
 export function serializeBoard() {
   captureLayout();
   captureLayoutSettings();
-  const desktop = completeLayout('desktop');
-  const mobile = completeLayout('mobile');
+  // Ghost cards never reach a file. They are onboarding hints the app puts on a
+  // blank board, not anything of the user's, and a .mbrd carrying three of them
+  // would hand them to whoever opened it - on a board that is by then no longer
+  // empty, so nothing would ever take them away again. Stripping here rather
+  // than at each of the three sinks below is what keeps the format from having
+  // to know the type exists at all.
+  const ghost = new Set(board.items.filter(i => i.type === 'ghost').map(i => i.id));
+  const real = ghost.size ? board.items.filter(i => !ghost.has(i.id)) : board.items;
+  const shed = list => (ghost.size ? list.filter(g => !ghost.has(g.id)) : list);
+  const desktop = shed(completeLayout('desktop'));
+  const mobile = shed(completeLayout('mobile'));
   const desktopSettings = settingsFor(board.layoutSettings.desktop, board.sharedAppearance);
   const desktopById = layoutMap(desktop);
   const itemIn = (item, geometry) => {
@@ -2781,7 +2904,7 @@ export function serializeBoard() {
     arrangement: board.arrangements.desktop,
     // Desktop stays in the traditional item fields for readers predating
     // profiles. New readers take the active geometry from `layouts`.
-    items: board.items.map(item => serializeItem(itemIn(item, desktopById.get(item.id)))),
+    items: real.map(item => serializeItem(itemIn(item, desktopById.get(item.id)))),
     layouts: {
       desktop: {
         items: desktop.map(serializeGeometry),
