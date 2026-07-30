@@ -1,13 +1,14 @@
 # Mobile scroll performance — implementation plan (2026-07-30)
 
-> **Status: closed.** Steps 1–3 are done. Step 2 fixed the defect — restoring
-> the `#viewport` writes halves the frame rate on the device, 119 → 60, and the
-> shipped build holds 120Hz with a 117.6 p95. **Steps 4 and 5 were not built,
-> and the measurement is why**: warm, there is no headroom left for the grid
-> rewrite to recover, and six mounted nodes on a 101-item board leave the two
-> step-5 levers nothing to save. The Results table and the reasoning are in
-> `research/2026-07-30-mobile-scroll-perf.md`; the step 4 and 5 sections below
-> are kept as written, for the Desktop case and for the next time.
+> **Status: closed.** Steps 1–3 are done. Step 2 fixed the defect: restoring the
+> `#viewport` writes takes lost frames from 0.5% to 37.6% on a display that
+> stayed at 120Hz throughout, and halves the delivered frame rate. **Steps 4 and
+> 5 were not built, and the measurement is why** — warm, `#perf2` and `#perf3`
+> are indistinguishable from what shipped, and six mounted nodes on a 101-item
+> board leave the step-5 levers nothing to save. The Results tables and the
+> reasoning are in `research/2026-07-30-mobile-scroll-perf.md`; the step 4 and 5
+> sections below are kept as written, for the Desktop case and for the next
+> time.
 >
 > Two deviations from the plan below, both recorded here rather than quietly:
 >
