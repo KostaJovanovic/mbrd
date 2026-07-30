@@ -213,6 +213,13 @@ function discard(el) {
     // actually releases what it had buffered.
     m.load?.();
   }
+  // The same bargain for pictures. An <img>'s decoded bitmap - naturalW x
+  // naturalH x 4 bytes, uncapped by how small the card was drawn - is freed when
+  // its src goes, not when the last reference to the element does. On a
+  // memory-tight phone that difference is a full-resolution decode held until the
+  // next GC, and a board panned across hundreds of photos discards that many at
+  // once. Clearing the src (and the still twin's) hands the decode back now.
+  for (const im of el.querySelectorAll('img')) im.removeAttribute('src');
 }
 
 /**

@@ -2121,6 +2121,14 @@ plates do: below a third of size a card is a coloured tile, and a click on
 /* At that scale a card is a swatch, not a thing you operate. */
 #world.zoom-far .item-bar { display: none; }
 
+/* And the drop-shadow twins with it. At swatch scale the shadow is a smudge no
+   one reads, but each twin is a multi-layer box-shadow element the compositor
+   still has to paint - one per item, and a full-board zoom-out puts every item
+   on screen at once. Dropping them is the same trade the chrome above makes, and
+   it cuts the compositor's layer count on exactly the view that strains it most
+   (see the shadow underlay in canvas/items.js and #item-shadows). */
+#world.zoom-far .item-shadow { display: none; }
+
 .grip {
   position: absolute;
   /* Capped at half the *ring*, not half the item: opposite marks then meet
