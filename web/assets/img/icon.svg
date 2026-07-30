@@ -1,31 +1,32 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="mbrd">
-  <!-- Three cards on the dot grid, freely placed and slightly askew - a board
-       with align-to-grid off, which is the one thing this app is.
-       (The previous icon is kept in icon-mockups/old/.)
+  <!-- Two cards on the dot grid, the big one running off the edge - because the
+       board does not stop, which is the first thing the README says about it.
+       (Earlier icons are kept in icon-mockups/: old/ is the pre-v0.66 one,
+       prev-m2/ the three-card set this replaces.)
 
-       Same idea as that one, built for the sizes that actually get seen. It had
-       three sheets outlined at 3 units and 16% opacity plus a 7-unit curve, and
-       below about 64px all four of those became a smudge. Here the cards are
-       solid fills on a dark ground, nothing is outlined, and the thinnest
-       feature is a 22-unit corner radius - so the mark degrades into a
-       recognisable arrangement of three colours rather than into mush.
+       Built for the sizes that actually get seen. Terracotta is 4.07:1 against
+       the paper ground, so the big card holds its shape down to a 16px tab; the
+       absinthe card is the second reading and can afford to be quieter. Nothing
+       is outlined and the thinnest feature is a 26-unit corner radius, so the
+       mark degrades into two blocks of colour rather than into mush.
 
-       Ground is paper #fbf8f1 and the top card is accent terracotta #c25c2b,
-       both tokens.css defaults; the other two cards are picked by hand - tea
-       rose #f4c2c2 and absinthe #76b583. Those two are lighter than the ground
-       is dark, so the dot grid is ink at 16% here rather than paper at 12%. -->
+       Ground is paper #fbf8f1 and the big card accent terracotta #c25c2b, both
+       tokens.css defaults; absinthe #76b583 is picked by hand. Dots are ink at
+       16% - paper dots on a paper ground are invisible.
+
+       The clip is what makes the bleed work: the card is drawn past 512 and cut
+       by the same rounded rectangle as the ground, so the edge stays the icon's
+       edge instead of the card growing its own corner. -->
   <defs>
     <pattern id="dots" width="48" height="48" patternUnits="userSpaceOnUse">
       <circle cx="24" cy="24" r="2.8" fill="#372a1d" fill-opacity="0.16"/>
     </pattern>
+    <clipPath id="sq"><rect width="512" height="512" rx="112"/></clipPath>
   </defs>
   <rect width="512" height="512" rx="112" fill="#fbf8f1"/>
   <rect width="512" height="512" rx="112" fill="url(#dots)"/>
-
-  <!-- Landscape, portrait, landscape, so the trio reads as three *different*
-       things rather than a repeated tile. Bounding box is centred on 256,256,
-       which is what lets the maskable variant be one scale() of this group. -->
-  <rect x="76"  y="96"  width="210" height="148" rx="22" fill="#c25c2b" transform="rotate(-4 181 170)"/>
-  <rect x="300" y="140" width="136" height="210" rx="22" fill="#f4c2c2" transform="rotate(4 368 245)"/>
-  <rect x="100" y="282" width="176" height="134" rx="22" fill="#76b583" transform="rotate(3 188 349)"/>
+  <g clip-path="url(#sq)">
+    <rect x="56"  y="72"  width="150" height="112" rx="18" fill="#76b583" transform="rotate(4 131 128)"/>
+    <rect x="146" y="188" width="420" height="300" rx="26" fill="#c25c2b" transform="rotate(-6 356 338)"/>
+  </g>
 </svg>
