@@ -44,6 +44,37 @@ a baseline.** Every reading in this table is a different point on a warm-up
 curve as much as a different switch, and only the two runs of the *same* build
 at either end of the session make that visible.
 
+### The p95 column is quantised, and the panel moves
+
+Noticed after the table was written, and it changes how it should be read.
+Every gap in it is a whole number of refreshes:
+
+| p95 reported | gap | at 120Hz |
+|--------------|-----|----------|
+| 117.6 | 8.50ms | 1 frame |
+| 60.2 / 59.9 | 16.6 / 16.7ms | 2 frames |
+| 29.9 | 33.4ms | 4 frames |
+| 24.0 | 41.7ms | 5 frames |
+
+So `p95 = 60` does not mean "60 fps". It means the 95th-percentile frame took
+**two refreshes** — and two refreshes at 120Hz is the same 16.7ms as one refresh
+at 60Hz. These panels change their own rate, so no arithmetic on gap data can
+tell "one frame was dropped" from "the display stepped down". Runs 3 and 4
+landing at 59.9 and 60.2 is that: they are sitting on the panel's other rate,
+not agreeing with each other about a cost. Two explanations now cover those two
+runs — warm-up and refresh-rate change — and neither leaves them supporting a
+grid rewrite, which is why the decision below is unchanged.
+
+Worse, `jankPct` was measured against *the run's own median*, which a variable
+display is free to move: a clean stretch at 60Hz scores as jank against a 120Hz
+median while nothing was missed at all. The readout now takes the beat from the
+5th-percentile gap - the interval the panel manages when it is trying - and
+reports the tail in beats: `2f` (ambiguous, as above), `3f+` (past anything a
+refresh change explains, so the honest count of lost frames) and `offbeat` (not
+a whole number of beats at all, which is the one shape that says the beat itself
+moved - 90Hz is 1.33 beats of 120). `jankPct` is kept in `report()` for
+continuity with the readings above and should not be trusted on a phone.
+
 ### Decisions
 
 - **Step 4 (the lattice moved by transform) is not indicated. Not built.** The
