@@ -1,6 +1,6 @@
 ﻿// Stamped by save.bat on every commit - do not edit these two lines by hand.
-export const COMMIT_COUNT = 69;
-export const VERSION = '0.69';
+export const COMMIT_COUNT = 70;
+export const VERSION = '0.70';
 
 // Commits crowned as major releases. Keep in sync with RELEASES in save.bat.
 export const RELEASE_COMMITS = [];

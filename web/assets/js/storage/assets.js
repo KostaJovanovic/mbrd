@@ -42,9 +42,15 @@ export async function addFile(file) {
   const buf = await file.arrayBuffer();
   const hash = await sha256(buf);
   if (!store.has(hash)) {
-    putAsset(hash, new Blob([buf], { type: file.type || '' }), {
-      mime: file.type || '',
-      ext: extOf(file.name),
+    const ext = extOf(file.name);
+    // An <img> renders a blob: URL by the blob's own MIME, and an SVG served with
+    // an empty type does not render at all. Some sources hand an .svg over with
+    // no File.type, so it is inferred from the extension here - narrowly, for the
+    // one format where the type is load-bearing rather than a hint.
+    const mime = file.type || (ext === 'svg' ? 'image/svg+xml' : '');
+    putAsset(hash, new Blob([buf], { type: mime }), {
+      mime,
+      ext,
       name: file.name,
     });
   }

@@ -125,6 +125,11 @@ of the last three directories is looking at a perfectly valid older board.
 the board was configured — and they travel with it, so opening a board puts you
 back where you left it.
 
+`view.zoom` is the raw world-to-screen scale, not the percentage the corner
+prints. The two differ by `BASE_ZOOM` in `canvas/viewport.js`: the interface
+calls scale 0.8 "100%", so a board left at 100% records `0.8` here. Readers
+should treat the number as a scale and not multiply it by a hundred.
+
 `settings.gridStyle` has only ever had one value. It is kept because older
 files carry it, which is the compatibility rule at the bottom of this document
 working as intended.

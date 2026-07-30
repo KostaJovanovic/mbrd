@@ -114,6 +114,19 @@ export function defaultSize(type) {
 export async function measureSize(type, file) {
   const box = defaultSize(type);
   if (type !== 'image' && type !== 'video') return { ...box, decodable: true };
+  // SVG is vector, so it is measured from its own markup rather than by decoding
+  // it. Two reasons this is not just an optimisation: it can never be a decode
+  // bomb (there are no pixels to allocate), and Firefox refuses to decode a
+  // viewBox-only SVG at all - createImageBitmap and <img>.decode both reject -
+  // so a decode probe would report it undecodable and the importer would drop it
+  // to a named card. It is always an image; a size it does not declare just
+  // leaves it at the placeholder box, which an <img> scales it into.
+  if (type === 'image' && isSvgImage(file)) {
+    const natural = await svgSize(file).catch(() => null);
+    return natural
+      ? { ...fitToBox('image', natural.w, natural.h), measured: true, decodable: true }
+      : { ...box, decodable: true };
+  }
   try {
     const natural = type === 'image' ? await imageSize(file) : await videoSize(file);
     // An image the browser cannot decode (HEIC, JXL, camera RAW) is reported
@@ -123,6 +136,34 @@ export async function measureSize(type, file) {
   } catch {
     return { ...box, decodable: false };
   }
+}
+
+/** An SVG, by MIME or by extension - the same either/or classify() uses. */
+function isSvgImage(file) {
+  return (file.type || '').toLowerCase() === 'image/svg+xml'
+    || SVG_EXTS.has(extOf(file.name));
+}
+
+/**
+ * An SVG's intrinsic size from its own root tag, without a decoder: explicit
+ * width/height when they are plain numbers, else the last two numbers of the
+ * viewBox. Null when neither is usable (percentages, missing) - the caller then
+ * keeps the placeholder box. Text and regex only, so it runs anywhere a File
+ * does and cannot be refused the way a decode can.
+ */
+async function svgSize(file) {
+  const text = (await file.text()).slice(0, 4096);
+  const tag = text.match(/<svg\b[^>]*>/i)?.[0] || '';
+  const w = parseFloat(tag.match(/\bwidth\s*=\s*["']?\s*([\d.]+)\s*(?:px)?["'\s>]/i)?.[1]);
+  const h = parseFloat(tag.match(/\bheight\s*=\s*["']?\s*([\d.]+)\s*(?:px)?["'\s>]/i)?.[1]);
+  if (w > 0 && h > 0) return { w, h };
+  const vb = tag.match(/\bviewBox\s*=\s*["']\s*[-\d.eE]+[\s,]+[-\d.eE]+[\s,]+([\d.eE]+)[\s,]+([\d.eE]+)/i);
+  if (vb) {
+    const vw = parseFloat(vb[1]);
+    const vh = parseFloat(vb[2]);
+    if (vw > 0 && vh > 0) return { w: vw, h: vh };
+  }
+  return null;
 }
 
 /**
