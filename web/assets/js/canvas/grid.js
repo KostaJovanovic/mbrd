@@ -16,7 +16,7 @@
 //   Harsh             a <canvas>. See drawCrosses() for why nothing else works.
 
 import { board } from '../state.js';
-import { deviceRatio, onTouch } from './viewport.js';
+import { deviceRatio, onTouch, mobilePerfFlags } from './viewport.js';
 import { MM_PER_INCH, PX_PER_INCH } from '../measure.js';
 
 // The on-screen window a minor step is allowed to live in. Outside it the
@@ -298,7 +298,12 @@ export function paintGrid(vp) {
   const size = sizes.join(', ');
   if (image !== lastImage) { canvas.style.backgroundImage = image; lastImage = image; }
   if (size !== lastSize) { canvas.style.backgroundSize = size; lastSize = size; }
-  canvas.style.backgroundPosition = positions.join(', ');
+  // The one write left on the hot path, and the one this cannot cache away: the
+  // marks have to land where the board is. It is also a full re-raster of the
+  // layer's tiled background, which is why there is a switch on it - see
+  // mobilePerfFlags. Off, the lattice is left where it was and the board slides
+  // out from under it; that is a broken picture on purpose, for measuring only.
+  if (mobilePerfFlags.gridPos) canvas.style.backgroundPosition = positions.join(', ');
   punchHole(canvas, o, vp, box);
 }
 

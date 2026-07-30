@@ -809,13 +809,15 @@ export function extractPalette(chunks, { plain = false } = {}) {
 // ---------------------------------------------------------------------------
 
 /**
- * How many pictures to look at, newest first.
+ * The hard ceiling on how many pictures a palette is read from, newest first.
  *
- * A cap and not a sample of the whole board: past this the newest twelve are
- * what the palette is a representation of. Each of the twelve counts the same
- * whatever its size or how vivid it is - see huesOf().
+ * A cap and not a sample of the whole board. How many *within* this ceiling are
+ * actually read is the board's own `paletteSources` setting - this is only the
+ * limit that setting is clamped to, and the backstop when no limit is passed.
+ * Each picture counts the same whatever its size or how vivid it is - see
+ * huesOf().
  */
-export const MAX_SOURCES = 12;
+export const MAX_SOURCES = 24;
 
 /** Each one drawn this big. 48x48 is 2304 pixels, and enough to vote with. */
 const SAMPLE = 48;
@@ -831,11 +833,12 @@ const SAMPLE = 48;
  * Failures are skipped rather than thrown. One picture the browser cannot
  * decode should cost its own vote and nothing else.
  */
-export async function samplePixels(urls) {
+export async function samplePixels(urls, limit = MAX_SOURCES) {
   const ctx = sampler();
   if (!ctx) return [];
+  const n = Math.max(1, Math.min(limit || MAX_SOURCES, MAX_SOURCES));
   const out = [];
-  for (const url of urls.slice(0, MAX_SOURCES)) {
+  for (const url of urls.slice(0, n)) {
     try {
       const src = await frameFor(url);
       // One canvas for all of them, so it is cleared between pictures: a

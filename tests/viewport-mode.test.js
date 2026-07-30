@@ -6,6 +6,7 @@ import {
   Viewport, mobileZoom, mobileHeaderHeight,
 } from '../web/assets/js/canvas/viewport.js';
 import { axesVisible } from '../web/assets/js/canvas/grid.js';
+import { sheetBox, mastShift } from '../web/assets/js/canvas/mobile-frame.js';
 import { webVisible } from '../web/assets/js/canvas/web.js';
 import {
   createMobileSliderFocus,
@@ -106,9 +107,10 @@ test('sidebar slider focus is disabled above the Mobile breakpoint', () => {
 });
 
 test('Mobile masthead leaves descender room and its finite board follows the style radius', async () => {
-  const [css, grid] = await Promise.all([
+  const [css, grid, frame] = await Promise.all([
     readFile(new URL('../web/assets/css/app.css', import.meta.url), 'utf8'),
     readFile(new URL('../web/assets/js/canvas/grid.js', import.meta.url), 'utf8'),
+    readFile(new URL('../web/assets/js/canvas/mobile-frame.js', import.meta.url), 'utf8'),
   ]);
   const rule = id => css.match(new RegExp(`#${id}\\s*\\{([^}]+)\\}`))?.[1] || '';
 
@@ -118,19 +120,95 @@ test('Mobile masthead leaves descender room and its finite board follows the sty
   // height dial tightens it.
   assert.match(rule('mobile-board-title'), /padding-block:\s*0\.2em\s+0\.45em;/);
   assert.match(rule('mobile-board-title'), /overflow-wrap:\s*anywhere;/);
-  assert.match(rule('mobile-board-frame'), /top:\s*var\(--mobile-board-top,\s*0\);/);
-  assert.match(rule('mobile-board-frame'), /height:\s*max\(0px,\s*calc\(/);
   assert.match(rule('mobile-board-frame'), /border-radius:\s*var\(--radius\);/);
   assert.match(rule('mobile-board-frame'),
     /background:\s*color-mix\(in srgb,\s*var\(--accent\)\s*var\(--mobile-board-accent\),\s*#fff\);/);
-  assert.match(rule('mobile-board-frame'),
-    /box-shadow:[^;]*color-mix\(in srgb,\s*var\(--ink\)\s*6%,\s*transparent\);/);
+  // The sheet is positioned from the live board rectangle, clipped to the
+  // window and written only when it changes - not from custom properties on
+  // #viewport, which invalidated every card on the board once a frame. What the
+  // clipping and the rounding come out as is asserted on sheetBox() itself
+  // below; this is only that the painter goes through it and keeps the cache.
+  assert.match(frame, /vp\.mobileScreenRect\(\)/);
+  assert.match(frame, /sheetBox\(r, vp\.width, vp\.height\)/);
+  assert.match(frame, /if \(next === lastSheet\) return;/);
+  // The surround is its own static wash now. It was a 100vmax spread shadow on
+  // the sheet, which repainted the whole window every time the board scrolled;
+  // the tone it states is the same 6% of ink.
+  assert.match(rule('mobile-surround'),
+    /background:\s*color-mix\(in srgb,\s*var\(--ink\)\s*6%,\s*transparent\);/);
+  assert.doesNotMatch(rule('mobile-board-frame'), /box-shadow/);
   assert.match(css,
     /data-whimsy="0"[^{}]*#mobile-board-frame\s*\{\s*--mobile-board-accent:\s*7%;\s*\}/);
   assert.match(css,
     /data-whimsy="2"[^{}]*#mobile-board-frame\s*\{\s*--mobile-board-accent:\s*4\.5%;\s*\}/);
   assert.match(grid, /topRadius:\s*r\.top\s*>=\s*0\s*\?\s*'var\(--radius\)'\s*:\s*'0px'/);
   assert.match(grid, /bottomRadius:\s*r\.bottom\s*<=\s*vp\.height\s*\?\s*'var\(--radius\)'\s*:\s*'0px'/);
+});
+
+test('the Mobile sheet is clipped to the window and rounds only a real edge', () => {
+  const W = 390, H = 800;
+  // A long board: top edge below the masthead, bottom edge far off the screen.
+  const atTop = sheetBox({ left: 16, width: 358, top: 260, bottom: 4000 }, W, H);
+  assert.deepEqual(
+    [atTop.x, atTop.y, atTop.w, atTop.h], [16, 260, 358, 540],
+    'at the top stop the sheet starts at the board edge and runs off the bottom');
+  assert.equal(atTop.topRadius, 'var(--radius)');
+  assert.equal(atTop.bottomRadius, '0px', 'the far edge is off screen and stays square');
+
+  // Scrolled into the middle: both edges outside the window, so the box is the
+  // window - which is the whole saving. This answer does not change for as long
+  // as the scroll stays in the middle of the board, and the caller compares it
+  // against the last one and writes nothing.
+  const mid = sheetBox({ left: 16, width: 358, top: -900, bottom: 3100 }, W, H);
+  assert.deepEqual([mid.x, mid.y, mid.w, mid.h], [16, 0, 358, H]);
+  assert.equal(mid.topRadius, '0px');
+  assert.equal(mid.bottomRadius, '0px');
+  assert.deepEqual(
+    sheetBox({ left: 16, width: 358, top: -1200, bottom: 2800 }, W, H), mid,
+    'two different scroll positions in the middle of a board are one box');
+
+  // At the bottom stop the far edge is back on screen and rounds again.
+  const atBottom = sheetBox({ left: 16, width: 358, top: -3200, bottom: 700 }, W, H);
+  assert.deepEqual([atBottom.x, atBottom.y, atBottom.w, atBottom.h], [16, 0, 358, 700]);
+  assert.equal(atBottom.topRadius, '0px');
+  assert.equal(atBottom.bottomRadius, 'var(--radius)');
+
+  // A board scrolled entirely past the window has no box at all rather than a
+  // negative one.
+  const gone = sheetBox({ left: 16, width: 358, top: -4000, bottom: -300 }, W, H);
+  assert.equal(gone.h, 0);
+});
+
+test('the Mobile masthead is written only while it is on screen', () => {
+  const H = 800, headerH = 240;
+  const top = mastShift({ top: 260 }, headerH, H);
+  assert.equal(top.visible, true);
+  assert.equal(top.y, 20, 'the band stands on the board edge, its own height above it');
+
+  // Scrolled away for good: the board's top edge is above the window, so the
+  // band that hangs off it is further above still and is not written at all.
+  assert.equal(mastShift({ top: -1 }, headerH, H).visible, false);
+  assert.equal(mastShift({ top: 0 }, headerH, H).visible, false);
+
+  // ...and a board whose top edge has not reached the window yet - a very short
+  // board on a very tall window, scrolled to its bottom stop.
+  assert.equal(mastShift({ top: H + headerH + 1 }, headerH, H).visible, false);
+  assert.equal(mastShift({ top: H + headerH - 1 }, headerH, H).visible, true);
+});
+
+test('no view frame writes an inherited custom property onto #viewport', async () => {
+  // #viewport is an ancestor of #world, and custom properties are inherited, so
+  // writing one there on a pan frame invalidates the computed style of every
+  // mounted card and everything inside it. --iz is published to #world and is
+  // quantised for exactly this reason (see IZ_STEP); the five Mobile board
+  // properties used to be published here with no such guard, on a layout that
+  // has no zoom at all. They live on the two elements that read them now.
+  const viewport = await readFile(
+    new URL('../web/assets/js/canvas/viewport.js', import.meta.url), 'utf8');
+  const paint = viewport.match(/_paint\(\)\s*\{[\s\S]*?\n  \}/)?.[0] || '';
+  assert.ok(paint, 'could not find Viewport._paint()');
+  assert.doesNotMatch(paint, /this\.el\.style\.setProperty/);
+  assert.doesNotMatch(viewport, /--mobile-board-(top|bottom|left|width)/);
 });
 
 test('Mobile masthead title preserves a trailing space while it is edited', async () => {

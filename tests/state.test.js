@@ -1132,6 +1132,29 @@ test('media fit is a board-wide default with an undoable per-item override', () 
   assert.equal(byId('pic').meta.fit, 'contain', 'the per-item override round-trips');
 });
 
+test('paletteSources is a board-wide count, clamped and round-tripped', () => {
+  fresh();
+  assert.equal(board.paletteSources, 12, 'defaults to the count the feature always used');
+
+  setSetting('paletteSources', 6);
+  assert.equal(board.paletteSources, 6);
+  setBoardMode('mobile');
+  assert.equal(board.paletteSources, 6, 'the count is board-wide, not per-layout');
+  setBoardMode('desktop');
+
+  // Clamped to [1, 24] and rounded, whatever a caller or an edited file offers.
+  setSetting('paletteSources', 99);
+  assert.equal(board.paletteSources, 24, 'held under the sampler ceiling');
+  setSetting('paletteSources', 0);
+  assert.equal(board.paletteSources, 1, 'at least one picture');
+
+  const data = serializeBoard();
+  loadBoard(data);
+  assert.equal(board.paletteSources, 1, 'round-trips');
+  loadBoard({ title: 'T', items: [] });
+  assert.equal(board.paletteSources, 12, 'a file without the key reads as the default');
+});
+
 test('A board that stored the name style under settings still loads it', () => {
   fresh();
   // Files written before the style moved to board level carry it inside

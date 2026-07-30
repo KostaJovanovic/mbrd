@@ -112,6 +112,7 @@ of the last three directories is looking at a perfectly valid older board.
   "mobileHeader": { "font": "", "size": 13, "stretch": 100, "leading": 100, "weight": 700, "offset": 0, "italic": false, "wrap": true, "axes": {} },
   "titleHidden": false,
   "mediaFit": "contain",
+  "paletteSources": 12,
   "items": [ … ],
   "layouts": {
     "desktop": [ { "id": "k3f9a2", "x": 120, "y": -40, "w": 320, "h": 240, "rot": 0, "z": 7 } ],
@@ -153,6 +154,11 @@ its own Desktop geometry in `layouts.desktop`; it is never packed onto Mobile.
 card and crops. It is **board-level** (one value for both layouts). A single
 image or video can override it with `meta.fit` (`"cover"` / `"contain"`) — an
 absent or unrecognised `mediaFit` reads as `"contain"`.
+
+`paletteSources` is how many of the board's pictures the "take colours from
+pictures" palette is read from, newest first — a whole number clamped to
+`[1, 24]`, defaulting to `12`. Board-level, since the palette it feeds is shared
+across layouts. Absent or out of range reads as `12`.
 
 Item coordinates and sizes are rounded to two decimals on the way out. A board
 is a place things sit, not a measurement, and the third decimal of a drag is

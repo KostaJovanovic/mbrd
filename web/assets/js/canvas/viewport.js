@@ -85,6 +85,34 @@ export function mobileZoom(viewWidth, worldWidth, pad = MOBILE_SIDE_PAD) {
   return clamp(Math.min(1, available / Math.max(1, worldWidth)), MIN_ZOOM, MAX_ZOOM);
 }
 
+/**
+ * Dev-only kill switches for the per-frame cost of a Mobile scroll, read by
+ * mbrd.perf and by the two modules below. All three default to the shipped
+ * behaviour, so a board that never opens the console pays one boolean read.
+ *
+ * They exist because the expensive parts of a Mobile scroll frame are *browser*
+ * work - style invalidation, layout, raster - and no JS timer can see them: the
+ * view listener has long returned by the time the frame is paid for. That is
+ * how they went unnoticed through two rounds of profiling. Switching one off
+ * and reading the HUD is the only honest measurement, so the switches stay in
+ * the tree as the regression check rather than being deleted once they have
+ * been used. See research/2026-07-30-mobile-scroll-perf.md.
+ *
+ * - `legacyVars` puts back the *cost* of what canvas/mobile-frame.js replaced:
+ *   the five custom properties written on #viewport on every frame. Nothing
+ *   reads them any more, so this changes no picture - it re-creates only the
+ *   invalidation. #viewport is an ancestor of #world and custom properties are
+ *   inherited, so writing one there invalidates the computed style of every
+ *   mounted card, once a frame, on a layout that has no zoom - the same cost
+ *   --iz carries, for nothing. Turn it on to measure what taking it away
+ *   bought, on the device it was taken away for.
+ * - `chrome` false hides the Mobile sheet and masthead and skips their writes
+ *   entirely: the upper bound on what the chrome can still be costing.
+ * - `gridPos` false skips the background-position write in canvas/grid.js,
+ *   which is the lattice layer's per-frame re-raster.
+ */
+export const mobilePerfFlags = { legacyVars: false, chrome: true, gridPos: true };
+
 /** How long after the last view change the board counts as still. See _moving(). */
 const VIEW_SETTLE_MS = 140;
 
@@ -717,25 +745,15 @@ export class Viewport {
 
   _paint() {
     const z = this.zoom;
-    // Only in Mobile mode. These five custom properties position the finite
-    // board frame, its rounded edges and the masthead - all of which are
-    // Desktop-hidden (#mobile-board-frame et al. are display:none off Mobile).
-    // Writing them on every Desktop pan frame was mobileScreenRect() arithmetic
-    // plus five style invalidations spent on props nothing reads. A switch into
-    // Mobile re-runs _paint through setBoardMode -> apply, so the values are
-    // current the moment they start being read again.
-    if (this.isMobile) {
-      const { left: mobileLeft, width: mobileWidth, top: mobileTop, bottom: mobileBottom }
-        = this.mobileScreenRect();
-      this.el.style.setProperty('--mobile-board-left', `${mobileLeft}px`);
-      this.el.style.setProperty('--mobile-board-width', `${mobileWidth}px`);
-      this.el.style.setProperty('--mobile-board-top', `${mobileTop}px`);
-      this.el.style.setProperty('--mobile-board-bottom', `${mobileBottom}px`);
-      // The masthead hangs off the top edge, so it needs no position of its own -
-      // app.css subtracts this from --mobile-board-top and the band travels with
-      // the board as it scrolls away.
-      this.el.style.setProperty('--mobile-header-height', `${this.mobileHeaderPx()}px`);
-    }
+    // The Mobile sheet and masthead used to be positioned from here, by five
+    // custom properties written onto this.el - which is #viewport, an ancestor
+    // of #world. Custom properties are inherited, so that was a computed-style
+    // invalidation of every mounted card and everything inside it, on every
+    // frame of every scroll, on the layout least able to afford one. They are
+    // canvas/mobile-frame.js's business now, off a change listener like every
+    // other piece of screen-space chrome, and nothing writes to #viewport on a
+    // view frame any more.
+    //
     // +panY (not -panY): items are laid out at cssY = -worldY, so the vertical
     // translate has to undo that flip as well as apply the pan.
     this.world.style.transform =
