@@ -321,11 +321,55 @@ const viewPerf = (() => {
   };
   const pct = (sorted, p) => sorted.length
     ? sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))] : 0;
+  /**
+   * How far a gap is off the display's own beat, in frames.
+   *
+   * A gap is never a free quantity: the compositor hands over on a refresh or
+   * it does not, so every interval is a whole number of them and the whole
+   * distribution lands on multiples of one. Anything that is *not* near a
+   * multiple did not come from a missed refresh, which is why it is counted
+   * separately below.
+   */
+  const OFF_BEAT = 0.25;
+  /** Below this a gap is a normal frame and no question is being asked of it. */
+  const A_FRAME = 1.15;
+
   const stats = () => {
     const sorted = [...gaps].sort((a, b) => a - b);
     const median = pct(sorted, 0.5) || 0;
     const janks = median ? gaps.filter(g => g > median * 1.5).length : 0;
-    return { sorted, median, janks };
+    // The display's fastest interval, as this run actually saw it - not as the
+    // device claims and not as the median says.
+    //
+    // The median is the wrong number to measure jank against on a phone, and
+    // reading a run against it is what nearly cost a day. These panels change
+    // refresh rate on their own: 120Hz under the finger, 60 when the system
+    // decides otherwise. A run that spends part of itself at 60 has a median
+    // pulled towards 16.7ms, so genuinely dropped frames stop looking dropped -
+    // and, worse the other way, a clean stretch at 60Hz scores as jank against
+    // a 120Hz median while nothing was missed at all.
+    //
+    // So the beat is taken from the fast end of the run instead: the 5th
+    // percentile is the interval the panel manages when it is trying, robust
+    // against the one or two impossibly short gaps a timer can produce.
+    const base = pct(sorted, 0.05) || median;
+    // ...and the tail is expressed in that beat. Two beats is deliberately kept
+    // apart from three: a two-beat gap is exactly what a drop to 60Hz looks
+    // like on a 120Hz panel and cannot be told from one missed refresh by any
+    // arithmetic on this data, so it is reported and not accused. Three or more
+    // is past anything a refresh-rate change explains, and is the honest count
+    // of frames this app actually lost.
+    const twos = base ? gaps.filter(g => g >= base * 1.5 && g < base * 2.5).length : 0;
+    const overs = base ? gaps.filter(g => g >= base * 2.5).length : 0;
+    // Gaps that are not a whole number of beats at all. A panel that stepped to
+    // some third rate - 90Hz is 1.33 beats of 120 - lands here rather than in
+    // the two counts above, which is the point: it is the one shape in the data
+    // that says the beat itself moved. Overlaps `twos`/`overs` by design.
+    const off = base ? gaps.filter(g => {
+      const f = g / base;
+      return f > A_FRAME && Math.abs(f - Math.round(f)) > OFF_BEAT;
+    }).length : 0;
+    return { sorted, median, janks, base, twos, overs, off };
   };
   /**
    * Which run this is, named as the address that produces it.
@@ -354,18 +398,23 @@ const viewPerf = (() => {
    * they were the same board in the same mode.
    */
   const summary = () => {
-    const { sorted, median, janks } = stats();
+    const { sorted, median, base, twos, overs, off } = stats();
     if (!gaps.length) return `${runLabel()} — no motion sampled`;
     const m = viewStats();
     const cullAvg = cullProfile.runs ? cullProfile.ms / cullProfile.runs : 0;
     const fullPct = cullProfile.runs ? 100 * cullProfile.fullSyncs / cullProfile.runs : 0;
+    const share = k => (100 * k / gaps.length).toFixed(1) + '%';
     return [
       runLabel(),
       `${board.layoutMode} ${board.items.length} items`,
       `fps ${(1000 / median).toFixed(1)}`,
-      `p95 ${(1000 / pct(sorted, 0.95)).toFixed(1)}`,
+      `beat ${base.toFixed(1)}ms`,
+      // The two counts that replaced a jank percentage measured against a
+      // median the panel is free to move - see stats().
+      `2f ${share(twos)}`,
+      `3f+ ${share(overs)}`,
+      `offbeat ${share(off)}`,
       `worst ${pct(sorted, 1).toFixed(0)}ms`,
-      `jank ${(100 * janks / gaps.length).toFixed(1)}%`,
       `n ${gaps.length}`,
       `cull ${cullAvg.toFixed(2)}ms`,
       `full ${fullPct.toFixed(0)}%`,
@@ -457,22 +506,29 @@ const viewPerf = (() => {
   const paintHud = now => {
     if (!hud || now - hudAt < 250) return;   // four updates a second is plenty
     hudAt = now;
-    const { sorted, median, janks } = stats();
+    const { median, base, twos, overs, off } = stats();
     if (!gaps.length) return;
-    // A second line for the two things the fps number cannot show: the cull's own
-    // per-frame cost (the zoom-out hot path) and what is mounted right now - live
-    // node and video counts and the decoded-image megabytes, which is the budget
-    // an iPhone runs out of when the whole board is framed.
+    // A second line for what the frame rate cannot say on a panel that changes
+    // its own refresh rate: the beat this run was actually delivered on, and
+    // the tail counted in it - see stats(). `2f` is the ambiguous column and
+    // `3f+` the accusing one.
+    //
+    // A third for what no frame rate can show: the cull's own per-frame cost
+    // (the zoom-out hot path) and what is mounted right now - live node and
+    // video counts and the decoded-image megabytes, which is the budget an
+    // iPhone runs out of when the whole board is framed.
+    //
+    // A fourth saying which run this is. Every one of these numbers is read off
+    // the glass, and a column of figures with no note of which switch was
+    // thrown is a column of figures that has to be taken again. The board and
+    // its size are here for the same reason: two runs only compare if they were
+    // the same board in the same mode.
     const cullAvg = cullProfile.runs ? cullProfile.ms / cullProfile.runs : 0;
     const m = viewStats();
-    // ...and a third saying which run this is. Every one of these numbers is
-    // read off the glass, and a column of figures with no note of which switch
-    // was thrown is a column of figures that has to be taken again. The board
-    // and its size are here for the same reason: two runs only compare if they
-    // were the same board in the same mode.
+    const share = k => (100 * k / gaps.length).toFixed(1);
     hudText.textContent =
-      `${(1000 / median).toFixed(0)} fps   p95 ${(1000 / pct(sorted, 0.95)).toFixed(0)}`
-      + `   jank ${(100 * janks / gaps.length).toFixed(0)}%   n ${gaps.length}\n`
+      `${(1000 / median).toFixed(0)} fps   beat ${base.toFixed(1)}ms   n ${gaps.length}\n`
+      + `2f ${share(twos)}%   3f+ ${share(overs)}%   offbeat ${share(off)}%\n`
       + `cull ${cullAvg.toFixed(2)}ms   mnt ${m.mounted}  vid ${m.videos}  img ${(m.imgBytes / 1048576).toFixed(0)}MB\n`
       + `${board.layoutMode} ${board.items.length} items   ${runLabel()}`;
   };
@@ -531,10 +587,9 @@ const viewPerf = (() => {
     },
     report() {
       if (!gaps.length) { console.log('[perf] no motion sampled — mbrd.perf.on(), then pan'); return null; }
-      // Anything past 1.5x the median missed at least one refresh - the count of
-      // those, as a share, is the jank the eye actually reads.
-      const { sorted, median, janks } = stats();
+      const { sorted, median, janks, base, twos, overs, off } = stats();
       const mem = viewStats();
+      const share = k => +(100 * k / gaps.length).toFixed(1);
       const r = {
         // Which board and which layout, because two runs of this are only
         // comparable if they were the same board in the same mode - and the
@@ -545,6 +600,19 @@ const viewPerf = (() => {
         fpsMedian: +(1000 / median).toFixed(1),
         fpsP95Low: +(1000 / pct(sorted, 0.95)).toFixed(1),   // the slow tail
         worstFrameGapMs: +pct(sorted, 1).toFixed(1),
+        // The tail against the beat this run was delivered on rather than
+        // against its own median, because the panel moves the median - see
+        // stats(). Two beats is the ambiguous column: on a 120Hz panel it is
+        // both "one frame missed" and "the display stepped down to 60", and no
+        // arithmetic on this data separates them. Three or more is past what a
+        // refresh-rate change explains and is the honest count of lost frames.
+        beatMs: +base.toFixed(2),
+        twoBeatPct: share(twos),
+        threePlusBeatPct: share(overs),
+        offBeatPct: share(off),   // the beat itself moved: 90Hz is 1.33 of 120
+        // Kept for continuity with readings taken before the beat existed, and
+        // not to be trusted on a variable-refresh display: it is measured
+        // against the median, which such a display is free to move under it.
         jankPct: +(100 * janks / gaps.length).toFixed(1),
         // The listener's own JS share, for contrast - this is what the grid
         // rewrite would have touched, and it is tiny.
