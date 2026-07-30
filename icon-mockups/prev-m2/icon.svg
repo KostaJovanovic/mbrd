@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="mbrd">
+  <!-- Three cards on the dot grid, freely placed and slightly askew - a board
+       with align-to-grid off, which is the one thing this app is.
+       (The previous icon is kept in icon-mockups/old/.)
+
+       Same idea as that one, built for the sizes that actually get seen. It had
+       three sheets outlined at 3 units and 16% opacity plus a 7-unit curve, and
+       below about 64px all four of those became a smudge. Here the cards are
+       solid fills on a dark ground, nothing is outlined, and the thinnest
+       feature is a 22-unit corner radius - so the mark degrades into a
+       recognisable arrangement of three colours rather than into mush.
+
+       Ground is paper #fbf8f1 and the top card is accent terracotta #c25c2b,
+       both tokens.css defaults; the other two cards are picked by hand - tea
+       rose #f4c2c2 and absinthe #76b583. Those two are lighter than the ground
+       is dark, so the dot grid is ink at 16% here rather than paper at 12%. -->
+  <defs>
+    <pattern id="dots" width="48" height="48" patternUnits="userSpaceOnUse">
+      <circle cx="24" cy="24" r="2.8" fill="#372a1d" fill-opacity="0.16"/>
+    </pattern>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#fbf8f1"/>
+  <rect width="512" height="512" rx="112" fill="url(#dots)"/>
+
+  <!-- Landscape, portrait, landscape, so the trio reads as three *different*
+       things rather than a repeated tile. Bounding box is centred on 256,256,
+       which is what lets the maskable variant be one scale() of this group. -->
+  <rect x="76"  y="96"  width="210" height="148" rx="22" fill="#c25c2b" transform="rotate(-4 181 170)"/>
+  <rect x="300" y="140" width="136" height="210" rx="22" fill="#f4c2c2" transform="rotate(4 368 245)"/>
+  <rect x="100" y="282" width="176" height="134" rx="22" fill="#76b583" transform="rotate(3 188 349)"/>
+</svg>
