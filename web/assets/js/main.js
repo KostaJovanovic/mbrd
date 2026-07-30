@@ -304,7 +304,7 @@ const viewPerf = (() => {
   // be read off, so a real touch device can be measured on the glass instead of
   // over a debugging cable. Desktop gets it too - a live number beside the
   // gesture is worth more than one printed after it.
-  let hud = null, hudAt = 0;
+  let hud = null, hudText = null, hudAt = 0;
   // JS cost of the main.js view listener, per view frame.
   let gridMs = 0, restMs = 0, frames = 0, worstFrame = 0;
   // True frame cadence: the interval between animation frames, but recorded only
@@ -327,6 +327,98 @@ const viewPerf = (() => {
     const janks = median ? gaps.filter(g => g > median * 1.5).length : 0;
     return { sorted, median, janks };
   };
+  /**
+   * Which run this is, named as the address that produces it.
+   *
+   * Derived from the flags rather than from the hash, because the console can
+   * set them too - and a console that has set two at once gets both names and
+   * no address, which is the honest answer to "which run is this".
+   */
+  const runLabel = () => {
+    const off = [
+      mobilePerfFlags.legacyVars && 'legacy',
+      !mobilePerfFlags.chrome && 'nochrome',
+      !mobilePerfFlags.gridPos && 'nogrid',
+    ].filter(Boolean);
+    const runs = { legacy: 1, nochrome: 2, nogrid: 3 };
+    if (!off.length) return '#perf shipped';
+    return off.length === 1 ? `#perf${runs[off[0]]} ${off[0]}` : off.join(' ');
+  };
+
+  /**
+   * The whole reading as one line, which is the shape it is wanted in.
+   *
+   * Four runs are compared against each other, so four of these stack into
+   * something readable with no editing, and each carries the address that
+   * reproduces it and the board it was taken on - two readings only compare if
+   * they were the same board in the same mode.
+   */
+  const summary = () => {
+    const { sorted, median, janks } = stats();
+    if (!gaps.length) return `${runLabel()} — no motion sampled`;
+    const m = viewStats();
+    const cullAvg = cullProfile.runs ? cullProfile.ms / cullProfile.runs : 0;
+    const fullPct = cullProfile.runs ? 100 * cullProfile.fullSyncs / cullProfile.runs : 0;
+    return [
+      runLabel(),
+      `${board.layoutMode} ${board.items.length} items`,
+      `fps ${(1000 / median).toFixed(1)}`,
+      `p95 ${(1000 / pct(sorted, 0.95)).toFixed(1)}`,
+      `worst ${pct(sorted, 1).toFixed(0)}ms`,
+      `jank ${(100 * janks / gaps.length).toFixed(1)}%`,
+      `n ${gaps.length}`,
+      `cull ${cullAvg.toFixed(2)}ms`,
+      `full ${fullPct.toFixed(0)}%`,
+      `mnt ${m.mounted}`,
+      `vid ${m.videos}`,
+      `img ${(m.imgBytes / 1048576).toFixed(0)}MB`,
+    ].join('  ');
+  };
+
+  /**
+   * Put a string on the clipboard on a device that has no console and,
+   * usually, no secure context either.
+   *
+   * navigator.clipboard is the right answer and is the one that will not be
+   * there: the phone reaches this board over the LAN at http://192.168.x.x, and
+   * the Clipboard API is gated on a secure context, so the whole namespace is
+   * undefined on exactly the device this button exists for. execCommand is
+   * deprecated and works there, which is the trade - and it is tried first, for
+   * the reason written against it below.
+   *
+   * And when neither lands, the text is put in a selectable box instead and the
+   * user copies it by hand. A dev tool that says "copied" without copying is
+   * worse than one that hands you the text.
+   */
+  const copyText = text => {
+    // execCommand first, and synchronously, which is the whole point of the
+    // order. Both paths need the tap that is still in progress, and awaiting
+    // the Clipboard API's rejection would spend it: by the time the promise
+    // settles the gesture is no longer the transient activation execCommand
+    // asks for, so the fallback would fail on precisely the device it exists
+    // for. Nothing is awaited before the attempt that has to work.
+    try {
+      const box = document.createElement('textarea');
+      box.value = text;
+      // Off-screen but focusable, and readOnly so a phone does not open its
+      // keyboard over the readout on the way past.
+      box.readOnly = true;
+      box.style.cssText = 'position:fixed;top:-1000px;left:0;opacity:0';
+      document.body.append(box);
+      box.select();
+      box.setSelectionRange(0, text.length);
+      const ok = document.execCommand('copy');
+      box.remove();
+      if (ok) return Promise.resolve(true);
+    } catch { /* deprecated, and one day gone - the API below is the future */ }
+    try {
+      if (navigator.clipboard?.writeText) {
+        return navigator.clipboard.writeText(text).then(() => true, () => false);
+      }
+    } catch { /* no secure context: there is nothing left to try */ }
+    return Promise.resolve(false);
+  };
+
   const showHud = () => {
     if (hud) return;
     hud = document.createElement('div');
@@ -335,10 +427,33 @@ const viewPerf = (() => {
       'position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:99999;'
       + 'font:600 13px/1.3 ui-monospace,monospace;padding:6px 10px;border-radius:8px;'
       + 'background:rgba(0,0,0,.8);color:#0f0;pointer-events:none;white-space:pre;text-align:center';
-    hud.textContent = 'perf — move the board';
+    // The figures and the button are two children now, because the readout is
+    // rewritten four times a second and a button inside that string would be
+    // destroyed on the next repaint.
+    hudText = document.createElement('div');
+    hudText.textContent = 'perf — move the board';
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.textContent = 'copy';
+    // The panel is inert to the pointer - it sits over the board and must not
+    // catch a drag meant for it - so the one thing that is not gets it back.
+    // 32px of height because this is tapped with a thumb.
+    copy.style.cssText =
+      'pointer-events:auto;margin-top:5px;width:100%;min-height:32px;'
+      + 'font:inherit;color:inherit;background:rgba(255,255,255,.12);'
+      + 'border:1px solid currentColor;border-radius:6px;cursor:pointer';
+    copy.addEventListener('click', async () => {
+      const text = summary();
+      const ok = await copyText(text);
+      copy.textContent = ok ? 'copied' : 'select and copy ↓';
+      // Nothing could reach the clipboard, so hand over the text instead.
+      if (!ok) hudText.textContent = text;
+      setTimeout(() => { copy.textContent = 'copy'; }, 1500);
+    });
+    hud.append(hudText, copy);
     document.body.appendChild(hud);
   };
-  const hideHud = () => { hud?.remove(); hud = null; };
+  const hideHud = () => { hud?.remove(); hud = hudText = null; };
   const paintHud = now => {
     if (!hud || now - hudAt < 250) return;   // four updates a second is plenty
     hudAt = now;
@@ -351,29 +466,15 @@ const viewPerf = (() => {
     const cullAvg = cullProfile.runs ? cullProfile.ms / cullProfile.runs : 0;
     const m = viewStats();
     // ...and a third saying which run this is. Every one of these numbers is
-    // read off the glass and written down by hand, and a column of figures with
-    // no note of which switch was thrown is a column of figures that has to be
-    // taken again. The board and its size are here for the same reason: two
-    // runs only compare if they were the same board in the same mode.
-    // Named as the address that produces it, so what is written down beside the
-    // figures is the thing that would reproduce them. Derived from the flags
-    // rather than from the hash, because the console can set them too - and a
-    // console that has set two at once gets both names and no address, which is
-    // the honest answer to "which run is this".
-    const off = [
-      mobilePerfFlags.legacyVars && 'legacy',
-      !mobilePerfFlags.chrome && 'nochrome',
-      !mobilePerfFlags.gridPos && 'nogrid',
-    ].filter(Boolean);
-    const runs = { legacy: 1, nochrome: 2, nogrid: 3 };
-    const label = off.length === 0 ? '#perf shipped'
-      : off.length === 1 ? `#perf${runs[off[0]]} ${off[0]}`
-      : off.join(' ');
-    hud.textContent =
+    // read off the glass, and a column of figures with no note of which switch
+    // was thrown is a column of figures that has to be taken again. The board
+    // and its size are here for the same reason: two runs only compare if they
+    // were the same board in the same mode.
+    hudText.textContent =
       `${(1000 / median).toFixed(0)} fps   p95 ${(1000 / pct(sorted, 0.95)).toFixed(0)}`
       + `   jank ${(100 * janks / gaps.length).toFixed(0)}%   n ${gaps.length}\n`
       + `cull ${cullAvg.toFixed(2)}ms   mnt ${m.mounted}  vid ${m.videos}  img ${(m.imgBytes / 1048576).toFixed(0)}MB\n`
-      + `${board.layoutMode} ${board.items.length} items   ${label}`;
+      + `${board.layoutMode} ${board.items.length} items   ${runLabel()}`;
   };
   const tick = now => {
     if (!on) return;
@@ -461,8 +562,14 @@ const viewPerf = (() => {
         decodedImgMB: +(mem.imgBytes / 1048576).toFixed(1),
       };
       console.table(r);
+      // The same reading as the HUD's copy button puts on the clipboard, so a
+      // run taken at the desk and a run taken on the glass are written the same
+      // way and stack into one table.
+      console.log(summary());
       return r;
     },
+    /** The one-line reading, for a console that would rather have the string. */
+    line: () => summary(),
   };
 })();
 
