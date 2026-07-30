@@ -1,10 +1,55 @@
 # Mobile board scroll — root causes and plan (2026-07-30)
 
-## Results (measured on the phone, 2026-07-30 23:43-23:50)
+## Results
 
-101-item Mobile board, 120Hz device. `fps` and `p95` are both frame rates, so
-higher is better; `p95` is the slow tail, `jank` the share of frames past 1.5x
-the median, `mnt` the mounted node count. Runs are in the order they were taken.
+### The authoritative set (2026-07-31 00:09, warm, beat-aware)
+
+Taken after the readout learned to measure against the display's beat rather
+than the median, and with the board already warm — so neither the warm-up curve
+nor the panel's refresh rate is in the way. 101-item Mobile board, 120Hz device.
+`3f+` is the honest count of lost frames; `2f` is the ambiguous column; `beat`
+is the fastest interval the panel delivered in that run.
+
+| Run | fps | beat | 2f | **3f+** | offbeat | worst | n | cull | mnt |
+|-----|-----|------|----|---------|---------|-------|---|------|-----|
+| `#perf` shipped | 120.5 | 8.3ms | 3.2% | **0.5%** | 0.0% | 117ms | 1258 | 0.08ms | 6 |
+| `#perf1` legacy | **59.9** | 8.3ms | 32.2% | **37.6%** | 0.0% | 133ms | 497 | 0.15ms | 6 |
+| `#perf2` nochrome | 120.5 | 8.3ms | 3.3% | **0.3%** | 0.0% | 117ms | 1010 | 0.08ms | 4 |
+| `#perf3` nogrid | 120.5 | 8.2ms | 2.5% | **0.2%** | 0.1% | 125ms | 1221 | 0.09ms | 5 |
+
+**`beat` is 8.3ms in every run, the legacy one included.** That one column
+closes the question the whole beat-aware rewrite was built to ask. The panel was
+running at 120Hz throughout — its fastest interval was 8.3ms even while the
+board was delivering 59.9 — so the halved frame rate is not the display
+stepping down to 60. The display was ready every 8.3ms and the app could not
+feed it. **The variable-refresh explanation is excluded, not argued away.**
+
+**M-1 is now proven rather than inferred.** Restoring the five `#viewport`
+custom properties takes genuinely-lost frames from 0.5% to **37.6%** — seventy
+times as many — with another 32.2% at two beats on top, and delivers 497 frames
+where the same gesture delivers 1258. `cull` doubles, 0.08 → 0.15ms, which is
+the same one style invalidation being paid for in a second place.
+
+**Steps 4 and 5 are closed on the numbers, this time cleanly.** `nochrome` and
+`nogrid` are indistinguishable from what shipped: 0.3% and 0.2% against 0.5%,
+which is noise. Neither the Mobile chrome nor the lattice repaint costs a
+measurable frame on this board. The earlier readings that appeared to say
+otherwise were the warm-up curve and the refresh rate, in some mixture, and not
+a cost.
+
+**One thing is left and is not addressed here.** `worst` is 117–133ms in *every*
+run, the two good ones included — about fourteen beats, once per gesture. It is
+not one of the three switches, it survives all of them, and at once per gesture
+on an otherwise clean board it was not worth chasing today. First place to look
+is a card build or an image decode landing on a frame; `BUILD_BUDGET` in
+`canvas/items.js` is the knob if it ever becomes worth it.
+
+### The first set (2026-07-30 23:43-23:50), and why it misled
+
+Kept because the way it misled is worth more than the figures in it. `p95` is a
+frame rate at the slow tail and `jank` the share of frames past 1.5x the run's
+own median — both of which turned out to be the wrong questions. Runs are in the
+order they were taken.
 
 | # | Run | fps | p95 | worst | jank | n | cull | mnt |
 |---|-----|-----|-----|-------|------|---|------|-----|
@@ -14,35 +59,19 @@ the median, `mnt` the mounted node count. Runs are in the order they were taken.
 | 4 | `#perf3` nogrid | 120.5 | 60.2 | 133ms | 5.8% | 843 | 0.12ms | 5 |
 | 5 | `#perf` shipped, **warm** | 120.5 | **117.6** | 133ms | **4.7%** | 1347 | 0.08ms | 6 |
 
-### What this says
+### Two traps, both in that table
 
-**M-1 was the whole of the problem, and the fix is worth what it looked like.**
-Putting the five `#viewport` custom properties back (run 2) halves the frame
-rate, 119 → 60.2. That is not a gradual slowdown; it is the per-frame work
-crossing the 8.3ms budget and the display dropping to every second refresh. The
-difference between this board holding 120Hz and holding 60Hz is one style
-invalidation per frame. This is the one result the session turns on, and it is
-unambiguous — nothing else in the table moves the *median* at all.
+**Trap one: a cold first run is not a baseline.** Run 5 is the same build as run
+1 and beats it on every figure — 4.7% against 28.3% — so most of what runs 2 to
+4 appeared to recover was the board getting warm: cards built, images decoded,
+the first pass over ground that had never been mounted. Read against run 1, runs
+3 and 4 look like the grid repaint and the Mobile chrome each costing a quarter
+of the frames. That is a tidy story and it is the wrong one; the warm set above
+shows both switches costing nothing at all. Only two runs of the *same* build at
+either end of a session make the curve visible.
 
-**Nothing else is worth fixing.** Run 5 is the shipped build measured warm, on
-the longest sample of the session, and it is at the ceiling: 120.5 median and a
-**117.6 p95**, meaning even the slow tail is landing inside the frame budget.
-There is no headroom left to buy. `cull` is 0.08ms and only 1% of frames reach a
-full sync.
-
-**Runs 3 and 4 do not mean what they appear to.** Read against run 1 they look
-like the grid repaint and the Mobile chrome each costing a quarter of the frames
-— two independent switches moving the tail by the same large amount, which is a
-tidy story and the wrong one. Run 5 is the same build as run 1 and beats *both*
-of them on every figure. So what runs 3 and 4 were measuring was mostly the
-board getting warm: cards built, images decoded, the first pass over ground that
-had never been mounted. The switches were credited with a recovery that would
-have happened anyway.
-
-The lesson is cheap to state and was nearly expensive: **a cold first run is not
-a baseline.** Every reading in this table is a different point on a warm-up
-curve as much as a different switch, and only the two runs of the *same* build
-at either end of the session make that visible.
+**Trap two, below.** The tail column in this table cannot mean what its units
+claim.
 
 ### The p95 column is quantised, and the panel moves
 
@@ -60,10 +89,14 @@ So `p95 = 60` does not mean "60 fps". It means the 95th-percentile frame took
 **two refreshes** — and two refreshes at 120Hz is the same 16.7ms as one refresh
 at 60Hz. These panels change their own rate, so no arithmetic on gap data can
 tell "one frame was dropped" from "the display stepped down". Runs 3 and 4
-landing at 59.9 and 60.2 is that: they are sitting on the panel's other rate,
-not agreeing with each other about a cost. Two explanations now cover those two
-runs — warm-up and refresh-rate change — and neither leaves them supporting a
-grid rewrite, which is why the decision below is unchanged.
+landing at 59.9 and 60.2 is that: they are sitting on a rate, not agreeing with
+each other about a cost.
+
+The beat-aware set at the top settles which it was, and the answer is neither of
+the flattering ones: `beat` came back 8.3ms in *every* run, so the panel never
+stepped down at all — those two-refresh gaps were frames the app missed on a
+display that was ready. Small numbers of them, and the same small number in
+every warm run, which is why they indict nothing.
 
 Worse, `jankPct` was measured against *the run's own median*, which a variable
 display is free to move: a clean stretch at 60Hz scores as jank against a 120Hz
@@ -77,29 +110,31 @@ continuity with the readings above and should not be trusted on a phone.
 
 ### Decisions
 
-- **Step 4 (the lattice moved by transform) is not indicated. Not built.** The
-  case for it rested on runs 3 and 4 against a cold baseline. Warm, there is
-  nothing to recover: `#perf3` cannot beat a 117.6 p95, because 117.6 is the
-  display. It remains a reasonable idea for a *Desktop* board under a sustained
-  zoom, where the tier fade and the changing zoom keep the layer genuinely
-  dirty — but that is a different measurement on a different layout, and it is
-  not this work.
+- **Step 4 (the lattice moved by transform) is not indicated. Not built.**
+  `#perf3` warm loses 0.2% of frames against the shipped build's 0.5%. There is
+  no cost there to remove. It remains a reasonable idea for a *Desktop* board
+  under a sustained zoom, where the tier fade and the changing zoom keep the
+  layer genuinely dirty — but that is a different measurement on a different
+  layout, and it is not this work.
 - **Step 5 is closed.** Six mounted nodes on a 101-item board and 6MB of decoded
   image: the cull is doing its job and there is nothing for a tighter cull
   margin to save, so the vertical-margin idea joins the axis-aware one as
   withdrawn. A shadow-twin drop has six twins to remove, which is not a lever.
 - **The work is done.** The flags stay in the tree as the regression check —
-  `#perf1` reproducing a 60fps board is the sharpest possible test that M-1 has
-  not come back.
+  `#perf1` reproducing 37.6% lost frames on a 120Hz display is the sharpest
+  possible test that M-1 has not come back.
+- **`worst` is the one number nobody has explained**, and it is deliberately
+  left. See the note under the warm table.
 
 ---
 
-## Status (closed 2026-07-30)
+## Status (closed 2026-07-31)
 
 Steps 1–3 of `research/2026-07-30-mobile-scroll-impl.md` are on `main`, 600 unit
-tests pass, and the measurement is in — see Results above. Steps 4 and 5 were
-**not built**, and the numbers are why. The board holds 120Hz with a 117.6 p95;
-there is nothing left to win on this layout.
+tests pass, and the measurement is in and confirmed — see Results above. Steps 4
+and 5 were **not built**, and the numbers are why: the board holds 120Hz and
+loses 0.5% of its frames, and neither remaining switch improves on that. What
+the fix is worth is `#perf1`, which loses 37.6%.
 
 Shipped:
 
