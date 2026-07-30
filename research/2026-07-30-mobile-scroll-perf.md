@@ -33,17 +33,23 @@ conditional step-5 levers. Both are gated on the measurement below.
 
 On the phone, at `…/#perf`, on the board that scrolls badly:
 
-| Run | Call | Measures |
-|-----|------|----------|
-| 0 | *(none)* | what shipped |
-| 1 | `mbrd.perf.mobile({ legacyVars: true })` | what M-1's removal bought |
-| 2 | `mbrd.perf.mobile({ chrome: false })` | what the chrome still costs |
-| 3 | `mbrd.perf.mobile({ gridPos: false })` | whether M-3 is worth fixing |
+| Run | Address | Measures |
+|-----|---------|----------|
+| 0 | `#perf` | what shipped |
+| 1 | `#perf1` | what M-1's removal bought |
+| 2 | `#perf2` | what the chrome still costs |
+| 3 | `#perf3` | whether M-3 is worth fixing |
+
+Editing the digit is enough — the hash is re-read on `hashchange`, so the run
+changes without a reload and the board, the mounted set and every decoded image
+stay exactly as they were. Two readings taken that way differ by the switch and
+by nothing else.
 
 Each run: three slow full-screen drags, three flings, let the momentum settle,
-then `mbrd.perf.report()`. Record `fpsMedian`, `fpsP95Low`, `jankPct`,
-`mountedNodes`, `cullAvgMs`, `cullFullSyncPct`. Reset a flag to its default
-before setting the next. Run 3 is the decision on step 4.
+then read all three lines off the HUD (there is no console on the device, which
+is the whole reason the switches are in the URL). The third line names the run.
+Record fps, p95, jank%, `mnt`, `cull`. Run 3 is the decision on step 4; `mnt` is
+the decision on the vertical cull margin.
 
 ### What could not be checked without the device
 

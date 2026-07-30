@@ -355,16 +355,25 @@ const viewPerf = (() => {
     // no note of which switch was thrown is a column of figures that has to be
     // taken again. The board and its size are here for the same reason: two
     // runs only compare if they were the same board in the same mode.
+    // Named as the address that produces it, so what is written down beside the
+    // figures is the thing that would reproduce them. Derived from the flags
+    // rather than from the hash, because the console can set them too - and a
+    // console that has set two at once gets both names and no address, which is
+    // the honest answer to "which run is this".
     const off = [
       mobilePerfFlags.legacyVars && 'legacy',
       !mobilePerfFlags.chrome && 'nochrome',
       !mobilePerfFlags.gridPos && 'nogrid',
     ].filter(Boolean);
+    const runs = { legacy: 1, nochrome: 2, nogrid: 3 };
+    const label = off.length === 0 ? '#perf shipped'
+      : off.length === 1 ? `#perf${runs[off[0]]} ${off[0]}`
+      : off.join(' ');
     hud.textContent =
       `${(1000 / median).toFixed(0)} fps   p95 ${(1000 / pct(sorted, 0.95)).toFixed(0)}`
       + `   jank ${(100 * janks / gaps.length).toFixed(0)}%   n ${gaps.length}\n`
       + `cull ${cullAvg.toFixed(2)}ms   mnt ${m.mounted}  vid ${m.videos}  img ${(m.imgBytes / 1048576).toFixed(0)}MB\n`
-      + `${board.layoutMode} ${board.items.length} items   ${off.length ? off.join(' ') : 'shipped'}`;
+      + `${board.layoutMode} ${board.items.length} items   ${label}`;
   };
   const tick = now => {
     if (!on) return;
@@ -385,9 +394,14 @@ const viewPerf = (() => {
     get active() { return on; },
     /** @param overlay  false to skip the on-screen readout (console only). */
     on(overlay = true) {
+      // Arming an armed profiler starts the counters again and nothing else.
+      // It used to start a second rAF loop as well, which sampled every frame
+      // twice - and re-arming is the normal case now that switching runs is a
+      // change of hash rather than a reload.
+      const already = on;
       reset(); on = true; cullProfile.on = true;
       if (overlay) showHud();
-      raf = requestAnimationFrame(tick);
+      if (!already) raf = requestAnimationFrame(tick);
       console.log('[perf] on — pan/zoom continuously, then mbrd.perf.report()');
     },
     off() { on = false; cullProfile.on = false; if (raf) cancelAnimationFrame(raf); raf = 0; hideHud(); console.log('[perf] off'); },
@@ -1502,24 +1516,34 @@ window.mbrd = { board, bus, vp, cmds, selection, perf: viewPerf, debugGrips: cmd
 //
 // The three Mobile kill switches ride it too, because they are for exactly the
 // device that cannot be typed into - see mobilePerfFlags in canvas/viewport.js.
-// One run is one address and a reload:
+// One run is one digit:
 //
-//   #perf            what shipped
-//   #perf,legacy     the five #viewport custom properties written again
-//   #perf,nochrome   the Mobile sheet and masthead gone entirely
-//   #perf,nogrid     the lattice's background-position write skipped
+//   #perf    what shipped
+//   #perf1   the five #viewport custom properties written again
+//   #perf2   the Mobile sheet and masthead gone entirely
+//   #perf3   the lattice's background-position write skipped
 //
-// Set before arming, so the first frame the readout counts is already the frame
-// being asked about.
-if (location.hash.includes('perf')) {
-  const h = location.hash;
+// A digit rather than a word, because this is typed with a thumb on the device
+// being measured and between two runs exactly one character changes.
+//
+// Re-read on hashchange as well as at boot, which is the point of the digit
+// being at the end: a hash edit does not reload, so the run changes while the
+// board, the mounted set and every decoded image stay exactly as they were.
+// Two readings taken that way differ by the switch and by nothing else, which
+// is more than can be said for two readings either side of a reload. Arming an
+// already-armed profiler restarts its counters, so each run is measured clean.
+const armPerf = () => {
+  const run = location.hash.match(/perf(\d)?/);
+  if (!run) { if (viewPerf.active) viewPerf.off(); return; }
   viewPerf.mobile({
-    legacyVars: h.includes('legacy'),
-    chrome: !h.includes('nochrome'),
-    gridPos: !h.includes('nogrid'),
+    legacyVars: run[1] === '1',
+    chrome: run[1] !== '2',
+    gridPos: run[1] !== '3',
   });
   viewPerf.on();
-}
+};
+armPerf();
+addEventListener('hashchange', armPerf);
 if (location.hash.includes('grips')) cmds.debugGrips();
 
 // ---------------------------------------------------------------------------
