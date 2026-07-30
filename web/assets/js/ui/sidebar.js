@@ -130,6 +130,10 @@ export function initSidebar(cmds) {
   bindCheck('opt-snap', 'snap');
   bindCheck('opt-hud', 'hud');
   bindCheck('opt-web', 'web');
+  // Board-level (board.mediaFit), so it routes through setSetting's own case
+  // rather than bindCheck's board.settings[key]. Checked = fill.
+  el('opt-mediafit').addEventListener('change', e =>
+    setSetting('mediaFit', e.target.checked ? 'cover' : 'contain'));
 
   wirePaper();
   wireScale();
@@ -283,6 +287,9 @@ function paint() {
   for (const [id, key] of [['opt-grid', 'grid'], ['opt-axes', 'axes'], ['opt-snap', 'snap'], ['opt-hud', 'hud'], ['opt-web', 'web']]) {
     el(id).checked = !!board.settings[key];
   }
+  // Board-level rather than a settings key, so it reads off board.mediaFit
+  // directly. Checked = fill (the default).
+  el('opt-mediafit').checked = board.mediaFit !== 'contain';
   // The web is a Desktop thing - Mobile is a reading feed with no spatial map to
   // draw one over - so its checkbox comes down rather than sitting there inert.
   el('opt-web').closest('.check').hidden = mobile;

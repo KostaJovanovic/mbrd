@@ -253,6 +253,11 @@
       <label class="check"><input type="checkbox" id="opt-snap"> Snap to grid</label>
       <label class="check"><input type="checkbox" id="opt-hud" checked> Show readout</label>
       <label class="check"><input type="checkbox" id="opt-web" checked> Show web</label>
+      <!-- Checked = photos and videos fill their card and crop (object-fit
+           cover); unchecked = the whole picture fits inside and letterboxes.
+           Board-wide default; a single image or video overrides it from its
+           right-click menu. -->
+      <label class="check"><input type="checkbox" id="opt-mediafit"> Fill photos &amp; videos</label>
       <!-- A sheet of paper drawn round the middle of the board, at the size it
            really is under the scale set below. The orientation is two buttons
            rather than a third entry per size, because "A4 landscape" is A4

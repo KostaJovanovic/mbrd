@@ -4418,6 +4418,13 @@ kbd {
   width:  calc(100% - var(--mat) * 2);
   height: calc(100% - var(--mat) - var(--chin));
   border-radius: 0;
+  /* The print fills its window whatever the board's fit setting says: a polaroid
+     is a cropped print, and the mat is already the "fit" gesture. Left to
+     contain, the picture would letterbox inside the window and the hairline
+     frame below - drawn on this box's edge - would stand off the photograph
+     instead of hugging it. Out-specifies .item[data-fit="contain"] .item-body
+     img, so it holds even when Fill is off. */
+  object-fit: cover;
   /* A pale photograph on pale stock has no edge of its own. This is the one
      the print would have. */
   box-shadow: 0 0 0 var(--hairline) color-mix(in srgb, var(--ink) 10%, transparent);

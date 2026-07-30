@@ -14,7 +14,7 @@ import {
   select, deselect, clearSelection, selectAll, duplicateItems,
   copyItems, cutItems, pasteItems, clipboardSize, clipboardHasOurs, clipboardBounds,
   stuckTo, stuckFollowers, stuckPlacement, restick, STICK_MIN, setItemText, renameItem, NOTE_MAX,
-  setSetting, snapshotGeom, applyGeom, commitGeom,
+  setSetting, setItemFit, snapshotGeom, applyGeom, commitGeom,
   setBoardMode, mobileBoardWidth, mobileBoardTop, mobileBoardBottom,
   recheckBoardGeometry, baseStep, placeMobileItems,
   raiseSelection, lowerSelection, visualStackOrder, selectionHasStackOverlap,
@@ -1095,6 +1095,41 @@ test('The board name style is board-wide, editable from either layout, and round
   assert.equal(board.mobileHeader.weight, 625);
   assert.equal(board.mobileHeader.italic, true);
   assert.deepEqual(board.mobileHeader.axes, { opsz: 72 });
+});
+
+test('media fit is a board-wide default with an undoable per-item override', () => {
+  fresh([
+    { id: 'pic', type: 'image', asset: { hash: hash('a'), embedded: true } },
+    { id: 'clip', type: 'video', asset: { hash: hash('b'), embedded: true } },
+  ]);
+  // Defaults to fit (fill is opt-in), whatever a caller passes that is not the
+  // one other value.
+  assert.equal(board.mediaFit, 'contain');
+
+  // Board-wide, and one value for both layouts.
+  setSetting('mediaFit', 'cover');
+  assert.equal(board.mediaFit, 'cover');
+  setBoardMode('mobile');
+  assert.equal(board.mediaFit, 'cover', 'the default is board-wide, not per-layout');
+  setBoardMode('desktop');
+
+  // A per-item override is undoable and independent of the default.
+  setItemFit('pic', 'contain');
+  assert.equal(byId('pic').meta.fit, 'contain');
+  undo();
+  assert.equal(byId('pic').meta.fit, undefined, 'undo clears the override');
+  redo();
+  assert.equal(byId('pic').meta.fit, 'contain', 'redo restores it');
+
+  // Only photos and videos are steerable, and the value is validated.
+  setItemFit('clip', 'sideways');
+  assert.equal(byId('clip').meta.fit, undefined, 'a bad value is ignored');
+
+  // Both the default and the override survive a round-trip.
+  const data = serializeBoard();
+  loadBoard(data);
+  assert.equal(board.mediaFit, 'cover', 'the board default round-trips');
+  assert.equal(byId('pic').meta.fit, 'contain', 'the per-item override round-trips');
 });
 
 test('A board that stored the name style under settings still loads it', () => {

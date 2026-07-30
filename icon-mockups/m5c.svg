@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="mbrd">
+  <!-- M5c - paper ground, so the orange is a card and not the backdrop.
+       Top card absinthe, the card running off the edge terracotta. -->
+  <defs>
+    <pattern id="d5c" width="48" height="48" patternUnits="userSpaceOnUse">
+      <circle cx="24" cy="24" r="2.8" fill="#372a1d" fill-opacity="0.16"/>
+    </pattern>
+    <clipPath id="sq5c"><rect width="512" height="512" rx="112"/></clipPath>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#fbf8f1"/>
+  <rect width="512" height="512" rx="112" fill="url(#d5c)"/>
+  <g clip-path="url(#sq5c)">
+    <rect x="56" y="72" width="150" height="112" rx="18" fill="#76b583" transform="rotate(4 131 128)"/>
+    <rect x="146" y="188" width="420" height="300" rx="26" fill="#c25c2b" transform="rotate(-6 356 338)"/>
+  </g>
+</svg>

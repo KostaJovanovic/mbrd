@@ -15,7 +15,7 @@
 // and dropping while it is open.
 
 import {
-  board, bus, DEFAULT_MOBILE_HEADER, setSetting,
+  board, bus, DEFAULT_MOBILE_HEADER, setSetting, mobileBoardWorldWidth,
 } from '../state.js';
 import { clamp, el } from '../util.js';
 import {
@@ -519,7 +519,13 @@ function styleTitleCard(style = header(), axes = availableAxes()) {
   // to clamp against, so the ratio is computed here against the mobile board's
   // width and handed over as --mobile-title-ratio, which the card multiplies by
   // its own width (100cqw) in app.css. The two then wrap identically.
-  const ref = viewport?.mobileWorldWidth || 512;
+  //
+  // From mobileBoardWorldWidth(), not viewport.mobileWorldWidth: the viewport
+  // holds the *active* layout's figure, and on Desktop that is the Desktop grid
+  // and its mobileColumns default (6, so 6x64=384) - which skips the 96px cap
+  // the real 8x64=512 masthead hits and made the card wrap sooner. This reads
+  // the Mobile layout's own width whatever layout is showing.
+  const ref = mobileBoardWorldWidth() || 512;
   const px = Math.min(96, Math.max(20, ref * (style.size / 100)));
   card.style.setProperty('--mobile-title-ratio', String(px / ref));
   scheduleFit();

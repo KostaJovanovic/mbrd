@@ -97,6 +97,11 @@ function itemEntries(id, count, at) {
   // reading of "set the picture" for a group of nine.
   const coverable = !many && cmds.canCoverItem(id);
   const covered = coverable && cmds.itemHasCover(id);
+  // Photos and videos can fill their card (crop) or fit inside it (letterbox),
+  // overriding the board-wide default for this one card. Single-item, like the
+  // cover actions above and for the same reason: it is an edit to one picture.
+  const fittable = !many && cmds.canSetFit(id);
+  const fills = fittable && cmds.itemFit(id) === 'cover';
   const flippable = !many && cmds.canFlipUpAxis(id);
   // A model card is a photograph of a model until somebody asks for the model.
   // Single-item for the same reason as the rest: you turn one thing over.
@@ -114,6 +119,12 @@ function itemEntries(id, count, at) {
     { label: covered ? 'Change picture' : 'Set a picture', hidden: !coverable,
       action: () => cmds.setCover(id) },
     { label: 'Remove picture', hidden: !covered, action: () => cmds.clearCover(id) },
+    // A radio pair drawn as two ticked entries: the current fit reads checked,
+    // the other is the one click to switch to it.
+    { label: 'Fill the card', check: fills, hidden: !fittable,
+      action: () => cmds.setItemFit(id, 'cover') },
+    { label: 'Fit in the card', check: fittable && !fills, hidden: !fittable,
+      action: () => cmds.setItemFit(id, 'contain') },
     // OBJ says nothing about which way is up and both readings are common, so
     // the format's default is a guess. This is the way out of a wrong one - and
     // it is on the item rather than in Appearance because a board can hold a
@@ -123,7 +134,7 @@ function itemEntries(id, count, at) {
     // Above the upright toggle would put the rare fix in front of the ordinary
     // gesture; below it, this is the last thing on the model's own group.
     { label: 'Rotate model', hidden: !turnable, action: () => cmds.rotateModel(id) },
-    { sep: true, hidden: !editable && !renamable && !coverable && !flippable && !turnable },
+    { sep: true, hidden: !editable && !renamable && !coverable && !fittable && !flippable && !turnable },
     { label: 'Bring to front', hidden: !stackable, action: () => cmds.raise() },
     { label: 'Send to back', hidden: !stackable, action: () => cmds.lower() },
     // The way back from a corner dragged too far. With the stacking pair rather

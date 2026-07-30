@@ -134,6 +134,17 @@ export function initItems(world, viewport) {
     sync();
   });
   bus.on('item', id => rebuild(id));
+  // A per-item fit change comes through 'item' (rebuild re-reads fitMode). The
+  // board-wide default changes nothing about an item, so it arrives as a plain
+  // 'settings' and only the data-fit attribute needs rewriting - no rebuild, no
+  // reflow of the media itself. Items with their own meta.fit keep it.
+  bus.on('settings', key => {
+    if (key !== 'mediaFit') return;
+    for (const [id, el] of nodes) {
+      const item = byId(id);
+      if (item && (item.type === 'image' || item.type === 'video')) el.dataset.fit = fitMode(item);
+    }
+  });
   // A layout-mode switch rewrites every item's geometry through writeLayout()
   // and announces it with 'layout' alone - no 'geom' per id, no 'items'. The old
   // whole-board scan read board.items fresh and never noticed; the index has to
@@ -152,7 +163,19 @@ export function initItems(world, viewport) {
   });
   // Arrow rather than the function itself: onChange hands its listener the
   // viewport, and sync() reads its argument.
-  vp.onChange(() => syncView());
+  //
+  // The cull is the zoom-out hot path - visibleRect grows past syncedRect every
+  // frame and this falls through to a full sync() - and the main.js profiler
+  // does not wrap it, so its cost was invisible. When mbrd.perf is armed
+  // (cullProfile.on), each frame records its own time and whether it ran a full
+  // sync; off, it is a single boolean read and the plain call, same as ever.
+  vp.onChange(() => {
+    if (!cullProfile.on) { syncView(); return; }
+    const t = performance.now();
+    syncView();
+    cullProfile.ms += performance.now() - t;
+    cullProfile.runs++;
+  });
   reconcile();
   reindex();
   sync();
@@ -300,6 +323,7 @@ function syncView() {
     if (v.x0 >= syncedRect.x0 && v.x1 <= syncedRect.x1 &&
         v.y0 >= syncedRect.y0 && v.y1 <= syncedRect.y1) return;
   }
+  if (cullProfile.on) cullProfile.fullSyncs++;
   // No restack: looking around cannot change one item's rank against another, so
   // the whole-board paintStack() the event paths run would be O(n log n) of
   // arithmetic and a zIndex write per mounted node, spent every zoom frame to
@@ -410,6 +434,40 @@ export function sync(restack = true) {
   }
 }
 
+/**
+ * Dev-only instrumentation for the view-change cull, read by mbrd.perf.
+ *
+ * `runs` is every view frame while armed; `fullSyncs` the subset that fell
+ * through to a full sync() (the zoom-out case); `ms` the total time in the
+ * listener across those frames. avg = ms/runs is the cull's own per-frame cost,
+ * the thing the main.js grid profiler never saw. Off by default - the listener
+ * above pays one boolean read when it is.
+ */
+export const cullProfile = { on: false, ms: 0, runs: 0, fullSyncs: 0,
+  reset() { this.ms = 0; this.runs = 0; this.fullSyncs = 0; } };
+
+/**
+ * Dev-only snapshot of what is mounted right now, for the memory readout. The
+ * crash this measures is decoded-image and video-decoder memory, not frame
+ * time, so it counts connected nodes, live <video> elements, and the decoded
+ * size of every mounted <img> (naturalWidth x naturalHeight x 4 bytes - what
+ * the browser actually holds, uncapped by how small the card is drawn).
+ *
+ * Cheap enough for the HUD to call a few times a second; never on a hot path.
+ */
+export function viewStats() {
+  let mounted = 0, videos = 0, imgs = 0, imgBytes = 0;
+  for (const el of nodes.values()) {
+    if (!el.isConnected) continue;
+    mounted++;
+    videos += el.getElementsByTagName('video').length;
+    for (const im of el.getElementsByTagName('img')) {
+      if (im.naturalWidth) { imgBytes += im.naturalWidth * im.naturalHeight * 4; imgs++; }
+    }
+  }
+  return { mounted, cached: nodes.size - mounted, videos, imgs, imgBytes };
+}
+
 /** Force-mount an item regardless of culling (used while dragging). */
 export function ensureMounted(id) {
   const item = byId(id);
@@ -427,7 +485,7 @@ function build(item) {
   el.className = 'item';
   el.dataset.id = item.id;
   el.dataset.type = item.type;
-  el.dataset.fit = fitMode(item.type);
+  el.dataset.fit = fitMode(item);
   // A named, self-describing card for assistive technology. The full
   // keyboard-selection model (roving tabindex, arrow navigation) is a separate,
   // browser-verified change; naming and role are the part that is safe to ship
@@ -671,6 +729,10 @@ function rebuild(id) {
   // per rename.
   releasePlayers(body);
   body.replaceChildren(buildContent(item));
+  // data-fit lives on the outer .item and is otherwise only written in build(),
+  // so a per-item fit change (which arrives as 'item' → rebuild) would rebuild
+  // the picture but leave the old object-fit. Re-read it here.
+  el.dataset.fit = fitMode(item);
   // The bar is a sibling of the body, so replaceChildren above does not touch
   // it - only the caption inside it needs the new name. Patched rather than
   // rebuilt so the handle beside it keeps its identity, and with it any focus
