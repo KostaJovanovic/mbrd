@@ -60,6 +60,13 @@ const cache = new Map();
 const pending = new Map();
 /** The serialization chain: one full decode live at a time. */
 let queue = Promise.resolve();
+/**
+ * Bumped by clearDisplay(). A job carries the epoch it started under and
+ * publishes nothing if that has moved on - see generate(). Generation is
+ * asynchronous and a full decode is slow, so a board load or a sharpness change
+ * lands mid-flight often enough to matter, not rarely.
+ */
+let epoch = 0;
 
 /**
  * The display URL for a hash if it is already made, else null. Synchronous, so a
@@ -82,19 +89,32 @@ export function ensureDisplay(hash) {
   if (inFlight) return inFlight;
   // Chain onto the queue so generation is serial; keep the chain alive past a
   // failure so one undecodable file does not stall every picture behind it.
-  const job = queue.then(() => generate(hash));
+  const mine = epoch;
+  const job = queue.then(() => generate(hash, mine));
   queue = job.catch(() => {});
   const tracked = job.finally(() => pending.delete(hash));
   pending.set(hash, tracked);
   return tracked;
 }
 
-async function generate(hash) {
+async function generate(hash, mine) {
   const existing = cache.get(hash);
   if (existing) return existing.url;
   const a = getAsset(hash);
   if (!a) return null;
   const small = await shrink(a.blob);
+  // A clear landed while that decode ran - a new board, or a new sharpness
+  // ceiling. Publishing now would put back a copy the clear meant to drop, at a
+  // resolution nobody asked for, and the entry would outlive the board it came
+  // from. Checked before createObjectURL rather than after, so a refused job
+  // has nothing to revoke and cannot leak. Callers read null as "no copy yet",
+  // which is true, and resetItems() remounts every card behind the clear anyway.
+  if (mine !== epoch) return null;
+  // Two jobs for one hash can only exist across a clear, which empties pending.
+  // If the later one already published, keep its entry: it was made under the
+  // current ceiling. Dropping `small` here is free - no URL was ever handed out.
+  const won = cache.get(hash);
+  if (won) return won.url;
   // A copy that came out is ours to revoke; a picture already small enough rides
   // the asset store's own URL, which assets.js revokes - do not double-manage it.
   const entry = small
@@ -152,5 +172,10 @@ export function clearDisplay() {
   for (const e of cache.values()) if (e.own) URL.revokeObjectURL(e.url);
   cache.clear();
   pending.clear();
-  queue = Promise.resolve();
+  // Not queue = Promise.resolve(). A decode in flight right now is still
+  // holding a full-resolution bitmap, and a fresh chain would let the next one
+  // start alongside it - two full decodes live at once, which is the crash this
+  // module exists to prevent. The chain stays; the epoch bump above is what
+  // stops the stale job from publishing, and it costs nothing to let it finish.
+  epoch++;
 }

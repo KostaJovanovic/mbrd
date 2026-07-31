@@ -78,6 +78,23 @@ echo.
 
 set SAVE_ERROR=0
 
+rem An unfinished merge must never reach "git add ." below. That command cannot
+rem tell a resolved file from one still carrying <<<<<<< markers: it stages the
+rem markers and Git records the conflict as settled, so the commit - and the
+rem push after it - ships an application that no browser and no test run can
+rem parse. Bail before the version stamps are rewritten, so a refused save
+rem leaves the tree exactly as it found it.
+set UNMERGED=
+for /f "delims=" %%u in ('git diff --name-only --diff-filter=U 2^>nul') do set UNMERGED=1
+if defined UNMERGED (
+  echo [err]  unresolved merge conflicts - resolve these first:
+  git diff --name-only --diff-filter=U
+  echo.
+  echo        fix each file, "git add" it, then rerun this script.
+  set SAVE_ERROR=1
+  goto end
+)
+
 for /f %%i in ('git rev-list --count HEAD 2^>nul') do set COMMIT_COUNT=%%i
 if not defined COMMIT_COUNT set COMMIT_COUNT=0
 set /a NEXT_COUNT=%COMMIT_COUNT%+1
