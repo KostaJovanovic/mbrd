@@ -151,7 +151,12 @@ export async function packBoard(boardData, { created = null } = {}) {
     const ext = ASSET_EXT.test((asset.ext || '').toLowerCase()) ? '.' + asset.ext.toLowerCase() : '';
     entries.push({
       name: `${ASSETS_DIR}${hash}${ext}`,
-      data: new Uint8Array(await asset.blob.arrayBuffer()),
+      // The Blob itself, not its bytes. This loop used to be an await-in-loop of
+      // arrayBuffer() calls that ended with every asset on the board resident at
+      // once - and then writeZip held each payload a second time until the final
+      // Blob was assembled, so a board's worth of video was two boards' worth of
+      // heap. writeZip takes a Blob and never reads it whole; see its header.
+      data: asset.blob,
       // Media is already compressed; deflating it burns time for ~0 bytes.
       compress: shouldCompress(asset.mime, asset.ext),
     });

@@ -168,8 +168,12 @@ export async function exportBoard({ pickNew = false } = {}) {
       if (picking) {
         job.label('Writing the file');
         const writable = await fileHandle.createWritable();
-        await writable.write(blob);
-        await writable.close();
+        // Piped rather than handed over whole. The archive packBoard returns is
+        // a composition of the assets' own Blobs (see writeZip), so it is a
+        // description of a file rather than a file in memory - and pipeTo pulls
+        // it a chunk at a time, which is the only way that stays true all the
+        // way to the disk. pipeTo closes the destination on its own.
+        await blob.stream().pipeTo(writable);
       } else {
         download(blob, fileNameFor(data.title));
       }

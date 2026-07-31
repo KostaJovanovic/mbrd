@@ -240,3 +240,56 @@ test('an oversized Blob is rejected on its size, before it is ever allocated', a
   };
   await assert.rejects(readZip(oversize), /too large to open/);
 });
+
+// ---------------------------------------------------------------------------
+// Blob entries - the export's memory ceiling
+// ---------------------------------------------------------------------------
+//
+// packBoard() hands assets over as Blobs rather than as bytes, so a board of
+// video is not a board of video on the heap. The writer therefore has two
+// paths to the same archive, and the thing that must hold is that they produce
+// the *same* archive - a Blob entry whose CRC or declared size came out
+// differently would be a file that opens nowhere, and it would only be
+// discovered by someone trying to reopen their board.
+
+test('a Blob entry writes byte-for-byte the same archive as its bytes', async () => {
+  const data = bytes(5000, 7);
+  const at = new Date(2020, 0, 2, 3, 4, 5);
+  const fromBytes = await buf([{ name: 'a.bin', data, compress: false }], { date: at });
+  const fromBlob = await buf([{ name: 'a.bin', data: new Blob([data]), compress: false }], { date: at });
+  assert.deepEqual(fromBlob, fromBytes);
+});
+
+test('a compressed Blob entry round-trips', async () => {
+  // Deflate goes Blob to Blob through the platform compressor on this path,
+  // which is a different call from the bytes one - so it gets its own trip.
+  const data = zeros(20000);
+  const files = await readZip(await buf([{ name: 'flat', data: new Blob([data]), compress: true }]));
+  assert.deepEqual(files.get('flat'), data);
+});
+
+test('a Blob and a byte entry can share one archive', async () => {
+  const a = bytes(300, 1), b = bytes(4000, 2);
+  const files = await readZip(await buf([
+    { name: 'bytes', data: a, compress: false },
+    { name: 'blob', data: new Blob([b]), compress: false },
+  ]));
+  assert.deepEqual([...files.keys()], ['bytes', 'blob']);
+  assert.deepEqual(files.get('bytes'), a);
+  assert.deepEqual(files.get('blob'), b);
+});
+
+test('an empty Blob entry is written and read as empty', async () => {
+  const files = await readZip(await buf([{ name: 'empty', data: new Blob([]), compress: true }]));
+  assert.deepEqual(files.get('empty'), new Uint8Array(0));
+});
+
+test('the streamed CRC agrees with the whole-buffer one', async () => {
+  // The two implementations share a table and nothing else. A Blob larger than
+  // one stream chunk is the case that would catch a mis-carried running value.
+  const data = bytes(300000, 11);
+  const archive = await buf([{ name: 'big', data: new Blob([data]), compress: false }]);
+  // The local header's CRC field, at a fixed offset from the start.
+  const written = new DataView(archive.buffer).getUint32(14, true);
+  assert.equal(written, crc32(data));
+});
