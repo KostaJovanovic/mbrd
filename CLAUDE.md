@@ -38,6 +38,13 @@ under `import/` or `ui/`.
 The bottom of the graph is wider than `util`/`geometry`: `measure.js`,
 `mesh.js`, `arrange/arrangements.js`, `import/budget.js` and `canvas/spatial.js`
 are all pure — no DOM, no `state` import — and are meant to stay that way.
+`board-store.js` and `history.js` sit down there too, and for a different
+reason: they are the floor `state.js` is being split onto. The first holds the
+`bus`, the `selection` and the dirty flag; the second the undo/redo engine over
+them. Both are re-exported by `state.js` under their old names, so nothing
+imports them directly yet — and neither may ever import `state.js` back, since a
+concern lifted out of that file can only stay out if what it stands on is lower
+than what it left. `tests/layers.test.js` lists both as BASE.
 `mesh.js` sits at the top level rather than under `canvas/` for exactly that
 reason: it is struct reading, and only `canvas/model.js` turns its output into
 pixels.
@@ -239,12 +246,14 @@ cache changes explicitly.
 
 `PLAN.md` is the full design; `research/` holds the reasoning behind past
 decisions, and its top level is deliberately short — only work that is still
-open. Two documents live there now: the pan/zoom performance plan (B1, A4, A5,
-B3 and B4 are unbuilt) and the scalability/readability audit (the `state.js`
-split and the delta-payload events are unbuilt). Anything carried out moves to
+open. One document lives there now: the scalability/readability audit, whose
+status header is current — seven of its eight leverage items are closed and the
+eighth, the `state.js` split, is started. Anything carried out moves to
 `research/old/` — that is where the Safari audit and its fixes, the Mobile
-scroll pair, the sidebar rebuild, the ghost-cards plan and `REFACTOR.md` are.
-`research/future/` is the not-yet-started pile (Tauri readiness). `docs/` holds three
+scroll pair, the sidebar rebuild, the ghost-cards plan, the pan/zoom performance
+plan and `REFACTOR.md` are. `research/future/` is the not-yet-started pile
+(Tauri readiness, and the LOD proxy and memory budget the perf plan left gated
+on an on-device measurement). `docs/` holds three
 references worth reading before touching their subsystems: `docs/mbrd-format.md`
 and `docs/layout-settings.md` are the specs, `docs/browser-support.md` records
 the browser floor. `window.mbrd` is a deliberate console handle (`mbrd.board`,
