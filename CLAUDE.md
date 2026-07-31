@@ -38,21 +38,26 @@ under `import/` or `ui/`.
 The bottom of the graph is wider than `util`/`geometry`: `measure.js`,
 `mesh.js`, `arrange/arrangements.js`, `import/budget.js` and `canvas/spatial.js`
 are all pure — no DOM, no `state` import — and are meant to stay that way.
-Four more sit down there for a different reason: they are the floor `state.js`
-is being split onto. `board-store.js` holds the `bus`, the `selection` and the
-dirty flag; `board-model.js` the board's shape, its defaults and the `byId`
-index; `history.js` the undo/redo engine; `sticky.js` which note is stuck to
-what. All four are re-exported by `state.js` under their old names, so nothing
-imports them directly and no caller knows they exist — and none may ever import
-`state.js` back, since a concern lifted out of that file can only stay out if
-what it stands on is lower than what it left. `tests/layers.test.js` lists all
-four as BASE, which is what enforces that.
+Six more sit down there for a different reason: they are what `state.js` was
+split onto, and they took it from 3202 lines to 1806. `board-store.js` holds the
+`bus`, the `selection` and the dirty flag; `board-model.js` the board's shape,
+its defaults and the `byId` index; `history.js` the undo/redo engine;
+`sticky.js` which note is stuck to what; `layout.js` the Mobile pack, both
+geometry profiles and the undoable geometry writes; `stacking.js` z-order. All
+six are re-exported by `state.js` under their old names, so nothing imports them
+directly and no caller knows they exist — and **none may ever import `state.js`
+back**, since a concern lifted out of that file can only stay out if what it
+stands on is lower than what it left. `tests/layers.test.js` lists all six as
+BASE, which is what enforces it; that list is the split, not a note about it.
 
-The split is unfinished and the reason is worth knowing before continuing: the
-seams that are left — stacking, snapping, the clipboard, selection — all call
-into the item CRUD and the geometry-write helpers, so each would import
-`state.js` and close a cycle. The next step is moving *those* down, not another
-leaf. See the audit's status header in `research/`.
+Two things about that shape are worth knowing before adding to it. The Mobile
+pack and the layout profiles are **one** module however they read as two —
+`placeMobileItems()` and `completeLayout()` call each other, so splitting them
+would be two modules importing each other. And the façade is written out
+explicitly rather than as a star re-export, which is deliberate: the one thing
+that broke during the split was four names that `state.js` re-exports but never
+uses itself, and being explicit is what made that break loudly in five test
+files instead of quietly at runtime.
 `mesh.js` sits at the top level rather than under `canvas/` for exactly that
 reason: it is struct reading, and only `canvas/model.js` turns its output into
 pixels.

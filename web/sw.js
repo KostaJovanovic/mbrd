@@ -84,6 +84,7 @@ const SHELL = [
   './assets/js/board-model.js',
   './assets/js/sticky.js',
   './assets/js/layout.js',
+  './assets/js/stacking.js',
   './assets/js/history.js',
   './assets/js/ui/search.js',
   './assets/js/ui/sidebar.js',
