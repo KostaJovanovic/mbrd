@@ -22,6 +22,7 @@ import {
   headerFontAxes, headerFontOptions, headerFontStack, headerFontWeights,
 } from './fonts.js';
 import { createMobileSliderFocus } from './sidebar.js';
+import { field, fieldStops } from './controls.js';
 
 const AXIS_LABELS = {
   opsz: 'Optical size',
@@ -352,10 +353,9 @@ function buildWeight(axis) {
     return;
   }
 
-  const label = document.createElement('label');
-  label.className = 'field';
-  const head = document.createElement('span');
-  head.textContent = 'Weight';
+  // No readout: the stops printed under the track are the value, the way the
+  // whimsy and quality dials read as words rather than numbers.
+  const { label } = field('Weight');
   // The value is a position in the list, not a weight: the stops are 400 and
   // 700 today and a range that stepped in hundreds between them would offer
   // three settings that do not exist. Same reason the whimsy dial is 0 to 2.
@@ -364,17 +364,9 @@ function buildWeight(axis) {
   input.min = '0';
   input.max = String(stops.length - 1);
   input.step = '1';
-  const names = document.createElement('span');
-  names.className = 'field-stops';
-  names.setAttribute('aria-hidden', 'true');
-  for (const stop of stops) {
-    const name = document.createElement('span');
-    name.textContent = stop.label;
-    // Each name set in the weight it names, the way the whimsy stops are each
-    // set in their own tier: the label is the specimen as well as the word.
-    name.style.fontWeight = String(stop.value);
-    names.append(name);
-  }
+  // Each name set in the weight it names, the way the whimsy stops are each set
+  // in their own tier: the label is the specimen as well as the word.
+  const names = fieldStops(stops, { specimen: s => ({ fontWeight: String(s.value) }) });
   // The printed stops are what a sighted user reads; a screen reader gets the
   // same names off the thumb rather than "3 of 5".
   const describe = index => {
@@ -385,7 +377,7 @@ function buildWeight(axis) {
     describe(index);
     update({ weight: stops[index].value });
   });
-  label.append(head, input, names);
+  label.append(input, names);
   weightHost.append(label);
   weightControl = {
     input,
@@ -408,19 +400,13 @@ function nearestStop(stops, weight) {
 }
 
 function rangeControl(labelText, axis) {
-  const label = document.createElement('label');
-  label.className = 'field';
-  const head = document.createElement('span');
-  const text = document.createElement('span');
-  text.textContent = labelText;
-  const out = document.createElement('output');
-  head.append(text, out);
+  const { label, out } = field(labelText, { out: true });
   const input = document.createElement('input');
   input.type = 'range';
   input.min = String(axis.min);
   input.max = String(axis.max);
   input.step = String(axisStep(axis));
-  label.append(head, input);
+  label.append(input);
   return { label, input, out, axis };
 }
 

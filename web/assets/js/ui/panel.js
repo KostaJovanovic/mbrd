@@ -28,6 +28,7 @@
 // decides what is on screen. ui/sidebar.js owns the subscriptions and calls
 // paintPanel() - there is one paint, not two racing.
 import { board } from '../state.js';
+import { field, fieldStops } from './controls.js';
 import {
   TABS, SECTIONS, sectionsFor, controlVisible, sectionVisible,
 } from './settings-schema.js';
@@ -222,23 +223,15 @@ function buildCheck(c) {
 }
 
 function buildRange(c) {
-  const label = make('label', 'field');
-  if (c.fieldId) label.id = c.fieldId;
-  const head = make('span');
   // `silent` is a dial whose stops are named underneath rather than a value
   // worth printing: whimsy and quality both read as words, not numbers. Those
-  // get the plain label and no wrapper - .field > span is the head, and a span
+  // get the plain label and no readout - .field > span is the head, and a span
   // inside a span is a level of nothing.
-  let out = null;
-  if (c.silent) {
-    head.textContent = c.label;
-  } else {
-    const text = make('span');
-    text.textContent = c.label;
-    out = make('output');
+  const { label, out } = field(c.label, { out: !c.silent });
+  if (c.fieldId) label.id = c.fieldId;
+  if (out) {
     out.id = `${c.id}-out`;
     if (c.outText) out.textContent = c.outText;
-    head.append(text, document.createTextNode(' '), out);
   }
 
   const input = make('input');
@@ -248,23 +241,13 @@ function buildRange(c) {
   input.max = c.max;
   input.step = c.step;
   if (c.value != null) input.value = c.value;
-  label.append(head, input);
+  label.append(input);
 
   if (c.stops?.length) {
-    // No <datalist>: Chromium ignores it on a custom-painted track, and Firefox
-    // draws ticks whose two ends vanish into the rounded track. Names are
-    // legible in a way ticks are not.
-    const stops = make('span', 'field-stops');
     // `stopsId` where a stylesheet reaches for the row by name - the whimsy
     // stops are specimens of the three tiers and are set in three different
     // faces, pinned by that id and by nothing else.
-    stops.id = c.stopsId || `${c.id}-stops`;
-    stops.setAttribute('aria-hidden', 'true');
-    for (const s of c.stops) {
-      const span = make('span');
-      span.textContent = s;
-      stops.append(span);
-    }
+    const stops = fieldStops(c.stops, { id: c.stopsId || `${c.id}-stops` });
     input.setAttribute('aria-describedby', stops.id);
     label.append(stops);
   }
@@ -280,14 +263,12 @@ function buildRange(c) {
 }
 
 function buildSelect(c) {
-  const label = make('label', 'field');
+  const { label } = field(c.label);
   if (c.fieldId) label.id = c.fieldId;
-  const head = make('span');
-  head.textContent = c.label;
   const select = make('select');
   select.id = c.id;
   fillSelect(c, select, ctx());
-  label.append(head, select);
+  label.append(select);
   if (!c.external && c.set) {
     select.addEventListener('change', () => c.set(select.value));
   }

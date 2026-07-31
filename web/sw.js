@@ -83,6 +83,7 @@ const SHELL = [
   './assets/js/ui/search.js',
   './assets/js/ui/sidebar.js',
   './assets/js/ui/panel.js',
+  './assets/js/ui/controls.js',
   './assets/js/ui/settings-schema.js',
   './assets/js/ui/quality.js',
   './assets/js/ui/appearance.js',

@@ -34,6 +34,7 @@ import {
 // touches document at import time and that one must stay testable - see look.js.
 import { safeVars } from './look.js';
 import { customFaces } from './fonts.js';
+import { field } from './controls.js';
 
 const STORE_KEY = 'mbrd.appearance';
 
@@ -1043,14 +1044,7 @@ function buildControls() {
   for (const c of CONTROLS) {
     const host = hosts[c.host];
     if (!host) continue;
-    const label = document.createElement('label');
-    label.className = 'field';
-
-    const head = document.createElement('span');
-    const text = document.createElement('span');
-    text.textContent = c.label;
-    const out = document.createElement('output');
-    head.append(text, out);
+    const { label, out } = field(c.label, { out: true });
 
     // A <select> rather than an <input>, and 'change' rather than 'input',
     // because a face is a choice from a list and not a value on a scale.
@@ -1086,7 +1080,7 @@ function buildControls() {
       });
     }
 
-    label.append(head, input);
+    label.append(input);
     host.append(label);
     inputs.set(c.var, { input, out, label, spec: c });
   }
