@@ -140,7 +140,7 @@ const BASE = new Set([
   // None may ever import state.js back - that is the whole reason they are
   // separate files, since a concern lifted out of state.js can only stay out if
   // what it stands on is lower than what it left.
-  'board-store.js', 'board-model.js', 'history.js', 'sticky.js',
+  'board-store.js', 'board-model.js', 'history.js', 'sticky.js', 'layout.js',
 ]);
 
 /**
