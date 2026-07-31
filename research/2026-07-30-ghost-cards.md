@@ -34,6 +34,68 @@ leave, and that board never shows them again.
 They are furniture, not content. A `.mbrd` never contains one, the bin never
 holds one, and undoing the import that dismissed them does not bring them back.
 
+A fourth card sits under the title card and carries the whimsy dial itself - 4:1
+rather than 3:2, a control rather than a sentence. It reaches `setWhimsy` through
+`cmds`, because it is built under `canvas/` and may not import
+`ui/appearance.js`; `main.js` hands `cmds` to `initGhosts()`, the same move it
+makes for storage's confirmation prompt. Keeping the dial honest when the level
+is moved from the settings panel is a `MutationObserver` on `data-whimsy` - the
+one thing `ui/appearance.js` already writes on every change, and what
+`canvas/grid.js` reads for the same reason. `canvas/input.js` needed nothing:
+its widget branch already names `input`, so a drag on the thumb moves the thumb
+and not the card.
+
+**Mobile is a column, and they are born into it.** The dial leads it, under the
+masthead, which is where it sits on Desktop too; a stable sort keeps the three
+hints in reading order behind it. Everything starts flush with the board's top
+edge — see the note on `placeMobileItems()` and the Desktop title card, which
+used to push the first free row four or five spaces down for every import on a
+phone, not just for these.
+ `ensureGhostCards()` forks
+the way `addItems()` does: Desktop gets the arrangement below, Mobile gets one
+full-width card per row through `placeMobileItems()`. It has to happen at seeding
+rather than at the mode switch, because a phone never makes that switch — it
+opens in Mobile, and `completeLayout()` only fills in the profile that is *not*
+live, so nothing else would ever have placed them. Seeded raw, two of the four
+sat off the side of a 512-wide board. The Mobile heights are the `mh` field in
+`GHOSTS`: a card twice as wide needs nothing like twice the height for the same
+three lines.
+
+**They are laid on the lattice.** Harsh means snapping on Desktop, so a board
+saved there is snapped the moment it loads — and hints are pushed straight onto
+`board.items` by `ensureGhostCards()` rather than going through `addItems()`,
+which is where `onLattice()` sits. Nothing else laid them down, so on every
+refresh at Harsh they arrived at their own coordinates while every other card on
+the board sat flush in its cells. Two halves to the fix: seeding runs each box
+through `latticeBox()` at the board's own `baseStep()` when snapping is on (no
+commit, no `presnap` memo — a hint is never unsnapped back to anything), and the
+geometry in `GHOSTS` is itself written in whole grid spaces, so the snapped and
+unsnapped layouts are the same layout. The sizes went up to 4×3 cells
+(256×192) as part of that: `latticeSide()` rounds 216×144 *down* to 187×123,
+which clipped the longest hint's own paragraph.
+
+The dial card is the sidebar's own control, not a copy of it. The renderer gives
+its row `class="field"`, so the track, the lozenge thumb, the stop names and
+everything the whimsy axis does to the three of them arrive from the panel's
+block in `app.css` — one slider, styled once. The three names are duplicated in
+`canvas/ghosts.js` (`STOPS`) because the panel's list lives in `ui/`, which
+`canvas/` may not reach into; `tests/ghosts.test.js` compares the two copies so
+they cannot drift. They are printed *above* the track on the card and below it in
+the panel, because the panel has a label over its slider and this card does not:
+the names are the label. There is no title on it for the same reason — a heading
+reading "Whimsy" over a row that already reads Softish / Middle / Harsh. says
+nothing twice — so the word goes to the input as its `aria-label`, and the level
+reaches a screen reader as `aria-valuetext` rather than as "1 of 2".
+
+It is also the one hint that stays an ordinary card at every stop on the axis:
+no dashed edge, no torn page, no tape. A dash marks a hint as provisional and a
+control is not, and the Softish treatment is actively hostile to this card — the
+perforation eats the left end of the track, a strip of tape lands across the
+thumb, and the mask that cuts the page applies to everything inside it. The tape
+is refused at minting (`GHOSTS` carries `tape: false`, since the placement is
+rolled there rather than drawn from the tier); the rest is
+`:not([data-hint="whimsy"])` on the Softish rules in `app.css`.
+
 ---
 
 ## 1. The one decision: they are real items
@@ -135,31 +197,62 @@ off `document.documentElement.dataset.whimsy`, which is the established pattern
 in `canvas/grid.js:221` and `canvas/exit-anim.js:91`. In practice the styling is
 pure CSS gated on `:root[data-whimsy="…"]`, so no JS reads it at all.
 
-**Middle and Harsh — a regular card with a dashed outline.** `border: 2px dashed`
-over a transparent body, radius from `var(--radius)` so it rounds at Middle and
-squares at Harsh with no second rule. No shadow: `canvas/items.js:532` builds
-shadows for everything except the title card, and ghosts join that exclusion —
-an outline that casts a shadow reads as solid.
+**Middle and Harsh — a regular card, and the *only* difference is the border.**
+Paper, inner rule, drop shadow and full reading weight on the text, exactly as a
+filed card wears them; `border: 2px dashed` replaces the inset hairline, with the
+radius from `var(--radius)` so it rounds at Middle and squares at Harsh with no
+second rule.
 
-**Softish — yellowed papyrus with chipped sides.** Two techniques, both already
-used elsewhere in the repo and both dependency-free:
+This is a correction. The first build also made the body transparent and faded
+the text, which is three cues all saying "provisional" — and it read as a broken
+card rather than an invitation. At Middle, the default level and the one most
+boards are actually looked at, it also left the words too pale to read. One cue
+is enough, and the edge is the right one to carry it.
 
-- The yellowing is layered `radial-gradient`s carrying `var()`, the same
-  technique `canvas/grid.js` uses for its two soft grid tiers and `app.css` uses
-  for the paper blooms. A slider move restyles it with no repaint.
-- The chipped edge is a `clip-path: polygon(…)` with an irregular point run.
-  Cheaper and crisper at any zoom than an SVG displacement filter, and it
-  composites on the GPU, which matters because `#world` is one transformed
-  layer and a filter there would force a repaint on every pan.
+The shadow is CSS on `.ghost-card` rather than an `#item-shadows` twin, because
+a ghost's silhouette is not its item box — Softish clips it to a torn polygon,
+and a rectangular twin would lay a clean shadow under a ragged scrap. Same
+reason `.title-card` carries its own, and `canvas/items.js:532` skips both.
 
-Three cards want three different silhouettes or the trio reads as a repeated
-tile — the same reasoning the icon's three cards are landscape/portrait/
-landscape. `:nth-child` variants, not randomness, so a board looks the same
-every time it opens.
+**Softish — a page torn out, taped down.** The scrapbook dialect of the dashed
+edge, saying the same thing twice in two registers: the sheet was ripped out of
+something, and it is only stuck here for now.
 
-New tokens go in the `[data-whimsy]` blocks in `tokens.css` (`0` at ~481, `2` at
-~553); the rules go in `app.css` next to the other `.item` rules — CSS is three
-files and stays three files.
+Papyrus was here first and was dropped outright. It was a *costume* — a
+different metaphor from the dashed edge, borrowed from somewhere the app has
+nothing to do with — and no amount of work on its edges fixed that. Six
+candidates were put on a real board at once to choose between (plain, pencil,
+tape, photo corners, tracing paper, torn page); this is torn page and tape
+together.
+
+- **The page.** Perforation stubs down the left edge where it left the pad,
+  faint rules, and the margin the rules stop at. The perforation is a repeating
+  CSS `mask`, not a `clip-path`: a torn stub is a circle, and a polygon is the
+  one thing that cannot do a circle cheaply.
+- **The tape.** One or two strips per card, each straddling a different edge at
+  an angle, half on and half off — the overhang is the entire read.
+
+Two traps here, both found the hard way:
+
+- **A mask applies to descendants.** Tape drawn inside the card would be punched
+  full of the same perforations, so the strips are *siblings* of the card. The
+  ghost renderer returns a `DocumentFragment` for exactly that reason;
+  `items.js` appends whatever it gets and `append()` spreads a fragment, so
+  nothing there needed changing.
+- **`.card` clips its own pseudo-elements** (`overflow: hidden`), which cut the
+  tape off flat at the card edge and made it read as printed on. A ghost card
+  holds two lines of text and no media, so it lets its tape out.
+
+**The randomness lives in the item, not in the render.** `tapeFor()` in
+`state.js` rolls the placements once, when the hint is minted, and they travel
+in `meta.tape`. `canvas/items.js` throws a culled card's node away and rebuilds
+it from nothing when it comes back on screen — a placement chosen while drawing
+would put the tape somewhere new every time the board panned past it. Random per
+board; fixed for that board's life. `tapeStyle()` in `canvas/ghosts.js` turns a
+placement into the four CSS values, and is pure so the geometry is testable.
+
+The strips are built at every tier and hidden by CSS away from Softish, so the
+whimsy dial shows and hides them without rebuilding a card.
 
 ### Leaving
 

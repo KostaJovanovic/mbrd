@@ -31,15 +31,25 @@
 //    copies this module created are revoked by clearDisplay().
 
 import { getAsset, assetURL } from '../storage/assets.js';
+import { quality } from '../quality.js';
 
 /**
  * The long edge a display copy is allowed to keep. Matches the reasoning behind
  * optimize's MAX_SIDE (1200): far enough that the picture stops being what
  * limits the view, close enough that a full board of copies is a few hundred
- * megabytes of decode rather than several gigabytes. Tunable - lower is safer on
- * old phones, higher is crisper on a card zoomed right in.
+ * megabytes of decode rather than several gigabytes.
+ *
+ * Now the quality dial's, rather than a constant - lower is safer on old
+ * phones, higher is crisper on a card zoomed right in, which is exactly the
+ * trade that dial exists to offer. 1280 is its top stop, so nothing moved for
+ * anyone who never touches it.
+ *
+ * The cache below is keyed by content hash alone, so this must not change
+ * without emptying it: a copy made at 1024 would otherwise be served for the
+ * rest of the session. ui/quality.js answers a change with resetItems(), which
+ * calls clearDisplay() on the way through.
  */
-const DISPLAY_MAX = 1280;
+const displayMax = () => quality.sharpness;
 
 /** WebP quality for the copy. High enough not to band on paper. */
 const QUALITY = 0.82;
@@ -110,7 +120,7 @@ async function shrink(blob) {
     return null;
   }
   try {
-    const scale = Math.min(1, DISPLAY_MAX / Math.max(bmp.width, bmp.height));
+    const scale = Math.min(1, displayMax() / Math.max(bmp.width, bmp.height));
     if (scale === 1) return null;   // already inside the ceiling: mount the original
     const w = Math.max(1, Math.round(bmp.width * scale));
     const h = Math.max(1, Math.round(bmp.height * scale));

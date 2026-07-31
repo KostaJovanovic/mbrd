@@ -809,13 +809,15 @@ export function extractPalette(chunks, { plain = false } = {}) {
 // ---------------------------------------------------------------------------
 
 /**
- * The hard ceiling on how many pictures a palette is read from, newest first.
+ * How many pictures a palette is read from when nobody says, newest first.
  *
- * A cap and not a sample of the whole board. How many *within* this ceiling are
- * actually read is the board's own `paletteSources` setting - this is only the
- * limit that setting is clamped to, and the backstop when no limit is passed.
- * Each picture counts the same whatever its size or how vivid it is - see
- * huesOf().
+ * This was a hard ceiling and is now a default, because the dial above it grew
+ * a stop past its top: `paletteSources: 0` means every picture on the board and
+ * arrives here as an infinite limit. The ceiling was never about correctness -
+ * a palette read from forty photographs is a fine palette - it was about the
+ * decode each source costs, and someone who asks for all of them has said they
+ * will pay it. Each picture counts the same whatever its size or how vivid it
+ * is - see huesOf().
  */
 export const MAX_SOURCES = 24;
 
@@ -836,7 +838,12 @@ const SAMPLE = 48;
 export async function samplePixels(urls, limit = MAX_SOURCES) {
   const ctx = sampler();
   if (!ctx) return [];
-  const n = Math.max(1, Math.min(limit || MAX_SOURCES, MAX_SOURCES));
+  // `limit` may be Infinity, which is what "every picture" arrives as. A falsy
+  // limit is still the default rather than none: 0 reaching here would be a
+  // caller that has not looked the setting up, and reading nothing at all is
+  // never the answer anybody wanted.
+  const asked = limit || MAX_SOURCES;
+  const n = asked === Infinity ? urls.length : Math.max(1, Math.min(asked, MAX_SOURCES));
   const out = [];
   for (const url of urls.slice(0, n)) {
     try {

@@ -667,6 +667,16 @@ export function placeMobileItems(items, obstacles = board.items, options = {}) {
   const snap = options.snap ?? board.settings.snap;
   const preserveSize = options.preserveSize === true;
   const columns = mobileColumnCount(options.columns ?? board.settings.mobileColumns);
+  // The Desktop title card is not on this board. It has no Mobile geometry and
+  // is never rendered here - the masthead above the column is drawn by
+  // canvas/mobile-frame.js and is not an item at all - so it keeps whatever
+  // Desktop place it had, and that place is *above* the Mobile board's top edge.
+  // Left in the obstacle list it pushed the first free row four or five spaces
+  // down (mobilePackStartRow measures from the highest obstacle), so an import
+  // onto an empty phone board landed in the middle of nothing with a screen of
+  // blank column above it. completeLayout() already takes it out of its own
+  // sweep for the same reason; this is the other door.
+  obstacles = obstacles.filter(it => it.type !== 'title');
   const clean = item => {
     const presnap = usableMemo(item.meta?.presnap);
     const { presnap: _oldPresnap, ...meta } = item.meta || {};
@@ -956,17 +966,110 @@ export function restoreTitleCard(at = null) {
  * user-facing prose, so an item carries only its key in meta.hint and
  * canvas/ghosts.js maps that to words and pixels.
  */
-export const GHOST_IDS = Object.freeze(['__ghost_drop__', '__ghost_move__', '__ghost_note__']);
-
-// Keyed by id so the two stay in step, and ordered the way they are read. The
-// sizes are a note's own proportions rather than a picture's - these are cards
-// with a sentence in them - and the positions sit below TITLE_DEFAULT_POS so a
-// fresh board reads top to bottom: name, then what to do. +y is up.
-const GHOSTS = Object.freeze([
-  { id: GHOST_IDS[0], hint: 'drop', x: -232, y:   40, w: 208, h: 156 },
-  { id: GHOST_IDS[1], hint: 'move', x:    0, y:  -40, w: 208, h: 156 },
-  { id: GHOST_IDS[2], hint: 'note', x:  232, y:   40, w: 208, h: 156 },
+export const GHOST_IDS = Object.freeze([
+  '__ghost_drop__', '__ghost_move__', '__ghost_note__', '__ghost_whimsy__',
 ]);
+
+// The one hint that is a control rather than a sentence. Named here because the
+// Mobile column orders itself around it; canvas/ghosts.js exports the same
+// string as DIAL for the renderer, which is the layer that knows what it means.
+const DIAL_HINT = 'whimsy';
+
+// Keyed by id so the two stay in step, and ordered the way they are read.
+//
+// Every number here is a whole number of grid spaces at the default 64 step,
+// and that is the point rather than a coincidence. A snapped board (which is
+// what Harsh means on Desktop) lays a box on the lattice by rounding its sides
+// to whole cells and its low edges to lines, so geometry that is *already*
+// there survives the trip unchanged - the cards look the same snapped and
+// unsnapped, and the layout below is the layout in both. Written at the sizes
+// that fit a paragraph after rounding, not the sizes that read best before it:
+// 216x144 rounded down to 187x123 and clipped its own copy.
+//
+// 4:3 rather than the title card's 3:2, because a card three cells tall is the
+// smallest one the longest hint fits in. The title card snaps to 4x3 as well,
+// so on the board that most people see the whole set matches anyway. Fixed
+// rather than a starting size, since a ghost carries no resize grips (see
+// setGrips in canvas/items.js); canvas/renderers.js defaultSize() names the
+// same box.
+//
+// The positions sit below TITLE_DEFAULT_POS so a fresh board reads top to
+// bottom: name, then the dial, then what to do. +y is up.
+//
+// They are a cascade rather than a row, and each one is placed against the two
+// beside it rather than on a line: down and to the right from the drop card,
+// past the dial, with the move card dropped below and back to the left. A row
+// of three is a table of contents, and this is a board - the first thing it
+// says about itself is that things sit where they were put. Every centre is
+// still a whole number of grid spaces, so a snapped board keeps the
+// arrangement exactly; see the note above.
+//
+// `mspan` and `mrows` are the box the same card takes on Mobile, where it is
+// packed into a column rather than placed: a fraction of the board's width, and
+// a whole number of grid rows. A fraction rather than a column count because
+// the Mobile board is eight columns by default and six by setting, so "half the
+// width" survives that change and "four cells" does not - at six columns it
+// would be two thirds of the board and two cards would no longer sit side by
+// side. Rows are cells outright, since the row height is the step either way.
+const GHOSTS = Object.freeze([
+  { id: GHOST_IDS[0], hint: 'drop', x: -320, y:   96, w: 256, h: 192, mspan: 0.5, mrows: 2 },
+  { id: GHOST_IDS[1], hint: 'move', x:  -64, y: -160, w: 256, h: 192, mspan: 0.5, mrows: 2 },
+  { id: GHOST_IDS[2], hint: 'note', x:  320, y:  -32, w: 256, h: 192, mspan: 0.5, mrows: 2 },
+  // The odd one out: a control rather than a sentence, so it is 4:1 on Desktop -
+  // four grid spaces by one. Parked under the title card and in the gap the
+  // cascade leaves between the drop card and the note card: the title's lower
+  // edge is at 158.5 (130.56 once the board is snapped) and this spans 0 to 64.
+  //
+  // On Mobile it takes the full width and two rows - the whole top of the column
+  // over two half-width hints - so the one control on the board is the one card
+  // that never shares a row.
+  //
+  // And untaped, because it is the one hint that stays an ordinary card at every
+  // tier: a torn scrap is a fine thing to write on and a poor thing to mount a
+  // working control in, and half a strip of tape across a slider is worse. The
+  // rest of that decision is in app.css, which keeps the Softish page treatment
+  // off this hint; the tape is the half that has to be refused here, since it is
+  // rolled at minting rather than drawn from the tier.
+  { id: GHOST_IDS[3], hint: 'whimsy', x: 0, y: 32, w: 256, h: 64,
+    mspan: 1, mrows: 2, tape: false },
+]);
+
+/**
+ * Where the strips of tape holding a hint down are stuck, at Softish.
+ *
+ * One or two per card, each straddling a different edge at an angle. Rolled
+ * once, here, and carried in the item - *not* decided when the card is drawn.
+ * canvas/items.js throws a culled card's node away and rebuilds it from nothing
+ * when it comes back on screen, so a placement chosen at render time would put
+ * the tape somewhere new every time the board panned past it. Random for each
+ * board, and then fixed for that board's life.
+ *
+ * `pos` is a percentage along the chosen edge, kept well inside the corners so
+ * a strip never hangs off one. `rot` is the angle it was pressed down at,
+ * relative to that edge. Lengths are world px, the unit the card is sized in.
+ *
+ * `rand` is injectable so a test can pin the roll.
+ */
+const TAPE_EDGES = ['top', 'right', 'bottom', 'left'];
+
+export function tapeFor(rand = Math.random) {
+  // Two often enough to be a pattern, one often enough that the trio is not a
+  // set of matching parcels.
+  const count = rand() < 0.45 ? 2 : 1;
+  const edges = [...TAPE_EDGES];
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    // Different edges, so two strips on one card never sit on top of each other.
+    const edge = edges.splice(Math.floor(rand() * edges.length), 1)[0];
+    out.push({
+      edge,
+      pos: Math.round(24 + rand() * 52),
+      rot: Math.round((rand() * 18 - 9) * 10) / 10,
+      len: Math.round(56 + rand() * 42),
+    });
+  }
+  return out;
+}
 
 /** Whether the board holds anything the user put there. */
 export function hasContent() {
@@ -992,10 +1095,52 @@ let ghostsDismissed = false;
  */
 export function ensureGhostCards() {
   if (ghostsDismissed || hasContent() || hasGhosts()) return;
+  const step = baseStep();
+  // Mobile is a column, and the layout above is a Desktop arrangement: four
+  // cards spread across nine hundred world units, on a board 512 wide. Seeding
+  // straight into it put two of them off the side of the frame entirely. So the
+  // same fork addItems() makes for an import - pack them into the feed when
+  // Mobile is the live layout, lay them on the lattice when Desktop is.
+  //
+  // It has to happen here rather than being left to the mode switch, because a
+  // phone never makes that switch: it opens in Mobile, and completeLayout() only
+  // fills in a profile that is *not* the live one. The hints are the one thing
+  // on the board that can be born into a layout nobody switched to.
+  if (board.layoutMode === 'mobile') {
+    // Sized against the column rather than carried over from Desktop: the dial
+    // takes the whole width, the hints half of it, and both are two rows tall.
+    // placeMobileItems() takes it from here - it fits, packs and (if the Mobile
+    // profile is snapped, which it is by default) lays each one on the lattice.
+    const width = mobileBoardWidth(step);
+    // The dial goes first, under the masthead, which is where it sits on Desktop
+    // too - directly below the title card. The packer takes the order it is
+    // given, and a stable sort keeps the three hints in reading order behind it.
+    const order = [...GHOSTS].sort((a, b) =>
+      Number(b.hint === DIAL_HINT) - Number(a.hint === DIAL_HINT));
+    const fresh = order.map(g => makeItem({
+      id: g.id, type: 'ghost', x: 0, y: 0, w: width * g.mspan, h: g.mrows * step,
+      meta: { hint: g.hint, tape: g.tape === false ? [] : tapeFor() },
+    }));
+    board.items.push(...placeMobileItems(fresh));
+    return;
+  }
   for (const g of GHOSTS) {
+    // Laid on the lattice on the way in, exactly as an imported item is by
+    // onLattice(). The positions above are written for an unsnapped board, and a
+    // snapped one is a different board: its cards sit flush in cells, and four
+    // that arrived at their own coordinates would be the only things on it that
+    // did not. This is the hydration path rather than the import path, so it
+    // does no commit and keeps no presnap memo - a hint is never unsnapped back
+    // to anything, because it is never saved and never survives content
+    // arriving.
+    //
+    // The step is the board's own, not 64: gridStep is a setting, and hardcoding
+    // geometry that happens to be whole cells at the default would come apart
+    // the moment somebody moved it.
+    const box = board.settings.snap ? latticeBox(g, step) : g;
     board.items.push(makeItem({
-      id: g.id, type: 'ghost', x: g.x, y: g.y, w: g.w, h: g.h,
-      meta: { hint: g.hint },
+      id: g.id, type: 'ghost', x: box.x, y: box.y, w: box.w, h: box.h,
+      meta: { hint: g.hint, tape: g.tape === false ? [] : tapeFor() },
     }));
   }
 }
@@ -1160,6 +1305,13 @@ function fitMobile(
   step = baseStep(),
   columns = mobileColumnCount(),
 ) {
+  // Every item but one. The Desktop title card is not on the Mobile board at
+  // all - canvas/items.js never mounts it there, the masthead is Mobile's title
+  // - and completeLayout() parks it clear of the top edge so that nothing else
+  // can run into a box that is not on the screen. That parking is above the top
+  // edge, which is exactly what the clamp below undoes: it would drag the card
+  // back down to flush with the first row, which is where the trouble was.
+  if (it.type === 'title') return { ...it };
   const width = mobileBoardWidth(step, columns);
   const inset = cellInset(step);
   const contentWidth = Math.max(MIN_SIZE, width - 2 * inset);
@@ -1203,9 +1355,26 @@ function completeLayout(mode) {
     // through to being packed like anything else.
     const riders = [];
     for (const it of board.items) {
-      // The Desktop title card carries no Mobile place - keep whatever geometry
-      // it had (never rendered on Mobile) and take it out of the packing sweep.
-      if (it.type === 'title') { map.set(it.id, map.get(it.id) || geometryOf(it)); continue; }
+      // The Desktop title card is not on this board: canvas/items.js leaves it
+      // out of the Mobile mount pass, and the masthead above the column is
+      // Mobile's title instead. So it is parked clear of the top edge rather
+      // than left wherever Desktop had it.
+      //
+      // Keeping its Desktop place was the bug. TITLE_DEFAULT_POS is y 244, and
+      // the Mobile board's top edge is 384 with the first row just under it -
+      // so an unrendered 256x171 box sat across the middle columns of the first
+      // three rows. Nothing drew it and everything else could feel it: a card
+      // dragged up there met an obstacle that was not on the screen, and a note
+      // dropped on it became stuck to it - pinned to a card that cannot be seen,
+      // selected or moved on this layout. Above the top edge it is out of every
+      // one of those answers, and it costs nothing, because the one thing this
+      // geometry is never used for on Mobile is drawing it.
+      if (it.type === 'title') {
+        map.set(it.id, geometryOf({
+          ...it, x: 0, y: mobileBoardTop(step) + step + it.h / 2, rot: 0,
+        }));
+        continue;
+      }
       if (isRider(it)) { riders.push(it); continue; }
       const saved = map.get(it.id);
       if (!saved) {
@@ -2817,10 +2986,19 @@ function normalizeMediaFit(value) {
   return value === 'cover' ? 'cover' : 'contain';
 }
 
-/** How many pictures the palette reads, clamped to [1, 24] (see MAX_SOURCES). */
+/**
+ * How many pictures the palette reads: [1, 24], or 0 for every one of them.
+ *
+ * Zero is past the top of the dial rather than below its bottom - the slider's
+ * last stop reads "Every photo" - and it is stored as 0 because a number cannot
+ * say "all" and the alternative was a second key saying it instead. 24 is the
+ * highest *count* the sampler defaults to (MAX_SOURCES); asking for all of them
+ * lifts that, which is the whole of what this option does.
+ */
 function normalizePaletteSources(value) {
   const n = Math.round(+value);
-  return Number.isFinite(n) ? Math.max(1, Math.min(24, n)) : 12;
+  if (!Number.isFinite(n)) return 12;
+  return n === 0 ? 0 : Math.max(1, Math.min(24, n));
 }
 
 function normalizeMobileHeader(raw) {

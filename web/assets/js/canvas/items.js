@@ -11,6 +11,7 @@ import {
   board, byId, selection, bus, renameItem, visualStackOrder, stuckFollowers,
 } from '../state.js';
 import { shuffle } from '../util.js';
+import { quality } from '../quality.js';
 import { itemRadius } from '../geometry.js';
 import { buildContent, fitMode } from './renderers.js';
 import { clearDisplay } from './display.js';
@@ -296,8 +297,12 @@ function reconcile(delta) {
  * reads as loading rather than as juddering. Twelve is about what fits in the
  * slack of a frame on a mid-range laptop; the number is not delicate, and
  * anything from about eight to twenty behaves the same way.
+ *
+ * Twelve is what this shipped with and is what the quality dial's top stop asks
+ * for; the lower stops trade a board that fills in later for a smoother zoom.
+ * See BUILD_STEPS in quality.js.
  */
-const BUILD_BUDGET = 12;
+const buildBudget = () => quality.build;
 
 /** Set when a sync ran out of budget, so the next frame knows to carry on. */
 let catchUp = 0;
@@ -383,7 +388,7 @@ export function sync(restack = true) {
     // nothing and is never deferred. A deferred card has no node yet, so its
     // absence from a mounted state is nothing for the detach loop to undo.
     if (!el) {
-      if (built >= BUILD_BUDGET) { owed = true; continue; }
+      if (built >= buildBudget()) { owed = true; continue; }
       built++;
     }
     const node = el || build(item);
@@ -529,11 +534,17 @@ function build(item) {
   // The title card carries its own drop shadow in CSS (box-shadow on
   // .title-card), because the 3:2 card is smaller than its snapped item box and
   // a twin placed at the box would sit taller than the card it shadows.
-  // A ghost card is left out for a different reason: the hint tiers draw it as
-  // an outline with nothing behind it, and a twin cast under a dashed rectangle
-  // fills it back in - the card reads solid, which is the one thing it is not.
-  // Softish carries its own shadow in CSS, where the chipped silhouette is.
-  if (item.type !== 'title' && item.type !== 'ghost') shadows.set(item.id, buildShadow(item, tilt));
+  // A ghost card is left out for the same reason as the title card, not a
+  // different one: its silhouette is not the item box. At Softish it is clipped
+  // to a torn polygon, and a rectangular twin would lay a clean shadow under a
+  // ragged scrap. So the shadow is CSS on .ghost-card, where the clip is, and
+  // each tier draws the one that fits it.
+  // And at the bottom of the quality dial there is no twin for anything:
+  // turning the shadow off in CSS alone would leave a second element per card
+  // being built, placed and mirrored on every move in order to paint nothing.
+  if (quality.shadows && item.type !== 'title' && item.type !== 'ghost') {
+    shadows.set(item.id, buildShadow(item, tilt));
+  }
   // The title card's pen and rename buttons live for the card's whole life - CSS
   // shows them on hover or selection. A child of .item, like the grips, so they
   // ride its transform and hold a constant on-screen size through --iz.
@@ -585,7 +596,13 @@ const GRIPS = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 function setGrips(el, want) {
   // The title card moves but does not resize: its size is the style's size dial,
   // not a drag on a corner. So it never gets grips, however it is selected.
-  if (el.dataset.type === 'title') want = false;
+  //
+  // A ghost card is the same, for a different reason: it holds a fixed sentence
+  // at a fixed 3:2, and it is leaving as soon as the board has anything on it.
+  // There is nothing to gain by resizing one and a stretched hint looks broken.
+  // Grips are the only way into a resize - canvas/input.js reaches it through
+  // `.grip` and nothing else - so withholding them here is the whole lock.
+  if (el.dataset.type === 'title' || el.dataset.type === 'ghost') want = false;
   if (!!el.dataset.grips === want) return;
   if (!want) {
     delete el.dataset.grips;

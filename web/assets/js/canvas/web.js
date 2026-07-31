@@ -30,6 +30,7 @@
 
 import { board, bus, isRider } from '../state.js';
 import { rafThrottle } from '../util.js';
+import { quality } from '../quality.js';
 import { webZoom } from './viewport.js';
 import { segmentMeetsRect, corners, pointInItem } from '../geometry.js';
 
@@ -39,9 +40,15 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
  * A relationship web belongs to the spatial Desktop arrangement only, and only
  * when the board asks for one. `settings.web` is layout-local (Desktop's own
  * checkbox); its absence in an older `.mbrd` reads as on.
+ *
+ * The quality dial can also take it away, and that is a different kind of no
+ * from the checkbox's: the checkbox says this board does not want threads, the
+ * dial says this device cannot afford to work them out. Both are honoured here,
+ * because everything downstream - the spanning tree, the crossing test, the
+ * per-view repaint - hangs off this one answer.
  */
 export const webVisible = (mode = board.layoutMode) =>
-  mode !== 'mobile' && board.settings.web !== false;
+  mode !== 'mobile' && board.settings.web !== false && quality.threads;
 
 /**
  * How far outside the viewport a thread is still drawn, in *screen* px.

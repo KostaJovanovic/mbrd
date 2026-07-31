@@ -19,6 +19,7 @@
 // frozen.
 
 import { bus } from '../state.js';
+import { quality } from '../quality.js';
 import { stillZoom } from './viewport.js';
 
 /** Long edge of a captured frame. It is only ever shown at a third size. */
@@ -28,6 +29,8 @@ let worldEl = null;
 let stilled = false;
 /** How many nodes were mounted at the last sweep - see the guard in update(). */
 let mounted = -1;
+/** The live update, so a quality change can ask the question again. */
+let recheck = () => {};
 
 export function initStills(world, vp) {
   worldEl = world;
@@ -36,7 +39,12 @@ export function initStills(world, vp) {
     // `<`, matching the zoom-far toggle in viewport.js. The two read the same
     // rung, so the comparison has to agree as well or the one zoom that sits
     // exactly on it would freeze the pictures while leaving the chrome up.
-    const want = vp.zoom < stillZoom();
+    //
+    // Or unconditionally, when the quality dial has taken motion away. That is
+    // also the only thing that reaches a Mobile board: its fitted zoom never
+    // drops below stillZoom() on touch, so distance alone never freezes a GIF
+    // on a phone - which is where a field of them costs the most.
+    const want = !quality.motion || vp.zoom < stillZoom();
     if (want !== stilled) {
       stilled = want;
       // Shoot before swapping, so what freezes is the frame that was on
@@ -61,10 +69,20 @@ export function initStills(world, vp) {
     capture(false);
   };
 
+  recheck = update;
   vp.onChange(update);
   bus.on('items', () => { if (stilled) capture(false); });
   update();
 }
+
+/**
+ * Ask the freeze question again without the view having moved.
+ *
+ * The one caller is the quality dial: motion is the only input to this module
+ * that is not the zoom, and nothing else can change it. A no-op before
+ * initStills().
+ */
+export const refreshStills = () => recheck();
 
 /** @param force  true to re-shoot every twin, false to fill in only the blanks. */
 function capture(force) {

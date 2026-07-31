@@ -157,8 +157,15 @@ absent or unrecognised `mediaFit` reads as `"contain"`.
 
 `paletteSources` is how many of the board's pictures the "take colours from
 pictures" palette is read from, newest first — a whole number clamped to
-`[1, 24]`, defaulting to `12`. Board-level, since the palette it feeds is shared
-across layouts. Absent or out of range reads as `12`.
+`[1, 24]`, or **`0` for every picture on the board**, defaulting to `12`.
+Board-level, since the palette it feeds is shared across layouts. Absent or
+unreadable reads as `12`; a count above 24 reads as `24`.
+
+`0` is the slider's stop past the top rather than a count below its bottom: 24
+is the highest number of sources the sampler reads by default, and `0` lifts
+that ceiling instead of naming a bigger number. An older reader that clamps this
+field to `[1, 24]` will read `0` as `1` and take its colours from the newest
+picture alone — a duller palette, not a broken board.
 
 Item coordinates and sizes are rounded to two decimals on the way out. A board
 is a place things sit, not a measurement, and the third decimal of a drag is

@@ -121,27 +121,28 @@
 
   /* ---- ghost cards ----
      The three hints a brand-new board opens with, and the only cards on the
-     board that are not the user's. They have to read as provisional - a card
-     drawn in pencil, waiting to be replaced by a real one - which at this end
-     and at Harsh is an outline and nothing else.
+     board that are not the user's. At every tier they are ordinary cards whose
+     edge happens to be dashed; Softish additionally carries a candidate look
+     layered on in app.css, which changes the edge or the mount and never the
+     type.
 
-     Mixed out of --ink like every other item token, so the hints belong to
-     whatever palette the board is wearing rather than being a grey box on it.
-     Weaker than --item-border, because a solid card earns a firmer edge than
-     one that is only a suggestion. */
-  /* The edge may be faint - it is a rectangle and the eye completes it from very
-     little. The words may not. These started as one token at 38% and the card
-     came out unreadable at the middle of the axis, which is the level most
-     boards are actually looked at: a hint nobody can read is worse than no hint,
-     since it still takes up the board. So the ink is a real reading weight and
-     only the outline is a whisper. */
-  --ghost-ink:    color-mix(in srgb, var(--ink) 72%, transparent);
-  --ghost-edge:   color-mix(in srgb, var(--ink) 30%, transparent);
+     The edge is mixed out of --ink like every other item token, so the hints
+     belong to whatever palette the board is wearing rather than being a grey
+     box on it, and it sits weaker than --item-border - a real card earns a
+     firmer edge than one that is only a suggestion.
+
+     The text is an ordinary card's text - full ink for the title, secondary ink
+     for the line - because the dashed edge is the only thing that should be
+     saying "provisional". Fading the words as well was the first attempt and it
+     made a hint nobody could read at the middle of the axis, which is where
+     most boards are actually looked at.
+
+     The edge is the one thing allowed to be faint: it is a rectangle, and the
+     eye completes a rectangle from very little. */
+  --ghost-ink:    var(--ink);
+  --ghost-ink-2:  var(--ink-2);
+  --ghost-edge:   color-mix(in srgb, var(--ink) 38%, transparent);
   --ghost-weight: 2px;
-  /* Dash and gap. Long enough to read as a deliberate rule rather than a dotted
-     one, and it is a screen-space stroke like the web's - see --web-weight. */
-  --ghost-dash:   9px;
-  --ghost-gap:    7px;
   /* Never grey - and never one fixed brown either. Mixed out of this palette's
      own ink, so a teal board casts a teal-grey shadow rather than a warm one
      borrowed from Papyrus. A grey drop shadow on warm paper is the single most
@@ -512,22 +513,13 @@
 
   --wash: 2.2;
 
-  /* Ghost cards stop being outlines at this end and become objects: old paper,
-     yellowed, with the edge chipped away. The scrapbook end of the axis is
-     where the board is a physical thing, and a dashed rectangle is a diagram.
-     app.css draws it - the silhouette is a clip-path and the ageing is a stack
-     of radial gradients, both of which need these five colours.
+  /* Ghost cards at this end are still cards - the candidates layered on in
+     app.css change the edge, the mount or the stock, never the type. The ink is
+     a warmer, softer version of the board's own rather than a second palette. */
+  --ghost-ink:    color-mix(in srgb, var(--ink) 92%, transparent);
+  --ghost-ink-2:  var(--ink-2);
+  --ghost-edge:   color-mix(in srgb, var(--ink) 32%, transparent);
 
-     Warm literals rather than palette mixes, and that is the exception worth
-     stating: everything else on the board takes its colour from the palette,
-     but old paper is old paper. A teal board with teal papyrus on it reads as
-     a tinted rectangle; the whole point is that this card looks like it came
-     from somewhere else and is not staying. */
-  --ghost-papyrus:      #e8d9b0;
-  --ghost-papyrus-lit:  #f3e8c8;
-  --ghost-papyrus-dark: #c9b285;
-  --ghost-papyrus-edge: color-mix(in srgb, #8a6b3c 45%, transparent);
-  --ghost-ink:          #5c4526;
   /* An actual highlighter pen: the warm accent rather than the primary one,
      and laid on heavier. This is the end of the axis where a board is a
      scrapbook, and a scrapbook is marked up in amber. */
@@ -674,8 +666,6 @@
   --ghost-ink:    var(--ink);
   --ghost-edge:   var(--ink);
   --ghost-weight: 1.5px;
-  --ghost-dash:   6px;
-  --ghost-gap:    5px;
   --note-shadow: none;
   --shadow-1: none;
   --shadow-2: 0 8px 28px color-mix(in srgb, var(--ink) 18%, transparent);
@@ -758,4 +748,57 @@
   --ease-back: ease;
   --dur-zoom:   110ms;
   --dur-travel: 220ms;
+}
+
+/* ---------------------------------------------------------------------------
+   Quality
+
+   Last in the file, and that is the whole of the cascade here: a whimsy block
+   is `:root[data-whimsy="2"]` and a quality block is `:root[data-quality=…]`,
+   which have identical specificity. Whichever is written second wins, and
+   quality has to - it is the axis that answers "this device cannot afford it",
+   which outranks "this board would like it".
+
+   Only tokens live here. The rules that are not tokens - backdrop blur,
+   transition durations - are in app.css beside the things they switch off.
+
+   Two selectors per rule, because there are two states to cover. Before
+   ui/quality.js runs, the inline guard in index.html has set the level and
+   nothing else, so the level stands in for its flags; once the module is up
+   every flag is written out as its own attribute, and a hand-set override then
+   outranks the stop it was set from. `:not([data-q-shadows])` is what hands
+   over between the two.
+   --------------------------------------------------------------------------- */
+
+:root[data-quality="light"]:not([data-q-shadows]),
+:root[data-q-shadows="off"] {
+  /* canvas/items.js stops building the twin at all at this point - see the
+     shadow guard in build(). This is for the ones CSS draws itself: the title
+     card, the ghosts, and Softish's chipped silhouette. */
+  --item-shadow: none;
+  --note-shadow: none;
+  --shadow-1: none;
+  --shadow-2: none;
+  --lift-hover: 0px;
+  --lift-drag: 0px;
+  --btn-lift: 0px;
+  /* And the edge takes over the job the shadow was doing.
+     A near-white card on near-white paper was told apart by its shadow and by
+     nothing else, so with the shadow gone a note, a link card or a letterboxed
+     photograph dissolved into the board. This is the same move the plain end of
+     the whimsy axis already makes - see --item-border under [data-whimsy="2"],
+     where elevation is a hairline - held short of that one's full-strength ink,
+     because Light is a device setting and should not read as a different tier.
+     16% is the middle's edge; this is firm enough to find and quiet enough not
+     to draw a box round everything. */
+  --item-border: color-mix(in srgb, var(--ink) 38%, transparent);
+}
+
+:root[data-quality="light"]:not([data-q-anim]),
+:root[data-q-anim="off"] {
+  --dur-fast: 0.01ms;
+  --dur-base: 0.01ms;
+  --dur-zoom: 0ms;
+  --dur-travel: 0ms;
+  --dur-palette: 0.01ms;
 }

@@ -23,26 +23,32 @@ import { clamp, rafThrottle, emitter } from '../util.js';
 import { itemBounds } from '../geometry.js';
 
 /**
- * What the corner calls 100%.
+ * What the corner calls 100%, and now also what it is.
+ *
+ * This was 0.8: the printed percentage and the true scale were two numbers for
+ * one thing, so that a board sitting at scale 0.8 read "100%". The rebasing is
+ * gone - 100% is 1:1 again, one world unit to one CSS pixel, the same thing
+ * mobileZoom() has always meant by 1 - and every rung below that is written as a
+ * multiple of this so the percentages the interface prints stay the ones this
+ * file reasons in.
  *
  * `zoom` in this file is and stays the true world-to-screen scale: the transform
  * multiplies by it, toScreen/toWorld divide by it, and a `view` saved in a board
- * records it raw. What moved is only the label - a board sitting at scale 0.8
- * now reads "100%", because the old 100% framed a card larger than anyone
- * actually works at and every session started with a zoom out.
+ * records it raw. Which is the one thing worth knowing about the change: a board
+ * saved before it opens at the scale it was saved at and prints a different
+ * number for it - 0.8 was "100%" and reads as 80% now. The board is not drawn
+ * any differently; the label under it is honest where it used to be flattering.
  *
- * So there are two numbers for one thing and they differ by this factor:
- * `vp.zoom` is the scale, `vp.zoom / BASE_ZOOM` is the percentage the interface
- * prints (see zoomText() in main.js, the one place that conversion happens).
- * Everything below that reads as a percentage in prose - the clamps, the detail
- * rungs - is written as a multiple of BASE_ZOOM so that those percentages stay
- * the ones the interface shows. Anything measured in real screen pixels is not:
- * the grid's MIN_PX/MAX_PX, paper.js's page outline and the scale bar all
+ * The name stays, rather than the constant being folded away into 1s. It is the
+ * one place that says which scale the corner means by 100%, and `vp.fit(items,
+ * 80, 0, BASE_ZOOM)` in main.js reads as what it is - open at 100% - where a
+ * bare 1 would read as an argument somebody guessed.
+ *
+ * Anything measured in real screen pixels is deliberately not written against
+ * it: the grid's MIN_PX/MAX_PX, paper.js's page outline and the scale bar all
  * compose with the raw zoom and stay truthful by doing so.
- *
- * Set this to 1 and the app is back to its old numbering exactly.
  */
-export const BASE_ZOOM = 0.8;
+export const BASE_ZOOM = 1;
 
 export const MIN_ZOOM = 0.1 * BASE_ZOOM;   // 10% as printed
 export const MAX_ZOOM = 5 * BASE_ZOOM;     // 500% as printed
@@ -75,10 +81,12 @@ export function mobileHeaderHeight(boardWidth) {
 /**
  * Fixed zoom that seats a Mobile board in the viewport without enlarging it.
  *
- * Deliberately not re-based on BASE_ZOOM, and neither is LOD_ZOOM_TOUCH below.
- * Mobile has no zoom control and prints no percentage, so the label BASE_ZOOM
- * moved does not exist here; this zoom is fit-derived, and the 1 is the literal
- * 1:1 the name means - one world unit to one CSS pixel.
+ * Written against a literal 1 rather than against BASE_ZOOM, and so is
+ * LOD_ZOOM_TOUCH below. Mobile has no zoom control and prints no percentage, so
+ * nothing here is a label: this zoom is fit-derived, and the 1 is the 1:1 the
+ * name means - one world unit to one CSS pixel. That the two now agree is a
+ * coincidence worth keeping separate, since only one of them is a display
+ * decision.
  */
 export function mobileZoom(viewWidth, worldWidth, pad = MOBILE_SIDE_PAD) {
   const available = Math.max(1, viewWidth - pad * 2);

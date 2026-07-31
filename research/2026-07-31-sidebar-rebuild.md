@@ -1,8 +1,9 @@
 # Sidebar rebuild — plan
 
-Status: **plan only, not started.** Written 2026-07-31. Every decision below was
-made by the user in a question round; the alternatives they turned down are
-recorded so a later reader does not re-open them by accident.
+Status: **carried out, 2026-07-31.** Written and built the same day. Every
+decision below was made by the user in a question round; the alternatives they
+turned down are recorded so a later reader does not re-open them by accident.
+What was actually built, and where it left the plan, is at the foot of the file.
 
 ## Why
 
@@ -188,7 +189,7 @@ Nothing goes into `board.settings`, so `docs/mbrd-format.md` is untouched (D7).
 |---|---|---|---|---|
 | Animate GIFs & videos | as now | GIFs freeze when still, videos need a tap | frozen / no autoplay | `canvas/stills.js`, `canvas/video.js` |
 | Card shadows | as now | as now | none, and `#item-shadows` stops being mirrored | `--item-shadow`/`--note-shadow` + `canvas/items.js` |
-| Picture sharpness | 1280px long edge | 1024 | 800 | `DISPLAY_MAX`, `canvas/display.js:42` |
+| Picture sharpness | 1280px long edge | 1152 | 1024 | `DISPLAY_MAX`, `canvas/display.js:42` |
 | Grid & web detail | as now | web off while moving | Harsh grid paints as Middle; web off | `canvas/grid.js`, `canvas/web.js` |
 | Blur behind panels | as now | as now | `backdrop-filter: none` | `app.css:~1527`, `:~4090` |
 | Build ahead | 12 cards/frame | 8 | 4 | `BUILD_BUDGET`, `canvas/items.js:300` |
@@ -256,3 +257,64 @@ Even delivered in one go, build it in this order — each step runs on its own:
   `research/2026-07-30-mobile-scroll-perf.md` is still unexplained with
   `BUILD_BUDGET` as the named suspect — measuring that first may set this row's
   values for us.
+
+---
+
+## Built
+
+New: `web/assets/js/quality.js` (base layer), `web/assets/js/ui/quality.js`,
+`web/assets/js/ui/settings-schema.js`, `web/assets/js/ui/panel.js`,
+`tests/quality.test.js`, `tests/settings-panel.test.js`.
+
+Changed: `index.html` (the sidebar is now a head, an empty `.side-tabs`, an
+empty `.side-body` and a foot — ~270 lines of markup gone; the inline pre-paint
+guard also reads the quality level), `ui/sidebar.js` (395 → 240 lines: open and
+close, the delegated `data-cmd` click, the slider-focus gesture, the board name
+and the paper orientation pair — the rest is the table), `canvas/items.js`,
+`canvas/display.js`, `canvas/web.js`, `canvas/stills.js` (one flag each),
+`main.js`, `app.css`, `tokens.css`, `sw.js`, `tests/layers.test.js`,
+`tests/storage.test.js`, `CLAUDE.md`.
+
+643 tests pass. Verified in headless Edge against the running dev server: the
+panel builds, all five external hosts are filled by their owning modules, the
+Mobile-width load hides exactly the seven Desktop-only controls, and
+`data-quality="light"` reaches `<html>` with its three flag attributes.
+
+## Where it left the plan
+
+- **The ornament lever is threads only.** The plan said "grid & web detail". The
+  grid was measured at 0.2% of frames in
+  `research/2026-07-30-mobile-scroll-perf.md` — noise — and the only real
+  saving available was to stop drawing the Harsh tier's lattice, which would be
+  a second, hidden "off" switch sitting next to the real one in Board & grid.
+  The row is called *Threads between cards* and does one thing.
+- **"Blur behind panels" is "Blurred backdrops".** There is no blur behind the
+  panels; the two `backdrop-filter` sites are the question dialog's scrim and
+  the transport button over an audio cover. The label now says what it turns
+  off.
+- **The motion lever is GIFs.** There was no video autoplay left to take away —
+  `88dcde8` already holds video sources until the first play on touch.
+- **Build ahead got its row after all** (the plan's first open question). It is
+  in the Quality fold as *Cards built per frame*, labelled with the trade rather
+  than the number alone.
+- **Real size went to Look** (the second open question), because the merge is
+  anchored to the paper sheet and the sheet is a drawn thing.
+- **The sharpness ladder was raised after it shipped.** The plan's
+  1280/1024/800 came from "a card is a few hundred world units, so pixels past
+  ~1200 never reach the eye" — true at zoom 1, false the moment anyone zooms in,
+  which is what a board is for. At 800 a photograph looked visibly upscaled.
+  Now 1280/1152/1024. Decode cost is the square of the edge, so Light still
+  takes about a third of the picture memory off, and the flags around it —
+  shadows, threads, blur, anim — were always the ones saving an old phone.
+  `tests/quality.test.js` holds the 1024 floor.
+- **`ownVisibility`**, which the plan did not foresee: `ui/appearance.js` takes
+  the palette source count down whenever the extraction switch above it is off,
+  and a panel repaint would have put it back on every settings event. One flag
+  in the table says who decides.
+
+## Not done, deliberately
+
+- The masthead panel is untouched (D16).
+- No new settings beyond Quality (D15).
+- The perf HUD is still `#perf`-only (D13), Debug still ships (D12), the
+  keyboard legend is still in the panel (D11).
