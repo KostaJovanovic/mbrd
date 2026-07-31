@@ -23,7 +23,7 @@ import { defaultUpAxis, meshKind } from './mesh.js';
 import {
   Viewport, MIN_ZOOM, MAX_ZOOM, BASE_ZOOM, zoomMs, travelMs, mobilePerfFlags,
 } from './canvas/viewport.js';
-import { paintGrid, resetGridInk } from './canvas/grid.js';
+import { paintGrid, paintGridOnView, resetGridInk } from './canvas/grid.js';
 import { initPaper, paintPaper } from './canvas/paper.js';
 import { initMobileFrame, paintMobileFrame } from './canvas/mobile-frame.js';
 import { initItems, resetItems, cullProfile, viewStats } from './canvas/items.js';
@@ -706,9 +706,12 @@ vp.onChange(() => {
   // The fast path a shipped board always takes: one boolean read, then the same
   // work as ever. The performance.now() pair only runs once the dev handle asks
   // for it, so profiling costs nothing until turned on.
-  if (!viewPerf.active) { paintGrid(vp); afterGrid(); return; }
+  // paintGridOnView, not paintGrid: on this one path a view change that moves
+  // the grid less than a device pixel would repaint it into the same picture.
+  // Every other caller here means "the grid itself changed" and calls paintGrid.
+  if (!viewPerf.active) { paintGridOnView(vp); afterGrid(); return; }
   const t0 = performance.now();
-  paintGrid(vp);
+  paintGridOnView(vp);
   const t1 = performance.now();
   afterGrid();
   viewPerf.sample(t1 - t0, performance.now() - t1);

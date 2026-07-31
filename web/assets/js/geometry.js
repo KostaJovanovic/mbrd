@@ -344,6 +344,44 @@ export function overlapFraction(a, b) {
   return frac > 1 ? 1 : frac;
 }
 
+/**
+ * The furthest anything inside `rect` moved on screen between two views.
+ *
+ * Answers "did that view change actually change the picture?" for anything
+ * painted in screen space from world coordinates - the grid is the caller, and
+ * the reason this exists: it repaints full-viewport on every view frame, and
+ * two gestures deliver a stream of frames that move nothing anybody can see.
+ * The tail of an inertial pan settles below a pixel per frame long before it
+ * stops emitting, and a precision wheel or trackpad hands over zoom in
+ * fractions far under one.
+ *
+ * A view here is the transform itself, `{ pan: {x, y}, zoom }`, in the sense
+ * viewport.js's toScreen() uses it: screen = (world - pan) * zoom, with y
+ * negated for the sign flip. Both views are measured against the *same*
+ * rectangle - the one visible now - because the question is about the marks on
+ * screen this moment, not about where a point used to be.
+ *
+ * Only the corners are evaluated, and that is exact rather than a sample: the
+ * mapping is affine in the world point, so the displacement between two of them
+ * is affine too, and an affine function over a rectangle takes its extremes at
+ * the corners. Four evaluations bound the whole frame.
+ *
+ * Returns the larger of the two axes, in screen pixels. Compare it against one
+ * device pixel to learn that every mark landed in the row and column it was
+ * already in.
+ */
+export function viewShift(prev, next, rect) {
+  let worst = 0;
+  for (const wx of [rect.x0, rect.x1]) {
+    for (const wy of [rect.y0, rect.y1]) {
+      const dx = (wx - next.pan.x) * next.zoom - (wx - prev.pan.x) * prev.zoom;
+      const dy = (next.pan.y - wy) * next.zoom - (prev.pan.y - wy) * prev.zoom;
+      worst = Math.max(worst, Math.abs(dx), Math.abs(dy));
+    }
+  }
+  return worst;
+}
+
 /** The two ends of an item's top edge, in world coordinates (+y is up). */
 export function topEdge(it) {
   const rad = (it.rot || 0) * RAD;

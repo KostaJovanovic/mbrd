@@ -18,6 +18,7 @@
 import { board } from '../state.js';
 import { deviceRatio, onTouch, mobilePerfFlags } from './viewport.js';
 import { MM_PER_INCH, PX_PER_INCH } from '../measure.js';
+import { viewShift } from '../geometry.js';
 
 // The on-screen window a minor step is allowed to live in. Outside it the
 // world-space step doubles or halves and the lattice re-tiers.
@@ -178,9 +179,63 @@ function placeInk(canvas, box) {
   canvas.style.bottom = 'auto';
 }
 
+/** The view the grid was last painted for - see paintGridOnView(). */
+let lastView = null;
+
+/**
+ * Paint the grid for a view change, unless the view did not move far enough to
+ * change a pixel of it.
+ *
+ * Separate from paintGrid() rather than a flag inside it, because the guard is
+ * only ever right for this one caller. Everything else that repaints - a
+ * setting moving, the palette changing, a board loading, the tier fade's own
+ * frame - changes what the grid should look like *without* moving the view, and
+ * a shared guard would swallow exactly those.
+ *
+ * The test is the largest distance any painted point travels. Screen position
+ * is affine in the world point, `(p - pan) * zoom`, so the extremes over the
+ * visible rectangle are at its corners and four evaluations bound the whole
+ * frame. Under a device pixel at both corners means every mark on screen lands
+ * in the same physical row and column it was already in, and the repaint would
+ * write the same picture over itself.
+ *
+ * What this is for is not a still board - a still board emits no view change at
+ * all - but the two cases that emit a stream of them and move nothing: the tail
+ * of an inertial pan as it settles below a pixel per frame, and a trackpad or
+ * precision wheel delivering a zoom in fractions too small to show.
+ */
+export function paintGridOnView(vp) {
+  if (viewSettledForGrid(vp)) return;
+  paintGrid(vp);
+}
+
+function viewSettledForGrid(vp) {
+  const p = lastView;
+  if (!p) return false;
+  // The viewport itself moved or resized: the box the grid is drawn in has
+  // changed even if the board under it has not.
+  if (p.cx !== vp.cx || p.cy !== vp.cy || p.left !== vp.left || p.top !== vp.top) return false;
+  // Not every input to this paint is the view's position. The origin hole is
+  // dropped for the length of a gesture and put back when it ends (punchHole),
+  // and the frame that puts it back is the settling one - the frame where the
+  // board has, by definition, not moved since the last. Compared, not special-
+  // cased, so the arriving edge is caught as well as the leaving one.
+  if (p.moving !== vp.moving) return false;
+  // A device pixel, not a CSS one: a CSS pixel is two or three rows of a phone's
+  // screen, and half of one is a move the eye can see.
+  return viewShift(p, vp, vp.visibleRect(0)) < 1 / deviceRatio();
+}
+
 export function paintGrid(vp) {
   const el = vp.el;
   const s = board.settings;
+  // Recorded at the top rather than at the foot: this function has three exits,
+  // and what the guard above compares against is the view a paint was made for,
+  // which is this one whichever way the paint goes out.
+  // Shaped like a view (pan/zoom) so viewShift() can take it directly, with the
+  // frame the grid is drawn in carried alongside.
+  lastView = { pan: { x: vp.pan.x, y: vp.pan.y }, zoom: vp.zoom,
+               cx: vp.cx, cy: vp.cy, left: vp.left, top: vp.top, moving: vp.moving };
 
   el.classList.toggle('no-axes', !axesVisible());
 

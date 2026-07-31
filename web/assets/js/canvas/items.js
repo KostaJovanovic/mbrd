@@ -12,7 +12,7 @@ import {
 } from '../state.js';
 import { shuffle } from '../util.js';
 import { quality } from '../quality.js';
-import { itemRadius } from '../geometry.js';
+import { itemRadius, rotatedExtents } from '../geometry.js';
 import { buildContent, fitMode } from './renderers.js';
 import { clearDisplay } from './display.js';
 import { releasePlayers } from './audio.js';
@@ -188,6 +188,50 @@ export function nodeFor(id) { return nodes.get(id); }
 /** Subscribe to view changes (pan/zoom); returns the unsubscribe. */
 export function onViewChange(fn) { return vp?.onChange(fn); }
 
+/**
+ * The client-space box of an item, computed rather than measured.
+ *
+ * getBoundingClientRect() answers the same question, and for a one-off it is
+ * the right call. This exists for the caller that asks on every view frame -
+ * the note toolbar, which has to stay over its note through a pan - because
+ * there the read is not free: the view has just written #world's transform, so
+ * nothing about the page's geometry is still valid and the browser flushes
+ * layout for the whole tree before it can answer. Once per frame, for the
+ * length of an edit.
+ *
+ * Nothing has to be measured, because everything is already known. placeBox()
+ * puts the box at item.x/y, sizes it w by h and turns it by -rot, so its
+ * extent is the standard rotated-rectangle pair, and vp.toScreen() carries the
+ * centre across. The one adjustment is the frame: toScreen() answers in the
+ * viewport's own coordinates and a position:fixed consumer wants the client's.
+ */
+export function screenBoxOf(item) {
+  if (!vp || !item) return null;
+  const { hw, hh } = rotatedExtents(item);
+  const halfW = hw * vp.zoom, halfH = hh * vp.zoom;
+  const c = vp.toScreen(item.x, item.y);
+  const cx = vp.left + c.x, cy = vp.top + c.y;
+  return {
+    cx, cy,
+    left: cx - halfW, right: cx + halfW,
+    top: cy - halfH, bottom: cy + halfH,
+  };
+}
+
+/**
+ * The viewport's own client rectangle, from the cache the Viewport already
+ * keeps. Same reason as above: it is refreshed by measure() on the two events
+ * that can move it (a resize, a scroll), so asking the element every frame
+ * would buy nothing but the layout flush.
+ */
+export function viewportClientRect() {
+  if (!vp) return null;
+  return {
+    left: vp.left, top: vp.top,
+    right: vp.left + vp.width, bottom: vp.top + vp.height,
+  };
+}
+
 /** The item id owning a DOM node, or null for canvas chrome. */
 export function itemIdFromEvent(target) {
   const el = target instanceof Element ? target.closest('.item') : null;
@@ -308,6 +352,37 @@ const buildBudget = () => quality.build;
 let catchUp = 0;
 
 /**
+ * How long the detach pass may be left undone while the view is in motion.
+ *
+ * Zooming out runs a full sync on every frame (see syncView), and the mount
+ * half of it has a budget while the detach half has none: it walks everything
+ * mounted, on every frame, for the whole gesture. The mount half cannot be put
+ * off - a card that is not there is a hole in the picture - but nothing is
+ * wrong with a card that is there a moment longer than it had to be.
+ *
+ * A throttle rather than a skip, and the distinction is the whole of it. Not
+ * detaching at all while the view moves was the first shape of this and it is
+ * the wrong one: a sustained pan across a large board never ends, so the
+ * mounted set grows for as long as the hand keeps moving and the memory
+ * ceiling this culling exists to hold is gone. Deferring it bounds the backlog
+ * instead - at worst one window's worth of newly-arrived cards - and the
+ * gesture still pays for it, just eight times a second rather than sixty.
+ *
+ * 120ms is roughly two of the viewport's settle windows and about seven frames.
+ * Long enough that the walk stops being a per-frame cost, short enough that the
+ * backlog is a handful of cards rather than a screenful.
+ */
+const DETACH_MS = 120;
+let lastDetach = 0;
+/**
+ * A detach the throttle put off. Read by syncView(), which otherwise returns
+ * early on the settling frame - the view has not moved since the last one,
+ * which is exactly the condition for skipping, and exactly when the deferred
+ * work has to be collected.
+ */
+let detachOwed = false;
+
+/**
  * The padded rectangle the last sync mounted against, and the reason a pan is
  * not a walk over the whole board every frame.
  *
@@ -331,7 +406,12 @@ let syncedRect = null;
 /** The view moved. Re-mount only if the screen has left what we last covered. */
 function syncView() {
   if (!worldEl) return;
-  if (syncedRect) {
+  // The exception to the containment guard: the view has stopped and the
+  // throttle below owes a detach. Nothing has moved, so the guard would send
+  // this frame away - and the settling frame is the last one that will be
+  // offered until somebody touches the board again.
+  const collecting = detachOwed && !vp.moving;
+  if (syncedRect && !collecting) {
     const v = vp.visibleRect(0);
     if (v.x0 >= syncedRect.x0 && v.x1 <= syncedRect.x1 &&
         v.y0 >= syncedRect.y0 && v.y1 <= syncedRect.y1) return;
@@ -342,7 +422,7 @@ function syncView() {
   // arithmetic and a zIndex write per mounted node, spent every zoom frame to
   // arrive at the order that is already there. Fresh mounts still get their
   // rank from the cached index below.
-  sync(false);
+  sync(false, true);
 }
 
 /**
@@ -352,8 +432,14 @@ function syncView() {
  * fact about the items, not about where the eye is, so it is recomputed only
  * when an item moves, arrives or leaves - the callers that emit 'items'/'geom' -
  * and left alone on every frame of a pan or zoom.
+ *
+ * `viewPath` says the same thing about the *other* half: it is what lets the
+ * detach pass be throttled while the view is in motion (see DETACH_MS). Named
+ * separately from `restack` rather than inferred from it, because the two are
+ * only incidentally the same caller today and a mount that leaves a deleted
+ * item on screen is a much worse failure than a stale z-order.
  */
-export function sync(restack = true) {
+export function sync(restack = true, viewPath = false) {
   if (!worldEl) return;
   const r = vp.visibleRect(cullMargin());
   syncedRect = r;
@@ -423,16 +509,27 @@ export function sync(restack = true) {
   // held, decoded, for the life of the tab. The cache only ever earned its keep
   // for media that is mid-playback, so that is now all it holds - the nodes with
   // isConnected already false are that cache, and they are skipped, not rescanned.
-  for (const [id, el] of nodes) {
-    if (onScreen.has(id) || !el.isConnected) continue;
-    shadows.get(id)?.remove();
-    if (disposable(el)) {
-      discard(el);
-      nodes.delete(id);
-      shadows.delete(id);
-    } else {
-      el.remove();
+  //
+  // Throttled, but only while the view is actually moving and only on the view
+  // path - see DETACH_MS. Every other caller is an item arriving, leaving or
+  // moving, where the walk is the thing that makes the change visible.
+  const now = performance.now();
+  if (!viewPath || !vp?.moving || now - lastDetach >= DETACH_MS) {
+    lastDetach = now;
+    detachOwed = false;
+    for (const [id, el] of nodes) {
+      if (onScreen.has(id) || !el.isConnected) continue;
+      shadows.get(id)?.remove();
+      if (disposable(el)) {
+        discard(el);
+        nodes.delete(id);
+        shadows.delete(id);
+      } else {
+        el.remove();
+      }
     }
+  } else {
+    detachOwed = true;
   }
   if (restack) paintStack();
   // Come back for the rest. One frame at a time and never more than one in
@@ -440,7 +537,7 @@ export function sync(restack = true) {
   // is this same pass against a newer rectangle, and two of them queued would
   // build the same cards twice.
   if (owed) {
-    if (!catchUp) catchUp = requestAnimationFrame(() => { catchUp = 0; sync(restack); });
+    if (!catchUp) catchUp = requestAnimationFrame(() => { catchUp = 0; sync(restack, viewPath); });
   } else if (catchUp) {
     cancelAnimationFrame(catchUp);
     catchUp = 0;
