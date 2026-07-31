@@ -1708,3 +1708,65 @@ test('the defaults are not shared between boards', () => {
   fresh();
   assert.deepEqual(board.settings.fonts, []);
 });
+
+// ---------------------------------------------------------------------------
+// History is bounded by what it retains, not only by how many entries it has
+// ---------------------------------------------------------------------------
+//
+// The count cap says nothing about cost: a nudge of two cards and a nudge of
+// ten thousand both count as one, while the second retains two snapshots of the
+// whole board. Two hundred of those is a board's geometry held twenty times
+// over, and it is the boards big enough for that to matter that can least
+// afford it. So a command may declare its weight, and the stack evicts on the
+// total as well as on the count.
+
+test('an unweighted command counts as one, whatever it does', async () => {
+  const { commit, clearHistory, historyWeight } =
+    await import('../web/assets/js/history.js');
+  clearHistory();
+  for (let i = 0; i < 5; i++) commit('edit', () => {}, () => {});
+  assert.equal(historyWeight(), 5);
+  clearHistory();
+});
+
+test('a weighted command carries its weight, and undo gives it back', async () => {
+  const { commit, undo, redo, clearHistory, historyWeight } =
+    await import('../web/assets/js/history.js');
+  clearHistory();
+  commit('move the board', () => {}, () => {}, 1000);
+  assert.equal(historyWeight(), 1000);
+  // Undo moves the entry to the redo stack, so the undo stack no longer holds it.
+  undo();
+  assert.equal(historyWeight(), 0, 'an undone command is not held by the undo stack');
+  redo();
+  assert.equal(historyWeight(), 1000, 'and redoing takes it back');
+  clearHistory();
+});
+
+test('the weight limit evicts the oldest, and never the last', async () => {
+  const { commit, undo, clearHistory, historyWeight, historyState } =
+    await import('../web/assets/js/history.js');
+  clearHistory();
+  // Four commands at 20000 apiece is 80000, past the 50000 ceiling.
+  for (const label of ['first', 'second', 'third', 'fourth']) {
+    commit(label, () => {}, () => {}, 20000);
+  }
+  assert.ok(historyWeight() <= 50000, `expected eviction, held ${historyWeight()}`);
+  assert.equal(historyState().undo, 'fourth', 'the newest survives');
+  // The oldest went; walking back must not reach it.
+  const seen = [];
+  for (let i = 0; i < 4; i++) { if (historyState().undo) seen.push(historyState().undo); undo(); }
+  assert.ok(!seen.includes('first'), 'the oldest was evicted');
+  clearHistory();
+});
+
+test('a single command heavier than the whole budget is still undoable', async () => {
+  // The one thing the user most likely wants back must not be the one thing
+  // that cannot be: evicting down to nothing would make the heaviest operation
+  // the only un-undoable one.
+  const { commit, clearHistory, historyState } = await import('../web/assets/js/history.js');
+  clearHistory();
+  commit('import everything', () => {}, () => {}, 500000);
+  assert.equal(historyState().undo, 'import everything');
+  clearHistory();
+});
