@@ -50,13 +50,20 @@ class BoardHandler(SimpleHTTPRequestHandler):
 
         normcase as well as realpath: on Windows the same directory can be
         spelled in several cases and commonpath compares strings.
+
+        commonpath belongs inside the guard, not after it: on Windows it raises
+        ValueError when the two paths sit on different drives, and a request for
+        "/D:/outside" against a repo on C: produces exactly that pair. Raising
+        here kills the handler and the client sees a dropped connection instead
+        of the 404 this is meant to produce. Every failure to place the path is
+        the same answer - not inside the root.
         """
         try:
             root = os.path.normcase(os.path.realpath(ROOT))
             full = os.path.normcase(os.path.realpath(candidate))
+            return full == root or os.path.commonpath([root, full]) == root
         except (OSError, ValueError):
             return False
-        return full == root or os.path.commonpath([root, full]) == root
 
     def _route(self):
         """Map the request path to a file, or set self._not_found."""

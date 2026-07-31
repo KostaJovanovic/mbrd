@@ -98,3 +98,36 @@ test('a failed open does not poison the connection: a later operation reconnects
   // Second call must reopen rather than reuse the rejected promise.
   assert.equal(await idbGet('kv', 'missing'), undefined);
 });
+
+// `blocked` is not a terminal event: the request stays live and can still
+// succeed once the blocking tab closes. We answer it by rejecting - a save that
+// fails loudly beats one that hangs on another window - but the connection that
+// arrives afterwards has no owner, and an idle connection nobody holds is
+// itself what blocks the next tab's upgrade. It must be closed.
+test('an open blocked and then succeeding does not leave an orphan connection', async () => {
+  let closed = 0;
+  let succeed;
+  const fake = {
+    open() {
+      const req = {};
+      soon(() => {
+        req.onblocked && req.onblocked();
+        // The blocking tab closes later; the same request then completes.
+        succeed = () => {
+          req.result = {
+            objectStoreNames: { contains: () => true },
+            createObjectStore() {},
+            close() { closed++; },
+            transaction() { throw new Error('an orphan must never serve work'); },
+          };
+          req.onsuccess && req.onsuccess();
+        };
+      });
+      return req;
+    },
+  };
+  const { idbGet } = await freshIdb(fake);
+  await assert.rejects(idbGet('kv', 'k'), /blocked/);
+  succeed();
+  assert.equal(closed, 1, 'the late connection must be closed, not retained');
+});

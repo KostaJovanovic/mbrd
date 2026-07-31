@@ -13,6 +13,14 @@ function open() {
   if (dbPromise) return dbPromise;
   dbPromise = new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
+    // `blocked` is not the end of an open request - it means "waiting on the
+    // other connections", and success can still follow once they close. So the
+    // promise below is settled at most once, and a connection that arrives
+    // after we have already given up is closed rather than kept: nobody is
+    // holding it, and an idle connection nobody owns is itself what blocks the
+    // next tab's upgrade. Unreachable while DB_VERSION stays 1 - no open ever
+    // needs a version change - and here for the first bump that changes it.
+    let settled = false;
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
@@ -24,14 +32,26 @@ function open() {
       // still holding the old one. Step aside and drop the cached handle so the
       // next operation reconnects, instead of deadlocking that upgrade forever.
       db.onversionchange = () => { db.close(); dbPromise = null; };
+      if (settled) { db.close(); return; }
+      settled = true;
       resolve(db);
     };
     // A permanently rejected dbPromise would poison every later operation, so
     // clear it on failure: the connection is worth retrying (private-mode
     // toggles, transient quota, a blocking sibling tab that later closes).
-    req.onerror = () => { dbPromise = null; reject(req.error); };
+    req.onerror = () => {
+      dbPromise = null;
+      if (settled) return;
+      settled = true;
+      reject(req.error);
+    };
+    // Reject rather than wait: a save that hangs until another tab happens to
+    // close is worse than one that fails and says so, and dropping dbPromise
+    // means the next operation simply tries again.
     req.onblocked = () => {
       dbPromise = null;
+      if (settled) return;
+      settled = true;
       reject(req.error || new Error('IndexedDB open blocked by another tab'));
     };
   });
