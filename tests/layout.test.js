@@ -8,7 +8,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { arrange, ARRANGEMENTS } from '../web/assets/js/arrange/arrangements.js';
+import {
+  arrange, ARRANGEMENTS,
+  mobileOrder, mobileArrangement, MOBILE_ARRANGEMENTS, MOBILE_DEFAULT,
+} from '../web/assets/js/arrange/arrangements.js';
 import { latticeBox } from '../web/assets/js/geometry.js';
 import {
   gridStep, boardGridStep, inkBox, MOBILE_GRID_EDGE_CLEARANCE,
@@ -473,6 +476,96 @@ test('chrome and motion drop out at the same zoom', () => {
   assert.equal(farZoom(), webZoom(), 'the ladder has grown a second rung');
   assert.equal(farZoom(), thumbZoom(), 'the ladder has grown a second rung');
   assert.ok(farZoom() > MIN_ZOOM && farZoom() < MAX_ZOOM, 'the rung is outside the zoom range');
+});
+
+// ---------------------------------------------------------------------------
+// Mobile: the orders
+//
+// A Mobile board is a packed column, so a layout cannot decide where anything
+// goes - only what order the packer meets it in. These are that second
+// catalogue: `(items, opts) => items`, pure, and every one of them a
+// permutation of what it was handed. See MOBILE_ARRANGEMENTS.
+// ---------------------------------------------------------------------------
+
+const ids = list => list.map(i => i.id);
+
+test('every Mobile order is a permutation, and only that', () => {
+  // The property the packer depends on: nothing invented, nothing dropped, and
+  // no geometry touched - fitMobile() and packMobileGrid() decide all of that
+  // afterwards, and an order that also moved things would be deciding it twice.
+  const src = mixed(23);
+  for (const { id } of MOBILE_ARRANGEMENTS) {
+    const out = mobileOrder(src, { name: id, seed: 4 });
+    assert.equal(out.length, src.length, `${id} changed the count`);
+    assert.deepEqual([...ids(out)].sort(), [...ids(src)].sort(), `${id} is not a permutation`);
+    assert.deepEqual(ids(src), ids(mixed(23).map(i => i)), 'the input was reordered in place');
+    for (const item of out) {
+      const was = src.find(s => s.id === item.id);
+      assert.equal(item.x, was.x, `${id} moved ${item.id}`);
+      assert.equal(item.y, was.y, `${id} moved ${item.id}`);
+    }
+  }
+});
+
+test('a Mobile order with no seed is the same order twice', () => {
+  // What makes a drop reproducible: the same files land the same way. Shuffle
+  // is included on purpose - unseeded it is the order it was handed, exactly
+  // the bargain the Desktop layouts make with variation().
+  const src = mixed(17);
+  for (const { id } of MOBILE_ARRANGEMENTS) {
+    assert.deepEqual(
+      ids(mobileOrder(src, { name: id })),
+      ids(mobileOrder(src, { name: id })),
+      `${id} is not reproducible without a seed`);
+  }
+  assert.deepEqual(ids(mobileOrder(src, { name: 'shuffle' })), ids(src));
+});
+
+test('each Mobile order sorts on the thing it is named after', () => {
+  const src = mixed(12);
+  const by = name => mobileOrder(src, { name });
+
+  // Tall first: height is what walls off a row in a row-major pack.
+  const heights = by('fit').map(i => i.h);
+  assert.deepEqual(heights, [...heights].sort((a, b) => b - a));
+
+  // Oldest first, the same key and direction as Desktop's `date`.
+  const times = by('date').map(i => i.meta.mtime);
+  assert.deepEqual(times, [...times].sort((a, b) => a - b));
+
+  // Kinds gathered, and in one run each rather than interleaved.
+  const kinds = by('type').map(i => i.type);
+  assert.deepEqual(kinds, [...kinds].sort());
+
+  const names = by('name').map(i => i.name);
+  assert.deepEqual(names, [...names].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })));
+});
+
+test('a stored Desktop arrangement reads as the nearest Mobile order', () => {
+  // Every board saved before the two catalogues split carries one of Desktop's
+  // seven for Mobile as well - 'spiral' by default, since that was the fallback
+  // for both. Three of the seven mean something in a column and carry over;
+  // scatter keeps the half of itself that a column can show; and the three that
+  // are pure geometry become the default rather than silently doing nothing.
+  assert.equal(mobileArrangement('free'), 'free');
+  assert.equal(mobileArrangement('date'), 'date');
+  assert.equal(mobileArrangement('type'), 'type');
+  assert.equal(mobileArrangement('scatter'), 'shuffle');
+  for (const name of ['spiral', 'grid', 'masonry', '', undefined, 'nonsense']) {
+    assert.equal(mobileArrangement(name), MOBILE_DEFAULT, `${name} should fall back`);
+  }
+  // And the fallback is a real entry, not a name that only this function knows.
+  assert.ok(MOBILE_ARRANGEMENTS.some(a => a.id === MOBILE_DEFAULT));
+});
+
+test('the two catalogues share only the ids that mean the same thing', () => {
+  // `free`, `date` and `type` are deliberately the same string in both, so a
+  // board switched to Mobile and back keeps the setting it had. Anything else
+  // appearing in both would be an id that reads as carried over and is not.
+  const shared = MOBILE_ARRANGEMENTS
+    .map(a => a.id)
+    .filter(id => named.includes(id));
+  assert.deepEqual(shared.sort(), ['date', 'free', 'type']);
 });
 
 // ---------------------------------------------------------------------------

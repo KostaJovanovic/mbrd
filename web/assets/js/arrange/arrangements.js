@@ -36,6 +36,11 @@
 //
 // `free` is the one exception, and only because the positions it starts from
 // are yours: two cards you deliberately stacked stay stacked.
+//
+// All of the above is Desktop. A Mobile board is a packed column and keeps none
+// of these positions, so it has a second catalogue further down whose entries
+// are `(items, opts) => items` - an order rather than a shape. See
+// MOBILE_ARRANGEMENTS.
 
 import { cellInset } from '../geometry.js';
 
@@ -567,6 +572,117 @@ function dateOrder(items) {
       || named(a).localeCompare(named(b), undefined, { numeric: true })
       || a - b;
   });
+}
+
+// ---------------------------------------------------------------------------
+// Mobile: the same question, and a different answer
+// ---------------------------------------------------------------------------
+//
+// A Mobile board is a column a fixed number of grid spaces wide, packed
+// row-major by placeMobileItems() in state.js. Nothing above survives the trip:
+// the packer takes the sequence it is handed and fits it, so whatever a spiral
+// or a scatter or a set of grid rings computed is thrown away the moment it
+// arrives - the *only* thing a layout can still decide on a phone is which card
+// the packer meets first.
+//
+// That is what the Layout menu used to be offering, and it was offering it
+// seven times in words that promised shapes a column cannot make. Rearrange
+// under "Spiral", "Grid rings" and "Masonry" all produced the identical
+// column, because after the 2D positions were sorted top-to-bottom the three
+// orders were the same order.
+//
+// So a Mobile board picks an *order*, and the shape of one of these is
+// `(items, opts) => items`, not `=> [{x, y}]`. Two catalogues rather than one
+// list with half its rows hidden, because the two are answering different
+// questions and only the ids they happen to share can be carried between them.
+//
+// The ids are deliberately not all new: `free`, `date` and `type` mean on a
+// column what they mean on a board, so a board switched from Desktop to Mobile
+// and back keeps the setting it had. The three that could not be honoured are
+// mapped by mobileArrangement() rather than left to fall through to a default
+// nobody chose.
+
+/** What "Layout" offers on a Mobile board. */
+export const MOBILE_ARRANGEMENTS = [
+  // First, and the default a Mobile profile carries, because it is the one that
+  // uses the width: the packer is first-fit, so meeting the wide and tall cards
+  // while the column is still empty is what lets the small ones fill in beside
+  // each other instead of leaving a ragged hole per row.
+  { id: 'fit', label: 'Tight fit' },
+  // The reading order the column already has. The counterpart of Desktop's
+  // Free: the one entry that imposes nothing.
+  { id: 'free', label: 'As placed' },
+  { id: 'date', label: 'By date' },
+  { id: 'type', label: 'By kind' },
+  { id: 'name', label: 'By name' },
+  // Not "Random scatter": nothing is scattered, the column is as tight as it
+  // ever was and only the order in it is dealt again.
+  { id: 'shuffle', label: 'Shuffle' },
+];
+
+/** The order a Mobile profile is born with. */
+export const MOBILE_DEFAULT = 'fit';
+
+/**
+ * Any stored arrangement id, read as one a column can actually show.
+ *
+ * `free`, `date` and `type` carry over whole. `scatter` becomes `shuffle`,
+ * which is the half of it a column can keep. The three that are pure geometry -
+ * spiral, grid rings, masonry - have no order in them at all and become the
+ * default, which is also what an unknown id from a newer file gets.
+ */
+export function mobileArrangement(name) {
+  if (MOBILE_ARRANGEMENTS.some(a => a.id === name)) return name;
+  return name === 'scatter' ? 'shuffle' : MOBILE_DEFAULT;
+}
+
+/**
+ * Top-to-bottom, then left-to-right: the column as it currently reads.
+ *
+ * The fallback for everything, and the whole of `free`. Sorting is stable in
+ * every engine the browser floor covers, so items that have no positions yet -
+ * a fresh drop, where every draft is still at the origin - come back in the
+ * order they arrived rather than in an order this invented for them.
+ */
+const readingOrder = items =>
+  [...items].sort((a, b) => (b.y || 0) - (a.y || 0) || (a.x || 0) - (b.x || 0));
+
+/** Each order, as a comparator over the reading order beneath it. */
+const ORDERS = {
+  free: items => readingOrder(items),
+  // Tall first, then wide. Height is what leaves holes in a row-major pack -
+  // a card three cells deep walls off the two rows under it for anything that
+  // cannot fit beside it - so it is the side that decides.
+  fit: items => readingOrder(items).sort((a, b) => b.h - a.h || b.w - a.w),
+  // The same key Desktop's `date` lays out on, oldest first, undated last. A
+  // column is read downward, which is the direction that layout was already
+  // written in, so this is that layout with the page taken away.
+  date: items => dateOrder(items).map(i => items[i]),
+  // Alphabetical by type, so an unseeded run deals the kinds the same way
+  // twice - and inside a kind, the order the column already had.
+  type: items => readingOrder(items)
+    .sort((a, b) => (a.type || 'generic').localeCompare(b.type || 'generic')),
+  name: items => readingOrder(items)
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true })),
+  // Seedless, this is the order it was handed: a drop is reproducible, and
+  // Rearrange is the caller that passes a seed. Same bargain the layouts above
+  // make with variation().
+  shuffle: (items, o) => {
+    const rnd = variation(o);
+    return rnd ? shuffleWith([...items], rnd) : [...items];
+  },
+};
+
+/**
+ * The order the Mobile packer should meet a set of items in.
+ *
+ * Pure, and the same shape of promise the layouts make: a new array in the
+ * chosen order, the input untouched, and no seed means the same input gives the
+ * same output every time. placeMobileItems() in state.js does the rest.
+ */
+export function mobileOrder(items, opts = {}) {
+  const fn = ORDERS[mobileArrangement(opts.name)] || ORDERS[MOBILE_DEFAULT];
+  return items.length ? fn(items, opts) : [];
 }
 
 /**

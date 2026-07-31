@@ -891,6 +891,56 @@ test('Mobile placement packs a large batch into grid rows and columns', () => {
     'packing uses more than the centre column');
 });
 
+test('the Mobile gap widens the seam and nothing else', () => {
+  fresh();
+  setBoardMode('mobile');
+  const step = baseStep();
+  const batch = () => Array.from({ length: 12 }, (_, i) =>
+    photo({ id: `gap-${i}`, x: 0, y: 0, w: 100, h: 100 }));
+
+  // Zero is the default a Mobile profile is born with, and at zero the packer
+  // is the one that shipped before the setting existed.
+  assert.equal(board.settings.spacing, 0);
+  const tight = placeMobileItems(batch(), []);
+
+  const gap = 24;
+  setSetting('spacing', gap);
+  assert.equal(board.settings.spacing, gap, 'Mobile takes a gap now');
+  const loose = placeMobileItems(batch(), []);
+
+  // Still packed, still non-overlapping, and still on the lattice - the gap
+  // buys room around each card, it does not change what the packer is doing.
+  for (let i = 0; i < loose.length; i++) {
+    for (let j = i + 1; j < loose.length; j++) {
+      assert.ok(overlapFraction(loose[i], loose[j]) < 1e-12,
+        `${loose[i].id} overlaps ${loose[j].id}`);
+    }
+  }
+  // Each card claims more of the column, so the same twelve run further down
+  // it. Measured on the lowest edge, which is the only thing a reader of a
+  // phone board would notice.
+  const bottom = list => Math.min(...list.map(it => it.y - it.h / 2));
+  assert.ok(bottom(loose) < bottom(tight), 'a gap did not lengthen the column');
+
+  // And every neighbour in a row is at least the gap apart, seam included.
+  const rows = new Map();
+  for (const it of loose) {
+    const key = it.y.toFixed(6);
+    (rows.get(key) || rows.set(key, []).get(key)).push(it);
+  }
+  for (const row of rows.values()) {
+    row.sort((a, b) => a.x - b.x);
+    for (let i = 1; i < row.length; i++) {
+      const between = (row[i].x - row[i].w / 2) - (row[i - 1].x + row[i - 1].w / 2);
+      assert.ok(between >= gap - 1e-9,
+        `${row[i - 1].id} and ${row[i].id} are ${between.toFixed(2)} apart, under the ${gap} asked for`);
+    }
+  }
+
+  setSetting('spacing', 0);
+  assert.equal(step, baseStep());
+});
+
 test('Mobile rearrangement preserves visible sizes and stays inside cell seams', () => {
   fresh();
   setBoardMode('mobile');
@@ -1042,11 +1092,13 @@ test('content is shared between both layouts, settings are not', () => {
   assert.equal(byId('shared').name, 'after');
   assert.equal(byId('shared').meta.text, 'same note');
 
-  // Desktop spacing is private. Mobile has no spacing control and always packs
-  // edge-to-edge - see docs/layout-settings.md.
+  // Spacing is layout-local, so each of the two keeps the gap it was given and
+  // neither can see the other's - see docs/layout-settings.md. Mobile starts at
+  // zero rather than at Desktop's 12, which is what every board saved before it
+  // had a gap of its own actually looked like.
   assert.equal(board.settings.spacing, 12, 'Desktop keeps its own spacing');
   setBoardMode('mobile');
-  assert.equal(board.settings.spacing, 0, 'Mobile refuses a spacing value');
+  assert.equal(board.settings.spacing, 36, 'Mobile keeps the gap it was given');
 });
 
 test('The board name style is board-wide, editable from either layout, and round-trips', () => {

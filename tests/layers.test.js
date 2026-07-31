@@ -129,6 +129,11 @@ const BASE = new Set([
   // them and ui/quality.js writes them, and a setting canvas has to import
   // cannot sit in ui/ without inverting the whole graph.
   'quality.js',
+  // The arrangement catalogue, which CLAUDE.md already names among the pure
+  // modules at the bottom: no DOM, no state import, geometry.js and nothing
+  // else. state.js reads mobileArrangement() from it to know which of the two
+  // catalogues a stored id belongs to, and that read is downward.
+  'arrange/arrangements.js',
 ]);
 
 /**

@@ -149,7 +149,10 @@ test('Desktop and Mobile retain independent settings and local appearance', () =
   assert.deepEqual(board.settings.fonts, [
     { family: 'Desktop Face', hash: desktopFontHash },
   ]);
-  assert.equal(board.arrangement, 'spiral');
+  // Mobile reads its stored id through its own catalogue: 'spiral' is a shape a
+  // column cannot make, and 'fit' is the order nearest to it. See
+  // MOBILE_ARRANGEMENTS in arrange/arrangements.js.
+  assert.equal(board.arrangement, 'fit');
   assert.equal(board.settings.appearance.whimsy, 2);
   assert.equal(board.settings.appearance.palette, 'photo');
   assert.equal(board.settings.appearance.auto, false);
@@ -168,11 +171,15 @@ test('Desktop and Mobile retain independent settings and local appearance', () =
 
   setSetting('gridStep', 48);
   setSetting('mobileColumns', 8);
+  // Mobile's own gap, kept apart from Desktop's like every other layout-local
+  // setting. It starts at zero - a column packed tight is what every board
+  // written before this looked like - and it is not refused, which is the half
+  // of the old rule that was wrong: paper needs a page, a gap needs nothing.
   setSetting('spacing', 20);
-  assert.equal(board.settings.spacing, 0, 'Mobile has no configurable gap');
+  assert.equal(board.settings.spacing, 20, 'Mobile has a gap of its own');
   setSetting('hud', false);
   setSetting('fonts', [{ family: 'Mobile Face', hash: mobileFontHash }]);
-  setArrangement('masonry');
+  setArrangement('type');
   setAppearance({
     ...board.settings.appearance,
     vars: {
@@ -202,11 +209,11 @@ test('Desktop and Mobile retain independent settings and local appearance', () =
   setBoardMode('mobile');
   assert.equal(board.settings.gridStep, 48);
   assert.equal(board.settings.mobileColumns, 8);
-  assert.equal(board.settings.spacing, 0);
+  assert.equal(board.settings.spacing, 20);
   assert.deepEqual(board.settings.fonts, [
     { family: 'Mobile Face', hash: mobileFontHash },
   ]);
-  assert.equal(board.arrangement, 'masonry');
+  assert.equal(board.arrangement, 'type');
   assert.equal(board.settings.appearance.vars['--paper'], '#f4efe5');
   assert.equal(board.settings.appearance.vars['--radius'], '5px');
   assert.equal(board.settings.appearance.vars['--font-body'], 'Mobile Face');
@@ -219,8 +226,8 @@ test('layout settings round-trip in the responsive .mbrd schema', () => {
   assert.equal(saved.layouts.desktop.arrangement, 'grid');
   assert.equal(saved.layouts.mobile.settings.gridStep, 48);
   assert.equal(saved.layouts.mobile.settings.mobileColumns, 8);
-  assert.equal(saved.layouts.mobile.settings.spacing, 0);
-  assert.equal(saved.layouts.mobile.arrangement, 'masonry');
+  assert.equal(saved.layouts.mobile.settings.spacing, 20);
+  assert.equal(saved.layouts.mobile.arrangement, 'type');
   assert.equal(saved.layouts.desktop.settings.appearance.vars['--radius'], '14px');
   assert.equal(saved.layouts.mobile.settings.appearance.vars['--radius'], '5px');
   assert.equal(saved.settings.gridStep, 80);

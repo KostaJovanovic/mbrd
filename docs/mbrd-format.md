@@ -178,10 +178,20 @@ carries `x`, `y`, `w`, `h`, `rot`, `z`, plus an optional layout-specific
 `presnap`. Mobile is a vertical board either 6 or 8 grid spaces wide, selected
 by its layout-specific `settings.mobileColumns` value; missing or invalid
 values fall back to 6. Its upper edge is `y = 6 × settings.gridStep`; it is at
-least 25 grid spaces tall and extends to 15 spaces below its lowest item. Mobile
-arrangements have no configurable spacing: fitted items occupy rectangular
-spans in the selected grid, fill rows from left to right where they fit, and use
-the grid's normal inset seam. The same packing resolves import collisions. The
+least 25 grid spaces tall and extends to 15 spaces below its lowest item. Fitted
+items occupy rectangular spans in the selected grid, fill rows from left to
+right where they fit, and use the grid's normal inset seam widened by the Mobile
+profile's own `settings.spacing`, which defaults to `0`. A file with no Mobile
+settings record of its own is read at `0` rather than inheriting the top-level
+(Desktop) value. The same packing resolves import collisions.
+
+`layouts.mobile.arrangement` names an **order**, not a shape: the column is
+always packed the same way, so the arrangement decides only the sequence the
+packer meets items in. The values are `fit`, `free`, `date`, `type`, `name` and
+`shuffle`; `free`, `date` and `type` are the same ids the Desktop catalogue
+uses. Any other value — including the Desktop shapes an older file stored here —
+is read as the nearest order (`scatter` → `shuffle`, everything else → `fit`)
+and is not rewritten on load. The
 Mobile viewport leaves a small gutter outside the side edges and suppresses the
 world axes, origin marker, and relationship web. Those are presentation rules,
 not saved settings.

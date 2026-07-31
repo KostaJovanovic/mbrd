@@ -33,7 +33,7 @@ import { initGhosts } from './canvas/ghosts.js';
 import { initStills } from './canvas/stills.js';
 import { initInput } from './canvas/input.js';
 import { initDrop, pickFiles, pickCover, addNote } from './import/drop.js';
-import { arrange } from './arrange/arrangements.js';
+import { arrange, mobileOrder } from './arrange/arrangements.js';
 import { defaultSize, measureSize } from './canvas/renderers.js';
 import {
   initStorage, restoreSession, saveBoard, exportBoard, openBoard, newBoard, openFile, autosave,
@@ -1624,35 +1624,41 @@ function rearrange(items) {
     ? free.map(it => { const b = latticeBox(it, step); return { w: b.w, h: b.h }; })
     : null;
   const laid = order.map(i => (sized ? { ...free[i], ...sized[i] } : free[i]));
+  const seed = (Math.random() * 0xffffffff) >>> 0;
 
-  const spots = arrange(laid, {
-    name: board.arrangement,
-    center: at,
-    spacing: mobile ? 0 : board.settings.spacing,
-    // Snapping reserves whole cells so the per-item lattice snap below cannot
-    // round two tight cards into an overlap - see arrange()/toCells.
-    cellStep: snapDesktop ? step : 0,
-    seed: (Math.random() * 0xffffffff) >>> 0,
-  });
-  let placed = laid.map((item, slot) => ({
-    ...item,
-    x: spots[slot].x,
-    y: spots[slot].y,
-  }));
+  let placed;
   if (mobile) {
+    // A column has no slots to deal, so none of the above applies: the packer
+    // decides where every card goes and the arrangement decides only what order
+    // it meets them in. `free` rather than `laid`, and that is the point of the
+    // fork - the shuffle above exists to re-deal a set of 2D slots, and dealt
+    // into a Mobile order it would scramble the very sequence the order just
+    // chose. See MOBILE_ARRANGEMENTS in arrange/arrangements.js.
+    placed = mobileOrder(free, { name: board.arrangement, seed });
     const moving = new Set(free.map(item => item.id));
     // Riders are not obstacles - they overlap their host and would wall it off.
     const obstacles = whole ? [] : board.items.filter(item =>
       !moving.has(item.id) && !isRider(item));
-    // The chosen arrangement still decides reading order on a narrow board:
-    // turn its slots into top-to-bottom, then left-to-right order before the
-    // Mobile packer fits that sequence into the selected-width lattice.
-    placed.sort((a, b) => b.y - a.y || a.x - b.x || a.id.localeCompare(b.id));
     // Rearrangement changes order and position, not the sizes already visible
     // on this layout. In particular, do not rebuild them from meta.presnap:
     // that is the geometry to restore when snapping is disabled, not a sizing
     // source for every later press of Rearrange.
     placed = placeMobileItems(placed, obstacles, { preserveSize: true });
+  } else {
+    const spots = arrange(laid, {
+      name: board.arrangement,
+      center: at,
+      spacing: board.settings.spacing,
+      // Snapping reserves whole cells so the per-item lattice snap below cannot
+      // round two tight cards into an overlap - see arrange()/toCells.
+      cellStep: snapDesktop ? step : 0,
+      seed,
+    });
+    placed = laid.map((item, slot) => ({
+      ...item,
+      x: spots[slot].x,
+      y: spots[slot].y,
+    }));
   }
   // spots came back in shuffled order, so each one goes to the item that was
   // in that slot, not to the item at the same index in board.items.

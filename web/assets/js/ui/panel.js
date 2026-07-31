@@ -15,7 +15,7 @@
 //
 //   Absence, not disabling. A control that does not apply to the current layout
 //   is hidden, and a section with nothing left to show goes with it - otherwise
-//   Mobile grows an empty "Real size" heading over a rule.
+//   Mobile grows an empty "Board & grid" heading over a rule.
 //
 //   The ids are the contract. Every id here is the id that was in index.html,
 //   because three other modules and a handful of tests reach for them.
@@ -286,18 +286,38 @@ function buildSelect(c) {
   head.textContent = c.label;
   const select = make('select');
   select.id = c.id;
-  for (const o of c.options?.() || []) {
-    const opt = make('option');
-    opt.value = o.value;
-    opt.textContent = o.label;
-    select.append(opt);
-  }
+  fillSelect(c, select, ctx());
   label.append(head, select);
   if (!c.external && c.set) {
     select.addEventListener('change', () => c.set(select.value));
   }
   register(c, label, select, null);
   return label;
+}
+
+/**
+ * Fill a select from the table, and answer whether anything changed.
+ *
+ * The panel is built once and never rebuilt, so a list that depends on the
+ * layout - Layout itself, whose two catalogues have no ids in common past three
+ * of them - has to be refilled rather than rebuilt. Compared before it is
+ * written, so the ordinary case (Units, Paper outline, the quality steps: lists
+ * that never move) costs one join and no DOM at all, and so that a select the
+ * user has open is not emptied under the pointer for no reason.
+ */
+function fillSelect(c, select, ctxValue) {
+  const want = c.options?.(ctxValue) || [];
+  const key = JSON.stringify(want.map(o => [o.value, o.label]));
+  if (select.dataset.opts === key) return false;
+  select.dataset.opts = key;
+  select.replaceChildren();
+  for (const o of want) {
+    const opt = make('option');
+    opt.value = o.value;
+    opt.textContent = o.label;
+    select.append(opt);
+  }
+  return true;
 }
 
 /**
@@ -426,6 +446,10 @@ function paintControl({ c: spec, wrap, input, out, nodes }, c) {
   // Never into a control that is being used: a select being reassigned while
   // its list is open, or a range mid-drag, both fight the hand on them.
   if (document.activeElement === input) return;
+  // The list before the value, so that a select whose options depend on the
+  // layout has somewhere to put the value it is about to be given. Refilling
+  // clears the selection, which is why this cannot happen the other way round.
+  if (spec.type === 'select') fillSelect(spec, input, c);
   const value = spec.get();
   if (spec.type === 'check') input.checked = !!value;
   else if (spec.type === 'range') { input.value = value; writeOut(spec, input, out); }
