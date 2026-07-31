@@ -1,5 +1,73 @@
 # Scalability, efficiency & readability audit — 2026-07-27
 
+## Status, 2026-07-31 — seven of the eight leverage items closed
+
+Checked against the code rather than against the last status note, which had
+drifted in both directions. Against the **prioritized fix list** at the foot of
+this document:
+
+1. **`Map<id,item>` index — built.** `byId()` is O(1) off a lazily rebuilt index
+   dropped on the `items` event (`state.js`). This was the highest-leverage item
+   in the codebase and it retired most of the O(n²) callers with it.
+2. **Delta payloads — built.** `items` carries `{ added, removed }` at ten of its
+   eleven emit sites (the eleventh is `loadBoard`, where "everything changed" has
+   no delta and the diff fallback is correct), `geom` carries its ids, and the
+   listeners consume them: `canvas/items.js` reconciles and reindexes by delta,
+   and the note re-grow at `main.js` grows only the arrivals.
+3. **Decouple restack from cull — built.** `syncView()` passes `restack: false`,
+   so looking around no longer recomputes an order that cannot have changed. The
+   detach half is now throttled during motion as well (the perf plan's B1).
+4. **Stop repacking Mobile in `serializeBoard`; batch the IDB traffic** —
+   half built, half **withdrawn**. The batching is done: `idb.js` grows
+   `idbGetMany`/`idbSetMany`/`idbDelMany`, the autosave sweep writes and prunes
+   in one transaction each, and the restore reads in chunks of 32 rather than
+   one transaction per asset. The repack half is withdrawn because its premise is
+   false — `AUTOSAVE_MS` is 20000 and the tick is gated on the dirty flag, not
+   "~1/s", `serializeBoard()` has exactly two callers, and `completeLayout()`
+   writes geometry back for every item on its first pass, so `placeMobileItems`
+   is paid once per new item rather than once per save.
+5. **Stream ZIP entries — built.** `writeZip()` takes a Blob as readily as bytes;
+   the CRC is streamed, the deflate goes Blob to Blob, and `parts[]` holds a
+   reference because `new Blob([...])` composes rather than copies. `packBoard`
+   passes `asset.blob` straight through and the export pipes it to the writable.
+   Peak went from archive-plus-twice-total to a chunk and a header.
+6. **Debounce `appearance.js persist()` — built.** The synchronous
+   `localStorage` write is throttled to five a second on the `setVar` path
+   alone, with a trailing write and a flush on `pagehide`/hidden.
+7. **Split `state.js` — started, not finished.** `board-store.js` (bus,
+   selection, dirty flag) and `history.js` (the undo/redo engine) are lifted out
+   and re-exported, and `tests/layers.test.js` declares both BASE so neither can
+   import state back. That was the load-bearing step — no other concern could
+   move while the things they all reach for lived in the file being split. The
+   file is 3202 → 3137 lines and the remaining seams, in the order they should
+   go: **move `board`, `byId` and the defaults down**, then sticky relations
+   (~205), snapping (~285), the clipboard (~160), selection (~27), and the item
+   CRUD the rest sit on. `web-graph.js` and the working-cache split are untouched.
+8. **Cache the index for stacking and stickiness; add a DOM helper** — both
+   built. §1.4's O(n²) first render is gone: `loadBoard` seeds the `sticks` memo
+   from each note's durable `meta.stuckTo` rather than measuring, so only a note
+   from an older file falls through to `measureStick`. `ui/controls.js` now holds
+   `field()` and `fieldStops()`, and the four hand-built control rows in
+   `ui/panel.js`, `ui/appearance.js` and `ui/mobile-header.js` use them. The
+   font-option half of that finding is **withdrawn**: there are two such sites
+   rather than three (`fonts.js customFaces()` returns option data and builds no
+   select), they read different fields off different shapes, and a helper would
+   save four lines apiece while hiding the difference.
+
+**Still open**, none of it on the leverage list: the rest of item 7, and the
+medium/low findings in §1.6 (`selectionHasStackOverlap`, the arrangement
+packers, `ui/search.js`), §1.7 (history bounded by count and not by bytes — now
+documented at `HISTORY_LIMIT` in `history.js`), §2.2–2.7 (the structural
+extractions), the remaining efficiency notes in Part 3, and the Part 4
+cleanups. This document stays in `research/` for those.
+
+**Not verified in a browser.** Item 8's control-row conversion changes DOM that
+`tests/settings-panel.test.js` says outright it does not cover, and the perf
+work in items 3 and 4 is canvas and storage. The sidebar, the Look tab, the
+Mobile masthead, save/open and refresh recovery want a look.
+
+---
+
 Companion to the 2026-07-26 correctness/security and Tauri-readiness audits.
 Those covered *is it correct and safe*; this one covers *how well does it grow,
 how hard is it to change, and how fast does it run*. Security findings are out
