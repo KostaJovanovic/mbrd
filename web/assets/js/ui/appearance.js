@@ -181,6 +181,15 @@ let onChange = () => {};
 export function initAppearance(handlers = {}) {
   onChange = handlers.onChange || (() => {});
 
+  // The other half of the throttled preference write - see storeLook(). pagehide
+  // rather than beforeunload, which iOS Safari does not reliably fire, and
+  // visibilitychange as well, because a tab discarded in the background never
+  // gets either of the unload events.
+  addEventListener('pagehide', flushLook);
+  addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushLook();
+  });
+
   const stored = readStored();
   // A board's own look wins when it brought one; otherwise fall back to the
   // user's saved preferences.
@@ -826,8 +835,53 @@ function paintThemeColour() {
   if (paper) themeColour.setAttribute('content', paper);
 }
 
-function persist() {
-  writePref(STORE_KEY, JSON.stringify(current));
+/**
+ * How long the stored copy of the look may lag behind the live one.
+ *
+ * Long enough that a drag writes about five times a second instead of sixty,
+ * short enough that nothing a person could do between two writes loses
+ * anything: the pending write reads `current` when it fires, not when it was
+ * scheduled, so the value that lands is always the latest one.
+ */
+const PREF_MS = 200;
+let prefTimer = 0;
+
+/**
+ * Mirror the look into the user's preferences.
+ *
+ * `soon` is for setVar(), and setVar() alone. localStorage is synchronous I/O -
+ * the write blocks the thread and, in some engines, reaches the disk - and
+ * setVar runs on every frame of a colour drag, where it was doing a
+ * JSON.stringify of the whole look and a blocking write per pointermove. The
+ * picture does not need it: the colour on screen comes from the inline
+ * properties setVar has already written, and the board's own copy still goes
+ * through setAppearance() below on every frame. Only the preference lags, and
+ * only by a fifth of a second.
+ *
+ * A throttle with a trailing write rather than a plain debounce, so a drag that
+ * never pauses still saves as it goes - a tab closed mid-gesture keeps the
+ * colour it was showing a moment ago rather than the one it started from.
+ */
+function storeLook(soon) {
+  if (!soon) {
+    if (prefTimer) { clearTimeout(prefTimer); prefTimer = 0; }
+    writePref(STORE_KEY, JSON.stringify(current));
+    return;
+  }
+  if (prefTimer) return;
+  prefTimer = setTimeout(() => {
+    prefTimer = 0;
+    writePref(STORE_KEY, JSON.stringify(current));
+  }, PREF_MS);
+}
+
+/** Write a pending preference now. The tab is going away. */
+function flushLook() {
+  if (prefTimer) storeLook(false);
+}
+
+function persist({ soon = false } = {}) {
+  storeLook(soon);
   setAppearance(clone(current));
   onChange();
 }
@@ -883,7 +937,7 @@ function setVar(name, value) {
   // the only control whose value changed is the one under the pointer. Nothing
   // else in the panel reads a pigment.
   if (sheet) paintThemeColour();
-  persist();
+  persist({ soon: true });
 }
 
 function readStored() {
