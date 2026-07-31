@@ -34,9 +34,8 @@ this document:
 6. **Debounce `appearance.js persist()` — built.** The synchronous
    `localStorage` write is throttled to five a second on the `setVar` path
    alone, with a trailing write and a flush on `pagehide`/hidden.
-7. **Split `state.js` — four modules out, blocked on the fifth.**
-   **3202 → 2514 lines**, a 21% reduction, in four steps each verified by the
-   full suite:
+7. **Split `state.js` — built. 3202 → 1806 lines, down 44%**, into six modules,
+   each step verified by the full suite:
 
    | module | holds | lines |
    |---|---|---|
@@ -44,30 +43,30 @@ this document:
    | `board-model.js` | the board's shape, defaults, `byId`, `makeItem` | 450 |
    | `history.js` | the undo/redo engine | 91 |
    | `sticky.js` | which note is stuck to what, and what travels | 260 |
+   | `layout.js` | the Mobile pack, both geometry profiles, the geometry writes | 644 |
+   | `stacking.js` | z-order, and what moves as one when it changes | 154 |
 
-   The order was forced: nothing could move while the things every concern
-   reaches for — the bus, then the board itself — lived in the file being split,
-   which is why `board-store.js` and then `board-model.js` came first and why
-   `sticky.js` could only follow them. Everything is re-exported from `state.js`
-   under its old name, so **no caller changed**. `tests/layers.test.js` declares
-   all four BASE, which is the load-bearing part: none may import `state.js`
-   back, since a concern lifted out can only stay out if what it stands on is
-   lower than what it left.
+   The order was forced rather than chosen: nothing could move while the things
+   every concern reaches for lived in the file being split, so the bus went
+   first, then the board itself, and each later module could only follow what it
+   stands on. Everything is re-exported from `state.js` under its old name, so
+   **no caller changed**, and `tests/layers.test.js` declares all six BASE —
+   none may import `state.js` back, which is the property that keeps them out.
 
-   **What blocks the rest, precisely.** The remaining seams — stacking
-   (`stackOrder`, `visualStackOrder`, `stackGroups`, `raiseSelection`,
-   `selectionHasStackOverlap`), snapping, the clipboard, and selection — all
-   call into the item CRUD and the geometry-write helpers (`applyGeom`,
-   `snapshotGeom`, `commitGeom`, `writeLayout`, `fitBoardMode`, `addItems`,
-   `removeItems`, `itemsIn`, `cloneItem`). Moving any of them out today would
-   make it import `state.js` and close a cycle. So the next step is not another
-   leaf: it is **moving the item CRUD and the three near-identical geometry
-   write-loops down** (Part 3 already flags those three as wanting one helper —
-   the two jobs are the same job). That is ~1000 lines of the app's core
-   mutation logic and wants its own session and a browser pass, which is why it
-   stopped here rather than half-way through.
+   **One correction to this document.** §2.1 lists "mobile grid packing" and
+   "layout/settings profiles" as two of the ten responsibilities. They are one:
+   `placeMobileItems()` calls `completeLayout()`'s `fitMobile`, and
+   `completeLayout()` calls `placeMobileItems()`. Splitting them as listed would
+   have produced two modules importing each other, so `layout.js` holds both.
 
-   Also untouched: `web-graph.js` (§2.2) and the working-cache split (§2.5).
+   **What is left in `state.js`** is a coherent module rather than a remainder:
+   item CRUD, the title card, the ghost cards, the trash, snapping, the
+   clipboard, item-content mutations, selection, settings, and load/serialize.
+   Splitting further is optional, not blocked — the natural next cuts are the
+   ghost cards (~250, self-contained onboarding) and the clipboard (~160).
+
+   Still untouched, and both still worth doing: `web-graph.js` (§2.2) and the
+   working-cache split out of `storage.js` (§2.5).
 8. **Cache the index for stacking and stickiness; add a DOM helper** — both
    built. §1.4's O(n²) first render is gone: `loadBoard` seeds the `sticks` memo
    from each note's durable `meta.stuckTo` rather than measuring, so only a note
