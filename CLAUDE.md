@@ -38,13 +38,21 @@ under `import/` or `ui/`.
 The bottom of the graph is wider than `util`/`geometry`: `measure.js`,
 `mesh.js`, `arrange/arrangements.js`, `import/budget.js` and `canvas/spatial.js`
 are all pure — no DOM, no `state` import — and are meant to stay that way.
-`board-store.js` and `history.js` sit down there too, and for a different
-reason: they are the floor `state.js` is being split onto. The first holds the
-`bus`, the `selection` and the dirty flag; the second the undo/redo engine over
-them. Both are re-exported by `state.js` under their old names, so nothing
-imports them directly yet — and neither may ever import `state.js` back, since a
-concern lifted out of that file can only stay out if what it stands on is lower
-than what it left. `tests/layers.test.js` lists both as BASE.
+Four more sit down there for a different reason: they are the floor `state.js`
+is being split onto. `board-store.js` holds the `bus`, the `selection` and the
+dirty flag; `board-model.js` the board's shape, its defaults and the `byId`
+index; `history.js` the undo/redo engine; `sticky.js` which note is stuck to
+what. All four are re-exported by `state.js` under their old names, so nothing
+imports them directly and no caller knows they exist — and none may ever import
+`state.js` back, since a concern lifted out of that file can only stay out if
+what it stands on is lower than what it left. `tests/layers.test.js` lists all
+four as BASE, which is what enforces that.
+
+The split is unfinished and the reason is worth knowing before continuing: the
+seams that are left — stacking, snapping, the clipboard, selection — all call
+into the item CRUD and the geometry-write helpers, so each would import
+`state.js` and close a cycle. The next step is moving *those* down, not another
+leaf. See the audit's status header in `research/`.
 `mesh.js` sits at the top level rather than under `canvas/` for exactly that
 reason: it is struct reading, and only `canvas/model.js` turns its output into
 pixels.

@@ -34,15 +34,40 @@ this document:
 6. **Debounce `appearance.js persist()` — built.** The synchronous
    `localStorage` write is throttled to five a second on the `setVar` path
    alone, with a trailing write and a flush on `pagehide`/hidden.
-7. **Split `state.js` — started, not finished.** `board-store.js` (bus,
-   selection, dirty flag) and `history.js` (the undo/redo engine) are lifted out
-   and re-exported, and `tests/layers.test.js` declares both BASE so neither can
-   import state back. That was the load-bearing step — no other concern could
-   move while the things they all reach for lived in the file being split. The
-   file is 3202 → 3137 lines and the remaining seams, in the order they should
-   go: **move `board`, `byId` and the defaults down**, then sticky relations
-   (~205), snapping (~285), the clipboard (~160), selection (~27), and the item
-   CRUD the rest sit on. `web-graph.js` and the working-cache split are untouched.
+7. **Split `state.js` — four modules out, blocked on the fifth.**
+   **3202 → 2514 lines**, a 21% reduction, in four steps each verified by the
+   full suite:
+
+   | module | holds | lines |
+   |---|---|---|
+   | `board-store.js` | the bus, the selection, the dirty flag | 80 |
+   | `board-model.js` | the board's shape, defaults, `byId`, `makeItem` | 450 |
+   | `history.js` | the undo/redo engine | 91 |
+   | `sticky.js` | which note is stuck to what, and what travels | 260 |
+
+   The order was forced: nothing could move while the things every concern
+   reaches for — the bus, then the board itself — lived in the file being split,
+   which is why `board-store.js` and then `board-model.js` came first and why
+   `sticky.js` could only follow them. Everything is re-exported from `state.js`
+   under its old name, so **no caller changed**. `tests/layers.test.js` declares
+   all four BASE, which is the load-bearing part: none may import `state.js`
+   back, since a concern lifted out can only stay out if what it stands on is
+   lower than what it left.
+
+   **What blocks the rest, precisely.** The remaining seams — stacking
+   (`stackOrder`, `visualStackOrder`, `stackGroups`, `raiseSelection`,
+   `selectionHasStackOverlap`), snapping, the clipboard, and selection — all
+   call into the item CRUD and the geometry-write helpers (`applyGeom`,
+   `snapshotGeom`, `commitGeom`, `writeLayout`, `fitBoardMode`, `addItems`,
+   `removeItems`, `itemsIn`, `cloneItem`). Moving any of them out today would
+   make it import `state.js` and close a cycle. So the next step is not another
+   leaf: it is **moving the item CRUD and the three near-identical geometry
+   write-loops down** (Part 3 already flags those three as wanting one helper —
+   the two jobs are the same job). That is ~1000 lines of the app's core
+   mutation logic and wants its own session and a browser pass, which is why it
+   stopped here rather than half-way through.
+
+   Also untouched: `web-graph.js` (§2.2) and the working-cache split (§2.5).
 8. **Cache the index for stacking and stickiness; add a DOM helper** — both
    built. §1.4's O(n²) first render is gone: `loadBoard` seeds the `sticks` memo
    from each note's durable `meta.stuckTo` rather than measuring, so only a note
