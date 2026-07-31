@@ -31,8 +31,19 @@ import { splitAppearance, mergeAppearance } from './layout-settings.js';
 // the one thing state needs from it, which of the two lists a stored
 // arrangement id belongs to. See tests/layers.test.js, where it is BASE.
 import { mobileArrangement } from './arrange/arrangements.js';
+// The floor this file stands on. Both were declared here until state.js was
+// split; they are re-exported below under exactly their old names, because
+// "state.js is the only door" is a rule about where mutations go and not about
+// which file a symbol happens to be declared in. See board-store.js.
+import { bus, selection, isDirty, markDirty, resetDirty } from './board-store.js';
+import {
+  commit, undo, redo, historyState, clearHistory,
+} from './history.js';
 
-export const bus = emitter();
+export { bus, selection, isDirty, markDirty };
+export { commit, undo, redo, historyState };
+
+
 
 // The filename an asset first arrived under lives in the asset registry, which
 // sits *above* state in the layering - storage depends on state, not the other
@@ -305,15 +316,6 @@ export const board = {
  */
 export const TITLE_ID = '__title__';
 
-export const selection = new Set();
-
-let dirty = false;
-export const isDirty = () => dirty;
-export function markDirty(v = true) {
-  if (dirty === v) return;
-  dirty = v;
-  bus.emit('board');
-}
 
 /**
  * id -> item, an index beside board.items rather than a replacement for it.
@@ -475,73 +477,6 @@ function normalizeAsset(asset) {
   if (!asset || typeof asset !== 'object') return null;
   if (isHash(asset.hash)) return asset;
   return asset.external ? { external: asset.external } : null;
-}
-
-// ---------------------------------------------------------------------------
-// History
-// ---------------------------------------------------------------------------
-
-const undoStack = [];
-const redoStack = [];
-const HISTORY_LIMIT = 200;
-
-/**
- * What each half of the history would do next, by name, or null for nothing.
- *
- * The labels are the ones commit() was given - "Add 3 items", "Nudge",
- * "Optimize" - so a control built on this can say what it is about to take
- * back rather than only whether it can.
- */
-export const historyState = () => ({
-  undo: undoStack.at(-1)?.label || null,
-  redo: redoStack.at(-1)?.label || null,
-});
-
-/**
- * The stacks changed.
- *
- * Its own event rather than something riding on 'board', and it has to be:
- * markDirty() only emits when dirtiness *changes*, so on an already-dirty board
- * - which is every board after the first edit - it goes quiet, and anything
- * watching for history through it would light up once and then never move
- * again.
- */
-const historyChanged = () => bus.emit('history');
-
-/** Run `redo` now and remember how to reverse it. */
-export function commit(label, redo, undo) {
-  redo();
-  undoStack.push({ label, redo, undo });
-  if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
-  redoStack.length = 0;
-  markDirty();
-  historyChanged();
-}
-
-export function undo() {
-  const cmd = undoStack.pop();
-  if (!cmd) return false;
-  cmd.undo();
-  redoStack.push(cmd);
-  markDirty();
-  historyChanged();
-  return true;
-}
-
-export function redo() {
-  const cmd = redoStack.pop();
-  if (!cmd) return false;
-  cmd.redo();
-  undoStack.push(cmd);
-  markDirty();
-  historyChanged();
-  return true;
-}
-
-function clearHistory() {
-  undoStack.length = 0;
-  redoStack.length = 0;
-  historyChanged();
 }
 
 // ---------------------------------------------------------------------------
@@ -2857,7 +2792,7 @@ export function loadBoard(data) {
   clipboard.items = [];
   clipboard.text = '';
   clipboard.pastes = 0;
-  dirty = false;
+  resetDirty();
   // 'board:load' is the "everything was replaced" signal - distinct from
   // 'board', which also fires for a title change or a dirty-flag flip and so
   // must never be treated as a reason to reset the view.

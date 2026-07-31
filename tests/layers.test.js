@@ -134,6 +134,13 @@ const BASE = new Set([
   // else. state.js reads mobileArrangement() from it to know which of the two
   // catalogues a stored id belongs to, and that read is downward.
   'arrange/arrangements.js',
+  // The two pieces lifted out from under state.js. board-store.js holds the
+  // bus, the selection and the dirty flag; history.js holds the undo/redo
+  // engine over them. Both are below state by construction and neither may ever
+  // import it - that is the whole reason they are separate files, since a
+  // concern lifted out of state.js can only stay out if what it stands on is
+  // lower than what it left.
+  'board-store.js', 'history.js',
 ]);
 
 /**
