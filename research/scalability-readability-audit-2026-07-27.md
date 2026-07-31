@@ -1,6 +1,6 @@
 # Scalability, efficiency & readability audit — 2026-07-27
 
-## Status, 2026-07-31 — seven of the eight leverage items closed
+## Status, 2026-07-31 — all eight leverage items closed
 
 Checked against the code rather than against the last status note, which had
 drifted in both directions. Against the **prioritized fix list** at the foot of
@@ -78,12 +78,29 @@ this document:
    select), they read different fields off different shapes, and a helper would
    save four lines apiece while hiding the difference.
 
-**Still open**, none of it on the leverage list: the rest of item 7, and the
-medium/low findings in §1.6 (`selectionHasStackOverlap`, the arrangement
-packers, `ui/search.js`), §1.7 (history bounded by count and not by bytes — now
-documented at `HISTORY_LIMIT` in `history.js`), §2.2–2.7 (the structural
-extractions), the remaining efficiency notes in Part 3, and the Part 4
-cleanups. This document stays in `research/` for those.
+Beyond the leverage list, two more findings closed in the same round:
+
+- **§2.2, `canvas/web.js` hides an algorithm module — built.** `web-graph.js`
+  is the graph and its governor, at the top level beside `geometry.js` and
+  `mesh.js` because it is pure arithmetic over points. `canvas/web.js`:
+  1028 → 513 lines, and it keeps only the drawing. `tests/web.test.js` now
+  imports the four graph exports from the graph module rather than from the
+  renderer, which was the point — that file never needed the drawing half.
+- **§1.7, history bounded by count and not by size — built.** `commit()` takes
+  an optional `weight`, the number of items the undo pair retains. Almost every
+  command leaves it at 1 and the count cap governs it as before; the three that
+  retain a board declare it (`commitGeom`, `addItems`, `removeItems`) and the
+  stack evicts on the total as well. Never down to nothing — a command heavier
+  than the whole budget is the one a user most wants back.
+
+**Still open**: §1.6 (`selectionHasStackOverlap` is still an O(n²) pairwise
+polygon test exposed as a live context-menu command; the arrangement packers;
+`ui/search.js` re-scanning per keystroke), §2.3–§2.7 (the UI reaching straight
+into `state`/`canvas`/`storage`; the two sources of truth for "the look";
+`main.js`'s fifteen UI concerns and the working-cache split out of
+`storage.js`; the global singletons and untyped bus; `input.js`'s ten gesture
+globals), the remaining efficiency notes in Part 3, and the Part 4 cleanups.
+This document stays in `research/` for those.
 
 **Not verified in a browser.** Item 8's control-row conversion changes DOM that
 `tests/settings-panel.test.js` says outright it does not cover, and the perf
