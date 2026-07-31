@@ -1,5 +1,22 @@
 # Full Repository Bug Audit — 2026-07-31
 
+Status: **all six closed**, 2026-07-31 (`03c3b11`, and the reset before it).
+
+- **P0, the unresolved merge.** Not resolved hunk by hunk: `MERGE_HEAD` turned
+  out to be a strict superset of `HEAD`, the same 34 commits under fresh SHAs
+  plus 26 of new work. The divergence traced to a single object — GitHub's
+  orphan "Initial commit", present on one side with its PGP signature and on the
+  other with it stripped, which rehashed the adoption merge and everything after
+  it. `main` was reset to `origin/main`; nothing local was lost.
+- **P2, `cloudflared.exe`.** Closed by that reset — the incoming side had
+  already untracked it and added the ignore rule. The binary stays on disk.
+- **P1 `save.bat`, P2 display race, P2 `serve.py`, P3 IndexedDB.** Fixed in
+  `03c3b11`, with `tests/display.test.js` and a `tests/idb.test.js` case, both
+  checked against the unfixed code rather than trusting a green run.
+
+The one recommendation not carried out is the browser smoke test (step 4), which
+needs a person at the app.
+
 ## Summary
 
 The audit found six concrete issues. The immediate release blocker is the unresolved merge: the working tree contains conflict markers in core application files and cannot boot or run the full test suite.

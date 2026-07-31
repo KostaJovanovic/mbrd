@@ -1,5 +1,11 @@
 # View-frame performance — handoff (2026-07-29)
 
+Status: **superseded**, 2026-07-30. The three changes below landed, and
+`research/2026-07-30-perf-plan.md` took the work over from here — it assumes the
+grid tier-fade skip, the mobile-var skip and the `mbrd.perf` profiler are in
+place. The "testing status" and "next" sections are the state of a working tree
+that no longer exists; read them as history, not as a to-do list.
+
 Status of the pan/zoom performance work. Three changes are in the working tree,
 uncommitted, on top of `v0.62` (`d3f3987`). This document records what they do,
 why, how to verify them, and what the work is aiming at next.

@@ -1,5 +1,11 @@
 # Safari support audit
 
+**Status:** closed, 2026-07-28. S1–S7 were each re-checked against the tree as
+it stood two days later and then addressed or consciously declined;
+`research/old/safari-support-fixes-2026-07-28.md` records which, and
+`docs/browser-support.md` is what S5/S7 became. Its one leftover — three
+unreferenced 90s easter-egg assets — was deleted in the interim.
+
 **Date:** 2026-07-26  
 **Scope:** `web/`, its browser-facing dependencies, the PWA shell, and relevant tests  
 **Reviewed state:** the working tree as found, including uncommitted changes  

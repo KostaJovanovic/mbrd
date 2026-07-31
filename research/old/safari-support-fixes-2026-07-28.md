@@ -1,7 +1,7 @@
 # Safari audit — what got fixed, what stayed a note
 
 **Date:** 2026-07-28
-**Source:** `research/safari-support-audit-2026-07-26.md` (S1–S7)
+**Source:** `research/old/safari-support-audit-2026-07-26.md` (S1–S7)
 **Verified:** `npm test` → 566 pass / 0 fail after the changes below.
 
 The audit was two days old and the tree had already moved under it, so each
