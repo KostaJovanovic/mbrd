@@ -31,6 +31,12 @@
     /* != null, not truthiness: 0 is Softish, a real level with its own rules. */
     if (s.whimsy != null) document.documentElement.dataset.whimsy = s.whimsy;
     if (s.palette) document.documentElement.dataset.palette = s.palette;
+    /* The quality dial, for the same reason and from its own key: a phone left
+       on Light should not be shown one blurred, shadowed frame first. Held to
+       the three known stops rather than trusted, because this reaches the page
+       as an attribute selector - see quality.js. */
+    var q = JSON.parse(localStorage.getItem('mbrd.quality') || '{}');
+    if (q && /^(light|balanced|full)$/.test(q.level)) document.documentElement.dataset.quality = q.level;
     /* The per-token overrides are the only part of a saved look that reaches the
        page as CSS, and this runs before ui/look.js can filter them - so it
        carries the same guard inline. A poisoned same-origin store could
@@ -138,274 +144,18 @@
       </svg>
     </button>
   </header>
-  <div class="side-body">
-    <section class="side-sec">
-      <h2>Board</h2>
-      <!-- A real input rather than a <p> you can click into, so it is reachable
-           by tab and by touch without inventing a role. Empty rather than
-           carrying the words "Untitled board": that is the placeholder, which
-           is both the italic aside it used to be styled as and the thing
-           setTitle() already falls back to when handed nothing. -->
-      <input id="board-title" class="board-title" type="text" maxlength="32"
-             placeholder="Untitled board" aria-label="Board name"
-             autocomplete="off" spellcheck="false">
-      <div class="btn-row">
-        <button type="button" data-cmd="new">New</button>
-        <button type="button" data-cmd="open">Open</button>
-      </div>
-      <div class="btn-row">
-        <button type="button" data-cmd="save" class="primary">Save</button>
-        <button type="button" data-cmd="export">Export</button>
-      </div>
-    </section>
+  <!-- Three tabs, and the panel opens on the first of them every time. The
+       sections are built by ui/panel.js from ui/settings-schema.js: this used
+       to be six hundred lines of markup that had to be kept in step by hand
+       with the wiring next door, and the order it grew into was nobody's
+       decision. The strip and the body below it are the whole of the shell.
 
-
-    <section class="side-sec">
-      <h2>Content</h2>
-      <div class="btn-row">
-        <button type="button" data-cmd="add-files">Add files</button>
-        <button type="button" data-cmd="add-note">Write a note</button>
-      </div>
-    </section>
-
-
-    <section class="side-sec">
-      <h2>Appearance</h2>
-      <!-- The whimsy axis. One dial from scrapbook to spec sheet - it moves
-           shape, type, motion, elevation, ornament and contrast together,
-           because those together are what makes a thing feel playful or
-           serious. See the third block of tokens.css. -->
-      <label class="field">
-        <span>Whimsy</span>
-        <!-- No <datalist> of stops here on purpose. It buys nothing - Chromium
-             ignores it once the track is custom-painted - and Firefox honours
-             it by drawing its own tick marks on the track, where the two end
-             ticks vanish into the rounded track ends and the middle one is
-             left sitting there as a stray dot. The three names below are the
-             stops, and they are legible in a way ticks are not. -->
-        <input id="opt-whimsy" type="range" min="0" max="2" step="1" value="1"
-               aria-describedby="whimsy-stop-labels">
-        <span class="field-stops" id="whimsy-stop-labels" aria-hidden="true">
-          <span>Softish</span><span>Middle</span><span>Harsh.</span>
-        </span>
-      </label>
-      <label class="field">
-        <span>Palette</span>
-        <select id="opt-palette">
-          <option value="">Papyrus</option>
-          <option value="absinthe">Absinthe</option>
-          <option value="tearose">Tea rose</option>
-          <option value="orca">Orca</option>
-        </select>
-      </label>
-      <!-- Whimsy and Palette are the whole section until you open this. Between
-           them they move every token the rest of it sets one at a time, which
-           is what makes the rest of it advanced rather than merely secondary. -->
-      <details class="advanced" id="appearance-advanced">
-        <summary>Advanced</summary>
-        <!-- The two faces share a row: they are one decision seen two ways, and
-             stacked they read as unrelated menus that happen to be adjacent. -->
-        <div id="appearance-type" class="field-pair"></div>
-        <p class="hint">Drop a <code>.woff2</code>, <code>.ttf</code> or <code>.otf</code> on the board to add your own face.</p>
-        <div id="appearance-vars"></div>
-        <label class="check"><input type="checkbox" id="opt-auto-palette" checked> Take colours from pictures</label>
-        <!-- How many of the board's pictures the palette above is read from,
-             newest first. Only shown while the switch is on - see syncAutoBox(). -->
-        <label class="field" id="palette-sources-field">
-          <span>Pictures used <output id="opt-palette-sources-out"></output></span>
-          <input id="opt-palette-sources" type="range" min="1" max="24" step="1" value="12">
-        </label>
-        <div id="appearance-advanced-vars"></div>
-        <div class="btn-row">
-          <button type="button" data-cmd="reset-appearance">Start over</button>
-        </div>
-      </details>
-    </section>
-
-
-    <section class="side-sec">
-      <h2>Board layout</h2>
-      <div class="btn-row">
-        <button type="button" id="board-mode" data-cmd="toggle-board-mode"
-                aria-pressed="false">Mobile board</button>
-      </div>
-      <label class="field" id="mobile-columns-field" hidden>
-        <span>Grid width</span>
-        <select id="mobile-columns"></select>
-      </label>
-      <p class="hint" id="board-mode-hint">Desktop is the free two-dimensional arrangement.</p>
-    </section>
-
-
-    <section class="side-sec">
-      <h2>Arrange</h2>
-      <label class="field">
-        <span>Layout</span>
-        <select id="arrangement"></select>
-      </label>
-      <label class="field">
-        <span>Spacing <output id="spacing-out"></output></span>
-        <input id="spacing" type="range" min="0" max="200" step="4" value="12">
-      </label>
-      <div class="btn-row">
-        <button type="button" data-cmd="rearrange">Rearrange everything</button>
-      </div>
-      <p class="hint">New drops use this layout. <em>Free</em> leaves every position untouched.</p>
-    </section>
-
-
-    <section class="side-sec">
-      <h2>View</h2>
-      <div class="btn-row">
-        <button type="button" data-cmd="fit">Zoom to fit</button>
-        <button type="button" data-cmd="recenter">Back to 0,0</button>
-      </div>
-      <label class="check"><input type="checkbox" id="opt-grid" checked> Show grid</label>
-      <label class="check"><input type="checkbox" id="opt-axes" checked> Show axes</label>
-      <label class="check"><input type="checkbox" id="opt-snap"> Snap to grid</label>
-      <label class="check"><input type="checkbox" id="opt-hud" checked> Show readout</label>
-      <label class="check"><input type="checkbox" id="opt-web" checked> Show web</label>
-      <!-- Checked = photos and videos fill their card and crop (object-fit
-           cover); unchecked = the whole picture fits inside and letterboxes.
-           Board-wide default; a single image or video overrides it from its
-           right-click menu. -->
-      <label class="check"><input type="checkbox" id="opt-mediafit"> Fill photos &amp; videos</label>
-      <!-- A sheet of paper drawn round the middle of the board, at the size it
-           really is under the scale set below. The orientation is two buttons
-           rather than a third entry per size, because "A4 landscape" is A4
-           turned, not another size - and because turning it is the thing you do
-           repeatedly while the size is chosen once. -->
-      <label class="field">
-        <span>Paper outline</span>
-        <select id="opt-paper">
-          <option value="">None</option>
-        </select>
-      </label>
-      <div class="btn-row" id="paper-orient" role="group" aria-label="Paper orientation">
-        <button type="button" data-orient="portrait" aria-pressed="true">Portrait</button>
-        <button type="button" data-orient="landscape" aria-pressed="false">Landscape</button>
-      </div>
-      <!-- Off by default: what the corners drag is not the sheet but the whole
-           board's scale, and a sheet put up to check a layout against should not
-           arrive with that armed on its corners. -->
-      <label class="check"><input type="checkbox" id="opt-paper-resize"> Resize by its corners</label>
-      <!-- The way back. Dragging the corners is how the scale gets set, which
-           means it is also how the scale gets lost - and the scale is not on
-           the undo stack, because no setting is. One button that puts it back
-           where every board starts. -->
-      <div class="btn-row">
-        <button type="button" data-cmd="reset-scale">Reset size</button>
-      </div>
-      <p class="hint" id="paper-hint"></p>
-      <!-- One volume for the whole board. See canvas/audio.js. -->
-      <label class="field">
-        <span>Volume<output id="opt-volume-out">60%</output></span>
-        <input id="opt-volume" type="range" min="0" max="100" step="1" value="60">
-      </label>
-    </section>
-
-
-    <!-- What the board's coordinates mean in the world. Nothing here moves
-         anything: the geometry is the same unitless floats it always was, and
-         these two settings decide how it is read back. See measure.js. -->
-    <section class="side-sec">
-      <h2>Real size</h2>
-      <label class="field">
-        <span>Units</span>
-        <select id="opt-units">
-          <option value="metric">Millimetres, centimetres, metres</option>
-          <option value="imperial">Inches and feet</option>
-        </select>
-      </label>
-      <!-- The scale is set by matching something, never by typing a
-           units-per-millimetre figure. Two ways in, and both are the same
-           gesture: drag the paper outline above until a known sheet looks the
-           right size against what is on the board, or point at an item whose
-           real size you already know and say what it is. -->
-      <div class="btn-row">
-        <button type="button" data-cmd="scale-from-item">Set from selection…</button>
-      </div>
-      <p class="hint" id="scale-hint"></p>
-    </section>
-
-
-    <!-- Folded, and closed on arrival. Sixteen rows of legend is the longest
-         thing in the panel, and every one of them is a keyboard row: it is read
-         once, learned, and then scrolled past forever - on a phone, where there
-         is no keyboard to read it for, scrolled past forever on the first visit.
-         The fold reuses .advanced because it is the same kind of thing, and its
-         summary already sets what h2 set, so the head still reads as a section
-         head with a caret in front of it. Closed is not remembered, for the
-         same reason the appearance fold does not remember it: the shut state is
-         the one that is right nearly always. -->
-    <section class="side-sec">
-      <details class="advanced" id="keys-fold">
-        <summary>By hand</summary>
-        <ul class="keys">
-          <li><kbd>drag</kbd><span>pan the board</span></li>
-          <li><kbd>shift</kbd>+<kbd>drag</kbd><span>select a region</span></li>
-          <li><kbd>space</kbd>+<kbd>drag</kbd><span>pan from anywhere</span></li>
-          <li><kbd>wheel</kbd><span>zoom to the cursor</span></li>
-          <li><kbd>dbl-click</kbd><span>zoom to an item</span></li>
-          <li><kbd>0</kbd> <kbd>F</kbd><span>recenter, fit</span></li>
-          <li><kbd>&larr;&uarr;&rarr;&darr;</kbd><span>nudge (+<kbd>shift</kbd> a step)</span></li>
-          <li><kbd>ctrl</kbd>+<kbd>A</kbd><span>select all</span></li>
-          <li><kbd>ctrl</kbd>+<kbd>C</kbd> <kbd>X</kbd> <kbd>V</kbd><span>copy, cut, paste</span></li>
-          <li><kbd>ctrl</kbd>+<kbd>D</kbd><span>duplicate selection</span></li>
-          <li><kbd>F2</kbd><span>rename</span></li>
-          <li><kbd>del</kbd><span>delete selection</span></li>
-          <li><kbd>ctrl</kbd>+<kbd>Z</kbd> <kbd>Y</kbd><span>undo, redo</span></li>
-          <li><kbd>ctrl</kbd>+<kbd>S</kbd> <kbd>O</kbd><span>save, open</span></li>
-          <li><kbd>ctrl</kbd>+<kbd>shift</kbd>+<kbd>S</kbd><span>export a .mbrd</span></li>
-        </ul>
-      </details>
-    </section>
-
-
-    <!-- Last, and below the keyboard legend rather than beside the Board
-         buttons at the top. Neither of these is part of anybody's working day,
-         and the second is the way out - which belongs at the far end of the
-         panel where it cannot be hit on the way to Save.
-
-         Optimize sits here rather than under Board for the first of those
-         reasons: it is housekeeping on the copy kept in this browser, done
-         once in a while and not while you are working. It asks first either
-         way, and says what it is about to do and how much it would save
-         before anything is touched. -->
-    <section class="side-sec">
-      <h2>This browser</h2>
-      <div class="btn-row">
-        <button type="button" data-cmd="optimize">Optimize</button>
-      </div>
-      <!-- The refresh gesture this app takes away. Pull-to-refresh is off
-           because every downward swipe on the board is a pan, and on a home
-           screen there is no address bar either - so on a phone this is the
-           only way to start the page again and pick up a new version. It
-           saves first. Not "Reload board" in the right-click menu, which
-           repairs the live board and keeps the history. -->
-      <div class="btn-row">
-        <button type="button" data-cmd="restart" title="Save and start the page again">Restart mbrd</button>
-      </div>
-      <div class="btn-row">
-        <button type="button" data-cmd="clear-data" class="danger">Clear everything</button>
-      </div>
-    </section>
-
-
-    <!-- Development aids, last of all: none of this is part of using a board, it
-         is for checking the app itself. The grip overlay paints the resize
-         corner grab zones - invisible by design (see .grip::before in app.css) -
-         so their reach can be seen and checked. Grips only show on a selected
-         card, so select one first. The button is a toggle; aria-pressed is kept
-         in step by cmds.debugGrips, which the #grips URL and mbrd.debugGrips()
-         also drive. -->
-    <section class="side-sec">
-      <h2>Debug</h2>
-      <div class="btn-row">
-        <button type="button" data-cmd="debug-grips" aria-pressed="false">Highlight resize grips</button>
-      </div>
-    </section>
-  </div>
+       All three panels stay in the document, hidden bar one, which is what
+       keeps each tab's scroll position and what lets the panel be built once -
+       ui/appearance.js and canvas/audio.js hold elements from in here by id,
+       and a rebuild would leave them holding nodes no longer in the page. -->
+  <div class="side-tabs"></div>
+  <div class="side-body"></div>
 
   <!-- The credit sits at the quiet end on purpose. An anchor and nothing else:
        no logo request, no analytics, no font from anywhere - the same rule the

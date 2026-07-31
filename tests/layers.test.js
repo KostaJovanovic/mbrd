@@ -123,7 +123,13 @@ test('the import graph has no cycle', () => {
 // The directional rules, and the debt against them
 // ---------------------------------------------------------------------------
 
-const BASE = new Set(['util.js', 'geometry.js', 'measure.js', 'layout-settings.js', 'version.js']);
+const BASE = new Set([
+  'util.js', 'geometry.js', 'measure.js', 'layout-settings.js', 'version.js',
+  // The quality dial's flags. Bottom of the graph on purpose: canvas/* reads
+  // them and ui/quality.js writes them, and a setting canvas has to import
+  // cannot sit in ui/ without inverting the whole graph.
+  'quality.js',
+]);
 
 /**
  * True when this edge points the wrong way through the declared layering.

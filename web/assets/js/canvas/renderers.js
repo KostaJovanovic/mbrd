@@ -12,7 +12,7 @@ import { buildVideoPlayer } from './video.js';
 import { onTouch } from './viewport.js';
 import { embedFor, embedOffer } from './embed.js';
 import { buildModelCard } from './model.js';
-import { hintFor } from './ghosts.js';
+import { hintFor, hintKey, tapeStyle, bindDial, STOPS, DIAL } from './ghosts.js';
 import { ensureDisplay, displayURLReady } from './display.js';
 import { meshKind } from '../mesh.js';
 
@@ -101,11 +101,12 @@ export function defaultSize(type) {
     // aspect. Matches TITLE_SIZE in state.js, where the singleton is minted; the
     // card visual is held to an exact 3:2 in CSS and snapping adds slack below.
     case 'title':   return { w: 256, h: 171 };
-    // A card with a sentence in it, so it is sized like a note that has been
-    // let out rather than like a picture. Matches GHOSTS in state.js, where the
-    // three are minted; this is here for the resize floor and for anything that
-    // asks a type how big it starts.
-    case 'ghost':   return { w: 208, h: 156 };
+    // Four grid spaces by three at the default step, so a snapped board lays it
+    // down exactly where it already is. Fixed: a ghost has no resize grips
+    // (canvas/items.js), so this is not a starting size the way every box above
+    // it is - it is the size. Matches GHOSTS in state.js, where they are minted
+    // and where the reasoning lives.
+    case 'ghost':   return { w: 256, h: 192 };
     default:        return { w: 200, h: 112 };
   }
 }
@@ -766,27 +767,122 @@ const RENDERERS = {
    *
    * Structure only. What it says comes from canvas/ghosts.js (the item carries
    * a key, not prose - see the note there), and what it looks like is entirely
-   * app.css: a dashed outline at Middle and Harsh, yellowed papyrus with a
-   * chipped edge at Softish. Nothing here reads the whimsy level, because
+   * app.css: a dashed outline at Middle and Harsh, a page torn out of a pad and
+   * taped down at Softish - except for the dial, which stays an ordinary card at
+   * every tier. Nothing here reads the whimsy level to draw with, because
    * nothing here needs to - the level is on <html> as data-whimsy and CSS can
-   * see it.
+   * see it. The dial reads it, but as a value to show, not as a look.
    *
    * classify() is not involved and never will be. That function routes dropped
    * *files*, and no file is ever a hint; these are minted by state.js on an
    * empty board and by nothing else.
    */
   ghost(item) {
+    // A fragment, not a card, and that is load-bearing. At Softish the card is
+    // perforated by a CSS mask, and a mask applies to an element's descendants
+    // as well as to itself - tape drawn inside the card would be punched full
+    // of the same holes. So the strips are siblings of the card, and both land
+    // in .item-body together. items.js appends whatever this returns, and
+    // append() spreads a fragment, so nothing there had to change.
+    const frag = document.createDocumentFragment();
     const card = document.createElement('div');
     card.className = 'card ghost-card';
+    // The key reaches the DOM as well as the words, because Softish gives each
+    // hint a torn silhouette of its own and CSS has to be able to tell them
+    // apart. It cannot do that by position: these are children of #world
+    // alongside the web, the shadow layer and the title card, so :nth-child
+    // counts things that are not cards and hands two hints the same outline.
+    const key = hintKey(item.meta?.hint);
+    card.dataset.hint = key;
     const { title, line } = hintFor(item.meta?.hint);
-    const head = document.createElement('div');
-    head.className = 'ghost-title';
-    head.textContent = title;
-    const body = document.createElement('div');
-    body.className = 'ghost-line';
-    body.textContent = line;
-    card.append(head, body);
-    return card;
+    // Every hint but the dial prints its title here, at the head of the card and
+    // ranged left. The dial prints its own, inside the row and centred over the
+    // track - see below.
+    if (key !== DIAL) {
+      const head = document.createElement('div');
+      head.className = 'ghost-title';
+      head.textContent = title;
+      card.append(head);
+    }
+
+    if (key === DIAL) {
+      // A hint you operate rather than read. The range input is what makes
+      // canvas/input.js let the press through - its widget branch names `input`
+      // outright, so a drag on the thumb moves the thumb and not the card.
+      //
+      // .field is the sidebar's own form row, borrowed whole rather than
+      // imitated: the track, the lozenge thumb, the stop names underneath and
+      // the way all three answer the whimsy axis are one block of CSS in the
+      // panel's section, and a second copy of it here would be a second thing to
+      // remember. This is the same slider, so it is the same class.
+      //
+      // The head is .field's own as well, and it carries the title instead of
+      // the card printing one: a card's title is ranged left at the top of it,
+      // and what this one wants is the word centred over the track it names,
+      // with the three stops under it. `is-dial` is that centring.
+      const row = document.createElement('div');
+      row.className = 'ghost-dial field is-dial';
+      const head = document.createElement('span');
+      head.textContent = title;
+      row.append(head);
+
+      const slider = document.createElement('input');
+      slider.type = 'range';
+      slider.min = '0';
+      slider.max = '2';
+      slider.step = '1';
+      // The level the interface is at, read off the attribute ui/appearance.js
+      // writes - the same source watchWhimsy() keeps this in step with.
+      slider.value = document.documentElement.dataset.whimsy ?? '1';
+      slider.setAttribute('aria-label', title);
+
+      // The stops, built the way ui/panel.js builds them: names rather than a
+      // <datalist>, which Chromium ignores on a painted track and Firefox draws
+      // as ticks whose ends vanish into the rounded ends of it. Hidden from the
+      // accessibility tree, because the same three words reach a screen reader
+      // through the dial's own aria-valuetext (see bindDial).
+      //
+      // Under the track, the same way round as the panel: the name of the axis
+      // over it, the names of its three stops under it.
+      const stops = document.createElement('span');
+      stops.className = 'field-stops';
+      // The id is a styling hook as much as a target for aria-describedby: each
+      // name is set in the face of the tier it names, and app.css reaches both
+      // whimsy rows - this one and the panel's #whimsy-stop-labels - through one
+      // block. Safe as an id because a board carries at most one dial card.
+      stops.id = 'ghost-whimsy-stops';
+      stops.setAttribute('aria-hidden', 'true');
+      for (const name of STOPS) {
+        const stop = document.createElement('span');
+        stop.textContent = name;
+        stops.append(stop);
+      }
+      slider.setAttribute('aria-describedby', stops.id);
+      row.append(slider, stops);
+
+      bindDial(slider);
+      card.append(row);
+    } else {
+      const body = document.createElement('div');
+      body.className = 'ghost-line';
+      body.textContent = line;
+      card.append(body);
+    }
+    frag.append(card);
+
+    // Built at every tier and shown only at Softish (app.css hides it
+    // otherwise), so sliding the whimsy dial does not have to rebuild a card.
+    for (const t of Array.isArray(item.meta?.tape) ? item.meta.tape : []) {
+      const strip = document.createElement('div');
+      strip.className = 'ghost-tape';
+      const { x, y, rot, len } = tapeStyle(t);
+      strip.style.setProperty('--t-x', x);
+      strip.style.setProperty('--t-y', y);
+      strip.style.setProperty('--t-rot', rot);
+      strip.style.setProperty('--t-len', len);
+      frag.append(strip);
+    }
+    return frag;
   },
 
   generic(item) {

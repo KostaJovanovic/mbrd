@@ -283,8 +283,15 @@ export function initAppearance(handlers = {}) {
   });
 }
 
-/** Slide the whole interface along the playful-to-plain axis. 0, 1 or 2. */
-function setWhimsy(level) {
+/**
+ * Slide the whole interface along the playful-to-plain axis. 0, 1 or 2.
+ *
+ * Exported so main.js can hang it on `cmds`, which is how the dial on the
+ * fourth ghost card reaches it: that card is built under canvas/, which may not
+ * import this module (the layering test), so it goes through the command
+ * surface like every other user-facing action.
+ */
+export function setWhimsy(level) {
   const n = clampWhimsy(level);
   if (n === current.whimsy) return;
   // Hand-set values for tokens this axis owns would outrank the new level
@@ -575,13 +582,27 @@ function pictureURLs() {
 }
 
 /**
- * How many pictures the palette is read from: the board's own setting, held
- * inside the sampler's absolute ceiling. Defaults to the ceiling when unset.
+ * How many pictures the palette is read from: the board's own setting.
+ *
+ * Zero is the stop past the top of the dial and means every picture on the
+ * board, which is Infinity here - it flows into slice() and into samplePixels()
+ * as a limit that limits nothing. Anything else is held inside the sampler's
+ * default ceiling, and an unset setting reads as that ceiling.
  */
 function sourceCount() {
   const n = board.paletteSources;
+  if (n === 0) return Infinity;
   return Number.isFinite(n) ? Math.max(1, Math.min(MAX_SOURCES, n)) : MAX_SOURCES;
 }
+
+/**
+ * The slider position that means "every picture".
+ *
+ * One past the highest count, so the dial reads low-to-high all the way: more
+ * pictures, more pictures, all of them. The value stored is 0, not this - see
+ * normalizePaletteSources() in state.js for why a number cannot say "all".
+ */
+const ALL_SOURCES_STOP = MAX_SOURCES + 1;
 
 /**
  * The pictures an extraction would actually read, as one comparable string.
@@ -1087,16 +1108,26 @@ function syncPaletteSources() {
   const input = document.getElementById('opt-palette-sources');
   const out = document.getElementById('opt-palette-sources-out');
   const n = sourceCount();
-  if (input && document.activeElement !== input) input.value = String(n);
-  if (out) out.textContent = `${n} photo${n === 1 ? '' : 's'}`;
+  const all = n === Infinity;
+  if (input && document.activeElement !== input) {
+    input.value = String(all ? ALL_SOURCES_STOP : n);
+  }
+  if (!out) return;
+  // Named rather than counted at the top stop, and the count of what is on the
+  // board is deliberately not printed: it would change under you every time a
+  // picture arrived, in a readout nobody is watching for that.
+  out.textContent = all ? 'Every photo' : `${n} photo${n === 1 ? '' : 's'}`;
 }
 
 function wirePaletteSources() {
   const input = document.getElementById('opt-palette-sources');
   if (!input) return;
-  input.max = String(MAX_SOURCES);
-  input.value = String(sourceCount());
-  input.addEventListener('input', () => setSetting('paletteSources', +input.value));
+  input.max = String(ALL_SOURCES_STOP);
+  input.value = String(sourceCount() === Infinity ? ALL_SOURCES_STOP : sourceCount());
+  input.addEventListener('input', () => {
+    const n = +input.value;
+    setSetting('paletteSources', n >= ALL_SOURCES_STOP ? 0 : n);
+  });
   syncPaletteSources();
 }
 

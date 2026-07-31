@@ -25,6 +25,11 @@ test('opening a file repairs underscores in an embedded or fallback title', () =
 });
 
 test('the sidebar title field carries the shared thirty-two-character limit', async () => {
-  const html = await readFile(new URL('../web/index.html', import.meta.url), 'utf8');
-  assert.match(html, /id="board-title"[^>]*maxlength="32"/);
+  // In the settings table rather than in index.html now that ui/panel.js builds
+  // the panel. Same assertion, one file along: the field the board is renamed in
+  // must stop where cleanBoardTitle() stops, or a name typed to the field's
+  // limit comes back cut.
+  const schema = await readFile(
+    new URL('../web/assets/js/ui/settings-schema.js', import.meta.url), 'utf8');
+  assert.match(schema, /id: 'board-title'[\s\S]{0,200}?maxlength: 32/);
 });

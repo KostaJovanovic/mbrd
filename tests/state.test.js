@@ -1145,12 +1145,19 @@ test('paletteSources is a board-wide count, clamped and round-tripped', () => {
   // Clamped to [1, 24] and rounded, whatever a caller or an edited file offers.
   setSetting('paletteSources', 99);
   assert.equal(board.paletteSources, 24, 'held under the sampler ceiling');
+
+  // Except 0, which is the stop past the top of the dial: every picture on the
+  // board. It used to be clamped up to 1, which is the opposite reading - the
+  // dullest palette available rather than the fullest one.
   setSetting('paletteSources', 0);
-  assert.equal(board.paletteSources, 1, 'at least one picture');
+  assert.equal(board.paletteSources, 0, 'zero means every picture');
+  setSetting('paletteSources', -3);
+  assert.equal(board.paletteSources, 1, 'and below zero is still at least one');
+  setSetting('paletteSources', 0);
 
   const data = serializeBoard();
   loadBoard(data);
-  assert.equal(board.paletteSources, 1, 'round-trips');
+  assert.equal(board.paletteSources, 0, 'round-trips');
   loadBoard({ title: 'T', items: [] });
   assert.equal(board.paletteSources, 12, 'a file without the key reads as the default');
 });

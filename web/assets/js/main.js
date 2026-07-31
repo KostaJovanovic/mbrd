@@ -42,12 +42,15 @@ import {
 import { flushNoteEdit, noteFloor } from './canvas/notes.js';
 import { initAssets, getAsset } from './storage/assets.js';
 import { initSidebar, close as closeSidebar } from './ui/sidebar.js';
+import { buildPanel } from './ui/panel.js';
+import { armQuality, watchQuality } from './ui/quality.js';
+import { clearQualityOverrides } from './quality.js';
 import { initMenu, openContextMenu, close as closeMenu } from './ui/menu.js';
 import { initSearch, open as openSearch } from './ui/search.js';
 import { initIdle } from './ui/idle.js';
 import { initScaleBar } from './ui/scalebar.js';
 import { initTrash } from './ui/trash.js';
-import { initAppearance, resetAppearance } from './ui/appearance.js';
+import { initAppearance, resetAppearance, setWhimsy } from './ui/appearance.js';
 import { initFonts } from './ui/fonts.js';
 import {
   initMobileHeaderEditor, openPanel as openHeaderPanel, closePanel as closeHeaderPanel,
@@ -90,6 +93,9 @@ const cmds = {
   // board's contents relate, and three cards that are about to leave are not
   // contents - dealing them slots would also scatter them out of reading order.
   rearrange: () => rearrange(board.items.filter(i => i.type !== 'ghost')),
+  // The whimsy axis, as a command so the dial on the fourth hint card can drive
+  // it - that card is built under canvas/, which cannot import ui/appearance.js.
+  setWhimsy: level => setWhimsy(level),
   rearrangeSelection: () => rearrange(board.items.filter(i => selection.has(i.id))),
   // The Desktop title card's pen: opens the same style panel the Mobile masthead
   // uses. Routed through cmds so canvas/input.js (which has no business importing
@@ -122,7 +128,13 @@ const cmds = {
     setSetting('scale', DEFAULT_SCALE);
     toast('Back to the default size');
   },
-  fit: () => vp.fit(board.items, 80, travelMs()),
+  // The title card is left out on Mobile for the same reason canvas/items.js
+  // does not mount it there: it is not on that board. Fitting the view to a card
+  // nobody can see - parked above the column by completeLayout() - would zoom
+  // out to make room for nothing.
+  fit: () => vp.fit(
+    board.items.filter(i => board.layoutMode !== 'mobile' || i.type !== 'title'),
+    80, travelMs()),
   recenter: () => vp.recenter(travelMs()),
   // Dev: paint the resize corner grab zones, which have no ink of their own, so
   // their reach can be checked by eye (see [data-debug-grips] in app.css). A
@@ -146,6 +158,13 @@ const cmds = {
     toast(vp.zoomLocked ? `Zoom locked at ${zoomText()}` : 'Zoom unlocked');
   },
   resetAppearance,
+  // Hands every quality flag back to the dial. The same way back Appearance's
+  // fold keeps, for the same reason: a panel of overrides with no way home is a
+  // panel you stop touching.
+  resetQuality: () => {
+    clearQualityOverrides();
+    toast('Quality back to the dial');
+  },
   reload: reloadBoard,
   restart: () => restartApp(),
 
@@ -255,6 +274,15 @@ initAssets();
 // (storage sits above state - AUD-12). This is the original-filename fallback
 // renameItem() uses when a name is cleared.
 setAssetNameLookup(hash => getAsset(hash)?.name);
+// The saved quality level onto <html>, before anything reads a flag off it.
+// The inline guard in index.html has already done this for the stylesheet; this
+// is the module half, and it is also what fills `quality` for canvas/*.
+armQuality();
+// The panel's DOM, before every module that reaches into it by id:
+// ui/appearance.js takes the whimsy slider, the palette menu and three hosts,
+// canvas/audio.js takes the volume slider, and ui/sidebar.js takes the board
+// name. None of them should have to learn that the panel is generated now.
+buildPanel();
 // Before initAppearance, so the type menus are built once with the board's own
 // faces already in them rather than built empty and rebuilt a tick later.
 initFonts();
@@ -272,9 +300,14 @@ initItems(el('world'), vp);
 initWeb(el('world'), vp);
 // One 'items' subscriber that sweeps the hint cards the first time the board
 // holds anything of the user's. After initItems, so the nodes it animates out
-// are mounted by the time it can fire.
-initGhosts();
+// are mounted by the time it can fire. `cmds` is handed down because the fourth
+// hint carries the whimsy dial, and canvas/ may not reach into ui/ to set it.
+initGhosts(cmds);
 initStills(el('world'), vp);
+// After both of those: moving the dial remounts every card (the shadow twin and
+// the display copy's size are decided at build time) and asks the freeze
+// question again, so it needs the two modules that answer.
+watchQuality();
 initScaleBar(vp);
 // Its own listeners rather than a call from the paint block below: the sheet is
 // also a control - it is dragged by the corners to set the board's scale - so

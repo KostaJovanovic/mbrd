@@ -1042,22 +1042,33 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
    Two looks along the whimsy axis, and they are different *techniques* rather
    than the same card with its numbers turned up, for the same reason the grid
-   has two: Middle and Harsh want an outline, which is a border; Softish wants
-   an object, which is a silhouette and a stack of gradients.
+   has two: Middle and Harsh want an ordinary card whose edge happens to be
+   dashed, which is a border; Softish wants an object that came from somewhere
+   else, which is a silhouette and a stack of gradients.
 
-   Common to both: no paper, no inset hairline and no inner rule. .card gives
-   every card all three (see .card and .card::after), and a hint that wears them
-   is just a card - the whole job here is to look like a card that is not there
-   yet. canvas/items.js also skips the #item-shadows twin for this type, since a
-   shadow under an outline fills it back in.
+   At Middle and Harsh a hint is an ordinary card in every respect but one: it
+   keeps the paper, the inner rule and the reading weight of the text, and the
+   *only* thing that marks it as provisional is that its edge is dashed rather
+   than drawn. That is a deliberate correction of a first attempt which made it
+   transparent with faded text as well - three cues saying the same thing, which
+   read as a broken card rather than as an invitation, and at Middle (the level
+   most boards are actually looked at) left the words too pale to read.
+
+   The fourth card is outside all of this. It holds the whimsy dial rather than a
+   sentence, and a control is not provisional - so it keeps an ordinary card's
+   edge at every stop on the axis it moves. Its rules are at the foot of this
+   block, and the `:not([data-hint="whimsy"])` on the Softish ones is the same
+   decision written from the other side.
    --------------------------------------------------------------------------- */
 .ghost-card {
-  background: none;
-  box-shadow: none;
-  /* The dashed rule is the card's own edge, not a second rectangle inside it. */
+  /* .card gives us var(--paper-card) and an inset hairline. The paper stays;
+     the hairline is what the dash replaces, so it is the box-shadow that goes -
+     and with it the drop shadow that .card never had, since canvas/items.js
+     builds no #item-shadows twin for this type. Carried here in CSS instead,
+     exactly as .title-card carries its own for the same reason. */
+  box-shadow: var(--item-shadow);
   border: var(--ghost-weight) dashed var(--ghost-edge);
   border-radius: inherit;
-  color: var(--ghost-ink);
   justify-content: center;
   gap: 5px;
   /* Overriding .card's own inset, because that padding is sized for a card with
@@ -1065,18 +1076,40 @@ button, input, select, textarea { font: inherit; color: inherit; }
   --card-pad-x: 18px;
   --card-pad-y: 16px;
 }
-/* .card::after is the inner rule every filed card wears. A hint has one edge. */
-.ghost-card::after { content: none; }
+/* The border draws where .card's inset hairline used to, so the inner rule has
+   to step in by the width of it or the two sit on top of each other. */
+.ghost-card::after { inset: calc(var(--card-rule-gap) - var(--ghost-weight)); }
+/* The inner rule is a filed card's, and Softish is not printing filed cards -
+   its candidates carry their own edge treatment instead, and pencil uses this
+   pseudo-element for the second stroke. */
+:root[data-whimsy="0"] .ghost-card:not([data-hint="whimsy"])::after { content: none; }
+/* .item-body clips every card to the item's rounded rectangle, which crops
+   anything a card wants to hang outside itself - the masking tape strip, the
+   pencil's overshot second line. The radius still comes from the item; only the
+   clipping goes.
+
+   Not for the dial, which keeps the clip because it keeps the rectangle: it is
+   the one hint that stays an ordinary card at every tier (see below), and it
+   carries no tape to hang out of one. */
+:root[data-whimsy="0"] .item[data-type="ghost"]:not(:has([data-hint="whimsy"])) .item-body {
+  overflow: visible;
+}
 
 /* The item box paints a card face across its whole extent (var(--item-bg)) on
-   the assumption that content covers it. A ghost is see-through by design, so
-   that face has to come off the box as well as off the card - the same move
-   .item[data-type="title"] makes, and for the same reason. */
+   the assumption that content covers it corner to corner. A Softish hint does
+   not - it is clipped to a torn polygon - so that face would show through every
+   chip as a square of undercard behind the scrap. The same move
+   .item[data-type="title"] makes, for the same reason. Harmless at the other two
+   tiers, where the card covers the box anyway. */
 .item[data-type="ghost"] { background: transparent; }
 /* No caption strip: a hint has no filename, and the empty bar would still claim
    its height at the foot of a card whose text is meant to sit centred. */
 .item[data-type="ghost"] .item-bar { display: none; }
 
+/* Both weights are the ones an ordinary card uses - the title reads like
+   .card-name, the line like secondary text. No transparency anywhere: a hint is
+   meant to be read, and the dashed edge is already carrying the whole "this is
+   not yours and is not staying" message on its own. */
 .ghost-title {
   font-family: var(--font-display);
   font-size: 15px;
@@ -1088,85 +1121,206 @@ button, input, select, textarea { font: inherit; color: inherit; }
   font-family: var(--font-body);
   font-size: 12px;
   line-height: 1.42;
-  /* The body is the second reading and steps back from the title, which at
-     Softish is already near-black on tan and cannot afford to be faded much. */
-  color: color-mix(in srgb, var(--ghost-ink) 86%, transparent);
+  color: var(--ghost-ink-2);
   text-wrap: pretty;
 }
 
-/* ---- Softish: old paper -------------------------------------------------
-   A pirate-map scrap. The silhouette is a clip-path polygon rather than an SVG
-   displacement filter, and that is a performance decision as much as a visual
-   one: #world is a single GPU-composited layer moved by one transform, and a
-   filter on a child of it forces a repaint on every pan. A clip-path does not.
+/* ---- Softish: a page torn out, taped down ------------------------------
+   The scrapbook end of the axis, and the scrapbook version of the dashed edge
+   the other two tiers wear. Two halves, and they say the same thing twice in
+   two registers: the sheet was ripped out of something, and it is only stuck
+   here for now.
 
-   The ageing is layered radial-gradients carrying var(), the same technique
-   canvas/grid.js uses for its two soft tiers - a palette change restyles them
-   with no repaint.
+   The page. Perforation stubs down the left edge where it left the pad, faint
+   rules, and the margin the rules stop at. The perforation is a repeating mask
+   rather than a clip-path, because clip-path draws polygons and a torn stub is
+   a circle - this is the one shape a polygon cannot do cheaply.
 
-   The three cards get three silhouettes. Three copies of one outline reads as a
-   repeated tile rather than as three scraps of paper, which is the same reason
-   the app icon's three cards are landscape, portrait, landscape. :nth-child on
-   .item, not randomness, so a board looks the same every time it opens. */
-:root[data-whimsy="0"] .ghost-card {
+   Watch the mask: it applies to the element *and its descendants*, so anything
+   drawn inside this card is perforated along with it. That is why the tape is a
+   sibling of the card rather than a child - see the ghost renderer, which
+   returns a fragment for exactly this reason.
+
+   The dial is excluded, here and everywhere else at this tier. A torn scrap is
+   a fine thing to write a sentence on and a poor thing to mount a working
+   control in: the perforation eats the left end of the track, the tape lands
+   across the thumb, and a mask cannot spare its descendants. It stays the same
+   ordinary card at all three stops - which also means the one thing on the board
+   that moves the axis looks the same from wherever on the axis you reach for it.
+   --------------------------------------------------------------------------- */
+:root[data-whimsy="0"] .ghost-card:not([data-hint="whimsy"]) {
   border: 0;
-  border-radius: 0;
-  /* Foxing, not blotches. The two darker blooms are mixed most of the way back
-     to the stock before they are laid on: at full strength they read as spilled
-     coffee rather than as paper that has aged unevenly, and they were also
-     fighting the text for the middle of the card. Both are pushed to the
-     corners for the same reason, and the lit bloom is the one allowed to be
-     broad, because a sheet lightens across its whole face and only stains in
-     patches. */
+  box-shadow: none;
   background:
-    radial-gradient(72% 58% at 26% 16%, var(--ghost-papyrus-lit) 0%, transparent 70%),
-    radial-gradient(34% 30% at 92% 88%,
-      color-mix(in srgb, var(--ghost-papyrus-dark) 55%, transparent) 0%, transparent 72%),
-    radial-gradient(26% 24% at 6% 92%,
-      color-mix(in srgb, var(--ghost-papyrus-dark) 42%, transparent) 0%, transparent 70%),
-    radial-gradient(22% 20% at 88% 12%,
-      color-mix(in srgb, var(--ghost-papyrus-dark) 34%, transparent) 0%, transparent 68%),
-    var(--ghost-papyrus);
-  /* The chipping eats into the box, so the text is held further off the edge
-     than a straight card would need. */
-  --card-pad-x: 24px;
-  --card-pad-y: 22px;
-  /* drop-shadow rather than box-shadow: the card is clipped to a ragged
-     polygon, and box-shadow traces the *box*, so it would draw a clean
-     rectangle behind a torn one. drop-shadow follows the clipped silhouette. */
-  filter: drop-shadow(0 6px 10px var(--ghost-papyrus-edge));
-  /* Chipped, not scalloped. The deviation from the edge is deliberately uneven -
-     long flush runs broken by the odd deep bite - because a constant amplitude
-     at a constant interval is a wave, and a wave reads as decoration. Paper
-     tears in a few places and stays straight in between. */
-  clip-path: polygon(
-    1% 5%, 10% 1%, 16% 4%, 30% 1%, 37% 3%, 49% 0%, 59% 4%, 67% 1%,
-    80% 5%, 89% 2%, 96% 6%, 100% 2%,
-    99% 15%, 97% 29%, 100% 40%, 98% 56%, 94% 67%, 99% 79%, 97% 91%, 100% 98%,
-    91% 99%, 80% 95%, 69% 100%, 60% 96%, 48% 100%, 37% 96%, 26% 99%,
-    15% 95%, 6% 99%, 1% 96%,
-    3% 84%, 0% 72%, 2% 60%, 5% 47%, 1% 35%, 3% 23%, 0% 12%
-  );
+    repeating-linear-gradient(180deg,
+      transparent 0 21px,
+      color-mix(in srgb, #6f86a8 17%, transparent) 21px 22px),
+    linear-gradient(90deg,
+      transparent 0 26px,
+      color-mix(in srgb, #b4544a 42%, transparent) 26px 27px,
+      transparent 27px),
+    var(--paper-card);
+  /* Square where it was torn, rounded where it was not. */
+  border-radius: 0 var(--radius) var(--radius) 0;
+  --card-pad-x: 34px;
+  -webkit-mask-image: radial-gradient(circle 6px at 0 11px, transparent 6px, #000 6.5px);
+  mask-image: radial-gradient(circle 6px at 0 11px, transparent 6px, #000 6.5px);
+  -webkit-mask-size: 100% 22px;
+  mask-size: 100% 22px;
+  -webkit-mask-repeat: repeat-y;
+  mask-repeat: repeat-y;
 }
-:root[data-whimsy="0"] .item[data-type="ghost"]:nth-child(3n+2) .ghost-card {
-  clip-path: polygon(
-    2% 2%, 12% 6%, 24% 1%, 33% 5%, 46% 1%, 54% 4%, 68% 0%, 77% 5%,
-    87% 1%, 94% 4%, 100% 1%,
-    98% 13%, 100% 26%, 96% 38%, 99% 51%, 97% 64%, 100% 77%, 95% 88%, 99% 99%,
-    88% 96%, 76% 100%, 65% 96%, 53% 99%, 41% 95%, 30% 100%, 19% 96%,
-    9% 100%, 2% 97%,
-    0% 86%, 4% 74%, 1% 63%, 3% 50%, 0% 38%, 4% 26%, 1% 14%
-  );
+
+/* The tape. One or two strips per card, straddling an edge at an angle - which
+   is the whole reason .item-body stops clipping at this tier, since half of a
+   piece of tape is outside the thing it is holding down.
+
+   Where each strip sits is decided once, when the hint is minted (see tapeFor()
+   in state.js), and travels in the item rather than being rolled here. Culling
+   throws a card's node away and rebuilds it from scratch when it comes back on
+   screen, so a placement chosen at render time would move every time the board
+   panned past. Random per board; fixed for that board's life.
+
+   The strip is only laid at this tier, but it is built at every one - hidden
+   rather than absent, so sliding the whimsy dial shows and hides it without
+   anything having to rebuild a card. */
+/* ---- The dial ----------------------------------------------------------
+   The fourth hint is a control rather than a paragraph, and the control is the
+   sidebar's, borrowed whole: the renderer gives the row .field, so the track,
+   the lozenge thumb, the stop names and everything the whimsy axis does to the
+   three of them arrive from the panel's own block. Nothing is restyled here.
+   What is left is where it sits.
+
+   The card is 4:1 and 64 world px tall, and it holds three lines: the word
+   Whimsy over the middle of the track, the track, and the three stop names
+   under it. Three lines in 64px is the whole problem, and it is solved by
+   spending the height where it shows rather than by squeezing all three:
+
+   - The gaps go. The panel leaves five pixels under a head because a column of
+     controls needs to say where one ends and the next begins; a card holding one
+     control has no next, and the three lines want to read as one block anyway.
+   - The slider's box comes down from 22px to 18. Nothing about it *looks*
+     different - the track is 3px and the thumb 15 - it is the dead air in a
+     form-sized hit box, which a card that cannot be dragged by its slider does
+     not need.
+   - The line heights are set rather than left to the faces, because the whimsy
+     axis changes the face under all three and a card this tight cannot take a
+     serif's leading arriving in place of a sans's.
+
+   That leaves the hierarchy, which is the part that makes it a card rather than
+   a form: head, track, stops, each a step quieter than the last. The panel's
+   head is 13px and its stops are 11 - and both arrive here at 13, because
+   .field > span outranks .field-stops - so the sizes are set here in the order
+   the eye should take them. It is the one place this card restyles the row it
+   borrowed, and it is spacing and weight only: the track, the thumb and every
+   answer they make to the whimsy axis are still the panel's.
+   --------------------------------------------------------------------------- */
+.ghost-card[data-hint="whimsy"] {
+  /* No dashed edge. The dash is what marks a hint as provisional - something
+     written on the board rather than put on it - and this card is not a hint:
+     it is a control that happens to be shown while the board is empty. So it
+     takes .card's own inset hairline back, with the drop shadow the ghost rule
+     put in place of it. An ordinary card at all three stops.
+
+     The inner rule goes with the dash for a plainer reason: it draws 5px in, and
+     a card 64 world px tall spends every one of those on the slider. */
+  border: 0;
+  box-shadow: inset 0 0 0 var(--hairline) var(--item-border), var(--item-shadow);
+  justify-content: center;
+  --card-pad-x: 20px;
+  --card-pad-y: 9px;
 }
-:root[data-whimsy="0"] .item[data-type="ghost"]:nth-child(3n) .ghost-card {
+.ghost-card[data-hint="whimsy"]::after { content: none; }
+/* Softish rounds this card almost to a pill (--radius runs to 20px there), and a
+   corner that is still turning at the point the first stop name starts leaves
+   the two outer names looking pushed against the edge. The names step in as the
+   corner grows; the track steps in with them, which is right - a track that ran
+   into the curve would look like it continued behind it. */
+:root[data-whimsy="0"] .ghost-card[data-hint="whimsy"] { --card-pad-x: 28px; }
+.item[data-type="ghost"] .ghost-dial {
+  flex: 1;
+  min-width: 0;
+  /* The row is the last thing in the card and the only thing in it, so the
+     margin a stacked field leaves for the next control is height this card does
+     not have. Same for the stops' own gap under the head they do not follow. */
+  margin: 0;
+  /* .item-body refuses the pointer so a whole card is one drag target. The dial
+     is the exception on the board: it has to be operated, not dragged. */
+  pointer-events: auto;
+}
+/* The name of the axis. The loudest of the three lines and still a quiet one -
+   letter-spaced rather than enlarged, the way a caption on a plate is. */
+.item[data-type="ghost"] .ghost-dial > span:first-child {
+  margin: 0;
+  font-size: var(--t-small);
+  line-height: 1.15;
+  letter-spacing: calc(0.04em * var(--ls-scale));
+  color: var(--ink-2);
+}
+/* The stops. Quieter again, and inset by half a thumb: a name marks the point
+   the thumb comes to rest on, and the thumb's centre stops half its own width
+   short of each end of the track. Ranged flush with the card's padding they sit
+   a little wide of the positions they name - and at Softish, where the corners
+   are turning hard, the outer two crowd them. */
+.item[data-type="ghost"] .ghost-dial .field-stops {
+  margin: 0;
+  padding: 0 5px;
+  font-size: var(--t-tiny);
+  line-height: 1.15;
+  color: var(--ink-3);
+}
+/* 18px rather than 22. The dead air in a form-sized hit box, and nothing that
+   is drawn: track 3px, thumb 15, both the panel's. */
+.item[data-type="ghost"] .ghost-dial input[type="range"] { height: 18px; }
+
+/* The shadow, and it cannot live on the card.
+   A mask is applied *after* both box-shadow and filter, so anything the card
+   casts is punched out along with the card - a shadow declared there simply
+   does not appear. It goes on .item-body instead, which is not masked and which
+   holds the page and its tape together: one filter, and the shadow traces the
+   perforated silhouette and the strips hanging off it rather than a rectangle.
+   Two layers, mirroring the two in --item-shadow, since a filter cannot take a
+   box-shadow value directly.
+
+   The dial is out of this too: it is still an ordinary card at this tier, so it
+   still carries its own box-shadow, and a filter here would lay a second one
+   under the first. */
+:root[data-whimsy="0"] .item[data-type="ghost"]:not(:has([data-hint="whimsy"])) .item-body {
+  filter:
+    drop-shadow(0 1px 1px color-mix(in srgb, var(--ink) 12%, transparent))
+    drop-shadow(0 7px 10px color-mix(in srgb, var(--ink) 20%, transparent));
+}
+/* Off with every other CSS-drawn shadow when the quality dial asks - same two
+   selectors as the block at the foot of tokens.css. */
+:root[data-quality="light"]:not([data-q-shadows]) .item[data-type="ghost"] .item-body,
+:root[data-q-shadows="off"] .item[data-type="ghost"] .item-body {
+  filter: none;
+}
+
+.ghost-tape { display: none; }
+:root[data-whimsy="0"] .ghost-tape {
+  display: block;
+  position: absolute;
+  width: var(--t-len);
+  height: 26px;
+  /* Set by the renderer from the placement: the point on the edge it straddles,
+     and the angle it was pressed down at. */
+  left: var(--t-x);
+  top: var(--t-y);
+  transform: translate(-50%, -50%) rotate(var(--t-rot));
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(90deg,
+      color-mix(in srgb, #a8814a 7%, transparent) 0 2px, transparent 2px 6px),
+    linear-gradient(180deg,
+      color-mix(in srgb, #e8cf9c 78%, transparent),
+      color-mix(in srgb, #dcc08a 72%, transparent));
+  /* Torn across, straight along: tape tears against the roll, not with it. */
   clip-path: polygon(
-    0% 3%, 8% 6%, 20% 2%, 29% 6%, 40% 2%, 52% 5%, 63% 1%, 74% 6%,
-    84% 2%, 92% 5%, 100% 3%,
-    97% 16%, 100% 28%, 95% 41%, 99% 54%, 96% 66%, 100% 80%, 97% 92%, 99% 97%,
-    89% 100%, 78% 96%, 67% 99%, 55% 95%, 44% 100%, 32% 96%, 21% 99%,
-    11% 96%, 3% 100%,
-    1% 88%, 5% 76%, 2% 64%, 4% 52%, 0% 40%, 3% 28%, 1% 16%
+    3% 0, 97% 4%, 100% 22%, 96% 41%, 100% 62%, 97% 82%, 99% 100%,
+    2% 96%, 0 78%, 4% 58%, 0 38%, 3% 19%
   );
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 18%, transparent);
 }
 
 .card-icon {
@@ -2721,6 +2875,46 @@ plates do: below a third of size a card is a coloured tile, and a click on
 #side-close:hover,
 #header-close:hover { color: var(--accent); background: var(--paper-2); transform: rotate(90deg); }
 
+/* The tab strip. Outside .side-body, so it holds still while a tab scrolls -
+   three headings that move away as you read are three headings you have to go
+   back for.
+
+   Not buttons in a row: a rule under the strip with the open tab's own segment
+   of it in the accent, which is the same trick the segmented corner controls
+   use and reads as one control rather than as three. */
+.side-tabs {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--rule);
+}
+.side-tab {
+  flex: 1;
+  min-height: calc(32px * var(--density));
+  padding: 0 4px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: none;
+  font: inherit;
+  font-size: var(--t-tiny);
+  font-style: var(--display-italic);
+  letter-spacing: calc(0.18em * var(--ls-scale));
+  text-transform: uppercase;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease);
+}
+.side-tab:hover { color: var(--ink); }
+.side-tab.is-on { color: var(--accent); border-bottom-color: var(--accent); }
+.side-tab:focus { outline: none; }
+.side-tab:focus-visible {
+  outline: var(--sel-line) solid var(--select);
+  outline-offset: calc(var(--sel-gap) * -1);
+}
+
 .side-body {
   flex: 1;
   min-height: 0;
@@ -2735,7 +2929,11 @@ plates do: below a third of size a card is a coloured tile, and a click on
   padding: calc(15px * var(--density)) 0;
   border-top: 1px solid var(--rule);
 }
-.side-sec:first-child { border-top: 0; }
+/* Not `:first-child`: on Mobile the first section of a tab may be hidden, and a
+   hidden element is still the first child - so the panel drew a rule across the
+   top of its first visible heading. ui/panel.js marks whichever one is actually
+   showing. */
+.side-sec.is-first { border-top: 0; }
 .side-sec h2 {
   margin: 0 0 11px;
   font-size: var(--t-tiny);
@@ -2821,13 +3019,15 @@ plates do: below a third of size a card is a coloured tile, and a click on
 .advanced[open] > summary::before { transform: rotate(90deg) translateX(1px); }
 .advanced[open] > summary { margin-bottom: 7px; }
 
-/* The keyboard legend's fold is a whole section rather than a tail inside one,
-   so its summary stands where an h2 stands: no 4px lead-in above it, and the
-   same 11px under it that .side-sec h2 sets. Everything else - the face, the
-   tracking, the caret - it already inherits from .advanced. */
-#keys-fold { margin-top: 0; }
-#keys-fold > summary { padding-top: 0; }
-#keys-fold[open] > summary { margin-bottom: 11px; }
+/* Some folds are a whole section rather than a tail inside one - the keyboard
+   legend and Paper - and their summary stands where an h2 stands: no 4px
+   lead-in above it, and the same 11px under it that .side-sec h2 sets.
+   Everything else - the face, the tracking, the caret - is already inherited
+   from .advanced. ui/panel.js marks these, and marks them by the section having
+   no heading of its own, which is the same fact said the other way round. */
+.advanced.is-head { margin-top: 0; }
+.advanced.is-head > summary { padding-top: 0; }
+.advanced.is-head[open] > summary { margin-bottom: 11px; }
 
 /* Wraps, because the buttons do not. Every one of these is `white-space:
    nowrap` on purpose - a command broken across two lines reads as two commands -
@@ -2910,6 +3110,15 @@ plates do: below a third of size a card is a coloured tile, and a click on
   margin-bottom: 5px;
 }
 .field output { font-family: var(--font-mono); font-style: normal; color: var(--ink); }
+/* A dial's head is centred over its track rather than ranged left with a
+   readout pushed to the right - there is no readout, because the stops named
+   under the track are the value. Worn by the whimsy card on the board (see
+   .ghost-dial); the panel's own rows keep the ordinary head.
+
+   The head alone, by position: .field-stops is a direct child span of the same
+   row, and centring that one would gather the three names into the middle
+   instead of leaving them spread across the track they mark. */
+.field.is-dial > span:first-child { justify-content: center; }
 /* The chevron on a menu, drawn rather than left to the browser.
 
    Padding was tried first and cannot do it: the native dropmarker is part of
@@ -3204,7 +3413,12 @@ kbd {
   z-index: 20;
   align-items: stretch;
   border: var(--hairline) solid var(--rule-2);
-  border-radius: var(--ogee);
+  /* The bin's corner, not the ogee it used to wear. The bar shares the foot of
+     the screen with the bin on one side and the history pair on the other, and
+     all three are the same height - three neighbours in one strip with two
+     different corners on them read as two strips. --leaf is what the other two
+     use (#bin-btn, #history). */
+  border-radius: var(--leaf);
   overflow: hidden;
   background: var(--paper-card);
   box-shadow: var(--shadow-2);
@@ -4703,26 +4917,84 @@ kbd {
   color: var(--ink-3);
   font-size: var(--t-tiny);
 }
-/* Pinned to the whimsy dial by id, not to .field-stops at large. The row itself
+/* Pinned to the whimsy dials by id, not to .field-stops at large. The row itself
    is a general thing - any slider whose stops have names can print them, and the
    masthead's weight dial does - but these three declarations are specimens of
    the three whimsy tiers and belong to nothing else. Left unscoped, "Regular"
    and "Bold" under the weight slider came out set in a serif italic and a sans
-   italic, which is the one thing a weight specimen must not do. */
-#whimsy-stop-labels span:nth-child(1) {
+   italic, which is the one thing a weight specimen must not do.
+
+   Two ids, because there are two whimsy dials: the panel's row (ui/panel.js
+   names it from the schema's stopsId) and the one on the ghost card, which is
+   the same control on the board. The card borrows the panel's slider whole, and
+   the specimens are the half of it that carries the most meaning - a stop that
+   is a word *and* an example of what choosing it does - so it borrows these too
+   rather than printing three names in one face. One block, both rows, so a
+   change to a specimen cannot reach one and miss the other. */
+#whimsy-stop-labels span:nth-child(1),
+#ghost-whimsy-stops span:nth-child(1) {
   font-family: var(--font-serif);
   font-style: italic;
   font-weight: 400;
 }
-#whimsy-stop-labels span:nth-child(2) {
+#whimsy-stop-labels span:nth-child(2),
+#ghost-whimsy-stops span:nth-child(2) {
   color: var(--ink-2);
   font-family: var(--font-sans);
   font-style: italic;
   font-weight: 400;
 }
-#whimsy-stop-labels span:nth-child(3) {
+#whimsy-stop-labels span:nth-child(3),
+#ghost-whimsy-stops span:nth-child(3) {
   color: var(--ink);
   font-family: var(--font-sans);
   font-style: normal;
   font-weight: 700;
+}
+
+/* ---------------------------------------------------------------------------
+   Quality: the two things that are not tokens
+
+   The token half is at the foot of tokens.css. These two are properties rather
+   than custom properties, so they cannot be handed down and have to be
+   cancelled where they are set - and both are set in a dozen places, which is
+   why this is a universal selector and an !important, the same shape the
+   prefers-reduced-motion block above uses and for the same reason.
+
+   Pairs of selectors again: the level alone until ui/quality.js has written the
+   flags out, then the flag, so a hand-set override outranks the stop.
+   --------------------------------------------------------------------------- */
+
+/* A backdrop blur cannot be composited once and reused - the pixels behind it
+   change on every frame of a moving board, so it is re-sampled every frame. It
+   is the most expensive thing on this page per pixel and the least missed. */
+:root[data-quality="light"]:not([data-q-blur]) *,
+:root[data-q-blur="off"] * {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* The durations are tokens and are already flattened next door; this catches
+   the animations and transitions written in milliseconds by hand. */
+:root[data-quality="light"]:not([data-q-anim]) *,
+:root[data-q-anim="off"] * {
+  animation-duration: 0.01ms !important;
+  transition-duration: 0.01ms !important;
+}
+
+/* The two card types that have no `.card` inside them, and so no hairline of
+   their own: canvas/renderers.js hands back the picture itself for an image and
+   a video, because they *are* the card. Every other type wears the inset ring
+   in `.card` and only needed --item-border firming up next door.
+
+   It matters most where you would least expect it: the default fit is `contain`,
+   so a portrait photograph is a letterboxed picture on a card-coloured field,
+   and with the shadow gone that field is the same near-white as the board. An
+   inset ring rather than a border, for the reason .card gives - the item clips
+   at its own radius and would shave a real border at the corners. */
+:root[data-quality="light"]:not([data-q-shadows]) .item[data-type="image"],
+:root[data-quality="light"]:not([data-q-shadows]) .item[data-type="video"],
+:root[data-q-shadows="off"] .item[data-type="image"],
+:root[data-q-shadows="off"] .item[data-type="video"] {
+  box-shadow: inset 0 0 0 var(--hairline) var(--item-border);
 }

@@ -63,6 +63,33 @@ and owns `cmds`, the single command surface that sidebar buttons
 (`data-cmd="…"`), the keyboard and the context menu all drive. A new user-facing
 action is an entry in `cmds`, not a second event listener.
 
+### The sidebar is a table
+
+`index.html` carries a head, an empty tab strip and an empty body; every control
+in the panel is a row in `ui/settings-schema.js`, built by `ui/panel.js`. A new
+setting is one entry there — id, tab, section, type, `get`/`set`, and `when` if
+it only applies to one layout. Three tabs (Board / Look / System), always opening
+on Board; `advanced: true` sinks a control into its section's fold; `when` is
+*absence*, not disabling. `external: true` means another module owns the
+behaviour and the builder only makes the element under the id that module looks
+up — `ui/appearance.js` (whimsy, palette, the three token hosts),
+`canvas/audio.js` (volume) and `ui/sidebar.js` (the board name) all predate the
+builder and are handed their elements. The panel is built **once**, before those
+modules run, and repainted; it is never rebuilt, because they hold their nodes.
+
+### Quality is not board state
+
+`quality.js` sits in the base layer beside `measure.js`: one dial (Light /
+Balanced / Full) resolving seven flags that `canvas/*` reads —`motion`,
+`shadows`, `threads`, `blur`, `anim`, `sharpness`, `build`. Full is the default
+and is exactly what shipped before it existed, so the numbers in `PRESETS.full`
+are the constants they replaced (`DISPLAY_MAX`, `BUILD_BUDGET`). It is stored per
+device in `localStorage`, never in the `.mbrd` — how hard someone else's phone
+should work is not a property of your board. `ui/quality.js` writes the level and
+three flags onto `<html>`; the CSS half is at the foot of `tokens.css` and
+`app.css`, and must stay last, since `[data-quality]` and `[data-whimsy]` have
+identical specificity.
+
 ### Two layouts, one board
 
 Desktop and Mobile share **items** and differ in everything spatial. `board`
