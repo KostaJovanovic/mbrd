@@ -29,10 +29,38 @@ const CRC_TABLE = (() => {
   return t;
 })();
 
-export function crc32(bytes) {
-  let c = 0xffffffff;
+const CRC_INIT = 0xffffffff;
+const crcChunk = (c, bytes) => {
   for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
+  return c >>> 0;
+};
+const crcEnd = c => (c ^ 0xffffffff) >>> 0;
+
+export function crc32(bytes) {
+  return crcEnd(crcChunk(CRC_INIT, bytes));
+}
+
+/**
+ * The same digest over a Blob, read a chunk at a time and never held whole.
+ *
+ * A ZIP entry's CRC has to be known before its local header is written, which
+ * is the one thing that stopped a photograph going into the archive as a Blob
+ * rather than as bytes. Streaming it is the difference between a peak of every
+ * asset resident at once and a peak of one chunk.
+ */
+async function crc32Blob(blob) {
+  const reader = blob.stream().getReader();
+  let c = CRC_INIT;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      c = crcChunk(c, value);
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+  return crcEnd(c);
 }
 
 // --- DEFLATE via the platform ----------------------------------------------
@@ -49,6 +77,18 @@ function supportsRaw() {
 async function deflateRaw(bytes) {
   const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate-raw'));
   return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+/**
+ * Deflate a Blob into a Blob, without either end being resident.
+ *
+ * The output is asked for as a Blob rather than an ArrayBuffer for the same
+ * reason the input is one: the browser keeps a Blob wherever it likes,
+ * including on disk, where a Uint8Array is unavoidably heap.
+ */
+async function deflateRawBlob(blob) {
+  const stream = blob.stream().pipeThrough(new CompressionStream('deflate-raw'));
+  return new Response(stream).blob();
 }
 
 /**
@@ -110,8 +150,23 @@ function dosDateTime(date) {
 }
 
 /**
- * Build a ZIP from `[{ name, data: Uint8Array, compress?: boolean }]`.
- * Returns a Blob. Entry order is preserved.
+ * Build a ZIP from `[{ name, data, compress?: boolean }]`. Returns a Blob.
+ * Entry order is preserved.
+ *
+ * `data` may be a Uint8Array, an ArrayBuffer, or a **Blob**, and the third is
+ * the one that matters. Everything an export writes that is large is an asset,
+ * and an asset is already a Blob in the store - the browser's, kept wherever
+ * the browser likes, quite possibly on disk. Turning it into a Uint8Array to
+ * hand it over here pulled the whole board onto the heap, twice over: once as
+ * the entry's `data` and again as the payload held in `parts` until the final
+ * Blob was assembled. A four-gigabyte board could not be written by a tab that
+ * had to hold four gigabytes to write it.
+ *
+ * Passed as a Blob it is never resident. The CRC is streamed, the deflate (when
+ * it is worth doing) goes Blob to Blob through the platform's own compressor,
+ * and `parts` holds a *reference* - `new Blob([...])` composes its members
+ * rather than copying them. Peak memory becomes a chunk and a header instead of
+ * the archive.
  */
 export async function writeZip(entries, { date = new Date(), mime = 'application/zip' } = {}) {
   const { time, date: dosDate } = dosDateTime(date);
@@ -131,18 +186,26 @@ export async function writeZip(entries, { date = new Date(), mime = 'application
   for (const entry of entries) {
     const name = enc.encode(entry.name);
     if (name.length > 0xffff) throw new Error(`"${entry.name}" has too long a name for a ZIP entry`);
-    const raw = entry.data instanceof Uint8Array ? entry.data : new Uint8Array(entry.data);
-    const crc = crc32(raw);
+    // A Blob stays a Blob all the way to the output; anything else is bytes.
+    // `size` and `length` are the same fact under two names, so they are read
+    // once here and the headers below use the numbers rather than the objects.
+    const blobbed = typeof Blob !== 'undefined' && entry.data instanceof Blob;
+    const raw = blobbed || entry.data instanceof Uint8Array
+      ? entry.data : new Uint8Array(entry.data);
+    const rawLen = blobbed ? raw.size : raw.length;
+    const crc = blobbed ? await crc32Blob(raw) : crc32(raw);
 
     let method = 0;
     let payload = raw;
-    if (entry.compress && supportsRaw() && raw.length > 256) {
-      const deflated = await deflateRaw(raw);
+    let payloadLen = rawLen;
+    if (entry.compress && supportsRaw() && rawLen > 256) {
+      const deflated = blobbed ? await deflateRawBlob(raw) : await deflateRaw(raw);
+      const deflatedLen = blobbed ? deflated.size : deflated.length;
       // Only take the compressed form when it actually helps.
-      if (deflated.length < raw.length) { method = 8; payload = deflated; }
+      if (deflatedLen < rawLen) { method = 8; payload = deflated; payloadLen = deflatedLen; }
     }
 
-    if (raw.length > MAX || payload.length > MAX) {
+    if (rawLen > MAX || payloadLen > MAX) {
       throw new Error(`"${entry.name}" is too large for a non-ZIP64 archive (4 GB limit)`);
     }
 
@@ -155,8 +218,8 @@ export async function writeZip(entries, { date = new Date(), mime = 'application
     lv.setUint16(10, time, true);
     lv.setUint16(12, dosDate, true);
     lv.setUint32(14, crc, true);
-    lv.setUint32(18, payload.length, true);
-    lv.setUint32(22, raw.length, true);
+    lv.setUint32(18, payloadLen, true);
+    lv.setUint32(22, rawLen, true);
     lv.setUint16(26, name.length, true);
     lv.setUint16(28, 0, true);
     local.set(name, 30);
@@ -173,14 +236,14 @@ export async function writeZip(entries, { date = new Date(), mime = 'application
     cv.setUint16(12, time, true);
     cv.setUint16(14, dosDate, true);
     cv.setUint32(16, crc, true);
-    cv.setUint32(20, payload.length, true);
-    cv.setUint32(24, raw.length, true);
+    cv.setUint32(20, payloadLen, true);
+    cv.setUint32(24, rawLen, true);
     cv.setUint16(28, name.length, true);
     cv.setUint32(42, offset, true);       // local header offset
     cd.set(name, 46);
     central.push(cd);
 
-    offset += local.length + payload.length;
+    offset += local.length + payloadLen;
     if (offset > MAX) throw new Error('Board is too large for a non-ZIP64 .mbrd (4 GB limit)');
   }
 
