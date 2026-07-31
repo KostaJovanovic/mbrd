@@ -131,7 +131,7 @@ export function mobileZoom(viewWidth, worldWidth, pad = MOBILE_SIDE_PAD) {
  * how they went unnoticed through two rounds of profiling. Switching one off
  * and reading the HUD is the only honest measurement, so the switches stay in
  * the tree as the regression check rather than being deleted once they have
- * been used. See research/2026-07-30-mobile-scroll-perf.md.
+ * been used. See research/old/2026-07-30-mobile-scroll-perf.md.
  *
  * - `legacyVars` puts back the *cost* of what canvas/mobile-frame.js replaced:
  *   the five custom properties written on #viewport on every frame. Nothing

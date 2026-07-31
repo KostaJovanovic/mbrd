@@ -6,7 +6,7 @@
 > 5 were not built, and the measurement is why** — warm, `#perf2` and `#perf3`
 > are indistinguishable from what shipped, and six mounted nodes on a 101-item
 > board leave the step-5 levers nothing to save. The Results tables and the
-> reasoning are in `research/2026-07-30-mobile-scroll-perf.md`; the step 4 and 5
+> reasoning are in `research/old/2026-07-30-mobile-scroll-perf.md`; the step 4 and 5
 > sections below are kept as written, for the Desktop case and for the next
 > time.
 >
@@ -29,7 +29,7 @@
 >   sheet sits below `#grid-ink` and the masthead above it, so the single
 >   wrapper the plan describes would have collapsed the two into one depth.
 
-Carries out `research/2026-07-30-mobile-scroll-perf.md`. That document is the
+Carries out `research/old/2026-07-30-mobile-scroll-perf.md`. That document is the
 research: what the frame spends its time on and why. This one is the work: the
 exact files, the exact edits, what each step is verified against, and where the
 commits fall.
@@ -470,7 +470,7 @@ number first and a look on the device after.
 
 ## Step 6 — Re-baseline, close, and write it up
 
-- Final numbers into `research/2026-07-30-mobile-scroll-perf.md` under
+- Final numbers into `research/old/2026-07-30-mobile-scroll-perf.md` under
   "Results", in the same table shape as the baseline, so the next person can see
   which step bought what.
 - Add a **Status** block at the top of that document in the style of

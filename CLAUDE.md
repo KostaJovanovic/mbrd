@@ -238,8 +238,13 @@ cache changes explicitly.
 ## Notes
 
 `PLAN.md` is the full design; `research/` holds the reasoning behind past
-decisions (`research/old/REFACTOR.md`, plus dated audits — the Safari,
-scalability and Tauri-readiness ones are the recent ones). `docs/` holds three
+decisions, and its top level is deliberately short — only work that is still
+open. Two documents live there now: the pan/zoom performance plan (B1, A4, A5,
+B3 and B4 are unbuilt) and the scalability/readability audit (the `state.js`
+split and the delta-payload events are unbuilt). Anything carried out moves to
+`research/old/` — that is where the Safari audit and its fixes, the Mobile
+scroll pair, the sidebar rebuild, the ghost-cards plan and `REFACTOR.md` are.
+`research/future/` is the not-yet-started pile (Tauri readiness). `docs/` holds three
 references worth reading before touching their subsystems: `docs/mbrd-format.md`
 and `docs/layout-settings.md` are the specs, `docs/browser-support.md` records
 the browser floor. `window.mbrd` is a deliberate console handle (`mbrd.board`,

@@ -130,7 +130,7 @@ continuity with the readings above and should not be trusted on a phone.
 
 ## Status (closed 2026-07-31)
 
-Steps 1–3 of `research/2026-07-30-mobile-scroll-impl.md` are on `main`, 600 unit
+Steps 1–3 of `research/old/2026-07-30-mobile-scroll-impl.md` are on `main`, 600 unit
 tests pass, and the measurement is in and confirmed — see Results above. Steps 4
 and 5 were **not built**, and the numbers are why: the board holds 120Hz and
 loses 0.5% of its frames, and neither remaining switch improves on that. What

@@ -254,7 +254,7 @@ Even delivered in one go, build it in this order — each step runs on its own:
 - **Whether `Build ahead` deserves a user-facing control at all,** or should
   simply follow the dial with no override row. It is the one lever whose effect
   is a trade rather than a reduction, and the `worst` 117–133 ms outlier in
-  `research/2026-07-30-mobile-scroll-perf.md` is still unexplained with
+  `research/old/2026-07-30-mobile-scroll-perf.md` is still unexplained with
   `BUILD_BUDGET` as the named suspect — measuring that first may set this row's
   values for us.
 
@@ -284,7 +284,7 @@ Mobile-width load hides exactly the seven Desktop-only controls, and
 
 - **The ornament lever is threads only.** The plan said "grid & web detail". The
   grid was measured at 0.2% of frames in
-  `research/2026-07-30-mobile-scroll-perf.md` — noise — and the only real
+  `research/old/2026-07-30-mobile-scroll-perf.md` — noise — and the only real
   saving available was to stop drawing the Harsh tier's lattice, which would be
   a second, hidden "off" switch sitting next to the real one in Board & grid.
   The row is called *Threads between cards* and does one thing.
