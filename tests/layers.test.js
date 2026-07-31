@@ -141,6 +141,9 @@ const BASE = new Set([
   // separate files, since a concern lifted out of state.js can only stay out if
   // what it stands on is lower than what it left.
   'board-store.js', 'board-model.js', 'history.js', 'sticky.js', 'layout.js', 'stacking.js',
+  // The web's graph and its governor. Pure arithmetic over points - no DOM, no
+  // viewport - which is what let it out of canvas/web.js at all.
+  'web-graph.js',
 ]);
 
 /**
