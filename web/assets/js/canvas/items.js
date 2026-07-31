@@ -897,6 +897,16 @@ function placeBox(el, item) {
   // got drawn - so the number is handed to them from here, where the size is
   // known. See --own-radius in app.css.
   el.style.setProperty('--half-min', (Math.min(item.w, item.h) / 2).toFixed(2) + 'px');
+  // The same fact per axis, for anything that has to stay a share of the side it
+  // sits on rather than of the shorter one. The corner grab boxes are why: they
+  // are a constant size on screen, so on a small card four of them met in the
+  // middle and the whole face resized. They now cap their lap onto the card at a
+  // fraction of the side they lap along - which on a 400x60 banner has to be a
+  // fraction of 400 across and of 60 down, not of 60 twice. A percentage cannot
+  // say this: a percentage inside a grip resolves against the grip's own box,
+  // which is itself already capped. See --grip-lap-x / -y in app.css.
+  el.style.setProperty('--half-w', (item.w / 2).toFixed(2) + 'px');
+  el.style.setProperty('--half-h', (item.h / 2).toFixed(2) + 'px');
   el.style.transform = item.rot ? `rotate(${-item.rot}deg)` : '';
 }
 

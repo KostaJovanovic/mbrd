@@ -350,17 +350,26 @@ button, input, select, textarea { font: inherit; color: inherit; }
   pointer-events: auto;
   cursor: text;
   font-family: var(--font-display);
-  /* --mobile-title-fit is the shrink that keeps an unwrapped name inside the
-     board, and it is 1 for every other case. Nothing in CSS can ask "is this
-     line wider than its container" - the wrap is the only fitting the language
-     does, and turning the wrap off takes it away - so fitTitle() in
+  /* --mobile-title-fit is the shrink that keeps a name inside the board: to one
+     line when the wrap is off, to two lines when it is on. Nothing in CSS can
+     ask "is this line wider than its container" or "how many lines did that
+     take" - the wrap is the only fitting the language does - so fitTitle() in
      ui/mobile-header.js measures it and writes the ratio here. Applied to the
      whole clamp rather than inside it, so the fit outranks the 20px floor: a
      name that has to go under twenty pixels to fit is still a name that has to
-     fit. */
+     fit.
+
+     The ceiling is a fraction of the board, not the 96px it used to be. The size
+     dial asks for a fraction (width x scale), and an absolute cap stopped the
+     name growing while the board kept going - so the same setting gave one
+     name-to-box ratio on a 416-wide phone and another on the 512 the Desktop
+     card is normalised against, and one name broke in two different places on
+     the two boards. --mobile-title-cap is handed down by ui/mobile-header.js so
+     the card's own arithmetic and this clamp cannot drift; see TITLE_CAP. */
   font-size: calc(clamp(20px,
     calc(var(--mobile-board-width, 0px) * var(--mobile-title-scale, 0.13)),
-    96px) * var(--mobile-title-fit, 1));
+    calc(var(--mobile-board-width, 0px) * var(--mobile-title-cap, 0.1875))
+  ) * var(--mobile-title-fit, 1));
   /* Font height is a vertical-only scale: it changes neither width nor wrapping.
      A hair below centre. Even growth is the middle of the *box*, and 50% is what
      that means - but the box is not the name: a line box reserves descender room
@@ -1238,7 +1247,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
    into the curve would look like it continued behind it. */
 :root[data-whimsy="0"] .ghost-card[data-hint="whimsy"] { --card-pad-x: 28px; }
 .item[data-type="ghost"] .ghost-dial {
-  flex: 1;
+  /* Sized by its contents, not stretched to the card. The card centres what is
+     in it (justify-content on .ghost-card), and a row told to fill the height
+     leaves its three lines sitting at the top of whatever it filled - which is
+     invisible on a Desktop card that is exactly as tall as the row, and half a
+     card of empty space on Mobile, where the dial is two rows tall. */
   min-width: 0;
   /* The row is the last thing in the card and the only thing in it, so the
      margin a stacked field leaves for the next control is height this card does
@@ -1272,6 +1285,51 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* 18px rather than 22. The dead air in a form-sized hit box, and nothing that
    is drawn: track 3px, thumb 15, both the panel's. */
 .item[data-type="ghost"] .ghost-dial input[type="range"] { height: 18px; }
+
+/* ---- Mobile ------------------------------------------------------------
+   A phone reads these at arm's length, and it reads them zoomed out: the Mobile
+   board is 512 world units laid across a screen four hundred and something
+   across, so every size here arrives on the glass about a fifth smaller than it
+   is written. Type set for a Desktop card, seen through that, is small twice
+   over. So the hints and the dial are both stepped up, and the padding comes in
+   to pay for it - a card two rows tall has no spare height, and the words are
+   what the card is for.
+
+   Keyed on the board mode rather than a width query, because it is the layout
+   that changed and not the window: main.js writes data-board-mode on <html>,
+   and a Mobile board shown on a laptop is still a Mobile board. */
+:root[data-board-mode="mobile"] .ghost-card {
+  --card-pad-x: 16px;
+  --card-pad-y: 13px;
+  gap: 4px;
+}
+:root[data-board-mode="mobile"] .ghost-title { font-size: 17px; }
+:root[data-board-mode="mobile"] .ghost-line {
+  font-size: 14px;
+  line-height: 1.38;
+}
+/* The torn page holds its text clear of the perforation down the left edge. A
+   third of the width of a Desktop card is one thing; a third of a phone's is a
+   column of nothing beside four lines of prose, so it comes in to the width of
+   the stubs and no further. */
+:root[data-board-mode="mobile"][data-whimsy="0"] .ghost-card:not([data-hint="whimsy"]) {
+  --card-pad-x: 26px;
+}
+
+/* The dial, where the same card is two rows tall and eight columns wide instead
+   of one by four. It gets its full 22px hit box back with the larger type - this
+   is the one layout where the control is worked with a thumb, not a pointer. */
+:root[data-board-mode="mobile"] .item[data-type="ghost"] .ghost-dial > span:first-child {
+  font-size: 17px;
+  margin-bottom: 3px;
+}
+:root[data-board-mode="mobile"] .item[data-type="ghost"] .ghost-dial .field-stops {
+  font-size: 14px;
+  margin-top: 3px;
+}
+:root[data-board-mode="mobile"] .item[data-type="ghost"] .ghost-dial input[type="range"] {
+  height: 22px;
+}
 
 /* The shadow, and it cannot live on the card.
    A mask is applied *after* both box-shadow and filter, so anything the card
@@ -2533,10 +2591,10 @@ plates do: below a third of size a card is a coloured tile, and a click on
   pointer-events: none;
   /* The grab area holds a constant size on screen at every zoom (--iz = 1/zoom),
      so a corner is as easy to aim at pulled right out as it is at 100% - a card
-     is resized as far out as 10% (see GRIP_MIN_ZOOM). Zoomed out the constant
-     screen size is large in world units, which would let a corner box lap the
-     neighbouring card; the corner rule below caps it at the item's own half so it
-     never crosses the card or the next corner's target. */
+     is resized as far out as 10% (see GRIP_MIN_ZOOM). That constant is the reach
+     *outward*, which costs the card nothing; how far the same box is allowed to
+     lap back over the face is a separate number, and it is capped against the
+     card's own size by the corner rule below. */
   --grip-reach: var(--iz);
 }
 .grip::before {
@@ -2565,19 +2623,43 @@ plates do: below a third of size a card is a coloured tile, and a click on
    depends on what is painted in front - a transparent PNG, a card with no
    background - and this does not. */
 .grip:not(.grip-edge)::before {
-  /* A constant square on screen, straddling the corner at ordinary zoom: it
-     reaches --grip-out past the ring and --grip-out back onto the card, centred on
-     the card's own corner, and its whole span resizes - the on-card lap included.
-     Below the chrome rung it is clipped to the outside half instead (see the
-     zoom-far rule below), which is where the move-vs-resize split lives. This is
-     only the corner; the outside strips along the edges are the edge grips. */
+  /* Straddling the corner at ordinary zoom: it reaches --grip-out past the ring
+     and laps --grip-lap-* back onto the card, and its whole span resizes - the
+     on-card lap included. Below the grab rung it is clipped to the outside alone
+     instead (see the zoom-grab rule below), which is where the move-vs-resize
+     split lives. This is only the corner; the outside strips along the edges are
+     the edge grips. */
   inset: auto;
+  /* Outward. A constant size on screen, and the card's size has no say in it:
+     the space past a card's edge belongs to nothing else, so a small card is
+     grabbed from outside exactly as easily as a large one. */
   --grip-out: calc(var(--grip-corner, 24px) * var(--grip-reach));
-  width:  calc(2 * var(--grip-out));
-  height: calc(2 * var(--grip-out));
+  /* Inward, and the reason this pair exists. The lap used to be --grip-out as
+     well, so a corner claimed a constant 24px of the face however small the card
+     was: at MIN_SIZE (48) the four corners met in the middle and the *entire*
+     card resized, with no move target left on it at all, and at 96 they still
+     took a quarter of it. The lap is now that same constant or an eighth of the
+     side it laps along, whichever is less - so it stops scaling with the pointer
+     and starts scaling with the card, and the share of a face it can ever cover
+     is fixed (four corners, 6.25%) instead of running to everything.
+
+     Per axis, because a 400x60 banner has to give up an eighth of 400 across and
+     an eighth of 60 down; capping both against the shorter side would leave a
+     wide card with a target sized for a narrow one. --half-w / --half-h are
+     w/2 and h/2, written per item by canvas/items.js/place() - a percentage
+     cannot say this, since a percentage here resolves against the grip's own
+     box, which is itself already capped. The 9999px fallbacks mean an element
+     that has not been placed yet behaves exactly as it did before. */
+  --grip-lap-x: min(var(--grip-out), calc(var(--half-w, 9999px) * 0.25));
+  --grip-lap-y: min(var(--grip-out), calc(var(--half-h, 9999px) * 0.25));
+  width:  calc(var(--grip-out) + var(--grip-lap-x));
+  height: calc(var(--grip-out) + var(--grip-lap-y));
 }
-/* Centred on the card's corner (--sel-edge is the ring's offset): --grip-out
-   reaches out past it, --grip-out laps back onto the card. */
+/* Hung on the card's corner (--sel-edge is the ring's offset): --grip-out reaches
+   out past it, and the box's width carries the lap back in. The offsets are the
+   *outward* reach alone, so the outer corner is pinned and every cap above eats
+   into the inner side only - which is what keeps a capped grip in the same place
+   as an uncapped one. */
 .grip[data-g="nw"]::before,
 .grip[data-g="sw"]::before { left:   calc(var(--sel-edge) - var(--grip-out)); }
 .grip[data-g="ne"]::before,
@@ -2588,10 +2670,13 @@ plates do: below a third of size a card is a coloured tile, and a click on
 .grip[data-g="se"]::before { bottom: calc(var(--sel-edge) - var(--grip-out)); }
 
 /* Below the grab rung (zoom-grab, 25%) a card is a swatch its corners would
-   otherwise cover, so there the hitbox is clipped to just its outside half - the
+   otherwise cover, so there the hitbox is clipped to just its outside - the
    inner corner lands exactly on the card's own corner and it reaches only outward
-   (width falls from 2*--grip-out to --grip-out, the offsets above hold the outer
-   corner in place). This is the whole fix, and it is geometry, not a JS patch:
+   (width falls to --grip-out, dropping the lap entirely; the offsets above hold
+   the outer corner in place). The proportional cap above does not make this
+   redundant: the cap is about how big the *card* is and this is about how big it
+   is *on screen*, and a large card zoomed out is small on screen while its eighth
+   is still an eighth. This is geometry, not a JS patch:
    with no hitbox over the face, the face itself takes every press and its own
    cursor - so the card moves and reads as movable the instant it is drawn, no
    pointermove needed to correct a cursor after the fact. And the corner mark's
@@ -4438,8 +4523,10 @@ kbd {
   /* Marks keep their drawn size and the targets around them grow. A finger is
      not a pointer: 9px of slop each way on the edge strips, and a corner reach of
      40 past the ring rather than 24, so a thumb finds the corner without a
-     magnifying pinch. Only the outside of the corner resizes anyway (input.js),
-     so the reach onto the card is never in the way. */
+     magnifying pinch. The extra reach is spent outward and costs the card
+     nothing: what a corner laps back over the face is capped at an eighth of the
+     side either way (--grip-lap-x / -y), so 40 does not cover a small card the
+     way it used to - it only makes the space outside it easier to hit. */
   /* The edge strips are pure hit area, so --grip-edge is the target itself -
      and it sets the offset as well as the thickness, so a wider strip grows
      away from the card rather than over it. */
@@ -4684,6 +4771,10 @@ kbd {
     box-shadow: none;
   }
   :is(#sidebar, #header-panel).is-slider-focus .side-head,
+  /* The tab strip goes wholesale, like the head and the foot and unlike the
+     body: no slider is ever inside it, so it needs none of the
+     :not(:has(.is-slider-active)) care the rows below it do. */
+  :is(#sidebar, #header-panel).is-slider-focus .side-tabs,
   :is(#sidebar, #header-panel).is-slider-focus .side-foot,
   :is(#sidebar, #header-panel).is-slider-focus .side-body :where(*):not(:has(.is-slider-active)):not(.is-slider-active) {
     opacity: 0;

@@ -484,6 +484,10 @@ function applyTitleStyle(title, style, axes) {
   if (stack) title.style.fontFamily = stack;
   else title.style.removeProperty('font-family');
   title.style.setProperty('--mobile-title-scale', formatAxis(style.size / 100));
+  // The cap, handed to CSS rather than written there, so the masthead's clamp
+  // and the card's own arithmetic (styleTitleCard) read one number. See
+  // TITLE_CAP for why it is a ratio and not the 96px it replaced.
+  title.style.setProperty('--mobile-title-cap', String(TITLE_CAP));
   title.style.setProperty('--mobile-title-stretch', formatAxis(style.stretch / 100));
   // A plain number; app.css turns it into a fraction of the band height so the
   // nudge holds its proportion at any font size. See the transform there.
@@ -526,7 +530,7 @@ function styleTitleCard(style = header(), axes = availableAxes()) {
   // the real 8x64=512 masthead hits and made the card wrap sooner. This reads
   // the Mobile layout's own width whatever layout is showing.
   const ref = mobileBoardWorldWidth() || 512;
-  const px = Math.min(96, Math.max(20, ref * (style.size / 100)));
+  const px = Math.min(ref * TITLE_CAP, Math.max(20, ref * (style.size / 100)));
   card.style.setProperty('--mobile-title-ratio', String(px / ref));
   scheduleFit();
 }
@@ -554,6 +558,88 @@ function styleTitleCard(style = header(), axes = availableAxes()) {
 const FIT_FLOOR = 0.25;
 let fitFrame = 0;
 
+/**
+ * How many lines a board's name is set on before it is shrunk to fit them.
+ *
+ * Two, and it is a rule rather than a preference: the masthead and the Desktop
+ * title card are one name in two places, and a name that breaks after "New" in
+ * one and after "board" in the other reads as two different boards. Two lines is
+ * what the default name wants, and holding both to the same number is what makes
+ * the two agree at every size.
+ *
+ * The wrap is still what does the breaking - this only decides how much room it
+ * is given to do it in. A name too long to reach two lines by the floor below is
+ * left at the floor and clipped by the -webkit-line-clamp in app.css, which is
+ * the same failure it had before.
+ */
+const TITLE_LINES = 2;
+
+/**
+ * The largest a name may be set relative to the board it is set across.
+ *
+ * 0.1875 is 96/512 - the absolute 96px cap this replaces, over the 512-unit
+ * Mobile board it was chosen against. The absolute cap was the bug: the size
+ * dial asks for a *fraction* of the board (width x size/100), so once that
+ * fraction crossed 96px the name stopped growing while the board kept going,
+ * and the same setting gave a different name-to-box ratio on a 416-wide phone
+ * than on the 512 the Desktop card normalises against. The two then wrapped
+ * differently, which is exactly what a shared style must not do. As a ratio it
+ * caps the same way at every width, and the card (which computes its own cap in
+ * styleTitleCard below) and the masthead (which reads it through CSS) cannot
+ * drift apart.
+ */
+const TITLE_CAP = 0.1875;
+
+/**
+ * How many lines the name is currently set on.
+ *
+ * A Range's client rects come one per line fragment, which is the only honest
+ * count: dividing the box height by the line height assumes a numeric
+ * line-height, and this one is `normal` by default - the face's own metrics,
+ * which no number here knows. Rects are grouped by their top edge because a line
+ * holding more than one inline box reports one rect each.
+ */
+function lineCount(title) {
+  if (typeof document === 'undefined' || typeof document.createRange !== 'function') return 1;
+  const range = document.createRange();
+  range.selectNodeContents(title);
+  const tops = new Set();
+  for (const r of range.getClientRects()) {
+    if (r.width > 0.5) tops.add(Math.round(r.top * 2));
+  }
+  return tops.size || 1;
+}
+
+/**
+ * Shrink a wrapped name until it is set on TITLE_LINES lines or fewer.
+ *
+ * Searched rather than solved. A line's worth of text scales with the font, so
+ * the arithmetic answer is lines-wanted over lines-got - but the wrap only
+ * breaks at words, and `text-wrap: balance` moves the breaks as the size
+ * changes, so that answer overshoots and leaves the name smaller than it needs
+ * to be. Six halvings between the floor and no shrink at all find the largest
+ * size that still fits, to about a percent, for six reads of layout in one frame
+ * callback. It runs only when something that could change the answer has
+ * happened - see scheduleFit.
+ */
+function fitLines(title, max = TITLE_LINES) {
+  title.style.setProperty('--mobile-title-fit', '1');
+  if (lineCount(title) <= max) {
+    title.style.removeProperty('--mobile-title-fit');
+    return;
+  }
+  let low = FIT_FLOOR;
+  let high = 1;
+  let best = FIT_FLOOR;
+  for (let pass = 0; pass < 6; pass++) {
+    const mid = (low + high) / 2;
+    title.style.setProperty('--mobile-title-fit', String(mid));
+    // Bigger means more lines, so a size that fits is a new lower bound to beat.
+    if (lineCount(title) <= max) { best = mid; low = mid; } else high = mid;
+  }
+  title.style.setProperty('--mobile-title-fit', String(Math.floor(best * 1000) / 1000));
+}
+
 function scheduleFit() {
   if (fitFrame || typeof requestAnimationFrame !== 'function') return;
   fitFrame = requestAnimationFrame(() => {
@@ -564,25 +650,32 @@ function scheduleFit() {
 
 function fitTitle() {
   const wrap = header().wrap;
-  // The masthead fits only on Mobile; the card is Desktop-only. Both fit only
-  // when the wrap is off - a wrapped name fits itself. Same measure for each,
-  // against its own box: the strip for the masthead, the card for the card.
+  // The masthead fits only on Mobile; the card is Desktop-only. Each is measured
+  // against its own box - the strip for the masthead, the card for the card -
+  // and against the same rule, which is what keeps one name from breaking in two
+  // different places on the two boards.
   fitOne(el('mobile-board-title'), el('mobile-board-header'),
-    wrap || board.layoutMode !== 'mobile');
+    wrap, board.layoutMode !== 'mobile');
   const cardName = titleCardEl();
-  fitOne(cardName, cardName?.closest('.title-card') ?? null, wrap);
+  fitOne(cardName, cardName?.closest('.title-card') ?? null, wrap, false);
 }
 
 /**
- * Shrink one name to its box when the wrap is off, or clear the shrink. `skip`
- * is the "leave it alone" case (wrapped, or the wrong layout). Measured with the
- * fit at 1 so the ratio is between the unfitted line and the room - see fitTitle
- * above for why. Floored rather than rounded so a line a fraction of a pixel too
- * wide is not called a fit.
+ * Fit one name to its box: to a line when the wrap is off, to TITLE_LINES lines
+ * when it is on. `off` is the "not on this layout" case, which clears the shrink
+ * rather than computing one for a box nobody is looking at.
+ *
+ * The wrapped half used to do nothing at all, on the reasoning that a wrapped
+ * name fits itself. It does - into however many lines it takes, which is not the
+ * same promise. The unwrapped half is unchanged: measured with the fit at 1, so
+ * the ratio is between the *unfitted* line and the room rather than between the
+ * shrunk line and the room, and floored rather than rounded so a line a fraction
+ * of a pixel too wide is not called a fit.
  */
-function fitOne(title, box, skip) {
+function fitOne(title, box, wrap, off) {
   if (!title || !box) return;
-  if (skip) { title.style.removeProperty('--mobile-title-fit'); return; }
+  if (off) { title.style.removeProperty('--mobile-title-fit'); return; }
+  if (wrap) { fitLines(title); return; }
   title.style.setProperty('--mobile-title-fit', '1');
   const room = box.clientWidth;
   const line = title.offsetWidth;

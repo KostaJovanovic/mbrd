@@ -27,6 +27,10 @@ import {
 // on every board that arrives from a file.
 import { DEFAULT_SCALE, clampScale, PAPERS } from './measure.js';
 import { splitAppearance, mergeAppearance } from './layout-settings.js';
+// Downward: the catalogue is pure - geometry.js and nothing else - and this is
+// the one thing state needs from it, which of the two lists a stored
+// arrangement id belongs to. See tests/layers.test.js, where it is BASE.
+import { mobileArrangement } from './arrange/arrangements.js';
 
 export const bus = emitter();
 
@@ -580,9 +584,29 @@ export function addItems(items, label = 'Add', options = {}) {
 
 const MOBILE_PACK_EPSILON = 1e-9;
 
+/**
+ * Half the space left around a card in the column, in world units.
+ *
+ * The lattice seam is always there - cellInset() is what keeps a card from
+ * sitting flush on the grid lines it is laid between - and Mobile's `spacing`
+ * is *added* to it rather than replacing it. So the gap between two neighbours
+ * is `spacing + 2 * cellInset(step)`, and a Mobile board at spacing 0 is
+ * exactly the board that shipped before the setting existed, which is the one
+ * property worth keeping: turning a slider up must be the only way to change
+ * a board that was already saved.
+ *
+ * Half, because a gap is shared: each of the two cards either side of it gives
+ * up this much, the same arrangement CELL_GAP makes in geometry.js and for the
+ * same reason - an item at the edge of the column then has the same margin as
+ * one in the middle of it.
+ */
+function mobileSeam(step, spacing = 0) {
+  return cellInset(step) + Math.max(0, spacing || 0) / 2;
+}
+
 /** Number of Mobile grid cells needed to contain one unrotated side. */
-function mobileCellSpan(side, step, maximum = Number.POSITIVE_INFINITY) {
-  const seam = 2 * cellInset(step);
+function mobileCellSpan(side, step, maximum = Number.POSITIVE_INFINITY, spacing = 0) {
+  const seam = 2 * mobileSeam(step, spacing);
   return Math.min(
     Math.max(Math.ceil((side + seam) / step - MOBILE_PACK_EPSILON), 1),
     maximum,
@@ -600,10 +624,10 @@ function mobilePackStartRow(obstacles, step) {
 }
 
 /** Compact row-major packing into the selected Mobile occupancy grid. */
-function packMobileGrid(items, obstacles, step, columns) {
+function packMobileGrid(items, obstacles, step, columns, spacing = 0) {
   const occupied = new Set();
   const startRow = mobilePackStartRow(obstacles, step);
-  const inset = cellInset(step);
+  const inset = mobileSeam(step, spacing);
   const open = (col, row, cols, rows) => {
     for (let y = row; y < row + rows; y++) {
       for (let x = col; x < col + cols; x++) {
@@ -619,8 +643,8 @@ function packMobileGrid(items, obstacles, step, columns) {
   };
 
   return items.map(item => {
-    const cols = mobileCellSpan(item.w, step, columns);
-    const rows = mobileCellSpan(item.h, step);
+    const cols = mobileCellSpan(item.w, step, columns, spacing);
+    const rows = mobileCellSpan(item.h, step, Number.POSITIVE_INFINITY, spacing);
     let row = startRow;
     let col = 0;
     let found = false;
@@ -661,47 +685,62 @@ function packMobileGrid(items, obstacles, step, columns) {
  * Snapped and unsnapped geometry are packed separately. The snapped copy uses
  * the lattice's normal inset seam; its presnap memo therefore restores another
  * collision-free grid layout if the user later turns snapping off.
+ *
+ * `spacing` is the Mobile profile's own - zero on a board that has never been
+ * asked for a gap, which is every board saved before the setting existed. It is
+ * added to the seam on all four sides of every card and to the room each one
+ * claims in the lattice; see mobileSeam().
  */
 export function placeMobileItems(items, obstacles = board.items, options = {}) {
   const step = options.step > 0 ? options.step : baseStep();
   const snap = options.snap ?? board.settings.snap;
   const preserveSize = options.preserveSize === true;
   const columns = mobileColumnCount(options.columns ?? board.settings.mobileColumns);
-  // The Desktop title card is not on this board. It has no Mobile geometry and
-  // is never rendered here - the masthead above the column is drawn by
-  // canvas/mobile-frame.js and is not an item at all - so it keeps whatever
-  // Desktop place it had, and that place is *above* the Mobile board's top edge.
-  // Left in the obstacle list it pushed the first free row four or five spaces
-  // down (mobilePackStartRow measures from the highest obstacle), so an import
-  // onto an empty phone board landed in the middle of nothing with a screen of
-  // blank column above it. completeLayout() already takes it out of its own
-  // sweep for the same reason; this is the other door.
-  obstacles = obstacles.filter(it => it.type !== 'title');
+  const spacing = Math.max(0, options.spacing ?? board.settings.spacing ?? 0);
+  // Two kinds of card are never neighbours, and neither may set the first free
+  // row - mobilePackStartRow() measures from the highest obstacle, so anything
+  // left in this list that is not really in the way costs every import the rows
+  // it stands in.
+  //
+  // The Desktop title card is not on this board at all. It has no Mobile
+  // geometry, it is never rendered here (the masthead above the column is drawn
+  // by canvas/mobile-frame.js and is not an item), and completeLayout() parks it
+  // clear of the top edge. Left in, it pushed every import four or five rows
+  // down; completeLayout() already takes it out of its own sweep.
+  //
+  // A hint is on the board, but it is leaving: the first real item to arrive
+  // takes all four away (see canvas/ghosts.js). Counting them cost an import the
+  // six rows they filled, and by the time the file was drawn the rows above it
+  // were empty - a photograph dropped onto a blank phone board landed a screen
+  // down from the top with nothing over it. They are packed as *items* when the
+  // column is rebuilt (repackMobileBoard passes no obstacles at all), so this
+  // does not strand them.
+  obstacles = obstacles.filter(it => it.type !== 'title' && it.type !== 'ghost');
   const clean = item => {
     const presnap = usableMemo(item.meta?.presnap);
     const { presnap: _oldPresnap, ...meta } = item.meta || {};
     const source = presnap ? { ...item, ...presnap } : item;
-    return fitMobile({ ...source, meta, rot: 0 }, true, step, columns);
+    return fitMobile({ ...source, meta, rot: 0 }, true, step, columns, spacing);
   };
   const rawItems = items.map(clean);
   const rawObstacles = obstacles.map(item => {
     const pre = usableMemo(item.meta?.presnap);
-    return fitMobile(pre ? { ...item, ...pre } : item, false, step, columns);
+    return fitMobile(pre ? { ...item, ...pre } : item, false, step, columns, spacing);
   });
-  const raw = packMobileGrid(rawItems, rawObstacles, step, columns);
+  const raw = packMobileGrid(rawItems, rawObstacles, step, columns, spacing);
   if (!snap) return raw;
 
   const liveItems = preserveSize
     ? items.map(item => {
         const { presnap: _oldPresnap, ...meta } = item.meta || {};
-        return fitMobile({ ...item, meta, rot: 0 }, true, step, columns);
+        return fitMobile({ ...item, meta, rot: 0 }, true, step, columns, spacing);
       })
     : rawItems.map(item => {
         const box = latticeBox(item, step);
-        return fitMobile({ ...item, w: box.w, h: box.h }, false, step, columns);
+        return fitMobile({ ...item, w: box.w, h: box.h }, false, step, columns, spacing);
       });
-  const liveObstacles = obstacles.map(item => fitMobile(item, false, step, columns));
-  return packMobileGrid(liveItems, liveObstacles, step, columns).map((item, index) => ({
+  const liveObstacles = obstacles.map(item => fitMobile(item, false, step, columns, spacing));
+  return packMobileGrid(liveItems, liveObstacles, step, columns, spacing).map((item, index) => ({
     ...item,
     meta: {
       ...item.meta,
@@ -715,7 +754,7 @@ export function placeMobileItems(items, obstacles = board.items, options = {}) {
   }));
 }
 
-/** Reflow the live Mobile board after its column count changes. */
+/** Reflow the live Mobile board after its column count or its gap changes. */
 function repackMobileBoard() {
   if (!board.items.length) return;
   const ordered = [...board.items].sort((a, b) =>
@@ -1304,6 +1343,7 @@ function fitMobile(
   scaleHeight = false,
   step = baseStep(),
   columns = mobileColumnCount(),
+  spacing = 0,
 ) {
   // Every item but one. The Desktop title card is not on the Mobile board at
   // all - canvas/items.js never mounts it there, the masthead is Mobile's title
@@ -1313,7 +1353,10 @@ function fitMobile(
   // back down to flush with the first row, which is where the trouble was.
   if (it.type === 'title') return { ...it };
   const width = mobileBoardWidth(step, columns);
-  const inset = cellInset(step);
+  // The seam the packer will actually leave, gap included - otherwise a card
+  // fitted to the full strip is exactly as wide as the columns it claims, and
+  // the gap has nowhere to come from but the far edge of the board.
+  const inset = mobileSeam(step, spacing);
   const contentWidth = Math.max(MIN_SIZE, width - 2 * inset);
   const oldWidth = Math.min(Math.max(Number.isFinite(it.w) ? it.w : MIN_SIZE, MIN_SIZE), MAX_SIZE);
   const ratio = oldWidth > contentWidth ? contentWidth / oldWidth : 1;
@@ -1331,7 +1374,9 @@ function fitMobile(
 }
 
 const fitBoardMode = (it, scaleHeight = false) =>
-  board.layoutMode === 'mobile' ? fitMobile(it, scaleHeight) : it;
+  board.layoutMode === 'mobile'
+    ? fitMobile(it, scaleHeight, baseStep(), mobileColumnCount(), board.settings.spacing)
+    : it;
 
 /**
  * Complete one profile for every live item.
@@ -1346,6 +1391,9 @@ function completeLayout(mode) {
     const profile = board.layoutSettings.mobile || defaultLayoutSettings('mobile');
     const step = profile.gridStep > 0 ? profile.gridStep : DEFAULT_SETTINGS.gridStep;
     const columns = mobileColumnCount(profile.mobileColumns);
+    // The inactive profile's own gap, not the live board's. This runs while
+    // Desktop is on screen, where board.settings.spacing is Desktop's 12.
+    const spacing = Math.max(0, profile.spacing || 0);
     const known = [];
     const missing = [];
     // A note stuck to something on the board rides it into the column rather than
@@ -1383,7 +1431,7 @@ function completeLayout(mode) {
       }
       const presnap = saved.presnap;
       const geometry = {
-        ...geometryOf(fitMobile(saved, false, step, columns)),
+        ...geometryOf(fitMobile(saved, false, step, columns, spacing)),
         ...(presnap ? { presnap: { ...presnap } } : {}),
       };
       map.set(it.id, geometry);
@@ -1399,18 +1447,19 @@ function completeLayout(mode) {
       step,
       snap: profile.snap,
       columns,
+      spacing,
     });
     for (const item of packed) map.set(item.id, geometryOf(item));
     const stranded = attachRiders(riders, map, (note, hostSrc, hostDst) => {
       const at = stuckPlacement(note, hostSrc, hostDst);
-      return geometryOf({ ...fitMobile(note, false, step, columns), x: at.x, y: at.y });
+      return geometryOf({ ...fitMobile(note, false, step, columns, spacing), x: at.x, y: at.y });
     });
     // A rider whose host never resolved - deleted, or a stuck-to-stuck cycle -
     // is packed after all, so it is at least visible somewhere.
     if (stranded.size) {
       const rest = riders.filter(r => stranded.has(r.id));
       const extra = placeMobileItems(rest, [...known, ...packed], {
-        step, snap: profile.snap, columns,
+        step, snap: profile.snap, columns, spacing,
       });
       for (const item of extra) map.set(item.id, geometryOf(item));
     }
@@ -1450,7 +1499,12 @@ function activateLayoutSettings(mode) {
     board.layoutSettings.mobile.paper = '';
     board.layoutSettings.mobile.paperLandscape = false;
     board.layoutSettings.mobile.paperResize = false;
-    board.layoutSettings.mobile.spacing = 0;
+    // Spacing used to be pinned to zero here alongside the paper keys, and it
+    // was the wrong list to be on. Paper is Desktop-only because a fixed-width
+    // strip has no page to fit anything onto; a gap between cards is something
+    // a column can perfectly well have. Zero stays the *default* a Mobile
+    // profile is born with (see defaultLayoutSettings) - so no saved board
+    // moves - and the slider is now free to move it.
   }
   const fonts = (board.layoutSettings.desktop.fonts || [])
     .map(font => ({ ...font }));
@@ -1459,7 +1513,16 @@ function activateLayoutSettings(mode) {
   const profile = board.layoutSettings[mode] || defaultLayoutSettings(mode);
   board.layoutSettings[mode] = cloneSettings(profile);
   board.settings = settingsFor(profile, board.sharedAppearance);
-  board.arrangement = board.arrangements[mode] || 'spiral';
+  // Read through the mode's own catalogue: Desktop's seven layouts are shapes
+  // and Mobile's six are orders, and a board carrying `spiral` for Mobile - as
+  // every board saved before this did, since 'spiral' was the fallback for both
+  // - is asking for a shape a column cannot make. mobileArrangement() answers
+  // with the order nearest to it. Nothing is written back; the stored id is
+  // still whatever it was until the user picks something.
+  const stored = board.arrangements[mode];
+  board.arrangement = mode === 'mobile'
+    ? mobileArrangement(stored)
+    : (stored || 'spiral');
 }
 
 function writeLayout(layout) {
@@ -2646,7 +2709,7 @@ export function setSetting(key, value) {
   // fixup in activateLayoutSettings() runs once, at the moment of the switch,
   // so without this a later write would put a sheet on the Mobile board.
   if (board.layoutMode === 'mobile' &&
-      ['paper', 'paperLandscape', 'paperResize', 'spacing'].includes(key)) return;
+      ['paper', 'paperLandscape', 'paperResize'].includes(key)) return;
   if (key === 'mobileColumns') {
     if (board.layoutMode !== 'mobile') return;
     value = mobileColumnCount(value);
@@ -2699,7 +2762,12 @@ export function setSetting(key, value) {
   // here rather than at the checkbox because the whimsy axis flips this setting
   // too (Harsh means snapped), and both routes have to behave the same.
   if (key === 'snap') value ? snapAll() : unsnapAll();
-  if (key === 'mobileColumns') repackMobileBoard();
+  // The gap is baked into where the packer put things, so on Mobile it is not a
+  // rule for the next import - it moves the column that is already there. On
+  // Desktop it is exactly a rule for the next import, and nothing moves until
+  // Rearrange is pressed. Same setting, and the difference is the layout's.
+  if (key === 'mobileColumns' ||
+      (key === 'spacing' && board.layoutMode === 'mobile')) repackMobileBoard();
   board.layoutSettings[board.layoutMode] = layoutSettingsOf(board.settings);
   markDirty();
   bus.emit('settings', key);
@@ -2815,7 +2883,16 @@ function normalizeBoard(data) {
   const src = data && typeof data === 'object' ? data : {};
   const rawSettings = src.settings && typeof src.settings === 'object' ? src.settings : {};
   const desktopSettings = normalizeSettings(rawSettings, 'desktop');
-  const mobileSettings = normalizeSettings(rawSettings, 'mobile');
+  // The Mobile profile, as far as it can be read out of a Desktop-shaped file.
+  //
+  // Spacing is zeroed on the way through and that is a migration, not a rule:
+  // top-level `settings` describes Desktop (see docs/mbrd-format.md), so a file
+  // with no Mobile record of its own would hand the column Desktop's 12 - and
+  // for every board written before Mobile had a gap at all, zero is what it was
+  // actually saved looking like. A file that *does* carry a Mobile record keeps
+  // whatever gap that record names; normalizeLayoutSettings() spreads the
+  // record over this, so the record wins wherever it has an opinion.
+  const mobileSettings = { ...normalizeSettings(rawSettings, 'mobile'), spacing: 0 };
   const { shared: sharedAppearance } = splitAppearance(desktopSettings.appearance);
   const items = (Array.isArray(src.items) ? src.items : [])
     .filter(it => it && typeof it === 'object')

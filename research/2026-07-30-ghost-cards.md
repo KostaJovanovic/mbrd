@@ -45,21 +45,22 @@ one thing `ui/appearance.js` already writes on every change, and what
 its widget branch already names `input`, so a drag on the thumb moves the thumb
 and not the card.
 
-**Mobile is a column, and they are born into it.** The dial leads it, under the
+**Mobile is a column, and they are born into it.** `ensureGhostCards()` forks
+the way `addItems()` does: Desktop gets the arrangement below, Mobile gets a
+packed column through `placeMobileItems()`. The dial leads it, under the
 masthead, which is where it sits on Desktop too; a stable sort keeps the three
 hints in reading order behind it. Everything starts flush with the board's top
 edge — see the note on `placeMobileItems()` and the Desktop title card, which
 used to push the first free row four or five spaces down for every import on a
-phone, not just for these.
- `ensureGhostCards()` forks
-the way `addItems()` does: Desktop gets the arrangement below, Mobile gets one
-full-width card per row through `placeMobileItems()`. It has to happen at seeding
+phone, not just for these. The fork has to happen at seeding
 rather than at the mode switch, because a phone never makes that switch — it
 opens in Mobile, and `completeLayout()` only fills in the profile that is *not*
 live, so nothing else would ever have placed them. Seeded raw, two of the four
-sat off the side of a 512-wide board. The Mobile heights are the `mh` field in
-`GHOSTS`: a card twice as wide needs nothing like twice the height for the same
-three lines.
+sat off the side of a 512-wide board. The Mobile boxes are the `mspan` /
+`mrows` fields in `GHOSTS`: the dial takes the full width and two rows, each hint
+half the width and two rows, so the one control on the board is the one card
+that never shares a row. A fraction rather than a column count, because the
+Mobile board is eight columns by default and six by setting.
 
 **They are laid on the lattice.** Harsh means snapping on Desktop, so a board
 saved there is snapped the moment it loads — and hints are pushed straight onto

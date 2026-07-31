@@ -11,7 +11,7 @@ import { addFile } from '../storage/assets.js';
 import { makeByteBudget, overPixelBudget } from './budget.js';
 import { classify, defaultSize, measureSize, fitToBox, linkURL, linkDraft } from '../canvas/renderers.js';
 import { iframeURL, embedFor } from '../canvas/embed.js';
-import { arrange } from '../arrange/arrangements.js';
+import { arrange, mobileOrder } from '../arrange/arrangements.js';
 import { coverArt, mayHaveArt } from './artwork.js';
 import { makeThumb } from '../optimize/picture.js';
 import { looksLikeMbrd } from '../storage/mbrd.js';
@@ -332,29 +332,40 @@ export async function importFiles(files, centre, { avoidOverlap = false } = {}) 
     return [];
   }
 
+  const desktop = board.layoutMode !== 'mobile';
+  if (!desktop) {
+    // Mobile lays nothing out here. placeMobileItems() below packs the column
+    // and the arrangement's whole remaining job is the sequence it packs in, so
+    // running a 2D layout first only to sort its output away was work thrown
+    // out - and, once the two catalogues split, work done under a name that no
+    // longer names a shape. No seed: a drop is reproducible, and Shuffle
+    // unseeded is the order the files arrived in.
+    const ordered = mobileOrder(drafts, { name: board.arrangement });
+    drafts.length = 0;
+    drafts.push(...ordered);
+  }
   // "Free" preserves existing positions, but fresh imports have none - so a
   // drop under Free falls back to the grid instead of stacking at one point.
   const name = board.arrangement === 'free' ? 'grid' : board.arrangement;
-  const desktop = board.layoutMode !== 'mobile';
-  const spots = arrange(drafts, {
-    name,
-    center: centre,
-    spacing: desktop ? board.settings.spacing : 0,
-    // A snapped Desktop drop is snapped item-by-item on the way in (onLattice in
-    // state.js), so the layout has to reserve whole cells or the same rounding
-    // that overlaps a tight Rearrange overlaps a tight drop - see arrange().
-    cellStep: board.settings.snap && desktop ? baseStep() : 0,
-    // A folder dropped onto a Desktop board flows around what is already there
-    // rather than landing on top of it. The Mobile board packs around existing
-    // items itself (placeMobileItems), so this is Desktop's half of the same
-    // promise; a paste or a bare-file drop still stacks at the cursor as before.
-    obstacles: avoidOverlap && desktop
-      ? board.items.map(it => ({ x: it.x, y: it.y, w: it.w, h: it.h }))
-      : undefined,
-  });
-  drafts.forEach((d, i) => { d.x = spots[i].x; d.y = spots[i].y; });
-  if (board.layoutMode === 'mobile') {
-    drafts.sort((a, b) => b.y - a.y || a.x - b.x || a.name.localeCompare(b.name));
+  if (desktop) {
+    const spots = arrange(drafts, {
+      name,
+      center: centre,
+      spacing: board.settings.spacing,
+      // A snapped Desktop drop is snapped item-by-item on the way in (onLattice
+      // in state.js), so the layout has to reserve whole cells or the same
+      // rounding that overlaps a tight Rearrange overlaps a tight drop - see
+      // arrange().
+      cellStep: board.settings.snap ? baseStep() : 0,
+      // A folder dropped onto a Desktop board flows around what is already there
+      // rather than landing on top of it. The Mobile board packs around existing
+      // items itself (placeMobileItems), so this is Desktop's half of the same
+      // promise; a paste or a bare-file drop still stacks at the cursor as before.
+      obstacles: avoidOverlap
+        ? board.items.map(it => ({ x: it.x, y: it.y, w: it.w, h: it.h }))
+        : undefined,
+    });
+    drafts.forEach((d, i) => { d.x = spots[i].x; d.y = spots[i].y; });
   }
 
   const added = addItems(

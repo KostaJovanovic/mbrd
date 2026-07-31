@@ -57,6 +57,33 @@ export const MOBILE_TOP_PAD = 32;
 export const MOBILE_BOTTOM_PAD = 32;
 
 /**
+ * How far below the chrome buttons a Mobile board comes to rest.
+ *
+ * MOBILE_TOP_PAD alone put the board's masthead level with the menu button and
+ * the pencil beside it: a title set across the width of the screen with two
+ * controls sitting in the middle of it, reading as part of the same row. The
+ * board now stops below them instead - the gap is above the masthead, so
+ * nothing inside the band changes size or proportion, and it scrolls away with
+ * the board like any other part of its top.
+ *
+ * Measured off the button rather than written down, because the number is not
+ * ours: the buttons are pinned at max(12px, env(safe-area-inset-top)) in
+ * app.css, and a notched phone pushes them further down than a flat one. Asking
+ * the element where its lower edge actually is answers for both, and keeps this
+ * true if the corner is ever re-laid.
+ */
+const MOBILE_CHROME_GAP = 14;
+
+function mobileTopPad() {
+  if (typeof document === 'undefined') return MOBILE_TOP_PAD;
+  const btn = document.getElementById('menu-btn');
+  const bottom = btn ? btn.getBoundingClientRect().bottom : 0;
+  // A button that has not been laid out yet (or is not there at all) measures
+  // zero; the plain pad is the honest answer until it has.
+  return bottom > 0 ? bottom + MOBILE_CHROME_GAP : MOBILE_TOP_PAD;
+}
+
+/**
  * The masthead above a Mobile board, sized from the board itself.
  *
  * Its width and height form a 3:2 landscape rectangle. Measuring the masthead
@@ -314,6 +341,12 @@ export class Viewport {
     this.height = 0;
     this.left = 0;
     this.top = 0;
+    // Where the Mobile board comes to rest under the chrome buttons. Cached
+    // rather than asked for on every clamp: _mobileTopPan() runs on each frame
+    // of a pan, and reading a rect there would measure layout mid-gesture.
+    // Refreshed where it can actually change - a resize, a rotation, a switch
+    // into Mobile - which is also where the buttons themselves move.
+    this._topPad = MOBILE_TOP_PAD;
     this.bus = emitter();
     this._flush = rafThrottle(() => this._paint());
     this._anim = null;              // rAF id of a view animation in flight
@@ -333,6 +366,7 @@ export class Viewport {
     this.top = r.top;
     this.width = r.width;
     this.height = r.height;
+    this._topPad = mobileTopPad();
     if (this.boardMode === 'mobile') {
       this.zoom = this._mobileZoom();
       this._constrainMobile();
@@ -368,7 +402,7 @@ export class Viewport {
    */
   _mobileTopPan() {
     return this.mobileWorldTop
-      + (MOBILE_TOP_PAD + this.mobileHeaderPx() - this.cy) / this.zoom;
+      + (this._topPad + this.mobileHeaderPx() - this.cy) / this.zoom;
   }
 
   /** Lowest pan that keeps the finite bottom edge just inside the viewport. */
@@ -403,6 +437,10 @@ export class Viewport {
     this.stopAnim();
     this.boardMode = mode === 'mobile' ? 'mobile' : 'desktop';
     this._setMobileBounds(worldWidth, worldTop, worldBottom);
+    // The corner is laid out differently at the two modes - the menu button
+    // comes back to the top on a phone - so the clearance is re-read here as
+    // well as on a resize.
+    this._topPad = mobileTopPad();
     if (this.isMobile) {
       this.zoom = this._mobileZoom();
       this._constrainMobile();

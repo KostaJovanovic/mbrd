@@ -75,10 +75,12 @@ test('a control that can be set can also be read', () => {
 
 test('Mobile is shown the arrangement it has and nothing it has not', () => {
   // setSetting() refuses paper, its orientation and its grips on a Mobile
-  // board, and Mobile packs with no configurable gap - so a row for any of them
-  // would be a control that does nothing. Absence, not disabling.
+  // board - so a row for any of them would be a control that does nothing.
+  // Absence, not disabling. Spacing is deliberately not on this list any more:
+  // a fixed-width strip has no page to fit anything onto, but it can perfectly
+  // well have a gap between its cards, and it now does - starting at zero.
   for (const id of ['opt-paper', 'paper-orient', 'opt-paper-resize', 'paper-hint',
-    'spacing', 'opt-web']) {
+    'opt-web']) {
     assert.equal(controlVisible(byId(id), MOBILE), false, `${id} should be absent on Mobile`);
     assert.equal(controlVisible(byId(id), DESKTOP), true, `${id} should be present on Desktop`);
   }
@@ -120,6 +122,25 @@ test('each section keeps something above its fold', () => {
   const keys = SECTIONS.find(s => s.id === 'keys');
   assert.equal(keys.title, undefined, 'the legend section draws no h2 of its own');
   assert.equal(keys.fold, 'By hand');
+});
+
+test('a section that is all fold is all fold', () => {
+  // The keyboard legend and Paper are whole sections behind one summary, and
+  // both carry `fold` and no title. buildSection() appends a control that is not
+  // `advanced` straight to the section, above the fold - which in a section with
+  // no h2 puts a bare row over the summary that is supposed to be its heading.
+  // So the two facts have to travel together, and the missing title is also what
+  // ui/panel.js marks .is-head from.
+  for (const s of SECTIONS) {
+    if (!s.fold) continue;
+    assert.equal(s.title, undefined, `${s.id} is a fold and a heading both`);
+    for (const c of s.controls) {
+      assert.equal(c.advanced, true,
+        `${c.id || c.type} in ${s.id} would be drawn above that section's own summary`);
+    }
+  }
+  // And the pair the rule was written for are still the pair.
+  assert.deepEqual(SECTIONS.filter(s => s.fold).map(s => s.id), ['real-size', 'keys']);
 });
 
 test('the four demoted controls are below a fold, not gone', () => {

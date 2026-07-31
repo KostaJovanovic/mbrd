@@ -36,7 +36,7 @@
 import {
   board, setSetting, setArrangement, MOBILE_COLUMN_OPTIONS,
 } from '../state.js';
-import { ARRANGEMENTS } from '../arrange/arrangements.js';
+import { ARRANGEMENTS, MOBILE_ARRANGEMENTS } from '../arrange/arrangements.js';
 import { itemBounds } from '../geometry.js';
 import { toUnits, formatLength, paperMm, PAPERS } from '../measure.js';
 import {
@@ -161,20 +161,36 @@ export const SECTIONS = [
         options: () => MOBILE_COLUMN_OPTIONS.map(n => ({ value: String(n), label: `${n} spaces` })),
         get: () => String(board.settings.mobileColumns),
         set: v => setSetting('mobileColumns', +v) },
+      // Two catalogues, because the two layouts are answering different
+      // questions: Desktop picks a shape, and Mobile - which packs a column and
+      // throws every computed position away - can only pick the order the
+      // packer meets things in. Six of Desktop's seven meant nothing here.
       { id: 'arrangement', type: 'select', label: 'Layout',
-        options: () => ARRANGEMENTS.map(a => ({ value: a.id, label: a.label })),
+        options: ctx => (ctx.mobile ? MOBILE_ARRANGEMENTS : ARRANGEMENTS)
+          .map(a => ({ value: a.id, label: a.label })),
         get: () => board.arrangement,
         set: v => setArrangement(v) },
       // Below the fold with the other set-once dials: an arrangement is picked
       // by name and the gap it packs at is a number you tune afterwards, if at
       // all. It stays edge-to-edge world px - see arrange/arrangements.js.
-      { id: 'spacing', type: 'range', label: 'Spacing', when: desktop, advanced: true,
+      //
+      // On both layouts now. It reads differently on each: Desktop's is a rule
+      // the next Rearrange will use, Mobile's moves the column the moment it is
+      // touched, because on a phone the gap is baked into where the packer put
+      // things. Mobile starts at zero and no saved board moves on its own.
+      { id: 'spacing', type: 'range', label: 'Spacing', advanced: true,
         min: 0, max: 200, step: 4, unit: 'px',
         get: () => board.settings.spacing,
         set: v => setSetting('spacing', v) },
       { type: 'buttons', buttons: [{ cmd: 'rearrange', label: 'Rearrange everything' }] },
-      { type: 'hint',
+      { type: 'hint', when: desktop,
         html: 'New drops use this layout. <em>Free</em> leaves every position untouched.' },
+      // The Mobile half of the same sentence, and it has to be a different one:
+      // a column is always packed the same way, so what is being chosen is the
+      // order things are packed in and not the shape they come out as.
+      { type: 'hint', when: mobile,
+        html: 'The column is always packed tight - this is the order it packs in. '
+          + '<em>As placed</em> keeps the one it already has.' },
       { id: 'opt-snap', type: 'check', label: 'Snap to grid', advanced: true,
         get: () => !!board.settings.snap,
         set: v => setSetting('snap', v) },
@@ -317,28 +333,6 @@ export const SECTIONS = [
 
   // --- System ------------------------------------------------------------
   {
-    // Which of the two arrangements this machine works in, and it is here
-    // rather than beside them because it is not a property of the board.
-    // `board.layoutMode` is deliberately not persisted in the .mbrd - a phone
-    // and a laptop each remember their own choice in localStorage - which makes
-    // it the same kind of setting as the quality dial below it: a decision
-    // about this device that no board can make for you.
-    id: 'layout', tab: 'system', title: 'Board layout',
-    controls: [
-      { type: 'buttons', buttons: [
-        { id: 'board-mode', cmd: 'toggle-board-mode', label: 'Mobile board',
-          pressed: ctx => ctx.mobile,
-          title: ctx => (ctx.mobile
-            ? 'Switch to the Desktop arrangement'
-            : 'Switch to the Mobile arrangement') },
-      ] },
-      { id: 'board-mode-hint', type: 'hint',
-        text: ctx => (ctx.mobile
-          ? `Mobile is ${board.settings.mobileColumns} spaces wide, starts six above 0,0, and grows with its contents.`
-          : 'Desktop is the free two-dimensional arrangement.') },
-    ],
-  },
-  {
     // The one section that is not about a board at all. See quality.js: it is
     // per device and never travels inside a .mbrd, because how hard someone
     // else's phone should work is not a property of your moodboard.
@@ -383,14 +377,34 @@ export const SECTIONS = [
     // Housekeeping on the copy kept in this browser, done once in a while and
     // not while you are working - and the way out, which belongs at the far end
     // of the panel where it cannot be hit on the way to Save.
+    //
+    // Which of the two arrangements this machine works in is in here too, rather
+    // than beside them under a heading of its own. It is not a property of the
+    // board: `board.layoutMode` is deliberately not persisted in the .mbrd, so a
+    // phone and a laptop each remember their own choice. That makes it the same
+    // kind of decision as everything else in this section - about this copy of
+    // the app, and about nobody else's.
     id: 'browser', tab: 'system', title: 'This browser',
     controls: [
       { type: 'buttons', buttons: [{ cmd: 'optimize', label: 'Optimize' }] },
+      { type: 'buttons', buttons: [
+        { id: 'board-mode', cmd: 'toggle-board-mode', label: 'Mobile board',
+          pressed: ctx => ctx.mobile,
+          title: ctx => (ctx.mobile
+            ? 'Switch to the Desktop arrangement'
+            : 'Switch to the Mobile arrangement') },
+      ] },
+      { id: 'board-mode-hint', type: 'hint',
+        text: ctx => (ctx.mobile
+          ? `Mobile is ${board.settings.mobileColumns} spaces wide, starts six above 0,0, and grows with its contents.`
+          : 'Desktop is the free two-dimensional arrangement.') },
       // The refresh gesture this app takes away: pull-to-refresh is off because
       // every downward swipe on the board is a pan, and on a home screen there
-      // is no address bar either. It saves first.
+      // is no address bar either. It saves first - which is why the label says
+      // reload and not restart: nothing is lost and nothing starts over, the
+      // page just comes back.
       { type: 'buttons', buttons: [
-        { cmd: 'restart', label: 'Restart mbrd', title: () => 'Save and start the page again' },
+        { cmd: 'restart', label: 'Reload mbrd', title: () => 'Save and load the page again' },
       ] },
       { type: 'buttons', buttons: [
         { cmd: 'clear-data', label: 'Clear everything', className: 'danger' },
