@@ -38,6 +38,10 @@ under `import/` or `ui/`.
 The bottom of the graph is wider than `util`/`geometry`: `measure.js`,
 `mesh.js`, `arrange/arrangements.js`, `import/budget.js` and `canvas/spatial.js`
 are all pure — no DOM, no `state` import — and are meant to stay that way.
+`mesh.js` sits at the top level rather than under `canvas/` for exactly that
+reason: it is struct reading, and only `canvas/model.js` turns its output into
+pixels. `web-graph.js` is there for the same reason — the thread graph and its
+governor are arithmetic over points, and only `canvas/web.js` draws them.
 Six more sit down there for a different reason: they are what `state.js` was
 split onto, and they took it from 3202 lines to 1806. `board-store.js` holds the
 `bus`, the `selection` and the dirty flag; `board-model.js` the board's shape,
@@ -58,9 +62,6 @@ explicitly rather than as a star re-export, which is deliberate: the one thing
 that broke during the split was four names that `state.js` re-exports but never
 uses itself, and being explicit is what made that break loudly in five test
 files instead of quietly at runtime.
-`mesh.js` sits at the top level rather than under `canvas/` for exactly that
-reason: it is struct reading, and only `canvas/model.js` turns its output into
-pixels.
 
 ### Nothing is a dependency
 
@@ -76,7 +77,10 @@ Every board mutation goes through `state.js`, which emits on a shared `bus`
 (`items`, `geom`, `item`, `selection`, `settings`, `layout`, `board`,
 `board:load`, `trash`, `history`). Subsystems subscribe; they never call each other.
 Undo/redo is command-based — `commit(label, redo, undo)` — so a new mutating
-operation must push its own inverse rather than relying on a diff.
+operation must push its own inverse rather than relying on a diff. A command
+that closes over a whole-board snapshot passes a fourth argument, `weight`: the
+number of items it retains, so the history evicts on what it holds and not only
+on how many entries it has.
 
 `main.js` is the wiring point: it builds the `Viewport`, calls every `init*()`,
 and owns `cmds`, the single command surface that sidebar buttons
@@ -260,8 +264,8 @@ cache changes explicitly.
 `PLAN.md` is the full design; `research/` holds the reasoning behind past
 decisions, and its top level is deliberately short — only work that is still
 open. One document lives there now: the scalability/readability audit, whose
-status header is current — seven of its eight leverage items are closed and the
-eighth, the `state.js` split, is started. Anything carried out moves to
+status header is current — all eight of its leverage items are closed, including
+the `state.js` split, and what remains is the medium/low findings it lists. Anything carried out moves to
 `research/old/` — that is where the Safari audit and its fixes, the Mobile
 scroll pair, the sidebar rebuild, the ghost-cards plan, the pan/zoom performance
 plan and `REFACTOR.md` are. `research/future/` is the not-yet-started pile
