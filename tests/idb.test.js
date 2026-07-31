@@ -19,8 +19,16 @@ const soon = fn => Promise.resolve().then(fn);
 function fakeIndexedDB({ txOutcome = 'complete', openFailures = 0 } = {}) {
   const data = new Map();
   let remainingFailures = openFailures;
+  // How many transactions the fake has opened, so a test can assert that a
+  // batch call really is one round trip and not a loop wearing a new name.
+  const stats = { transactions: 0 };
 
   function makeRequest(result) {
+    const t = makeRequest.tx;
+    // A transaction ends once, after the last request in it has succeeded - the
+    // real thing commits when its request queue drains, and a fake that ended
+    // after the *first* one would let a broken batch look like a working one.
+    t.pending++;
     const r = {};
     soon(() => {
       r.result = result;
@@ -29,7 +37,7 @@ function fakeIndexedDB({ txOutcome = 'complete', openFailures = 0 } = {}) {
       // early-resolving wrapper would have already resolved by now - that is
       // exactly the bug the abort case catches.
       soon(() => {
-        const t = makeRequest.tx;
+        if (--t.pending > 0) return;
         if (txOutcome === 'abort') { t.error = new Error('aborted'); t.onabort && t.onabort(); }
         else if (txOutcome === 'error') { t.error = new Error('tx error'); t.onerror && t.onerror(); }
         else t.oncomplete && t.oncomplete();
@@ -60,7 +68,8 @@ function fakeIndexedDB({ txOutcome = 'complete', openFailures = 0 } = {}) {
           createObjectStore() {},
           close() {},
           transaction() {
-            const t = { objectStore: () => store };
+            stats.transactions++;
+            const t = { objectStore: () => store, pending: 0 };
             makeRequest.tx = t;
             return t;
           },
@@ -70,6 +79,7 @@ function fakeIndexedDB({ txOutcome = 'complete', openFailures = 0 } = {}) {
       });
       return req;
     },
+    stats,
   };
 }
 
@@ -130,4 +140,56 @@ test('an open blocked and then succeeding does not leave an orphan connection', 
   await assert.rejects(idbGet('kv', 'k'), /blocked/);
   succeed();
   assert.equal(closed, 1, 'the late connection must be closed, not retained');
+});
+
+// The batch calls exist because the autosave sweep and the session restore used
+// to open one transaction per asset and await each before issuing the next -
+// on a board of five hundred photographs, five hundred sequential round trips
+// standing between the user and a board they had been told was saved. What has
+// to hold is that they are genuinely one transaction, that they keep the
+// wrapper's promise honest (nothing resolves before the commit), and that a
+// batch is all-or-nothing.
+
+test('a batch write is one transaction, and every value round-trips', async () => {
+  const fake = fakeIndexedDB();
+  const { idbSetMany, idbGetMany } = await freshIdb(fake);
+  const before = fake.stats.transactions;
+  await idbSetMany('assets', [['a', 1], ['b', 2], ['c', 3]]);
+  assert.equal(fake.stats.transactions - before, 1, 'three puts, one transaction');
+  assert.deepEqual(await idbGetMany('assets', ['a', 'b', 'c']), [1, 2, 3]);
+});
+
+test('a batch read answers in the order asked, with holes for missing keys', async () => {
+  // Order is the contract: the restore pairs each record back with the hash at
+  // the same index, so a reordered answer would file every asset under the
+  // wrong card.
+  const { idbSetMany, idbGetMany } = await freshIdb(fakeIndexedDB());
+  await idbSetMany('assets', [['x', 'ex'], ['y', 'why']]);
+  assert.deepEqual(await idbGetMany('assets', ['y', 'gone', 'x']), ['why', undefined, 'ex']);
+});
+
+test('an empty batch does no work at all', async () => {
+  const fake = fakeIndexedDB();
+  const { idbSetMany, idbGetMany, idbDelMany } = await freshIdb(fake);
+  // Touch the connection first, so the count below is about the batches.
+  await idbSetMany('assets', [['seed', 1]]);
+  const before = fake.stats.transactions;
+  assert.deepEqual(await idbGetMany('assets', []), []);
+  assert.deepEqual(await idbSetMany('assets', []), []);
+  assert.deepEqual(await idbDelMany('assets', []), []);
+  assert.equal(fake.stats.transactions, before, 'nothing to do opens nothing');
+});
+
+test('a batch that aborts rejects rather than reporting a partial write', async () => {
+  // The reason the wrapper resolves on oncomplete and not on request success:
+  // every put in the batch is accepted, and the transaction still fails.
+  const { idbSetMany } = await freshIdb(fakeIndexedDB({ txOutcome: 'abort' }));
+  await assert.rejects(idbSetMany('assets', [['a', 1], ['b', 2]]), /aborted/);
+});
+
+test('a batch delete removes exactly what it was given', async () => {
+  const { idbSetMany, idbDelMany, idbKeys } = await freshIdb(fakeIndexedDB());
+  await idbSetMany('assets', [['a', 1], ['b', 2], ['c', 3]]);
+  await idbDelMany('assets', ['a', 'c']);
+  assert.deepEqual(await idbKeys('assets'), ['b']);
 });

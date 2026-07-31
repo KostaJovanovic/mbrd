@@ -65,6 +65,12 @@ function open() {
 // saved. The request result is captured and handed back only once the whole
 // transaction commits. Reads take the same path - completion follows success,
 // so the captured value is ready.
+// `fn` may issue one request or an array of them. Many requests in one
+// transaction is the whole point of the batch calls below: a transaction is not
+// free - it is opened, scheduled and committed - and doing one per asset made
+// putting a photo board away a few hundred sequential round trips, each waiting
+// on the last because the caller awaited it. Issued together they are one
+// commit, and IndexedDB was built to be driven this way.
 function tx(store, mode, fn) {
   return open().then(db => new Promise((resolve, reject) => {
     const t = db.transaction(store, mode);
@@ -72,7 +78,16 @@ function tx(store, mode, fn) {
     let settled = false;
     const fail = err => { if (!settled) { settled = true; reject(err); } };
     const req = fn(t.objectStore(store));
-    if (req) {
+    if (Array.isArray(req)) {
+      // Results in the order the requests were issued, filled as they succeed
+      // and handed over only at oncomplete like everything else here.
+      const out = new Array(req.length);
+      req.forEach((r, i) => {
+        r.onsuccess = () => { out[i] = r.result; };
+        r.onerror = () => fail(r.error);
+      });
+      result = out;
+    } else if (req) {
       req.onsuccess = () => { result = req.result; };
       req.onerror = () => fail(req.error);
     }
@@ -87,3 +102,18 @@ export const idbSet = (store, key, value) => tx(store, 'readwrite', s => s.put(v
 export const idbDel = (store, key) => tx(store, 'readwrite', s => s.delete(key));
 export const idbKeys = store => tx(store, 'readonly', s => s.getAllKeys());
 export const idbClear = store => tx(store, 'readwrite', s => s.clear());
+
+// The batch forms. Empty in, empty out, without opening a transaction to do
+// nothing - the autosave sweep reaches all three of these on a board where
+// nothing changed, which is most of the time.
+
+/** Values for `keys`, in that order. A missing key reads as undefined. */
+export const idbGetMany = (store, keys) =>
+  keys.length ? tx(store, 'readonly', s => keys.map(k => s.get(k))) : Promise.resolve([]);
+
+/** Write `[key, value]` pairs. All of them land, or none do. */
+export const idbSetMany = (store, entries) =>
+  entries.length ? tx(store, 'readwrite', s => entries.map(([k, v]) => s.put(v, k))) : Promise.resolve([]);
+
+export const idbDelMany = (store, keys) =>
+  keys.length ? tx(store, 'readwrite', s => keys.map(k => s.delete(k))) : Promise.resolve([]);

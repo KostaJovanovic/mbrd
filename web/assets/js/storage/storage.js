@@ -25,7 +25,9 @@ import {
 } from '../state.js';
 import { packBoard, unpackBoard, MIME } from './mbrd.js';
 import { allAssets, putAsset, clearAssets } from './assets.js';
-import { idbGet, idbSet, idbDel, idbClear, idbKeys } from './idb.js';
+import {
+  idbGet, idbSet, idbClear, idbKeys, idbGetMany, idbSetMany, idbDelMany,
+} from './idb.js';
 // The confirmation dialogs below - discard-unsaved and clear-everything - are
 // the one thing this module needs from the interface, and ui/ sits *above*
 // storage in the layering (AUD-12). So the prompt is injected rather than
@@ -639,15 +641,23 @@ async function writeSnapshot() {
     // browser", the board marked clean, and one photograph that would come back
     // as an empty frame on the next visit. The export path has refused this
     // since it was found there; the browser save was still doing it.
+    //
+    // Collected and written in one transaction rather than awaited one at a
+    // time. The first save after a large import is the case: five hundred
+    // photographs used to be five hundred sequential transactions, each opened
+    // and committed before the next was even issued, and the whole of that wait
+    // stood between the user and a board they were told was safe.
     const missing = [];
+    const arriving = [];
     for (const hash of referenced) {
       if (known.has(hash)) continue;
       const asset = store.get(hash);
       if (!asset) { missing.push(hash); continue; }
-      await idbSet('assets', hash, {
+      arriving.push([hash, {
         blob: asset.blob, ext: asset.ext, mime: asset.mime, name: asset.name,
-      });
+      }]);
     }
+    await idbSetMany('assets', arriving);
 
     // Written even when something is missing, and returned as a failure anyway.
     // The two are not in tension: recovering a board with one broken card beats
@@ -664,9 +674,7 @@ async function writeSnapshot() {
       incomplete: missing.length > 0,
     });
 
-    for (const hash of known) {
-      if (!referenced.has(hash)) await idbDel('assets', hash);
-    }
+    await idbDelMany('assets', [...known].filter(hash => !referenced.has(hash)));
 
     if (missing.length) {
       lastFailure = `${describeMissing(data, missing)} - the board cannot be saved complete`;
@@ -726,18 +734,28 @@ export async function restoreSession() {
     // lost; nothing asked for them.
     const needed = referencedHashes(session.board);
     let lost = 0;
-    // One read per asset, and on a heavy board that is the whole of the wait
-    // between opening the tab and seeing anything. Counted, because it is the
-    // one wait a person meets before they have done anything at all, and a
-    // blank board with no explanation reads as a board that was lost.
+    // On a heavy board this is the whole of the wait between opening the tab and
+    // seeing anything. Counted, because it is the one wait a person meets before
+    // they have done anything at all, and a blank board with no explanation
+    // reads as a board that was lost.
+    //
+    // Read a chunk at a time rather than one asset at a time: a transaction per
+    // asset made the wait a few hundred sequential round trips, and reading them
+    // all in one would remove the count that keeps the wait explicable. A chunk
+    // is both - thirty-odd round trips instead of five hundred, and a progress
+    // bar that still moves several times a second.
+    const CHUNK = 32;
+    const list = [...needed];
     const job = busy('Restoring your board');
-    let n = 0;
     try {
-      for (const hash of needed) {
-        job.step(n++, needed.length);
-        const rec = await idbGet('assets', hash);
-        if (rec?.blob) putAsset(hash, rec.blob, { ext: rec.ext, mime: rec.mime, name: rec.name });
-        else lost++;
+      for (let i = 0; i < list.length; i += CHUNK) {
+        job.step(i, list.length);
+        const slice = list.slice(i, i + CHUNK);
+        const recs = await idbGetMany('assets', slice);
+        recs.forEach((rec, k) => {
+          if (rec?.blob) putAsset(slice[k], rec.blob, { ext: rec.ext, mime: rec.mime, name: rec.name });
+          else lost++;
+        });
       }
     } finally {
       job.end();
