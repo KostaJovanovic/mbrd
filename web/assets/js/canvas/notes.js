@@ -26,7 +26,7 @@
 // nothing else, it becomes a link item as the edit closes - see linkify() below.
 
 import { byId, bus, markDirty, setNoteContent, retypeItem, board, NOTE_MAX } from '../state.js';
-import { nodeFor, onViewChange } from './items.js';
+import { nodeFor, onViewChange, screenBoxOf, viewportClientRect } from './items.js';
 import {
   linkURL, linkDraft, normalizeNoteRich, flattenNoteRich, buildNoteLine,
   NOTE_TAGS, NOTE_ALIGNS, NOTE_VALIGNS, NOTE_FONTS, NOTE_FONT_KEYS, NOTE_MARKER,
@@ -374,29 +374,50 @@ export function editNote(id) {
   }
   (viewportEl || node).append(toolbar.el);
 
+  // The bar's own size, measured once instead of on every frame.
+  //
+  // This runs on every view change for the whole length of an edit, so the four
+  // measurements it used to take - the viewport's rect, the note's rect, and the
+  // bar's width and height - were four reads landing immediately after the view
+  // wrote #world's transform, which is a forced synchronous layout of the whole
+  // page per frame of every pan. Three of the four are now computed from what
+  // the viewport already knows (see screenBoxOf / viewportClientRect); this is
+  // the fourth, and it is the only one that genuinely needs the DOM.
+  //
+  // It is also the one that holds still. The bar is a fixed run of five control
+  // groups whose <select>s are sized by their widest option, so nothing a person
+  // can do mid-edit changes its box - only a window resize can, by way of the
+  // root font size, and that is where it is re-measured.
+  let barW = 0, barH = 0;
+  const measureBar = () => { barW = toolbar.el.offsetWidth; barH = toolbar.el.offsetHeight; };
+
   // Keep the bar over the note and inside the viewport, flipping below the note
   // when there is no room above. Desktop floats a compact bar centred on the
   // note; mobile spans the whole board width, a wrapped strip above the note.
   const placeToolbar = () => {
     // Mobile pins to the foot of the screen by CSS - nothing to compute.
     if (mobile || !viewportEl) return;
-    const vpRect = viewportEl.getBoundingClientRect();
-    const nRect = node.getBoundingClientRect();
+    const vpRect = viewportClientRect();
+    const nRect = screenBoxOf(byId(id));
+    if (!vpRect || !nRect) return;
+    if (!barW) measureBar();
     const bar = toolbar.el;
     const gap = 12, pad = 8;
-    const bw = bar.offsetWidth, bh = bar.offsetHeight;
-    let cx = nRect.left + nRect.width / 2;
-    const minX = vpRect.left + pad + bw / 2;
-    const maxX = vpRect.right - pad - bw / 2;
+    let cx = nRect.cx;
+    const minX = vpRect.left + pad + barW / 2;
+    const maxX = vpRect.right - pad - barW / 2;
     cx = Math.min(maxX, Math.max(minX, cx));
-    let top = nRect.top - gap - bh;             // above the note
+    let top = nRect.top - gap - barH;           // above the note
     if (top < vpRect.top + pad) top = nRect.bottom + gap;   // no room -> below
-    top = Math.min(vpRect.bottom - pad - bh, Math.max(vpRect.top + pad, top));
+    top = Math.min(vpRect.bottom - pad - barH, Math.max(vpRect.top + pad, top));
     bar.style.left = cx + 'px';
     bar.style.top = top + 'px';
   };
+  measureBar();
   placeToolbar();
   const offView = onViewChange(placeToolbar);
+  const onResize = () => { measureBar(); placeToolbar(); };
+  addEventListener('resize', onResize);
 
   // beforeinput, not a check after the fact: refusing the keystroke leaves the
   // caret where it was, where truncating afterwards would move it and quietly
@@ -555,6 +576,7 @@ export function editNote(id) {
     document.removeEventListener('selectionchange', onSelect);
     document.documentElement.classList.remove('note-edit-mobile');
     offView?.();
+    removeEventListener('resize', onResize);
     wrap.contentEditable = 'false';
     counter.remove();
     toolbar.el.remove();

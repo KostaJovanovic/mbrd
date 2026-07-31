@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 
 import {
   rotatedExtents, itemBounds, itemInRect, itemRadius, pointInItem, topEdge,
-  corners, overlapFraction, segmentMeetsRect,
+  corners, overlapFraction, segmentMeetsRect, viewShift,
 } from '../web/assets/js/geometry.js';
 import { item } from './helpers.js';
 
@@ -331,4 +331,64 @@ test('it never loops, however far out the ends are', () => {
     [-far, -far, far, far], [far, -far, -far, far], [-far, 5, far, 5],
     [5, -far, 5, far], [-far, -far, -far, far], [far, far, far + 1, far + 1],
   ]) assert.equal(typeof seg(ax, ay, bx, by), 'boolean');
+});
+
+// ---------------------------------------------------------------------------
+// viewShift - "did that view change move anything anybody can see?"
+// ---------------------------------------------------------------------------
+//
+// The grid repaints full-viewport on every view frame, and two very ordinary
+// gestures hand it a stream of frames that move nothing: the tail of an
+// inertial pan, and a trackpad delivering zoom in fractions. Skipping those is
+// only safe if this function never says "settled" about a frame that moved.
+
+const view = (px, py, zoom) => ({ pan: { x: px, y: py }, zoom });
+const RECT = { x0: -500, y0: -400, x1: 500, y1: 400 };
+
+test('an unchanged view has shifted by nothing', () => {
+  const v = view(10, -20, 1.5);
+  assert.equal(viewShift(v, v, RECT), 0);
+});
+
+test('a pure pan shifts by the pan distance times the zoom', () => {
+  // Pan is in world units, so the screen distance is scaled. 3 world units at
+  // 2x is 6 screen pixels, whichever corner you measure from.
+  assert.ok(near(viewShift(view(0, 0, 2), view(3, 0, 2), RECT), 6));
+  assert.ok(near(viewShift(view(0, 0, 2), view(0, 3, 2), RECT), 6));
+});
+
+test('the sign flip on y does not lose the shift', () => {
+  // Screen y runs the other way from world y (viewport.js toScreen). A y-pan
+  // that came out as zero here would let a vertical drag repaint nothing.
+  assert.ok(viewShift(view(0, 0, 1), view(0, -0.5, 1), RECT) > 0);
+});
+
+test('a zoom moves the far corners most and the centre not at all', () => {
+  // Zooming about the pan point leaves that point still: at pan (0,0) the
+  // rectangle's centre is the fixed point, and 500 world units out at a zoom
+  // step of 0.01 is 5 screen pixels.
+  const a = view(0, 0, 1), b = view(0, 0, 1.01);
+  assert.ok(near(viewShift(a, b, RECT), 5));
+  assert.equal(viewShift(a, b, { x0: 0, y0: 0, x1: 0, y1: 0 }), 0);
+});
+
+test('a zoom too small to see reports under a pixel', () => {
+  // The case the guard exists for: a precision wheel notch. Half a screen
+  // pixel across a thousand-unit rectangle.
+  const shift = viewShift(view(0, 0, 1), view(0, 0, 1 + 0.5 / 500), RECT);
+  assert.ok(shift < 1, `expected sub-pixel, got ${shift}`);
+});
+
+test('a pan and a zoom that cancel at one corner still count at another', () => {
+  // The trap in measuring one point instead of four: zooming about a corner
+  // holds that corner still while the opposite one travels the full distance.
+  // Anchoring the zoom at (-500,-400) - the rect's near corner - leaves it
+  // fixed and moves the far corner by the whole 1000x800 extent times the step.
+  const a = view(-500, -400, 1), b = view(-500, -400, 1.01);
+  assert.ok(near(viewShift(a, b, RECT), 10), 'the far corner moved 1000 * 0.01');
+});
+
+test('it is symmetric in the two views', () => {
+  const a = view(0, 0, 1), b = view(7, -3, 1.4);
+  assert.ok(near(viewShift(a, b, RECT), viewShift(b, a, RECT)));
 });
