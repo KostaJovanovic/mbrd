@@ -625,7 +625,9 @@ export function commitGeom(label, before, driven, options = {}) {
     }
     after = snapshotGeom(before.map(b => b.id));
   }
-  commit(label, () => applyGeom(after), () => applyGeom(before));
+  // Weighted: this pair retains two snapshots of everything it moved, and a
+  // whole-board drag or arrange is where the history's memory actually goes.
+  commit(label, () => applyGeom(after), () => applyGeom(before), before.length * 2);
 }
 
 export function forgetPresnap(it) {

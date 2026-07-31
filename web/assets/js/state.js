@@ -147,7 +147,9 @@ export function addItems(items, label = 'Add', options = {}) {
     () => { const ids = new Set(added.map(a => a.id));
             board.items = board.items.filter(i => !ids.has(i.id));
             ids.forEach(id => selection.delete(id));
-            bus.emit('items', { added: [], removed: [...ids] }); bus.emit('selection'); });
+            bus.emit('items', { added: [], removed: [...ids] }); bus.emit('selection'); },
+    // Retains every item it added - a folder drop is the heavy case.
+    added.length);
   return added;
 }
 
@@ -240,7 +242,12 @@ export function removeItems(ids, label = 'Delete') {
             board.trash.push(...evicted);
             evicted = [];
             bus.emit('items', { added: removed.map(r => r.item.id), removed: [] });
-            bus.emit('trash'); });
+            bus.emit('trash'); },
+    // Pins every removed item. Not the trash entries this evicts as well:
+    // `evicted` is filled by the redo above, which commit() has not run yet
+    // when this argument is evaluated - and it is bounded by TRASH_LIMIT
+    // anyway, so counting it would change nothing worth the wrong number.
+    removed.length);
 }
 
 /**
