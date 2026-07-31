@@ -13,9 +13,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
+// The graph module, not the renderer. These four were imported from
+// canvas/web.js when the algorithm still lived inside it; the point of the
+// split is that this file never needs the drawing half at all.
 import {
   threads, denseLimitNow, denseLimitFor, nextDenseLimit,
-} from '../web/assets/js/canvas/web.js';
+} from '../web/assets/js/web-graph.js';
 
 /**
  * Deliberately not the module's own predicate.
