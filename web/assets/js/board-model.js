@@ -59,9 +59,13 @@ export const DEFAULT_SETTINGS = {
   grid: true,
   axes: true,
   snap: false,
-  // The relationship web behind the cards. Desktop-only and layout-local, on by
-  // default; an older board with no such key reads as on - see canvas/web.js.
-  web: true,
+  // The relationship web behind the cards. Desktop-only and layout-local, and
+  // off to begin with: threads are a reading of the board rather than part of
+  // it, and a board you have just made has nothing for them to say. One
+  // checkbox away in View. Absence of the key follows this default, so a board
+  // saved before the checkbox existed now opens without the web - anything
+  // saved since carries its own answer either way. See canvas/web.js.
+  web: false,
   // Off to begin with. It is a working instrument - where the pointer is, how
   // big the selected thing is - and a board you have just opened is a thing you
   // are looking at rather than working on. The scale bar covers the question a

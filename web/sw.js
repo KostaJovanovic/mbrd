@@ -12,7 +12,7 @@
 // Written out in full rather than composed from PREFIX, because save.bat bumps
 // this line by regex on every commit and would not recognise an expression.
 // tests/sw.test.js holds the two together.
-const VERSION = 'mbrd-v105';
+const VERSION = 'mbrd-v106';
 const PREFIX = 'mbrd-';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) turns the
@@ -42,6 +42,10 @@ const SHELL = [
   './assets/img/icon-512.png',
   './assets/img/icon-maskable-192.png',
   './assets/img/icon-maskable-512.png',
+  // The stock the sheet is printed on - app.css multiplies it over body. Not
+  // decoration that can fail to no-op: without it the board loses its tooth
+  // offline and the paper reads a shade lighter than it does online.
+  './assets/img/paper-grain.webp',
   './404.html',
   './assets/js/main.js',
   './assets/js/state.js',
@@ -53,6 +57,7 @@ const SHELL = [
   './assets/js/version.js',
   './assets/js/canvas/viewport.js',
   './assets/js/canvas/grid.js',
+  './assets/js/canvas/grain.js',
   './assets/js/canvas/paper.js',
   './assets/js/canvas/mobile-frame.js',
   './assets/js/canvas/items.js',
@@ -102,6 +107,7 @@ const SHELL = [
   './assets/js/ui/menu.js',
   './assets/js/ui/trash.js',
   './assets/js/ui/idle.js',
+  './assets/js/ui/nowplaying.js',
   './assets/js/ui/scalebar.js',
   // Optimising a board of photographs and music must work on a plane. Pictures
   // and sound are done by the browser itself, so they are all here - the ffmpeg

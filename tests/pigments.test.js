@@ -169,16 +169,54 @@ test('every colour in the palette is a colour the pictures contain', () => {
   }
 });
 
-test('the accent is the board colour furthest from its sheet', () => {
-  // Of the colours actually on the board, the one that makes the most visible
-  // button. Which is as much of the contrast advice as can be had without
-  // inventing a colour.
+test('with nothing to weigh, the accent is the hue furthest from the sheet', () => {
+  // Bare angles carry no standing, so distance decides alone. Of the colours
+  // actually on the board, the one that makes the most visible button - as much
+  // of the contrast advice as can be had without inventing a colour.
   const two = paletteFor([200, 40]);
   assert.ok(near(hueOf(two['--accent']), 40), `--accent is ${hueOf(two['--accent'])}`);
 
   const three = paletteFor([200, 260, 20]);
   assert.ok(near(hueOf(three['--accent']), 20), `--accent is ${hueOf(three['--accent'])}`);
   assert.ok(near(hueOf(three['--leafy']), 260), `--leafy is ${hueOf(three['--leafy'])}`);
+});
+
+test('a wisp of sky does not take the accent from a colour of the board', () => {
+  // The board this rule was written for, to its measured standings: a warm
+  // sheet at 62 degrees, a green at 133 that owns a third of one photograph,
+  // and a blue at 248 that is fifty-three pixels of haze in another. Under the
+  // old rule the blue won on distance alone and the board got a cobalt button.
+  const board = [
+    { h: 62.5, standing: 0.240 },
+    { h: 247.5, standing: 0.017 },
+    { h: 132.5, standing: 0.227 },
+  ];
+  const v = paletteFor(board);
+  assert.ok(near(hueOf(v['--accent']), 132.5), `--accent is ${hueOf(v['--accent'])}`);
+  // The sky is still on the board - it is a colour those photographs hold, and
+  // membership was never the thing at fault. It takes the ornament, not the
+  // button.
+  assert.ok(near(hueOf(v['--leafy']), 247.5), `--leafy is ${hueOf(v['--leafy'])}`);
+});
+
+test('facing the sheet is worth a near-tie and never worth a rout', () => {
+  // Distance is a thumb on the scale. Two real colours a hair apart in standing
+  // go to the one that makes the better button...
+  const tie = paletteFor([
+    { h: 62, standing: 0.30 },
+    { h: 100, standing: 0.20 },
+    { h: 240, standing: 0.18 },
+  ]);
+  assert.ok(near(hueOf(tie['--accent']), 240), `--accent is ${hueOf(tie['--accent'])}`);
+
+  // ...and a colour ten times the other's is not overtaken by any amount of
+  // distance, since FACING_BONUS tops out at doubling.
+  const rout = paletteFor([
+    { h: 62, standing: 0.30 },
+    { h: 100, standing: 0.20 },
+    { h: 240, standing: 0.02 },
+  ]);
+  assert.ok(near(hueOf(rout['--accent']), 100), `--accent is ${hueOf(rout['--accent'])}`);
 });
 
 test('a board of one colour gets a palette in one colour', () => {
@@ -221,10 +259,12 @@ test('vivid pictures make a stronger palette than muted ones', () => {
   // file's. The paper's chroma is an order of magnitude lower and never clipped.
   assert.ok(chromaOf(muted['--paper']) < chromaOf(plain['--paper']));
   assert.ok(chromaOf(plain['--paper']) < chromaOf(loud['--paper']));
-  // Bounded at both ends, or a board of neon signs stops being a sheet of
-  // tinted paper and becomes a painted panel.
-  assert.ok(chromaOf(loud['--paper']) <= 0.035, `${chromaOf(loud['--paper'])}`);
-  assert.ok(chromaOf(muted['--paper']) >= 0.009, `${chromaOf(muted['--paper'])}`);
+  // Bounded at both ends, and both bounds came down with the tables: the sheet
+  // is a cast now rather than a dye, so even a board of neon signs prints on
+  // something within 0.02 of neutral. The lower bound is what stops the dial
+  // reaching plain white - a muted board still has a colour, faintly.
+  assert.ok(chromaOf(loud['--paper']) <= 0.020, `${chromaOf(loud['--paper'])}`);
+  assert.ok(chromaOf(muted['--paper']) >= 0.004, `${chromaOf(muted['--paper'])}`);
   // The reference photograph leaves the tables exactly as measured.
   assert.ok(Math.abs(chromaOf(plain['--paper']) - chromaOf(paletteFor([200])['--paper'])) < 0.001);
 });
@@ -236,10 +276,13 @@ test('dark pictures make a deeper sheet, and it is still a sheet', () => {
   assert.ok(lightOf(night['--paper']) < lightOf(plain['--paper']) - 0.02);
   assert.ok(lightOf(beach['--paper']) > lightOf(plain['--paper']));
   // Never a dark palette by the back door: this is a light interface with a
-  // deeper sheet, and the floor is the bound that says so. 0.87 rather than the
-  // 0.9 this first held - the dial was widened deliberately, because at the old
-  // range a board of night photographs was indistinguishable from any other.
-  assert.ok(lightOf(night['--paper']) > 0.87, `paper went to ${lightOf(night['--paper'])}`);
+  // deeper sheet, and the floor is the bound that says so. 0.85 now, down from
+  // 0.9 and then 0.87 - the dial has been widened twice, both times because a
+  // board of night photographs came out looking like every other board. The
+  // second widening is also the one that had to carry more: with the sheet
+  // near-neutral, lightness is the only thing left that can tell two papers
+  // apart.
+  assert.ok(lightOf(night['--paper']) > 0.85, `paper went to ${lightOf(night['--paper'])}`);
   assert.ok(lightOf(beach['--paper']) < 1);
 });
 
@@ -355,10 +398,14 @@ test('the sheet a pick brings is the pick\'s own hue, not the table\'s', () => {
   const vars = paletteFromAccent('#3355ff');
   for (const key of ['--paper', '--paper-2', '--paper-3', '--ink', '--rule']) {
     const { h } = oklch(...[1, 3, 5].map(i => parseInt(vars[key].slice(i, i + 2), 16)));
-    // Within a degree or two: gamut clipping gives up chroma, and a nearly
-    // neutral paper carries so little of it that the hue wobbles.
+    // Within a few degrees: gamut clipping gives up chroma, and a nearly
+    // neutral paper carries so little of it that the hue wobbles. The tolerance
+    // is 6 rather than the 3 it was because the papers are now a third as
+    // chromatic - at chroma 0.008 a single step of 8-bit rounding is worth
+    // several degrees, so this is sRGB's precision showing through and not the
+    // sheet drifting off the pick.
     const off = Math.abs(((h - blue + 540) % 360) - 180);
-    assert.ok(off < 3, `${key} is ${off.toFixed(1)} degrees off the pick`);
+    assert.ok(off < 6, `${key} is ${off.toFixed(1)} degrees off the pick`);
   }
 });
 

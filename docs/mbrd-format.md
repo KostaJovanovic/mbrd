@@ -247,7 +247,7 @@ promise 1 above,** and that is the open question at the bottom of this document.
 | `stuckTo`| `note` | The id of the item this sticky note is pinned to, or `null` for loose. Stamped from live geometry at save; a load seeds the runtime memo from it so the pin survives a reload and a Mobile reflow even when the note no longer visibly overlaps its host. A dangling id (host deleted) falls back to measuring overlap. |
 | `url`    | `link` | The address. **Revalidated on every render**, never trusted from the file. |
 | `peaks`  | `audio` | RMS readings in [0, 1]. Moved out to `waveforms/` when packing — see below. |
-| `cover`  | any | An asset hash for a chosen picture: album art, a diagram. |
+| `cover`  | any | An asset hash for the picture a card shows: album art, a diagram, a chosen image. On a `video` it is the poster — a still cut from the clip's own first frame at import, so the card is a picture of itself before it is played. Same key either way, and readers need not tell them apart. |
 | `fit`    | `image`, `video` | This one card's fit, overriding the board-wide `mediaFit`: `"cover"` fills and crops, `"contain"` fits the whole picture in. Absent means follow the board default. |
 | `presnap`| any | Where the item was before snap-to-grid moved it, so turning snapping off can put it back. `{ x, y, w, h }`. |
 

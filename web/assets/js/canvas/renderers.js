@@ -235,6 +235,116 @@ function videoSize(file) {
   });
 }
 
+/**
+ * How wide a video's own first frame is kept.
+ *
+ * A poster is drawn full-bleed at card size, so it wants more than a cover's 600
+ * corner-thumbnail ceiling and much less than the clip's own resolution - a 4K
+ * phone video's first frame is a three-megabyte JPEG nobody needs to see a
+ * still of. 640 covers a mobile card at two device pixels per point and a
+ * desktop card at one, which is the whole job.
+ */
+const POSTER_SIDE = 640;
+
+/** How long a frame grab may take before the clip is left without one. */
+const POSTER_MS = 6000;
+
+/**
+ * The first frame of a clip, as a WebP blob, or null.
+ *
+ * This exists because of what a video card looks like before it is played. On a
+ * touch device the source is deliberately held back until the first tap - see
+ * the video renderer, and the decoder ceiling that forces it - so a clip with
+ * nothing to show is a black rectangle with a play button on it. The desktop
+ * path gets a frame for free by loading metadata at `#t=0.1`; the mobile path
+ * loads nothing at all, and so has to be *given* a picture at import.
+ *
+ * The browser's own decoder does the work, which is the point: the ffmpeg
+ * poster path in optimize/media.js is thirty megabytes off a CDN and is only
+ * reached for a clip this browser cannot open at all. A clip it *can* open
+ * needs none of that - it needs a seek and a drawImage.
+ *
+ * Everything here degrades to null, and null is not a failure: it means the
+ * card is exactly what it was before any of this existed. The refusals worth
+ * naming are a decoder that will not seek without playback (older iOS), a clip
+ * whose first frame is genuinely black, and a browser that will not write WebP.
+ * The blank check is deliberately crude - a solid-colour frame compresses to
+ * almost nothing - because storing a black rectangle as a picture of a black
+ * rectangle is strictly worse than storing no picture.
+ */
+export function videoFrame(file) {
+  const url = URL.createObjectURL(file);
+  const v = document.createElement('video');
+  return new Promise(resolve => {
+    let settled = false;
+    const done = value => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      v.pause?.();
+      v.removeAttribute('src');
+      v.load?.();
+      URL.revokeObjectURL(url);
+      resolve(value);
+    };
+    const timer = setTimeout(() => done(null), POSTER_MS);
+
+    // Muted and inline are not cosmetic: an unmuted video may not be allowed to
+    // play at all without a gesture, and on iOS a video that has never played
+    // draws as a transparent rectangle onto a canvas however far it has seeked.
+    v.muted = true;
+    v.playsInline = true;
+    v.preload = 'auto';
+    v.addEventListener('error', () => done(null), { once: true });
+
+    v.addEventListener('loadedmetadata', () => {
+      if (!v.videoWidth) return done(null);
+      // A hair past zero rather than zero. Plenty of clips open on a frame of
+      // black - a fade-in, a slate - and the first tenth of a second is far
+      // enough in to have a picture while still being "the start of the clip".
+      const at = Number.isFinite(v.duration) && v.duration > 0
+        ? Math.min(0.1, v.duration / 2)
+        : 0.1;
+      // Some decoders will not produce a frame for a video that has never run,
+      // and answer a seek with the poster-frame nothing. Starting it and
+      // stopping it immediately costs a few milliseconds and is what makes this
+      // work on the devices the whole feature is for. Failure is ignored: where
+      // play() is refused, the seek alone is usually enough.
+      v.play().then(() => v.pause(), () => {}).finally(() => { v.currentTime = at; });
+    }, { once: true });
+
+    const grab = () => { capture(v).then(done, () => done(null)); };
+    // requestVideoFrameCallback fires when a frame has actually been presented,
+    // which 'seeked' does not promise - it says the seek finished, not that
+    // there is anything on the element yet.
+    if (typeof v.requestVideoFrameCallback === 'function') {
+      v.addEventListener('seeked', () => v.requestVideoFrameCallback(grab), { once: true });
+    } else {
+      v.addEventListener('seeked', grab, { once: true });
+    }
+
+    v.src = url;
+  });
+}
+
+/** Draw whatever the element is showing into a capped WebP. */
+async function capture(v) {
+  const scale = Math.min(1, POSTER_SIDE / Math.max(v.videoWidth, v.videoHeight));
+  const w = Math.max(1, Math.round(v.videoWidth * scale));
+  const h = Math.max(1, Math.round(v.videoHeight * scale));
+  const canvas = new OffscreenCanvas(w, h);
+  const ctx = canvas.getContext('2d', { alpha: false });
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(v, 0, 0, w, h);
+  const out = await canvas.convertToBlob({ type: 'image/webp', quality: 0.72 });
+  // The same trap the picture shrinker guards - a browser that cannot write
+  // WebP hands back a PNG - plus the blank frame described above. 2 KB is well
+  // under any real photograph at this size and well over any flat colour.
+  if (!out || out.type.toLowerCase() !== 'image/webp' || out.size < 2048) return null;
+  return { blob: out, w: v.videoWidth, h: v.videoHeight };
+}
+
 /** Build the inner DOM for an item. Async content fills itself in afterwards. */
 export function buildContent(item) {
   const fn = RENDERERS[item.type] || RENDERERS.generic;
@@ -551,7 +661,7 @@ const RENDERERS = {
     sound.preload = 'metadata';
     const url = item.asset && assetURL(item.asset.hash);
     if (url) sound.src = url;
-    registerPlayer(sound);
+    registerPlayer(sound, item);
 
     card.append(buildTransport(item, sound), sound);
     return card;

@@ -11,7 +11,7 @@
 <meta name="description" content="An infinite freeform moodboard. Drop in anything, place it anywhere. Runs entirely in your browser.">
 <meta name="author" content="valjdakosta">
 <meta name="color-scheme" content="light">
-<meta name="theme-color" content="#fbf8f1">
+<meta name="theme-color" content="#faf8f3">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="assets/img/icon.svg" type="image/svg+xml">
 <!-- A PNG, and it has to be: iOS does not read an SVG here, so the home-screen
@@ -63,6 +63,13 @@
 </script>
 </head>
 <body>
+
+<!-- The stock the board is printed on: a tile of 300gsm grain multiplied over
+     the paper on <body>. Outside #viewport rather than inside it, because
+     #viewport has paint containment and so is a stacking context - a blend
+     inside one has nothing behind it to blend with. canvas/grain.js moves it
+     with the board; see the #grain rule in app.css for the rest. -->
+<div id="grain" aria-hidden="true"></div>
 
 <!-- The canvas. #viewport is fixed to the window and paints the grid; #world is
      the single transformed layer every item lives in (see canvas/viewport.js). -->
@@ -437,6 +444,40 @@
       <path d="M11.4 2.6a1.6 1.6 0 0 1 2.2 2.2L6.3 12.1l-3 .8.8-3z"/>
     </svg>
     <span>Note</span>
+  </button>
+</div>
+
+<!-- What is playing, and the controls for it. Built by ui/nowplaying.js, which
+     fills .np-transport with the same buildTransport() the card uses - the
+     waveform in here and the waveform on the card are two views of one <audio>,
+     so neither has to be told what the other did.
+
+     Along the foot between the bin and the zoom cluster, which is where a
+     transport has lived on every player anybody has used. On a phone that edge
+     belongs to the add bar, so app.css lifts this above it rather than moving
+     it - the two are never the same piece of screen.
+
+     hidden to start: there is nothing playing when a board opens, and a bar
+     announcing silence is furniture with no job. -->
+<div id="nowplaying" hidden>
+  <span class="np-name"></span>
+  <div class="np-transport"></div>
+  <!-- The global volume, the same one the sidebar's slider writes. Not a
+       per-clip level: canvas/audio.js keeps one for the whole board, on the
+       grounds that it is a property of the room and not of any one recording.
+       The module removes this whole block where the browser will not honour a
+       write to it - see volumeLocked(). -->
+  <label class="np-volume">
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M3 6h2.4L8.8 3.1v9.8L5.4 10H3z" fill="currentColor"/>
+      <path d="M11 5.6a3.4 3.4 0 0 1 0 4.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+    </svg>
+    <input id="np-volume" type="range" min="0" max="100" step="1" value="60" aria-label="Volume">
+  </label>
+  <button type="button" class="np-close" aria-label="Close the player" title="Stop and close">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+      <path d="M4 4l8 8M12 4l-8 8"/>
+    </svg>
   </button>
 </div>
 

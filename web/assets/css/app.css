@@ -54,18 +54,120 @@ html, body {
 /* The sheet. #viewport paints the grid on top of this and stays transparent,
    so the paper shows through at every zoom without the grid painter having to
    know about it.
-   Soft blooms and a vignette only - no fibre hatching. Fine repeating lines
-   under a dot grid read as a second, competing grid, and at fractional zoom the
-   two beat against each other into moire. */
+   Blooms, a vignette and the stock's own tooth, in that order. What this rule
+   still refuses is *hatching*: fine repeating lines under a dot grid read as a
+   second, competing grid, and at fractional zoom the two beat against each
+   other into moire. The grain below scales with the board, so it does sweep its
+   frequency past the grid's - what keeps that survivable is that it is
+   isotropic noise rather than a lattice, and noise has no single period to beat
+   against. See canvas/grain.js, which owns both halves of that trade. */
 body {
   background-color: var(--paper);
-  /* --wash scales all three at once, so the whimsy axis can flatten the paper
-     to nothing without a second background declaration to keep in sync. */
+  /* --wash scales the two colour blooms and --vignette the ink shading, so the
+     whimsy axis can flatten the paper to nothing - or decorate it without
+     darkening it - with no second background declaration to keep in sync.
+
+     The first bloom is the palette's own accent, and 3% rather than the 5% the
+     other pigments here take. It used to be --accent-warm, which is a warm
+     yellow in three of the four palettes - so whatever the board's colour, the
+     corner came out the same amber smudge, and on Orca's teal sheet it was a
+     gold blob 107 degrees off the palette (which is what --accent-warm is *for*
+     there; see its block in tokens.css). The accent tracks the theme instead,
+     including a palette ui/pigments.js has extracted from a picture.
+
+     The share drops because the accent is the darker pigment: measured against
+     plain paper, --accent-warm at 5% costs the corner 1.86 levels of lightness
+     and --accent at 5% costs 3.70, which reads as a stain rather than a bloom.
+     3% lands at 1.76 - the weight this always had - while carrying more chroma
+     than the warm did. */
   background-image:
-    radial-gradient(58% 44% at 18% 12%, color-mix(in srgb, var(--accent-warm) calc(5% * var(--wash)), transparent), transparent 70%),
+    radial-gradient(58% 44% at 18% 12%, color-mix(in srgb, var(--accent) calc(3% * var(--wash)), transparent), transparent 70%),
     radial-gradient(52% 40% at 84% 78%, color-mix(in srgb, var(--leafy) calc(4% * var(--wash)), transparent), transparent 72%),
-    radial-gradient(120% 100% at 50% 50%, transparent 55%, color-mix(in srgb, var(--ink) calc(5% * var(--wash)), transparent));
+    radial-gradient(120% 100% at 50% 50%, transparent 55%, color-mix(in srgb, var(--ink) calc(5% * var(--vignette)), transparent));
 }
+
+/* The tooth of the stock: a 512px seamless tile of 300gsm grain, multiplied
+   over the finished sheet.
+
+   Multiply and not soft-light, which is the mode a grey texture usually wants.
+   Both soft-light and overlay are defined so that a backdrop of white comes
+   back unchanged, and this sheet is 98% light: measured against --paper, the
+   whole tile collapses into about two levels out of 255, and against
+   --paper-card into less than one. Multiply is subtractive and so has the whole
+   range below the sheet to work in. It also keeps the palettes honest for free
+   - scaling all three channels by the same grey leaves hue exactly where it
+   was, so an extracted pigment stays the colour ui/pigments.js derived.
+
+   The tile is baked high-key for the same reason: its levels run 236-255, so
+   the brightest fibres take nothing off the sheet and the darkest take about
+   7%. A tile centred on mid-grey would have spent most of its range darkening
+   uniformly and only the remainder on texture. Lossless WebP, because 19 levels
+   of grain is inside the quantisation noise of any lossy setting and the
+   banding is worse than the weight it saves.
+
+   Its own layer rather than a fourth background-image on the rule above,
+   because a background-blend-mode is fixed at authoring time and this wants the
+   whimsy dial the blooms and the vignette have.
+
+   A real element rather than a body::before, and that is forced. The layer has
+   to travel with the board - canvas/grain.js writes its background-position on
+   every view change - and a pseudo-element cannot be written to from script; it
+   would have to read a custom property off body instead. Body is an ancestor of
+   #world, and an inherited custom property written there once a frame
+   invalidates the computed style of every card on the board. That is the same
+   trap canvas/mobile-frame.js was built to get out of.
+
+   The 512px below is the tile at 100%. grain.js scales it with the zoom and
+   carries the same number, so what is written here is only what the layer
+   wears between first paint and the first view change. */
+/* Two surfaces, one stock. Desktop's paper is the window, so the grain is a
+   full-bleed layer under #viewport. Mobile's paper is the *sheet* - a finite,
+   deliberately opaque strip painted inside #viewport, above that layer - so on
+   Mobile the full-bleed one is covered by the board and shows only in the
+   surround around it, which is the board wearing its texture inside out. The
+   sheet therefore carries its own, and the full-bleed layer is taken off; see
+   the two rules below the shared block.
+
+   Both read their placement from custom properties rather than being written
+   directly, because one of the two surfaces is a pseudo-element. That is safe
+   here in a way it would not be on <body>: #grain is childless and
+   #mobile-board-frame has only this ::after, so an inherited custom property on
+   either invalidates nothing but itself. */
+#grain,
+#mobile-board-frame::after {
+  background-image: url("../img/paper-grain.webp");
+  background-repeat: repeat;
+  background-position: var(--grain-pos, 0 0);
+  background-size: var(--grain-tile, 512px 512px);
+  mix-blend-mode: multiply;
+  pointer-events: none;
+  /* Two dials multiplied. --grain is the look's, from tokens.css; --grain-fade
+     is the zoom's, written onto the surface by canvas/grain.js as the board
+     goes below 40% - see fadeFor() there. The fallback of 1 is what the layer
+     wears before the first view change, and is also what keeps it visible if
+     script never runs. */
+  opacity: calc(0.8 * var(--grain) * var(--grain-fade, 1));
+}
+
+#grain {
+  position: fixed;
+  inset: 0;
+}
+
+/* Clipped to the sheet by the sheet, radius included - which is why this is a
+   pseudo-element on the frame rather than a third layer positioned to match it.
+   canvas/mobile-frame.js rewrites that radius as each end of the board scrolls
+   in and out of the window, and `inherit` follows it for free. */
+#mobile-board-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+/* The surround is not paper. It is the mat the sheet is lying on, and giving it
+   the board's tooth is what made the texture read as inverted. */
+:root[data-board-mode="mobile"] #grain { display: none; }
 
 button, input, select, textarea { font: inherit; color: inherit; }
 
@@ -2762,7 +2864,6 @@ plates do: below a third of size a card is a coloured tile, and a click on
   display: grid;
   align-content: center;
   justify-items: center;
-  gap: 4px;
   padding: 0;
   border: var(--hairline) solid var(--rule-2);
   border-radius: var(--radius-sm);
@@ -2809,13 +2910,34 @@ plates do: below a third of size a card is a coloured tile, and a click on
               visibility 0s 0.3s;
 }
 #mobile-header-edit-btn svg { width: 18px; height: 18px; color: var(--accent); }
+/* Three bars that have to look like three of the same bar, which is a harder
+   ask than it sounds: each one is rasterized on its own, so two bars render
+   identically only if they sit at the same phase against the device pixel grid.
+   That is a statement about the *pitch* - bar height plus gap - and not about
+   the height, which is where an earlier pass at this stopped. Going from a
+   1.5px bar to 2px fixed the 1x case and left the pitch at 6, and 6 is only
+   whole in device pixels when the ratio is a multiple of a sixth: 1x, 1.5x and
+   2x are clean, 1.25x and 1.75x are 7.5 and 10.5, and those two are precisely
+   Windows' 125% and 175%. The middle bar came out a shade thinner than its
+   neighbours on any laptop set that way.
+
+   8 is the pitch that survives: every device pixel ratio anyone ships is a
+   multiple of an eighth, so 8 is whole at all of them - 10 at 1.25x, 14 at
+   1.75x, 21 at the 2.625x a Pixel reports, 28 at 3.5x. The bar keeps its 2px
+   weight and the gap grows to 6 to pay for it.
+
+   Both of the stack's own dimensions are then kept even, so the grid's centring
+   lands on a whole pixel rather than halfway across one. The button is 42x40
+   over a 1px border, so the box being centred in is 40x38: an 18px-wide bar
+   sits at x=11 where the old 17px one sat at 11.5 and wore soft edges down both
+   sides at every scale, and the 18px-tall stack (2+6+2+6+2) sits at y=10. The
+   touch sizes below hold the same two rules against a 44x44 box.
+
+   18x18 is also, not by accident, the size of the pen icon in the opposite
+   corner. The hamburger has been reading small next to it. */
+#menu-btn { gap: 6px; }
 #menu-btn span {
-  width: 17px;
-  /* A whole device pixel, not 1.5. Three separate bars each snap to the pixel
-     grid on their own, so a fractional height rounds unevenly - on a 1x display
-     (a 1080p panel at 100%) the middle bar landed on a boundary that rounded to
-     2px while the other two rounded to 1px. 2px renders identical at every
-     integer scale. */
+  width: 18px;
   height: 2px;
   border-radius: var(--radius-xs);
   background: var(--ink);
@@ -3253,8 +3375,13 @@ plates do: below a third of size a card is a coloured tile, and a click on
 }
 .field select:hover { border-color: var(--accent); }
 
-/* Ruled slider: a hairline track with a terracotta lozenge riding it. */
-.field input[type="range"] {
+/* Ruled slider: a hairline track with a terracotta lozenge riding it.
+   Every slider in the app is inside a .field, bar one: the now-playing bar's
+   volume, which is a row of controls rather than a labelled setting. Named here
+   rather than given a .field it would then have to undo, because what these
+   rules describe is what a slider looks like on this paper, not where it sits.
+   :is() so the two stay one rule and cannot drift. */
+:is(.field, .np-volume) input[type="range"] {
   width: 100%;
   height: 22px;
   -webkit-appearance: none;
@@ -3262,17 +3389,17 @@ plates do: below a third of size a card is a coloured tile, and a click on
   background: transparent;
   cursor: pointer;
 }
-.field input[type="range"]::-webkit-slider-runnable-track {
+:is(.field, .np-volume) input[type="range"]::-webkit-slider-runnable-track {
   height: 3px;
   border-radius: 2px;
   background: linear-gradient(90deg, var(--rule-2), var(--rule));
 }
-.field input[type="range"]::-moz-range-track {
+:is(.field, .np-volume) input[type="range"]::-moz-range-track {
   height: 3px;
   border-radius: 2px;
   background: linear-gradient(90deg, var(--rule-2), var(--rule));
 }
-.field input[type="range"]::-webkit-slider-thumb {
+:is(.field, .np-volume) input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 15px; height: 15px;
   margin-top: -6px;
@@ -3281,7 +3408,7 @@ plates do: below a third of size a card is a coloured tile, and a click on
   background: var(--accent);
   transform: rotate(45deg);
 }
-.field input[type="range"]::-moz-range-thumb {
+:is(.field, .np-volume) input[type="range"]::-moz-range-thumb {
   width: 13px; height: 13px;
   border: 1.5px solid var(--paper-card);
   border-radius: var(--radius-xs);
@@ -3542,6 +3669,211 @@ kbd {
   transition: opacity var(--dur-base) var(--ease), visibility 0s var(--dur-base);
 }
 
+/* ---------------------------------------------------------
+   The now-playing bar (ui/nowplaying.js)
+   --------------------------------------------------------- */
+
+/* Along the foot, in the gap between the bin's corner and the zoom cluster's.
+   Two insets rather than a centre and a width, and that is the whole of how it
+   stays out of the way: left and right say what it must not sit on top of,
+   max-width caps it, and `margin-inline: auto` centres whatever is left over
+   inside that gap. Narrow the window and the bar shrinks instead of sliding
+   under the furniture; open the sidebar and only one number changes.
+
+   The gutters are the furniture's own arithmetic where it has any. The bin's
+   row is three chrome buttons and the gap between the trash and the history
+   pair, which is a sum this can take. The zoom cluster is a segmented pill of
+   six buttons of three different widths, which is not - so its width is named
+   once here, beside the thing that needs it.
+
+   Same card as the add bar next door: the same paper, the same hairline, the
+   same --leaf corner. It shares an edge with that bar on a phone, and two
+   objects on one edge wearing two different corners read as two strips. */
+#nowplaying {
+  --np-corner-w: 214px;
+  --np-gap: 12px;
+  --np-left: calc(max(16px, env(safe-area-inset-left))
+                  + 3 * var(--chrome-button-w) + 8px + var(--np-gap));
+  --np-right: calc(max(16px, env(safe-area-inset-right))
+                   + var(--np-corner-w) + var(--np-gap));
+
+  position: fixed;
+  z-index: 20;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  left: var(--np-left);
+  right: var(--np-right);
+  max-width: 520px;
+  margin-inline: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 8px 14px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
+  user-select: none;
+}
+#nowplaying[hidden] { display: none; }
+
+/* Arriving and leaving.
+   It comes up from under the edge of the window and goes back down under it.
+   Not a nudge: the first version of this rose ten pixels and scaled from 0.98,
+   which is an animation by measurement and a pop by eye - a tenth of a second
+   of movement smaller than the bar's own padding. A thing pinned to the bottom
+   of the screen has an obvious place to come from, and using it is what makes
+   the movement legible at all. Hence `100% + 24px` - its own height, and enough
+   again to clear the inset it sits on and the shadow it casts.
+
+   Three characters off one pair of rules, because the personality is in the
+   tokens and not in the markup: how far under it starts, how much smaller, how
+   far tossed, and on what curve. The three tiers set those four at the foot of
+   this file; here it is one transform either way.
+
+   Two transitions, deliberately. The rule below is what plays on the way *in* -
+   longer, and on --ease-back, because arriving is the app answering something
+   and an answer may have some spring in it. The base rule's is what plays on
+   the way *out*: quicker and straight, since leaving is only getting out of the
+   way and a bar that bounced as it left would be asking to be watched. That is
+   the same asymmetry the idle fade makes further down, pointed the other way -
+   the furniture drifts off slowly because nothing asked it to go, where this
+   goes because somebody closed it.
+
+   Both halves of the exit run for the same --dur-fast on purpose:
+   ui/nowplaying.js ends the exit on the opacity transition, so a transform
+   still running when that fires would be cut off by [hidden].
+
+   pointer-events with the opacity, or a bar faded to nothing would still be a
+   row of buttons sitting over the board. */
+#nowplaying {
+  --np-under: calc(100% + 24px);
+  --np-shrink: 0.98;
+  --np-tilt: 0deg;
+  --np-ease: var(--ease-back);
+
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(var(--np-under)) scale(var(--np-shrink)) rotate(var(--np-tilt));
+  transition: opacity var(--dur-fast) var(--ease),
+              transform var(--dur-fast) var(--ease);
+}
+#nowplaying.is-up {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+  transition: opacity var(--dur-base) var(--ease),
+              transform var(--dur-base) var(--np-ease);
+}
+
+/* The sidebar no longer takes it off the screen - it moves over instead. A
+   player is the one piece of chrome whose job continues while you are doing
+   something else, and hiding it meant the only way to stop a track was to close
+   the panel you had just opened. The bin and the add bar still go, because what
+   they do is on the board the panel is covering.
+
+   One number: the left gutter clears the panel rather than the trash. The
+   right-hand one is untouched, so the bar keeps its own right edge and simply
+   loses width - it does not slide across under the sidebar. */
+#sidebar.is-open ~ #nowplaying {
+  --np-left: calc(max(14px, env(safe-area-inset-left))
+                  + min(var(--sidebar-w), 100vw - 28px) + var(--np-gap));
+}
+/* The masthead panel is the same object from the other side. */
+#header-panel.is-open ~ #nowplaying {
+  --np-right: calc(max(14px, env(safe-area-inset-right))
+                   + min(var(--sidebar-w), 100vw - 28px) + var(--np-gap));
+}
+/* Where a panel and the zoom cluster together leave too little to be a player,
+   the bar steps over the cluster rather than squeezing between the two. Sixty
+   pixels up clears the whole corner stack - the scale bar sits above the zoom
+   pill and the pair measure 67. */
+@media (max-width: 1080px) {
+  :is(#sidebar, #header-panel).is-open ~ #nowplaying {
+    left: max(16px, env(safe-area-inset-left));
+    right: max(16px, env(safe-area-inset-right));
+    bottom: calc(max(16px, env(safe-area-inset-bottom)) + 67px + 10px);
+  }
+  #sidebar.is-open ~ #nowplaying {
+    left: calc(max(14px, env(safe-area-inset-left))
+               + min(var(--sidebar-w), 100vw - 28px) + var(--np-gap));
+  }
+  #header-panel.is-open ~ #nowplaying {
+    right: calc(max(14px, env(safe-area-inset-right))
+                + min(var(--sidebar-w), 100vw - 28px) + var(--np-gap));
+  }
+}
+
+/* The name gets a third of the bar and no more. It is the label on a control,
+   not the content - what somebody is looking at while this is up is the
+   waveform - so a long filename ellipses rather than pushing the transport
+   into a corner. The full one is on the title attribute. */
+#nowplaying .np-name {
+  flex: 0 1 auto;
+  max-width: 33%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--t-small);
+  color: var(--ink-2);
+}
+#nowplaying .np-transport {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+#nowplaying .transport {
+  flex: 1;
+  min-width: 0;
+  gap: 8px;
+  margin-top: 0;
+}
+/* Shorter than the card's forty. A card gives the waveform the whole lower half
+   of its face and can afford to; here it is one control in a row of them, and a
+   40px band of bars would make the bar as tall as the sidebar's header. The
+   readings are the same - drawBars() resamples to whatever width it is given -
+   so this is the same shape drawn shorter, not a coarser one. */
+#nowplaying .wave { height: 26px; }
+/* The video form. Its own card gives this 14px because the bar is laid over the
+   picture and every pixel is one of the thing you pinned up; here there is no
+   picture underneath and the line is the only thing to aim at, so it gets the
+   waveform's height and the same target the waveform has. The rule it draws is
+   still 3px - .vtrack sizes the reach, not the ink. */
+#nowplaying .vtrack { height: 26px; }
+/* And the same ink as the waveform beside it. The card's 22% is judged against
+   a photograph; on paper, next to a play button in full accent, it reads as a
+   crease rather than as a track - which is the note .wave-base already carries
+   for having made exactly this mistake. */
+#nowplaying .vtrack::before { background: color-mix(in srgb, var(--ink) 38%, transparent); }
+#nowplaying .transport .play { width: 28px; height: 28px; }
+
+/* The volume, and the icon is the label. A word here would be the only text in
+   the bar competing with the track's own name, and a speaker is the one glyph
+   that needs no gloss. */
+#nowplaying .np-volume {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+#nowplaying .np-volume svg { width: 15px; height: 15px; color: var(--ink-3); }
+#nowplaying .np-volume input { width: 68px; }
+#nowplaying .np-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+#nowplaying .np-close:hover { background: var(--paper-2); color: var(--accent-deep); }
+#nowplaying .np-close svg { width: 12px; height: 12px; }
+
 /* Idle - fifteen seconds of nothing, and the furniture goes.
    ui/idle.js puts the class on and takes it off; what counts as "something
    happened" is decided there.
@@ -3562,7 +3894,13 @@ kbd {
 :root.is-idle #mobile-header-edit-btn,
 :root.is-idle #bin,
 :root.is-idle #corner,
-:root.is-idle #add-bar {
+:root.is-idle #add-bar,
+/* Including the player, and it is worth saying why: something audible with its
+   controls faded out sounds like a thing that cannot be stopped. It can - any
+   pointer move, key or wheel brings the whole set back inside a quarter of a
+   second, which is faster than reaching for it - and exempting it would leave
+   one lit panel on an otherwise empty board for as long as a track runs. */
+:root.is-idle #nowplaying {
   opacity: 0;
   pointer-events: none;
   transition: opacity calc(var(--dur-base) * 6) var(--ease);
@@ -4554,7 +4892,10 @@ kbd {
   /* 44px, everywhere a finger has to land. This is the *input* question, so it
      is here rather than in the width query below: a 10" tablet has all the room
      in the world and the same finger. */
-  #menu-btn span { width: 19px; }
+  /* 20, not 19: the 46px button over a 1px border is a 44px box, so an even bar
+     centres on a whole pixel. The gap is untouched - the pitch of 8 is the one
+     number in this control that must not move. */
+  #menu-btn span { width: 20px; }
   #mobile-header-edit-btn svg { width: 20px; height: 20px; }
   #bin-btn svg { width: 20px; height: 20px; }
   #zoom-ctl button { min-width: 40px; height: 46px; }
@@ -4602,6 +4943,37 @@ kbd {
      spent now that it shares a row with the 48px chrome buttons; let the two
      halves take the row's height so the foot is one flush line. */
   #add-bar button { min-height: 0; }
+
+  /* Above the foot strip rather than in it. The bottom edge is spoken for at
+     this width - bin, add bar and history read as one flush line - and a fourth
+     object squeezed into it would break the thing that makes those three read
+     as one. So the player stands off it by the same gap the strip uses inside
+     itself, full width between the same insets, and the two stack.
+
+     The name goes with it. There is no room for a filename, a waveform, a
+     volume slider and a close on a phone, and of those four the name is the one
+     the card itself already carries - you started this from somewhere. */
+  #nowplaying {
+    --np-left: max(12px, env(safe-area-inset-left));
+    --np-right: max(12px, env(safe-area-inset-right));
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--bar-h) + var(--bar-gap));
+    max-width: none;
+  }
+  #nowplaying .np-name { display: none; }
+  #nowplaying .np-volume input { width: 56px; }
+
+  /* And here the sidebar does take it away, unlike at every wider size. The
+     panel is 322 of a 390-wide screen: there is no "beside it" to move to, and
+     a player peeking out from under an open panel is not a control, it is a
+     sliver. The rule above that keeps it up is written for a sidebar that is a
+     left-hand strip, which is what it stops being here. */
+  :is(#sidebar, #header-panel).is-open ~ #nowplaying {
+    left: max(12px, env(safe-area-inset-left));
+    right: max(12px, env(safe-area-inset-right));
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--bar-h) + var(--bar-gap));
+    opacity: 0;
+    pointer-events: none;
+  }
 
   /* The menu goes back to the top left, which is where it is at every other
      width. It came down here to be reachable by a thumb, and the row it came
@@ -4980,7 +5352,7 @@ kbd {
 
 /* Lozenges become squares. Same target size, no tilt. */
 :root[data-whimsy="2"] .grip,
-:root[data-whimsy="2"] .field input[type="range"]::-webkit-slider-thumb { transform: none; }
+:root[data-whimsy="2"] :is(.field, .np-volume) input[type="range"]::-webkit-slider-thumb { transform: none; }
 
 /* The toast sits straight rather than tossed onto the page. */
 :root[data-whimsy="2"] .toast-line {
@@ -4989,9 +5361,105 @@ kbd {
 }
 @keyframes rise-plain { from { opacity: 0; transform: translateY(6px); } }
 
+/* How the player arrives, per tier. Four values, set here and read by the two
+   transitions where #nowplaying is styled - the shape of the movement is one
+   thing and its personality is another, and only the second belongs down here
+   with the rest of the axis. All three slide up from under the edge; what
+   differs is from how far, how they get there, and what they do on arrival.
+
+   Softish throws it: it starts further under and noticeably smaller, and comes
+   in off-square before settling - the same hand that tosses a card onto the
+   board and leaves it at an angle, and this tier's --ease-back is a real
+   overshoot rather than a suggestion. The angle is small and negative so it
+   settles clockwise into true, which is how something set down by hand comes
+   to rest.
+
+   Middle keeps the base above: up from under the edge, a whisper of scale, no
+   tilt, and only as much spring as its --ease-back has.
+
+   Harsh slides and does nothing else. Everything at this end of the axis stands
+   still on arrival - the grips do not tilt, the toast does not lean, the
+   buttons do not grow - so there is no overshoot and no scale, just the
+   distance covered on the plain curve. Motion as transport rather than as
+   character, which is the whole argument of this tier. It is not *no* movement:
+   a bar that simply existed where it had not been a frame earlier is the one
+   thing on this axis that would read as a glitch rather than as a decision. */
+:root[data-whimsy="0"] #nowplaying {
+  --np-under: calc(100% + 44px);
+  --np-shrink: 0.93;
+  --np-tilt: -1.1deg;
+}
+:root[data-whimsy="2"] #nowplaying {
+  --np-shrink: 1;
+  --np-tilt: 0deg;
+  --np-ease: var(--ease);
+}
+
 /* The close button stops spinning; it still lights up. */
 :root[data-whimsy="2"] #side-close:hover,
 :root[data-whimsy="2"] #header-close:hover { transform: none; }
+
+/* The hamburger's three bars lean into a wave while the pointer rests on it,
+   and only at Softish. A transition and not a loop: the shape is a destination
+   the bars travel to and hold, so it eases in when you arrive and eases back
+   out when you leave, once each. Something that keeps moving under an idle
+   cursor asks to be watched, and this is a button that has been on the glass
+   the whole session.
+
+   Alternating sideways, not a bob. Three stacked bars pushed left, right, left
+   are already a wave drawn standing still; pushing them up and down instead
+   only makes the stack breathe. Two whole pixels each way, which is small next
+   to the eleven of clear space either side and - the reason for the round
+   number - leaves the held shape sitting on the same pixel grid the rest state
+   was built to sit on, so the bars are as crisp at the end of the gesture as at
+   the start.
+
+   The stagger is what makes it a wave rather than three bars moving. Each bar
+   takes about two thirds of a second and the two below start a third and two
+   thirds of that late, so the ripple enters at the top and arrives at the
+   bottom a full second after the pointer did. The delays are not reversed for
+   the way out, so the wave recedes in the direction it came - top bar first,
+   bottom bar last - which is how it leaves the shape it made rather than
+   snapping back through it.
+
+   Softish alone, and it is the argument the whimsy axis makes everywhere else:
+   this tier throws cards down at an angle and lets the now-playing bar
+   overshoot. Middle keeps the plain background-and-border hover the shared rule
+   above gives every chrome button, and Harsh stands still, which is that tier's
+   entire position.
+
+   The transition is declared on the resting bars rather than inside :hover,
+   which is the only way the return is eased too - a transition that lives on
+   the hovered state has nothing to run when that state is removed.
+
+   Behind (hover: hover) rather than cancelled in the coarse-pointer block the
+   way the other hover reactions are. A tap on a touch screen leaves :hover
+   latched until something else is tapped, and a wave that arrives on the first
+   tap and stays is worse than no wave; "does this pointer hover" is the actual
+   question, where the pointer block asks how wide the finger is. It also avoids
+   a specificity contest that block would win only on source order.
+
+   ease-in-out, and not one of the --ease tokens: those are all arrival curves,
+   quick off the mark and settling at the end. That is right for something
+   answering a click and wrong here, where the leaving edge wants to be as soft
+   as the coming one. The duration reads off --dur-base so the ripple keeps the
+   tempo of the tier it belongs to, and both rules that can silence it - the
+   reduced-motion block and quality's anim flag - are !important universals, so
+   neither needs naming here. */
+@media (hover: hover) {
+  :root[data-whimsy="0"] #menu-btn span {
+    transition: transform calc(var(--dur-base) * 1.7) ease-in-out;
+  }
+  :root[data-whimsy="0"] #menu-btn span:nth-child(2) {
+    transition-delay: calc(var(--dur-base) * 0.55);
+  }
+  :root[data-whimsy="0"] #menu-btn span:nth-child(3) {
+    transition-delay: calc(var(--dur-base) * 1.1);
+  }
+  :root[data-whimsy="0"] #menu-btn:hover span:nth-child(1),
+  :root[data-whimsy="0"] #menu-btn:hover span:nth-child(3) { transform: translateX(2px); }
+  :root[data-whimsy="0"] #menu-btn:hover span:nth-child(2) { transform: translateX(-2px); }
+}
 
 /* The stop labels under the whimsy slider. Not a legend - the ends of a scale,
    which is the only way a three-position slider says what it does.

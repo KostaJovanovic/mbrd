@@ -291,6 +291,30 @@ function disposable(el) {
   return true;
 }
 
+/**
+ * Whether this node is making a noise right now.
+ *
+ * Narrower than disposable(), and the two answer different questions.
+ * disposable() asks whether a node can be rebuilt without anyone noticing, and
+ * a clip scrubbed to the middle and left there cannot - so it stays in the
+ * cache, detached. This asks whether the node can be detached *at all*, and the
+ * answer is no while it is playing: removing a media element from the document
+ * runs the internal pause steps, so the cull would stop the sound. That is the
+ * whole reason panning away from a playing clip used to kill it, and the reason
+ * ui/nowplaying.js can offer to control something you cannot see.
+ *
+ * One node, in practice. registerPlayer()'s one-clip-at-a-time rule means there
+ * is only ever one thing playing on a board, so this exempts exactly one card
+ * from the cull - and it is off screen, so it is a card's worth of style and
+ * layout with nothing to paint.
+ */
+function sounding(el) {
+  for (const m of el.querySelectorAll('video, audio')) {
+    if (!m.paused) return true;
+  }
+  return false;
+}
+
 /** Let go of one item's node and shadow, mounted or merely cached. */
 function dropNode(id, el = nodes.get(id)) {
   if (!el) return;
@@ -500,8 +524,10 @@ export function sync(restack = true, viewPath = false) {
     }
   }
   // Detach pass. Walk what is mounted - bounded by the screen, not the board -
-  // and let go of everything no longer on it. Detached either way; the question
-  // is whether the node is kept for its media state or discarded.
+  // and let go of everything no longer on it. Three answers, not two: thrown
+  // away, detached and kept for its media state, or - for the one clip actually
+  // playing - left where it is, because detaching it would stop it. See
+  // sounding().
   //
   // Keeping every one of them made memory proportional to the board a person had
   // *visited* rather than to what was on screen, which is the opposite of what
@@ -519,6 +545,10 @@ export function sync(restack = true, viewPath = false) {
     detachOwed = false;
     for (const [id, el] of nodes) {
       if (onScreen.has(id) || !el.isConnected) continue;
+      // Before the shadow goes, so the card and its shadow stay in step. The
+      // mount pass would put the shadow back on the way in, so either order
+      // works; leaving both mounted is the one that needs no explaining.
+      if (sounding(el)) continue;
       shadows.get(id)?.remove();
       if (disposable(el)) {
         discard(el);

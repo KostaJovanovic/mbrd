@@ -90,7 +90,7 @@ test('Mobile is shown the arrangement it has and nothing it has not', () => {
 });
 
 test('the settings that are not about a layout are in both', () => {
-  for (const id of ['opt-grid', 'opt-axes', 'opt-hud', 'opt-mediafit', 'opt-volume',
+  for (const id of ['opt-grid', 'opt-axes', 'opt-hud', 'opt-mediafit',
     'opt-units', 'opt-whimsy', 'opt-palette', 'opt-quality', 'board-title']) {
     assert.equal(controlVisible(byId(id), MOBILE), true, `${id} missing on Mobile`);
     assert.equal(controlVisible(byId(id), DESKTOP), true, `${id} missing on Desktop`);

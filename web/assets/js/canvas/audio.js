@@ -22,7 +22,19 @@
 //
 // Volume is deliberately one global rather than per item. It is a property of
 // the room you are sitting in, not of any one clip, and a board with six clips
-// on it would otherwise mean six sliders to turn down.
+// on it would otherwise mean six sliders to turn down. The value is held here
+// and handed out through getVolume()/onVolume(); the one slider that writes it
+// is on the now-playing bar, and it is a slider rather than the owner of the
+// number precisely so that where the control lives stays somebody else's
+// decision. It has moved once already - it was a row in the sidebar - and this
+// file did not have to change for it.
+//
+// This file also answers "what is playing", because it is the only place that
+// can. The exclusive-playback listener below already hears every start on every
+// element, by any route, which is exactly the question ui/nowplaying.js asks.
+// Deliberately not on the `bus`: what is coming out of the speakers is a fact
+// about this device at this moment, not a property of the board, and it belongs
+// in a .mbrd no more than the volume does.
 
 import { getAsset } from '../storage/assets.js';
 import { bus, markDirty, selection } from '../state.js';
@@ -48,30 +60,76 @@ let volume = DEFAULT_VOLUME;
 /** Every <audio> currently on the board, so a slider move reaches all of them. */
 const players = new Set();
 
-export function initAudio() {
-  const stored = readVolume();
-  volume = stored;
+/**
+ * Which item each element is playing.
+ *
+ * Weak, so this is not the reference that keeps a deleted card's <audio> alive.
+ * releasePlayers() is the deliberate teardown and does the real work; this map
+ * is only here so a path that misses it leaks nothing.
+ */
+const owners = new WeakMap();
 
-  const input = document.getElementById('opt-volume');
-  const out = document.getElementById('opt-volume-out');
-  if (!input) return;
-  // iPhone Safari keeps media volume under the hardware buttons: assigning
-  // HTMLMediaElement.volume is ignored and reading it always returns full. A
-  // slider that writes volume is then a lie - it would read "20%" while every
-  // clip plays at the system level (Safari audit S2). Where that is the case,
-  // hide the control and say how volume is actually set. iPadOS gained
-  // script-controlled volume in Safari 26, so this only hides the slider where
-  // it genuinely cannot work.
-  if (volumeLocked()) {
-    showVolumeLocked(input);
-    return;
-  }
-  input.value = String(Math.round(volume * 100));
-  if (out) out.textContent = Math.round(volume * 100) + '%';
-  input.addEventListener('input', () => {
-    setVolume(+input.value / 100);
-    if (out) out.textContent = Math.round(volume * 100) + '%';
-  });
+/** Anyone who wants to be told the volume moved, whoever moved it. */
+const volumeWatchers = new Set();
+/** Anyone who wants to be told which clip is the current one. */
+const playingWatchers = new Set();
+
+/**
+ * The clip the board is currently about: `{ el, item }`, or null.
+ *
+ * Set when something starts and *not* cleared when it stops, which is the whole
+ * behaviour of the now-playing bar - a paused track is still the track you were
+ * listening to, and a bar that vanished on pause would mean finding the card
+ * again to resume. It is cleared only when the element itself goes away.
+ */
+let current = null;
+
+export const nowPlaying = () => current;
+export const getVolume = () => volume;
+
+/**
+ * Let go of the current track without touching the element it names.
+ *
+ * What "close the player" means, and it has to be said here rather than done in
+ * the bar. setCurrent() ignores a repeat of the pair it already holds - which is
+ * right, since a clip resuming after a pause is not a new track and the bar
+ * should not be rebuilt for it - but that also meant a bar that had hidden
+ * itself could never be brought back by the same card: pressing play announced
+ * the pair that was already on record, so nothing was announced at all. Clearing
+ * it is what makes the next press a change again.
+ */
+export function clearNowPlaying() {
+  setCurrent(null);
+}
+
+export function onNowPlaying(fn) {
+  playingWatchers.add(fn);
+  return () => playingWatchers.delete(fn);
+}
+
+export function onVolume(fn) {
+  volumeWatchers.add(fn);
+  return () => volumeWatchers.delete(fn);
+}
+
+function setCurrent(next) {
+  if (current?.el === next?.el && current?.item === next?.item) return;
+  current = next;
+  for (const fn of playingWatchers) fn(current);
+}
+
+/**
+ * Take the stored volume up, before anything can be built against it.
+ *
+ * All this does now. The sidebar used to carry the slider and this used to wire
+ * it, but the control moved to the now-playing bar - a volume dial is reached
+ * for while something is playing, and that is exactly when the bar is up, where
+ * in the panel it was two clicks away from the sound it was about. Still called
+ * from main.js and still called first, because ui/nowplaying.js paints its
+ * slider from getVolume() on the way up.
+ */
+export function initAudio() {
+  volume = readVolume();
 }
 
 /**
@@ -81,8 +139,14 @@ export function initAudio() {
  * browser that honours the property returns what was written, one that locks it
  * to the hardware returns 1. Synchronous by spec - the volume attribute is not
  * async - so no clip has to exist or play for this to be true.
+ *
+ * What it is for: a slider that writes volume where the write is ignored is a
+ * lie - it would read "20%" while every clip plays at the system level (Safari
+ * audit S2). ui/nowplaying.js takes its slider off rather than show one. iPadOS
+ * gained script-controlled volume in Safari 26, so this only fires where it
+ * genuinely cannot work.
  */
-function volumeLocked() {
+export function volumeLocked() {
   try {
     const probe = new Audio();
     probe.volume = 0.5;
@@ -92,21 +156,11 @@ function volumeLocked() {
   }
 }
 
-/** Replace the dead slider with the instruction that actually works. */
-function showVolumeLocked(input) {
-  const field = input.closest('.field') || input.parentElement;
-  if (!field) return;
-  field.hidden = true;
-  const note = document.createElement('p');
-  note.className = 'hint';
-  note.textContent = 'Use the device volume buttons to set playback volume.';
-  field.after(note);
-}
-
 export function setVolume(v) {
   volume = clamp(+v || 0, 0, 1);
   for (const a of players) a.volume = volume;
   writePref(VOLUME_KEY, volume);
+  for (const fn of volumeWatchers) fn(volume);
 }
 
 function readVolume() {
@@ -122,10 +176,17 @@ function readVolume() {
  * volume control for the rest of the session. What it must not survive is a
  * node being *destroyed* - see releasePlayers, and canvas/items.js/discard for
  * the one place that tells the difference.
+ *
+ * `item` is what the element is playing, and it is taken rather than looked up
+ * because there is no way back from a media element to a board item - the card
+ * around it is the only link, and the card is exactly what stops being reachable
+ * when this matters. Optional so a caller with nothing to say can say nothing;
+ * an element with no item simply never becomes the current one.
  */
-export function registerPlayer(el) {
+export function registerPlayer(el, item = null) {
   el.volume = volume;
   players.add(el);
+  if (item) owners.set(el, item);
 
   // One clip at a time. A board is a wall of things you are looking at
   // together, and two of them talking over each other is not a mix, it is a
@@ -141,6 +202,15 @@ export function registerPlayer(el) {
     for (const other of players) {
       if (other !== el && !other.paused) other.pause();
     }
+    // Hung on the same event and for the same reason it is: this is the one
+    // place that hears a start however it was started, so it is the one place
+    // that can answer what the current clip is. Video as well as audio - a clip
+    // that has left the screen is still running, and the argument for being able
+    // to stop the thing you can hear does not turn on whether it also had a
+    // picture. The bar draws it as a line rather than a waveform; see
+    // buildTransport's `line` option.
+    const owner = owners.get(el);
+    if (owner) setCurrent({ el, item: owner });
   });
 }
 
@@ -157,6 +227,12 @@ export function registerPlayer(el) {
  * Paused on the way out as well: an element with no card is an element nobody
  * can stop, and the exclusive-playback loop above only pauses things it can
  * still see.
+ *
+ * And the one thing that clears the current track. This is the only event that
+ * means the element is finished with - a rename rebuilds a card's content and
+ * orphans its <audio>, a delete throws the card away - and without it the bar
+ * would sit there holding a node no longer attached to anything, offering a
+ * play button that would start a clip with no card behind it.
  */
 export function releasePlayers(root) {
   // 'audio, video' - a <video> registers here too, for the global volume and
@@ -166,6 +242,8 @@ export function releasePlayers(root) {
   for (const el of root.querySelectorAll?.('audio, video') || []) {
     el.pause();
     players.delete(el);
+    owners.delete(el);
+    if (current?.el === el) setCurrent(null);
   }
 }
 
@@ -352,6 +430,37 @@ function resample(values, n) {
 // ---------------------------------------------------------------------------
 
 /**
+ * Make a seek track draggable, not merely clickable.
+ *
+ * Shared, because there are three of these now - the card's waveform, the
+ * video card's line, and whichever of the two the now-playing bar is showing -
+ * and a scrub that behaved differently depending on which one you had hold of
+ * would be three controls wearing one costume.
+ *
+ * Captured, and the capture is doing two jobs. It keeps the drag alive once the
+ * pointer leaves the track, which on something fourteen pixels tall is most of
+ * the gesture: without it a scrub ends the moment your hand strays off the
+ * line, which is exactly when you are moving fastest. And it keeps
+ * canvas/input.js out of it - a pointer sequence that got through to the canvas
+ * would be read as a drag of the card, so seeking a clip would carry it across
+ * the board.
+ *
+ * stopPropagation on the down as well as the capture, because the capture only
+ * redirects the *later* events: the pointerdown itself has already begun
+ * bubbling towards the canvas by the time this runs.
+ */
+export function bindScrub(el, seekTo) {
+  el.addEventListener('pointerdown', e => {
+    el.setPointerCapture(e.pointerId);
+    seekTo(e.clientX);
+    e.stopPropagation();
+  });
+  el.addEventListener('pointermove', e => {
+    if (el.hasPointerCapture(e.pointerId)) seekTo(e.clientX);
+  });
+}
+
+/**
  * Build the play button, the waveform and the clock for one audio item.
  *
  * The waveform is two identical lanes of bars stacked on top of each other -
@@ -365,8 +474,30 @@ function resample(values, n) {
  * A recording has no up and no down - the waveform of a signal is symmetric by
  * construction, and drawing only its top half is a bar chart of a sound rather
  * than a picture of one.
+ *
+ * Built for a card and, since the now-playing bar, for one other place. The only
+ * thing that has to change between the two is how it knows it has been thrown
+ * away: `opts.alive` for the selection listener at the foot, and `opts.signal`
+ * for the handlers on the <audio> itself.
+ *
+ * The signal matters because the element outlives the transport now. A card's
+ * <audio> is built with the card and dies with it, so its listeners die with it
+ * too; the bar's transport is rebuilt every time you switch back to a track it
+ * has already shown, onto the same long-lived element, and without a way to let
+ * go it would leave a play/pause/timeupdate set behind on every visit.
+ *
+ * `opts.line` draws a plain progress line where the waveform would go, and it
+ * is what the bar uses for video. Not a style choice - it is the only honest
+ * option. A measured waveform means decodeAudioData over the file's whole
+ * arrayBuffer, which for a clip off a phone is hundreds of megabytes read into
+ * memory to draw forty bars; and the readings would land in item.meta.peaks,
+ * which collectWaveforms() in storage/mbrd.js writes out as a waveforms/<hash>
+ * sidecar without asking what kind of item it came off. So video gets the same
+ * line its own card carries, and peaks() is never called for one.
  */
-export function buildTransport(item, sound) {
+export function buildTransport(item, sound, opts = {}) {
+  const line = !!opts.line;
+
   const transport = document.createElement('div');
   transport.className = 'transport';
 
@@ -376,8 +507,10 @@ export function buildTransport(item, sound) {
   play.setAttribute('aria-label', 'Play');
   play.innerHTML = PLAY_ICON;
 
+  // The thing you seek on, in whichever of its two forms. Same role, same keys,
+  // same scrub - only the ink differs, and only paint() below knows which.
   const wave = document.createElement('div');
-  wave.className = 'wave';
+  wave.className = line ? 'vtrack' : 'wave';
   // role="slider" is a promise: focusable, driven by the arrow keys, and
   // reporting where it is. It had the role and the label and none of the rest,
   // which is worse than no role at all - a screen reader announces a slider
@@ -387,9 +520,16 @@ export function buildTransport(item, sound) {
   wave.setAttribute('aria-label', 'Seek');
   wave.tabIndex = 0;
   wave.setAttribute('aria-valuemin', '0');
-  const base = lane('wave-base');
-  const fill = lane('wave-fill');
-  wave.append(base, fill);
+  let base = null, fill;
+  if (line) {
+    fill = document.createElement('div');
+    fill.className = 'vtrack-fill';
+    wave.append(fill);
+  } else {
+    base = lane('wave-base');
+    fill = lane('wave-fill');
+    wave.append(base, fill);
+  }
 
   const time = document.createElement('span');
   time.className = 'transport-time';
@@ -423,8 +563,13 @@ export function buildTransport(item, sound) {
   };
 
   const paint = () => {
-    const at = sound.duration ? sound.currentTime / sound.duration : 0;
-    fill.style.clipPath = `inset(0 ${((1 - at) * 100).toFixed(3)}% 0 0)`;
+    const at = sound.duration ? clamp(sound.currentTime / sound.duration, 0, 1) : 0;
+    // A clip on the bars, a scale on the line, and each is the cheap way to
+    // move the one it belongs to: the waveform's fill has to reveal shaped ink
+    // so it is cut rather than resized, where the line is a plain rectangle and
+    // scaleX never touches layout. Both run on every frame of playback.
+    if (line) fill.style.transform = `scaleX(${at.toFixed(4)})`;
+    else fill.style.clipPath = `inset(0 ${((1 - at) * 100).toFixed(3)}% 0 0)`;
     // How long it is until it starts, where it is once it has. A card sitting
     // at the top of a track has nothing to report about the playhead - it is at
     // the beginning, which is where the playhead always is before you press
@@ -450,7 +595,9 @@ export function buildTransport(item, sound) {
     frame = sound.paused ? 0 : requestAnimationFrame(follow);
   };
 
-  peaks(item).then(v => { values = v; drawBars(); });
+  // Only for the waveform. A line has nothing to measure, and measuring it
+  // anyway is the expensive mistake the header above spells out.
+  if (!line) peaks(item).then(v => { values = v; drawBars(); });
 
   // The first draw waits for the element to have a real width, rather than
   // taking whatever it measures at the moment the readings arrive.
@@ -466,12 +613,14 @@ export function buildTransport(item, sound) {
   //
   // Only while there is nothing drawn yet. Once there is, resizes are left to
   // the deselect below, so the bars do not reflow under a dragging pointer.
-  const watch = new ResizeObserver(() => {
-    if (builtFor || !wave.clientWidth || !values) return;
-    drawBars();
-    watch.disconnect();
-  });
-  watch.observe(wave);
+  if (!line) {
+    const watch = new ResizeObserver(() => {
+      if (builtFor || !wave.clientWidth || !values) return;
+      drawBars();
+      watch.disconnect();
+    });
+    watch.observe(wave);
+  }
 
   play.addEventListener('click', () => {
     if (!sound.paused) { sound.pause(); return; }
@@ -487,30 +636,49 @@ export function buildTransport(item, sound) {
         : 'Could not play this file');
     });
   });
-  sound.addEventListener('play', () => {
+  const on = (type, fn) => sound.addEventListener(type, fn, { signal: opts.signal });
+
+  on('play', () => {
     transport.classList.add('is-playing');
     play.innerHTML = PAUSE_ICON;
     play.setAttribute('aria-label', 'Pause');
     if (!frame) frame = requestAnimationFrame(follow);
   });
-  sound.addEventListener('pause', () => {
+  on('pause', () => {
     transport.classList.remove('is-playing');
     play.innerHTML = PLAY_ICON;
     play.setAttribute('aria-label', 'Play');
     paint();
   });
-  sound.addEventListener('loadedmetadata', paint);
+  on('loadedmetadata', paint);
   // The frame loop above covers playback. This covers everything else that can
   // move the playhead - a seek while paused, a buffering stall, currentTime set
   // from outside - none of which produce a frame loop of their own.
-  sound.addEventListener('timeupdate', paint);
-  sound.addEventListener('seeked', paint);
-  sound.addEventListener('ended', () => { sound.currentTime = 0; paint(); });
+  on('timeupdate', paint);
+  on('seeked', paint);
+  on('ended', () => { sound.currentTime = 0; paint(); });
 
-  wave.addEventListener('pointerdown', e => {
+  // A transport built onto an element that is already going has missed the
+  // 'play' it would have taken its state from. The card never hit this - its
+  // element is new - but the bar is handed a clip mid-flight every time.
+  if (!sound.paused) {
+    transport.classList.add('is-playing');
+    play.innerHTML = PAUSE_ICON;
+    play.setAttribute('aria-label', 'Pause');
+    frame = requestAnimationFrame(follow);
+  }
+  paint();
+
+  // Dragged, not just clicked. This was one pointerdown that jumped the
+  // playhead and let go - so finding a moment in a recording meant a series of
+  // guesses, each one a fresh click, with the sound restarting from wherever
+  // the last guess landed. bindScrub() is the same gesture the video card's
+  // line has always had.
+  bindScrub(wave, clientX => {
     if (!sound.duration) return;
     const box = wave.getBoundingClientRect();
-    sound.currentTime = clamp((e.clientX - box.left) / box.width, 0, 1) * sound.duration;
+    if (!box.width) return;
+    sound.currentTime = clamp((clientX - box.left) / box.width, 0, 1) * sound.duration;
     paint();
   });
 
@@ -550,11 +718,21 @@ export function buildTransport(item, sound) {
   // of bars - but rebuilding them on every frame of a drag would have the
   // waveform reflowing under the pointer, which reads as the sound changing.
   // Deselection is the end of the gesture, and by then the width is final.
+  //
+  // A card replaced by rebuild() (a rename, a note edit) is detached from its
+  // item and will never be seen again; that is when this stops. `.item` and not
+  // isConnected, deliberately: buildContent() composes a card while it is still
+  // detached, so a selection event landing in that window would read as death
+  // and quietly cost the card its resize redraw for good. A transport built
+  // somewhere other than a card - the now-playing bar - has no .item to find
+  // and says for itself when it is finished.
+  const alive = opts.alive || (() => !!wave.closest('.item'));
   const off = bus.on('selection', () => {
-    // A card replaced by rebuild() (a rename, a note edit) is detached from
-    // its item and will never be seen again; that is when this stops.
-    if (!wave.closest('.item')) { off(); return; }
-    if (selection.has(item.id)) return;
+    if (!alive()) { off(); return; }
+    // A line has no bars to redraw at a new pitch - it is one rectangle that
+    // scales - so it has no reason to be listening at all past the liveness
+    // check above.
+    if (line || selection.has(item.id)) return;
     if (wave.clientWidth && wave.clientWidth !== builtFor) drawBars();
   });
 

@@ -4,9 +4,11 @@
 
 `web/` is the browser application and static document root. Entry files (`index.html`, `manifest.json`, `sw.js`, and `404.html`) sit at its top level. Styles live in `web/assets/css/`; JavaScript is split by responsibility under `web/assets/js/`, including `canvas/`, `import/`, `arrange/`, `storage/`, and `ui/`. Images and bundled fonts are under `web/assets/img/` and `web/assets/fonts/`.
 
-Dependencies run one way: `util`/`geometry` ← `state` ← {`import`, `storage`, `canvas`} ← `ui`, with `canvas` reaching into `import` only for the generated format catalog. Anything that builds an item's DOM belongs under `canvas/` — that is why `renderers.js`, `notes.js` and `audio.js` live there. Keep that direction; a `ui/` module imported from `canvas/` is a layering regression.
+Dependencies run one way: `util`/`geometry` ← `state` ← {`import`, `storage`, `canvas`} ← `ui`, with `canvas` reaching into `import` only for the generated format catalog. Anything that builds an item's DOM belongs under `canvas/` — that is why `renderers.js`, `notes.js` and `audio.js` live there. Keep that direction; a `ui/` module imported from `canvas/` is a layering regression, and `tests/layers.test.js` enforces the graph rather than merely describing it.
 
-`serve.py` provides the local threaded server and SPA fallback; `qr.py` beside it holds the terminal QR encoder. `server.bat` is the Windows launcher. `tools/gen-formats.mjs` regenerates the committed format catalog. Design and implementation notes are in `PLAN.md`, `REFACTOR.md`, and `research/`.
+The bottom of the graph is wider than `util`/`geometry`. `measure.js`, `mesh.js`, `web-graph.js`, `arrange/arrangements.js`, `import/budget.js` and `canvas/spatial.js` are pure — no DOM, no `state` import — and stay that way. Six more are what `state.js` was split onto: `board-store.js`, `board-model.js`, `history.js`, `sticky.js`, `layout.js` and `stacking.js`. `state.js` re-exports all six under their old names, so nothing imports them directly, and none of them may import `state.js` back.
+
+`serve.py` provides the local threaded server and SPA fallback; `qr.py` beside it holds the terminal QR encoder. `server.bat` is the Windows launcher. `tools/gen-formats.mjs` regenerates the committed format catalog. Design and implementation notes are in `PLAN.md` and `research/`, whose top level holds only work that is still open — anything carried out moves to `research/old/` (`REFACTOR.md` is there), and `research/future/` is the not-yet-started pile. `docs/` holds the `.mbrd` and layout-settings specs and the browser floor.
 
 ## Build, Test, and Development Commands
 
