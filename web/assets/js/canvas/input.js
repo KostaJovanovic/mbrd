@@ -187,7 +187,40 @@ export function initInput(vp, cmds) {
   // A pointer resting on an unpicked item - see needsTapFirst(). The gesture is
   // a pan; this is what lets the lift still count as a tap if it never moved.
   let armSelect = null;
+  // A press on a card's own surface, still eligible to count as a tap.
+  //
+  // Separate from armSelect because the two cover different halves of the same
+  // gesture: armSelect only exists on the pan-then-select path (touch, or an
+  // unpicked card), where a mouse press on a card starts a move outright. A tap
+  // is a tap either way, so this is set on both and cleared by the same slop.
+  //
+  // Only a playing video does anything with it - see pauseOnTap(). Kept general
+  // in name rather than called videoTap, because what it records is a fact
+  // about the gesture and not about what happens to be under it.
+  let cardTap = null;
   const cancelPress = () => { clearTimeout(pressTimer); pressTimer = 0; pressAt = null; };
+
+  /**
+   * A tap on a playing video stops it.
+   *
+   * The transport's small play button used to be the only way to pause, which
+   * put a 25px target on a bar that fades out until you point at the card,
+   * while the picture - the obvious thing to press - did nothing at all. So the
+   * picture is the pause now.
+   *
+   * Pause only, never play. A tap is also how a card gets selected, and a tap
+   * that toggled would mean you could not pick up a video without starting it;
+   * the big button over the poster frame is the play, and it is only in the way
+   * while the clip is stopped, which is exactly when it is wanted. So a paused
+   * card behaves as any other card does, and a playing one has its whole face
+   * as a stop button.
+   */
+  const pauseOnTap = id => {
+    const item = byId(id);
+    if (item?.type !== 'video') return;
+    const media = nodeFor(id)?.querySelector('video');
+    if (media && !media.paused) media.pause();
+  };
 
   /**
    * Whether a pointer landing on this item should pan the board rather than
@@ -513,6 +546,7 @@ export function initInput(vp, cmds) {
       emptyTapCandidate = null;
       lastEmptyTap = null;
       armSelect = null;
+      cardTap = null;
       abortGesture();
       const [a, b] = [...pointers.values()];
       g = {
@@ -656,11 +690,13 @@ export function initInput(vp, cmds) {
         y: e.clientY,
         additive: e.shiftKey || e.ctrlKey || e.metaKey,
       };
+      cardTap = { pointerId: e.pointerId, id, x: e.clientX, y: e.clientY, slop: TAP_MOVE_SLOP };
       startPan(e);
     } else if (id) {
       const additive = e.shiftKey || e.ctrlKey || e.metaKey;
       if (additive) select([id], true);
       else if (!selection.has(id)) select([id]);
+      cardTap = { pointerId: e.pointerId, id, x: e.clientX, y: e.clientY, slop: DRAG_SLOP };
       startMove(e, id);
     } else if (e.shiftKey || e.ctrlKey || e.metaKey) {
       startMarquee(e);
@@ -682,6 +718,7 @@ export function initInput(vp, cmds) {
         emptyTapCandidate = null;
         lastEmptyTap = null;
         armSelect = null;
+        cardTap = null;
         // Whatever the finger had started - a move, a pan, a marquee - it was
         // not that. Dropped rather than committed, since nothing moved.
         abortGesture();
@@ -711,6 +748,18 @@ export function initInput(vp, cmds) {
     if (armSelect?.pointerId === e.pointerId
         && Math.hypot(e.clientX - armSelect.x, e.clientY - armSelect.y) > TAP_MOVE_SLOP) {
       armSelect = null;
+    }
+    // And a card that has been dragged was not tapped. Its own slop, carried on
+    // the record, because the two paths that set it disagree about how far a
+    // press may wander and still be a press - and both are right. On the pan
+    // path nothing under the finger moves until the lift, so it gets the same
+    // generous TAP_MOVE_SLOP the selection does, for the same finger-wobble
+    // reason. On the move path the card is already following the pointer at
+    // DRAG_SLOP, and a gesture that visibly moved a card should not also have
+    // paused it.
+    if (cardTap?.pointerId === e.pointerId
+        && Math.hypot(e.clientX - cardTap.x, e.clientY - cardTap.y) > cardTap.slop) {
+      cardTap = null;
     }
     // A finger that has travelled is dragging, not pressing. The same slop the
     // move gesture uses, so the two agree about when a press has become a drag.
@@ -939,6 +988,13 @@ export function initInput(vp, cmds) {
     if (armSelect?.pointerId === e.pointerId) {
       if (e.type === 'pointerup') select([armSelect.id], armSelect.additive);
       armSelect = null;
+    }
+    // pointerup only, like the pick above and for the same reason: a
+    // pointercancel is the system taking the gesture away, not a person
+    // finishing one.
+    if (cardTap?.pointerId === e.pointerId) {
+      if (e.type === 'pointerup') pauseOnTap(cardTap.id);
+      cardTap = null;
     }
     cancelPress();
     pointers.delete(e.pointerId);
@@ -1303,6 +1359,7 @@ export function initInput(vp, cmds) {
     // other path from closing and rebuilding the same menu a moment later.
     cancelPress();
     armSelect = null;
+    cardTap = null;
     abortGesture();
     if (repeatsLongPressContextMenu(longPressMenu, {
       x: e.clientX,

@@ -105,6 +105,12 @@ const AXIS_TOKENS = ['--radius', '--grid-alpha', '--grid-dot'];
  */
 const DISPLAY_FACES = [
   { label: 'Default', value: '' },
+  // The two bundled serifs, in the order the axis reaches for them: Playfair is
+  // the middle's display face, Fraunces the soft end's. Both are offered at
+  // every level for the reason given below - comparing one serif across all
+  // three tiers is the point - and offering only whichever the current tier
+  // already resolves to would make "Default" and one entry the same choice.
+  { label: 'Playfair',             value: '"Playfair", Georgia, serif' },
   { label: 'Fraunces',             value: '"Fraunces", Georgia, serif' },
   { label: 'Iowan Old Style',      value: '"Iowan Old Style", Palatino, serif' },
   { label: 'Palatino',             value: '"Palatino Linotype", "Book Antiqua", Palatino, serif' },
