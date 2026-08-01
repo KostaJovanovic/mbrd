@@ -34,7 +34,7 @@ export const TOKENS = new Set([
   '--danger', '--density', '--display-italic', '--dur-base',
   '--dur-fast', '--dur-palette', '--dur-travel', '--dur-zoom', '--ease', '--ease-back',
   '--font-body', '--font-display', '--font-mono', '--font-sans',
-  '--font-serif',
+  '--font-serif', '--font-serif-display', '--font-serif-text',
   '--ghost-edge', '--ghost-ink', '--ghost-ink-2', '--ghost-weight',
   '--grain', '--grid-alpha',
   '--grid-axis', '--grid-dot', '--grid-major', '--grid-minor',

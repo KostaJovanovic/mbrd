@@ -249,19 +249,44 @@
      Serif above sans, never the other way round. Sans headlines over serif
      body is the newspaper convention and it reads as a newspaper.
 
-     Fraunces is self-hosted (see fonts.css); the stack behind it is the old
+     Playfair is self-hosted (see fonts.css); the stack behind it is the old
      system-serif list, so a board still sets sensibly before the file lands
      or if it never does.
 
-     The two faces are also named on their own, once, and never redefined by a
-     tier: --font-display and --font-body move along the axis, but the whimsy
-     stop labels have to name each face directly - a specimen typeset in
+     A Didone rather than Fraunces, and that choice belongs to this tier
+     specifically. The middle is the one level where a serif has to hold a line
+     *against* a sans rather than carry a page alone, and what makes that
+     pairing read as set rather than styled is contrast - thin hairlines, heavy
+     stems, an axis that is nothing like Geist's even weight. Fraunces is the
+     warmer face and it wins the soft end for the same reason it loses here: at
+     whimsy 0 the serif is also the body copy, and running text wants warmth,
+     not contrast. Two faces, one job each, and only the level that uses a face
+     pays to download it - see the header of fonts.css.
+
+     Hence three names where there used to be two, and the split between them
+     is which ones a tier is allowed to touch.
+
+     --font-serif-display, --font-serif-text and --font-sans are the faces. Each
+     is written out once here and never redefined below, because things that are
+     not the current tier read them: the whimsy stop labels are specimens of the
+     three levels and have to name a face directly, and a specimen typeset in
      whatever the slider currently resolves to shows the same font three times
-     at the plain end, which is the one thing those labels exist not to do. */
-  --font-serif: "Fraunces", "Iowan Old Style", "Palatino Linotype", Palatino,
-                "Book Antiqua", "URW Palladio L", Georgia, "Times New Roman", serif;
+     at the plain end, which is the one thing those labels exist not to do. That
+     rule already covered --font-display and --display-italic; adding a second
+     serif is what brought --font-serif under it too, since "the serif" is now
+     something the axis moves.
+
+     --font-serif is the moving one - the tier's current serif, and the *only*
+     name a level restates. --font-display and --font-body are wiring on top of
+     it, so a level that wants a different serif sets one line and everything
+     derived follows. */
+  --font-serif-display: "Playfair", "Iowan Old Style", "Palatino Linotype", Palatino,
+                        "Book Antiqua", "URW Palladio L", Georgia, "Times New Roman", serif;
+  --font-serif-text:    "Fraunces", "Iowan Old Style", "Palatino Linotype", Palatino,
+                        "Book Antiqua", "URW Palladio L", Georgia, "Times New Roman", serif;
   --font-sans:  "Geist", -apple-system, "Helvetica Neue", Helvetica,
                 "Liberation Sans", system-ui, sans-serif;
+  --font-serif:   var(--font-serif-display);
   --font-display: var(--font-serif);
   --font-body:    var(--font-sans);
   --font-mono:    ui-monospace, "Cascadia Mono", "SF Mono", Consolas, "DejaVu Sans Mono", monospace;
@@ -274,8 +299,12 @@
   --t-body:  15px;
   --t-small: 13px;
   --t-tiny:  11px;
-  /* Fraunces gets a display cut up top and a text cut down at 13px on its own.
-     Blink needs telling; Gecko does it by default. */
+  /* Both serifs get a display cut up top and a text cut down at 13px on their
+     own. Blink needs telling; Gecko does it by default. It matters more here
+     than it did with one face: Playfair's opsz runs from 5, and its default
+     instance sits at that end, so a browser that ignored this would set every
+     title in the 5pt cut - the flattest, sturdiest drawing in the file, which
+     is the exact opposite of what this tier picked a Didone for. */
   font-optical-sizing: auto;
   /* One knob the whimsy axis turns rather than rewriting a dozen rules:
      whether ornamental text is italic.
@@ -647,12 +676,21 @@
      it. Turning ornament up at this end is --wash's job and the shapes', not
      the board's. Saying nothing is what inherits the middle's grid. */
 
-  /* One serif, top to bottom. The optical axis is what makes that survivable:
-     the same file is a display cut at 28px and a text cut at 15px, so setting
+  /* One serif, top to bottom - and a different one from the middle's, which is
+     the whole reason this line is here. Playfair is a Didone: it earns the
+     middle its contrast against Geist, and it is exactly the wrong face to set
+     a paragraph in at 15px, where hairlines thin out and the even colour a
+     block of text needs breaks up. Fraunces is the warm, low-contrast answer,
+     and restating --font-serif is all it takes because --font-display reads
+     through it and --font-body reads through that.
+
+     The optical axis is what makes one face doing both jobs survivable: the
+     same file is a display cut at 28px and a text cut at 15px, so setting
      running copy in the display face is not the compromise it usually is.
      Sizes sit a step under the middle's - with only one voice on the page,
      the size difference has nothing to hold apart, and shouting it would
      just be shouting. */
+  --font-serif: var(--font-serif-text);
   --font-body:  var(--font-display);
   --t-display: 28px;
   --t-title:   20px;
@@ -822,10 +860,12 @@
   --sel-corner: 3.2px;
   --sel-reach:  14px;
 
-  /* One sans, top to bottom. The serif stays named in --font-serif, but the
-     only thing set in it at this end is the "Softish" stop label under the
-     whimsy slider - one word, so the italic subset is all a board left here
-     ever pulls, and the service worker has precached it anyway. */
+  /* One sans, top to bottom. Both serifs stay named above, but the only thing
+     set in one at this end is the "Softish" stop label under the whimsy slider,
+     which names --font-serif-text directly - one word, so the Fraunces italic
+     subset is all a board left here ever pulls, and the service worker has
+     precached it anyway. Playfair is not touched at this level at all: a board
+     parked on Harsh never fetches a byte of it. */
   --font-display: var(--font-sans);
   --font-body:    var(--font-display);
   --font-mono:    "Geist Mono", ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;

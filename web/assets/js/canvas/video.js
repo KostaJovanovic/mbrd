@@ -22,7 +22,9 @@
 // spent is a pixel of the thing you pinned up. So: a plain progress line, and
 // a bar that stays out of the way until the pointer is on the card.
 
-import { registerPlayer, bindScrub, PLAY_ICON, PAUSE_ICON, clock } from './audio.js';
+// No PAUSE_ICON: the only button here is the big one over the picture, and it
+// is a play button that goes away rather than one that turns into a pause.
+import { registerPlayer, bindScrub, PLAY_ICON, clock } from './audio.js';
 import { clamp, toast } from '../util.js';
 
 const SOUND_ICON =
@@ -43,22 +45,26 @@ export function buildVideoPlayer(item, video) {
   const player = document.createElement('div');
   player.className = 'vplayer';
 
-  // Two play buttons, and they are not a redundancy.
+  // One play button, over the middle of the picture.
   //
-  // The big one is the only thing on a card that says "this moves" - a video
-  // parked on its poster frame is otherwise indistinguishable from a
-  // photograph, which is precisely the state the old bare <video> left every
-  // clip in. It is there while paused and gone while playing.
+  // It is the only thing on a card that says "this moves" - a video parked on
+  // its poster frame is otherwise indistinguishable from a photograph, which is
+  // precisely the state the old bare <video> left every clip in. It is there
+  // while paused and gone while playing.
   //
-  // The small one is in the bar, where a transport's play button belongs once
-  // you are already using the transport, and it is the one that becomes a
-  // pause. Both drive the same element, so neither can disagree with the other.
+  // There used to be a second, small one at the left of the transport bar, and
+  // the argument for it was that a transport's play button belongs in the
+  // transport. What it actually bought was a 25px target to stop a clip with,
+  // laid over the picture, on a control that fades out until you point at the
+  // card - while the obvious thing to press, the picture itself, did nothing.
+  // So the pause moved to the card: a tap anywhere on a playing video stops it,
+  // which canvas/input.js does on the lift of a press that never travelled. The
+  // big button is what starts it again, because a paused card has to keep some
+  // mark saying it is a clip and not a photograph.
   const big = iconButton('vbig', 'Play', PLAY_ICON);
 
   const bar = document.createElement('div');
   bar.className = 'transport transport-video';
-
-  const play = iconButton('play', 'Play', PLAY_ICON);
 
   const track = document.createElement('div');
   track.className = 'vtrack';
@@ -79,7 +85,7 @@ export function buildVideoPlayer(item, video) {
 
   const mute = iconButton('vmute', 'Mute', SOUND_ICON);
 
-  bar.append(play, track, time, mute);
+  bar.append(track, time, mute);
   player.append(big, bar);
 
   // ---- painting ---------------------------------------------------------
@@ -128,7 +134,6 @@ export function buildVideoPlayer(item, video) {
         : 'Could not play this video');
     });
   };
-  play.addEventListener('click', toggle);
   big.addEventListener('click', toggle);
 
   mute.addEventListener('click', () => {
@@ -138,18 +143,18 @@ export function buildVideoPlayer(item, video) {
     player.classList.toggle('is-muted', video.muted);
   });
 
+  // On the player and not on the bar. The bar carried the same class so it
+  // could stay up for the length of a clip, and that is exactly what the
+  // two-second linger replaced - a bar pinned open by playback is one that
+  // never goes away, since a playing clip never stops playing. The player's own
+  // is-playing still does real work: it takes the big button off the picture,
+  // and #world's `:has()` rules hide the caption plate over a running clip.
   video.addEventListener('play', () => {
     player.classList.add('is-playing');
-    bar.classList.add('is-playing');
-    play.innerHTML = PAUSE_ICON;
-    play.setAttribute('aria-label', 'Pause');
     if (!frame) frame = requestAnimationFrame(follow);
   });
   video.addEventListener('pause', () => {
     player.classList.remove('is-playing');
-    bar.classList.remove('is-playing');
-    play.innerHTML = PLAY_ICON;
-    play.setAttribute('aria-label', 'Play');
     paint();
   });
   video.addEventListener('loadedmetadata', paint);

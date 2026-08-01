@@ -750,6 +750,39 @@ button, input, select, textarea { font: inherit; color: inherit; }
   opacity: 1;
   pointer-events: auto;
 }
+/* And the card comes to the front for as long as they are up, because the
+   z-index the buttons carry cannot reach past the card that holds them. Every
+   .item is written an inline z-index by paintStack() in canvas/items.js - its
+   rank in the visual stack - and a numeric z-index makes an element a stacking
+   context, so `z-index: 3` on the pen orders it against the card's own children
+   and against nothing else. The buttons sit ten pixels *outside* the card's
+   right edge, which is exactly the strip a neighbouring card is free to occupy:
+   any item ranked above the title card and overlapping that strip painted over
+   them, and the fix has to move the card rather than the buttons.
+
+   !important, which is the whole reason this works: the rank is an inline style
+   rewritten on every restack, and a stylesheet cannot outrank an inline
+   declaration any other way. This is the case the keyword is for.
+
+   The number only has to beat the highest rank, and ranks are positions in a
+   list - 0 to one less than the number of items on the board - so anything past
+   a plausible board wins. It cannot leak upwards either: #world carries the
+   pan/zoom transform and is therefore a stacking context of its own, so every
+   item z-index is sealed inside it and none of this competes with the sidebar
+   or the corner controls, whose numbers live in a different world entirely.
+
+   One thing it does cost, recorded rather than fixed: visualStackOrder() lifts
+   every note above every non-note as a band, so a sticky note stuck to the
+   title card normally draws over it. While the card is raised it does not - the
+   note goes behind for as long as the pointer is on the card. The card is a
+   legal stick target, so this is reachable; it lasts exactly as long as the
+   hover, and the alternative is buttons that cannot be clicked.
+
+   Gated on the same zoom rung that reveals the buttons, so the raise exists
+   when they do and not otherwise - a card that jumped forward on hover while
+   showing nothing would be a stacking change with no visible cause. */
+#world:not(.zoom-tiny) .item[data-type="title"]:hover,
+#world:not(.zoom-tiny) .item[data-type="title"].is-selected { z-index: 100000 !important; }
 /* A transparent bridge across the gap to the buttons. Without it the pointer
    crosses dead space between the card's edge and the buttons, .item:hover drops,
    and they vanish before they can be reached. A pseudo-element of the card, so
@@ -1908,20 +1941,50 @@ button, input, select, textarea { font: inherit; color: inherit; }
   background: var(--paper-card);
   border-top: var(--hairline) solid var(--rule);
   opacity: 0;
-  transition: opacity var(--dur-fast) var(--ease);
+  /* Quick in, and out two seconds after the reason to show it stopped being
+     true. The delay is the whole auto-hide, and it is a transition-delay rather
+     than a timer because there is nothing here a timer would know that the
+     cascade does not: the bar is visible exactly while some selector matches,
+     so "two seconds after none of them do" is what a delayed fade-out already
+     means. One declaration, no per-card setTimeout on a board of clips, and no
+     state to get out of step with what is on screen. */
+  transition: opacity var(--dur-fast) var(--ease) 2s;
 }
-/* Shown when the card is the one being worked on - selected or running - not
-   merely hovered: a scrubber is a control you reach for, and a board of videos
-   should not sprout a bar under the pointer as it crosses each one.
-   :focus-within is not a nicety - without it the bar vanishes the moment the
-   pointer leaves, taking the scrubber the keyboard is currently on with it. */
-.item.is-selected .transport-video,
-.transport-video:focus-within,
-.transport-video.is-playing { opacity: 1; }
-/* Smaller than the audio card's, which is the only control on a card of its
-   own and can afford to be the size it is. */
-.transport-video .play { width: 25px; height: 25px; }
-.transport-video .play svg { width: 11px; height: 11px; }
+/* Up while the pointer is on the card, and for two seconds after it leaves.
+   The rule used to be selected-or-running and explicitly not hover, on the
+   grounds that a board of videos should not sprout bars under a crossing
+   pointer. That objection was against a bar with no way of going away again -
+   which is also why running is no longer on this list, since a playing clip
+   never stops running and its bar therefore never left. With a linger the two
+   halves belong together: hover is what brings it up, and not hovering is what
+   takes it away. It is what the header of canvas/video.js always described.
+
+   Nothing on the way in waits: transition-delay goes to zero here, so the bar
+   answers the pointer immediately and only dawdles on the way out.
+
+   :focus-within is not a nicety - without it the bar would vanish two seconds
+   after the pointer left, taking the scrubber the keyboard is on with it, and
+   a scrub dragged off the edge of the card (the pointer is captured, the hover
+   is not) would fade out under the hand doing it. */
+.item:hover .transport-video,
+.transport-video:focus-within {
+  opacity: 1;
+  transition-delay: 0s;
+}
+/* Where there is no pointer to hover with, selection is the way in - a tap
+   raises the bar, and it fades two seconds after the card is let go of. Behind
+   a media query rather than left in the list above, because on a mouse the same
+   rule would pin the bar open on any selected card and there would be no
+   auto-hide to speak of. */
+@media (hover: none) {
+  .item.is-selected .transport-video {
+    opacity: 1;
+    transition-delay: 0s;
+  }
+}
+/* No play button in here any more - see the note at the top of canvas/video.js.
+   What is left is the scrubber, the clock and the mute, and the 9px lead that
+   used to hold a 25px button now just gives the line somewhere to start. */
 
 /* A plain line, deliberately, where the audio card gets a measured waveform.
    A waveform is worth its space when it is the only picture of the file there
@@ -2921,21 +2984,26 @@ plates do: below a third of size a card is a coloured tile, and a click on
    Windows' 125% and 175%. The middle bar came out a shade thinner than its
    neighbours on any laptop set that way.
 
-   8 is the pitch that survives: every device pixel ratio anyone ships is a
-   multiple of an eighth, so 8 is whole at all of them - 10 at 1.25x, 14 at
-   1.75x, 21 at the 2.625x a Pixel reports, 28 at 3.5x. The bar keeps its 2px
-   weight and the gap grows to 6 to pay for it.
+   Scaling is a quarter-step business - 125%, 150%, 175% - so pitch x 1.25 has
+   to come out whole, and 1.25 is five quarters. That makes the pitch a multiple
+   of four and there is no way around it: 4 and 8 are the only two this control
+   can use, and everything between them renders the middle bar differently from
+   its neighbours on some fraction of displays.
 
-   Both of the stack's own dimensions are then kept even, so the grid's centring
+   4, which is the tighter of the two. The bar keeps its 2px weight and the gap
+   is 2, so the three sit close the way a menu glyph usually does. 8 was here
+   first and was chosen for a wider margin - it is whole at the eighth-step
+   ratios too, the 2.625x a Pixel reports and 3.5x - but at those densities a
+   bar is five device pixels thick and half of one either way is not a thing an
+   eye can find. The quarter steps are the ones that showed.
+
+   Both of the stack's own dimensions are kept even, so the grid's centring
    lands on a whole pixel rather than halfway across one. The button is 42x40
    over a 1px border, so the box being centred in is 40x38: an 18px-wide bar
    sits at x=11 where the old 17px one sat at 11.5 and wore soft edges down both
-   sides at every scale, and the 18px-tall stack (2+6+2+6+2) sits at y=10. The
-   touch sizes below hold the same two rules against a 44x44 box.
-
-   18x18 is also, not by accident, the size of the pen icon in the opposite
-   corner. The hamburger has been reading small next to it. */
-#menu-btn { gap: 6px; }
+   sides at every scale, and the 10px-tall stack (2+2+2+2+2) sits at y=14. The
+   touch sizes below hold the same two rules against a 44x44 box. */
+#menu-btn { gap: 2px; }
 #menu-btn span {
   width: 18px;
   height: 2px;
@@ -5399,38 +5467,40 @@ kbd {
 :root[data-whimsy="2"] #side-close:hover,
 :root[data-whimsy="2"] #header-close:hover { transform: none; }
 
-/* The hamburger's three bars lean into a wave while the pointer rests on it,
-   and only at Softish. A transition and not a loop: the shape is a destination
-   the bars travel to and hold, so it eases in when you arrive and eases back
-   out when you leave, once each. Something that keeps moving under an idle
-   cursor asks to be watched, and this is a button that has been on the glass
-   the whole session.
+/* The hamburger's three bars slide left and right on a sine while the pointer
+   rests on them, and only at Softish.
 
-   Alternating sideways, not a bob. Three stacked bars pushed left, right, left
-   are already a wave drawn standing still; pushing them up and down instead
-   only makes the stack breathe. Two whole pixels each way, which is small next
-   to the eleven of clear space either side and - the reason for the round
-   number - leaves the held shape sitting on the same pixel grid the rest state
-   was built to sit on, so the bars are as crisp at the end of the gesture as at
-   the start.
+   One wave, sampled three times. Each bar runs the same horizontal oscillation
+   and the two below it are a third and two thirds of a lap behind, so at any
+   instant the three are sitting at 0, 120 and 240 degrees of one sine - three
+   points evenly spaced along a single curve. The wave is not in any one bar; it
+   is the shape the three of them make together, and it travels because each bar
+   reaches a given offset a third of a lap after the one above it. Give them all
+   the same phase and the stack just slides back and forth in a block.
 
-   The stagger is what makes it a wave rather than three bars moving. Each bar
-   takes about two thirds of a second and the two below start a third and two
-   thirds of that late, so the ripple enters at the top and arrives at the
-   bottom a full second after the pointer did. The delays are not reversed for
-   the way out, so the wave recedes in the direction it came - top bar first,
-   bottom bar last - which is how it leaves the shape it made rather than
-   snapping back through it.
+   Sideways rather than up and down, which is the axis with room on it: the bar
+   is 18px inside a 40px box, so there are 11 clear pixels either side and three
+   of amplitude cost nothing. Vertically the bars have 6px of air between them
+   and any real amplitude closes it.
+
+   The keyframes are a sine and not an approximation of one. Eight samples a lap
+   at 45-degree steps, held together with linear timing - between neighbouring
+   samples a straight line departs from the true curve by about three percent of
+   the amplitude, which at three pixels is a tenth of one and invisible. Easing
+   between a crest and a trough instead gives motion that dwells at the ends,
+   which is the part that stops looking like a wave.
+
+   The delays are positive, so all three bars start from true and the lower two
+   wait their turn. A negative delay would have them out of phase from the first
+   frame, which means bars two and three jump to where the wave already is at
+   the moment the pointer arrives. This way the wave builds over its first lap
+   and then runs in steady state, and nothing snaps on the way in.
 
    Softish alone, and it is the argument the whimsy axis makes everywhere else:
    this tier throws cards down at an angle and lets the now-playing bar
    overshoot. Middle keeps the plain background-and-border hover the shared rule
    above gives every chrome button, and Harsh stands still, which is that tier's
    entire position.
-
-   The transition is declared on the resting bars rather than inside :hover,
-   which is the only way the return is eased too - a transition that lives on
-   the hovered state has nothing to run when that state is removed.
 
    Behind (hover: hover) rather than cancelled in the coarse-pointer block the
    way the other hover reactions are. A tap on a touch screen leaves :hover
@@ -5439,26 +5509,38 @@ kbd {
    question, where the pointer block asks how wide the finger is. It also avoids
    a specificity contest that block would win only on source order.
 
-   ease-in-out, and not one of the --ease tokens: those are all arrival curves,
-   quick off the mark and settling at the end. That is right for something
-   answering a click and wrong here, where the leaving edge wants to be as soft
-   as the coming one. The duration reads off --dur-base so the ripple keeps the
-   tempo of the tier it belongs to, and both rules that can silence it - the
-   reduced-motion block and quality's anim flag - are !important universals, so
-   neither needs naming here. */
+   The lap reads off --dur-base so the wave keeps the tempo of the tier it
+   belongs to, and both rules that can silence it - the reduced-motion block and
+   quality's anim flag - are !important universals, so neither needs naming
+   here. 5.95 is one full oscillation, so it is the number that means "how fast
+   is this" and the only one to move to change that; the two delays are its
+   thirds and have to be recomputed with it.
+
+   Leaving costs at most three pixels: the animation is gated on :hover, and
+   removing it reverts the transform in one frame rather than easing out, which
+   is a thing CSS cannot do to a running animation. It is paid at the one moment
+   the button has stopped being the thing being looked at. */
 @media (hover: hover) {
-  :root[data-whimsy="0"] #menu-btn span {
-    transition: transform calc(var(--dur-base) * 1.7) ease-in-out;
+  :root[data-whimsy="0"] #menu-btn:hover span {
+    animation: menu-wave calc(var(--dur-base) * 5.95) linear infinite;
   }
-  :root[data-whimsy="0"] #menu-btn span:nth-child(2) {
-    transition-delay: calc(var(--dur-base) * 0.55);
+  :root[data-whimsy="0"] #menu-btn:hover span:nth-child(2) {
+    animation-delay: calc(var(--dur-base) * 1.98333);
   }
-  :root[data-whimsy="0"] #menu-btn span:nth-child(3) {
-    transition-delay: calc(var(--dur-base) * 1.1);
+  :root[data-whimsy="0"] #menu-btn:hover span:nth-child(3) {
+    animation-delay: calc(var(--dur-base) * 3.96667);
   }
-  :root[data-whimsy="0"] #menu-btn:hover span:nth-child(1),
-  :root[data-whimsy="0"] #menu-btn:hover span:nth-child(3) { transform: translateX(2px); }
-  :root[data-whimsy="0"] #menu-btn:hover span:nth-child(2) { transform: translateX(-2px); }
+}
+/* sin, at eight points around the circle, times three pixels. 2.121 is the
+   amplitude times the sine of 45 degrees, and it appears twice going out and
+   twice coming back because a sine is symmetric about both its crest and its
+   zero - which is why writing one out takes five lines. */
+@keyframes menu-wave {
+  0%, 50%, 100% { transform: none; }
+  12.5%, 37.5%  { transform: translateX(2.121px); }
+  25%           { transform: translateX(3px); }
+  62.5%, 87.5%  { transform: translateX(-2.121px); }
+  75%           { transform: translateX(-3px); }
 }
 
 /* The stop labels under the whimsy slider. Not a legend - the ends of a scale,
@@ -5466,9 +5548,16 @@ kbd {
 
    Each name is a specimen of its own tier, so all three are pinned to a fixed
    face and style: serif italic, sans italic, sans bold. None of them may read
-   off --font-display or --display-italic, because those are exactly what the
-   slider moves - at the plain end the whole row would collapse into one font
-   and the labels would stop showing the difference they name. */
+   off --font-display, --display-italic or --font-serif, because those are
+   exactly what the slider moves - at the plain end the whole row would collapse
+   into one font and the labels would stop showing the difference they name.
+
+   --font-serif joined that list when the axis grew a second serif. "Softish" is
+   a specimen of Fraunces, which is that tier's face, so it names
+   --font-serif-text - the face - and not --font-serif, which is whichever serif
+   the *current* tier resolves to. Reading the moving one printed the Softish
+   label in the middle's Playfair on two levels out of three: a specimen of a
+   font you do not get by choosing it. */
 .field-stops {
   display: flex;
   justify-content: space-between;
@@ -5492,7 +5581,7 @@ kbd {
    change to a specimen cannot reach one and miss the other. */
 #whimsy-stop-labels span:nth-child(1),
 #ghost-whimsy-stops span:nth-child(1) {
-  font-family: var(--font-serif);
+  font-family: var(--font-serif-text);
   font-style: italic;
   font-weight: 400;
 }

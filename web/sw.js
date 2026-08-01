@@ -12,7 +12,7 @@
 // Written out in full rather than composed from PREFIX, because save.bat bumps
 // this line by regex on every commit and would not recognise an expression.
 // tests/sw.test.js holds the two together.
-const VERSION = 'mbrd-v106';
+const VERSION = 'mbrd-v107';
 const PREFIX = 'mbrd-';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) turns the
@@ -127,6 +127,10 @@ const SHELL = [
   // fallback faces, which is the one failure a service worker exists to
   // prevent and the one nobody checks for. tests/sw.test.js now asserts this
   // list against the files on disk, because it drifted silently once already.
+  './assets/fonts/playfair-latin.woff2',
+  './assets/fonts/playfair-latin-ext.woff2',
+  './assets/fonts/playfair-latin-italic.woff2',
+  './assets/fonts/playfair-latin-ext-italic.woff2',
   './assets/fonts/fraunces-latin.woff2',
   './assets/fonts/fraunces-latin-ext.woff2',
   './assets/fonts/fraunces-latin-italic.woff2',

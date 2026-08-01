@@ -53,6 +53,21 @@ const live = new Map();
 const BUILTIN_HEADER_FACES = [
   { label: 'Default', value: '', stack: '' },
   {
+    label: 'Playfair',
+    value: 'Playfair',
+    stack: '"Playfair", Georgia, serif',
+    // The shipped subset's fvar, not the upstream family's: wdth was instanced
+    // out at 100 before subsetting (see fonts.css), so offering it here would be
+    // a slider that moves nothing. opsz really does run to 1200 - it is drawn
+    // for signage - but a masthead is type on a card, and past a couple of
+    // hundred the hairlines thin out faster than the size grows. Capped at 144
+    // to match Fraunces, which is about where that stops being useful.
+    axes: [
+      { tag: 'wght', min: 300, default: 700, max: 900 },
+      { tag: 'opsz', min: 5, default: 72, max: 144 },
+    ],
+  },
+  {
     label: 'Fraunces',
     value: 'Fraunces',
     stack: '"Fraunces", Georgia, serif',

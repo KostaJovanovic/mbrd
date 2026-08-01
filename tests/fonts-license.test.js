@@ -22,6 +22,7 @@ const shipped = walk(FONTS, ['.woff2'], FONTS);
 
 /** family name -> the OFL file it is meant to be covered by. */
 const COVER = {
+  playfair: 'playfair-OFL.txt',
   fraunces: 'fraunces-OFL.txt',
   geist: 'geist-OFL.txt',
 };
