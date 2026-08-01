@@ -9,9 +9,12 @@
 // thing you are meant to click.
 //
 //   - one to three hues, taken from what the photographs contain;
-//   - a tinted sheet and a dark ink of the *dominant* hue, which is what makes
-//     a palette read as a palette rather than as a grey page with a colour on
-//     it, and what keeps the 60 in one family;
+//   - a sheet and a dark ink of the *dominant* hue, which keeps the 60 in one
+//     family - but at a chroma somebody would have to be told about. The sheet
+//     used to be dyed well into that hue, on the reasoning that a tinted sheet
+//     is what makes a palette read as a palette; what it actually did was cast
+//     every photograph pinned to it, which on a board is the content losing an
+//     argument with the frame. The saturation moved to the pigments;
 //   - every other pigment taken from the photographs too, never constructed:
 //     the accent is the board's own second colour, the one furthest from the
 //     sheet, and a board of one colour gets a palette in one colour. Contrast
@@ -253,8 +256,44 @@ const MAX_HUES = 3;
  * doing so the moment the split is uneven.
  */
 export function huesOf(chunks) {
-  const { votes, voters } = readBoard(chunks);
-  return peaksOf(votes, voters);
+  return peaksOf(readBoard(chunks)).map(p => p.h);
+}
+
+/**
+ * How much of the board a hue actually is - the measurement the vote above
+ * deliberately destroys, kept beside it.
+ *
+ * Normalising each picture to one vote is right for the question "which colours
+ * does this board have", and it is wrong for every question about magnitude,
+ * because dividing by a picture's own total is exactly what throws magnitude
+ * away. A wisp of pale sky is the whole of a fog photograph's vote and arrives
+ * indistinguishable from a wall of red.
+ *
+ * Measured on the board this was written for: eleven photographs, and the three
+ * hues that survived the vote were a warm at 62 degrees, a green at 133 and a
+ * blue at 248. By the vote the blue polled 0.38 of the leader and the green
+ * 0.27, so the blue looked like the stronger of the two. By mass the warm is
+ * 24.0% of the board's colour, the green 22.7%, and the blue **1.7%** - fifty
+ * three pixels of haze in one frame. The green owns a third of one photograph
+ * and is a colour of that board; the blue is the sky behind it.
+ *
+ * So the census answers two questions with two numbers rather than one with
+ * one. Membership stays democratic - a board is entitled to a colour that only
+ * one of its pictures holds, and MIN_SHARE is what guards that. Which of those
+ * colours gets the loudest job is a question about magnitude, and this is what
+ * answers it. See rolesFor().
+ */
+function standings(mass, peaks) {
+  let total = 0;
+  for (const v of mass) total += v;
+  if (!total) return peaks.map(() => 0);
+  // Summed over the same five-bin window the smoothing kernel spans, so a hue's
+  // standing covers the same colour its peak does.
+  return peaks.map(({ i }) => {
+    let m = 0;
+    for (let k = -2; k <= 2; k++) m += mass[(i + k + BINS) % BINS];
+    return m / total;
+  });
 }
 
 /**
@@ -286,6 +325,7 @@ function readBoard(chunks) {
  */
 function census(chunks, floor) {
   const votes = new Float64Array(BINS);
+  const mass = new Float64Array(BINS);
   let voters = 0, vividSum = 0, keySum = 0, lit = 0;
   for (const px of chunks) {
     const one = new Float64Array(BINS);
@@ -304,12 +344,17 @@ function census(chunks, floor) {
     // photograph, none at all if it is a grey frame with a stray pixel in it.
     const trust = clamp((coloured / opaque - COLOUR_MIN) / (COLOUR_FULL - COLOUR_MIN), 0, 1);
     if (!trust) continue;
-    for (let i = 0; i < BINS; i++) votes[i] += trust * one[i] / weight;
+    for (let i = 0; i < BINS; i++) {
+      votes[i] += trust * one[i] / weight;
+      // Not divided by `weight`, which is the entire point - see standing.
+      mass[i] += trust * one[i] / opaque;
+    }
     vividSum += trust * (weight / coloured);
     voters += trust;
   }
   return {
     votes,
+    mass,
     voters,
     vivid: voters ? vividSum / voters : 0,
     // No pixels at all is the reference picture rather than a black one: with
@@ -318,8 +363,15 @@ function census(chunks, floor) {
   };
 }
 
-/** The peaks of a hue vote, strongest first. */
-function peaksOf(votes, voters) {
+/**
+ * The peaks of a hue vote, strongest first, each with its standing.
+ *
+ * Returns `{ h, standing }` rather than a bare angle. The angle was all that
+ * used to survive this function, and everything downstream had to invent the
+ * rest from tables - which is how a hue that is 1.7% of a board came to be
+ * rendered at the same chroma as one that is 24% of it.
+ */
+function peaksOf({ votes, mass, voters }) {
   if (!voters) return [];
 
   const smooth = new Float64Array(BINS);
@@ -336,7 +388,7 @@ function peaksOf(votes, voters) {
     // `>=` on one side only, so a plateau of equal bins yields its first bin
     // once rather than every bin in it.
     if (smooth[i] > 0 && smooth[i] >= prev && smooth[i] > next) {
-      peaks.push({ h: (i + 0.5) * 360 / BINS, w: smooth[i] });
+      peaks.push({ i, h: (i + 0.5) * 360 / BINS, w: smooth[i] });
     }
   }
   // A histogram with no local maximum is a flat one - every pixel in a single
@@ -346,7 +398,7 @@ function peaksOf(votes, voters) {
     let best = 0;
     for (let i = 1; i < BINS; i++) if (smooth[i] > smooth[best]) best = i;
     if (smooth[best] <= 0) return [];
-    peaks.push({ h: (best + 0.5) * 360 / BINS, w: smooth[best] });
+    peaks.push({ i: best, h: (best + 0.5) * 360 / BINS, w: smooth[best] });
   }
   peaks.sort((a, b) => b.w - a.w);
 
@@ -356,7 +408,8 @@ function peaksOf(votes, voters) {
     if (p.w < peaks[0].w * MIN_SHARE) break;
     if (out.every(q => apart(p.h, q.h) >= MIN_SEP)) out.push(p);
   }
-  return out.map(p => p.h);
+  const standing = standings(mass, out);
+  return out.map((p, i) => ({ h: p.h, standing: standing[i] }));
 }
 
 // ---------------------------------------------------------------------------
@@ -369,35 +422,54 @@ function peaksOf(votes, voters) {
 
 /**
  * Lightness and chroma for each paper and ink token: the mean of the four
- * presets, to three places.
+ * presets, to three places. Regenerate with tools/preset-oklch.mjs after
+ * touching them, or the extraction drifts away from the family it belongs to.
  *
- * All nine take the first hue. That is what three of the four presets do
- * already - Absinthe, Tea rose and Peacock put their sheet within 13 degrees of
- * their accent - and it is the thing that makes a palette read as one sheet of
- * tinted paper rather than as a grey page with a colour printed on it. Papyrus
- * is the exception at 44 degrees off, and Papyrus is not what this is imitating.
+ * All nine still take the first hue, but the chroma they take it at is now
+ * 0.007 on the sheet against the 0.017 it was. The sheet is a cast, not a dye.
+ * It used to be the other way round, on the reasoning that a tinted sheet is
+ * what makes a palette read as a palette; what that actually produced was a
+ * board whose paper tinted every photograph pinned to it, and photographs are
+ * the content here. So the hue survives and the saturation went to the
+ * pigments, where it is looked at rather than looked through.
+ *
+ * The papers went *up* in lightness at the same time - 0.980 against 0.965 -
+ * and that pairing is the whole of it. Taking chroma out while leaving the
+ * sheet where it was made the first attempt look more tinted rather than less,
+ * which is not a contradiction: at equal chroma a darker sheet shows its hue
+ * more, so a de-tint that dims the paper reads as a dye. Less colour, more
+ * light. Either one alone is the wrong half.
+ *
+ * Papyrus is the one preset whose sheet is far off its accent, at 44 degrees,
+ * and Papyrus is not what this is imitating.
  */
 const SHEET = {
-  '--paper':      { L: 0.965, C: 0.017 },
-  '--paper-2':    { L: 0.935, C: 0.027 },
-  '--paper-3':    { L: 0.894, C: 0.037 },
-  '--paper-card': { L: 0.988, C: 0.009 },
-  '--ink':        { L: 0.295, C: 0.028 },
-  '--ink-2':      { L: 0.483, C: 0.037 },
-  '--ink-3':      { L: 0.641, C: 0.038 },
-  '--rule':       { L: 0.856, C: 0.038 },
-  '--rule-2':     { L: 0.750, C: 0.049 },
+  '--paper':      { L: 0.980, C: 0.007 },
+  '--paper-2':    { L: 0.952, C: 0.010 },
+  '--paper-3':    { L: 0.914, C: 0.015 },
+  '--paper-card': { L: 0.993, C: 0.003 },
+  '--ink':        { L: 0.268, C: 0.026 },
+  '--ink-2':      { L: 0.437, C: 0.033 },
+  '--ink-3':      { L: 0.611, C: 0.035 },
+  '--rule':       { L: 0.878, C: 0.014 },
+  '--rule-2':     { L: 0.776, C: 0.021 },
 };
 
 /**
  * The pigment trio. Means again, and the hue offsets are measured too:
- * --accent-deep sits within a degree of the accent in all four presets, so it
- * is the same hue darker and nothing else.
+ * --accent-deep sits within a couple of degrees of the accent in all four
+ * presets, so it is the same hue darker and nothing else.
+ *
+ * The accent mean is 0.147 and the four range from 0.096 to 0.204, but that
+ * spread is not a design decision the way the sheet's was - the presets all ask
+ * for 0.185 and what differs is how much of it their hue can hold at L 0.548.
+ * The mean is therefore the mean of four *clipped* answers, which is the honest
+ * reference for an extractor that will be clipped the same way.
  */
 const PIGMENT = {
-  '--accent':      { L: 0.576, C: 0.115 },
-  '--accent-warm': { L: 0.728, C: 0.120 },
-  '--accent-deep': { L: 0.445, C: 0.094 },
+  '--accent':      { L: 0.548, C: 0.147 },
+  '--accent-warm': { L: 0.730, C: 0.158 },
+  '--accent-deep': { L: 0.415, C: 0.114 },
 };
 
 /**
@@ -421,7 +493,7 @@ const WARM_TURN = 20;
  * middle of that and close to three of them.
  */
 const LEAFY_SOLO_TURN = 85;
-const LEAFY = { L: 0.587, C: 0.071 };
+const LEAFY = { L: 0.572, C: 0.111 };
 
 // ---------------------------------------------------------------------------
 // The scheme: which hue does which job
@@ -457,24 +529,42 @@ const LEAFY_DROP = 0.07;
  * colours are the pictures' colours" and "the accent contrasts", the first is
  * the feature; the second is a preference about buttons.
  *
- * What survives of it: among the hues that are not the sheet's, the accent
- * takes the one furthest from it. That is the most visible button available
- * *within* the colours the photographs actually hold, and it costs nothing,
- * because every hue that got this far is already MIN_SEP from every other.
+ * What survived of it, and had to be walked back further: the accent used to
+ * take whichever remaining hue was *furthest* from the sheet, full stop. That
+ * reads as a modest rule and is not one, because on a warm board the hue
+ * furthest from the sheet is blue, and the blue in an outdoor photograph is the
+ * sky - the least saturated and least present thing in the frame, and the one
+ * thing almost every picture taken outdoors contains. So the rule reliably
+ * found sky, promoted it to the loudest role on the board, and rendered it at a
+ * table chroma three times the haze's own. A board of eleven low-saturation
+ * photographs came out with a cobalt button that 1.7% of its colour asked for.
+ *
+ * Distance is now a thumb on the scale instead of the scale. Hues are ranked by
+ * standing - how much of the board's colour each actually is - and a hue
+ * opposite the sheet counts for up to twice its standing, because it does make
+ * the better button. Twice is enough to settle a near-tie between two real
+ * colours and nowhere near enough to hand the job to a wisp: on the board this
+ * was written for the green scores 0.32 against the blue's 0.03.
  *
  * A board with one hue in it gets a palette in one hue - sheet, ink and accent
  * together. Which is what three of the four presets do, and what a board of
  * photographs that are all one colour honestly is.
+ *
+ * Bare angles are still accepted, and then there is no standing to rank by and
+ * distance decides alone - which is what a hand-picked colour and every test
+ * that cares only about hue want.
  */
+const FACING_BONUS = 1;
+
 function rolesFor(hues) {
-  const [sheet, ...rest] = hues;
-  // Furthest from the sheet first, rather than strongest first: both are real
-  // colours off the board, and of the two the further one makes the better
-  // button. --leafy takes what is left, and washes the sheet.
-  const ranked = [...rest].sort((a, b) => apart(b, sheet) - apart(a, sheet));
+  const [sheet, ...rest] = hues.map(p => (typeof p === 'number' ? { h: p, standing: 0 } : p));
+  const score = p => p.standing * (1 + FACING_BONUS * apart(p.h, sheet.h) / 180);
+  const ranked = [...rest]
+    .sort((a, b) => (score(b) - score(a)) || (apart(b.h, sheet.h) - apart(a.h, sheet.h)))
+    .map(p => p.h);
   return {
-    sheet,
-    accent: ranked.length ? ranked[0] : sheet,
+    sheet: sheet.h,
+    accent: ranked.length ? ranked[0] : sheet.h,
     // A third photographed hue if the board has one. With two, the wash sits
     // *between* them rather than at a turn of its own: on a board of rose and
     // magenta, +85 degrees is an olive that nothing on the board is, and the
@@ -482,12 +572,12 @@ function rolesFor(hues) {
     // Only a board with a single hue has nothing to sit between, and there the
     // turn stands - a wash that is its own accent is not a second voice at all.
     leafy: ranked.length > 1 ? ranked[1]
-      : ranked.length ? midHue(sheet, ranked[0])
-        : (sheet + LEAFY_SOLO_TURN) % 360,
+      : ranked.length ? midHue(sheet.h, ranked[0])
+        : (sheet.h + LEAFY_SOLO_TURN) % 360,
     // --accent-warm has no photograph left to take by this point - the vote
     // yields three hues at the most and the other two are spoken for - so it
     // stays a relative of the sheet it washes.
-    warm: warmer(sheet),
+    warm: warmer(sheet.h),
   };
 }
 
@@ -512,40 +602,56 @@ const REF_KEY = 0.62;
 /**
  * How far chroma may be scaled by how vivid the pictures are.
  *
- * The old ceiling was 1.35, chosen to sit near the presets' own cap of 0.13 -
- * and the complaint that followed was the correct one: a board of saturated
- * photographs came out at chroma 0.019 on the sheet while the photographs
- * themselves averaged 0.12, six times more colour than the palette they
- * produced. A palette that faint is a preset with a hue setting, and it does
- * not look like anybody's board.
+ * Both ends moved when the tables did, and the ceiling moved *down*, which
+ * looks backwards for a palette that got louder. The reason is that the tables
+ * it multiplies now start at the sRGB wall: the presets ask for chroma 0.185 on
+ * the accent and mostly do not get it, so the reference is already the most
+ * saturated version of its hue the screen can show. Multiplying that by 2 asks
+ * for nothing the gamut can give - every vivid board would land on the same
+ * clipped colour as every other, and the top half of the dial would be dead
+ * travel. 1.35 keeps the range meaningful where a hue does have room to grow
+ * and costs nothing where it does not.
  *
- * 1.9 puts a vivid board's paper at 0.032 and its --paper-3 at 0.070, which is
- * a plainly tinted sheet rather than a hint of one, and its accent at 0.219 -
- * beyond sRGB for some hues, where hex() gives up chroma and the palette simply
- * takes what the gamut allows. The floor drops further too, so a board of
- * concrete and fog reads as one.
+ * The floor is where the work happens instead. At 0.40 a board of concrete and
+ * fog gets an accent at 0.059 against a vivid board's 0.198 - a greyed palette
+ * against a saturated one - and downwards is the direction with room in it,
+ * because the gamut is not what limits how *little* colour a palette can hold.
  *
- * This is the axis to reach for first if boards still come out too polite.
+ * So: the dial no longer says how loud the loudest board is, since that is
+ * fixed by the screen. It says how quiet the quietest one gets.
  */
-const VIVID_FLOOR = 0.55;
-const VIVID_CEIL = 1.90;
+const VIVID_FLOOR = 0.40;
+const VIVID_CEIL = 1.35;
 
 /**
  * How far the sheet's lightness may follow the pictures' own.
  *
- * Asymmetric, and deliberately: there is room below 0.965 for a sheet to go
+ * Asymmetric, and deliberately: there is room below 0.979 for a sheet to go
  * deeper and almost none above it before paper stops being paper and starts
  * being a lit screen. Dark photographs therefore get most of this range and
  * bright ones get a token amount of it.
+ *
+ * The upward stop is 0.010 because the base sheet is now bright enough that
+ * anything more would reach L 1.0, and at L 1.0 hex() returns #ffffff whatever
+ * chroma it was handed - so a board of beach photographs would lose its tint
+ * entirely and print on the browser's white rather than its own. The clamp is
+ * what keeps the brightest board still a board.
+ *
+ * Widened along with the chroma dial and for the same reason. Now that the
+ * sheet is near-neutral, its *lightness* is the only thing left that can tell
+ * one board's paper from another's - a board of night photographs printing on
+ * a sheet at 0.857 is grey paper, which reads as a different board, where the
+ * same board under the old range printed within a hair of the same white as
+ * everything else and relied on a tint to say so.
  *
  * Only the paper and the rules move. The inks stay where they are, so every one
  * of these shifts widens the contrast between text and its sheet rather than
  * narrowing it - the repair pass below is a floor, not a substitute for not
  * walking towards it.
  */
-const KEY_GAIN = 0.22;
-const KEY_DOWN = 0.070;
-const KEY_UP = 0.025;
+const KEY_GAIN = 0.30;
+const KEY_DOWN = 0.085;
+const KEY_UP = 0.010;
 const PAPERS = ['--paper', '--paper-2', '--paper-3', '--paper-card', '--rule', '--rule-2'];
 
 /**
@@ -555,15 +661,20 @@ const PAPERS = ['--paper', '--paper-2', '--paper-3', '--paper-card', '--rule', '
  * Harsh is the level where the board stops being a scrapbook and starts being a
  * drawing - it is already where the grid turns to crosses and where things snap
  * to a lattice - and a drawing is made on white paper. So at that end the sheet
- * returns to nearly white however dark or vivid the photographs were, keeping a
- * third of its tint, which is enough that it is still recognisably this board's
- * white rather than the browser's.
+ * returns to nearly white however dark or vivid the photographs were, keeping
+ * some of its tint so it is still recognisably this board's white rather than
+ * the browser's.
+ *
+ * Kept fraction went from a third to 0.55 when the papers were de-tinted, and
+ * it is the same amount of colour arriving by a different route: a third of the
+ * old chroma was 0.006, half of the new is 0.004, and below about 0.003 an
+ * 8-bit sheet is simply #fdfdfd and the board has lost its white.
  *
  * The pigments are untouched: the accent, the wash and the ink are what the
  * pictures said, and this is a statement about paper, not about colour.
  */
 const PLAIN_PAPER = 0.985;
-const PLAIN_TINT = 0.3;
+const PLAIN_TINT = 0.55;
 
 /**
  * The tables, bent by what the photographs are. Null traits leaves them be.
@@ -633,6 +744,11 @@ const ACCENT_FLOOR = 4.5;
  */
 /**
  * A full set of pigment tokens from one to three hues.
+ *
+ * `hues` is either bare angles or peaksOf()'s `{ h, standing }`. The extraction
+ * hands over the second so rolesFor() can rank on how much of the board each
+ * colour is; anything that only knows an angle passes the first and gets the
+ * old distance rule, which is the right answer when there is no board to weigh.
  *
  * `traits` is what the photographs were - see temper(). Absent, the tables
  * stand as measured, which is what a hand-picked colour and every test that
@@ -798,10 +914,12 @@ function mixHex(a, b, t) {
  * that in a way an all-neutral palette does not.
  */
 export function extractPalette(chunks, { plain = false } = {}) {
-  const { votes, voters, vivid, key } = readBoard(chunks);
-  const hues = peaksOf(votes, voters);
+  const board = readBoard(chunks);
+  // The rich peaks, not huesOf()'s bare angles: rolesFor() ranks on standing,
+  // and standing is what huesOf() drops on its way out.
+  const hues = peaksOf(board);
   if (!hues.length) return null;
-  return paletteFor(hues, { vivid, key, plain });
+  return paletteFor(hues, { vivid: board.vivid, key: board.key, plain });
 }
 
 // ---------------------------------------------------------------------------

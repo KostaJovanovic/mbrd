@@ -9,7 +9,7 @@ import { toast, busy, extOf } from '../util.js';
 import { board, bus, addItems, select, setItemCover, NOTE_MAX, baseStep } from '../state.js';
 import { addFile } from '../storage/assets.js';
 import { makeByteBudget, overPixelBudget } from './budget.js';
-import { classify, defaultSize, measureSize, fitToBox, linkURL, linkDraft } from '../canvas/renderers.js';
+import { classify, defaultSize, measureSize, fitToBox, linkURL, linkDraft, videoFrame } from '../canvas/renderers.js';
 import { iframeURL, embedFor } from '../canvas/embed.js';
 import { arrange, mobileOrder } from '../arrange/arrangements.js';
 import { coverArt, mayHaveArt } from './artwork.js';
@@ -412,21 +412,42 @@ export async function thumbFor(blob) {
 }
 
 /**
- * A still out of a clip this browser refused, registered as an asset.
+ * A still out of a clip, registered as an asset. Two routes, one answer.
  *
- * Dynamically imported, and that is deliberate rather than incidental. The
- * decoder behind it is thirty megabytes of vendored ffmpeg that most boards
- * never need, and the module here is only reached by a file the browser has
- * already failed to open - so an import of ordinary MP4s never touches it, and
- * a machine without the core vendored answers "no" from a HEAD request before
- * anything is loaded.
+ * Every video gets one, not only the unplayable ones. That used to be the rule
+ * and it left the common case looking broken: a phone shows a video card with
+ * no source attached at all until it is tapped - the decoder ceiling makes that
+ * necessary, see the video renderer - so a perfectly playable clip sat on a
+ * mobile board as an empty black box. Desktop hid the problem by loading
+ * metadata at `#t=0.1` and painting the frame it got. A poster is what gives
+ * the phone the same picture without holding a decoder open for it.
+ *
+ * The browser's own decoder is tried first and answers for almost everything,
+ * at the cost of one seek. Only a clip it cannot open at all falls through to
+ * ffmpeg - H.265 is the case - and that route is dynamically imported for a
+ * reason: the core is thirty megabytes off a CDN, most boards never need it,
+ * and a machine without it answers "no" from a HEAD request before anything is
+ * loaded. An import of ordinary MP4s never touches it.
  *
  * Everything about this is allowed to fail. No decoder, no frame, a format the
  * encoder will not write - all of them come back null, and null means the clip
- * is exactly what it was before: a video card with nothing to show yet, which
- * is what every unplayable clip looked like until now.
+ * is exactly what it was before: a video card with nothing to show yet.
  */
-async function posterFor(file) {
+async function posterFor(file, decodable) {
+  if (decodable) {
+    try {
+      const frame = await videoFrame(file);
+      if (frame) {
+        const named = new File([frame.blob], 'poster.webp', { type: 'image/webp' });
+        return { hash: await addFile(named), w: frame.w, h: frame.h };
+      }
+    } catch { /* fall through - a clip with no poster is what it was before */ }
+    // Deliberately not falling through to ffmpeg. The browser opened this clip,
+    // so thirty megabytes would be spent to answer a question it can already
+    // answer; that it declined to hand over a frame is a decoder quirk, not a
+    // format this app cannot read.
+    return null;
+  }
   try {
     const { firstFrame } = await import('../optimize/media.js');
     const frame = await firstFrame(file, msg => toast(msg));
@@ -466,16 +487,18 @@ async function prepareFile(file) {
     }
   }
   const hash = await addFile(file);
-  // A clip this browser will not open - an iPhone's H.265, most of the time -
-  // gets a still pulled out of it instead of being left as a black rectangle.
-  // See posterFor() below, and firstFrame() in optimize/media.js.
-  const poster = type === 'video' && !size.decodable ? await posterFor(file) : null;
-  if (poster) {
-    // The frame knows the shape of the clip, which is the one thing the failed
-    // measurement above could not find out. Without this an upright phone video
-    // would sit on the board as a landscape box with an upright picture letter-
-    // boxed inside it.
-    if (poster.w && poster.h) size = { ...size, ...fitToBox('video', poster.w, poster.h), measured: true };
+  // Every clip gets a still pulled out of it, because a video card has nothing
+  // to show until it is played - on a phone, where the source is held back
+  // entirely, that is a black rectangle. See posterFor() below.
+  const poster = type === 'video' ? await posterFor(file, size.decodable) : null;
+  // The frame knows the shape of the clip, which is the one thing a failed
+  // measurement could not find out. Without this an upright phone video would
+  // sit on the board as a landscape box with an upright picture letterboxed
+  // inside it. Only when the measurement failed: a clip the browser opened has
+  // already been measured from the file itself, and the frame would only
+  // recompute the identical box.
+  if (poster && !size.measured && poster.w && poster.h) {
+    size = { ...size, ...fitToBox('video', poster.w, poster.h), measured: true };
   }
   // An audio file usually carries its own picture, and the card has a slot for
   // one already - see setItemCover() in state.js. Registered as an ordinary

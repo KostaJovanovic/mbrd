@@ -1,0 +1,901 @@
+<!doctype html>
+<html lang="en" data-theme="lab">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mbrd — pigment lab</title>
+<!--
+  A bench for the palette extractor. Not part of the app.
+
+  It is here in web/ rather than in tools/ for one reason: serve.py's document
+  root is web/, so this is the only place a page can `import` the real
+  pigments.js instead of a copy of it. It is deliberately absent from sw.js's
+  SHELL - a dev bench has no business in the offline shell - which is also why
+  it is a single file with no module of its own under assets/js, since the
+  SHELL test walks that directory and would rightly object.
+
+  What it imports is the real thing: oklch(), hex(), contrast() and
+  samplePixels() come straight from pigments.js, so colour conversion, gamut
+  clipping and the 48x48 sampling are not reimplemented here and cannot drift.
+
+  What it *does* reimplement is the census, the peak finder, the role
+  assignment and temper() - because those are the parts whose constants are
+  module-private, and the whole point of a bench is to turn them. That copy can
+  drift from the original, so the bench also runs the live extractPalette() on
+  the same pixels and shows both answers side by side. If the copy at its
+  default settings ever stops matching the live code, the readout says so in
+  red. That check is the only thing standing between this file and a tuning
+  session spent on a palette the app does not actually produce.
+-->
+<style>
+  /* Neutral chrome on purpose. A tinted surround is the one thing that makes a
+     near-neutral sheet impossible to judge, and judging the sheet is half of
+     what this page is for. */
+  :root {
+    --bg: #17181a;   --panel: #1f2124;  --edge: #313437;
+    --fg: #e7e9ec;   --dim: #9aa0a7;    --faint: #6b7178;
+    --ok: #57b364;   --bad: #e2564a;    --hot: #d9a441;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  h1 { font-size: 14px; margin: 0; font-weight: 600; letter-spacing: .01em; }
+  h2 {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .09em;
+    color: var(--faint); margin: 0 0 8px; font-weight: 600;
+  }
+  header {
+    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+    padding: 10px 16px; border-bottom: 1px solid var(--edge); background: var(--panel);
+    position: sticky; top: 0; z-index: 5;
+  }
+  header .note { color: var(--faint); font-size: 12px; }
+  #drift { font-size: 12px; margin-left: auto; }
+
+  main { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 0; align-items: start; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+
+  #rail {
+    border-right: 1px solid var(--edge); padding: 14px 16px 40px;
+    position: sticky; top: 41px; max-height: calc(100vh - 41px); overflow-y: auto;
+  }
+  #out { padding: 14px 16px 60px; min-width: 0; }
+  section { margin-bottom: 22px; }
+
+  /* Sources ------------------------------------------------------------- */
+  #drop {
+    border: 1px dashed var(--edge); border-radius: 8px; padding: 16px 12px;
+    text-align: center; color: var(--dim); cursor: pointer; transition: .12s;
+  }
+  #drop:hover, #drop.over { border-color: var(--hot); color: var(--fg); background: #ffffff08; }
+  #thumbs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
+  #thumbs figure { margin: 0; position: relative; width: 48px; }
+  #thumbs img {
+    width: 48px; height: 48px; object-fit: cover; border-radius: 3px;
+    display: block; border: 1px solid var(--edge);
+  }
+  #thumbs button {
+    position: absolute; inset: 0; border: 0; background: #000a; color: #fff;
+    opacity: 0; cursor: pointer; border-radius: 3px; font-size: 16px;
+  }
+  #thumbs figure:hover button { opacity: 1; }
+
+  /* Dials --------------------------------------------------------------- */
+  .dial { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; margin-bottom: 7px; }
+  .dial label { color: var(--dim); font-size: 12px; }
+  .dial output { font-variant-numeric: tabular-nums; color: var(--fg); font-size: 12px; }
+  .dial input[type=range] { grid-column: 1 / -1; width: 100%; margin: 0; accent-color: var(--hot); }
+  .dial .why { grid-column: 1 / -1; color: var(--faint); font-size: 11px; margin-top: -1px; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 9px; }
+  select, button.act {
+    background: #2a2d31; color: var(--fg); border: 1px solid var(--edge);
+    border-radius: 5px; padding: 4px 8px; font: inherit; font-size: 12px; cursor: pointer;
+  }
+  button.act:hover { border-color: var(--hot); }
+  label.check { display: flex; align-items: center; gap: 6px; color: var(--dim); font-size: 12px; cursor: pointer; }
+  fieldset { border: 1px solid var(--edge); border-radius: 7px; padding: 10px 11px 4px; margin: 0 0 14px; }
+  legend { font-size: 10px; text-transform: uppercase; letter-spacing: .09em; color: var(--faint); padding: 0 5px; }
+
+  /* Output -------------------------------------------------------------- */
+  #swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+  .sw { width: 104px; }
+  .sw i { display: block; height: 46px; border-radius: 5px; border: 1px solid #0004; }
+  .sw b { display: block; font-size: 10px; font-weight: 600; margin-top: 4px; color: var(--dim); }
+  .sw code { font-size: 11px; color: var(--fg); }
+  .sw em { display: block; font-style: normal; font-size: 10px; color: var(--faint); font-variant-numeric: tabular-nums; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    font-size: 11px; padding: 2px 7px; border-radius: 20px; border: 1px solid var(--edge);
+    font-variant-numeric: tabular-nums;
+  }
+  .chip.pass { color: var(--ok); border-color: #57b36455; }
+  .chip.fail { color: var(--bad); border-color: #e2564a66; background: #e2564a14; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  th, td { text-align: right; padding: 3px 8px; border-bottom: 1px solid var(--edge); font-variant-numeric: tabular-nums; }
+  th { color: var(--faint); font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+  th:first-child, td:first-child { text-align: left; font-variant-numeric: normal; }
+  td.role { color: var(--hot); }
+  tr.muted td { color: var(--faint); }
+  .scroll { overflow-x: auto; }
+
+  canvas#chart { width: 100%; height: 150px; display: block; border-radius: 6px; background: #0000001f; }
+
+  /* The mock boards. One per whimsy level, because the difference between them
+     is the thing hardest to judge from a swatch: the sheet is extracted per
+     level (Harsh alone passes plain:true) and then painted under that level's
+     own --wash and --vignette, exactly as body does in app.css. */
+  #mocks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  @media (max-width: 1100px) { #mocks { grid-template-columns: 1fr; } }
+  .mock { border-radius: 10px; padding: 20px; border: 1px solid var(--edge); }
+  .mock .card {
+    border-radius: 8px; padding: 13px 15px;
+    box-shadow: 0 1px 2px #0000001a, 0 6px 18px #00000014;
+  }
+  .mock h3 { margin: 0 0 5px; font-size: 15px; }
+  .mock p { margin: 0 0 10px; font-size: 12px; }
+  .mock .btn { border: 0; border-radius: 6px; padding: 6px 13px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .mock .rule { height: 3px; border-radius: 2px; margin: 10px 0; }
+  .mock .meta { font-size: 11px; }
+  .mockhead {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 5px; font-size: 11px;
+  }
+  .mockhead b { color: var(--fg); font-size: 12px; }
+  .mockhead span { color: var(--faint); font-variant-numeric: tabular-nums; }
+  .mockhead span.gap { color: var(--hot); }
+  #empty { color: var(--faint); padding: 40px 0; text-align: center; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>pigment lab</h1>
+  <span class="note">drop photographs, turn the dials, read what the extractor makes of them</span>
+  <span id="drift"></span>
+</header>
+
+<main>
+  <div id="rail">
+    <section>
+      <h2>Sources</h2>
+      <div id="drop">Drop photographs here<br><span style="font-size:11px">or click to choose</span></div>
+      <input id="file" type="file" accept="image/*" multiple hidden>
+      <div id="thumbs"></div>
+    </section>
+
+    <div class="row">
+      <button class="act" data-preset="live">Live defaults</button>
+      <button class="act" data-preset="A">Option A</button>
+      <button class="act" data-preset="B">Option B</button>
+      <button class="act" id="dump">Copy constants</button>
+    </div>
+
+    <fieldset>
+      <legend>Census — which pixels speak</legend>
+      <div id="g-census"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Vote — which hues survive</legend>
+      <div id="g-vote"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Roles — which hue gets which job</legend>
+      <div class="row">
+        <label class="check"><input type="checkbox" id="useStanding" checked> rank by standing</label>
+      </div>
+      <div class="dial"><span class="why">Off is the old rule: the accent goes to whichever hue is furthest from the sheet, whatever it weighs.</span></div>
+      <div id="g-roles"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Vividness — how loud the palette gets</legend>
+      <div class="row">
+        <select id="vividMode">
+          <option value="today">strength of the colour that is there (live)</option>
+          <option value="mass">colour per pixel of the whole frame (A)</option>
+          <option value="damped">strength, damped by coverage (B)</option>
+        </select>
+      </div>
+      <div id="g-vivid"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Sheet — paper and key</legend>
+      <div class="row">
+        <label class="check"><input type="checkbox" id="plain"> plain end (whimsy Harsh)</label>
+      </div>
+      <div id="g-sheet"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Tables — the base palette</legend>
+      <div id="g-tables"></div>
+    </fieldset>
+  </div>
+
+  <div id="out">
+    <div id="empty">No photographs yet. Drop a few on the left.</div>
+    <div id="body" hidden>
+      <section>
+        <h2>Palette</h2>
+        <div id="swatches"></div>
+      </section>
+
+      <section>
+        <h2>Legibility</h2>
+        <div class="chips" id="contrasts"></div>
+      </section>
+
+      <section>
+        <h2>On a board, at each end of the whimsy axis</h2>
+        <div id="mocks"></div>
+      </section>
+
+      <section>
+        <h2>The vote, and what it hides</h2>
+        <canvas id="chart" width="1400" height="300"></canvas>
+        <div class="scroll"><table id="hues"></table></div>
+      </section>
+
+      <section>
+        <h2>Each picture</h2>
+        <div class="scroll"><table id="pics"></table></div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<script type="module">
+// Everything colour-exact comes from the app. Only the tunable pipeline is
+// restated below, and #drift holds the restatement to the original.
+import { oklch, hex, contrast, samplePixels, extractPalette }
+  from './assets/js/ui/pigments.js';
+
+const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+const apart = (a, b) => { const d = Math.abs(a - b) % 360; return Math.min(d, 360 - d); };
+const BINS = 72;
+
+// --------------------------------------------------------------------------
+// The dials. `live` is the value the shipped constant holds right now, so
+// "Live defaults" is a real comparison and not a remembered one.
+// --------------------------------------------------------------------------
+const DIALS = [
+  ['neutralC',    'g-census', 'neutral floor (NEUTRAL_C)',      0.005, 0.12,  0.001, 0.045,
+    'Below this chroma a pixel has no hue worth counting.'],
+  ['minL',        'g-census', 'darkest pixel that votes (MIN_L)', 0,   0.4,   0.01,  0.12, ''],
+  ['maxL',        'g-census', 'lightest pixel that votes (MAX_L)', 0.6, 1,    0.01,  0.95, ''],
+  ['colourMin',   'g-census', 'no vote below (COLOUR_MIN)',     0,     0.10,  0.001, 0.005,
+    'Fraction of a frame that must be coloured before the picture votes at all.'],
+  ['colourFull',  'g-census', 'full vote above (COLOUR_FULL)',  0.001, 0.30,  0.001, 0.02, ''],
+
+  ['minShare',    'g-vote',   'second hue must poll (MIN_SHARE)', 0,   0.6,   0.01,  0.15,
+    'Share of the leader a hue needs to make the palette at all.'],
+  ['minSep',      'g-vote',   'hues must be apart (MIN_SEP)',   5,     90,    1,     40, ''],
+  ['maxHues',     'g-vote',   'hues at most (MAX_HUES)',        1,     5,     1,     3, ''],
+
+  ['facingBonus', 'g-roles',  'facing the sheet is worth (FACING_BONUS)', 0, 4, 0.1, 1,
+    'A hue opposite the sheet counts for this much extra standing. 0 ranks on weight alone.'],
+
+  ['refVivid',    'g-vivid',  'reference picture (REF_VIVID)',  0.001, 0.15,  0.001, 0.065,
+    'The vividness at which the tables stand exactly as measured.'],
+  ['vividFloor',  'g-vivid',  'quietest board (VIVID_FLOOR)',   0.1,   1,     0.05,  0.40, ''],
+  ['vividCeil',   'g-vivid',  'loudest board (VIVID_CEIL)',     1,     2.5,   0.05,  1.35, ''],
+
+  ['keyGain',     'g-sheet',  'paper follows the pictures (KEY_GAIN)', 0, 1,  0.01,  0.30, ''],
+  ['keyDown',     'g-sheet',  'darkest the sheet goes (KEY_DOWN)', 0,  0.25,  0.005, 0.085, ''],
+  ['keyUp',       'g-sheet',  'lightest the sheet goes (KEY_UP)', 0,   0.06,  0.002, 0.010,
+    'Small on purpose: at L 1.0 hex() returns #ffffff whatever chroma it was handed.'],
+  ['plainPaper',  'g-sheet',  'plain-end sheet (PLAIN_PAPER)',  0.9,   1,     0.005, 0.985, ''],
+  ['plainTint',   'g-sheet',  'tint kept there (PLAIN_TINT)',   0,     1,     0.05,  0.55, ''],
+
+  ['paperL',      'g-tables', 'paper lightness',                0.88,  1,     0.002, 0.980, ''],
+  ['sheetTint',   'g-tables', 'sheet chroma ×',            0,     4,     0.05,  1,
+    'Multiplies every paper, rule and ink chroma. 1 is the mean of the four presets.'],
+  ['accentL',     'g-tables', 'accent lightness',               0.25,  0.85,  0.005, 0.548, ''],
+  ['pigmentBoost','g-tables', 'pigment chroma ×',          0,     2,     0.05,  1,
+    'Multiplies the accent trio and the wash before the vividness dial touches them.'],
+];
+
+const P = {};
+for (const [key, , , , , , live] of DIALS) P[key] = live;
+let useStanding = true, plain = false, vividMode = 'today';
+
+// The shipped tables, restated. Held to the live code by #drift.
+const SHEET = {
+  '--paper':      { L: 0.980, C: 0.007 },
+  '--paper-2':    { L: 0.952, C: 0.010 },
+  '--paper-3':    { L: 0.914, C: 0.015 },
+  '--paper-card': { L: 0.993, C: 0.003 },
+  '--ink':        { L: 0.268, C: 0.026 },
+  '--ink-2':      { L: 0.437, C: 0.033 },
+  '--ink-3':      { L: 0.611, C: 0.035 },
+  '--rule':       { L: 0.878, C: 0.014 },
+  '--rule-2':     { L: 0.776, C: 0.021 },
+};
+const PIGMENT = {
+  '--accent':      { L: 0.548, C: 0.147 },
+  '--accent-warm': { L: 0.730, C: 0.158 },
+  '--accent-deep': { L: 0.415, C: 0.114 },
+};
+const LEAFY = { L: 0.572, C: 0.111 };
+const PAPERS = ['--paper', '--paper-2', '--paper-3', '--paper-card', '--rule', '--rule-2'];
+const WARM_ANCHOR = 75, WARM_TURN = 20, LEAFY_SOLO_TURN = 85;
+const ANALOGOUS = 60, LEAFY_DROP = 0.07, REF_KEY = 0.62;
+const FLOOR = { '--ink': 7, '--ink-2': 4.5, '--ink-3': 2.2 };
+const ACCENT_FLOOR = 4.5;
+
+const PRESETS = {
+  live: { vividMode: 'today', dials: {} },
+  A:    { vividMode: 'mass',   dials: { refVivid: 0.020 } },
+  B:    { vividMode: 'damped', dials: { refVivid: 0.065 } },
+};
+
+// --------------------------------------------------------------------------
+// The pipeline, parameterised
+// --------------------------------------------------------------------------
+
+/** One pass over every picture: the vote, the mass, and the two dials. */
+function census(chunks, floor) {
+  const votes = new Float64Array(BINS), mass = new Float64Array(BINS);
+  const cNum = new Float64Array(BINS), cDen = new Float64Array(BINS);
+  let voters = 0, vividSum = 0, keySum = 0, lit = 0;
+  const pictures = [];
+
+  for (const px of chunks) {
+    const one = new Float64Array(BINS);
+    let weight = 0, coloured = 0, lSum = 0, opaque = 0;
+    for (let i = 0; i + 3 < px.length; i += 4) {
+      if (px[i + 3] < 128) continue;
+      const { L, C, h } = oklch(px[i], px[i + 1], px[i + 2]);
+      lSum += L; opaque++;
+      if (L < P.minL || L > P.maxL || C < floor) continue;
+      const b = Math.floor(h / 360 * BINS) % BINS;
+      one[b] += C; cNum[b] += C; cDen[b]++;
+      weight += C; coloured++;
+    }
+    if (opaque) { keySum += lSum / opaque; lit++; }
+    const cover = opaque ? coloured / opaque : 0;
+    const shot = {
+      cover, key: opaque ? lSum / opaque : 0,
+      strength: coloured ? weight / coloured : 0,   // chroma of the coloured part
+      frame: opaque ? weight / opaque : 0,          // chroma per pixel of the frame
+      trust: 0, top: null,
+    };
+    pictures.push(shot);
+    if (!weight) continue;
+
+    shot.trust = clamp((cover - P.colourMin) / (P.colourFull - P.colourMin), 0, 1);
+    let t = 0; for (let i = 1; i < BINS; i++) if (one[i] > one[t]) t = i;
+    shot.top = (t + 0.5) * 360 / BINS;
+    if (!shot.trust) continue;
+
+    for (let i = 0; i < BINS; i++) {
+      votes[i] += shot.trust * one[i] / weight;   // democratic: one picture, one vote
+      mass[i] += shot.trust * one[i] / opaque;    // honest: how much of the board it is
+    }
+    // Three readings of "how vivid were these pictures", the fork this bench exists for.
+    const vivid = vividMode === 'mass' ? shot.frame
+      : vividMode === 'damped' ? shot.strength * clamp(0.5 + 0.5 * cover / 0.15, 0.5, 1)
+        : shot.strength;
+    vividSum += shot.trust * vivid;
+    voters += shot.trust;
+  }
+  return {
+    votes, mass, cNum, cDen, voters, pictures,
+    vivid: voters ? vividSum / voters : 0,
+    key: lit ? keySum / lit : REF_KEY,
+  };
+}
+
+const blur = src => {
+  const out = new Float64Array(BINS), K = [1, 2, 3, 2, 1], KSUM = 9;
+  for (let i = 0; i < BINS; i++) {
+    let s = 0;
+    for (let k = -2; k <= 2; k++) s += K[k + 2] * src[(i + k + BINS) % BINS];
+    out[i] = s / KSUM;
+  }
+  return out;
+};
+
+/** Peaks of the vote, each carrying what the vote alone cannot say. */
+function peaksOf(board) {
+  if (!board.voters) return { accepted: [], smooth: new Float64Array(BINS), smoothMass: new Float64Array(BINS) };
+  const smooth = blur(board.votes), smoothMass = blur(board.mass);
+
+  const peaks = [];
+  for (let i = 0; i < BINS; i++) {
+    const prev = smooth[(i - 1 + BINS) % BINS], next = smooth[(i + 1) % BINS];
+    if (smooth[i] > 0 && smooth[i] >= prev && smooth[i] > next) {
+      peaks.push({ i, h: (i + 0.5) * 360 / BINS, w: smooth[i] });
+    }
+  }
+  if (!peaks.length) {
+    let best = 0;
+    for (let i = 1; i < BINS; i++) if (smooth[i] > smooth[best]) best = i;
+    if (smooth[best] <= 0) return { accepted: [], smooth, smoothMass };
+    peaks.push({ i: best, h: (best + 0.5) * 360 / BINS, w: smooth[best] });
+  }
+  peaks.sort((a, b) => b.w - a.w);
+
+  const accepted = [peaks[0]];
+  for (const p of peaks.slice(1)) {
+    if (accepted.length >= P.maxHues) break;
+    if (p.w < peaks[0].w * P.minShare) break;
+    if (accepted.every(q => apart(p.h, q.h) >= P.minSep)) accepted.push(p);
+  }
+
+  // Standing is read off the *raw* mass, exactly as pigments.js does it. The
+  // blurred copy above is for the chart only - a smoothed window is not the
+  // same sum as a raw one, and the drift check would rightly catch it.
+  let total = 0; for (const v of board.mass) total += v;
+  for (const p of accepted) {
+    let m = 0, n = 0, d = 0;
+    for (let k = -2; k <= 2; k++) {
+      const b = (p.i + k + BINS) % BINS;
+      m += board.mass[b]; n += board.cNum[b]; d += board.cDen[b];
+    }
+    p.share = p.w / peaks[0].w;
+    p.standing = total ? m / total : 0;
+    p.chroma = d ? n / d : 0;
+    p.pixels = d;
+  }
+  return { accepted, smooth, smoothMass };
+}
+
+const midHue = (a, b) => {
+  const d = ((b - a + 540) % 360) - 180;
+  return (a + d / 2 + 360) % 360;
+};
+const warmer = h => {
+  const d = ((WARM_ANCHOR - h + 540) % 360) - 180;
+  return h + Math.sign(d) * Math.min(Math.abs(d), WARM_TURN);
+};
+
+/** Which hue does which job. */
+function rolesFor(hues) {
+  const [sheet, ...rest] = hues;
+  const score = p => useStanding
+    ? p.standing * (1 + P.facingBonus * apart(p.h, sheet.h) / 180)
+    : apart(p.h, sheet.h);
+  const ranked = [...rest]
+    .sort((a, b) => (score(b) - score(a)) || (apart(b.h, sheet.h) - apart(a.h, sheet.h)));
+  for (const p of ranked) p.score = score(p);
+  sheet.score = score(sheet);
+  return {
+    sheet: sheet.h,
+    accent: ranked.length ? ranked[0].h : sheet.h,
+    leafy: ranked.length > 1 ? ranked[1].h
+      : ranked.length ? midHue(sheet.h, ranked[0].h)
+        : (sheet.h + LEAFY_SOLO_TURN) % 360,
+    warm: warmer(sheet.h),
+    ranked,
+  };
+}
+
+/** The tables, bent by what the photographs are. */
+function temper(traits, isPlain) {
+  const scale = clamp(Math.sqrt(traits.vivid / P.refVivid), P.vividFloor, P.vividCeil);
+  const key = clamp((traits.key - REF_KEY) * P.keyGain, -P.keyDown, P.keyUp);
+  const lift = P.paperL - SHEET['--paper'].L;
+  const shift = isPlain ? P.plainPaper - SHEET['--paper'].L : key + lift;
+  const sheetScale = (isPlain ? scale * P.plainTint : scale) * P.sheetTint;
+  const sheet = {}, pigment = {};
+  for (const [k, { L, C }] of Object.entries(SHEET)) {
+    sheet[k] = { L: PAPERS.includes(k) ? clamp(L + shift, 0, 1) : L, C: C * sheetScale };
+  }
+  for (const [k, { L, C }] of Object.entries(PIGMENT)) {
+    pigment[k] = {
+      L: k === '--accent' ? P.accentL : L,
+      C: C * scale * P.pigmentBoost,
+    };
+  }
+  return { scale, key, sheet, pigment, leafy: { L: LEAFY.L, C: LEAFY.C * scale * P.pigmentBoost } };
+}
+
+const mixHex = (a, b, t) => {
+  const p = s => [1, 3, 5].map(i => parseInt(s.slice(i, i + 2), 16));
+  const [ar, ag, ab] = p(a), [br, bg, bb] = p(b);
+  const m = (x, y) => Math.round(x + (y - x) * t).toString(16).padStart(2, '0');
+  return '#' + m(ar, br) + m(ag, bg) + m(ab, bb);
+};
+
+function build(roles, traits, isPlain = plain) {
+  const { sheet, pigment, leafy, scale, key } = temper(traits, isPlain);
+  const vars = {};
+  for (const [k, { L, C }] of Object.entries(sheet)) vars[k] = hex(L, C, roles.sheet);
+  for (const [k, { L, C }] of Object.entries(pigment)) {
+    vars[k] = hex(L, C, ((k === '--accent-warm' ? roles.warm : roles.accent) + 360) % 360);
+  }
+  const crowded = apart(roles.accent, roles.leafy) < ANALOGOUS;
+  vars['--leafy'] = hex(crowded ? leafy.L - LEAFY_DROP : leafy.L, leafy.C, (roles.leafy + 360) % 360);
+
+  // repair: only L moves, and only downwards.
+  const paper = vars['--paper'];
+  for (const [k, floor] of Object.entries(FLOOR)) {
+    let { L, C } = sheet[k];
+    for (let i = 0; i < 40 && contrast(vars[k], paper) < floor; i++) {
+      L = Math.max(0, L - 0.02);
+      vars[k] = hex(L, C, roles.sheet);
+      if (L === 0) break;
+    }
+  }
+  const light = mixHex(paper, '#ffffff', 0.55);
+  let { L, C } = pigment['--accent'];
+  for (let i = 0; i < 40 && contrast(vars['--accent'], light) < ACCENT_FLOOR; i++) {
+    L = Math.max(0, L - 0.02);
+    vars['--accent'] = hex(L, C, roles.accent);
+    if (L === 0) break;
+  }
+  vars['--accent-fg'] = light;
+  if (contrast(vars['--accent'], light) < ACCENT_FLOOR) {
+    vars['--accent'] = hex(pigment['--accent'].L, pigment['--accent'].C, roles.accent);
+    vars['--accent-fg'] = vars['--ink'];
+  }
+  return { vars, scale, key };
+}
+
+// --------------------------------------------------------------------------
+// Wiring
+// --------------------------------------------------------------------------
+const $ = s => document.querySelector(s);
+const el = (tag, cls, text) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+};
+let sources = [];   // { name, url, px }
+const DIALSET = {}; // key -> { input, paint }, so the presets can move them
+
+for (const [key, group, label, min, max, step, live, why] of DIALS) {
+  const wrap = el('div', 'dial');
+  const lab = el('label', null, label);
+  const out = el('output');
+  const input = Object.assign(document.createElement('input'),
+    { type: 'range', min, max, step, value: live });
+  const places = String(step).includes('.') ? String(step).split('.')[1].length : 0;
+  const paint = () => { out.textContent = Number(P[key]).toFixed(places); };
+  input.addEventListener('input', () => { P[key] = Number(input.value); paint(); run(); });
+  wrap.append(lab, out, input);
+  if (why) wrap.append(el('span', 'why', why));
+  $('#' + group).append(wrap);
+  DIALSET[key] = { input, paint };
+  paint();
+}
+
+$('#useStanding').addEventListener('change', e => { useStanding = e.target.checked; run(); });
+$('#plain').addEventListener('change', e => { plain = e.target.checked; run(); });
+$('#vividMode').addEventListener('change', e => { vividMode = e.target.value; run(); });
+
+for (const b of document.querySelectorAll('[data-preset]')) {
+  b.addEventListener('click', () => {
+    const preset = PRESETS[b.dataset.preset];
+    for (const [key, , , , , , live] of DIALS) {
+      P[key] = preset.dials[key] ?? live;
+      DIALSET[key].input.value = P[key];
+      DIALSET[key].paint();
+    }
+    vividMode = preset.vividMode;
+    $('#vividMode').value = vividMode;
+    run();
+  });
+}
+
+$('#dump').addEventListener('click', () => {
+  const lines = DIALS.map(([key, , label, , , , live]) =>
+    `${P[key] === live ? '  ' : '* '}${label.replace(/.*\(([^)]+)\).*/, '$1').padEnd(14)} ${P[key]}`);
+  const text = [
+    `vividness reading : ${vividMode}`,
+    `accent ranked by  : ${useStanding ? 'standing + facing bonus' : 'distance from the sheet'}`,
+    `plain end         : ${plain}`,
+    '', ...lines,
+  ].join('\n');
+  navigator.clipboard?.writeText(text);
+  $('#dump').textContent = 'Copied';
+  setTimeout(() => { $('#dump').textContent = 'Copy constants'; }, 1200);
+});
+
+// Sources ------------------------------------------------------------------
+const drop = $('#drop'), picker = $('#file');
+drop.addEventListener('click', () => picker.click());
+picker.addEventListener('change', () => add([...picker.files]));
+for (const type of ['dragenter', 'dragover']) {
+  drop.addEventListener(type, e => { e.preventDefault(); drop.classList.add('over'); });
+}
+for (const type of ['dragleave', 'drop']) {
+  drop.addEventListener(type, () => drop.classList.remove('over'));
+}
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', e => {
+  e.preventDefault();
+  add([...e.dataTransfer.files].filter(f => f.type.startsWith('image/')));
+});
+
+async function add(files) {
+  for (const f of files) {
+    const url = URL.createObjectURL(f);
+    // The app's own sampler, so the 48x48 averaging is the real one.
+    const [px] = await samplePixels([url], Infinity);
+    if (px) sources.push({ name: f.name, url, px });
+  }
+  paintThumbs();
+  run();
+}
+
+function paintThumbs() {
+  const box = $('#thumbs');
+  box.textContent = '';
+  sources.forEach((s, i) => {
+    const fig = el('figure');
+    const img = el('img');
+    img.src = s.url; img.alt = s.name; img.title = s.name;
+    const kill = el('button', null, '×');
+    kill.title = 'remove';
+    kill.addEventListener('click', () => {
+      URL.revokeObjectURL(s.url);
+      sources.splice(i, 1);
+      paintThumbs(); run();
+    });
+    fig.append(img, kill);
+    box.append(fig);
+  });
+}
+
+// The run ------------------------------------------------------------------
+function run() {
+  const has = sources.length > 0;
+  $('#empty').hidden = has;
+  $('#body').hidden = !has;
+  $('#drift').textContent = '';
+  if (!has) return;
+
+  const chunks = sources.map(s => s.px);
+  // Two passes at two floors, as readBoard() does.
+  let board = census(chunks, P.neutralC);
+  if (!board.voters) board = census(chunks, 0.018);
+  const { accepted, smooth, smoothMass } = peaksOf(board);
+  if (!accepted.length) {
+    $('#swatches').textContent = 'No colour worth taking — the extractor would leave the look alone.';
+    return;
+  }
+  const roles = rolesFor(accepted);
+  const { vars, scale, key } = build(roles, board);
+
+  paintSwatches(vars);
+  paintContrasts(vars);
+  paintMocks(roles, board);
+  paintChart(smooth, smoothMass, accepted, roles);
+  paintHues(accepted, roles, scale, key, board);
+  paintPics(board.pictures);
+  checkDrift(chunks, vars);
+}
+
+/**
+ * The bench against the app. Only meaningful at live defaults - anywhere else
+ * the two are *supposed* to differ, which is the point of the dials.
+ */
+function checkDrift(chunks, vars) {
+  const atLive = DIALS.every(([k, , , , , , live]) => P[k] === live)
+    && vividMode === 'today' && useStanding;
+  const box = $('#drift');
+  if (!atLive) {
+    box.style.color = 'var(--faint)';
+    box.textContent = 'dials off live defaults — comparison paused';
+    return;
+  }
+  const real = extractPalette(chunks, { plain });
+  const keys = ['--paper', '--ink', '--accent', '--accent-warm', '--leafy'];
+  const off = real ? keys.filter(k => real[k] !== vars[k]) : keys;
+  box.style.color = off.length ? 'var(--bad)' : 'var(--ok)';
+  box.textContent = off.length
+    ? `bench has drifted from pigments.js: ${off.join(' ')}`
+    : 'matches pigments.js exactly';
+}
+
+const named = c => { const { L, C, h } = oklch(...[1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16))); return { L, C, h }; };
+
+function paintSwatches(vars) {
+  const box = $('#swatches');
+  box.textContent = '';
+  for (const [k, v] of Object.entries(vars)) {
+    const n = named(v);
+    const sw = el('div', 'sw');
+    const chip = el('i');
+    chip.style.background = v;
+    sw.append(chip, el('b', null, k), el('code', null, v),
+      el('em', null, `L ${n.L.toFixed(3)}  C ${n.C.toFixed(3)}  h ${n.h.toFixed(0)}`));
+    box.append(sw);
+  }
+}
+
+function paintContrasts(vars) {
+  const box = $('#contrasts');
+  box.textContent = '';
+  const tests = [
+    ['ink on paper', vars['--ink'], vars['--paper'], 7],
+    ['ink-2 on paper', vars['--ink-2'], vars['--paper'], 4.5],
+    ['ink-3 on paper', vars['--ink-3'], vars['--paper'], 2.2],
+    ['label on accent', vars['--accent-fg'], vars['--accent'], 4.5],
+    ['ink on card', vars['--ink'], vars['--paper-card'], 7],
+  ];
+  for (const [label, a, b, floor] of tests) {
+    const r = contrast(a, b);
+    box.append(el('span', 'chip ' + (r >= floor ? 'pass' : 'fail'),
+      `${label} ${r.toFixed(2)} : 1  (needs ${floor})`));
+  }
+}
+
+/**
+ * The whimsy axis, as tokens.css sets it.
+ *
+ * `plain` is what appearance.js passes to extractPalette() - Harsh alone - so
+ * the three levels do not merely decorate one sheet differently, they extract
+ * different sheets. That is the half of the axis that is invisible from a
+ * swatch and the reason these are drawn side by side.
+ */
+const WHIMSY = [
+  { name: 'Softish', plain: false, wash: 2.2, vignette: 1 },
+  { name: 'Middle',  plain: false, wash: 1,   vignette: 1 },
+  { name: 'Harsh',   plain: true,  wash: 0,   vignette: 0 },
+];
+
+const rgbOf = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
+const lightOf = c => oklch(...rgbOf(c)).L;
+
+/** What the corner of the board actually renders as, blooms and vignette included. */
+function cornerOf(vars, { wash, vignette }) {
+  let c = vars['--paper'];
+  c = mixHex(c, vars['--accent'], 0.03 * wash);   // the two blooms, then the ink
+  c = mixHex(c, vars['--leafy'], 0.04 * wash);    // shading - the same three
+  c = mixHex(c, vars['--ink'], 0.05 * vignette);  // gradients body carries
+  return c;
+}
+
+function paintMocks(roles, board) {
+  const box = $('#mocks');
+  box.textContent = '';
+  const levels = WHIMSY.map(w => ({ w, vars: build(roles, board, w.plain).vars }));
+  // Measured against Harsh, which is the level that keeps its paper white.
+  const ref = lightOf(cornerOf(levels[2].vars, levels[2].w));
+
+  for (const { w, vars } of levels) {
+    const corner = cornerOf(vars, w);
+    const drop = ref - lightOf(corner);
+    const head = el('div', 'mockhead');
+    head.append(el('b', null, w.name));
+    head.append(el('span', Math.abs(drop) > 0.02 ? 'gap' : '',
+      `paper L ${lightOf(vars['--paper']).toFixed(3)} · corner L ${lightOf(corner).toFixed(3)}`
+      + (drop > 0.001 ? `  −${drop.toFixed(3)}` : '')));
+
+    const m = el('div', 'mock');
+    m.style.backgroundColor = vars['--paper'];
+    // The same three gradients as body in app.css, at this level's dials.
+    m.style.backgroundImage = [
+      `radial-gradient(58% 44% at 18% 12%, color-mix(in srgb, ${vars['--accent']} ${3 * w.wash}%, transparent), transparent 70%)`,
+      `radial-gradient(52% 40% at 84% 78%, color-mix(in srgb, ${vars['--leafy']} ${4 * w.wash}%, transparent), transparent 72%)`,
+      `radial-gradient(120% 100% at 50% 50%, transparent 55%, color-mix(in srgb, ${vars['--ink']} ${5 * w.vignette}%, transparent))`,
+    ].join(',');
+    m.innerHTML = `
+      <div class="card" style="background:${vars['--paper-card']};border:1px solid ${vars['--rule']}">
+        <h3 style="color:${vars['--ink']}">A board of photographs</h3>
+        <p style="color:${vars['--ink-2']}">The sheet is the dominant hue at a chroma
+          somebody would have to be told about.</p>
+        <div class="rule" style="background:${vars['--leafy']}"></div>
+        <button class="btn" style="background:${vars['--accent']};color:${vars['--accent-fg']}">Rearrange all</button>
+        <span class="meta" style="color:${vars['--ink-3']};margin-left:8px">edited just now</span>
+      </div>`;
+
+    const cell = el('div');
+    cell.append(head, m);
+    box.append(cell);
+  }
+}
+
+function paintChart(smooth, smoothMass, accepted, roles) {
+  const c = $('#chart'), g = c.getContext('2d');
+  const W = c.width, H = c.height, pad = 26;
+  g.clearRect(0, 0, W, H);
+  const maxV = Math.max(...smooth) || 1, maxM = Math.max(...smoothMass) || 1;
+  const x = i => pad + (i / BINS) * (W - pad * 2);
+  const bw = (W - pad * 2) / BINS;
+
+  // The hue wheel along the foot, so a peak can be read as a colour.
+  for (let i = 0; i < BINS; i++) {
+    g.fillStyle = hex(0.62, 0.14, (i + 0.5) * 360 / BINS);
+    g.fillRect(x(i), H - 16, bw + 1, 16);
+  }
+  // Mass first, filled: what the board actually holds.
+  g.fillStyle = '#d9a44155';
+  g.beginPath(); g.moveTo(x(0), H - 16);
+  for (let i = 0; i < BINS; i++) g.lineTo(x(i) + bw / 2, H - 16 - (smoothMass[i] / maxM) * (H - 50));
+  g.lineTo(x(BINS - 1) + bw, H - 16); g.closePath(); g.fill();
+  // The vote on top, as a line: what the extractor counts.
+  g.strokeStyle = '#8fd0ff'; g.lineWidth = 3;
+  g.beginPath();
+  for (let i = 0; i < BINS; i++) {
+    const px = x(i) + bw / 2, py = H - 16 - (smooth[i] / maxV) * (H - 50);
+    i ? g.lineTo(px, py) : g.moveTo(px, py);
+  }
+  g.stroke();
+
+  g.font = '600 15px ui-sans-serif, system-ui, sans-serif';
+  g.fillStyle = '#8fd0ff'; g.fillText('vote (normalised per picture)', pad, 18);
+  g.fillStyle = '#d9a441'; g.fillText('mass (share of the board)', pad + 250, 18);
+
+  for (const p of accepted) {
+    const px = x(p.i) + bw / 2;
+    const role = p.h === roles.sheet ? 'sheet' : p.h === roles.accent ? 'ACCENT'
+      : p.h === roles.leafy ? 'leafy' : '';
+    g.strokeStyle = '#ffffff66'; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(px, 26); g.lineTo(px, H - 16); g.stroke();
+    g.fillStyle = '#fff';
+    g.fillText(`${p.h.toFixed(0)}° ${role}`, px + 5, 42);
+  }
+}
+
+const rows = (table, head, body) => {
+  table.textContent = '';
+  const thead = el('thead'), tr = el('tr');
+  for (const h of head) tr.append(el('th', null, h));
+  thead.append(tr); table.append(thead);
+  const tb = el('tbody');
+  for (const r of body) {
+    const line = el('tr', r.cls);
+    r.cells.forEach((v, i) => line.append(el('td', r.roleAt === i ? 'role' : null, v)));
+    tb.append(line);
+  }
+  table.append(tb);
+};
+
+function paintHues(accepted, roles, scale, key, board) {
+  rows($('#hues'),
+    ['hue', 'role', 'vote', 'standing', 'score', 'chroma', 'pixels'],
+    accepted.map(p => ({
+      roleAt: 1,
+      cells: [
+        p.h.toFixed(1) + '°',
+        p.h === roles.sheet ? 'sheet' : p.h === roles.accent ? 'accent'
+          : p.h === roles.leafy ? 'leafy' : '—',
+        p.share.toFixed(3),
+        p.standing.toFixed(3),
+        p.score != null ? p.score.toFixed(3) : '—',
+        p.chroma.toFixed(4),
+        p.pixels,
+      ],
+    })));
+  const note = el('caption');
+  note.style.cssText = 'caption-side:bottom;text-align:left;color:var(--faint);font-size:11px;padding-top:6px';
+  note.textContent =
+    `vividness ${board.vivid.toFixed(4)} of ${P.refVivid} → chroma × ${scale.toFixed(2)}`
+    + `   ·   key ${board.key.toFixed(3)} → paper ${key >= 0 ? '+' : ''}${key.toFixed(3)} L`;
+  $('#hues').append(note);
+}
+
+function paintPics(pictures) {
+  rows($('#pics'),
+    ['picture', 'coloured', 'trust', 'strength', 'frame chroma', 'key', 'top hue'],
+    pictures.map((p, i) => ({
+      cls: p.trust ? '' : 'muted',
+      cells: [
+        sources[i]?.name ?? '—',
+        (p.cover * 100).toFixed(1) + '%',
+        p.trust.toFixed(2),
+        p.strength.toFixed(4),
+        p.frame.toFixed(4),
+        p.key.toFixed(3),
+        p.top == null ? '—' : p.top.toFixed(0) + '°',
+      ],
+    })));
+}
+
+run();
+</script>
+</body>
+</html>

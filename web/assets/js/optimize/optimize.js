@@ -27,7 +27,7 @@
 // poster for one the browser cannot even open is a separate, lighter job
 // (firstFrame in media.js), not part of optimising.
 
-import { board, byId, swapAssets, setItemThumb } from '../state.js';
+import { board, byId, swapAssets, setItemThumb, setItemPoster } from '../state.js';
 import { addFile, getAsset } from '../storage/assets.js';
 import { formatBytes, itemHashes, extOf } from '../util.js';
 import { PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS } from '../import/formats.js';
@@ -45,9 +45,18 @@ import { toOpus, opusAvailable } from './opus.js';
  */
 export function planOptimize() {
   const seen = new Set();
-  const plan = { pictures: [], sounds: [], skipped: [], done: 0, total: 0 };
+  const plan = { pictures: [], sounds: [], skipped: [], done: 0, total: 0, posters: 0 };
 
   for (const item of board.items) {
+    // Clips with nothing to show yet. Counted rather than bucketed with the
+    // rest, because this is not a file to be rewritten - the clip is left
+    // exactly as it is and a still is cut *beside* it. It is here so the dialog
+    // knows a board of nothing but video still has work on it: without this,
+    // the one board that most needs the stills is the board the button says
+    // there is nothing to do on. See backfillPosters().
+    if (item.type === 'video' && item.asset?.hash && !(item.meta?.cover && getAsset(item.meta.cover))) {
+      plan.posters++;
+    }
     // What this item held the last time the optimiser looked at it. Matching
     // bytes are done with - see swapAssets() in state.js. Skipping them is not
     // only about the wasted minute: re-encoding a WebP or an Opus stream from
@@ -182,7 +191,56 @@ export async function runOptimize({ onProgress = () => {} } = {}) {
   // thumbnail is a thumbnail of bytes that no longer exist on this card.
   const restaged = new Set(swaps.filter(s => s.asset).map(s => s.id));
   report.thumbs = await backfillThumbs(restaged, onProgress);
+  report.posters = await backfillPosters(onProgress);
   return report;
+}
+
+/**
+ * Give every video on the board a still of its own first frame, if it has none.
+ *
+ * The same repair backfillThumbs() is, for the same reason: import makes these
+ * now, so a board built since they existed finds nothing here and pays one pass
+ * over the item list. It is here for the board saved before that - where every
+ * video card is a black rectangle on a phone, because the mobile path attaches
+ * no source until the clip is tapped and so has no frame to paint.
+ *
+ * Not keyed to the optimiser's swaps the way thumbnails are. A poster is cut
+ * from the clip's own first frame and the optimiser never rewrites a clip -
+ * video is deliberately left alone, see the module note - so the bytes a poster
+ * was cut from are the bytes the item still holds. There is nothing to restage.
+ *
+ * Only ever adds. setItemPoster() refuses an item that already carries a
+ * picture, so a cover somebody chose by hand survives this untouched.
+ */
+async function backfillPosters(onProgress) {
+  const wanted = board.items.filter(it =>
+    it.type === 'video' && it.asset?.hash && !(it.meta?.cover && getAsset(it.meta.cover)));
+  if (!wanted.length) return 0;
+
+  // Loaded here rather than at the top of the file: it reaches for `document`
+  // inside the call, but it also drags the whole renderer module in, and this
+  // pass does nothing at all on the boards that already have their posters.
+  const { videoFrame } = await import('../canvas/renderers.js');
+
+  let made = 0, n = 0;
+  for (const item of wanted) {
+    onProgress({ done: n, total: wanted.length, name: item.name || '', phase: 'posters' });
+    n++;
+    const asset = getAsset(item.asset.hash);
+    if (!asset) continue;
+    try {
+      const frame = await videoFrame(asset.blob);
+      if (!frame) continue;
+      const hash = await addFile(new File([frame.blob], 'poster.webp', { type: 'image/webp' }));
+      setItemPoster(item.id, hash);
+      made++;
+    } catch (err) {
+      // One clip that will not give up a frame is not a failed pass. It stays
+      // the card it already was.
+      console.warn('[mbrd] no poster for', item.name || item.id, err);
+    }
+  }
+  return made;
 }
 
 /**
@@ -293,18 +351,21 @@ function renameFor(name, mime) {
 
 /** "3 files, 41.2 MB smaller" - the sentence the toast says afterwards. */
 export function describeSaving(report) {
-  // Thumbnails on their own still count as work done, and saying so matters on
-  // the one board where it is the only thing that happened: an old board of
-  // already-small pictures, where the honest report used to be "nothing was
-  // worth shrinking" while two hundred thumbnails had just been cut.
-  const thumbs = report.thumbs
-    ? `${report.thumbs} thumbnail${report.thumbs === 1 ? '' : 's'} made`
-    : '';
-  if (!report.changed) return thumbs || 'Nothing on this board was worth shrinking';
+  // The derived passes on their own still count as work done, and saying so
+  // matters on the one board where it is the only thing that happened: an old
+  // board of already-small pictures, where the honest report used to be
+  // "nothing was worth shrinking" while two hundred thumbnails had just been
+  // cut. Video stills are the same case - the optimiser never touches a clip's
+  // bytes, so on a board of video they are the *whole* of what it did.
+  const derived = [
+    report.thumbs && `${report.thumbs} thumbnail${report.thumbs === 1 ? '' : 's'} made`,
+    report.posters && `${report.posters} video still${report.posters === 1 ? '' : 's'} taken`,
+  ].filter(Boolean).join(', ');
+  if (!report.changed) return derived || 'Nothing on this board was worth shrinking';
   const saved = report.before - report.after;
   return `${report.changed} file${report.changed === 1 ? '' : 's'} rewritten, ` +
     `${formatBytes(saved)} smaller` +
-    (thumbs ? `, ${thumbs}` : '') +
+    (derived ? `, ${derived}` : '') +
     (report.failed ? ` - ${report.failed} could not be read` : '');
 }
 

@@ -1075,6 +1075,29 @@ export function setItemThumb(id, hash) {
 }
 
 /**
+ * Give a video the frame it was cut from, if it has nothing to show yet.
+ *
+ * The same slot as setItemCover(), and deliberately not the same function. A
+ * poster is derived output the way a thumbnail is - the clip's own first frame,
+ * cut so a card is a picture of itself rather than a black rectangle before it
+ * is played - so it is not undoable, for exactly the reasons spelled out above
+ * setItemThumb(). Made at import (import/drop.js) and repaired by the optimiser
+ * for boards saved before posters existed.
+ *
+ * The refusal is the important half: a clip that already carries a cover keeps
+ * it, whether that came from a previous cut or from somebody choosing a picture
+ * by hand. This can add a picture to a card that has none; it can never replace
+ * one, which is what keeps a non-undoable write safe to make.
+ */
+export function setItemPoster(id, hash) {
+  const it = byId(id);
+  if (!it || !isHash(hash) || isHash(it.meta?.cover)) return;
+  it.meta = { ...it.meta, cover: hash };
+  bus.emit('item', id);
+  markDirty();
+}
+
+/**
  * Point a run of items at smaller copies of their own files, reversibly.
  *
  * One commit for the whole board rather than one per card, because that is what

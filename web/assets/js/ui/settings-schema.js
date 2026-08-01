@@ -263,10 +263,12 @@ export const SECTIONS = [
       { id: 'opt-mediafit', type: 'check', label: 'Fill photos & videos',
         get: () => board.mediaFit !== 'contain',
         set: v => setSetting('mediaFit', v ? 'cover' : 'contain') },
-      // One volume for the whole board, wired by canvas/audio.js. It used to be
-      // the last row of "View", under the paper sizes, which is nowhere.
-      { id: 'opt-volume', type: 'range', label: 'Volume', external: true,
-        min: 0, max: 100, step: 1, value: 60, outText: '60%' },
+      // Volume was the last row here and is not any more. It lives on the
+      // now-playing bar, which is the only place it is ever wanted: a volume
+      // slider is reached for while something is playing, and the bar is up
+      // exactly then. In the panel it was a control you had to go and find, two
+      // clicks from the sound it was about, and it sat there the rest of the
+      // time as a dial for a board with nothing to hear on it.
     ],
   },
   {
@@ -394,10 +396,6 @@ export const SECTIONS = [
             ? 'Switch to the Desktop arrangement'
             : 'Switch to the Mobile arrangement') },
       ] },
-      { id: 'board-mode-hint', type: 'hint',
-        text: ctx => (ctx.mobile
-          ? `Mobile is ${board.settings.mobileColumns} spaces wide, starts six above 0,0, and grows with its contents.`
-          : 'Desktop is the free two-dimensional arrangement.') },
       // The refresh gesture this app takes away: pull-to-refresh is off because
       // every downward swipe on the board is a pan, and on a home screen there
       // is no address bar either. It saves first - which is why the label says

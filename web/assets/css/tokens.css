@@ -34,27 +34,44 @@
    ========================================================= */
 
 :root {
-  /* ---- paper ---- */
-  --paper:      #fbf8f1;   /* the sheet */
-  --paper-2:    #f4efe4;   /* insets, wells */
-  --paper-3:    #ebe3d4;   /* pressed, active */
-  --paper-card: #fffdf8;   /* items sit slightly brighter than the board */
+  /* ---- paper ----
+     The tint here is a whisper and is meant to be: OKLCh chroma 0.007 on the
+     sheet, rising to 0.015 by the time it is a pressed well. What the sheet
+     carries is warmth, not colour - a sheet dyed far enough into its hue to be
+     named stops reading as paper and starts reading as coloured card, and it
+     drags every photograph pinned to it towards the same cast. The colour is
+     spent on the pigments below instead, where it is what somebody is looking
+     at rather than what they are looking through.
+
+     Bright as well as neutral, and the pairing is the whole of it: taking
+     chroma out while leaving the sheet where it was made the paper look *more*
+     tinted, not less, because at equal chroma a darker sheet shows its hue
+     more. Less colour, more light. Either half alone is the wrong answer. */
+  --paper:      #faf8f3;   /* the sheet */
+  --paper-2:    #f1efe8;   /* insets, wells */
+  --paper-3:    #e6e3d8;   /* pressed, active */
+  --paper-card: #fdfdfa;   /* items sit slightly brighter than the board */
 
   /* ---- ink ---- */
-  --ink:        #372a1d;
-  --ink-2:      #6f5b45;   /* secondary text */
-  --ink-3:      #9a866c;   /* faint */
-  --rule:       #e6dcc8;
-  --rule-2:     #cdbfa2;
+  --ink:        #31261b;
+  --ink-2:      #615141;   /* secondary text */
+  --ink-3:      #968371;   /* faint */
+  --rule:       #dad7cd;
+  --rule-2:     #bab6a7;
 
-  /* ---- pigment ---- */
-  --accent:      #c25c2b;  /* terracotta */
-  --accent-warm: #e0983f;  /* amber */
-  --accent-deep: #8d3c17;  /* burnt sienna, for pressed states */
+  /* ---- pigment ----
+     This is where the palette lives now. Chroma 0.185 on the accent against the
+     0.115 it used to carry - far enough that for most hues hex() is handing
+     back what the sRGB gamut allows rather than what was asked for, which is
+     the intended failure: at this end of the dial the answer to "how much
+     colour" is "as much as the screen has". */
+  --accent:      #b94900;  /* terracotta */
+  --accent-warm: #e89100;  /* amber */
+  --accent-deep: #7f2f00;  /* burnt sienna, for pressed states */
   /* What sits on top of the accent. Mixed up out of this palette's own sheet
      rather than fixed, so it is never a warm cream on a teal button. */
   --accent-fg:   color-mix(in srgb, var(--paper) 45%, #fff);
-  --leafy:       #75855f;  /* olive - secondary ornament */
+  --leafy:       #66842b;  /* olive - secondary ornament */
   /* Kept unmistakably red - a destructive action should not have to be
      decoded - but pulled towards this palette's ink so it belongs to the board
      it is printed on. */
@@ -274,8 +291,46 @@
 
   /* ---- ornament ----
      Multiplier on the decorative washes in the paper. 0 flattens them without
-     app.css needing a second background declaration. */
+     app.css needing a second background declaration.
+
+     Two dials rather than one, because the three layers `body` lays over the
+     sheet are not the same kind of thing. Two are colour - the palette's accent
+     and a leafy one, ornament in the literal sense - and the third is a vignette in
+     ink, which is not ornament but shading. Turning ornament up is what the
+     soft end of the whimsy axis is for; turning the shading up with it is what
+     made that end read as a dim board rather than a decorated one. So --wash
+     carries the blooms, --vignette carries the ink, and the axis can now ask
+     for more of one without the other. Harsh sets both to 0: a spec sheet has
+     neither.
+
+     --grain is the third and is stock rather than ornament: the tooth of the
+     300gsm tile app.css multiplies over the sheet. It is a separate dial for
+     the same reason the other two are separate - the blooms are pigment laid
+     *on* the paper and the grain is the paper - but it shares their shape, a
+     bare multiplier the axis can take to 0 without app.css needing a second
+     declaration. Multiply, not soft-light: both soft-light and overlay are
+     no-ops where the backdrop is white, and at 98% lightness this sheet gets
+     about four percent of their nominal effect. See the body rule in app.css. */
   --wash: 1;
+  /* 0.4, down from 1. Splitting the vignette out of --wash fixed the soft end
+     being *hardest* hit by the shading; it left the shading itself where it
+     was, and on a board whose palette came from photographs that turned out to
+     be too much on its own.
+
+     The reason it shows up on extracted boards and not on the presets: a preset
+     sheet is the same lightness at every whimsy level, so the vignette is all
+     the axis changes. An extracted sheet is not - ui/appearance.js passes
+     `plain` only at Harsh, so Harsh keeps a near-white sheet while the other
+     two take the key shift and can fall to 0.895. The two effects then point
+     the same way and compound. Measured on a board of dim photographs: the
+     corner sat 0.144 L below Harsh's, of which the sheet was 0.066, the blooms
+     0.052 and this 0.028. The axis was reading as a brightness control.
+
+     0.4 rather than 0 because the shading is doing a real job - it is what
+     stops a wide window reading as a flat slab - and it is the one layer here
+     that is not the palette's own colour, so it costs nothing in hue. */
+  --vignette: 0.4;
+  --grain: 1;
 
   /* ---- motion ---- */
   --dur-fast: 0.13s;
@@ -314,20 +369,20 @@
    and if it is ever seen it should be the default look rather than white.
    ========================================================= */
 
-@property --paper      { syntax: "<color>"; inherits: true; initial-value: #fbf8f1; }
-@property --paper-2    { syntax: "<color>"; inherits: true; initial-value: #f4efe4; }
-@property --paper-3    { syntax: "<color>"; inherits: true; initial-value: #ebe3d4; }
-@property --paper-card { syntax: "<color>"; inherits: true; initial-value: #fffdf8; }
-@property --ink        { syntax: "<color>"; inherits: true; initial-value: #372a1d; }
-@property --ink-2      { syntax: "<color>"; inherits: true; initial-value: #6f5b45; }
-@property --ink-3      { syntax: "<color>"; inherits: true; initial-value: #9a866c; }
-@property --rule       { syntax: "<color>"; inherits: true; initial-value: #e6dcc8; }
-@property --rule-2     { syntax: "<color>"; inherits: true; initial-value: #cdbfa2; }
-@property --accent     { syntax: "<color>"; inherits: true; initial-value: #c25c2b; }
-@property --accent-warm{ syntax: "<color>"; inherits: true; initial-value: #e0983f; }
-@property --accent-deep{ syntax: "<color>"; inherits: true; initial-value: #8d3c17; }
-@property --accent-fg  { syntax: "<color>"; inherits: true; initial-value: #fdfcf9; }
-@property --leafy      { syntax: "<color>"; inherits: true; initial-value: #75855f; }
+@property --paper      { syntax: "<color>"; inherits: true; initial-value: #faf8f3; }
+@property --paper-2    { syntax: "<color>"; inherits: true; initial-value: #f1efe8; }
+@property --paper-3    { syntax: "<color>"; inherits: true; initial-value: #e6e3d8; }
+@property --paper-card { syntax: "<color>"; inherits: true; initial-value: #fdfdfa; }
+@property --ink        { syntax: "<color>"; inherits: true; initial-value: #31261b; }
+@property --ink-2      { syntax: "<color>"; inherits: true; initial-value: #615141; }
+@property --ink-3      { syntax: "<color>"; inherits: true; initial-value: #968371; }
+@property --rule       { syntax: "<color>"; inherits: true; initial-value: #dad7cd; }
+@property --rule-2     { syntax: "<color>"; inherits: true; initial-value: #bab6a7; }
+@property --accent     { syntax: "<color>"; inherits: true; initial-value: #b94900; }
+@property --accent-warm{ syntax: "<color>"; inherits: true; initial-value: #e89100; }
+@property --accent-deep{ syntax: "<color>"; inherits: true; initial-value: #7f2f00; }
+@property --accent-fg  { syntax: "<color>"; inherits: true; initial-value: #fdfcfa; }
+@property --leafy      { syntax: "<color>"; inherits: true; initial-value: #66842b; }
 
 /* Not on the first paint: an element has no before-change style the first time
    it is rendered, so nothing fades in from the initial values above - the board
@@ -401,68 +456,108 @@
    These set pigments only, never shape, type or motion - a palette is a change
    of colour, not of personality. Personality is the axis below.
 
-   The paper carries the palette as much as the accent does. Four sheets that
-   are all within a percent of white, distinguished only by what is printed on
-   them, is not four palettes - it is one palette with four inks. So each sheet
-   below is tinted well into its own hue, and its wells and pressed states are
-   ramped from that rather than from a shared grey.
+   These used to be told apart by their paper: each sheet was dyed well into its
+   own hue, on the reasoning that four near-white sheets are one palette with
+   four inks. Tried, lived with, and wrong in practice. A sheet with that much
+   pigment in it is not neutral ground for photographs - it tints everything
+   pinned to it, and four boards that each cast their pictures a different way
+   is a worse outcome than four boards that agree about white. It also spent the
+   difference in the one place a palette cannot afford it: with the sheet doing
+   the distinguishing, the accents were free to stay timid, and they did.
+
+   So the paper is nearly neutral in all four now - chroma 0.003 to 0.007 on the
+   sheet, and bright with it - and the difference moved to the pigments, which
+   are carried much harder than they were: chroma 0.185 on the accent where the
+   old set averaged 0.118. For most of these hues that is past what sRGB holds
+   at that lightness, so hex() gives chroma back until the colour fits and what
+   lands is the wall itself. That is the direction, not a defect - a palette
+   whose accent is the most saturated version of its hue the screen can show.
+
+     Papyrus    warm. Terracotta run all the way up, on a cream barely cream
+                enough to name.
+     Absinthe   the acid one. Olive at the gamut edge, coolest sheet here.
+     Tea rose   the loudest, which it never used to be: a crimson rather than a
+                dusty rose, and the lightest sheet of the four under it.
+     Orca       the deep one. Ink at OKLCh L 0.22 - 16:1, printing rather than
+                writing - under a teal that clips downwards where Absinthe's
+                olive clips up.
+
+   Ink lightness spans 0.22 to 0.30 across the four, which is the second axis:
+   with every accent pinned at the gamut wall, how dark the ink is under it is
+   what stops two of them reading alike. Hue is deliberately not the axis - it
+   was never the one they were short of.
+
+   Every value below is generated in OKLCh and checked: --ink clears 7:1 on its
+   own sheet, --ink-2 clears 4.5:1, and --accent clears 4.5:1 against the label
+   that --accent-fg mixes for it. Change one by hand and check it the same way -
+   ui/pigments.js exports contrast() and hex(), and tools/preset-oklch.mjs
+   prints what these currently span.
    ========================================================= */
 
 :root[data-palette="absinthe"] {
-  --paper:      #f3f7e0;
-  --paper-2:    #e9efcf;
-  --paper-3:    #dce5ba;
-  --paper-card: #fbfcf0;
-  --ink:        #2c3324;
-  --ink-2:      #5a6550;
-  --ink-3:      #89947c;
-  --rule:       #c8d0aa;
-  --rule-2:     #a3ad82;
-  --accent:      #7d8f3c;
-  --accent-warm: #b3ae4a;
-  --accent-deep: #56652a;
-  --leafy:       #a4772f;
+  /* The acid one. Both the olive and its amber run out of blue entirely at this
+     chroma - #687b00 and #b5ad00 have a zero channel - which is what an olive
+     asked for more colour than sRGB has at that lightness looks like. */
+  --paper:      #f8f9f4;
+  --paper-2:    #eff0e8;
+  --paper-3:    #e2e4d9;
+  --paper-card: #fdfdfb;
+  --ink:        #20271a;
+  --ink-2:      #4b5441;
+  --ink-3:      #7b8670;
+  --rule:       #d6d8ce;
+  --rule-2:     #b5b8a9;
+  --accent:      #687b00;
+  --accent-warm: #b5ad00;
+  --accent-deep: #455300;
+  --leafy:       #9b6f24;
 }
 
 :root[data-palette="tearose"] {
-  /* Rosier than it was, and the move is a hue rather than more colour: the
-     sheet sat at h≈40 in OKLCH, which is apricot, while the accent was already
-     down at 27 - so the palette read as peach with a red flower on it rather
-     than as one rose. Everything is at 18-22 now, with a quarter more chroma on
-     the papers to stop the shift reading as grey. Every lightness is untouched,
-     which is what keeps the contrast ratios exactly where they were. */
-  --paper:      #ffedec;
-  --paper-2:    #ffdcd9;
-  --paper-3:    #fac8c5;
-  --paper-card: #fff8f7;
-  --ink:        #3c2626;
-  --ink-2:      #775454;
-  --ink-3:      #a8807f;
-  --rule:       #efbdba;
-  --rule-2:     #d49693;
-  --accent:      #b95158;
-  --accent-warm: #df8a84;
-  --accent-deep: #862f37;
-  /* The one thing that does not move. It is the counterweight - a leaf against
-     the flower - and rosying it would leave the palette with nothing to be
-     rosy against. */
-  --leafy:       #7c8466;
+  /* No longer the soft one. At this chroma the rose becomes a crimson, which is
+     the biggest change of character in the set - and the sheet under it is the
+     lightest of the four, so the palette is now a loud colour on very pale
+     paper rather than a quiet colour on pink paper. The hues are the ones the
+     rosying pass settled on, h≈18-22 throughout; only lightness and chroma
+     moved. */
+  --paper:      #fdf7f6;
+  --paper-2:    #f6edeb;
+  --paper-3:    #ecdfdd;
+  --paper-card: #fffcfc;
+  --ink:        #3b2a2a;
+  --ink-2:      #6d5555;
+  --ink-3:      #a38686;
+  --rule:       #e0d4d2;
+  --rule-2:     #c3b1af;
+  --accent:      #cd1f3f;
+  --accent-warm: #ff7873;
+  --accent-deep: #900225;
+  /* The counterweight - a leaf against the flower - and the one thing that is
+     not rosy, which is what the rest of the palette is rosy against. It takes
+     the same chroma as everything else here, so it is an olive now rather than
+     a sage. */
+  --leafy:       #708120;
 }
 
 :root[data-palette="orca"] {
-  --paper:      #e9f3f0;
-  --paper-2:    #dbeae6;
-  --paper-3:    #c8dcd7;
-  --paper-card: #f7fcfa;
-  --ink:        #1b2c2b;
-  --ink-2:      #4a615f;
-  --ink-3:      #7e9391;
-  --rule:       #bcd2cd;
-  --rule-2:     #92aeaa;
-  --accent:      #1f7a72;
-  --accent-warm: #cf9a3a;
-  --accent-deep: #14544f;
-  --leafy:       #8a6f3c;
+  /* The deep one. Ink at L 0.22 for 16:1 - the darkest print in the set - and a
+     teal that clips the gamut downwards where Absinthe's olive clips up, which
+     is what keeps two palettes both standing at the wall from looking alike.
+     Its --accent-warm is the one pigment here that is not the accent's own hue:
+     a gold 107 degrees away, which is this palette's whole idea. */
+  --paper:      #f4faf9;
+  --paper-2:    #e8f1f0;
+  --paper-3:    #d8e6e3;
+  --paper-card: #fbfdfd;
+  --ink:        #0c201f;
+  --ink-2:      #314c4b;
+  --ink-3:      #607e7c;
+  --rule:       #cddad8;
+  --rule-2:     #a8bbb7;
+  --accent:      #008379;
+  --accent-warm: #d99a12;
+  --accent-deep: #005852;
+  --leafy:       #947229;
 }
 
 
@@ -511,7 +606,26 @@
   --ogee:      30px;
   --card-rule-gap: 8px;
 
-  --wash: 2.2;
+  /* Ornament up, shading left alone. This used to be one dial and 2.2 took the
+     ink vignette to 11% with the blooms, which is what made the soft end read
+     as a dimmer board rather than a more decorated one - the darkest thing on
+     the sheet was turned up hardest, and at the edges of a wide window that is
+     most of what you see. --vignette stays at whatever the middle sets by
+     saying nothing, which is the same trick the grid below uses.
+
+     1.4, down from 2.2, and the same finding that took --vignette to 0.4 is
+     why. The blooms are the palette's own accent and leafy, which are mid
+     lightness pigments - so "more ornament" on a light sheet is also "darker",
+     however carefully the ink is held back. At 2.2 they cost this end 0.052 L
+     against Harsh's corner, twice what the vignette did. 1.4 keeps the soft end
+     visibly the decorated one without it being the dim one. */
+  --wash: 1.4;
+  /* Heavier stock at the scrapbook end, but nowhere near --wash's 2.2: grain
+     multiplies, so turning it up darkens the sheet as well as roughening it,
+     and past about here it stops reading as tooth and starts reading as a grey
+     cast. app.css takes 0.8 of this, so 1.25 is the ceiling - the tile at its
+     full baked strength - and there is deliberately no headroom above it. */
+  --grain: 1.25;
 
   /* Ghost cards at this end are still cards - the candidates layered on in
      app.css change the edge, the mount or the stock, never the type. The ink is
@@ -724,8 +838,12 @@
 
   /* No blooms and no vignette: the ornament in the paper is Middle's, not this
      end's. Which is the whole reason --paper above has to be a colour that can
-     stand up flat - with this at 0 there is nothing else left in the sheet. */
+     stand up flat - with these at 0 there is nothing else left in the sheet.
+     No grain either, and for the same reason the paper is a colour that stands
+     up flat: this end is printed on office paper, not on card. */
   --wash: 0;
+  --vignette: 0;
+  --grain: 0;
   /* A fine lattice, but a *visible* one. At 1px and 0.11 these were painted
      and not seen: a 1px radius is two pixels across before antialiasing eats
      the edges, and an eighth of an alpha on near-white paper finished the job.

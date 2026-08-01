@@ -14,7 +14,7 @@ import {
   select, deselect, clearSelection, selectAll, duplicateItems,
   copyItems, cutItems, pasteItems, clipboardSize, clipboardHasOurs, clipboardBounds,
   stuckTo, stuckFollowers, stuckPlacement, restick, STICK_MIN, setItemText, renameItem, NOTE_MAX,
-  setSetting, setItemFit, snapshotGeom, applyGeom, commitGeom,
+  setSetting, setItemFit, setItemCover, setItemPoster, snapshotGeom, applyGeom, commitGeom,
   setBoardMode, mobileBoardWidth, mobileBoardTop, mobileBoardBottom,
   recheckBoardGeometry, baseStep, placeMobileItems,
   raiseSelection, lowerSelection, visualStackOrder, selectionHasStackOverlap,
@@ -28,6 +28,7 @@ const fresh = (items = []) => loadBoard({ title: 'T', items });
 
 const note = (props = {}) => ({ type: 'note', w: 100, h: 100, meta: { text: 'n' }, ...props });
 const photo = (props = {}) => ({ type: 'image', w: 200, h: 200, ...props });
+const clip = (props = {}) => ({ type: 'video', w: 288, h: 162, ...props });
 
 beforeEach(() => {
   setBoardMode('desktop');
@@ -51,6 +52,36 @@ test('board names are short portable filename stems wherever they enter state', 
   loadBoard({ title: 'A far too long loaded board name that keeps going', items: [] });
   assert.equal(board.title, 'A far too long loaded board name',
     'opened boards obey the same limit as names typed in the UI');
+});
+
+test('a video still fills an empty picture slot and never replaces a chosen one', () => {
+  const cut = hash('poster');
+  const chosen = hash('chosen');
+
+  // The case the whole thing exists for: a clip with nothing to show, which on
+  // a phone is a black rectangle until it is tapped.
+  const [a] = addItems([clip()]);
+  setItemPoster(a.id, cut);
+  assert.equal(byId(a.id).meta.cover, cut);
+
+  // Derived output, so no history entry of its own - the same bargain
+  // setItemThumb makes. If this were undoable, the optimiser's stills pass
+  // would spend one slot per clip on a board of video and throw the session's
+  // real undo away. One undo goes straight past it to the add.
+  assert.ok(undo());
+  assert.equal(board.items.length, 0, 'the still was not an entry between here and the add');
+
+  // A picture somebody chose outranks a frame cut from the clip, and this is
+  // what makes the non-undoable write safe: it can only ever add.
+  const [b] = addItems([clip()]);
+  setItemCover(b.id, chosen);
+  setItemPoster(b.id, cut);
+  assert.equal(byId(b.id).meta.cover, chosen);
+
+  // Undoing the *choice* leaves the slot empty rather than falling back to a
+  // still that was never stored.
+  assert.ok(undo());
+  assert.equal(byId(b.id).meta?.cover, undefined);
 });
 
 // ---------------------------------------------------------------------------

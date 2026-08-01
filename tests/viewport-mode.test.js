@@ -8,6 +8,7 @@ import {
 import { axesVisible } from '../web/assets/js/canvas/grid.js';
 import { sheetBox, mastShift } from '../web/assets/js/canvas/mobile-frame.js';
 import { webVisible } from '../web/assets/js/canvas/web.js';
+import { setSetting } from '../web/assets/js/state.js';
 import {
   createMobileSliderFocus,
   mobileLayoutDetected,
@@ -322,7 +323,10 @@ test('Mobile viewport follows a changing content bottom', () => {
 });
 
 test('Mobile suppresses Desktop spatial guides without changing their settings', () => {
+  // Both have to be asked for - the web is off by default - or the assertions
+  // below would pass on a board that never wanted them in the first place.
   const settings = { axes: true };
+  setSetting('web', true);
   assert.equal(axesVisible(settings, 'mobile'), false);
   assert.equal(webVisible('mobile'), false);
   assert.equal(settings.axes, true);

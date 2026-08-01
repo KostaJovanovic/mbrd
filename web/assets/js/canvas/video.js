@@ -22,7 +22,7 @@
 // spent is a pixel of the thing you pinned up. So: a plain progress line, and
 // a bar that stays out of the way until the pointer is on the card.
 
-import { registerPlayer, PLAY_ICON, PAUSE_ICON, clock } from './audio.js';
+import { registerPlayer, bindScrub, PLAY_ICON, PAUSE_ICON, clock } from './audio.js';
 import { clamp, toast } from '../util.js';
 
 const SOUND_ICON =
@@ -171,19 +171,11 @@ export function buildVideoPlayer(item, video) {
     paint();
   };
 
-  // Captured, so the scrub survives the pointer leaving the track - which on a
-  // bar this thin is most of the gesture. The capture is also what keeps
-  // canvas/input.js out of it: without it, a drag that wandered off the line
-  // would be picked up as a drag of the card itself, and seeking a clip would
-  // move it across the board.
-  track.addEventListener('pointerdown', e => {
-    track.setPointerCapture(e.pointerId);
-    seekTo(e.clientX);
-    e.stopPropagation();
-  });
-  track.addEventListener('pointermove', e => {
-    if (track.hasPointerCapture(e.pointerId)) seekTo(e.clientX);
-  });
+  // The shared gesture - see bindScrub() in audio.js for why it is captured.
+  // It lived here first and the audio waveform went without it, which is how
+  // one of the two seek controls on this board came to be draggable and the
+  // other only clickable.
+  bindScrub(track, seekTo);
 
   /** Seek by `secs`, or to an absolute point when `to` is given. */
   const seekBy = (secs, to = null) => {
@@ -210,7 +202,9 @@ export function buildVideoPlayer(item, video) {
     e.stopPropagation();
   });
 
-  registerPlayer(video);
+  // The item goes with it so the exclusive-playback rule can name what is
+  // playing; audio.js filters on type, so a video never raises the bar.
+  registerPlayer(video, item);
   paint();
   return player;
 }

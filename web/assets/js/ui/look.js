@@ -36,7 +36,7 @@ export const TOKENS = new Set([
   '--font-body', '--font-display', '--font-mono', '--font-sans',
   '--font-serif',
   '--ghost-edge', '--ghost-ink', '--ghost-ink-2', '--ghost-weight',
-  '--grid-alpha',
+  '--grain', '--grid-alpha',
   '--grid-axis', '--grid-dot', '--grid-major', '--grid-minor',
   '--grow-hover', '--hairline', '--highlight', '--highlight-ink',
   '--ink', '--ink-2', '--ink-3',
@@ -49,7 +49,7 @@ export const TOKENS = new Set([
   '--shadow-1', '--shadow-2', '--sheet-fill', '--sheet-grip', '--sheet-line',
   '--sidebar-w', '--stock', '--t-body',
   '--t-display', '--t-small', '--t-tiny', '--t-title', '--tilt-drag',
-  '--tilt-max', '--wash', '--web-line', '--web-weight',
+  '--tilt-max', '--vignette', '--wash', '--web-line', '--web-weight',
 ]);
 
 /**

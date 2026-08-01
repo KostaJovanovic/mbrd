@@ -12,6 +12,16 @@ import { planOptimize, runOptimize, describeSaving } from './optimize.js';
 import { opusAvailable, OPUS_KBPS } from './opus.js';
 
 /**
+ * What the waiting strip calls each pass - what it is doing, and what one item
+ * of it is called. Anything not listed is the main encoding pass.
+ */
+const PHASE = {
+  thumbs: ['Making thumbnails', 'Thumbnail'],
+  posters: ['Taking video stills', 'Video still'],
+};
+const MAIN = ['Optimizing', 'Optimizing'];
+
+/**
  * Ask, run, and say what happened.
  *
  * The dialog is built out of the plan rather than out of a fixed sentence,
@@ -27,7 +37,7 @@ export async function optimizeBoard() {
     [plan.sounds.length, 'sound file'],
   ].filter(([n]) => n);
 
-  if (!counts.length) {
+  if (!counts.length && !plan.posters) {
     // Two different nothings, and telling them apart is the difference between
     // "this is done" and "this button does not work".
     toast(plan.done
@@ -36,10 +46,14 @@ export async function optimizeBoard() {
     return;
   }
 
-  const lines = [
-    counts.map(([n, word]) => `${n} ${word}${n === 1 ? '' : 's'}`).join(', ') +
-      ` - ${formatBytes(plan.total)} in total.`,
-  ];
+  const lines = counts.length
+    ? [counts.map(([n, word]) => `${n} ${word}${n === 1 ? '' : 's'}`).join(', ') +
+        ` - ${formatBytes(plan.total)} in total.`]
+    // A board with nothing to shrink but clips to take stills from. Said first
+    // and on its own, because otherwise the dialog opens by listing zero files
+    // and then asks to be run anyway.
+    : [`Nothing on this board is worth shrinking, but ${plan.posters} ` +
+       `video${plan.posters === 1 ? '' : 's'} ${plan.posters === 1 ? 'has' : 'have'} no still yet.`];
   if (plan.pictures.length) lines.push('Pictures are capped at 1200px and rewritten as WebP.');
   if (plan.sounds.length) {
     lines.push(opusAvailable()
@@ -50,16 +64,29 @@ export async function optimizeBoard() {
   // waking for a moodboard (see optimize.js). Say how many are being left alone,
   // so a count smaller than the board holds does not read as a bug.
   const skippedVideos = plan.skipped.filter(e => e.kind === 'video').length;
-  if (skippedVideos) {
+  if (skippedVideos && counts.length) {
     lines.push(`${skippedVideos} video${skippedVideos === 1 ? ' is' : 's are'} left as ` +
       `${skippedVideos === 1 ? 'it is' : 'they are'} - clips are not optimised.`);
+  }
+  // The one thing done *to* a video, and worth saying plainly because it is why
+  // a phone shows a black box where a clip should be: the card has no picture
+  // until the clip is played, and on a touch device it is not played until it
+  // is tapped.
+  if (plan.posters) {
+    lines.push(`${plan.posters} clip${plan.posters === 1 ? '' : 's'} will have a still taken ` +
+      'from the first frame, so the card shows something before it is played.');
   }
   // Said out loud rather than left as a smaller number than expected: a board
   // half of which has already been done should not look like half a board.
   if (plan.done) {
     lines.push(`${plan.done} more ${plan.done === 1 ? 'file has' : 'files have'} been optimized already and will be left alone.`);
   }
-  lines.push('The originals stay here until you discard them, and one undo puts them back.');
+  // Only when something is actually being rewritten. A stills-only pass has no
+  // originals to keep and nothing to take back - it adds a picture beside a
+  // clip and changes no file on the board.
+  if (counts.length) {
+    lines.push('The originals stay here until you discard them, and one undo puts them back.');
+  }
 
   const answer = await ask({
     title: 'Optimize this board',
@@ -79,12 +106,13 @@ export async function optimizeBoard() {
     report = await runOptimize({
       // Named as well as counted: the count says how long is left, the filename
       // says which one is taking it, and the phase says which pass it is on -
-      // the thumbnail sweep at the end is its own pass over its own list, so
-      // without that the bar would appear to run twice for no stated reason.
+      // the two sweeps at the end are each their own pass over their own list,
+      // so without that the bar would appear to run three times for no stated
+      // reason.
       onProgress: ({ done, total, name, phase }) => {
-        job.label(phase === 'thumbs' ? 'Making thumbnails' : 'Optimizing');
+        const [bare, one] = PHASE[phase] || MAIN;
         job.step(done, total);
-        if (name) job.label(`${phase === 'thumbs' ? 'Thumbnail' : 'Optimizing'} - ${name}`);
+        job.label(name ? `${one} - ${name}` : bare);
       },
     });
   } catch (err) {

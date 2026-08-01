@@ -43,7 +43,7 @@ reason: it is struct reading, and only `canvas/model.js` turns its output into
 pixels. `web-graph.js` is there for the same reason — the thread graph and its
 governor are arithmetic over points, and only `canvas/web.js` draws them.
 Six more sit down there for a different reason: they are what `state.js` was
-split onto, and they took it from 3202 lines to 1806. `board-store.js` holds the
+split onto, and they took nearly half of it with them. `board-store.js` holds the
 `bus`, the `selection` and the dirty flag; `board-model.js` the board's shape,
 its defaults and the `byId` index; `history.js` the undo/redo engine;
 `sticky.js` which note is stuck to what; `layout.js` the Mobile pack, both
@@ -66,10 +66,11 @@ files instead of quietly at runtime.
 ### Nothing is a dependency
 
 `storage/zip.js` inflates its own entries, `mesh.js` reads STL/OBJ/GLB by hand,
-`import/artwork.js` walks ID3v2 / MP4 atoms / FLAC blocks itself, and
-`ui/pigments.js` does its own OKLCh. That is the repo's one real property: zero
-runtime dependencies. A new format is a few hundred lines of header reading in
-the same style, not an npm package.
+`import/artwork.js` walks ID3v2 / MP4 atoms / FLAC blocks itself,
+`optimize/opus.js` wraps WebCodecs' bare Opus packets in an Ogg container it
+writes by hand, and `ui/pigments.js` does its own OKLCh. That is the repo's one
+real property: zero runtime dependencies. A new format is a few hundred lines of
+header reading in the same style, not an npm package.
 
 ### state.js is the only door
 
@@ -96,10 +97,33 @@ it only applies to one layout. Three tabs (Board / Look / System), always openin
 on Board; `advanced: true` sinks a control into its section's fold; `when` is
 *absence*, not disabling. `external: true` means another module owns the
 behaviour and the builder only makes the element under the id that module looks
-up — `ui/appearance.js` (whimsy, palette, the three token hosts),
-`canvas/audio.js` (volume) and `ui/sidebar.js` (the board name) all predate the
-builder and are handed their elements. The panel is built **once**, before those
-modules run, and repainted; it is never rebuilt, because they hold their nodes.
+up — `ui/appearance.js` (whimsy, palette, the three token hosts) and
+`ui/sidebar.js` (the board name) both predate the builder and are handed their
+elements. The panel is built **once**, before those modules run, and repainted;
+it is never rebuilt, because they hold their nodes.
+
+Not all chrome is in the panel. `ui/nowplaying.js` is the bar along the foot
+that comes up when a clip starts: the transport again, pinned to the glass, so
+the thing making a noise can be stopped by whoever is listening rather than by
+whoever can find its card. Volume is a row it took *out* of the sidebar — a
+volume dial is reached for while something is playing, which is exactly when
+the bar is up. It keeps playing off-screen because `sounding()` in
+`canvas/items.js` exempts the one card making a noise from the cull; removing a
+media element from the document pauses it, so before that a pan stopped the
+music.
+
+`ui/search.js` is a palette over the canvas
+rather than a field in the sidebar — a search you have to open a drawer to reach
+is one you stop using — and it exists because an infinite canvas can lose a
+thing that is saved and intact, four screens away at last week's zoom.
+`ui/idle.js` fades the corner controls after five seconds of nothing and brings
+them back on any sign of life; waking too eagerly costs nothing, being invisible
+when somebody reaches for a control costs everything. `canvas/mobile-frame.js`
+positions the Mobile sheet and masthead in screen space itself, because doing it
+the old way — custom properties written onto `#viewport` every frame —
+invalidated the computed style of all of `#world` beneath it. Inherited custom
+properties on an ancestor of `#world` are a whole-board cost; keep new ones off
+it.
 
 ### Quality is not board state
 
@@ -154,6 +178,16 @@ screen) or discarded. Which items are near the screen is answered by
 items) per view change, redone every frame of a zoom. Assume an item's node may
 not be in the DOM; `ensureMounted(id)` is the way in.
 
+Culling bounds how many nodes exist; two more modules bound what each one costs,
+and both are memory ceilings rather than polish. `canvas/display.js` mounts a
+copy capped at ~1200px on the long edge instead of the stored original — a
+decoded bitmap is `naturalWidth × naturalHeight × 4` however small the card is
+drawn, so one phone photograph is ~96 MB and a board framed by zoom-to-fit is
+what kills the tab on iOS Safari. The original is untouched and is still what
+Export writes. `canvas/stills.js` is the same idea for time: past a zoom
+threshold each animated GIF's *current* frame is painted into a static twin and
+the two are swapped, because a browser gives no way to pause an `<img>`.
+
 `canvas/web.js` draws the threads between item centres, and its rule is that no
 two may cross: a Euclidean minimum spanning tree first (guarantees one connected
 piece, and an MST provably contains no crossing), then every other thread that
@@ -203,17 +237,25 @@ hash — and it is crash recovery only. The durable artefact is always the `.mbr
 the user saved.
 
 `optimize/` is loaded by dynamic `import()` and never runs on its own — it is a
-button. Originals stay under `meta.was` so the undo is real.
+button. Nothing in it fires on import, on save or on a timer; it says what it is
+about to do first, and originals stay under `meta.was` so the undo is real. It
+touches only what it can make meaningfully smaller (`WORTH_IT` in
+`optimize.js`), which is why it is allowed to be lossy at all. The browser does
+the work: pictures through `picture.js`, sound through `opus.js`. Video is
+deliberately left alone — a wasm encoder pins a core for the length of the clip
+— so `optimize/media.js` is down to one job, pulling a first frame out of a clip
+no browser here can decode (H.265 from a phone), and that is the one path that
+needs ffmpeg.
 
 `import/budget.js` is the importer's memory boundary and the only one: the
 500-file cap in `import/drop.js` is a UX guard, not a limit on bytes, since one
 50 KB PNG can claim 30000×30000 and cost gigabytes at `createImageBitmap()`.
 New import paths take `IMPORT_LIMITS` and a byte budget, not a file count.
 
-### Two things that reach outside
+### Three things that reach outside
 
 Everything else in mbrd renders the same with the network off, and opening a
-board tells nobody. Two modules are the exceptions and both are built so the
+board tells nobody. Three modules are the exceptions and each is built so the
 exception is a choice:
 
 `canvas/embed.js` is the only code that talks to a third party — a link card
@@ -223,6 +265,14 @@ a dropped `.woff2` into the type menus and inside the `.mbrd` as an asset rather
 than fetching a face, so a board keeps its look when it is sent to someone else.
 The family name there is *rebuilt* from the filename, never taken — it lands
 inside a CSS declaration.
+
+`optimize/media.js` is the third and the only one that fetches: the ffmpeg core
+lives at jsdelivr and is pulled on first use, since thirty megabytes is not
+something to ship in the shell. Nothing about a board is sent — only the request
+for the core — and it is the one thing in `optimize/` deliberately absent from
+`SHELL` in `web/sw.js`, so video posters are the single feature that degrades
+offline until the core has been fetched once. Everything there fails to "no
+poster", never to a broken card, and the dialog says which case it is in.
 
 ### Look
 

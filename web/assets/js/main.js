@@ -24,6 +24,7 @@ import {
   Viewport, MIN_ZOOM, MAX_ZOOM, BASE_ZOOM, zoomMs, travelMs, mobilePerfFlags,
 } from './canvas/viewport.js';
 import { paintGrid, paintGridOnView, resetGridInk } from './canvas/grid.js';
+import { initGrain, paintGrain, resetGrain } from './canvas/grain.js';
 import { initPaper, paintPaper } from './canvas/paper.js';
 import { initMobileFrame, paintMobileFrame } from './canvas/mobile-frame.js';
 import { initItems, resetItems, cullProfile, viewStats } from './canvas/items.js';
@@ -50,6 +51,7 @@ import { initSearch, open as openSearch } from './ui/search.js';
 import { initIdle } from './ui/idle.js';
 import { initScaleBar } from './ui/scalebar.js';
 import { initTrash } from './ui/trash.js';
+import { initNowPlaying } from './ui/nowplaying.js';
 import { initAppearance, resetAppearance, setWhimsy } from './ui/appearance.js';
 import { initFonts } from './ui/fonts.js';
 import {
@@ -290,9 +292,19 @@ initFonts();
 // unlike every other tier they cannot follow a custom property on their own -
 // see canvas/grid.js. Every edit to a look hands the resolved colours back and
 // repaints; the other tiers repaint for nothing, which is four gradients.
-initAppearance({ onChange: () => { resetGridInk(); paintGrid(vp); } });
+// resetGrain for the same reason one line up: --grain is a token, and the layer
+// caches whether it resolves to anything rather than asking per frame. Then a
+// paint, because a look that turns the grain back on has a layer standing at
+// whatever position it was left at when it went transparent.
+initAppearance({
+  onChange: () => { resetGridInk(); paintGrid(vp); resetGrain(); paintGrain(vp); },
+});
+initGrain(vp);
 initAudio();
-bus.on('layout', () => syncBoardMode(true));
+// paintGrain too: the two layouts keep their stock on different surfaces - the
+// full-bleed layer on Desktop, the sheet itself on Mobile - so a mode switch
+// hands the grain to an element that has never been placed. See canvas/grain.js.
+bus.on('layout', () => { syncBoardMode(true); paintGrain(vp); });
 syncBoardMode();
 initSidebar(cmds);
 initMobileHeaderEditor(vp);
@@ -321,6 +333,9 @@ initMenu(vp, cmds);
 initSearch(vp);
 initIdle(vp);
 initTrash(vp);
+// After initAudio(), which is what reads the stored volume - the bar's slider
+// paints itself from that value on the way up.
+initNowPlaying();
 initDrop(vp);
 // Hand storage the confirmation prompt it cannot import (ui sits above storage
 // - AUD-12): the discard-unsaved and clear-everything dialogs.
@@ -693,6 +708,13 @@ let viewSettle = 0;
 // Everything the view-change frame does after the grid. Named so the profiler
 // below can time the grid alone against the rest without duplicating it.
 const afterGrid = () => {
+  // Inside the profiled listener rather than on a subscription of its own, and
+  // that is the whole reason it is called from here. canvas/grain.js registers
+  // before this file does, so a self-subscribed paint would run ahead of the
+  // t0 below and land in neither half of the sample - the one full-screen
+  // re-raster on the pan path would have been the one thing mbrd.perf could not
+  // see. It belongs in restMs.
+  paintGrain(vp);
   board.view.pan = { x: vp.pan.x, y: vp.pan.y };
   board.view.zoom = vp.zoom;
   paintZoom();
@@ -1208,6 +1230,7 @@ function reloadBoard() {
   bus.emit('selection');
   bus.emit('settings', 'reload');
   paintGrid(vp);
+  paintGrain(vp);
   paintPaper();
   paintMobileFrame();
   vp.apply();
@@ -1822,6 +1845,7 @@ const started = (async function start() {
   el('hud').hidden = !board.settings.hud;
   paintSnap();
   paintGrid(vp);
+  paintGrain(vp);
   paintPaper();
   paintMobileFrame();
   paintCount();

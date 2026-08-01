@@ -42,7 +42,9 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 /**
  * A relationship web belongs to the spatial Desktop arrangement only, and only
  * when the board asks for one. `settings.web` is layout-local (Desktop's own
- * checkbox); its absence in an older `.mbrd` reads as on.
+ * checkbox) and defaults to off, so a board only has threads because somebody
+ * asked for them; the `!== false` here is for settings that never reached
+ * normalizeSettings(), which is the one path that can leave the key missing.
  *
  * The quality dial can also take it away, and that is a different kind of no
  * from the checkbox's: the checkbox says this board does not want threads, the

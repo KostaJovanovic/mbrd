@@ -264,7 +264,12 @@ fold, which holds the type menus, the pigment, the extraction switch and the
 grid, radius and panel sliders. Whimsy is one axis from Softish to Harsh, and
 it moves everything the fold sets one control at a time.
 
-Four palettes ship (Papyrus, Absinthe, Tea rose, Orca) and every colour, radius
+Four palettes ship — Papyrus (terracotta), Absinthe (acid olive), Tea rose
+(crimson) and Orca (deep teal). All four print on a near-neutral sheet, because
+paper dyed far enough into its own hue to be told apart by it also tints every
+photograph pinned to it; the colour goes into the pigments instead, hard enough
+that most of these accents are the most saturated version of their hue sRGB can
+show. Every colour, radius
 and spacing value is a CSS custom property in `tokens.css`. The panel writes them
 straight onto `:root`, so changes are live. A look is saved twice on purpose: to
 `localStorage`, so it follows you across boards, and into `board.json`, so
