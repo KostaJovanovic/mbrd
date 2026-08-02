@@ -141,7 +141,18 @@ export async function firstFrame(file, say = () => {}) {
   if (!(await mediaAvailable())) return null;
   if (!ready) {
     say(`Loading the media decoder (${MEDIA_MB} MB, once)…`);
-    ready = spawn();
+    // A boot that fails must not be remembered as a permanently rejected
+    // promise: `if (!ready)` would be false forever and every later call would
+    // reject without ever attempting a respawn. Cleared here rather than inside
+    // spawn(), because a promise executor runs *before* the assignment it is
+    // being assigned by - anything it writes to `ready` is overwritten by the
+    // next line, which is exactly how the constructor-throw branch came to wedge
+    // the module for the session. Guarded on identity so a stale failure cannot
+    // clear a worker that has booted since.
+    // The handler names `boot` before it is initialised, which is fine because
+    // it can only run a tick later, by which time it is the promise below.
+    const boot = spawn().catch(err => { if (ready === boot) ready = null; throw err; });
+    ready = boot;
   }
   await ready;
 
@@ -193,8 +204,11 @@ export async function firstFrame(file, say = () => {}) {
 function spawn() {
   return new Promise((resolve, reject) => {
     let w;
+    // A CSP that forbids workers, or a blocked script URL. Rejecting is the
+    // whole of what this can do: clearing `ready` is the caller's, for the
+    // reason given at firstFrame()'s spawn site.
     try { w = new Worker('./assets/js/optimize/media-worker.js'); }
-    catch (err) { ready = null; reject(err); return; }
+    catch (err) { reject(err); return; }
     worker = w;
 
     // The boot handshake. Removed once, because everything after it is a job.

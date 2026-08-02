@@ -160,7 +160,7 @@
    to it: declaring 300 700 over a face that holds 100 900 does not decline the
    extra weights so much as hide them, and nothing downstream can tell the
    difference between an axis that stops and an axis said to stop. These used to
-   read 300 700 and 400 600, which is why `.wordmark h1` in app.css got 700 from
+   read 300 700 and 400 600, which is why `.wordmark h1` in base.css got 700 from
    a font that has 900 - see the note there. */
 
 @font-face {

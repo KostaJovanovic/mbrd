@@ -130,3 +130,30 @@ test('the appearance panel no longer builds a density slider', () => {
   assert.ok(!source.includes("label: 'Panel density'"));
   assert.ok(source.includes("label: 'Panel width'"));
 });
+
+test('the palette compares pictures by hash, without minting an object URL', () => {
+  // ui/appearance.js is one of the three modules that touch a browser global at
+  // import time, so this is asked of the source rather than of the module - the
+  // same shape as the density-slider check above.
+  //
+  // The invariant: the walk that answers "have the sampled pictures changed?"
+  // runs on every 'items' event, and assetURL() *mints* a blob URL on first use
+  // and holds it for the session. Resolving inside the walk created one per
+  // picture on the board - four hundred on a four-hundred-photo board, none of
+  // them necessarily rendered - which is the laziness storage/assets.js exists
+  // to preserve. Hashes are identity enough, and the URLs are resolved for the
+  // handful actually read.
+  const source = read(join(WEB, 'assets', 'js', 'ui', 'appearance.js'));
+  // Comments stripped: this one names assetURL() to explain why it is not called.
+  const code = line => line.replace(/\/\/.*$/, '');
+  const walk = source.match(/function pictureHashes\(\)[\s\S]*?\n}/)[0]
+    .split('\n').map(code).join('\n');
+  assert.ok(walk.includes('getAsset('), 'the walk should test registration, not resolve');
+  assert.ok(!walk.includes('assetURL('), 'the walk must not mint an object URL per picture');
+
+  const key = source.match(/function sourceKey\(\)[\s\S]*?\n}/)[0];
+  assert.ok(key.includes('pictureHashes()'), 'the comparison key is built from hashes');
+
+  // And the resolve that does happen is of the slice, not of the board.
+  assert.match(source, /hashes\.slice\(0, sourceCount\(\)\)\.map\(assetURL\)/);
+});

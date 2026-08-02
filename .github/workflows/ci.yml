@@ -1,0 +1,116 @@
+# The app has no dependencies and no build step, so CI is the test suite plus
+# two syntax passes. There is no `npm install` anywhere in here on purpose.
+#
+# The ubuntu leg is the one that earns its keep: this codebase is developed on
+# Windows, where the filesystem is case-insensitive, so `import './Foo.js'`
+# resolves locally and 404s for everyone else. Linux is where that surfaces.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: tests (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: ['20', '22']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      # No cache and no install: package.json declares no dependencies.
+      - name: Test
+        run: npm test
+
+  syntax:
+    name: syntax
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Catches a syntax error in any file no test happens to import.
+      - name: Check every JavaScript file parses
+        run: git ls-files '*.js' '*.mjs' | xargs -r -n 32 node --check
+
+      - name: Check the Python parses
+        run: python -m py_compile serve.py qr.py
+
+  typecheck:
+    name: typecheck and lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      # The one job here that installs anything. TypeScript is a devDependency
+      # and nothing else: no TypeScript reaches the browser, nothing is emitted,
+      # and `npm test` still runs with no install at all. tsc reads types out of
+      # JSDoc over plain .js - see jsconfig.json, which scopes it to the pure
+      # layer. It is what found web-graph.js calling two geometry helpers it had
+      # never imported.
+      - run: npm ci
+      - run: npm run typecheck
+
+      # Correctness only - no formatter, no style opinions. See .oxlintrc.json.
+      # Errors fail the job; oxlint's own default-category warnings do not, so
+      # this gates mistakes rather than taste.
+      - run: npm run lint
+
+  generated:
+    name: generated files are current
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # gen-formats.mjs needs the sibling catalog it reads from, which is not in
+      # this repository, so the catalog cannot be rebuilt here. What can be
+      # checked is that nobody hand-edited the generated file's banner away.
+      - name: import/formats.js still declares itself generated
+        run: |
+          head -5 web/assets/js/import/formats.js | grep -qi 'generated' \
+            || { echo "web/assets/js/import/formats.js lost its generated-file banner"; exit 1; }
+
+      # save.bat stamps these two by regex. A reformat of either line breaks the
+      # stamp silently, so fail loudly here instead.
+      - name: version stamps are still regex-matchable
+        run: |
+          grep -qE "^export const COMMIT_COUNT = [0-9]+;$" web/assets/js/version.js \
+            || { echo "version.js COMMIT_COUNT line no longer matches save.bat's regex"; exit 1; }
+          grep -qE "^export const VERSION = '[^']*';$" web/assets/js/version.js \
+            || { echo "version.js VERSION line no longer matches save.bat's regex"; exit 1; }
+          grep -qE "^const VERSION = 'mbrd-v[0-9]+';$" web/sw.js \
+            || { echo "sw.js VERSION line no longer matches save.bat's regex"; exit 1; }

@@ -38,7 +38,7 @@
 // The bin and the add bar act on the board the panel is covering, so they have
 // nothing to do while it is up; a player does not stop being a player because
 // somebody opened the settings, and hiding it meant the only way to silence a
-// track was to close the panel you had just gone to. app.css moves it clear of
+// track was to close the panel you had just gone to. The CSS moves it clear of
 // the panel rather than taking it away - see the #sidebar.is-open rule there.
 //
 // Arriving and leaving are CSS, and the only reason this file knows about them
@@ -46,7 +46,7 @@
 // element has to come out of it a frame before it rises, and go into it a fade
 // after it has gone. raise() and hide() are those two orderings and nothing
 // else - what the movement looks like is four custom properties per whimsy
-// tier, at the foot of app.css.
+// tier, at the foot of the CSS.
 
 import {
   buildTransport, nowPlaying, onNowPlaying, clearNowPlaying,

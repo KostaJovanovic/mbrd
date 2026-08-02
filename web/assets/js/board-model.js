@@ -19,16 +19,15 @@
 
 import { uid, isHash } from './util.js';
 import { MIN_SIZE, MAX_SIZE } from './geometry.js';
-import { DEFAULT_SCALE, clampScale, PAPERS } from './measure.js';
+import { DEFAULT_SCALE } from './measure.js';
 import { splitAppearance, mergeAppearance } from './layout-settings.js';
-import { mobileArrangement } from './arrange/arrangements.js';
 import { bus } from './board-store.js';
 
 /** The longest a sticky note may be. Enforced at every door onto the board. */
 export const NOTE_MAX = 512;
 
 // `size` is the type's size, as a percentage of the strip's own width - see
-// #mobile-board-title in app.css. `stretch` is a percentage of that size taken
+// #mobile-board-title in canvas.css. `stretch` is a percentage of that size taken
 // vertically only: 100 is the face as drawn, 160 is the same letters a little
 // over half again as tall and exactly as wide. Two numbers rather than one
 // because they are two questions - how big the name is set, and how tall the
@@ -123,7 +122,7 @@ export const MOBILE_APPEARANCE_VARS = Object.freeze({
  * second word impossible. Final-only filename rules live in cleanBoardTitle().
  */
 export function cleanBoardTitleDraft(value) {
-  let title = typeof value === 'string' ? value : '';
+  const title = typeof value === 'string' ? value : '';
   return title
     .replace(/\s+/g, ' ')
     .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '')
@@ -289,6 +288,23 @@ export const board = {
  * a delete-then-restore lands the same card back rather than a new one.
  */
 export const TITLE_ID = '__title__';
+
+/**
+ * The two types the app puts on a board itself: the Desktop title card and the
+ * onboarding hints. Furniture, not anything of the user's.
+ *
+ * Named once and imported, because "is this something somebody put here?" is
+ * asked from four modules and was spelled out at each of them - which is how the
+ * HUD came to count the title card while hasContent() did not, and how a sticky
+ * note came to be able to stick to it. A fifth furniture type would otherwise
+ * have to find all four sites again.
+ *
+ * Only for the sites that mean *both*. Places that exclude one on purpose - the
+ * Mobile packer, which packs hints and parks the title card; the clipboard,
+ * which refuses the title card alone; serializeBoard(), which strips hints alone
+ * - are asking a different question and keep their own test.
+ */
+export const isFurniture = it => it?.type === 'title' || it?.type === 'ghost';
 
 
 /**

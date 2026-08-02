@@ -23,11 +23,23 @@ export const whimsyControlsSnap = mode => mode !== 'mobile';
 export const appearanceControlVisible = (name, mode) =>
   name !== '--sidebar-w' || mode === 'desktop';
 
-/** Split one complete look into its board-wide and layout-local halves. */
+/**
+ * Split one complete look into its board-wide and layout-local halves.
+ *
+ * @typedef {object} Look
+ * @property {number}  [whimsy]
+ * @property {string}  [palette]
+ * @property {Record<string, string>} [vars]
+ * @property {boolean} [auto]
+ * @property {boolean} [derived]
+ *
+ * @param {Look} [look]
+ * @returns {{shared: Look, local: {vars: Record<string, string>}}}
+ */
 export function splitAppearance(look = {}) {
   const source = look && typeof look === 'object' ? look : {};
-  const sharedVars = {};
-  const localVars = {};
+  /** @type {Record<string, string>} */ const sharedVars = {};
+  /** @type {Record<string, string>} */ const localVars = {};
   const vars = source.vars && typeof source.vars === 'object' ? source.vars : {};
   for (const [key, value] of Object.entries(vars)) {
     (paletteToken.has(key) ? sharedVars : localVars)[key] = value;

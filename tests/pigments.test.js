@@ -332,6 +332,114 @@ test('every hue stays legible however the pictures bend the tables', () => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// The pigment is the colour, not only the angle
+// ---------------------------------------------------------------------------
+//
+// Only the hue used to come out of the photographs: every extracted board
+// printed its accent at the tables' L 0.548, C 0.147, so two boards with nothing
+// in common came out as one design in two rotations. Lightness and chroma are
+// now measured too, held inside the band a pigment has to stay in to be one.
+
+/** A picture that is one colour, given in OKLCh - so a test can name a tone. */
+const tone = (L, C, h, n = 400) => block(hex(L, C, h), n);
+
+test('two boards of the same hue come out as different colours', () => {
+  const neon = extractPalette([tone(0.50, 0.24, 263)]);
+  const dusty = extractPalette([tone(0.55, 0.06, 263)]);
+  assert.ok(apart(hueOf(neon['--accent']), hueOf(dusty['--accent'])) < 12,
+    'the hue is the same in both, which is the point of the comparison');
+  assert.ok(chromaOf(neon['--accent']) > chromaOf(dusty['--accent']) + 0.1,
+    `neon ${chromaOf(neon['--accent']).toFixed(3)} vs dusty ${chromaOf(dusty['--accent']).toFixed(3)}`);
+  assert.notEqual(neon['--accent'], dusty['--accent']);
+});
+
+test('the accent carries the lightness and chroma the pictures had', () => {
+  // Inside the wearable band the measurement is taken rather than approached: a
+  // board of exactly this colour gets exactly this colour as its accent.
+  for (const [L, C, h] of [[0.48, 0.09, 33], [0.55, 0.06, 263]]) {
+    const v = extractPalette([tone(L, C, h)]);
+    assert.ok(Math.abs(lightOf(v['--accent']) - L) < 0.03,
+      `L ${lightOf(v['--accent']).toFixed(3)} for a picture at ${L}`);
+    assert.ok(Math.abs(chromaOf(v['--accent']) - C) < 0.02,
+      `C ${chromaOf(v['--accent']).toFixed(3)} for a picture at ${C}`);
+  }
+});
+
+test('the contrast floor may darken a measured accent, and only darken it', () => {
+  // A green at 0.62 cannot carry a light label, so repair() walks it down until
+  // it can - which is the one thing allowed to overrule the photographs, and the
+  // reason it moves L and never C. The measurement is a starting point for the
+  // legibility pass, not a licence to skip it.
+  const v = extractPalette([tone(0.62, 0.13, 150)]);
+  assert.ok(lightOf(v['--accent']) < 0.62, 'the floor pulled it down');
+  assert.ok(contrast(v['--accent'], v['--accent-fg']) >= 4.5, 'and pulled it far enough');
+  assert.ok(Math.abs(chromaOf(v['--accent']) - 0.13) < 0.02,
+    `chroma should survive the repair, was ${chromaOf(v['--accent']).toFixed(3)}`);
+  // Never the other way: a dark picture is not brightened to meet a floor it
+  // already clears.
+  const dark = extractPalette([tone(0.40, 0.10, 150)]);
+  assert.ok(lightOf(dark['--accent']) <= 0.43, `was ${lightOf(dark['--accent']).toFixed(3)}`);
+});
+
+test('a pigment stays a pigment however faint or extreme the pictures', () => {
+  // The two bounds, and they are the only two. A hue with almost no colour in it
+  // must not print a grey button; a picture too pale to be a button is brought
+  // down to one rather than left to the contrast repair to salvage.
+  const faint = extractPalette([tone(0.55, 0.05, 200)]);
+  assert.ok(chromaOf(faint['--accent']) >= 0.045,
+    `a near-grey board gave ${chromaOf(faint['--accent']).toFixed(3)}`);
+  const pale = extractPalette([tone(0.92, 0.06, 90)]);
+  assert.ok(lightOf(pale['--accent']) <= 0.80,
+    `a chalk board gave a button at ${lightOf(pale['--accent']).toFixed(3)}`);
+  const gloom = extractPalette([tone(0.15, 0.08, 300)]);
+  assert.ok(lightOf(gloom['--accent']) >= 0.33,
+    `a night board gave a button at ${lightOf(gloom['--accent']).toFixed(3)}`);
+});
+
+test('every measured colour still produces a legible palette', () => {
+  // The same guarantee as the two tests above this section, now that the
+  // pictures move two more axes than they used to. The corners are where it
+  // would break: a dark saturated pigment against a dark sheet, a pale one
+  // carrying a light label.
+  for (const L of [0.2, 0.5, 0.9]) {
+    for (const C of [0.05, 0.12, 0.3]) {
+      for (let h = 0; h < 360; h += 15) {
+        const v = extractPalette([tone(L, C, h)]);
+        assert.ok(v, `no palette at all for L ${L} C ${C} hue ${h}`);
+        const paper = v['--paper'];
+        assert.ok(contrast(v['--ink'], paper) >= 7,
+          `L ${L} C ${C} hue ${h}: ink is ${contrast(v['--ink'], paper).toFixed(2)}`);
+        assert.ok(contrast(v['--ink-2'], paper) >= 4.5,
+          `L ${L} C ${C} hue ${h}: ink-2 is ${contrast(v['--ink-2'], paper).toFixed(2)}`);
+        assert.ok(contrast(v['--accent'], v['--accent-fg']) >= 4.5,
+          `L ${L} C ${C} hue ${h}: label is ${contrast(v['--accent'], v['--accent-fg']).toFixed(2)}`);
+      }
+    }
+  }
+});
+
+test('the deep accent stays the accent, darker', () => {
+  for (const [L, C, h] of [[0.50, 0.24, 263], [0.48, 0.09, 33], [0.62, 0.13, 150]]) {
+    const v = extractPalette([tone(L, C, h)]);
+    assert.ok(apart(hueOf(v['--accent-deep']), hueOf(v['--accent'])) < 12,
+      'the deep is the same hue');
+    assert.ok(lightOf(v['--accent-deep']) < lightOf(v['--accent']),
+      'and it is darker');
+  }
+});
+
+test('a hue with nothing measured behind it still gets the tables', () => {
+  // Bare angles are what a hand-picked colour and most of this file hand in.
+  // There is no photograph to read a tone off, and the presets' own means are
+  // the honest answer - so this path must come out exactly as it always did.
+  const bare = paletteFor([200]);
+  assert.ok(Math.abs(lightOf(bare['--accent']) - 0.548) < 0.01,
+    `the table accent moved to L ${lightOf(bare['--accent']).toFixed(3)}`);
+  assert.deepEqual(paletteFor([{ h: 200, standing: 0 }]), bare,
+    'a hue carrying no tone is the same as a bare angle');
+});
+
 test('the sheet and the ink share the first hue', () => {
   const hueOf = c => oklch(...[1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16))).h;
   for (const h of [20, 140, 260]) {

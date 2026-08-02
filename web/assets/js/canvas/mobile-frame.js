@@ -61,7 +61,7 @@ export function initMobileFrame(viewport) {
   // Queried off the viewport rather than the document, and tolerant of their
   // absence, for the same reason canvas/grid.js's ensureCanvas() is: the render
   // harnesses mount a bare #viewport without the rest of the page around it.
-  // #mobile-surround needs no reference at all - it is a static wash that app.css
+  // #mobile-surround needs no reference at all - it is a static wash that canvas.css
   // shows in Mobile and hides everywhere else, and no frame ever touches it.
   frameEl = vp.el.querySelector(':scope > #mobile-board-frame');
   mastEl = vp.el.querySelector(':scope > #mobile-board-header');
@@ -80,7 +80,7 @@ function draw() {
   if (!vp || !frameEl || !mastEl) return;
 
   if (!vp.isMobile) {
-    // app.css hides all three off Mobile, so there is nothing to undo - only a
+    // The CSS hides all three off Mobile, so there is nothing to undo - only a
     // cache to drop, so that coming back writes the geometry afresh rather than
     // trusting numbers taken before the mode changed.
     if (wasMobile !== false) { wasMobile = false; lastSheet = lastMast = ''; lastShift = null; }

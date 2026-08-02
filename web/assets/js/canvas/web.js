@@ -32,10 +32,10 @@ import { board, bus, isRider } from '../state.js';
 import { rafThrottle } from '../util.js';
 import { quality } from '../quality.js';
 import { webZoom } from './viewport.js';
-import { segmentMeetsRect, corners, pointInItem } from '../geometry.js';
+import { segmentMeetsRect } from '../geometry.js';
 // The graph and its governor - see web-graph.js. Pure, and deliberately not
 // in this file: the algorithm is the part that can be tested without a browser.
-import { threads, pair } from '../web-graph.js';
+import { threads } from '../web-graph.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -124,9 +124,7 @@ let path = null;         // every settled thread, as subpaths of one `d`
 let fadeLayer = null;    // <g> holding only the threads currently fading
 let vp = null;           // for the visible rect; absent in tests, which then draw everything
 
-/** The last built geometry, reused by every paint until an item moves. */
-let builtPts = [];
-/** The box `builtPts` describes, kept by build() so paint() need not re-derive it. */
+/** The box the built geometry describes, kept by build() so paint() need not re-derive it. */
 let settledBox = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
 /** The box last written to the <svg>, so an unchanged one is not rewritten. */
 let lastBox = '';
@@ -298,7 +296,6 @@ function build() {
     animating.clear();
     settled.clear();
     lastSeg.clear();
-    builtPts = [];
     settledBox = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
     paintedRect = null;
     lastBox = '';
@@ -306,7 +303,7 @@ function build() {
     svg.style.display = 'none';
     return;
   }
-  const pts = builtPts = centres();
+  const pts = centres();
   // The box these points describe, worked out here rather than in paint().
   //
   // It is a property of where the items are, and the items do not move when the

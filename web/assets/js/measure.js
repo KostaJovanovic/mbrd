@@ -62,14 +62,6 @@ const PX_PER_MM = PX_PER_INCH / MM_PER_INCH;
 export const DEFAULT_SCALE = PX_PER_MM;
 
 /**
- * state.js's `gridStep` default, written out rather than imported: this file
- * sits below state.js and has to stay there, since state.js imports *it*. Only
- * the ceiling below needs it, and tests/measure.test.js holds the two copies to
- * each other so they cannot drift apart unnoticed.
- */
-const DEFAULT_GRID_UNITS = 64;
-
-/**
  * Guard rails. A scale outside these is a typo, not a board.
  *
  * Wide on purpose. These exist to stop a hand-edited file turning every readout

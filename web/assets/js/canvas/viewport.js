@@ -68,9 +68,9 @@ export const MOBILE_BOTTOM_PAD = 32;
  *
  * Measured off the button rather than written down, because the number is not
  * ours: the buttons are pinned at max(12px, env(safe-area-inset-top)) in
- * app.css, and a notched phone pushes them further down than a flat one. Asking
- * the element where its lower edge actually is answers for both, and keeps this
- * true if the corner is ever re-laid.
+ * mobile.css, and a notched phone pushes them further down than a flat one.
+ * Asking the element where its lower edge actually is answers for both, and
+ * keeps this true if the corner is ever re-laid.
  */
 const MOBILE_CHROME_GAP = 14;
 
@@ -237,7 +237,7 @@ const GRIP_MIN_ZOOM = 0.1 * BASE_ZOOM;
  * Below this the card is small enough that a straddling corner would cover too
  * much of its face to pick it up by, so the whole face becomes a move target and
  * the corner resizes only from the part of its hitbox past the card's edge (see
- * the zoom-grab rules in app.css). A rung of its own, between the chrome rung and
+ * the zoom-grab rules in the CSS). A rung of its own, between the chrome rung and
  * the grips' own floor, because it is about size on screen, not legibility.
  */
 const GRAB_ZOOM = 0.25 * BASE_ZOOM;
@@ -281,7 +281,7 @@ export const stillZoom = () => lodZoom();
 /**
  * And below this a photograph is drawn from its hundred-pixel thumbnail
  * instead of its full-size self, which is the same swap by the same mechanism -
- * see the image renderer and the is-stilled rules in app.css.
+ * see the image renderer and the is-stilled rules in the CSS.
  */
 export const thumbZoom = () => lodZoom();
 /** Below this the web is a scribble rather than a set of threads - web.js. */
@@ -291,7 +291,7 @@ export const webZoom = () => lodZoom();
 //
 // Read from CSS rather than fixed here, so the board's own movement sits on
 // the same whimsy axis as the interface's: sliding towards "plain" shortens
-// these along with every transition in app.css, instead of leaving the canvas
+// these along with every transition in the CSS, instead of leaving the canvas
 // animating at scrapbook speed inside a spec-sheet UI.
 //
 // A tapped zoom step glides instead of jumping: a discrete 1.3x cut gives you
@@ -719,7 +719,7 @@ export class Viewport {
   /**
    * Say that the view is moving, and say when it has stopped.
    *
-   * The class is what app.css hangs its cheap mode off. What it turns off is
+   * The class is what the CSS hangs its cheap mode off. What it turns off is
    * the caption plate's `backdrop-filter`, which is the single most expensive
    * thing on the board: a backdrop blur is not one effect for the page but one
    * per element, each of which makes the compositor sample and blur the pixels
@@ -817,7 +817,7 @@ export class Viewport {
     // below it.
     this.world.classList.toggle('zoom-tiny', z < GRIP_MIN_ZOOM);
     // Below this a corner grip clips to its outside half and the whole card face
-    // becomes a move target - see the zoom-grab rules in app.css. Its own rung
+    // becomes a move target - see the zoom-grab rules in the CSS. Its own rung
     // (25%), lower than the chrome one, because it is about the card being too
     // small to grab, not too small to read.
     this.world.classList.toggle('zoom-grab', z < GRAB_ZOOM);

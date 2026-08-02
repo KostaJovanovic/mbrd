@@ -1,7 +1,7 @@
 // The tooth of the stock, moved with the board.
 //
 // The tile itself is described where it is styled, at the #grain rule in
-// app.css. This file is only about where it sits, and that is one decision:
+// base.css. This file is only about where it sits, and that is one decision:
 // the paper travels on a pan and does not scale on a zoom.
 //
 // Travelling is what makes it paper. Locked to the glass, a grain layer is a
@@ -25,7 +25,7 @@
 // that is the common gesture, but a pinch on this layer is no longer free.
 //
 // The second is moire, and it is the thing the note above the body rule in
-// app.css refuses for hatching. A scaling grain sweeps its own spatial
+// base.css refuses for hatching. A scaling grain sweeps its own spatial
 // frequency through the dot grid's on the way out, so somewhere in the zoom
 // range the two beat. What keeps it survivable is that the grain is isotropic
 // noise rather than a lattice - noise has no single period to beat against, so
@@ -41,7 +41,7 @@ import { sheetBox } from './mobile-frame.js';
 /**
  * The tile's side in *world* units - its on-screen size at 100%.
  *
- * app.css carries the same number as #grain's background-size, which is what
+ * base.css carries the same number as #grain's background-size, which is what
  * the layer wears until the first paint here replaces it. The two only have to
  * agree to the extent that a boot with script broken should not look wrong.
  */
@@ -154,7 +154,7 @@ export function paintGrain(vp) {
   if (!(tile > 0)) return;
 
   // Whichever surface is this layout's paper. On Mobile that is the sheet, and
-  // the full-bleed layer is display:none - see the rules in app.css.
+  // the full-bleed layer is display:none - see the rules in the CSS.
   const mobile = !!vp.isMobile;
   const surface = mobile ? sheetEl : el;
   if (!surface) return;

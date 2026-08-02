@@ -30,7 +30,7 @@
 import { board } from '../state.js';
 import { field, fieldStops } from './controls.js';
 import {
-  TABS, SECTIONS, sectionsFor, controlVisible, sectionVisible,
+  TABS, SECTIONS, controlVisible, sectionVisible,
 } from './settings-schema.js';
 
 /** Every built control, in build order: { c, wrap, input, out, section }. */
@@ -178,7 +178,7 @@ function buildFold(spec) {
   return details;
 }
 
-function buildControl(c, spec) {
+function buildControl(c, _spec) {
   const node = BUILDERS[c.type]?.(c);
   if (!node) return null;
   return node;

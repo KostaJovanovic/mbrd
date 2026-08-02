@@ -18,9 +18,19 @@
      icon of an app added from Safari was falling back to a screenshot of the
      page. The 192 is scaled down to whatever the device wants. -->
 <link rel="apple-touch-icon" href="assets/img/icon-192.png">
+<!-- The order below IS the cascade: later files win at equal specificity, and
+     quality.css must stay last (see the banner at the top of base.css). A new
+     stylesheet goes in this list and in SHELL in sw.js. -->
 <link rel="stylesheet" href="assets/css/fonts.css">
 <link rel="stylesheet" href="assets/css/tokens.css">
-<link rel="stylesheet" href="assets/css/app.css">
+<link rel="stylesheet" href="assets/css/base.css">
+<link rel="stylesheet" href="assets/css/canvas.css">
+<link rel="stylesheet" href="assets/css/items.css">
+<link rel="stylesheet" href="assets/css/sidebar.css">
+<link rel="stylesheet" href="assets/css/chrome.css">
+<link rel="stylesheet" href="assets/css/overlays.css">
+<link rel="stylesheet" href="assets/css/mobile.css">
+<link rel="stylesheet" href="assets/css/quality.css">
 <script>
   /* Before first paint: apply the saved look - whimsy level, palette, and any
      per-token overrides - so an installed PWA never flashes the default
@@ -151,7 +161,7 @@
      the paper on <body>. Outside #viewport rather than inside it, because
      #viewport has paint containment and so is a stacking context - a blend
      inside one has nothing behind it to blend with. canvas/grain.js moves it
-     with the board; see the #grain rule in app.css for the rest. -->
+     with the board; see the #grain rule in base.css for the rest. -->
 <div id="grain" aria-hidden="true"></div>
 
 <!-- The canvas. #viewport is fixed to the window and paints the grid; #world is
@@ -201,7 +211,7 @@
          are rounded too, a hard square at the plain end. An SVG shape is the
          shape it is - a circle cannot be squared off with a border-radius the
          way a box can - so each stop gets its own geometry rather than a
-         rounding of one. All are inert markup; app.css shows exactly one. -->
+         rounding of one. All are inert markup; the CSS shows exactly one. -->
     <circle class="om-ring" cx="18" cy="18" r="10" stroke-width="1.3"/>
     <rect class="om-ring-rd" x="8" y="8" width="20" height="20" rx="5" stroke-width="1.3"/>
     <rect class="om-ring-sq" x="8" y="8" width="20" height="20" stroke-width="1.3"/>
@@ -303,7 +313,7 @@
            where the band's own overflow starts cutting the letters off, and
            holds a detent at 100% so the face as drawn is a stop you can find
            without aiming. It grows evenly up and down about the name's own
-           middle - see #mobile-board-title in app.css.
+           middle - see #mobile-board-title in canvas.css.
            Line height is the room between the lines of a name that wraps, and
            its 100% is the face's own - see DEFAULT_MOBILE_HEADER. -->
       <label class="field">
@@ -482,7 +492,7 @@
          do rather than doing something itself.
 
          The body of the padlock is one path and the shackle is two, of which
-         app.css shows whichever matches aria-pressed - an open shackle leaning
+         The CSS shows whichever matches aria-pressed - an open shackle leaning
          off its post when the zoom is free, closed on it when it is not. Two
          paths rather than a rotation, because the shape a padlock makes when it
          opens is not the shape it makes when it is turned. main.js writes the
@@ -502,7 +512,7 @@
   </div>
 </div>
 
-<!-- Phones only; app.css keeps it out of the way at every other width. Getting
+<!-- Phones only; the CSS keeps it out of the way at every other width. Getting
      something onto the board is the one thing you come here to do, and on a
      phone it was two taps into a panel that covers the screen - while the four
      corners were spent on view controls you need only once something is
@@ -538,7 +548,7 @@
 
      Along the foot between the bin and the zoom cluster, which is where a
      transport has lived on every player anybody has used. On a phone that edge
-     belongs to the add bar, so app.css lifts this above it rather than moving
+     belongs to the add bar, so the CSS lifts this above it rather than moving
      it - the two are never the same piece of screen.
 
      hidden to start: there is nothing playing when a board opens, and a bar
@@ -656,7 +666,7 @@
       </a>
       <div class="credit-who">
         <a class="credit-name" href="https://omarzunic.com"
-           target="_blank" rel="noopener noreferrer">Omar Zunic</a>
+           target="_blank" rel="noopener noreferrer">Omar Žunić</a>
         <span class="credit-site">omarzunic.com</span>
         <p class="credit-quote">[INSERT FUNNY QUIP HERE]</p>
       </div>

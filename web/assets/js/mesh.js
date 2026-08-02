@@ -594,7 +594,7 @@ function readAccessor(json, buffers, index) {
   const comps = COMPONENTS[acc.type];
   const reader = READERS[acc.componentType];
   if (!comps || !reader) return null;
-  const [Kind, size] = reader;
+  const [, size] = reader;
   // Validate the count before allocating from it. It is attacker-controlled and
   // the multiplication below feeds a typed-array length; an implausible or
   // non-integer count is refused rather than turned into a giant allocation.

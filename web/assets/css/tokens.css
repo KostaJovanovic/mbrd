@@ -1,7 +1,7 @@
 /* =========================================================
    mbrd - design tokens
 
-   Nothing in app.css hardcodes a colour, a corner, a duration or a typeface.
+   Nothing in the CSS hardcodes a colour, a corner, a duration or a typeface.
    Everything resolves through a custom property declared here, which is what
    makes the whole look swappable at runtime - by the Appearance panel, by a
    board that travels with its own look, and eventually by the board itself
@@ -140,7 +140,7 @@
      The three hints a brand-new board opens with, and the only cards on the
      board that are not the user's. At every tier they are ordinary cards whose
      edge happens to be dashed; Softish additionally carries a candidate look
-     layered on in app.css, which changes the edge or the mount and never the
+     layered on in the CSS, which changes the edge or the mount and never the
      type.
 
      The edge is mixed out of --ink like every other item token, so the hints
@@ -295,7 +295,7 @@
      and is doing the announcing rather than the reading, so it can be drawn
      finer than a face that also has to carry paragraphs.
 
-     Every display site in app.css reads this, the already-bold ones through a
+     Every display site in the CSS reads this, the already-bold ones through a
      calc that keeps their offset - a card name is +200 over the tier's weight,
      a note heading +300 - so the relationships that were tuned at 400 survive
      the move. That is also what lets the plain end restate 400 and render
@@ -305,7 +305,7 @@
      already sit at 400 and are 11-13px; thinning a serif at that size is how
      it stops being read. */
   --display-weight: 300;
-  /* The display sizes are tokens rather than numbers in app.css because they
+  /* The display sizes are tokens rather than numbers in the CSS because they
      are the axis's loudest lever: three steps above the body here, closer to
      two at the ends. --t-display is the largest thing on a board (a note's
      title, the wordmark); --t-title is a filed card's name. */
@@ -335,7 +335,7 @@
 
   /* ---- ornament ----
      Multiplier on the decorative washes in the paper. 0 flattens them without
-     app.css needing a second background declaration.
+     the CSS needing a second background declaration.
 
      Two dials rather than one, because the three layers `body` lays over the
      sheet are not the same kind of thing. Two are colour - the palette's accent
@@ -348,13 +348,13 @@
      neither.
 
      --grain is the third and is stock rather than ornament: the tooth of the
-     300gsm tile app.css multiplies over the sheet. It is a separate dial for
+     300gsm tile the CSS multiplies over the sheet. It is a separate dial for
      the same reason the other two are separate - the blooms are pigment laid
      *on* the paper and the grain is the paper - but it shares their shape, a
-     bare multiplier the axis can take to 0 without app.css needing a second
+     bare multiplier the axis can take to 0 without the CSS needing a second
      declaration. Multiply, not soft-light: both soft-light and overlay are
      no-ops where the backdrop is white, and at 98% lightness this sheet gets
-     about four percent of their nominal effect. See the body rule in app.css. */
+     about four percent of their nominal effect. See the body rule in the CSS. */
   --wash: 1;
   /* 0.4, down from 1. Splitting the vignette out of --wash fixed the soft end
      being *hardest* hit by the shading; it left the shading itself where it
@@ -636,7 +636,7 @@
    the pictures dropped on it - their contrast and their sharpness - and parks
    itself somewhere along here on its own, with the palette above rewritten
    from the colours it extracted. Everything such a driver needs to write is a
-   custom property, so it can drive all of this without touching app.css.
+   custom property, so it can drive all of this without touching the CSS.
    ========================================================= */
 
 /* ---- 0: softish ---------------------------------------------------------
@@ -667,12 +667,12 @@
   /* Heavier stock at the scrapbook end, but nowhere near --wash's 2.2: grain
      multiplies, so turning it up darkens the sheet as well as roughening it,
      and past about here it stops reading as tooth and starts reading as a grey
-     cast. app.css takes 0.8 of this, so 1.25 is the ceiling - the tile at its
+     cast. The CSS takes 0.8 of this, so 1.25 is the ceiling - the tile at its
      full baked strength - and there is deliberately no headroom above it. */
   --grain: 1.25;
 
   /* Ghost cards at this end are still cards - the candidates layered on in
-     app.css change the edge, the mount or the stock, never the type. The ink is
+     the CSS change the edge, the mount or the stock, never the type. The ink is
      a warmer, softer version of the board's own rather than a second palette. */
   --ghost-ink:    color-mix(in srgb, var(--ink) 92%, transparent);
   --ghost-ink-2:  var(--ink-2);
@@ -758,7 +758,7 @@
      board that has to hold the whole surface up on its own.
 
      Middle's paper is a warm literal with three radial blooms laid over it by
-     `body` in app.css, every one of them scaled by --wash. Harsh sets --wash to
+     `body` in the CSS, every one of them scaled by --wash. Harsh sets --wash to
      0 further down, which is right - a spec sheet has no ornament - but it also
      means all three blooms mix away to fully transparent and the flat colour
      underneath becomes the entire sheet. A value picked to sit *under* a wash
@@ -859,7 +859,7 @@
      things positioned in it. Take it away and the tier stopped being austere
      and started being a spreadsheet. What actually wants square cards is a
      board with a grid switched on, and that is now where it comes from - see
-     the [data-snap] rule in app.css, which zeroes the lean at any tier. */
+     the [data-snap] rule in the CSS, which zeroes the lean at any tier. */
   --tilt-max: 1.5deg;
 
   /* 0px, not 0. These are lengths, and a bare 0 is a *number*: calc() cannot
@@ -942,7 +942,7 @@
    which outranks "this board would like it".
 
    Only tokens live here. The rules that are not tokens - backdrop blur,
-   transition durations - are in app.css beside the things they switch off.
+   transition durations - are in the CSS beside the things they switch off.
 
    Two selectors per rule, because there are two states to cover. Before
    ui/quality.js runs, the inline guard in index.html has set the level and

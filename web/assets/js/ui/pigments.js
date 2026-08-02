@@ -23,9 +23,16 @@
 //     did;
 //   - --leafy for whatever colour is left over, and a lightness split between
 //     any two voices that land too close to tell apart by hue alone;
-//   - chroma and sheet lightness bent by what the photographs actually are -
-//     vivid pictures get a stronger palette, dark ones a deeper sheet - but
-//     bent within bounds measured off the presets, never freely;
+//   - a pigment's lightness and chroma read off the pixels of its own hue, not
+//     only its angle. This was the last thing the presets still decided for
+//     every board, and deciding it for every board is what made every board
+//     look alike: a dusty photograph and a neon one at the same hue printed the
+//     same button. The tables are still the reference, and are what a hue with
+//     no photograph behind it gets - see WEARABLE_L for the two bounds a
+//     measurement has to stay inside to be a pigment at all;
+//   - the sheet's own chroma and lightness bent by what the photographs are -
+//     vivid pictures get a stronger cast, dark ones a deeper sheet - but bent
+//     within bounds measured off the presets, never freely;
 //   - and a repair pass afterwards, because a palette that came out of a
 //     photograph has no reason to be legible and every one of these has to be.
 //
@@ -326,16 +333,29 @@ function readBoard(chunks) {
 function census(chunks, floor) {
   const votes = new Float64Array(BINS);
   const mass = new Float64Array(BINS);
+  // The third tally: what each hue actually *looks* like on this board, as
+  // distinct from which hue it is and how much of it there is. Summed weighted
+  // by chroma - the same weight the vote uses - so the answer is the mean colour
+  // of the pixels that voted rather than of every pixel that grazed the floor.
+  // See toneAt(): these three are only ever read as ratios.
+  const litSum = new Float64Array(BINS);
+  const chrSum = new Float64Array(BINS);
+  const toneWeight = new Float64Array(BINS);
   let voters = 0, vividSum = 0, keySum = 0, lit = 0;
   for (const px of chunks) {
     const one = new Float64Array(BINS);
+    const oneL = new Float64Array(BINS);
+    const oneC = new Float64Array(BINS);
     let weight = 0, coloured = 0, lSum = 0, opaque = 0;
     for (let i = 0; i + 3 < px.length; i += 4) {
       if (px[i + 3] < 128) continue;
       const { L, C, h } = oklch(px[i], px[i + 1], px[i + 2]);
       lSum += L; opaque++;
       if (L < MIN_L || L > MAX_L || C < floor) continue;
-      one[Math.floor(h / 360 * BINS) % BINS] += C;
+      const bin = Math.floor(h / 360 * BINS) % BINS;
+      one[bin] += C;
+      oneL[bin] += C * L;
+      oneC[bin] += C * C;
       weight += C; coloured++;
     }
     if (opaque) { keySum += lSum / opaque; lit++; }
@@ -348,6 +368,14 @@ function census(chunks, floor) {
       votes[i] += trust * one[i] / weight;
       // Not divided by `weight`, which is the entire point - see standing.
       mass[i] += trust * one[i] / opaque;
+      // Trust-weighted like the other two, so a grey screenshot's one stray
+      // pixel cannot be where the board's red comes from. Not normalised by
+      // anything else: a mean is a mean, and it is taken over the pixels rather
+      // than over the pictures because the question is what the colour is, not
+      // how many photographs hold it.
+      litSum[i] += trust * oneL[i];
+      chrSum[i] += trust * oneC[i];
+      toneWeight[i] += trust * one[i];
     }
     vividSum += trust * (weight / coloured);
     voters += trust;
@@ -355,12 +383,29 @@ function census(chunks, floor) {
   return {
     votes,
     mass,
+    tone: { litSum, chrSum, toneWeight },
     voters,
     vivid: voters ? vividSum / voters : 0,
     // No pixels at all is the reference picture rather than a black one: with
     // nothing to say, the tables stand as measured.
     key: lit ? keySum / lit : REF_KEY,
   };
+}
+
+/**
+ * The mean lightness and chroma of one hue, over the same five-bin window its
+ * standing is summed on - so a hue's colour covers the colour its peak does.
+ *
+ * Null when nothing voted there, which is what a bare angle from a test or from
+ * the picker produces, and the tables stand.
+ */
+function toneAt({ litSum, chrSum, toneWeight }, i) {
+  let l = 0, c = 0, w = 0;
+  for (let k = -2; k <= 2; k++) {
+    const j = (i + k + BINS) % BINS;
+    l += litSum[j]; c += chrSum[j]; w += toneWeight[j];
+  }
+  return w ? { L: l / w, C: c / w } : null;
 }
 
 /**
@@ -371,7 +416,7 @@ function census(chunks, floor) {
  * rest from tables - which is how a hue that is 1.7% of a board came to be
  * rendered at the same chroma as one that is 24% of it.
  */
-function peaksOf({ votes, mass, voters }) {
+function peaksOf({ votes, mass, tone, voters }) {
   if (!voters) return [];
 
   const smooth = new Float64Array(BINS);
@@ -402,14 +447,42 @@ function peaksOf({ votes, mass, voters }) {
   }
   peaks.sort((a, b) => b.w - a.w);
 
-  const out = [peaks[0]];
-  for (const p of peaks.slice(1)) {
+  // The sheet is the hue most of the photographs hold, and that is the vote's
+  // question - a colour many pictures share, whatever any one of them holds a
+  // lot of. It does not move below.
+  const standing = standings(mass, peaks);
+  const sheet = { ...peaks[0], standing: standing[0] };
+
+  // Everything after it is ordered by the same score rolesFor() will use to hand
+  // out the roles, and *that* is the fix for a palette that used to flicker.
+  //
+  // The two used to disagree: the shortlist was cut by peak height in the vote,
+  // and the roles were then chosen from the survivors by standing. So a hue
+  // could be the obvious accent by a factor of twenty and still be pruned by a
+  // hue with a marginally taller vote - measured on a board of 67 pictures, one
+  // photograph joining the set moved the accent from blue to magenta on a vote
+  // tie of 0.219 against 0.219, decided by sort order. Turning the dial one stop
+  // rewrote every button on the board and turning it back rewrote it again.
+  //
+  // One ordering now decides both membership and role, so the hue that would win
+  // the accent cannot be cut before it is asked. MIN_SHARE stays exactly where
+  // it was and does the job it was written for: it is a floor on the vote, so a
+  // colour almost no picture holds is not a candidate at all, however much of it
+  // the one picture that does hold it holds. See the sky in rolesFor().
+  const floor = sheet.w * MIN_SHARE;
+  const facing = p => 1 + FACING_BONUS * apart(p.h, sheet.h) / 180;
+  const rest = peaks
+    .map((p, n) => ({ ...p, standing: standing[n] }))
+    .slice(1)
+    .filter(p => p.w >= floor)
+    .sort((a, b) => (b.standing * facing(b) - a.standing * facing(a)) || (b.w - a.w));
+
+  const out = [sheet];
+  for (const p of rest) {
     if (out.length >= MAX_HUES) break;
-    if (p.w < peaks[0].w * MIN_SHARE) break;
     if (out.every(q => apart(p.h, q.h) >= MIN_SEP)) out.push(p);
   }
-  const standing = standings(mass, out);
-  return out.map((p, i) => ({ h: p.h, standing: standing[i] }));
+  return out.map(p => ({ h: p.h, standing: p.standing, tone: toneAt(tone, p.i) }));
 }
 
 // ---------------------------------------------------------------------------
@@ -473,6 +546,57 @@ const PIGMENT = {
 };
 
 /**
+ * What a colour read off the photographs is allowed to be, once it has to be a
+ * button rather than a pixel.
+ *
+ * The tables above are the reference and no longer the answer. Only the *hue*
+ * used to come out of the pictures, which meant every extracted board printed
+ * its accent at exactly L 0.548, C 0.147 - the mean of the four presets - and
+ * two boards with nothing in common came out as one design in two rotations.
+ * The lightness and the saturation of a colour are as much of it as its angle,
+ * and a board of chalk photographs asking for the same chroma as a board of
+ * neon was the plainest way of saying the palette had not really looked.
+ *
+ * So the measurement stands, inside these bounds, and the bounds are only the
+ * ones a token has to clear to do its job:
+ *
+ * - **Lightness.** A pigment carries a button and a link. Below the floor it is
+ *   a colour you cannot see the difference between and black; above the ceiling
+ *   it cannot hold a light label and repair() has to darken it anyway, which
+ *   throws the measurement away by a slower route. The band is wide enough to
+ *   hold every preset (0.415 to 0.730) with room either side.
+ * - **Chroma.** The floor is what keeps a hue with almost no colour in it from
+ *   printing a grey button and calling it a palette - a board can be muted
+ *   without its one accent being absent. There is no ceiling, because the gamut
+ *   already is one: hex() bisects any chroma the screen cannot show.
+ */
+const WEARABLE_L = { min: 0.36, max: 0.78 };
+const WEARABLE_C_MIN = 0.055;
+
+/** A measured colour, held to what a pigment has to be. Null passes through. */
+function wearable(tone) {
+  if (!tone) return null;
+  return {
+    L: clamp(tone.L, WEARABLE_L.min, WEARABLE_L.max),
+    C: Math.max(tone.C, WEARABLE_C_MIN),
+  };
+}
+
+/**
+ * --accent-deep, from whatever the accent turned out to be.
+ *
+ * The presets put it a fixed distance below their accent rather than at a
+ * lightness of its own - "the same hue darker and nothing else" - so it is that
+ * distance, and the same ratio of chroma, applied to the measurement instead of
+ * to the table. Taking a second measurement for it would let the two drift
+ * apart, and a deep that is not the accent's own darker twin is a third colour.
+ */
+const DEEP_DROP = PIGMENT['--accent'].L - PIGMENT['--accent-deep'].L;
+const DEEP_TEMPER = PIGMENT['--accent-deep'].C / PIGMENT['--accent'].C;
+
+const deepen = ink => ({ L: Math.max(0, ink.L - DEEP_DROP), C: ink.C * DEEP_TEMPER });
+
+/**
  * Where "warm" is, in OKLCh degrees, and how far a hue may be turned towards it.
  *
  * A fixed offset would be wrong in half the cases: +20 degrees from a red is
@@ -505,8 +629,13 @@ const LEAFY = { L: 0.572, C: 0.111 };
 // is a monochrome palette - safe, and with nothing in it that draws the eye to
 // the thing you are meant to click.
 //
-// It is also why every extracted board used to look like the same board. Only
-// the hue came from the photographs, and one hue rotated is one design.
+// It is also half of why every extracted board used to look like the same
+// board: only the hue came from the photographs, and one hue rotated is one
+// design. Giving the roles different hues fixed the half of it that was about
+// the scheme; the other half was that a hue is not a colour, and it is fixed at
+// WEARABLE_L above - the lightness and the saturation are read off the pictures
+// too now, so a board of chalk and a board of neon no longer print the same
+// button at two angles.
 
 /**
  * Two voices closer than this cannot be told apart by hue, so they are told
@@ -559,10 +688,21 @@ const FACING_BONUS = 1;
 function rolesFor(hues) {
   const [sheet, ...rest] = hues.map(p => (typeof p === 'number' ? { h: p, standing: 0 } : p));
   const score = p => p.standing * (1 + FACING_BONUS * apart(p.h, sheet.h) / 180);
-  const ranked = [...rest]
-    .sort((a, b) => (score(b) - score(a)) || (apart(b.h, sheet.h) - apart(a.h, sheet.h)))
-    .map(p => p.h);
+  const order = [...rest]
+    .sort((a, b) => (score(b) - score(a)) || (apart(b.h, sheet.h) - apart(a.h, sheet.h)));
+  const ranked = order.map(p => p.h);
+  // The colour each role was measured at, alongside the angle. Null wherever
+  // there is nothing to measure - a bare angle, or a role whose hue no
+  // photograph supplied - and build() falls back to the tables for that one
+  // token. Carried beside `ranked` rather than inside it because every caller
+  // of these four fields wants a number.
+  const tone = {
+    sheet: sheet.tone || null,
+    accent: order.length ? order[0].tone || null : sheet.tone || null,
+    leafy: order.length > 1 ? order[1].tone || null : null,
+  };
   return {
+    tone,
     sheet: sheet.h,
     accent: ranked.length ? ranked[0] : sheet.h,
     // A third photographed hue if the board has one. With two, the wash sits
@@ -769,9 +909,21 @@ function build(roles, traits) {
 
   for (const [key, { L, C }] of Object.entries(sheet)) vars[key] = hex(L, C, roles.sheet);
 
+  // What the accent is actually made of: the photographs' own lightness and
+  // chroma at that hue where they were measured, the tables where they were not.
+  const accentInk = wearable(roles.tone?.accent) || pigment['--accent'];
+  const leafyInk = wearable(roles.tone?.leafy) || leafy;
+
   for (const [key, { L, C }] of Object.entries(pigment)) {
-    const h = key === '--accent-warm' ? roles.warm : roles.accent;
-    vars[key] = hex(L, C, (h + 360) % 360);
+    // --accent-warm is the one pigment no photograph supplied - rolesFor() turns
+    // it out of the sheet's hue - so it has no measurement to wear and keeps the
+    // table, bent by the vivid dial like everything else.
+    if (key === '--accent-warm') {
+      vars[key] = hex(L, C, (roles.warm + 360) % 360);
+      continue;
+    }
+    const ink = key === '--accent-deep' ? deepen(accentInk) : accentInk;
+    vars[key] = hex(ink.L, ink.C, (roles.accent + 360) % 360);
   }
 
   // Told apart by lightness when hue cannot do it - see ANALOGOUS. Dropped
@@ -779,9 +931,9 @@ function build(roles, traits) {
   // room is downwards.
   const crowded = apart(roles.accent, roles.leafy) < ANALOGOUS;
   vars['--leafy'] =
-    hex(crowded ? leafy.L - LEAFY_DROP : leafy.L, leafy.C, (roles.leafy + 360) % 360);
+    hex(crowded ? leafyInk.L - LEAFY_DROP : leafyInk.L, leafyInk.C, (roles.leafy + 360) % 360);
 
-  return repair(vars, roles, sheet, pigment);
+  return repair(vars, roles, sheet, accentInk);
 }
 
 /**
@@ -797,11 +949,14 @@ function build(roles, traits) {
  * PIGMENT directly, because the palette it is repairing was not built from
  * those: a vivid board's ink starts with more chroma in it and a dark board's
  * paper starts lower, and re-deriving from the means would quietly undo both.
+ * `accentInk` is the same thing one step further - the accent as the pictures
+ * measured it, which is what the fallback below has to restore it to.
  */
-function repair(vars, roles, sheet, pigment) {
+function repair(vars, roles, sheet, accentInk) {
   const paper = vars['--paper'];
   for (const [key, floor] of Object.entries(FLOOR)) {
-    let { L, C } = sheet[key];
+    const { C } = sheet[key];
+    let { L } = sheet[key];
     for (let i = 0; i < 40 && contrast(vars[key], paper) < floor; i++) {
       L = Math.max(0, L - 0.02);
       vars[key] = hex(L, C, roles.sheet);
@@ -814,7 +969,8 @@ function repair(vars, roles, sheet, pigment) {
   // against a nominal white. A hue that cannot clear the floor with a light
   // label gets a dark one instead, which is what Peacock's gold needed by hand.
   const light = mixHex(paper, '#ffffff', 0.55);
-  let { L, C } = pigment['--accent'];
+  const { C } = accentInk;
+  let { L } = accentInk;
   for (let i = 0; i < 40 && contrast(vars['--accent'], light) < ACCENT_FLOOR; i++) {
     L = Math.max(0, L - 0.02);
     vars['--accent'] = hex(L, C, roles.accent);
@@ -831,7 +987,7 @@ function repair(vars, roles, sheet, pigment) {
     // gamut long before they run out of lightness. Flip the label to the ink,
     // restore the accent to the lightness the palette wanted, and let the
     // brightest hues stay bright.
-    vars['--accent'] = hex(pigment['--accent'].L, pigment['--accent'].C, roles.accent);
+    vars['--accent'] = hex(accentInk.L, accentInk.C, roles.accent);
     vars['--accent-fg'] = vars['--ink'];
   }
   return vars;

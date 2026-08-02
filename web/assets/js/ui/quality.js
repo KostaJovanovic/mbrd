@@ -4,7 +4,7 @@
 // about when each can run:
 //
 //   armQuality()   reads the saved level and writes it onto <html>, which is
-//                  what the [data-quality] blocks in tokens.css and app.css key
+//                  what the [data-quality] blocks in tokens.css and the CSS key
 //                  off. Called before the panel is painted, so a phone left on
 //                  Light does not flash a blurred, shadowed board first. The
 //                  inline script in index.html does the same thing one moment

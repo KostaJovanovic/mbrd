@@ -73,7 +73,7 @@ test('the query never drops a box that truly overlaps (no false negatives)', () 
   const coord = () => (rand() - 0.5) * span;
   const size = () => 5 + rand() * 900;   // from tiny to several cells wide
 
-  for (let cellSize of [50, 200, 512, 1500]) {
+  for (const cellSize of [50, 200, 512, 1500]) {
     const boxes = [];
     for (let i = 0; i < 400; i++) boxes.push(box('b' + i, coord(), coord(), size(), size()));
     rebuild(boxes, cellSize);

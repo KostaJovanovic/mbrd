@@ -24,17 +24,20 @@
 import {
   board, bus, setAppearance, setSetting, MOBILE_APPEARANCE_VARS,
 } from '../state.js';
-import { appearanceControlVisible, whimsyControlsSnap } from '../layout-settings.js';
+import { whimsyControlsSnap } from '../layout-settings.js';
 import { clamp, readPrefJSON, toast, writePref } from '../util.js';
-import { assetURL } from '../storage/assets.js';
+import { assetURL, getAsset } from '../storage/assets.js';
 import {
   extractPalette, oklch, paletteFromAccent, samplePixels, MAX_SOURCES, PALETTE_TOKENS,
 } from './pigments.js';
 // What a board is allowed to ask for. Kept in its own module because this one
 // touches document at import time and that one must stay testable - see look.js.
 import { safeVars } from './look.js';
-import { customFaces } from './fonts.js';
-import { field } from './controls.js';
+import {
+  initAppearanceControls, buildControls, syncControls, syncControlVisibility,
+  syncAutoBox, syncPaletteSources, wireAutoPalette, wirePaletteSources,
+  wireWhimsy, wirePalette, inputs, toHex,
+} from './appearance-controls.js';
 
 const STORE_KEY = 'mbrd.appearance';
 
@@ -187,6 +190,16 @@ let onChange = () => {};
 
 export function initAppearance(handlers = {}) {
   onChange = handlers.onChange || (() => {});
+
+  // Hand the panel what it borrows from this module. First, before anything
+  // below can call into it. `current` goes through as a getter rather than by
+  // value because the four sites below reassign it - a board arriving replaces
+  // the whole look - and a captured reference would go stale on the first open.
+  initAppearanceControls({
+    CONTROLS, HOSTS, WHIMSY, ALL_SOURCES_STOP,
+    current: () => current,
+    apply, persist, setVar, setWhimsy, setAutoPalette, sourceCount, autoOn,
+  });
 
   // The other half of the throttled preference write - see storeLook(). pagehide
   // rather than beforeunload, which iOS Safari does not reliably fire, and
@@ -443,7 +456,7 @@ let fadeEnd = 0, fading = false;
  */
 function followFade() {
   if (typeof requestAnimationFrame !== 'function') return;
-  // Nothing to follow when the reader asked for less motion - app.css cuts every
+  // Nothing to follow when the reader asked for less motion - the CSS cuts every
   // duration to a hundredth of a millisecond - but the loop is still entered for
   // one frame, because the settle at the end of it is not decoration. See below.
   const still = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -572,7 +585,7 @@ function dropPigments() {
 }
 
 /**
- * The pictures the palette is taken from, newest first.
+ * The pictures the palette is taken from, newest first, as content hashes.
  *
  * Newest first because a board that grows past MAX_SOURCES should follow what
  * is being added to it rather than stay pinned to whatever was dropped first.
@@ -580,9 +593,19 @@ function dropPigments() {
  * The covers count as pictures. A board of audio cards is a board full of album
  * art, and reading the sleeve of every record on it is exactly what somebody
  * pressing the button means.
+ *
+ * Hashes rather than object URLs, and that is the whole of the difference from
+ * the version this replaced. assetURL() *mints* a URL on first use and holds it
+ * for the session, so walking the board to answer "has the picture set changed?"
+ * created one blob URL per picture on the board - four hundred of them on a
+ * four-hundred-photo board, whether or not any of them was ever rendered,
+ * sampled or mounted, which is exactly the laziness storage/assets.js exists to
+ * preserve and defeats canvas/items.js's discard() bookkeeping for anything
+ * culled. A hash is a stable identity and costs nothing; the URLs are resolved
+ * in recolourFromBoard(), for the handful actually read.
  */
-function pictureURLs() {
-  const urls = [];
+function pictureHashes() {
+  const hashes = [];
   for (const it of [...board.items].reverse()) {
     // Pictures only, named explicitly rather than taken from itemHashes(): that
     // helper also returns a video's or an audio file's asset, and handing those
@@ -590,11 +613,12 @@ function pictureURLs() {
     // vote. A video's cover art is still wanted, and is picked up below.
     const hash = it.type === 'image' ? it.asset?.hash : null;
     for (const h of [hash, it.meta?.cover]) {
-      const url = h && assetURL(h);
-      if (url) urls.push(url);
+      // Registered, but not resolved: getAsset() is the same "are the bytes
+      // here?" test assetURL() returning null used to stand in for.
+      if (h && getAsset(h)) hashes.push(h);
     }
   }
-  return urls;
+  return hashes;
 }
 
 /**
@@ -628,9 +652,12 @@ const ALL_SOURCES_STOP = MAX_SOURCES + 1;
  * count is never read. Order is part of it, and so is the count itself: the same
  * pictures with the dial turned down are a different, shorter list - which is
  * what makes turning the dial re-derive the palette.
+ *
+ * Hashes, so the key survives a clearAssets() that re-registers the same bytes -
+ * the identity is the content, not whichever URL happens to be standing.
  */
 function sourceKey() {
-  return pictureURLs().slice(0, sourceCount()).join('\n');
+  return pictureHashes().slice(0, sourceCount()).join('\n');
 }
 
 /** The pictures the palette standing on screen was taken from - see sourceKey(). */
@@ -653,7 +680,11 @@ let lastFailure = null;
  * does not nag on every single edit.
  */
 async function recolourFromBoard({ silent = false } = {}) {
-  const urls = pictureURLs();
+  const hashes = pictureHashes();
+  // Sliced before the URLs are resolved, not after: a picture past the count is
+  // never read, and minting a blob URL for it would hold the whole board's
+  // pictures open for the session to sample twelve of them.
+  const urls = hashes.slice(0, sourceCount()).map(assetURL).filter(Boolean);
   // Recorded before the pixels are read, not after: the answer to "which
   // pictures is the palette standing on" is these, whatever they turn out to
   // say. Recording it afterwards would leave a board whose pictures have no
@@ -674,7 +705,9 @@ async function recolourFromBoard({ silent = false } = {}) {
   // board's colours now" - but on a board you have just cleared they are the
   // colours of pictures that are not there, which is the one case where the
   // palette is provably not a representation of anything.
-  if (!urls.length) {
+  // Asked of the board, not of the slice: "no pictures here" is a fact about
+  // the board, and a dial turned down is not an empty board.
+  if (!hashes.length) {
     if (dropPigments()) {
       persist();
       syncControls();
@@ -696,7 +729,7 @@ async function recolourFromBoard({ silent = false } = {}) {
   // the count of pictures found against pictures actually decoded is the whole
   // diagnosis - without it the answer to "why has nothing changed?" is a
   // browser-by-browser guess, which is exactly what it was.
-  console.info(`[mbrd] palette: ${urls.length} picture${urls.length === 1 ? '' : 's'} on the board, ${pixels.length} read`);
+  console.info(`[mbrd] palette: ${hashes.length} picture${hashes.length === 1 ? '' : 's'} on the board, ${pixels.length} read`);
   // Told apart from "no colour in them" on purpose. Pictures that are on the
   // board and cannot be read at all is a fault in this app, not a fact about
   // the photographs, and the two failures used to arrive as one message.
@@ -808,7 +841,7 @@ function apply(look) {
  * Say whether the display face is a sans, for the one rule that cares.
  *
  * The wordmark is set as heavy as the face allows when it is a sans and left at
- * 400 when it is not - see `.wordmark h1` in app.css. CSS cannot ask what
+ * 400 when it is not - see `.wordmark h1` in base.css. CSS cannot ask what
  * family it ended up with, so the question is answered here and left on :root
  * as an attribute.
  *
@@ -1032,230 +1065,3 @@ const autoOn = look => look?.auto !== false;
 // happened to be set second, and this would then re-apply a look identical to
 // the one already on screen every time the board emitted an event.
 const sameLook = (a, b) => JSON.stringify(clone(a)) === JSON.stringify(clone(b));
-
-// ---------------------------------------------------------------------------
-// Controls
-// ---------------------------------------------------------------------------
-
-const inputs = new Map();
-
-function buildControls() {
-  const hosts = {};
-  for (const [name, id] of Object.entries(HOSTS)) {
-    const node = document.getElementById(id);
-    if (node) { node.replaceChildren(); hosts[name] = node; }
-  }
-  if (!Object.keys(hosts).length) return;
-
-  for (const c of CONTROLS) {
-    const host = hosts[c.host];
-    if (!host) continue;
-    const { label, out } = field(c.label, { out: true });
-
-    // A <select> rather than an <input>, and 'change' rather than 'input',
-    // because a face is a choice from a list and not a value on a scale.
-    const input = c.type === 'font' ? document.createElement('select')
-                                    : document.createElement('input');
-    if (c.type === 'font') {
-      // The board's own faces first, above the shipped list: a face somebody
-      // went and dropped in is the one they are looking for, and burying it
-      // under six they did not choose is how a feature reads as missing.
-      const faces = [...c.options];
-      const own = customFaces();
-      if (own.length) faces.splice(1, 0, ...own);
-      for (const f of faces) {
-        const opt = document.createElement('option');
-        opt.value = f.value;
-        opt.textContent = f.label;
-        // Each name set in the face it names, so the list is the comparison
-        // rather than a legend for one. Costs nothing: every stack here is
-        // already loaded or already on the machine.
-        if (f.value && !f.value.startsWith('var(')) opt.style.fontFamily = f.value;
-        input.append(opt);
-      }
-      input.addEventListener('change', () => setVar(c.var, input.value));
-    } else {
-      input.type = c.type === 'color' ? 'color' : 'range';
-      if (c.type === 'range') {
-        input.min = c.min; input.max = c.max; input.step = c.step;
-      }
-      input.addEventListener('input', () => {
-        const value = c.type === 'color' ? input.value : input.value + (c.unit || '');
-        out.textContent = c.type === 'color' ? '' : format(input.value, c);
-        setVar(c.var, value);
-      });
-    }
-
-    label.append(input);
-    host.append(label);
-    inputs.set(c.var, { input, out, label, spec: c });
-  }
-  syncControls();
-}
-
-function syncControlVisibility() {
-  for (const [name, { label }] of inputs) {
-    label.hidden = !appearanceControlVisible(name, board.layoutMode);
-  }
-}
-
-function syncControls() {
-  syncControlVisibility();
-  const computed = getComputedStyle(root);
-  for (const [name, { input, out, spec }] of inputs) {
-    const raw = (current.vars[name] ?? computed.getPropertyValue(name)).trim();
-    if (spec.type === 'font') {
-      // Read off `current.vars` alone, never off the computed value. The
-      // computed one is whatever the whimsy level resolved to, which is a stack
-      // that matches no option here and would select nothing - where '' is a
-      // real state with a real entry: the level still has the type.
-      input.value = current.vars[name] ?? '';
-      out.textContent = '';
-    } else if (spec.type === 'color') {
-      input.value = toHex(raw) || '#000000';
-      out.textContent = '';
-    } else {
-      const n = parseFloat(raw);
-      input.value = Number.isFinite(n) ? n : spec.min;
-      out.textContent = format(input.value, spec);
-    }
-  }
-  const paletteSel = document.getElementById('opt-palette');
-  if (paletteSel) paletteSel.value = current.palette || '';
-
-  const whimsy = document.getElementById('opt-whimsy');
-  if (whimsy) whimsy.value = current.whimsy;
-
-  syncAutoBox();
-}
-
-/**
- * The switch on its own, because setVar() can turn it off and must not run the
- * full sync to say so.
- *
- * syncControls() writes every control's value back from the look, including the
- * colour input that is mid-drag when this fires - and a colour picker being
- * assigned to while the pointer is down is how you get a value that jumps back
- * a frame after each move. The checkbox is the only thing that changed, so the
- * checkbox is the only thing rewritten.
- */
-function syncAutoBox() {
-  const box = document.getElementById('opt-auto-palette');
-  if (box) box.checked = autoOn(current);
-  // The source-count dial only means anything while the switch is on - with it
-  // off the palette is the chosen one and no picture is read - so it comes down
-  // with the switch rather than sitting there inert.
-  const field = document.getElementById('palette-sources-field');
-  if (field) field.hidden = !autoOn(current);
-  syncPaletteSources();
-}
-
-function wireAutoPalette() {
-  const input = document.getElementById('opt-auto-palette');
-  if (!input) return;
-  input.checked = autoOn(current);
-  input.addEventListener('change', () => setAutoPalette(input.checked));
-}
-
-/** The slider showing its own value, and the count it reflects. */
-function syncPaletteSources() {
-  const input = document.getElementById('opt-palette-sources');
-  const out = document.getElementById('opt-palette-sources-out');
-  const n = sourceCount();
-  const all = n === Infinity;
-  if (input && document.activeElement !== input) {
-    input.value = String(all ? ALL_SOURCES_STOP : n);
-  }
-  if (!out) return;
-  // Named rather than counted at the top stop, and the count of what is on the
-  // board is deliberately not printed: it would change under you every time a
-  // picture arrived, in a readout nobody is watching for that.
-  out.textContent = all ? 'Every photo' : `${n} photo${n === 1 ? '' : 's'}`;
-}
-
-function wirePaletteSources() {
-  const input = document.getElementById('opt-palette-sources');
-  if (!input) return;
-  input.max = String(ALL_SOURCES_STOP);
-  input.value = String(sourceCount() === Infinity ? ALL_SOURCES_STOP : sourceCount());
-  input.addEventListener('input', () => {
-    const n = +input.value;
-    setSetting('paletteSources', n >= ALL_SOURCES_STOP ? 0 : n);
-  });
-  syncPaletteSources();
-}
-
-function wireWhimsy() {
-  const input = document.getElementById('opt-whimsy');
-  if (!input) return;
-  input.max = WHIMSY.length - 1;
-  input.value = current.whimsy;
-  input.addEventListener('input', () => setWhimsy(input.value));
-}
-
-function format(value, spec) {
-  const n = parseFloat(value);
-  // Match the readout's precision to the slider's step, so a 0.1px grid weight
-  // doesn't display as a flat "2px" through its whole range.
-  const decimals = spec.step >= 1 ? 0 : String(spec.step).split('.')[1].length;
-  return n.toFixed(decimals) + (spec.unit || '');
-}
-
-function wirePalette() {
-  const sel = document.getElementById('opt-palette');
-  if (!sel) return;
-  sel.value = current.palette || '';
-  sel.addEventListener('change', () => {
-    // A palette switch replaces the pigments wholesale, so per-token colour
-    // tweaks are dropped - otherwise the old accent would stick to the new
-    // paper and every palette after the first would look muddy.
-    //
-    // Two of them when they were hand-picked, because those are the two the
-    // panel offers and dropping more would throw away something the user cannot
-    // see to put back. All thirteen when they were extracted from photographs,
-    // because a derived look is not a set of tweaks to keep on top of a chosen
-    // palette - it *is* a palette, and leaving eleven of its tokens inline
-    // would leave the named one outvoted on its own sheet.
-    for (const key of current.derived ? Object.keys(current.vars) : ['--accent', '--paper']) {
-      delete current.vars[key];
-      root.style.removeProperty(key);
-    }
-    delete current.derived;
-    // Choosing a palette by name is a decision about colour, and it takes the
-    // switch with it for the same reason picking a pigment by hand does - see
-    // setVar(). This is also the way back from an extracted palette: it is the
-    // one control that drops all fourteen tokens at once.
-    current.auto = false;
-    current.palette = sel.value;
-    apply(current);
-    persist();
-    syncControls();   // computed colours changed under us
-  });
-}
-
-/**
- * Normalise whatever the browser reports for a colour token into #rrggbb, which
- * is the only thing <input type="color"> accepts.
- */
-function toHex(value) {
-  const v = value.trim();
-  if (/^#[0-9a-f]{6}$/i.test(v)) return v.toLowerCase();
-  if (/^#[0-9a-f]{3}$/i.test(v)) return '#' + [...v.slice(1)].map(c => c + c).join('').toLowerCase();
-  const m = v.match(/^rgba?\(([^)]+)\)$/i);
-  if (m) {
-    const [r, g, b] = m[1].split(/[\s,/]+/).map(Number);
-    return '#' + [r, g, b].map(n => clamp255(n).toString(16).padStart(2, '0')).join('');
-  }
-  // color(), oklch(), a named colour: round-trip it through a canvas.
-  try {
-    const ctx = document.createElement('canvas').getContext('2d');
-    ctx.fillStyle = '#000';
-    ctx.fillStyle = v;
-    const out = ctx.fillStyle;
-    return /^#[0-9a-f]{6}$/i.test(out) ? out.toLowerCase() : null;
-  } catch {
-    return null;
-  }
-}
-
-const clamp255 = n => clamp(Math.round(n || 0), 0, 255);

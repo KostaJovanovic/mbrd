@@ -12,7 +12,7 @@
 // Written out in full rather than composed from PREFIX, because save.bat bumps
 // this line by regex on every commit and would not recognise an expression.
 // tests/sw.test.js holds the two together.
-const VERSION = 'mbrd-v110';
+const VERSION = 'mbrd-v111';
 const PREFIX = 'mbrd-';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) turns the
@@ -27,7 +27,17 @@ const SHELL = [
   './index.html',
   './manifest.json',
   './assets/css/tokens.css',
-  './assets/css/app.css',
+  // The eight subsystem stylesheets, in the order index.html loads them, which
+  // is the cascade - see the banner at the top of base.css. quality.css is last
+  // there and is last here.
+  './assets/css/base.css',
+  './assets/css/canvas.css',
+  './assets/css/items.css',
+  './assets/css/sidebar.css',
+  './assets/css/chrome.css',
+  './assets/css/overlays.css',
+  './assets/css/mobile.css',
+  './assets/css/quality.css',
   './assets/img/icon.svg',
   './assets/img/icon-maskable.svg',
   // The same two icons as bitmaps, because not every place an installed icon
@@ -42,7 +52,7 @@ const SHELL = [
   './assets/img/icon-512.png',
   './assets/img/icon-maskable-192.png',
   './assets/img/icon-maskable-512.png',
-  // The stock the sheet is printed on - app.css multiplies it over body. Not
+  // The stock the sheet is printed on - the CSS multiplies it over body. Not
   // decoration that can fail to no-op: without it the board loses its tooth
   // offline and the paper reads a shade lighter than it does online.
   './assets/img/paper-grain.webp',
@@ -53,6 +63,7 @@ const SHELL = [
   './assets/img/credit-omarzunic.webp',
   './404.html',
   './assets/js/main.js',
+  './assets/js/commands.js',
   './assets/js/state.js',
   './assets/js/layout-settings.js',
   './assets/js/util.js',
@@ -78,11 +89,15 @@ const SHELL = [
   './assets/js/storage/idb.js',
   './assets/js/storage/mbrd.js',
   './assets/js/storage/storage.js',
+  './assets/js/storage/session.js',
+  './assets/js/storage/naming.js',
   './assets/js/storage/zip.js',
   './assets/js/canvas/web.js',
   './assets/js/canvas/ghosts.js',
   './assets/js/canvas/stills.js',
   './assets/js/canvas/renderers.js',
+  './assets/js/canvas/note-model.js',
+  './assets/js/canvas/poster.js',
   './assets/js/canvas/notes.js',
   './assets/js/canvas/audio.js',
   './assets/js/canvas/video.js',
@@ -104,6 +119,7 @@ const SHELL = [
   './assets/js/ui/settings-schema.js',
   './assets/js/ui/quality.js',
   './assets/js/ui/appearance.js',
+  './assets/js/ui/appearance-controls.js',
   './assets/js/ui/dialog.js',
   './assets/js/ui/credits.js',
   './assets/js/ui/fonts.js',
@@ -115,6 +131,11 @@ const SHELL = [
   './assets/js/ui/idle.js',
   './assets/js/ui/nowplaying.js',
   './assets/js/ui/scalebar.js',
+  './assets/js/ui/hud.js',
+  './assets/js/ui/board-view.js',
+  './assets/js/ui/board-title.js',
+  './assets/js/ui/board-actions.js',
+  './assets/js/perf/view-perf.js',
   // Optimising a board of photographs and music must work on a plane. Pictures
   // and sound are done by the browser itself, so they are all here - the ffmpeg
   // core the last two reach for is thirty megabytes and is deliberately *not*;
