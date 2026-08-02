@@ -83,6 +83,16 @@ that closes over a whole-board snapshot passes a fourth argument, `weight`: the
 number of items it retains, so the history evicts on what it holds and not only
 on how many entries it has.
 
+Undo is not the only way back. `ui/trash.js` is the bin, and the two are
+different models on purpose: undo is a stack, so it returns the *last* thing
+and only if nothing has happened since; the bin holds everything thrown away
+(`TRASH_LIMIT`, 60) with no relation to what came after, taken back one at a
+time. Restoring is a **drag** rather than a Restore button, because a deleted
+item remembers where it was and that spot is usually why it was deleted — the
+board has grown into the gap, so the drag is what says where it goes now. Title
+and ghost cards are never binned: the title card is a singleton with its own
+restore control in the dock, and a dismissed ghost does not come back at all.
+
 `main.js` is the wiring point: it builds the `Viewport`, calls every `init*()`,
 and owns `cmds`, the single command surface that sidebar buttons
 (`data-cmd="…"`), the keyboard and the context menu all drive. A new user-facing
@@ -102,6 +112,14 @@ up — `ui/appearance.js` (whimsy, palette, the three token hosts) and
 elements. The panel is built **once**, before those modules run, and repainted;
 it is never rebuilt, because they hold their nodes.
 
+A row's *shape* comes from `ui/controls.js` — `field()` and `fieldStops()` —
+and not from whoever is building it. `ui/panel.js`, `ui/appearance.js` and
+`ui/mobile-header.js` all call them, because the CSS pins that structure
+exactly (`.field > span` is the flex head, `.field output` the readout,
+`.field:has(select)` draws its own chevron), and a fourth site hand-building
+the three elements gets a row that is very nearly right. A new control *type*
+goes there; a new control *instance* goes in the schema.
+
 Not all chrome is in the panel. `ui/nowplaying.js` is the bar along the foot
 that comes up when a clip starts: the transport again, pinned to the glass, so
 the thing making a noise can be stopped by whoever is listening rather than by
@@ -111,6 +129,15 @@ the bar is up. It keeps playing off-screen because `sounding()` in
 `canvas/items.js` exempts the one card making a noise from the cull; removing a
 media element from the document pauses it, so before that a pan stopped the
 music.
+
+`ui/credits.js` is the sheet the footer's Credits button opens — a plain module
+beside `ui/dialog.js` rather than a fourth mode inside it, because it asks
+nothing and resolves to nothing, so none of `ask()`'s queueing applies. Its
+markup is static in `index.html` for the same reason `#ask`'s is, and it shares
+every `#ask` rule that is about being a sheet. The faces on it are committed
+files under `assets/img`, not GitHub URLs: fetching them would make it a fourth
+thing reaching outside, for decoration, on the screen about the people who wrote
+the rule.
 
 `ui/search.js` is a palette over the canvas
 rather than a field in the sidebar — a search you have to open a drawer to reach
@@ -199,6 +226,37 @@ gesture map — read it before adding a binding.
 `canvas/renderers.js` is one entry per item type — `RENDERERS` plus a branch in
 `classify()`. Adding a type touches nothing else.
 
+Ghost cards — the hints a blank board opens with, three sentences and the
+whimsy dial — are **real items** in `board.items`, not an overlay, because an
+overlay would have meant a second gesture pipeline beside `canvas/input.js` for
+the sake of four cards. `state.js` owns their ids (`GHOST_IDS`) and their
+geometry; `canvas/ghosts.js` owns the words and the moment they go, since
+`state.js` sits below the canvas and holds no user-facing prose — an item
+carries only a key in `meta.hint`. Being furniture rather than content is
+enforced at exactly three places: `serializeBoard()` strips them so no `.mbrd`
+carries one, `removeItems()` does not bin them, and `dismissGhosts()` is
+hydration rather than a command — no commit, no history — which is what makes
+their leaving survive an undo of the import that triggered it.
+
+`canvas/exit-anim.js` is the animation a card plays as it is deleted, and the
+whole trick is that it runs on a **clone** lifted into a screen-space overlay
+while the real node is discarded on schedule. Nothing there touches state,
+undo, media release or culling; the clone is stripped of its `<video>`/
+`<audio>` source so a card fading out cannot hold a stream open, and undo can
+rebuild the item immediately without two nodes fighting for the same id.
+`exitKindFor()` is pure — the whimsy tier picks the feel, except a title card,
+which vanishes and drops a chip toward the bin.
+
+`canvas/grain.js` takes both its position **and** its size from the board: the
+paper travels on a pan and scales on a zoom, because flecks that belong to the
+sheet are a fixed size *on the sheet*. Locked to the glass it reads as dirt on
+the lens; travelling but not scaling reads as a second surface with its own
+idea of how big things are. The cost is that a pinch is now a full-screen
+re-raster rather than a re-position — a pan is still one `background-position`
+write — and that a scaling grain sweeps its frequency through the grid's. The
+noise is isotropic rather than a lattice, which is what turns what would be
+hard moire into a broad swim; a zoom-out over a Harsh board is where to check.
+
 `canvas/model.js` holds **one** WebGL context for the whole app and blits it into
 each card's 2D canvas; browsers cap contexts around sixteen and a panning board
 would spend them all. Model cards are stored as self-photographed WebP stills
@@ -231,7 +289,14 @@ container on top of it (`docs/mbrd-format.md` is the spec).
 IndexedDB (same store as the autosave interval), Export packs the `.mbrd` file
 via the File System Access API where available. They fail differently, and the
 UI says which is which. Any path that can replace the current board must go
-through the discard confirmation. `storage/idb.js` is the whole IndexedDB
+through the discard confirmation, which is `ask()` in `ui/dialog.js` — it
+replaces `confirm()` because a destructive question has *three* answers, and
+the useful one is "no, let me save this first". It resolves to `'go'`, `'keep'`
+or `'cancel'`, and every accidental way out (Escape, backdrop, close) is
+`'cancel'`; with no document it resolves to `'cancel'` too, so an unanswerable
+question about discarding somebody's work is answered "don't". Passing a
+`field` changes the contract to "what" rather than "which", and it resolves to
+the trimmed string or `null`. `storage/idb.js` is the whole IndexedDB
 surface — two stores, `kv` for the board snapshot and `assets` for Blobs by
 hash — and it is crash recovery only. The durable artefact is always the `.mbrd`
 the user saved.
@@ -295,7 +360,14 @@ service worker's `SHELL` would have to learn about.
   are `main.js`, `ui/appearance.js` and `optimize/media-worker.js`, listed in
   `tests/imports.test.js`. Adding a fourth is a regression.
 - **Every shipped asset appears in `SHELL` in `web/sw.js`** (`tests/sw.test.js`).
-  That list drifted once and left a font uncached offline.
+  That list drifted once and left a font uncached offline. The test walks
+  `assets/js`, `assets/css` and `assets/fonts`, which is what makes
+  `web/lab.html` possible: a bench for the palette extractor, deliberately out
+  of the offline shell, sitting at `web/`'s top level only because `serve.py`'s
+  document root is `web/` and that is the one place a page can `import` the
+  real `ui/pigments.js` rather than a copy. It is a single file with no module
+  of its own under `assets/js` for exactly that reason — put one there and the
+  walk would rightly demand it be precached.
 - **The layering graph is executable** (`tests/layers.test.js`), not advice.
 - **Every bundled `woff2` family has its licence file beside it**
   (`tests/fonts-license.test.js`). Geist shipped without one for several

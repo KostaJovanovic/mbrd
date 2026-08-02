@@ -3796,13 +3796,32 @@ kbd {
 /* Quiet by construction: the same size and colour as the version number beside
    it, underlined only on the way past. Loud is one edit away - a mark in the
    .side-head next to the wordmark - and that is a decision rather than a
-   default, so it is not taken here. */
+   default, so it is not taken here.
+
+   It is a <button> now and still dressed as the text it replaced: no box, no
+   fill, no padding of its own. A control shaped like a control would be the
+   loudest thing in a row built to be ignored, and the row's own font, size and
+   letter-spacing are what it should be wearing - which is what `inherit` on all
+   four of these is buying. */
 .side-foot .by {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
   color: inherit;
   text-decoration: none;
+  cursor: pointer;
   transition: color var(--dur-fast) var(--ease);
 }
 .side-foot .by:hover { color: var(--accent); text-decoration: underline; }
+/* Tabbed to rather than clicked: the same ring the dialog buttons, the search
+   hits and the context menu use, and nothing at all for a plain click. */
+.side-foot .by:focus { outline: none; }
+.side-foot .by:focus-visible {
+  outline: var(--sel-line) solid var(--select);
+  outline-offset: var(--sel-gap);
+}
 
 /* ---------------------------------------------------------
    HUD, drop overlay, toast
@@ -5009,11 +5028,14 @@ kbd {
      than neither following the axis. */
   transition: opacity 300ms var(--ease);
 }
-/* The question dialog. Dressed as the app rather than as the browser: the same
-   sheet, hairline, leaf radius and lift budget every other surface uses, so the
-   one moment this thing interrupts you it still looks like the thing you were
-   using. */
-#ask {
+/* The question dialog, and the credits sheet beside it. Dressed as the app
+   rather than as the browser: the same sheet, hairline, leaf radius and lift
+   budget every other surface uses, so the one moment this thing interrupts you
+   it still looks like the thing you were using.
+   The two share every rule below that is about being a sheet, and part company
+   only at their width - which is the point of writing them together rather than
+   twice. */
+#ask, #credits {
   max-width: min(420px, calc(100vw - 32px));
   padding: 22px 24px 18px;
   border: var(--hairline) solid var(--rule-2);
@@ -5026,14 +5048,14 @@ kbd {
   margin: auto;
   animation: ask-in var(--dur-base) var(--ease-back);
 }
-#ask::backdrop {
+#ask::backdrop, #credits::backdrop {
   /* Tinted with the board's own ink rather than plain black, so the sheet
      behind it dims into the palette instead of going grey. */
   background: color-mix(in srgb, var(--ink) 42%, transparent);
   -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
 }
-#ask h2 {
+#ask h2, #credits h2 {
   margin: 0 0 8px;
   font-family: var(--font-display);
   font-size: var(--t-title);
@@ -5113,6 +5135,109 @@ kbd {
   color: var(--paper-card);
 }
 @keyframes ask-in { from { opacity: 0; transform: translateY(8px) scale(0.97); } }
+
+/* The credits sheet. Everything about it being a sheet is shared with #ask
+   above; what is left here is the list, and the list is two rows of a face
+   beside a name.
+   Wider than the question dialog by sixty pixels and no more. A quote set on
+   two lines reads as a quote; set on four it reads as a paragraph, and a
+   paragraph is not what anybody opened this for. */
+#credits { max-width: min(480px, calc(100vw - 32px)); }
+#credits h2 { margin-bottom: 16px; }
+.credit-list {
+  margin: 0 0 18px;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 18px;
+}
+.credit {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 14px;
+}
+/* Round, and round at every whimsy level - the one radius in this stylesheet
+   that is not var(--leaf) or var(--ogee) and is not meant to become one. The
+   corner tokens travel with the dial, and a face that squares off as the board
+   gets sharper reads as a card with a photograph cropped into it; these are
+   people, not items, and the shape says so however the rest of the board is
+   set. object-fit covers because both sources are square but nothing promises
+   the next one will be.
+   Sized in one place: the width, the height and the intrinsic attributes on
+   the <img> all say 56, so the row never reflows as the file decodes. */
+.credit-face {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 50%;
+  border: var(--hairline) solid var(--rule-2);
+  background: var(--paper-2);
+  box-shadow: var(--shadow-1);
+  transition: border-color var(--dur-fast) var(--ease),
+              transform var(--dur-base) var(--ease-back);
+}
+/* The face is a link to the same place the name is. `display: block` because an
+   inline anchor sits on the text baseline and leaves a strip of descender space
+   under a picture that has none.
+   No focus ring is written for it: it is out of the tab order (see the note in
+   index.html), so the only ring it could ever show would be one nobody asked
+   for. */
+.credit-face-link {
+  display: block;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.credit-face-link:hover .credit-face {
+  border-color: var(--accent);
+  transform: translateY(var(--btn-lift)) scale(var(--btn-grow));
+}
+/* Hovering the picture lights the name, because the name is the half of this
+   row that says where the click goes and the picture is the half people aim
+   at. `~` rather than a hover on the whole row: the quote is in there too, and
+   passing over a sentence is not reaching for a link. */
+.credit-face-link:hover ~ .credit-who .credit-name {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.credit-who { min-width: 0; }
+.credit-name {
+  display: inline-block;
+  font-family: var(--font-display);
+  font-size: var(--t-body);
+  color: var(--ink);
+  text-decoration: none;
+  transition: color var(--dur-fast) var(--ease);
+}
+.credit-name:hover { color: var(--accent); text-decoration: underline; }
+.credit-name:focus { outline: none; }
+.credit-name:focus-visible {
+  outline: var(--sel-line) solid var(--select);
+  outline-offset: var(--sel-gap);
+}
+/* The address under the name, in the voice every other aside in this app is
+   set in. Quiet enough to be scenery and legible enough to be typed out by
+   somebody who would rather not click a link. */
+.credit-site {
+  display: block;
+  font-family: var(--font-display);
+  font-size: var(--t-tiny);
+  font-style: var(--display-italic);
+  letter-spacing: calc(0.06em * var(--ls-scale));
+  color: var(--ink-3);
+}
+/* Marked as a quotation by the rule down its left rather than by quote marks,
+   because one of the two lines below is a placeholder in square brackets and
+   nested punctuation around it reads as a mistake. */
+.credit-quote {
+  margin: 8px 0 0;
+  padding-left: 10px;
+  border-left: var(--hairline) solid var(--rule-2);
+  font-size: var(--t-small);
+  font-style: var(--display-italic);
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
 
 .toast-line.is-going { opacity: 0; }
 .toast-line.is-error { border-color: var(--danger); color: var(--danger); }

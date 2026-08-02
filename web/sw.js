@@ -12,7 +12,7 @@
 // Written out in full rather than composed from PREFIX, because save.bat bumps
 // this line by regex on every commit and would not recognise an expression.
 // tests/sw.test.js holds the two together.
-const VERSION = 'mbrd-v108';
+const VERSION = 'mbrd-v109';
 const PREFIX = 'mbrd-';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) turns the
@@ -46,6 +46,11 @@ const SHELL = [
   // decoration that can fail to no-op: without it the board loses its tooth
   // offline and the paper reads a shade lighter than it does online.
   './assets/img/paper-grain.webp',
+  // The two faces on the credits sheet. Committed rather than fetched from
+  // GitHub - see the note above the dialog in index.html - which is exactly why
+  // they belong in here: a file this app ships is a file this app caches.
+  './assets/img/credit-valjdakosta.webp',
+  './assets/img/credit-omarzunic.webp',
   './404.html',
   './assets/js/main.js',
   './assets/js/state.js',
@@ -100,6 +105,7 @@ const SHELL = [
   './assets/js/ui/quality.js',
   './assets/js/ui/appearance.js',
   './assets/js/ui/dialog.js',
+  './assets/js/ui/credits.js',
   './assets/js/ui/fonts.js',
   './assets/js/ui/mobile-header.js',
   './assets/js/ui/look.js',

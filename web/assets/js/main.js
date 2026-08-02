@@ -51,6 +51,7 @@ import { initSearch, open as openSearch } from './ui/search.js';
 import { initIdle } from './ui/idle.js';
 import { initScaleBar } from './ui/scalebar.js';
 import { initTrash } from './ui/trash.js';
+import { openCredits } from './ui/credits.js';
 import { initNowPlaying } from './ui/nowplaying.js';
 import { initAppearance, resetAppearance, setWhimsy } from './ui/appearance.js';
 import { initFonts } from './ui/fonts.js';
@@ -169,6 +170,10 @@ const cmds = {
   },
   reload: reloadBoard,
   restart: () => restartApp(),
+  // Who made this. A command rather than a listener on the footer button, for
+  // the reason every other action here is one: the sidebar knows about data-cmd
+  // and about nothing else, so this is the only wiring the panel needs.
+  credits: () => openCredits(),
 
   selectAll,
   undo, redo,
