@@ -247,14 +247,15 @@
   <div class="side-tabs"></div>
   <div class="side-body"></div>
 
-  <!-- The credit sits at the quiet end on purpose. An anchor and nothing else:
-       no logo request, no analytics, no font from anywhere - the same rule the
-       link cards follow, so an offline board still renders this footer exactly
-       as an online one does. rel carries noopener because every outbound link
-       in this app does. -->
+  <!-- The credit sits at the quiet end on purpose, and it opens a sheet rather
+       than leaving for one: a name and a link had nowhere to put a second name
+       or anything either person would say. Dressed as the anchor it replaces
+       and not as a button, because the row it sits in is the version number's
+       and a control shaped like a control would be the loudest thing in it.
+       Routed through data-cmd like every other action in this panel. -->
   <footer class="side-foot">
     <span id="version"></span>
-    <a class="by" href="https://link.valjdakosta.com" target="_blank" rel="noopener noreferrer">valjdakosta</a>
+    <button type="button" class="by" data-cmd="credits">Credits</button>
   </footer>
 </aside>
 
@@ -612,6 +613,60 @@
     <span class="ask-gap"></span>
     <button type="button" id="ask-cancel"></button>
     <button type="button" id="ask-go" class="danger"></button>
+  </div>
+</dialog>
+
+<!-- The credits sheet the footer opens. A real <dialog> for the same four
+     reasons #ask is one, and written out here rather than built by ui/credits.js
+     because two names are not data: nothing about this list is decided at run
+     time, so the module above it is two listeners and no builder.
+     The faces are committed files, not GitHub URLs. An <img> pointing at
+     avatars.githubusercontent.com would tell somebody else's server that this
+     board was opened, which is the one thing this app does not do, and it would
+     leave the sheet broken offline. Both are dressed to a display size of 56px;
+     the first is 72px square because that is all its source is. -->
+<dialog id="credits" aria-labelledby="credits-title">
+  <h2 id="credits-title">Credits</h2>
+  <ul class="credit-list">
+    <li class="credit">
+      <!-- The face goes to the same place the name does, because a picture
+           beside a link is a thing people click and being right about that
+           costs one element. It is hidden from the keyboard and from screen
+           readers on purpose: two tab stops and two announcements for one
+           destination is worse than one of each, and the name below is the
+           one that can say where it goes. alt is empty for the same reason -
+           the name is the next thing read out. -->
+      <a class="credit-face-link" href="https://valjdakosta.com" tabindex="-1"
+         aria-hidden="true" target="_blank" rel="noopener noreferrer">
+        <img class="credit-face" src="assets/img/credit-valjdakosta.webp" alt=""
+             width="56" height="56" loading="lazy" decoding="async">
+      </a>
+      <div class="credit-who">
+        <a class="credit-name" href="https://valjdakosta.com"
+           target="_blank" rel="noopener noreferrer">valjdakosta</a>
+        <span class="credit-site">valjdakosta.com</span>
+        <p class="credit-quote">Of course it depends, of course it depends</p>
+      </div>
+    </li>
+    <li class="credit">
+      <a class="credit-face-link" href="https://omarzunic.com" tabindex="-1"
+         aria-hidden="true" target="_blank" rel="noopener noreferrer">
+        <img class="credit-face" src="assets/img/credit-omarzunic.webp" alt=""
+             width="56" height="56" loading="lazy" decoding="async">
+      </a>
+      <div class="credit-who">
+        <a class="credit-name" href="https://omarzunic.com"
+           target="_blank" rel="noopener noreferrer">Omar Zunic</a>
+        <span class="credit-site">omarzunic.com</span>
+        <p class="credit-quote">[INSERT FUNNY QUIP HERE]</p>
+      </div>
+    </li>
+  </ul>
+  <!-- Borrowing #ask's row and its gap: one button, pushed to the end, wearing
+       the same dressing every other dialog button in the app wears. -->
+  <div class="ask-row">
+    <span class="ask-gap"></span>
+    <button type="button" id="credits-close">Close</button>
   </div>
 </dialog>
 
