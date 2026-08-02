@@ -57,7 +57,7 @@ export const TOKENS = new Set([
  *
  * The names above are only half of it. An unknown custom property is inert -
  * nothing reads it - but an *allowed* one is substituted into real
- * declarations all over app.css, so `--paper: url(https://...)` would still
+ * declarations all over the CSS, so `--paper: url(https://...)` would still
  * fetch. What a token actually holds is a colour, a length, a number, a font
  * stack, a shadow or an easing curve, and all of those live inside this
  * alphabet.

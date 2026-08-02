@@ -29,11 +29,11 @@ import {
 } from './geometry.js';
 import { splitAppearance } from './layout-settings.js';
 import { mobileArrangement } from './arrange/arrangements.js';
-import { bus, selection, markDirty } from './board-store.js';
+import { bus, markDirty } from './board-store.js';
 import { commit, clearHistory } from './history.js';
 import {
-  board, byId, BOARD_MODES, DEFAULT_SETTINGS, MOBILE_COLUMNS, MOBILE_TOP_ROWS,
-  MOBILE_MIN_ROWS, MOBILE_BOTTOM_ROWS, MOBILE_APPEARANCE_VARS, mobileColumnCount,
+  board, byId, BOARD_MODES, DEFAULT_SETTINGS, MOBILE_TOP_ROWS,
+  MOBILE_MIN_ROWS, MOBILE_BOTTOM_ROWS, mobileColumnCount,
   cloneSettings, layoutSettingsOf, settingsFor, defaultLayoutSettings,
 } from './board-model.js';
 import { isRider, attachRiders, stuckPlacement, restick } from './sticky.js';
@@ -426,6 +426,11 @@ export function completeLayout(mode) {
       // selected or moved on this layout. Above the top edge it is out of every
       // one of those answers, and it costs nothing, because the one thing this
       // geometry is never used for on Mobile is drawing it.
+      //
+      // The stick half of that is now also fixed at the stick end - sticky.js
+      // refuses furniture as a host on either layout - so this parking is doing
+      // the obstacle job it was written for and no longer the only thing
+      // standing between a note and an invisible card.
       if (it.type === 'title') {
         map.set(it.id, geometryOf({
           ...it, x: 0, y: mobileBoardTop(step) + step + it.h / 2, rot: 0,

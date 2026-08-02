@@ -27,11 +27,15 @@
 
 import { byId, bus, markDirty, setNoteContent, retypeItem, board, NOTE_MAX } from '../state.js';
 import { nodeFor, onViewChange, screenBoxOf, viewportClientRect } from './items.js';
+import { linkURL, linkDraft } from './renderers.js';
+// The model, from the model. This module is the note *editor*; reaching through
+// the renderer for the shape both of them read was an arrow pointing the wrong
+// way, and the split is what let it be straightened.
 import {
-  linkURL, linkDraft, normalizeNoteRich, flattenNoteRich, buildNoteLine,
-  NOTE_TAGS, NOTE_ALIGNS, NOTE_VALIGNS, NOTE_FONTS, NOTE_FONT_KEYS, NOTE_MARKER,
+  normalizeNoteRich, flattenNoteRich, buildNoteLine,
+  NOTE_TAGS, NOTE_ALIGNS, NOTE_FONTS, NOTE_FONT_KEYS, NOTE_MARKER,
   NOTE_SIZE_MIN, NOTE_SIZE_MAX, NOTE_SIZE_STEP,
-} from './renderers.js';
+} from './note-model.js';
 
 /**
  * Height this note needs, in world px, for its text at `width`.
@@ -207,7 +211,7 @@ function buildToolbar(api) {
   };
   // A button carrying either text (the headings) or a CSS-drawn icon (the
   // alignment and vertical-placement controls, whose glyphs no font can be
-  // trusted to have). `icon` is a class suffix; the shape is painted in app.css.
+  // trusted to have). `icon` is a class suffix; the shape is painted in the CSS.
   const btn = (g, { text, icon, title, fn, key }) => {
     const b = document.createElement('button');
     b.type = 'button';

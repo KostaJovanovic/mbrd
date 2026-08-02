@@ -1,0 +1,358 @@
+/* =========================================================
+   mbrd - the reset, the page, and the sheet it is printed on
+
+   FIRST OF EIGHT. This was one 6,000-line app.css until it became the file
+   every interface change had to touch at once. It is now split by subsystem, and
+   index.html loads the parts in this order - which IS the cascade, so the order
+   is not cosmetic:
+
+     base      this file: reset, type, the page, paper, grain, the boot cover
+     canvas    #viewport, #world, the transform layer, the grid, the threads,
+               the paper outline, the Mobile sheet and masthead in screen space
+     items     the cards per type, the ghost hints, the grips, and what the
+               board stops paying for while it is being moved
+     sidebar   the panel: tabs, sections, folds, .field and its variants
+     chrome    the HUD, the drop overlay, toasts, the now-playing bar
+     overlays  the bin, the delete fly-out, the menu, Find, the waiting strip
+     mobile    touch, small screens, the Mobile sheet and masthead
+     quality   the whimsy axis and the quality dial - MUST STAY LAST, because
+               [data-whimsy] and [data-quality] have the same specificity as
+               what they override and win only on document order
+
+   A new rule goes next to the subsystem it styles. A new *file* has to be added
+   to index.html and to SHELL in sw.js - tests/sw.test.js walks this directory
+   and will say so.
+
+   Structure only. Every colour, corner, duration, typeface and ornament comes
+   from a custom property in tokens.css - nothing below names a hue, and the
+   handful of values that are written literally here are proportions rather
+   than style (a 50% centre, a 100% fill).
+
+   That is what lets the whimsy slider re-skin the whole interface at runtime
+   without touching these files, and what lets the board re-skin itself from the
+   pictures dropped on it. The rules gated on [data-whimsy] in quality.css are
+   the exceptions: the few decisions that are structural rather than numeric,
+   and so cannot live in a token.
+   ========================================================= */
+
+* { box-sizing: border-box; }
+
+/* Selected text, in this board's own pigment rather than the browser's blue.
+   Unqualified on purpose: it covers the canvas, the sidebar and the menus in
+   one rule, because a highlight is a property of the board's palette and not
+   of any one surface on it. See --highlight in tokens.css for why it is a
+   wash at two of the three whimsy levels and a solid block at the third. */
+::selection {
+  background: var(--highlight);
+  color: var(--highlight-ink);
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--t-body);
+  -webkit-font-smoothing: antialiased;
+  /* Kill rubber-band / pull-to-refresh: every gesture on this page is ours. */
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The small print goes in the display face.
+   Every selector here is an aside - a caption, a section head, a keyboard
+   legend, a toast - and an aside is the display voice's job, not the body's.
+   In the middle of the whimsy axis, where the two tokens name different
+   families, this is the split doing its work; at either end both name the
+   same family and the whole rule is a no-op. Grouped rather than repeated
+   thirteen times, and kept next to the body rule it is the counterweight to. */
+.card-icon, .card-meta, .item-label, .wordmark h1, .wordmark .sub,
+.side-sec h2, .field > span, .hint, .keys li, .side-foot,
+#bin-panel h2, #bin-none, #bin-hint, #drop-overlay div, #toast {
+  font-family: var(--font-display);
+}
+
+/* The sheet. #viewport paints the grid on top of this and stays transparent,
+   so the paper shows through at every zoom without the grid painter having to
+   know about it.
+   Blooms, a vignette and the stock's own tooth, in that order. What this rule
+   still refuses is *hatching*: fine repeating lines under a dot grid read as a
+   second, competing grid, and at fractional zoom the two beat against each
+   other into moire. The grain below scales with the board, so it does sweep its
+   frequency past the grid's - what keeps that survivable is that it is
+   isotropic noise rather than a lattice, and noise has no single period to beat
+   against. See canvas/grain.js, which owns both halves of that trade. */
+body {
+  background-color: var(--paper);
+  /* --wash scales the two colour blooms and --vignette the ink shading, so the
+     whimsy axis can flatten the paper to nothing - or decorate it without
+     darkening it - with no second background declaration to keep in sync.
+
+     The first bloom is the palette's own accent, and 3% rather than the 5% the
+     other pigments here take. It used to be --accent-warm, which is a warm
+     yellow in three of the four palettes - so whatever the board's colour, the
+     corner came out the same amber smudge, and on Orca's teal sheet it was a
+     gold blob 107 degrees off the palette (which is what --accent-warm is *for*
+     there; see its block in tokens.css). The accent tracks the theme instead,
+     including a palette ui/pigments.js has extracted from a picture.
+
+     The share drops because the accent is the darker pigment: measured against
+     plain paper, --accent-warm at 5% costs the corner 1.86 levels of lightness
+     and --accent at 5% costs 3.70, which reads as a stain rather than a bloom.
+     3% lands at 1.76 - the weight this always had - while carrying more chroma
+     than the warm did. */
+  background-image:
+    radial-gradient(58% 44% at 18% 12%, color-mix(in srgb, var(--accent) calc(3% * var(--wash)), transparent), transparent 70%),
+    radial-gradient(52% 40% at 84% 78%, color-mix(in srgb, var(--leafy) calc(4% * var(--wash)), transparent), transparent 72%),
+    radial-gradient(120% 100% at 50% 50%, transparent 55%, color-mix(in srgb, var(--ink) calc(5% * var(--vignette)), transparent));
+}
+
+/* The tooth of the stock: a 512px seamless tile of 300gsm grain, multiplied
+   over the finished sheet.
+
+   Multiply and not soft-light, which is the mode a grey texture usually wants.
+   Both soft-light and overlay are defined so that a backdrop of white comes
+   back unchanged, and this sheet is 98% light: measured against --paper, the
+   whole tile collapses into about two levels out of 255, and against
+   --paper-card into less than one. Multiply is subtractive and so has the whole
+   range below the sheet to work in. It also keeps the palettes honest for free
+   - scaling all three channels by the same grey leaves hue exactly where it
+   was, so an extracted pigment stays the colour ui/pigments.js derived.
+
+   The tile is baked high-key for the same reason: its levels run 236-255, so
+   the brightest fibres take nothing off the sheet and the darkest take about
+   7%. A tile centred on mid-grey would have spent most of its range darkening
+   uniformly and only the remainder on texture. Lossless WebP, because 19 levels
+   of grain is inside the quantisation noise of any lossy setting and the
+   banding is worse than the weight it saves.
+
+   Its own layer rather than a fourth background-image on the rule above,
+   because a background-blend-mode is fixed at authoring time and this wants the
+   whimsy dial the blooms and the vignette have.
+
+   A real element rather than a body::before, and that is forced. The layer has
+   to travel with the board - canvas/grain.js writes its background-position on
+   every view change - and a pseudo-element cannot be written to from script; it
+   would have to read a custom property off body instead. Body is an ancestor of
+   #world, and an inherited custom property written there once a frame
+   invalidates the computed style of every card on the board. That is the same
+   trap canvas/mobile-frame.js was built to get out of.
+
+   The 512px below is the tile at 100%. grain.js scales it with the zoom and
+   carries the same number, so what is written here is only what the layer
+   wears between first paint and the first view change. */
+/* Two surfaces, one stock. Desktop's paper is the window, so the grain is a
+   full-bleed layer under #viewport. Mobile's paper is the *sheet* - a finite,
+   deliberately opaque strip painted inside #viewport, above that layer - so on
+   Mobile the full-bleed one is covered by the board and shows only in the
+   surround around it, which is the board wearing its texture inside out. The
+   sheet therefore carries its own, and the full-bleed layer is taken off; see
+   the two rules below the shared block.
+
+   Both read their placement from custom properties rather than being written
+   directly, because one of the two surfaces is a pseudo-element. That is safe
+   here in a way it would not be on <body>: #grain is childless and
+   #mobile-board-frame has only this ::after, so an inherited custom property on
+   either invalidates nothing but itself. */
+#grain,
+#mobile-board-frame::after {
+  background-image: url("../img/paper-grain.webp");
+  background-repeat: repeat;
+  background-position: var(--grain-pos, 0 0);
+  background-size: var(--grain-tile, 512px 512px);
+  mix-blend-mode: multiply;
+  pointer-events: none;
+  /* Two dials multiplied. --grain is the look's, from tokens.css; --grain-fade
+     is the zoom's, written onto the surface by canvas/grain.js as the board
+     goes below 40% - see fadeFor() there. The fallback of 1 is what the layer
+     wears before the first view change, and is also what keeps it visible if
+     script never runs. */
+  opacity: calc(0.8 * var(--grain) * var(--grain-fade, 1));
+}
+
+#grain {
+  position: fixed;
+  inset: 0;
+}
+
+/* ---------------------------------------------------------
+   The boot cover (index.html, dismissed by main.js)
+
+   Third layer of the sheet and the last one painted, which is why it sits here
+   rather than with the chrome: paper, then grain, then the thing over both.
+
+   It repaints the paper instead of being transparent over it, because what it
+   is covering is the chrome - the menu button, the add bar, the zoom pill are
+   all in the document at first paint and would otherwise sit on an empty board
+   while it loaded. Only the flat colour, though, not the blooms and the
+   vignette: the wash is 3-5% of an ink over near-white, so the seam when this
+   fades is under two levels, and duplicating the three gradients here would be
+   a second copy of the sheet to keep in step with the first.
+
+   Everything below is a token, so the cover comes up in the board's own palette
+   and whimsy level - both restored by the inline script in <head> before first
+   paint, which is the whole reason this can be themed at all.
+   --------------------------------------------------------- */
+#splash {
+  position: fixed;
+  inset: 0;
+  /* Above the sidebar (40), the dialogs (70) and the toast (50) - a cover that
+     something can appear over is not a cover. Under the debug overlay, which is
+     the only thing in the app that outranks the app. */
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--paper);
+  transition: opacity var(--dur-base) var(--ease);
+}
+/* main.js adds this once there is a board, then removes the node. Pointer
+   events go first so a click during the fade lands on the board under it. */
+#splash.is-done {
+  opacity: 0;
+  pointer-events: none;
+}
+.splash-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 0 24px;
+  /* The name sits a little above centre. Optical centring, not arithmetic: a
+     block of type centred by its box reads as low, and this one is short
+     enough for that to show. */
+  transform: translateY(-4%);
+}
+/* The sidebar's wordmark, larger. Same face, same full stop - a cover that
+   showed a different mark from the one behind it would be someone else's app.
+   Sized against the window rather than in points, because at this size it is
+   the only thing on the screen and has a whole phone or a whole desktop to sit
+   in; the clamp keeps it off both walls. */
+.splash-word {
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  font-size: clamp(46px, 13vw, 92px);
+  line-height: 0.95;
+  letter-spacing: calc(0.02em * var(--ls-scale));
+  color: var(--ink);
+  /* Hidden until the inline script in index.html reports the face has loaded,
+     so the name is never set in the fallback and swapped mid-cover. The sub
+     line is not held back with it: it is set in the body face, which at two
+     levels out of three is the sans that has already painted the chrome. */
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+#splash.is-lettered .splash-word { opacity: 1; }
+.splash-sub {
+  font-family: var(--font-body);
+  font-size: var(--t-small);
+  font-style: var(--display-italic);
+  letter-spacing: calc(0.04em * var(--ls-scale));
+  color: var(--ink-3);
+}
+/* A board building itself: three cards drop in and threads snap between them,
+   left to right, then the row lets go and does it again.
+
+   Every value in here is a token the whimsy axis already moves, which is the
+   point - the loader is not decorated to match the tier, it is built out of the
+   tier. Softish gets round cards on a real overshoot at 3 degrees of tilt;
+   Harsh gets square ones, no shadow, no tilt worth the name and an --ease-back
+   that is plain `ease`, so the same six declarations come out as a Swiss
+   diagram. Nothing here has to know which level it is on.
+
+   The stagger is one animation-delay per child rather than five keyframe sets:
+   same duration, constant offsets, so the phase between them never drifts
+   however long the cover is up. Transform and opacity only - see the note on
+   the markup for why this cannot be driven from JavaScript. */
+.splash-thread {
+  display: flex;
+  align-items: center;
+  margin-top: 14px;
+  width: min(248px, 62vw);
+}
+.splash-card {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper-card);
+  box-shadow: var(--item-shadow);
+  animation: splash-card 2.8s var(--ease-back) infinite both;
+}
+/* Each card lands at its own angle, as a share of the tier's own maximum - so
+   the row is hand-laid at the soft end and lines up square at the plain one,
+   off a single token. The middle card is the accent, because three cards in
+   paper is a diagram and one of them in colour is a board. */
+.splash-thread .splash-card:nth-child(1) { --splash-tilt: calc(var(--tilt-max) * -1); }
+.splash-thread .splash-card:nth-child(3) {
+  --splash-tilt: var(--tilt-max);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.splash-thread .splash-card:nth-child(5) { --splash-tilt: calc(var(--tilt-max) * -0.55); }
+.splash-line {
+  flex: 1;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 2px;
+  /* Reaches from the card that has just landed towards the next one, so it
+     grows from its left end. --ease and not --ease-back: a thread that
+     overshoots is a thread that pokes out the far side of the card it just
+     arrived at. The cards are the springy half; these are pulled taut. */
+  transform-origin: left center;
+  animation: splash-line 2.8s var(--ease) infinite both;
+}
+/* One step per element, in document order, which is what makes the row read as
+   a sequence rather than five things pulsing together. */
+.splash-thread > :nth-child(1) { animation-delay: 0s; }
+.splash-thread > :nth-child(2) { animation-delay: 0.16s; }
+.splash-thread > :nth-child(3) { animation-delay: 0.34s; }
+.splash-thread > :nth-child(4) { animation-delay: 0.5s; }
+.splash-thread > :nth-child(5) { animation-delay: 0.68s; }
+/* Drops in, sits, and is taken away smaller than it arrived. The tilt is only
+   worn while it is up: it turns square on the way out, so the row leaves as
+   tidily as a board being cleared. */
+@keyframes splash-card {
+  0%   { opacity: 0; transform: scale(0.2) rotate(0deg); }
+  16%  { opacity: 1; transform: scale(1) rotate(var(--splash-tilt, 0deg)); }
+  64%  { opacity: 1; transform: scale(1) rotate(var(--splash-tilt, 0deg)); }
+  80%  { opacity: 0; transform: scale(0.72) rotate(0deg); }
+  100% { opacity: 0; transform: scale(0.2) rotate(0deg); }
+}
+@keyframes splash-line {
+  0%   { opacity: 0; transform: scaleX(0); }
+  8%   { opacity: 1; transform: scaleX(0); }
+  26%  { opacity: 1; transform: scaleX(1); }
+  64%  { opacity: 1; transform: scaleX(1); }
+  80%  { opacity: 0; transform: scaleX(1); }
+  100% { opacity: 0; transform: scaleX(0); }
+}
+/* The finished picture, held. Not "no animation" but the last frame of one -
+   an empty row where the loader was says the app has stopped, which is the one
+   thing a loader must never say. Quality is deliberately not consulted: the
+   cover is a handful of composited layers either way, and a Light board is
+   being spared repaints on a board it does not have yet. */
+@media (prefers-reduced-motion: reduce) {
+  .splash-card,
+  .splash-line { animation: none; }
+  .splash-card { transform: rotate(var(--splash-tilt, 0deg)); }
+}
+
+/* Clipped to the sheet by the sheet, radius included - which is why this is a
+   pseudo-element on the frame rather than a third layer positioned to match it.
+   canvas/mobile-frame.js rewrites that radius as each end of the board scrolls
+   in and out of the window, and `inherit` follows it for free. */
+#mobile-board-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+/* The surround is not paper. It is the mat the sheet is lying on, and giving it
+   the board's tooth is what made the texture read as inverted. */
+:root[data-board-mode="mobile"] #grain { display: none; }
+
+button, input, select, textarea { font: inherit; color: inherit; }

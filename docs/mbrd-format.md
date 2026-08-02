@@ -4,6 +4,16 @@ Version 1. Written 2026-07-25, from the code in `web/assets/js/storage/mbrd.js`
 and `web/assets/js/storage/zip.js`, which are the only two files that read or
 write it.
 
+> **The format is free to implement.** This specification is published so that
+> other software can read and write `.mbrd` files, and no permission, licence or
+> attribution is required to do so. The app's GPL covers mbrd's *source*, not
+> the format it stores work in — an implementation in any language, under any
+> licence, open or closed, is fine and is the point. A file format only one
+> program can read is a worse place to keep your work.
+>
+> If you build one, an issue saying so would be welcome; interoperability
+> reports are the most useful bug reports this project can get.
+
 This document exists because the format has grown two deliberate features —
 `notes/` full of real Markdown and `waveforms/` full of readable JSON — that
 were designed and were never written down. Both are there because **the archive
@@ -88,10 +98,20 @@ of the last three directories is looking at a perfectly valid older board.
 | ---------- | ------- |
 | `format`   | Always `"mbrd"`. A file whose manifest says otherwise is refused. |
 | `version`  | Format version, currently `1`. A **higher** number loads anyway with a console warning — a board from a newer mbrd is more likely to be readable than not, and refusing it outright would lose work that a slightly lossy open would have kept. |
-| `app`      | Which build wrote it. Informational; nothing reads it back. |
+| `app`      | Which build wrote it, as `mbrd <version>`. Mostly informational — the one thing that reads it back is the title repair below, which needs to know whether the writer predates v0.51. |
 | `created`  | Preserved across re-saves, so a board keeps its birthday. |
 | `modified` | Set on every pack. |
 | `title`    | The board's name. Also the filename it was exported under, in practice. |
+
+**The title repair.** A board's name and its filename are not the same string:
+`fileNameFor()` turns spaces into underscores so the name is safe in a file
+picker. Opening a file takes `board.json`'s `title` exactly as it stands —
+underscores are legal in a title, so a board named `my_board` stays named
+`my_board`. The one exception is a file written **before v0.51**, where a
+Save As renamed the board itself to the picker-safe filename: those titles have
+their underscores decoded back to spaces, and `app` is how that is told. A file
+with no `app` is believed, not repaired. Where no title is stored at all, the
+filename supplies one and is decoded the same way.
 
 ---
 
@@ -422,5 +442,7 @@ Three ways it could go, and the differences are not small:
    and nobody is ever surprised by which one they have.
 
 Option 3 is the only one that keeps promise 1 true rather than usually true.
-Option 1 is the only one that needs no code. **This is Kosta's call and nothing
-should be built for it until it is made.**
+Option 1 is the only one that needs no code. **This is an open maintainer
+decision and nothing should be built for it until it is made** — a pull request
+implementing any of the three would be premature, but the discussion is welcome
+in an issue.

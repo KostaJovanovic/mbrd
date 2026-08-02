@@ -2,6 +2,8 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
+import { appCss } from './helpers.js';
+
 import {
   Viewport, mobileZoom, mobileHeaderHeight,
 } from '../web/assets/js/canvas/viewport.js';
@@ -108,11 +110,11 @@ test('sidebar slider focus is disabled above the Mobile breakpoint', () => {
 });
 
 test('Mobile masthead leaves descender room and its finite board follows the style radius', async () => {
-  const [css, grid, frame] = await Promise.all([
-    readFile(new URL('../web/assets/css/app.css', import.meta.url), 'utf8'),
+  const [grid, frame] = await Promise.all([
     readFile(new URL('../web/assets/js/canvas/grid.js', import.meta.url), 'utf8'),
     readFile(new URL('../web/assets/js/canvas/mobile-frame.js', import.meta.url), 'utf8'),
   ]);
+  const css = appCss();
   const rule = id => css.match(new RegExp(`#${id}\\s*\\{([^}]+)\\}`))?.[1] || '';
 
   assert.match(rule('mobile-board-title'), /line-height:\s*normal;/);
@@ -213,17 +215,20 @@ test('no view frame writes an inherited custom property onto #viewport', async (
 });
 
 test('Mobile masthead title preserves a trailing space while it is edited', async () => {
-  const main = await readFile(new URL('../web/assets/js/main.js', import.meta.url), 'utf8');
-  assert.match(main, /cleanBoardTitleDraft\(field\.textContent\)/);
-  assert.doesNotMatch(main, /cleanBoardTitleDraft\(field\.innerText\)/);
+  // The shared inline board-name editor, which the masthead and the Desktop
+  // title card both use. Lifted out of main.js into ui/board-title.js.
+  const mod = await readFile(
+    new URL('../web/assets/js/ui/board-title.js', import.meta.url), 'utf8');
+  assert.match(mod, /cleanBoardTitleDraft\(field\.textContent\)/);
+  assert.doesNotMatch(mod, /cleanBoardTitleDraft\(field\.innerText\)/);
 });
 
 test('the top-stop pen opens persisted header typography controls', async () => {
-  const [html, css, module] = await Promise.all([
+  const [html, module] = await Promise.all([
     readFile(new URL('../web/index.html', import.meta.url), 'utf8'),
-    readFile(new URL('../web/assets/css/app.css', import.meta.url), 'utf8'),
     readFile(new URL('../web/assets/js/ui/mobile-header.js', import.meta.url), 'utf8'),
   ]);
+  const css = appCss();
   assert.match(html, /id="mobile-header-edit-btn"[\s\S]*aria-controls="header-panel"/);
   assert.match(html, /id="mobile-header-settings"/);
   for (const id of [
@@ -335,7 +340,7 @@ test('Mobile suppresses Desktop spatial guides without changing their settings',
 });
 
 test('Mobile board mode hides the ruler and zoom controls at every screen width', async () => {
-  const css = await readFile(new URL('../web/assets/css/app.css', import.meta.url), 'utf8');
+  const css = appCss();
   const rule = /:root\[data-board-mode="mobile"\] #zoom-ctl,\s*:root\[data-board-mode="mobile"\] #scale-bar \{\s*display:\s*none;\s*\}/;
   const match = css.match(rule);
   assert.ok(match, 'visibility follows the selected board mode');

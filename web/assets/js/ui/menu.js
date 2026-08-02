@@ -70,7 +70,7 @@ export function openContextMenu(clientX, clientY, itemId, selectionSize) {
  * (it is a movable singleton); Delete hides it, and the bin's restore button
  * brings it back.
  */
-function titleEntries(id, at) {
+function titleEntries(_id, _at) {
   return [
     { label: 'Edit style', action: () => cmds.editTitle() },
     { label: 'Reset position', action: () => cmds.resetTitlePosition() },

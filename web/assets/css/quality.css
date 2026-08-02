@@ -1,0 +1,367 @@
+/* ---------------------------------------------------------
+   Whimsy axis - the parts a token cannot express
+
+   Almost everything the slider moves is a value, and values live in
+   tokens.css. What is left here is the handful of decisions that are
+   *structural*: an ornament that has to stop existing rather than shrink to
+   zero, and a couple of shapes that are drawn rather than declared.
+
+   The middle needs none of it: it keeps its ornaments and just turns them
+   down, which the tokens already do on their own. Both ends have one thing
+   each that a number cannot say - the plain end wants ornaments gone rather
+   than small, and the soft end wants a photograph to become a print.
+   --------------------------------------------------------- */
+
+/* ---- 0: softish - a photograph becomes a print ---------------------------
+   White stock all round the picture, deeper at the foot, and the caption
+   written on that chin where a caption belongs. The tier was already most of
+   the way there: --tilt-max is 3deg at this end, so the cards sit crooked and
+   the scattered-prints reading was there with only the frame missing.
+
+   The mat is drawn *inside* the item's own box, by insetting the picture -
+   not by growing the card, and not on a pseudo-element hanging outside it.
+   Both of those were considered and both are worse. Growing the card would
+   mean the whimsy slider silently resized every item on a saved board, so
+   sliding to this end and back would not return you to the board you started
+   with. Drawing the mat outside would leave the white border outside the
+   item's hit area: the visible edge of a photograph would not be draggable,
+   the selection ring and all eight resize handles would trace the picture
+   rather than the print, and the item's shadow would fall from the picture's
+   edge into the middle of its own frame.
+
+   What insetting costs, said plainly: the picture keeps object-fit: cover and
+   the inner box is proportionally wider than the item, so a photograph loses
+   roughly a tenth of its height to the crop. That is the trade, and it is a
+   small one on a board that already crops on every resize.
+
+   Every measure is a fraction of --half-min (min(w, h) / 2, per item from
+   canvas/items.js/place()). A fraction rather than a fixed border because a
+   print scales as a print: 12px of mat is a frame on a thumbnail and a
+   hairline on a photograph two thousand across. Taking it off the shorter
+   side is what makes the mat the same real width on all four edges. */
+:root[data-whimsy="0"] .item[data-type="image"] {
+  --mat:  calc(var(--half-min, 120px) * 0.08);
+  --chin: calc(var(--half-min, 120px) * 0.26);
+  /* A print has a cut edge, not a mathematical one - so not zero, but a long
+     way under this level's 26px, which would read as a rounded sticker. A
+     fraction of --radius rather than a literal, so the Corner radius slider
+     still moves it along with everything else. */
+  --shape-radius: calc(var(--radius) * 0.12);
+}
+/* Absolute, positioned off the top-left corner and *sized* to the rest, rather
+   than stretched between four insets.
+   That distinction is the whole rule. An `inset: mat; bottom: chin` with auto
+   width and height is the obvious way to write this and it does not work: an
+   <img> is a replaced element, and an absolutely positioned replaced box with
+   auto width resolves it to the picture's own intrinsic size rather than to
+   the gap between the offsets - which leaves `right` and `bottom` merely
+   over-constrained and dropped. The picture then hangs off the corner at its
+   natural size and .item-body's clip cuts it at the item's edge, so the mat
+   comes out on the top and left only and the caption is back over the photo.
+   Widths written out are unambiguous for a replaced box.
+   Both pictures of an animated pair are matched, so a frozen GIF sits in its
+   frame exactly where the moving one did. */
+:root[data-whimsy="0"] .item[data-type="image"] .item-body img {
+  position: absolute;
+  left: var(--mat);
+  top:  var(--mat);
+  width:  calc(100% - var(--mat) * 2);
+  height: calc(100% - var(--mat) - var(--chin));
+  border-radius: 0;
+  /* The print fills its window whatever the board's fit setting says: a polaroid
+     is a cropped print, and the mat is already the "fit" gesture. Left to
+     contain, the picture would letterbox inside the window and the hairline
+     frame below - drawn on this box's edge - would stand off the photograph
+     instead of hugging it. Out-specifies .item[data-fit="contain"] .item-body
+     img, so it holds even when Fill is off. */
+  object-fit: cover;
+  /* A pale photograph on pale stock has no edge of its own. This is the one
+     the print would have. */
+  box-shadow: 0 0 0 var(--hairline) color-mix(in srgb, var(--ink) 10%, transparent);
+}
+/* The caption stops being a strip laid across the foot of the picture and
+   becomes what is written on the chin. It needs no moving to get there: the bar
+   sits against .item's own edges, not the picture's, so insetting the picture
+   has already left it on the mat. All it has to do is stop looking like a plate
+   - the translucent paper, the rule, the blur and the divider between caption
+   and handle were all there to hold the bar off a photograph, and there is no
+   photograph behind it now. */
+:root[data-whimsy="0"] .item[data-type="image"] .item-bar {
+  background: none;
+  border-top: 0;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  /* The name is written on the print's mat here, not laid over the picture, so
+     it is part of the photograph rather than a label reached for - it stays put
+     while the other tiers hide it until hover. Overrides the hover-only fade. */
+  opacity: 1;
+}
+/* line-height rather than a flex centre, because the caption keeps its ellipsis
+   and its single line, and both of those want it to stay a block. */
+:root[data-whimsy="0"] .item[data-type="image"] .item-label {
+  height: var(--chin);
+  line-height: var(--chin);
+  padding: 0 var(--mat);
+  text-align: center;
+  font-size: clamp(11px, calc(var(--half-min, 120px) * 0.09), 20px);
+}
+
+/* A card at radius 0 with a hairline border already reads as ruled - a second
+   rule inside it is just noise. */
+/* The origin takes the shape its tier gives everything else. The middle is a
+   rounded square, like the cards, and it is what the bare stylesheet renders
+   because an unset whimsy is the middle - so only the two ends speak up here:
+   Softish keeps the compass ring, and Harsh squares the corners off into a
+   registration mark to match the crosses the lattice is drawn with at that end
+   of the axis, taking the pip with it. The pip stays a dot until then; a dot is
+   a dot at any radius. Each shape is inert wherever it is not the chosen one. */
+#origin-mark .om-ring,
+#origin-mark .om-ring-sq,
+#origin-mark .om-pip-sq { display: none; }
+:root[data-whimsy="0"] #origin-mark .om-ring-rd { display: none; }
+:root[data-whimsy="0"] #origin-mark .om-ring { display: inline; }
+:root[data-whimsy="2"] #origin-mark .om-ring-rd,
+:root[data-whimsy="2"] #origin-mark .om-pip { display: none; }
+:root[data-whimsy="2"] #origin-mark .om-ring-sq,
+:root[data-whimsy="2"] #origin-mark .om-pip-sq { display: inline; }
+
+:root[data-whimsy="2"] .card::after { content: none; }
+
+/* Stickies go flat: no adhesive band showing through, just a ruled edge. */
+:root[data-whimsy="2"] .item[data-type="note"] .card {
+  background: var(--note-paper);
+  box-shadow: inset 0 0 0 var(--hairline) var(--ink);
+}
+
+/* Lozenges become squares. Same target size, no tilt. */
+:root[data-whimsy="2"] .grip,
+:root[data-whimsy="2"] :is(.field, .np-volume) input[type="range"]::-webkit-slider-thumb { transform: none; }
+
+/* The toast sits straight rather than tossed onto the page. */
+:root[data-whimsy="2"] .toast-line {
+  transform: none;
+  animation-name: rise-plain;
+}
+@keyframes rise-plain { from { opacity: 0; transform: translateY(6px); } }
+
+/* How the player arrives, per tier. Four values, set here and read by the two
+   transitions where #nowplaying is styled - the shape of the movement is one
+   thing and its personality is another, and only the second belongs down here
+   with the rest of the axis. All three slide up from under the edge; what
+   differs is from how far, how they get there, and what they do on arrival.
+
+   Softish throws it: it starts further under and noticeably smaller, and comes
+   in off-square before settling - the same hand that tosses a card onto the
+   board and leaves it at an angle, and this tier's --ease-back is a real
+   overshoot rather than a suggestion. The angle is small and negative so it
+   settles clockwise into true, which is how something set down by hand comes
+   to rest.
+
+   Middle keeps the base above: up from under the edge, a whisper of scale, no
+   tilt, and only as much spring as its --ease-back has.
+
+   Harsh slides and does nothing else. Everything at this end of the axis stands
+   still on arrival - the grips do not tilt, the toast does not lean, the
+   buttons do not grow - so there is no overshoot and no scale, just the
+   distance covered on the plain curve. Motion as transport rather than as
+   character, which is the whole argument of this tier. It is not *no* movement:
+   a bar that simply existed where it had not been a frame earlier is the one
+   thing on this axis that would read as a glitch rather than as a decision. */
+:root[data-whimsy="0"] #nowplaying {
+  --np-under: calc(100% + 44px);
+  --np-shrink: 0.93;
+  --np-tilt: -1.1deg;
+}
+:root[data-whimsy="2"] #nowplaying {
+  --np-shrink: 1;
+  --np-tilt: 0deg;
+  --np-ease: var(--ease);
+}
+
+/* The close button stops spinning; it still lights up. */
+:root[data-whimsy="2"] #side-close:hover,
+:root[data-whimsy="2"] #header-close:hover { transform: none; }
+
+/* The hamburger's three bars slide left and right on a sine while the pointer
+   rests on them, and only at Softish.
+
+   One wave, sampled three times. Each bar runs the same horizontal oscillation
+   and the two below it are a third and two thirds of a lap behind, so at any
+   instant the three are sitting at 0, 120 and 240 degrees of one sine - three
+   points evenly spaced along a single curve. The wave is not in any one bar; it
+   is the shape the three of them make together, and it travels because each bar
+   reaches a given offset a third of a lap after the one above it. Give them all
+   the same phase and the stack just slides back and forth in a block.
+
+   Sideways rather than up and down, which is the axis with room on it: the bar
+   is 18px inside a 40px box, so there are 11 clear pixels either side and three
+   of amplitude cost nothing. Vertically the bars have 6px of air between them
+   and any real amplitude closes it.
+
+   The keyframes are a sine and not an approximation of one. Eight samples a lap
+   at 45-degree steps, held together with linear timing - between neighbouring
+   samples a straight line departs from the true curve by about three percent of
+   the amplitude, which at three pixels is a tenth of one and invisible. Easing
+   between a crest and a trough instead gives motion that dwells at the ends,
+   which is the part that stops looking like a wave.
+
+   The delays are positive, so all three bars start from true and the lower two
+   wait their turn. A negative delay would have them out of phase from the first
+   frame, which means bars two and three jump to where the wave already is at
+   the moment the pointer arrives. This way the wave builds over its first lap
+   and then runs in steady state, and nothing snaps on the way in.
+
+   Softish alone, and it is the argument the whimsy axis makes everywhere else:
+   this tier throws cards down at an angle and lets the now-playing bar
+   overshoot. Middle keeps the plain background-and-border hover the shared rule
+   above gives every chrome button, and Harsh stands still, which is that tier's
+   entire position.
+
+   Behind (hover: hover) rather than cancelled in the coarse-pointer block the
+   way the other hover reactions are. A tap on a touch screen leaves :hover
+   latched until something else is tapped, and a wave that arrives on the first
+   tap and stays is worse than no wave; "does this pointer hover" is the actual
+   question, where the pointer block asks how wide the finger is. It also avoids
+   a specificity contest that block would win only on source order.
+
+   The lap reads off --dur-base so the wave keeps the tempo of the tier it
+   belongs to, and both rules that can silence it - the reduced-motion block and
+   quality's anim flag - are !important universals, so neither needs naming
+   here. 5.95 is one full oscillation, so it is the number that means "how fast
+   is this" and the only one to move to change that; the two delays are its
+   thirds and have to be recomputed with it.
+
+   Leaving costs at most three pixels: the animation is gated on :hover, and
+   removing it reverts the transform in one frame rather than easing out, which
+   is a thing CSS cannot do to a running animation. It is paid at the one moment
+   the button has stopped being the thing being looked at. */
+@media (hover: hover) {
+  :root[data-whimsy="0"] #menu-btn:hover span {
+    animation: menu-wave calc(var(--dur-base) * 5.95) linear infinite;
+  }
+  :root[data-whimsy="0"] #menu-btn:hover span:nth-child(2) {
+    animation-delay: calc(var(--dur-base) * 1.98333);
+  }
+  :root[data-whimsy="0"] #menu-btn:hover span:nth-child(3) {
+    animation-delay: calc(var(--dur-base) * 3.96667);
+  }
+}
+/* sin, at eight points around the circle, times three pixels. 2.121 is the
+   amplitude times the sine of 45 degrees, and it appears twice going out and
+   twice coming back because a sine is symmetric about both its crest and its
+   zero - which is why writing one out takes five lines. */
+@keyframes menu-wave {
+  0%, 50%, 100% { transform: none; }
+  12.5%, 37.5%  { transform: translateX(2.121px); }
+  25%           { transform: translateX(3px); }
+  62.5%, 87.5%  { transform: translateX(-2.121px); }
+  75%           { transform: translateX(-3px); }
+}
+
+/* The stop labels under the whimsy slider. Not a legend - the ends of a scale,
+   which is the only way a three-position slider says what it does.
+
+   Each name is a specimen of its own tier, so all three are pinned to a fixed
+   face and style: serif italic, sans italic, sans bold. None of them may read
+   off --font-display, --display-italic or --font-serif, because those are
+   exactly what the slider moves - at the plain end the whole row would collapse
+   into one font and the labels would stop showing the difference they name.
+
+   --font-serif joined that list when the axis grew a second serif, and it stays
+   on it now that both serif tiers name Fraunces again: --font-serif is still
+   whichever serif the *current* tier resolves to, and at the plain end that is
+   not what a board set to Softish would show. "Softish" is a specimen of
+   Fraunces, so it names --font-serif-text - the face itself.
+
+   The same reasoning is why the weights below are literals and must stay
+   literals. --display-weight is the tier's, and these three are specimens of
+   tiers you are not on; the 400 on "Softish" is that level's weight written
+   down, not a value to be read off the slider. */
+.field-stops {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 3px;
+  color: var(--ink-3);
+  font-size: var(--t-tiny);
+}
+/* Pinned to the whimsy dials by id, not to .field-stops at large. The row itself
+   is a general thing - any slider whose stops have names can print them, and the
+   masthead's weight dial does - but these three declarations are specimens of
+   the three whimsy tiers and belong to nothing else. Left unscoped, "Regular"
+   and "Bold" under the weight slider came out set in a serif italic and a sans
+   italic, which is the one thing a weight specimen must not do.
+
+   Two ids, because there are two whimsy dials: the panel's row (ui/panel.js
+   names it from the schema's stopsId) and the one on the ghost card, which is
+   the same control on the board. The card borrows the panel's slider whole, and
+   the specimens are the half of it that carries the most meaning - a stop that
+   is a word *and* an example of what choosing it does - so it borrows these too
+   rather than printing three names in one face. One block, both rows, so a
+   change to a specimen cannot reach one and miss the other. */
+#whimsy-stop-labels span:nth-child(1),
+#ghost-whimsy-stops span:nth-child(1) {
+  font-family: var(--font-serif-text);
+  font-style: italic;
+  font-weight: 400;
+}
+#whimsy-stop-labels span:nth-child(2),
+#ghost-whimsy-stops span:nth-child(2) {
+  color: var(--ink-2);
+  font-family: var(--font-sans);
+  font-style: italic;
+  font-weight: 400;
+}
+#whimsy-stop-labels span:nth-child(3),
+#ghost-whimsy-stops span:nth-child(3) {
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-style: normal;
+  font-weight: 700;
+}
+
+/* ---------------------------------------------------------------------------
+   Quality: the two things that are not tokens
+
+   The token half is at the foot of tokens.css. These two are properties rather
+   than custom properties, so they cannot be handed down and have to be
+   cancelled where they are set - and both are set in a dozen places, which is
+   why this is a universal selector and an !important, the same shape the
+   prefers-reduced-motion block above uses and for the same reason.
+
+   Pairs of selectors again: the level alone until ui/quality.js has written the
+   flags out, then the flag, so a hand-set override outranks the stop.
+   --------------------------------------------------------------------------- */
+
+/* A backdrop blur cannot be composited once and reused - the pixels behind it
+   change on every frame of a moving board, so it is re-sampled every frame. It
+   is the most expensive thing on this page per pixel and the least missed. */
+:root[data-quality="light"]:not([data-q-blur]) *,
+:root[data-q-blur="off"] * {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* The durations are tokens and are already flattened next door; this catches
+   the animations and transitions written in milliseconds by hand. */
+:root[data-quality="light"]:not([data-q-anim]) *,
+:root[data-q-anim="off"] * {
+  animation-duration: 0.01ms !important;
+  transition-duration: 0.01ms !important;
+}
+
+/* The two card types that have no `.card` inside them, and so no hairline of
+   their own: canvas/renderers.js hands back the picture itself for an image and
+   a video, because they *are* the card. Every other type wears the inset ring
+   in `.card` and only needed --item-border firming up next door.
+
+   It matters most where you would least expect it: the default fit is `contain`,
+   so a portrait photograph is a letterboxed picture on a card-coloured field,
+   and with the shadow gone that field is the same near-white as the board. An
+   inset ring rather than a border, for the reason .card gives - the item clips
+   at its own radius and would shave a real border at the corners. */
+:root[data-quality="light"]:not([data-q-shadows]) .item[data-type="image"],
+:root[data-quality="light"]:not([data-q-shadows]) .item[data-type="video"],
+:root[data-q-shadows="off"] .item[data-type="image"],
+:root[data-q-shadows="off"] .item[data-type="video"] {
+  box-shadow: inset 0 0 0 var(--hairline) var(--item-border);
+}

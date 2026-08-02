@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/valjdakosta/mbrd/security/advisories/new
+    about: Please report privately rather than in an issue. See SECURITY.md — malformed-file parsing is the surface that matters here.
+  - name: How the app is put together
+    url: https://github.com/valjdakosta/mbrd/blob/main/docs/architecture.md
+    about: The layering graph, state as the only door, coordinates and culling. Worth reading before a first change.
+  - name: The .mbrd file format
+    url: https://github.com/valjdakosta/mbrd/blob/main/docs/mbrd-format.md
+    about: The full container spec. The format is free to implement.

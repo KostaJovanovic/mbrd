@@ -1,10 +1,17 @@
 // One renderer per item type: classification, a default size, and the DOM that
 // goes inside a card. Adding a new type means adding an entry to RENDERERS and
 // a branch in classify() - nothing else in the app needs to know about it.
+//
+// Both of those still live here, deliberately, because they are the pair a new
+// type touches and splitting them would double that. What moved out is what was
+// never type dispatch: canvas/note-model.js has the sticky-note formatting
+// model (pure, and read by the editor as much as by the renderer) and
+// canvas/poster.js the video first-frame grab. Both are re-exported below so no
+// caller had to learn they moved.
 
 import { extOf, baseName, formatBytes } from '../util.js';
 import { assetURL, getAsset, readText } from '../storage/assets.js';
-import { byId, bus, markDirty, board, NOTE_MAX, isDefaultTitle } from '../state.js';
+import { byId, bus, markDirty, board, isDefaultTitle } from '../state.js';
 import { latticeBox } from '../geometry.js';
 import { describeExt, PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS } from '../import/formats.js';
 import { buildTransport, registerPlayer } from './audio.js';
@@ -15,6 +22,19 @@ import { buildModelCard } from './model.js';
 import { hintFor, hintKey, tapeStyle, bindDial, STOPS, DIAL } from './ghosts.js';
 import { ensureDisplay, displayURLReady } from './display.js';
 import { meshKind } from '../mesh.js';
+import { normalizeNoteRich, applyNoteStyle, buildNoteLine } from './note-model.js';
+
+// The façade: both moved out of this file, and every caller still asks here.
+// Written out rather than as a star re-export for the reason state.js is - a
+// name that goes missing should break loudly at the import, not quietly at
+// runtime.
+export {
+  NOTE_TAGS, NOTE_ALIGNS, NOTE_VALIGNS, NOTE_FONTS, NOTE_FONT_KEYS,
+  NOTE_SIZE_MIN, NOTE_SIZE_MAX, NOTE_SIZE_STEP, NOTE_MARKER,
+  parseNoteText, normalizeNoteRich, flattenNoteRich, applyNoteStyle,
+  buildNoteLine,
+} from './note-model.js';
+export { videoFrame } from './poster.js';
 
 
 /**
@@ -235,116 +255,6 @@ function videoSize(file) {
   });
 }
 
-/**
- * How wide a video's own first frame is kept.
- *
- * A poster is drawn full-bleed at card size, so it wants more than a cover's 600
- * corner-thumbnail ceiling and much less than the clip's own resolution - a 4K
- * phone video's first frame is a three-megabyte JPEG nobody needs to see a
- * still of. 640 covers a mobile card at two device pixels per point and a
- * desktop card at one, which is the whole job.
- */
-const POSTER_SIDE = 640;
-
-/** How long a frame grab may take before the clip is left without one. */
-const POSTER_MS = 6000;
-
-/**
- * The first frame of a clip, as a WebP blob, or null.
- *
- * This exists because of what a video card looks like before it is played. On a
- * touch device the source is deliberately held back until the first tap - see
- * the video renderer, and the decoder ceiling that forces it - so a clip with
- * nothing to show is a black rectangle with a play button on it. The desktop
- * path gets a frame for free by loading metadata at `#t=0.1`; the mobile path
- * loads nothing at all, and so has to be *given* a picture at import.
- *
- * The browser's own decoder does the work, which is the point: the ffmpeg
- * poster path in optimize/media.js is thirty megabytes off a CDN and is only
- * reached for a clip this browser cannot open at all. A clip it *can* open
- * needs none of that - it needs a seek and a drawImage.
- *
- * Everything here degrades to null, and null is not a failure: it means the
- * card is exactly what it was before any of this existed. The refusals worth
- * naming are a decoder that will not seek without playback (older iOS), a clip
- * whose first frame is genuinely black, and a browser that will not write WebP.
- * The blank check is deliberately crude - a solid-colour frame compresses to
- * almost nothing - because storing a black rectangle as a picture of a black
- * rectangle is strictly worse than storing no picture.
- */
-export function videoFrame(file) {
-  const url = URL.createObjectURL(file);
-  const v = document.createElement('video');
-  return new Promise(resolve => {
-    let settled = false;
-    const done = value => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      v.pause?.();
-      v.removeAttribute('src');
-      v.load?.();
-      URL.revokeObjectURL(url);
-      resolve(value);
-    };
-    const timer = setTimeout(() => done(null), POSTER_MS);
-
-    // Muted and inline are not cosmetic: an unmuted video may not be allowed to
-    // play at all without a gesture, and on iOS a video that has never played
-    // draws as a transparent rectangle onto a canvas however far it has seeked.
-    v.muted = true;
-    v.playsInline = true;
-    v.preload = 'auto';
-    v.addEventListener('error', () => done(null), { once: true });
-
-    v.addEventListener('loadedmetadata', () => {
-      if (!v.videoWidth) return done(null);
-      // A hair past zero rather than zero. Plenty of clips open on a frame of
-      // black - a fade-in, a slate - and the first tenth of a second is far
-      // enough in to have a picture while still being "the start of the clip".
-      const at = Number.isFinite(v.duration) && v.duration > 0
-        ? Math.min(0.1, v.duration / 2)
-        : 0.1;
-      // Some decoders will not produce a frame for a video that has never run,
-      // and answer a seek with the poster-frame nothing. Starting it and
-      // stopping it immediately costs a few milliseconds and is what makes this
-      // work on the devices the whole feature is for. Failure is ignored: where
-      // play() is refused, the seek alone is usually enough.
-      v.play().then(() => v.pause(), () => {}).finally(() => { v.currentTime = at; });
-    }, { once: true });
-
-    const grab = () => { capture(v).then(done, () => done(null)); };
-    // requestVideoFrameCallback fires when a frame has actually been presented,
-    // which 'seeked' does not promise - it says the seek finished, not that
-    // there is anything on the element yet.
-    if (typeof v.requestVideoFrameCallback === 'function') {
-      v.addEventListener('seeked', () => v.requestVideoFrameCallback(grab), { once: true });
-    } else {
-      v.addEventListener('seeked', grab, { once: true });
-    }
-
-    v.src = url;
-  });
-}
-
-/** Draw whatever the element is showing into a capped WebP. */
-async function capture(v) {
-  const scale = Math.min(1, POSTER_SIDE / Math.max(v.videoWidth, v.videoHeight));
-  const w = Math.max(1, Math.round(v.videoWidth * scale));
-  const h = Math.max(1, Math.round(v.videoHeight * scale));
-  const canvas = new OffscreenCanvas(w, h);
-  const ctx = canvas.getContext('2d', { alpha: false });
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(v, 0, 0, w, h);
-  const out = await canvas.convertToBlob({ type: 'image/webp', quality: 0.72 });
-  // The same trap the picture shrinker guards - a browser that cannot write
-  // WebP hands back a PNG - plus the blank frame described above. 2 KB is well
-  // under any real photograph at this size and well over any flat colour.
-  if (!out || out.type.toLowerCase() !== 'image/webp' || out.size < 2048) return null;
-  return { blob: out, w: v.videoWidth, h: v.videoHeight };
-}
-
 /** Build the inner DOM for an item. Async content fills itself in afterwards. */
 export function buildContent(item) {
   const fn = RENDERERS[item.type] || RENDERERS.generic;
@@ -387,137 +297,6 @@ function coverEl(item) {
   return img;
 }
 
-// ---------------------------------------------------------------------------
-// Sticky-note formatting model
-//
-// A note used to be a title and a body split on the first newline. It is now a
-// short run of formatted blocks - a heading, a subheading, paragraphs - each
-// with its own alignment, over a note-level font, size and vertical placement.
-//
-// The structured form lives in `meta.rich`; `meta.text` stays the one plaintext
-// value, Markdown-flavoured (`# ` heading, `## ` subheading), so search, linkify
-// and older readers keep working and a note round-trips through a reader that
-// has never heard of `meta.rich`. When both are present `meta.rich` is the truth
-// and `meta.text` is what it flattens to.
-//
-// Everything here is pure and free of the DOM on purpose (barring the two
-// element builders at the end): the renderer, the editor (canvas/notes.js) and
-// the tests all read the one model through these functions.
-// ---------------------------------------------------------------------------
-
-export const NOTE_TAGS = ['h1', 'h2', 'p'];
-export const NOTE_ALIGNS = ['left', 'center', 'right'];
-export const NOTE_VALIGNS = ['top', 'middle', 'bottom'];
-
-/**
- * The font families a note may wear, as an allowlist. The value reaches the DOM
- * as a `font-family` string, so it is only ever chosen from this table and never
- * taken from a file - the same rule the token allowlist keeps for the board.
- */
-export const NOTE_FONTS = {
-  sheet: 'var(--font-display)',
-  sans: 'system-ui, sans-serif',
-  serif: 'Georgia, "Times New Roman", serif',
-  mono: 'ui-monospace, "Cascadia Code", Consolas, monospace',
-};
-export const NOTE_FONT_KEYS = Object.keys(NOTE_FONTS);
-
-/** Size is a multiplier on the note's own zoom-scaled type, not an absolute. */
-export const NOTE_SIZE_MIN = 0.7;
-export const NOTE_SIZE_MAX = 1.8;
-export const NOTE_SIZE_STEP = 0.1;
-
-const clampSize = n =>
-  Math.min(NOTE_SIZE_MAX, Math.max(NOTE_SIZE_MIN, Number.isFinite(+n) ? +n : 1));
-
-/** The Markdown marker a tag writes at the head of its line. */
-export const NOTE_MARKER = { h1: '# ', h2: '## ', p: '' };
-
-/** The block a single line of Markdown-ish text describes, given its position. */
-function lineToBlock(line, index) {
-  if (line.startsWith('## ')) return { tag: 'h2', align: 'left', text: line.slice(3) };
-  if (line.startsWith('# ')) return { tag: 'h1', align: 'left', text: line.slice(2) };
-  // No marker: the first line is the note's title, as it always was, so a note
-  // written before meta.rich existed still reads titled. The rest is body.
-  return { tag: index === 0 ? 'h1' : 'p', align: 'left', text: line };
-}
-
-/** Blocks from the plaintext fallback - a legacy note, or an older reader's file. */
-export function parseNoteText(text) {
-  const lines = String(text ?? '').split('\n');
-  return lines.map(lineToBlock);
-}
-
-/** One clean block, or null to drop it. */
-function normalizeBlock(raw) {
-  if (!raw || typeof raw !== 'object') return null;
-  return {
-    tag: NOTE_TAGS.includes(raw.tag) ? raw.tag : 'p',
-    align: NOTE_ALIGNS.includes(raw.align) ? raw.align : 'left',
-    // One line per block: a stray newline in stored text would otherwise smuggle
-    // a second, unstyled line into a block the editor cannot address.
-    text: typeof raw.text === 'string' ? raw.text.replace(/\n/g, ' ') : '',
-  };
-}
-
-/**
- * The formatting model for a note: `meta.rich` when it is well-formed, otherwise
- * parsed back from `meta.text`. Always returns a usable object with at least one
- * block, so the renderer and the editor never have to branch on absence. The
- * total text is held to NOTE_MAX here as well as in the editor, so a hand-edited
- * file cannot get a novel onto a sticky.
- */
-export function normalizeNoteRich(rich, text = '') {
-  let blocks = Array.isArray(rich?.blocks)
-    ? rich.blocks.map(normalizeBlock).filter(Boolean)
-    : parseNoteText(text);
-  if (!blocks.length) blocks = [{ tag: 'h1', align: 'left', text: '' }];
-  // Trim from the end until the flattened text fits, keeping at least one block.
-  let budget = NOTE_MAX;
-  blocks = blocks.filter((b, i) => {
-    const cost = NOTE_MARKER[b.tag].length + b.text.length + (i ? 1 : 0);
-    if (budget <= 0 && i) return false;
-    budget -= cost;
-    return true;
-  });
-  if (budget < 0) {
-    const last = blocks[blocks.length - 1];
-    last.text = last.text.slice(0, Math.max(0, last.text.length + budget));
-  }
-  return {
-    font: NOTE_FONT_KEYS.includes(rich?.font) ? rich.font : 'sheet',
-    size: clampSize(rich?.size),
-    valign: NOTE_VALIGNS.includes(rich?.valign) ? rich.valign : 'top',
-    blocks,
-  };
-}
-
-/**
- * The plaintext a rich model flattens to - the Markdown that lands in meta.text.
- * Font, size, alignment and vertical placement have no plaintext form and are
- * simply absent from it; that is the deal meta.text makes to stay portable.
- */
-export function flattenNoteRich(rich) {
-  return normalizeNoteRich(rich).blocks
-    .map(b => NOTE_MARKER[b.tag] + b.text)
-    .join('\n');
-}
-
-/** Write a note's board-wide look onto its rich wrapper (font, size, vAlign). */
-export function applyNoteStyle(wrap, rich) {
-  wrap.style.fontFamily = NOTE_FONTS[rich.font];
-  wrap.style.setProperty('--note-scale', rich.size);
-  wrap.dataset.font = rich.font;
-  wrap.dataset.valign = rich.valign;
-}
-
-/** One block as an editable line element. */
-export function buildNoteLine(block) {
-  const line = document.createElement('div');
-  line.className = `note-line note-${block.tag} al-${block.align}`;
-  line.textContent = block.text;
-  return line;
-}
 
 const RENDERERS = {
   image(item) {
@@ -555,7 +334,7 @@ const RENDERERS = {
     }
 
     // Both kinds of picture can travel with a twin, and the twin works the
-    // same way either way: a sibling <img class="still"> that app.css shows
+    // same way either way: a sibling <img class="still"> that the CSS shows
     // instead of this one once #world is marked zoomed-out. Two sources for
     // it, and they are the two halves of the same idea.
     //
@@ -805,7 +584,7 @@ const RENDERERS = {
     name.className = 'card-name';
     name.textContent = baseName(item.name) || item.name || 'untitled';
 
-    // .card-text was already in app.css, waiting - monospaced, pre-wrapped, and
+    // .card-text was already in items.css, waiting - monospaced, pre-wrapped, and
     // masked to a fade at the bottom so a long file ends by trailing off rather
     // than by being chopped. It had no markup to style until now.
     //
@@ -857,7 +636,7 @@ const RENDERERS = {
    * board's own font faces. A singleton kept out of classify() - it is never a
    * dropped file - and desktop-only, gated at mount in canvas/items.js.
    */
-  title(item) {
+  title(_item) {
     const card = document.createElement('div');
     card.className = 'title-card';
     const name = document.createElement('div');
@@ -877,7 +656,7 @@ const RENDERERS = {
    *
    * Structure only. What it says comes from canvas/ghosts.js (the item carries
    * a key, not prose - see the note there), and what it looks like is entirely
-   * app.css: a dashed outline at Middle and Harsh, a page torn out of a pad and
+   * items.css: a dashed outline at Middle and Harsh, a page torn out of a pad and
    * taped down at Softish - except for the dial, which stays an ordinary card at
    * every tier. Nothing here reads the whimsy level to draw with, because
    * nothing here needs to - the level is on <html> as data-whimsy and CSS can
@@ -957,7 +736,7 @@ const RENDERERS = {
       const stops = document.createElement('span');
       stops.className = 'field-stops';
       // The id is a styling hook as much as a target for aria-describedby: each
-      // name is set in the face of the tier it names, and app.css reaches both
+      // name is set in the face of the tier it names, and the CSS reaches both
       // whimsy rows - this one and the panel's #whimsy-stop-labels - through one
       // block. Safe as an id because a board carries at most one dial card.
       stops.id = 'ghost-whimsy-stops';
@@ -980,7 +759,7 @@ const RENDERERS = {
     }
     frag.append(card);
 
-    // Built at every tier and shown only at Softish (app.css hides it
+    // Built at every tier and shown only at Softish (the CSS hides it
     // otherwise), so sliding the whimsy dial does not have to rebuild a card.
     for (const t of Array.isArray(item.meta?.tape) ? item.meta.tape : []) {
       const strip = document.createElement('div');

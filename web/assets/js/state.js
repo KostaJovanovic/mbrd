@@ -13,24 +13,23 @@
 //   board      - a whole new board was loaded, or the title/dirty flag changed
 //   trash      - something was thrown away, restored, or purged
 
-import { clamp, emitter, uid, isFamily, isHash, itemHashes, toast } from './util.js';
+import { clamp, isFamily, isHash, itemHashes, toast } from './util.js';
 // Pure geometry, shared with the canvas and the input layer so that "where is
 // this item and what does it cover" has exactly one answer in this app. Kept
 // at the top level rather than under canvas/ because it depends on nothing and
 // belongs to no one layer - see geometry.js.
 import {
-  itemBounds, overlapFraction, latticeBox, cellInset, MIN_SIZE, MAX_SIZE,
+  itemBounds, latticeBox,
 } from './geometry.js';
 // The board's link to real-world sizes. Pure arithmetic with no state of its
 // own, at the same level as geometry.js and imported here for the same reason:
 // the default belongs with the rest of the defaults, and the clamp has to run
 // on every board that arrives from a file.
-import { DEFAULT_SCALE, clampScale, PAPERS } from './measure.js';
+import { clampScale, PAPERS } from './measure.js';
 import { splitAppearance, mergeAppearance } from './layout-settings.js';
 // Downward: the catalogue is pure - geometry.js and nothing else - and this is
 // the one thing state needs from it, which of the two lists a stored
 // arrangement id belongs to. See tests/layers.test.js, where it is BASE.
-import { mobileArrangement } from './arrange/arrangements.js';
 // The floor this file stands on. Both were declared here until state.js was
 // split; they are re-exported below under exactly their old names, because
 // "state.js is the only door" is a rule about where mutations go and not about
@@ -52,10 +51,10 @@ import {
   MOBILE_COLUMNS, MOBILE_COLUMN_OPTIONS, MOBILE_TOP_ROWS, MOBILE_MIN_ROWS,
   MOBILE_BOTTOM_ROWS, MOBILE_APPEARANCE_VARS, cleanBoardTitleDraft, cleanBoardTitle,
   defaultBoardTitle, isDefaultTitle, mobileColumnCount, board, TITLE_ID, byId,
-  topZ, makeItem,
+  topZ, makeItem, isFurniture,
 } from './board-model.js';
 import {
-  cloneSettings, layoutSettingsOf, settingsFor, defaultLayoutSettings,
+  cloneSettings, layoutSettingsOf, settingsFor,
   dedupeIds, MAX_ITEMS,
 } from './board-model.js';
 
@@ -63,7 +62,7 @@ import {
 // mutations that act on their answers are here.
 import {
   STICK_MIN, stuckTo, wouldStick, restick, forgetSticks, seedSticks,
-  stuckPlacement, isRider, attachRiders, stuckFollowers,
+  stuckPlacement, isRider, stuckFollowers,
 } from './sticky.js';
 
 // Where everything is - see layout.js. The Mobile pack, the two geometry
@@ -95,7 +94,7 @@ export {
   MOBILE_COLUMNS, MOBILE_COLUMN_OPTIONS, MOBILE_TOP_ROWS, MOBILE_MIN_ROWS,
   MOBILE_BOTTOM_ROWS, MOBILE_APPEARANCE_VARS, cleanBoardTitleDraft, cleanBoardTitle,
   defaultBoardTitle, isDefaultTitle, mobileColumnCount, board, TITLE_ID, byId,
-  topZ, makeItem,
+  topZ, makeItem, isFurniture,
 };
 
 
@@ -417,7 +416,7 @@ const GHOSTS = Object.freeze([
   // And untaped, because it is the one hint that stays an ordinary card at every
   // tier: a torn scrap is a fine thing to write on and a poor thing to mount a
   // working control in, and half a strip of tape across a slider is worse. The
-  // rest of that decision is in app.css, which keeps the Softish page treatment
+  // rest of that decision is in the CSS, which keeps the Softish page treatment
   // off this hint; the tape is the half that has to be refused here, since it is
   // rolled at minting rather than drawn from the tier.
   { id: GHOST_IDS[3], hint: 'whimsy', x: 0, y: 32, w: 256, h: 64,
@@ -463,7 +462,7 @@ export function tapeFor(rand = Math.random) {
 
 /** Whether the board holds anything the user put there. */
 export function hasContent() {
-  return board.items.some(i => i.type !== 'title' && i.type !== 'ghost');
+  return board.items.some(i => !isFurniture(i));
 }
 
 /** Whether any ghost card is currently on the board. */
@@ -638,7 +637,7 @@ export function emptyTrash() {
  *   item whose size is an odd number of cells therefore ends up with its centre
  *   on a half-step, which is correct and is not a rounding error.
  */
-function snapAll() {
+function snapAll(snapTo) {
   const step = baseStep();
   const before = [], after = [];
   for (const it of board.items) {
@@ -657,7 +656,7 @@ function snapAll() {
       pre: pre || { x: it.x, y: it.y, w: it.w, h: it.h },
     });
   }
-  applySnapState(before, after, 'Snap to grid');
+  applySnapState(before, after, 'Snap to grid', snapTo);
 }
 
 /**
@@ -674,7 +673,7 @@ export function recheckBoardGeometry() {
 }
 
 /** Put back what snapAll() remembered, for everything still carrying a memo. */
-function unsnapAll() {
+function unsnapAll(snapTo) {
   const before = [], after = [];
   for (const it of board.items) {
     // Checked rather than trusted: a memo arrives from a .mbrd like everything
@@ -685,16 +684,56 @@ function unsnapAll() {
     before.push({ id: it.id, x: it.x, y: it.y, w: it.w, h: it.h, pre });
     after.push({ id: it.id, x: pre.x, y: pre.y, w: pre.w, h: pre.h, pre: null });
   }
-  applySnapState(before, after, 'Leave the grid');
+  applySnapState(before, after, 'Leave the grid', snapTo);
 }
 
 
-function applySnapState(before, after, label) {
+/**
+ * Write the snap flag itself - the setting half of the same act.
+ *
+ * The layoutSettings mirror is written with it and not left to setSetting()'s
+ * tail: the two are one value kept in two places, and an undo that restored the
+ * flag while leaving the mirror behind would put the lie back at the next
+ * layout switch instead of at the next drag.
+ */
+function writeSnapSetting(v) {
+  board.settings.snap = v;
+  board.layoutSettings[board.layoutMode] = layoutSettingsOf(board.settings);
+  markDirty();
+  bus.emit('settings', 'snap');
+}
+
+/**
+ * The geometry, and - when a person actually turned the setting - the setting
+ * with it, as one command.
+ *
+ * `snapTo` is the flag the user asked for, or undefined for
+ * recheckBoardGeometry(), which re-asserts a rule that is already on rather than
+ * toggling one. Folding the flag in is the whole point: it used to be written by
+ * setSetting() *outside* this command, so one Ctrl+Z took the board off the
+ * lattice and left the checkbox ticked - the only place in the app where undo
+ * produced a state nobody could have produced by hand.
+ *
+ * Nothing moved is not nothing happened: an empty board, or one already flush on
+ * the lattice, still has a setting to write. It goes in without history, the way
+ * every other setting does - there is no geometry to take back, so there is
+ * nothing for an undo entry to be about.
+ */
+function applySnapState(before, after, label, snapTo) {
   const moved = after.some((a, i) =>
     SNAP_KEYS.some(k => a[k] !== before[i][k]) || !!a.pre !== !!before[i].pre);
-  if (!moved) return;
-  writeSnapState(after);
-  commit(label, () => writeSnapState(after), () => writeSnapState(before));
+  if (!moved) {
+    if (snapTo !== undefined) writeSnapSetting(snapTo);
+    return;
+  }
+  const apply = (list, flag) => {
+    if (flag !== undefined) writeSnapSetting(flag);
+    writeSnapState(list);
+  };
+  // commit() runs its redo half itself, which is what applies `after` here.
+  commit(label,
+    () => apply(after, snapTo),
+    () => apply(before, snapTo === undefined ? undefined : !snapTo));
 }
 
 function writeSnapState(list) {
@@ -1391,11 +1430,19 @@ export function setSetting(key, value) {
     return;
   }
   if (board.settings[key] === value) return;
-  board.settings[key] = value;
   // Snapping is not only a rule for the next drag - it moves the board. Done
   // here rather than at the checkbox because the whimsy axis flips this setting
   // too (Harsh means snapped), and both routes have to behave the same.
-  if (key === 'snap') value ? snapAll() : unsnapAll();
+  //
+  // The whole key is handed over, write included: the flag belongs inside the
+  // command the geometry pushes, so that one Ctrl+Z takes back both halves of
+  // what one click did. writeSnapSetting() does everything this function's tail
+  // would have done, which is why this returns rather than falling through.
+  if (key === 'snap') {
+    value ? snapAll(value) : unsnapAll(value);
+    return;
+  }
+  board.settings[key] = value;
   // The gap is baked into where the packer put things, so on Mobile it is not a
   // rule for the next import - it moves the column that is already there. On
   // Desktop it is exactly a rule for the next import, and nothing moves until
@@ -1537,6 +1584,12 @@ function normalizeBoard(data) {
   // One id space across the live board and the bin: a restored item must not
   // collide with a live one.
   const ids = new Set();
+  // makeItem() defaults a missing `z` to topZ() + 1, which reads the *live*
+  // board - and the live board here is still the previous one, about to be
+  // thrown away. Harmless, and worth recording why rather than fixing: every
+  // file this app writes carries a z, and for one that does not,
+  // normalizeLayout()/completeLayout() below overwrite the geometry anyway. What
+  // it must never become is load-bearing.
   const normalizedItems = dedupeIds(items.map(makeItem), ids);
   const rawLayouts = src.layouts && typeof src.layouts === 'object' ? src.layouts : {};
   const desktopRecord = layoutRecord(rawLayouts.desktop);

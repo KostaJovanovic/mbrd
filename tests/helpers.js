@@ -36,6 +36,31 @@ export function walk(dir, exts, from = WEB) {
 export const read = path => readFileSync(path, 'utf8');
 
 /**
+ * The app's stylesheets in cascade order, concatenated - what used to be
+ * app.css before it was split by subsystem.
+ *
+ * A test asserting that some rule exists is asking about the app's CSS, not
+ * about which of eight files a rule happens to live in. Reading them as one
+ * string keeps such a test true when a rule moves between subsystems, and stops
+ * the split from being a thing every future assertion has to know about.
+ *
+ * The order is index.html's, which is the cascade - so a test that cares about
+ * *precedence* (quality.css wins on document order, not specificity) still gets
+ * an honest answer.
+ *
+ * tokens.css and fonts.css are deliberately out: they are the property table
+ * and the @font-face set, and a test wanting either should say so.
+ */
+export const APP_CSS_ORDER = [
+  'base.css', 'canvas.css', 'items.css', 'sidebar.css',
+  'chrome.css', 'overlays.css', 'mobile.css', 'quality.css',
+];
+
+export const appCss = () => APP_CSS_ORDER
+  .map(name => readFileSync(join(WEB, 'assets', 'css', name), 'utf8'))
+  .join('\n');
+
+/**
  * A board item, with the defaults the geometry helpers assume. Tests override
  * only the fields they care about, which keeps a case about rotation from
  * being buried in eight irrelevant properties.

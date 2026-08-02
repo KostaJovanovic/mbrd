@@ -486,7 +486,7 @@ function titleCardEl() {
 /**
  * Write the shared masthead style onto whichever element is passed - the Mobile
  * masthead or the Desktop title card's name. Both read the same custom
- * properties; app.css turns them into a font size against each element's own
+ * properties; the CSS turns them into a font size against each element's own
  * context (the strip width for one, the card's own width for the other), which
  * is the only part that differs. The name-fit shrink (fitTitle) applies to both
  * now, and is scheduled by the caller, not written here.
@@ -501,7 +501,7 @@ function applyTitleStyle(title, style, axes) {
   // TITLE_CAP for why it is a ratio and not the 96px it replaced.
   title.style.setProperty('--mobile-title-cap', String(TITLE_CAP));
   title.style.setProperty('--mobile-title-stretch', formatAxis(style.stretch / 100));
-  // A plain number; app.css turns it into a fraction of the band height so the
+  // A plain number; the CSS turns it into a fraction of the band height so the
   // nudge holds its proportion at any font size. See the transform there.
   title.style.setProperty('--mobile-title-offset', String(style.offset ?? 0));
   // Cleared rather than set to a number at the default, so the stylesheet's
@@ -523,7 +523,7 @@ function applyTitleStyle(title, style, axes) {
   title.style.fontVariationSettings = variationSettings(style, axes) || 'normal';
   // An attribute rather than an inline white-space, because not wrapping is
   // three declarations and not one - see #mobile-board-title[data-nowrap] in
-  // app.css, where the other two are what keeps an over-long name centred on
+  // canvas.css, where the other two are what keeps an over-long name centred on
   // the board instead of starting at its left edge.
   title.toggleAttribute('data-nowrap', !style.wrap);
 }
@@ -541,7 +541,7 @@ function styleTitleCard(style = header(), axes = availableAxes()) {
   // card ratio 0.20 vs masthead 0.1875). The card has no screen width of its own
   // to clamp against, so the ratio is computed here against the mobile board's
   // width and handed over as --mobile-title-ratio, which the card multiplies by
-  // its own width (100cqw) in app.css. The two then wrap identically.
+  // its own width (100cqw) in the CSS. The two then wrap identically.
   //
   // From mobileBoardWorldWidth(), not viewport.mobileWorldWidth: the viewport
   // holds the *active* layout's figure, and on Desktop that is the Desktop grid
@@ -562,7 +562,7 @@ function styleTitleCard(style = header(), axes = availableAxes()) {
  * both edges and the band clips it. There is no CSS for "make this line fit" -
  * no container query on your own overflow, no font-size that responds to the
  * text it is setting - so the width is measured here and the shortfall written
- * back as --mobile-title-fit, which app.css multiplies into the font size.
+ * back as --mobile-title-fit, which the CSS multiplies into the font size.
  *
  * Measured with the fit at 1, because the number being computed is the ratio
  * between the *unfitted* line and the room, and measuring the shrunk line would
@@ -588,7 +588,7 @@ let fitFrame = 0;
  *
  * The wrap is still what does the breaking - this only decides how much room it
  * is given to do it in. A name too long to reach two lines by the floor below is
- * left at the floor and clipped by the -webkit-line-clamp in app.css, which is
+ * left at the floor and clipped by the -webkit-line-clamp in the CSS, which is
  * the same failure it had before.
  */
 const TITLE_LINES = 2;

@@ -1,0 +1,73 @@
+// Correctness only. Nothing here is about taste.
+//
+// This repository had exactly one author for its whole life, so "match the
+// surrounding style" worked. It does not survive a second author, and the answer
+// is a linter that catches mistakes rather than one with opinions about layout.
+// There is deliberately NO formatter: Prettier would rewrite all 31,000 lines
+// and destroy the blame this project's module headers make worth keeping.
+//
+// oxlint rather than ESLint because it is a single binary with no plugin graph,
+// which is closer to what this repo is. It is a devDependency; the app still
+// ships nothing and `npm test` still needs no install.
+//
+// no-undef earns its place on its own: the same class of bug it catches was
+// sitting in web-graph.js, which called two geometry helpers it had never
+// imported and threw out of threads() for the life of the module.
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "env": {
+    "browser": true,
+    "es2024": true
+  },
+  "ignorePatterns": [
+    "node_modules",
+    "test-results",
+    "playwright-report",
+    "graphify-out",
+    "web/assets/js/import/formats.js"
+  ],
+  "rules": {
+    "no-undef": "error",
+    "no-unused-vars": [
+      "error",
+      {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_",
+        "caughtErrors": "none",
+        "ignoreRestSiblings": true
+      }
+    ],
+    "prefer-const": "error",
+    "eqeqeq": [
+      "error",
+      "smart"
+    ],
+    "no-var": "error",
+    "no-dupe-keys": "error",
+    "no-unreachable": "error",
+    "no-self-assign": "error",
+    "no-constant-condition": "error"
+  },
+  "overrides": [
+    {
+      "files": [
+        "web/sw.js",
+        "web/assets/js/optimize/media-worker.js"
+      ],
+      "env": {
+        "worker": true,
+        "serviceworker": true
+      }
+    },
+    {
+      "files": [
+        "tests/**",
+        "tools/**",
+        "playwright.config.js"
+      ],
+      "env": {
+        "node": true
+      }
+    }
+  ]
+}

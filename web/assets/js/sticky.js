@@ -25,7 +25,7 @@
 // the answers stay in state.js.
 
 import { overlapFraction } from './geometry.js';
-import { board, byId } from './board-model.js';
+import { board, byId, isFurniture, TITLE_ID } from './board-model.js';
 
 // ---------------------------------------------------------------------------
 // Sticky notes that stick
@@ -78,6 +78,14 @@ const sticks = new Map();
  * corner by a third of itself is obviously stuck to it, and no test of the
  * centre will ever say so.
  *
+ * A host must be a real item. The title card and the hint cards are the app's
+ * own furniture: a note stuck to the title card travelled with it and, on
+ * Mobile, landed in the packed first row as a rider nothing had treated as an
+ * obstacle - while a note stuck to a hint was stuck to something deleted the
+ * moment any real content arrived. layout.js parks the title card clear of the
+ * Mobile board for the same reason, which fixed the obstacle end of it; this is
+ * the stick end.
+ *
  * Only notes stick, and only to something below them in the stack. A note
  * hidden behind the thing it claims to be stuck to would be a relationship
  * nobody could see, and being seen is the whole of the point. It costs nothing
@@ -107,7 +115,7 @@ export function stuckTo(note) {
 function measureStick(note) {
   let best = null;
   for (const it of board.items) {
-    if (it.id === note.id || (it.z || 0) >= (note.z || 0)) continue;
+    if (isFurniture(it) || it.id === note.id || (it.z || 0) >= (note.z || 0)) continue;
     if (best && (it.z || 0) < (best.z || 0)) continue;
     if (overlapFraction(note, it) > STICK_MIN) best = it;
   }
@@ -126,7 +134,7 @@ function measureStick(note) {
 export function wouldStick(box, excludeId) {
   let best = null;
   for (const it of board.items) {
-    if (it.id === excludeId) continue;
+    if (isFurniture(it) || it.id === excludeId) continue;
     if (best && (it.z || 0) < (best.z || 0)) continue;
     if (overlapFraction(box, it) > STICK_MIN) best = it;
   }
@@ -159,12 +167,26 @@ export const forgetSticks = () => sticks.clear();
  * (stamped at serialize time); seeding it here makes the saved answer win over a
  * fresh measurement, while an older board with no such key measures as before.
  * A null is kept as the real answer "loose", exactly as the memo treats it.
+ *
+ * A record naming furniture is dropped rather than seeded. The memo is trusted
+ * ahead of measurement, so a file written before measureStick() excluded the
+ * title card would otherwise reintroduce from disk exactly the relation the
+ * measurement now refuses - and a seeded memo is never re-measured while its
+ * host is on the board.
+ *
+ * The title card is named by its constant rather than looked up, because it is
+ * not on the board yet: loadBoard() runs this before main.js seeds the card, so
+ * there is nothing to ask about the type. Hints need no such test - a load drops
+ * every ghost, so a record naming one finds no host and simply measures again.
  */
 export function seedSticks() {
   sticks.clear();
+  const furniture = new Set([TITLE_ID]);
+  for (const it of board.items) if (isFurniture(it)) furniture.add(it.id);
   for (const it of board.items) {
     if (it.type === 'note' && it.meta && 'stuckTo' in it.meta) {
-      sticks.set(it.id, it.meta.stuckTo ?? null);
+      const hostId = it.meta.stuckTo ?? null;
+      sticks.set(it.id, furniture.has(hostId) ? null : hostId);
     }
   }
 }

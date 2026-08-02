@@ -19,6 +19,15 @@
 // rather than dropping frames. It is wall-clock dependent, which is what made
 // its test flaky once; the tests around it assert the arithmetic, never a
 // duration.
+//
+// geometry.js is the only thing this imports, and both names are used by
+// CardGrid below. They were being called without being imported at all, which
+// threw a ReferenceError out of threads() on any board with enough sized items
+// to reach the extra-thread pass - so the web stopped drawing past the spanning
+// tree and said nothing about it. Found by `npm run typecheck`, which is the
+// first thing that ever looked; tests/web.test.js now covers the path.
+
+import { corners, pointInItem } from './geometry.js';
 
 /**
  * Every thread that fits: the spanning tree, then everything else that can be

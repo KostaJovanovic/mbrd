@@ -52,7 +52,7 @@ function importsOf(mod) {
   for (const re of [withFrom, bare]) {
     let m;
     while ((m = re.exec(src))) {
-      let spec = m[1];
+      const spec = m[1];
       // Resolve './x' and '../y' against this module's directory.
       const parts = (dir ? dir.split('/') : []);
       for (const seg of spec.split('/')) {

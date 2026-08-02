@@ -1,0 +1,390 @@
+/* ---------------------------------------------------------
+   Touch, and small screens
+
+   Two separate questions that are usually confused for one.
+
+   *Touch* is about the input: a finger has no hover state and covers about ten
+   millimetres, so anything that only appears on hover is unreachable and
+   anything under about 44px is a coin toss. That is `pointer: coarse`, and it
+   is true of a large tablet as much as a phone.
+
+   *Small* is about the room: the chrome sits in four corners, and on a narrow
+   screen those corners are the parts of the glass a thumb cannot reach while
+   the hand is holding the device. That is a width query, and it is true of a
+   phone whether or not it is being touched.
+
+   Written in that order, and deliberately not merged.
+   --------------------------------------------------------- */
+
+@media (pointer: coarse) {
+  :root {
+    --chrome-button-w: var(--chrome-button-touch);
+    --chrome-button-h: var(--chrome-button-touch);
+    /* Still not 44px: four of these sit on the corners of a rectangle you are
+       looking *through*, so a target that size would hide a card each. Grown to
+       where a finger can find it without the sheet becoming mostly handle. */
+    --sheet-grip: 20px;
+  }
+
+  /* Marks keep their drawn size and the targets around them grow. A finger is
+     not a pointer: 9px of slop each way on the edge strips, and a corner reach of
+     40 past the ring rather than 24, so a thumb finds the corner without a
+     magnifying pinch. The extra reach is spent outward and costs the card
+     nothing: what a corner laps back over the face is capped at an eighth of the
+     side either way (--grip-lap-x / -y), so 40 does not cover a small card the
+     way it used to - it only makes the space outside it easier to hit. */
+  /* The edge strips are pure hit area, so --grip-edge is the target itself -
+     and it sets the offset as well as the thickness, so a wider strip grows
+     away from the card rather than over it. */
+  .item { --grip-slop: 9px; --grip-corner: 40px; --grip-edge: 24px; }
+  /* Nothing to hover with, and a swollen mark under a finger is a mark under a
+     finger. It stays for the drag, which is the part you can see. */
+  .grip:not(.grip-edge):hover { --grip-swell: 1; }
+
+  /* Every hover reaction in the chrome fires on the *first* tap on a touch
+     screen and then sticks until something else is tapped, so a bin button
+     stays lit long after you have finished with it. The reactions are
+     decoration; the pressed state below is the one that carries information. */
+  #menu-btn:hover, #mobile-header-edit-btn:hover, #bin-btn:hover, #zoom-ctl button:hover,
+  .btn-row button:hover, #side-close:hover, #header-close:hover {
+    background: var(--paper-card);
+    border-color: var(--rule-2);
+    color: inherit;
+    transform: none;
+  }
+  #zoom-ctl button:hover:not(:disabled) svg,
+  #bin-btn:hover svg { transform: none; }
+  #menu-btn:active, #mobile-header-edit-btn:active, #bin-btn:active, #zoom-ctl button:active,
+  .btn-row button:active { background: var(--paper-3); }
+
+  /* 44px, everywhere a finger has to land. This is the *input* question, so it
+     is here rather than in the width query below: a 10" tablet has all the room
+     in the world and the same finger. */
+  /* 20, not 19: the 46px button over a 1px border is a 44px box, so an even bar
+     centres on a whole pixel. The gap is untouched - the pitch of 8 is the one
+     number in this control that must not move. */
+  #menu-btn span { width: 20px; }
+  #mobile-header-edit-btn svg { width: 20px; height: 20px; }
+  #bin-btn svg { width: 20px; height: 20px; }
+  /* Width only. The height used to be restated here as 46 because the base rule
+     set 32 and a finger needs more than that; now the base rule reads
+     --chrome-button-h, which this query has already taken to
+     --chrome-button-touch a few hundred lines up, so the pill grows with every
+     other control instead of alongside it. A literal repeated here would be a
+     second place to remember. */
+  #zoom-ctl button { min-width: 40px; }
+  #zoom-ctl svg { width: 17px; height: 17px; }
+  .check input { width: 20px; height: 20px; }
+
+  /* A long press on the board opens the context menu (canvas/input.js). iOS
+     answers the same gesture with its own callout - "Copy / Look Up" over a
+     card - so the platform's has to be turned off or the two fight. */
+  #world, #viewport { -webkit-touch-callout: none; }
+}
+
+@media (max-width: 700px) {
+  /* Two bands instead of four corners.
+
+     The foot is for the hand: the add bar along the very bottom, with the bin,
+     undo and redo on the row above it. The view controls go up to the top
+     edge, because they are the odd one out - zoom is something you set and
+     then leave, not something you reach for mid-gesture, and it was the piece
+     most often pressed by accident while dragging an item towards the bottom
+     of the screen. The menu shares that top edge from the other corner, for
+     the reason written over its own rule below.
+
+     Nothing moves in the markup - these are four independently fixed elements
+     and always were, so this is only a question of where each one is pinned. */
+  /* One row along the foot, not two bands. The bin holds the left corner and
+     undo/redo the right, as before, but the add bar no longer owns the whole
+     bottom edge with the pair stepped up over it - it fills the span between
+     them instead, so bin, add bar and history read as one flush strip.
+
+     --bar-h is the height the three share; --bar-gap is the space the add bar
+     leaves on each side. Its left inset clears one chrome button (the bin),
+     its right inset clears two (the history pair). One place to change the
+     height, so the strip cannot drift apart the way the old four corners did. */
+  :root { --bar-h: 48px; --bar-gap: 8px; }
+
+  #add-bar {
+    display: flex;
+    height: var(--bar-h);
+    bottom: max(12px, env(safe-area-inset-bottom));
+    left: calc(max(12px, env(safe-area-inset-left)) + var(--chrome-button-w) + var(--bar-gap));
+    right: calc(max(12px, env(safe-area-inset-right)) + 2 * var(--chrome-button-w) + var(--bar-gap));
+  }
+  /* The 54px tap target the add bar carried when it owned the whole edge is
+     spent now that it shares a row with the 48px chrome buttons; let the two
+     halves take the row's height so the foot is one flush line. */
+  #add-bar button { min-height: 0; }
+
+  /* Above the foot strip rather than in it. The bottom edge is spoken for at
+     this width - bin, add bar and history read as one flush line - and a fourth
+     object squeezed into it would break the thing that makes those three read
+     as one. So the player stands off it by the same gap the strip uses inside
+     itself, full width between the same insets, and the two stack.
+
+     The name goes with it. There is no room for a filename, a waveform, a
+     volume slider and a close on a phone, and of those four the name is the one
+     the card itself already carries - you started this from somewhere. */
+  #nowplaying {
+    --np-left: max(12px, env(safe-area-inset-left));
+    --np-right: max(12px, env(safe-area-inset-right));
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--bar-h) + var(--bar-gap));
+    max-width: none;
+  }
+  #nowplaying .np-name { display: none; }
+  #nowplaying .np-volume input { width: 56px; }
+
+  /* And here the sidebar does take it away, unlike at every wider size. The
+     panel is 322 of a 390-wide screen: there is no "beside it" to move to, and
+     a player peeking out from under an open panel is not a control, it is a
+     sliver. The rule above that keeps it up is written for a sidebar that is a
+     left-hand strip, which is what it stops being here. */
+  :is(#sidebar, #header-panel).is-open ~ #nowplaying {
+    left: max(12px, env(safe-area-inset-left));
+    right: max(12px, env(safe-area-inset-right));
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--bar-h) + var(--bar-gap));
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* The menu goes back to the top left, which is where it is at every other
+     width. It came down here to be reachable by a thumb, and the row it came
+     down into has since filled up: the bin brought undo and redo with it, and
+     three controls plus the menu at the two far ends of the same strip is a
+     row you have to aim at. The panel it opens is a two-handed job anyway -
+     you go to it to rename a board or change the look, not mid-gesture - so it
+     is the one thing in the corner that can afford the reach. */
+  #menu-btn {
+    top: max(12px, env(safe-area-inset-top));
+    left: max(12px, env(safe-area-inset-left));
+  }
+  #mobile-header-edit-btn {
+    top: max(12px, env(safe-area-inset-top));
+    right: max(12px, env(safe-area-inset-right));
+    left: auto;
+  }
+
+  /* The bin takes the left corner of the foot, which is the one it holds at
+     every other width. It sat on the right here for a while, from back when the
+     menu button owned the bottom left and the two could not share the strip;
+     the menu has since moved, so the only thing the right-hand pin still bought
+     was a bin that changes sides between a phone and the laptop it syncs with. */
+  #bin {
+    bottom: max(12px, env(safe-area-inset-bottom));
+    left: max(12px, env(safe-area-inset-left));
+  }
+  /* And undo and redo stay at the other end, which is the one thing about this
+     row that does not match the desktop. On a laptop they sit against the bin
+     because they are the same thought - the bin is the one mistake you can walk
+     back by hand and these are every other one - and the pointer costs nothing
+     to move between them. Here the cost is a thumb: both far corners of the foot
+     are comfortable and the middle is the stretch, so a pair pressed as often as
+     these belongs in a corner rather than beside one - and the add bar takes the
+     stretch between them, where it is aimed at rather than reached for in a hurry.
+     It stays a child of #bin, so the idle fade and the sidebar-open hide still
+     take it with everything else; only where it is pinned changes. */
+  #history-ctl {
+    position: fixed;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    right: max(12px, env(safe-area-inset-right));
+  }
+  /* All three share one height so the foot is a single flush line. */
+  #bin-btn, #history-ctl { height: var(--bar-h); }
+
+  /* The toast rises from the foot on a desktop, where the foot is empty. Here
+     the foot is the button row, so a line landing at its usual 24px would sit
+     behind the bin and the add bar. Lift it clear: the row's own bottom, plus
+     the row height, plus a gap. */
+  #toast { bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--bar-h) + 12px); }
+  /* Only the width is narrowed - the panel hangs off the left edge here just as
+     it does on a desktop, so nothing about which way it opens changes. */
+  #bin-panel { width: min(268px, calc(100vw - 24px)); max-height: min(60vh, 420px); }
+
+  /* Up at the top edge, clear of everything the thumb is doing. Right-aligned
+     rather than centred: #corner is a column that grows downwards from its
+     pin, and the top right is the one part of the screen nothing else claims. */
+  #corner {
+    top: max(12px, env(safe-area-inset-top));
+    bottom: auto;
+    right: max(12px, env(safe-area-inset-right));
+  }
+  /* The readout can afford to be tighter than it is on a desktop: there is no
+     room for 58px of it, and the + and - shifting by a few pixels as the zoom
+     crosses 100% matters less than the whole bar fitting. */
+  #zoom-level { min-width: 46px; }
+
+  /* The ruler goes under the view controls here rather than over them, and it
+     turns over with the move.
+
+     Both halves are the same decision. #corner grows downwards from a pin at
+     the top of the screen at this width, where on a desktop it grows upwards
+     from the bottom - so what was the outside edge of the group is now the
+     inside one, and a stick drawn with its baseline at the bottom and its
+     serifs rising into the pill above reads as a bracket around the wrong
+     thing. Turned over, the baseline is the edge it shares with the controls,
+     the serifs hang from it, and the number sits at the foot: controls, rule,
+     reading, which is the order a scale bar has under a drawing. */
+  #corner { flex-direction: column; }
+  #scale-bar { order: 1; flex-direction: column-reverse; padding: 2px 2px 0; }
+  #scale-bar-stick::before { bottom: auto; top: 0; }
+
+  /* The coordinate readout is the first thing to go. It is a thing to glance
+     at while working with a mouse, and there is no cursor to report. */
+  #hud { display: none; }
+
+  /* And with the panel open, the view controls go too - so nothing is left on
+     the glass but the panel.
+
+     Only at this width, and that is the whole of the reasoning. On a desktop
+     the sidebar is a sheet laid over one edge of a board you can still see and
+     still use, so the zoom controls in the far corner are as live as they ever
+     were. Here the panel *is* the screen: the board behind it is not visible,
+     the scale bar is measuring something nobody can look at, and a zoom control
+     floating over a full-screen panel reads as a piece of the panel - one that
+     does nothing you would expect a control on this screen to do. The menu
+     button, the bin and the add bar already leave for exactly this reason; this
+     is the last corner that stayed.
+
+     visibility with the opacity, and delayed by the fade's own length, so the
+     controls finish fading before they leave the tab order and come back the
+     instant the panel starts to close. The same pairing #bin and #add-bar use -
+     a control faded to nothing that can still be pressed is worse than one that
+     is simply there. */
+  #sidebar.is-open ~ #corner,
+  #header-panel.is-open ~ #corner {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity var(--dur-base) var(--ease), visibility 0s var(--dur-base);
+  }
+
+  /* The masthead pen leaves with the rest when the sidebar becomes the screen.
+     Above (line ~2122) it rides over the sidebar at z-index 41, which is right
+     on Desktop where the sidebar is a left strip and the pen's own corner stays
+     clear - but here the panel is full-screen, so a pen floating on top of it is
+     a control pointing at a masthead nothing on this view is showing. */
+  #sidebar.is-open ~ #mobile-header-edit-btn {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity var(--dur-base) var(--ease), visibility 0s var(--dur-base);
+  }
+
+  /* Under the view controls rather than beside them: at this width a centred
+     330px strip and a right-pinned zoom bar are the same piece of screen. */
+  #busy { top: calc(max(12px, env(safe-area-inset-top)) + 46px); }
+
+  /* The panel becomes the screen rather than a sheet laid on it. At this width
+     the board behind it is not usable anyway, and half a panel is worse than a
+     whole one. Insets on all four sides so a notch or a home indicator does not
+     eat anything.
+
+     It used to stop 58px short of the bottom to leave the zoom bar showing.
+     That was the wrong trade twice over: it spent the scarcest thing on a phone
+     - vertical room in a panel that is mostly a scrolling list - on a strip of
+     controls that do nothing while the panel is up, and it left a band of live
+     board at the foot of a screen you are scrolling with your thumb. */
+  #sidebar,
+  #header-panel {
+    top: max(10px, env(safe-area-inset-top));
+    bottom: max(10px, env(safe-area-inset-bottom));
+    left: max(10px, env(safe-area-inset-left));
+    right: max(10px, env(safe-area-inset-right));
+    width: auto;
+    /* Just a fade here. The slide-with-overshoot is a sheet arriving from off
+       to the left, which reads only while there is board either side of it to
+       arrive over; at this width the panel *is* the screen, so the same motion
+       is the whole view lurching sideways. Closed state keeps the transform at
+       none so nothing is being animated but the opacity. */
+    transform: none;
+    transition: opacity var(--dur-base) var(--ease),
+                visibility 0s linear var(--dur-base),
+                background-color var(--dur-fast) var(--ease),
+                border-color var(--dur-fast) var(--ease),
+                box-shadow var(--dur-fast) var(--ease);
+  }
+
+  /* A range is the only visible thing while a finger is tuning it. The panel
+     itself dissolves as well as its controls, exposing the board beneath while
+     the active track stays exactly where the gesture began. Ancestors of that
+     input remain laid out but lose their own decoration; every other branch
+     fades completely. Releasing the pointer removes the state immediately. */
+  :is(#sidebar, #header-panel).is-slider-focus {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+  }
+  :is(#sidebar, #header-panel).is-slider-focus .side-head,
+  /* The tab strip goes wholesale, like the head and the foot and unlike the
+     body: no slider is ever inside it, so it needs none of the
+     :not(:has(.is-slider-active)) care the rows below it do. */
+  :is(#sidebar, #header-panel).is-slider-focus .side-tabs,
+  :is(#sidebar, #header-panel).is-slider-focus .side-foot,
+  :is(#sidebar, #header-panel).is-slider-focus .side-body :where(*):not(:has(.is-slider-active)):not(.is-slider-active) {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--dur-fast) var(--ease);
+  }
+  :is(#sidebar, #header-panel).is-slider-focus .side-body {
+    scrollbar-color: transparent transparent;
+  }
+  :is(#sidebar, #header-panel).is-slider-focus .side-body :where(*):has(.is-slider-active) {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+  }
+  :is(#sidebar, #header-panel).is-slider-focus input[type="range"].is-slider-active {
+    position: relative;
+    z-index: 2;
+    opacity: 1;
+    pointer-events: auto;
+  }
+  /* A flick that runs off the end of the panel would otherwise carry on into
+     the page behind it, which on a phone is the browser's own overscroll. */
+  .side-body { overscroll-behavior: contain; }
+
+  /* The find palette is a desktop-width strip; here it wants the width it can
+     get, and to sit higher up so the keyboard does not cover its own results. */
+  #search {
+    top: max(10px, env(safe-area-inset-top));
+    left: 10px;
+    right: 10px;
+    width: auto;
+    /* The centring is a `translate`, not a `transform` - cancelling the wrong
+       one of those leaves the palette half a screen to the left. */
+    translate: none;
+  }
+}
+
+/* Very narrow phones: with the add bar now sharing the foot with the bin and
+   the history pair, its two halves no longer have room for an icon and a word
+   side by side without crowding the seam. Below 360px the labels drop and the
+   icons carry the buttons alone.
+
+   Hidden the accessible way, not display:none - the add bar's buttons have no
+   aria-label, so the word IS the button's name; taking it out of the flow while
+   leaving it for a screen reader keeps "Files" and "Note" spoken. The icon then
+   centres on its own in the flex row. */
+@media (max-width: 359px) {
+  #add-bar button span {
+    position: absolute;
+    width: 1px; height: 1px;
+    margin: -1px; padding: 0; border: 0;
+    clip-path: inset(50%);
+    overflow: hidden; white-space: nowrap;
+  }
+}
+
+/* Landscape on a phone: the bar is still at the bottom but there is barely any
+   bottom to put it in, so the panel gives up the inset and takes the height. */
+@media (max-width: 900px) and (max-height: 480px) {
+  #sidebar, #header-panel { top: 6px; bottom: 6px; }
+  .side-head { padding: 10px 14px 8px; }
+  /* Height is the scarce thing here, so the foot row shrinks a notch. The
+     finger has not changed size, so this stops at 44 rather than going further.
+     Harmless above 700px, where the foot row is not laid out and nothing reads
+     the token. */
+  :root { --bar-h: 44px; }
+}

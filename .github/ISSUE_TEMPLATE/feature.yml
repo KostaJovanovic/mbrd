@@ -1,0 +1,60 @@
+name: Feature or change
+description: Something the board should do that it does not.
+labels: ['enhancement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Worth knowing before you write: mbrd has **no runtime dependencies, no
+        build step, and no server**, and those are properties rather than
+        accidents. A proposal that needs an npm package, a bundler, or a network
+        round trip is not automatically out — but it needs to argue for itself
+        on those grounds, so say so up front if yours does.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you actually trying to do
+      description: The situation, not the solution. What were you doing with a board when this came up?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you have in mind
+      description: How it would look and behave. Sketches and screenshots of other tools are welcome.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: shape
+    attributes:
+      label: Roughly what shape is this
+      description: Best guess is fine — it just helps route the discussion.
+      options:
+        - A new arrangement
+        - Support for a new file type
+        - A new setting
+        - A new action (keyboard / menu / sidebar)
+        - Something about the look
+        - Storage or the `.mbrd` format
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: outside
+    attributes:
+      label: Does it need the network, a dependency, or a build step?
+      description: |
+        Three modules reach outside today and each does so only on an explicit
+        user action. If yours would be a fourth, say what it fetches and when.
+      placeholder: No / Yes — it would need …
+
+  - type: checkboxes
+    id: offer
+    attributes:
+      label: Would you like to build it?
+      options:
+        - label: I would be up for implementing this myself

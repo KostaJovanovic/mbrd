@@ -1,9 +1,19 @@
 {
   "name": "mbrd",
   "private": true,
+  "license": "GPL-3.0-or-later",
   "type": "module",
-  "description": "Dev-only test harness. The app itself has no dependencies and no build step - the browser loads web/ directly.",
+  "description": "Dev-only test harness. The app itself has no dependencies and no build step - the browser loads web/ directly. `npm test` needs no install; the three devDependencies are for the optional lint, typecheck and e2e runs only.",
   "scripts": {
-    "test": "node --test \"tests/**/*.test.js\""
+    "start": "python serve.py",
+    "test": "node --test \"tests/**/*.test.js\"",
+    "lint": "oxlint web tests tools",
+    "typecheck": "tsc -p jsconfig.json",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.0",
+    "oxlint": "^1.76.0",
+    "typescript": "^5.7.0"
   }
 }

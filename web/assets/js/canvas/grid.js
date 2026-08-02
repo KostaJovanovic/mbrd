@@ -172,7 +172,7 @@ function placeInk(canvas, box) {
   canvas.style.height = `${box.h}px`;
   canvas.style.borderRadius =
     `${box.topRadius} ${box.topRadius} ${box.bottomRadius} ${box.bottomRadius}`;
-  // app.css pins the layer with inset:0, and left+right+width over-constrains a
+  // The CSS pins the layer with inset:0, and left+right+width over-constrains a
   // box - the browser drops one of them, and which one it drops is not a thing
   // to leave to the writing direction.
   canvas.style.right = 'auto';

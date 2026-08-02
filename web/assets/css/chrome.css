@@ -1,0 +1,458 @@
+/* ---------------------------------------------------------
+   HUD, drop overlay, toast
+   --------------------------------------------------------- */
+
+/* The corner stack: zoom controls over the coordinate readout. */
+#corner {
+  position: fixed;
+  z-index: 20;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  user-select: none;
+  transition: opacity var(--dur-base) var(--ease);
+}
+
+#zoom-ctl {
+  display: flex;
+  align-items: stretch;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  overflow: hidden;
+  background: var(--paper-card);
+  box-shadow: var(--shadow-1);
+}
+#zoom-ctl button {
+  display: grid;
+  place-items: center;
+  min-width: 34px;
+  /* The same height as every other control on the glass. It was 32, which made
+     the one cluster you use constantly the one cluster that did not line up
+     with the bin, the history pair or the menu - and unlike the corner rounds,
+     eight pixels of height is a difference you can see without looking for it.
+     Only the height; the segments stay their own widths, since this is a pill
+     with a readout in the middle of it and not a row of square buttons. */
+  height: var(--chrome-button-h);
+  padding: 0 7px;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+#zoom-ctl button + button { border-left: 1px solid var(--rule); }
+#zoom-ctl button:hover { background: var(--paper-2); color: var(--accent-deep); }
+#zoom-ctl button:active { background: var(--paper-3); }
+#zoom-ctl button:disabled { color: var(--ink-3); cursor: default; background: none; }
+#zoom-ctl svg {
+  width: 15px; height: 15px;
+  /* The glyph takes the reaction, not the button: scaling the button itself
+     would drag the hairline dividers between them around. */
+  transition: transform var(--dur-base) var(--ease-back);
+}
+#zoom-ctl button:hover:not(:disabled) svg { transform: scale(var(--btn-grow)) translateY(var(--btn-lift)); }
+#zoom-ctl button:active:not(:disabled) svg { transform: scale(calc(var(--btn-press) - 0.08)); }
+/* The readout doubles as the reset-to-100% button, so it needs to be wide
+   enough that 12% and 1600% don't shove the + and - around as you zoom. */
+#zoom-level {
+  min-width: 58px;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  color: var(--ink);
+  letter-spacing: calc(0.02em * var(--ls-scale));
+}
+/* A hairline gap before the fit/home pair - they move the view, not the zoom. */
+#zoom-ctl button[data-zoom="fit"] { border-left-width: 3px; border-left-style: double; }
+/* And the same double rule again before the padlock, for the same reason read
+   the other way: everything to its left does something, and it decides whether
+   they can. Three groups in one pill - zoom, view, and the switch over both. */
+#zoom-lock { border-left-width: 3px; border-left-style: double; }
+/* Only one shackle is ever drawn. */
+#zoom-lock .lock-shut, #zoom-lock[aria-pressed="true"] .lock-open { display: none; }
+#zoom-lock[aria-pressed="true"] .lock-shut { display: inline; }
+/* Pressed is a state and not a hover, so it is the ink that carries it rather
+   than a wash: the accent at full strength against the muted grey the rest of
+   the row sits at, which is the same way the bin says it has something in it.
+   No fill behind it - the row is one pill on glass, and a filled segment in the
+   middle of it reads as a second object. */
+#zoom-lock[aria-pressed="true"] { color: var(--accent-deep); }
+#zoom-lock[aria-pressed="true"] .lock-body { fill: color-mix(in srgb, var(--accent) 18%, transparent); }
+
+/* The phone's add bar. Nothing but its own shape here - where it is pinned, and
+   the fact that it exists at all, are both in the width query at the foot of
+   this sheet. A mouse has the whole sidebar a click away and does not need the
+   bottom edge of the window spent on two of its buttons. */
+#add-bar {
+  display: none;
+  position: fixed;
+  z-index: 20;
+  align-items: stretch;
+  border: var(--hairline) solid var(--rule-2);
+  /* The bin's corner, not the ogee it used to wear. The bar shares the foot of
+     the screen with the bin on one side and the history pair on the other, and
+     all three are the same height - three neighbours in one strip with two
+     different corners on them read as two strips. --leaf is what the other two
+     use (#bin-btn, #history). */
+  border-radius: var(--leaf);
+  overflow: hidden;
+  background: var(--paper-card);
+  /* One shadow across the whole set. This was --shadow-2, on the argument that
+     a bar which comes and goes should float higher than the permanent
+     furniture - but it shares the foot of the screen with the bin and the
+     history pair, which are the two things it most needs to look level with,
+     and a deeper shadow under the middle of three neighbours reads as the
+     middle one lifting off. Same reasoning that took its corner to --leaf. */
+  box-shadow: var(--shadow-1);
+  user-select: none;
+  transition: opacity var(--dur-base) var(--ease), visibility 0s;
+}
+#add-bar button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  /* 54, not 44. This is the one control on the screen that is aimed at rather
+     than pressed on the way past, and it is the bottom of a phone - the strip
+     a browser's own chrome shares with the home indicator. */
+  min-height: 54px;
+  padding: 0 14px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font-size: var(--t-small);
+  letter-spacing: calc(0.02em * var(--ls-scale));
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+/* The two halves are one object, so the seam is a rule and not a gap. */
+#add-bar button + button { border-left: 1px solid var(--rule); }
+#add-bar button:active { background: var(--paper-3); color: var(--accent-deep); }
+#add-bar svg { width: 19px; height: 19px; color: var(--accent); }
+/* Same bargain as #bin: the panel covers this whole bar at this width, and a
+   control you cannot see should not still be in the tab order underneath it. */
+#sidebar.is-open ~ #add-bar {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity var(--dur-base) var(--ease), visibility 0s var(--dur-base);
+}
+
+/* ---------------------------------------------------------
+   The now-playing bar (ui/nowplaying.js)
+   --------------------------------------------------------- */
+
+/* Along the foot, in the gap between the bin's corner and the zoom cluster's.
+   Two insets rather than a centre and a width, and that is the whole of how it
+   stays out of the way: left and right say what it must not sit on top of,
+   max-width caps it, and `margin-inline: auto` centres whatever is left over
+   inside that gap. Narrow the window and the bar shrinks instead of sliding
+   under the furniture; open the sidebar and only one number changes.
+
+   The gutters are the furniture's own arithmetic where it has any. The bin's
+   row is three chrome buttons and the gap between the trash and the history
+   pair, which is a sum this can take. The zoom cluster is a segmented pill of
+   six buttons of three different widths, which is not - so its width is named
+   once here, beside the thing that needs it.
+
+   Same card as the add bar next door: the same paper, the same hairline, the
+   same --leaf corner. It shares an edge with that bar on a phone, and two
+   objects on one edge wearing two different corners read as two strips. */
+#nowplaying {
+  --np-corner-w: 214px;
+  --np-gap: 12px;
+  --np-left: calc(max(16px, env(safe-area-inset-left))
+                  + 3 * var(--chrome-button-w) + 8px + var(--np-gap));
+  --np-right: calc(max(16px, env(safe-area-inset-right))
+                   + var(--np-corner-w) + var(--np-gap));
+
+  position: fixed;
+  z-index: 20;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  left: var(--np-left);
+  right: var(--np-right);
+  max-width: 520px;
+  margin-inline: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 8px 14px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper-card);
+  /* --shadow-1, the one every control on the glass wears. See #add-bar. */
+  box-shadow: var(--shadow-1);
+  user-select: none;
+}
+#nowplaying[hidden] { display: none; }
+
+/* Arriving and leaving.
+   It comes up from under the edge of the window and goes back down under it.
+   Not a nudge: the first version of this rose ten pixels and scaled from 0.98,
+   which is an animation by measurement and a pop by eye - a tenth of a second
+   of movement smaller than the bar's own padding. A thing pinned to the bottom
+   of the screen has an obvious place to come from, and using it is what makes
+   the movement legible at all. Hence `100% + 24px` - its own height, and enough
+   again to clear the inset it sits on and the shadow it casts.
+
+   Three characters off one pair of rules, because the personality is in the
+   tokens and not in the markup: how far under it starts, how much smaller, how
+   far tossed, and on what curve. The three tiers set those four at the foot of
+   this file; here it is one transform either way.
+
+   Two transitions, deliberately. The rule below is what plays on the way *in* -
+   longer, and on --ease-back, because arriving is the app answering something
+   and an answer may have some spring in it. The base rule's is what plays on
+   the way *out*: quicker and straight, since leaving is only getting out of the
+   way and a bar that bounced as it left would be asking to be watched. That is
+   the same asymmetry the idle fade makes further down, pointed the other way -
+   the furniture drifts off slowly because nothing asked it to go, where this
+   goes because somebody closed it.
+
+   Both halves of the exit run for the same --dur-fast on purpose:
+   ui/nowplaying.js ends the exit on the opacity transition, so a transform
+   still running when that fires would be cut off by [hidden].
+
+   pointer-events with the opacity, or a bar faded to nothing would still be a
+   row of buttons sitting over the board. */
+#nowplaying {
+  --np-under: calc(100% + 24px);
+  --np-shrink: 0.98;
+  --np-tilt: 0deg;
+  --np-ease: var(--ease-back);
+
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(var(--np-under)) scale(var(--np-shrink)) rotate(var(--np-tilt));
+  transition: opacity var(--dur-fast) var(--ease),
+              transform var(--dur-fast) var(--ease);
+}
+#nowplaying.is-up {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+  transition: opacity var(--dur-base) var(--ease),
+              transform var(--dur-base) var(--np-ease);
+}
+
+/* The sidebar no longer takes it off the screen - it moves over instead. A
+   player is the one piece of chrome whose job continues while you are doing
+   something else, and hiding it meant the only way to stop a track was to close
+   the panel you had just opened. The bin and the add bar still go, because what
+   they do is on the board the panel is covering.
+
+   One number: the left gutter clears the panel rather than the trash. The
+   right-hand one is untouched, so the bar keeps its own right edge and simply
+   loses width - it does not slide across under the sidebar. */
+#sidebar.is-open ~ #nowplaying {
+  --np-left: calc(max(14px, env(safe-area-inset-left))
+                  + min(var(--sidebar-w), 100vw - 28px) + var(--np-gap));
+}
+/* The masthead panel is the same object from the other side. */
+#header-panel.is-open ~ #nowplaying {
+  --np-right: calc(max(14px, env(safe-area-inset-right))
+                   + min(var(--sidebar-w), 100vw - 28px) + var(--np-gap));
+}
+/* Where a panel and the zoom cluster together leave too little to be a player,
+   the bar steps over the cluster rather than squeezing between the two.
+
+   Spelled out as a sum rather than as the 67px it used to be. That number was
+   measured off the corner stack when the zoom pill was 32 tall, so raising the
+   pill to --chrome-button-h would have left the player eight pixels low and
+   sitting on it - and on a touch pointer, where the token is 46 rather than 40,
+   fourteen. A literal here is a measurement of another rule, and it goes stale
+   the moment that rule moves. Each term below is the thing it names. */
+@media (max-width: 1080px) {
+  :is(#sidebar, #header-panel).is-open ~ #nowplaying {
+    left: max(16px, env(safe-area-inset-left));
+    right: max(16px, env(safe-area-inset-right));
+    bottom: calc(max(16px, env(safe-area-inset-bottom))
+                 + var(--chrome-button-h) + 2 * var(--hairline)  /* the zoom pill */
+                 + 8px                                           /* #corner's gap */
+                 + 25px                                          /* the scale bar */
+                 + 10px);                                        /* clearance */
+  }
+  #sidebar.is-open ~ #nowplaying {
+    left: calc(max(14px, env(safe-area-inset-left))
+               + min(var(--sidebar-w), 100vw - 28px) + var(--np-gap));
+  }
+  #header-panel.is-open ~ #nowplaying {
+    right: calc(max(14px, env(safe-area-inset-right))
+                + min(var(--sidebar-w), 100vw - 28px) + var(--np-gap));
+  }
+}
+
+/* The name gets a third of the bar and no more. It is the label on a control,
+   not the content - what somebody is looking at while this is up is the
+   waveform - so a long filename ellipses rather than pushing the transport
+   into a corner. The full one is on the title attribute. */
+#nowplaying .np-name {
+  flex: 0 1 auto;
+  max-width: 33%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--t-small);
+  color: var(--ink-2);
+}
+#nowplaying .np-transport {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+#nowplaying .transport {
+  flex: 1;
+  min-width: 0;
+  gap: 8px;
+  margin-top: 0;
+}
+/* Shorter than the card's forty. A card gives the waveform the whole lower half
+   of its face and can afford to; here it is one control in a row of them, and a
+   40px band of bars would make the bar as tall as the sidebar's header. The
+   readings are the same - drawBars() resamples to whatever width it is given -
+   so this is the same shape drawn shorter, not a coarser one. */
+#nowplaying .wave { height: 26px; }
+/* The video form. Its own card gives this 14px because the bar is laid over the
+   picture and every pixel is one of the thing you pinned up; here there is no
+   picture underneath and the line is the only thing to aim at, so it gets the
+   waveform's height and the same target the waveform has. The rule it draws is
+   still 3px - .vtrack sizes the reach, not the ink. */
+#nowplaying .vtrack { height: 26px; }
+/* And the same ink as the waveform beside it. The card's 22% is judged against
+   a photograph; on paper, next to a play button in full accent, it reads as a
+   crease rather than as a track - which is the note .wave-base already carries
+   for having made exactly this mistake. */
+#nowplaying .vtrack::before { background: color-mix(in srgb, var(--ink) 38%, transparent); }
+#nowplaying .transport .play { width: 28px; height: 28px; }
+
+/* The volume, and the icon is the label. A word here would be the only text in
+   the bar competing with the track's own name, and a speaker is the one glyph
+   that needs no gloss. */
+#nowplaying .np-volume {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+#nowplaying .np-volume svg { width: 15px; height: 15px; color: var(--ink-3); }
+#nowplaying .np-volume input { width: 68px; }
+#nowplaying .np-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+#nowplaying .np-close:hover { background: var(--paper-2); color: var(--accent-deep); }
+#nowplaying .np-close svg { width: 12px; height: 12px; }
+
+/* Idle - fifteen seconds of nothing, and the furniture goes.
+   ui/idle.js puts the class on and takes it off; what counts as "something
+   happened" is decided there.
+
+   pointer-events with it, and that pairing is the whole safety of this: a
+   control faded to nothing that could still be pressed would be a mine, and
+   the first tap has to be the one that brings the bar back rather than one
+   that lands on an invisible Empty.
+
+   Much slower going than coming, and the gap is the point. Leaving is the app
+   getting out of the way: a drift long enough that the eye never catches the
+   moment it starts, so the board is simply clear rather than visibly emptied.
+   Arriving answers something the user just did, and an answer is late at a
+   quarter of a second - the base rules on each element carry that quick half.
+   A multiple of --dur-base rather than a fixed time, so the three whimsy tiers
+   keep their own tempo instead of all drifting off at the middle one's. */
+:root.is-idle #menu-btn,
+:root.is-idle #mobile-header-edit-btn,
+:root.is-idle #bin,
+:root.is-idle #corner,
+:root.is-idle #add-bar,
+/* Including the player, and it is worth saying why: something audible with its
+   controls faded out sounds like a thing that cannot be stopped. It can - any
+   pointer move, key or wheel brings the whole set back inside a quarter of a
+   second, which is faster than reaching for it - and exempting it would leave
+   one lit panel on an otherwise empty board for as long as a track runs. */
+:root.is-idle #nowplaying {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity calc(var(--dur-base) * 6) var(--ease);
+}
+
+/* The scale bar. A label over a stick, both right-aligned, so the stick's right
+   end lines up with the edge of the zoom control beneath it - the eye then has
+   a straight edge to measure from rather than a floating rule.
+
+   No card, no background: it is a measurement laid on the board, not another
+   control sitting on top of it. That also keeps the corner from becoming three
+   stacked panels. */
+#scale-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  padding: 0 2px 2px;
+  user-select: none;
+  pointer-events: none;
+}
+#scale-bar[hidden] { display: none; }
+#scale-bar-label {
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+  /* Enough of the paper behind it to stay legible over a photograph, without
+     drawing a box: the label sits in a wash, the stick does not need one. */
+  padding: 0 3px;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--paper-card) 78%, transparent);
+}
+/* Serifed at both ends, the way a scale bar on a drawing is: the two tick marks
+   are what make it a measurement between two points rather than a line of
+   unclear extent. Borders rather than pseudo-elements so the whole thing is one
+   element whose width is the only thing the module writes. */
+#scale-bar-stick {
+  height: 7px;
+  border: solid var(--ink-2);
+  border-width: 0 var(--hairline);
+  position: relative;
+}
+#scale-bar-stick::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--hairline);
+  background: var(--ink-2);
+}
+
+#hud {
+  display: flex;
+  align-items: stretch;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  overflow: hidden;
+  background: var(--paper-card);
+  box-shadow: var(--shadow-1);
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  color: var(--ink-2);
+  pointer-events: none;
+}
+/* Nowrap because each slot now carries both readings - board units and the real
+   measurement - and a pair broken across two lines reads as four numbers. The
+   strip grows sideways instead; it is hidden outright on a narrow screen. */
+#hud span { padding: 6px 11px; white-space: nowrap; }
+#hud span + span { border-left: 1px solid var(--rule); }
+#hud-xy { color: var(--accent-deep); }
+#hud[hidden] { display: none; }

@@ -254,11 +254,11 @@ const HASH_SLICE = 256 * 1024;
  * slices, but nothing is added to the wait.
  */
 function breathe() {
-  return new Promise(done => {
+  return /** @type {Promise<void>} */ (new Promise(done => {
     const { port1, port2 } = new MessageChannel();
-    port1.onmessage = () => { port1.close(); port2.close(); done(); };
+    port1.onmessage = () => { port1.close(); port2.close(); done(undefined); };
     port2.postMessage(0);
-  });
+  }));
 }
 
 /**
@@ -316,7 +316,7 @@ function shaBlock(H, w, view, off) {
 
 /**
  * How long a toast takes to fade, paired with the `transition` on .toast-line in
- * app.css. A line is only removed once the fade has run - removing it on the old
+ * overlays.css. A line is only removed once the fade has run - removing it on the old
  * schedule would cut the fade off at its first frame.
  */
 const TOAST_FADE_MS = 300;

@@ -1,7 +1,13 @@
-mbrd - what changed
+# Changelog
 
-Everything done in this session, on top of v0.92. Not yet pushed, and not yet
-exercised in a browser.
+Written by hand, in the app's own voice, and grouped by what changed for the
+person using it rather than by module. Versions are stamped per commit by
+`save.bat` (`0.<commit count>`, see `web/assets/js/version.js`), so a release
+here covers a run of commits rather than a single one.
+
+---
+
+## v0.93 — on top of v0.92
 
 
 THE BOARD MOVES MORE SMOOTHLY

@@ -440,14 +440,30 @@ const outgrewStill = item =>
  * an oklch, an inline override - and none of those compare equal across a
  * palette change that lands on the same colour. `color` is resolved by the
  * engine before getComputedStyle sees it.
+ *
+ * Held once, because measuring it is an insert, a forced style recalculation and
+ * a removal - and stillFor() asks for every uncoloured model card, inside
+ * buildModelCard(), inside the culler's build budget. A screenful of models was
+ * a screenful of layout flushes on exactly the frames that budget exists to
+ * protect. The value changes about as often as the palette does, which is what
+ * resetModelInk() below is for; canvas/grid.js's gridInk() is the same shape
+ * for the same reason.
  */
+let ink = null;
+
 function boardInk() {
+  if (ink) return ink;
   const probe = document.createElement('div');
   probe.style.cssText = 'position:absolute;visibility:hidden;color:var(--ink-2)';
   document.body.append(probe);
-  const ink = getComputedStyle(probe).color;
+  ink = getComputedStyle(probe).color;
   probe.remove();
   return ink;
+}
+
+/** Forget the resolved ink - the look changed. The twin of resetGridInk(). */
+export function resetModelInk() {
+  ink = null;
 }
 
 /**
@@ -538,6 +554,10 @@ bus.on('selection', () => {
  */
 bus.on('settings', key => {
   if (key !== 'appearance') return;
+  // Before the loop, not after: stillFor() compares each still's shotInk against
+  // boardInk(), so a cache still holding the old colour would find every one of
+  // them current and invalidate nothing.
+  resetModelInk();
   for (const it of board.items) {
     if (it.type === 'model' && it.meta?.shotInk) bus.emit('item', it.id);
   }

@@ -17,8 +17,15 @@ desktop.ini
 src-tauri/target/
 src-tauri/gen/
 
-# Node, if tooling ever needs it
+# Node. The app has no dependencies; these are the two optional dev tools -
+# `npm run typecheck` and `npm run test:e2e`. `npm test` needs neither, and
+# needs no install at all.
 node_modules/
+
+# Playwright output. The runs are optional and local; nothing here is source.
+test-results/
+playwright-report/
+.playwright/
 
 # Tool output: code-graph dumps, including session transcripts.
 graphify-out/

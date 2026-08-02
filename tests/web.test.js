@@ -261,3 +261,31 @@ test('a board past the limit still gets a connected web', () => {
   for (const [a, b] of edges) parent[find(a)] = find(b);
   assert.equal(new Set(pts.map((_, i) => find(i))).size, 1);
 });
+
+test('the extra-thread pass runs on cards with real width and height', () => {
+  // A regression test for a ReferenceError, not for a graph property.
+  //
+  // CardGrid treats each card as an obstacle, and its constructor is the only
+  // place that reads a point's w/h - so it is only entered once a board has
+  // items with a real size AND enough candidates to get past the spanning tree
+  // into the second pass. Every case above this one either passes bare points
+  // or stops at the tree, so for the whole life of the module its constructor
+  // called corners() and pointInItem() without web-graph.js importing either,
+  // and threads() threw. The web stopped drawing past the tree and said
+  // nothing. `npm run typecheck` is what finally noticed.
+  //
+  // Sized points, and a layout with far more candidate pairs than tree edges.
+  const pts = [];
+  for (let i = 0; i < 12; i++) {
+    pts.push({ x: (i % 4) * 300, y: Math.floor(i / 4) * 300, w: 100, h: 100, rot: 0 });
+  }
+  const edges = threads(pts);
+  // More than a spanning tree's n-1, which is what says the second pass ran
+  // rather than merely not throwing.
+  assert.ok(edges.length > pts.length - 1,
+    `expected the extra-thread pass to add edges, got ${edges.length}`);
+
+  // And a rotated card, which is the branch corners() exists for.
+  const tilted = pts.map((p, i) => (i === 5 ? { ...p, rot: 30 } : p));
+  assert.doesNotThrow(() => threads(tilted));
+});

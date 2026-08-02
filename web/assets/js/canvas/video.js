@@ -208,7 +208,8 @@ export function buildVideoPlayer(item, video) {
   });
 
   // The item goes with it so the exclusive-playback rule can name what is
-  // playing; audio.js filters on type, so a video never raises the bar.
+  // playing - and so the now-playing bar can, since it carries video as well as
+  // audio and reads the type to pick its notation (ui/nowplaying.js).
   registerPlayer(video, item);
   paint();
   return player;

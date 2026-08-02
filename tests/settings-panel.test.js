@@ -11,6 +11,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
+import { appCss } from './helpers.js';
 import {
   TABS, SECTIONS, sectionsFor, controlVisible, sectionVisible,
 } from '../web/assets/js/ui/settings-schema.js';
@@ -49,8 +50,11 @@ test('no id is used twice', () => {
 test('every button names a command that exists', () => {
   // The panel reaches the app through one delegated listener on data-cmd, so a
   // typo here is a button that does nothing at all, silently.
-  return readFile(new URL('../web/assets/js/main.js', import.meta.url), 'utf8').then(main => {
-    const block = main.match(/const cmds = \{([\s\S]*?)\n\};/);
+  // The command surface lives in commands.js, built by createCommands(vp) so it
+  // can close over the Viewport without touching a browser global at import
+  // time. The object is one indent in, hence the closing brace this matches.
+  return readFile(new URL('../web/assets/js/commands.js', import.meta.url), 'utf8').then(main => {
+    const block = main.match(/const cmds = \{([\s\S]*?)\n {2}\};/);
     assert.ok(block, 'the cmds object moved - this test cannot find it');
     const camel = s => s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
     for (const [, c] of allControls()) {
@@ -164,10 +168,15 @@ test('the palette source dial has one stop past its highest count', async () => 
   // count nothing will honour.
   const { MAX_SOURCES } = await import('../web/assets/js/ui/pigments.js');
   assert.equal(byId('opt-palette-sources').max, MAX_SOURCES + 1);
-  const src = await readFile(
+  // The stop is *defined* by the look model and *consumed* by the panel, which
+  // are two files since the appearance split - and the panel reaches it through
+  // the injected dependency bag rather than by import, which is the seam.
+  const model = await readFile(
     new URL('../web/assets/js/ui/appearance.js', import.meta.url), 'utf8');
-  assert.match(src, /ALL_SOURCES_STOP = MAX_SOURCES \+ 1/);
-  assert.match(src, /n >= ALL_SOURCES_STOP \? 0 : n/, 'the top stop stores zero');
+  assert.match(model, /ALL_SOURCES_STOP = MAX_SOURCES \+ 1/);
+  const controls = await readFile(
+    new URL('../web/assets/js/ui/appearance-controls.js', import.meta.url), 'utf8');
+  assert.match(controls, /n >= d\.ALL_SOURCES_STOP \? 0 : n/, 'the top stop stores zero');
 });
 
 test('the whimsy stops keep the id the stylesheet sets them by', async () => {
@@ -178,8 +187,7 @@ test('the whimsy stops keep the id the stylesheet sets them by', async () => {
   // names would come out set in whatever the slider had just moved the display
   // face to, which is the one thing a specimen must not do.
   assert.equal(byId('opt-whimsy').stopsId, 'whimsy-stop-labels');
-  const css = await readFile(
-    new URL('../web/assets/css/app.css', import.meta.url), 'utf8');
+  const css = appCss();
   assert.match(css, /#whimsy-stop-labels span:nth-child\(1\)/);
 });
 

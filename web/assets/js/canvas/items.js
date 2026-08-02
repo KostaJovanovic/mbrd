@@ -700,7 +700,7 @@ function buildShadow(item, tilt) {
 
 /**
  * The eight resize handles: four corners, and four edges for resizing one axis
- * alone. The single-letter ones are the edges (see .grip-edge in app.css).
+ * alone. The single-letter ones are the edges (see .grip-edge in items.css).
  *
  * They exist for exactly as long as the card is selected, which is exactly as
  * long as they are drawn - CSS hides them otherwise, and there is no grabbing
@@ -750,7 +750,7 @@ function setGrips(el, want) {
  * masthead style panel, and a T to the LEFT that drops into inline rename of the
  * board name (single tap). Renaming is also a double-tap of the card itself (see
  * the dblclick handler in input.js). Only the title card has them, built once and
- * kept - app.css shows them on hover or while the card is selected. Children of
+ * kept - the CSS shows them on hover or while the card is selected. Children of
  * `.item` like the grips, so they ride the card's transform and hold a constant
  * on-screen size through --iz. The clicks themselves are caught by
  * canvas/input.js (which owns cmds), the way grip and widget hits are - this only
@@ -780,7 +780,7 @@ function buildTitleControls(el) {
  * The strip across the foot of a card: caption on the left, handle on the right.
  *
  * Always built, for every type. Which types show a *caption* is still a
- * question app.css answers - a sticky note has a name nothing draws - and CSS
+ * question the CSS answers - a sticky note has a name nothing draws - and CSS
  * reveals the handle only while this item is selected. Touch also has the
  * long-press route, so hiding the resting handle does not strand its actions.
  */
@@ -1022,7 +1022,7 @@ function placeBox(el, item) {
   // CSS can express the cap (50%) but not *read* the capped result, and the
   // selection ring and its corner marks have to trace the corner that actually
   // got drawn - so the number is handed to them from here, where the size is
-  // known. See --own-radius in app.css.
+  // known. See --own-radius in canvas.css.
   el.style.setProperty('--half-min', (Math.min(item.w, item.h) / 2).toFixed(2) + 'px');
   // The same fact per axis, for anything that has to stay a share of the side it
   // sits on rather than of the shorter one. The corner grab boxes are why: they
@@ -1031,7 +1031,7 @@ function placeBox(el, item) {
   // fraction of the side they lap along - which on a 400x60 banner has to be a
   // fraction of 400 across and of 60 down, not of 60 twice. A percentage cannot
   // say this: a percentage inside a grip resolves against the grip's own box,
-  // which is itself already capped. See --grip-lap-x / -y in app.css.
+  // which is itself already capped. See --grip-lap-x / -y in items.css.
   el.style.setProperty('--half-w', (item.w / 2).toFixed(2) + 'px');
   el.style.setProperty('--half-h', (item.h / 2).toFixed(2) + 'px');
   el.style.transform = item.rot ? `rotate(${-item.rot}deg)` : '';
@@ -1076,7 +1076,7 @@ function paintSelection() {
     setGrips(el, on);
     el.classList.toggle('is-selected', on);
     // The twin tracks selection too, so a selected card's shadow holds still
-    // under the pointer exactly as the card does (see .item-shadow in app.css).
+    // under the pointer exactly as the card does (see .item-shadow in canvas.css).
     shadows.get(id)?.classList.toggle('is-selected', on);
   }
 }

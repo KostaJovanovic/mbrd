@@ -17,12 +17,12 @@ opens the same on any machine you send it to.
 ## Run it
 
 ```
-server.bat
+python serve.py            # or: python serve.py 8000
 ```
 
 Opens `http://localhost:6273` and prints a QR code for the LAN URL, so a phone
-on the same Wi-Fi can open the same board. `python serve.py` works too and takes
-a port: `python serve.py 8000`.
+on the same Wi-Fi can open the same board. Python 3, no packages. On Windows,
+`server.bat` is a wrapper around the same thing.
 
 No bundler, no `npm install`, no build step. The browser loads the ES modules in
 `web/` directly — an edit is one refresh away.
@@ -409,18 +409,22 @@ degrades where.
 ## Working on it
 
 ```bash
+python serve.py [port]            # dev server on 6273
 npm test                          # node --test over tests/ — no install, no deps
 node --test tests/state.test.js   # one file
-python serve.py [port]            # dev server on 6273
 node tools/gen-formats.mjs        # regenerate import/formats.js
-save.bat                          # bump version stamps, commit, optionally push
 ```
 
-`AGENTS.md` is the contributor guide — style, naming, commit and PR conventions.
-`CLAUDE.md` is the architecture brief. `PLAN.md` is the original design and
-`research/` holds the reasoning behind past decisions. Module headers in this
-codebase carry the *why*, often at length: read the top of a file before
-changing it.
+Contributions are welcome. **[`CONTRIBUTING.md`](CONTRIBUTING.md)** is the place
+to start — how to run and test it, the five invariants that are easy to break by
+accident, and where a given kind of change belongs.
+**[`docs/architecture.md`](docs/architecture.md)** is how the app is put
+together, and answers *why is this not built on a framework* with the line counts
+behind it. `AGENTS.md` covers style, naming and commit conventions.
+[`research/`](research/README.md) holds the reasoning behind past decisions.
+
+Module headers in this codebase carry the *why*, often at length: read the top of
+a file before changing it.
 
 A handful of invariants are enforced by the suite rather than by memory — the
 layering graph, no browser globals at module import time, every shipped asset
@@ -443,12 +447,26 @@ font. `window.mbrd` is a deliberate console handle (`mbrd.board`,
 - **Later** — Tauri wrap for Windows and Linux, then Android and iOS/iPadOS;
   optional self-hosted sync of `.mbrd` files.
 
-`PLAN.md` has the full design. The previous README is kept as
-[`readme_old.md`](readme_old.md).
+The original design document is kept at
+[`research/old/PLAN.md`](research/old/PLAN.md); it describes the project before
+most of it existed and is history rather than a plan.
+[`CHANGELOG.md`](CHANGELOG.md) is what has actually changed.
 
 ---
 
 ## Licence
 
-GNU GPL — see [`LICENSE`](LICENSE). Bundled typefaces and their licences are in
+**GNU GPL v3 or later** — see [`LICENSE`](LICENSE).
+
+Copyleft, deliberately. mbrd keeps your work on your own machine and in a format
+you can open with `unzip`; a fork that quietly took either of those away would be
+a worse program wearing this one's face. The GPL is what makes "you can always
+get the source of the thing holding your boards" a property rather than a
+promise. Bundled typefaces and their licences are in
 [`THIRD-PARTY.md`](THIRD-PARTY.md).
+
+**The `.mbrd` format itself is free to implement**, by anyone, under any licence,
+with no permission needed — see [`docs/mbrd-format.md`](docs/mbrd-format.md). The
+GPL covers mbrd's *source*, not the format it stores work in: an implementation
+in any language, open or closed, is fine and is the point. A file format that
+only one program can read is a worse place to keep your work.

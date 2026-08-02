@@ -1,8 +1,114 @@
 # Open-source readiness — refactor plan, 2026-08-02
 
-Status: **proposed, nothing done.** Written against the tree at `v0.109`
-(109 commits, 219 tracked files, 31,645 lines of JavaScript, 7,202 of CSS,
-9,129 of test).
+## Status, 2026-08-02 — carried out
+
+Every item is done. The suite is **728 passing**, `npm run lint` and
+`npm run typecheck` are both clean, the **Playwright set is 4/4 in a real
+browser**, `node --check` is clean over every tracked `.js`, `serve.py`/`qr.py`
+compile, and every entry in the service worker's `SHELL` was fetched over a live
+`serve.py` and returned 200.
+
+One thing is left for the maintainer: the repository slug in
+`.github/ISSUE_TEMPLATE/config.yml`, which currently guesses `valjdakosta/mbrd`.
+
+**The licence is settled: GPL-3.0-or-later**, recorded in `package.json` and
+argued in one paragraph in the README. Copyleft was chosen over permissive on
+the grounds that the app's two promises - your work stays on your machine, and
+the format opens with `unzip` - are exactly the kind a fork can quietly drop.
+
+**The typecheck found a live bug on its first run**, which is the whole argument
+for Part 6 made concrete: `web-graph.js` called `corners()` and `pointInItem()`
+without importing either, so `threads()` threw a `ReferenceError` on any board
+with enough sized items to reach the extra-thread pass — the relationship web
+stopped drawing past its spanning tree and said nothing. Fixed, with a
+regression test (`tests/web.test.js`) that enters `CardGrid` deliberately.
+
+| item | state |
+| --- | --- |
+| 2.1 entry points | done — README leads with `python serve.py`; the `.bat` files are untouched, by request |
+| 2.3 hygiene | partly — filename with a space renamed; **BOM strip withdrawn**, see below |
+| 2.4 licence / format | done — **GPL-3.0-or-later**, stated and reasoned in the README and declared in `package.json`; the `.mbrd` format separately declared free to implement |
+| 3.1 CI | done — `.github/workflows/ci.yml`, ubuntu × windows, node 20/22, plus syntax and stamp checks |
+| 3.2 Pages demo | done — `.github/workflows/pages.yml` |
+| 3.3 community files | done — CONTRIBUTING, CODE_OF_CONDUCT, SECURITY, three issue templates, PR template |
+| 3.4 lint | done — `oxlint`, correctness rules only, no formatter. Cleared 51 findings; gated in CI |
+| 3.5 seed issues | done — ten written out in `.github/SEED-ISSUES.md`, ready to paste on the day the repo goes public |
+| 4.1 `main.js` split | done — 1,962 → 441, onto six modules |
+| 4.2 `app.css` split | done — 6,021 → eight files |
+| 4.3 `state.test.js` split | done — 1,803 → six files, all 128 cases accounted for |
+| 4.4 second tier | done — all three. See below for the two that needed a designed seam |
+| 5.1 one architecture doc | done — `docs/architecture.md`; CLAUDE.md and AGENTS.md are pointers |
+| 5.2 clean root | done |
+| 5.3 frame `research/` | done — `research/README.md` |
+| Part 6 depth | done — `npm run typecheck` (clean, gated in CI) and `npm run test:e2e` (4 cases, optional) |
+
+**The BOM item was wrong and is withdrawn.** `web/assets/js/version.js` and
+`web/sw.js` carry a UTF-8 BOM because `save.bat` writes them with
+`Set-Content -Encoding utf8`, which in Windows PowerShell 5.1 *means* a BOM.
+Stripping them would be undone on the next commit, and the only real fix edits
+`save.bat`. Both files parse fine with a BOM. Left alone.
+
+### 4.4's other two needed a designed seam, not a cut
+
+`ui/appearance.js` and `storage/storage.js` were **not** two sequential halves
+the way `main.js` and `app.css` were. Measured rather than guessed:
+
+- `ui/appearance.js` — the controls section uses **13** names from the look model
+  above it (`current`, `apply`, `persist`, `setVar`, `setWhimsy`, `CONTROLS`,
+  `HOSTS`, …) and the look model uses **11** back from the controls
+  (`syncControls`, `buildControls`, `wirePalette`, `inputs`, …).
+- `storage/storage.js` — the file/dialog half uses **9** names from the session
+  half (`autosave`, `drainSave`, `clearSession`, `cacheOk`, …) and the session
+  half uses **7** back (`fileHandle`, `exportBoard`, `newBoard`, `prompt`, …).
+
+Both were mutually recursive, so each needed an injection interface and an
+answer to *which module owns the mutable state*. Both now have one:
+
+- **`ui/appearance.js` (1,261 → 1,047) + `ui/appearance-controls.js` (279).**
+  The panel is handed what it borrows through `initAppearanceControls()`, and
+  `current` goes through as a **getter** — the model reassigns it at four sites,
+  so a captured reference would go stale the first time a board was opened. The
+  first cut of this took `document.documentElement` at module scope and
+  `tests/imports.test.js` rejected it, which is the invariant doing its job: a
+  fourth import-time-dirty module would have been a regression, so the root
+  element is taken in the initialiser instead.
+- **`storage/storage.js` (949 → 468) + `storage/session.js` (569) +
+  `storage/naming.js` (31).** The question was **who owns the file handle**, and
+  the answer is `storage.js`: a handle is about the document somebody chose on
+  disk, a session is about the copy this browser keeps. So the engine is handed
+  the handle, the created-stamp, Export and the discard prompt, and never
+  imports back. `lastFailure`, `cacheOk` and `warnedIncomplete` moved *to* the
+  engine that sets them, and the file half resets them through
+  `resetSessionLatches()` rather than reaching in.
+
+Both were verified in a real browser afterwards, not only against the suite —
+the save → refresh → recover case exercises the storage seam end to end.
+
+`canvas/renderers.js` was the third and is done, because it genuinely did have a
+separable piece: `classify()` and `RENDERERS` stay together (they are the pair a
+new item type edits, and splitting them would double that work), while the
+sticky-note formatting model and the video first-frame grab — neither of which is
+type dispatch — moved to `canvas/note-model.js` and `canvas/poster.js`. That also
+straightened a backwards arrow: `canvas/notes.js` is the note *editor* and was
+reaching through the renderer for the model both of them read.
+
+Three things this turned up that the plan did not predict:
+
+1. **`commands.js` cannot import `ui/appearance.js`** — that would be a fourth
+   module touching a browser global at import time. `resetAppearance` and
+   `setWhimsy` are injected from `main.js` instead, in the same shape as
+   `setAssetNameLookup()` and `setPrompt()`.
+2. **The `motion.css` the plan implied does not exist.** The cheap-mode section
+   runs straight into the grip rules, and both belong with items — shipping a
+   file named for only half of what is in it would have been worse than the
+   long file.
+3. **The relationship web was broken** and nothing said so. See the typecheck
+   note at the top.
+
+---
+
+Written against the tree at `v0.109` (109 commits, 219 tracked files, 31,645
+lines of JavaScript, 7,202 of CSS, 9,129 of test).
 
 Two questions are answered here. First, whether to rewrite on a framework
 before opening the repo — the answer is no, with numbers. Second, what to

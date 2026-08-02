@@ -65,6 +65,19 @@ export const ARRANGEMENTS = [
  * successive rows go *down*. So the centre goes in negated and the results come
  * back negated, and each layout gets to stay in the orientation it reads best
  * in. `free` is exempt - it hands back real world coordinates untouched.
+ *
+ * @typedef {object} ArrangeOpts
+ * @property {string}  [name]      which layout; defaults to 'grid'
+ * @property {{x: number, y: number}} [center]  where the block is built around
+ * @property {number}  [spacing]   edge-to-edge gap, always
+ * @property {number}  [cellStep]  snap lattice cell size, 0 for none
+ * @property {number}  [seed]      makes a layout move its slots; seedless calls
+ *                                 stay reproducible
+ * @property {Array<object>} [obstacles]  boxes already on the board to clear
+ *
+ * @param {Array<object>} items
+ * @param {ArrangeOpts} [opts]
+ * @returns {Array<{x: number, y: number}>} one position per item, in input order
  */
 export function arrange(items, opts = {}) {
   const o = { center: { x: 0, y: 0 }, spacing: 12, ...opts };
@@ -466,6 +479,15 @@ function lattice(cells, items, gap) {
  * side of it - that is what lets `grid` promise the first item the exact point
  * it was given while the ring around it sizes itself freely.
  */
+/**
+ * Cumulative track positions for one axis.
+ *
+ * @param {Map<number, number>} span  size of each index
+ * @param {number} lo
+ * @param {number} hi
+ * @returns {[Map<number, number>, [number, number]]} centre per index, and the
+ *          low/high edge of the whole run
+ */
 function track(span, lo, hi) {
   const mid = new Map();
   const first = span.get(0) || 0;
@@ -723,6 +745,13 @@ function shuffleWith(arr, rnd) {
 }
 
 /** A ring cell turned a quarter at a time about the centre. */
+/**
+ * One cell, turned a quarter at a time.
+ *
+ * @param {[number, number]} cell
+ * @param {number} turn
+ * @returns {[number, number]}
+ */
 function spin([col, row], turn) {
   switch (turn & 3) {
     case 1:  return [-row, col];
@@ -735,6 +764,12 @@ function spin([col, row], turn) {
 /**
  * Nth cell of a square spiral: 0 -> (0,0), then right, up, left, down in
  * growing rings. Gives "outward from the centre" without any sorting.
+ */
+/**
+ * The nth cell of a square spiral out from the origin.
+ *
+ * @param {number} n
+ * @returns {[number, number]} column, row
  */
 function ringCell(n) {
   if (n === 0) return [0, 0];

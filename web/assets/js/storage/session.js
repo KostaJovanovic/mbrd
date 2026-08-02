@@ -1,0 +1,569 @@
+// The browser's own copy of the board: the IndexedDB working cache, the
+// background autosave, and the restore that runs at boot.
+//
+// Lifted out of storage.js, which carried three different failure models in one
+// file - Save (this), Export (a .mbrd on disk) and Open - and the interface
+// already has to say which of them failed. They were not two sequential halves:
+// this engine reached up for five things and the file half reached down for
+// nine, so the split had to answer a question rather than move lines.
+//
+// The question was **who owns the file handle**, and the answer is: not this
+// module. A handle is about the document somebody chose on disk; a session is
+// about the copy this browser is keeping for them. So `d` below is the seam -
+// the handle, the created-stamp, Export and the discard prompt all arrive from
+// storage.js, and nothing here imports it back.
+//
+// This is crash recovery only. The durable artefact is always the .mbrd the
+// user exported.
+
+import { toast, busy, itemHashes, clearPrefs } from '../util.js';
+import {
+  board, serializeBoard, loadBoard, markDirty, isDirty, bus,
+} from '../state.js';
+import { allAssets, putAsset } from './assets.js';
+import {
+  idbGet, idbSet, idbClear, idbKeys, idbGetMany, idbSetMany, idbDelMany,
+} from './idb.js';
+
+/**
+ * What this engine borrows from the file half. Filled by initSession().
+ *
+ * @type {{
+ *   fileName: () => (string|null),
+ *   created: () => (number|null),
+ *   setCreated: (at: number|null) => void,
+ *   exportBoard: () => Promise<boolean>,
+ *   prompt: (opts: object) => Promise<string|null>,
+ * }}
+ */
+let d = /** @type {any} */ (null);
+
+/** Hand the session engine what it needs from the file half. Called once. */
+export function initSession(deps) {
+  d = deps;
+}
+
+// ---------------------------------------------------------------------------
+// IndexedDB working cache
+// ---------------------------------------------------------------------------
+
+const SESSION_KEY = 'session';
+/** How often the background autosave writes, if anything has changed. */
+const AUTOSAVE_MS = 20000;
+let cacheOk = true;
+/**
+ * Why the last write into this browser failed, for the button that has to say
+ * so. Lives with the engine that sets it; the file half reads it through
+ * lastSaveFailure() and clears all three latches through resetSessionLatches().
+ */
+let lastFailure = '';
+/** Whether the "some bytes are missing" toast has already been shown. */
+let warnedIncomplete = false;
+
+/**
+ * The background autosave, run on a fixed interval (AUTOSAVE_MS) rather than
+ * after every edit. Each board-mutating event only bumps the change generation
+ * (noteChange); this tick is the thing that actually writes, and only when
+ * there is something new to write.
+ *
+ * Announces itself on the way out, and only when the save answered something
+ * the user did. Two gates, because there are two ways to save nothing worth
+ * mentioning:
+ *
+ * `isDirty` catches the clean board - panning about emits 'view', which is
+ * snapshotted so the board reopens where you left it, and is not an edit.
+ *
+ * `quiet` catches the load. A board arriving emits 'board:load', which bumps
+ * the generation like anything else - and a session restored from IndexedDB
+ * comes back carrying the dirty flag it went down with, so the first gate lets
+ * it through and every visit would open by announcing a save of a board nobody
+ * had touched. One suppressed snapshot per board is the whole of it.
+ *
+ * Nothing is said about a failure here. autosave() already toasts the two ways
+ * it can go wrong, and both are loud - a quiet mark in the corner going quietly
+ * absent is not how you tell someone their board is not being kept.
+ */
+let quiet = true;
+const hushNextSave = () => { quiet = true; };
+
+// Bump the change generation so a later save knows this edit is not yet on disk.
+// This runs even while caching is off; the tick below is what gates on cacheOk.
+const noteChange = () => { saveGen++; };
+
+async function autosaveTick() {
+  if (committedGen >= saveGen || !cacheOk) return;   // nothing new, or caching off
+  const announce = isDirty() && !quiet;
+  quiet = false;
+  const ok = await autosave().catch(() => false);
+  if (ok && announce) bus.emit('autosaved');
+}
+
+// No two background autosaves closer together than this. It throttles the
+// per-commit save below: a burst of edits (place, move, delete in a row)
+// coalesces into one write on the cooldown's trailing edge rather than a write
+// apiece. The explicit Save (Ctrl+S) and the page-exit flush call autosave()
+// directly and are not subject to it - they are asked-for, not automatic.
+const AUTOSAVE_COOLDOWN_MS = 5000;
+let lastAutosaveAt = 0;
+let coolTimer = 0;
+
+function requestAutosave() {
+  const wait = AUTOSAVE_COOLDOWN_MS - (Date.now() - lastAutosaveAt);
+  if (wait <= 0) {
+    lastAutosaveAt = Date.now();
+    autosaveTick().catch(() => {});
+  } else if (!coolTimer) {
+    // Inside the cooldown: fire once when it lifts, catching the newest edit.
+    coolTimer = setTimeout(() => {
+      coolTimer = 0;
+      lastAutosaveAt = Date.now();
+      autosaveTick().catch(() => {});
+    }, wait);
+  }
+}
+
+/**
+ * Every asset hash a snapshot will need to come back whole - the live items
+ * and the bin alike. The bin's bytes are not optional: restoring something
+ * from it after a reload is the entire promise of a bin that survives one.
+ *
+ * Taken from the serialised board rather than from the in-memory asset store,
+ * because those two are deliberately not the same set. The store also holds
+ * bytes for items that have been deleted outright and are only reachable
+ * through undo - and undo does not survive a reload (loadBoard clears the
+ * history), so keeping those on disk buys nothing at all.
+ */
+function referencedHashes(data) {
+  const out = new Set();
+  const add = it => { for (const h of itemHashes(it)) out.add(h); };
+  for (const it of data.items || []) add(it);
+  for (const t of data.trash || []) add(t?.item);
+  // The files the optimiser replaced. Not in itemHashes() on purpose - that one
+  // drives the *packer*, and an export is the artifact the optimising was for,
+  // so it carries the small copies alone. Here they are held, because this drives
+  // the sweep and the sweep would otherwise delete the very bytes the undo entry
+  // exists to put back. See swapAssets() and discardOriginals() in state.js.
+  for (const it of data.items || []) {
+    if (it?.meta?.was) out.add(it.meta.was);
+    if (it?.meta?.wasCover) out.add(it.meta.wasCover);
+  }
+  // The faces the board is set in. Not on any item and so not in itemHashes(),
+  // which makes them exactly the thing the sweep below would throw away: a face
+  // dropped in would be gone by the next autosave, and the board would come
+  // back after a reload set in a family that no longer resolves.
+  for (const f of data.settings?.fonts || []) if (f?.hash) out.add(f.hash);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Save coordinator (single-flight)
+// ---------------------------------------------------------------------------
+//
+// writeSnapshot() is multi-step - serialise, write assets, write the snapshot,
+// sweep - and used to be reachable twice at once: the interval tick, an explicit
+// Save, and the pagehide flush all called it directly. Two overlapping runs
+// could finish out of order, landing an older snapshot on top of a newer one,
+// and an older run's sweep could delete an asset only the newer snapshot still
+// referenced. See AUD-02 in research/full-code-audit-2026-07-26.md.
+//
+// One writer fixes both. `saveGen` counts changes worth persisting; a run
+// captures the generation it is about to write and, if newer edits landed while
+// it wrote, loops once more for the newest. Every caller awaits a run that
+// covers the generation current when it asked, and no two runs ever overlap -
+// so no stale snapshot and no stale sweep.
+let saveGen = 0;         // bumped by every change worth a snapshot
+let committedGen = -1;   // saveGen of the last durable write (-1: nothing yet)
+let saving = null;       // in-flight run, a Promise<boolean>, or null
+let lastResult = false;  // result of the most recent completed run
+
+/**
+ * Persist the working state, coalescing concurrent callers into one writer.
+ *
+ * Resolves to whether a snapshot covering the caller's generation is durable.
+ * A change arriving mid-write is captured by a follow-up write, so the newest
+ * board is always what ends up on disk - never a stale snapshot that a slower,
+ * older run finished writing last.
+ */
+export function autosave() {
+  const wanted = saveGen;
+  if (!saving && committedGen >= wanted) return Promise.resolve(lastResult);
+  if (!saving) saving = runSaves();
+  return saving.then(() => (committedGen >= wanted ? lastResult : false));
+}
+
+async function runSaves() {
+  try {
+    for (;;) {
+      const gen = saveGen;
+      const ok = await writeSnapshot();
+      lastResult = ok;
+      if (ok) committedGen = gen;
+      // Stop on failure - a full disk must not spin - or when no newer edit
+      // landed while this write ran. Otherwise loop and write the newest.
+      if (!ok || saveGen === gen) return ok;
+    }
+  } finally {
+    saving = null;
+  }
+}
+
+/**
+ * Wait for any in-flight writer to finish. Used by the destructive paths before
+ * they clear the store, so a save already past its `cacheOk` gate cannot
+ * repopulate IndexedDB after the wipe. Its result is not ours to report.
+ */
+export async function drainSave() {
+  if (saving) { try { await saving; } catch { /* not our result */ } }
+}
+
+/**
+ * Write the working state to IndexedDB, and take out the rubbish.
+ *
+ * The sweep at the end is the part this was missing. Autosave only ever
+ * inserted, so every board ever opened left its assets behind: open three
+ * boards of holiday photos in an afternoon and all three are still on disk,
+ * for good. The store grew monotonically until the quota refused a write, at
+ * which point autosave switched itself off and the user was told to export -
+ * a disk full of boards they had already closed.
+ *
+ * The order is what makes it safe to delete anything:
+ *
+ *   1. write the assets the new snapshot will refer to
+ *   2. write the snapshot
+ *   3. delete assets that no snapshot refers to any more
+ *
+ * At no point does a stored snapshot point at bytes that are not there. Step 3
+ * only removes hashes that were already on disk *before* this save and that
+ * the board just written does not mention, so a failure anywhere earlier
+ * leaves the previous snapshot and its assets completely intact - the sweep
+ * simply does not happen that time round.
+ */
+async function writeSnapshot() {
+  if (!cacheOk) {
+    lastFailure = 'This browser will not store the board (full, or blocked) - export it to a file';
+    return false;
+  }
+  try {
+    // Serialised once and reused, so the snapshot and the set of assets kept
+    // for it can never describe two different boards.
+    const data = serializeBoard();
+    const referenced = referencedHashes(data);
+    const known = new Set(await idbKeys('assets'));
+    const store = allAssets();
+
+    // A hash with no bytes on disk and none in memory is a card this snapshot
+    // cannot bring back. Collected rather than skipped: quietly carrying on was
+    // how a board with a hole in it became a *successful* save - "Saved in this
+    // browser", the board marked clean, and one photograph that would come back
+    // as an empty frame on the next visit. The export path has refused this
+    // since it was found there; the browser save was still doing it.
+    //
+    // Collected and written in one transaction rather than awaited one at a
+    // time. The first save after a large import is the case: five hundred
+    // photographs used to be five hundred sequential transactions, each opened
+    // and committed before the next was even issued, and the whole of that wait
+    // stood between the user and a board they were told was safe.
+    const missing = [];
+    const arriving = [];
+    for (const hash of referenced) {
+      if (known.has(hash)) continue;
+      const asset = store.get(hash);
+      if (!asset) { missing.push(hash); continue; }
+      arriving.push([hash, {
+        blob: asset.blob, ext: asset.ext, mime: asset.mime, name: asset.name,
+      }]);
+    }
+    await idbSetMany('assets', arriving);
+
+    // Written even when something is missing, and returned as a failure anyway.
+    // The two are not in tension: recovering a board with one broken card beats
+    // recovering nothing at all, so the snapshot is worth having - but it is not
+    // a board the user has been told is safe, so it goes down with `dirty` set
+    // and saveBoard() does not clear that flag. What is refused here is the
+    // claim, not the backup.
+    await idbSet('kv', SESSION_KEY, {
+      board: data,
+      created: d.created(),
+      fileName: d.fileName() || null,
+      dirty: isDirty() || missing.length > 0,
+      at: Date.now(),
+      incomplete: missing.length > 0,
+    });
+
+    await idbDelMany('assets', [...known].filter(hash => !referenced.has(hash)));
+
+    if (missing.length) {
+      lastFailure = `${describeMissing(data, missing)} - the board cannot be saved complete`;
+      // Once per run of trouble, not once per tick - autosave fires on the
+      // interval, and a board that has lost an asset would otherwise put a
+      // red toast on screen for the rest of the session. saveBoard() says it
+      // again regardless, because a press was a question.
+      if (!warnedIncomplete) {
+        warnedIncomplete = true;
+        toast(lastFailure, 'error');
+      }
+      return false;
+    }
+    warnedIncomplete = false;
+    lastFailure = '';
+    return true;
+  } catch (err) {
+    // Quota or a private-mode refusal: stop trying and say so once.
+    cacheOk = false;
+    console.warn('[mbrd] autosave disabled:', err);
+    lastFailure = 'This browser will not store the board (full, or blocked) - export it to a file';
+    toast(lastFailure, 'error');
+    return false;
+  }
+}
+
+/** "2 items (photo.jpg, note) have no stored data", for a message. */
+function describeMissing(data, hashes) {
+  const wanted = new Set(hashes);
+  const names = [];
+  for (const item of [...(data.items || []), ...(data.trash || []).map(t => t?.item)]) {
+    const hash = item?.asset?.hash;
+    if (!hash || !wanted.has(hash)) continue;
+    wanted.delete(hash);
+    names.push(item.name || item.type || 'item');
+  }
+  const shown = names.slice(0, 3).join(', ');
+  const rest = names.length > 3 ? ` and ${names.length - 3} more` : '';
+  return `${names.length} item${names.length === 1 ? '' : 's'} ` +
+    `(${shown}${rest}) ${names.length === 1 ? 'has' : 'have'} no stored data`;
+}
+
+/** Restore the last working state. Returns true when a board was recovered. */
+export async function restoreSession() {
+  try {
+    const session = await idbGet('kv', SESSION_KEY);
+    if (!session?.board?.items) return false;
+    // Exactly what the autosave sweep decided was worth keeping, asked the same
+    // way - the bin's items included, or restoring one would put an empty frame
+    // on the board.
+    //
+    // The same question, and it used to be asked differently here: `asset.hash`
+    // alone, which is one of the three ids an item can hold. So the sweep wrote
+    // an album cover to disk and the restore never read it back, and the picture
+    // on a music card - or the still on a model, or the face a board is set in -
+    // was there until the first reload and gone after it. The bytes were never
+    // lost; nothing asked for them.
+    const needed = referencedHashes(session.board);
+    let lost = 0;
+    // On a heavy board this is the whole of the wait between opening the tab and
+    // seeing anything. Counted, because it is the one wait a person meets before
+    // they have done anything at all, and a blank board with no explanation
+    // reads as a board that was lost.
+    //
+    // Read a chunk at a time rather than one asset at a time: a transaction per
+    // asset made the wait a few hundred sequential round trips, and reading them
+    // all in one would remove the count that keeps the wait explicable. A chunk
+    // is both - thirty-odd round trips instead of five hundred, and a progress
+    // bar that still moves several times a second.
+    const CHUNK = 32;
+    const list = [...needed];
+    const job = busy('Restoring your board');
+    try {
+      for (let i = 0; i < list.length; i += CHUNK) {
+        job.step(i, list.length);
+        const slice = list.slice(i, i + CHUNK);
+        const recs = await idbGetMany('assets', slice);
+        recs.forEach((rec, k) => {
+          if (rec?.blob) putAsset(slice[k], rec.blob, { ext: rec.ext, mime: rec.mime, name: rec.name });
+          else lost++;
+        });
+      }
+    } finally {
+      job.end();
+    }
+    d.setCreated(session.created || null);
+    loadBoard(session.board);
+    // A board that came back without all its bytes is not the board that was
+    // put away, and the one thing it must not do is look settled: left clean,
+    // the next export would refuse and the user would have had no warning
+    // between the two. Dirty and said out loud, so the missing cards are news
+    // now rather than at the moment they try to file the thing.
+    markDirty(!!session.dirty || lost > 0);
+    if (lost) {
+      console.warn(`[mbrd] ${lost} asset(s) missing from the working cache`);
+      toast(`${lost} item${lost === 1 ? '' : 's'} came back without ${lost === 1 ? 'its' : 'their'} data`, 'error');
+    }
+    return true;
+  } catch (err) {
+    console.warn('[mbrd] no session restored:', err);
+    return false;
+  }
+}
+
+/**
+ * Wipe the working-cache stores, and let a real failure be seen.
+ *
+ * It used to swallow every error and return nothing, so "Clear everything"
+ * could report success while user data survived the failed wipe (AUD-03). Now
+ * it throws on failure - and with the honest idb helper (AUD-01) a throw means
+ * the transaction genuinely did not commit. The one caller that must tolerate
+ * failure (newBoard) catches it; the one that must not (clearAllData) reports
+ * it.
+ */
+export async function clearSession() {
+  await idbClear('kv');
+  await idbClear('assets');
+}
+
+/**
+ * Delete the service worker's caches and drop its registration - the app's own
+ * code, not the user's data. Only clearAllData() reaches for this; it is
+ * best-effort and never throws, because a wipe that fails to bin re-downloadable
+ * scripts still succeeded at the part that mattered. The reload that follows
+ * pulls a fresh copy from the network.
+ */
+async function clearAppCaches() {
+  try {
+    if (typeof caches !== 'undefined') {
+      const names = await caches.keys();
+      await Promise.all(names.map(n => caches.delete(n)));
+    }
+    const regs = await navigator.serviceWorker?.getRegistrations?.() || [];
+    await Promise.all(regs.map(r => r.unregister()));
+  } catch (err) {
+    console.warn('[mbrd] could not clear app caches:', err);
+  }
+}
+
+/**
+ * Everything this app has ever put in this browser, gone.
+ *
+ * Wider than New on purpose. New replaces the board and leaves the person
+ * behind it - the palette, the whimsy level, the volume, whether the panel is
+ * open - which is right, because starting a new board is not disowning the way
+ * you like to work. This is the other request: hand the machine back, or start
+ * from nothing after a look you cannot undo your way out of. So it takes the
+ * preferences too, and the answer to "what is left?" is "the files you
+ * exported", which the dialog says.
+ *
+ * It goes all the way: past the board and the preferences to the service
+ * worker's caches and its registration too - the application's own scripts,
+ * fonts and stylesheets. That is not anybody's *data*, and clearing it means an
+ * offline device has no app to open until it is next online; but this is the one
+ * request wide enough to mean "everything about this site", so it takes that as
+ * well. The reload re-fetches and re-registers when there is a network. Best
+ * effort, and never blocking the wipe: the app is re-downloadable, the data is
+ * the part that had to go.
+ *
+ * One thing it deliberately does *not* touch: anything on disk. A .mbrd is a
+ * file the user owns and put somewhere; no button in a web page is going to go
+ * looking for those.
+ *
+ * The reload is the honest ending. Half a dozen modules hold state that came
+ * out of the store - registered faces, custom properties written onto :root by
+ * the boot script, the viewport's own position - and reconstructing a
+ * first-run app from inside a running one is a list nobody keeps correct.
+ * Starting the page again *is* the first run, so it cannot drift.
+ */
+export async function clearAllData() {
+  const answer = await d.prompt({
+    title: 'Clear everything?',
+    body: 'The board kept in this browser, everything in it and the look you '
+      + 'set are all deleted, and mbrd starts over. Boards you exported to a '
+      + 'file are not touched.',
+    keep: board.items.length ? 'Export first' : '',
+    cancel: 'Cancel',
+    go: 'Delete it all',
+  });
+  if (answer === 'cancel') return false;
+  // Exporting can fail or be cancelled at the picker, and somebody who asked to
+  // keep the board and did not keep it has not answered the question yet.
+  if (answer === 'keep') return (await d.exportBoard()) ? clearAllData() : false;
+
+  // Before the wipe, not after: a snapshot landing between the clear and the
+  // reload would put the board straight back. Dropping the latch stops a *new*
+  // save - the interval tick gates on cacheOk - and draining the writer stops
+  // one already past the latch (flushEdits() on the way out of the page calls
+  // autosave() directly) from repopulating the store.
+  cacheOk = false;
+  await drainSave();
+  // Surface a failed wipe instead of reloading over it. A reload that claimed
+  // success while data remained is the exact privacy failure in AUD-03: the
+  // person asked for everything gone and would have been told it was.
+  try {
+    await clearSession();
+  } catch (err) {
+    console.error('[mbrd] clear everything failed:', err);
+    toast('Could not clear this browser’s storage: ' + (err?.message || err), 'error');
+    cacheOk = true;
+    return false;
+  }
+  clearPrefs();
+  // The app's own code goes too - this is the "everything about the site" wipe.
+  // After the session, because it is re-downloadable and its failure must not
+  // sink a wipe of the data that was the point.
+  await clearAppCaches();
+  location.reload();
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Wiring
+// ---------------------------------------------------------------------------
+
+export function initSessionStorage() {
+  // 'trash' belongs here with the rest. Emptying the bin emits nothing else,
+  // and markDirty() is idempotent - so on an already-dirty board, purging the
+  // bin would bump no change generation at all and a reload brought every
+  // purged item back.
+  // 'view' is emitted by main.js once a pan or zoom has settled. It does not
+  // mark the board dirty - looking around is not editing - but it does have to
+  // be snapshotted, or closing the tab after moving about restores the view the
+  // board had before, which is not where it was left.
+  for (const evt of ['items', 'geom', 'item', 'settings', 'board', 'trash', 'view']) {
+    bus.on(evt, noteChange);
+  }
+  setInterval(requestAutosave, AUTOSAVE_MS);
+  // Don't wait out the interval for a committed action - a card placed, moved or
+  // removed should land on disk promptly. 'history' fires once per commit (and
+  // on undo/redo), after its mutation event has already bumped the generation,
+  // and never during a live drag - applyGeom() repaints without committing - so
+  // this is one request per finished gesture, not one per frame. requestAutosave
+  // holds it to the 5s cooldown, so a fast run of edits still writes just once.
+  bus.on('history', requestAutosave);
+  // A board replacing the one that was here is not an edit to it - see the note
+  // on `quiet` above. Both doors: opened from a file, and started from nothing.
+  bus.on('board:load', hushNextSave);
+  bus.on('board:new', hushNextSave);
+  // No "Leave site?" guard on close. The 20s autosave and the pagehide flush
+  // (main.js) have already put the board in IndexedDB, and restoreSession()
+  // brings it straight back on the next visit, so the prompt guarded nothing and
+  // cost a click on every reload.
+}
+
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// What the file half reaches for
+// ---------------------------------------------------------------------------
+
+/** Why the last write into this browser failed, or '' if it did not. */
+export const lastSaveFailure = () => lastFailure;
+
+/**
+ * Stop accepting writes, so a closing board's autosave cannot repopulate the
+ * store after it has been cleared. Paired with drainSave() - see AUD-03.
+ */
+export function suspendCache() {
+  cacheOk = false;
+}
+
+/**
+ * A fresh start is a fresh start.
+ *
+ * All three latches are set by a failure that belonged to the board just
+ * closed - a quota error raised by its photographs, or an asset it had lost -
+ * and by this point the data that caused the first one is gone. Left set, they
+ * turned one full disk into a session where nothing could be saved again until
+ * the page was reloaded, on a board that is now empty.
+ */
+export function resetSessionLatches() {
+  cacheOk = true;
+  warnedIncomplete = false;
+  lastFailure = '';
+}

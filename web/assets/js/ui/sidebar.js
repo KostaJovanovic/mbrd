@@ -25,7 +25,7 @@ let sliderFocus;
 const MODE_PREF = 'mbrd.boardMode';
 const MOBILE_LAYOUT_QUERY = '(max-width: 700px)';
 
-/** Match the same narrow-screen breakpoint used by app.css. */
+/** Match the same narrow-screen breakpoint used by the CSS. */
 export function mobileLayoutDetected(media = query => globalThis.matchMedia?.(query)) {
   return typeof media === 'function' && !!media(MOBILE_LAYOUT_QUERY)?.matches;
 }
