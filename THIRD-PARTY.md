@@ -17,11 +17,10 @@ licence with the software it covers — which is condition 2 of the OFL.
 Geist and Geist Mono are one licence file because Vercel releases them from one
 repository under one copyright statement, with both names reserved together.
 
-Every face here is subset to Latin and Latin Extended rather than shipped whole.
-The Playfair files are additionally instanced at width 100 — the upstream family
-carries a `wdth` axis that nothing in this app reads, and dropping it saved
-312KB across the four files. Both are the same kind of change: a subset of the
-outlines for a delivery format, which is what the OFL FAQ covers under
-subsetting, and which is how Google Fonts itself serves these families under
+Every face here is subset to Latin and Latin Extended rather than shipped whole,
+and that is the only change made to any of them: all variation axes are intact,
+including Playfair's `wdth`, which was briefly instanced out to save 312KB and
+has been restored. Subsetting for a delivery format is what the OFL FAQ covers
+under subsetting, and is how Google Fonts itself serves these families under
 their own names. No outline was redrawn and no Reserved Font Name is used for
 anything the original authors did not draw.

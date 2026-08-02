@@ -167,6 +167,28 @@ that ceiling instead of naming a bigger number. An older reader that clamps this
 field to `[1, 24]` will read `0` as `1` and take its colours from the newest
 picture alone — a duller palette, not a broken board.
 
+`settings.fonts` is the faces the board carries with it, at most eight, each
+`{ "hash", "family" }` — the hash naming bytes in `assets/`, the family becoming
+a CSS family name. A record filtered out for a bad hash or an unusable family
+name drops on its own; the rest of the list still opens.
+
+Two optional fields describe the same thing at two strengths, and **at most one
+of them appears**:
+
+| field | when | what |
+| --- | --- | --- |
+| `axes` | the file's `fvar` could be read | The variable axes, up to 32, each `{ "tag", "min", "default", "max" }`. `tag` is four characters from `[A-Za-z0-9 ]`; a record whose bounds are not finite or whose `max` is not above its `min` is dropped. |
+| `variable` | it could not | `true`, meaning only "this file has an `fvar`". |
+
+The weaker field exists because WOFF2 keeps its table data in one Brotli stream
+and browsers ship no decoder for it, so a `.woff2` whose filename does not carry
+the conventional `Family[opsz,wght]` bracket group cannot have its axes read
+here at all — while its *table directory*, which is not compressed, still says
+whether an `fvar` is present. That is enough for a reader to declare a weight
+range wide enough to reach the axis rather than pinning the face at 400, and it
+is deliberately not enough to draw a slider. A reader that ignores `variable`
+loses real weights on those faces and nothing else.
+
 Item coordinates and sizes are rounded to two decimals on the way out. A board
 is a place things sit, not a measurement, and the third decimal of a drag is
 noise that costs bytes in every item.

@@ -38,6 +38,9 @@ import { isFamily, toast } from '../util.js';
 const MAX_BYTES = 4 * 1024 * 1024;
 const MAX_FONTS = 8;
 
+/** Matches MAX_FONT_AXES in state.js - the two are one limit in two layers. */
+const MAX_AXES = 32;
+
 /**
  * hash -> { face, family }.
  *
@@ -56,21 +59,47 @@ const BUILTIN_HEADER_FACES = [
     label: 'Playfair',
     value: 'Playfair',
     stack: '"Playfair", Georgia, serif',
-    // The shipped subset's fvar, not the upstream family's: wdth was instanced
-    // out at 100 before subsetting (see fonts.css), so offering it here would be
-    // a slider that moves nothing. opsz really does run to 1200 - it is drawn
-    // for signage - but a masthead is type on a card, and past a couple of
-    // hundred the hairlines thin out faster than the size grows. Capped at 144
-    // to match Fraunces, which is about where that stops being useful.
+    // The one face here that opens at a size of its own - 15% of the strip
+    // against the 13% every other face takes from DEFAULT_MOBILE_HEADER. A
+    // Didone gives up more of its height to the contrast between stem and
+    // hairline than the others do, so the same percentage reads smaller set in
+    // this than in Geist or Fraunces, and the name arrives looking timid.
+    //
+    // An opening position, not a floor: the size slider is untouched and keeps
+    // its full 7-24 range. Picking Playfair moves it there; picking anything
+    // else leaves the size exactly where it stands, since no other face states
+    // one. Coming back to Playfair puts it at 15 again, which is what "starts
+    // at" has to mean if it is to mean anything.
+    size: 15,
+    // The shipped subset's fvar, verbatim - all three axes.
+    //
+    // opsz genuinely runs to 1200; Playfair is drawn for signage at the top of
+    // it. This was capped at 144 for a while on the argument that the last 88%
+    // of the travel does almost nothing you would want, which is true and is
+    // still not this table's call to make: a bound written here is
+    // indistinguishable, to everything downstream, from a bound in the file.
+    // Ranges are what the face has. Taste belongs to whoever drags the slider.
+    //
+    // wdth spent even longer missing, and worse than capped - the subsets were
+    // fetched with it instanced out, so for a while the honest answer to "where
+    // is the width slider" was that the file had no width in it. Its default is
+    // 112.5, the top of its own range; 100 here is the normal width the rest of
+    // the board sets it to through font-stretch, so opening the panel does not
+    // move the masthead.
     axes: [
       { tag: 'wght', min: 300, default: 700, max: 900 },
-      { tag: 'opsz', min: 5, default: 72, max: 144 },
+      { tag: 'wdth', min: 87.5, default: 100, max: 112.5 },
+      { tag: 'opsz', min: 5, default: 72, max: 1200 },
     ],
   },
   {
     label: 'Fraunces',
     value: 'Fraunces',
     stack: '"Fraunces", Georgia, serif',
+    // `default` is the masthead's opening position, not the fvar default, and
+    // that is the one number here allowed to be a choice: Fraunces defaults to
+    // opsz 9 and wght 900, which is a caption cut in black - a poor place to
+    // start a title. min and max are the file's.
     axes: [
       { tag: 'wght', min: 100, default: 700, max: 900 },
       { tag: 'opsz', min: 9, default: 72, max: 144 },
@@ -96,19 +125,64 @@ const BUILTIN_HEADER_FACES = [
     label: 'Geist (sans)',
     value: 'Geist',
     stack: '"Geist", system-ui, sans-serif',
-    axes: [{ tag: 'wght', min: 300, default: 700, max: 700 }],
+    // 100 to 900, which is the file. This read 300 to 700 - the old @font-face
+    // descriptor - and so the slider stopped where the descriptor did rather
+    // than where Geist does. Both are fixed together, and they have to be: the
+    // slider drives font-weight, which the descriptor clamps, so widening one
+    // without the other is either a control that lies or a font that is hidden.
+    axes: [{ tag: 'wght', min: 100, default: 700, max: 900 }],
   },
 ];
 
+/**
+ * Ranges for a tag whose real bounds could not be read.
+ *
+ * Only WOFF2 gets here - every other container hands over its `fvar` and the
+ * exact numbers with it (see fontAxes). For those files this table is never
+ * consulted, and none of these guesses can override a bound the font actually
+ * stated.
+ *
+ * The five registered tags are first; the rest are custom axes with their
+ * published ranges from the family that popularised each one - Roboto Flex for
+ * the parametrics, Recursive for CASL/CRSV/MONO, Fraunces for SOFT/WONK,
+ * Commissioner for FLAR/VOLM. A file using the same tag with different bounds
+ * is entirely legal, so these are a good guess and not a fact.
+ *
+ * Which is why, where a guess had to lean, it leans wide. CSS clamps a
+ * variation value to the axis, so a slider that overshoots the real range ends
+ * in a dead stretch at one end - visibly nothing happening, and recoverable by
+ * dragging back. One that undershoots hides part of the face with no sign that
+ * anything is missing, which is the failure this whole table exists to reduce.
+ * An unlisted tag still gets 0..100, and that is a shrug, not a claim.
+ */
 const AXIS_FALLBACKS = {
   wght: { min: 100, default: 400, max: 900 },
-  wdth: { min: 50, default: 100, max: 200 },
-  opsz: { min: 6, default: 14, max: 144 },
-  slnt: { min: -15, default: 0, max: 0 },
+  wdth: { min: 25, default: 100, max: 200 },
+  opsz: { min: 5, default: 14, max: 1200 },
+  slnt: { min: -20, default: 0, max: 0 },
   ital: { min: 0, default: 0, max: 1 },
+  CASL: { min: 0, default: 0, max: 1 },
+  CRSV: { min: 0, default: 0.5, max: 1 },
+  MONO: { min: 0, default: 0, max: 1 },
   GRAD: { min: -200, default: 0, max: 150 },
   SOFT: { min: 0, default: 0, max: 100 },
   WONK: { min: 0, default: 0, max: 1 },
+  FLAR: { min: 0, default: 0, max: 100 },
+  VOLM: { min: 0, default: 0, max: 100 },
+  ROND: { min: 0, default: 0, max: 100 },
+  BLED: { min: 0, default: 0, max: 100 },
+  EDPT: { min: 0, default: 100, max: 200 },
+  EHLT: { min: 0, default: 12, max: 24 },
+  ELGR: { min: 1, default: 1, max: 2 },
+  ELSH: { min: 0, default: 0, max: 100 },
+  XTRA: { min: 323, default: 468, max: 603 },
+  XOPQ: { min: 27, default: 96, max: 175 },
+  YOPQ: { min: 25, default: 79, max: 135 },
+  YTAS: { min: 649, default: 750, max: 854 },
+  YTDE: { min: -305, default: -203, max: -98 },
+  YTFI: { min: 560, default: 738, max: 788 },
+  YTLC: { min: 416, default: 514, max: 570 },
+  YTUC: { min: 528, default: 712, max: 760 },
 };
 
 export function initFonts() {
@@ -161,6 +235,18 @@ export function headerFontStack(value) {
   return live.size && [...live.values()].some(entry => entry.family === value)
     ? `"${value}", system-ui, sans-serif`
     : '';
+}
+
+/**
+ * The size a face asks to open at, or null to keep whatever is set.
+ *
+ * Null for "Default" and for every dropped face, so this only ever speaks for a
+ * bundled face that named a number. See the Playfair entry above, which is the
+ * only one that does.
+ */
+export function headerFontSize(value) {
+  if (!value) return null;
+  return BUILTIN_HEADER_FACES.find(face => face.value === value)?.size ?? null;
 }
 
 /**
@@ -257,6 +343,92 @@ export async function fontAxes(file) {
   }
 }
 
+/**
+ * Is this a variable font, whatever its axes turn out to be?
+ *
+ * A weaker question than fontAxes() asks, and the point is that WOFF2 can
+ * answer it. Its *table data* is one Brotli stream with no browser decoder to
+ * put through it, which is why the axes themselves are out of reach - but its
+ * table directory is not compressed at all. Walking that says whether an `fvar`
+ * is in there without decoding a byte of it.
+ *
+ * Which is worth knowing on its own, because register() has to choose a weight
+ * descriptor before anything renders, and the two wrong answers are not
+ * symmetrical: see the note there.
+ */
+export async function fontIsVariable(file) {
+  if (!file?.arrayBuffer) return false;
+  try {
+    const buffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    if (bytes.length < 12) return false;
+    return tagAt(bytes, 0) === 'wOF2'
+      ? woff2HasFvar(bytes, new DataView(buffer))
+      : !!findFvar(buffer);
+  } catch {
+    return false;
+  }
+}
+
+/** WOFF2's fixed header, before the table directory starts. */
+const WOFF2_HEADER = 48;
+/**
+ * The three entries of WOFF2's 63-tag table this has to recognise.
+ *
+ * A directory entry names its table by index into that list rather than by
+ * spelling the tag out, and only 63 - the escape - means four literal bytes
+ * follow. The whole list is not here because only three of its members change
+ * what this function does: `fvar` is what is being looked for, and `glyf` and
+ * `loca` are the two tables whose transform flag reads backwards from every
+ * other table's, which decides whether an entry carries one length or two.
+ * Getting that wrong desynchronises the walk rather than skipping a table.
+ */
+const WOFF2_TAGS = { glyf: 10, loca: 11, fvar: 47, escape: 63 };
+
+function woff2HasFvar(bytes, view) {
+  if (bytes.length < WOFF2_HEADER) return false;
+  const numTables = view.getUint16(12);
+  if (!numTables) return false;
+  let at = WOFF2_HEADER;
+  for (let i = 0; i < numTables; i++) {
+    if (at >= bytes.length) return false;
+    const flags = bytes[at++];
+    const known = flags & 0x3F;
+    let tag = '';
+    if (known === WOFF2_TAGS.escape) {
+      if (at + 4 > bytes.length) return false;
+      tag = tagAt(bytes, at);
+      at += 4;
+    }
+    if (known === WOFF2_TAGS.fvar || tag === 'fvar') return true;
+    // glyf and loca are transformed when their version is 0 and left alone at
+    // 3; every other table is the other way round. A transformed entry carries
+    // a second length, and reading the wrong number of them here would put the
+    // walk out of step with the directory for every table after this one.
+    const paired = known === WOFF2_TAGS.glyf || known === WOFF2_TAGS.loca ||
+      tag === 'glyf' || tag === 'loca';
+    const version = flags >> 6;
+    at = skipBase128(bytes, at);
+    if (paired ? version === 0 : version !== 0) at = skipBase128(bytes, at);
+    if (at < 0) return false;
+  }
+  return false;
+}
+
+/** Step over one UIntBase128, or -1 if what is there is not a valid one. */
+function skipBase128(bytes, at) {
+  if (at < 0 || at >= bytes.length) return -1;
+  // A leading 0x80 encodes a leading zero, which the format forbids outright -
+  // it is the shape a padded length would take, and refusing it is what keeps
+  // one encoding per value.
+  if (bytes[at] === 0x80) return -1;
+  for (let i = 0; i < 5; i++) {
+    if (at >= bytes.length) return -1;
+    if (!(bytes[at++] & 0x80)) return at;
+  }
+  return -1;
+}
+
 function findFvar(buffer) {
   const bytes = new Uint8Array(buffer);
   const view = new DataView(buffer);
@@ -301,9 +473,17 @@ function parseFvar(bytes) {
   const offset = view.getUint16(4);
   const count = view.getUint16(8);
   const size = view.getUint16(10);
-  if (!count || count > 16 || size < 20 || offset + count * size > bytes.length) return null;
+  if (!count || size < 20 || offset + count * size > bytes.length) return null;
   const axes = [];
-  for (let i = 0; i < count; i++) {
+  // Read up to the cap rather than refusing a font that exceeds it. `count > 16`
+  // used to be part of the guard above, which meant a face with seventeen axes
+  // returned null and fell through to the filename - so the most variable fonts
+  // there are were the ones that offered no sliders at all. The table still has
+  // to fit its own declared length, which is the check that actually defends
+  // against a corrupt header; the cap is only about how many controls a panel
+  // can usefully hold. See MAX_FONT_AXES in state.js, which is the same number
+  // one layer down - a board may not store more than this either.
+  for (let i = 0; i < Math.min(count, MAX_AXES); i++) {
     const at = offset + i * size;
     const tag = tagAt(bytes, at);
     const min = fixed(view.getInt32(at + 4));
@@ -359,20 +539,25 @@ async function addFontFiles(files) {
       toast(`${file.name} is too big to travel with a board`, 'error');
       continue;
     }
-    const [hash, axes] = await Promise.all([addFile(file), fontAxes(file)]);
+    const [hash, axes, variable] = await Promise.all([
+      addFile(file), fontAxes(file), fontIsVariable(file),
+    ]);
     // Same bytes, already here. Nothing to add and nothing to say - dropping a
     // face twice is not an error, it is somebody making sure.
     if (list.some(f => f.hash === hash)) continue;
 
     const family = uniqueFamily(familyFor(file.name), list);
-    if (!(await register(hash, family, axes))) {
+    if (!(await register(hash, family, axes, variable))) {
       toast(`${file.name} is not a font this browser can read`, 'error');
       continue;
     }
+    // `variable` is only worth storing when it is the whole of what is known.
+    // With axes in hand it is implied by them, and a second field saying the
+    // same thing is a second field that can disagree.
     setSetting('fonts', [...list, {
       hash,
       family,
-      ...(axes.length ? { axes } : {}),
+      ...(axes.length ? { axes } : variable ? { variable: true } : {}),
     }]);
     added++;
   }
@@ -398,7 +583,9 @@ async function syncFonts() {
     document.fonts.delete(live.get(hash).face);
     live.delete(hash);
   }
-  for (const { hash, family, axes } of want) await register(hash, family, axes);
+  for (const { hash, family, axes, variable } of want) {
+    await register(hash, family, axes, variable);
+  }
   bus.emit('fonts');
 }
 
@@ -423,17 +610,33 @@ const fontList = () =>
  * would let the second silently replace the first in every menu that named it.
  * uniqueFamily() below is what stops that; this only has to be idempotent.
  */
-async function register(hash, family, axes = []) {
+async function register(hash, family, axes = [], variable = false) {
   if (live.has(hash)) return true;
   const url = assetURL(hash);
   if (!url) return false;
   try {
     // Loaded before it is added, so a file that is not a font is a caught
     // rejection here rather than a family in the menus that paints nothing.
+    //
+    // The weight descriptor is a claim about what this face covers, and leaving
+    // it off does not mean "no claim" - it means `normal`, which is 400 flat.
+    // On a variable font that pins the weight axis at Regular and hands every
+    // bold on the board to the synthesiser, out of a file that has real ones
+    // in it. So an unread axis must not fall through to the empty case.
+    //
+    // 1 1000 when the axes could not be read but the file is known to have an
+    // `fvar` - a bracketless .woff2, whose bounds are unknowable here. It is a
+    // guess, and it is the right way round: overshooting a real axis costs a
+    // stretch of weights that all paint the same, and every one of them is a
+    // weight the face actually drew. Understating it costs the weights
+    // themselves. The one case it gets wrong is a variable font with no `wght`
+    // axis at all - a handful of width-only and optical-only faces exist - and
+    // there the claim is empty and bold stops being synthesised. Rare, against
+    // a default that is wrong for almost every variable font there is.
     const weight = axes.find(axis => axis.tag === 'wght');
     const descriptors = weight
       ? { weight: `${Math.max(1, weight.min)} ${Math.min(1000, weight.max)}` }
-      : {};
+      : variable ? { weight: '1 1000' } : {};
     const face = new FontFace(family, `url("${url}")`, descriptors);
     await face.load();
     document.fonts.add(face);

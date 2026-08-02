@@ -3,14 +3,22 @@
 
    A browser only fetches a @font-face it actually needs, and only for the
    characters it actually paints, so the plain end never downloads a serif and
-   the soft end never downloads the sans. That is also what makes two serifs
-   affordable: a board sits at one whimsy level at a time and pulls one of them.
+   the soft end never downloads the sans.
 
-   Two serifs, because the two ends of the axis ask a serif for opposite things.
-   The middle pairs a display serif *against* Geist and wants contrast - that is
-   Playfair. The soft end sets everything in one serif including running copy and
-   wants warmth and a low-contrast text cut - that is Fraunces. A single face
-   doing both jobs is the compromise this split exists to refuse.
+   Two serifs are declared here, but only one is a tier's default. Fraunces is
+   the serif both the middle and the soft end set, at two different weights
+   (--display-weight in tokens.css). Playfair was the middle's for a while, on
+   the argument that a serif holding a line against Geist wants a Didone's
+   contrast; the middle buys that separation off Fraunces' weight axis instead,
+   which is one file rather than two.
+
+   Playfair stays declared because it is still a face you can choose - both font
+   menus offer it by name (DISPLAY_FACES in ui/appearance.js and
+   BUILTIN_HEADER_FACES in ui/fonts.js), and a board that picked it keeps it.
+   No default reaches for it, so on a board that has not, the four files below
+   are bytes the service worker precaches and the page never asks for. That is
+   the price of leaving the face on the menu; dropping it from SHELL in sw.js is
+   the trade available if it stops being worth paying.
 
    Both are variable on a weight and an optical-size axis, and in both cases the
    optical axis is why they are here rather than a static display serif: one file
@@ -19,21 +27,33 @@
    `font-optical-sizing: auto` for exactly this; Blink needs telling.
    Both SIL Open Font License 1.1; see the -OFL.txt files beside them. */
 
-/* Playfair, the middle's display voice. Not Playfair Display - that is the
-   static 2011 cut with no optical axis, which at 13px is hairlines and gaps.
+/* Playfair, on the menu rather than on the axis. Not Playfair Display - that is
+   the static 2011 cut with no optical axis, which at 13px is hairlines and gaps.
    This is the 2023 family, whose opsz runs from 5, so the small italic asides
-   (--display-italic) get a real text cut rather than a shrunk headline.
+   (--display-italic) get a real text cut rather than a shrunk headline on a
+   board that has chosen it.
 
-   Instanced at width 100 before it was subset: the upstream face carries a wdth
-   axis defaulting to 112.5 (SemiExpanded) and nothing here reads it, so pinning
-   it saved 312KB across the four files. The name records still say
-   "5pt SemiExpanded Light" - those are the axis defaults the instancer left
-   behind, not what renders. font-weight drives wght and font-optical-sizing
-   drives opsz, so the defaults are never what a browser resolves to. */
+   All three axes, opsz and wdth and wght. These shipped for a while with wdth
+   instanced out at 100, which saved 312KB across the four files and cost the
+   width slider - an axis removed from the file is gone, not merely unexposed,
+   and nothing downstream can tell that apart from a family that never had one.
+   The bytes are the honest price of the axis.
+
+   Every axis default in this family sits at an end of its range rather than in
+   the middle - opsz 5, wdth 112.5, wght 300 - so none of them is what you want
+   and all three have to be driven. All three are registered axes, which is
+   exactly what makes that fine: font-optical-sizing drives opsz, font-weight
+   drives wght, and font-stretch drives wdth, the last defaulting to `normal`
+   (100%) and so quietly correcting a face whose own default is SemiExpanded.
+   The range below is what lets it - a font-stretch descriptor left unstated
+   defaults to 100% alone, and the face would then claim one width and clamp
+   every other. The name records still read "5pt SemiExpanded Light"; that is
+   the same set of defaults seen from the other side, and not what renders. */
 @font-face {
   font-family: 'Playfair';
   font-style: normal;
   font-weight: 300 900;
+  font-stretch: 87.5% 112.5%;
   font-display: swap;
   src: url(../fonts/playfair-latin.woff2) format('woff2-variations');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
@@ -44,20 +64,22 @@
   font-family: 'Playfair';
   font-style: normal;
   font-weight: 300 900;
+  font-stretch: 87.5% 112.5%;
   font-display: swap;
   src: url(../fonts/playfair-latin-ext.woff2) format('woff2-variations');
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
                  U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF,
                  U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
-/* A real italic, and it carries more weight here than Fraunces' does: the middle
-   is the level that sets --display-italic, so half the small print on a default
-   board is in this file. A synthesised oblique of a Didone is the most obviously
-   fake thing a browser draws. */
+/* A real italic, because the levels that would set a board in this face are the
+   ones that set --display-italic - half the small print on a serif board is
+   italic - and a synthesised oblique of a Didone is the most obviously fake
+   thing a browser draws. */
 @font-face {
   font-family: 'Playfair';
   font-style: italic;
   font-weight: 300 900;
+  font-stretch: 87.5% 112.5%;
   font-display: swap;
   src: url(../fonts/playfair-latin-italic.woff2) format('woff2-variations');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
@@ -68,6 +90,7 @@
   font-family: 'Playfair';
   font-style: italic;
   font-weight: 300 900;
+  font-stretch: 87.5% 112.5%;
   font-display: swap;
   src: url(../fonts/playfair-latin-ext-italic.woff2) format('woff2-variations');
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
@@ -75,9 +98,13 @@
                  U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
-/* Fraunces, the soft end's single voice - and the one face on the board that
-   has to be a display cut and a text cut at once, since whimsy 0 sets running
-   copy in it too. */
+/* Fraunces, the serif of both levels that have one - the soft end's single
+   voice, and the middle's announcing voice over Geist. It is the one face on
+   the board that has to be a display cut and a text cut at once, since whimsy 0
+   sets running copy in it too, and the weight axis is what lets it be two tiers
+   as well: 300 in the middle, 400 at the soft end. The wght range below is the
+   file's own 100-900 and not a narrower claim, which is what makes that
+   possible - see the note over Geist. */
 
 @font-face {
   font-family: 'Fraunces';
@@ -125,12 +152,21 @@
 }
 
 /* Geist, for the plain end of the axis - and, from the middle onwards, for
-   running text underneath the serif. */
+   running text underneath the serif.
+
+   The weight descriptors below are the files' own fvar ranges - 100 to 900 for
+   both Geist and Geist Mono - and not a narrower band chosen here. A @font-face
+   weight range is a *claim about the file*, and the browser clamps font-weight
+   to it: declaring 300 700 over a face that holds 100 900 does not decline the
+   extra weights so much as hide them, and nothing downstream can tell the
+   difference between an axis that stops and an axis said to stop. These used to
+   read 300 700 and 400 600, which is why `.wordmark h1` in app.css got 700 from
+   a font that has 900 - see the note there. */
 
 @font-face {
   font-family: 'Geist';
   font-style: normal;
-  font-weight: 300 700;
+  font-weight: 100 900;
   font-display: swap;
   src: url(../fonts/geist-latin.woff2) format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
@@ -140,7 +176,7 @@
 @font-face {
   font-family: 'Geist';
   font-style: normal;
-  font-weight: 300 700;
+  font-weight: 100 900;
   font-display: swap;
   src: url(../fonts/geist-latin-ext.woff2) format('woff2');
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
@@ -150,7 +186,7 @@
 @font-face {
   font-family: 'Geist Mono';
   font-style: normal;
-  font-weight: 400 600;
+  font-weight: 100 900;
   font-display: swap;
   src: url(../fonts/geist-mono-latin.woff2) format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,

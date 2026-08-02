@@ -31,7 +31,7 @@ export const TOKENS = new Set([
   '--accent', '--accent-deep', '--accent-fg', '--accent-warm',
   '--btn-grow', '--btn-lift', '--btn-press', '--card-rule-gap',
   '--chrome-button-h', '--chrome-button-touch', '--chrome-button-w',
-  '--danger', '--density', '--display-italic', '--dur-base',
+  '--danger', '--density', '--display-italic', '--display-weight', '--dur-base',
   '--dur-fast', '--dur-palette', '--dur-travel', '--dur-zoom', '--ease', '--ease-back',
   '--font-body', '--font-display', '--font-mono', '--font-sans',
   '--font-serif', '--font-serif-display', '--font-serif-text',
