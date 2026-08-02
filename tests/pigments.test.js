@@ -332,6 +332,54 @@ test('every hue stays legible however the pictures bend the tables', () => {
   }
 });
 
+/** A picture that is mostly grey, with a speck of one colour in it. */
+function speck(hexColour, of = 400, k = 12) {
+  const px = block('#808080', of);
+  const [r, g, b] = [1, 3, 5].map(i => parseInt(hexColour.slice(i, i + 2), 16));
+  for (let i = 0; i < k; i++) { px[i * 4] = r; px[i * 4 + 1] = g; px[i * 4 + 2] = b; }
+  return px;
+}
+
+test('the hue that would win the accent is never cut before it is asked', () => {
+  // The shortlist used to be cut by peak height in the vote and the roles then
+  // chosen from the survivors by standing, so a hue could be the obvious accent
+  // by a factor of twenty and be pruned by two hues with taller votes and almost
+  // no colour in them. On a real board that made the accent flicker between two
+  // unrelated colours as pictures were added: one photograph joining moved it
+  // from blue to magenta on a vote tie decided by sort order.
+  //
+  // Here: three pictures of a sheet hue, two pictures each holding a speck of
+  // yellow and a speck of green - four votes between them, next to nothing of
+  // either colour - and one picture that is entirely blue.
+  const chunks = [
+    ...Array.from({ length: 3 }, () => block(hex(0.55, 0.12, 30))),
+    ...Array.from({ length: 2 }, () => speck(hex(0.60, 0.12, 90))),
+    ...Array.from({ length: 2 }, () => speck(hex(0.60, 0.12, 150))),
+    block(hex(0.50, 0.20, 260)),
+  ];
+  const v = extractPalette(chunks);
+  assert.ok(near(hueOf(v['--paper']), 30, 15),
+    `the sheet should still be the hue most pictures hold, was ${hueOf(v['--paper']).toFixed(0)}`);
+  assert.ok(near(hueOf(v['--accent']), 260, 15),
+    `the accent should be the board's other real colour, was ${hueOf(v['--accent']).toFixed(0)}`);
+});
+
+test('a speck of a colour is still not a candidate at all', () => {
+  // The other half of the same rule, and the reason MIN_SHARE stays a floor on
+  // the *vote*: ordering the shortlist by standing must not let a hue that
+  // almost no picture holds buy its way onto it with one saturated frame. This
+  // is the sky case from rolesFor(), asked of the shortlist rather than of the
+  // ranking - six photographs of a warm board, one of which has a scrap of
+  // cyan in the corner.
+  const chunks = [
+    ...Array.from({ length: 6 }, () => block(hex(0.55, 0.12, 30))),
+    speck(hex(0.55, 0.30, 200), 400, 3),
+  ];
+  const v = extractPalette(chunks);
+  assert.ok(!near(hueOf(v['--accent']), 200, 25),
+    `a scrap of cyan took the accent at ${hueOf(v['--accent']).toFixed(0)}`);
+});
+
 // ---------------------------------------------------------------------------
 // The pigment is the colour, not only the angle
 // ---------------------------------------------------------------------------

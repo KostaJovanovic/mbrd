@@ -28,7 +28,8 @@ On Windows, `server.bat` is a convenience wrapper around exactly that.
 No `npm install` to run the app or its tests. `package.json` declares no runtime
 dependencies at all, and its three devDependencies are for the optional lint,
 typecheck and end-to-end runs below — `npm test` uses Node's own runner and needs
-nothing fetched.
+nothing fetched. **Node 22 or newer**: the test script hands `node --test` a
+glob, and Node only expands one itself from 21 onwards.
 
 ## Test it
 
@@ -188,12 +189,11 @@ import path with the wrong case works locally and 404s in CI.
 
 ---
 
-## Reporting a security issue
+## The part that is worth being careful about
 
-Please do not open a public issue. See [`SECURITY.md`](SECURITY.md) — the
-surface worth reporting is malformed-file parsing, since the app hand-parses ZIP,
-STL/OBJ/GLB, ID3/MP4/FLAC and Ogg from files it did not write.
-
-## Code of conduct
-
-By participating you agree to the [Code of Conduct](CODE_OF_CONDUCT.md).
+The app hand-parses ZIP, STL/OBJ/GLB, ID3/MP4/FLAC and Ogg out of files it did
+not write, and `.mbrd` is a file that arrives from outside. Every one of those
+readers bounds-checks before it allocates, and `tests/zip.test.js`,
+`tests/mesh.test.js` and `tests/mbrd.test.js` are largely about malformed input
+rather than about correct input. A change anywhere near them wants a test that
+feeds it something broken.
