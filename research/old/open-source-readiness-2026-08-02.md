@@ -28,11 +28,11 @@ regression test (`tests/web.test.js`) that enters `CardGrid` deliberately.
 | 2.1 entry points | done — README leads with `python serve.py`; the `.bat` files are untouched, by request |
 | 2.3 hygiene | partly — filename with a space renamed; **BOM strip withdrawn**, see below |
 | 2.4 licence / format | done — **GPL-3.0-or-later**, stated and reasoned in the README and declared in `package.json`; the `.mbrd` format separately declared free to implement |
-| 3.1 CI | done — `.github/workflows/ci.yml`, ubuntu × windows, node 20/22, plus syntax and stamp checks |
-| 3.2 Pages demo | done — `.github/workflows/pages.yml` |
-| 3.3 community files | done — CONTRIBUTING, CODE_OF_CONDUCT, SECURITY, three issue templates, PR template |
+| 3.1 CI | done — `.github/workflows/ci.yml`, ubuntu × windows, node 22/24, plus syntax and stamp checks |
+| 3.2 Pages demo | **reverted 2026-08-02, do not re-add** — see *What was taken back out* |
+| 3.3 community files | partly — CONTRIBUTING kept; **CODE_OF_CONDUCT, SECURITY, issue templates and PR template reverted 2026-08-02** |
 | 3.4 lint | done — `oxlint`, correctness rules only, no formatter. Cleared 51 findings; gated in CI |
-| 3.5 seed issues | done — ten written out in `.github/SEED-ISSUES.md`, ready to paste on the day the repo goes public |
+| 3.5 seed issues | **reverted 2026-08-02** — `.github/SEED-ISSUES.md` removed with the rest |
 | 4.1 `main.js` split | done — 1,962 → 441, onto six modules |
 | 4.2 `app.css` split | done — 6,021 → eight files |
 | 4.3 `state.test.js` split | done — 1,803 → six files, all 128 cases accounted for |
@@ -494,3 +494,41 @@ Rough shape: the gate is a few focused days of work; nothing in it is
 architecturally risky, because Part 1's conclusion is that the architecture is
 not the problem. The problem is that the repo currently assumes its only reader
 already knows everything.
+
+
+---
+
+## What was taken back out, 2026-08-02
+
+Same day, by the repository's owner, and recorded here because this document is
+the reason a later pass would put it all back.
+
+**The Pages demo (3.2) is gone and should not return.** It failed on the first
+push - `configure-pages` 404s because Pages is not enabled, and it cannot be
+enabled: the repository is private, and Pages wants a public one. That is the
+smaller half. The larger half is that **the app is already hosted, on
+Cloudflare**, so the workflow was a second deployment of the same static site
+that nobody had asked for. This document argued for it on the general principle
+that a project whose pitch has to be seen needs a demo URL, and never asked
+whether one already existed. It is worth naming the failure mode: a readiness
+checklist written from the outside will recommend the standard furniture for a
+public repository whether or not this particular repository needs it.
+
+**The community files (3.3, 3.5) went with it** - `CODE_OF_CONDUCT.md`,
+`SECURITY.md`, the three issue templates, the PR template and `SEED-ISSUES.md`.
+Every one of them is addressed to contributors who do not exist yet on a
+repository that is not public. They can be written on the day they are needed,
+which is the day the repository goes public, and they will be better then for
+being written to a real audience.
+
+**What stayed, and why.** `CONTRIBUTING.md` - it is the how-to-run, how-to-test,
+what-you-can-break-by-accident document that `CLAUDE.md`, `AGENTS.md`,
+`README.md` and `docs/architecture.md` all point at, and none of that is
+community boilerplate. Its two publishing-only sections (security reporting,
+code of conduct) were folded into one about the parsers, which is the thing
+actually worth being careful about here. `.github/workflows/ci.yml`,
+`.oxlintrc.json`, `jsconfig.json` and `playwright.config.js` also stayed: CI
+caught a real break the same day (the test script hands `node --test` a glob,
+which Node only expands from 21, so the node-20 legs found no tests at all - the
+matrix is 22/24 now, and `package.json` declares the floor), and the typecheck
+found `web-graph.js` calling two helpers it had never imported.

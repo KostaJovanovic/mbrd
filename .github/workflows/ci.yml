@@ -24,7 +24,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        node: ['20', '22']
+        # 22 is the floor: `npm test` passes a glob to node --test, which Node
+        # only expands from 21 onwards, and 20 is out of support since April.
+        node: ['22', '24']
 
     steps:
       - uses: actions/checkout@v4
