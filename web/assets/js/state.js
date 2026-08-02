@@ -1667,7 +1667,14 @@ function normalizeFonts(raw) {
     seen.add(f.hash);
     const font = { hash: f.hash, family: f.family };
     const axes = normalizeFontAxes(f.axes);
+    // One or the other, never both. `variable` says only "this file has an
+    // fvar", which is all a bracketless .woff2 can be asked - its axes are
+    // behind Brotli. It exists so ui/fonts.js can still declare a weight range
+    // wide enough to reach the axis instead of defaulting to a flat 400; with
+    // real axes present that range comes from them and this would be a second
+    // source for the same fact.
     if (axes.length) font.axes = axes;
+    else if (f.variable === true) font.variable = true;
     out.push(font);
     if (out.length >= MAX_FONTS) break;
   }
@@ -1748,7 +1755,14 @@ function normalizeMobileHeader(raw) {
 
 /** Matches MAX_FONTS in ui/fonts.js - the two are one limit in two layers. */
 const MAX_FONTS = 8;
-const MAX_FONT_AXES = 16;
+/**
+ * Matches MAX_AXES in ui/fonts.js. 32, up from 16: the parametric families are
+ * the reason - Roboto Flex ships thirteen axes and Amstelvar more than twenty,
+ * and a limit that truncated them was cutting off exactly the fonts a variable
+ * axis panel exists for. Still a bound rather than none, since this is what a
+ * hand-made .mbrd is held to on the way in.
+ */
+const MAX_FONT_AXES = 32;
 
 /** The serialisable board, exactly as it lands in board.json. */
 export function serializeBoard() {

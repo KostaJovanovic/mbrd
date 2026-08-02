@@ -1892,6 +1892,44 @@ function warnMissingCapabilities() {
   }
 }
 
+/**
+ * Take the boot cover off (index.html), now that there is a board under it.
+ *
+ * One frame later, not immediately: start() has just written the items, the
+ * grid and the grain into the DOM and none of it has been painted yet, so
+ * fading on this turn would uncover the same empty room the cover exists to
+ * hide. A single rAF is enough - the fade itself is 400ms and the paint lands
+ * inside it either way.
+ *
+ * The node is removed rather than left at opacity 0. It is fixed and
+ * full-screen, so what it leaves behind is a compositing layer over the whole
+ * board for the life of the session, and `transitionend` is not guaranteed to
+ * arrive - a tab backgrounded mid-fade never fires it - hence the timer as
+ * well. Both paths call remove(), which is safe twice.
+ */
+function dismissSplash() {
+  const splash = el('splash');
+  if (!splash) return;
+  // #load holds the cover up indefinitely so the boot animation can be watched
+  // at leisure - it is on screen for well under a second in the normal case,
+  // which is not long enough to judge it. A dev switch in the same shape as
+  // #grips and #perf, and like them it is not a state the app can reach on its
+  // own: it is in the URL, so the way out is the URL. Nothing dismisses it -
+  // deliberately, since a cover that lets go on a stray click or keypress is
+  // one that ends the moment you lean on the desk to look at it.
+  if (location.hash.includes('load')) return;
+  requestAnimationFrame(() => {
+    splash.classList.add('is-done');
+    const drop = () => splash.remove();
+    splash.addEventListener('transitionend', drop, { once: true });
+    setTimeout(drop, 1200);
+  });
+}
+// Both arms, deliberately: a boot that threw still has to give the page back.
+// Whatever went wrong, the board underneath is more use than a cover nobody
+// can dismiss - and the console already carries the failure.
+started.then(dismissSplash, dismissSplash);
+
 // Installed as a PWA, "Open with mbrd" on a .mbrd hands us the file here
 // (manifest.json file_handlers). The desktop equivalent lands in M4 via Tauri.
 //

@@ -249,32 +249,31 @@
      Serif above sans, never the other way round. Sans headlines over serif
      body is the newspaper convention and it reads as a newspaper.
 
-     Playfair is self-hosted (see fonts.css); the stack behind it is the old
+     Fraunces is self-hosted (see fonts.css); the stack behind it is the old
      system-serif list, so a board still sets sensibly before the file lands
      or if it never does.
 
-     A Didone rather than Fraunces, and that choice belongs to this tier
-     specifically. The middle is the one level where a serif has to hold a line
-     *against* a sans rather than carry a page alone, and what makes that
-     pairing read as set rather than styled is contrast - thin hairlines, heavy
-     stems, an axis that is nothing like Geist's even weight. Fraunces is the
-     warmer face and it wins the soft end for the same reason it loses here: at
-     whimsy 0 the serif is also the body copy, and running text wants warmth,
-     not contrast. Two faces, one job each, and only the level that uses a face
-     pays to download it - see the header of fonts.css.
-
-     Hence three names where there used to be two, and the split between them
-     is which ones a tier is allowed to touch.
+     Both serif tiers set the same face, and what separates them is weight, not
+     family. This level had Playfair for a while, on the argument that the
+     middle is the one place a serif has to hold a line *against* a sans and so
+     wants a Didone's contrast. It does want contrast - but a second family is
+     not the only way to buy it, and it is the expensive way: two serifs is two
+     downloads, two italics, and two faces to keep in agreement. One family set
+     lighter here than at the soft end gets the same separation out of an axis
+     the file already carries. See --display-weight below.
 
      --font-serif-display, --font-serif-text and --font-sans are the faces. Each
      is written out once here and never redefined below, because things that are
      not the current tier read them: the whimsy stop labels are specimens of the
      three levels and have to name a face directly, and a specimen typeset in
      whatever the slider currently resolves to shows the same font three times
-     at the plain end, which is the one thing those labels exist not to do. That
-     rule already covered --font-display and --display-italic; adding a second
-     serif is what brought --font-serif under it too, since "the serif" is now
-     something the axis moves.
+     at the plain end, which is the one thing those labels exist not to do.
+
+     --font-serif-display is the odd one out now: no tier reads it. It stays
+     named because Playfair is still a face both font menus offer by name
+     (DISPLAY_FACES in ui/appearance.js, BUILTIN_HEADER_FACES in ui/fonts.js)
+     and because it is in the TOKENS allowlist, so a saved board may already
+     carry it.
 
      --font-serif is the moving one - the tier's current serif, and the *only*
      name a level restates. --font-display and --font-body are wiring on top of
@@ -286,10 +285,26 @@
                         "Book Antiqua", "URW Palladio L", Georgia, "Times New Roman", serif;
   --font-sans:  "Geist", -apple-system, "Helvetica Neue", Helvetica,
                 "Liberation Sans", system-ui, sans-serif;
-  --font-serif:   var(--font-serif-display);
+  --font-serif:   var(--font-serif-text);
   --font-display: var(--font-serif);
   --font-body:    var(--font-sans);
   --font-mono:    ui-monospace, "Cascadia Mono", "SF Mono", Consolas, "DejaVu Sans Mono", monospace;
+  /* How heavily the tier sets its display face - and, now that both serif
+     levels name Fraunces, the whole of the difference between them. A step
+     under the soft end's 400: the middle's serif shares the page with Geist
+     and is doing the announcing rather than the reading, so it can be drawn
+     finer than a face that also has to carry paragraphs.
+
+     Every display site in app.css reads this, the already-bold ones through a
+     calc that keeps their offset - a card name is +200 over the tier's weight,
+     a note heading +300 - so the relationships that were tuned at 400 survive
+     the move. That is also what lets the plain end restate 400 and render
+     exactly as it did: the token is a shift, not a rewrite.
+
+     Not applied to small print (card meta, item labels, the icon line). Those
+     already sit at 400 and are 11-13px; thinning a serif at that size is how
+     it stops being read. */
+  --display-weight: 300;
   /* The display sizes are tokens rather than numbers in app.css because they
      are the axis's loudest lever: three steps above the body here, closer to
      two at the ends. --t-display is the largest thing on a board (a note's
@@ -676,13 +691,16 @@
      it. Turning ornament up at this end is --wash's job and the shapes', not
      the board's. Saying nothing is what inherits the middle's grid. */
 
-  /* One serif, top to bottom - and a different one from the middle's, which is
-     the whole reason this line is here. Playfair is a Didone: it earns the
-     middle its contrast against Geist, and it is exactly the wrong face to set
-     a paragraph in at 15px, where hairlines thin out and the even colour a
-     block of text needs breaks up. Fraunces is the warm, low-contrast answer,
-     and restating --font-serif is all it takes because --font-display reads
-     through it and --font-body reads through that.
+  /* One serif, top to bottom. No --font-serif here: the middle names Fraunces
+     too now, so this end inherits the face and differs by weight alone.
+
+     400 rather than the middle's 300, and the reason is what the face is being
+     asked to do. Here the serif is the body copy as well - --font-body reads
+     through --font-display below - and running text set finer than 400 loses
+     its colour, the even grey a paragraph has to hold to be read without
+     effort. The middle can be drawn lighter precisely because nothing there is
+     read at length in it. 400 is also what every display site was tuned at
+     before the token existed, so this level renders exactly as it did.
 
      The optical axis is what makes one face doing both jobs survivable: the
      same file is a display cut at 28px and a text cut at 15px, so setting
@@ -690,7 +708,7 @@
      Sizes sit a step under the middle's - with only one voice on the page,
      the size difference has nothing to hold apart, and shouting it would
      just be shouting. */
-  --font-serif: var(--font-serif-text);
+  --display-weight: 400;
   --font-body:  var(--font-display);
   --t-display: 28px;
   --t-title:   20px;
@@ -868,6 +886,12 @@
      parked on Harsh never fetches a byte of it. */
   --font-display: var(--font-sans);
   --font-body:    var(--font-display);
+  /* Back to 400, which is what the display sites were written at. The middle's
+     300 is a judgement about a serif holding a line against a sans, and there
+     is no serif here to make it about. Geist at 300 is thin rather than fine -
+     a grotesque has no hairline to lose, so lightening it takes the whole
+     letter down with it, and this end is the one that puts readability first. */
+  --display-weight: 400;
   --font-mono:    "Geist Mono", ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
   --display-italic: normal;
   /* Swiss takes its contrast from weight and rule, not from size. These are

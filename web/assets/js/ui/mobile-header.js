@@ -19,18 +19,39 @@ import {
 } from '../state.js';
 import { clamp, el } from '../util.js';
 import {
-  headerFontAxes, headerFontOptions, headerFontStack, headerFontWeights,
+  headerFontAxes, headerFontOptions, headerFontSize, headerFontStack,
+  headerFontWeights,
 } from './fonts.js';
 import { createMobileSliderFocus } from './sidebar.js';
 import { field, fieldStops } from './controls.js';
 
+/**
+ * A four-letter tag, in words.
+ *
+ * Not a whitelist - axisLabel() falls back to the tag itself, so an axis nobody
+ * here has heard of still gets a slider with "ZZZZ" over it. This only decides
+ * whether the label is readable, and every tag a real family has shipped is
+ * worth having in it: `wght` and `ital` never appear (the weight control and the
+ * italic switch own those), and the rest are what is left.
+ */
 const AXIS_LABELS = {
   opsz: 'Optical size',
   wdth: 'Width',
   slnt: 'Slant',
+  CASL: 'Casual',
+  CRSV: 'Cursive',
+  MONO: 'Monospace',
   GRAD: 'Grade',
   SOFT: 'Softness',
   WONK: 'Wonky',
+  FLAR: 'Flare',
+  VOLM: 'Volume',
+  ROND: 'Roundness',
+  BLED: 'Bleed',
+  EDPT: 'Extrusion depth',
+  EHLT: 'Highlight',
+  ELGR: 'Element grid',
+  ELSH: 'Element shape',
   XTRA: 'Counter width',
   XOPQ: 'Thick stroke',
   YOPQ: 'Thin stroke',
@@ -265,7 +286,12 @@ function changeFont() {
     if (axis.tag !== 'wght' && axis.tag !== 'ital') values[axis.tag] = axis.default;
   }
   const weight = axes.find(axis => axis.tag === 'wght')?.default ?? header().weight;
-  update({ font, weight, axes: values });
+  // A face may ask to open at a size of its own; only Playfair does. Falling
+  // back to the size already set, rather than to the default, is what keeps
+  // this from undoing a size somebody chose merely because they went looking
+  // through the face menu.
+  const size = headerFontSize(font) ?? header().size;
+  update({ font, weight, size, axes: values });
   buildAxisControls();
   paint();
 }
@@ -483,6 +509,13 @@ function applyTitleStyle(title, style, axes) {
   // own metrics again - which is the one value no number here can express.
   if (style.leading === 100) title.style.removeProperty('line-height');
   else title.style.lineHeight = formatAxis(style.leading / 100);
+  // Always written, never cleared - unlike `leading` above, which hands its
+  // default back to the stylesheet. The board's name is deliberately the one
+  // piece of display type the whimsy axis does not set: it is board state, the
+  // same number on every tier, and it renders the same at whimsy 0 and 1. That
+  // is a choice and not an oversight, so an inline weight is the honest way to
+  // write it - clearing it at the default would let --display-weight through
+  // and make the middle a step lighter.
   title.style.fontWeight = String(style.weight);
   title.style.fontStyle = axes.some(axis => axis.tag === 'ital')
     ? 'normal'

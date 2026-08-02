@@ -64,6 +64,89 @@
 </head>
 <body>
 
+<!-- The boot cover, over the page until main.js has a board on it.
+
+     What it hides is not a slow app so much as an ugly order of events: the
+     paper, the grid and the whole of the chrome are in the document at first
+     paint, while the board itself comes out of IndexedDB several awaits later -
+     so without this the app opens as a finished, empty room and then has its
+     furniture carried in one piece at a time. A cover holds that back until
+     there is something to show.
+
+     Every part of it is inert: no ids anything else looks up, no state, and the
+     node deletes itself after the fade (dismissSplash in main.js). aria-hidden
+     because a screen reader has no use for a curtain - and nothing here is
+     content, only the app's own name while it gets ready.
+
+     The <noscript> below is the honest exit for a visitor with JavaScript off.
+     Nothing in mbrd works without it, but a permanently covered page cannot
+     even say so; uncovering at least shows the board it will not be able to
+     fill. -->
+<noscript><style>#splash { display: none !important; }</style></noscript>
+<div id="splash" aria-hidden="true">
+  <div class="splash-inner">
+    <div class="splash-word">mbrd.</div>
+    <div class="splash-sub">Plan it, see it. Sorted.</div>
+    <!-- Three cards landing on a board with threads snapping between them - the
+         app's own signature (canvas/web.js), which is why the loader is this
+         and not a spinner. It is a CSS animation for the same reason #busy's
+         bar is one: the work it covers is on the main thread, so anything
+         driven from JavaScript would freeze at exactly the moment somebody is
+         watching it to find out whether the app has hung.
+
+         Five elements alternating card / thread / card, in that order, because
+         the CSS staggers them by nth-child and the sequence *is* the animation:
+         a card arrives, a thread reaches for the next one, and so on. -->
+    <div class="splash-thread">
+      <i class="splash-card"></i><i class="splash-line"></i><i class="splash-card"></i><i class="splash-line"></i><i class="splash-card"></i>
+    </div>
+  </div>
+</div>
+<script>
+  /* Two jobs, both of them failsafes, and neither belongs in a module: this has
+     to run whether or not main.js ever parses.
+
+     One - hold the wordmark back until the display face has landed. Every
+     bundled face is `font-display: swap`, so a cover shown for 300ms would
+     otherwise set the name in Times, then swap it to Fraunces, and the last
+     thing the eye catches before the board appears would be the app's own name
+     changing shape. The face is asked for by reading it off the element rather
+     than naming it here: which one it is depends on the whimsy level restored
+     a moment ago, and the whole stack is a legal font shorthand, so a level
+     set in the sans asks for the sans and no board fetches a serif it is not
+     going to show. Not document.fonts.ready, which answers "is anything still
+     loading" - and at this point in the document the answer is no, because
+     layout has not reached the wordmark and so has not asked for its font yet.
+
+     Two - uncover the page if boot never happens. main.js normally does it (and
+     does it as soon as there is a board, which is well before this fires); this
+     is for the load that fails - a module 404 behind a stale service worker, a
+     syntax error, a browser below the floor. Six seconds because its only job
+     is to rescue a boot that is not coming, and firing early on a big board
+     would pull the cover off a half-built one. */
+  (function () {
+    var s = document.getElementById('splash');
+    if (!s) return;
+    var letter = function () { s.classList.add('is-lettered'); };
+    try {
+      var word = s.querySelector('.splash-word');
+      if (document.fonts && document.fonts.load && word) {
+        var css = getComputedStyle(word);
+        document.fonts.load(css.fontWeight + ' 1em ' + css.fontFamily, 'mbrd.')
+          .then(letter, letter);
+        setTimeout(letter, 1200);
+      } else letter();
+    } catch (e) { letter(); }
+    /* #load is the dev switch that holds the cover up to be looked at (see
+       dismissSplash in main.js). It has to be honoured here too, or the rescue
+       timer would take the thing away six seconds into watching it. */
+    addEventListener('load', function () {
+      if (location.hash.indexOf('load') !== -1) return;
+      setTimeout(function () { s.classList.add('is-done'); }, 6000);
+    });
+  })();
+</script>
+
 <!-- The stock the board is printed on: a tile of 300gsm grain multiplied over
      the paper on <body>. Outside #viewport rather than inside it, because
      #viewport has paint containment and so is a stacking context - a blend

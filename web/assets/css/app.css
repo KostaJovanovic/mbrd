@@ -154,6 +154,170 @@ body {
   inset: 0;
 }
 
+/* ---------------------------------------------------------
+   The boot cover (index.html, dismissed by main.js)
+
+   Third layer of the sheet and the last one painted, which is why it sits here
+   rather than with the chrome: paper, then grain, then the thing over both.
+
+   It repaints the paper instead of being transparent over it, because what it
+   is covering is the chrome - the menu button, the add bar, the zoom pill are
+   all in the document at first paint and would otherwise sit on an empty board
+   while it loaded. Only the flat colour, though, not the blooms and the
+   vignette: the wash is 3-5% of an ink over near-white, so the seam when this
+   fades is under two levels, and duplicating the three gradients here would be
+   a second copy of the sheet to keep in step with the first.
+
+   Everything below is a token, so the cover comes up in the board's own palette
+   and whimsy level - both restored by the inline script in <head> before first
+   paint, which is the whole reason this can be themed at all.
+   --------------------------------------------------------- */
+#splash {
+  position: fixed;
+  inset: 0;
+  /* Above the sidebar (40), the dialogs (70) and the toast (50) - a cover that
+     something can appear over is not a cover. Under the debug overlay, which is
+     the only thing in the app that outranks the app. */
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--paper);
+  transition: opacity var(--dur-base) var(--ease);
+}
+/* main.js adds this once there is a board, then removes the node. Pointer
+   events go first so a click during the fade lands on the board under it. */
+#splash.is-done {
+  opacity: 0;
+  pointer-events: none;
+}
+.splash-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 0 24px;
+  /* The name sits a little above centre. Optical centring, not arithmetic: a
+     block of type centred by its box reads as low, and this one is short
+     enough for that to show. */
+  transform: translateY(-4%);
+}
+/* The sidebar's wordmark, larger. Same face, same full stop - a cover that
+   showed a different mark from the one behind it would be someone else's app.
+   Sized against the window rather than in points, because at this size it is
+   the only thing on the screen and has a whole phone or a whole desktop to sit
+   in; the clamp keeps it off both walls. */
+.splash-word {
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  font-size: clamp(46px, 13vw, 92px);
+  line-height: 0.95;
+  letter-spacing: calc(0.02em * var(--ls-scale));
+  color: var(--ink);
+  /* Hidden until the inline script in index.html reports the face has loaded,
+     so the name is never set in the fallback and swapped mid-cover. The sub
+     line is not held back with it: it is set in the body face, which at two
+     levels out of three is the sans that has already painted the chrome. */
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+#splash.is-lettered .splash-word { opacity: 1; }
+.splash-sub {
+  font-family: var(--font-body);
+  font-size: var(--t-small);
+  font-style: var(--display-italic);
+  letter-spacing: calc(0.04em * var(--ls-scale));
+  color: var(--ink-3);
+}
+/* A board building itself: three cards drop in and threads snap between them,
+   left to right, then the row lets go and does it again.
+
+   Every value in here is a token the whimsy axis already moves, which is the
+   point - the loader is not decorated to match the tier, it is built out of the
+   tier. Softish gets round cards on a real overshoot at 3 degrees of tilt;
+   Harsh gets square ones, no shadow, no tilt worth the name and an --ease-back
+   that is plain `ease`, so the same six declarations come out as a Swiss
+   diagram. Nothing here has to know which level it is on.
+
+   The stagger is one animation-delay per child rather than five keyframe sets:
+   same duration, constant offsets, so the phase between them never drifts
+   however long the cover is up. Transform and opacity only - see the note on
+   the markup for why this cannot be driven from JavaScript. */
+.splash-thread {
+  display: flex;
+  align-items: center;
+  margin-top: 14px;
+  width: min(248px, 62vw);
+}
+.splash-card {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper-card);
+  box-shadow: var(--item-shadow);
+  animation: splash-card 2.8s var(--ease-back) infinite both;
+}
+/* Each card lands at its own angle, as a share of the tier's own maximum - so
+   the row is hand-laid at the soft end and lines up square at the plain one,
+   off a single token. The middle card is the accent, because three cards in
+   paper is a diagram and one of them in colour is a board. */
+.splash-thread .splash-card:nth-child(1) { --splash-tilt: calc(var(--tilt-max) * -1); }
+.splash-thread .splash-card:nth-child(3) {
+  --splash-tilt: var(--tilt-max);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.splash-thread .splash-card:nth-child(5) { --splash-tilt: calc(var(--tilt-max) * -0.55); }
+.splash-line {
+  flex: 1;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 2px;
+  /* Reaches from the card that has just landed towards the next one, so it
+     grows from its left end. --ease and not --ease-back: a thread that
+     overshoots is a thread that pokes out the far side of the card it just
+     arrived at. The cards are the springy half; these are pulled taut. */
+  transform-origin: left center;
+  animation: splash-line 2.8s var(--ease) infinite both;
+}
+/* One step per element, in document order, which is what makes the row read as
+   a sequence rather than five things pulsing together. */
+.splash-thread > :nth-child(1) { animation-delay: 0s; }
+.splash-thread > :nth-child(2) { animation-delay: 0.16s; }
+.splash-thread > :nth-child(3) { animation-delay: 0.34s; }
+.splash-thread > :nth-child(4) { animation-delay: 0.5s; }
+.splash-thread > :nth-child(5) { animation-delay: 0.68s; }
+/* Drops in, sits, and is taken away smaller than it arrived. The tilt is only
+   worn while it is up: it turns square on the way out, so the row leaves as
+   tidily as a board being cleared. */
+@keyframes splash-card {
+  0%   { opacity: 0; transform: scale(0.2) rotate(0deg); }
+  16%  { opacity: 1; transform: scale(1) rotate(var(--splash-tilt, 0deg)); }
+  64%  { opacity: 1; transform: scale(1) rotate(var(--splash-tilt, 0deg)); }
+  80%  { opacity: 0; transform: scale(0.72) rotate(0deg); }
+  100% { opacity: 0; transform: scale(0.2) rotate(0deg); }
+}
+@keyframes splash-line {
+  0%   { opacity: 0; transform: scaleX(0); }
+  8%   { opacity: 1; transform: scaleX(0); }
+  26%  { opacity: 1; transform: scaleX(1); }
+  64%  { opacity: 1; transform: scaleX(1); }
+  80%  { opacity: 0; transform: scaleX(1); }
+  100% { opacity: 0; transform: scaleX(0); }
+}
+/* The finished picture, held. Not "no animation" but the last frame of one -
+   an empty row where the loader was says the app has stopped, which is the one
+   thing a loader must never say. Quality is deliberately not consulted: the
+   cover is a handful of composited layers either way, and a Light board is
+   being spared repaints on a board it does not have yet. */
+@media (prefers-reduced-motion: reduce) {
+  .splash-card,
+  .splash-line { animation: none; }
+  .splash-card { transform: rotate(var(--splash-tilt, 0deg)); }
+}
+
 /* Clipped to the sheet by the sheet, radius included - which is why this is a
    pseudo-element on the frame rather than a third layer positioned to match it.
    canvas/mobile-frame.js rewrites that radius as each end of the board scrolls
@@ -661,6 +825,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
   text-align: center;
   font-family: var(--font-display);
   color: var(--ink);
+  /* Deliberately NOT --display-weight, and this is the one display site that
+     opts out. The board's name carries its own weight in board state
+     (DEFAULT_MOBILE_HEADER.weight in board-model.js, the Weight dial in
+     ui/mobile-header.js), written inline by applyTitleStyle() onto both this
+     card and the masthead - so an inline 700 wins over anything declared here
+     on every board that has ever been styled, which is all of them. The name is
+     the same on Softish and on Middle by design: one number, chosen per board,
+     that the whimsy axis is not allowed to move.
+     700 to match the default the inline style is about to set, so the frame
+     before it lands is not a different weight from the frame after. */
   font-weight: 700;
   /* A pure fraction of the card's own width - no screen-pixel clamp here. The
      masthead's 20-96px clamp is folded into --mobile-title-ratio by
@@ -1526,7 +1700,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .card-name {
   font-family: var(--font-display);
-  font-weight: 600;
+  /* +200 over the tier's display weight - the 600 this was written at, carried
+     across the middle's lighter serif. See --display-weight in tokens.css. */
+  font-weight: calc(var(--display-weight) + 200);
   font-size: var(--t-title);
   line-height: 1.2;
   word-break: break-word;
@@ -2180,13 +2356,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
    sheet; only weight and size set them apart. */
 .item[data-type="note"] .note-line { line-height: 1.4; }
 .item[data-type="note"] .note-line.note-h1 {
-  font-weight: 700;
+  font-weight: calc(var(--display-weight) + 300);
   line-height: 1.2;
   color: var(--ink);
   font-size: calc(var(--note-t-title) * var(--note-scale, 1));
 }
 .item[data-type="note"] .note-line.note-h2 {
-  font-weight: 700;
+  font-weight: calc(var(--display-weight) + 300);
   line-height: 1.25;
   color: var(--ink);
   font-size: calc((var(--note-t-title) + var(--note-t-body)) / 2 * var(--note-scale, 1));
@@ -2929,7 +3105,14 @@ plates do: below a third of size a card is a coloured tile, and a click on
   justify-items: center;
   padding: 0;
   border: var(--hairline) solid var(--rule-2);
-  border-radius: var(--radius-sm);
+  /* --leaf, the corner every control on the glass wears - the bin, the history
+     pair, the zoom pill, the add bar and the player. This was --radius-sm, the
+     panel corner, which made the one permanent button in the top left the only
+     piece of furniture on the board rounded differently from the rest. Two
+     pixels apart at Middle and identical at Harsh, so it never looked wrong;
+     it just meant there was no rule. There is now: on the glass is --leaf,
+     inside a panel is --radius-sm. */
+  border-radius: var(--leaf);
   background: var(--paper-card);
   box-shadow: var(--shadow-1);
   cursor: pointer;
@@ -2984,26 +3167,30 @@ plates do: below a third of size a card is a coloured tile, and a click on
    Windows' 125% and 175%. The middle bar came out a shade thinner than its
    neighbours on any laptop set that way.
 
-   Scaling is a quarter-step business - 125%, 150%, 175% - so pitch x 1.25 has
-   to come out whole, and 1.25 is five quarters. That makes the pitch a multiple
-   of four and there is no way around it: 4 and 8 are the only two this control
-   can use, and everything between them renders the middle bar differently from
-   its neighbours on some fraction of displays.
+   8 is the pitch that survives: every device pixel ratio anyone ships is a
+   multiple of an eighth, so 8 is whole at all of them - 10 at 1.25x, 14 at
+   1.75x, 21 at the 2.625x a Pixel reports, 28 at 3.5x. The bar keeps its 2px
+   weight and the gap grows to 6 to pay for it.
 
-   4, which is the tighter of the two. The bar keeps its 2px weight and the gap
-   is 2, so the three sit close the way a menu glyph usually does. 8 was here
-   first and was chosen for a wider margin - it is whole at the eighth-step
-   ratios too, the 2.625x a Pixel reports and 3.5x - but at those densities a
-   bar is five device pixels thick and half of one either way is not a thing an
-   eye can find. The quarter steps are the ones that showed.
+   A pitch of 4 was tried after this and reverted. It is the only other value
+   that works - the ratios are quarter-steps, so the pitch has to be a multiple
+   of four, which leaves 4 and 8 and nothing in between - and on the arithmetic
+   it costs only the eighth-step densities, where a bar is five device pixels
+   thick and half of one either way is invisible. What it actually cost was the
+   drawing: three bars 2px apart are a glyph of a menu, and this button is a
+   stack of rules on a board that is made of rules. The spacing is the whole
+   idea. Do not tighten it again for a rounding argument.
 
-   Both of the stack's own dimensions are kept even, so the grid's centring
+   Both of the stack's own dimensions are then kept even, so the grid's centring
    lands on a whole pixel rather than halfway across one. The button is 42x40
    over a 1px border, so the box being centred in is 40x38: an 18px-wide bar
    sits at x=11 where the old 17px one sat at 11.5 and wore soft edges down both
-   sides at every scale, and the 10px-tall stack (2+2+2+2+2) sits at y=14. The
-   touch sizes below hold the same two rules against a 44x44 box. */
-#menu-btn { gap: 2px; }
+   sides at every scale, and the 18px-tall stack (2+6+2+6+2) sits at y=10. The
+   touch sizes below hold the same two rules against a 44x44 box.
+
+   18x18 is also, not by accident, the size of the pen icon in the opposite
+   corner. The hamburger has been reading small next to it. */
+#menu-btn { gap: 6px; }
 #menu-btn span {
   width: 18px;
   height: 2px;
@@ -3013,13 +3200,21 @@ plates do: below a third of size a card is a coloured tile, and a click on
 /* The wordmark, set in whatever the display face is - and when that face is a
    sans, set as heavy as it goes.
 
-   900 rather than 700, and it is not a typo. Geist is a variable font with a
-   weight axis that stops at 700, and asking a variable face for more than its
-   axis holds clamps to the axis - so this asks for "the top of whatever this
-   font has" and gets 700 from Geist, 900 from a dropped face that carries one,
-   and the same synthetic bold either number would have produced from a face
-   with a single master. There is no way to read a face's maximum in CSS, and
-   this is the question phrased so it does not need to be read.
+   900 rather than 700, and it is not a typo. Asking a variable face for more
+   weight than its axis holds clamps to the axis, so this asks for "the top of
+   whatever this font has": 900 from a face that carries one, and the same
+   synthetic bold either number would have produced from a face with a single
+   master. There is no way to read a face's maximum in CSS, and this is the
+   question phrased so it does not need to be read.
+
+   It used to read 700 on Geist, and the note here said that was Geist's
+   ceiling. It was not - the file's fvar runs 100 to 900, and the ceiling was
+   the `font-weight: 300 700` descriptor in fonts.css, which clamps before the
+   axis is ever consulted. That descriptor now states the file's real range, so
+   this line finally gets what it always asked for and the wordmark sets a
+   genuine 900. Which is the general trap, and the reason the descriptor was
+   worth fixing: a narrow @font-face range is indistinguishable, from every
+   point downstream, from a font that simply has less.
    ui/appearance.js sets the attribute; see markDisplayFace() for how a stack is
    judged to be a sans. */
 :root[data-display-sans] .wordmark h1 { font-weight: 900; }
@@ -3113,10 +3308,13 @@ plates do: below a third of size a card is a coloured tile, and a click on
 .wordmark h1 {
   margin: 0;
   font-size: 30px;
-  font-weight: 400;
-  /* 400 is right for the serif: Fraunces at 30px is a display cut already, and
-     bolding a high-contrast face thickens the stems without making it any more
-     of a title. A sans has nothing else to give - see the override below. */
+  /* The tier's own display weight, unshifted - 400 at the soft and plain ends,
+     300 in the middle. Bolding a serif at 30px thickens the stems without
+     making it any more of a title, so the wordmark has never asked for more
+     than the text around it, and following --display-weight is what keeps that
+     true now the middle sets its serif lighter. A sans has nothing else to
+     give - see the override below. */
+  font-weight: var(--display-weight);
   letter-spacing: calc(0.14em * var(--ls-scale));
   line-height: 1;
   color: var(--ink);
@@ -3637,7 +3835,13 @@ kbd {
   display: grid;
   place-items: center;
   min-width: 34px;
-  height: 32px;
+  /* The same height as every other control on the glass. It was 32, which made
+     the one cluster you use constantly the one cluster that did not line up
+     with the bin, the history pair or the menu - and unlike the corner rounds,
+     eight pixels of height is a difference you can see without looking for it.
+     Only the height; the segments stay their own widths, since this is a pill
+     with a readout in the middle of it and not a row of square buttons. */
+  height: var(--chrome-button-h);
   padding: 0 7px;
   border: 0;
   background: none;
@@ -3701,7 +3905,13 @@ kbd {
   border-radius: var(--leaf);
   overflow: hidden;
   background: var(--paper-card);
-  box-shadow: var(--shadow-2);
+  /* One shadow across the whole set. This was --shadow-2, on the argument that
+     a bar which comes and goes should float higher than the permanent
+     furniture - but it shares the foot of the screen with the bin and the
+     history pair, which are the two things it most needs to look level with,
+     and a deeper shadow under the middle of three neighbours reads as the
+     middle one lifting off. Same reasoning that took its corner to --leaf. */
+  box-shadow: var(--shadow-1);
   user-select: none;
   transition: opacity var(--dur-base) var(--ease), visibility 0s;
 }
@@ -3779,7 +3989,8 @@ kbd {
   border: var(--hairline) solid var(--rule-2);
   border-radius: var(--leaf);
   background: var(--paper-card);
-  box-shadow: var(--shadow-2);
+  /* --shadow-1, the one every control on the glass wears. See #add-bar. */
+  box-shadow: var(--shadow-1);
   user-select: none;
 }
 #nowplaying[hidden] { display: none; }
@@ -3852,14 +4063,23 @@ kbd {
                    + min(var(--sidebar-w), 100vw - 28px) + var(--np-gap));
 }
 /* Where a panel and the zoom cluster together leave too little to be a player,
-   the bar steps over the cluster rather than squeezing between the two. Sixty
-   pixels up clears the whole corner stack - the scale bar sits above the zoom
-   pill and the pair measure 67. */
+   the bar steps over the cluster rather than squeezing between the two.
+
+   Spelled out as a sum rather than as the 67px it used to be. That number was
+   measured off the corner stack when the zoom pill was 32 tall, so raising the
+   pill to --chrome-button-h would have left the player eight pixels low and
+   sitting on it - and on a touch pointer, where the token is 46 rather than 40,
+   fourteen. A literal here is a measurement of another rule, and it goes stale
+   the moment that rule moves. Each term below is the thing it names. */
 @media (max-width: 1080px) {
   :is(#sidebar, #header-panel).is-open ~ #nowplaying {
     left: max(16px, env(safe-area-inset-left));
     right: max(16px, env(safe-area-inset-right));
-    bottom: calc(max(16px, env(safe-area-inset-bottom)) + 67px + 10px);
+    bottom: calc(max(16px, env(safe-area-inset-bottom))
+                 + var(--chrome-button-h) + 2 * var(--hairline)  /* the zoom pill */
+                 + 8px                                           /* #corner's gap */
+                 + 25px                                          /* the scale bar */
+                 + 10px);                                        /* clearance */
   }
   #sidebar.is-open ~ #nowplaying {
     left: calc(max(14px, env(safe-area-inset-left))
@@ -4099,7 +4319,16 @@ kbd {
 
    This has to come before :hover, which it ties with on specificity: source
    order is what lets the hover colour win over the muted one. */
-#bin-btn:not(.has-things) { color: var(--ink-3); border-color: var(--rule); }
+#bin-btn:not(.has-things) { color: var(--ink-3); }
+/* The icon goes grey, not just faint - the ink it inherits carries the
+   palette's hue like every other ink on the board, so an empty bin on Peacock
+   was a *teal* trash can, quietly. saturate(0) is what takes the hue out and
+   leaves the shape, which is the difference between a control that is resting
+   and one that has been recoloured.
+   On the glyph and not the button: a filter on the button would take the
+   background and the hairline with it, and the outline is the one thing that
+   has to stay identical across the whole set. */
+#bin-btn:not(.has-things) svg { filter: saturate(0); }
 #bin-btn:hover { background: var(--paper-2); color: var(--accent-deep); }
 /* Hovering an empty bin brings its edge back up to the normal hairline, so the
    pointer gets the same "this is a control" answer it gets from a full one. */
@@ -4181,10 +4410,19 @@ kbd {
   place-items: center;
   width: var(--chrome-button-w);
   height: var(--chrome-button-h);
-  border: var(--hairline) solid var(--accent);
-  /* Same corner as the trash pop-up it sits beside (#bin-panel), not the leaf
-     round the dock buttons wear. */
-  border-radius: var(--radius-sm);
+  /* The same hairline every other control on the glass wears. This was the
+     accent, which made the button carry its message in its outline - and an
+     outline is the one part of a control that has to be the same on all of
+     them for the set to read as a set. The message did not go anywhere: it
+     moved into the glyph, which is already accent-deep below. Same trade the
+     bin makes when it is empty. */
+  border: var(--hairline) solid var(--rule-2);
+  /* On the glass, so --leaf - the corner the bin, the history pair and the
+     zoom pill wear. It used to take --radius-sm to match #bin-panel, the trash
+     pop-up it sits beside, which is a fair thing to want and the wrong half to
+     match: this is a button on the board, not part of that panel, and it is up
+     whether the panel is or not. */
+  border-radius: var(--leaf);
   background: var(--paper-card);
   box-shadow: var(--shadow-1);
   color: var(--accent-deep);
@@ -4966,7 +5204,13 @@ kbd {
   #menu-btn span { width: 20px; }
   #mobile-header-edit-btn svg { width: 20px; height: 20px; }
   #bin-btn svg { width: 20px; height: 20px; }
-  #zoom-ctl button { min-width: 40px; height: 46px; }
+  /* Width only. The height used to be restated here as 46 because the base rule
+     set 32 and a finger needs more than that; now the base rule reads
+     --chrome-button-h, which this query has already taken to
+     --chrome-button-touch a few hundred lines up, so the pill grows with every
+     other control instead of alongside it. A literal repeated here would be a
+     second place to remember. */
+  #zoom-ctl button { min-width: 40px; }
   #zoom-ctl svg { width: 17px; height: 17px; }
   .check input { width: 20px; height: 20px; }
 
@@ -5552,12 +5796,16 @@ kbd {
    exactly what the slider moves - at the plain end the whole row would collapse
    into one font and the labels would stop showing the difference they name.
 
-   --font-serif joined that list when the axis grew a second serif. "Softish" is
-   a specimen of Fraunces, which is that tier's face, so it names
-   --font-serif-text - the face - and not --font-serif, which is whichever serif
-   the *current* tier resolves to. Reading the moving one printed the Softish
-   label in the middle's Playfair on two levels out of three: a specimen of a
-   font you do not get by choosing it. */
+   --font-serif joined that list when the axis grew a second serif, and it stays
+   on it now that both serif tiers name Fraunces again: --font-serif is still
+   whichever serif the *current* tier resolves to, and at the plain end that is
+   not what a board set to Softish would show. "Softish" is a specimen of
+   Fraunces, so it names --font-serif-text - the face itself.
+
+   The same reasoning is why the weights below are literals and must stay
+   literals. --display-weight is the tier's, and these three are specimens of
+   tiers you are not on; the 400 on "Softish" is that level's weight written
+   down, not a value to be read off the slider. */
 .field-stops {
   display: flex;
   justify-content: space-between;
