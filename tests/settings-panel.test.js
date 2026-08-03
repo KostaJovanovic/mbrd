@@ -160,6 +160,19 @@ test('the four demoted controls are below a fold, not gone', () => {
   assert.equal(host.advanced, true);
 });
 
+test('the Look tab opens on three dials, and type is one of them', () => {
+  // The fold is for controls a board is no worse for never touching, and a
+  // typeface is not one: the display serif is the loudest decision on a board,
+  // and a face dropped onto the board itself becomes an entry in these menus -
+  // so hiding them made a feature that worked into one that could not be found.
+  // Its hint says exactly that and has to travel with it.
+  const look = SECTIONS.find(s => s.id === 'appearance');
+  const above = look.controls.filter(c => !c.advanced);
+  assert.deepEqual(above.map(c => c.id ?? c.type),
+    ['opt-whimsy', 'opt-palette', 'appearance-type', 'hint']);
+  assert.match(above[3].html, /\.woff2/, 'the dropped-face hint stayed with the menus');
+});
+
 test('the palette source dial has one stop past its highest count', async () => {
   // The last stop is "Every photo" and is stored as 0 - see
   // normalizePaletteSources() in state.js. Two files know that number: the table
@@ -177,6 +190,32 @@ test('the palette source dial has one stop past its highest count', async () => 
   const controls = await readFile(
     new URL('../web/assets/js/ui/appearance-controls.js', import.meta.url), 'utf8');
   assert.match(controls, /n >= d\.ALL_SOURCES_STOP \? 0 : n/, 'the top stop stores zero');
+});
+
+test('the palette menu carries Dynamic, and it is the only way to ask for it', async () => {
+  // One decision, one control. "Take colours from pictures" used to be a
+  // checkbox below this menu and inside the fold, quietly overruling whichever
+  // palette the menu claimed - so a board could say Papyrus and be set in the
+  // colours of its own photographs, with the explanation two clicks away.
+  const options = byId('opt-palette').options();
+  assert.equal(options[0].label, 'Dynamic', 'first, above the four named palettes');
+  assert.deepEqual(options.map(o => o.label),
+    ['Dynamic', 'Papyrus', 'Absinthe', 'Tea rose', 'Orca']);
+  assert.equal(SECTIONS.flatMap(s => s.controls).some(c => c.id === 'opt-auto-palette'),
+    false, 'the checkbox it replaced is gone, not merely hidden');
+
+  // And the value is one string in two files that do not import each other:
+  // this table is data with no panel imports, ui/appearance-controls.js owns
+  // what the menu does with it. Same bargain as the source dial's top stop.
+  const controls = await readFile(
+    new URL('../web/assets/js/ui/appearance-controls.js', import.meta.url), 'utf8');
+  const owned = controls.match(/DYNAMIC = '([a-z0-9-]+)'/)[1];
+  assert.equal(options[0].value, owned, 'the menu offers a value the panel answers to');
+  // Never a palette name: it is not written to look.palette and no [data-palette]
+  // block answers to it, so a stylesheet that grew one would be a silent clash.
+  const tokens = await readFile(
+    new URL('../web/assets/css/tokens.css', import.meta.url), 'utf8');
+  assert.doesNotMatch(tokens, new RegExp(`\\[data-palette=["']?${owned}`));
 });
 
 test('the whimsy stops keep the id the stylesheet sets them by', async () => {

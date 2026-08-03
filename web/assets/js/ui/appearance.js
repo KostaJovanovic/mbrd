@@ -24,7 +24,7 @@
 import {
   board, bus, setAppearance, setSetting, MOBILE_APPEARANCE_VARS,
 } from '../state.js';
-import { whimsyControlsSnap } from '../layout-settings.js';
+import { autoPaletteReady, whimsyControlsSnap } from '../layout-settings.js';
 import { clamp, readPrefJSON, toast, writePref } from '../util.js';
 import { assetURL, getAsset } from '../storage/assets.js';
 import {
@@ -35,7 +35,7 @@ import {
 import { safeVars } from './look.js';
 import {
   initAppearanceControls, buildControls, syncControls, syncControlVisibility,
-  syncAutoBox, syncPaletteSources, wireAutoPalette, wirePaletteSources,
+  syncPaletteMode, syncPaletteSources, wirePaletteSources,
   wireWhimsy, wirePalette, inputs, toHex,
 } from './appearance-controls.js';
 
@@ -136,17 +136,20 @@ const BODY_FACES = [
 /**
  * The curated set of tokens worth exposing. Everything else stays internal.
  *
- * `host` files each control into one of three places in the panel, all three of
- * which now sit inside the Advanced fold:
+ * `host` files each control into one of three places in the panel:
  *
- *   type      the paired row of face menus, side by side
- *   main      the pigment, which moves the whole sheet
- *   advanced  the sliders, for the ones you set once and then leave
+ *   type      the paired row of face menus, side by side. Above the fold, with
+ *             Whimsy and Palette - the display serif is the loudest decision on
+ *             a board, and a face dropped onto the board itself lands in this
+ *             menu, which made a working feature unfindable while it was hidden.
+ *   main      the pigment, which moves the whole sheet. Inside the fold.
+ *   advanced  the sliders, for the ones you set once and then leave. Also inside.
  *
- * Whimsy and Palette are the section above the fold, and nothing here joins
- * them. Between those two they already move every token this list sets one at a
- * time - which is the argument for the split: these are the controls for when
- * the two dials did not land where you wanted, not the ones you start with.
+ * Whimsy, Palette and the faces are the section above the fold, and nothing else
+ * here joins them. Between those three they already move every token this list
+ * sets one at a time - which is the argument for the split: the rest are the
+ * controls for when the dials did not land where you wanted, not the ones you
+ * start with.
  *
  * Deliberately not in AXIS_TOKENS, and that is the decision worth naming:
  * sliding whimsy drops a hand-set radius back to the stylesheet, but a chosen
@@ -198,7 +201,7 @@ export function initAppearance(handlers = {}) {
   initAppearanceControls({
     CONTROLS, HOSTS, WHIMSY, ALL_SOURCES_STOP,
     current: () => current,
-    apply, persist, setVar, setWhimsy, setAutoPalette, sourceCount, autoOn,
+    setVar, setWhimsy, setPalette, goDynamic, sourceCount, dynamicOn,
   });
 
   // The other half of the throttled preference write - see storeLook(). pagehide
@@ -219,7 +222,6 @@ export function initAppearance(handlers = {}) {
 
   buildControls();
   wirePalette();
-  wireAutoPalette();
   wirePaletteSources();
   wireWhimsy();
 
@@ -241,41 +243,23 @@ export function initAppearance(handlers = {}) {
   // disagree is what the whole of readStored()/persist() exists to avoid.
   bus.on('board:new', () => resetAppearance());
 
-  // While the switch is on, the palette follows whatever is on the board rather
-  // than staying at whatever the pictures said the first time. Every way that
-  // set can change goes through 'items': a picture arriving, a picture deleted,
-  // the undo of either, and everything the bin does. Deleting used to be the
-  // gap - a colour thrown off the board went on tinting the board it was thrown
-  // off, which is the one case where the palette is demonstrably not a
-  // representation of the pictures any more.
-  //
-  // Guarded on the *sampled* pictures actually differing, which is stricter
-  // than "something happened": 'items' also fires for a note, a drag, a
-  // duplicate, a text file, a board load - and for the thirteenth picture on a
-  // board where only twelve are ever read. Re-running the extraction to arrive
-  // at the same palette would repaint the whole interface and mark the board
-  // dirty for nothing.
-  //
-  // Not awaited and its rejection swallowed: this is a decoration on an edit
-  // that has already succeeded, and it has no business turning into an
-  // unhandled rejection in somebody's console because one PNG would not decode.
-  bus.on('items', () => {
-    if (!autoOn(current)) return;
-    if (sourceKey() === lastSources) return;
-    recolourFromBoard({ silent: true }).catch(() => {});
-  });
+  // While the extraction is allowed, the palette follows whatever is on the
+  // board rather than staying at whatever the pictures said the first time.
+  // Every way that set can change goes through 'items': a picture arriving, a
+  // picture deleted, the undo of either, and everything the bin does. Deleting
+  // used to be the gap - a colour thrown off the board went on tinting the board
+  // it was thrown off, which is the one case where the palette is demonstrably
+  // not a representation of the pictures any more.
+  bus.on('items', autoRecolour);
 
   // Turning the "how many pictures" dial changes which pictures the palette is a
-  // representation of, so it re-derives - on the same terms as an edit: only
-  // when the switch is on and only when the sampled set actually differs (the
-  // count is part of sourceKey). syncPaletteSources() keeps the slider itself in
-  // step; this is the colour half of the same change.
+  // representation of, so it re-derives - on the same terms as an edit.
+  // syncPaletteSources() keeps the slider itself in step; this is the colour
+  // half of the same change.
   bus.on('settings', key => {
     if (key !== 'paletteSources') return;
     syncPaletteSources();
-    if (!autoOn(current)) return;
-    if (sourceKey() === lastSources) return;
-    recolourFromBoard({ silent: true }).catch(() => {});
+    autoRecolour();
   });
 
   // A face arrived, or a board load changed which ones are registered. The
@@ -416,8 +400,9 @@ export function setPigments(vars) {
   // PIGMENT plus --leafy are those same thirteen. So an extraction overrides the
   // named palette completely and nothing leaks through from underneath, which
   // is what makes it safe to leave standing. And leaving it standing is what
-  // gives the switch something to fall back to: turning the extraction off hands
-  // the sheet back to the palette that was chosen, rather than to Papyrus.
+  // gives the menu something to fall back to: a board that stops colouring
+  // itself hands the sheet back to the palette that was chosen before Dynamic
+  // was, rather than to Papyrus.
   //
   // Through the same filter as anything else, because the eventual caller is
   // pigments read out of whatever pictures were dropped on the board.
@@ -525,43 +510,58 @@ function paintPigment() {
 }
 
 /**
- * Turn the extraction on or off.
+ * Dynamic, chosen from the palette menu.
  *
- * This is the whole gate. It used to be inferred - "has anybody been in here by
- * hand?" - which meant the honest answer to "will importing a photograph
- * repaint my board?" was a paragraph about provenance. A switch the user can
- * see is a better answer than a rule they have to be told, and it also settles
- * the case the inference got wrong in both directions: somebody who wants their
- * hand-tuned board recoloured anyway can now say so, and somebody who never
- * wanted it is not relying on having happened to touch a slider.
+ * This used to be a checkbox in the fold, below the menu, and the two of them
+ * were one decision described twice: a board is set in Papyrus or in Absinthe or
+ * in its own photographs, and being asked to pick a named palette and then to
+ * say whether it counts is a question with a wrong answer in it. Absence rather
+ * than disabling, the same rule the panel keeps everywhere else - so the entry
+ * is the state, and the state has one control.
  *
- * Turning it on extracts immediately. Waiting for the next import would mean
- * the switch appeared to do nothing, which is indistinguishable from broken.
- *
- * Turning it off hands the sheet back to the palette named in the menu above.
- * It used to leave the extracted colours standing on the grounds that they were
- * the board's colours by then - which left the switch looking broken from the
- * other direction: unticking "take colours from the pictures" and watching the
- * board go on wearing the pictures' colours is not an answer anybody reads as
- * "off", and the way back was a menu the user had to know to go and use.
- *
- * Every pigment goes, not only the ones this module can prove it wrote. The
- * `derived` flag was the obvious guard and the wrong one: a look carried in
- * from an older version, or from somebody else's .mbrd, holds pigment tokens
- * with no flag on them at all - and on exactly those boards the switch did
- * nothing, which is the report that found this. "Return to the palette in the
- * menu" has to mean that on every board or it means nothing on any of them.
- * Type, radius and the rest of the look are untouched; this is a colour switch.
+ * Extracts immediately, and with no three-picture floor - unlike the automatic
+ * path, see autoPaletteReady(). Waiting would mean the entry appeared to do
+ * nothing, which is indistinguishable from broken, and this is somebody asking
+ * for it out loud. On a board with fewer pictures than it can read a colour
+ * from, recolourFromBoard() says so; that is a better answer than an entry that
+ * refuses to be selected.
  */
-function setAutoPalette(on) {
-  if (on) delete current.auto;
-  else {
-    current.auto = false;
-    dropPigments();
-  }
+function goDynamic() {
+  delete current.auto;
   persist();
   syncControls();
-  if (on) recolourFromBoard().catch(() => {});
+  recolourFromBoard().catch(() => {});
+}
+
+/**
+ * A named palette, chosen from the same menu. Also the only way out of Dynamic.
+ *
+ * Every pigment comes off, whoever wrote it. That is what makes a palette switch
+ * a palette switch rather than a tint over the last one: an extracted look is
+ * thirteen inline tokens, and leaving eleven of them standing would leave the
+ * named palette outvoted on its own sheet.
+ *
+ * And *every* pigment, not only the ones this module can prove it derived. The
+ * `derived` flag was the obvious guard and the wrong one: a look carried in from
+ * an older version, or from somebody else's .mbrd, holds pigment tokens with no
+ * flag on them at all - and on exactly those boards the way back did nothing,
+ * which is the report that found it. A hand-picked accent needs no special case
+ * either, because it is two of those same thirteen keys and deleting all
+ * thirteen deletes exactly those two: the branch this replaces dropped every key
+ * in `vars` on a derived look, which took a chosen display face with it.
+ *
+ * Type, radius and the rest of the look are untouched. This is a colour control.
+ */
+function setPalette(name) {
+  dropPigments();
+  // Choosing a colour by name is a decision about the same thing the extraction
+  // decides, so it takes the extraction with it - the same way picking a pigment
+  // by hand does, see setVar().
+  current.auto = false;
+  current.palette = name;
+  apply(current);
+  persist();
+  syncControls();
 }
 
 /**
@@ -655,9 +655,13 @@ const ALL_SOURCES_STOP = MAX_SOURCES + 1;
  *
  * Hashes, so the key survives a clearAssets() that re-registers the same bytes -
  * the identity is the content, not whichever URL happens to be standing.
+ *
+ * The walk is a parameter so autoRecolour() can count the pictures and build the
+ * key off one pass rather than two - it needs both, and 'items' is an event that
+ * fires on every edit a board ever receives.
  */
-function sourceKey() {
-  return pictureHashes().slice(0, sourceCount()).join('\n');
+function sourceKey(hashes = pictureHashes()) {
+  return hashes.slice(0, sourceCount()).join('\n');
 }
 
 /** The pictures the palette standing on screen was taken from - see sourceKey(). */
@@ -665,6 +669,49 @@ let lastSources = null;
 
 /** The last reason an automatic run gave up, so it is said once and not on loop. */
 let lastFailure = null;
+
+/**
+ * Whether the board is wearing colours taken from its own pictures right now.
+ *
+ * This is what the palette menu shows as Dynamic, and it is deliberately
+ * neither of the two flags that look like it. `auto` is only whether the board
+ * is *allowed* to colour itself: a fresh board is allowed and is wearing
+ * Papyrus, and a menu claiming otherwise would be describing a permission
+ * rather than a colour. `derived` is provenance, and is missing from every look
+ * written before that flag existed - so a board carrying an extracted palette in
+ * from an older version, or from somebody else's .mbrd, would show a palette
+ * name it is demonstrably not set in, with no entry selected for what it is.
+ *
+ * Pigments inline, plus permission, is the honest test, and it is the same one
+ * dropPigments() and reshade() already ask.
+ */
+const dynamicOn = () => autoOn(current) && PALETTE_TOKENS.some(key => key in current.vars);
+
+/**
+ * The board recolouring itself because something changed under it.
+ *
+ * Three gates, in increasing order of what they cost to ask. The extraction has
+ * to be allowed at all; the board has to be holding enough pictures to be worth
+ * reading, or already be reading them (see autoPaletteReady()); and the pictures
+ * that would actually be sampled have to have moved.
+ *
+ * That last one is stricter than "something happened" on purpose: 'items' also
+ * fires for a note, a drag, a duplicate, a text file, a board load - and for the
+ * thirteenth picture on a board where only twelve are ever read. Re-running the
+ * extraction to arrive at the same palette would repaint the whole interface and
+ * mark the board dirty for nothing.
+ *
+ * Not awaited and its rejection swallowed: this is a decoration on an edit that
+ * has already succeeded, and it has no business turning into an unhandled
+ * rejection in somebody's console because one PNG would not decode.
+ */
+function autoRecolour() {
+  if (!autoOn(current)) return;
+  const hashes = pictureHashes();
+  if (!autoPaletteReady(hashes.length, dynamicOn())) return;
+  if (sourceKey(hashes) === lastSources) return;
+  recolourFromBoard({ silent: true }).catch(() => {});
+}
 
 /**
  * Take the colours off the board's own pictures.
@@ -695,11 +742,12 @@ async function recolourFromBoard({ silent = false } = {}) {
     lastFailure = why;
     return false;
   };
-  // One picture is enough now, where the silent version of this wanted three.
-  // That floor existed because the feature fired unasked and a whole interface
-  // turning over on a single dropped file reads as a fault; asked for by a
-  // switch, it is the thing that was asked for, and refusing until the third
-  // photograph arrives is the fault.
+  // One picture is enough here. The three-picture floor lives on the automatic
+  // path alone - autoRecolour(), and autoPaletteReady() for why - because it is
+  // a rule about firing unasked. By the time control reaches this function
+  // either somebody chose Dynamic from the menu or the board is already
+  // colouring itself, and in both cases refusing to read the one picture there
+  // is would be the fault.
   // An empty board has no colours of its own, so it stops wearing the ones it
   // used to have. Leaving them standing was defensible while they were "the
   // board's colours now" - but on a board you have just cleared they are the
@@ -760,16 +808,17 @@ async function recolourFromBoard({ silent = false } = {}) {
  * Back to how the app ships: Middle, Papyrus, no overrides, extraction on.
  *
  * The look object is replaced rather than edited, so every key goes with it -
- * including `auto` and `derived`, which is what puts the extraction switch back
- * on, since autoOn() reads an absent flag as on.
+ * including `auto` and `derived`, which is what allows the extraction again,
+ * since autoOn() reads an absent flag as on.
  *
- * And on is a promise the board then has to keep. Leaving it there would say
- * "colours come from the pictures" over a Papyrus sheet taken from none of
- * them, and it would stay that way until the next import happened to move the
- * source list - the extraction remembers what it last read, so the same twelve
- * pictures are not counted twice. That memory is part of what is being reset,
- * so it goes too, and the count runs again. On a board with no pictures there
- * is nothing to run and Papyrus is the answer already.
+ * And allowed is a promise the board then has to keep, on a board holding enough
+ * pictures for it: leaving it there would go back to Papyrus and stay there
+ * until the next import happened to move the source list, since the extraction
+ * remembers what it last read and the same twelve pictures are not counted
+ * twice. That memory is part of what is being reset, so it goes too, and the
+ * count runs again. Through the automatic gate rather than around it - starting
+ * over is not a request for colour, so a board under the floor stays Papyrus,
+ * which is where starting over has just put it anyway.
  *
  * Silent because this is a button about the whole look rather than about
  * colour: somebody straightening the shapes and the type does not need a toast
@@ -794,7 +843,7 @@ export function resetAppearance() {
   if (was !== DEFAULT_WHIMSY) axisMoved(DEFAULT_WHIMSY);
   lastSources = null;
   lastFailure = null;
-  recolourFromBoard({ silent: true }).catch(() => {});
+  autoRecolour();
 }
 
 // ---------------------------------------------------------------------------
@@ -944,7 +993,7 @@ function setVar(name, value) {
   if (PALETTE_TOKENS.includes(name)) {
     delete current.derived;
     current.auto = false;
-    syncAutoBox();
+    syncPaletteMode();
   }
   if (value === '') {
     delete current.vars[name];
@@ -1036,14 +1085,15 @@ const clone = look => withProvenance(look, {
  *            cleared the moment a pigment is set by hand. Only wirePalette()
  *            reads it, to decide whether switching palette drops two tokens or
  *            all fourteen.
- *   auto     whether to take the colours again on the next import. The user's
- *            setting, and the only thing the switch writes.
+ *   auto     whether the board may take its colours from the pictures at all.
+ *            The user's setting, written by the two ends of the palette menu -
+ *            Dynamic deletes it, a named palette sets it false.
  *
  * `auto` is stored inverted - present and false means off, absent means on -
  * because on is the default. A board that has never been near this setting has
- * no field for it, and that has to mean the same thing as a board that was
- * switched on, or the default would only apply to boards made after it changed.
- * The only value written is `false`; turning it back on deletes the field.
+ * no field for it, and that has to mean the same thing as a board that chose
+ * Dynamic, or the default would only apply to boards made after it changed.
+ * The only value written is `false`; choosing Dynamic deletes the field.
  *
  * Both are held to an exact value, and `derived` additionally to there being
  * something for it to be true *of* - so a .mbrd claiming a derived look with no

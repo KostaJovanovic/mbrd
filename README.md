@@ -36,8 +36,10 @@ No bundler, no `npm install`, no build step. The browser loads the ES modules in
 | drag empty space | pan |
 | `Shift` or `Ctrl` + drag empty | marquee select |
 | `space` + drag, or middle-drag | pan from anywhere |
-| wheel | zoom to the cursor (`Shift`+wheel pans sideways) |
-| two fingers | pan and pinch-zoom |
+| wheel | zoom to the cursor |
+| two fingers on a touchpad | scroll to pan, pinch to zoom |
+| `Shift` + wheel or scroll | pan sideways |
+| two fingers on a screen | pan and pinch-zoom |
 | drag an item | move the whole selection, plus anything stuck to it |
 | corner grip | resize freely; `Shift` holds the proportion |
 | edge grip | resize that axis alone |
@@ -259,10 +261,10 @@ tabs — **Board**, **Look**, **System** — and every control in it is one row 
 `ui/settings-schema.js`, built by `ui/panel.js`. A control that does not apply to
 the current layout is *absent*, not greyed out.
 
-**Whimsy** and **Palette** are the whole of the Look tab until you open the
-fold, which holds the type menus, the pigment, the extraction switch and the
-grid, radius and panel sliders. Whimsy is one axis from Softish to Harsh, and
-it moves everything the fold sets one control at a time.
+**Whimsy**, **Palette** and the two **type menus** are the whole of the Look tab
+until you open the fold, which holds the pigment, the count of pictures the
+palette reads, and the grid, radius and panel sliders. Whimsy is one axis from
+Softish to Harsh, and it moves everything the fold sets one control at a time.
 
 Four palettes ship — Papyrus (terracotta), Absinthe (acid olive), Tea rose
 (crimson) and Orca (deep teal). All four print on a near-neutral sheet, because
@@ -279,10 +281,14 @@ someone else's board opens looking the way they made it.
 the whole palette — paper, ink and pigment — is read off them: one to three hues,
 clustered in OKLCh, held to the same lightness and chroma the four presets were
 built on, and repaired afterwards so the ink still clears its contrast ratio on
-the sheet. It is on to begin with and runs again every time a picture lands, so
-the board keeps up with what is actually on it. Picking a colour by hand, or a
-named palette, switches it off and leaves your choice alone. Nothing is uploaded
-— the pixels are read from a 48×48 canvas in your own browser.
+the sheet. It happens on its own once the board is holding **three** pictures —
+one photograph is not a collection, and a whole interface turning over on a
+single dropped file reads as a fault — and from then on it runs again every time
+a picture lands, so the board keeps up with what is actually on it. The palette
+menu says **Dynamic** while that is what you are looking at, and choosing it
+yourself skips the wait. Picking a colour by hand, or a named palette, hands the
+sheet back and leaves your choice alone. Nothing is uploaded — the pixels are
+read from a 48×48 canvas in your own browser.
 
 Picking a pigment by hand does the same thing from one colour: the paper, its
 three shades, the ink, the rules and the two other pigments are all rebuilt from

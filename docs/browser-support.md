@@ -68,6 +68,9 @@ iPhone + iPad Safari** before a release:
 1. Boot offline after a service-worker update (airplane mode, relaunch).
 2. Add files → autosave → reload → board restored.
 3. Pan / pinch-zoom / marquee-select / resize handles on touch and trackpad.
+   Specifically: a two-finger swipe on the trackpad must **pan** and a mouse
+   wheel must **zoom**, on the same machine — `readWheel()` tells them apart by
+   the shape of the deltas, and Safari's are its own (see `canvas/input.js`).
 4. Save, then Export a `.mbrd`; reopen it. Cross-check: export from Chromium,
    open in Safari, and back.
 5. Clear everything → confirm the wipe, and that Cancel aborts it.

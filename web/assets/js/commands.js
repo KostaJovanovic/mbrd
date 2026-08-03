@@ -304,6 +304,23 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
       document.querySelector('[data-cmd="debug-grips"]')?.setAttribute('aria-pressed', String(on));
       return on;
     },
+    // Dev: print what each swipe of a touchpad actually delivered - see the
+    // wheel handler in canvas/input.js. The same shape as the grip overlay: an
+    // attribute that module reads, a button that reflects it, and mbrd.debugWheel()
+    // or the #wheel URL for the console.
+    //
+    // This one exists because the wheel handler is the only place in the app
+    // that guesses at hardware, and the guess cannot be checked by reading it.
+    // A two-finger scroll is railed by the platform before the page ever sees
+    // it, and whether the sideways half arrives as nothing, as a trickle or in
+    // hundred-pixel lumps decides which fix is the right one - a question only
+    // the machine under the hand can answer.
+    debugWheel: () => {
+      const on = document.documentElement.toggleAttribute('data-debug-wheel');
+      document.querySelector('[data-cmd="debug-wheel"]')?.setAttribute('aria-pressed', String(on));
+      toast(on ? 'Swipe the board - each gesture prints to the console' : 'Wheel logging off');
+      return on;
+    },
     // Hold the magnification where it is. A command rather than two lines in the
     // click handler, because that is what a user-facing action is here - the one
     // surface a key binding or a menu row would bind to if either ever wants it.

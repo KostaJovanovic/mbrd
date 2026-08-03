@@ -63,6 +63,14 @@ const KEYS = [
   [['shift', '+', 'drag'], 'select a region'],
   [['space', '+', 'drag'], 'pan from anywhere'],
   [['wheel'], 'zoom to the cursor'],
+  // Not a key, and neither is the wheel above it or the drag at the top: this
+  // is the gesture legend as much as the keyboard one, and a touchpad is how
+  // most people reading it will be moving around the board.
+  [['two fingers'], 'scroll to pan, pinch to zoom'],
+  // The escape from the platform's axis rail, which is the one thing about
+  // panning on a touchpad that nobody guesses - see readWheel() in
+  // canvas/input.js.
+  [['shift', '+', 'scroll'], 'pan sideways'],
   [['dbl-click'], 'zoom to an item'],
   [['0', 'F'], 'recenter, fit'],
   [['←↑→↓'], 'nudge (+shift a step)'],
@@ -211,25 +219,42 @@ export const SECTIONS = [
         // specimen of the tier it names, set in that tier's own face.
         stopsId: 'whimsy-stop-labels',
         stops: ['Softish', 'Middle', 'Harsh.'] },
+      // Five entries and one of them is not a colour: Dynamic is the board's own
+      // pictures, and it replaced a "Take colours from pictures" checkbox that
+      // sat below this menu inside the fold. The two were one decision written
+      // down twice - a board is set in Papyrus, or in Absinthe, or in its own
+      // photographs - and the checkbox spent most of its life ticked over a
+      // palette it was quietly overruling. First in the list because it is the
+      // one entry the board can reach on its own, three pictures in.
+      //
+      // 'dynamic' is DYNAMIC in ui/appearance-controls.js, which owns what the
+      // menu does with it; this file is data and imports no panel module, so
+      // tests/settings-panel.test.js holds the two strings together.
       { id: 'opt-palette', type: 'select', label: 'Palette', external: true,
         options: () => [
+          { value: 'dynamic', label: 'Dynamic' },
           { value: '', label: 'Papyrus' },
           { value: 'absinthe', label: 'Absinthe' },
           { value: 'tearose', label: 'Tea rose' },
           { value: 'orca', label: 'Orca' },
         ] },
-      // Everything below the fold. Whimsy and Palette between them move every
+      // The third dial, and above the fold with the other two. Type is not a
+      // tweak to reach for when Whimsy landed wrong: the display serif is the
+      // loudest decision on a board, it is the first thing anybody goes looking
+      // for, and a face somebody dropped onto the board themselves appears in
+      // this menu - which made a dropped font a feature that worked and could
+      // not be found. Its hint travels with it for the same reason; a line about
+      // dropping a .woff2 is no use in a fold you open after giving up.
+      { id: 'appearance-type', type: 'slot', className: 'field-pair' },
+      { type: 'hint',
+        html: 'Drop a <code>.woff2</code>, <code>.ttf</code> or <code>.otf</code> on the board to add your own face.' },
+      // Everything below the fold. The three above it between them move every
       // token these set one at a time, which is what makes the rest advanced
       // rather than merely secondary.
-      { id: 'appearance-type', type: 'slot', className: 'field-pair', advanced: true },
-      { type: 'hint', advanced: true,
-        html: 'Drop a <code>.woff2</code>, <code>.ttf</code> or <code>.otf</code> on the board to add your own face.' },
       { id: 'appearance-vars', type: 'slot', advanced: true },
-      { id: 'opt-auto-palette', type: 'check', label: 'Take colours from pictures',
-        external: true, advanced: true },
       // How many of the board's pictures the palette is read from, newest first.
       // `ownVisibility` because ui/appearance.js takes this row down whenever the
-      // switch above is off - the dial means nothing while no picture is being
+      // palette is not Dynamic - the dial means nothing while no picture is being
       // read - and a panel repaint that put it back would fight it every time
       // any setting changed.
       // 25 stops, and the last one is not a count: it reads "Every photo" and is
@@ -433,6 +458,11 @@ export const SECTIONS = [
         // itself - the #grips URL and mbrd.debugGrips() drive the same toggle -
         // and a painted value would put the button back to false behind it.
         { cmd: 'debug-grips', label: 'Highlight resize grips', ariaPressed: 'false' },
+        // The same arrangement, and for the same reason: cmds.debugWheel writes
+        // its own aria-pressed, since the #wheel URL and the console drive the
+        // one toggle. Prints one line per swipe - what the touchpad delivered,
+        // against what the app read it as.
+        { cmd: 'debug-wheel', label: 'Log touchpad swipes', ariaPressed: 'false' },
         // Every line between cards, in one press. Here rather than beside the
         // Join tool because it is a demolition and not a drawing tool: the way
         // to remove *a* connection is to draw over it, and a board-wide clear is

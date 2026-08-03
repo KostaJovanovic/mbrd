@@ -288,14 +288,18 @@ el('viewport').addEventListener('pointerdown', () => closeMenu());
 // A console handle, deliberately public: `mbrd.board` to inspect state,
 // `mbrd.cmds.fit()` to drive the app, `mbrd.vp` for the coordinate model,
 // `mbrd.perf.on()` to profile the pan/zoom frame, `mbrd.debugGrips()` to see the
-// resize hitboxes.
-window.mbrd = { board, bus, vp, cmds, selection, perf: viewPerf, debugGrips: cmds.debugGrips };
+// resize hitboxes, `mbrd.debugWheel()` to print what a touchpad swipe delivered.
+window.mbrd = {
+  board, bus, vp, cmds, selection, perf: viewPerf,
+  debugGrips: cmds.debugGrips, debugWheel: cmds.debugWheel,
+};
 
 // The profiler can be armed from the URL as well as from the console, which is
-// the only way in on a phone - see initPerfHash. The grip overlay rides the same
-// trick with `#grips`.
+// the only way in on a phone - see initPerfHash. The grip overlay and the swipe
+// log ride the same trick with `#grips` and `#wheel`.
 initPerfHash(viewPerf);
 if (location.hash.includes('grips')) cmds.debugGrips();
+if (location.hash.includes('wheel')) cmds.debugWheel();
 
 // ---------------------------------------------------------------------------
 // Start
