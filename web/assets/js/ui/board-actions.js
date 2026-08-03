@@ -27,6 +27,7 @@ import { paintGrain } from '../canvas/grain.js';
 import { paintPaper } from '../canvas/paper.js';
 import { paintMobileFrame } from '../canvas/mobile-frame.js';
 import { resetItems } from '../canvas/items.js';
+import { resetWeb } from '../canvas/web.js';
 import { resetModels, resetModelInk } from '../canvas/model.js';
 import { flushNoteEdit, noteFloor } from '../canvas/notes.js';
 import { getAsset } from '../storage/assets.js';
@@ -310,6 +311,12 @@ export function reloadBoard() {
   resetModelInk();
   resetModels();
   resetItems();
+  // The lines between cards, and this one is not covered by the 'items' emit
+  // below. That rebuilds the web, but build() keeps a stored route for as long
+  // as its two ends have not moved - so a route that came out wrong would
+  // survive the one command whose whole job is to put a drifted board right.
+  // See resetWeb().
+  resetWeb();
   syncBoardMode();
   bus.emit('items');
   bus.emit('selection');
