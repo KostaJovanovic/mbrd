@@ -43,7 +43,7 @@
    UA's display:none: display does not transition, and the id rule above
    already outranks [hidden] anyway. visibility carries the delay, so the
    button leaves the tab order and the accessibility tree only once the fade
-   has finished - the same bargain #add-bar makes a few hundred lines down.
+   has finished - the same bargain #toolbar makes in chrome.css.
 
    0.3s flat rather than a multiple of --dur-base, which means this one fade
    does not slow down or speed up with the whimsy axis the way the rest of the

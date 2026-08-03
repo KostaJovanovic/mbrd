@@ -26,9 +26,20 @@ test('an unset preference is Full, and Full is what the app shipped with', () =>
   assert.equal(quality.build, 12);
   assert.equal(quality.motion, true);
   assert.equal(quality.shadows, true);
-  assert.equal(quality.threads, true);
   assert.equal(quality.blur, true);
   assert.equal(quality.anim, true);
+});
+
+test('the dial cannot hide a line somebody drew', () => {
+  // There was a `threads` flag here, and Light turned it off. That was right
+  // while the web was worked out from the board on every drag frame and wrong
+  // the moment connections became a stored list drawn by hand: what it had
+  // become was a quality setting that silently deleted work. The board's own
+  // "Show connections" is the control, and it is not on this dial.
+  fresh();
+  setQualityLevel('light');
+  assert.equal('threads' in quality, false,
+    'the threads flag is retired, not merely defaulted on - see quality.js');
 });
 
 test('Balanced changes nothing you can see on a board standing still', () => {
@@ -39,17 +50,16 @@ test('Balanced changes nothing you can see on a board standing still', () => {
   assert.equal(quality.sharpness, 1152);
   assert.equal(quality.blur, false);
   assert.equal(quality.build, 8);
-  // And the four that would be visible are untouched.
+  // And the three that would be visible are untouched.
   assert.equal(quality.motion, true);
   assert.equal(quality.shadows, true);
-  assert.equal(quality.threads, true);
   assert.equal(quality.anim, true);
 });
 
 test('Light gives something up on every axis', () => {
   fresh();
   setQualityLevel('light');
-  for (const key of ['motion', 'shadows', 'threads', 'blur', 'anim']) {
+  for (const key of ['motion', 'shadows', 'blur', 'anim']) {
     assert.equal(quality[key], false, `${key} should be off at Light`);
   }
   assert.equal(quality.sharpness, 1024);
@@ -167,6 +177,11 @@ test('the wired sites read the dial rather than a constant', async () => {
   assert.match(items, /built >= buildBudget\(\)/, 'the build budget is the dial’s');
   assert.match(items, /quality\.shadows && item\.type !== 'title'/, 'no twin is built when shadows are off');
   assert.match(display, /displayMax\(\) \/ Math\.max/, 'the display copy takes the dial’s long edge');
-  assert.match(web, /board\.settings\.web !== false && quality\.threads/, 'the web asks the dial too');
+  // canvas/web.js is deliberately *not* in this list any more. It is the one
+  // site that stopped reading the dial: what it draws is a stored list rather
+  // than work it has to decide whether to afford. Asserted the other way round
+  // instead, so the flag cannot creep back in.
+  assert.doesNotMatch(web, /from '\.\.\/quality\.js'/,
+    'connections are drawn whatever the dial says - see canvas/web.js');
   assert.match(stills, /!quality\.motion \|\| vp\.zoom < stillZoom\(\)/, 'motion off freezes at any zoom');
 });

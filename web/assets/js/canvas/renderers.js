@@ -11,7 +11,7 @@
 
 import { extOf, baseName, formatBytes } from '../util.js';
 import { assetURL, getAsset, readText } from '../storage/assets.js';
-import { byId, bus, markDirty, board, isDefaultTitle } from '../state.js';
+import { byId, bus, markDirty, board, isDefaultTitle, setSwatchHex } from '../state.js';
 import { latticeBox } from '../geometry.js';
 import { describeExt, PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS } from '../import/formats.js';
 import { buildTransport, registerPlayer } from './audio.js';
@@ -127,8 +127,44 @@ export function defaultSize(type) {
     // it is - it is the size. Matches GHOSTS in state.js, where they are minted
     // and where the reasoning lives.
     case 'ghost':   return { w: 256, h: 192 };
+    // A colour and its number, and nothing else - so it is sized like the note
+    // next to it rather than like a card with a body. Two grid spaces square at
+    // the default step, plus the row the hex is printed in.
+    case 'swatch':  return { w: 128, h: 148 };
     default:        return { w: 200, h: 112 };
   }
+}
+
+/**
+ * What a swatch starts as.
+ *
+ * A grey, and deliberately not a colour. The whole content of a swatch is the
+ * colour you chose, so any preset here would be the app putting a colour it
+ * invented on somebody's board and calling it theirs. Mid grey is the absence
+ * of a choice, and it is the one value that reads as "this is waiting for you"
+ * rather than as a decision already made.
+ */
+export const SWATCH_DEFAULT = '#8a8a8a';
+
+/**
+ * A swatch's colour, held to what it has to be.
+ *
+ * `#rrggbb` lowercase and nothing else, because two different things need it in
+ * exactly that form: `<input type="color">` refuses anything shorter or named,
+ * and the stylesheet interpolates it straight into a custom property. `meta` is
+ * the open field and this one arrives from a .mbrd like everything else, so it
+ * is checked here rather than trusted - the same bargain normalizeAsset() makes
+ * one layer down.
+ *
+ * The three-digit form is folded out rather than rejected. Nobody typed it into
+ * the picker, but somebody may well have typed it into a file by hand, and
+ * `#f00` is not a broken colour - it is the same colour written shorter.
+ */
+export function swatchHex(raw) {
+  const s = String(raw ?? '').trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/.test(s)) return s;
+  if (/^#[0-9a-f]{3}$/.test(s)) return '#' + s.slice(1).replace(/./g, c => c + c);
+  return SWATCH_DEFAULT;
 }
 
 /**
@@ -772,6 +808,58 @@ const RENDERERS = {
       frag.append(strip);
     }
     return frag;
+  },
+
+  /**
+   * A colour, and the number for it.
+   *
+   * The third item type with no source file behind it, after the note and the
+   * link, and the only one whose whole content is a single value. So the card
+   * *is* the editor: the well is a real `<input type="color">` rather than a
+   * div with a picker bolted to it, which buys the platform's own colour dialog,
+   * the eyedropper where there is one, and keyboard reachability, for nothing.
+   *
+   * It is also why nothing had to change in canvas/input.js. That pipeline
+   * already yields a press to a native widget - GRIP_YIELD names `input`
+   * outright, which is what lets the whimsy dial on the fourth hint card work -
+   * so pressing the well opens the picker instead of dragging the card, and
+   * pressing anywhere else on it drags as usual.
+   *
+   * Two events, two jobs. `input` fires continuously while the picker is open
+   * and only repaints, so the card follows the cursor through the dialog; only
+   * `change`, which fires when the dialog closes, reaches the board - otherwise
+   * dragging across a colour wheel would push a hundred entries onto the undo
+   * stack for one decision.
+   */
+  swatch(item) {
+    const card = document.createElement('div');
+    card.className = 'card swatch-card';
+    const hex = swatchHex(item.meta?.hex);
+
+    const well = document.createElement('input');
+    well.type = 'color';
+    well.className = 'swatch-well';
+    well.value = hex;
+    well.setAttribute('aria-label', 'Swatch colour');
+
+    const code = document.createElement('div');
+    code.className = 'swatch-hex';
+
+    const show = value => {
+      // The colour reaches the stylesheet as a property rather than as an
+      // inline background, so items.css decides what is done with it - the well
+      // is a colour field at one whimsy tier and a chip on a card at another,
+      // and a renderer that wrote `background` would have settled that here.
+      card.style.setProperty('--swatch', value);
+      code.textContent = value.toUpperCase();
+    };
+    show(hex);
+
+    well.addEventListener('input', () => show(swatchHex(well.value)));
+    well.addEventListener('change', () => setSwatchHex(item.id, well.value));
+
+    card.append(well, code);
+    return card;
   },
 
   generic(item) {

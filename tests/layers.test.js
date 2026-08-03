@@ -144,6 +144,10 @@ const BASE = new Set([
   // The web's graph and its governor. Pure arithmetic over points - no DOM, no
   // viewport - which is what let it out of canvas/web.js at all.
   'web-graph.js',
+  // And the router, beside it for the same reason: the obstacles are handed in,
+  // so it never reaches for the spatial index or the board. canvas/web.js is
+  // the half that knows which cards are near and the half that draws.
+  'web-route.js',
 ]);
 
 /**

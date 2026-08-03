@@ -96,30 +96,116 @@
      Nothing moves in the markup - these are four independently fixed elements
      and always were, so this is only a question of where each one is pinned. */
   /* One row along the foot, not two bands. The bin holds the left corner and
-     undo/redo the right, as before, but the add bar no longer owns the whole
-     bottom edge with the pair stepped up over it - it fills the span between
-     them instead, so bin, add bar and history read as one flush strip.
+     undo/redo the right, as before, but the toolbar's handle no longer owns the
+     whole bottom edge with the pair stepped up over it - it fills the span
+     between them instead, so bin, handle and history read as one flush strip.
 
-     --bar-h is the height the three share; --bar-gap is the space the add bar
+     --bar-h is the height the three share; --bar-gap is the space the handle
      leaves on each side. Its left inset clears one chrome button (the bin),
      its right inset clears two (the history pair). One place to change the
-     height, so the strip cannot drift apart the way the old four corners did. */
-  :root { --bar-h: 48px; --bar-gap: 8px; }
+     height, so the strip cannot drift apart the way the old four corners did.
 
-  #add-bar {
-    display: flex;
-    height: var(--bar-h);
-    bottom: max(12px, env(safe-area-inset-bottom));
+     --tools-h is the tier the handle opens into. Named beside the other two
+     because the player's bottom is worked out from all three and a literal
+     there would be a measurement of a rule somewhere else. */
+  :root { --bar-h: 48px; --bar-gap: 8px; --tools-h: 46px; }
+
+  /* The toolbar stops being a strip at the top and becomes a drawer at the
+     foot. Nothing about the markup changes - it is one fixed element and always
+     was - so this is only a question of where it is pinned and which of its two
+     halves is drawn.
+
+     The container takes the handle's shape and the tools tier floats out of it
+     upward, absolutely positioned against it, which is what keeps the two in
+     step: the tier's own left and right are the container's, so it can never
+     drift off the bin at one end or the history pair at the other. */
+  #toolbar {
+    top: auto;
     left: calc(max(12px, env(safe-area-inset-left)) + var(--chrome-button-w) + var(--bar-gap));
     right: calc(max(12px, env(safe-area-inset-right)) + 2 * var(--chrome-button-w) + var(--bar-gap));
+    bottom: max(12px, env(safe-area-inset-bottom));
+    translate: none;
+    height: var(--bar-h);
+    /* The tier hangs outside the container, so the overflow clip the desktop bar
+       uses to keep its segments inside one border would cut it off. */
+    overflow: visible;
   }
-  /* The 54px tap target the add bar carried when it owned the whole edge is
-     spent now that it shares a row with the 48px chrome buttons; let the two
-     halves take the row's height so the foot is one flush line. */
-  #add-bar button { min-height: 0; }
+  /* Two ids, to match the rule in chrome.css that takes it away. This one
+     happened to work at (1,0,0) only because `#toolbar button` also says
+     `display: flex`, which is a tie nobody chose and one that would break the
+     day that block's display value changed. */
+  #toolbar #toolbar-toggle {
+    display: flex;
+    flex: 1;
+    height: 100%;
+  }
+
+  /* The tier. Its own card rather than part of the handle's - it comes and goes
+     while the handle stays, and two objects that appear at different times are
+     two objects. Same paper, same corner and same hairline as everything else
+     along this edge, for the reason the player's own rule gives.
+
+     Laid out with the same rise the player uses: up from under its own edge,
+     not a fade in place. A drawer that materialises where it will sit says
+     nothing about where it came from, and this one came from the button
+     directly below it. */
+  #toolbar-tools {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(100% + var(--bar-gap));
+    height: var(--tools-h);
+    border: var(--hairline) solid var(--rule-2);
+    border-radius: var(--leaf);
+    overflow: hidden;
+    background: var(--paper-card);
+    box-shadow: var(--shadow-1);
+    opacity: 0;
+    pointer-events: none;
+    visibility: hidden;
+    transform: translateY(8px) scale(0.98);
+    transition: opacity var(--dur-fast) var(--ease),
+                transform var(--dur-fast) var(--ease),
+                visibility 0s var(--dur-fast);
+  }
+  #toolbar.is-open #toolbar-tools {
+    opacity: 1;
+    pointer-events: auto;
+    visibility: visible;
+    transform: none;
+    transition: opacity var(--dur-base) var(--ease),
+                transform var(--dur-base) var(--ease-back),
+                visibility 0s;
+  }
+  /* Every tool takes an equal share of the row, so the tier is one strip of
+     even segments rather than a row sized by how long each word happens to be. */
+  #toolbar-tools button { flex: 1; padding: 0 6px; height: 100%; }
+  /* And no words in the tier. The strip between the bin and the history pair is
+     a little over two hundred points wide on the common phone, and five tools
+     in it get forty each - which fits an icon and nothing else. The handle
+     below keeps its word, because it is one button with the whole span.
+
+     Hidden the accessible way rather than with display:none: these buttons have
+     no aria-label, so the word IS the button's name, and taking it out of the
+     flow while leaving it for a screen reader keeps "Files" and "Note" spoken.
+     The icon then centres on its own in the flex row. */
+  #toolbar-tools button span {
+    position: absolute;
+    width: 1px; height: 1px;
+    margin: -1px; padding: 0; border: 0;
+    clip-path: inset(50%);
+    overflow: hidden; white-space: nowrap;
+  }
+  /* Rearrange and Find are not here. Both are one tap away in the panel on this
+     layout, and a row of seven on a 390-wide screen is a row you cannot aim at -
+     the same "absent rather than greyed out" the settings schema applies to its
+     own layout-specific rows. The camera is the same rule read the other way:
+     it is here and nowhere else. */
+  #toolbar [data-desktop] { display: none; }
+  #toolbar [data-phone] { display: flex; }
 
   /* Above the foot strip rather than in it. The bottom edge is spoken for at
-     this width - bin, add bar and history read as one flush line - and a fourth
+     this width - bin, handle and history read as one flush line - and a fourth
      object squeezed into it would break the thing that makes those three read
      as one. So the player stands off it by the same gap the strip uses inside
      itself, full width between the same insets, and the two stack.
@@ -132,6 +218,19 @@
     --np-right: max(12px, env(safe-area-inset-right));
     bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--bar-h) + var(--bar-gap));
     max-width: none;
+  }
+  /* And a third tier while the drawer is out, because the tools took the
+     second. This is the general sibling combinator, which is the whole reason
+     #toolbar has to precede #nowplaying in index.html - the note is repeated
+     there, over the markup, where somebody moving an element would read it.
+
+     It moves rather than fades: the player is playing, and a transport that
+     vanishes because a drawer opened over it sounds like something that cannot
+     be stopped. Same objection the idle rule answers in chrome.css. */
+  #toolbar.is-open ~ #nowplaying {
+    bottom: calc(max(12px, env(safe-area-inset-bottom))
+                 + var(--bar-h) + var(--bar-gap)
+                 + var(--tools-h) + var(--bar-gap));
   }
   #nowplaying .np-name { display: none; }
   #nowplaying .np-volume input { width: 56px; }
@@ -234,6 +333,10 @@
      at while working with a mouse, and there is no cursor to report. */
   #hud { display: none; }
 
+  /* The top edge is clear again - the toolbar went to the foot - so the waiting
+     strip takes it back. See the note on #busy in overlays.css. */
+  #busy { top: max(14px, env(safe-area-inset-top)); }
+
   /* And with the panel open, the view controls go too - so nothing is left on
      the glass but the panel.
 
@@ -244,12 +347,12 @@
      the scale bar is measuring something nobody can look at, and a zoom control
      floating over a full-screen panel reads as a piece of the panel - one that
      does nothing you would expect a control on this screen to do. The menu
-     button, the bin and the add bar already leave for exactly this reason; this
+     button, the bin and the toolbar already leave for exactly this reason; this
      is the last corner that stayed.
 
      visibility with the opacity, and delayed by the fade's own length, so the
      controls finish fading before they leave the tab order and come back the
-     instant the panel starts to close. The same pairing #bin and #add-bar use -
+     instant the panel starts to close. The same pairing #bin and #toolbar use -
      a control faded to nothing that can still be pressed is worse than one that
      is simply there. */
   #sidebar.is-open ~ #corner,
@@ -355,25 +458,6 @@
     /* The centring is a `translate`, not a `transform` - cancelling the wrong
        one of those leaves the palette half a screen to the left. */
     translate: none;
-  }
-}
-
-/* Very narrow phones: with the add bar now sharing the foot with the bin and
-   the history pair, its two halves no longer have room for an icon and a word
-   side by side without crowding the seam. Below 360px the labels drop and the
-   icons carry the buttons alone.
-
-   Hidden the accessible way, not display:none - the add bar's buttons have no
-   aria-label, so the word IS the button's name; taking it out of the flow while
-   leaving it for a screen reader keeps "Files" and "Note" spoken. The icon then
-   centres on its own in the flex row. */
-@media (max-width: 359px) {
-  #add-bar button span {
-    position: absolute;
-    width: 1px; height: 1px;
-    margin: -1px; padding: 0; border: 0;
-    clip-path: inset(50%);
-    overflow: hidden; white-space: nowrap;
   }
 }
 

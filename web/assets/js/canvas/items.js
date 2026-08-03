@@ -232,6 +232,22 @@ export function viewportClientRect() {
   };
 }
 
+/**
+ * The card holding the first end of a connection being drawn, or null.
+ *
+ * Owned here rather than in ui/toolbar.js, which is what actually decides it,
+ * because a mark on a card has to survive the card being culled and rebuilt -
+ * see the note in build(). ui/ hands the id down; this layer keeps it true.
+ */
+let pickedId = null;
+
+export function setConnectPick(id) {
+  if (pickedId === id) return;
+  if (pickedId) nodeFor(pickedId)?.removeAttribute('data-pick');
+  pickedId = id || null;
+  if (pickedId) nodeFor(pickedId)?.setAttribute('data-pick', '');
+}
+
 /** The item id owning a DOM node, or null for canvas chrome. */
 export function itemIdFromEvent(target) {
   const el = target instanceof Element ? target.closest('.item') : null;
@@ -635,6 +651,13 @@ function build(item) {
   el.setAttribute('aria-label', itemAccessibleName(item));
   // Which colour off the sticky pad. CSS picks the tint from this.
   if (item.meta.tint) el.dataset.tint = item.meta.tint;
+  // The first end of a connection being drawn, if this is it. Written here as
+  // well as by setConnectPick() below, and that is the whole reason the id is
+  // held in this module rather than in ui/toolbar.js: a card that is culled
+  // while it is picked is thrown away and rebuilt from nothing when it comes
+  // back on screen, so a mark applied only to the live node would quietly
+  // disappear the moment somebody panned away from it and back.
+  if (item.id === pickedId) el.dataset.pick = '';
   // How far off square this one rests, as a fraction of whatever the whimsy
   // axis currently allows (--tilt-max). Presentational, so it stays out of
   // item.rot and the geometry model - see tiltFactor().

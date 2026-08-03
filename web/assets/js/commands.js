@@ -23,14 +23,21 @@ import {
   duplicateItems, select, setItemCover, setItemUpAxis, setItemFit,
   setBoardMode as selectBoardMode,
   restoreTitleCard, resetTitlePosition,
+  addConnections, clearConnections, isFurniture, isRider,
 } from './state.js';
+// The spanning tree, which used to be the web and is now the generator behind
+// "Join these" - see cmds.connectSelection and the header of web-graph.js.
+import { threads } from './web-graph.js';
 import { defaultUpAxis, meshKind } from './mesh.js';
 import { travelMs } from './canvas/viewport.js';
 import { isTurning, rotateModel } from './canvas/model.js';
-import { pickFiles, pickCover, addNote } from './import/drop.js';
+import { pickFiles, pickCover, pickPhoto, addNote, addSwatch, addLink } from './import/drop.js';
+import { linkURL } from './canvas/renderers.js';
+import { ask } from './ui/dialog.js';
 import { exportBoard, openBoard, newBoard } from './storage/storage.js';
 import { getAsset } from './storage/assets.js';
 import { close as closeSidebar } from './ui/sidebar.js';
+import { closeToolbar, setArmed, connectArmed, connectTap } from './ui/toolbar.js';
 import { clearQualityOverrides } from './quality.js';
 import { openContextMenu } from './ui/menu.js';
 import { open as openSearch } from './ui/search.js';
@@ -46,6 +53,59 @@ import {
   saveWithCooldown, armClear, resetSize, rearrange,
   reloadBoard, restartApp, scaleFromItem,
 } from './ui/board-actions.js';
+
+/**
+ * An address somebody typed, which is a narrower thing than an address that
+ * arrived.
+ *
+ * linkURL() is strict on purpose and stays strict everywhere else: it decides
+ * what a *paste* meant, and there `example.com/things` is a sentence fragment
+ * as easily as an address - so guessing `https://` at it would silently rewrite
+ * what somebody wrote. See its own note.
+ *
+ * Here the intent is not in doubt. The user pressed a button called Add a link
+ * and typed into a box that says `https://example.com` under the caret; there
+ * is no second reading of what they meant, and refusing `example.com` because
+ * it lacks four characters the placeholder is already showing is the app being
+ * pedantic about a question it has the answer to. So the scheme is filled in
+ * once, and only when there is none - anything already carrying one is handed
+ * to linkURL() untouched and lives or dies by its verdict.
+ *
+ * Exported for its test and for no other caller: it is the one piece of this
+ * file that is a decision rather than a wire, and the only piece that can be
+ * checked without a viewport.
+ */
+export function linkTyped(text) {
+  const direct = linkURL(text);
+  if (direct) return direct;
+  // A scheme is what the URL grammar says it is, not the presence of `://`.
+  // That shortcut let `mailto:a@b.c` through the guard and came back out as
+  // `https://mailto:a@b.c/` - an address nobody typed, pointing nowhere, on a
+  // card claiming to be a link to it. Anything already carrying a scheme has
+  // had its answer from linkURL() and keeps it.
+  return /^[a-z][a-z0-9+.-]*:/i.test(text.trim()) ? null : linkURL('https://' + text.trim());
+}
+
+/**
+ * Make sure the board is showing its connections, before drawing one.
+ *
+ * The migration nobody would otherwise notice. `settings.web` defaults to on
+ * now, but a board saved by any earlier build carries an explicit `false` -
+ * every board that never had the automatic web switched on does - and absence
+ * of the key is the only case the new default reaches. Without this, somebody
+ * on an existing board would press Join, pick two cards, and be shown nothing:
+ * the connection is there, the setting is hiding it, and there is no way to
+ * guess that from the screen.
+ *
+ * So arming the tool, or asking the generator for a set, turns the switch on.
+ * You cannot ask for a line to be drawn and mean "but not shown", and the
+ * checkbox is still one click away in View for anyone who wants them hidden
+ * afterwards. Silent because it is not a decision - it is the tool refusing to
+ * be pressed into doing nothing visible.
+ */
+function showConnections() {
+  if (board.settings.web === false) setSetting('web', true);
+}
 
 /**
  * Build the command surface for this session.
@@ -78,6 +138,109 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
     addNote: () => {
       const item = addNote(vp.toWorld(vp.left + vp.cx, vp.top + vp.cy));
       requestAnimationFrame(() => cmds.editNote(item.id));
+    },
+    // A colour of your own. No editor opened after it, unlike the note above:
+    // the card *is* the editor - the well on it is a real colour input - so
+    // there is nothing to put a caret into and nothing to open. It arrives
+    // grey, which is the app declining to choose a colour for you; see
+    // SWATCH_DEFAULT.
+    addSwatch: () => addSwatch(vp.toWorld(vp.left + vp.cx, vp.top + vp.cy)),
+    // A card for somewhere else, typed rather than dropped. Nothing is fetched:
+    // a link card is a name and an address until somebody clicks it, and that
+    // stays true however the address arrived.
+    addLink: async () => {
+      const typed = await ask({
+        title: 'Add a link',
+        go: 'Add',
+        field: { placeholder: 'https://example.com', type: 'url' },
+      });
+      // null is every way out of the dialog, including an empty box.
+      if (!typed) return;
+      const url = linkTyped(typed);
+      if (!url) { toast('That is not an address this can open', 'error'); return; }
+      addLink(vp.toWorld(vp.left + vp.cx, vp.top + vp.cy), url);
+    },
+    // The camera, on a phone. Straight into the import path a dropped photo
+    // takes - budget included - see pickPhoto().
+    addPhoto: () => pickPhoto(),
+
+    // --- connections ---
+    // The one tool on the bar that is a mode. Pressing it arms; pressing it
+    // again, or Escape, puts it down. What a press on the board then means is
+    // ui/toolbar.js's connectStep(), and canvas/input.js asks through the two
+    // below rather than importing a ui/ module it has no business importing -
+    // the same seam the title card's pen and the whimsy dial already use.
+    connect: () => {
+      if (board.layoutMode === 'mobile') {
+        toast('Connections are a Desktop board thing');
+        return;
+      }
+      const on = !connectArmed();
+      setArmed(on);
+      if (!on) return;
+      showConnections();
+      toast('Pick two cards to join them. Same two again to part them.');
+    },
+    connectArmed,
+    connectTap,
+    // Every line off the board at once. In the panel's Debug fold rather than on
+    // the toolbar: the way to remove one connection is to draw over it, and this
+    // is the board-wide broom you want after trying the generator somewhere you
+    // did not mean to. Undoable, so it says what it did rather than asking first.
+    clearConnections: () => {
+      const gone = clearConnections();
+      toast(gone
+        ? `Removed ${gone} connection${gone === 1 ? '' : 's'}`
+        : 'There are no connections on this board');
+    },
+    /**
+     * Join these for me.
+     *
+     * The spanning tree that used to *be* the web, run once on demand and
+     * turned into real connections - the same ones a hand would have drawn,
+     * editable and removable one at a time afterwards. Over the selection when
+     * there is one worth calling a selection, over the whole board otherwise,
+     * which is the same "everything, whatever happens to be picked" split
+     * rearrange/rearrangeSelection already make.
+     *
+     * **No button.** It is on `mbrd.cmds.connectSelection()` and nowhere else,
+     * deliberately: this is a thing you do once to a board rather than a tool
+     * you reach for, and it sat on the toolbar as a seventh segment that made
+     * the bar read as a menu. An entry here with no surface on it is not dead
+     * code - the console handle is a shipped feature, and this is the door a
+     * keyboard binding or a menu row would bind to if either ever wants it.
+     *
+     * It is also the migration. A board that had the automatic web switched on
+     * lost it the day connections became a stored list; this is how it comes
+     * back, as something that can then be argued with.
+     *
+     * Furniture is left out. A hint card relates to nothing - it is talking to
+     * the person, not to the board - and the title card is the board's name.
+     * Riders too: a stuck note is part of the card it is pinned to, and the web
+     * layer will not draw a line to one anyway.
+     */
+    connectSelection: () => {
+      if (board.layoutMode === 'mobile') {
+        toast('Connections are a Desktop board thing');
+        return;
+      }
+      const pool = board.items.filter(i =>
+        !isFurniture(i) && !isRider(i) && (selection.size < 2 || selection.has(i.id)));
+      if (pool.length < 2) {
+        toast('Pick two or more cards, or put something on the board');
+        return;
+      }
+      // The graph works in the same plane the cards do; y is not flipped for it
+      // the way canvas/web.js flips it to draw, because a reflection cannot turn
+      // a non-crossing set into a crossing one and the tree is the same tree.
+      showConnections();
+      const pts = pool.map(i => ({ id: i.id, x: i.x, y: i.y, w: i.w, h: i.h, rot: i.rot || 0 }));
+      const made = addConnections(
+        threads(pts, { generous: true }).map(([a, b]) => [pts[a].id, pts[b].id]),
+        'Join cards');
+      toast(made
+        ? `Joined ${made} pair${made === 1 ? '' : 's'}`
+        : 'Those are already joined');
     },
 
     clearData: () => armClear(),
@@ -174,10 +337,12 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
       if (!selection.size) return;
       removeItems([...selection]);
     },
-    // Escape means "put the sheets away", and there are two of them now - the
-    // main panel and the masthead's. One command rather than two, because the key
-    // that closes a panel should not have to be told which panel is up.
-    closeSidebar: () => { closeSidebar(); closeHeaderPanel(); },
+    // Escape means "put the sheets away", and there are three of them now - the
+    // main panel, the masthead's, and the toolbar's own drawer on a phone. One
+    // command rather than three, because the key that closes a panel should not
+    // have to be told which panel is up. Still named for the sidebar, which is
+    // what the keyboard binds to and what it means to whoever presses it.
+    closeSidebar: () => { closeSidebar(); closeHeaderPanel(); closeToolbar(); },
     editNote,
 
     // --- right-click menu ---

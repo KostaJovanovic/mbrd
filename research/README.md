@@ -35,18 +35,17 @@ for a change without checking the current source first.
 
 ## Current
 
-Three documents, which is the point of the tier:
+One document, which is the point of the tier:
 
-- `code-audit-2026-08-02.md` — the pass after the July audits. Eight findings,
-  none of them a crash or a data-loss path; all eight are now fixed. Kept here
-  rather than in `old/` for its last section, which records what was checked and
-  found sound so the next pass need not redo it.
-- `code-audit-2026-08-02-plan.md` — how those eight were fixed: five groups, the
-  changes per file, the tests each one earned, what was deliberately left, and
-  the two things that can only be checked in a browser.
 - `scalability-readability-audit-2026-07-27.md` — all eight leverage items are
   closed; the medium and low findings it lists are the remaining work, and are
   the natural source of issues.
+
+This section listed three for a while, two of which (`code-audit-2026-08-02.md`
+and its plan) had already moved to `old/`. That is precisely the filing bug the
+rule above describes, found by reading the two against each other; both are in
+`old/` and this list now says so. `toolbar-2026-08-03.md` went down with them on
+the commit that carried it out.
 
 Worth knowing about one that is *not* here. `old/open-source-readiness-2026-08-02.md`
 is the plan this repository's public layout, CI, linting, typecheck and file

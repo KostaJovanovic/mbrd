@@ -9,7 +9,10 @@ import { toast, busy, extOf } from '../util.js';
 import { board, bus, addItems, select, setItemCover, NOTE_MAX, baseStep } from '../state.js';
 import { addFile } from '../storage/assets.js';
 import { makeByteBudget, overPixelBudget } from './budget.js';
-import { classify, defaultSize, measureSize, fitToBox, linkURL, linkDraft, videoFrame } from '../canvas/renderers.js';
+import {
+  classify, defaultSize, measureSize, fitToBox, linkURL, linkDraft, videoFrame,
+  swatchHex, SWATCH_DEFAULT,
+} from '../canvas/renderers.js';
 import { iframeURL, embedFor } from '../canvas/embed.js';
 import { arrange, mobileOrder } from '../arrange/arrangements.js';
 import { coverArt, mayHaveArt } from './artwork.js';
@@ -151,9 +154,10 @@ export function initDrop(vp) {
     input.value = '';
     delete input.dataset.mode;
     // Back to the defaults the content picker wants, so the next opening of it
-    // is not still filtered to images and limited to one.
+    // is not still filtered to images, limited to one, or pointed at a camera.
     input.accept = '';
     input.multiple = true;
+    input.removeAttribute('capture');
     if (mode === 'cover') {
       const id = coverFor;
       coverFor = null;
@@ -164,11 +168,47 @@ export function initDrop(vp) {
   });
 }
 
-/** Open the OS file picker for content (not for .mbrd - that's storage.js). */
+/**
+ * Open the OS file picker for content (not for .mbrd - that's storage.js).
+ *
+ * Every attribute the three pickers disagree about is written here rather than
+ * assumed, and the reason is the one path with no event at the end of it: a
+ * cancelled picker never fires `change`, so the reset in the change handler
+ * never runs. Leaving the last opening's `accept` or `capture` on the shared
+ * input would mean that cancelling the camera once made "Add files" a camera
+ * button for the rest of the session.
+ */
 export function pickFiles() {
   const input = document.getElementById('file-input');
   input.accept = '';
   input.multiple = true;
+  input.removeAttribute('capture');
+  input.dataset.mode = 'content';
+  input.click();
+}
+
+/**
+ * The camera, on a phone.
+ *
+ * The same hidden input and the same `content` mode a dropped photo takes, so
+ * a picture taken here is hashed, measured, thumbnailed, budgeted and laid out
+ * by exactly the path a picture dragged in from a folder goes down. That is the
+ * whole of this function: a photo from a camera is a file from outside, and it
+ * gets the same byte budget as one that arrived any other way.
+ *
+ * `capture` is a hint rather than a switch. A phone reads it and opens the
+ * camera; everything else ignores it and opens a file picker filtered to
+ * images, which is a harmless thing for the button to do - but the button is
+ * not drawn there anyway (see the width query in mobile.css).
+ *
+ * `environment` rather than `user`: what somebody photographs onto a moodboard
+ * is a thing in front of them.
+ */
+export function pickPhoto() {
+  const input = document.getElementById('file-input');
+  input.accept = 'image/*';
+  input.multiple = false;
+  input.setAttribute('capture', 'environment');
   input.dataset.mode = 'content';
   input.click();
 }
@@ -189,6 +229,7 @@ export function pickCover(id) {
   const input = document.getElementById('file-input');
   input.accept = 'image/*';
   input.multiple = false;
+  input.removeAttribute('capture');
   input.dataset.mode = 'cover';
   coverFor = id;
   input.click();
@@ -601,6 +642,30 @@ function embedPage(url) {
   const spec = embedFor(url);
   if (!spec) return url;
   try { return new URL(spec.page); } catch { return url; }
+}
+
+/**
+ * A colour with nothing behind it. The third item type born on the board.
+ *
+ * Here rather than anywhere else because this file is where the two other
+ * fileless types are minted, and "getting things onto the board" is what it is
+ * for - the drag-and-drop half at the top is one of the doors, not the subject.
+ *
+ * The hex is the name as well as the content, for the reason setSwatchHex()
+ * gives: a swatch has no other name it could have, and this is what makes one
+ * findable and what a copy of one says on the system clipboard.
+ */
+export function addSwatch(centre, hex = SWATCH_DEFAULT) {
+  const value = swatchHex(hex);
+  const size = defaultSize('swatch');
+  const [item] = addItems([{
+    type: 'swatch',
+    name: value.toUpperCase(),
+    x: centre.x, y: centre.y, w: size.w, h: size.h,
+    meta: { hex: value },
+  }], 'Add swatch');
+  select([item.id]);
+  return item;
 }
 
 export function addLink(centre, url) {

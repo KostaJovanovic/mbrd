@@ -1,5 +1,18 @@
-// The web's graph: which cards get a thread, and the governor that decides how
-// many is affordable.
+// The web's graph: which cards would get a thread, and the governor that
+// decides how many is affordable.
+//
+// **This is a generator now, not the thing that draws the board.** It used to
+// be run by canvas/web.js on every change, and what it produced *was* the web -
+// an effect nobody could steer, over a board that had not asked for one. Lines
+// between cards are drawn by hand now and stored (board.connections), and this
+// survives as the answer to "join these for me": run it over a selection and it
+// offers a set of real, stored, editable connections that then route like any
+// other. See cmds.connectSelection.
+//
+// Which is the right relationship between an algorithm and somebody's board.
+// The no-crossing guarantee below stops being a law the app imposes and becomes
+// what the generator happens to produce - and several hundred lines of tested,
+// proven geometry go on earning their keep instead of being deleted.
 //
 // Pure - no DOM, no viewport, no state - which is why it sits at the top level
 // beside geometry.js and mesh.js rather than under canvas/. canvas/web.js is
@@ -122,13 +135,38 @@ let warmup = WARMUP;
 /** What the limit currently is. Exported for tests; nothing in the app reads it. */
 export const denseLimitNow = () => denseLimit;
 
-export function threads(pts) {
+/**
+ * How much of the ceiling one call is allowed, as a multiple of the learned
+ * limit. One is the frame budget the governor was written for.
+ *
+ * The governor learned its limit under a hard constraint that no longer exists.
+ * This module used to be run on every frame of a drag - canvas/web.js rebuilt
+ * the whole web as a card moved - so "how large a board will this machine
+ * finish inside half a frame" was exactly the right question, and thinning the
+ * web was the only alternative to dropping frames.
+ *
+ * It is a generator now. Nothing runs it per frame; it runs when somebody
+ * presses "Join these" and waits for the answer, and there is no frame to stay
+ * inside. So the limit stays - a selection of nine hundred cards should still
+ * not lock the tab - but its urgency drops, and this is that: the same learned
+ * number, multiplied. Four frames rather than half of one, which is a pause
+ * nobody notices after a button press and still a bound.
+ */
+const GENEROUS = 8;
+
+/**
+ * Every thread that fits, as index pairs into `pts`.
+ *
+ * `generous` relaxes the governor for a call that is not inside a frame. See
+ * GENEROUS; the default is the frame budget this was written for.
+ */
+export function threads(pts, { generous = false } = {}) {
   const n = pts.length;
   const t0 = performance.now();
   const edges = spanningTree(pts);
   const tTree = performance.now() - t0;
   learnTree(n, tTree);
-  if (n > denseLimit) return edges;
+  if (n > denseLimit * (generous ? GENEROUS : 1)) return edges;
 
   const taken = new Set(edges.map(([a, b]) => pair(a, b, n)));
   const k = Math.min(NEIGHBOURS, n - 1);

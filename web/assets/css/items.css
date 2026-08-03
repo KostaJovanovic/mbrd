@@ -673,6 +673,60 @@
   -webkit-mask-image: linear-gradient(180deg, #000 80%, transparent);
           mask-image: linear-gradient(180deg, #000 80%, transparent);
 }
+/* The swatch card: a colour and the number for it.
+   canvas/renderers.js/RENDERERS.swatch builds it and writes --swatch.
+
+   A plate like every other card here rather than a card-shaped rectangle of the
+   colour itself, and that is the one real decision in this block. A full-bleed
+   swatch is a lovely object and a poor sample: a colour has no honest reading
+   except against something neutral, and a board of full-bleed swatches would be
+   nine colours each judged against whichever two happened to be beside it. The
+   paper is the constant they are all read against, which is what a swatch on a
+   fan deck has and a paint tin does not. */
+.swatch-card {
+  gap: 9px;
+  align-items: stretch;
+}
+
+/* The well is a real <input type="color"> - see the renderer for why - so
+   almost everything below is undressing it. A colour input arrives wearing a
+   platform border, a platform radius and its own inner padding, none of which
+   this board has anywhere else in it. */
+.swatch-well {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--swatch, #8a8a8a);
+  /* Same hairline .card-cover wears, and for the same reason: a pale swatch on
+     pale card stock has no edge of its own. */
+  box-shadow: 0 0 0 var(--hairline) color-mix(in srgb, var(--ink) 10%, transparent);
+  cursor: pointer;
+  /* -moz- and -webkit- name the same two parts under different vendors. Both
+     are the same undressing; neither browser understands the other's. */
+  -webkit-appearance: none;
+     -moz-appearance: none;
+          appearance: none;
+}
+.swatch-well::-webkit-color-swatch-wrapper { padding: 0; }
+.swatch-well::-webkit-color-swatch { border: 0; border-radius: inherit; }
+.swatch-well::-moz-color-swatch { border: 0; border-radius: inherit; }
+
+/* The number, set in the mono face and ranged centre under the colour. Mono
+   because it is a value rather than a word - the same reason the coordinate
+   readout in the corner is - and centred because there is nothing else on this
+   card for it to align with. */
+.swatch-hex {
+  flex: none;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  letter-spacing: calc(0.04em * var(--ls-scale));
+  color: var(--ink-2);
+}
+
 /* A picture given to a card that is not itself one - album art off an mp3's
    tags, or anything chosen by hand. See coverEl() in canvas/renderers.js, which
    prepends it inside the card rather than behind it.

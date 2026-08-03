@@ -512,33 +512,130 @@
   </div>
 </div>
 
-<!-- Phones only; the CSS keeps it out of the way at every other width. Getting
-     something onto the board is the one thing you come here to do, and on a
-     phone it was two taps into a panel that covers the screen - while the four
-     corners were spent on view controls you need only once something is
-     already there. So it is one bar along the bottom edge, under the thumb.
+<!-- The toolbar. A board is made by putting things on it, and until this
+     existed there was no surface on a desktop that said so: files arrived by
+     drag, by a fold of the panel, or by a keyboard shortcut nobody was told
+     about. The phone had the one honest creation surface in the app - the old
+     #add-bar, split because "add" is honestly two verbs, bring something in or
+     write something down - and this is that bar grown up and given to both
+     layouts rather than a second thing beside it.
 
-     Split, because "add" is honestly two verbs: bring something in, or write
-     something down. One button would have had to pick a default, and the other
-     half is not a secondary action - a moodboard is as often a sentence as a
-     photograph.
+     Every button is a data-cmd, which is the whole wiring: ui/toolbar.js reads
+     the attribute and presses the same command the panel, the keyboard and the
+     right-click menu press. The old bar had its own data-add and its own two
+     lines in ui/hud.js; folding it in here removes that one-off rather than
+     adding a second.
 
-     Files on the left, note on the right. Swapped in the markup rather than
-     with row-reverse, so the tab order and the reading order stay the same as
-     what is on screen. -->
-<div id="add-bar">
-  <button type="button" data-add="files">
+     Top-centre on a desktop. Both side edges are spoken for - the panel opens
+     left and the masthead's opens right, and both already shove #nowplaying
+     out of the way when they do - and the whole bottom edge is the bin and the
+     history pair at one end, the zoom cluster and the readout at the other,
+     and the player in between. The top edge is the only clear one.
+
+     On a phone it collapses to #toolbar-toggle, sitting in the bottom row
+     exactly where the add bar was, and opens upward into a second tier with
+     the player stepped up to a third. Which is why this element must stay
+     *before* #nowplaying in the markup: the rules that move the player are
+     general sibling combinators, and a sibling combinator only looks forward.
+
+     data-desktop marks a button that is not on the phone's tier at all, rather
+     than one that is greyed out there. Rearrange and Find are both a tap away
+     in the panel on that layout, and five creation tools already fill a
+     390-wide screen; a row that scrolls is a row you cannot aim at. -->
+<div id="toolbar" role="toolbar" aria-label="Board tools">
+  <!-- Phone only. aria-expanded rather than a class alone, because what this
+       does is open a thing that is not otherwise there - the same contract the
+       panel's own menu button has. -->
+  <button type="button" id="toolbar-toggle" aria-expanded="false" aria-controls="toolbar-tools">
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
       <path d="M8 3.2v9.6M3.2 8h9.6"/>
     </svg>
-    <span>Files</span>
+    <span>Add</span>
   </button>
-  <button type="button" data-add="note">
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M11.4 2.6a1.6 1.6 0 0 1 2.2 2.2L6.3 12.1l-3 .8.8-3z"/>
-    </svg>
-    <span>Note</span>
-  </button>
+  <div id="toolbar-tools">
+    <button type="button" data-cmd="add-files" title="Add files  (or drop them anywhere)">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
+        <path d="M8 3.2v9.6M3.2 8h9.6"/>
+      </svg>
+      <span>Files</span>
+    </button>
+    <button type="button" data-cmd="add-note" title="Write a note">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M11.4 2.6a1.6 1.6 0 0 1 2.2 2.2L6.3 12.1l-3 .8.8-3z"/>
+      </svg>
+      <span>Note</span>
+    </button>
+    <button type="button" data-cmd="add-swatch" title="Add a colour">
+      <!-- Three overlapping chips, which is what a swatch is a single one of.
+           Filled rather than outlined, alone among the icons here: this is the
+           one tool whose subject is colour, and an outline of a colour chip is
+           a picture of a card. -->
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" aria-hidden="true">
+        <rect x="1.9" y="5.4" width="6.4" height="6.4" rx="1.4" fill="currentColor" fill-opacity="0.22"/>
+        <rect x="4.8" y="3.6" width="6.4" height="6.4" rx="1.4" fill="currentColor" fill-opacity="0.38"/>
+        <rect x="7.7" y="1.9" width="6.4" height="6.4" rx="1.4" fill="currentColor" fill-opacity="0.6"/>
+      </svg>
+      <span>Colour</span>
+    </button>
+    <button type="button" data-cmd="add-link" title="Add a link">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+        <path d="M6.6 9.4a2.6 2.6 0 0 0 3.7 0l2.3-2.3a2.6 2.6 0 0 0-3.7-3.7l-1 1"/>
+        <path d="M9.4 6.6a2.6 2.6 0 0 0-3.7 0L3.4 8.9a2.6 2.6 0 0 0 3.7 3.7l1-1"/>
+      </svg>
+      <span>Link</span>
+    </button>
+    <!-- Phone only, and absent rather than greyed out where there is no camera
+         to reach: a disabled camera button on a desktop is furniture, and the
+         settings schema already answers this question the same way for its own
+         layout-specific rows. `capture` is a hint a phone honours and every
+         other browser ignores, so the width query is what actually decides. -->
+    <button type="button" data-cmd="add-photo" data-phone title="Take a photo">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true">
+        <path d="M2 5.6h2.6l1-1.6h4.8l1 1.6H14v7H2z"/>
+        <circle cx="8" cy="8.9" r="2.3"/>
+      </svg>
+      <span>Photo</span>
+    </button>
+    <!-- The one tool here that is a mode, and the only one in the app. It stays
+         pressed while it is armed - aria-pressed, the way #zoom-lock marks a
+         held zoom - and Escape always puts it down. Desktop only: a phone board
+         is a reading feed with no spatial map for a line to mean anything on,
+         which is the same reason webVisible() refuses that layout. -->
+    <button type="button" data-cmd="connect" data-desktop aria-pressed="false"
+            title="Join two cards  (pick one, then the other)">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+        <circle cx="3.6" cy="12.4" r="2.1"/>
+        <circle cx="12.4" cy="3.6" r="2.1"/>
+        <path d="M5.3 10.7 10.7 5.3" stroke-linecap="round"/>
+      </svg>
+      <span>Join</span>
+    </button>
+    <!-- No button for the generator. cmds.connectSelection joins a whole
+         selection in one press - the spanning tree that used to draw this
+         board's web, turned into ordinary connections - and it is still there
+         on `mbrd.cmds.connectSelection()`, which is also how a board that had
+         the old automatic web gets it back. It is off the bar because it is a
+         thing you do once to a board, not a tool you reach for, and a seventh
+         segment up here made the bar read as a menu rather than a set of
+         tools. -->
+
+    <button type="button" data-cmd="rearrange" data-desktop title="Rearrange everything">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true">
+        <rect x="2.5" y="2.5" width="4.6" height="4.6" rx="1"/>
+        <rect x="8.9" y="2.5" width="4.6" height="4.6" rx="1"/>
+        <rect x="2.5" y="8.9" width="4.6" height="4.6" rx="1"/>
+        <rect x="8.9" y="8.9" width="4.6" height="4.6" rx="1"/>
+      </svg>
+      <span>Arrange</span>
+    </button>
+    <button type="button" data-cmd="find" data-desktop title="Find something  Ctrl+K">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+        <circle cx="7.1" cy="7.1" r="4.1"/>
+        <path d="M10.2 10.2L13.4 13.4"/>
+      </svg>
+      <span>Find</span>
+    </button>
+  </div>
 </div>
 
 <!-- What is playing, and the controls for it. Built by ui/nowplaying.js, which

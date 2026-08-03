@@ -37,7 +37,7 @@ export async function optimizeBoard() {
     [plan.sounds.length, 'sound file'],
   ].filter(([n]) => n);
 
-  if (!counts.length && !plan.posters) {
+  if (!counts.length && !plan.posters && !plan.empty.length) {
     // Two different nothings, and telling them apart is the difference between
     // "this is done" and "this button does not work".
     toast(plan.done
@@ -49,11 +49,13 @@ export async function optimizeBoard() {
   const lines = counts.length
     ? [counts.map(([n, word]) => `${n} ${word}${n === 1 ? '' : 's'}`).join(', ') +
         ` - ${formatBytes(plan.total)} in total.`]
-    // A board with nothing to shrink but clips to take stills from. Said first
-    // and on its own, because otherwise the dialog opens by listing zero files
-    // and then asks to be run anyway.
-    : [`Nothing on this board is worth shrinking, but ${plan.posters} ` +
-       `video${plan.posters === 1 ? '' : 's'} ${plan.posters === 1 ? 'has' : 'have'} no still yet.`];
+    // A board with nothing to shrink but clips to take stills from, or empty
+    // files to clear out. Said first and on its own, because otherwise the
+    // dialog opens by listing zero files and then asks to be run anyway.
+    : [plan.posters
+        ? `Nothing on this board is worth shrinking, but ${plan.posters} ` +
+          `video${plan.posters === 1 ? '' : 's'} ${plan.posters === 1 ? 'has' : 'have'} no still yet.`
+        : 'Nothing on this board is worth shrinking, but there are empty files on it.'];
   if (plan.pictures.length) lines.push('Pictures are capped at 1200px and rewritten as WebP.');
   if (plan.sounds.length) {
     lines.push(opusAvailable()
@@ -75,6 +77,16 @@ export async function optimizeBoard() {
   if (plan.posters) {
     lines.push(`${plan.posters} clip${plan.posters === 1 ? '' : 's'} will have a still taken ` +
       'from the first frame, so the card shows something before it is played.');
+  }
+  // The one thing here that takes something away rather than making it smaller,
+  // so it is said plainly and it names what is left behind. A file of zero bytes
+  // can never draw anything, so the card keeps everything a person put on it -
+  // its name, its place, its size - and stops claiming to hold a picture.
+  if (plan.empty.length) {
+    const n = plan.empty.length;
+    lines.push(`${n} empty file${n === 1 ? '' : 's'} will be removed - ` +
+      `${n === 1 ? 'it has' : 'they have'} no contents and cannot be shown. ` +
+      `The card${n === 1 ? '' : 's'} and ${n === 1 ? 'its' : 'their'} name${n === 1 ? '' : 's'} stay.`);
   }
   // Said out loud rather than left as a smaller number than expected: a board
   // half of which has already been done should not look like half a board.

@@ -31,6 +31,7 @@
     "web/assets/js/quality.js",
     "web/assets/js/layout-settings.js",
     "web/assets/js/web-graph.js",
+    "web/assets/js/web-route.js",
     "web/assets/js/canvas/spatial.js",
     "web/assets/js/import/budget.js",
     "web/assets/js/arrange/arrangements.js"
