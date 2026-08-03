@@ -58,13 +58,18 @@ export const DEFAULT_SETTINGS = {
   grid: true,
   axes: true,
   snap: false,
-  // The relationship web behind the cards. Desktop-only and layout-local, and
-  // off to begin with: threads are a reading of the board rather than part of
-  // it, and a board you have just made has nothing for them to say. One
-  // checkbox away in View. Absence of the key follows this default, so a board
-  // saved before the checkbox existed now opens without the web - anything
-  // saved since carries its own answer either way. See canvas/web.js.
-  web: false,
+  // Whether the connections between cards are drawn. Desktop-only and
+  // layout-local. **On** to begin with, where the automatic web this replaced
+  // was off, and the two defaults answer different questions: a web nobody
+  // asked for appearing over a board somebody had just made was an imposition,
+  // and a line you drew by hand and cannot see is a bug. One checkbox away in
+  // View either way.
+  //
+  // Still called `web`, deliberately. It is the key an older build reads to
+  // decide whether to draw anything at all between cards, and renaming it would
+  // open every board that had the web switched on with nothing between them.
+  // See canvas/web.js, which kept its name for the same reason.
+  web: true,
   // Off to begin with. It is a working instrument - where the pointer is, how
   // big the selected thing is - and a board you have just opened is a thing you
   // are looking at rather than working on. The scale bar covers the question a
@@ -278,9 +283,74 @@ export const board = {
   // in ui/pigments.js, the absolute ceiling the sampler enforces. Default 12,
   // the count the feature used before it was made a dial.
   paletteSources: 12,
+  // Lines somebody drew between two cards. Pairs of item ids, unordered - a
+  // connection has two ends and no direction, which is why there are no
+  // arrowheads and why the key below sorts before it compares.
+  //
+  // Top-level rather than inside a layout, and that is the one structural
+  // decision here: a connection is between *items*, items are shared across
+  // Desktop and Mobile, and only geometry is per-layout. Filing them under a
+  // layout would mean a board connected on the desktop opened unconnected on a
+  // phone and then lost the connections the next time it was saved from one.
+  connections: [],
   // Thrown away but not gone. Entries are { item, at }, newest first.
   trash: [],
 };
+
+/**
+ * The unordered key for a pair. `a-b` and `b-a` are one connection.
+ *
+ * A NUL separator, escaped rather than typed for the reason canvas/web.js gives
+ * over its own copy: a literal one makes every tool that sniffs for it decide
+ * the file is binary. uid() cannot produce one, and an id out of somebody
+ * else's board.json is held to a string and a length by makeItem().
+ */
+export const pairKey = (a, b) => (a < b ? a + '\0' + b : b + '\0' + a);
+
+/**
+ * The most connections a board may carry.
+ *
+ * Lower than MAX_ITEMS on purpose, even though a complete graph over 20,000
+ * cards would be two hundred million pairs: this is the number a *file* is
+ * allowed to declare, and every entry costs a segment to route and a subpath to
+ * draw. Two thousand is far past any board a person draws by hand and past
+ * anything the generator makes from a selection, and it is finite, which is the
+ * property that matters when the list arrives from outside. See AUD-07.
+ */
+export const MAX_CONNECTIONS = 2000;
+
+/**
+ * The connections a board may keep, out of whatever arrived.
+ *
+ * Total, like everything else that reads a file here: a malformed entry is
+ * dropped rather than throwing part-way through a load.
+ *
+ * `live` is the set of ids the pair may name - the board's items *and* the
+ * bin's. The bin is what makes that union right rather than generous: a
+ * connection to a card that has been thrown away has to survive a save and a
+ * reload, or restoring the card would bring back an item with its lines
+ * quietly missing. Anything naming neither is pruned, because nothing in the
+ * app could ever make it mean something again.
+ */
+export function normalizeConnections(raw, live) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const pair of raw) {
+    if (!Array.isArray(pair) || pair.length < 2) continue;
+    const [a, b] = pair;
+    if (typeof a !== 'string' || typeof b !== 'string' || !a || !b) continue;
+    // A card joined to itself is not a connection, it is a dot.
+    if (a === b) continue;
+    if (live && (!live.has(a) || !live.has(b))) continue;
+    const key = pairKey(a, b);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push([a, b]);
+    if (out.length >= MAX_CONNECTIONS) break;
+  }
+  return out;
+}
 
 /**
  * The Desktop title card is a singleton, so it carries a fixed id rather than a

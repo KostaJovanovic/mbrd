@@ -48,6 +48,7 @@ import { initIdle } from './ui/idle.js';
 import { initScaleBar } from './ui/scalebar.js';
 import { initTrash } from './ui/trash.js';
 import { initNowPlaying } from './ui/nowplaying.js';
+import { initToolbar } from './ui/toolbar.js';
 import { initAppearance, resetAppearance, setWhimsy } from './ui/appearance.js';
 import { initFonts } from './ui/fonts.js';
 import { initMobileHeaderEditor, isPanelOpen as isHeaderPanelOpen, closePanel as closeHeaderPanel } from './ui/mobile-header.js';
@@ -148,10 +149,14 @@ initTrash(vp);
 // paints itself from that value on the way up.
 initNowPlaying();
 initDrop(vp);
-// The glass: the zoom cluster, the add bar, undo/redo, and the readouts. After
-// buildPanel() (its controls are in the static markup, but the save button it
-// does not own is not) and after cmds exists, which it is handed.
+// The glass: the zoom cluster, undo/redo, and the readouts. After buildPanel()
+// (its controls are in the static markup, but the save button it does not own
+// is not) and after cmds exists, which it is handed.
 initHud(vp, cmds);
+// The toolbar, which is the other half of that glass and used to be two lines
+// inside initHud() as the phone's add bar. Handed cmds for the same reason: its
+// buttons are data-cmd and nothing else.
+initToolbar(cmds);
 // The board's name, on the masthead and on the Desktop card.
 initBoardTitle();
 // Hand storage the confirmation prompt it cannot import (ui sits above storage

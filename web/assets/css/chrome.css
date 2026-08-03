@@ -81,45 +81,68 @@
 #zoom-lock[aria-pressed="true"] { color: var(--accent-deep); }
 #zoom-lock[aria-pressed="true"] .lock-body { fill: color-mix(in srgb, var(--accent) 18%, transparent); }
 
-/* The phone's add bar. Nothing but its own shape here - where it is pinned, and
-   the fact that it exists at all, are both in the width query at the foot of
-   this sheet. A mouse has the whole sidebar a click away and does not need the
-   bottom edge of the window spent on two of its buttons. */
-#add-bar {
-  display: none;
+/* ---------------------------------------------------------
+   The toolbar (ui/toolbar.js)
+   --------------------------------------------------------- */
+
+/* Top-centre, and the one piece of chrome on that edge. Why there rather than
+   down with the rest is in index.html, above the markup; what is here is only
+   the shape of it, plus the phone's drawer at the foot of this sheet.
+
+   The height is the glass's own button height, so the bar lines up with the
+   menu button in the opposite corner the way the zoom pill lines up with the
+   bin. That number is also what #busy is pushed down by in overlays.css - a
+   strip announcing an import has no business landing on top of the button that
+   started it - so it is published as a token rather than left implicit. */
+:root { --toolbar-h: var(--chrome-button-h); }
+
+#toolbar {
   position: fixed;
   z-index: 20;
+  top: max(16px, env(safe-area-inset-top));
+  left: 50%;
+  translate: -50% 0;
+  display: flex;
   align-items: stretch;
+  /* On the bar, not only on its buttons. box-sizing is border-box everywhere
+     (base.css), so #menu-btn's height *includes* its hairline - and this had no
+     height of its own, so it came out as a 40px button plus its own two pixels
+     of border and sat two taller than the button in the opposite corner. The
+     height belongs to the object that wears the border. */
+  height: var(--toolbar-h);
   border: var(--hairline) solid var(--rule-2);
-  /* The bin's corner, not the ogee it used to wear. The bar shares the foot of
-     the screen with the bin on one side and the history pair on the other, and
-     all three are the same height - three neighbours in one strip with two
-     different corners on them read as two strips. --leaf is what the other two
-     use (#bin-btn, #history). */
+  /* The zoom pill's corner and the bin's, not an ogee. This is a row of
+     segments behind one hairline, which is the same object the zoom cluster is,
+     and two rows of segments on one screen wearing two different corners read
+     as two unrelated things. */
   border-radius: var(--leaf);
   overflow: hidden;
   background: var(--paper-card);
-  /* One shadow across the whole set. This was --shadow-2, on the argument that
-     a bar which comes and goes should float higher than the permanent
-     furniture - but it shares the foot of the screen with the bin and the
-     history pair, which are the two things it most needs to look level with,
-     and a deeper shadow under the middle of three neighbours reads as the
-     middle one lifting off. Same reasoning that took its corner to --leaf. */
+  /* --shadow-1, the one every permanent control on the glass wears. It was
+     --shadow-2 for a moment, on the argument that a creation surface should
+     float above the view controls; it does not, it sits level with them, and a
+     deeper shadow only made the top of the screen look detached from the foot
+     of it. */
   box-shadow: var(--shadow-1);
   user-select: none;
   transition: opacity var(--dur-base) var(--ease), visibility 0s;
 }
-#add-bar button {
-  flex: 1;
+
+#toolbar-tools {
+  display: flex;
+  align-items: stretch;
+}
+
+#toolbar button {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 9px;
-  /* 54, not 44. This is the one control on the screen that is aimed at rather
-     than pressed on the way past, and it is the bottom of a phone - the strip
-     a browser's own chrome shares with the home indicator. */
-  min-height: 54px;
-  padding: 0 14px;
+  gap: 8px;
+  /* The bar carries the height now; the segments fill whatever it leaves inside
+     its border. Writing --toolbar-h here as well would put the border back on
+     the outside of it. */
+  height: 100%;
+  padding: 0 13px;
   border: 0;
   background: none;
   color: var(--ink);
@@ -128,17 +151,65 @@
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
-/* The two halves are one object, so the seam is a rule and not a gap. */
-#add-bar button + button { border-left: 1px solid var(--rule); }
-#add-bar button:active { background: var(--paper-3); color: var(--accent-deep); }
-#add-bar svg { width: 19px; height: 19px; color: var(--accent); }
-/* Same bargain as #bin: the panel covers this whole bar at this width, and a
-   control you cannot see should not still be in the tab order underneath it. */
-#sidebar.is-open ~ #add-bar {
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transition: opacity var(--dur-base) var(--ease), visibility 0s var(--dur-base);
+/* One object, so the seams are rules and not gaps - the zoom pill's own idiom.
+   Adjacency inside #toolbar-tools, which is the only place two buttons are ever
+   siblings: on a phone the toggle stands alone in the foot row and the tools
+   are a tier of their own above it, so there is no seam between the two to
+   draw. */
+#toolbar button + button { border-left: 1px solid var(--rule); }
+
+/* The phone's handle, and the one tool that only exists on a phone. Both off at
+   every other width - see the foot of mobile.css, which is where the tier the
+   handle opens is laid out and where the camera is switched back on.
+
+   Both selectors have to outrank `#toolbar button` above, and that is not
+   decoration: written as a bare `#toolbar-toggle` this rule is (1,0,0) against
+   that block's (1,0,1), so `display: flex` won and the handle was drawn on the
+   desktop bar - a plus and the word Add, sitting in front of a Files button
+   wearing the same plus. The [data-phone] half was already (1,0,1) and won on
+   source order, which is exactly why only one of the two leaked and the bug
+   looked like a labelling mistake rather than a cascade one. */
+#toolbar #toolbar-toggle,
+#toolbar [data-phone] { display: none; }
+
+#toolbar button:hover { background: var(--paper-2); color: var(--accent-deep); }
+#toolbar button:active { background: var(--paper-3); color: var(--accent-deep); }
+#toolbar svg {
+  width: 17px; height: 17px;
+  color: var(--accent);
+  /* The glyph takes the reaction and not the button, for the reason #zoom-ctl
+     gives: scaling the button would drag the hairlines between them about. */
+  transition: transform var(--dur-base) var(--ease-back);
+}
+#toolbar button:hover svg { transform: scale(var(--btn-grow)) translateY(var(--btn-lift)); }
+#toolbar button:active svg { transform: scale(calc(var(--btn-press) - 0.08)); }
+
+/* An armed tool, marked the way #zoom-lock marks a held zoom: the accent at
+   full strength rather than a fill behind it, because the bar is one pill on
+   glass and a filled segment in the middle of it reads as a second object.
+   Nothing sets this until connectors arrive (step 4); it is here beside the
+   rest of the bar's dressing rather than three sheets away from it. */
+#toolbar button[aria-pressed="true"] {
+  color: var(--accent-deep);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* Same bargain as #bin and the bar this replaced, and the same width it is
+   struck at as the player's own accommodation just below: above 1080 a panel is
+   a strip down one side and the bar keeps its middle, so nothing needs to move.
+   Below it the panel reaches the bar, and a control you cannot see should not
+   still be in the tab order underneath it. Fading rather than sliding, because
+   there is nowhere for a centred object to slide to.
+
+   visibility carries the delay so it leaves the tab order only once the fade
+   has finished, and comes back the instant the panel starts to close. */
+@media (max-width: 1080px) {
+  :is(#sidebar, #header-panel).is-open ~ #toolbar {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity var(--dur-base) var(--ease), visibility 0s var(--dur-base);
+  }
 }
 
 /* ---------------------------------------------------------
@@ -183,7 +254,7 @@
   border: var(--hairline) solid var(--rule-2);
   border-radius: var(--leaf);
   background: var(--paper-card);
-  /* --shadow-1, the one every control on the glass wears. See #add-bar. */
+  /* --shadow-1, the one every control on the glass wears. See #toolbar. */
   box-shadow: var(--shadow-1);
   user-select: none;
 }
@@ -376,7 +447,13 @@
 :root.is-idle #mobile-header-edit-btn,
 :root.is-idle #bin,
 :root.is-idle #corner,
-:root.is-idle #add-bar,
+/* The toolbar goes with the rest, and it is the one entry here worth arguing
+   about: everything else on this list reports or controls the view, and this
+   one is where things are made. It fades anyway, because a creation surface
+   that stayed lit over a board nobody is touching would be the only object on
+   screen still talking. If that reads wrong in the hand the answer is a longer
+   timer for this one element, not an exemption from fading. */
+:root.is-idle #toolbar,
 /* Including the player, and it is worth saying why: something audible with its
    controls faded out sounds like a thing that cannot be stopped. It can - any
    pointer move, key or wheel brings the whole set back inside a quarter of a

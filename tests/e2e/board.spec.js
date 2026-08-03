@@ -81,6 +81,101 @@ test.describe('the canvas', () => {
   });
 });
 
+test.describe('the toolbar', () => {
+  test('the phone handle is on a phone and nowhere else', async ({ page }) => {
+    // A cascade bug, which is the one kind of mistake this file exists for: the
+    // rule taking the handle away was `#toolbar-toggle` (1,0,0) against a
+    // `#toolbar button` block at (1,0,1), so `display: flex` won and the desktop
+    // bar grew a plus-and-Add segment in front of a Files button wearing the
+    // same plus. Nothing in the unit suite can see a losing selector; a real
+    // browser resolving a real cascade is the only thing that can.
+    //
+    // Asserted both ways round, because "hidden everywhere" would have passed
+    // just as happily and left the phone with no way to open its tools.
+    await ready(page);
+    await expect(page.locator('#toolbar-toggle')).toBeHidden();
+    await expect(page.locator('#toolbar [data-cmd="add-files"]')).toBeVisible();
+    // And the camera, which is the same rule read the other way.
+    await expect(page.locator('#toolbar [data-cmd="add-photo"]')).toBeHidden();
+
+    // Under the 700px query, where the bar becomes a drawer.
+    await page.setViewportSize({ width: 390, height: 780 });
+    await expect(page.locator('#toolbar-toggle')).toBeVisible();
+    await expect(page.locator('#toolbar [data-cmd="add-photo"]')).toBeVisible();
+    // The tools are a tier that is shut until the handle opens it.
+    await expect(page.locator('#toolbar-tools')).toBeHidden();
+    await page.locator('#toolbar-toggle').click();
+    await expect(page.locator('#toolbar-tools')).toBeVisible();
+    await expect(page.locator('#toolbar-toggle')).toHaveAttribute('aria-expanded', 'true');
+    // Desktop-only tools stay off the tier.
+    await expect(page.locator('#toolbar [data-cmd="connect"]')).toBeHidden();
+  });
+
+
+  test('joining two cards is two clicks, and the same two again parts them', async ({ page }) => {
+    // Here rather than in the unit suite because this is the one thing about
+    // connections that a headless test structurally cannot reach: the armed
+    // state is a branch in canvas/input.js's pointer pipeline, and what it has
+    // to do is intercept a real press on a real card before selection or a drag
+    // can claim it. Everything either side of that - the step function, the
+    // list, undo, the file - is covered in tests/toolbar.test.js and
+    // tests/connections.test.js.
+    await ready(page);
+
+    // Two cards a long way apart, so a press lands on one and nothing else.
+    const ids = await page.evaluate(() => {
+      // cmds.addNote() returns nothing - it opens the editor a frame later -
+      // so the item is taken off the end of the board, the same way the note
+      // case above does it.
+      const last = () => window.mbrd.board.items[window.mbrd.board.items.length - 1];
+      window.mbrd.cmds.addNote();
+      const a = last();
+      window.mbrd.cmds.addNote();
+      const b = last();
+      a.x = -260; a.y = 0;
+      b.x = 260; b.y = 0;
+      window.mbrd.bus.emit('geom', [a.id, b.id]);
+      return [a.id, b.id];
+    });
+    // The second addNote left an editor open on the card it made; a caret in a
+    // contenteditable would swallow the Escape this case ends with.
+    await page.locator('#viewport').click({ position: { x: 12, y: 12 } });
+
+    // Through the toolbar button, not through cmds.connect() - the wiring from
+    // a data-cmd to the command surface is part of what is being checked.
+    await page.locator('#toolbar [data-cmd="connect"]').click();
+    await expect(page.locator('#toolbar [data-cmd="connect"]')).toHaveAttribute('aria-pressed', 'true');
+
+    const press = async id => {
+      const box = await page.locator(`.item[data-id="${id}"]`).boundingBox();
+      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    };
+    await press(ids[0]);
+    // The first press picks an end and must not have selected the card.
+    await expect
+      .poll(() => page.evaluate(() => window.mbrd.selection.size))
+      .toBe(0);
+    await press(ids[1]);
+    await expect
+      .poll(() => page.evaluate(() => window.mbrd.board.connections.length))
+      .toBe(1);
+
+    // Still armed, which is what makes joining five things one trip up here.
+    await expect(page.locator('#toolbar [data-cmd="connect"]')).toHaveAttribute('aria-pressed', 'true');
+
+    // And the same pair again takes the line away.
+    await press(ids[0]);
+    await press(ids[1]);
+    await expect
+      .poll(() => page.evaluate(() => window.mbrd.board.connections.length))
+      .toBe(0);
+
+    // Escape is the way out of the only mode this app has.
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#toolbar [data-cmd="connect"]')).toHaveAttribute('aria-pressed', 'false');
+  });
+});
+
 test.describe('storage', () => {
   test('a board survives a refresh through IndexedDB', async ({ page }) => {
     await ready(page);

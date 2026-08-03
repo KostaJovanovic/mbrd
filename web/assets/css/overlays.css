@@ -85,7 +85,7 @@
    Deliberately the quietest thing in the corner: no card, no shadow, no border
    - it is a note to yourself, not a control, and the moment it looks like a
    button somebody will try to press it. It leaves slowly and arrives quickly,
-   the same asymmetry #add-bar uses when the furniture idles away: arriving
+   the same asymmetry #toolbar uses when the furniture idles away: arriving
    answers something you just did and is late at a quarter of a second, whereas
    leaving is only the app getting out of the way again. */
 #saved {
@@ -618,7 +618,15 @@
 #busy {
   position: fixed;
   z-index: 55;
-  top: max(14px, env(safe-area-inset-top));
+  /* Below the toolbar, which holds the same middle of the same edge. This
+     strip is over it in the stack and would simply land on top, and the button
+     it would cover is very often the one that started the import it is
+     reporting. Each term is the thing it names rather than a literal, so the
+     bar moving takes this with it: the bar's height and a gap. The hairlines
+     are not added on - box-sizing is border-box and the bar carries its own
+     height, so --toolbar-h is the whole of it. mobile.css hands the plain inset
+     back at the width where the toolbar leaves this edge for the foot. */
+  top: calc(max(14px, env(safe-area-inset-top)) + var(--toolbar-h) + 10px);
   left: 50%;
   width: min(330px, calc(100vw - 28px));
   padding: 10px 14px 11px;

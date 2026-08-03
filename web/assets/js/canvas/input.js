@@ -576,6 +576,21 @@ export function initInput(vp, cmds) {
       }
     }
     const id = itemIdFromEvent(target);
+    // The connector tool, when it is armed. A press picks an end instead of
+    // selecting one, and claims the whole gesture: no capture, no drag, nothing
+    // deselected underneath. Caught before every branch below - including the
+    // widget one - because while the tool is out, a press on a card means
+    // connect it whether or not that card happens to have a scrubber on it.
+    //
+    // This is the only mode in the app, and it is one branch in the existing
+    // pipeline rather than a second pipeline, which is the whole of why picking
+    // an end completes on the press and never becomes a drag. cmds.connectTap
+    // answers false on every ordinary board, so what this costs the hot path is
+    // one boolean.
+    if (cmds.connectTap?.(id)) {
+      pointers.delete(e.pointerId);
+      return;
+    }
     // The title card's pen. Caught before the generic widget branch below (a
     // button would otherwise just select the card): it opens the shared style
     // panel and claims the whole press, so the card underneath neither drags nor

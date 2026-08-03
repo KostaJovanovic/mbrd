@@ -45,9 +45,29 @@ import { toOpus, opusAvailable } from './opus.js';
  */
 export function planOptimize() {
   const seen = new Set();
-  const plan = { pictures: [], sounds: [], skipped: [], done: 0, total: 0, posters: 0 };
+  const plan = { pictures: [], sounds: [], skipped: [], empty: [], done: 0, total: 0, posters: 0 };
 
   for (const item of board.items) {
+    // Files with no bytes in them, which is the one case here that is a removal
+    // rather than a re-encode. An empty file cannot be made smaller and can
+    // never draw anything: what it leaves is a card claiming to be a photograph
+    // with a permanent hole where the picture goes. They arrive from an import
+    // that let one through (a zero-byte file with a MIME type on it is a file
+    // as far as the picker is concerned) and from archives written around one.
+    //
+    // Per item and not per hash, unlike everything below. Every empty file in
+    // existence hashes to the same digest, so a board with five of them has one
+    // hash on five cards - and deduplicating by hash would clean exactly one of
+    // them and quietly leave the other four.
+    const emptyAsset = !!item.asset?.hash && getAsset(item.asset.hash)?.size === 0;
+    const emptyCover = !!item.meta?.cover && getAsset(item.meta.cover)?.size === 0;
+    if (emptyAsset || emptyCover) {
+      plan.empty.push({
+        id: item.id, asset: emptyAsset, cover: emptyCover,
+        name: item.name || getAsset(item.asset?.hash)?.name || '',
+      });
+    }
+
     // Clips with nothing to show yet. Counted rather than bucketed with the
     // rest, because this is not a file to be rewritten - the clip is left
     // exactly as it is and a still is cut *beside* it. It is here so the dialog
@@ -74,6 +94,10 @@ export function planOptimize() {
       const asset = getAsset(hash);
       if (!asset) continue;
       seen.add(hash);
+      // Bucketed above, as a removal. Not counted here as well: an encoder
+      // would be handed nothing, and a dialog promising to shrink a file whose
+      // size is already zero is a promise it cannot keep.
+      if (!asset.size) continue;
       if (marked.has(hash)) { plan.done++; continue; }
       plan.total += asset.size;
       const isCover = hash !== item.asset?.hash;
@@ -178,14 +202,22 @@ export async function runOptimize({ onProgress = () => {} } = {}) {
   // an item it decided to leave alone has still been decided about, and saying
   // so is what stops the next run deciding it all over again.
   const looked = new Set(jobs.map(j => j.hash));
+  // The empty files, by the card that holds one. `null` is the third thing a
+  // swap can say - drop this reference - beside a hash (replace it) and nothing
+  // at all (leave it alone). See swapAssets() in state.js.
+  const empties = new Map(plan.empty.map(e => [e.id, e]));
   const swaps = [];
   for (const item of board.items) {
-    const asset = replacement.get(item.asset?.hash);
-    const cover = replacement.get(item.meta?.cover);
-    if (asset || cover || itemHashes(item).some(h => looked.has(h))) {
+    const gone = empties.get(item.id);
+    const asset = gone?.asset ? null : replacement.get(item.asset?.hash);
+    const cover = gone?.cover ? null : replacement.get(item.meta?.cover);
+    // `!== undefined`, not truthiness: null is a real instruction here and the
+    // falsy test this used to be would have skipped every card being emptied.
+    if (asset !== undefined || cover !== undefined || itemHashes(item).some(h => looked.has(h))) {
       swaps.push({ id: item.id, asset, cover });
     }
   }
+  report.emptied = plan.empty.length;
   report.items = swapAssets(swaps);
   // Items whose picture is not the picture it was a moment ago. Their old
   // thumbnail is a thumbnail of bytes that no longer exist on this card.
@@ -360,6 +392,10 @@ export function describeSaving(report) {
   const derived = [
     report.thumbs && `${report.thumbs} thumbnail${report.thumbs === 1 ? '' : 's'} made`,
     report.posters && `${report.posters} video still${report.posters === 1 ? '' : 's'} taken`,
+    // A removal, not a saving, so it is named here rather than folded into the
+    // byte count: dropping a file of zero bytes frees zero bytes, and reporting
+    // it as space saved would be arithmetic nobody can check.
+    report.emptied && `${report.emptied} empty file${report.emptied === 1 ? '' : 's'} removed`,
   ].filter(Boolean).join(', ');
   if (!report.changed) return derived || 'Nothing on this board was worth shrinking';
   const saved = report.before - report.after;

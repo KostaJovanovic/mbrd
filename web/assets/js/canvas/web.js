@@ -1,59 +1,62 @@
-// The web: threads from item to item, drawn behind everything.
+// The web: the lines between cards, drawn behind everything.
 //
-// One rule - no two threads may cross - and otherwise as many of them as will
-// fit. That is a maximal planar set of straight segments over the item
-// centres, and it is built in two passes for two different reasons.
+// **These are drawn, not derived.** This file used to compute a maximal planar
+// set of segments over the item centres on every change - a Euclidean minimum
+// spanning tree for connectedness, then every other thread that fit, shortest
+// first, kept only if it crossed nothing already accepted. It was a good effect
+// and it was nobody's: the board decided what related to what, and there was no
+// way to say otherwise. So the same picture is now a list of pairs somebody
+// drew (`board.connections`), and the spanning tree survives as a generator
+// that offers to draw a set of them for you - see web-graph.js, which is
+// unchanged, and cmds.connectSelection.
 //
-// The first pass is a Euclidean minimum spanning tree, and it is here to
-// guarantee the web is one connected piece rather than islands. Its edges are
-// provably non-crossing, and the proof is short enough to keep: if AB and CD
-// crossed at a point P then |AB| + |CD| = (|AP|+|PB|) + (|CP|+|PD|), and
-// regrouping those four pieces by the triangle inequality gives
-// |AC| + |BD| <= that sum, equal only if all four points are collinear. So
-// re-pairing is never worse, and a *minimum* tree cannot contain a crossing.
-//
-// The second pass then adds every other thread that fits, shortest first,
-// keeping one only if it crosses nothing accepted so far. Shortest-first is
-// what makes the result look like a web rather than a mess: a short thread
-// gets to claim its space before a long one can cut across the same gap, so
-// the board fills up with small local triangles instead of a few long
-// diagonals stretched over everything.
+// The module kept its name, and the setting kept its key. `settings.web` is
+// what an older build reads to decide whether to draw anything at all between
+// cards, and renaming either would have cost the SHELL list, the layers test,
+// three passages of docs/architecture.md and a silent change to every board
+// that had the web switched on, for nothing.
 //
 // Drawn inside #world, so pan and zoom come for free from the layer transform.
-// The stroke is marked non-scaling so a thread stays a thread at 8x instead of
+// The stroke is marked non-scaling so a line stays a line at 8x instead of
 // becoming a beam.
 //
-// Two jobs, and they are deliberately separated: `build` decides which threads
-// exist, `paint` decides which of them go into the `d` string. Only build reads
-// the board, and only paint reads the viewport, so panning across a board never
-// recomputes a spanning tree and moving an item never waits on one.
+// Two jobs, and they are deliberately separated: `build` decides which lines
+// exist and where their ends are, `paint` decides which of them go into the `d`
+// string. Only build reads the board, and only paint reads the viewport, so
+// panning across a board never rebuilds the geometry and moving an item never
+// waits on the view.
 
 import { board, bus, isRider } from '../state.js';
 import { rafThrottle } from '../util.js';
-import { quality } from '../quality.js';
 import { webZoom } from './viewport.js';
 import { segmentMeetsRect } from '../geometry.js';
-// The graph and its governor - see web-graph.js. Pure, and deliberately not
-// in this file: the algorithm is the part that can be tested without a browser.
-import { threads } from '../web-graph.js';
+// Where a line runs when there are cards in the way - see web-route.js. Pure,
+// and deliberately not in this file for the same reason web-graph.js is not:
+// the algorithm is the half that can be tested without a browser.
+import { routeConnection, pathData, blockOf, CLEARANCE } from '../web-route.js';
+// Which cards are near enough to be in the way. The index is kept current by
+// canvas/items.js on every add, remove and move.
+import { queryRect } from './spatial.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 /**
- * A relationship web belongs to the spatial Desktop arrangement only, and only
- * when the board asks for one. `settings.web` is layout-local (Desktop's own
- * checkbox) and defaults to off, so a board only has threads because somebody
- * asked for them; the `!== false` here is for settings that never reached
- * normalizeSettings(), which is the one path that can leave the key missing.
+ * Connections belong to the spatial Desktop arrangement only, and only when the
+ * board asks to see them. `settings.web` is layout-local (Desktop's own
+ * checkbox) and now defaults to **on**: a line somebody drew and cannot see is
+ * a bug, where the automatic web this replaced defaulted to off because an
+ * effect nobody asked for is an imposition. The `!== false` is what makes that
+ * default reach a board whose settings never went through normalizeSettings().
  *
- * The quality dial can also take it away, and that is a different kind of no
- * from the checkbox's: the checkbox says this board does not want threads, the
- * dial says this device cannot afford to work them out. Both are honoured here,
- * because everything downstream - the spanning tree, the crossing test, the
- * per-view repaint - hangs off this one answer.
+ * The quality dial used to be able to take this away as well, through a
+ * `threads` flag, and it no longer can. That flag existed because working out a
+ * planar graph over every card on every drag frame is genuinely more than a
+ * tired phone should be asked for; drawing a stored list of pairs is not, so
+ * what the flag had become was a switch that silently hid work the user had
+ * done. It is gone from quality.js entirely rather than left inert.
  */
 export const webVisible = (mode = board.layoutMode) =>
-  mode !== 'mobile' && board.settings.web !== false && quality.threads;
+  mode !== 'mobile' && board.settings.web !== false;
 
 /**
  * How far outside the viewport a thread is still drawn, in *screen* px.
@@ -80,13 +83,14 @@ const CULL_MARGIN_MAX = 400;
  * different thread and never fade at all.
  *
  * The element is the part worth being careful about. Giving all of them their
- * own <line> would undo the reason this was one path to begin with - the web is
- * rebuilt on every drag frame, and a few hundred elements to reconcile is a
- * different order of cost from one `d` string. So threads only get an element
- * while they are actually fading, and are handed back to the bulk path the
- * moment they land. In the steady state, including the whole of a drag that
- * does not change which threads exist, this draws exactly what it drew before:
- * one path, one attribute write.
+ * own <line> would undo the reason this was one path to begin with - build()
+ * runs on every frame of a drag, because the ends move with the card even
+ * though the list does not change, and a few hundred elements to reconcile is a
+ * different order of cost from one `d` string. So a line only gets an element
+ * while it is actually fading, and is handed back to the bulk path the moment
+ * it lands. In the steady state, including the whole of a drag - where every
+ * line moves and none of them arrives or leaves - this is one path and one
+ * attribute write.
  */
 const FADE_IN_MS = 400;
 const FADE_OUT_MS = 300;
@@ -135,8 +139,17 @@ let paintedRect = null;
 const animating = new Map();
 /** Keys currently drawn in the bulk path. */
 const settled = new Set();
-/** Last known endpoints per key, so a thread whose item has gone can still fade
- *  out from where it was rather than vanishing the instant it loses a centre. */
+/**
+ * key -> `{ a, b, points, sig }` - the last known geometry of each line, so one
+ * whose item has gone can still fade out from where it was rather than
+ * vanishing the instant it loses a centre.
+ *
+ * `points` is the whole path, two entries for a straight line and more for a
+ * routed one. `sig` is the two end boxes as a string: build() reuses a route
+ * whose ends have not moved and throws one away the moment they have, which is
+ * the mechanism behind "straight while dragging, routed on the drop" - see
+ * scheduleRoute().
+ */
 const lastSeg = new Map();
 
 // A separator that cannot occur in an id, so two ids can share one string key.
@@ -165,8 +178,15 @@ let wantPaint = false;
 let frame = () => {};
 const requestBuild = () => { wantBuild = true; wantPaint = true; frame(); };
 const requestPaint = () => { wantPaint = true; frame(); };
-/** The eye moved, which on its own may well leave the drawing untouched. */
-const viewMoved = () => frame();
+/**
+ * The eye moved, which on its own may well leave the drawing untouched.
+ *
+ * It does restart the route pass, though, and for the same reason a drag does:
+ * a pan is a thing in motion, and a line coming on screen during one should
+ * arrive resolved rather than resolve under the hand. routePass() is cheap when
+ * nothing is owed, which is the steady state.
+ */
+const viewMoved = () => { frame(); scheduleRoute(); };
 
 function tick() {
   if (wantBuild) { wantBuild = false; build(); }
@@ -174,6 +194,43 @@ function tick() {
   wantPaint = false;
   paint(forced);
 }
+
+// ---------------------------------------------------------------------------
+// The performance rule
+//
+// The web this replaced could afford to rebuild everything on every frame of a
+// drag, because a spanning-tree edge is two points and a comparison. Routing is
+// not, and this is the one place the whole feature can go wrong.
+//
+// So: **nothing is routed while anything is moving.** build() reuses a stored
+// route whose two ends have not moved and drops one whose ends have, which
+// leaves a card being dragged trailing straight lines for the length of the
+// gesture - the same bargain items.css already strikes about what the board
+// stops paying for while it is being moved. A pass over the routes is scheduled
+// on every build and every view change and restarted each time, so it runs once
+// the hand comes off rather than sixty times on the way there.
+//
+// The delay is a settling time, not a debounce for its own sake. Long enough
+// that a drag never reaches it, short enough that a drop feels like it resolved
+// rather than like it thought about it.
+// ---------------------------------------------------------------------------
+const ROUTE_SETTLE_MS = 110;
+
+/**
+ * How many lines will be routed in one pass before the rest are left straight.
+ *
+ * A ceiling rather than a target: a board with more connections on screen than
+ * this has other problems, and the honest failure is some of them staying
+ * straight rather than the pass taking a visible pause. The on-screen ones go
+ * first, so what is left straight is what nobody is looking at.
+ */
+const ROUTE_BUDGET = 200;
+
+let routeTimer = 0;
+const scheduleRoute = () => {
+  clearTimeout(routeTimer);
+  routeTimer = setTimeout(routePass, ROUTE_SETTLE_MS);
+};
 
 export function initWeb(worldEl, viewport) {
   svg = document.createElementNS(SVG_NS, 'svg');
@@ -195,8 +252,11 @@ export function initWeb(worldEl, viewport) {
   bus.on('geom', requestBuild);
   bus.on('board:load', requestBuild);
   bus.on('layout', requestBuild);
-  // Only the web toggle changes the geometry; other settings (spacing, units)
-  // fire the same event and must not drag a spanning tree in with them.
+  // A line drawn or removed. Its own event rather than 'items', which fires for
+  // a drag, a delete and an undo as well - see the note beside it in state.js.
+  bus.on('connections', requestBuild);
+  // Only the web toggle changes what is drawn; other settings (spacing, units)
+  // fire the same event and must not drag a rebuild in with them.
   bus.on('settings', key => { if (key === 'web') requestBuild(); });
   // Panning and zooming change which threads are worth drawing and nothing
   // else, so they ask for a paint and never for a build.
@@ -227,8 +287,13 @@ function fadeTo(key, entry, dir) {
 
 function begin(key, seg, dir) {
   if (!seg) return;
-  const el = document.createElementNS(SVG_NS, 'line');
+  // A <path>, not a <line>. A routed connection bends, so the fading copy has
+  // to be able to draw the same shape the bulk path draws - and the two share
+  // one rule in canvas.css, which is what keeps a line landing out of a fade
+  // from changing appearance as it does.
+  const el = document.createElementNS(SVG_NS, 'path');
   el.setAttribute('class', 'thread');
+  el.setAttribute('fill', 'none');
   el.style.opacity = dir === 'in' ? '0' : '1';
   fadeLayer.append(el);
   const entry = { el, dir, seg, timer: 0 };
@@ -263,31 +328,54 @@ function land(key) {
  * and the only conversion this module needs.
  */
 function centres() {
-  // A stuck note is part of the thing it is pinned to, not a node of its own: it
-  // sits on top of its host, so a thread run out to it would double back on the
+  // A stuck note is part of the thing it is pinned to, not an end of its own: it
+  // sits on top of its host, so a line run out to it would double back on the
   // host's own and read as a tether on the sticky. Riders are left out; the host
-  // carries the web for the pair.
-  // Size and rotation ride along so the second pass can treat each card as an
-  // obstacle, not just its centre a node. World y points up and this layer lays
-  // y down, so a card turned by `rot` in the world is turned by `-rot` here -
-  // the reflection that takes (x, y) to (x, -y) flips the sense of the angle.
-  // Ghost cards are not nodes. The web is a picture of how the things on a
-  // board relate to each other, and a hint relates to nothing - it is talking
-  // to the person, not to the board. Threading them would also draw a web on
-  // an empty board and then tear it down at the first import.
+  // carries the connection for the pair. A note stuck to a card it is joined to
+  // therefore stops showing that line while it is stuck, and starts again when
+  // it is pulled off - which is the same thing the web did and is the honest
+  // reading either way.
+  // Size and rotation ride along, unused here and read by the router in step 5:
+  // a card is an obstacle to route around, not only a point to reach. World y
+  // points up and this layer lays y down, so a card turned by `rot` in the world
+  // is turned by `-rot` here - the reflection that takes (x, y) to (x, -y) flips
+  // the sense of the angle.
+  // Ghost cards are not ends either. A hint relates to nothing - it is talking
+  // to the person, not to the board - and serializeBoard() strips them, so a
+  // connection to one could not survive a save even if one could be drawn.
   return board.items
     .filter(i => !isRider(i) && i.type !== 'ghost')
     .map(i => ({ id: i.id, x: i.x, y: -i.y, w: i.w, h: i.h, rot: -(i.rot || 0) }));
 }
 
 /**
- * Which threads exist. Runs only when an item has moved, arrived or gone.
+ * The two end boxes, as a string. Two lines with the same signature have the
+ * same route, and a signature that changed is a route that has to be worked out
+ * again. Rounded to a tenth of a world unit: a route does not change because a
+ * card moved a thousandth of a pixel, and a signature that turned on the last
+ * float bit would never match twice.
+ */
+const sigOf = (a, b) =>
+  [a.x, a.y, a.w, a.h, a.rot, b.x, b.y, b.w, b.h, b.rot]
+    .map(n => Math.round(n * 10) / 10).join(',');
+
+/** Grow settledBox to hold a point. */
+function stretchBox(p) {
+  if (p.x < settledBox.minX) settledBox.minX = p.x;
+  if (p.y < settledBox.minY) settledBox.minY = p.y;
+  if (p.x > settledBox.maxX) settledBox.maxX = p.x;
+  if (p.y > settledBox.maxY) settledBox.maxY = p.y;
+}
+
+/**
+ * Which lines exist and where their ends are. Runs when an item has moved,
+ * arrived or gone, and when a connection is drawn or removed.
  */
 function build() {
   if (!svg) return;
-  // Mobile is a reading-order feed, not a spatial map. Do not merely hide its
-  // web: release the settled/fading geometry so a large board spends no time
-  // rebuilding connections that this layout never shows.
+  // Mobile is a reading-order feed, not a spatial map. Do not merely hide the
+  // lines: release the settled/fading geometry so a large board spends no time
+  // holding on to connections that this layout never shows.
   if (!webVisible()) {
     for (const entry of animating.values()) {
       clearTimeout(entry.timer);
@@ -303,31 +391,45 @@ function build() {
     svg.style.display = 'none';
     return;
   }
-  const pts = centres();
-  // The box these points describe, worked out here rather than in paint().
-  //
-  // It is a property of where the items are, and the items do not move when the
-  // view does - so re-deriving it from every centre on the board was a loop
-  // over the whole board on every frame of every pan, to arrive at the number
-  // it arrived at last frame. Panning is the case that matters: build() runs
-  // when something is dragged, added or deleted, and paint() runs whenever the
-  // eye moves.
-  settledBox = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
-  for (const p of pts) {
-    if (p.x < settledBox.minX) settledBox.minX = p.x;
-    if (p.y < settledBox.minY) settledBox.minY = p.y;
-    if (p.x > settledBox.maxX) settledBox.maxX = p.x;
-    if (p.y > settledBox.maxY) settledBox.maxY = p.y;
-  }
-  // One item has nothing to connect to, and zero items have nothing at all -
-  // but the threads that were there a moment ago still have a fade to finish,
-  // so this is an empty edge set rather than an early return.
-  const edges = pts.length < 2 ? [] : threads(pts);
+  // id -> where that card is, for the ends of every stored pair. Cards this
+  // layer does not node - a rider, a hint - are simply absent from the map, and
+  // a pair naming one is skipped below along with a pair naming a card that has
+  // been deleted. That is the whole of the dangling story on this side: not
+  // drawn, no bookkeeping, and it comes back when the item does.
+  const where = new Map(centres().map(p => [p.id, p]));
 
   const wanted = new Map();
-  for (const [a, b] of edges) {
-    wanted.set(keyOf(pts[a].id, pts[b].id), { a: pts[a], b: pts[b] });
+  // The box the geometry describes, worked out here rather than in paint().
+  //
+  // It is a property of where the connected cards are, and they do not move
+  // when the view does - so re-deriving it was a loop over the board on every
+  // frame of every pan, to arrive at the number it arrived at last frame.
+  //
+  // Over the ends actually used, not over every card. A board of four hundred
+  // items with two of them joined describes a box the size of the two, and
+  // sizing the <svg> to the whole board would be an element the size of the
+  // board holding one short line.
+  settledBox = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  for (const [a, b] of board.connections) {
+    const pa = where.get(a);
+    const pb = where.get(b);
+    if (!pa || !pb) continue;
+    const key = keyOf(a, b);
+    // A stored route is kept exactly as long as both of its ends are where they
+    // were. The moment either moves, the route is thrown away and the line
+    // falls back to a straight one until the pass scheduled below runs - which
+    // is the whole of "no routing while anything is moving".
+    const sig = sigOf(pa, pb);
+    const held = lastSeg.get(key);
+    const seg = held && held.sig === sig
+      ? held
+      : { a: pa, b: pb, sig, points: [{ x: pa.x, y: pa.y }, { x: pb.x, y: pb.y }] };
+    wanted.set(key, seg);
+    // Over the path, not only over the two ends: a route that bends out around
+    // a card reaches past both of them, and an <svg> clips at its own edge.
+    for (const p of seg.points) stretchBox(p);
   }
+  scheduleRoute();
 
   // A fade costs an element, a transition and a timer, and none of that is
   // worth spending on a thread nobody can see. Opening a 400-item board used
@@ -365,6 +467,89 @@ function build() {
   for (const [key, live] of animating) {
     if (!wanted.has(key) && live.dir === 'in') fadeTo(key, live, 'out');
   }
+}
+
+/**
+ * Work out where every line actually runs, once things have stopped moving.
+ *
+ * On-screen first and then the rest, so a budget that bites leaves straight
+ * lines where nobody is looking. A line whose ends have not moved since it was
+ * last routed keeps the path it has - build() is what decides that, by holding
+ * or dropping the stored route - so the common case here is a handful of lines
+ * around one card that was just dragged, not the whole board.
+ *
+ * The obstacles come from the spatial index rather than from a scan of the
+ * board: the query rectangle is the two ends' bounding box grown by the
+ * clearance, so a line between neighbours never considers the other four
+ * hundred cards. The index answers with a *superset* - it is a grid of cells
+ * and a cell shared with the query is enough - which is exactly right here,
+ * since the router does its own precise work against the boxes it is handed.
+ */
+function routePass() {
+  if (!svg || !webVisible()) return;
+  const where = new Map(centres().map(p => [p.id, p]));
+  const vis = visibleBox(cullMargin());
+  const near = seg => !vis ||
+    !(Math.max(seg.a.x, seg.b.x) < vis.x0 || Math.min(seg.a.x, seg.b.x) > vis.x1 ||
+      Math.max(seg.a.y, seg.b.y) < vis.y0 || Math.min(seg.a.y, seg.b.y) > vis.y1);
+
+  const owed = [...lastSeg.entries()].filter(([, seg]) => !seg.routed);
+  // On screen first. A stable partition rather than a sort: the order within
+  // each half does not matter and a comparator would only make it look like it
+  // did.
+  const order = [...owed.filter(([, s]) => near(s)), ...owed.filter(([, s]) => !near(s))];
+
+  let spent = 0;
+  for (const [, seg] of order) {
+    if (spent++ >= ROUTE_BUDGET) break;
+    // seg.a and seg.b already carry the id and the box - centres() puts both on
+    // every point - so there is nothing to look up here.
+    const { a, b } = seg;
+    const routed = routeConnection(a, b, obstaclesBetween(a, b, where));
+    seg.points = routed.points;
+    seg.straight = routed.straight;
+    seg.routed = true;
+    for (const p of seg.points) stretchBox(p);
+  }
+  // Forced: the geometry changed without the *set* of lines changing, which is
+  // the one case paint()'s own "has the view left the rectangle it culled
+  // against" shortcut would otherwise talk it out of.
+  requestPaint();
+}
+
+/**
+ * The cards a line between these two might have to go around.
+ *
+ * In world coordinates on the way in and this layer's on the way out. The index
+ * is built from item geometry, where y points up; everything here lays y down,
+ * so the query rectangle flips and the ids that come back are looked up in the
+ * already-flipped map rather than converted a second time.
+ */
+function obstaclesBetween(a, b, where) {
+  const pad = CLEARANCE * 2;
+  const box = {
+    x0: Math.min(a.x, b.x) - pad, x1: Math.max(a.x, b.x) + pad,
+    y0: Math.min(a.y, b.y) - pad, y1: Math.max(a.y, b.y) + pad,
+  };
+  // The two ends themselves have to be inside the query or a route out of a
+  // card that is entirely past the other would have no room to start.
+  for (const end of [blockOf(a, pad), blockOf(b, pad)]) {
+    box.x0 = Math.min(box.x0, end.x0); box.x1 = Math.max(box.x1, end.x1);
+    box.y0 = Math.min(box.y0, end.y0); box.y1 = Math.max(box.y1, end.y1);
+  }
+  const world = { x0: box.x0, x1: box.x1, y0: -box.y1, y1: -box.y0 };
+  const out = [];
+  for (const id of queryRect(world)) {
+    if (id === a.id || id === b.id) continue;
+    const p = where.get(id);
+    if (!p) continue;                       // a rider or a hint: not an obstacle
+    const k = blockOf(p, 0);
+    // The index is a superset by design, so this is the precise re-test it owes
+    // - a plain box overlap, which is all an axis-aligned router can use.
+    if (k.x1 < box.x0 || k.x0 > box.x1 || k.y1 < box.y0 || k.y0 > box.y1) continue;
+    out.push(p);
+  }
+  return out;
 }
 
 /**
@@ -466,7 +651,7 @@ function paint(forced = false) {
     if (p.x > maxX) maxX = p.x;
     if (p.y > maxY) maxY = p.y;
   };
-  for (const entry of animating.values()) { stretch(entry.seg.a); stretch(entry.seg.b); }
+  for (const entry of animating.values()) for (const p of entry.seg.points) stretch(p);
   // A board whose items all sit on one row has a zero-height box, and an SVG
   // with a zero extent renders nothing at all - so the box never closes fully.
   const w = Math.max(maxX - minX, 1);
@@ -484,29 +669,56 @@ function paint(forced = false) {
 
   const vis = paintedRect;
 
-  // One path of many subpaths rather than one element per thread: swapping a
+  // One path of many subpaths rather than one element per line: swapping a
   // single `d` attribute beats reconciling a few hundred nodes. Only the
-  // settled threads are here; the fading ones are drawn as their own <line>
-  // just below, and drawing a thread in both places at once would leave a
-  // fading one with a solid twin under it.
+  // settled ones are here; the fading ones are drawn as their own <path> just
+  // below, and drawing a line in both places at once would leave a fading one
+  // with a solid twin under it.
+  const r = cornerRadius();
   let d = '';
   for (const key of settled) {
     const seg = lastSeg.get(key);
     if (!seg) continue;
-    if (vis && !segmentMeetsRect(seg.a, seg.b, vis)) continue;
-    d += `M${(seg.a.x - minX).toFixed(2)} ${(seg.a.y - minY).toFixed(2)}` +
-         `L${(seg.b.x - minX).toFixed(2)} ${(seg.b.y - minY).toFixed(2)}`;
+    if (vis && !meetsRect(seg.points, vis)) continue;
+    d += pathData(seg.points, r, minX, minY);
   }
   path.setAttribute('d', d);
 
-  // The box's origin moves whenever the outermost item does, so every fading
-  // thread is repositioned each frame as well - they are relative to a corner
+  // The box's origin moves whenever the outermost end does, so every fading
+  // line is repositioned each frame as well - they are relative to a corner
   // that is itself in motion. There are only ever a handful, so they are not
   // worth culling.
   for (const { el, seg } of animating.values()) {
-    el.setAttribute('x1', (seg.a.x - minX).toFixed(2));
-    el.setAttribute('y1', (seg.a.y - minY).toFixed(2));
-    el.setAttribute('x2', (seg.b.x - minX).toFixed(2));
-    el.setAttribute('y2', (seg.b.y - minY).toFixed(2));
+    el.setAttribute('d', pathData(seg.points, r, minX, minY));
   }
+}
+
+/**
+ * Whether any leg of a path meets the visible rect.
+ *
+ * Leg by leg rather than by the path's bounding box, and the reason is the case
+ * a board of connections is full of: the long line. Its bounding box is most of
+ * the board, so a box test passes it from almost anywhere and it is emitted
+ * into `d` on every frame of every pan having never come near the screen.
+ */
+function meetsRect(points, rect) {
+  for (let i = 1; i < points.length; i++) {
+    if (segmentMeetsRect(points[i - 1], points[i], rect)) return true;
+  }
+  return false;
+}
+
+/**
+ * How round a corner is, off the whimsy axis.
+ *
+ * Square at Harsh, rounded at Softish, read from the attribute ui/appearance.js
+ * writes on the root element - the same source the stylesheets take every other
+ * tier decision from. A connector with a corner style of its own would be the
+ * one element on the board with an opinion about how the interface looks.
+ */
+function cornerRadius() {
+  const level = document.documentElement.dataset.whimsy;
+  if (level === '2') return 0;      // Harsh: the board is a lattice, so are these
+  if (level === '0') return 14;     // Softish
+  return 9;                         // Middle, and the fallback before the dial is read
 }

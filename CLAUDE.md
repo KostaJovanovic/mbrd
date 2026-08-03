@@ -20,16 +20,27 @@ of a file before changing it**, and keep that convention when adding one.
 ## Commands
 
 ```bash
-npm test                          # node --test over tests/ — no install, no deps
-node --test tests/state.test.js   # one file
-node --test --test-name-pattern "undo" tests/state.test.js   # one test
+npm test                          # node --test over tests/ — no install, no deps; Node 22+
+node --test tests/state-history.test.js                            # one file
+node --test --test-name-pattern "undo" tests/state-history.test.js # one test
 python serve.py [port]            # dev server on 6273; server.bat is the Windows launcher
 node tools/gen-formats.mjs [path-to-file-analyser]   # regenerate import/formats.js
 save.bat                          # bump version stamps, commit, optionally push
 ```
 
+Three optional runs, all needing `npm install` first (three devDependencies —
+`npm test` still needs none). CI gates the first two, so a green `npm test` is
+not the whole bar:
+
+```bash
+npm run lint        # oxlint, correctness only — no formatter, and adding one is a regression
+npm run typecheck   # tsc --noEmit over JSDoc; jsconfig.json scopes it to the pure layer
+npm run test:e2e    # Playwright on 6274; also needs `npx playwright install chromium`
+```
+
 Syntax checks worth running on a change: `node --check` on touched `.js`,
-`python -m py_compile` on `serve.py` / `qr.py`.
+`python -m py_compile` on `serve.py` / `qr.py`. CI runs both over every tracked
+file, so a syntax error in a module no test imports still fails.
 
 There is no bundler, no build step and no runtime dependency. The browser loads
 the ES modules under `web/` directly — an edit is one refresh away.
@@ -47,6 +58,14 @@ the ES modules under `web/` directly — an edit is one refresh away.
   them.
 - **A new user-facing action is an entry in `cmds`** (`commands.js`), not a
   second event listener. A new setting is one entry in `ui/settings-schema.js`.
+  A new toolbar tool is a `<button data-cmd>` in `index.html` plus that entry.
+- **`#toolbar` must stay before `#nowplaying` in `index.html`.** The rules that
+  step the player up a tier when the phone's toolbar opens are general sibling
+  combinators, which only look forward. Reordering the two breaks the layout
+  silently and only on a phone.
+- **Import paths are case-sensitive in CI and not on this machine.** Windows
+  resolves `'./Foo.js'` for `foo.js` happily; the Linux leg 404s. Match the
+  filename exactly.
 - Call out `.mbrd` schema, generated-catalog or service-worker cache changes
   explicitly when reporting work.
 

@@ -79,8 +79,6 @@ export const BUILD_STEPS = [
  *              the fitted zoom never drops below canvas/stills.js's threshold.
  *   shadows    the twin in #item-shadows is built at all. Off is less DOM, not
  *              just less ink.
- *   threads    canvas/web.js draws its minimum spanning tree. Desktop only in
- *              the first place.
  *   blur       backdrop-filter, wherever it is used - the dialog's scrim and
  *              the transport button over a cover. The most expensive thing a
  *              phone GPU is asked for here, and the least missed.
@@ -91,11 +89,20 @@ export const BUILD_STEPS = [
  * Balanced changes only things you cannot see standing still: softer pictures,
  * no panel blur, smaller batches. Light is where the board visibly gives
  * something up, and says so in the panel.
+ *
+ * There was a `threads` flag here as well, and it is worth saying why it went.
+ * It existed because the web computed a maximal planar set over every card on
+ * every drag frame, which is genuinely more than a tired phone should be asked
+ * for. Connections are drawn from a stored list now (canvas/web.js): a handful
+ * of pairs somebody drew by hand, and no graph to solve. So the flag stopped
+ * paying for itself, and what it had become was a switch that silently hid work
+ * the user had done - which is not a quality trade, it is a missing feature. The
+ * board's own "Show connections" is the honest control, and it is in View.
  */
 const PRESETS = {
-  full: { motion: true, shadows: true, threads: true, blur: true, anim: true, sharpness: 1280, build: 12 },
-  balanced: { motion: true, shadows: true, threads: true, blur: false, anim: true, sharpness: 1152, build: 8 },
-  light: { motion: false, shadows: false, threads: false, blur: false, anim: false, sharpness: 1024, build: 4 },
+  full: { motion: true, shadows: true, blur: true, anim: true, sharpness: 1280, build: 12 },
+  balanced: { motion: true, shadows: true, blur: false, anim: true, sharpness: 1152, build: 8 },
+  light: { motion: false, shadows: false, blur: false, anim: false, sharpness: 1024, build: 4 },
 };
 
 const DEFAULT_LEVEL = 'full';

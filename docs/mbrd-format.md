@@ -138,6 +138,7 @@ filename supplies one and is decoded the same way.
     "desktop": [ { "id": "k3f9a2", "x": 120, "y": -40, "w": 320, "h": 240, "rot": 0, "z": 7 } ],
     "mobile":  [ { "id": "k3f9a2", "x": 0, "y": -120, "w": 320, "h": 240, "rot": 0, "z": 7 } ]
   },
+  "connections": [ ["k3f9a2", "p81m4x"] ],
   "trash": [ { "at": 1753440000000, "item": { … } } ]
 }
 ```
@@ -247,6 +248,50 @@ so one file can stay in Mobile mode on a phone and Desktop mode on a computer.
 `trash` is the bin, and its items carry their assets. That is deliberate: a bin
 that cannot restore anything after a save is not a bin.
 
+### `connections`
+
+Lines somebody drew between two cards, as unordered pairs of item ids. A
+connection has two ends and no direction — `["a","b"]` and `["b","a"]` are the
+same one, and the second is dropped on the way in.
+
+**Top-level, not inside a layout,** and that is the structural point: a
+connection is between *items*, items are shared across Desktop and Mobile, and
+only geometry is per-layout. Filing them under a layout would mean a board
+connected on a desktop opened unconnected on a phone and then lost the lines the
+next time it was saved from one.
+
+Nothing about the path is stored. Where a line runs is a function of where the
+two cards are now, worked out at draw time, so there is nothing to invalidate
+and nothing to go stale — the same relationship the automatic web this replaced
+had with the board.
+
+What is held to, on the way in and on the way out:
+
+- Both ends must name an item the file actually carries, **live or binned**. A
+  pair naming a card in the bin is kept, because restoring that card has to
+  bring its lines back with it; a pair naming nothing is dropped, since nothing
+  could make it mean something again.
+- A card joined to itself is not a connection. Dropped.
+- Duplicates collapse. Malformed entries — not an array, one id, a non-string —
+  are dropped one at a time rather than failing the load.
+- At most 2000 (`MAX_CONNECTIONS`). JSON is cheap and every entry costs a route
+  to work out and a subpath to draw.
+
+*While the app is running* a connection whose item has been deleted is simply
+not drawn, and is deliberately **not** removed — that is what lets delete, undo,
+trash and restore work with no bookkeeping at any of them. The pruning above
+happens only at the file boundary.
+
+An older reader ignores the key and shows the board without lines — and, unlike
+an unknown `type` or an unknown `meta` key, does **not** write it back, because
+`board.json` is rebuilt field by field rather than carried through. So a board
+saved by a build that predates this loses its connections. That is the one place
+the format's forward-compatibility promise does not reach, and it is worth
+knowing before adding another top-level key.
+
+`settings.web` — which predates all of this and is still called that, so an
+older build reads it and behaves — is the switch for whether they are drawn.
+
 ### An item
 
 ```json
@@ -266,7 +311,7 @@ that cannot restore anything after a save is not a bin.
 | field  | meaning |
 | ------ | ------- |
 | `id`   | Unique within the board. `[A-Za-z0-9_-]{1,64}`. |
-| `type` | `image`, `video`, `audio`, `text`, `note`, `link`, `model`, `generic`. |
+| `type` | `image`, `video`, `audio`, `text`, `note`, `link`, `swatch`, `model`, `generic`. |
 | `x`, `y` | The item's **centre**, in world units. **`y` points up** — this is the one convention that surprises people, and it is why the renderer lays items out at `-y`. |
 | `w`, `h` | Size in world units. Bounded to 48…20000 (`geometry.js`). |
 | `rot`  | Degrees, anticlockwise-positive. Nothing sets it yet; every geometry helper already respects it. |
@@ -274,6 +319,13 @@ that cannot restore anything after a save is not a bin.
 | `name` | The label on the card. Editable, and independent of the filename. |
 | `asset`| `{ hash, embedded: true }`, or `null` for items that are only text. |
 | `meta` | Per-type extras. See below. |
+
+**An unknown `type`** — a reader that does not recognise one shows the item as a
+plain named card rather than dropping it (`RENDERERS[item.type] ||
+RENDERERS.generic`), and writes it back out untouched. `type` is a free-form
+string in the model for exactly that reason. It is what let `swatch` be added
+without older builds losing those items, or losing the board they were on, and
+it is the same extension point unknown `meta` keys get below.
 
 **`asset.external`** — `{ external: { path } }` is reserved for a
 link-instead-of-embed setting that does not exist. Unpack tolerates it; pack has
@@ -288,6 +340,7 @@ promise 1 above,** and that is the open question at the bottom of this document.
 | `rich`   | `note` | The formatted content when present, and then authoritative over `text` (which it flattens to). `{ font, size, valign, blocks: [{ tag, align, text }] }` — `tag` is `h1`/`h2`/`p`, `align` is `left`/`center`/`right`, `font` is an allowlist key (`sheet`/`sans`/`serif`/`mono`), `size` a multiplier clamped to 0.7–1.8, `valign` is `top`/`middle`/`bottom`. Normalised on the way in (`normalizeNoteRich`): unknown values fall back, and the flattened text is held to `NOTE_MAX`. Absent on a legacy note, which is parsed back from `text`. |
 | `stuckTo`| `note` | The id of the item this sticky note is pinned to, or `null` for loose. Stamped from live geometry at save; a load seeds the runtime memo from it so the pin survives a reload and a Mobile reflow even when the note no longer visibly overlaps its host. A dangling id (host deleted) falls back to measuring overlap. |
 | `url`    | `link` | The address. **Revalidated on every render**, never trusted from the file. |
+| `hex`    | `swatch` | The colour, as `#rrggbb`. The item's `name` carries the same value uppercased — a swatch has no other name it could have, which is what makes one findable and what a copy of one puts on the system clipboard. Held to six hex digits on the way in and on the way out to the card (`swatchHex`); `#rgb` is folded out to the long form, and anything else falls back to the default grey rather than being stored. The item carries no asset. |
 | `peaks`  | `audio` | RMS readings in [0, 1]. Moved out to `waveforms/` when packing — see below. |
 | `cover`  | any | An asset hash for the picture a card shows: album art, a diagram, a chosen image. On a `video` it is the poster — a still cut from the clip's own first frame at import, so the card is a picture of itself before it is played. Same key either way, and readers need not tell them apart. |
 | `fit`    | `image`, `video` | This one card's fit, overriding the board-wide `mediaFit`: `"cover"` fills and crops, `"contain"` fits the whole picture in. Absent means follow the board default. |

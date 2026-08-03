@@ -12,6 +12,10 @@
 //   layout     - desktop/mobile geometry profile changed (payload: mode)
 //   board      - a whole new board was loaded, or the title/dirty flag changed
 //   trash      - something was thrown away, restored, or purged
+//   connections- a line between two cards was drawn or removed. Its own event
+//                rather than riding on 'items', which was tempting and wrong:
+//                every subscriber to that one would repaint for a change that
+//                moved nothing and added nothing.
 
 import { clamp, isFamily, isHash, itemHashes, toast } from './util.js';
 // Pure geometry, shared with the canvas and the input layer so that "where is
@@ -55,8 +59,10 @@ import {
 } from './board-model.js';
 import {
   cloneSettings, layoutSettingsOf, settingsFor,
-  dedupeIds, MAX_ITEMS,
+  dedupeIds, MAX_ITEMS, MAX_CONNECTIONS, pairKey, normalizeConnections,
 } from './board-model.js';
+
+export { MAX_CONNECTIONS, pairKey };
 
 // Stuckness, one level down - see sticky.js. Questions about geometry; the
 // mutations that act on their answers are here.
@@ -183,6 +189,142 @@ function onLattice(it) {
       ? it.meta
       : { ...it.meta, presnap: { x: it.x, y: it.y, w: it.w, h: it.h } },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Connections
+//
+// Lines between two cards, drawn by hand. The list is `board.connections` -
+// unordered pairs of item ids, top-level because items are shared across both
+// layouts while geometry is not (see board-model.js).
+//
+// **Dangling is tolerated, not prevented,** and that one decision is why there
+// is no bookkeeping here for delete, undo, trash or restore. A connection whose
+// item is not on the board is simply not drawn; the item comes back and its
+// connections come back with it, because they never left. Every alternative -
+// stripping pairs on delete and restoring them on undo, or refusing to let an
+// item go while something points at it - is a second undoable thing to get
+// right at four call sites, to arrive at the same picture.
+//
+// The pruning happens once, at the edges: on the way into a file and on the way
+// out of one, against the items that file actually holds (live *and* binned).
+// So nothing accumulates on disk, and nothing is lost while the app is running.
+// ---------------------------------------------------------------------------
+
+/**
+ * key -> true for every pair on the board, rebuilt lazily.
+ *
+ * The same arrangement byId() has with board.items, for the same reason: the
+ * array is the truth and an index maintained by hand is one missed write away
+ * from lying. `connections` is the only event that can change membership, so it
+ * is the only one that drops this.
+ */
+let connIndex = null;
+
+function connKeys() {
+  if (!connIndex) {
+    connIndex = new Set();
+    for (const [a, b] of board.connections) connIndex.add(pairKey(a, b));
+  }
+  return connIndex;
+}
+bus.on('connections', () => { connIndex = null; });
+bus.on('board:load', () => { connIndex = null; });
+
+/** Whether these two cards are joined. Order does not matter. */
+export const areConnected = (a, b) => !!a && !!b && connKeys().has(pairKey(a, b));
+
+/** The ids joined to this one. Linear, and called once per reroute. */
+export function connectedTo(id) {
+  const out = [];
+  for (const [a, b] of board.connections) {
+    if (a === id) out.push(b);
+    else if (b === id) out.push(a);
+  }
+  return out;
+}
+
+/**
+ * Join these two, or part them if they are already joined.
+ *
+ * One function rather than a connect and a disconnect, because it is one
+ * gesture: the connector tool run again on a pair that already has a line is
+ * how a line is removed. The alternative was making connections selectable,
+ * which means hit-testing a path in canvas/input.js and a selection model
+ * holding things that are not items - a great deal of machinery for a delete
+ * key. See research/toolbar-2026-08-03.md.
+ *
+ * Returns whether the pair is connected now, so the caller can say which of the
+ * two things just happened.
+ */
+export function toggleConnection(a, b) {
+  if (!a || !b || a === b) return false;
+  const key = pairKey(a, b);
+  const had = connKeys().has(key);
+  if (!had && board.connections.length >= MAX_CONNECTIONS) {
+    toast('That is as many connections as one board can hold', 'error');
+    return false;
+  }
+  const write = list => {
+    board.connections = list;
+    bus.emit('connections');
+  };
+  const before = board.connections;
+  const after = had
+    ? board.connections.filter(p => pairKey(p[0], p[1]) !== key)
+    : [...board.connections, [a, b]];
+  commit(had ? 'Remove connection' : 'Connect',
+    () => write(after), () => write(before));
+  return !had;
+}
+
+/**
+ * Add several at once, skipping the ones already there. One undo entry.
+ *
+ * The generator's door (cmds.connectSelection). One commit rather than one per
+ * pair for the reason swapAssets() gives: you asked for a set of connections
+ * and one Ctrl+Z has to take back a set, and forty separate entries would also
+ * be forty of the history limit spent on a single button press.
+ *
+ * Returns how many were actually new, which is what the toast reports.
+ */
+export function addConnections(pairs, label = 'Connect') {
+  const keys = connKeys();
+  const fresh = [];
+  const taken = new Set();
+  for (const [a, b] of pairs || []) {
+    if (!a || !b || a === b) continue;
+    const key = pairKey(a, b);
+    if (keys.has(key) || taken.has(key)) continue;
+    taken.add(key);
+    fresh.push([a, b]);
+    if (board.connections.length + fresh.length >= MAX_CONNECTIONS) break;
+  }
+  if (!fresh.length) return 0;
+  const before = board.connections;
+  const after = [...board.connections, ...fresh];
+  const write = list => { board.connections = list; bus.emit('connections'); };
+  commit(label, () => write(after), () => write(before), fresh.length);
+  return fresh.length;
+}
+
+/**
+ * Take every line off the board, in one undoable step.
+ *
+ * The board-wide counterpart to drawing over a pair, and the answer to the one
+ * thing the generator makes easy to regret: running it on a board you did not
+ * mean to leaves forty lines that would otherwise be forty trips with the Join
+ * tool. Returns how many went, so the caller can say.
+ *
+ * One commit rather than one per pair, for the reason swapAssets() gives: you
+ * asked to clear a board and one Ctrl+Z has to give a board back.
+ */
+export function clearConnections(label = 'Remove all connections') {
+  const before = board.connections;
+  if (!before.length) return 0;
+  const write = list => { board.connections = list; bus.emit('connections'); };
+  commit(label, () => write([]), () => write(before), before.length);
+  return before.length;
 }
 
 /**
@@ -963,6 +1105,51 @@ export function setItemText(id, text) {
 }
 
 /**
+ * Recolour a swatch: its `meta.hex` and the name it wears, as one step.
+ *
+ * The two are one fact. A swatch has no name of its own to lose - it is a
+ * colour and the number for it - so the number *is* the name, which is what
+ * makes a swatch findable in the palette (ui/search.js reads names) and what
+ * puts something readable on the system clipboard when one is copied
+ * (summarise(), above, falls back to the name for every type but note and
+ * link). Writing them in one commit is the same reasoning applySnapState() uses
+ * for the snap flag and the geometry: one act by the user should be one Ctrl+Z,
+ * and a state where the two disagree is one nobody could have produced by hand.
+ *
+ * The value arrives from an `<input type="color">`, which can only ever hand
+ * over `#rrggbb` - but it also arrives from a .mbrd, so it goes through the
+ * same gate the renderer reads it back through rather than being trusted here.
+ * That gate is canvas/renderers.js, which sits *above* this file, so the check
+ * is repeated in miniature rather than imported: six hex digits or nothing
+ * happens. A bad value is dropped, not stored and quietly corrected on the way
+ * out - the board should not hold a colour it will not show.
+ */
+export function setSwatchHex(id, hex) {
+  const it = byId(id);
+  if (!it || it.type !== 'swatch') return;
+  const next = String(hex ?? '').trim().toLowerCase();
+  if (!/^#[0-9a-f]{6}$/.test(next)) return;
+  const prevHex = it.meta?.hex;
+  const prevName = it.name;
+  if (prevHex === next) return;
+  const write = (value, name) => {
+    const item = byId(id);
+    if (!item) return;
+    // Undefined is a real previous value - a swatch out of a hand-written file
+    // may carry no hex at all - and setting the key to `undefined` rather than
+    // removing it would leave the board holding a field it does not have. Same
+    // shape setItemCover() uses to take a picture away.
+    if (value === undefined) { const { hex: _drop, ...rest } = item.meta || {}; item.meta = rest; }
+    else item.meta = { ...item.meta, hex: value };
+    item.name = name;
+    bus.emit('item', id);
+  };
+  commit('Recolour swatch',
+    () => write(next, next.toUpperCase()),
+    () => write(prevHex, prevName));
+}
+
+/**
  * Commit a note's formatted content - the structured `meta.rich` and the
  * plaintext `meta.text` it flattens to - as one undoable step, so a single Ctrl+Z
  * takes back the whole edit rather than the two halves separately. A no-op when
@@ -1145,10 +1332,16 @@ export function setItemPoster(id, hash) {
  * limit, which is to say the rest of the session's undo thrown away to record a
  * single button press.
  *
- * Each swap is `{ id, asset, cover }` - either field may be absent, and an
- * absent one is left exactly as it was. Items that were *considered* and left
- * alone belong in the list too, with neither field: they still get marked, and
+ * Each swap is `{ id, asset, cover }`, and each field says one of three things:
+ * a hash replaces what is there, `null` takes the reference away, and absent
+ * leaves it exactly as it was. Items that were *considered* and left alone
+ * belong in the list too, with neither field: they still get marked, and
  * marking them is the whole point of listing them.
+ *
+ * `null` is what the optimiser does with a file of zero bytes. That is a
+ * removal rather than a re-encode - there is nothing to shrink and nothing to
+ * draw - and it goes through here rather than through its own command so that a
+ * run is still one undoable step, which is the promise below.
  *
  * The id that was there goes into `meta.was` / `meta.wasCover`, and that is not
  * bookkeeping for undo's sake: undo closes over the old ids already. It is for
@@ -1185,7 +1378,9 @@ export function swapAssets(swaps, label = 'Optimize board') {
   const swapping = list.some(({ id, asset, cover }) => {
     const it = byId(id);
     return (isHash(asset) && it.asset?.hash && asset !== it.asset.hash) ||
-           (isHash(cover) && isHash(it.meta?.cover) && cover !== it.meta.cover);
+           (isHash(cover) && isHash(it.meta?.cover) && cover !== it.meta.cover) ||
+           (asset === null && !!it.asset) ||
+           (cover === null && isHash(it.meta?.cover));
   });
   if (!swapping) {
     for (const { id } of list) {
@@ -1203,14 +1398,25 @@ export function swapAssets(swaps, label = 'Optimize board') {
       const it = byId(id);
       if (!it) continue;
       const meta = { ...it.meta };
-      if (isHash(asset) && it.asset?.hash && asset !== it.asset.hash) {
+      // null means take the reference away rather than point it somewhere else.
+      // The bytes are still pinned by `was` for as long as the undo can reach
+      // them, exactly as a re-encode pins its original - the sweep would
+      // otherwise collect them the next time the board saved, and undo would
+      // hand back a hash with nothing behind it.
+      if (asset === null && it.asset?.hash) {
+        if (!isHash(meta.was)) meta.was = it.asset.hash;
+        it.asset = null;
+      } else if (isHash(asset) && it.asset?.hash && asset !== it.asset.hash) {
         // Only the first swap records an original. Optimising twice must not
         // leave `was` pointing at the *previous* optimisation, or undoing once
         // would restore a file that is itself already re-encoded.
         if (!isHash(meta.was)) meta.was = it.asset.hash;
         it.asset = { ...it.asset, hash: asset };
       }
-      if (isHash(cover) && isHash(meta.cover) && cover !== meta.cover) {
+      if (cover === null && isHash(meta.cover)) {
+        if (!isHash(meta.wasCover)) meta.wasCover = meta.cover;
+        delete meta.cover;
+      } else if (isHash(cover) && isHash(meta.cover) && cover !== meta.cover) {
         if (!isHash(meta.wasCover)) meta.wasCover = meta.cover;
         meta.cover = cover;
       }
@@ -1508,6 +1714,7 @@ export function loadBoard(data) {
   board.mediaFit = next.mediaFit;
   board.paletteSources = next.paletteSources;
   board.trash = next.trash;
+  board.connections = next.connections;
   board.layoutMode = layoutMode;
   // Nothing that arrives from outside is allowed to be a ghost. serializeBoard()
   // never writes one, so a file carrying the type was hand-made or came from a
@@ -1551,6 +1758,7 @@ export function loadBoard(data) {
   bus.emit('items');
   bus.emit('selection');
   bus.emit('trash');
+  bus.emit('connections');
 }
 
 /**
@@ -1635,6 +1843,12 @@ function normalizeBoard(data) {
     items: normalizedItems,
     trash: dedupeIds(trash.map(t => makeItem(t.item)), ids)
       .map((item, i) => ({ item, at: +trash[i].at || 0 })),
+    // Against `ids`, which dedupeIds() has by now filled with every id on the
+    // board *and* every id in the bin - and filled with the ids as they ended
+    // up, so a pair naming a duplicate that was renamed on the way in is pruned
+    // rather than pointing at whichever card won the collision. A connection to
+    // a binned card is kept: restoring it has to bring its lines back with it.
+    connections: normalizeConnections(src.connections, ids),
   };
 }
 
@@ -1832,6 +2046,9 @@ export function serializeBoard() {
   const shed = list => (ghost.size ? list.filter(g => !ghost.has(g.id)) : list);
   const desktop = shed(completeLayout('desktop'));
   const mobile = shed(completeLayout('mobile'));
+  // Every id this file will carry: the real items and the bin's. What
+  // connections are pruned against - see the note beside them below.
+  const filed = new Set([...real.map(i => i.id), ...board.trash.map(t => t.item.id)]);
   const desktopSettings = settingsFor(board.layoutSettings.desktop, board.sharedAppearance);
   const desktopById = layoutMap(desktop);
   const itemIn = (item, geometry) => {
@@ -1877,6 +2094,16 @@ export function serializeBoard() {
     // file you might not open again for a month, and a bin that emptied itself
     // at exactly that moment would be a trapdoor rather than a safety net.
     trash: board.trash.map(t => ({ at: t.at, item: serializeItem(t.item) })),
+    // Pruned against what this file actually holds, which is the *shed* item
+    // list plus the bin. Two things fall out of that and both are meant to:
+    // a connection to a hint card cannot reach a file, because ghosts are
+    // stripped a few lines up and a pair naming one would dangle in every
+    // reader; and a connection to a binned card is kept, because restoring
+    // that card has to bring its lines back with it.
+    //
+    // This is the only place dangling pairs are collected. While the app is
+    // running they are simply not drawn - see the note over toggleConnection().
+    connections: normalizeConnections(board.connections, filed),
   };
 }
 

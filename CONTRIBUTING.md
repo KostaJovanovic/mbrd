@@ -148,7 +148,8 @@ land, and none of them require touching anything else:
 | a new arrangement | `arrange/arrangements.js` — a pure `(items, opts) => [{x, y}]` in input order |
 | support for a new file type | a branch in `classify()` plus an entry in `RENDERERS`, both in `canvas/renderers.js` |
 | a setting | one entry in `ui/settings-schema.js` — id, tab, section, type, `get`/`set` |
-| a user-facing action | one entry in `cmds` (`commands.js`), which the sidebar, keyboard and context menu all drive |
+| a user-facing action | one entry in `cmds` (`commands.js`), which the sidebar, toolbar, keyboard and context menu all drive |
+| a tool on the toolbar | a `<button data-cmd="…">` in `index.html`, plus the `cmds` entry above. `data-desktop` keeps it off the phone's tier, `data-phone` off every other width |
 
 Two things not to do, both of which look like improvements:
 

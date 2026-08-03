@@ -694,8 +694,12 @@
   z-index: 5;
 }
 
-/* The web of threads between items (canvas/web.js). Inside #world, so pan and
-   zoom are the layer's transform rather than anything this has to redraw.
+/* The lines between items (canvas/web.js). Drawn by hand with the Join tool
+   rather than worked out from the board - the id and the class kept the names
+   they had, for the reason that module's header gives.
+
+   Inside #world, so pan and zoom are the layer's transform rather than
+   anything this has to redraw.
    It sits below the shared item-shadow underlay; #world paints no background
    of its own, so there is nothing for either backdrop to disappear behind. */
 #web {
@@ -705,16 +709,54 @@
   z-index: -2;
 }
 /* Two kinds of element, one appearance. The bulk <path> carries every settled
-   thread as subpaths of a single `d`, which is what keeps a redraw to one
-   attribute write on a board with hundreds of them. A thread only gets its own
-   <line> for as long as it is fading, because opacity cannot be applied to a
-   subpath - and it is handed back to the path the moment it lands. */
+   line as subpaths of a single `d`, which is what keeps a redraw to one
+   attribute write on a board with hundreds of them. A line only gets its own
+   <path> for as long as it is fading, because opacity cannot be applied to a
+   subpath - and it is handed back to the bulk one the moment it lands.
+
+   stroke-linejoin, which a straight segment never needed: a routed line bends
+   around the cards in its way, and a mitre on a right angle at a non-scaling
+   stroke width draws a small spur at every corner. */
 #web path,
-#web line.thread {
+#web path.thread {
+  fill: none;
   stroke: var(--web-line);
   stroke-width: var(--web-weight);
   stroke-linecap: round;
+  stroke-linejoin: round;
   /* A thread, not a beam: without this the stroke would be multiplied by the
      zoom along with everything else, and reach ten pixels wide at 8x. */
   vector-effect: non-scaling-stroke;
+}
+
+/* ---------------------------------------------------------
+   Drawing one (ui/toolbar.js)
+   --------------------------------------------------------- */
+
+/* The board while the Join tool is armed. This is the app's only mode, so it
+   says so where the hand is rather than only where the button is: the button at
+   the top of the screen is pressed, and the whole board under the cursor is a
+   crosshair. Somebody who armed the tool and then looked away for a minute
+   should be able to tell from the board alone.
+
+   The cursor is written on the viewport rather than on the cards, so empty
+   canvas carries it too - clicking nothing is a real move in this mode (it
+   drops the pick), and a card-only cursor would say the gaps were inert. */
+:root.is-connecting #viewport,
+:root.is-connecting .item { cursor: crosshair; }
+
+/* The first end, once one is chosen. canvas/items.js writes data-pick, and it
+   writes it in build() as well as on the live node - a card culled while it is
+   picked is thrown away and rebuilt, and a mark applied only to the node would
+   go with it.
+
+   A ring rather than a wash, and drawn outside the card rather than over it: it
+   has to read on a photograph as clearly as on paper, and half a second later
+   this card is going to have a line coming out of it. Outline, not a border or
+   a shadow - it does not affect layout, it follows the card's own radius, and
+   it survives the overflow clip .item applies to everything inside itself. */
+.item[data-pick] {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: inherit;
 }

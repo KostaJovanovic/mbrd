@@ -111,7 +111,7 @@ function paperHint() {
 const QUALITY_HINT = {
   full: 'Everything on. The board as it was drawn.',
   balanced: 'Softer pictures, no panel blur, smaller batches. Nothing you can see standing still.',
-  light: 'GIFs held still, no shadows, no threads, no animation. For a tired phone.',
+  light: 'GIFs held still, no shadows, no blur, no animation. For a tired phone.',
 };
 
 /**
@@ -254,9 +254,17 @@ export const SECTIONS = [
       { id: 'opt-hud', type: 'check', label: 'Show readout',
         get: () => !!board.settings.hud, set: v => setSetting('hud', v) },
       // A Desktop thing - Mobile is a reading feed with no spatial map to draw
-      // one over - so it comes down rather than sitting there inert.
-      { id: 'opt-web', type: 'check', label: 'Show web', when: desktop,
-        get: () => !!board.settings.web, set: v => setSetting('web', v) },
+      // them over - so it comes down rather than sitting there inert.
+      //
+      // On by default now, where the web it replaced was off. The two defaults
+      // answer different questions: an automatic effect that appeared uninvited
+      // over a board somebody had just made was an imposition, and a line you
+      // drew yourself and cannot see is a bug. Still `settings.web` in the file,
+      // and deliberately - the key is what an older build reads to decide
+      // whether to draw anything between cards, and renaming it would leave
+      // every board that had the web switched on opening blank.
+      { id: 'opt-web', type: 'check', label: 'Show connections', when: desktop,
+        get: () => board.settings.web !== false, set: v => setSetting('web', v) },
       // Checked = photos and videos fill their card and crop; unchecked = the
       // whole picture fits inside and letterboxes. Board-wide default; a single
       // item overrides it from its right-click menu.
@@ -354,8 +362,6 @@ export const SECTIONS = [
         get: () => quality.motion, set: v => setQualityOverride('motion', v) },
       { id: 'q-shadows', type: 'check', label: 'Card shadows', advanced: true,
         get: () => quality.shadows, set: v => setQualityOverride('shadows', v) },
-      { id: 'q-threads', type: 'check', label: 'Threads between cards', advanced: true,
-        get: () => quality.threads, set: v => setQualityOverride('threads', v) },
       { id: 'q-blur', type: 'check', label: 'Blurred backdrops', advanced: true,
         get: () => quality.blur, set: v => setQualityOverride('blur', v) },
       { id: 'q-anim', type: 'check', label: 'Animations', advanced: true,
@@ -427,6 +433,13 @@ export const SECTIONS = [
         // itself - the #grips URL and mbrd.debugGrips() drive the same toggle -
         // and a painted value would put the button back to false behind it.
         { cmd: 'debug-grips', label: 'Highlight resize grips', ariaPressed: 'false' },
+        // Every line between cards, in one press. Here rather than beside the
+        // Join tool because it is a demolition and not a drawing tool: the way
+        // to remove *a* connection is to draw over it, and a board-wide clear is
+        // the thing you want after trying the generator on a board you did not
+        // mean to. Undoable like anything else, which is what keeps it out of
+        // the danger dressing the clear-everything button wears.
+        { cmd: 'clear-connections', label: 'Remove all connections' },
       ] },
     ],
   },

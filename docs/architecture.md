@@ -52,8 +52,11 @@ The bottom of the graph is wider than `util`/`geometry`. `measure.js`,
 are pure — no DOM, no `state` import — and are meant to stay that way.
 `mesh.js` sits at the top level rather than under `canvas/` for exactly that
 reason: it is struct reading, and only `canvas/model.js` turns its output into
-pixels. `web-graph.js` is there for the same reason — the thread graph and its
-governor are arithmetic over points, and only `canvas/web.js` draws them.
+pixels. `web-graph.js` and `web-route.js` are there for the same reason — the
+spanning tree and its governor, and the orthogonal router, are arithmetic over
+points and boxes, and only `canvas/web.js` draws what they decide. The router's
+obstacles are handed in, which is what keeps it down here rather than reaching
+up into `canvas/spatial.js` for them.
 
 Six more sit down there for a different reason: they are what `state.js` was
 split onto, and they took nearly half of it with them.
@@ -174,6 +177,23 @@ there; a new control *instance* goes in the schema.**
 
 ### Chrome that is not in the panel
 
+`ui/toolbar.js` is the bar that says a board is made by putting things on it —
+files, a note, a colour, a link, the camera on a phone, and the connector tool.
+Every button on it carries a `data-cmd` and this module resolves it
+against `cmds`, exactly as `ui/sidebar.js` does for the panel; a tool is a button
+in `index.html` and an entry in `commands.js`, and nothing here hears about it.
+
+It is one component on two layouts, not two. Top-centre on a desktop, because
+both side edges are spoken for by the panels and the whole bottom edge is the
+bin, the history pair, the zoom cluster and the player. On a phone it collapses
+to a handle in that bottom row — where the old `#add-bar` was, whose `data-add`
+one-off it absorbed — and opens upward into a second tier, with the player
+stepped up to a third. **`#toolbar` must stay before `#nowplaying` in
+`index.html`:** the rules that move the player are general sibling combinators.
+
+The one thing it owns beyond wiring is the connector tool's armed state, which
+is the app's only mode. See *Connections* below.
+
 `ui/nowplaying.js` is the bar along the foot that comes up when a clip starts:
 the transport again, pinned to the glass, so the thing making a noise can be
 stopped by whoever is listening rather than by whoever can find its card. Volume
@@ -212,10 +232,16 @@ keep new ones off it.**
 ## Quality is not board state
 
 `quality.js` sits in the base layer beside `measure.js`: one dial (Light /
-Balanced / Full) resolving seven flags that `canvas/*` reads — `motion`,
-`shadows`, `threads`, `blur`, `anim`, `sharpness`, `build`. Full is the default
-and is exactly what shipped before it existed, so the numbers in `PRESETS.full`
-are the constants they replaced (`DISPLAY_MAX`, `BUILD_BUDGET`).
+Balanced / Full) resolving six flags that `canvas/*` reads — `motion`,
+`shadows`, `blur`, `anim`, `sharpness`, `build`. Full is the default and is
+exactly what shipped before it existed, so the numbers in `PRESETS.full` are the
+constants they replaced (`DISPLAY_MAX`, `BUILD_BUDGET`).
+
+There were seven. `threads` went when the web stopped being computed on every
+drag frame: a flag that had been a real trade became a switch that silently hid
+lines somebody had drawn, which is a missing feature rather than a quality
+setting. Worth remembering as the shape of the question — a flag here has to be
+work the board can afford not to do, never work the user has already done.
 
 It is stored **per device** in `localStorage`, never in the `.mbrd` — how hard
 someone else's phone should work is not a property of your board. `ui/quality.js`
@@ -282,12 +308,57 @@ and both are memory ceilings rather than polish:
   animated GIF's *current* frame is painted into a static twin and the two are
   swapped, because a browser gives no way to pause an `<img>`.
 
-### The web, input, and item types
+### Connections, input, and item types
 
-`canvas/web.js` draws the threads between item centres, and its rule is that no
-two may cross: a Euclidean minimum spanning tree first (guarantees one connected
-piece, and an MST provably contains no crossing), then every other thread that
-fits, shortest first.
+Lines between cards are **drawn, not derived**. `board.connections` is a
+top-level list of unordered item-id pairs — top-level because a connection is
+between *items*, and items are shared across both layouts while geometry is not.
+Three modules divide the work:
+
+- `web-route.js` (pure, top level) decides where a line runs: an orthogonal path
+  that goes around the cards in between rather than through them. Not a grid
+  search — world space is infinite and float, so any fixed cell size either
+  misses real gaps or explodes. The lattice is built from the obstacles' own
+  edges, pushed out by a clearance, and A\* runs over it with a cost of distance
+  **plus a penalty per turn**. That penalty is the difference between a diagram
+  and a staircase. Obstacles are handed in; this module never reaches for the
+  spatial index or the board.
+- `canvas/web.js` draws them, and owns the performance rule the feature lives or
+  dies by: **nothing is routed while anything is moving.** A stored route is kept
+  exactly as long as both of its ends are where they were, so a card being
+  dragged trails straight lines for the length of the gesture and a pass over the
+  routes runs once the hand comes off. Nothing about a path is ever stored — it
+  is a function of where the cards are now, so there is nothing to invalidate.
+- `web-graph.js` is what this used to be. Its minimum spanning tree drew the
+  board's web automatically, and it survives as the **generator**
+  (`cmds.connectSelection`): run once on demand over a selection, it emits real,
+  stored, editable connections that then route like any other. So its
+  no-crossing guarantee stops being a law the app imposes and becomes what the
+  generator happens to produce — and several hundred lines of proven geometry go
+  on earning their keep. It has no button; it is on `mbrd.cmds` and nowhere
+  else, because it is a thing you do once to a board rather than a tool. It is
+  also how a board that had the old automatic web gets it back as real lines.
+
+Making one is the app's **only mode**. `ui/toolbar.js` holds the armed state and
+the four-case step (`connectStep`); `canvas/input.js` asks through `cmds` rather
+than importing a `ui/` module, the same seam the title card's pen uses. The tool
+stays armed after a pair — connecting five things is one trip to the toolbar —
+and Escape always puts it down.
+
+**Dangling is tolerated, not prevented.** A connection whose item is gone is
+simply not drawn, which is why delete, undo, trash and restore need no
+bookkeeping at any of them: the item comes back and its lines come back with it,
+because they never left. Pruning happens exactly twice, on the way into a file
+and on the way out of one, against the items that file holds — live *and*
+binned, so restoring a card brings its lines back.
+
+`settings.web` is still called that. It is the key an older build reads to
+decide whether to draw anything at all between cards, and renaming it would open
+every board that had the web switched on with nothing between them. It defaults
+to **on** now, where the automatic web defaulted to off: an effect nobody asked
+for is an imposition, and a line you drew yourself and cannot see is a bug. For
+the same reason the quality dial's `threads` flag is gone rather than left inert
+— a quality setting that silently hides work the user did is not a trade.
 
 `canvas/input.js` is one Pointer Events pipeline for mouse, pen and touch with
 exactly one active gesture (`g`); a second finger always wins and converts a drag
@@ -467,7 +538,7 @@ specificity:
 | `fonts.css` | the bundled `@font-face` set |
 | `tokens.css` | every custom property |
 | `base.css` | reset, type, the page, paper, grain, the surround, the boot cover |
-| `canvas.css` | `#viewport`, `#world`, the transform layer, the grid, the threads, item shadows, the paper outline, the Mobile sheet and masthead in screen space |
+| `canvas.css` | `#viewport`, `#world`, the transform layer, the grid, the connections, item shadows, the paper outline, the Mobile sheet and masthead in screen space |
 | `items.css` | the cards per type, the ghost hints, the grips, and what the board stops paying for while it is being moved |
 | `sidebar.css` | the panel — tabs, sections, folds, `.field` and its variants |
 | `chrome.css` | the corner, HUD readouts, the drop overlay, toasts, the now-playing bar |

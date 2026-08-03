@@ -53,20 +53,15 @@ export function initHud(viewport, cmds) {
     }
   });
 
-  // The phone's add bar (index.html, and the width query in the stylesheets).
-  // Wired here beside the zoom controls rather than in ui/sidebar.js, because it
-  // is chrome on the glass and not part of the panel - the same reason those
-  // are here.
-  el('add-bar').addEventListener('click', e => {
-    const btn = e.target.closest('[data-add]');
-    if (!btn) return;
-    if (btn.dataset.add === 'note') cmds.addNote();
-    else cmds.addFiles();
-  });
+  // The phone's add bar used to be wired here, beside the zoom controls, with
+  // its own data-add attributes and a two-branch switch over them. It is the
+  // toolbar now (ui/toolbar.js), every button on it is an ordinary data-cmd,
+  // and the one-off went with it - which is the whole reason that surface was
+  // folded in rather than joined by a second one.
 
   // Undo and redo on the glass, next to the bin. Here beside the zoom controls
-  // and the add bar rather than in ui/trash.js: they share that corner but not
-  // its subject, and the bin module has no business knowing about the history.
+  // rather than in ui/trash.js: they share that corner but not its subject, and
+  // the bin module has no business knowing about the history.
   //
   // Through cmds, not through state's undo() directly - the keyboard, the
   // context menu and these three now all press the same button.
