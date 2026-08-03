@@ -383,16 +383,22 @@ invent a movement the page was never told about; `Shift` is the way out of that
 one (it moves the whole delta onto the horizontal, `dx || dy` so it is right
 whether or not the browser already swapped, and it is applied *after* the device
 is latched or a mouse would stay latched into panning for the notch after the key
-came up). A swipe that merely **leans** is only attenuated, and that half
-`unrail()` gives back: it follows both axes across the burst and lifts the minor
-one by up to `UNRAIL_GAIN`, ramping in from `UNRAIL_FLOOR` so a real diagonal is
-untouched. Measured, not guessed — a recorded swipe delivered 5257px of vertical
-against 973px of sideways, the sideways half present in only 75 of its 349
-events. Reading a running measure rather than one event is load-bearing twice
-over: the minor axis arrives in gaps, and a delta released in one lump raises its
-own axis's measure as it lands, which takes the lift off the event that would
-otherwise have jerked. `cmds.debugWheel()` (also `#wheel`, also System → Debug)
-prints one line per swipe, which is how those numbers were got.
+came up). A swipe the platform is only **withholding** is the half `unrail()`
+gives back, lifting that axis by up to `UNRAIL_GAIN`.
+
+What it keys off is **how often the minor axis arrives, not how big it is** —
+two different questions, and only the first is evidence of a rail. From one pad
+within a minute: a railed swipe gave 5257px down and 973px across with the across
+in *75 of 349* events; a free one gave 791px down and 1147px across with it in
+*58 of 59*. The ratio cannot separate those — a sideways flick with a little
+drift looks as lopsided as a vertical swipe with the sideways half confiscated,
+and lifting the drift slides the board out from under the gesture. Presence
+separates them exactly, because zeroing events is what the rail does. Both
+measures start at "delivered whole", so nothing is lifted on the strength of the
+first event or two, and `UNRAIL_CAP` bounds the invention on top so a delta the
+driver held back and released in one lump cannot be multiplied into a jerk.
+`cmds.debugWheel()` (also `#wheel`, also System → Debug) prints one line per
+swipe, which is how all of those numbers were got.
 
 `canvas/renderers.js` is one entry per item type — `RENDERERS` plus a branch in
 `classify()`. Adding a type touches nothing else, and those two stayed in one
