@@ -365,6 +365,35 @@ exactly one active gesture (`g`); a second finger always wins and converts a dra
 into a pinch. **Its header carries the full gesture map — read it before adding a
 binding, and do not split the file.**
 
+The `wheel` handler is the one place that guesses at hardware. A touchpad and a
+mouse wheel arrive at the same event and mean opposite things — two fingers is a
+*scroll* and should pan in both axes, a notch is the zoom this app has always had
+— and no API says which sent it. `readWheel()` is the heuristic, pure and
+exported so `tests/input.test.js` can pin the cases: `ctrlKey` is a pinch (every
+engine reports one that way, and it is the only pinch notification a page gets),
+a non-zero `deltaMode` is a mouse, and otherwise a sideways or fractional or
+sub-notch delta is a pad. The answer is **latched for the length of a burst**
+(`WHEEL_STREAM_MS`), because a swipe starts slow and reads correctly on its first
+event but can look exactly like a wheel once it is moving.
+
+The other thing the handler answers to is the platform's **axis rail**, which
+comes in two strengths. A swipe committed to one axis has the other suppressed
+outright — straight sideways reports `deltaY` of exactly zero, and nothing can
+invent a movement the page was never told about; `Shift` is the way out of that
+one (it moves the whole delta onto the horizontal, `dx || dy` so it is right
+whether or not the browser already swapped, and it is applied *after* the device
+is latched or a mouse would stay latched into panning for the notch after the key
+came up). A swipe that merely **leans** is only attenuated, and that half
+`unrail()` gives back: it follows both axes across the burst and lifts the minor
+one by up to `UNRAIL_GAIN`, ramping in from `UNRAIL_FLOOR` so a real diagonal is
+untouched. Measured, not guessed — a recorded swipe delivered 5257px of vertical
+against 973px of sideways, the sideways half present in only 75 of its 349
+events. Reading a running measure rather than one event is load-bearing twice
+over: the minor axis arrives in gaps, and a delta released in one lump raises its
+own axis's measure as it lands, which takes the lift off the event that would
+otherwise have jerked. `cmds.debugWheel()` (also `#wheel`, also System → Debug)
+prints one line per swipe, which is how those numbers were got.
+
 `canvas/renderers.js` is one entry per item type — `RENDERERS` plus a branch in
 `classify()`. Adding a type touches nothing else, and those two stayed in one
 file deliberately: they are the pair a new type edits, and splitting them would
@@ -526,6 +555,18 @@ only part of a board that reaches the browser as *code*, so it is filtered
 through the `TOKENS` allowlist in `ui/look.js` — keep it that way.
 `ui/pigments.js` derives whole palettes in OKLCh from board pictures (48×48
 canvas, nothing uploaded) and repairs contrast afterwards.
+
+The palette menu is the one control for "what colour is this board?": four named
+palettes and **Dynamic**, which is the board's own pictures. There is no separate
+switch — choosing Dynamic allows the extraction and runs it, and choosing a name
+takes the permission away and drops every pigment the look was carrying. What the
+menu *shows* is derived rather than stored (`dynamicOn()`: permission plus
+pigments actually inline), because neither `auto` (permission) nor `derived`
+(provenance, and absent from older looks) answers "is this board wearing its
+pictures' colours right now". The board reaches Dynamic on its own at
+`AUTO_PALETTE_FLOOR` pictures — three, in `layout-settings.js` with the pure gate
+`autoPaletteReady()` — and that floor is on the automatic path only; asking for
+it by name has none.
 
 ### The stylesheets
 

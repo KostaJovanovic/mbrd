@@ -40,11 +40,11 @@ let ROOT = null;
  * @type {{
  *   CONTROLS: Array<object>, HOSTS: Record<string, string>,
  *   WHIMSY: string[], ALL_SOURCES_STOP: number,
- *   current: () => object, apply: (look: object) => void, persist: () => void,
+ *   current: () => object,
  *   setVar: (name: string, value: string) => void,
  *   setWhimsy: (level: number|string) => void,
- *   setAutoPalette: (on: boolean) => void,
- *   sourceCount: () => number, autoOn: (look: object) => boolean,
+ *   setPalette: (name: string) => void, goDynamic: () => void,
+ *   sourceCount: () => number, dynamicOn: () => boolean,
  * }}
  */
 let d = /** @type {any} */ (null);
@@ -56,6 +56,21 @@ export function initAppearanceControls(deps) {
 }
 
 export const inputs = new Map();
+
+/**
+ * The palette menu's entry for "take the colours from the pictures".
+ *
+ * A mode rather than a colour, and deliberately not a palette name: it is never
+ * written to `look.palette`, and no [data-palette] block in tokens.css answers
+ * to it. The menu shows it whenever the board is actually wearing extracted
+ * pigments - dynamicOn() in ui/appearance.js - so the row reads as the state the
+ * board is in rather than as a button somebody once pressed.
+ *
+ * The same string is the option's value in ui/settings-schema.js, which is data
+ * and imports nothing from here; tests/settings-panel.test.js holds the two
+ * together, the same bargain as the source dial's top stop.
+ */
+export const DYNAMIC = 'dynamic';
 
 export function buildControls() {
   const hosts = {};
@@ -138,41 +153,33 @@ export function syncControls() {
       out.textContent = format(input.value, spec);
     }
   }
-  const paletteSel = document.getElementById('opt-palette');
-  if (paletteSel) paletteSel.value = d.current().palette || '';
-
   const whimsy = document.getElementById('opt-whimsy');
   if (whimsy) whimsy.value = d.current().whimsy;
 
-  syncAutoBox();
+  syncPaletteMode();
 }
 
 /**
- * The switch on its own, because d.setVar() can turn it off and must not run the
- * full sync to say so.
+ * The palette menu and the dial under it, without touching anything else.
  *
- * syncControls() writes every control's value back from the look, including the
- * colour input that is mid-drag when this fires - and a colour picker being
- * assigned to while the pointer is down is how you get a value that jumps back
- * a frame after each move. The checkbox is the only thing that changed, so the
- * checkbox is the only thing rewritten.
+ * Its own function because d.setVar() can knock the board out of Dynamic - a
+ * hand-picked pigment is a decision about the same thing - and must not run the
+ * full sync to say so. syncControls() writes every control's value back from the
+ * look, including the colour input that is mid-drag when this fires, and a
+ * colour picker being assigned to while the pointer is down is how you get a
+ * value that jumps back a frame after each move.
  */
-export function syncAutoBox() {
-  const box = document.getElementById('opt-auto-palette');
-  if (box) box.checked = d.autoOn(d.current());
-  // The source-count dial only means anything while the switch is on - with it
-  // off the palette is the chosen one and no picture is read - so it comes down
-  // with the switch rather than sitting there inert.
+export function syncPaletteMode() {
+  const dynamic = d.dynamicOn();
+  const sel = document.getElementById('opt-palette');
+  if (sel) sel.value = dynamic ? DYNAMIC : (d.current().palette || '');
+  // The source-count dial only means anything while the pictures are what the
+  // board is painted from - anywhere else it is a dial over a palette that reads
+  // no picture at all - so it comes down with the mode rather than sitting there
+  // inert.
   const field = document.getElementById('palette-sources-field');
-  if (field) field.hidden = !d.autoOn(d.current());
+  if (field) field.hidden = !dynamic;
   syncPaletteSources();
-}
-
-export function wireAutoPalette() {
-  const input = document.getElementById('opt-auto-palette');
-  if (!input) return;
-  input.checked = d.autoOn(d.current());
-  input.addEventListener('change', () => d.setAutoPalette(input.checked));
 }
 
 /** The slider showing its own value, and the count it reflects. */
@@ -219,35 +226,26 @@ function format(value, spec) {
   return n.toFixed(decimals) + (spec.unit || '');
 }
 
+/**
+ * The one control that answers "what colour is this board?".
+ *
+ * Four named palettes and Dynamic, which is the pictures on the board. They were
+ * a menu and a checkbox below it in the fold, and that was one decision written
+ * down twice - a board is set in Papyrus or in Absinthe or in its own
+ * photographs, and being asked to name a palette and then to say whether it
+ * counts is a question with a wrong answer in it.
+ *
+ * Both branches drop every pigment the look is carrying and both mark the look
+ * accordingly, which is why neither happens here: they are the look model's, in
+ * ui/appearance.js, and each runs its own sync on the way out.
+ */
 export function wirePalette() {
   const sel = document.getElementById('opt-palette');
   if (!sel) return;
-  sel.value = d.current().palette || '';
+  sel.value = d.dynamicOn() ? DYNAMIC : (d.current().palette || '');
   sel.addEventListener('change', () => {
-    // A palette switch replaces the pigments wholesale, so per-token colour
-    // tweaks are dropped - otherwise the old accent would stick to the new
-    // paper and every palette after the first would look muddy.
-    //
-    // Two of them when they were hand-picked, because those are the two the
-    // panel offers and dropping more would throw away something the user cannot
-    // see to put back. All thirteen when they were extracted from photographs,
-    // because a derived look is not a set of tweaks to keep on top of a chosen
-    // palette - it *is* a palette, and leaving eleven of its tokens inline
-    // would leave the named one outvoted on its own sheet.
-    for (const key of d.current().derived ? Object.keys(d.current().vars) : ['--accent', '--paper']) {
-      delete d.current().vars[key];
-      ROOT.style.removeProperty(key);
-    }
-    delete d.current().derived;
-    // Choosing a palette by name is a decision about colour, and it takes the
-    // switch with it for the same reason picking a pigment by hand does - see
-    // d.setVar(). This is also the way back from an extracted palette: it is the
-    // one control that drops all fourteen tokens at once.
-    d.current().auto = false;
-    d.current().palette = sel.value;
-    d.apply(d.current());
-    d.persist();
-    syncControls();   // computed colours changed under us
+    if (sel.value === DYNAMIC) d.goDynamic();
+    else d.setPalette(sel.value);
   });
 }
 

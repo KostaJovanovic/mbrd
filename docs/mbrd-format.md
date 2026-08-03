@@ -176,8 +176,8 @@ card and crops. It is **board-level** (one value for both layouts). A single
 image or video can override it with `meta.fit` (`"cover"` / `"contain"`) — an
 absent or unrecognised `mediaFit` reads as `"contain"`.
 
-`paletteSources` is how many of the board's pictures the "take colours from
-pictures" palette is read from, newest first — a whole number clamped to
+`paletteSources` is how many of the board's pictures the Dynamic palette is read
+from, newest first — a whole number clamped to
 `[1, 24]`, or **`0` for every picture on the board**, defaulting to `12`.
 Board-level, since the palette it feeds is shared across layouts. Absent or
 unreadable reads as `12`; a count above 24 reads as `24`.

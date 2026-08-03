@@ -49,6 +49,28 @@ test.describe('the canvas', () => {
     expect(zoomed).toBeGreaterThan(before.zoom);
   });
 
+  test('a two-finger swipe pans both ways instead of zooming', async ({ page }) => {
+    // A wheel event carrying a sideways delta is a touchpad - no wheel has that
+    // axis - and this is the one place that can be shown for real: the deltas a
+    // browser builds are the deltas readWheel() has to classify, and the unit
+    // suite can only hand it an object shaped like one. It also holds the two
+    // apart on the same machine, which is the whole trick: this case swipes and
+    // the case above it spins a wheel, and they must not do the same thing.
+    await ready(page);
+    const before = await page.evaluate(
+      () => ({ ...window.mbrd.vp.pan, zoom: window.mbrd.vp.zoom }));
+
+    const box = await page.locator('#viewport').boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(30, 30);
+
+    const after = await page.evaluate(
+      () => ({ ...window.mbrd.vp.pan, zoom: window.mbrd.vp.zoom }));
+    expect(after.zoom).toBe(before.zoom);
+    expect(after.x).not.toBeCloseTo(before.x, 1);
+    expect(after.y).not.toBeCloseTo(before.y, 1);
+  });
+
   test('a note can be added, selected and deleted, and undo brings it back', async ({ page }) => {
     await ready(page);
 
@@ -173,6 +195,68 @@ test.describe('the toolbar', () => {
     // Escape is the way out of the only mode this app has.
     await page.keyboard.press('Escape');
     await expect(page.locator('#toolbar [data-cmd="connect"]')).toHaveAttribute('aria-pressed', 'false');
+  });
+});
+
+test.describe('the look', () => {
+  test('a board colours itself at the third picture, and the menu says so', async ({ page }) => {
+    // The one part of the palette that no unit test can reach: the extraction
+    // needs a canvas to read pixels off, ui/appearance.js touches `document` at
+    // import time and cannot be loaded in Node, and what is being asserted is a
+    // <select> agreeing with the colours on screen. The gate itself is pure and
+    // is tested in tests/layout-settings.test.js; this is the wiring around it.
+    //
+    // The modules are imported by URL rather than reached through `window.mbrd`,
+    // which is not a back door either: the browser resolves each specifier to
+    // the module instance the app is already running, so putAsset() here is the
+    // same store an import writes to.
+    await ready(page);
+
+    const add = n => page.evaluate(async i => {
+      const { putAsset } = await import('/assets/js/storage/assets.js');
+      const { addItems } = await import('/assets/js/state.js');
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 8;
+      const ctx = canvas.getContext('2d');
+      // Three saturated pictures around one hue, which is the case the extractor
+      // is built for - a board of photographs that agree with each other.
+      ctx.fillStyle = ['#c8281e', '#c8641e', '#b4281e'][i];
+      ctx.fillRect(0, 0, 8, 8);
+      const blob = await new Promise(done => canvas.toBlob(done, 'image/png'));
+      const hash = String(i + 1).repeat(64);
+      putAsset(hash, blob, { mime: 'image/png', ext: 'png', name: `p${i}.png` });
+      addItems([{ type: 'image', x: i * 300, y: 0, w: 200, h: 200,
+        asset: { hash, embedded: true } }], 'Add picture');
+    }, n);
+
+    const palette = page.locator('#opt-palette');
+    await expect(palette).toHaveValue('');
+
+    // One photograph is not a collection, and a whole interface turning over on
+    // a single dropped file is the fault the floor exists to prevent.
+    await add(0);
+    await add(1);
+    await page.waitForTimeout(300);
+    await expect(palette).toHaveValue('');
+    expect(await page.evaluate(
+      () => document.documentElement.style.getPropertyValue('--accent'))).toBe('');
+
+    // And the third one is the board deciding it has a colour of its own.
+    await add(2);
+    await expect(palette).toHaveValue('dynamic');
+    expect(await page.evaluate(
+      () => document.documentElement.style.getPropertyValue('--accent'))).not.toBe('');
+
+    // The same menu is the way back: a named palette drops every extracted
+    // pigment, and there is no second control to go and find. Through the panel
+    // rather than through the module, because the point of the entry is that a
+    // person can reach it - so the panel is opened at the tab it lives on.
+    await page.locator('#menu-btn').click();
+    await page.locator('#tab-look').click();
+    await palette.selectOption('');
+    await expect(palette).toHaveValue('');
+    expect(await page.evaluate(
+      () => document.documentElement.style.getPropertyValue('--accent'))).toBe('');
   });
 });
 

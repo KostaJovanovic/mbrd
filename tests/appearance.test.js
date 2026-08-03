@@ -151,9 +151,61 @@ test('the palette compares pictures by hash, without minting an object URL', () 
   assert.ok(walk.includes('getAsset('), 'the walk should test registration, not resolve');
   assert.ok(!walk.includes('assetURL('), 'the walk must not mint an object URL per picture');
 
-  const key = source.match(/function sourceKey\(\)[\s\S]*?\n}/)[0];
+  const key = source.match(/function sourceKey\([^)]*\)[\s\S]*?\n}/)[0];
   assert.ok(key.includes('pictureHashes()'), 'the comparison key is built from hashes');
 
   // And the resolve that does happen is of the slice, not of the board.
   assert.match(source, /hashes\.slice\(0, sourceCount\(\)\)\.map\(assetURL\)/);
+});
+
+// ---------------------------------------------------------------------------
+// Dynamic
+// ---------------------------------------------------------------------------
+//
+// The gate itself is pure and tested in layout-settings.test.js. What is asked
+// here is that the look model actually goes through it - the same shape as the
+// checks above, because ui/appearance.js touches a browser global at import
+// time and cannot be loaded in Node.
+
+test('the board only ever colours itself through the three-picture gate', () => {
+  const source = read(join(WEB, 'assets', 'js', 'ui', 'appearance.js'));
+  const strip = block => block.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+
+  // Every unasked-for run goes through autoRecolour(), which is the only thing
+  // that asks the gate. A second bus handler calling recolourFromBoard() direct
+  // would be a board colouring itself off one photograph again, and nothing on
+  // screen would say why.
+  const auto = strip(source.match(/function autoRecolour\(\)[\s\S]*?\n}/)[0]);
+  assert.ok(auto.includes('autoPaletteReady('), 'the automatic path asks the gate');
+  assert.ok(auto.includes('dynamicOn()'), 'and tells it whether the board is already dynamic');
+
+  const calls = [...strip(source).matchAll(/recolourFromBoard\(/g)].length;
+  // Four, and each one is a person: autoRecolour, the Dynamic entry, the whimsy
+  // axis moving under an already-extracted palette, and the definition itself.
+  assert.equal(calls, 4, 'a new caller of recolourFromBoard() needs a reason in this test');
+  for (const fn of ['goDynamic', 'reshade']) {
+    assert.ok(strip(source.match(new RegExp(`function ${fn}\\(\\)[\\s\\S]*?\\n}`))[0])
+      .includes('recolourFromBoard('), `${fn} extracts without the floor`);
+  }
+  // Starting over is not a request for colour, so it goes through the gate.
+  assert.ok(strip(source.match(/export function resetAppearance\(\)[\s\S]*?\n}/)[0])
+    .includes('autoRecolour()'));
+});
+
+test('Dynamic is a state the menu reads, not a flag it remembers', () => {
+  const source = read(join(WEB, 'assets', 'js', 'ui', 'appearance.js'));
+  // `auto` is permission and `derived` is provenance; neither is "the board is
+  // wearing its pictures' colours right now", which is what the menu shows.
+  // A look carried in from an older version has pigments and no `derived` flag,
+  // and the menu has to say Dynamic on those boards too.
+  assert.match(source,
+    /const dynamicOn = \(\) => autoOn\(current\) && PALETTE_TOKENS\.some\(/);
+
+  // And the entry never becomes a palette name: nothing writes it to
+  // `current.palette`, so no board can save a data-palette no stylesheet answers
+  // to and open in a look nobody can name.
+  const controls = read(join(WEB, 'assets', 'js', 'ui', 'appearance-controls.js'));
+  const wire = controls.match(/export function wirePalette\(\)[\s\S]*?\n}\n/)[0];
+  assert.ok(!wire.includes('.palette ='), 'the menu sets no palette of its own');
+  assert.match(wire, /sel\.value === DYNAMIC \? d\.goDynamic\(\) : d\.setPalette\(sel\.value\)|if \(sel\.value === DYNAMIC\) d\.goDynamic\(\);\s*\n\s*else d\.setPalette\(sel\.value\)/);
 });

@@ -24,6 +24,40 @@ export const appearanceControlVisible = (name, mode) =>
   name !== '--sidebar-w' || mode === 'desktop';
 
 /**
+ * How many pictures a board has to hold before it starts colouring itself.
+ *
+ * Taking the colours from the pictures is on by default, so without a floor the
+ * first photograph dropped onto a fresh board turns the whole interface over -
+ * paper, ink, rules and all three pigments - on the strength of one file that
+ * nobody said was representative of anything. That reads as a fault rather than
+ * as a feature, and it is worst exactly where it is most likely: the first thing
+ * you ever do with the app.
+ *
+ * Three is where a board stops being a photograph and starts being a
+ * collection, and a collection having a colour of its own is the whole of what
+ * this feature is for.
+ *
+ * The floor governs the *automatic* path alone. Choosing Dynamic from the
+ * palette menu is somebody asking out loud, and making them drop two more
+ * photographs before the thing they asked for happens would be the same fault
+ * pointing the other way.
+ */
+export const AUTO_PALETTE_FLOOR = 3;
+
+/**
+ * Whether an extraction nobody asked for should run.
+ *
+ * `dynamic` is whether the board is *already* wearing colours taken from its
+ * pictures. Once it is, every change follows - including down past the floor,
+ * and all the way to none, where the board hands the sheet back to the palette
+ * named in the menu. The floor is about starting, not about staying: a board
+ * that has been colouring itself since its third photograph must not stop
+ * agreeing with its own pictures the moment you delete one.
+ */
+export const autoPaletteReady = (pictures, dynamic) =>
+  dynamic || pictures >= AUTO_PALETTE_FLOOR;
+
+/**
  * Split one complete look into its board-wide and layout-local halves.
  *
  * @typedef {object} Look

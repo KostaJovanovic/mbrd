@@ -13,8 +13,10 @@
 //   drag an item ................ move the whole selection, plus anything stuck to it
 //   drag a corner grip .......... resize freely;  shift holds the proportion
 //   drag an edge grip ........... resize that axis alone, media included
-//   wheel ....................... zoom to cursor;  shift+wheel pans horizontally
-//   two fingers ................. pan + pinch zoom
+//   wheel ....................... zoom to cursor
+//   two fingers on a touchpad ... pan in both axes;  pinch zooms to the cursor
+//   shift + wheel or scroll ..... pan sideways, out of the platform's axis rail
+//   two fingers on a screen ..... pan + pinch zoom
 
 import { clamp } from '../util.js';
 import {
@@ -92,6 +94,231 @@ export function resizeHandleAction(start, current) {
   return Math.hypot(current.x - start.x, current.y - start.y) >= DRAG_SLOP
     ? 'resize'
     : 'wait';
+}
+
+// ---------------------------------------------------------------------------
+// The wheel that is not always a wheel
+// ---------------------------------------------------------------------------
+//
+// A touchpad and a mouse wheel arrive at the same event and mean opposite
+// things. Two fingers moved across a pad is a *scroll* - the board should
+// follow the fingers, in both axes - while a notch of a wheel is the zoom this
+// app has always had. There is no API that says which device sent an event, and
+// no plan to add one, so this is a heuristic; what makes it tolerable is that
+// both answers are ordinary board gestures, so being wrong is annoying and
+// never destructive.
+//
+// Three signals, in order of how much they can be trusted:
+//
+//   ctrlKey     A pinch. Every engine reports one as a wheel event with the
+//               control key set and nobody's hand anywhere near control, which
+//               is a hack of long standing and is also completely reliable - it
+//               is the only pinch notification a page gets from a touchpad.
+//   deltaMode   Lines or pages. No touchpad reports either; it is a mouse, or
+//               it is Firefox reporting a mouse.
+//   the deltas  A pad moves sideways and in fractions of a pixel. A wheel is a
+//               column of whole notches: dx is exactly zero and dy arrives in
+//               steps of 100 or 120, or 3 lines.
+//
+// The last one is the fuzzy one, and it is fuzziest at the *start* of a swipe,
+// which is where a mistake is most visible. So the answer is latched for the
+// length of a gesture: wheel events come in bursts a few milliseconds apart, and
+// a device does not change hands mid-burst. A swipe starts slow - the first
+// event of one is small and gets classified correctly - and every event behind
+// it inherits that answer however fast the fingers get.
+
+/** Pixels one line of a deltaMode 1 event is taken to be. */
+const WHEEL_LINE = 16;
+
+/**
+ * How large a single step has to be before it is taken for a wheel notch.
+ *
+ * Under every mouse in use: 100 in Chrome and Safari, 120 with some Windows
+ * drivers, 3 lines in Firefox (which is deltaMode 1 and never reaches this).
+ * Over anything a swipe opens with.
+ */
+export const WHEEL_NOTCH = 40;
+
+/** How long after one wheel event another still belongs to the same gesture. */
+export const WHEEL_STREAM_MS = 200;
+
+/**
+ * How much of a zoom one unit of delta is worth, per source.
+ *
+ * Two numbers because the two devices count in different units. A wheel notch
+ * is a hundred at a time and wants a small coefficient; a pinch is a stream of
+ * single figures describing how far the fingers moved, and at the wheel's rate
+ * it would take a pinch across the whole pad to change anything.
+ */
+const WHEEL_ZOOM_RATE = 0.0016;
+const PINCH_ZOOM_RATE = 0.01;
+
+/** The most one event may be worth, so a flung pad cannot jump the view. */
+const WHEEL_MAX_STEP = 400;
+
+/**
+ * How much of the lean is handed back when the platform rails a swipe.
+ *
+ * Measured rather than picked. A swipe down this board with a deliberate curve
+ * in it arrived as 5257px of vertical and 973px of sideways, the sideways half
+ * present in only 75 of its 349 events - the fingers went one way and the
+ * platform reported a fifth of it. Three brings that back to roughly half, which
+ * is a swipe that goes where it was aimed without the board sliding out from
+ * under the hand.
+ *
+ * It only ever touches an axis the platform is *withholding* - see unrail() - so
+ * a swipe delivered whole is left alone however lopsided it is. And it cannot
+ * rescue one railed outright: straight sideways reports vertical of exactly
+ * zero, and no multiple of zero is a lean.
+ *
+ * This is the one number to turn if it feels wrong.
+ */
+export const UNRAIL_GAIN = 3;
+
+/**
+ * The most one event may be *boosted* by, in pixels.
+ *
+ * Not a cap on the movement - what the platform reported always passes through
+ * untouched, so this can never take away a step the fingers earned. It bounds
+ * the invention on top, because a delta the driver held back and released in one
+ * lump (48px against a 15px-per-event swipe, in the recording) would otherwise
+ * be multiplied into a visible sideways jerk.
+ */
+const UNRAIL_CAP = 40;
+
+/** How quickly the running measures of a gesture follow it. */
+const AXIS_EASE = 0.15;
+
+/** The device this burst of wheel events is being read as, and when it last spoke. */
+let wheelKind = 'zoom';
+let wheelAt = -Infinity;
+
+/** How much each axis has been moving, over this burst alone. */
+let axisX = 0;
+let axisY = 0;
+
+/**
+ * How often each axis arrives at all, over this burst alone.
+ *
+ * Both start at 1 - honest until proven otherwise - so a swipe is never lifted
+ * on the strength of its first event or two, which is where the evidence is
+ * thinnest and a wrong answer is most visible. A gated axis falls away from 1
+ * within about a tenth of a second and stays down; an axis the platform is
+ * reporting properly never leaves it.
+ */
+let seenX = 1;
+let seenY = 1;
+
+/** Forget the current burst. For tests, and for anything that changes device. */
+export function resetWheelKind() {
+  wheelKind = 'zoom';
+  wheelAt = -Infinity;
+  axisX = axisY = 0;
+  seenX = seenY = 1;
+}
+
+/**
+ * Give back the part of a lean the platform kept.
+ *
+ * The measure that decides this is *how often the minor axis arrives*, and not
+ * how big it is when it does. Those are two different questions and only the
+ * first one is evidence of a rail. Recorded on this machine, from the same pad
+ * within a minute of each other:
+ *
+ *   railed   5257px down, 973px across, the across in  75 of 349 events
+ *   free      791px down, 1147px across, the across in  58 of  59 events
+ *
+ * The second is a swipe the platform is reporting faithfully - every event
+ * carries both axes, and a hand on that gesture must feel nothing added. Reading
+ * the *ratio* cannot tell it from the first: a sideways flick with a little
+ * drift in it looks as lopsided as a vertical swipe with the sideways half
+ * confiscated, and lifting the drift is the board sliding out from under you.
+ * Reading how often the axis shows up tells them apart exactly, because that is
+ * the thing the rail actually does - it zeroes events.
+ *
+ * So the gain rides on the gaps: none, and nothing happens; four events in five
+ * missing, and the axis is lifted by nearly UNRAIL_GAIN. What the platform
+ * reported is always added to, never replaced - this may hand back movement the
+ * driver kept, and can never take away a step the fingers earned.
+ *
+ * A measure of the burst rather than of one event, necessarily: a single event
+ * carrying no sideways is what four out of five look like from inside a rail and
+ * also what a perfectly straight moment of a free swipe looks like.
+ */
+function unrail(dx, dy) {
+  axisX += (Math.abs(dx) - axisX) * AXIS_EASE;
+  axisY += (Math.abs(dy) - axisY) * AXIS_EASE;
+  seenX += ((dx ? 1 : 0) - seenX) * AXIS_EASE;
+  seenY += ((dy ? 1 : 0) - seenY) * AXIS_EASE;
+
+  // Whichever axis is carrying less of the gesture is the one a rail would be
+  // holding back. Magnitude answers that; presence answers whether it is.
+  const minorIsX = axisX < axisY;
+  const gated = 1 - (minorIsX ? seenX : seenY);
+  if (gated <= 0) return { dx, dy };
+
+  const boost = (UNRAIL_GAIN - 1) * gated;
+  const lift = v => v + clamp(v * boost, -UNRAIL_CAP, UNRAIL_CAP);
+  return minorIsX ? { dx: lift(dx), dy } : { dx, dy: lift(dy) };
+}
+
+/** Which device a single event looks like it came from, read cold. */
+function classifyWheel(e, dx, dy) {
+  if (e.deltaMode !== 0) return 'zoom';
+  // Sideways at all, or in fractions: a wheel can do neither.
+  if (dx !== 0 || !Number.isInteger(dy)) return 'pan';
+  return Math.abs(dy) < WHEEL_NOTCH ? 'pan' : 'zoom';
+}
+
+/**
+ * What a wheel event is asking for: `pan` by (dx, dy), or `zoom` by `factor`.
+ *
+ * Deltas come out in pixels whatever the event counted in, so the caller never
+ * has to know about deltaMode. A pinch is always a zoom and never latches the
+ * device - somebody holding control over a real wheel is asking for the same
+ * thing, and letting that decide what the next plain notch means would be a
+ * modifier key with an after-effect.
+ *
+ * A two-finger scroll is *railed*, and the rail comes in two strengths. A swipe
+ * committed to one axis has the other suppressed outright - straight sideways
+ * arrives with `deltaY` of exactly zero, and nothing here can invent a movement
+ * the page was never told about. A swipe that merely *leans* is only attenuated,
+ * and that one unrail() gives back.
+ *
+ * Shift is the way out of the hard case: it moves the whole delta onto the
+ * horizontal whichever axis the pad is willing to report on, so there is one way
+ * across that works from inside a vertical rail without changing grip.
+ *
+ * It is the same key that has always panned a mouse wheel sideways, and reading
+ * both here rather than at the call site is what makes them one rule.
+ *
+ * Applied *after* the device is latched, never as part of it: a mouse user
+ * holding Shift is asking for a pan and is still holding a mouse, and letting
+ * that answer stand would zoom-lock into pan for the next notch after they let
+ * go of the key.
+ */
+export function readWheel(e, pageHeight = 800) {
+  const scale = e.deltaMode === 1 ? WHEEL_LINE : e.deltaMode === 2 ? pageHeight : 1;
+  const dx = (e.deltaX || 0) * scale;
+  const dy = (e.deltaY || 0) * scale;
+  const zoom = rate => Math.exp(-clamp(dy, -WHEEL_MAX_STEP, WHEEL_MAX_STEP) * rate);
+
+  if (e.ctrlKey) return { kind: 'zoom', dx, dy, factor: zoom(PINCH_ZOOM_RATE) };
+
+  const at = e.timeStamp || 0;
+  const fresh = at - wheelAt > WHEEL_STREAM_MS;
+  const kind = fresh ? classifyWheel(e, dx, dy) : wheelKind;
+  if (fresh) axisX = axisY = 0;
+  wheelKind = kind;
+  wheelAt = at;
+
+  // `dx || dy`, so this is right whether or not the browser did it already -
+  // several of them turn Shift+scroll into a horizontal delta on the way past,
+  // and swapping a second time would put it back where it started.
+  if (e.shiftKey) return { kind: 'pan', dx: dx || dy, dy: 0, factor: 1 };
+
+  if (kind === 'zoom') return { kind, dx, dy, factor: zoom(WHEEL_ZOOM_RATE) };
+  return { kind, ...unrail(dx, dy), factor: 1 };
 }
 
 /**
@@ -1093,22 +1320,61 @@ export function initInput(vp, cmds) {
 
   // ---- wheel ------------------------------------------------------------
 
+  // ---- what a swipe actually delivered ----------------------------------
+  //
+  // The wheel handler is the only place in this file that guesses at hardware,
+  // and the guess cannot be checked by reading the code: a two-finger scroll is
+  // *railed* by the platform - the axis you set off in is decided before the
+  // page is told anything - so the numbers that arrive are the only evidence of
+  // what the pad and the driver between them did with the gesture.
+  //
+  // Summarised per gesture rather than printed per event. A swipe is forty
+  // events and the question is never about one of them: it is "did the sideways
+  // half arrive at all, and in what shape?" - nothing, a trickle, or the
+  // hundred-pixel lumps a non-precision horizontal wheel sends. Those are three
+  // different faults with three different fixes, and one line each tells them
+  // apart. Off unless asked for: cmds.debugWheel(), or open the board on #wheel.
+  let swipe = null;
+  let swipeTimer = 0;
+  function noteWheel(e, kind) {
+    if (!document.documentElement.hasAttribute('data-debug-wheel')) return;
+    swipe ??= { n: 0, x: 0, y: 0, sideways: 0, biggest: 0 };
+    swipe.n++;
+    swipe.x += Math.abs(e.deltaX);
+    swipe.y += Math.abs(e.deltaY);
+    if (e.deltaX) swipe.sideways++;
+    swipe.biggest = Math.max(swipe.biggest, Math.abs(e.deltaX));
+    clearTimeout(swipeTimer);
+    swipeTimer = setTimeout(() => {
+      const s = swipe;
+      swipe = null;
+      console.info(`[mbrd] swipe: ${s.n} events, read as ${kind}. `
+        + `Down the page ${Math.round(s.y)}px, across ${Math.round(s.x)}px `
+        + `in ${s.sideways} of them, biggest single sideways step ${Math.round(s.biggest)}px.`);
+    }, WHEEL_STREAM_MS + 100);
+  }
+
   el.addEventListener('wheel', e => {
     e.preventDefault();
-    // deltaMode 1 = lines, 2 = pages: normalise to something pixel-ish.
-    const scale = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? vp.height : 1;
-    // Mobile is a fixed-width feed: the wheel follows the only axis that
-    // remains navigable instead of changing its locked-to-width zoom.
+    const w = readWheel(e, vp.height);
+    noteWheel(e, w.kind);
+    // Mobile is a fixed-width feed with one navigable axis, so everything that
+    // arrives moves the feed along it - a sideways swipe and a Shift+wheel
+    // included, since neither has anywhere else to go. A pinch too: there is
+    // nothing for it to do against a zoom locked to the width.
     if (vp.isMobile) {
-      vp.panByScreen(0, -e.deltaY * scale);
+      vp.panByScreen(0, -(w.dy || w.dx));
       return;
     }
-    if (e.shiftKey && !e.ctrlKey) {
-      vp.panByScreen(-e.deltaY * scale, 0);
+    // Two fingers on a pad, in whichever direction they went - and Shift+wheel,
+    // which readWheel() has already turned into the same thing. The board
+    // follows the fingers, which is the opposite sign to the scroll they
+    // describe.
+    if (w.kind === 'pan') {
+      vp.panByScreen(-w.dx, -w.dy);
       return;
     }
-    const dy = e.deltaY * scale;
-    vp.zoomAt(e.clientX, e.clientY, Math.exp(-clamp(dy, -400, 400) * 0.0016));
+    vp.zoomAt(e.clientX, e.clientY, w.factor);
   }, { passive: false });
 
   // ---- double click -----------------------------------------------------

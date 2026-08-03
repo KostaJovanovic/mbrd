@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 import {
   appearanceControlVisible,
+  autoPaletteReady,
+  AUTO_PALETTE_FLOOR,
   PALETTE_TOKENS,
   TYPOGRAPHY_TOKENS,
   mergeAppearance,
@@ -78,6 +80,29 @@ test('panel width is exposed only by the Desktop appearance controls', () => {
   assert.equal(appearanceControlVisible('--sidebar-w', 'desktop'), true);
   assert.equal(appearanceControlVisible('--sidebar-w', 'mobile'), false);
   assert.equal(appearanceControlVisible('--grid-alpha', 'mobile'), true);
+});
+
+test('a board colours itself at the third picture and not before', () => {
+  // The floor is the whole of the difference between a feature and a fault: the
+  // extraction is on by default, so without it the first photograph dropped onto
+  // a fresh board turns the entire interface over uninvited.
+  assert.equal(autoPaletteReady(0, false), false);
+  assert.equal(autoPaletteReady(1, false), false);
+  assert.equal(autoPaletteReady(2, false), false);
+  assert.equal(autoPaletteReady(AUTO_PALETTE_FLOOR, false), true);
+  assert.equal(autoPaletteReady(40, false), true);
+});
+
+test('a board already taking its colours from pictures follows them all the way down', () => {
+  // The floor is about starting, not about staying. A board that has been
+  // colouring itself since its third photograph must not freeze at two when you
+  // delete one - a colour thrown off the board would go on tinting the board it
+  // was thrown off, which is the one case where the palette is provably not a
+  // representation of the pictures any more. Zero included: an empty board hands
+  // the sheet back, and that decision belongs to the caller, not to the gate.
+  for (const n of [0, 1, 2, 3]) {
+    assert.equal(autoPaletteReady(n, true), true, `${n} pictures, already dynamic`);
+  }
 });
 
 test('the shared appearance allowlist contains only palette colors', () => {
