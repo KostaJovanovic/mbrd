@@ -5,10 +5,15 @@
 // smaller and can never draw anything: what it leaves on a board is a card
 // claiming to be a photograph with a permanent hole where the picture goes.
 //
-// Two properties matter and both are asserted here. The card survives - its
-// name, its place, its size are all things a person chose and none of them are
-// the file - and the whole run is still one undo, which is the promise the
-// optimiser makes about everything else it does.
+// The two halves read differently on purpose, and getting that wrong is what
+// this file now pins. A card whose *own* file is empty has nothing on it at all
+// - no picture, no sound, no text, and no way for any of those to arrive later
+// - so the card goes, to the bin, in one undoable step. A card that merely
+// wears an empty *cover* has a real file on it and only its picture is hollow,
+// so it loses the picture and keeps everything else.
+//
+// The first version of this cleared the reference on both and left the cards
+// standing, which is the hole without even the explanation for it.
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -91,69 +96,87 @@ test('a board of real files plans no removals', () => {
 // Taking them away
 // ---------------------------------------------------------------------------
 
-test('the card keeps everything a person chose, and stops claiming to hold a file', () => {
+test('a card whose own file is empty is thrown away, not left standing', () => {
+  // The bug this file was written for. Clearing the reference and leaving the
+  // card produced a card that had stopped claiming to be a file and still sat
+  // on the board taking up room.
+  loadBoard({
+    title: 'T',
+    items: [
+      photo({ id: 'a', name: 'broken', asset: { hash: EMPTY, embedded: true } }),
+      photo({ id: 'b', asset: { hash: REAL, embedded: true } }),
+    ],
+  });
+  const doomed = planOptimize().empty.filter(e => e.asset).map(e => e.id);
+  removeItems(doomed, 'Remove empty file');
+
+  assert.equal(byId('a'), undefined, 'the card is gone, not merely emptied');
+  assert.ok(byId('b'), 'and the card with a real file is untouched');
+});
+
+test('a thrown-away empty card goes to the bin and comes back on one undo', () => {
+  // The whole reason a delete is allowed here: it is recoverable twice over.
+  loadBoard({
+    title: 'T',
+    items: [photo({ id: 'a', name: 'broken', asset: { hash: EMPTY, embedded: true } })],
+  });
+  removeItems(['a'], 'Remove empty file');
+  assert.equal(board.trash.length, 1, 'it is in the bin');
+  assert.equal(board.trash[0].item.id, 'a');
+
+  undo();
+  assert.ok(byId('a'), 'and one Ctrl+Z puts it back on the board');
+  assert.equal(byId('a').name, 'broken');
+  assert.equal(board.trash.length, 0);
+});
+
+test('an empty cover is dropped, and the card keeps everything else', () => {
+  // The other half, and deliberately not a delete: this card has a real file on
+  // it and only its picture is hollow.
   loadBoard({
     title: 'T',
     items: [photo({
       id: 'a', name: 'A good name', x: 40, y: -60, w: 300, h: 200,
-      asset: { hash: EMPTY, embedded: true },
+      asset: { hash: REAL, embedded: true }, meta: { cover: COVER },
     })],
   });
-  // The optimiser's own door - null is the third thing a swap can say.
-  swapAssets([{ id: 'a', asset: null }]);
+  swapAssets([{ id: 'a', cover: null }]);
 
   const it = byId('a');
-  assert.equal(it.asset, null, 'the reference is gone');
-  assert.equal(it.name, 'A good name', 'the name is not the file');
+  assert.equal('cover' in it.meta, false, 'the key is gone, not left as undefined');
+  assert.equal(it.asset.hash, REAL, 'the file it actually holds is untouched');
+  assert.equal(it.name, 'A good name', 'the name is not the picture');
   assert.equal(it.x, 40);
   assert.equal(it.w, 300, 'nor is the size somebody dragged it to');
-  assert.equal(it.meta.was, EMPTY,
+  assert.equal(it.meta.wasCover, COVER,
     'and the bytes stay pinned for as long as undo can reach them');
 });
 
-test('an empty cover is dropped without touching the card its own file', () => {
+test('dropping empty covers is one undo across the whole board', () => {
+  loadBoard({
+    title: 'T',
+    items: [
+      photo({ id: 'a', asset: { hash: REAL, embedded: true }, meta: { cover: COVER } }),
+      photo({ id: 'b', asset: { hash: REAL, embedded: true }, meta: { cover: COVER } }),
+    ],
+  });
+  swapAssets([{ id: 'a', cover: null }, { id: 'b', cover: null }]);
+  assert.equal('cover' in byId('a').meta, false);
+  assert.equal('cover' in byId('b').meta, false);
+
+  undo();
+  assert.equal(byId('a').meta.cover, COVER, 'one Ctrl+Z gives the whole run back');
+  assert.equal(byId('b').meta.cover, COVER);
+});
+
+test('a board with nothing but an empty cover to clear is still a run worth making', () => {
+  // The case the old `if (asset || cover || …)` guard silently dropped: null is
+  // falsy, so every card losing a cover failed the test that decides whether it
+  // reaches swapAssets() at all.
   loadBoard({
     title: 'T',
     items: [photo({ id: 'a', asset: { hash: REAL, embedded: true }, meta: { cover: COVER } })],
   });
-  swapAssets([{ id: 'a', cover: null }]);
-  const it = byId('a');
-  assert.equal('cover' in it.meta, false, 'the key is gone, not left as undefined');
-  assert.equal(it.asset.hash, REAL, 'the file it actually holds is untouched');
-  assert.equal(it.meta.wasCover, COVER);
-});
-
-test('removing empty files is one undo, like everything else the optimiser does', () => {
-  loadBoard({
-    title: 'T',
-    items: [
-      photo({ id: 'a', asset: { hash: EMPTY, embedded: true } }),
-      photo({ id: 'b', asset: { hash: EMPTY, embedded: true } }),
-      photo({ id: 'c', asset: { hash: REAL, embedded: true }, meta: { cover: COVER } }),
-    ],
-  });
-  swapAssets([
-    { id: 'a', asset: null }, { id: 'b', asset: null }, { id: 'c', cover: null },
-  ]);
-  assert.equal(byId('a').asset, null);
-  assert.equal(byId('b').asset, null);
-  assert.equal('cover' in byId('c').meta, false);
-
-  undo();
-  assert.equal(byId('a').asset.hash, EMPTY, 'one Ctrl+Z gives the whole run back');
-  assert.equal(byId('b').asset.hash, EMPTY);
-  assert.equal(byId('c').meta.cover, COVER);
-});
-
-test('a board with nothing but empties to clear is still a run worth making', () => {
-  // The case the old `if (asset || cover || …)` guard silently dropped: null is
-  // falsy, so every card being emptied failed the test that decides whether it
-  // reaches swapAssets() at all.
-  loadBoard({
-    title: 'T',
-    items: [photo({ id: 'a', asset: { hash: EMPTY, embedded: true } })],
-  });
-  const touched = swapAssets([{ id: 'a', asset: null }]);
-  assert.equal(touched, 1, 'the run happened');
-  assert.equal(board.items[0].asset, null);
+  assert.equal(swapAssets([{ id: 'a', cover: null }]), 1, 'the run happened');
+  assert.equal('cover' in byId('a').meta, false);
 });

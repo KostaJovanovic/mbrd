@@ -27,7 +27,7 @@
 // poster for one the browser cannot even open is a separate, lighter job
 // (firstFrame in media.js), not part of optimising.
 
-import { board, byId, swapAssets, setItemThumb, setItemPoster } from '../state.js';
+import { board, byId, swapAssets, setItemThumb, setItemPoster, removeItems } from '../state.js';
 import { addFile, getAsset } from '../storage/assets.js';
 import { formatBytes, itemHashes, extOf } from '../util.js';
 import { PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS } from '../import/formats.js';
@@ -157,12 +157,41 @@ function mediaKind({ mime, ext, type, isCover }) {
  * bitmap, and eight of those at once on a board of large photographs is how you
  * find the tab's memory ceiling.
  *
- * The board itself is touched exactly once, at the end, in a single undoable
+ * The rewriting touches the board exactly once, at the end, in a single undoable
  * commit - see swapAssets(). Half an optimisation is not a state the board
  * should ever be observed in.
+ *
+ * Clearing out the empty files is the one thing that stands outside that, as its
+ * own commit before any of this runs. It is a different act - taking away what
+ * was never content, rather than rewriting what is - and the note over it says
+ * why the two should not share a Ctrl+Z.
  */
 export async function runOptimize({ onProgress = () => {} } = {}) {
   const plan = planOptimize();
+
+  // The empty files, before anything else runs.
+  //
+  // A card whose own file has no bytes in it goes entirely - the card, not just
+  // the reference. There is nothing on it: no picture, no sound, no text, and
+  // no way for any of those to arrive later. What was left when this only
+  // cleared the reference was a card that had stopped claiming to be a file and
+  // still sat on the board taking up room, which is the hole without even the
+  // explanation for it.
+  //
+  // Its own commit rather than folded into the swap at the end, and that is a
+  // deliberate departure from the one-commit rule below. The two are different
+  // acts: one clears out what was never content, the other rewrites what is.
+  // Undoing an optimisation should not resurrect four broken cards, and one
+  // Ctrl+Z that did both would be a step nobody could describe.
+  //
+  // They go to the bin like any other delete, so this is recoverable past the
+  // undo as well - which is the whole reason it is allowed to be a delete.
+  const doomed = plan.empty.filter(e => e.asset).map(e => e.id);
+  if (doomed.length) {
+    removeItems(doomed, doomed.length > 1
+      ? `Remove ${doomed.length} empty files` : 'Remove empty file');
+  }
+
   const jobs = [...plan.pictures, ...plan.sounds];
   // hash -> the hash of the smaller file that replaces it. One entry per set of
   // bytes, not per card, so nine tracks sharing one cover re-encode it once.
@@ -202,17 +231,22 @@ export async function runOptimize({ onProgress = () => {} } = {}) {
   // an item it decided to leave alone has still been decided about, and saying
   // so is what stops the next run deciding it all over again.
   const looked = new Set(jobs.map(j => j.hash));
-  // The empty files, by the card that holds one. `null` is the third thing a
-  // swap can say - drop this reference - beside a hash (replace it) and nothing
-  // at all (leave it alone). See swapAssets() in state.js.
-  const empties = new Map(plan.empty.map(e => [e.id, e]));
+  // Empty *covers*, which are the other half of the empty-file story and are
+  // not a delete: the card has a real file on it and only its picture is the
+  // hollow one, so it loses the picture and keeps everything else. `null` is the
+  // third thing a swap can say - drop this reference - beside a hash (replace
+  // it) and nothing at all (leave it alone). See swapAssets() in state.js.
+  //
+  // Read off the live board rather than off the plan, because the cards whose
+  // own file was empty have already gone by now.
+  const hollowCover = new Set(
+    plan.empty.filter(e => e.cover).map(e => e.id).filter(id => byId(id)));
   const swaps = [];
   for (const item of board.items) {
-    const gone = empties.get(item.id);
-    const asset = gone?.asset ? null : replacement.get(item.asset?.hash);
-    const cover = gone?.cover ? null : replacement.get(item.meta?.cover);
-    // `!== undefined`, not truthiness: null is a real instruction here and the
-    // falsy test this used to be would have skipped every card being emptied.
+    const asset = replacement.get(item.asset?.hash);
+    const cover = hollowCover.has(item.id) ? null : replacement.get(item.meta?.cover);
+    // `!== undefined`, not truthiness: null is a real instruction here, and the
+    // falsy test this used to be would have skipped every cover being dropped.
     if (asset !== undefined || cover !== undefined || itemHashes(item).some(h => looked.has(h))) {
       swaps.push({ id: item.id, asset, cover });
     }

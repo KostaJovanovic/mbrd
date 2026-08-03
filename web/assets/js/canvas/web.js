@@ -349,6 +349,49 @@ function centres() {
 }
 
 /**
+ * Let go of every line: the fading elements, the settled set, the stored routes
+ * and the box they described.
+ *
+ * Two callers with the same need. build() runs it when the layout or the
+ * checkbox says there is nothing to draw - releasing rather than merely hiding,
+ * so a large board spends no time holding geometry this layout never shows -
+ * and resetWeb() runs it to make the next build start from nothing.
+ */
+function release() {
+  for (const entry of animating.values()) {
+    clearTimeout(entry.timer);
+    entry.el.remove();
+  }
+  animating.clear();
+  settled.clear();
+  lastSeg.clear();
+  settledBox = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  paintedRect = null;
+  lastBox = '';
+  if (path) path.setAttribute('d', '');
+}
+
+/**
+ * Draw the lines again from nothing - the web's half of "Reload board".
+ *
+ * The other reset* calls in ui/board-actions.js exist because a live board can
+ * drift from what its data says, and this one is here for a reason the others
+ * are not: a route is *cached*. build() keeps a stored path for exactly as long
+ * as its two ends have not moved, which is what lets a drag trail straight lines
+ * and resolve on the drop - and it also means a route that came out wrong stays
+ * wrong through the one command whose whole purpose is to put things right.
+ *
+ * Dropping the stored routes is therefore the substance of this, not a side
+ * effect of clearing the drawing. Everything is rerouted on the settle after the
+ * rebuild, against wherever the cards are now.
+ */
+export function resetWeb() {
+  if (!svg) return;
+  release();
+  requestBuild();
+}
+
+/**
  * The two end boxes, as a string. Two lines with the same signature have the
  * same route, and a signature that changed is a route that has to be worked out
  * again. Rounded to a tenth of a world unit: a route does not change because a
@@ -377,17 +420,7 @@ function build() {
   // lines: release the settled/fading geometry so a large board spends no time
   // holding on to connections that this layout never shows.
   if (!webVisible()) {
-    for (const entry of animating.values()) {
-      clearTimeout(entry.timer);
-      entry.el.remove();
-    }
-    animating.clear();
-    settled.clear();
-    lastSeg.clear();
-    settledBox = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
-    paintedRect = null;
-    lastBox = '';
-    path.setAttribute('d', '');
+    release();
     svg.style.display = 'none';
     return;
   }

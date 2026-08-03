@@ -56,6 +56,7 @@ export async function optimizeBoard() {
         ? `Nothing on this board is worth shrinking, but ${plan.posters} ` +
           `video${plan.posters === 1 ? '' : 's'} ${plan.posters === 1 ? 'has' : 'have'} no still yet.`
         : 'Nothing on this board is worth shrinking, but there are empty files on it.'];
+
   if (plan.pictures.length) lines.push('Pictures are capped at 1200px and rewritten as WebP.');
   if (plan.sounds.length) {
     lines.push(opusAvailable()
@@ -79,14 +80,21 @@ export async function optimizeBoard() {
       'from the first frame, so the card shows something before it is played.');
   }
   // The one thing here that takes something away rather than making it smaller,
-  // so it is said plainly and it names what is left behind. A file of zero bytes
-  // can never draw anything, so the card keeps everything a person put on it -
-  // its name, its place, its size - and stops claiming to hold a picture.
-  if (plan.empty.length) {
-    const n = plan.empty.length;
-    lines.push(`${n} empty file${n === 1 ? '' : 's'} will be removed - ` +
-      `${n === 1 ? 'it has' : 'they have'} no contents and cannot be shown. ` +
-      `The card${n === 1 ? '' : 's'} and ${n === 1 ? 'its' : 'their'} name${n === 1 ? '' : 's'} stay.`);
+  // so it is said plainly and it says where what it takes ends up. The two
+  // halves read differently on purpose: a card whose own file is empty has
+  // nothing on it at all and goes, while a card that merely wears an empty
+  // picture keeps everything else and only loses the picture.
+  const goneCards = plan.empty.filter(e => e.asset).length;
+  const goneCovers = plan.empty.filter(e => e.cover && !e.asset).length;
+  if (goneCards) {
+    lines.push(`${goneCards} card${goneCards === 1 ? '' : 's'} hold${goneCards === 1 ? 's' : ''} ` +
+      `an empty file with nothing in it and will be thrown away - ` +
+      `${goneCards === 1 ? 'it goes' : 'they go'} to the bin, and one undo brings ` +
+      `${goneCards === 1 ? 'it' : 'them'} back.`);
+  }
+  if (goneCovers) {
+    lines.push(`${goneCovers} card${goneCovers === 1 ? '' : 's'} will lose an empty picture ` +
+      `and keep everything else.`);
   }
   // Said out loud rather than left as a smaller number than expected: a board
   // half of which has already been done should not look like half a board.
