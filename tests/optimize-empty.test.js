@@ -19,7 +19,7 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  board, byId, loadBoard, undo, setBoardMode, swapAssets,
+  board, byId, loadBoard, undo, setBoardMode, swapAssets, removeItems,
 } from '../web/assets/js/state.js';
 import { putAsset, clearAssets } from '../web/assets/js/storage/assets.js';
 import { planOptimize } from '../web/assets/js/optimize/optimize.js';
