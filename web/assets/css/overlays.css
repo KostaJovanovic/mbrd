@@ -547,6 +547,13 @@
   position: fixed;
   z-index: 60;
   min-width: 208px;
+  /* The 8px the placement keeps at each edge (ui/menu.js). A picture card's
+     menu is a dozen entries, which is taller than a phone held sideways - so
+     the overflow scrolls rather than hanging off the bottom where the last
+     entries could not be reached at all. */
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 5px;
   border: var(--hairline) solid var(--rule-2);
   border-radius: var(--radius);
@@ -555,6 +562,9 @@
   animation: ctx-in var(--dur-fast) var(--ease);
   user-select: none;
 }
+/* The menu takes focus when it opens so the keyboard has somewhere to land;
+   the ring belongs on the entry the arrows reach, not round the whole stock. */
+#ctx-menu:focus { outline: none; }
 @keyframes ctx-in { from { opacity: 0; transform: translateY(-3px); } }
 
 .ctx-item {

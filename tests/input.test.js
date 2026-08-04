@@ -5,7 +5,7 @@ import {
   isDoubleTap, needsSelectionBeforeMove, repeatsLongPressContextMenu,
   releasePointerSafely, resizeHandleAction, shortcutsSuppressed,
   readWheel, resetWheelKind, WHEEL_NOTCH, WHEEL_STREAM_MS,
-  drewRectangle,
+  drewRectangle, holdFloor, holdOffset, marqueeHit,
 } from '../web/assets/js/canvas/input.js';
 
 test('double taps match within the touch timing and distance windows', () => {
@@ -66,6 +66,106 @@ test('a thin band across a row of cards still counts', () => {
 
 test('a rectangle counts whichever corner it was dragged from', () => {
   assert.equal(drewRectangle({ x0: 200, y0: 200, x1: 0, y1: 0 }, 1), true);
+});
+
+// A fence may not be pulled in past its own cards. The floor is two numbers the
+// drag is clamped to, and every case below is one of the four ways an edge can
+// be the one that moves.
+
+const BOX = { x: 0, y: 0, w: 1000, h: 1000 };
+
+test('nothing held floors nothing', () => {
+  assert.deepEqual(holdFloor(BOX, 'se', []), { w: 0, h: 0 });
+  assert.deepEqual(holdFloor(BOX, 'se', null), { w: 0, h: 0 });
+});
+
+test('dragging the east edge in stops at the furthest card', () => {
+  // The west edge stays at -500, so the width has to reach from there to +300.
+  assert.equal(holdFloor(BOX, 'e', [{ x: 300, y: 0 }]).w, 800);
+  // And the axis the grip does not touch is not floored by it.
+  assert.equal(holdFloor(BOX, 'e', [{ x: 300, y: 400 }]).h, 800);
+});
+
+test('dragging the west edge in measures from the other side', () => {
+  // East stays at +500, the furthest card left is at -200: 700 wide.
+  assert.equal(holdFloor(BOX, 'w', [{ x: -200, y: 0 }]).w, 700);
+});
+
+test('a corner floors both axes at once', () => {
+  const floor = holdFloor(BOX, 'ne', [{ x: 100, y: -50 }]);
+  assert.equal(floor.w, 600);
+  // 'n' is the +y side, so a card at -50 is on the *fixed* south side: the north
+  // edge can come all the way down to it.
+  assert.equal(floor.h, 450);
+});
+
+test('an axis with no moving edge grows about the centre', () => {
+  // A north-south drag leaves x alone, and x then has to hold both sides - so
+  // the width is twice the furthest of them, not the span between them.
+  assert.equal(holdFloor(BOX, 'n', [{ x: 300, y: 0 }, { x: -100, y: 0 }]).w, 600);
+});
+
+test('a card past the middle does not floor below nothing', () => {
+  // Dragging the east edge in past a card sitting west of centre: the floor is
+  // the distance from the fixed west edge, which is still positive.
+  assert.equal(holdFloor(BOX, 'e', [{ x: -400, y: 0 }]).w, 100);
+  // And a hold outside the box on the fixed side cannot ask for a negative one.
+  assert.equal(holdFloor(BOX, 'e', [{ x: -900, y: 0 }]).w, 0);
+});
+
+test('the furthest card is the one that holds it open', () => {
+  const holds = [{ x: 10, y: 0 }, { x: 420, y: 0 }, { x: 200, y: 0 }];
+  assert.equal(holdFloor(BOX, 'e', holds).w, 920);
+});
+
+test('a hold is measured in the fence its own frame', () => {
+  const straight = { x: 100, y: 100, w: 400, h: 200, rot: 0 };
+  assert.deepEqual(holdOffset({ x: 150, y: 80 }, straight), { x: 50, y: -20 });
+
+  // Turned a quarter turn anticlockwise: a card 50 to the east of the fence's
+  // centre in world terms is 50 along the fence's own *south* axis.
+  const turned = { x: 0, y: 0, w: 400, h: 200, rot: 90 };
+  const at = holdOffset({ x: 50, y: 0 }, turned);
+  assert.ok(Math.abs(at.x - 0) < 1e-9);
+  assert.ok(Math.abs(at.y - -50) < 1e-9);
+});
+
+test('a turned fence is not floored open by an axis its grip never touched', () => {
+  // A card near the corner of a fence turned 45 degrees. Read in world axes its
+  // vertical offset is larger than the fence is tall, so the sign-0 axis of an
+  // east drag - which should floor nothing - would have demanded a fence three
+  // times the height. In the fence's own frame the card is where it looks: well
+  // inside, and holding nothing open.
+  const fence = { x: 0, y: 0, w: 600, h: 200, rot: 45 };
+  const member = { x: 200, y: 200 };                 // world; ~283 along its length
+  const world = { x: member.x - fence.x, y: member.y - fence.y };
+  assert.ok(holdFloor(fence, 'e', [world]).h > fence.h, 'world axes ask for a taller fence');
+  assert.ok(holdFloor(fence, 'e', [holdOffset(member, fence)]).h <= fence.h);
+});
+
+// A band catches a card by overlap and a fence only by covering it. A fence is
+// always larger than what is drawn inside it, so one rule for both meant every
+// band drawn within a region also caught the region.
+
+const card = extra => ({ type: 'photo', x: 0, y: 0, w: 100, h: 100, ...extra });
+const fence = extra => ({ type: 'fence', x: 0, y: 0, w: 1000, h: 800, ...extra });
+
+test('a band drawn inside a fence catches the cards and not the fence', () => {
+  // A small band well within the region: it overlaps the fence, and that is
+  // exactly the reading this rule refuses.
+  assert.equal(marqueeHit(card({ x: 120, y: 60 }), 100, 40, 200, 90), true);
+  assert.equal(marqueeHit(fence(), 100, 40, 200, 90), false);
+});
+
+test('a band round the whole fence takes it', () => {
+  assert.equal(marqueeHit(fence(), -600, -500, 600, 500), true);
+  // And one that leaves a single edge out does not - to take a region, enclose it.
+  assert.equal(marqueeHit(fence(), -600, -500, 499, 500), false);
+});
+
+test('a card is still caught by the corner it pokes into a band', () => {
+  // The overlap rule the union in fenceBox() exists to cover: unchanged.
+  assert.equal(marqueeHit(card({ x: 140, y: 0 }), 0, -50, 100, 50), true);
 });
 
 test('a tap on a resize handle waits until it crosses the drag slop', () => {

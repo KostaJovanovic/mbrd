@@ -17,9 +17,9 @@ import {
   fenceOf, fenceMembers, fenceFollowers, refence, isContent,
   stuckTo, stuckFollowers, snapshotGeom, applyGeom, commitGeom, undo,
   setBoardMode, raiseSelection, hasContent, ensureGhostCards, hasGhosts,
-  mobileBoardWidth, baseStep,
+  mobileBoardWidth, baseStep, visualStackOrder,
 } from '../web/assets/js/state.js';
-import { mobileRuns, fenceBox } from '../web/assets/js/fences.js';
+import { mobileRuns, fenceBox, nextFenceName } from '../web/assets/js/fences.js';
 import { itemBounds } from '../web/assets/js/geometry.js';
 import { fresh, note, photo, fence } from './state-fixtures.js';
 
@@ -499,4 +499,124 @@ test('the box a selection gets holds every card it was measured from', () => {
   refence([a.id, b.id]);
   assert.equal(fenceOf(byId(a.id))?.id, f.id);
   assert.equal(fenceOf(byId(b.id))?.id, f.id);
+});
+
+// ---------------------------------------------------------------------------
+// The name a fence opens with
+// ---------------------------------------------------------------------------
+
+test('the first fence on a board is number one', () => {
+  assert.equal(nextFenceName(), 'Untitled fence 1');
+});
+
+test('the number counts up past whatever is already there', () => {
+  addItems([fence({ x: 0, y: 0, w: 400, h: 400, name: 'Untitled fence 1' })]);
+  addItems([fence({ x: 2000, y: 0, w: 400, h: 400, name: 'Untitled fence 2' })]);
+  assert.equal(nextFenceName(), 'Untitled fence 3');
+});
+
+test('a fence somebody named does not hold a number down', () => {
+  addItems([fence({ x: 0, y: 0, w: 400, h: 400, name: 'Colour studies' })]);
+  assert.equal(nextFenceName(), 'Untitled fence 1');
+});
+
+test('a deleted number is not handed out again', () => {
+  // One past the highest, not the lowest free. Filling the gap would give a new
+  // region a name a different region had last week.
+  addItems([fence({ x: 0, y: 0, w: 400, h: 400, name: 'Untitled fence 1' })]);
+  const [second] = addItems([fence({ x: 2000, y: 0, w: 400, h: 400, name: 'Untitled fence 2' })]);
+  addItems([fence({ x: 4000, y: 0, w: 400, h: 400, name: 'Untitled fence 3' })]);
+  removeItems([second.id]);
+  assert.equal(nextFenceName(), 'Untitled fence 4');
+});
+
+test('only fences are counted', () => {
+  addItems([photo({ x: 0, y: 0, name: 'Untitled fence 7' })]);
+  assert.equal(nextFenceName(), 'Untitled fence 1');
+});
+
+// ---------------------------------------------------------------------------
+// The fence band
+//
+// "A fence is behind its cards" used to be an arrangement - a new fence took a z
+// below every card it enclosed - and an arrangement is true when it is made and
+// not afterwards. visualStackOrder() puts every fence in a band under every card
+// instead, which cannot drift because there is nothing stored to drift.
+// ---------------------------------------------------------------------------
+
+test('a fence is painted behind a card that was already lower than it', () => {
+  // The bug this band exists for. The photo is at the bottom of the board and
+  // the fence is drawn over it later, so the fence has the higher raw z - and
+  // under the old rule it covered the very card it had just picked up.
+  const [pic] = addItems([photo({ x: 0, y: 0, z: -50 })]);
+  const [f] = addItems([fence({ x: 0, y: 0, w: 900, h: 700, z: 10 })]);
+  assert.equal(fenceOf(byId(pic.id))?.id, f.id, 'it is in the fence');
+  const order = visualStackOrder();
+  assert.ok(order.indexOf(f.id) < order.indexOf(pic.id), 'and behind it');
+});
+
+test('a fence grown out over a card ends up behind it', () => {
+  // The gesture from the other end: the card is nowhere near the fence and has a
+  // z of its own, and the resize is what picks it up.
+  const [f] = addItems([fence({ x: 0, y: 0, w: 400, h: 400 })]);
+  const [pic] = addItems([photo({ x: 900, y: 0 })]);
+  assert.equal(fenceOf(byId(pic.id)), null);
+
+  resize(f.id, 2400, 400);
+  assert.equal(fenceOf(byId(pic.id))?.id, f.id, 'the resize picked it up');
+  const order = visualStackOrder();
+  assert.ok(order.indexOf(f.id) < order.indexOf(pic.id), 'and it did not bury it');
+});
+
+test('every fence is under every card, whatever their z says', () => {
+  addItems([photo({ id: 'p1', x: 0, y: 0, z: -900 })]);
+  addItems([fence({ id: 'f1', x: 0, y: 0, w: 900, h: 700, z: 900 })]);
+  addItems([photo({ id: 'p2', x: 4000, y: 0, z: -800 })]);
+  addItems([fence({ id: 'f2', x: 4000, y: 0, w: 900, h: 700, z: 800 })]);
+  const order = visualStackOrder();
+  const lastFence = Math.max(order.indexOf('f1'), order.indexOf('f2'));
+  const firstCard = Math.min(order.indexOf('p1'), order.indexOf('p2'));
+  assert.ok(lastFence < firstCard, 'the bands do not interleave');
+});
+
+test('a note still sits on top of everything', () => {
+  // Three bands, not two: the note band is above the card band exactly as it was.
+  const [f] = addItems([fence({ x: 0, y: 0, w: 900, h: 700 })]);
+  const [pic] = addItems([photo({ x: 0, y: 0, w: 300, h: 300 })]);
+  const [n] = addItems([note({ x: 0, y: 0, w: 80, h: 80 })]);
+  assert.deepEqual(visualStackOrder(), [f.id, pic.id, n.id]);
+});
+
+test('a fence inside a fence is painted in front of the one holding it', () => {
+  // z cannot express this: the inner fence needs to be under its own cards and
+  // over its parent, and on a board a whole number apart there is no such value -
+  // so both came out at the same z and which name you could read was a coin toss.
+  // Area settles it, because containment already requires strictly more of it.
+  const [outer] = addItems([fence({ x: 0, y: 0, w: 2000, h: 1600, z: -1 })]);
+  const [inner] = addItems([fence({ x: 0, y: 0, w: 600, h: 400, z: -1 })]);
+  assert.equal(fenceOf(byId(inner.id))?.id, outer.id, 'it is nested');
+  const order = visualStackOrder();
+  assert.ok(order.indexOf(outer.id) < order.indexOf(inner.id));
+});
+
+test('the fence band ignores raw z only where nesting decides it', () => {
+  // Same size, so neither can hold the other: raw z is still what orders them,
+  // and Bring to front still means something between two overlapping regions.
+  addItems([fence({ id: 'a', x: 0, y: 0, w: 800, h: 600, z: -5 })]);
+  addItems([fence({ id: 'b', x: 100, y: 0, w: 800, h: 600, z: -2 })]);
+  const order = visualStackOrder();
+  assert.ok(order.indexOf('a') < order.indexOf('b'));
+});
+
+test('raising a fence carries its cards and stays under them', () => {
+  const [f] = addItems([fence({ x: 0, y: 0, w: 900, h: 700 })]);
+  const [pic] = addItems([photo({ x: 0, y: 0, w: 300, h: 300 })]);
+  const [other] = addItems([photo({ x: 4000, y: 0 })]);
+  select([f.id]);
+  raiseSelection();
+
+  const order = visualStackOrder();
+  assert.ok(order.indexOf(f.id) < order.indexOf(pic.id), 'still behind its own card');
+  assert.ok(order.indexOf(other.id) < order.indexOf(pic.id),
+    'and its card came forward with it');
 });

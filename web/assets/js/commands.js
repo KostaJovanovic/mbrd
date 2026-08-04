@@ -24,7 +24,7 @@ import {
   setBoardMode as selectBoardMode,
   restoreTitleCard, resetTitlePosition,
   addConnections, clearConnections, isFurniture, isRider,
-  addItems, baseStep, isFence, fenceBox,
+  addItems, baseStep, isFence, fenceBox, nextFenceName,
 } from './state.js';
 import { itemBounds, MAX_SIZE, MIN_SIZE } from './geometry.js';
 import { editItemName } from './canvas/items.js';
@@ -141,12 +141,12 @@ function fenceable() {
  *
  * Three details are load-bearing rather than taste:
  *
- * The fence takes a z **below** every card it encloses. It is drawn behind them -
- * a region on the board rather than a card on top of one - and a fence that
- * landed above its own contents would cover them. stackRoot() keeps it there
- * afterwards, since raising a fence carries its members and walks them in raw z
- * order. An empty one goes behind the whole board, since anything at all might
- * be dragged into it later and there is no smaller answer.
+ * The fence takes a z **below** every card it encloses. Not for painting - every
+ * fence is behind every card by band now, see visualStackOrder() - but because
+ * raising a fence carries its members and walks them in raw z order, so being the
+ * lowest thing in its own layer is what keeps it under them within it. An empty
+ * one goes behind the whole board, since anything at all might be dragged into it
+ * later and there is no smaller answer.
  *
  * Membership is not recorded here, and there is nothing to record: the cards are
  * inside the rectangle, so they are in the fence, and that stays true because it
@@ -154,8 +154,10 @@ function fenceable() {
  * the fence away leaves the cards exactly where they are.
  *
  * The name field opens straight away, in an animation frame so the card exists to
- * open it on. An unnamed fence is a box; the name is the whole reason to draw
- * one, and asking for it later means never.
+ * open it on, and over a default name rather than an empty plate - the field
+ * opens with its text *selected*, so typing replaces the default and pressing
+ * Escape keeps it. An unnamed fence is a box; the name is the whole reason to
+ * draw one, and asking for it later means never.
  */
 function drawFence(rect) {
   const inside = fenced();
@@ -172,7 +174,7 @@ function drawFence(rect) {
   const under = inside.length ? inside : board.items.filter(i => !isFurniture(i));
   const [fence] = addItems([{
     type: 'fence',
-    name: '',
+    name: nextFenceName(),
     x: box.x, y: box.y, w: box.w, h: box.h,
     z: Math.min(0, ...under.map(i => i.z || 0)) - 1,
   }], 'Add a fence');
@@ -514,14 +516,26 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
     },
     canEditNote: id => byId(id)?.type === 'note',
     resetSize,
-    // Image and video cards are already a picture; everything else can be given
-    // one. Asked of the item rather than of the renderer because this is about
-    // what the card *is*, not about which module happens to draw it.
-    canCoverItem: id => {
-      const type = byId(id)?.type;
-      return !!type && type !== 'image' && type !== 'video';
-    },
+    // Album art, and nothing else. A cover is the picture a card that cannot be
+    // looked at borrows so it can be recognised from across the board, and in
+    // practice that card is a track: the art usually arrives inside the file
+    // (import/artwork.js), and this is how one that came without any gets it.
+    // Offering the same thing on a note or a link put a picture behind words
+    // that were already legible, which is a card wearing a costume rather than
+    // a card that has something to show.
+    //
+    // The model is deliberately wider than the offer - setItemCover() dresses
+    // any card, and state.js says why - so a picture an older build put on
+    // something else still draws. canClearCover is how it comes back off.
+    canCoverItem: id => byId(id)?.type === 'audio',
     itemHasCover: id => !!byId(id)?.meta?.cover,
+    // Anything already wearing one, except a video: a video's cover is the
+    // poster frame the importer grabs and the optimiser repairs, not a choice
+    // somebody made, and taking it away would only mean the board makes it again.
+    canClearCover: id => {
+      const it = byId(id);
+      return !!it?.meta?.cover && it.type !== 'video';
+    },
     setCover: id => pickCover(id),
     clearCover: id => setItemCover(id, null),
 

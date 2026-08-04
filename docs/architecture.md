@@ -395,7 +395,7 @@ membership is a fact about where two things are, measured and remembered, never
 stored as a list that could disagree with the geometry beside it. Delete, undo,
 bin and restore therefore need no bookkeeping, exactly as connections do not.
 
-Five things about it are load-bearing and none is obvious:
+Seven things about it are load-bearing and none is obvious:
 
 - **The rubber band is the way in.** `canvas/input.js` reports every marquee that
   was a rectangle somebody drew rather than a modified click (`drewRectangle()`),
@@ -408,7 +408,12 @@ Five things about it are load-bearing and none is obvious:
   the selection is the whole of the instruction. `fenceBox()` unions the two —
   the drawn rectangle exactly as drawn, the items with a step of margin — which
   is what stops a fence from opening not containing its own contents, since a
-  marquee catches anything it *overlaps*.
+  marquee catches a *card* by overlap. It catches a *fence* only by covering it
+  outright (`marqueeHit()` over `itemWithinRect()`): a fence is always larger
+  than what is drawn inside it, so under one rule for both, every band drawn
+  within a region also caught the region — which counted it in the offer, drew a
+  fence unioned out to swallow its own parent, and towed the whole thing when the
+  cards it caught were dragged. To take a region, enclose it or press its name.
 - **It is an item** (`type: "fence"`), not a top-level key like `connections`.
   That is a format decision, argued in the format doc: an older build drops an
   unrecognised top-level key on save and carries an unrecognised `type` through
@@ -422,10 +427,49 @@ Five things about it are load-bearing and none is obvious:
 - **Moving a fence does not re-measure; resizing one does.** A photograph's edges
   are incidental to what lies on it and `sticky.js` says so; a fence's edges *are*
   the fence, and dragging a corner out over three more cards is the only gesture
-  that means "and these too". `commitGeom()` carries both halves.
-- **The interior takes no presses.** A fence is large, and a large card that
-  swallowed clicks would end "drag empty space to pan" everywhere it covered. The
-  label bar is the whole of its hit area.
+  that means "and these too". `commitGeom()` carries both halves. It only works
+  outwards: a grip stops when the rectangle reaches its own contents
+  (`holdFloor()` in `canvas/input.js`, frozen at the start of the drag), because
+  a corner pulled in a little too far used to drop cards silently and the only
+  sign was a region that had quietly stopped owning half of itself. Letting a
+  card go is the card's own gesture — drag it out. `resetSize` skips fences for
+  the same reason: a fence has no size it was born at. The floor is Desktop-only
+  and measured in the fence's own frame (`holdOffset()`), because both the layout
+  and the rotation it is read through have to be the ones membership was decided
+  in.
+- **A rearrangement carries a region rather than dealing it out.** `rearrange()`
+  lays out fences and loose cards; a fence's contents ride it by the translation
+  it took, the way a stuck note rides its host, and are not `driven` — so nothing
+  re-measures and nothing can be re-parented. Flat, an arrangement gave every
+  fence a slot as though it were a card and its contents slots of their own, and
+  since membership is derived, what came back was whatever landed inside whichever
+  rectangle: one press of Rearrange took every grouping apart. Fences also sit out
+  the lattice re-size for the reason `resetSize` does. Mobile needs none of this —
+  `packRuns()` lays the column out in runs already.
+- **Every fence is behind every card**, and that is a band in
+  `visualStackOrder()`, not a z value — the mirror of the note band above it. It
+  used to be arranged instead (a new fence took a z below its members), which is
+  true when it is drawn and false the moment anything changes: resize a fence out
+  over a card already lower than it and the card was picked up and then hidden
+  behind the thing that picked it up. A band cannot drift, because there is
+  nothing stored to drift. Within the band fences run largest first, so a nested
+  region is never buried by the one around it: z cannot express that (a nested
+  fence needs a value under its cards and over its parent, and on a board a whole
+  number apart there is none), while area can, because containment already
+  requires strictly more of it. Equal areas cannot nest, so raw z still orders
+  those and Bring to front still separates them.
+- **The interior takes no presses**, and the rule that says so is on `.item`, not
+  on `.item-body` — every card's body already refuses the pointer, so the first
+  version of it was a copy of the rule it meant to overturn and the face went on
+  swallowing every empty-space gesture it covered. A fence is large, and a large
+  card that swallowed clicks would end "drag empty space to pan" everywhere it
+  covered. The name plate and the resize grips take it back (a descendant set to
+  `auto` is hit inside a `none` ancestor); the plate is the whole of its hit area
+  otherwise — and it is the one label set at the
+  *region's* size rather than a card's (`clamp(15px, 4cqi, 44px)`, the same
+  container-query trick the Desktop title card uses), the one that survives
+  `#world.zoom-far`, and the one with a default name, because zooming out to find
+  your way around is the moment a region's name is what you came for.
 
 Two relations now answer "what travels", and they have to be closed over
 together: a note stuck to a card inside a fence travels with the fence, which

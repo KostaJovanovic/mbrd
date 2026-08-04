@@ -76,7 +76,7 @@ import {
 // there.
 import {
   isFence, fenceOf, fenceMembers, fenceFollowers, refence, refenceAround,
-  refenceArrivals, forgetFences, seedFences, fenceBox,
+  refenceArrivals, forgetFences, seedFences, fenceBox, nextFenceName,
 } from './fences.js';
 
 // Where everything is - see layout.js. The Mobile pack, the two geometry
@@ -105,7 +105,7 @@ export {
 
 export {
   isFence, fenceOf, fenceMembers, fenceFollowers, refence, refenceAround, forgetFences,
-  fenceBox,
+  fenceBox, nextFenceName,
 };
 
 export {
@@ -1294,6 +1294,12 @@ export function renameItem(id, name) {
  * So any of them can carry one: an album cover, a diagram, a frame grabbed by
  * hand. The picture is an ordinary asset, hashed and deduped like every other,
  * which is what makes "the same cover on nine tracks" cost one file.
+ *
+ * Wider than what the interface offers on purpose. The right-click menu asks
+ * for a picture on a track and nowhere else (canCoverItem, commands.js), and
+ * the importer sets one from a file's own art or a video's poster frame - but
+ * a cover put on any card by an older build, or by the console, is a valid
+ * board and draws. Narrowing this as well would turn those into a repair job.
  *
  * Only the *reference* is undoable. The bytes stay in the registry either way,
  * because undo has to be able to put the picture back and the autosave sweep

@@ -22,12 +22,12 @@ import { clamp } from '../util.js';
 import {
   board, byId, selection, select, deselect, clearSelection, topZ, stackOrder,
   snapshotGeom, applyGeom, commitGeom, bus, stuckFollowers, stuckPlacement, wouldStick,
-  fenceFollowers,
+  fenceFollowers, isFence, fenceMembers,
   copyItems, cutItems, pasteItems, clipboardSize, clipboardBounds, clipboardHasOurs,
   baseStep,
 } from '../state.js';
 import { zoomMs } from './viewport.js';
-import { itemInRect, latticeBox, latticeLow, cellInset, MIN_SIZE, MAX_SIZE } from '../geometry.js';
+import { itemInRect, itemWithinRect, latticeBox, latticeLow, cellInset, MIN_SIZE, MAX_SIZE } from '../geometry.js';
 import { itemIdFromEvent, ensureMounted, nodeFor, sync as syncItems, editItemName } from './items.js';
 import { noteFloor } from './notes.js';
 
@@ -123,6 +123,80 @@ const MARQUEE_DRAWN = 16;
 export function drewRectangle(box, zoom, slop = MARQUEE_DRAWN) {
   if (!box) return false;
   return Math.hypot((box.x1 - box.x0) * zoom, (box.y1 - box.y0) * zoom) >= slop;
+}
+
+/**
+ * Is this item caught by a band over `[x0,x1] x [y0,y1]`?
+ *
+ * A card by overlap and a fence only by being covered outright, and the
+ * asymmetry is the fence's own. It is the one item whose face takes no presses -
+ * items.css hands them straight through to whatever is underneath - so a band
+ * swept across that face is a band drawn *inside* the region rather than one
+ * aimed at it. And a fence is always larger than what is drawn inside it, so
+ * under one rule for both, every band within a region caught the region: the
+ * offer that follows counted it, the fence it drew was unioned out to swallow
+ * the parent it was drawn inside, and dragging what the band caught towed the
+ * whole region. To take a fence, put the band round it - or press its name.
+ */
+export function marqueeHit(it, x0, y0, x1, y1) {
+  return isFence(it)
+    ? itemWithinRect(it, x0, y0, x1, y1)
+    : itemInRect(it, x0, y0, x1, y1);
+}
+
+/**
+ * Where a member sits relative to its fence's centre, in the fence's own frame.
+ *
+ * Un-rotated the way pointInItem() un-rotates, and that is the point: membership
+ * is decided in the fence's frame, so a floor built to keep membership has to be
+ * measured in the same one. Read in world axes, a member of a turned fence has an
+ * offset the fence's own width and height say nothing about - and on the axis a
+ * corner drag does not touch, that offset can exceed the side it is compared
+ * against, which floors a resize open at a size nobody asked for.
+ *
+ * A no-op on the ordinary board, where nothing is turned.
+ */
+export function holdOffset(item, fence) {
+  const dx = item.x - fence.x, dy = item.y - fence.y;
+  const rot = fence.rot || 0;
+  if (!rot) return { x: dx, y: dy };
+  const rad = rot * Math.PI / 180;
+  const c = Math.cos(rad), s = Math.sin(rad);
+  return { x: c * dx + s * dy, y: c * dy - s * dx };
+}
+
+/**
+ * The smallest width and height a resize may reach while still covering every
+ * point in `holds` - offsets from the *starting* box's centre.
+ *
+ * A fence contains a card by its centre, so this is exactly the condition "and
+ * nothing falls out", said as two numbers the drag can be clamped to. It is not
+ * the members' bounding box: a card straddling the border is already a member on
+ * one side of it, and floored to the bounding box a fence could not be pulled in
+ * past a photograph half of which was hanging out anyway.
+ *
+ * The opposite edge stays put through a resize, which is what makes each axis one
+ * line of arithmetic. Dragging the east edge fixes the west one, so the width has
+ * to reach from there to the furthest point; dragging a corner's other axis not
+ * at all (sign 0) grows the box about its centre, so it has to reach twice the
+ * furthest side. Zero when nothing is held, which floors nothing.
+ */
+export function holdFloor(box, corner, holds) {
+  if (!holds?.length) return { w: 0, h: 0 };
+  const axis = (sign, side, offsets) => {
+    const lo = Math.min(...offsets), hi = Math.max(...offsets);
+    if (sign > 0) return Math.max(0, hi + side / 2);
+    if (sign < 0) return Math.max(0, side / 2 - lo);
+    return Math.max(0, 2 * Math.max(hi, -lo));
+  };
+  return {
+    w: axis(corner.includes('e') ? 1 : corner.includes('w') ? -1 : 0,
+      box.w, holds.map(p => p.x)),
+    // 'n' is the +y side of the item, because world y points up - the same
+    // reading the resize itself takes.
+    h: axis(corner.includes('n') ? 1 : corner.includes('s') ? -1 : 0,
+      box.h, holds.map(p => p.y)),
+  };
 }
 
 /**
@@ -664,7 +738,7 @@ export function initInput(vp, cmds) {
     const x0 = Math.min(g.x0, g.x1), x1 = Math.max(g.x0, g.x1);
     const y0 = Math.min(g.y0, g.y1), y1 = Math.max(g.y0, g.y1);
     const hit = board.items
-      .filter(i => itemInRect(i, x0, y0, x1, y1))
+      .filter(i => marqueeHit(i, x0, y0, x1, y1))
       .map(i => i.id);
     select(hit, g.additive);
   }
@@ -778,6 +852,20 @@ export function initInput(vp, cmds) {
       driven: [id],
       start: vp.toWorld(origin?.x ?? e.clientX, origin?.y ?? e.clientY),
       box: { x: it.x, y: it.y, w: it.w, h: it.h },
+      // Where this fence's cards sit relative to its centre, frozen for the
+      // length of the grip. What holds the rectangle open - see holdFloor() and
+      // the floor it feeds, below. Null for everything else, which is the test
+      // the per-frame code makes rather than asking the type again.
+      //
+      // Desktop only, and the same rule commitGeom() states: membership is a
+      // Desktop fact, and on Mobile the offsets read here are not the ones it was
+      // measured from. A band's cards are packed *underneath* it there, hundreds
+      // of units down, so a floor taken from those offsets was not a floor at all
+      // - it stretched the band over its whole run the moment a grip moved. There
+      // is nothing to hold open in any case: a Mobile resize re-parents nothing.
+      holds: isFence(it) && board.layoutMode !== 'mobile'
+        ? fenceMembers(id).map(m => holdOffset(m, it))
+        : null,
       // Nothing is aspect-locked by default any more, media included. A corner
       // used to hold a photograph's proportion and let shift free it, on the
       // reasoning that the shape a picture arrived in is the shape it wants -
@@ -1221,6 +1309,23 @@ export function initInput(vp, cmds) {
           w = lattice.w;
           h = lattice.h;
         }
+      }
+      // A fence may not be dragged smaller than the cards it holds. Growing one
+      // out over three more is how you say "and these too"; pulling it back in
+      // over its own contents used to be how you said the opposite, and it was
+      // the wrong gesture for it - a corner dragged in a little too far dropped
+      // cards silently, and the only sign was a region that had quietly stopped
+      // owning half of itself. Letting a card go is now the card's own gesture:
+      // drag it out, which has always worked and cannot be done by accident.
+      //
+      // Measured against where the members were when the grip was taken, not
+      // where they are now, so a drag that grows past a card and then comes back
+      // is not held open by something it picked up on the way out - nothing has
+      // joined yet, since membership is not re-measured until the release.
+      if (g.holds) {
+        const hold = holdFloor(g.box, g.corner, g.holds);
+        w = Math.max(w, hold.w);
+        h = Math.max(h, hold.h);
       }
       // A note may not be dragged smaller than its own text. The floor is
       // measured at the width being proposed, not the one on screen, because

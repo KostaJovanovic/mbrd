@@ -108,6 +108,141 @@ test.describe('the canvas', () => {
   });
 });
 
+test.describe('the right-click menu', () => {
+  /** A note well away from the origin, with the editor it opens closed again. */
+  async function note(page, x, y) {
+    const id = await page.evaluate(([x, y]) => {
+      window.mbrd.cmds.addNoteAt({ x, y });
+      return window.mbrd.board.items[window.mbrd.board.items.length - 1].id;
+    }, [x, y]);
+    await page.locator('#viewport').click({ position: { x: 12, y: 12 } });
+    await expect(page.locator('.item.is-editing')).toHaveCount(0);
+    return id;
+  }
+
+  test('offers the board on empty space and the card on a card, and retargets the selection', async ({ page }) => {
+    // The entry sets are chosen by a chain of `hidden` flags over a dozen
+    // capability probes (ui/menu.js), and none of it is reachable without a
+    // real right-click: the gesture starts in canvas/input.js, which decides
+    // what is under the cursor and whether the selection should move to it.
+    await ready(page);
+    const id = await note(page, 0, 0);
+
+    const menu = page.locator('#ctx-menu');
+    // Down the left edge, and dispatched at a point rather than at a locator:
+    // the corner belongs to #menu-btn, and the middle to the title card. Empty
+    // board is what a canvas menu needs under it.
+    const view = await page.locator('#viewport').boundingBox();
+    await page.mouse.click(view.x + 30, view.y + view.height / 2, { button: 'right' });
+    await expect(menu).toBeVisible();
+    // Matched loosely throughout: an entry's accessible name picks up the <kbd>
+    // accel beside it, and a toggle's picks up the tick drawn by a ::before.
+    // The names are the labels, and asserting the decoration would be asserting
+    // the stylesheet.
+    await expect(menu.getByRole('menuitem', { name: /^Zoom to fit/ })).toBeVisible();
+    await expect(menu.getByRole('menuitemcheckbox', { name: /Snap to grid/ })).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: /Duplicate/ })).toHaveCount(0);
+    await expect(menu.getByRole('menuitem', { name: /^Reload board/ })).toBeVisible();
+
+    // The menu owns the keyboard while it is up, and Escape is the way out.
+    await expect(menu).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
+
+    // On the card: the selection follows the press, the way every file manager
+    // behaves - the note was not selected before this click.
+    expect(await page.evaluate(() => window.mbrd.selection.size)).toBe(0);
+    await page.locator(`.item[data-id="${id}"]`).click({ button: 'right' });
+    await expect(menu).toBeVisible();
+    expect(await page.evaluate(() => [...window.mbrd.selection])).toEqual([id]);
+    await expect(menu.getByRole('menuitem', { name: /^Duplicate item/ })).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: /^Edit text/ })).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: /^Delete item/ })).toBeVisible();
+    // A picture is a track's affordance and nothing else's (canCoverItem,
+    // commands.js), so a note is not offered one.
+    await expect(menu.getByRole('menuitem', { name: /picture/ })).toHaveCount(0);
+
+    // An arrow walks into the entries from the menu itself, which is what the
+    // container being focusable buys. Edit text is first, and deliberately so:
+    // right-clicking the one item you can type into offers that before anything
+    // else (ui/menu.js).
+    await page.keyboard.press('ArrowDown');
+    await expect(menu.getByRole('menuitem', { name: /^Edit text/ })).toBeFocused();
+
+    // And an entry does its work: Delete, through the menu, on the retargeted
+    // selection.
+    await menu.getByRole('menuitem', { name: /^Delete item/ }).click();
+    await expect(menu).toHaveCount(0);
+    await expect
+      .poll(() => page.evaluate(i => !!window.mbrd.board.items.find(x => x.id === i), id))
+      .toBe(false);
+
+    // And the positive half of the picture rule, on the one card type that has
+    // it: a track is the thing with nothing to look at, so it is the thing
+    // offered something to show. Put on the board through state.js rather than
+    // by importing a sound file - the importer is not what this case is about.
+    const track = await page.evaluate(async () => {
+      const { addItems } = await import('/assets/js/state.js');
+      addItems([{ type: 'audio', x: 0, y: 0, w: 320, h: 96, name: 'track.opus' }], 'Add track');
+      return window.mbrd.board.items[window.mbrd.board.items.length - 1].id;
+    });
+    await page.evaluate(i => window.mbrd.vp.fit(
+      window.mbrd.board.items.filter(x => x.id === i), 160, 0), track);
+    // At the middle of the card. A press landing on the play button is still a
+    // right-click on the card: the menu is opened by a listener on the viewport
+    // that walks up from whatever was under the pointer (canvas/input.js).
+    const bar = await page.locator(`.item[data-id="${track}"]`).boundingBox();
+    await page.mouse.click(bar.x + bar.width / 2, bar.y + bar.height / 2, { button: 'right' });
+    await expect(menu.getByRole('menuitem', { name: /^Set a picture/ })).toBeVisible();
+  });
+
+  test('stays inside the window at the corner, and scrolls when it is taller than one', async ({ page }) => {
+    // Two lengths a browser resolves and the unit suite has no screen to
+    // measure. The flip is the placement (ui/menu.js); the cap is the
+    // max-height in overlays.css, and without it a card's dozen entries hang
+    // off the bottom of a short window with no way to reach the last of them.
+    await ready(page);
+    await note(page, 0, 0);
+
+    const view = await page.locator('#viewport').boundingBox();
+    await page.mouse.click(view.x + view.width - 6, view.y + view.height - 6, { button: 'right' });
+    const menu = page.locator('#ctx-menu');
+    await expect(menu).toBeVisible();
+
+    const fits = async () => {
+      const box = await menu.boundingBox();
+      const win = await page.evaluate(() => ({ w: innerWidth, h: innerHeight }));
+      return {
+        right: box.x + box.width <= win.w + 1,
+        bottom: box.y + box.height <= win.h + 1,
+        top: box.y >= -1,
+      };
+    };
+    expect(await fits(), 'the corner menu flipped rather than overflowing')
+      .toEqual({ right: true, bottom: true, top: true });
+
+    await page.keyboard.press('Escape');
+
+    // A window shorter than any of the menus are tall - 220 leaves 204 for a
+    // stock that wants better than 350 - and wide enough to stay out of the
+    // phone layout, which is not what this case is about.
+    await page.setViewportSize({ width: 900, height: 220 });
+    const short = await page.locator('#viewport').boundingBox();
+    await page.mouse.click(short.x + 30, short.y + short.height / 2, { button: 'right' });
+    await expect(menu).toBeVisible();
+    expect(await fits(), 'the tall menu stayed in the window')
+      .toEqual({ right: true, bottom: true, top: true });
+    // Capped, not cropped: everything past the fold is still reachable.
+    expect(await menu.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
+    // And the wheel that scrolls it does not close it, which is what makes the
+    // overflow usable with a mouse.
+    await menu.hover();
+    await page.mouse.wheel(0, 120);
+    await expect(menu).toBeVisible();
+    expect(await menu.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+  });
+});
+
 test.describe('the toolbar', () => {
   test('the phone handle is on a phone and nowhere else', async ({ page }) => {
     // A cascade bug, which is the one kind of mistake this file exists for: the
@@ -500,8 +635,11 @@ test.describe('fences', () => {
     await page.keyboard.up('Shift');
     await expect(prompt).toBeVisible();
     await prompt.locator('button').click();
-    // The name field opens on creation; close it before anything else runs.
+    // The name field opens on creation, over a default rather than an empty
+    // plate; Escape abandons the edit and the default is what is left.
     await page.keyboard.press('Escape');
+    await expect(page.locator('.item[data-type="fence"] .item-label'))
+      .toHaveText('Untitled fence 1');
 
     const held = await page.evaluate(ids => {
       const f = window.mbrd.board.items.find(i => i.type === 'fence');
@@ -512,6 +650,85 @@ test.describe('fences', () => {
       });
     }, ids);
     expect(held, 'the fence opened holding both cards').toEqual([true, true]);
+
+    // And now the band that goes *inside* the region it just made. A fence is
+    // larger than anything drawn within it, so under the overlap rule a card is
+    // caught by it caught the fence as well - which counted it in the offer, drew
+    // a fence unioned out to swallow its own parent, and towed the whole region
+    // when the cards it caught were dragged. One card, one offer about one card.
+    // Clear first: the band is additive (shift is what makes it a band at all),
+    // and the fence it just drew is still selected.
+    await page.locator('#viewport').click({ position: { x: 12, y: 12 } });
+    // Started *below* the card and dragged up, because a fence's name plate is
+    // its top edge and the whole of its hit area - a press that begins on it is a
+    // drag of the region, not a band drawn inside it.
+    const inner = boxes[0];
+    await page.keyboard.down('Shift');
+    await page.mouse.move(inner.x - 12, inner.y + inner.height + 12);
+    await page.mouse.down();
+    await page.mouse.move(inner.x + inner.width + 12, inner.y - 12, { steps: 8 });
+    await page.mouse.up();
+    await page.keyboard.up('Shift');
+    await expect(prompt).toHaveText('Fence this one');
+  });
+
+  test('rearranging the board keeps a region together', async ({ page }) => {
+    // Only reachable here: rearrange() lives in ui/, drives the whole board, and
+    // has no seam a unit test can hold. Laid out flat, a fence took a slot as
+    // though it were a card and its contents were dealt slots of their own - and
+    // since membership is measured and never stored, what came back was whatever
+    // happened to land inside whichever rectangle. Carried, it cannot move.
+    await ready(page);
+
+    const ids = await page.evaluate(() => {
+      const last = () => window.mbrd.board.items[window.mbrd.board.items.length - 1];
+      window.mbrd.cmds.addNoteAt({ x: -160, y: 0 });
+      const a = last();
+      window.mbrd.cmds.addNoteAt({ x: 160, y: 0 });
+      const b = last();
+      window.mbrd.bus.emit('geom', [a.id, b.id]);
+      return [a.id, b.id];
+    });
+    await page.locator('#viewport').click({ position: { x: 12, y: 12 } });
+
+    const fence = await page.evaluate(() => {
+      window.mbrd.cmds.selectAll();
+      window.mbrd.cmds.fenceSelection();
+      return window.mbrd.board.items.find(i => i.type === 'fence')?.id ?? null;
+    });
+    expect(fence, 'the fence was made').not.toBeNull();
+    await page.keyboard.press('Escape');
+
+    // Where each card sits inside the region, which is the thing that has to
+    // survive - not where the region ends up, which is the arrangement's call.
+    const offsets = at => page.evaluate(({ ids, fence }) => {
+      const f = window.mbrd.board.items.find(i => i.id === fence);
+      return ids.map(id => {
+        const it = window.mbrd.board.items.find(i => i.id === id);
+        return { x: it.x - f.x, y: it.y - f.y };
+      });
+    }, at);
+
+    const before = await offsets({ ids, fence });
+    const size = await page.evaluate(f => {
+      const it = window.mbrd.board.items.find(i => i.id === f);
+      return { w: it.w, h: it.h };
+    }, fence);
+
+    await page.evaluate(() => window.mbrd.cmds.rearrange());
+    await page.waitForTimeout(200);
+
+    const after = await offsets({ ids, fence });
+    for (let i = 0; i < before.length; i++) {
+      expect(Math.abs(after[i].x - before[i].x), `card ${i} kept its place`).toBeLessThan(1);
+      expect(Math.abs(after[i].y - before[i].y), `card ${i} kept its place`).toBeLessThan(1);
+    }
+    // And the region was not resized to the lattice under them, which is the
+    // other way a card falls out of one. See resetSize() for the same exemption.
+    expect(await page.evaluate(f => {
+      const it = window.mbrd.board.items.find(i => i.id === f);
+      return { w: it.w, h: it.h };
+    }, fence)).toEqual(size);
   });
 });
 
