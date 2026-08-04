@@ -70,7 +70,8 @@ test('a rectangle counts whichever corner it was dragged from', () => {
 
 // A fence may not be pulled in past its own cards. The floor is two numbers the
 // drag is clamped to, and every case below is one of the four ways an edge can
-// be the one that moves.
+// be the one that moves. A hold with no half-extent is a bare point, which is
+// what the first few cases below use to keep the arithmetic legible.
 
 const BOX = { x: 0, y: 0, w: 1000, h: 1000 };
 
@@ -118,29 +119,52 @@ test('the furthest card is the one that holds it open', () => {
   assert.equal(holdFloor(BOX, 'e', holds).w, 920);
 });
 
+test('the floor is drawn at the card edge, not through its middle', () => {
+  // The whole point of the half-extents: a border that stops at the centres cuts
+  // the cards it is holding in half, which reads as a region that has lost them.
+  assert.equal(holdFloor(BOX, 'e', [{ x: 300, y: 0, hw: 100, hh: 50 }]).w, 900);
+  assert.equal(holdFloor(BOX, 'w', [{ x: -200, y: 0, hw: 100, hh: 50 }]).w, 800);
+  // Centred, both sides count, so it is twice the furthest *edge*.
+  assert.equal(holdFloor(BOX, 'n', [{ x: 300, y: 0, hw: 100 }]).w, 800);
+});
+
+test('a card already hanging out cannot prise the fence open', () => {
+  // It joined by its centre and may have been left half over the border, so the
+  // edge it asks for is outside the fence. Capped at the size the drag started
+  // from: a grip that refuses to shrink, never one that grows on its own.
+  assert.equal(holdFloor(BOX, 'e', [{ x: 480, y: 0, hw: 100 }]).w, 1000);
+  assert.equal(holdFloor(BOX, 'se', [{ x: 900, y: -900, hw: 200, hh: 200 }]).w, 1000);
+});
+
 test('a hold is measured in the fence its own frame', () => {
   const straight = { x: 100, y: 100, w: 400, h: 200, rot: 0 };
-  assert.deepEqual(holdOffset({ x: 150, y: 80 }, straight), { x: 50, y: -20 });
+  const at = holdOffset({ x: 150, y: 80, w: 60, h: 40 }, straight);
+  assert.deepEqual(at, { x: 50, y: -20, hw: 30, hh: 20 });
 
   // Turned a quarter turn anticlockwise: a card 50 to the east of the fence's
   // centre in world terms is 50 along the fence's own *south* axis.
   const turned = { x: 0, y: 0, w: 400, h: 200, rot: 90 };
-  const at = holdOffset({ x: 50, y: 0 }, turned);
-  assert.ok(Math.abs(at.x - 0) < 1e-9);
-  assert.ok(Math.abs(at.y - -50) < 1e-9);
+  const spun = holdOffset({ x: 50, y: 0, w: 60, h: 40 }, turned);
+  assert.ok(Math.abs(spun.x - 0) < 1e-9);
+  assert.ok(Math.abs(spun.y - -50) < 1e-9);
+  // And a card turned with its fence is square to it: it asks for its own box,
+  // not for the larger one its corners sweep out in world axes.
+  const square = holdOffset({ x: 0, y: 0, w: 60, h: 40, rot: 90 }, turned);
+  assert.ok(Math.abs(square.hw - 30) < 1e-9);
+  assert.ok(Math.abs(square.hh - 20) < 1e-9);
 });
 
 test('a turned fence is not floored open by an axis its grip never touched', () => {
   // A card near the corner of a fence turned 45 degrees. Read in world axes its
-  // vertical offset is larger than the fence is tall, so the sign-0 axis of an
-  // east drag - which should floor nothing - would have demanded a fence three
-  // times the height. In the fence's own frame the card is where it looks: well
-  // inside, and holding nothing open.
+  // offset and its extents both exceed the height, so the sign-0 axis of an east
+  // drag - which should floor nothing - pins the height at its starting value and
+  // the fence cannot be shrunk at all. In the fence's own frame the card is where
+  // it looks: square to the fence, well inside, and holding half of it.
   const fence = { x: 0, y: 0, w: 600, h: 200, rot: 45 };
-  const member = { x: 200, y: 200 };                 // world; ~283 along its length
-  const world = { x: member.x - fence.x, y: member.y - fence.y };
-  assert.ok(holdFloor(fence, 'e', [world]).h > fence.h, 'world axes ask for a taller fence');
-  assert.ok(holdFloor(fence, 'e', [holdOffset(member, fence)]).h <= fence.h);
+  const member = { x: 200, y: 200, w: 100, h: 100, rot: 45 };
+  const world = { x: member.x - fence.x, y: member.y - fence.y, hw: 70.71, hh: 70.71 };
+  assert.equal(holdFloor(fence, 'e', [world]).h, fence.h, 'world axes allow no shrink at all');
+  assert.ok(Math.abs(holdFloor(fence, 'e', [holdOffset(member, fence)]).h - 100) < 1e-9);
 });
 
 // A band catches a card by overlap and a fence only by covering it. A fence is

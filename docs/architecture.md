@@ -436,7 +436,12 @@ Seven things about it are load-bearing and none is obvious:
   the same reason: a fence has no size it was born at. The floor is Desktop-only
   and measured in the fence's own frame (`holdOffset()`), because both the layout
   and the rotation it is read through have to be the ones membership was decided
-  in.
+  in. It is drawn at the cards' **edges** and capped at the size the drag started
+  from: membership is a fact about centres, but a border stopped at the centres
+  slices through the cards it is holding, and a fence that visibly cuts its
+  contents in half has lost them whatever the memo says. The cap is what makes
+  that safe — a card left half over the border would otherwise ask for a floor
+  wider than the fence, and touching a grip would snap the region open.
 - **A rearrangement carries a region rather than dealing it out.** `rearrange()`
   lays out fences and loose cards; a fence's contents ride it by the translation
   it took, the way a stuck note rides its host, and are not `driven` — so nothing
@@ -458,14 +463,20 @@ Seven things about it are load-bearing and none is obvious:
   number apart there is none), while area can, because containment already
   requires strictly more of it. Equal areas cannot nest, so raw z still orders
   those and Bring to front still separates them.
-- **The interior takes no presses**, and the rule that says so is on `.item`, not
-  on `.item-body` — every card's body already refuses the pointer, so the first
-  version of it was a copy of the rule it meant to overturn and the face went on
-  swallowing every empty-space gesture it covered. A fence is large, and a large
-  card that swallowed clicks would end "drag empty space to pan" everywhere it
-  covered. The name plate and the resize grips take it back (a descendant set to
-  `auto` is hit inside a `none` ancestor); the plate is the whole of its hit area
-  otherwise — and it is the one label set at the
+- **The interior draws nothing and takes no presses**, and both halves of that
+  have to be said on `.item` rather than on `.item-body`, which is the trap this
+  type keeps walking into: `.item` is what carries a card's paper *and* what takes
+  its presses, and the body is already transparent to both for every type. Said on
+  the body, each rule was a copy of the one it meant to overturn — so a region
+  swallowed every empty-space gesture it covered, and laid an opaque page over the
+  grid, the grain and every card shadow inside it (`#item-shadows` is *below* the
+  item layer, so anything with a background paints over it). A fence is large, and
+  a large card that swallowed clicks or light would take most of the board with
+  it. The name plate is the exception to both — it keeps its paper and its press,
+  because it is the one part of a fence that is a thing rather than a boundary —
+  and the resize grips take the pointer back too (a descendant set to `auto` is
+  hit inside a `none` ancestor). The plate is the whole of its hit area otherwise
+  — and it is the one label set at the
   *region's* size rather than a card's (`clamp(15px, 4cqi, 44px)`, the same
   container-query trick the Desktop title card uses), the one that survives
   `#world.zoom-far`, and the one with a default name, because zooming out to find
