@@ -42,7 +42,7 @@ import { initAssets, getAsset } from './storage/assets.js';
 import { initSidebar } from './ui/sidebar.js';
 import { buildPanel } from './ui/panel.js';
 import { armQuality, watchQuality } from './ui/quality.js';
-import { initMenu, close as closeMenu } from './ui/menu.js';
+import { initMenu } from './ui/menu.js';
 import { initFencePrompt } from './ui/fence-prompt.js';
 import { initSearch } from './ui/search.js';
 import { initIdle } from './ui/idle.js';
@@ -287,8 +287,6 @@ bus.on('board:load', () => {
   // happened to something else.
   resetSave();
 });
-
-el('viewport').addEventListener('pointerdown', () => closeMenu());
 
 // A console handle, deliberately public: `mbrd.board` to inspect state,
 // `mbrd.cmds.fit()` to drive the app, `mbrd.vp` for the coordinate model,

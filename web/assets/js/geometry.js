@@ -176,6 +176,30 @@ export function itemInRect(it, x0, y0, x1, y1) {
 }
 
 /**
+ * Does the world-space rectangle `[x0,x1] x [y0,y1]` hold the whole item?
+ *
+ * The strict half of the pair above, and it exists for one caller: a fence is
+ * larger than anything drawn inside it, so under the overlap test a band swept
+ * across a region always caught the region itself - and then the offer that
+ * followed miscounted, the fence it drew was unioned out to swallow its own
+ * parent, and dragging what the band caught towed the whole thing.
+ *
+ * Overlap is right for a card, whose face is what you are pointing at. A fence's
+ * face is not a target at all - items.css hands presses straight through it, and
+ * only its name plate takes one - so a band crossing that face is a band drawn
+ * *in* the region, not at it. Containment is what "at it" means for a shape you
+ * cannot otherwise hit.
+ *
+ * Rotation-aware through the same extents, so it is the box you can see that has
+ * to fit, and the same forgiving approximation everything else here makes.
+ */
+export function itemWithinRect(it, x0, y0, x1, y1) {
+  const { hw, hh } = rotatedExtents(it);
+  return it.x - hw >= x0 && it.x + hw <= x1 &&
+         it.y - hh >= y0 && it.y + hh <= y1;
+}
+
+/**
  * Where a point sits relative to a rectangle, as four bits.
  *
  * Cohen and Sutherland's, from 1967, and still the cheapest way to ask this:

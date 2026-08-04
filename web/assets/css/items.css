@@ -773,8 +773,22 @@
    fence or the photo on top of it", because the fence's face is never a target.
 
    The shadow twin is not built for this type at all (canvas/items.js), so there
-   is nothing to exclude here. */
-.item[data-type="fence"] .item-body { pointer-events: none; }
+   is nothing to exclude here.
+
+   It has to be said on `.item` and not on `.item-body`, which is where it was
+   said first and where it did nothing at all: every card's body already refuses
+   the pointer (`the whole card is one drag target`, further up), and the target
+   it is refusing *in favour of* is `.item` itself. So the rule that was supposed
+   to hand a press through a region was a second copy of the rule that made the
+   region take it - and the interior swallowed every empty-space gesture it
+   covered, which is exactly what this is written against.
+
+   Two children take it back. A descendant set to `auto` is hit even inside a
+   `none` ancestor, which is what makes the exemption list this short: the name
+   plate, so a region can be grabbed and renamed, and the resize grips, whose own
+   target is `.grip::before` and is already `auto` for its own reasons. */
+.item[data-type="fence"] { pointer-events: none; }
+.item[data-type="fence"] .item-bar { pointer-events: auto; }
 
 /* The label sits on the top edge, not the foot.
 
@@ -798,6 +812,34 @@
   cursor: grab;
 }
 .item[data-type="fence"].is-dragging .item-bar { cursor: grabbing; }
+
+/* And it is set at the region's size, not a card's.
+
+   12px is a caption under a photograph and is the wrong size for the name of an
+   area two thousand units across - at the zoom where you can see the whole fence
+   it is a smudge, which is the one moment its name is the thing you came for. So
+   the label is measured against the fence itself, the way the Desktop title card
+   is measured against its own width (canvas.css), rather than set to a bigger
+   fixed number that would then be wrong at the other end of the range.
+
+   The container is the .item and not .fence-card, because the plate is the item's
+   child and not the card's - see bottomBar() in canvas/items.js.
+
+   The clamp is the whole design. 4% of the width is a heading on an ordinary
+   fence; the floor keeps a small one legible, and the ceiling stops a fence drawn
+   across half a board from setting its name in letters a foot high. Padding in em
+   so the plate grows with the type instead of being sized twice.
+
+   A fence also keeps its name while the board is zoomed out, where every other
+   label is dropped. That exemption is made at the hide rule further down and not
+   here, for the same reason .item-bar-always is: it only means anything beside
+   the rule it is an exemption from, and the two are one specificity tie apart. */
+.item[data-type="fence"] { container-type: inline-size; }
+.item[data-type="fence"] .item-label {
+  font-size: clamp(15px, 4cqi, 44px);
+  padding: 0.45em 0.6em 0.5em;
+  color: var(--ink);
+}
 
 /* A picture given to a card that is not itself one - album art off an mp3's
    tags, or anything chosen by hand. See coverEl() in canvas/renderers.js, which
@@ -1875,6 +1917,17 @@ plates do: below a third of size a card is a coloured tile, and a click on
    specificity here would also unhide the plates that particular item types
    hide on purpose. A plate being typed into is the one that must survive. */
 #world.zoom-far .item:not(.is-editing) .item-label { display: none; }
+/* Except a fence's, which is the one label zooming out is *for*. The rule above
+   exists because a hundred captions at three pixels are a hundred text nodes
+   nobody can read; a fence is the opposite case on both counts - it is set at the
+   region's own size, so it is still legible out here, and finding your way around
+   a large board is precisely the moment the names of its areas are what you are
+   looking at. There are few of them, so the saving is not one a fence is
+   spending. Below the rule it exempts, not above: the two selectors weigh the
+   same, and document order is what settles a tie. */
+   :not([hidden]) because this outweighs the [hidden] rule above and would
+   otherwise put an empty plate back on a fence somebody cleared the name of. */
+#world.zoom-far .item[data-type="fence"] .item-label:not([hidden]) { display: block; }
 /* ---------------------------------------------------------------------------
    Cheap mode: what the board stops paying for while it is being moved.
 

@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  rotatedExtents, itemBounds, itemInRect, itemRadius, pointInItem, topEdge,
+  rotatedExtents, itemBounds, itemInRect, itemWithinRect, itemRadius, pointInItem, topEdge,
   corners, overlapFraction, segmentMeetsRect, viewShift,
 } from '../web/assets/js/geometry.js';
 import { item } from './helpers.js';
@@ -111,6 +111,24 @@ test('the marquee sees a rotated corner that the unrotated box would miss', () =
   const turned = { ...straight, rot: 45 };
   assert.ok(!itemInRect(straight, -200, -5, -5, 5), 'straight square should miss');
   assert.ok(itemInRect(turned, -200, -5, -5, 5), 'turned square should be caught');
+});
+
+test('containment is the strict reading of the same band', () => {
+  const it = item({ x: 0, y: 0, w: 10, h: 10 });
+  assert.ok(itemWithinRect(it, -50, -50, 50, 50));
+  // Overlapping is not enough, which is the whole difference between the two.
+  const over = item({ x: 52, y: 0, w: 10, h: 10 });
+  assert.ok(itemInRect(over, -50, -50, 50, 50));
+  assert.ok(!itemWithinRect(over, -50, -50, 50, 50));
+});
+
+test('containment is edge-inclusive and rotation-aware', () => {
+  // Exactly filling the band still counts, the same way touching it counts above.
+  assert.ok(itemWithinRect(item({ x: 0, y: 0, w: 100, h: 100 }), -50, -50, 50, 50));
+  // Turned, the same square needs the room its corners actually reach into.
+  const turned = { ...item({ x: 0, y: 0, w: 100, h: 100 }), rot: 45 };
+  assert.ok(!itemWithinRect(turned, -50, -50, 50, 50));
+  assert.ok(itemWithinRect(turned, -71, -71, 71, 71));
 });
 
 // ---------------------------------------------------------------------------

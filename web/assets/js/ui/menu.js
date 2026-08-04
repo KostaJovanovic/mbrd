@@ -19,16 +19,29 @@ import { canRenameItem, editItemName } from '../canvas/items.js';
 let node = null;
 let vp = null;
 let cmds = null;
+// Whatever had the keyboard when the menu opened, so it can be given back.
+let opener = null;
 
 export function initMenu(viewport, commands) {
   vp = viewport;
   cmds = commands;
 
-  // Close on anything that would make the anchor point meaningless.
+  // Close on anything that would make the anchor point meaningless. Both
+  // pointer and wheel let the menu's own scroller through: a menu too tall for
+  // the window scrolls (see render), and closing on the wheel that scrolls it
+  // would make the entries past the fold unreachable with a mouse.
   addEventListener('pointerdown', e => {
     if (node && !node.contains(e.target)) close();
   }, true);
-  addEventListener('wheel', close, { passive: true });
+  addEventListener('wheel', e => {
+    if (node && !node.contains(e.target)) close();
+  }, { passive: true, capture: true });
+  // Capture, because a scroll does not bubble. The board itself does not
+  // scroll today, so this is the surrounding page moving under a menu that is
+  // pinned to the window - the anchor point would be a lie afterwards.
+  addEventListener('scroll', e => {
+    if (node && !node.contains(e.target)) close();
+  }, true);
   addEventListener('resize', close);
   addEventListener('blur', close);
   addEventListener('keydown', e => {
@@ -42,8 +55,18 @@ export function initMenu(viewport, commands) {
 }
 
 export function close() {
-  node?.remove();
+  if (!node) return;
+  // Read before the node goes: removing the element that holds focus drops the
+  // keyboard on <body>, and the board's shortcuts go with it.
+  const held = node.contains(document.activeElement);
+  node.remove();
   node = null;
+  const back = opener;
+  opener = null;
+  // Only when the menu actually had focus. Closing on a pointerdown elsewhere
+  // means the browser is about to decide where focus goes on its own, and
+  // taking it back first would fight that.
+  if (held && back?.isConnected) back.focus({ preventScroll: true });
 }
 
 /**
@@ -51,7 +74,11 @@ export function close() {
  * `itemId` is the item under the cursor, or null for bare canvas.
  */
 export function openContextMenu(clientX, clientY, itemId, selectionSize) {
+  // After the close, not before it: a second right-click while a menu is up
+  // has the old menu holding focus, and close() has just handed it back to
+  // whatever owned it first. That is the element this menu owes it to as well.
   close();
+  opener = document.activeElement;
   const at = vp.toWorld(clientX, clientY);
   const entries = !itemId ? canvasEntries(at)
     // The title card is a singleton with its own short menu - never the group
@@ -92,11 +119,15 @@ function itemEntries(id, count, at) {
   // there is nowhere sensible to put the caret when a whole group is selected.
   const editable = !many && cmds.canEditNote(id);
   const renamable = !many && canRenameItem(id);
-  // A card that is not itself a picture can be given one. Single-item, like the
-  // two above: a file dialog answers with one file, and there is no sensible
-  // reading of "set the picture" for a group of nine.
+  // A track can be given a picture - see canCoverItem, which is where the rule
+  // and the reason for it live. Single-item, like the two above: a file dialog
+  // answers with one file, and there is no sensible reading of "set the
+  // picture" for a group of nine.
   const coverable = !many && cmds.canCoverItem(id);
-  const covered = coverable && cmds.itemHasCover(id);
+  // Asked separately rather than read off `coverable`, so a picture an older
+  // build allowed onto a note or a link is still one click from coming off. A
+  // card that cannot be given one can still be wearing one.
+  const covered = !many && cmds.canClearCover(id);
   // Photos and videos can fill their card (crop) or fit inside it (letterbox),
   // overriding the board-wide default for this one card. Single-item, like the
   // cover actions above and for the same reason: it is an edit to one picture.
@@ -134,7 +165,7 @@ function itemEntries(id, count, at) {
     // Above the upright toggle would put the rare fix in front of the ordinary
     // gesture; below it, this is the last thing on the model's own group.
     { label: 'Rotate model', hidden: !turnable, action: () => cmds.rotateModel(id) },
-    { sep: true, hidden: !editable && !renamable && !coverable && !fittable && !flippable && !turnable },
+    { sep: true, hidden: !editable && !renamable && !coverable && !covered && !fittable && !flippable && !turnable },
     { label: 'Bring to front', hidden: !stackable, action: () => cmds.raise() },
     { label: 'Send to back', hidden: !stackable, action: () => cmds.lower() },
     // The way back from a corner dragged too far. With the stacking pair rather
@@ -163,6 +194,10 @@ function itemEntries(id, count, at) {
     // even though the band is now the ordinary way in.
     { label: `Fence these ${count}`, hidden: !many,
       action: () => cmds.fenceSelection() },
+    // On both menus, and on this one deliberately: a right-click is the way
+    // back to the board's own actions from wherever the pointer happens to be,
+    // and having to first find empty ground to ask for a reload would be the
+    // menu being precious about which surface it was opened on.
     { label: 'Reload board', action: () => cmds.reload() },
     { sep: true },
     { label: `Duplicate ${what}`, accel: 'Ctrl D', action: () => cmds.duplicate() },
@@ -201,6 +236,11 @@ function render(entries, clientX, clientY) {
   node = document.createElement('div');
   node.id = 'ctx-menu';
   node.setAttribute('role', 'menu');
+  node.setAttribute('aria-label', 'Board actions');
+  // Focusable but not tabbable: the menu takes the keyboard when it opens, so
+  // a screen reader announces it and Escape and the arrows have somewhere to
+  // land. The entries themselves are what Tab and the arrows then walk.
+  node.tabIndex = -1;
 
   for (const entry of entries) {
     if (entry.hidden) continue;
@@ -239,6 +279,9 @@ function render(entries, clientX, clientY) {
   }
 
   // Measure off-screen, then place - the menu's size depends on its entries.
+  // The height read here is already capped by the max-height in overlays.css,
+  // so a menu with more entries than the window is tall scrolls rather than
+  // running off the bottom: the flip below can only work with a box that fits.
   node.style.visibility = 'hidden';
   document.body.append(node);
   const { width, height } = node.getBoundingClientRect();
@@ -250,6 +293,7 @@ function render(entries, clientX, clientY) {
   node.style.left = Math.round(x) + 'px';
   node.style.top = Math.round(y) + 'px';
   node.style.visibility = '';
+  node.focus({ preventScroll: true });
 }
 
 function moveFocus(step) {

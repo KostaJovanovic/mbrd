@@ -18,7 +18,7 @@ import {
   board, bus, selection, setSetting, byId,
   snapshotGeom, applyGeom, commitGeom, baseStep,
   recheckBoardGeometry, placeMobileItems,
-  isRider, stuckTo, stuckPlacement,
+  isRider, stuckTo, stuckPlacement, isFence, fenceOf,
 } from '../state.js';
 import { latticeBox, itemBounds } from '../geometry.js';
 import { travelMs } from '../canvas/viewport.js';
@@ -218,7 +218,13 @@ function paintClear() {
  * should be seen in, and it would be one undo step per item to get out of.
  */
 export async function resetSize() {
-  const items = board.items.filter(i => selection.has(i.id));
+  // Fences sit this one out. "Reset size" restores the size a card was born at,
+  // and a fence was born at whatever size it was drawn - it has no natural one,
+  // because its size *is* what it means. Handing it a default would shrink a
+  // region down to a small box and drop everything in it, which is the same
+  // silent loss the resize grips now floor against; there is no floor to apply
+  // here, since the whole action is "go back to a size of your own".
+  const items = board.items.filter(i => selection.has(i.id) && !isFence(i));
   if (!items.length) return;
 
   const step = baseStep();
@@ -400,10 +406,37 @@ export function rearrange(items) {
   // the layout and sizes it to the lattice on a snapped board, so cards no
   // longer land on top of it and it moves with the rest.
   const riders = items.filter(isRider);
-  const free = items.filter(it => !isRider(it));
+  // A fenced card is not laid out either, and rides its fence the way a sticky
+  // rides its card. A fence is one object - that is what fenceFollowers() says
+  // about dragging one, and a layout has no business disagreeing - so the region
+  // takes a slot at its own size and its contents keep their places inside it.
+  //
+  // Laid out flat, they did not: an arrangement dealt every fence a slot as
+  // though it were a card and scattered its cards to slots of their own, and
+  // since membership is measured and not stored, what came back was whatever
+  // happened to land inside whichever rectangle. One press of "Rearrange
+  // everything" took every grouping on the board apart and made new ones out of
+  // the pieces. Carried instead, membership is untouched by construction.
+  //
+  // Read once, before anything moves, because fenceOf() measures against live
+  // geometry when it has no memo - and by the second pass below the fences have
+  // moved. Only a fence that is itself in this set carries: rearranging nine
+  // cards that happen to sit in a fence nobody selected is a request to lay out
+  // those nine, and they are laid out.
+  const parentOf = new Map(items.map(it => [it.id, fenceOf(it)?.id ?? null]));
+  const inSet = new Set(items.map(it => it.id));
+  // Mobile has its own answer and it is a better one: packRuns() lays the whole
+  // column out in runs, a band and then the cards under it, so every fenced card
+  // has to be in the list it is handed. See placeMobileItems().
+  const carried = mobile ? [] : items.filter(it =>
+    !isRider(it) && inSet.has(parentOf.get(it.id)));
+  const carriedIds = new Set(carried.map(it => it.id));
+  const free = items.filter(it => !isRider(it) && !carriedIds.has(it.id));
   const beforeAll = snapshotGeom(items.map(i => i.id));
   // Nothing to lay out - the whole set was followers. There is no arrangement of
-  // riders alone; they stay on their hosts.
+  // riders alone; they stay on their hosts. A fence's contents cannot empty this
+  // on their own: containment is a strict order, so the outermost fence in any
+  // chain has nothing in this set to be carried by, and is free.
   if (!free.length) return;
 
   const at = whole ? { x: 0, y: 0 } : middleOf(free);
@@ -439,8 +472,17 @@ export function rearrange(items) {
   // which is a Rearrange button that does nothing at all.
   const step = baseStep();
   const snapDesktop = board.settings.snap && !mobile;
+  // A fence keeps the size it was drawn at, the same exemption resetSize() makes
+  // and for the same reason with one more on top: a region has no natural size,
+  // and rounding this one to whole cells could pull an edge in past a card whose
+  // centre was sitting within half a cell of it - which would drop that card out
+  // of the fence silently, on a gesture that is not about membership at all.
   const sized = snapDesktop
-    ? free.map(it => { const b = latticeBox(it, step); return { w: b.w, h: b.h }; })
+    ? free.map(it => {
+        if (isFence(it)) return { w: it.w, h: it.h };
+        const b = latticeBox(it, step);
+        return { w: b.w, h: b.h };
+      })
     : null;
   const laid = order.map(i => (sized ? { ...free[i], ...sized[i] } : free[i]));
   const seed = (Math.random() * 0xffffffff) >>> 0;
@@ -507,8 +549,44 @@ export function rearrange(items) {
     // the size it laid out for. The sizes are already on the lattice and it
     // leaves them there; what this pass is for is the position, which an
     // arrangement had no reason to land on a line.
-    return { ...at, ...latticeBox({ ...at, ...sized[i] }, step) };
+    const box = latticeBox({ ...at, ...sized[i] }, step);
+    // A fence takes the position and declines the size, which is the exemption
+    // above seen at the other end: latticeBox() answers with a whole box, and
+    // half of that answer is the rounding this one item does not want.
+    return isFence(free[i])
+      ? { ...at, x: box.x, y: box.y }
+      : { ...at, ...box };
   }));
+
+  // Fences are at their new slots; carry their contents by the same translation,
+  // which is what keeps a region a region. The offset each card held is kept
+  // exactly - not the fractional placement a rider gets, because a fence is not
+  // resized here and a region's contents are arranged relative to each other,
+  // not spread across a plate.
+  //
+  // In passes, like the riders below and for the same reason one level further
+  // out: a fence inside a fence is carried too, and can only carry its own
+  // contents once it has been carried itself.
+  if (carried.length) {
+    const beforeById = new Map(beforeAll.map(g => [g.id, g]));
+    const pending = new Set(carriedIds);
+    for (let grew = true; grew && pending.size;) {
+      grew = false;
+      for (const it of carried) {
+        if (!pending.has(it.id)) continue;
+        const fenceId = parentOf.get(it.id);
+        if (pending.has(fenceId)) continue;        // its fence has not moved yet
+        const src = beforeById.get(fenceId);
+        const now = byId(fenceId);
+        const was = beforeById.get(it.id);
+        if (src && now && was) {
+          applyGeom([{ id: it.id, x: was.x + (now.x - src.x), y: was.y + (now.y - src.y) }]);
+        }
+        pending.delete(it.id);
+        grew = true;
+      }
+    }
+  }
 
   // Hosts are now at their new slots; carry each rider to its host and keep the
   // offset it had. Read the host's *old* geometry from the pre-move snapshot (so
@@ -536,7 +614,11 @@ export function rearrange(items) {
   // driven = the free items only. Each was placed, none towed, so each of those
   // notes asks again what it landed on. Riders are left out on purpose: they kept
   // their host, so re-measuring them onto whatever they now sit beside would be
-  // the one thing that could tear a pinned pile apart.
+  // the one thing that could tear a pinned pile apart. A fence's contents are out
+  // for the same reason and it is the whole of the fix above: they were carried,
+  // they have not moved relative to anything, and a card that asked again here
+  // would be asking about a board it did not travel across. The fences themselves
+  // are driven, so a region dealt a slot inside a larger one nests as it should.
   commitGeom(whole ? 'Rearrange' : `Rearrange ${items.length} items`,
     beforeAll, free.map(g => g.id), mobile ? { preservePresnap: true } : {});
   // A whole-board layout rebuilds around the origin, so the view has to follow

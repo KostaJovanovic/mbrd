@@ -25,7 +25,7 @@ import { overlapFraction } from './geometry.js';
 import { bus, selection } from './board-store.js';
 import { board, byId, topZ } from './board-model.js';
 import { stuckTo } from './sticky.js';
-import { fenceOf } from './fences.js';
+import { fenceOf, isFence } from './fences.js';
 import { snapshotGeom, commitGeom } from './layout.js';
 
 export function bottomZ() {
@@ -62,26 +62,71 @@ export function stackOrder(ids) {
 
 /**
  * The visual stack, bottom-to-top, with each sticky chain kept as one layer and
- * every note lifted above everything that is not a note.
+ * three bands laid over the result.
  *
  * A sticky note is a mark laid *on* the board's contents - a caption, a flag, a
  * scrap - so it is never buried by the picture it annotates or by anything else;
- * only another note may sit over it. The two bands are presentation alone. Raw z
- * still records the host-below-note order that lets a board rediscover sticky
- * relations after loading (see measureStick), so the band is not written back
- * into z and nothing about stickiness changes. And because Bring-to-front /
- * Send-to-back move an item by its raw z, splitting the visible stack into these
- * bands is exactly what makes those actions reorder a note among notes and a
- * non-note among non-notes without either ever crossing into the other's band.
+ * only another note may sit over it. A fence is the mirror image: a region drawn
+ * on the board *under* its contents, so it is never in front of anything, and
+ * only another fence may sit over it. So the stack is fences, then everything
+ * else, then notes.
+ *
+ * The fence band is what makes "a fence is behind its cards" true rather than
+ * merely arranged. It used to be arranged: a new fence took a z below every card
+ * it enclosed, which is correct at the moment it is drawn and false the moment
+ * anything changes - resize a fence out over a card that was already lower than
+ * it and the card is picked up and then hidden behind the thing that picked it
+ * up. Every fix for that at the z level is a mutation somebody's undo has to
+ * carry. A band costs nothing and cannot drift, because there is nothing stored
+ * to drift.
+ *
+ * The bands are presentation alone. Raw z still records the host-below-note order
+ * that lets a board rediscover sticky relations after loading (see measureStick),
+ * so a band is not written back into z and nothing about either relation changes.
+ * And because Bring-to-front / Send-to-back move an item by its raw z, splitting
+ * the visible stack this way is exactly what makes those actions reorder a note
+ * among notes, a fence among fences, and a card among cards, with none of the
+ * three ever crossing into another's band.
  *
  * Within each band the group order is kept, so a note still sits above the very
  * host it is stuck to, and a pile of notes keeps the order it was laid down in.
+ * The fence band is the one exception, and nesting is why - see below.
  */
 export function visualStackOrder() {
   const order = stackGroups().flatMap(group => group.items);
-  const notes = [], rest = [];
-  for (const item of order) (item.type === 'note' ? notes : rest).push(item.id);
-  return [...rest, ...notes];
+  const fences = [], notes = [], rest = [];
+  for (const item of order) {
+    (isFence(item) ? fences : item.type === 'note' ? notes : rest).push(item.id);
+  }
+  return [...sortFences(fences), ...rest, ...notes];
+}
+
+/**
+ * The fence band, largest first, so a nested region is never buried by the one
+ * around it.
+ *
+ * Sorted by area rather than left in z order because z cannot express this. A
+ * fence is drawn below its contents, and the contents of a fence inside a fence
+ * include that fence - so a nested region needs a z below its cards and above its
+ * parent, and on a board where both the cards and the parent are whole numbers a
+ * step apart there is no such number. Every fence drawn inside another therefore
+ * came out on the same z as it, and which of the two names you could read was
+ * whichever the sort happened to put last.
+ *
+ * Area answers it exactly and stores nothing, which is the band's whole argument
+ * repeated one level down: containment already requires strictly greater area
+ * (see measure() in fences.js), so "smaller is nearer the front" *is* "a region
+ * is in front of the region that holds it", for any depth of nesting and with no
+ * z to keep in step. Stable, so two fences of the same area - which by that rule
+ * cannot contain one another - keep the raw z order they came in with, and Bring
+ * to front still separates them.
+ */
+function sortFences(ids) {
+  const area = id => {
+    const it = byId(id);
+    return Math.abs((it?.w || 0) * (it?.h || 0));
+  };
+  return [...ids].sort((a, b) => area(b) - area(a));
 }
 
 /**
@@ -120,12 +165,16 @@ export function selectionHasStackOverlap(ids = selection) {
  * anything goes up to the fence around it. So a note on a photo inside a fence
  * roots at the fence, and the three change z together.
  *
- * This is the one place fences and sticky notes meet, and they have to. A fence
- * is drawn *behind* its members, so "bring this fence to front" that did not
- * carry them would put the fence over its own contents - the one arrangement the
- * feature cannot survive. Carrying the whole layer is what keeps the fence at the
- * bottom of it, since raiseSelection() walks the layer in raw z order and the
- * fence is the lowest thing in it.
+ * This is the one place fences and sticky notes meet, and they have to. "Bring
+ * this fence to front" means bring the region and what is in it, the same way it
+ * means a photograph and the notes on it: a region that came forward and left its
+ * cards behind other people's would have been taken apart by its own raise.
+ *
+ * It no longer has to keep the fence *under* its members - visualStackOrder()
+ * puts every fence in a band below every card, so that is now true by
+ * construction rather than by arrangement. It stays under them within the layer
+ * as well, since raiseSelection() walks in raw z order and the fence is the
+ * lowest thing in it, which is what keeps two nested fences in their own order.
  *
  * The `seen` guard is belt and braces: sticking requires a lower z and
  * containment requires a strictly larger area, so neither relation can cycle and

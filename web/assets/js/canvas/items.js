@@ -818,6 +818,9 @@ function buildTitleControls(el) {
 const TYPE_LABEL = {
   image: 'picture', video: 'video', audio: 'audio clip',
   note: 'note', model: 'model', link: 'link', embed: 'embed',
+  // Matches the visible default a new fence is given (nextFenceName), so a fence
+  // somebody cleared the name of is still announced as the thing it is.
+  fence: 'fence',
 };
 
 /**

@@ -336,6 +336,33 @@ export function mobileRuns(items) {
   return runs;
 }
 
+/** The stem every unnamed fence is given, numbered. */
+export const FENCE_NAME = 'Untitled fence';
+
+/**
+ * The name a new fence opens with.
+ *
+ * A fence starts named for the same reason it opens with its name field ready to
+ * type into: the name is the whole point of drawing one, and a board of blank
+ * plates is a board where nothing can be referred to. A default is the version of
+ * that which survives somebody pressing Escape.
+ *
+ * One past the highest number in use, rather than the lowest number free. Filling
+ * a gap would give a *new* region a name a different region had last week - in
+ * the file, in a screenshot, in somebody's memory of where a thing was - and the
+ * only thing the counter owes anyone is that two fences never share a name.
+ */
+export function nextFenceName() {
+  const numbered = new RegExp(`^${FENCE_NAME} (\\d+)$`, 'i');
+  let top = 0;
+  for (const it of board.items) {
+    if (!isFence(it)) continue;
+    const found = numbered.exec((it.name || '').trim());
+    if (found) top = Math.max(top, +found[1]);
+  }
+  return `${FENCE_NAME} ${top + 1}`;
+}
+
 /**
  * The rectangle a new fence should occupy, from a drawn area, a set of items, or
  * both. `{ x, y, w, h }` about its centre, or null when handed neither.
