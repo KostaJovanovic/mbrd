@@ -27,7 +27,10 @@ import {
   baseStep,
 } from '../state.js';
 import { zoomMs } from './viewport.js';
-import { itemInRect, itemWithinRect, latticeBox, latticeLow, cellInset, MIN_SIZE, MAX_SIZE } from '../geometry.js';
+import {
+  itemInRect, itemWithinRect, rotatedExtents,
+  latticeBox, latticeLow, cellInset, MIN_SIZE, MAX_SIZE,
+} from '../geometry.js';
 import { itemIdFromEvent, ensureMounted, nodeFor, sync as syncItems, editItemName } from './items.js';
 import { noteFloor } from './notes.js';
 
@@ -145,7 +148,8 @@ export function marqueeHit(it, x0, y0, x1, y1) {
 }
 
 /**
- * Where a member sits relative to its fence's centre, in the fence's own frame.
+ * Where a member sits relative to its fence's centre, and how much room it takes,
+ * both in the fence's own frame: `{ x, y, hw, hh }`.
  *
  * Un-rotated the way pointInItem() un-rotates, and that is the point: membership
  * is decided in the fence's frame, so a floor built to keep membership has to be
@@ -154,48 +158,65 @@ export function marqueeHit(it, x0, y0, x1, y1) {
  * corner drag does not touch, that offset can exceed the side it is compared
  * against, which floors a resize open at a size nobody asked for.
  *
+ * The half-extents come along because the floor is drawn at the card's edge and
+ * not at its centre (see holdFloor). They are the card's own box seen from the
+ * fence, so a card turned 10 degrees inside a fence turned 10 degrees is square
+ * to it and asks for no more room than it takes.
+ *
  * A no-op on the ordinary board, where nothing is turned.
  */
 export function holdOffset(item, fence) {
   const dx = item.x - fence.x, dy = item.y - fence.y;
   const rot = fence.rot || 0;
-  if (!rot) return { x: dx, y: dy };
+  const { hw, hh } = rotatedExtents({ w: item.w, h: item.h, rot: (item.rot || 0) - rot });
+  if (!rot) return { x: dx, y: dy, hw, hh };
   const rad = rot * Math.PI / 180;
   const c = Math.cos(rad), s = Math.sin(rad);
-  return { x: c * dx + s * dy, y: c * dy - s * dx };
+  return { x: c * dx + s * dy, y: c * dy - s * dx, hw, hh };
 }
 
 /**
- * The smallest width and height a resize may reach while still covering every
- * point in `holds` - offsets from the *starting* box's centre.
+ * The smallest width and height a resize may reach while still holding every
+ * card in `holds` - centre offsets and half-extents from the *starting* box.
  *
- * A fence contains a card by its centre, so this is exactly the condition "and
- * nothing falls out", said as two numbers the drag can be clamped to. It is not
- * the members' bounding box: a card straddling the border is already a member on
- * one side of it, and floored to the bounding box a fence could not be pulled in
- * past a photograph half of which was hanging out anyway.
+ * Drawn at the cards' **edges**, not at their centres. Membership is decided by
+ * the centre, so the centre is where the floor was first put - and the result was
+ * a border sliced through the middle of the very cards it was holding, which
+ * reads as a region that has lost them however the memo answers. What a fence
+ * means is visible or it means nothing: it has to stop where its contents stop.
+ *
+ * Capped at the size the drag started from, and that cap is what makes the edge
+ * rule safe. A card can perfectly well be sticking out of a fence already - it
+ * joined by its centre, it may have been left half over the border, an import may
+ * have put it there - and an uncapped edge floor would then be *larger* than the
+ * fence, so touching a grip would snap the region open to swallow it. Capped, the
+ * worst case is a fence that will not shrink on that axis, which is a grip that
+ * does nothing rather than a grip that does something nobody asked for. It can
+ * never hold a fence open wider than it already was.
  *
  * The opposite edge stays put through a resize, which is what makes each axis one
  * line of arithmetic. Dragging the east edge fixes the west one, so the width has
- * to reach from there to the furthest point; dragging a corner's other axis not
- * at all (sign 0) grows the box about its centre, so it has to reach twice the
+ * to reach from there to the furthest edge; dragging a corner's other axis not at
+ * all (sign 0) grows the box about its centre, so it has to reach twice the
  * furthest side. Zero when nothing is held, which floors nothing.
  */
 export function holdFloor(box, corner, holds) {
   if (!holds?.length) return { w: 0, h: 0 };
-  const axis = (sign, side, offsets) => {
-    const lo = Math.min(...offsets), hi = Math.max(...offsets);
-    if (sign > 0) return Math.max(0, hi + side / 2);
-    if (sign < 0) return Math.max(0, side / 2 - lo);
-    return Math.max(0, 2 * Math.max(hi, -lo));
+  const axis = (sign, side, at, half) => {
+    const lo = Math.min(...holds.map(p => at(p) - half(p)));
+    const hi = Math.max(...holds.map(p => at(p) + half(p)));
+    const want = sign > 0 ? hi + side / 2
+      : sign < 0 ? side / 2 - lo
+      : 2 * Math.max(hi, -lo);
+    return Math.min(side, Math.max(0, want));
   };
   return {
     w: axis(corner.includes('e') ? 1 : corner.includes('w') ? -1 : 0,
-      box.w, holds.map(p => p.x)),
+      box.w, p => p.x, p => p.hw || 0),
     // 'n' is the +y side of the item, because world y points up - the same
     // reading the resize itself takes.
     h: axis(corner.includes('n') ? 1 : corner.includes('s') ? -1 : 0,
-      box.h, holds.map(p => p.y)),
+      box.h, p => p.y, p => p.hh || 0),
   };
 }
 

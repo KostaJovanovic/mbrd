@@ -749,6 +749,17 @@
    on it; no drop shadow, which canvas/items.js also skips for this type (an
    enormous card casting a shadow over everything it contains); and a dashed
    edge, which says "drawn on" the way a solid one says "lying on". */
+/* Nothing is drawn inside one, and that has to be said twice - here for the card
+   and above it for the item, which is the element that actually carries a card's
+   paper (`background: var(--item-bg)` on .item). Said only on the card, a fence
+   still laid an opaque sheet across everything it covered: the grid, the board's
+   own grain, and - the visible one - every card shadow inside it, since those are
+   painted in #item-shadows *below* the item layer so that no card can cast over
+   the face of another. A region drawn on the board has to let the board through,
+   or the cards inside it are lying flat on a page instead of sitting on top of
+   one. The plate keeps its paper; it is the one part of a fence that is a thing
+   rather than a boundary. */
+.item[data-type="fence"] { background: none; }
 .fence-card {
   background: none;
   border: 2px dashed var(--rule-2);

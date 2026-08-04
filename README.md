@@ -81,9 +81,12 @@ fill later. It arrives named — *Untitled fence 3* — with the name selected a
 ready to be typed over, set large enough to read from wherever you can see the
 whole region. Drag the fence by its label and everything inside comes along; drag
 a card out and it is out; pull the fence's corner over three more and it has
-them, and pulling it back in stops when it reaches its own contents, so nothing
-is dropped by a corner going a little too far. There is no membership to manage,
-because there is none stored — a card is
+them, and pulling it back in stops at the edge of its own contents, so nothing is
+dropped or cut in half by a corner going a little too far. Everything else about a region
+carries on working inside it: the board still pans where you drag it, a band drawn
+within one takes the cards it went round and not the region around them, and
+rearranging the board moves each region whole rather than dealing its cards out.
+There is no membership to manage, because there is none stored — a card is
 in a fence when it is inside it, which is a thing you can see. On a phone, where
 the board is a single column, each fence becomes a full-width heading with its
 cards gathered under it. Deleting a fence takes away the line and leaves the
