@@ -862,6 +862,28 @@ const RENDERERS = {
     return card;
   },
 
+  /**
+   * A fence: a labelled region, and the emptiest renderer here.
+   *
+   * There is nothing to draw inside one, which is the point - a fence is a
+   * boundary and a name, and what fills it is the board showing through. The
+   * label is the ordinary `.item-bar` every card carries, moved to the top edge
+   * by items.css; building a second caption here would have meant a second thing
+   * for a rename to keep in step.
+   *
+   * The interior does not take presses (items.css again). A fence is large, and
+   * a large card that swallowed clicks would end "drag empty space to pan"
+   * everywhere inside it - on an infinite canvas, that is most of the gestures
+   * somebody has. So the bar is the whole of the fence's hit area: press it to
+   * select, drag it to move the region and everything in it, and the resize
+   * grips appear on selection like they do for anything else.
+   */
+  fence(_item) {
+    const card = document.createElement('div');
+    card.className = 'card fence-card';
+    return card;
+  },
+
   generic(item) {
     return cardShell(item, extOf(item.name) || 'file');
   },

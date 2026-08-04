@@ -22,6 +22,7 @@ import { clamp } from '../util.js';
 import {
   board, byId, selection, select, deselect, clearSelection, topZ, stackOrder,
   snapshotGeom, applyGeom, commitGeom, bus, stuckFollowers, stuckPlacement, wouldStick,
+  fenceFollowers,
   copyItems, cutItems, pasteItems, clipboardSize, clipboardBounds, clipboardHasOurs,
   baseStep,
 } from '../state.js';
@@ -62,6 +63,33 @@ export function needsSelectionBeforeMove(selected, id) {
 }
 
 /**
+ * Everything that travels when these ids do: the ids themselves, whatever is
+ * stuck to them, and whatever they fence.
+ *
+ * To a fixed point, and it has to be. A note stuck to a card inside a fence
+ * travels with the fence, and neither relation can see that on its own - asking
+ * one after the other in either order stops a step short of it. So both are
+ * asked until the set stops growing. Two passes settle every real board, and the
+ * loop is bounded by the item count because each pass either adds somebody or
+ * ends it.
+ *
+ * Both halves already leave out anything they are handed, which is what keeps a
+ * marquee from moving a card once as a selection and again as a follower.
+ */
+function travelling(ids) {
+  const out = [...ids];
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const id of [...stuckFollowers(out), ...fenceFollowers(out)]) {
+      if (out.includes(id)) continue;
+      out.push(id);
+      grew = true;
+    }
+  }
+  return out;
+}
+
+/**
  * Whether a global canvas shortcut must stand down for this keystroke.
  *
  * True when the event was already handled (the context menu's capture listener
@@ -79,6 +107,22 @@ export function repeatsLongPressContextMenu(opened, event) {
   const elapsed = event.at - opened.at;
   return elapsed >= 0 && elapsed <= LONG_PRESS_CONTEXT_GUARD_MS
     && Math.hypot(event.x - opened.x, event.y - opened.y) <= LONG_PRESS_CONTEXT_GUARD_PX;
+}
+
+// Screen pixels of diagonal before a rubber band counts as a rectangle somebody
+// drew, rather than a click that happened to be modified. A shift-click on empty
+// board starts a marquee of zero size (startMarquee runs on the press, not on the
+// first movement), and that gesture means "clear the selection", not "here is a
+// region" - so the offer that follows a band has to be able to tell them apart.
+// Comfortably above DRAG_SLOP: crossing the slop makes it a drag, this makes it
+// a rectangle, and the gap is the small deliberate band where a wobbly click
+// selects things without also being asked about fencing them.
+const MARQUEE_DRAWN = 16;
+
+/** Did this marquee draw a rectangle, or was it a modified click? */
+export function drewRectangle(box, zoom, slop = MARQUEE_DRAWN) {
+  if (!box) return false;
+  return Math.hypot((box.x1 - box.x0) * zoom, (box.y1 - box.y0) * zoom) >= slop;
 }
 
 /**
@@ -626,12 +670,13 @@ export function initInput(vp, cmds) {
   }
 
   function startMove(e, id) {
-    // Whatever is stuck to the selection comes with it. Worked out once, here,
-    // and then held for the length of the gesture: recomputing it per frame
-    // would let notes latch on and fall off as the drag swept the selection
-    // across other items, so the group you picked up would not be the group you
-    // put down. What is stuck when you take hold is what travels.
-    const moving = [...selection, ...stuckFollowers(selection)];
+    // Whatever is stuck to the selection comes with it, and whatever is fenced
+    // by it. Worked out once, here, and then held for the length of the gesture:
+    // recomputing it per frame would let notes latch on and fall off as the drag
+    // swept the selection across other items, so the group you picked up would
+    // not be the group you put down. What is stuck when you take hold is what
+    // travels. See travelling(), which is where the fixed point is worked out.
+    const moving = travelling(selection);
     // Snapshotted here, before anything is touched, so the raise below rides
     // along in the same undo entry as the move it belongs to.
     const before = snapshotGeom(moving);
@@ -1288,8 +1333,26 @@ export function initInput(vp, cmds) {
         && (g.additive ? g.wasSelected : selection.size > 1)
       ? g.id
       : null;
+    // A rectangle dragged round some cards is "these belong together" said in the
+    // one gesture on the board that already means it, so the offer to make it a
+    // fence goes where the band was let go. Read here, while the gesture still
+    // stands, and acted on below once it does not - the offer is about the board
+    // as it now is, and finishGesture() is what settles that.
+    //
+    // pointerup only, like the pick and the throw above: a pointercancel is the
+    // system taking the gesture away, and answering a question nobody finished
+    // asking is worse than not offering. cmds owns whether there is anything
+    // worth offering; all this knows is that a rectangle was drawn.
+    const banded = e.type === 'pointerup' && g.kind === 'marquee'
+        && drewRectangle(g, vp.zoom)
+      ? {
+        x0: Math.min(g.x0, g.x1), y0: Math.min(g.y0, g.y1),
+        x1: Math.max(g.x0, g.x1), y1: Math.max(g.y0, g.y1),
+      }
+      : null;
     finishGesture();
     if (unpick) deselect(unpick);
+    if (banded) cmds.fencePrompt(e.clientX, e.clientY, banded);
     if (thrown) vp.glide(thrown.vx, thrown.vy);
     if (tap) lastEmptyTap = tap;
     setPanCursor();
@@ -1514,9 +1577,10 @@ export function initInput(vp, cmds) {
     const sx = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
     const sy = e.key === 'ArrowUp' ? 1 : e.key === 'ArrowDown' ? -1 : 0;
     // The arrow keys are a drag by another route, so they carry the same stuck
-    // notes. No z-bump here: a nudge does not raise anything, and the pair are
-    // already in the right order relative to each other.
-    const before = snapshotGeom([...selection, ...stuckFollowers(selection)]);
+    // notes and the same fenced cards. No z-bump here: a nudge does not raise
+    // anything, and the pair are already in the right order relative to each
+    // other.
+    const before = snapshotGeom(travelling(selection));
     const { dx, dy } = nudgeBy(sx, sy, e.shiftKey, before);
     if (!dx && !dy) return;
     applyGeom(before.map(b => ({ ...b, x: b.x + dx, y: b.y + dy })));

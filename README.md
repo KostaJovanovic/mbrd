@@ -74,6 +74,17 @@ Seven arrangements ship — Spiral, Grid rings, Masonry, Cluster by type, By dat
 Random scatter, and Free, which imposes no shape at all. `spacing` always means
 the gap between edges, so it means the same thing in every one of them.
 
+Drag a rubber band round a few cards and a small **Fence these 5** appears beside
+the cursor; take it and the band becomes a labelled region, or walk away and it
+withdraws itself. A band that caught nothing offers the empty region instead, to
+fill later. Drag the fence by its label and everything inside comes along; drag
+a card out and it is out; pull the fence's corner over three more and it has
+them. There is no membership to manage, because there is none stored — a card is
+in a fence when it is inside it, which is a thing you can see. On a phone, where
+the board is a single column, each fence becomes a full-width heading with its
+cards gathered under it. Deleting a fence takes away the line and leaves the
+cards exactly where they were.
+
 An empty board is not blank. It carries four hint cards — drop something, move
 around, write a note, and a live Whimsy dial — which are real items on the board
 rather than an overlay, so they pan and zoom like anything else. They leave for

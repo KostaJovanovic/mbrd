@@ -37,6 +37,10 @@ import {
   cloneSettings, layoutSettingsOf, settingsFor, defaultLayoutSettings,
 } from './board-model.js';
 import { isRider, attachRiders, stuckPlacement, restick } from './sticky.js';
+import { isFence, refence, refenceAround, mobileRuns } from './fences.js';
+
+/** A geometry snapshot entry as a plain rectangle, for the containment tests. */
+const boxOf = g => ({ x: g.x, y: g.y, w: g.w, h: g.h, rot: g.rot || 0 });
 
 /** The four fields snapping moves, and the four a presnap memo remembers. */
 export const SNAP_KEYS = ['x', 'y', 'w', 'h'];
@@ -133,6 +137,67 @@ export function packMobileGrid(items, obstacles, step, columns, spacing = 0) {
 }
 
 /**
+ * A fence's Mobile geometry: a band across the whole column, one row deep.
+ *
+ * A fence is the one item that is not fitted to the column - it *is* the column.
+ * Everything else keeps its proportions and is scaled down to fit; a region has
+ * no proportions worth keeping, and a band narrower than the cards under it
+ * would read as a card rather than as a heading over them.
+ *
+ * Sized to exactly the content width fitMobile() would allow, which is what
+ * keeps that function free of a special case: with w already at the maximum, its
+ * clamp is a no-op and its scale ratio is 1.
+ */
+function bandBox(fence, step, columns, spacing) {
+  const inset = mobileSeam(step, spacing);
+  return {
+    ...fence,
+    w: Math.max(MIN_SIZE, mobileBoardWidth(step, columns) - 2 * inset),
+    h: Math.max(MIN_SIZE, step - 2 * inset),
+    rot: 0,
+  };
+}
+
+/**
+ * Pack a list into runs: a band across the column, then the cards it holds,
+ * then the next band below all of them.
+ *
+ * The barrier is the whole point, and it is bought with no new machinery: each
+ * run is packed against *everything already placed* as its obstacles, and
+ * mobilePackStartRow() puts it on the first full row below the lowest of them.
+ * So nothing in a later run can climb into a gap left in an earlier one, which a
+ * plain first-fit over the whole column would do gladly - and a run that is not
+ * contiguous is not a run.
+ *
+ * A board with no fences takes the first branch and packs exactly as it did
+ * before any of this existed. That is deliberate: every board saved until now is
+ * that board, and it must come back unchanged.
+ *
+ * The result is put back into the caller's order because placeMobileItems()
+ * pairs its two packs by index.
+ */
+function packRuns(items, obstacles, step, columns, spacing) {
+  const runs = mobileRuns(items);
+  if (runs.length === 1 && !runs[0].band) {
+    return packMobileGrid(items, obstacles, step, columns, spacing);
+  }
+  const placed = [];
+  const behind = [...obstacles];
+  for (const run of runs) {
+    if (run.band) {
+      const [band] = packMobileGrid(
+        [bandBox(run.band, step, columns, spacing)], behind, step, columns, spacing);
+      if (band) { placed.push(band); behind.push(band); }
+    }
+    const got = packMobileGrid(run.items, behind, step, columns, spacing);
+    placed.push(...got);
+    behind.push(...got);
+  }
+  const found = new Map(placed.map(item => [item.id, item]));
+  return items.map(item => found.get(item.id)).filter(Boolean);
+}
+
+/**
  * Append items to Mobile as a compact selected-width grid without overlap.
  *
  * The incoming order still comes from the selected arrangement. Each item's
@@ -186,7 +251,7 @@ export function placeMobileItems(items, obstacles = board.items, options = {}) {
     const pre = usableMemo(item.meta?.presnap);
     return fitMobile(pre ? { ...item, ...pre } : item, false, step, columns, spacing);
   });
-  const raw = packMobileGrid(rawItems, rawObstacles, step, columns, spacing);
+  const raw = packRuns(rawItems, rawObstacles, step, columns, spacing);
   if (!snap) return raw;
 
   const liveItems = preserveSize
@@ -199,7 +264,7 @@ export function placeMobileItems(items, obstacles = board.items, options = {}) {
         return fitMobile({ ...item, w: box.w, h: box.h }, false, step, columns, spacing);
       });
   const liveObstacles = obstacles.map(item => fitMobile(item, false, step, columns, spacing));
-  return packMobileGrid(liveItems, liveObstacles, step, columns, spacing).map((item, index) => ({
+  return packRuns(liveItems, liveObstacles, step, columns, spacing).map((item, index) => ({
     ...item,
     meta: {
       ...item.meta,
@@ -405,6 +470,23 @@ export function completeLayout(mode) {
     const spacing = Math.max(0, profile.spacing || 0);
     const known = [];
     const missing = [];
+    // A fenced board is packed whole rather than appended to, and this is the one
+    // behaviour fences take away.
+    //
+    // Ordinarily an item that already has Mobile geometry keeps it and only new
+    // arrivals are packed, which is what lets a card dragged around the column
+    // stay where it was put. A run cannot be built that way: a fence drawn on
+    // Desktop arrives here as the single missing item while every card it holds
+    // still has a place somewhere up the column, so it would land alone at the
+    // bottom as a band with nothing under it, and the grouping would be invisible
+    // on exactly the layout it was supposed to become visible on.
+    //
+    // So on a board with fences the column is a function of the fences, rebuilt
+    // from the current Desktop membership every time this runs. The cost is real
+    // and worth naming: on such a board, positions you arranged by hand on the
+    // phone do not survive a trip to Desktop and back. A board with no fences is
+    // untouched by this, which is every board saved until now.
+    const fenced = board.items.some(isFence);
     // A note stuck to something on the board rides it into the column rather than
     // being packed as a card of its own, so a pinned sticky stays pinned when the
     // board reflows for Mobile. It is neither packed nor an obstacle; its place is
@@ -438,7 +520,7 @@ export function completeLayout(mode) {
         continue;
       }
       if (isRider(it)) { riders.push(it); continue; }
-      const saved = map.get(it.id);
+      const saved = fenced ? null : map.get(it.id);
       if (!saved) {
         missing.push(it);
         continue;
@@ -615,12 +697,6 @@ export function commitGeom(label, before, driven, options = {}) {
   let after = snapshotGeom(before.map(b => b.id));
   const changed = after.some((a, i) => GEOM_KEYS.some(k => a[k] !== before[i][k]));
   if (!changed) return;
-  // What the gesture actually had hold of, as opposed to what came along for
-  // the ride. Only these ask again where they are stuck; see restick(). Left
-  // out entirely by callers that move things without anybody touching them -
-  // Bring to front, the embed's fit - which change no note's position relative
-  // to anything and so change no answer.
-  if (driven) restick(driven);
   // Placed by hand while snapping was on: this *is* where the item belongs
   // now, so it gives up its memory of where it sat before the board was laid
   // on the lattice. Turning snapping off later leaves it exactly here.
@@ -630,9 +706,47 @@ export function commitGeom(label, before, driven, options = {}) {
     }
     after = snapshotGeom(before.map(b => b.id));
   }
+  // What the gesture actually had hold of, as opposed to what came along for
+  // the ride. Only these ask again where they are stuck; see restick(). Left
+  // out entirely by callers that move things without anybody touching them -
+  // Bring to front, the embed's fit - which change no note's position relative
+  // to anything and so change no answer.
+  //
+  // It rides *inside* the committed pair rather than running once here, because
+  // moving is moving whether a hand or the history did it. Undo puts a note back
+  // where it was without anybody touching it, so nothing in the gesture path
+  // runs - and the answer measured after the drop would then stand over a note
+  // no longer anywhere near the thing it names. The memo outliving the geometry
+  // that justified it is the one thing the memo must never do. commit() runs
+  // the redo half immediately, so the gesture's own restick is that first call.
+  //
+  // Fences ask the same question and one more. A fence that changed *size* is
+  // the one gesture that re-parents without anybody touching the cards: its
+  // edges are what membership means, so dragging a corner out over three more
+  // cards is how you say "and these too". Everything inside the rectangle as it
+  // was or as it now is has to ask again - see refenceAround(), which is handed
+  // both boxes so the pair is symmetric and undo needs no separate case.
+  //
+  // Desktop only, because membership is measured there and nowhere else, and a
+  // fence on Mobile is a band the packer owns rather than a region anybody drew.
+  const resized = [];
+  if (driven && board.layoutMode !== 'mobile') {
+    for (let i = 0; i < after.length; i++) {
+      if (!driven.includes(before[i].id) || !isFence(byId(before[i].id))) continue;
+      if (after[i].w === before[i].w && after[i].h === before[i].h) continue;
+      resized.push(boxOf(before[i]), boxOf(after[i]));
+    }
+  }
+  const move = snap => {
+    applyGeom(snap);
+    if (!driven) return;
+    restick(driven);
+    refence(driven);
+    refenceAround(resized);
+  };
   // Weighted: this pair retains two snapshots of everything it moved, and a
   // whole-board drag or arrange is where the history's memory actually goes.
-  commit(label, () => applyGeom(after), () => applyGeom(before), before.length * 2);
+  commit(label, () => move(after), () => move(before), before.length * 2);
 }
 
 export function forgetPresnap(it) {

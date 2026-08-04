@@ -202,6 +202,15 @@ test.describe('the toolbar', () => {
     // composeNote().
     const count = await page.evaluate(() => window.mbrd.board.items.length);
     await page.locator('#toolbar [data-cmd="add-note"]').click();
+    // The same wait the first note gets above, and it is not ceremony. The
+    // composer opens an animation frame after the click and takes the caret in
+    // the one after that; until it does, focus is still on the toolbar button
+    // that was just pressed - and a space on a focused button is a click. So
+    // typing "not this one" straight after the click pressed Add note twice
+    // more, and the board grew two notes nobody asked for. The test was
+    // measuring its own race, intermittently, and it failed as often as the
+    // machine was slow.
+    await expect(card).toHaveClass(/is-editing/);
     await page.keyboard.type('not this one');
     await page.locator('#compose-cancel').click();
     await expect(page.locator('#compose')).toBeHidden();
@@ -356,6 +365,153 @@ test.describe('the look', () => {
     await expect(palette).toHaveValue('');
     expect(await page.evaluate(
       () => document.documentElement.style.getPropertyValue('--accent'))).toBe('');
+  });
+});
+
+test.describe('fences', () => {
+  test('a fence drawn round two cards drags them, and survives a save', async ({ page }) => {
+    await ready(page);
+
+    const ids = await page.evaluate(() => {
+      const last = () => window.mbrd.board.items[window.mbrd.board.items.length - 1];
+      window.mbrd.cmds.addNoteAt({ x: -160, y: 0 });
+      const a = last();
+      window.mbrd.cmds.addNoteAt({ x: 160, y: 0 });
+      const b = last();
+      window.mbrd.bus.emit('geom', [a.id, b.id]);
+      return [a.id, b.id];
+    });
+    // The second note left an editor open on the card it made.
+    await page.locator('#viewport').click({ position: { x: 12, y: 12 } });
+
+    const fence = await page.evaluate(() => {
+      window.mbrd.cmds.selectAll();
+      window.mbrd.cmds.fenceSelection();
+      return window.mbrd.board.items.find(i => i.type === 'fence')?.id ?? null;
+    });
+    expect(fence, 'the fence was made').not.toBeNull();
+
+    // It is a real card on the board, and its label bar is the only part of it
+    // that takes a press - the body lets the pointer through so that panning
+    // still works inside a region. So the bar is what a drag has to find.
+    await expect(page.locator(`.item[data-id="${fence}"]`)).toBeVisible();
+    await expect(page.locator(`.item[data-id="${fence}"] .item-bar`)).toBeVisible();
+
+    // The name field opens on creation; close it before driving anything else.
+    await page.keyboard.press('Escape');
+
+    const before = await page.evaluate(
+      ids => ids.map(id => window.mbrd.board.items.find(i => i.id === id).x), ids);
+
+    const bar = await page.locator(`.item[data-id="${fence}"] .item-bar`).boundingBox();
+    await page.mouse.move(bar.x + bar.width / 2, bar.y + bar.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(bar.x + bar.width / 2 + 220, bar.y + bar.height / 2, { steps: 12 });
+    await page.mouse.up();
+
+    const after = await page.evaluate(
+      ids => ids.map(id => window.mbrd.board.items.find(i => i.id === id).x), ids);
+    expect(after[0], 'the first card came along').toBeGreaterThan(before[0]);
+    expect(after[1], 'and so did the second').toBeGreaterThan(before[1]);
+    // By the same amount: they were towed, not each nudged.
+    expect(Math.abs((after[0] - before[0]) - (after[1] - before[1]))).toBeLessThan(1);
+
+    // And the grouping is a property of the file, not of this session.
+    await page.evaluate(() => window.mbrd.cmds.save?.());
+    await page.waitForTimeout(500);
+    await page.reload();
+    await page.waitForFunction(() => !!window.mbrd?.vp, null, { timeout: 15_000 });
+
+    // Asserted through meta.fence rather than through fenceOf(), which is not on
+    // the console handle and should not be put there for a test. The key is what
+    // actually crosses the save, and on a board reopened straight into Mobile it
+    // is the only thing that knows - so it is the right thing to check.
+    await expect
+      .poll(() => page.evaluate(ids => {
+        const it = window.mbrd.board.items.find(i => i.id === ids[0]);
+        return it?.meta?.fence ?? null;
+      }, ids), { timeout: 10_000 })
+      .toBe(fence);
+  });
+
+  test('a rubber band offers to fence what it caught, and withdraws it', async ({ page }) => {
+    // The creation gesture, and the only case in the suite that can see it: the
+    // offer is a real pointer landing on a real button, and the withdrawal is a
+    // distance in screen pixels that no unit test has a screen to measure.
+    await ready(page);
+
+    // Well away from the origin, so the corner the band starts in is empty board
+    // rather than the title card or a hint card.
+    const ids = await page.evaluate(() => {
+      const last = () => window.mbrd.board.items[window.mbrd.board.items.length - 1];
+      window.mbrd.cmds.addNoteAt({ x: 3000, y: 3000 });
+      const a = last();
+      window.mbrd.cmds.addNoteAt({ x: 3600, y: 3000 });
+      const b = last();
+      return [a.id, b.id];
+    });
+    // The second note left an editor open on the card it made.
+    await page.locator('#viewport').click({ position: { x: 12, y: 12 } });
+    await expect(page.locator('.item.is-editing')).toHaveCount(0);
+
+    // Both notes on screen with room around them, so the band has empty board to
+    // start and finish in. No travel time: this is not what the case is about.
+    await page.evaluate(ids => {
+      const items = window.mbrd.board.items.filter(i => ids.includes(i.id));
+      window.mbrd.vp.fit(items, 300, 0);
+    }, ids);
+
+    const boxes = await Promise.all(ids.map(
+      id => page.locator(`.item[data-id="${id}"]`).boundingBox()));
+    const pad = 40;
+    const x0 = Math.min(...boxes.map(b => b.x)) - pad;
+    const y0 = Math.min(...boxes.map(b => b.y)) - pad;
+    const x1 = Math.max(...boxes.map(b => b.x + b.width)) + pad;
+    const y1 = Math.max(...boxes.map(b => b.y + b.height)) + pad;
+
+    await page.keyboard.down('Shift');
+    await page.mouse.move(x0, y0);
+    await page.mouse.down();
+    await page.mouse.move(x1, y1, { steps: 12 });
+    await page.mouse.up();
+    await page.keyboard.up('Shift');
+
+    const prompt = page.locator('#fence-prompt');
+    await expect(prompt).toBeVisible();
+    await expect(prompt).toHaveText('Fence these 2');
+
+    // Walking away is how it is declined - no key, no click, nothing to dismiss.
+    // In one hop, since the rule is where the pointer is and not how it got
+    // there, and to the far corner of the *window*: a move dispatched past the
+    // edge of it is delivered nowhere, so a pointer sent off into space would
+    // look exactly like a withdrawal that never happened.
+    const view = await page.locator('#viewport').boundingBox();
+    await page.mouse.move(view.x + 20, view.y + 20);
+    await expect(prompt).toHaveCount(0);
+    expect(await page.evaluate(() => window.mbrd.board.items.some(i => i.type === 'fence')))
+      .toBe(false);
+
+    // And again, accepted this time.
+    await page.keyboard.down('Shift');
+    await page.mouse.move(x0, y0);
+    await page.mouse.down();
+    await page.mouse.move(x1, y1, { steps: 12 });
+    await page.mouse.up();
+    await page.keyboard.up('Shift');
+    await expect(prompt).toBeVisible();
+    await prompt.locator('button').click();
+    // The name field opens on creation; close it before anything else runs.
+    await page.keyboard.press('Escape');
+
+    const held = await page.evaluate(ids => {
+      const f = window.mbrd.board.items.find(i => i.type === 'fence');
+      if (!f) return null;
+      return ids.map(id => {
+        const it = window.mbrd.board.items.find(i => i.id === id);
+        return Math.abs(it.x - f.x) <= f.w / 2 && Math.abs(it.y - f.y) <= f.h / 2;
+      });
+    }, ids);
+    expect(held, 'the fence opened holding both cards').toEqual([true, true]);
   });
 });
 

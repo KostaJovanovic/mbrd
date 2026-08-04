@@ -692,7 +692,11 @@ function build(item) {
   // And at the bottom of the quality dial there is no twin for anything:
   // turning the shadow off in CSS alone would leave a second element per card
   // being built, placed and mirrored on every move in order to paint nothing.
-  if (quality.shadows && item.type !== 'title' && item.type !== 'ghost') {
+  // A fence joins them, for a third reason: it is not a sheet of paper. A drop
+  // shadow under a two-thousand-unit rectangle reads as an enormous card lying
+  // on the board rather than as a region drawn on it, and it would be cast over
+  // every card the fence contains.
+  if (quality.shadows && item.type !== 'title' && item.type !== 'ghost' && item.type !== 'fence') {
     shadows.set(item.id, buildShadow(item, tilt));
   }
   // The title card's pen and rename buttons live for the card's whole life - CSS
@@ -833,6 +837,12 @@ export function itemAccessibleName(item) {
 function bottomBar(item) {
   const bar = document.createElement('div');
   bar.className = 'item-bar';
+  // A fence's bar is the only part of it that takes a press - its interior lets
+  // the pointer through so that panning still works inside a region - so unlike
+  // every other card's plate it is drawn even when there is no name on it yet.
+  // Otherwise an unnamed fence would have no hit area anywhere and could never
+  // be selected, moved or renamed again. items.css does the rest.
+  if (item.type === 'fence') bar.classList.add('item-bar-always');
   bar.append(nameplate(item));
   return bar;
 }

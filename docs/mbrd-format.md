@@ -292,6 +292,40 @@ knowing before adding another top-level key.
 `settings.web` — which predates all of this and is still called that, so an
 older build reads it and behaves — is the switch for whether they are drawn.
 
+### Fences
+
+A **fence** is an item of `type: "fence"` — a labelled rectangle, with the cards
+inside it belonging to it. Its `name` is the label; it carries no asset and its
+`meta` is empty but for the membership key below.
+
+**Membership is not a list, and there is deliberately nothing here that holds
+one.** A card is in a fence when its centre falls inside the fence's rectangle,
+which is a fact about the geometry the file already carries. So there is no
+member array to disagree with the coordinates beside it, and no way for a file to
+claim a grouping its own numbers contradict.
+
+`meta.fence` on the *member* is a record of that measurement rather than the
+authority for it, kept for two reasons. A pixel of drift across a save must not
+lose a grouping somebody plainly made; and membership is measured on **Desktop**
+geometry only, so a reader that opens a board straight into the Mobile layout has
+nothing to measure and this key is all it has. A reader that ignores the key
+entirely still gets the right answer on Desktop, by measuring.
+
+The Desktop-only rule is worth stating plainly for anyone implementing this: on
+Mobile a fence is drawn as a full-width band with its members packed *beneath*
+it, so no card is geometrically inside its own fence there. Measuring in that
+layout would find every fence empty.
+
+Fences nest, and the **smallest** containing fence wins. A fence may only be
+contained by one of strictly greater area, which is what makes the containment
+chain a strict order.
+
+An older reader that does not know the type shows a fence as a large empty named
+card, in the right place and at the right size, and writes it back untouched —
+the ordinary unknown-`type` behaviour described below. The grouping is lost to
+that reader and survives the round trip, which is the whole reason this is an
+item type and not a new top-level key like `connections`.
+
 ### An item
 
 ```json
@@ -311,7 +345,7 @@ older build reads it and behaves — is the switch for whether they are drawn.
 | field  | meaning |
 | ------ | ------- |
 | `id`   | Unique within the board. `[A-Za-z0-9_-]{1,64}`. |
-| `type` | `image`, `video`, `audio`, `text`, `note`, `link`, `swatch`, `model`, `generic`. |
+| `type` | `image`, `video`, `audio`, `text`, `note`, `link`, `swatch`, `model`, `fence`, `generic`. |
 | `x`, `y` | The item's **centre**, in world units. **`y` points up** — this is the one convention that surprises people, and it is why the renderer lays items out at `-y`. |
 | `w`, `h` | Size in world units. Bounded to 48…20000 (`geometry.js`). |
 | `rot`  | Degrees, anticlockwise-positive. Nothing sets it yet; every geometry helper already respects it. |
@@ -344,6 +378,7 @@ promise 1 above,** and that is the open question at the bottom of this document.
 | `peaks`  | `audio` | RMS readings in [0, 1]. Moved out to `waveforms/` when packing — see below. |
 | `cover`  | any | An asset hash for the picture a card shows: album art, a diagram, a chosen image. On a `video` it is the poster — a still cut from the clip's own first frame at import, so the card is a picture of itself before it is played. Same key either way, and readers need not tell them apart. |
 | `fit`    | `image`, `video` | This one card's fit, overriding the board-wide `mediaFit`: `"cover"` fills and crops, `"contain"` fits the whole picture in. Absent means follow the board default. |
+| `fence`  | any | The id of the fence this item is inside, when it is inside one. Absent means loose — the key is written only where there is a fence to name, since a null on every card would be noise. Stamped at save from live geometry; a load seeds the runtime memo from it. A dangling id (fence deleted) falls back to measuring. |
 | `presnap`| any | Where the item was before snap-to-grid moved it, so turning snapping off can put it back. `{ x, y, w, h }`. |
 
 Unknown `meta` keys are carried through untouched. That is the extension point:

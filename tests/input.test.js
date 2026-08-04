@@ -5,6 +5,7 @@ import {
   isDoubleTap, needsSelectionBeforeMove, repeatsLongPressContextMenu,
   releasePointerSafely, resizeHandleAction, shortcutsSuppressed,
   readWheel, resetWheelKind, WHEEL_NOTCH, WHEEL_STREAM_MS,
+  drewRectangle,
 } from '../web/assets/js/canvas/input.js';
 
 test('double taps match within the touch timing and distance windows', () => {
@@ -40,6 +41,31 @@ test('a native context menu does not reopen a freshly opened touch menu', () => 
   assert.equal(repeatsLongPressContextMenu(opened, { x: 108, y: 207, at: 1_700 }), true);
   assert.equal(repeatsLongPressContextMenu(opened, { x: 108, y: 207, at: 1_901 }), false);
   assert.equal(repeatsLongPressContextMenu(opened, { x: 130, y: 200, at: 1_100 }), false);
+});
+
+test('a shift-click that never moved is not a rectangle somebody drew', () => {
+  // startMarquee() runs on the press, so this shape is a real gesture: it means
+  // "clear the selection", and the fence offer must not follow it.
+  assert.equal(drewRectangle({ x0: 40, y0: 40, x1: 40, y1: 40 }, 1), false);
+  assert.equal(drewRectangle(null, 1), false);
+});
+
+test('a rectangle is judged on the screen, not on the board', () => {
+  const band = { x0: 0, y0: 0, x1: 100, y1: 100 };
+  // The same world rectangle, zoomed right out: a flick of the wrist, and no
+  // more an act of enclosure than the click above.
+  assert.equal(drewRectangle(band, 1), true);
+  assert.equal(drewRectangle(band, 0.05), false);
+});
+
+test('a thin band across a row of cards still counts', () => {
+  // Height near zero is a perfectly ordinary way to sweep one row, so the test
+  // is the diagonal rather than either side on its own.
+  assert.equal(drewRectangle({ x0: 0, y0: 0, x1: 400, y1: 2 }, 1), true);
+});
+
+test('a rectangle counts whichever corner it was dragged from', () => {
+  assert.equal(drewRectangle({ x0: 200, y0: 200, x1: 0, y1: 0 }, 1), true);
 });
 
 test('a tap on a resize handle waits until it crosses the drag slop', () => {

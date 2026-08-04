@@ -25,6 +25,7 @@ import { overlapFraction } from './geometry.js';
 import { bus, selection } from './board-store.js';
 import { board, byId, topZ } from './board-model.js';
 import { stuckTo } from './sticky.js';
+import { fenceOf } from './fences.js';
 import { snapshotGeom, commitGeom } from './layout.js';
 
 export function bottomZ() {
@@ -112,15 +113,32 @@ export function selectionHasStackOverlap(ids = selection) {
   return inside.some(a => outside.some(b => overlapFraction(a, b) > 0));
 }
 
-/** The bottom-most non-sticky ancestor that owns an item's external layer. */
+/**
+ * The bottom-most ancestor that owns an item's external layer.
+ *
+ * Two relations, walked as one chain: a note goes up to what it is stuck to, and
+ * anything goes up to the fence around it. So a note on a photo inside a fence
+ * roots at the fence, and the three change z together.
+ *
+ * This is the one place fences and sticky notes meet, and they have to. A fence
+ * is drawn *behind* its members, so "bring this fence to front" that did not
+ * carry them would put the fence over its own contents - the one arrangement the
+ * feature cannot survive. Carrying the whole layer is what keeps the fence at the
+ * bottom of it, since raiseSelection() walks the layer in raw z order and the
+ * fence is the lowest thing in it.
+ *
+ * The `seen` guard is belt and braces: sticking requires a lower z and
+ * containment requires a strictly larger area, so neither relation can cycle and
+ * the pair cannot either. It costs one Set on a walk that is two steps deep.
+ */
 export function stackRoot(item) {
   let root = item;
   const seen = new Set();
-  while (root?.type === 'note' && !seen.has(root.id)) {
+  while (root && !seen.has(root.id)) {
     seen.add(root.id);
-    const host = stuckTo(root);
-    if (!host) break;
-    root = host;
+    const up = (root.type === 'note' ? stuckTo(root) : null) || fenceOf(root);
+    if (!up) break;
+    root = up;
   }
   return root;
 }

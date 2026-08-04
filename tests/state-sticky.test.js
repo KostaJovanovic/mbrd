@@ -15,7 +15,7 @@ import {
   stuckTo, stuckFollowers, stuckPlacement, restick, STICK_MIN, snapshotGeom,
   applyGeom, commitGeom, setBoardMode, raiseSelection, lowerSelection,
   visualStackOrder, selectionHasStackOverlap, wouldStick, board, ensureTitleCard,
-  ensureGhostCards, TITLE_ID,
+  ensureGhostCards, TITLE_ID, undo, redo,
 } from '../web/assets/js/state.js';
 import { overlapFraction } from '../web/assets/js/geometry.js';
 import { fresh, note, photo } from './state-fixtures.js';
@@ -245,6 +245,33 @@ test('moving the note itself asks again', () => {
   applyGeom([{ ...before[0], x: 600, y: 0 }]);
   commitGeom('Move', before, [n.id]);
   assert.equal(stuckTo(byId(n.id))?.id, second.id, 'it was put down somewhere else');
+});
+
+test('undoing a move asks again, and so does redoing it', () => {
+  // The memo must never outlive the geometry that justified it. Undo puts the
+  // note back over the first photo without anybody touching it, so nothing in
+  // the gesture path runs - and the answer measured after the drop would stand
+  // over a note that is no longer anywhere near what it names.
+  //
+  // commitGeom is the only thing that resticks, so the pair it commits has to
+  // be what carries it: moving is moving whether a hand or the history did it.
+  fresh();
+  const [first] = addItems([photo({ x: 0, y: 0, w: 200, h: 200 })]);
+  const [second] = addItems([photo({ x: 600, y: 0, w: 200, h: 200 })]);
+  const [n] = addItems([note({ x: 0, y: 0, w: 80, h: 80 })]);
+  assert.equal(stuckTo(byId(n.id))?.id, first.id);
+
+  const before = snapshotGeom([n.id]);
+  applyGeom([{ ...before[0], x: 600, y: 0 }]);
+  commitGeom('Move', before, [n.id]);
+  assert.equal(stuckTo(byId(n.id))?.id, second.id);
+
+  undo();
+  assert.equal(byId(n.id).x, 0, 'the geometry went back');
+  assert.equal(stuckTo(byId(n.id))?.id, first.id, 'and so did the stick');
+
+  redo();
+  assert.equal(stuckTo(byId(n.id))?.id, second.id, 'and forward again');
 });
 
 test('a note towed by its host keeps its host', () => {

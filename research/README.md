@@ -35,14 +35,20 @@ for a change without checking the current source first.
 
 ## Current
 
-Two documents, which is the point of the tier:
+One document, which is the point of the tier:
 
 - `scalability-readability-audit-2026-07-27.md` — all eight leverage items are
   closed; the medium and low findings it lists are the remaining work, and are
   the natural source of issues.
-- `fences-2026-08-04.md` — regions that hold the cards inside them. Nothing is
-  built; it is a plan waiting on two maintainer decisions, both named at the
-  bottom of it.
+
+`old/fences-2026-08-04.md` went down on the commit that carried it out, which is
+the rule above being followed rather than described. Read it for why fences are
+an item rather than a top-level key, and why membership is measured on Desktop
+geometry alone — both are decisions the code cannot explain on its own. It also
+carries an amendment written the same day, which is the more useful half to read:
+its Decision 3 traded away Fences' own draw-a-rectangle gesture on a cost that
+turned out not to exist, because the marquee already *was* that gesture. Its v2
+list is now roll-up and per-fence tint, and its two open questions are still open.
 
 This section listed three for a while, two of which (`code-audit-2026-08-02.md`
 and its plan) had already moved to `old/`. That is precisely the filing bug the
