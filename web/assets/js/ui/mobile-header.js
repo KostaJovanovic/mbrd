@@ -24,6 +24,7 @@ import {
 } from './fonts.js';
 import { createMobileSliderFocus } from './sidebar.js';
 import { field, fieldStops } from './controls.js';
+import { paintTitleField, wireTitleField } from './board-title.js';
 
 /**
  * A four-letter tag, in words.
@@ -67,6 +68,7 @@ let button;
 let panel;
 let sliderFocus;
 let section;
+let titleInput;
 let fontSelect;
 let sizeInput;
 let sizeOut;
@@ -88,6 +90,7 @@ export function initMobileHeaderEditor(vp) {
   button = el('mobile-header-edit-btn');
   panel = el('header-panel');
   section = el('mobile-header-settings');
+  titleInput = el('header-title');
   fontSelect = el('mobile-header-font');
   sizeInput = el('mobile-header-size');
   sizeOut = el('mobile-header-size-out');
@@ -116,6 +119,12 @@ export function initMobileHeaderEditor(vp) {
   // pressable pen in front of an open panel for a fraction of a second.
   button.addEventListener('click', () => (isPanelOpen() ? closePanel() : openPanel()));
   el('header-close').addEventListener('click', closePanel);
+  // The name at the top of the panel, on ui/board-title.js's wiring rather than
+  // on its own. It is the same field the sidebar's Board section has, and a
+  // rename typed into either shows in the other because both are painted from
+  // `board.title` on the same 'board' event - which is also how it stays in step
+  // with the inline caret on the masthead and on the title card.
+  wireTitleField(titleInput);
   fontSelect.addEventListener('change', changeFont);
   sizeInput.addEventListener('input', () => {
     update({ size: +sizeInput.value });
@@ -148,7 +157,12 @@ export function initMobileHeaderEditor(vp) {
   // the band only ever changes width when the window does.
   const title = el('mobile-board-title');
   title.addEventListener('input', scheduleFit);
-  bus.on('board', scheduleFit);
+  // 'board' is also how a rename made anywhere else - the sidebar's copy of this
+  // field, the tap on the masthead, the title card - reaches the field above.
+  bus.on('board', () => {
+    paintTitleField(titleInput);
+    scheduleFit();
+  });
   if (typeof ResizeObserver === 'function') {
     new ResizeObserver(scheduleFit).observe(el('mobile-board-header'));
   }
@@ -437,6 +451,7 @@ function rangeControl(labelText, axis) {
 }
 
 function paint() {
+  paintTitleField(titleInput);
   const style = header();
   const axes = availableAxes();
   const masthead = el('mobile-board-title');

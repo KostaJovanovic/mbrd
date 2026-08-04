@@ -787,6 +787,10 @@
   font-weight: 400;
   color: var(--ink);
 }
+/* On the `text-wrap: pretty` and the Firefox warning it prints, see the note on
+   .ghost-line in items.css. Kept for the same reason: the question text is a
+   sentence or two at whatever width the dialog happens to be, and an orphan
+   under it reads as a mistake in a box that is asking for an answer. */
 #ask p {
   margin: 0 0 18px;
   font-size: var(--t-body);
@@ -812,6 +816,36 @@
 }
 #ask-field:focus { outline: none; border-color: var(--accent); }
 #ask-field[hidden] { display: none; }
+/* And the same box asked for a colour instead of a word. Taller than a line of
+   text, because what it is showing is the answer rather than holding a caret,
+   and undressed the way .swatch-well is undressed in items.css - a colour input
+   arrives wearing a platform border, a platform radius and its own inner
+   padding, and this sheet has none of those anywhere else in it. The four
+   pixels it keeps are a mount, so the colour sits inside the dialog's own
+   hairline rather than fighting it.
+
+   Two vendor spellings of the same two parts, neither of which the other
+   browser understands. Held in step with .swatch-well: the well on the card and
+   the picker in this dialog are the same control asked at different moments,
+   and a swatch that changes shape between the two reads as two features. */
+#ask-field[type="color"] {
+  min-height: calc(52px * var(--density));
+  padding: 4px;
+  cursor: pointer;
+  -webkit-appearance: none;
+     -moz-appearance: none;
+          appearance: none;
+}
+#ask-field[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+#ask-field[type="color"]::-webkit-color-swatch {
+  border: 0;
+  border-radius: calc(var(--leaf) - 3px);
+}
+#ask-field[type="color"]::-moz-color-swatch {
+  border: 0;
+  border-radius: calc(var(--leaf) - 3px);
+}
+
 
 .ask-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 /* Pushes the two paired answers to the far end, away from the one that keeps
@@ -859,6 +893,104 @@
   color: var(--paper-card);
 }
 @keyframes ask-in { from { opacity: 0; transform: translateY(8px) scale(0.97); } }
+
+/* ---------------------------------------------------------
+   Writing a note (composeNote, canvas/notes.js)
+   --------------------------------------------------------- */
+
+/* The dialog a new note is written in - and it is not a sheet, unlike every
+   other dialog in this file. There is no card, no border and no shadow here,
+   because the thing in the middle of it is a note card and a card inside a card
+   is two pieces of paper. All this element does is centre what is put into it,
+   hold the backdrop, and stack the formatting bar, the note and the buttons in
+   that order.
+
+   The bar comes from canvas/notes.js and lands last in the DOM, so `order` is
+   what puts it back on top. Written on the three children rather than on the
+   bar alone, so the reading order of the rule is the reading order on screen. */
+#compose {
+  max-width: min(560px, calc(100vw - 32px));
+  margin: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  overflow: visible;
+  animation: ask-in var(--dur-base) var(--ease-back);
+}
+/* What hides a closed <dialog> is `display: none` in the UA stylesheet, and a
+   flat `display: flex` here outranks it - so the dialog stayed on screen after
+   close(), holding the board under a backdrop nothing could dismiss. The layout
+   belongs to the open state, and this is how it is written. */
+#compose[open] { display: flex; }
+#compose::backdrop {
+  background: color-mix(in srgb, var(--ink) 42%, transparent);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+#compose .note-toolbar { order: 1; }
+#compose-mount { order: 2; }
+#compose .ask-row { order: 3; align-self: stretch; }
+
+/* The mount, and the one thing in the app that holds a live item outside the
+   world layer.
+
+   An item is absolutely positioned and carries its board coordinates inline -
+   canvas/items.js writes left/top/width/height on the node itself - so the only
+   way to show one anywhere else is to take the positioning away. `static` does
+   that: the two coordinates stop meaning anything and the two sizes go on
+   meaning exactly what they mean on the board, which is what keeps the sheet
+   the size a note is. It is also why the note grows here as it is typed, from
+   the same growNote() that grows one on the board.
+
+   --sheet-zoom is how much bigger than life the sheet is drawn, set by
+   composeNote() along with the box the mount reserves for the scaled card. --iz
+   is the inverse of the board's zoom, which the item chrome uses to hold its
+   size on screen; here the zoom is this one, so the counter comes out the size
+   it is on the board rather than twice it. */
+#compose-mount {
+  position: relative;
+  --sheet-zoom: 1;
+  --iz: calc(1 / var(--sheet-zoom));
+}
+#compose-mount .item {
+  position: static;
+  transform: scale(var(--sheet-zoom));
+  /* Top left, so the scaled card lands exactly on the box the mount reserved -
+     from the centre it would grow out of it in every direction. */
+  transform-origin: 0 0;
+  /* The board's own item transition would slide the card in from wherever it
+     was; it is not going anywhere, it is being written on. */
+  transition: none;
+}
+/* The sheet and its counter, and nothing else. A note in the world layer is
+   also selected - the grips, the ring and the bottom bar belong to a thing you
+   can drag, resize, rotate and rename, and none of those are true of a note
+   being written in a dialog.
+   .item-body is what holds the card (see build() in canvas/items.js); naming
+   .card here instead would hide the wrapper and leave the sheet with no box at
+   all, which is a zero-height contenteditable and a caret with nowhere to go. */
+#compose-mount .item > :not(.item-body, .note-count) { display: none; }
+
+/* The bar, in a row of the dialog rather than floating over a board. */
+.note-toolbar.is-inline {
+  position: static;
+  max-width: 100%;
+  flex-wrap: wrap;
+  justify-content: center;
+  transform: none;
+}
+
+/* And the landing. The card is put back into the world layer at the spot it was
+   made - the middle of the view, which is where the dialog just was - so this is
+   the end of a movement rather than a journey: it settles onto the board from
+   very slightly above it. */
+.item.is-landing { animation: note-land var(--dur-base) var(--ease-back); }
+@keyframes note-land {
+  from { transform: translateY(-10px) scale(1.06); }
+}
 
 /* The credits sheet. Everything about it being a sheet is shared with #ask
    above; what is left here is the list, and the list is two rows of a face
@@ -960,6 +1092,9 @@
   font-size: var(--t-small);
   font-style: var(--display-italic);
   color: var(--ink-2);
+  /* Again the note on .ghost-line in items.css. A pull quote is the worst place
+     on the page for a one-word last line, and this one is short enough that the
+     ragged edge is most of what you see. */
   text-wrap: pretty;
 }
 

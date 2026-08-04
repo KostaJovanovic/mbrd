@@ -25,7 +25,10 @@
 // One note stops being a note. If what it says turns out to be an address and
 // nothing else, it becomes a link item as the edit closes - see linkify() below.
 
-import { byId, bus, markDirty, setNoteContent, retypeItem, board, NOTE_MAX } from '../state.js';
+import {
+  byId, bus, markDirty, setNoteContent, retypeItem, board, NOTE_MAX,
+  lastCommand, takeBack, removeItems,
+} from '../state.js';
 import { nodeFor, onViewChange, screenBoxOf, viewportClientRect } from './items.js';
 import { linkURL, linkDraft } from './renderers.js';
 // The model, from the model. This module is the note *editor*; reaching through
@@ -289,14 +292,26 @@ function buildToolbar(api) {
  * The note commits on focusout, not on blur, and the guard lets focus move
  * anywhere inside the item - between lines, and onto the toolbar's <select> -
  * without ending the edit. Only leaving the item entirely finishes it.
+ *
+ * `surface` is the one option, and it exists for composeNote() below: an
+ * element that counts as part of this edit. Given one, the toolbar is mounted
+ * inside it rather than floated over the board, and a press or a focus landing
+ * anywhere in it - on the bar, on the dialog's own buttons, on the padding
+ * between them - does not end the edit. Everything else about the editor is
+ * the same code either way, which is the point.
+ *
+ * `onDone` is called once the edit is over, with the note's flattened text, or
+ * with null if it was discarded. Returns `{ finish }`, and `finish(true)` is
+ * the discard: it tears the editor down and commits nothing, which is a thing
+ * only a caller that owns the item can sensibly ask for.
  */
-export function editNote(id) {
+export function editNote(id, { surface = null, onDone = null } = {}) {
   const item = byId(id);
   const node = nodeFor(id);
-  if (!item || item.type !== 'note' || !node) return;
+  if (!item || item.type !== 'note' || !node) return { finish: () => {} };
   const card = node.querySelector('.card');
   const wrap = card?.querySelector('.note-rich');
-  if (!wrap) return;
+  if (!wrap) return { finish: () => {} };
 
   // Close any editor already open - including a stale one on this very note -
   // before starting, so an edit is never begun on top of another. Without this a
@@ -366,8 +381,14 @@ export function editNote(id) {
   // strip the same way the Mobile board's does. matchMedia is read here, in the
   // handler, never at module load - see tests/imports.test.js.
   const narrow = typeof matchMedia === 'function' && matchMedia('(max-width: 640px)').matches;
-  const mobile = board.layoutMode === 'mobile' || narrow;
-  if (mobile) {
+  // A surface is neither of the two: the bar is a row of the dialog, sitting
+  // above the sheet in ordinary flow, so there is nothing to pin and nothing to
+  // follow. It cannot take the mobile treatment either - that one clears the
+  // foot of the *board*, and the board is not what is being written on.
+  const mobile = !surface && (board.layoutMode === 'mobile' || narrow);
+  if (surface) {
+    toolbar.el.classList.add('is-inline');
+  } else if (mobile) {
     toolbar.el.classList.add('is-mobile');
     // The bar takes the foot of the screen for the duration of the edit, in
     // place of the add bar and the bin/undo/redo strip; the root class hides
@@ -376,7 +397,7 @@ export function editNote(id) {
   } else {
     toolbar.el.classList.add('is-float');
   }
-  (viewportEl || node).append(toolbar.el);
+  (surface || viewportEl || node).append(toolbar.el);
 
   // The bar's own size, measured once instead of on every frame.
   //
@@ -399,8 +420,9 @@ export function editNote(id) {
   // when there is no room above. Desktop floats a compact bar centred on the
   // note; mobile spans the whole board width, a wrapped strip above the note.
   const placeToolbar = () => {
-    // Mobile pins to the foot of the screen by CSS - nothing to compute.
-    if (mobile || !viewportEl) return;
+    // Mobile pins to the foot of the screen by CSS, and an inline bar is placed
+    // by the flow it is in - nothing to compute for either.
+    if (surface || mobile || !viewportEl) return;
     const vpRect = viewportClientRect();
     const nRect = screenBoxOf(byId(id));
     if (!vpRect || !nRect) return;
@@ -485,7 +507,10 @@ export function editNote(id) {
 
   const onKey = e => {
     e.stopPropagation();                    // the canvas must not see Delete/space
-    if (e.key === 'Escape') { finish(); return; }
+    // Escape ends the edit on the board. In a dialog it is the dialog's word,
+    // not the editor's - there it means "I did not mean to open this", and the
+    // surface answers it by discarding rather than by committing.
+    if (e.key === 'Escape') { if (!surface) finish(); return; }
     if (e.key === 'Enter') {
       e.preventDefault();
       const line = currentLine(wrap);
@@ -552,6 +577,7 @@ export function editNote(id) {
   // otherwise read as leaving and commit the note out from under the tap.
   const onFocusOut = e => {
     if (node.contains(e.relatedTarget) || toolbar.el.contains(e.relatedTarget)) return;
+    if (surface?.contains(e.relatedTarget)) return;
     finish();
   };
 
@@ -561,13 +587,17 @@ export function editNote(id) {
   // the note editable. Capture phase, so it runs before the canvas eats the press.
   const onDocPointerDown = e => {
     if (node.contains(e.target) || toolbar.el.contains(e.target)) return;
+    // A press on the surface is a press on the thing the note is being written
+    // in, which includes its Cancel button - and a Cancel that had already
+    // committed the note by the time it was released would not be one.
+    if (surface?.contains(e.target)) return;
     finish();
   };
 
   const onSelect = () => reflectNow();
 
   let done = false;
-  function finish() {
+  function finish(discard = false) {
     if (done) return;
     done = true;
     if (editing?.finish === finish) editing = null;
@@ -585,11 +615,16 @@ export function editNote(id) {
     counter.remove();
     toolbar.el.remove();
     node.classList.remove('is-editing');
+    if (discard) { onDone?.(null); return; }
     const rich = readRich(wrap);
     const text = flattenNoteRich(rich);
-    if (linkify(id, text)) return;
+    // linkify retires this item and mints a link in its place, so there is
+    // nothing left here to write to - but the edit is still over, and whoever
+    // asked for it still has to hear so.
+    if (linkify(id, text)) { onDone?.(text); return; }
     setNoteContent(id, rich, text);
     growNote(id);
+    onDone?.(text);
   }
 
   wrap.addEventListener('beforeinput', onBeforeInput);
@@ -607,7 +642,148 @@ export function editNote(id) {
   if (last) { last.focus?.(); caretTo(last, last.textContent.length); }
   wrap.focus();
   reflectNow();
+  return { finish };
 }
+
+/**
+ * Write a new note in front of the board, and drop it there.
+ *
+ * The note is made first and is a real item from the start - which is what
+ * makes this the note editor and not a second one. The card the canvas built
+ * for it is lifted out of the world layer into #compose for as long as it is
+ * being written, and put back where it came from afterwards; everything
+ * between those two moves is editNote() doing exactly what it does on the
+ * board. The pad colour, the heading, the alignment, the font, the size, the
+ * character count, a note that turns out to be nothing but a URL becoming a
+ * link - all of it is the same code, because it is the same note.
+ *
+ * `make` is how the note is made rather than the note itself, and that is the
+ * whole of why this owns the making: cancelling has to take back the add, and
+ * to take back a command you have to be holding it. The command is captured
+ * either side of the call, so a `make` that commits nothing is noticed rather
+ * than assumed about. See takeBack() in history.js - this used to reason "the
+ * add must still be the top of the stack", which was true and stayed true only
+ * as long as three unrelated functions went on not committing.
+ *
+ * A maker rather than an import, because canvas/ may not reach into import/ for
+ * anything but the format catalog, and addNote() lives there.
+ *
+ * Without the dialog - an older shell, a page stripped of it - the note is
+ * still written, just on the board, which is where the context menu writes one
+ * anyway.
+ */
+export function composeNote(make) {
+  const before = lastCommand();
+  const item = make();
+  if (!item) return;
+  // Null when `make` committed nothing, which is the case takeBack() must not
+  // be handed: the top of the stack would then be somebody else's command.
+  const added = lastCommand() === before ? null : lastCommand();
+  // A frame, so the canvas has built the card before it is asked for.
+  requestAnimationFrame(() => openComposer(item.id, added));
+}
+
+function openComposer(id, added) {
+  const dlg = document.getElementById('compose');
+  const mount = document.getElementById('compose-mount');
+  const node = nodeFor(id);
+  if (!node || !mount || typeof dlg?.showModal !== 'function') { editNote(id); return; }
+
+  // Shown at twice the size, which is a zoom and not a different note: the card
+  // is the same box with the same --half-min, so every fraction of itself the
+  // sticky is drawn from - the margins, the adhesive band, the type ramp - lands
+  // exactly where it lands on the board. A note is 120 across by default, and
+  // 120 points of paper in the middle of a dimmed screen is a stamp.
+  //
+  // A transform rather than the zoom property, because zoom changes the numbers
+  // offsetHeight reports and noteHeight() measures with it - a sheet that
+  // reported twice its height would grow the item to twice the height it needs.
+  // The mount reserves the scaled box in its place, since a transform does not.
+  mount.style.setProperty('--sheet-zoom', String(SHEET_ZOOM));
+  const fit = () => {
+    const it = byId(id);
+    if (!it) return;
+    mount.style.width = (it.w * SHEET_ZOOM) + 'px';
+    mount.style.height = (it.h * SHEET_ZOOM) + 'px';
+  };
+  fit();
+  // The note grows as it is written, on the board and here alike; the box the
+  // dialog keeps for it has to grow with it.
+  const offGeom = bus.on('geom', ids => { if (ids?.includes?.(id)) fit(); });
+
+  // Where the canvas had it, to the sibling: the world layer is in z-order and
+  // handing the card back at the end of the row would put it in front of things
+  // it belongs behind until the next repaint.
+  const home = node.parentElement;
+  const after = node.nextSibling;
+  mount.append(node);
+
+  const go = document.getElementById('compose-go');
+  const cancel = document.getElementById('compose-cancel');
+
+  const handle = editNote(id, {
+    surface: dlg,
+    onDone: text => {
+      offGeom();
+      go.removeEventListener('click', onGo);
+      cancel.removeEventListener('click', onCancel);
+      dlg.removeEventListener('cancel', onEscape);
+      mount.style.width = mount.style.height = '';
+      dlg.close();
+      if (home) home.insertBefore(node, after);
+      else node.remove();
+      if (text?.trim()) {
+        // It landed. The card is already where the note lives - it was made at
+        // the middle of the view, which is where the dialog was - so this is
+        // the last of the movement rather than a journey.
+        node.classList.add('is-landing');
+        node.addEventListener('animationend', () => node.classList.remove('is-landing'), { once: true });
+        return;
+      }
+      // Nothing was written, so nothing was made. takeBack() answers false if
+      // anything has been committed since the add, which cannot happen while a
+      // modal is up and is not worth being wrong about: an ordinary delete is
+      // the fallback, and that one is undoable like any other.
+      if (!takeBack(added)) removeItems([id], 'Discard note');
+    },
+  });
+
+  // The caret goes on the sheet after the dialog opens, and after is the whole
+  // point of the line below. A modal's own focusing steps do not run inside
+  // showModal() - they are flushed at the next rendering opportunity - so the
+  // focus editNote() just set is taken away again a frame later and put on the
+  // first button in the dialog, which is Cancel. The first keystroke then
+  // pressed it: typing a note discarded it. Animation frame callbacks run after
+  // that flush in the same rendering pass, which is the one place the caret can
+  // be put back and stay put.
+  const sheet = node.querySelector('.note-rich');
+  dlg.showModal();
+  requestAnimationFrame(() => {
+    // Unless the whole thing is already over - a second press, an Escape landing
+    // in the same frame - in which case the sheet is back on the board and
+    // putting a caret in it is the one thing nobody asked for.
+    if (!dlg.open || !mount.contains(sheet)) return;
+    sheet.focus();
+    const lines = sheet.querySelectorAll('.note-line');
+    const last = lines[lines.length - 1];
+    if (last) caretTo(last, last.textContent.length);
+  });
+
+  const onGo = () => handle.finish();
+  const onCancel = () => handle.finish(true);
+  // Escape reaches the dialog as a close request whatever the editor did with
+  // the keystroke, and closing this one means the note was never written.
+  // preventDefault so the discard closes it, rather than it closing and the
+  // discard arriving at an already-shut dialog.
+  const onEscape = e => { e.preventDefault(); handle.finish(true); };
+
+  go.addEventListener('click', onGo);
+  cancel.addEventListener('click', onCancel);
+  dlg.addEventListener('cancel', onEscape);
+}
+
+/** How much bigger than life the composer draws the sheet. See composeNote(). */
+const SHEET_ZOOM = 2;
 
 /** Insert `el` after `ref` and return it. */
 function insertAfter(ref, el) {

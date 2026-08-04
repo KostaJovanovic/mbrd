@@ -31,8 +31,8 @@ import { threads } from './web-graph.js';
 import { defaultUpAxis, meshKind } from './mesh.js';
 import { travelMs } from './canvas/viewport.js';
 import { isTurning, rotateModel } from './canvas/model.js';
-import { pickFiles, pickCover, pickPhoto, addNote, addSwatch, addLink } from './import/drop.js';
-import { linkURL } from './canvas/renderers.js';
+import { pickFiles, pickCover, addNote, addSwatch, addLink } from './import/drop.js';
+import { linkURL, SWATCH_DEFAULT } from './canvas/renderers.js';
 import { ask } from './ui/dialog.js';
 import { exportBoard, openBoard, newBoard } from './storage/storage.js';
 import { getAsset } from './storage/assets.js';
@@ -46,7 +46,7 @@ import {
   openPanel as openHeaderPanel, closePanel as closeHeaderPanel,
   isPanelOpen as isHeaderPanelOpen,
 } from './ui/mobile-header.js';
-import { editNote } from './canvas/notes.js';
+import { composeNote, editNote } from './canvas/notes.js';
 import { paintZoom, zoomText } from './ui/hud.js';
 import { editTitleCard } from './ui/board-title.js';
 import {
@@ -135,16 +135,36 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
     discardOriginals: () => import('./optimize/ui.js').then(m => m.discardOptimizeOriginals()),
 
     addFiles: () => pickFiles(),
-    addNote: () => {
-      const item = addNote(vp.toWorld(vp.left + vp.cx, vp.top + vp.cy));
-      requestAnimationFrame(() => cmds.editNote(item.id));
+    // The three that are typed rather than dropped all ask the same way. What
+    // they have in common is that pressing the tool is not the whole of the
+    // action - there is a word, a colour or an address still to come - and the
+    // dialog is where it comes, so nothing lands on the board until there is
+    // something to put on it. Cancelling leaves no card behind to tidy up.
+    //
+    // The note is the one of the three that is not a question, because there is
+    // no answer a box could take: it is written on the sticky itself, in front
+    // of the board, and dropped. See composeNote() - the item is real from the
+    // first keystroke and the editor is the ordinary one, so what is being
+    // written on behaves like a note for the plain reason that it is one.
+    //
+    // It is handed *how* to make the note rather than a note, because taking one
+    // back needs the command that made it, and holding that command is easier
+    // than reasoning about where it ended up in the history.
+    addNote: () => composeNote(() => addNote(vp.toWorld(vp.left + vp.cx, vp.top + vp.cy))),
+    // A colour of your own, chosen before the card exists. The well on the card
+    // is a real colour input and still is, so this is not the only way to set
+    // one - but arriving grey and waiting to be told meant every swatch was two
+    // actions, and SWATCH_DEFAULT is what the picker opens on rather than what
+    // the board gets.
+    addSwatch: async () => {
+      const picked = await ask({
+        title: 'Add a colour',
+        go: 'Add',
+        field: { type: 'color', value: SWATCH_DEFAULT },
+      });
+      if (!picked) return;
+      addSwatch(vp.toWorld(vp.left + vp.cx, vp.top + vp.cy), picked);
     },
-    // A colour of your own. No editor opened after it, unlike the note above:
-    // the card *is* the editor - the well on it is a real colour input - so
-    // there is nothing to put a caret into and nothing to open. It arrives
-    // grey, which is the app declining to choose a colour for you; see
-    // SWATCH_DEFAULT.
-    addSwatch: () => addSwatch(vp.toWorld(vp.left + vp.cx, vp.top + vp.cy)),
     // A card for somewhere else, typed rather than dropped. Nothing is fetched:
     // a link card is a name and an address until somebody clicks it, and that
     // stays true however the address arrived.
@@ -160,10 +180,6 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
       if (!url) { toast('That is not an address this can open', 'error'); return; }
       addLink(vp.toWorld(vp.left + vp.cx, vp.top + vp.cy), url);
     },
-    // The camera, on a phone. Straight into the import path a dropped photo
-    // takes - budget included - see pickPhoto().
-    addPhoto: () => pickPhoto(),
-
     // --- connections ---
     // The one tool on the bar that is a mode. Pressing it arms; pressing it
     // again, or Escape, puts it down. What a press on the board then means is

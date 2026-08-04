@@ -151,8 +151,18 @@
      directly below it. */
   #toolbar-tools {
     position: absolute;
-    left: 0;
-    right: 0;
+    /* Wider than the handle it opens from, out to the width of the whole foot:
+       the tier's edges land on the bin's outer edge at one end and the redo
+       button's at the other, which is as wide as anything on this layout gets.
+       The handle has to clear those three buttons because it shares their row;
+       the tier is a row of its own and clearing them buys nothing but a
+       narrower strip - and the width is what pays for a word on a tool.
+
+       Written as the negative of the container's own insets, out of the same
+       two tokens, so the tier cannot drift off the strip below when either
+       changes. */
+    left: calc(-1 * (var(--chrome-button-w) + var(--bar-gap)));
+    right: calc(-1 * (2 * var(--chrome-button-w) + var(--bar-gap)));
     bottom: calc(100% + var(--bar-gap));
     height: var(--tools-h);
     border: var(--hairline) solid var(--rule-2);
@@ -180,29 +190,39 @@
   /* Every tool takes an equal share of the row, so the tier is one strip of
      even segments rather than a row sized by how long each word happens to be. */
   #toolbar-tools button { flex: 1; padding: 0 6px; height: 100%; }
-  /* And no words in the tier. The strip between the bin and the history pair is
-     a little over two hundred points wide on the common phone, and five tools
-     in it get forty each - which fits an icon and nothing else. The handle
-     below keeps its word, because it is one button with the whole span.
+  /* The tier keeps its words, now that it has the width of the whole foot to
+     spend. Four segments of a 390-wide screen come out at ninety points each,
+     and the longest of these labels wants about eighty: a 13px word, the
+     seventeen-point glyph, the gap between them and the padding either side.
+
+     Below that the words go, all but one. The floor is 360 rather than 344,
+     which is where the arithmetic actually runs out, because the arithmetic
+     assumes a browser that has not been told to draw text larger - and the
+     failure at the bottom is a word spilling out from under its own icon.
+
+     Files is the one that stays, because it is the one the toolbar exists for
+     and the one whose icon says least: a note, a colour and a link are all
+     drawings of themselves, while a plus on its own could mean anything.
 
      Hidden the accessible way rather than with display:none: these buttons have
      no aria-label, so the word IS the button's name, and taking it out of the
-     flow while leaving it for a screen reader keeps "Files" and "Note" spoken.
+     flow while leaving it for a screen reader keeps "Note" and "Colour" spoken.
      The icon then centres on its own in the flex row. */
-  #toolbar-tools button span {
-    position: absolute;
-    width: 1px; height: 1px;
-    margin: -1px; padding: 0; border: 0;
-    clip-path: inset(50%);
-    overflow: hidden; white-space: nowrap;
+  #toolbar-tools button span { white-space: nowrap; }
+  @media (max-width: 359px) {
+    #toolbar-tools button:not([data-cmd="add-files"]) span {
+      position: absolute;
+      width: 1px; height: 1px;
+      margin: -1px; padding: 0; border: 0;
+      clip-path: inset(50%);
+      overflow: hidden;
+    }
   }
   /* Rearrange and Find are not here. Both are one tap away in the panel on this
-     layout, and a row of seven on a 390-wide screen is a row you cannot aim at -
+     layout, and a row of six on a 390-wide screen is a row you cannot aim at -
      the same "absent rather than greyed out" the settings schema applies to its
-     own layout-specific rows. The camera is the same rule read the other way:
-     it is here and nowhere else. */
+     own layout-specific rows. */
   #toolbar [data-desktop] { display: none; }
-  #toolbar [data-phone] { display: flex; }
 
   /* Above the foot strip rather than in it. The bottom edge is spoken for at
      this width - bin, handle and history read as one flush line - and a fourth

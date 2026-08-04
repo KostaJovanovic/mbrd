@@ -377,6 +377,14 @@
   letter-spacing: calc(0.01em * var(--ls-scale));
   color: var(--ghost-ink);
 }
+/* `text-wrap: pretty` here, and on the two prose blocks in overlays.css, is
+   kept knowing Firefox drops it and says so in the console. It is not the same
+   case as the unprefixed `line-clamp` further down, which was removed for
+   exactly that warning: this one earns it. A hint line is two or three lines of
+   centred text with no fixed measure, which is the shape that strands a single
+   short word on the last line, and pretty is the only thing that fixes it in
+   the engines that have it. Three console lines in one browser is the price of
+   better breaks in the other two. Leave it. */
 .ghost-line {
   font-family: var(--font-body);
   font-size: 12px;
@@ -825,7 +833,12 @@
    The transport is pinned to the foot of the card by `margin-top: auto`, which
    only works while there is a foot left to pin it to: a name that wrapped to
    five or six lines pushed the play button out through the bottom of the card,
-   which clips. So it gets a line budget and an ellipsis after it. */
+   which clips. So it gets a line budget and an ellipsis after it.
+
+   Prefixed only, for the reason spelled out on `.card-link .card-meta` below:
+   no engine takes the unprefixed `line-clamp` without also taking the -webkit-
+   one, so the unprefixed declaration only ever bought a dropped-declaration
+   warning in the Firefox console. */
 .card-audio .card-name {
   flex: 0 1 auto;
   min-height: 0;
@@ -833,7 +846,6 @@
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
-          line-clamp: 3;
 }
 /* The transport keeps its height whatever else is on the card, and stops short
    of the corner the handle owns - see the padding note on .card-audio above. */
@@ -869,7 +881,7 @@
   .card-audio .card-icon { display: none; }
 }
 @container audio-card (max-height: 126px) {
-  .card-audio .card-name { -webkit-line-clamp: 2; line-clamp: 2; }
+  .card-audio .card-name { -webkit-line-clamp: 2; }
 }
 /* Just under the clamp above, and that is deliberate rather than a near miss.
    By this height the name is on two lines, not three, which hands back a line's
@@ -880,7 +892,7 @@
   .card-audio .card-meta { display: none; }
 }
 @container audio-card (max-height: 100px) {
-  .card-audio .card-name { -webkit-line-clamp: 1; line-clamp: 1; }
+  .card-audio .card-name { -webkit-line-clamp: 1; }
 }
 
 /* The native player is a fixed-height control, so it is pinned to the foot of

@@ -163,7 +163,10 @@ sinks a control into its section's fold; `when` is *absence*, not disabling.
 `external: true` means another module owns the behaviour and the builder only
 makes the element under the id that module looks up — `ui/appearance.js` (whimsy,
 palette, the three token hosts) and `ui/sidebar.js` (the board name) both predate
-the builder and are handed their elements. The panel is built **once**, before
+the builder and are handed their elements. The name field's behaviour is
+`ui/board-title.js`'s (`wireTitleField`/`paintTitleField`); `ui/sidebar.js` only
+points them at `#board-title`, because the masthead panel has the same field
+under `#header-title` and one rename has to show in both. The panel is built **once**, before
 those modules run, and repainted; it is never rebuilt, because they hold their
 nodes.
 
@@ -178,7 +181,7 @@ there; a new control *instance* goes in the schema.**
 ### Chrome that is not in the panel
 
 `ui/toolbar.js` is the bar that says a board is made by putting things on it —
-files, a note, a colour, a link, the camera on a phone, and the connector tool.
+files, a note, a colour, a link, and the connector tool.
 Every button on it carries a `data-cmd` and this module resolves it
 against `cmds`, exactly as `ui/sidebar.js` does for the panel; a tool is a button
 in `index.html` and an entry in `commands.js`, and nothing here hears about it.
@@ -188,8 +191,11 @@ both side edges are spoken for by the panels and the whole bottom edge is the
 bin, the history pair, the zoom cluster and the player. On a phone it collapses
 to a handle in that bottom row — where the old `#add-bar` was, whose `data-add`
 one-off it absorbed — and opens upward into a second tier, with the player
-stepped up to a third. **`#toolbar` must stay before `#nowplaying` in
-`index.html`:** the rules that move the player are general sibling combinators.
+stepped up to a third. The tier is wider than the handle: the handle shares its
+row with the bin and the history pair and has to clear them, the tier has a row
+to itself and spans the whole foot, which is what pays for the words under the
+icons — all four above 360px, Files alone below it. **`#toolbar` must stay before `#nowplaying` in `index.html`:**
+the rules that move the player are general sibling combinators.
 
 The one thing it owns beyond wiring is the connector tool's armed state, which
 is the app's only mode. See *Connections* below.
@@ -409,6 +415,35 @@ editor as much as by the renderer) and `canvas/poster.js` (the video
 first-frame grab). Both are re-exported by `renderers.js`, so no caller had to
 learn they moved; `canvas/notes.js` reads the model directly, because it is the
 note *editor* and reaching through the renderer for it was a backwards arrow.
+
+`composeNote()` in that same file is how a new note is written, and it is worth
+knowing what it is *not*: there is no second editor. The note is made first and
+is an ordinary item from the first keystroke; the card the canvas built for it
+is moved out of `#world` into `<dialog id="compose">` for as long as it is being
+written, and put back afterwards. `editNote()` takes one option for this —
+`surface`, an element that counts as part of the edit, so the bar mounts inside
+it and a press on the dialog's own buttons does not commit the note out from
+under the press. Three things make it work and each is load-bearing: the card is
+`position: static` in the mount, so the board coordinates it carries inline stop
+meaning anything while its inline width and height go on meaning exactly what
+they mean on the board; the mount reserves `SHEET_ZOOM` times that box and the
+card is scaled into it, since a note is 120px and a transform (unlike `zoom`)
+leaves `offsetHeight` alone for `noteHeight()` to measure; and the caret is put
+on the sheet in an animation frame *after* `showModal()`, because a modal's
+focusing steps are flushed at the next rendering opportunity and would otherwise
+take it.
+
+Cancelling calls `finish(true)`, which commits nothing, and then takes back the
+add. That is why `composeNote()` is handed *how* to make the note rather than a
+note: it captures `lastCommand()` either side of the call and hands that token
+to `takeBack()`, which undoes it **only if it is still the top of the stack** and
+leaves no redo behind — a withdrawal rather than a step through the user's own
+history. The first version reasoned instead that the add must still be the
+newest thing, because `growNote()` is not undoable, `setNoteContent()` no-ops on
+unchanged text and `dismissGhosts()` is hydration. All three are true; none of
+them is this file's business, and one of them changing would have silently
+undone something else. `takeBack()` asks the question, and `removeItems()` is
+the fallback when the answer is no.
 
 ### Ghosts, exits, grain, models
 

@@ -61,6 +61,15 @@ arranged around the drop point using whatever layout **Arrange** is set to, and
 they are pushed clear of whatever is already there rather than dropped on top of
 it.
 
+The three things you make rather than bring — a note, a colour, a link — each
+come with a question, and nothing reaches the board until you answer it. A
+colour opens a picker; a link asks for the address. A note is written on the
+note: the sticky itself comes up in front of the board, at twice its size, with
+the same editor, the same formatting bar and the same character count it has on
+the board — because it *is* the card, lifted out for as long as you are writing
+on it. **Add** drops it where it was made. Change your mind and there is
+nothing to tidy up.
+
 Seven arrangements ship — Spiral, Grid rings, Masonry, Cluster by type, By date,
 Random scatter, and Free, which imposes no shape at all. `spacing` always means
 the gap between edges, so it means the same thing in every one of them.
