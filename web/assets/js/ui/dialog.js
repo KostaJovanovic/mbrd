@@ -37,7 +37,19 @@ let current = null;
  * it resolves to the trimmed string that was typed, or to null for every way
  * out. A caller that passes a field knows it passed one, and null reads as "no
  * answer" in a way that a 'cancel' string sitting where a number should be does
- * not. `field` is `{ value, placeholder, type }`, all optional.
+ * not. `field` is `{ value, placeholder, type, maxLength }`, all optional.
+ *
+ * `type` is the input's type, so `'color'` makes this a colour picker rather
+ * than a box - the same question shape either way, answered by pointing instead
+ * of typing. A colour input always holds a value, so that question cannot be
+ * answered blank; every way out of it is still null.
+ *
+ * A note is not asked for here, and was for a day. A note has a pad colour, a
+ * shape, headings, an alignment, a font and a size, and a box that answers with
+ * a string can express none of them - so what came back was a note that behaved
+ * like a note everywhere except where it was written. See composeNote() in
+ * canvas/notes.js: it puts the real editor in a dialog rather than describing a
+ * second one here.
  */
 export async function ask(opts = {}) {
   if (typeof document === 'undefined') return 'cancel';
@@ -77,9 +89,17 @@ function openWith(el, o) {
   keep.hidden = !o.keep;
 
   field.hidden = !o.field;
+  // type before value: an input reads its value through whatever type it
+  // currently has, and a colour input handed '' while it is still a text box
+  // sanitises the assignment to #000000 rather than to what was asked for.
+  field.type = o.field?.type ?? 'text';
   field.value = o.field?.value ?? '';
   field.placeholder = o.field?.placeholder ?? '';
-  field.type = o.field?.type ?? 'text';
+  // A ceiling where the caller has one, and none where it does not - the shared
+  // element outlives every question asked through it, so a limit left behind by
+  // the last one would silently cut the next.
+  if (o.field?.maxLength) field.maxLength = o.field.maxLength;
+  else field.removeAttribute('maxlength');
   // A question that wants something typed is not a destructive one - nothing
   // has been decided by the time it opens - so the "go" button loses the danger
   // dressing it wears for the delete-everything cases this dialog was built

@@ -40,11 +40,11 @@ import { splitAppearance, mergeAppearance } from './layout-settings.js';
 // which file a symbol happens to be declared in. See board-store.js.
 import { bus, selection, isDirty, markDirty, resetDirty } from './board-store.js';
 import {
-  commit, undo, redo, historyState, clearHistory,
+  commit, undo, redo, historyState, clearHistory, lastCommand, takeBack,
 } from './history.js';
 
 export { bus, selection, isDirty, markDirty };
-export { commit, undo, redo, historyState };
+export { commit, undo, redo, historyState, lastCommand, takeBack };
 
 // The board's shape and its index, one level down - see board-model.js. The
 // first group is re-exported because callers have always imported these from

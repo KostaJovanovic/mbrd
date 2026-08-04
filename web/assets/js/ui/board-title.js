@@ -1,8 +1,18 @@
-// The board's name, in the two places it is shown and edited.
+// The board's name, in the places it is shown and edited.
 //
 // One editor, two hosts: the Mobile masthead and the Desktop title card. They
 // are the same string and the same edit, so they are one module - keeping the
 // two in step was the whole reason this was written once rather than twice.
+//
+// Two kinds of editor, though, and the second half of this file is the other
+// one: the inline caret on the name where it sits, and the ordinary text field
+// in a panel. The field is now in two panels - the sidebar's Board section and
+// the masthead's own - and the second one is why wireTitleField() and
+// paintTitleField() are here rather than in ui/sidebar.js where they were
+// written. They were private to the sidebar for as long as there was one field;
+// a copy in the header panel would have been a second place for the sanitizer,
+// the commit-on-change rule and the placeholder trick to drift out of step,
+// which is the exact failure the top of this file exists to prevent.
 //
 // Lifted out of main.js unchanged. Reached from `cmds` (the T button, F2, a
 // double-click on the card) and from the masthead tap wired below.
@@ -90,6 +100,69 @@ export function paintMobileTitle() {
     if (!card.isContentEditable) card.textContent = board.title;
     card.classList.toggle('is-untitled', isDefaultTitle(board.title));
   }
+}
+
+/**
+ * Rename the board by typing in a panel's name field.
+ *
+ * `change` rather than `input`, so a rename is one undoable event and one dirty
+ * flag rather than one per keystroke - it fires on Enter and on blur, and only
+ * when the value actually moved.
+ *
+ * The field edits `board.title` and paintTitleField() shows `board.title`, where
+ * it used to prefer the open file's name. Those two only ever differed by an
+ * extension - opening a .mbrd sets the title from the file's stem - right up
+ * until somebody renames one, which is the whole of this feature. Preferring the
+ * file name would have made the field look broken: you type, and the old name
+ * stays on screen.
+ *
+ * setTitle() is deliberately not the thing that marks the board dirty. It is
+ * also called by the save picker, straight after a save, where re-dirtying the
+ * board it has just cleaned would be wrong.
+ *
+ * Takes the element rather than an id because the two callers own their own
+ * markup: the sidebar's field is built from the settings schema, the masthead
+ * panel's is written out in index.html.
+ */
+export function wireTitleField(input) {
+  if (!input) return;
+  input.addEventListener('input', () => {
+    const clean = cleanBoardTitleDraft(input.value);
+    if (clean !== input.value) input.value = clean;
+  });
+  input.addEventListener('change', () => {
+    const next = cleanBoardTitle(input.value);
+    if (next === titleValue()) return;
+    setTitle(next);
+    markDirty();
+  });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    // Put the old name back before the global handler blurs us, so escaping
+    // out of a half-typed name leaves the board called what it was called.
+    else if (e.key === 'Escape') input.value = titleValue();
+  });
+}
+
+/** The title as a field holds it: empty for a board still on its auto name, so
+ *  the name shows through as the faint italic placeholder rather than as a
+ *  value nobody typed. */
+const titleValue = () => (isDefaultTitle(board.title) ? '' : board.title);
+
+/**
+ * Push the current name back into a panel's field - after opening a board, an
+ * undo, or a rename made anywhere else, which is the case that matters now that
+ * there is more than one field: typing in one must show up in the other.
+ */
+export function paintTitleField(input) {
+  if (!input) return;
+  // Never while it is being typed into: 'board' fires on every dirty-flag flip,
+  // and rewriting the field mid-word would move the caret to the end.
+  if (document.activeElement !== input) input.value = titleValue();
+  // The auto name lives in the placeholder, so an unnamed board shows its date
+  // faint and italic and a click starts from an empty field rather than from
+  // text to delete.
+  input.placeholder = isDefaultTitle(board.title) ? board.title : 'Untitled board';
 }
 
 /**

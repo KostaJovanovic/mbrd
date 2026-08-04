@@ -158,19 +158,15 @@
    draw. */
 #toolbar button + button { border-left: 1px solid var(--rule); }
 
-/* The phone's handle, and the one tool that only exists on a phone. Both off at
-   every other width - see the foot of mobile.css, which is where the tier the
-   handle opens is laid out and where the camera is switched back on.
+/* The phone's handle, off at every other width - see the foot of mobile.css,
+   which is where the tier it opens is laid out.
 
-   Both selectors have to outrank `#toolbar button` above, and that is not
-   decoration: written as a bare `#toolbar-toggle` this rule is (1,0,0) against
-   that block's (1,0,1), so `display: flex` won and the handle was drawn on the
-   desktop bar - a plus and the word Add, sitting in front of a Files button
-   wearing the same plus. The [data-phone] half was already (1,0,1) and won on
-   source order, which is exactly why only one of the two leaked and the bug
-   looked like a labelling mistake rather than a cascade one. */
-#toolbar #toolbar-toggle,
-#toolbar [data-phone] { display: none; }
+   Two ids, and that is not decoration: written as a bare `#toolbar-toggle` this
+   rule is (1,0,0) against the `#toolbar button` block above at (1,0,1), so
+   `display: flex` won and the handle was drawn on the desktop bar - a plus and
+   the word Add, sitting in front of a Files button wearing the same plus. The
+   bug looked like a labelling mistake rather than a cascade one. */
+#toolbar #toolbar-toggle { display: none; }
 
 #toolbar button:hover { background: var(--paper-2); color: var(--accent-deep); }
 #toolbar button:active { background: var(--paper-3); color: var(--accent-deep); }

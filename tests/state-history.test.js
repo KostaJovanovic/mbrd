@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 
 import {
   board, addItems, removeItems, restoreItems, emptyTrash, undo, redo, byId,
-  setBoardMode, setSetting, recheckBoardGeometry,
+  setBoardMode, setSetting, recheckBoardGeometry, lastCommand, takeBack,
 } from '../web/assets/js/state.js';
 import { fresh, photo } from './state-fixtures.js';
 
@@ -122,6 +122,56 @@ test('redo evicts again rather than growing the bin', () => {
   redo();
   assert.equal(board.trash.length, 60);
   assert.equal(board.trash[0].item.name, 'new.png');
+});
+
+// ---------------------------------------------------------------------------
+// Taking back your own command
+// ---------------------------------------------------------------------------
+//
+// Not undo. Undo is a step the user takes through their own history; this is a
+// caller withdrawing something it did itself - composeNote(), which makes a real
+// note before there is anything written on it and has to be able to un-make it.
+// The whole value of it is the check: the caller holds the command it made and
+// asks whether that is still the newest thing, rather than assuming it.
+
+test('a command taken back is undone and leaves no trace on either stack', () => {
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  const cmd = lastCommand();
+  assert.equal(board.items.length, 1);
+
+  assert.equal(takeBack(cmd), true);
+  assert.equal(board.items.length, 0);
+  assert.equal(byId(a.id), undefined);
+  // Neither half of the history knows it happened: nothing to redo, and the
+  // undo before it is untouched.
+  assert.equal(redo(), false, 'a withdrawn command must not be redoable');
+  assert.equal(undo(), false, 'and must not have left an entry to undo');
+});
+
+test('a command is not taken back once something else has happened', () => {
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  const cmd = lastCommand();
+  const [b] = addItems([photo({ x: 40, y: 0 })]);
+
+  assert.equal(takeBack(cmd), false, 'it is no longer the last thing that happened');
+  assert.equal(board.items.length, 2, 'and nothing was undone in its place');
+  assert.ok(byId(a.id) && byId(b.id));
+});
+
+test('taking back nothing is false rather than an error', () => {
+  // What a caller passes when whatever it did committed nothing at all - the
+  // case that would otherwise take back somebody else's command.
+  assert.equal(takeBack(null), false);
+  assert.equal(takeBack(undefined), false);
+});
+
+test('the last command is the one just committed, and null on a fresh board', () => {
+  assert.equal(lastCommand(), null);
+  addItems([photo()]);
+  const first = lastCommand();
+  assert.ok(first);
+  addItems([photo({ x: 40 })]);
+  assert.notEqual(lastCommand(), first, 'each command is its own token');
 });
 
 // ---------------------------------------------------------------------------

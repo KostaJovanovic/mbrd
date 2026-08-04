@@ -154,10 +154,9 @@ export function initDrop(vp) {
     input.value = '';
     delete input.dataset.mode;
     // Back to the defaults the content picker wants, so the next opening of it
-    // is not still filtered to images, limited to one, or pointed at a camera.
+    // is not still filtered to images or limited to one.
     input.accept = '';
     input.multiple = true;
-    input.removeAttribute('capture');
     if (mode === 'cover') {
       const id = coverFor;
       coverFor = null;
@@ -171,44 +170,17 @@ export function initDrop(vp) {
 /**
  * Open the OS file picker for content (not for .mbrd - that's storage.js).
  *
- * Every attribute the three pickers disagree about is written here rather than
+ * Every attribute the pickers disagree about is written here rather than
  * assumed, and the reason is the one path with no event at the end of it: a
  * cancelled picker never fires `change`, so the reset in the change handler
- * never runs. Leaving the last opening's `accept` or `capture` on the shared
- * input would mean that cancelling the camera once made "Add files" a camera
+ * never runs. Leaving the last opening's `accept` on the shared input would
+ * mean that cancelling "Choose a picture" once made "Add files" a picture
  * button for the rest of the session.
  */
 export function pickFiles() {
   const input = document.getElementById('file-input');
   input.accept = '';
   input.multiple = true;
-  input.removeAttribute('capture');
-  input.dataset.mode = 'content';
-  input.click();
-}
-
-/**
- * The camera, on a phone.
- *
- * The same hidden input and the same `content` mode a dropped photo takes, so
- * a picture taken here is hashed, measured, thumbnailed, budgeted and laid out
- * by exactly the path a picture dragged in from a folder goes down. That is the
- * whole of this function: a photo from a camera is a file from outside, and it
- * gets the same byte budget as one that arrived any other way.
- *
- * `capture` is a hint rather than a switch. A phone reads it and opens the
- * camera; everything else ignores it and opens a file picker filtered to
- * images, which is a harmless thing for the button to do - but the button is
- * not drawn there anyway (see the width query in mobile.css).
- *
- * `environment` rather than `user`: what somebody photographs onto a moodboard
- * is a thing in front of them.
- */
-export function pickPhoto() {
-  const input = document.getElementById('file-input');
-  input.accept = 'image/*';
-  input.multiple = false;
-  input.setAttribute('capture', 'environment');
   input.dataset.mode = 'content';
   input.click();
 }
@@ -217,7 +189,7 @@ export function pickPhoto() {
  * The item waiting for a picture, between opening the picker and it answering.
  *
  * Module state rather than a closure because the one hidden input is shared
- * three ways - content here, .mbrd in storage.js, and now this - and `mode` on
+ * three ways - content here, .mbrd in storage.js, and this - and `mode` on
  * the element is how they stay out of each other's way. Cleared as soon as it
  * is read, so a cancelled picker cannot leave a card armed to receive the next
  * unrelated file.
@@ -229,7 +201,6 @@ export function pickCover(id) {
   const input = document.getElementById('file-input');
   input.accept = 'image/*';
   input.multiple = false;
-  input.removeAttribute('capture');
   input.dataset.mode = 'cover';
   coverFor = id;
   input.click();

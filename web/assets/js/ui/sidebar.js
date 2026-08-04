@@ -5,20 +5,21 @@
 // ui/panel.js builds them, which is what took this file from "every setting,
 // wired by id" down to the panel as an object: the sheet's open state, the one
 // delegated click that reaches the command surface, the gesture that isolates a
-// slider under a finger, the board's name, and the paper orientation pair.
+// slider under a finger, and the paper orientation pair. The name field is the
+// fourth thing here and the one this file no longer implements - it wires and
+// paints ui/board-title.js's, because the masthead's panel has the same field
+// and one rename must show in both.
 //
 // Paper orientation stays here rather than in the table because it is not a
 // value being set: choosing an orientation with no sheet up also puts a sheet
 // up, which is a rule about paper. The table can say what a control *is*; this
 // is a thing one control *does*.
 
-import {
-  board, bus, markDirty, setSetting, setTitle, cleanBoardTitle,
-  cleanBoardTitleDraft, isDefaultTitle,
-} from '../state.js';
+import { board, bus, setSetting } from '../state.js';
 import { VERSION } from '../version.js';
 import { el, readPref, writePref } from '../util.js';
 import { buildPanel, paintPanel } from './panel.js';
+import { paintTitleField, wireTitleField } from './board-title.js';
 
 let sidebar, menuBtn;
 let sliderFocus;
@@ -103,7 +104,7 @@ export function initSidebar(cmds) {
   cmds.setBoardMode(readPref(MODE_PREF, detected));
 
   wirePaperOrientation();
-  wireTitle();
+  wireTitleField(el('board-title'));
 
   el('version').textContent = 'v' + VERSION;
 
@@ -139,61 +140,12 @@ function wirePaperOrientation() {
   }
 }
 
-/**
- * Rename the board by typing in its name.
- *
- * `change` rather than `input`, so a rename is one undoable event and one dirty
- * flag rather than one per keystroke - it fires on Enter and on blur, and only
- * when the value actually moved.
- *
- * The field edits `board.title` and paint() shows `board.title`, where it used
- * to prefer the open file's name. Those two only ever differed by an extension -
- * opening a .mbrd sets the title from the file's stem - right up until somebody
- * renames one, which is the whole of this feature. Preferring the file name
- * would have made the field look broken: you type, and the old name stays on
- * screen.
- *
- * setTitle() is deliberately not the thing that marks the board dirty. It is
- * also called by the save picker, straight after a save, where re-dirtying the
- * board it has just cleaned would be wrong.
- */
-function wireTitle() {
-  const input = el('board-title');
-  input.addEventListener('input', () => {
-    const clean = cleanBoardTitleDraft(input.value);
-    if (clean !== input.value) input.value = clean;
-  });
-  input.addEventListener('change', () => {
-    const next = cleanBoardTitle(input.value);
-    if (next === titleValue()) return;
-    setTitle(next);
-    markDirty();
-  });
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
-    // Put the old name back before the global handler blurs us, so escaping
-    // out of a half-typed name leaves the board called what it was called.
-    else if (e.key === 'Escape') input.value = titleValue();
-  });
-}
-
-/** The title as the field holds it: empty for a board still on its auto name,
- *  so the name shows through as the faint italic placeholder rather than as a
- *  value nobody typed. */
-const titleValue = () => (isDefaultTitle(board.title) ? '' : board.title);
-
 /** Push state back into the controls (after opening a board, or an undo). */
 function paint() {
-  const title = el('board-title');
-  if (title) {
-    // Never while it is being typed into: 'board' fires on every dirty-flag
-    // flip, and rewriting the field mid-word would move the caret to the end.
-    if (document.activeElement !== title) title.value = titleValue();
-    // The auto name lives in the placeholder, so an unnamed board shows its
-    // date faint and italic and a click starts from an empty field rather than
-    // from text to delete.
-    title.placeholder = isDefaultTitle(board.title) ? board.title : 'Untitled board';
-  }
+  // The name field's behaviour lives in ui/board-title.js now - the masthead's
+  // panel grew a second one, and one rename showing up in both is only true
+  // while there is one implementation of it.
+  paintTitleField(el('board-title'));
   paintPanel();
 }
 

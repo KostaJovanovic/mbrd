@@ -91,12 +91,53 @@ const historyChanged = () => bus.emit('history');
 export function commit(label, redo, undo, weight = 1) {
   redo();
   const held = Number.isFinite(weight) && weight > 1 ? Math.floor(weight) : 1;
-  undoStack.push({ label, redo, undo, weight: held });
+  const cmd = { label, redo, undo, weight: held };
+  undoStack.push(cmd);
   heldWeight += held;
   trim();
   clearRedo();
   markDirty();
   historyChanged();
+  return cmd;
+}
+
+/**
+ * The command the history would take back next, as an opaque token.
+ *
+ * For the caller that is about to do something it may need to un-do, and wants
+ * to be able to name *its own* command later rather than assume the stack has
+ * not moved. Compare the token from before an operation with the one after to
+ * find out whether it committed anything at all. There is nothing to read in
+ * the value; it is an identity, and takeBack() is what it is for.
+ */
+export const lastCommand = () => undoStack.at(-1) || null;
+
+/**
+ * Take back a command, if it is still the last thing that happened.
+ *
+ * Not undo(). Undo is a step the user took through their own history, and it
+ * leaves a redo behind; this is a caller withdrawing something it did itself,
+ * so the command leaves no trace on either stack - it is as if it never ran.
+ * composeNote() is the case it exists for: a note is a real item from the first
+ * keystroke, so cancelling has to take back the add, and taking it back must
+ * not become a thing the user can accidentally redo.
+ *
+ * The check is the point of the signature. That call site used to reason "the
+ * add is still the newest thing, because nothing between it and here commits" -
+ * which was true, and true only as long as three unrelated functions in two
+ * other modules went on not committing. Handing the command back and comparing
+ * it with the top of the stack asks the question instead of assuming the
+ * answer, and returns false when something has happened since so the caller can
+ * clean up by ordinary means.
+ */
+export function takeBack(cmd) {
+  if (!cmd || undoStack.at(-1) !== cmd) return false;
+  undoStack.pop();
+  cmd.undo();
+  heldWeight -= cmd.weight;
+  markDirty();
+  historyChanged();
+  return true;
 }
 
 /** The redo stack retains snapshots too, and a new command invalidates it. */

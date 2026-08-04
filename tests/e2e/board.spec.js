@@ -78,8 +78,13 @@ test.describe('the canvas', () => {
     // first thing of the user's to land on a blank board sweeps the three hint
     // cards with it (dismissGhosts, canvas/ghosts.js), so the board gets
     // *smaller* on the add. Counting would assert the scaffolding, not the note.
-    const id = await page.evaluate(() => window.mbrd.cmds.addNote()?.id
-      ?? window.mbrd.board.items[window.mbrd.board.items.length - 1].id);
+    // Through addNoteAt, which is the context menu's path: it puts a note down
+    // where it is told and returns. cmds.addNote() asks for the words first now,
+    // and a dialog is not what this case is about - see its own test below.
+    const id = await page.evaluate(() => {
+      window.mbrd.cmds.addNoteAt({ x: 0, y: 0 });
+      return window.mbrd.board.items[window.mbrd.board.items.length - 1].id;
+    });
     await expect
       .poll(() => page.evaluate(i => !!window.mbrd.board.items.find(x => x.id === i), id))
       .toBe(true);
@@ -117,13 +122,10 @@ test.describe('the toolbar', () => {
     await ready(page);
     await expect(page.locator('#toolbar-toggle')).toBeHidden();
     await expect(page.locator('#toolbar [data-cmd="add-files"]')).toBeVisible();
-    // And the camera, which is the same rule read the other way.
-    await expect(page.locator('#toolbar [data-cmd="add-photo"]')).toBeHidden();
 
     // Under the 700px query, where the bar becomes a drawer.
     await page.setViewportSize({ width: 390, height: 780 });
     await expect(page.locator('#toolbar-toggle')).toBeVisible();
-    await expect(page.locator('#toolbar [data-cmd="add-photo"]')).toBeVisible();
     // The tools are a tier that is shut until the handle opens it.
     await expect(page.locator('#toolbar-tools')).toBeHidden();
     await page.locator('#toolbar-toggle').click();
@@ -133,6 +135,105 @@ test.describe('the toolbar', () => {
     await expect(page.locator('#toolbar [data-cmd="connect"]')).toBeHidden();
   });
 
+  test('the phone tier is wider than the handle, and spends the width on words', async ({ page }) => {
+    // Two halves of one decision: the tier reaches past the handle on both
+    // sides, out to the edges of the foot strip, and the width it buys is spent
+    // on the labels. Both are lengths a cascade resolves and nothing in the unit
+    // suite can see - the labels in particular are taken away by a clip-path, so
+    // they are there for Playwright and for a screen reader alike whether or not
+    // the rule that draws them is winning.
+    await ready(page);
+    await page.setViewportSize({ width: 390, height: 780 });
+    await page.locator('#toolbar-toggle').click();
+
+    const tier = await page.locator('#toolbar-tools').boundingBox();
+    const handle = await page.locator('#toolbar-toggle').boundingBox();
+    expect(tier.x).toBeLessThan(handle.x);
+    expect(tier.x + tier.width).toBeGreaterThan(handle.x + handle.width);
+
+    const word = cmd => page.locator(`#toolbar [data-cmd="${cmd}"] span`).boundingBox();
+    for (const cmd of ['add-files', 'add-note', 'add-swatch', 'add-link']) {
+      expect((await word(cmd)).width, `${cmd} should be labelled at 390`).toBeGreaterThan(10);
+    }
+
+    // And on the narrow phones the words do not fit on, all but Files go - which
+    // is the case worth asserting, because it is the one nobody develops on.
+    await page.setViewportSize({ width: 320, height: 700 });
+    expect((await word('add-files')).width).toBeGreaterThan(10);
+    expect((await word('add-note')).width).toBeLessThan(2);
+  });
+
+
+  test('a note is written on the note, in front of the board', async ({ page }) => {
+    // The property worth asserting is not that a dialog opens: it is that the
+    // thing inside the dialog is the item. A real card, the real editor over it,
+    // the real formatting bar beside it - so what lands is what was in front of
+    // you rather than a copy of it. Only a browser can answer this: it is a
+    // contenteditable inside a top-layer <dialog>, and the card is a live node
+    // moved out of the world layer and back.
+    await ready(page);
+
+    await page.locator('#toolbar [data-cmd="add-note"]').click();
+    const card = page.locator('#compose-mount .item[data-type="note"]');
+    await expect(card).toBeVisible();
+    // The editor is open on it, and it is the ordinary one.
+    await expect(card).toHaveClass(/is-editing/);
+    await expect(page.locator('#compose .note-toolbar')).toBeVisible();
+    await expect(page.locator('#compose .note-count')).toBeVisible();
+
+    // Typed, not filled: the caret is already in the sheet, which is the whole
+    // claim being made here.
+    await page.keyboard.type('e2e note');
+    await page.locator('#compose-go').click();
+    // "# " and not just the words, which is the assertion worth making: the
+    // first line of a note is its heading, meta.text is the Markdown the blocks
+    // flatten to, and both of those are true because this went through the block
+    // model rather than through a box that returns a string.
+    await expect
+      .poll(() => page.evaluate(() => window.mbrd.board.items
+        .some(i => i.type === 'note' && i.meta?.text === '# e2e note')))
+      .toBe(true);
+    // And the card went home, to the layer it came from.
+    await expect(page.locator('#compose-mount .item')).toHaveCount(0);
+    await expect(page.locator('#world .item[data-type="note"]')).toHaveCount(1);
+
+    // Cancelling takes the note back, written-on or not. Nothing between the add
+    // and here commits, so one step of history is exactly the add - see
+    // composeNote().
+    const count = await page.evaluate(() => window.mbrd.board.items.length);
+    await page.locator('#toolbar [data-cmd="add-note"]').click();
+    await page.keyboard.type('not this one');
+    await page.locator('#compose-cancel').click();
+    await expect(page.locator('#compose')).toBeHidden();
+    await expect
+      .poll(() => page.evaluate(() => window.mbrd.board.items.length))
+      .toBe(count);
+    expect(await page.evaluate(() => window.mbrd.board.items
+      .some(i => i.meta?.text?.includes('not this one')))).toBe(false);
+  });
+
+  test('the colour tool asks first, with a picker', async ({ page }) => {
+    // The same bargain as the note, in the shape a colour can be asked in: it is
+    // answered by pointing, so the value is set rather than typed - which is the
+    // whole reason it is a colour input and not a box.
+    await ready(page);
+
+    await page.locator('#toolbar [data-cmd="add-swatch"]').click();
+    await expect(page.locator('#ask-field')).toHaveAttribute('type', 'color');
+    await page.locator('#ask-field').evaluate(el => { el.value = '#3366cc'; });
+    await page.locator('#ask-go').click();
+    await expect
+      .poll(() => page.evaluate(() => window.mbrd.board.items
+        .some(i => i.type === 'swatch' && i.meta?.hex === '#3366cc')))
+      .toBe(true);
+
+    // And cancelling leaves nothing behind.
+    const count = await page.evaluate(() => window.mbrd.board.items.length);
+    await page.locator('#toolbar [data-cmd="add-swatch"]').click();
+    await page.locator('#ask-cancel').click();
+    await expect(page.locator('#ask-field')).toBeHidden();
+    expect(await page.evaluate(() => window.mbrd.board.items.length)).toBe(count);
+  });
 
   test('joining two cards is two clicks, and the same two again parts them', async ({ page }) => {
     // Here rather than in the unit suite because this is the one thing about
@@ -146,20 +247,18 @@ test.describe('the toolbar', () => {
 
     // Two cards a long way apart, so a press lands on one and nothing else.
     const ids = await page.evaluate(() => {
-      // cmds.addNote() returns nothing - it opens the editor a frame later -
-      // so the item is taken off the end of the board, the same way the note
-      // case above does it.
+      // addNoteAt() returns nothing - it opens the editor a frame later - so
+      // the item is taken off the end of the board, the same way the note case
+      // above does it.
       const last = () => window.mbrd.board.items[window.mbrd.board.items.length - 1];
-      window.mbrd.cmds.addNote();
+      window.mbrd.cmds.addNoteAt({ x: -260, y: 0 });
       const a = last();
-      window.mbrd.cmds.addNote();
+      window.mbrd.cmds.addNoteAt({ x: 260, y: 0 });
       const b = last();
-      a.x = -260; a.y = 0;
-      b.x = 260; b.y = 0;
       window.mbrd.bus.emit('geom', [a.id, b.id]);
       return [a.id, b.id];
     });
-    // The second addNote left an editor open on the card it made; a caret in a
+    // The second note left an editor open on the card it made; a caret in a
     // contenteditable would swallow the Escape this case ends with.
     await page.locator('#viewport').click({ position: { x: 12, y: 12 } });
 
@@ -267,7 +366,7 @@ test.describe('storage', () => {
     // Something identifiable, then let the autosave land.
     const title = 'e2e-' + (await page.evaluate(() => window.mbrd.board.items.length));
     await page.evaluate(t => {
-      window.mbrd.cmds.addNote();
+      window.mbrd.cmds.addNoteAt({ x: 0, y: 0 });
       window.mbrd.board.title = t;
       window.mbrd.bus.emit('board');
     }, title);

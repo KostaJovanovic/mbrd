@@ -936,10 +936,17 @@ export function initInput(vp, cmds) {
       startPan(e);
     } else if (id) {
       const additive = e.shiftKey || e.ctrlKey || e.metaKey;
+      const held = selection.has(id);
       if (additive) select([id], true);
-      else if (!selection.has(id)) select([id]);
+      else if (!held) select([id]);
       cardTap = { pointerId: e.pointerId, id, x: e.clientX, y: e.clientY, slop: DRAG_SLOP };
       startMove(e, id);
+      // Carried on the gesture so the lift can tell a selection edit from a
+      // pick - see `unpick` in endPointer(). A modified press means "toggle
+      // this card", and whether the lift should drop it again depends on what
+      // the press found, not on how big the selection ended up.
+      g.additive = additive;
+      g.wasSelected = held;
     } else if (e.shiftKey || e.ctrlKey || e.metaKey) {
       startMarquee(e);
     } else {
@@ -1270,8 +1277,15 @@ export function initInput(vp, cmds) {
     // every tap of the one selected card, so a tap that meant "keep this one"
     // read as "drop it" - and reselecting then took a second tap. A single
     // selection is cleared by tapping empty space, not by tapping itself.
+    //
+    // A modified press answers this for itself instead. Ctrl-clicking an
+    // unselected card had just added it, and the group-size test then took it
+    // straight back off again on the lift - so Ctrl+click appeared to do
+    // nothing at all unless you dragged, which is what made it stick. What the
+    // press found is the whole story: a card that was already in the selection
+    // is peeled, a card that was not stays added.
     const unpick = e.type === 'pointerup' && g.kind === 'move' && !g.moved
-        && selection.size > 1
+        && (g.additive ? g.wasSelected : selection.size > 1)
       ? g.id
       : null;
     finishGesture();
