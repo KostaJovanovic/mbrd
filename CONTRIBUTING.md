@@ -41,7 +41,8 @@ node --test --test-name-pattern "undo" tests/state-history.test.js  # one test
 
 Node's built-in runner over `tests/`. It covers the pure logic: the ZIP
 container and its hardening, the `.mbrd` sidecars, board state and undo, the
-clipboard, the sticky relation, geometry, the arrangement engine, the grid.
+clipboard, the sticky and fence relations, geometry, the arrangement engine, the
+grid.
 
 Worth running on any change you touched: `node --check` on each changed `.js`,
 and `python -m py_compile serve.py qr.py` if you touched either.

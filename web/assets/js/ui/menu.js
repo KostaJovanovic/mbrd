@@ -151,6 +151,18 @@ function itemEntries(id, count, at) {
     // does not move. The whole-board one is on the canvas menu.
     { label: `Rearrange these ${count}`, hidden: !many,
       action: () => cmds.rearrangeSelection() },
+    // Beside Rearrange because it is the other answer to the same question -
+    // "these belong together". Rearrange says so by moving them; a fence says so
+    // by drawing a line round them and leaving them where they are. Group only,
+    // for the reason above: one card has nothing to be grouped with.
+    //
+    // The second surface, not the only one: a rubber band offers this for itself
+    // as it is let go (ui/fence-prompt.js), which is the gesture people reach for
+    // and the one Fences itself uses. This is what is left for a selection built
+    // by shift-clicking, where there is no band to catch the answer - so it stays
+    // even though the band is now the ordinary way in.
+    { label: `Fence these ${count}`, hidden: !many,
+      action: () => cmds.fenceSelection() },
     { label: 'Reload board', action: () => cmds.reload() },
     { sep: true },
     { label: `Duplicate ${what}`, accel: 'Ctrl D', action: () => cmds.duplicate() },

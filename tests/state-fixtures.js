@@ -13,3 +13,4 @@ export const fresh = (items = []) => loadBoard({ title: 'T', items });
 export const note = (props = {}) => ({ type: 'note', w: 100, h: 100, meta: { text: 'n' }, ...props });
 export const photo = (props = {}) => ({ type: 'image', w: 200, h: 200, ...props });
 export const clip = (props = {}) => ({ type: 'video', w: 288, h: 162, ...props });
+export const fence = (props = {}) => ({ type: 'fence', w: 800, h: 600, name: 'F', ...props });

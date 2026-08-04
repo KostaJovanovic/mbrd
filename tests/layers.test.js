@@ -141,6 +141,11 @@ const BASE = new Set([
   // separate files, since a concern lifted out of state.js can only stay out if
   // what it stands on is lower than what it left.
   'board-store.js', 'board-model.js', 'history.js', 'sticky.js', 'layout.js', 'stacking.js',
+  // Fence membership, beside sticky.js and for the same reason: it is a question
+  // about where two things are, and the mutations that act on the answer stay in
+  // state.js. It reads board.layouts directly rather than layout.js's helper for
+  // it, which is what keeps the two off a cycle - layout.js calls refence().
+  'fences.js',
   // The web's graph and its governor. Pure arithmetic over points - no DOM, no
   // viewport - which is what let it out of canvas/web.js at all.
   'web-graph.js',

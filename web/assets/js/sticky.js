@@ -26,6 +26,20 @@
 
 import { overlapFraction } from './geometry.js';
 import { board, byId, isFurniture, TITLE_ID } from './board-model.js';
+import { isFence } from './fences.js';
+
+/**
+ * What a note may not be stuck to: the app's own furniture, and a fence.
+ *
+ * The furniture half is argued at measureStick() below. A fence joins it for a
+ * third reason, and the same one that keeps the title card out - a host is
+ * something a note lies *on*, and a fence is a region a note lies *in*. A note
+ * stuck to the fence around it would be pinned to a rectangle it was already
+ * travelling with, so moving the fence would move it twice; and on Mobile, where
+ * a fence is a full-width band, it would ride that band instead of taking its
+ * place in the run. The note is in the fence already. It does not also stick.
+ */
+const cannotHost = it => isFurniture(it) || isFence(it);
 
 // ---------------------------------------------------------------------------
 // Sticky notes that stick
@@ -115,7 +129,7 @@ export function stuckTo(note) {
 function measureStick(note) {
   let best = null;
   for (const it of board.items) {
-    if (isFurniture(it) || it.id === note.id || (it.z || 0) >= (note.z || 0)) continue;
+    if (cannotHost(it) || it.id === note.id || (it.z || 0) >= (note.z || 0)) continue;
     if (best && (it.z || 0) < (best.z || 0)) continue;
     if (overlapFraction(note, it) > STICK_MIN) best = it;
   }
@@ -134,7 +148,7 @@ function measureStick(note) {
 export function wouldStick(box, excludeId) {
   let best = null;
   for (const it of board.items) {
-    if (isFurniture(it) || it.id === excludeId) continue;
+    if (cannotHost(it) || it.id === excludeId) continue;
     if (best && (it.z || 0) < (best.z || 0)) continue;
     if (overlapFraction(box, it) > STICK_MIN) best = it;
   }

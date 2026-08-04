@@ -735,6 +735,70 @@
   color: var(--ink-2);
 }
 
+/* ---------------------------------------------------------------------------
+   Fences: a region drawn on the board, not a card lying on it
+   ---------------------------------------------------------------------------
+
+   Everything here follows from one thing being true: a fence is *large*. Two
+   thousand world units across is an ordinary one, which makes it the only item
+   on the board bigger than the screen it is looked at through, and every rule
+   an ordinary card wears is wrong at that size.
+
+   So it is drawn as an outline rather than a sheet. No paper fill, because a
+   fill at this size is a wall the board is behind rather than a boundary drawn
+   on it; no drop shadow, which canvas/items.js also skips for this type (an
+   enormous card casting a shadow over everything it contains); and a dashed
+   edge, which says "drawn on" the way a solid one says "lying on". */
+.fence-card {
+  background: none;
+  border: 2px dashed var(--rule-2);
+  border-radius: var(--radius);
+  box-shadow: none;
+}
+.item[data-type="fence"].is-selected .fence-card { border-color: var(--select); }
+
+/* The interior refuses the pointer, and this is the load-bearing rule of the
+   whole feature.
+
+   On an infinite canvas, dragging empty space pans the board - and inside a
+   fence there would be no empty space left. A fence that took presses across its
+   whole face would end panning, marqueeing and every empty-space gesture
+   everywhere it covered, which on a board organised into fences is most of the
+   board. So presses fall straight through the interior to whatever is under it:
+   a card, or the board itself.
+
+   What takes the press instead is the caption bar below. That leaves exactly one
+   unambiguous place to grab a fence, which is also what settles the question an
+   overlapping card would otherwise raise - there is no "did that press mean the
+   fence or the photo on top of it", because the fence's face is never a target.
+
+   The shadow twin is not built for this type at all (canvas/items.js), so there
+   is nothing to exclude here. */
+.item[data-type="fence"] .item-body { pointer-events: none; }
+
+/* The label sits on the top edge, not the foot.
+
+   A caption under a card names the thing above it; a caption over a region names
+   everything below it, which is what a fence's name is for. It is the ordinary
+   .item-bar every card carries, moved - so a rename keeps working, the plate
+   keeps its paper and its rule, and there is no second caption to keep in step.
+
+   It is also the one bar that is drawn when it is empty - see .item-bar-always
+   at the hide rule further down, which is where that exemption is made rather
+   than here. */
+.item[data-type="fence"] .item-bar {
+  top: 0;
+  bottom: auto;
+  border-top: 0;
+  border-bottom: 1px solid var(--rule);
+  border-radius: var(--radius) var(--radius) 0 0;
+  /* A minimum, not a height: the plate spans the fence, so the whole top edge is
+     the handle, and it has to stay grabbable while the fence has no name yet. */
+  min-height: 22px;
+  cursor: grab;
+}
+.item[data-type="fence"].is-dragging .item-bar { cursor: grabbing; }
+
 /* A picture given to a card that is not itself one - album art off an mp3's
    tags, or anything chosen by hand. See coverEl() in canvas/renderers.js, which
    prepends it inside the card rather than behind it.
@@ -1792,8 +1856,15 @@ plates do: below a third of size a card is a coloured tile, and a click on
    an unnamed card, and on the types that keep their name inside the card (audio,
    text, note, link, model, generic) - the first selector tests the [hidden]
    attribute nameplate sets, the type selectors catch the ones painted out by
-   type instead, where a name is present but nothing on the board draws it. */
-.item-bar:not(:has(> .item-label:not([hidden]))),
+   type instead, where a name is present but nothing on the board draws it.
+
+   .item-bar-always is the one exemption from the first half, set by bottomBar()
+   on a fence: an unnamed card simply has no plate, while an unnamed fence with
+   no plate would have no hit area anywhere on it - its interior refuses the
+   pointer - and could never be selected, moved or renamed again. It is excluded
+   here with a class rather than unhidden below, for the reason the next comment
+   gives. */
+.item-bar:not(.item-bar-always):not(:has(> .item-label:not([hidden]))),
 .item[data-type="audio"] .item-bar,
 .item[data-type="text"] .item-bar,
 .item[data-type="note"] .item-bar,

@@ -67,15 +67,22 @@ split onto, and they took nearly half of it with them.
 | `board-model.js` | the board's shape, its defaults, the `byId` index |
 | `history.js` | the undo/redo engine |
 | `sticky.js` | which note is stuck to what |
+| `fences.js` | which card is inside which region |
 | `layout.js` | the Mobile pack, both geometry profiles, the undoable geometry writes |
 | `stacking.js` | z-order |
 
-All six are re-exported by `state.js` under their old names, so nothing imports
-them directly and no caller knows they exist — and **none may ever import
+All of them are re-exported by `state.js` under their old names, so nothing
+imports them directly and no caller knows they exist — and **none may ever import
 `state.js` back**, since a concern lifted out of that file can only stay out if
-what it stands on is lower than what it left. `tests/layers.test.js` lists all
-six as BASE, which is what enforces it; that list *is* the split, not a note
-about it.
+what it stands on is lower than what it left. `tests/layers.test.js` lists them
+as BASE, which is what enforces it; that list *is* the split, not a note about
+it.
+
+`fences.js` is the one that was never in `state.js` — it was written down here
+because it belongs to the same floor and answers the same kind of question. It
+reads `board.layouts` directly rather than through `layout.js`'s helper for it,
+and that is deliberate: `layout.js` calls `refence()`, so reaching back the other
+way would put the two on a cycle.
 
 Two things about that shape are worth knowing before adding to it. The Mobile
 pack and the layout profiles are **one** module however they read as two —
@@ -266,6 +273,19 @@ and `board.arrangement` are the *active* mode's, rebuilt by `setBoardMode()`.
 `board.layoutMode` is local UI state and is deliberately not persisted, so a
 phone and a laptop each remember their own choice.
 
+A fence is the one thing that crosses that divide as a *shape* rather than as
+geometry. On Mobile it becomes a full-width band with its members packed as a
+contiguous run beneath it, which is the honest translation — `arrangement` there
+names an order, not a shape, and a run is an order. `mobileRuns()` decides the
+sequence (a run ranks where its earliest member does, loose cards last) and
+`packRuns()` in `layout.js` packs each run against everything already placed, so
+a band is a barrier and nothing from a later run can climb into a gap in an
+earlier one. **A board with fences is repacked whole whenever `completeLayout()`
+runs**, because a fence drawn on Desktop would otherwise arrive as a lone band
+with its members still scattered up the column; the cost is that hand-arranged
+Mobile positions do not survive a mode switch on such a board, and a board with
+no fences is untouched by any of it.
+
 `layout-settings.js` is the pure split: `splitAppearance()` / `mergeAppearance()`
 send palette and typography tokens board-wide and keep radius, density, grid ink
 and panel dimensions layout-local. Paper is Desktop-only. Adding a setting means
@@ -365,6 +385,58 @@ to **on** now, where the automatic web defaulted to off: an effect nobody asked
 for is an imposition, and a line you drew yourself and cannot see is a bug. For
 the same reason the quality dial's `threads` flag is gone rather than left inert
 — a quality setting that silently hides work the user did is not a trade.
+
+### Fences
+
+A **fence** is a labelled rectangle, and the cards inside it belong to it.
+`fences.js` holds the relation and `docs/mbrd-format.md` holds the schema; what
+matters here is that it is `sticky.js`'s argument with a different predicate —
+membership is a fact about where two things are, measured and remembered, never
+stored as a list that could disagree with the geometry beside it. Delete, undo,
+bin and restore therefore need no bookkeeping, exactly as connections do not.
+
+Five things about it are load-bearing and none is obvious:
+
+- **The rubber band is the way in.** `canvas/input.js` reports every marquee that
+  was a rectangle somebody drew rather than a modified click (`drewRectangle()`),
+  and `cmds.fencePrompt` decides whether there is anything worth offering; the
+  offer itself is `ui/fence-prompt.js`, a button beside the cursor that withdraws
+  when the pointer strays ~2.5cm from it. That withdrawal is the design: the
+  gesture has already been made, so the offer must cost nothing to decline. The
+  band may draw an *empty* region because it has a rectangle to go on; the group
+  menu's `Fence these N` may not, and needs two cards, because with nothing drawn
+  the selection is the whole of the instruction. `fenceBox()` unions the two —
+  the drawn rectangle exactly as drawn, the items with a step of margin — which
+  is what stops a fence from opening not containing its own contents, since a
+  marquee catches anything it *overlaps*.
+- **It is an item** (`type: "fence"`), not a top-level key like `connections`.
+  That is a format decision, argued in the format doc: an older build drops an
+  unrecognised top-level key on save and carries an unrecognised `type` through
+  untouched. As a list it would have destroyed people's groupings; as an item it
+  degrades to a large empty named card.
+- **Membership is measured on Desktop geometry and only there.** On Mobile a
+  fence is a band with its members packed *beneath* it, so nothing is
+  geometrically inside its fence on that layout — measuring there would find
+  every fence empty and then save that. The phone reads membership; it never
+  computes it, which is also why you cannot re-fence a card from one.
+- **Moving a fence does not re-measure; resizing one does.** A photograph's edges
+  are incidental to what lies on it and `sticky.js` says so; a fence's edges *are*
+  the fence, and dragging a corner out over three more cards is the only gesture
+  that means "and these too". `commitGeom()` carries both halves.
+- **The interior takes no presses.** A fence is large, and a large card that
+  swallowed clicks would end "drag empty space to pan" everywhere it covered. The
+  label bar is the whole of its hit area.
+
+Two relations now answer "what travels", and they have to be closed over
+together: a note stuck to a card inside a fence travels with the fence, which
+neither can see alone. `travelling()` in `canvas/input.js` is that fixed point.
+They meet again in `stackRoot()`, which walks both — a fence is drawn behind its
+members, so raising one has to carry them or it would cover its own contents.
+
+`isContent()` in `board-model.js` is the second half of `isFurniture()`'s
+question, and exists for the same recorded reason: a fence is nobody's furniture
+and is not content either, so the count and the ghost latch both ask one
+predicate rather than drifting apart.
 
 `canvas/input.js` is one Pointer Events pipeline for mouse, pen and touch with
 exactly one active gesture (`g`); a second finger always wins and converts a drag

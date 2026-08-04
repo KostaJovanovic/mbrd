@@ -604,6 +604,25 @@
   background: var(--rule);
 }
 
+/* The fence offer (ui/fence-prompt.js).
+   The context menu's stock and the context menu's items, because it is the same
+   kind of thing appearing in the same way - but snug rather than a column, since
+   it holds exactly one entry and a 208px minimum would make a two-word button
+   look like a menu with everything missing. Above #ctx-menu in the stack: the
+   two cannot both be up, and a right-click while the offer stands closes it. */
+#fence-prompt {
+  position: fixed;
+  z-index: 61;
+  padding: 4px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--radius);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
+  animation: ctx-in var(--dur-fast) var(--ease);
+  user-select: none;
+}
+#fence-prompt .ctx-item { white-space: nowrap; }
+
 /* ---------------------------------------------------------
    The waiting strip (busy() in util.js)
 

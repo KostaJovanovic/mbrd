@@ -55,7 +55,7 @@ import {
   MOBILE_COLUMNS, MOBILE_COLUMN_OPTIONS, MOBILE_TOP_ROWS, MOBILE_MIN_ROWS,
   MOBILE_BOTTOM_ROWS, MOBILE_APPEARANCE_VARS, cleanBoardTitleDraft, cleanBoardTitle,
   defaultBoardTitle, isDefaultTitle, mobileColumnCount, board, TITLE_ID, byId,
-  topZ, makeItem, isFurniture,
+  topZ, makeItem, isFurniture, isContent,
 } from './board-model.js';
 import {
   cloneSettings, layoutSettingsOf, settingsFor,
@@ -70,6 +70,14 @@ import {
   STICK_MIN, stuckTo, wouldStick, restick, forgetSticks, seedSticks,
   stuckPlacement, isRider, stuckFollowers,
 } from './sticky.js';
+
+// Fence membership, one level down - see fences.js. Same bargain as sticky.js:
+// a question about where two things are, measured and remembered here, acted on
+// there.
+import {
+  isFence, fenceOf, fenceMembers, fenceFollowers, refence, refenceAround,
+  refenceArrivals, forgetFences, seedFences, fenceBox,
+} from './fences.js';
 
 // Where everything is - see layout.js. The Mobile pack, the two geometry
 // profiles and the undoable geometry writes, which had to move as one piece
@@ -96,11 +104,16 @@ export {
 };
 
 export {
+  isFence, fenceOf, fenceMembers, fenceFollowers, refence, refenceAround, forgetFences,
+  fenceBox,
+};
+
+export {
   NOTE_MAX, DEFAULT_MOBILE_HEADER, DEFAULT_SETTINGS, BOARD_MODES, BOARD_TITLE_MAX,
   MOBILE_COLUMNS, MOBILE_COLUMN_OPTIONS, MOBILE_TOP_ROWS, MOBILE_MIN_ROWS,
   MOBILE_BOTTOM_ROWS, MOBILE_APPEARANCE_VARS, cleanBoardTitleDraft, cleanBoardTitle,
   defaultBoardTitle, isDefaultTitle, mobileColumnCount, board, TITLE_ID, byId,
-  topZ, makeItem, isFurniture,
+  topZ, makeItem, isFurniture, isContent,
 };
 
 
@@ -145,9 +158,15 @@ export function addItems(items, label = 'Add', options = {}) {
   } else {
     added = added.map(item => fitBoardMode(onLattice(item)));
   }
+  // A fence arriving changes what everything under it belongs to, and only this
+  // says so - see refenceArrivals(). In the redo half rather than beside it, for
+  // the reason commitGeom() gives at length: commit() runs redo immediately, so
+  // this covers the first add and every redo after it, while the undo half is a
+  // removal, which heals on its own.
   commit(label,
     () => { const fresh = added.filter(a => !byId(a.id));
             board.items.push(...fresh);
+            refenceArrivals(added);
             bus.emit('items', { added: fresh.map(a => a.id), removed: [] }); },
     () => { const ids = new Set(added.map(a => a.id));
             board.items = board.items.filter(i => !ids.has(i.id));
@@ -376,6 +395,10 @@ export function removeItems(ids, label = 'Delete') {
             bus.emit('items', { added: [], removed: [...set] });
             bus.emit('selection'); bus.emit('trash'); },
     () => { for (const r of removed) board.items.splice(r.index, 0, r.item);
+            // A fence coming back has to be noticed by what it comes back
+            // around; see refenceArrivals(). The redo half is the delete, and a
+            // fence leaving heals itself.
+            refenceArrivals(removed.map(r => r.item));
             board.titleHidden = wasHidden;
             board.trash = board.trash.filter(t => !binIds.has(t.item.id));
             // Back on the end, which is where they were: the entries this
@@ -602,9 +625,17 @@ export function tapeFor(rand = Math.random) {
   return out;
 }
 
-/** Whether the board holds anything the user put there. */
+/**
+ * Whether the board holds anything the user put there *as content*.
+ *
+ * isContent() rather than !isFurniture(), which is the same rule the HUD count
+ * asks - see board-model.js. A board holding nothing but fences is a board
+ * holding nothing: the regions are drawn around content, so with no content in
+ * them there is nothing to be drawn around, and the hints have not been earned
+ * away yet.
+ */
 export function hasContent() {
-  return board.items.some(i => !isFurniture(i));
+  return board.items.some(isContent);
 }
 
 /** Whether any ghost card is currently on the board. */
@@ -729,6 +760,12 @@ export function restoreItems(ids, at = null, label = 'Restore') {
   commit(label,
     () => { const fresh = items.filter(i => !byId(i.id));
             board.items.push(...fresh);
+            // The third door a fence can come back through, and it needs the
+            // same notice as the other two. See refenceArrivals(). Note that a
+            // fence dragged out of the bin lands where the drag put it, not
+            // where it was deleted from, so what it now holds is a fresh
+            // question in the strongest sense.
+            refenceArrivals(items);
             board.trash = board.trash.filter(t => !set.has(t.item.id));
             bus.emit('items', { added: fresh.map(i => i.id), removed: [] });
             bus.emit('trash'); },
@@ -1734,6 +1771,10 @@ export function loadBoard(data) {
   // note belongs, so the memo has to hold *this* board's answers, not the last
   // board's. Seeding also drops the old board's ids, which two files can share.
   seedSticks();
+  // And the same for fences, for a stronger version of the same reason: a board
+  // opened straight into Mobile cannot measure membership at all until somebody
+  // switches modes, so meta.fence is the only thing that knows. See fences.js.
+  seedFences();
   activateLayoutSettings(layoutMode);
   writeLayout(completeLayout(layoutMode));
   selection.clear();
@@ -2059,6 +2100,24 @@ export function serializeBoard() {
     // from a stale field, so the file records where the note actually sits; a
     // load seeds the memo back from it. Null is a real answer and is kept.
     if (item.type === 'note') meta.stuckTo = stuckTo(item)?.id ?? null;
+    // And the durable membership record, on any type rather than on one - a
+    // fence nested in a bigger fence carries it too. It does the same small job
+    // the stick record does, keeping a pixel of drift across a save from losing
+    // a grouping somebody plainly made, and one larger one that has no
+    // equivalent: a board opened straight into Mobile cannot measure membership
+    // at all, since it is measured on Desktop geometry and there is none of that
+    // on screen. For that board this key *is* the membership. See seedFences().
+    //
+    // Written only when there is one, unlike stuckTo, which keeps its null. A
+    // note is one item in a hundred and a fence record would otherwise land on
+    // every card on the board; `"fence": null` five hundred times is noise in a
+    // format whose second promise is that you can read it. Absent means loose,
+    // which is also what a fresh measurement says, so the two agree. Deleted
+    // rather than left when it goes, or a card dragged out of a fence would keep
+    // the stale key it arrived with.
+    const fence = fenceOf(item)?.id;
+    if (fence) meta.fence = fence;
+    else delete meta.fence;
     return { ...item, ...(geometry || null), meta };
   };
   return {

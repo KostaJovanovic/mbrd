@@ -24,7 +24,10 @@ import {
   setBoardMode as selectBoardMode,
   restoreTitleCard, resetTitlePosition,
   addConnections, clearConnections, isFurniture, isRider,
+  addItems, baseStep, isFence, fenceBox,
 } from './state.js';
+import { itemBounds, MAX_SIZE, MIN_SIZE } from './geometry.js';
+import { editItemName } from './canvas/items.js';
 // The spanning tree, which used to be the web and is now the generator behind
 // "Join these" - see cmds.connectSelection and the header of web-graph.js.
 import { threads } from './web-graph.js';
@@ -40,6 +43,7 @@ import { close as closeSidebar } from './ui/sidebar.js';
 import { closeToolbar, setArmed, connectArmed, connectTap } from './ui/toolbar.js';
 import { clearQualityOverrides } from './quality.js';
 import { openContextMenu } from './ui/menu.js';
+import { openFencePrompt } from './ui/fence-prompt.js';
 import { open as openSearch } from './ui/search.js';
 import { openCredits } from './ui/credits.js';
 import {
@@ -105,6 +109,76 @@ export function linkTyped(text) {
  */
 function showConnections() {
   if (board.settings.web === false) setSetting('web', true);
+}
+
+// ---------------------------------------------------------------------------
+// Fences
+//
+// Two ways in - a rubber band, and the group menu - and one thing they do, so
+// the making of a fence is here once rather than in each of them. What differs
+// is only what each is allowed to ask for: the band may draw an empty region
+// because it has a rectangle, the menu may not because it has nothing to draw.
+// ---------------------------------------------------------------------------
+
+/** What a fence would be drawn round: the selection, less the furniture. */
+const fenced = () => board.items.filter(i => selection.has(i.id) && !isFurniture(i));
+
+/**
+ * Desktop only, because membership is measured on Desktop geometry and nowhere
+ * else (see fences.js). A fence made on a phone would have Mobile geometry, no
+ * Desktop record to measure against, and no way to acquire one - it would open
+ * on a laptop owning nothing.
+ */
+function fenceable() {
+  if (board.layoutMode !== 'mobile') return true;
+  toast('Fences are a Desktop board thing');
+  return false;
+}
+
+/**
+ * Put a fence over `rect` (a world-space `{x0,y0,x1,y1}`, or null), the current
+ * selection, or both.
+ *
+ * Three details are load-bearing rather than taste:
+ *
+ * The fence takes a z **below** every card it encloses. It is drawn behind them -
+ * a region on the board rather than a card on top of one - and a fence that
+ * landed above its own contents would cover them. stackRoot() keeps it there
+ * afterwards, since raising a fence carries its members and walks them in raw z
+ * order. An empty one goes behind the whole board, since anything at all might
+ * be dragged into it later and there is no smaller answer.
+ *
+ * Membership is not recorded here, and there is nothing to record: the cards are
+ * inside the rectangle, so they are in the fence, and that stays true because it
+ * is measured rather than stored. Which is also why undo needs no help - taking
+ * the fence away leaves the cards exactly where they are.
+ *
+ * The name field opens straight away, in an animation frame so the card exists to
+ * open it on. An unnamed fence is a box; the name is the whole reason to draw
+ * one, and asking for it later means never.
+ */
+function drawFence(rect) {
+  const inside = fenced();
+  const box = fenceBox(rect, itemBounds(inside), baseStep());
+  if (!box) return;
+  // An item is bounded to MAX_SIZE like everything else, and makeItem() clamps
+  // silently. A fence clamped down is the one shape whose clamping changes what
+  // it *means* - it would come out smaller than what it was drawn to hold - so
+  // this says so instead of drawing a lie.
+  if (box.w > MAX_SIZE || box.h > MAX_SIZE) {
+    toast('Those are too far apart to fence');
+    return;
+  }
+  const under = inside.length ? inside : board.items.filter(i => !isFurniture(i));
+  const [fence] = addItems([{
+    type: 'fence',
+    name: '',
+    x: box.x, y: box.y, w: box.w, h: box.h,
+    z: Math.min(0, ...under.map(i => i.z || 0)) - 1,
+  }], 'Add a fence');
+  if (!fence) return;
+  select([fence.id]);
+  requestAnimationFrame(() => editItemName(fence.id));
 }
 
 /**
@@ -240,8 +314,12 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
         toast('Connections are a Desktop board thing');
         return;
       }
+      // Fences are out with the furniture and the riders. A line to a region is
+      // a line to no particular card, and the tree would spend edges joining
+      // boxes to the things already inside them.
       const pool = board.items.filter(i =>
-        !isFurniture(i) && !isRider(i) && (selection.size < 2 || selection.has(i.id)));
+        !isFurniture(i) && !isRider(i) && !isFence(i)
+        && (selection.size < 2 || selection.has(i.id)));
       if (pool.length < 2) {
         toast('Pick two or more cards, or put something on the board');
         return;
@@ -257,6 +335,45 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
       toast(made
         ? `Joined ${made} pair${made === 1 ? '' : 's'}`
         : 'Those are already joined');
+    },
+
+    /**
+     * Draw a fence around what is selected, with no rectangle to go on.
+     *
+     * The menu's way in, and the one that survives a selection built by
+     * shift-clicking, where there is no band to catch the answer. Two or more,
+     * because with nothing drawn the selection is the whole of the instruction
+     * and one card is not a group - the band has no such rule, since a rectangle
+     * round one photograph is still a region somebody drew.
+     */
+    fenceSelection: () => {
+      if (!fenceable()) return;
+      if (fenced().length < 2) {
+        toast('Pick two or more cards to fence');
+        return;
+      }
+      drawFence(null);
+    },
+
+    /**
+     * Offer to fence what a rubber band just caught, beside the pointer that let
+     * it go. canvas/input.js calls this at the end of every marquee; the policy
+     * for whether there is anything worth offering is here rather than there,
+     * because it is a question about the board and not about the gesture.
+     *
+     * A band that caught nothing is still an offer - that is the empty fence you
+     * could not make before, and Fences' own way of making one - but only above a
+     * size, since a band flicked across empty board is how the selection gets
+     * cleared and an offer after every one of those would be an interruption.
+     * With something caught there is no floor: the contents set the size.
+     */
+    fencePrompt: (x, y, rect) => {
+      if (board.layoutMode === 'mobile') return;
+      const count = fenced().length;
+      if (!count && (rect.x1 - rect.x0 < MIN_SIZE || rect.y1 - rect.y0 < MIN_SIZE)) return;
+      openFencePrompt(x, y, count, () => {
+        if (fenceable()) drawFence(rect);
+      });
     },
 
     clearData: () => armClear(),

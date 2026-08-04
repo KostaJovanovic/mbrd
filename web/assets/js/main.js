@@ -43,6 +43,7 @@ import { initSidebar } from './ui/sidebar.js';
 import { buildPanel } from './ui/panel.js';
 import { armQuality, watchQuality } from './ui/quality.js';
 import { initMenu, close as closeMenu } from './ui/menu.js';
+import { initFencePrompt } from './ui/fence-prompt.js';
 import { initSearch } from './ui/search.js';
 import { initIdle } from './ui/idle.js';
 import { initScaleBar } from './ui/scalebar.js';
@@ -142,6 +143,10 @@ initPaper(vp);
 initMobileFrame(vp);
 initInput(vp, cmds);
 initMenu(vp, cmds);
+// The offer that follows a rubber band. Takes the viewport and not cmds: the
+// action is handed in when the offer is made, so it never needs the command
+// surface - see the head of the module.
+initFencePrompt(vp);
 initSearch(vp);
 initIdle(vp);
 initTrash(vp);

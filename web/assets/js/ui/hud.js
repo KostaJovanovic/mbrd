@@ -18,7 +18,7 @@
 
 import { el } from '../util.js';
 import { formatLength, formatSize } from '../measure.js';
-import { board, bus, selection, byId, historyState, isFurniture } from '../state.js';
+import { board, bus, selection, byId, historyState, isContent } from '../state.js';
 import { MIN_ZOOM, MAX_ZOOM, BASE_ZOOM, zoomMs, travelMs } from '../canvas/viewport.js';
 
 const ZOOM_STEP = 1.3;
@@ -229,14 +229,14 @@ const px = n => Math.round(n);
  * so the slot never goes empty.
  */
 export function paintCount() {
-  // Furniture is not things. A blank board that announced "3 things" would be
-  // counting its own scaffolding, and the number is meant to answer "how much
-  // have I put here" - which on a new board is none. The hints were excluded
-  // here from the start and the Desktop title card was not, so every count on
-  // Desktop read one high and a brand-new board opened saying "1 thing";
-  // isFurniture() is hasContent()'s own rule, asked from one place so a fourth
-  // type cannot drift apart from it again.
-  const n = board.items.reduce((t, i) => t + (isFurniture(i) ? 0 : 1), 0);
+  // Furniture is not things, and neither is a fence. A blank board that
+  // announced "3 things" would be counting its own scaffolding, and the number
+  // is meant to answer "how much have I put here" - which on a new board is
+  // none. The hints were excluded here from the start and the Desktop title card
+  // was not, so every count on Desktop read one high and a brand-new board
+  // opened saying "1 thing"; isContent() is hasContent()'s own rule, asked from
+  // one place so a fourth type cannot drift apart from it again.
+  const n = board.items.reduce((t, i) => t + (isContent(i) ? 1 : 0), 0);
   if (selection.size === 1) {
     const it = byId([...selection][0]);
     if (it) {

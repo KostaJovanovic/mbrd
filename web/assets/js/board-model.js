@@ -376,6 +376,24 @@ export const TITLE_ID = '__title__';
  */
 export const isFurniture = it => it?.type === 'title' || it?.type === 'ghost';
 
+/**
+ * Something the user put on this board *as content*, which is a narrower
+ * question than isFurniture()'s and needs its own name.
+ *
+ * A fence is not furniture - nobody but the user ever makes one - and it is not
+ * content either. It is a line drawn around content, so counting it answers "how
+ * much have I put here" with a number that includes the boxes; and a board
+ * holding nothing but fences is a board holding nothing, which is exactly the
+ * board that should still be showing its hints.
+ *
+ * Named here beside isFurniture() and for the same stated reason: that one
+ * exists because "is this something somebody put here?" was spelled out at four
+ * sites and drifted, which is how the HUD came to count the title card while
+ * hasContent() did not. This is the second half of that question, so it gets the
+ * same treatment before it has a chance to drift too.
+ */
+export const isContent = it => !!it && !isFurniture(it) && it.type !== 'fence';
+
 
 /**
  * id -> item, an index beside board.items rather than a replacement for it.
