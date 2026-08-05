@@ -18,7 +18,7 @@ import {
   board, bus, selection, setSetting, byId,
   snapshotGeom, applyGeom, commitGeom, baseStep,
   recheckBoardGeometry, placeMobileItems,
-  isRider, stuckTo, stuckPlacement, isFence, fenceOf,
+  isRider, stuckTo, stuckPlacement, isFence, fenceOf, fenceBox,
 } from '../state.js';
 import { latticeBox, itemBounds } from '../geometry.js';
 import { travelMs } from '../canvas/viewport.js';
@@ -26,7 +26,7 @@ import { paintGrid, resetGridInk } from '../canvas/grid.js';
 import { paintGrain } from '../canvas/grain.js';
 import { paintPaper } from '../canvas/paper.js';
 import { paintMobileFrame } from '../canvas/mobile-frame.js';
-import { resetItems } from '../canvas/items.js';
+import { barHeight, resetItems } from '../canvas/items.js';
 import { resetWeb } from '../canvas/web.js';
 import { resetModels, resetModelInk } from '../canvas/model.js';
 import { flushNoteEdit, noteFloor } from '../canvas/notes.js';
@@ -392,11 +392,27 @@ export async function restartApp() {
  * So a subset is relaid about its own centre and covers its own ground, and the
  * view stays where it is - the cards rearrange in front of you, which is the
  * plainest feedback there is and the reason a Fit would only get in the way.
+ *
+ * Three options, all of them a region's (see cmds.rearrangeFence):
+ *
+ *   name     the layout, overriding the board's own. A region gets masonry
+ *            whatever the board is set to, because the board's arrangement is a
+ *            statement about the board.
+ *   center   where to lay it out about, overriding the two rules above. A
+ *            region is relaid about *itself*, not about the middle of whatever
+ *            happens to be in it - the region is the thing that is staying put.
+ *   enclose  a fence id to close around the result, inside the same commit. The
+ *            layout is not bounded by anything, so its block can come out wider
+ *            or narrower than the region it was made for; a region that ended up
+ *            not holding its own contents would then have them measured out of
+ *            it. So the rectangle follows the cards, which is also the shape a
+ *            fence is made with in the first place - see fenceBox().
  */
-export function rearrange(items) {
+export function rearrange(items, options = {}) {
   if (!items.length) return;
   const whole = items.length === board.items.length;
   const mobile = board.layoutMode === 'mobile';
+  const enclosing = options.enclose ? byId(options.enclose) : null;
 
   // A stuck note is not laid out; it rides its host to the host's new slot and
   // keeps its place on it. So a pinned sticky stays pinned through a Rearrange,
@@ -432,14 +448,17 @@ export function rearrange(items) {
     !isRider(it) && inSet.has(parentOf.get(it.id)));
   const carriedIds = new Set(carried.map(it => it.id));
   const free = items.filter(it => !isRider(it) && !carriedIds.has(it.id));
-  const beforeAll = snapshotGeom(items.map(i => i.id));
+  // The region joins the snapshot when there is one, so closing it around the
+  // result is inside the same undo entry as the layout that made it necessary.
+  const beforeAll = snapshotGeom(
+    enclosing ? [...items.map(i => i.id), enclosing.id] : items.map(i => i.id));
   // Nothing to lay out - the whole set was followers. There is no arrangement of
   // riders alone; they stay on their hosts. A fence's contents cannot empty this
   // on their own: containment is a strict order, so the outermost fence in any
   // chain has nothing in this set to be carried by, and is free.
   if (!free.length) return;
 
-  const at = whole ? { x: 0, y: 0 } : middleOf(free);
+  const at = options.center ?? (whole ? { x: 0, y: 0 } : middleOf(free));
   const before = snapshotGeom(free.map(i => i.id));
   // Two things vary here, and neither is enough on its own.
   //
@@ -507,7 +526,7 @@ export function rearrange(items) {
     placed = placeMobileItems(placed, obstacles, { preserveSize: true });
   } else {
     const spots = arrange(laid, {
-      name: board.arrangement,
+      name: options.name || board.arrangement,
       center: at,
       spacing: board.settings.spacing,
       // Snapping reserves whole cells so the per-item lattice snap below cannot
@@ -611,6 +630,48 @@ export function rearrange(items) {
     }
   }
 
+  // The region closes around what it now holds, measured from where the cards
+  // actually landed rather than from where the layout meant to put them - the
+  // lattice pass and the rider pass both ran in between. A step of margin, the
+  // same one a fence is drawn with, so the cards are inside it rather than flush
+  // against it.
+  //
+  // Driven, unlike the carried contents: its edges are what membership means, so
+  // a region that changed size is the one thing that has to ask again - the rule
+  // commitGeom() already states for a resize.
+  const closing = [];
+  if (enclosing) {
+    const box = fenceBox(null, itemBounds(items.map(i => byId(i.id)).filter(Boolean)), step);
+    if (box) {
+      applyGeom([{ id: enclosing.id, ...box, rot: enclosing.rot, z: enclosing.z }]);
+      // Then again, with room at the top for the name. A fence's plate lies
+      // across the top of its box, so a block closed to a step of margin puts
+      // its first row under the region's own name - which is the one thing on a
+      // fence you have to be able to read.
+      //
+      // Twice rather than once because the plate's height depends on the width
+      // the region has just been given (the name is set at 2.8cqi of it), and the
+      // write above is what makes that width real: 'geom' places nodes
+      // synchronously, so the measurement below is of the plate that will
+      // actually be drawn. Both writes land before the commit, so it is still
+      // one undo.
+      //
+      // Only here, and not where a fence is *made*. There the rectangle is one
+      // somebody drew, and taking it exactly as drawn is the promise fenceBox()
+      // makes; here the cards were put where they are by this function a moment
+      // ago, so where they sit under the plate is ours to answer for.
+      const plate = barHeight(enclosing.id);
+      if (plate > 0) {
+        // World y points up, so the top edge is y + h/2: the extra height is all
+        // added above, and nothing that was inside moves.
+        applyGeom([{
+          id: enclosing.id, x: box.x, y: box.y + plate / 2,
+          w: box.w, h: box.h + plate, rot: enclosing.rot, z: enclosing.z,
+        }]);
+      }
+      closing.push(enclosing.id);
+    }
+  }
   // driven = the free items only. Each was placed, none towed, so each of those
   // notes asks again what it landed on. Riders are left out on purpose: they kept
   // their host, so re-measuring them onto whatever they now sit beside would be
@@ -619,8 +680,8 @@ export function rearrange(items) {
   // they have not moved relative to anything, and a card that asked again here
   // would be asking about a board it did not travel across. The fences themselves
   // are driven, so a region dealt a slot inside a larger one nests as it should.
-  commitGeom(whole ? 'Rearrange' : `Rearrange ${items.length} items`,
-    beforeAll, free.map(g => g.id), mobile ? { preservePresnap: true } : {});
+  commitGeom(options.label || (whole ? 'Rearrange' : `Rearrange ${items.length} items`),
+    beforeAll, [...free.map(g => g.id), ...closing], mobile ? { preservePresnap: true } : {});
   // A whole-board layout rebuilds around the origin, so the view has to follow
   // it there or the rearrangement happens off screen. Free is the exception:
   // it shakes each item where it stands, and flying to fit the whole board

@@ -615,6 +615,23 @@ test.describe('fences', () => {
     await expect(prompt).toBeVisible();
     await expect(prompt).toHaveText('Fence these 2');
 
+    // The band has gone with the gesture, so the region the offer is about is
+    // held on the board by a ghost of it. It stands for the *fence's* box and
+    // not the band's, which is the whole reason it is not simply the marquee
+    // left up: a marquee catches what it overlaps, so the fence opens unioned
+    // out past the band to hold what it caught. Asserted as "larger on every
+    // edge" rather than to the pixel - the margin is a grid step, and pinning
+    // the number here would be a copy of baseStep() to keep in step.
+    const ghost = page.locator('#fence-ghost');
+    await expect(ghost).toBeVisible();
+    expect(await page.evaluate(() => document.getElementById('marquee').hidden),
+      'the marquee itself is down').toBe(true);
+    const shown = await ghost.boundingBox();
+    expect(shown.x).toBeLessThan(x0);
+    expect(shown.y).toBeLessThan(y0);
+    expect(shown.x + shown.width).toBeGreaterThan(x1);
+    expect(shown.y + shown.height).toBeGreaterThan(y1);
+
     // Walking away is how it is declined - no key, no click, nothing to dismiss.
     // In one hop, since the rule is where the pointer is and not how it got
     // there, and to the far corner of the *window*: a move dispatched past the
@@ -623,6 +640,10 @@ test.describe('fences', () => {
     const view = await page.locator('#viewport').boundingBox();
     await page.mouse.move(view.x + 20, view.y + 20);
     await expect(prompt).toHaveCount(0);
+    // The ghost goes with it. It is the offer's drawing, not the board's, and a
+    // rectangle left behind by a question nobody answered would be a fence
+    // nobody made.
+    await expect(ghost).toHaveCount(0);
     expect(await page.evaluate(() => window.mbrd.board.items.some(i => i.type === 'fence')))
       .toBe(false);
 
@@ -670,6 +691,211 @@ test.describe('fences', () => {
     await page.mouse.up();
     await page.keyboard.up('Shift');
     await expect(prompt).toHaveText('Fence this one');
+  });
+
+  test('resizing a region carries the cards inside it', async ({ page }) => {
+    // The same bargain a stuck note has with the card under it, one relation
+    // over: a card is *in* a region the way a sticky is *on* a card, so pulling
+    // an edge in gathers the contents rather than leaving them behind it. Only
+    // reachable here - it is a grip dragged across a real board, and the thing
+    // being asserted is where two other items ended up.
+    await ready(page);
+
+    const ids = await page.evaluate(() => {
+      const last = () => window.mbrd.board.items[window.mbrd.board.items.length - 1];
+      window.mbrd.cmds.addNoteAt({ x: -220, y: 0 });
+      const a = last();
+      window.mbrd.cmds.addNoteAt({ x: 220, y: 0 });
+      const b = last();
+      window.mbrd.bus.emit('geom', [a.id, b.id]);
+      return [a.id, b.id];
+    });
+    await page.locator('#viewport').click({ position: { x: 12, y: 12 } });
+
+    const fence = await page.evaluate(() => {
+      window.mbrd.cmds.selectAll();
+      window.mbrd.cmds.fenceSelection();
+      return window.mbrd.board.items.find(i => i.type === 'fence')?.id ?? null;
+    });
+    expect(fence, 'the fence was made').not.toBeNull();
+    await page.keyboard.press('Escape');
+
+    // Where each card sits as a fraction of the region, which is the quantity
+    // that has to survive - not the position, which is the whole point of
+    // dragging the edge.
+    const places = () => page.evaluate(({ ids, fence }) => {
+      const f = window.mbrd.board.items.find(i => i.id === fence);
+      return {
+        fence: { x: f.x, w: f.w },
+        at: ids.map(id => {
+          const it = window.mbrd.board.items.find(i => i.id === id);
+          return (it.x - f.x) / f.w;
+        }),
+      };
+    }, { ids, fence });
+
+    const before = await places();
+
+    // Its own name plate is the way to select it - the face takes no presses.
+    // Dragged much further in than the region can go, so this is the carry and
+    // the floor in one gesture.
+    await page.locator(`.item[data-id="${fence}"] .item-bar`).click();
+    const grip = await page.locator(`.item[data-id="${fence}"] .grip[data-g="e"]`).boundingBox();
+    await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(grip.x + grip.width / 2 - 900, grip.y + grip.height / 2, { steps: 20 });
+    await page.mouse.up();
+
+    const after = await places();
+    expect(after.fence.w, 'the region actually shrank').toBeLessThan(before.fence.w - 100);
+    for (let i = 0; i < ids.length; i++) {
+      expect(Math.abs(after.at[i] - before.at[i]), `card ${i} kept its place in the region`)
+        .toBeLessThan(0.01);
+    }
+    // And it stopped while the cards still fit. Keeping a card's fraction is not
+    // the same as keeping it inside: the fraction holds a card's *centre*, and a
+    // card is a box whose size does not shrink with the region - so past a point
+    // the cards are in the right places and hanging over the border anyway. The
+    // whole box, not the centre, is what is asserted here.
+    expect(await page.evaluate(({ ids, fence }) => {
+      const f = window.mbrd.board.items.find(i => i.id === fence);
+      return ids.every(id => {
+        const it = window.mbrd.board.items.find(i => i.id === id);
+        return Math.abs(it.x - f.x) + it.w / 2 <= f.w / 2 + 0.5
+          && Math.abs(it.y - f.y) + it.h / 2 <= f.h / 2 + 0.5;
+      });
+    }, { ids, fence }), 'every card still fits inside').toBe(true);
+  });
+
+  test('the menu inside a region arranges the region, not the board', async ({ page }) => {
+    // A press on a fence's face falls through to the board - that is what keeps
+    // panning and banding working inside one - so the *canvas* menu is what a
+    // right-click in a region opens, and "Rearrange everything" would be the
+    // loudest possible reading of a click aimed at one shelf.
+    await ready(page);
+
+    // From an empty board, unlike its neighbours. Nothing here clears storage
+    // between cases, so by this point the board carries everything every earlier
+    // test made - and this one right-clicks a *point*, which needs the region it
+    // is aiming at to be where the test put it and on screen. Selecting all and
+    // fencing that would draw one rectangle round the whole accumulated board.
+    const ids = await page.evaluate(() => {
+      const { board, selection, bus, cmds } = window.mbrd;
+      const old = board.items.filter(i => i.type !== 'title' && i.type !== 'ghost');
+      if (old.length) {
+        selection.clear();
+        for (const it of old) selection.add(it.id);
+        bus.emit('selection');
+        cmds.deleteSelection();
+      }
+      const out = [];
+      for (const [x, y] of [[-300, 120], [-80, -160], [160, 90], [340, -60], [-260, -80], [60, 200]]) {
+        cmds.addNoteAt({ x, y });
+        out.push(board.items[board.items.length - 1].id);
+      }
+      bus.emit('geom', out);
+      return out;
+    });
+    await page.locator('#viewport').click({ position: { x: 12, y: 12 } });
+    // These six and nothing else, through the same Set the console handle
+    // exposes - selectAll() would take the hint cards and the title card with it.
+    const fence = await page.evaluate(ids => {
+      const { selection, bus, cmds, board } = window.mbrd;
+      selection.clear();
+      for (const id of ids) selection.add(id);
+      bus.emit('selection');
+      cmds.fenceSelection();
+      return board.items.find(i => i.type === 'fence')?.id ?? null;
+    }, ids);
+    expect(fence).not.toBeNull();
+    await page.keyboard.press('Escape');
+    await page.locator('#viewport').click({ position: { x: 12, y: 12 } });
+
+    // Framed before it is aimed at. A board reopens on the view it was saved
+    // with, so where these cards are on *screen* is whatever the last test left
+    // behind - and a right-click dispatched past the edge of the window is
+    // delivered nowhere, which looks exactly like a menu that refused to open.
+    await page.evaluate(f => {
+      const it = window.mbrd.board.items.find(i => i.id === f);
+      window.mbrd.vp.fit([it], 160, 0);
+    }, fence);
+    await page.waitForTimeout(300);
+
+    const box = await page.locator(`.item[data-id="${fence}"]`).boundingBox();
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, { button: 'right' });
+    const menu = page.locator('#ctx-menu');
+    await expect(menu).toBeVisible();
+    await expect(menu.locator('.ctx-item', { hasText: 'Rearrange fence' })).toHaveCount(1);
+    await expect(menu.locator('.ctx-item', { hasText: 'Rearrange everything' })).toHaveCount(0);
+
+    await menu.locator('.ctx-item', { hasText: 'Rearrange fence' }).click();
+    await page.waitForTimeout(400);
+
+    // The layout is not bounded by the region, so the region follows it - and a
+    // region that came out not holding its own contents would have them measured
+    // straight out of it on the commit.
+    expect(await page.evaluate(({ ids, fence }) => {
+      const f = window.mbrd.board.items.find(i => i.id === fence);
+      return ids.every(id => {
+        const it = window.mbrd.board.items.find(i => i.id === id);
+        return Math.abs(it.x - f.x) + it.w / 2 <= f.w / 2 + 0.5
+          && Math.abs(it.y - f.y) + it.h / 2 <= f.h / 2 + 0.5;
+      });
+    }, { ids, fence }), 'every card is inside the region it closed around').toBe(true);
+
+    // And below the region's name, not over it. A fence's plate lies across the
+    // top of its box, so a block closed to a bare margin puts its first row
+    // under the one thing on a fence you have to be able to read.
+    expect(await page.evaluate(({ ids, fence }) => {
+      const f = window.mbrd.board.items.find(i => i.id === fence);
+      const bar = document.querySelector(`.item[data-id="${fence}"] > .item-bar`);
+      // World y is up, so the plate runs from the top edge down by its height.
+      const plateBottom = f.y + f.h / 2 - bar.offsetHeight;
+      return ids.every(id => {
+        const it = window.mbrd.board.items.find(i => i.id === id);
+        return it.y + it.h / 2 <= plateBottom;
+      });
+    }, { ids, fence }), 'no card is under the name plate').toBe(true);
+
+    // Masonry, not the board's arrangement: the cards come back in columns, so
+    // the tops line up in a handful of rows rather than scattering.
+    const rows = await page.evaluate(ids => new Set(ids.map(id => {
+      const it = window.mbrd.board.items.find(i => i.id === id);
+      return Math.round((it.y + it.h / 2) / 4);
+    })).size, ids);
+    expect(rows, 'six cards land on a few shared rows').toBeLessThan(4);
+
+    // One undo puts the layout *and* the region it closed back.
+    const undone = await page.evaluate(async () => {
+      window.mbrd.cmds.undo();
+      await new Promise(r => setTimeout(r, 200));
+      return window.mbrd.board.items.filter(i => i.type === 'fence').length;
+    });
+    expect(undone).toBe(1);
+  });
+
+  test('a region hangs straight where a card leans', async ({ page }) => {
+    // The tilt is per item and turns about the centre, so across two thousand
+    // units a region visibly disagrees with the cards inside it - which keep
+    // their own leans. Asserted at the softish end, the only tier that leans.
+    await ready(page);
+    await page.evaluate(() => document.documentElement.setAttribute('data-whimsy', '0'));
+
+    await page.evaluate(() => {
+      window.mbrd.cmds.addNoteAt({ x: -220, y: 0 });
+      window.mbrd.cmds.addNoteAt({ x: 220, y: 0 });
+    });
+    await page.locator('#viewport').click({ position: { x: 12, y: 12 } });
+    await page.evaluate(() => {
+      window.mbrd.cmds.selectAll();
+      window.mbrd.cmds.fenceSelection();
+    });
+    await page.keyboard.press('Escape');
+
+    const fenceEl = page.locator('.item[data-type="fence"]');
+    expect(await fenceEl.evaluate(el => getComputedStyle(el).rotate)).toBe('0deg');
+    expect(await fenceEl.evaluate(el => getComputedStyle(el).getPropertyValue('--item-tilt').trim()))
+      .toBe('0');
   });
 
   test('rearranging the board keeps a region together', async ({ page }) => {

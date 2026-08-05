@@ -33,6 +33,18 @@ for. The rest degrade inside optional paths:
   feature-detects and defaults destructive answers to cancel when it is absent.
 - **CSS `:has()`, `@property`, `color-mix()`, modern colour** — the palette and a
   handful of layout rules.
+- **External SVG `<use>`** — every icon in the app is a `<symbol>` in
+  `assets/icons.svg`, referenced as `<use href="assets/icons.svg#i-note">`. Above
+  the floor this is uniform; it is called out because it is the app's only
+  cross-document reference and it fails in a particular way. A browser that will
+  not follow it draws *nothing* — no error, no fallback, a blank box where the
+  icon was. IE and legacy Edge were the browsers that needed a polyfill for it
+  (`svg4everybody`); every engine at or above this floor resolves it natively.
+  Two consequences that outlive any one browser, both from the symbol rendering
+  into a shadow tree: inherited properties reach it (which is how one `.ico` rule
+  sets the weight of all forty drawings, and how `currentColor` works at all),
+  and selectors do not (which is why `#zoom-lock` swaps two wrappers instead of
+  two paths, and why `#origin-mark` is still written inline).
 
 ## Safari behaviours the app already accommodates
 

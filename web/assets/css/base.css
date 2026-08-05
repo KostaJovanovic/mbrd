@@ -177,6 +177,42 @@ body {
 }
 
 /* ---------------------------------------------------------
+   Icons (assets/icons.svg)
+
+   The one place the set's drawing spec is written. Every icon in the app is a
+   <symbol> in assets/icons.svg and reaches its button as
+
+     <svg class="ico"><use href="assets/icons.svg#i-note"/></svg>
+
+   and these five properties are what make forty separate drawings read as one
+   set. They are here rather than on the symbols because all five are inherited
+   properties, and inherited properties are the one thing that crosses into the
+   shadow tree a <use> renders into - so a rule written once on the wrapper
+   reaches every shape inside it. Nothing else can: no selector in this file can
+   match a path *within* a symbol, which is the constraint the sprite is built
+   around and is explained where the symbols are.
+
+   A symbol that is deliberately filled - the colour chips, the speaker's cone,
+   the grid's dots - says `fill="currentColor"` on the shape itself. That is a
+   presentation attribute on the element, and an element's own declaration beats
+   a value inherited from an ancestor, so it wins over the `fill: none` here
+   without either having to know about the other.
+
+   The size is a floor, not the size: every surface that had an opinion before
+   the sprite existed still has it, and every one of those rules is an id
+   selector (#toolbar svg, #zoom-ctl svg, #saved svg...) which outranks this. So
+   this is what an icon is in a context that has never said. */
+.ico {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---------------------------------------------------------
    The boot cover (index.html, dismissed by main.js)
 
    Third layer of the sheet and the last one painted, which is why it sits here

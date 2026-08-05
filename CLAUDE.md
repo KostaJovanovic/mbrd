@@ -51,6 +51,9 @@ the ES modules under `web/` directly — an edit is one refresh away.
 - **Do not edit `web/assets/js/version.js` or the `VERSION` line in
   `web/sw.js`.** `save.bat` stamps both by regex; reformatting either line
   breaks the stamp silently.
+- **No apostrophes anywhere inside the `SHELL` array in `web/sw.js`**, comments
+  included. `tests/sw.test.js` reads that list by pulling out single-quoted
+  runs, so one apostrophe in a comment there breaks it.
 - **Do not hand-edit `web/assets/js/import/formats.js`.** It is generated.
 - **Do not split `canvas/input.js`.** One pipeline, exactly one active gesture.
 - **A new module must not touch `document` at import time** — export an
@@ -59,6 +62,26 @@ the ES modules under `web/` directly — an edit is one refresh away.
 - **A new user-facing action is an entry in `cmds`** (`commands.js`), not a
   second event listener. A new setting is one entry in `ui/settings-schema.js`.
   A new toolbar tool is a `<button data-cmd>` in `index.html` plus that entry.
+  A new file type is a branch in `classify()` plus an entry in `RENDERERS`,
+  both in `canvas/renderers.js`. A new arrangement is a pure
+  `(items, opts) => [{x, y}]` in `arrange/arrangements.js`.
+- **Icons are `<symbol>`s in `web/assets/icons.svg`, reached by name** —
+  `<use href="assets/icons.svg#i-note">`. A misspelled id fails silently: no
+  console warning, no failed request, just a hole where the icon was.
+  `tests/icons.test.js` checks the references against the sprite and the sprite
+  against the references.
+- **`state.js` is the only door, and it is being split downward.** The base
+  layer under it — `board-store.js`, `board-model.js`, `history.js`,
+  `sticky.js`, `fences.js`, `layout.js`, `stacking.js`, `web-graph.js`,
+  `web-route.js` — may never import `state.js` back. That one-way edge is the
+  whole reason they are separate files: a concern lifted out of `state.js` only
+  stays out if what it stands on is lower than what it left.
+  `tests/layers.test.js` holds the list.
+- **The hand-written binary readers parse files the app did not write.**
+  `storage/zip.js`, `mesh.js`, `import/artwork.js` and `optimize/opus.js` all
+  bounds-check before they allocate, and their tests are largely about
+  malformed input. A change near them wants a test that feeds it something
+  broken.
 - **`#toolbar` must stay before `#nowplaying` in `index.html`.** The rules that
   step the player up a tier when the phone's toolbar opens are general sibling
   combinators, which only look forward. Reordering the two breaks the layout

@@ -238,10 +238,9 @@
     </div>
     <button id="side-close" type="button" aria-label="Close menu" title="Close">
       <!-- Two crossed strokes rather than a "times" glyph: a character's ink is
-           not centred in its line box, so the glyph orbits when it spins. -->
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
-        <path d="M4 4l8 8M12 4l-8 8"/>
-      </svg>
+           not centred in its line box, so the glyph orbits when it spins. The
+           strokes are in assets/icons.svg, along with every other icon here. -->
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>
     </button>
   </header>
   <!-- Three tabs, and the panel opens on the first of them every time. The
@@ -293,9 +292,7 @@
       <h1>Header</h1>
     </div>
     <button id="header-close" type="button" aria-label="Close header options" title="Close">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
-        <path d="M4 4l8 8M12 4l-8 8"/>
-      </svg>
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>
     </button>
   </header>
   <div class="side-body">
@@ -378,10 +375,7 @@
      the note pen so the action reads as editing, not as a second menu. -->
 <button id="mobile-header-edit-btn" type="button" hidden aria-expanded="false"
         aria-label="Edit Mobile header" aria-controls="header-panel">
-  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"
-       stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <path d="M11.4 2.6a1.6 1.6 0 0 1 2.2 2.2L6.3 12.1l-3 .8.8-3z"/>
-  </svg>
+  <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-pen"/></svg>
 </button>
 
 <!-- The bin. Opposite corner to the zoom controls, and deliberately the same
@@ -409,10 +403,7 @@
          and toggled by ui/trash.js. -->
     <button type="button" id="title-restore" hidden
             aria-label="Bring back the title card" title="Bring back the title card">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M4 4.5h8"/>
-        <path d="M8 4.5v7"/>
-      </svg>
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-title"/></svg>
     </button>
   </div>
   <!-- The autosave, saying so. Absolutely placed rather than stacked in the
@@ -423,9 +414,7 @@
        you work is the same information turned into an interruption. The
        explicit Save still says so out loud, because that one was a question. -->
   <div id="saved" aria-hidden="true">
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M3.5 8.5l3 3 6-7"/>
-    </svg>
+    <svg class="ico"><use href="assets/icons.svg#i-check"/></svg>
     <span>Saved</span>
   </div>
   <!-- One row along the bottom of the corner. The bin keeps the corner itself,
@@ -436,12 +425,7 @@
          loaded, and it matches the muted look the button starts in; ui/trash.js
          rewrites both the label and the tooltip every time the bin changes. -->
     <button type="button" id="bin-btn" aria-label="Trash, empty" aria-expanded="false" aria-controls="bin-panel" title="Trash, empty">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M2.5 4h11"/>
-        <path d="M6 4V2.5h4V4"/>
-        <path d="M3.8 4l.6 9a1 1 0 0 0 1 1h5.2a1 1 0 0 0 1-1l.6-9"/>
-        <path d="M6.6 6.5v5M9.4 6.5v5"/>
-      </svg>
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-delete"/></svg>
     </button>
     <!-- Undo and redo. Beside the bin because they belong to the same thought -
          the bin is the one mistake you can walk back by hand, and these are
@@ -453,16 +437,10 @@
          happen ("Undo Add 3 items"). -->
     <div id="history-ctl">
       <button type="button" data-history="undo" aria-label="Undo" title="Nothing to undo" disabled>
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M3 6.5h6.2a3.4 3.4 0 0 1 0 6.8H6.4"/>
-          <path d="M5.6 3.6 2.7 6.5l2.9 2.9"/>
-        </svg>
+        <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-undo"/></svg>
       </button>
       <button type="button" data-history="redo" aria-label="Redo" title="Nothing to redo" disabled>
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M13 6.5H6.8a3.4 3.4 0 0 0 0 6.8h2.8"/>
-          <path d="M10.4 3.6l2.9 2.9-2.9 2.9"/>
-        </svg>
+        <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-redo"/></svg>
       </button>
     </div>
   </div>
@@ -479,44 +457,40 @@
   </div>
   <div id="zoom-ctl">
     <button type="button" data-zoom="out" aria-label="Zoom out" title="Zoom out  −">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
-        <path d="M4 8h8"/>
-      </svg>
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-zoom-out"/></svg>
     </button>
     <button type="button" id="zoom-level" data-zoom="reset" title="Back to 100%">100%</button>
     <button type="button" data-zoom="in" aria-label="Zoom in" title="Zoom in  +">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
-        <path d="M8 4v8M4 8h8"/>
-      </svg>
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-zoom-in"/></svg>
     </button>
     <button type="button" data-zoom="fit" aria-label="Zoom to fit" title="Zoom to fit  F">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/>
-      </svg>
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-fit"/></svg>
     </button>
     <button type="button" data-zoom="home" aria-label="Back to 0,0" title="Back to 0,0  0">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
-        <circle cx="8" cy="8" r="4"/>
-        <path d="M8 1v2.4M8 12.6V15M1 8h2.4M12.6 8H15"/>
-      </svg>
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-home"/></svg>
     </button>
     <!-- Hold the magnification. Last in the row and pressed rather than pushed,
          because it is the only control here that changes what the other four
          do rather than doing something itself.
 
-         The body of the padlock is one path and the shackle is two, of which
-         The CSS shows whichever matches aria-pressed - an open shackle leaning
-         off its post when the zoom is free, closed on it when it is not. Two
-         paths rather than a rotation, because the shape a padlock makes when it
-         opens is not the shape it makes when it is turned. main.js writes the
-         pressed state, the label and the title together. -->
+         Two whole padlocks, and the CSS shows whichever matches aria-pressed -
+         open and leaning off its post while the zoom is free, closed on it when
+         it is not. Two drawings rather than a rotation, because the shape a
+         padlock makes when it opens is not the shape it makes when it is turned.
+         main.js writes the pressed state, the label and the title together.
+
+         Two *elements* rather than two shapes in one, and that is the sprite's
+         doing: the shackles used to be a pair of paths in a single inline <svg>
+         with chrome.css hiding one of them by class. A symbol referenced from
+         assets/icons.svg renders into a shadow tree, and no selector in this
+         document can reach a shape inside it - the rule would have matched
+         nothing and drawn both shackles at once, silently. What CSS can still
+         do is hide one of these two wrappers, because a wrapper is an ordinary
+         element sitting in the page. Same switch, moved out one level. -->
     <button type="button" id="zoom-lock" data-zoom="lock" aria-pressed="false"
             aria-label="Lock zoom" title="Lock the zoom">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <rect class="lock-body" x="3.25" y="7.25" width="9.5" height="6.5" rx="1.4"/>
-        <path class="lock-open" d="M5.75 7.25V5.1a2.6 2.6 0 0 1 5.15-.5"/>
-        <path class="lock-shut" d="M5.75 7.25V5.1a2.25 2.25 0 0 1 4.5 0v2.15"/>
-      </svg>
+      <svg class="ico lock-open" aria-hidden="true"><use href="assets/icons.svg#i-lock-open"/></svg>
+      <svg class="ico lock-shut" aria-hidden="true"><use href="assets/icons.svg#i-lock-shut"/></svg>
     </button>
   </div>
   <div id="hud">
@@ -560,41 +534,24 @@
        does is open a thing that is not otherwise there - the same contract the
        panel's own menu button has. -->
   <button type="button" id="toolbar-toggle" aria-expanded="false" aria-controls="toolbar-tools">
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
-      <path d="M8 3.2v9.6M3.2 8h9.6"/>
-    </svg>
+    <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-plus"/></svg>
     <span>Add</span>
   </button>
   <div id="toolbar-tools">
     <button type="button" data-cmd="add-files" title="Add files  (or drop them anywhere)">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
-        <path d="M8 3.2v9.6M3.2 8h9.6"/>
-      </svg>
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-plus"/></svg>
       <span>Files</span>
     </button>
     <button type="button" data-cmd="add-note" title="Write a note">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M11.4 2.6a1.6 1.6 0 0 1 2.2 2.2L6.3 12.1l-3 .8.8-3z"/>
-      </svg>
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-pen"/></svg>
       <span>Note</span>
     </button>
     <button type="button" data-cmd="add-swatch" title="Add a colour">
-      <!-- Three overlapping chips, which is what a swatch is a single one of.
-           Filled rather than outlined, alone among the icons here: this is the
-           one tool whose subject is colour, and an outline of a colour chip is
-           a picture of a card. -->
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" aria-hidden="true">
-        <rect x="1.9" y="5.4" width="6.4" height="6.4" rx="1.4" fill="currentColor" fill-opacity="0.22"/>
-        <rect x="4.8" y="3.6" width="6.4" height="6.4" rx="1.4" fill="currentColor" fill-opacity="0.38"/>
-        <rect x="7.7" y="1.9" width="6.4" height="6.4" rx="1.4" fill="currentColor" fill-opacity="0.6"/>
-      </svg>
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-swatch"/></svg>
       <span>Colour</span>
     </button>
     <button type="button" data-cmd="add-link" title="Add a link">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
-        <path d="M6.6 9.4a2.6 2.6 0 0 0 3.7 0l2.3-2.3a2.6 2.6 0 0 0-3.7-3.7l-1 1"/>
-        <path d="M9.4 6.6a2.6 2.6 0 0 0-3.7 0L3.4 8.9a2.6 2.6 0 0 0 3.7 3.7l1-1"/>
-      </svg>
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-link"/></svg>
       <span>Link</span>
     </button>
     <!-- The one tool here that is a mode, and the only one in the app. It stays
@@ -604,11 +561,7 @@
          which is the same reason webVisible() refuses that layout. -->
     <button type="button" data-cmd="connect" data-desktop aria-pressed="false"
             title="Join two cards  (pick one, then the other)">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-        <circle cx="3.6" cy="12.4" r="2.1"/>
-        <circle cx="12.4" cy="3.6" r="2.1"/>
-        <path d="M5.3 10.7 10.7 5.3" stroke-linecap="round"/>
-      </svg>
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-connect"/></svg>
       <span>Join</span>
     </button>
     <!-- No button for the generator. cmds.connectSelection joins a whole
@@ -621,19 +574,11 @@
          tools. -->
 
     <button type="button" data-cmd="rearrange" data-desktop title="Rearrange everything">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true">
-        <rect x="2.5" y="2.5" width="4.6" height="4.6" rx="1"/>
-        <rect x="8.9" y="2.5" width="4.6" height="4.6" rx="1"/>
-        <rect x="2.5" y="8.9" width="4.6" height="4.6" rx="1"/>
-        <rect x="8.9" y="8.9" width="4.6" height="4.6" rx="1"/>
-      </svg>
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-rearrange"/></svg>
       <span>Arrange</span>
     </button>
     <button type="button" data-cmd="find" data-desktop title="Find something  Ctrl+K">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
-        <circle cx="7.1" cy="7.1" r="4.1"/>
-        <path d="M10.2 10.2L13.4 13.4"/>
-      </svg>
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-find"/></svg>
       <span>Find</span>
     </button>
   </div>
@@ -660,16 +605,11 @@
        The module removes this whole block where the browser will not honour a
        write to it - see volumeLocked(). -->
   <label class="np-volume">
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M3 6h2.4L8.8 3.1v9.8L5.4 10H3z" fill="currentColor"/>
-      <path d="M11 5.6a3.4 3.4 0 0 1 0 4.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-    </svg>
+    <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-volume"/></svg>
     <input id="np-volume" type="range" min="0" max="100" step="1" value="60" aria-label="Volume">
   </label>
   <button type="button" class="np-close" aria-label="Close the player" title="Stop and close">
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
-      <path d="M4 4l8 8M12 4l-8 8"/>
-    </svg>
+    <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>
   </button>
 </div>
 
@@ -721,6 +661,39 @@
     <span class="ask-gap"></span>
     <button type="button" id="ask-cancel"></button>
     <button type="button" id="ask-go" class="danger"></button>
+  </div>
+</dialog>
+
+<!-- Choosing a colour, before the swatch exists.
+
+     Not part of #ask, and the reason is the same one that kept the note editor
+     out of it: ask() answers with one field, and a colour is a plane, a hue and
+     a number that all have to agree. It is also the one question a plain
+     <input type="color"> cannot be asked inside a dialog without the platform
+     opening a second dialog over the top of it - which is precisely the grey
+     system box #ask was written to get rid of. See ui/color-picker.js.
+
+     The square carries no colour of its own here: the stylesheet lays white and
+     black gradients over a --hue the module sets, so the markup is a box, a
+     handle, a slider and the number. -->
+<dialog id="pick" aria-labelledby="pick-title">
+  <h2 id="pick-title"></h2>
+  <div id="pick-area" tabindex="0" role="slider"
+       aria-label="Saturation and brightness" aria-valuemin="0" aria-valuemax="100">
+    <div id="pick-dot"></div>
+  </div>
+  <input id="pick-hue" type="range" min="0" max="360" step="1" aria-label="Hue">
+  <div class="pick-foot">
+    <!-- The answer, at the size it will be read at. Empty and decorative: what
+         it shows is the colour the two controls above are already showing. -->
+    <span id="pick-well" aria-hidden="true"></span>
+    <input id="pick-hex" type="text" spellcheck="false" autocomplete="off"
+           autocapitalize="off" maxlength="7" aria-label="Hex colour">
+  </div>
+  <div class="ask-row">
+    <span class="ask-gap"></span>
+    <button type="button" id="pick-cancel"></button>
+    <button type="button" id="pick-go"></button>
   </div>
 </dialog>
 

@@ -24,7 +24,7 @@ import {
   setBoardMode as selectBoardMode,
   restoreTitleCard, resetTitlePosition,
   addConnections, clearConnections, isFurniture, isRider,
-  addItems, baseStep, isFence, fenceBox, nextFenceName,
+  addItems, baseStep, isFence, fenceAt, fenceBox, fenceFollowers, fenceOf, nextFenceName,
 } from './state.js';
 import { itemBounds, MAX_SIZE, MIN_SIZE } from './geometry.js';
 import { editItemName } from './canvas/items.js';
@@ -37,6 +37,7 @@ import { isTurning, rotateModel } from './canvas/model.js';
 import { pickFiles, pickCover, addNote, addSwatch, addLink } from './import/drop.js';
 import { linkURL, SWATCH_DEFAULT } from './canvas/renderers.js';
 import { ask } from './ui/dialog.js';
+import { pickColor } from './ui/color-picker.js';
 import { exportBoard, openBoard, newBoard } from './storage/storage.js';
 import { getAsset } from './storage/assets.js';
 import { close as closeSidebar } from './ui/sidebar.js';
@@ -124,6 +125,35 @@ function showConnections() {
 const fenced = () => board.items.filter(i => selection.has(i.id) && !isFurniture(i));
 
 /**
+ * The one region these items are all already in, or null.
+ *
+ * A band drawn inside a fence is the ordinary way to get at some of what is in
+ * it - pick out four of the twelve and move them - and the offer has no business
+ * appearing over that. The grouping it proposes is one the board already has:
+ * every card it would enclose is enclosed now, by a region drawn round them for
+ * that very reason, so accepting would draw a second boundary exactly where the
+ * first one already is. And the cost of asking is not nothing, because the button
+ * lands beside the pointer, which is where the hand is about to reach for the
+ * cards it just selected.
+ *
+ * Only when they *share* one. Cards caught from two different regions, or some
+ * loose and some not, are a grouping the board does not have yet, so the offer
+ * stands - as it does when the band swallowed the fence itself (a region drawn
+ * round a region is a real thing to want, and the fence is then one of the caught
+ * items, whose own fence is not it).
+ *
+ * What this gives up is making a *nested* region by banding part of one, and that
+ * is the trade: it is much the rarer gesture, and it keeps its other way in - the
+ * group menu's Fence these, which asks in so many words rather than by guessing
+ * from a rectangle. Suppressing an offer is not removing a command.
+ */
+export function sharedFence(items) {
+  if (!items.length) return null;
+  const first = fenceOf(items[0]);
+  return first && items.every(it => fenceOf(it)?.id === first.id) ? first : null;
+}
+
+/**
  * Desktop only, because membership is measured on Desktop geometry and nowhere
  * else (see fences.js). A fence made on a phone would have Mobile geometry, no
  * Desktop record to measure against, and no way to acquire one - it would open
@@ -159,9 +189,18 @@ function fenceable() {
  * Escape keeps it. An unnamed fence is a box; the name is the whole reason to
  * draw one, and asking for it later means never.
  */
+/**
+ * The rectangle a fence would take right now, from a drawn band or without one.
+ *
+ * Named because two callers need the same answer and one of them is only
+ * looking: the offer draws this faintly where the fence would land, and drawing
+ * anything else there would be a promise the accept does not keep.
+ */
+const wouldFence = rect => fenceBox(rect, itemBounds(fenced()), baseStep());
+
 function drawFence(rect) {
   const inside = fenced();
-  const box = fenceBox(rect, itemBounds(inside), baseStep());
+  const box = wouldFence(rect);
   if (!box) return;
   // An item is bounded to MAX_SIZE like everything else, and makeItem() clamps
   // silently. A fence clamped down is the one shape whose clamping changes what
@@ -232,12 +271,12 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
     // one - but arriving grey and waiting to be told meant every swatch was two
     // actions, and SWATCH_DEFAULT is what the picker opens on rather than what
     // the board gets.
+    //
+    // Asked through pickColor() rather than ask(), which is the difference
+    // between choosing the colour in this app and choosing it in a system panel
+    // drawn over it. See the head of ui/color-picker.js.
     addSwatch: async () => {
-      const picked = await ask({
-        title: 'Add a colour',
-        go: 'Add',
-        field: { type: 'color', value: SWATCH_DEFAULT },
-      });
+      const picked = await pickColor({ title: 'Add a colour', go: 'Add', value: SWATCH_DEFAULT });
       if (!picked) return;
       addSwatch(vp.toWorld(vp.left + vp.cx, vp.top + vp.cy), picked);
     },
@@ -368,12 +407,20 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
      * size, since a band flicked across empty board is how the selection gets
      * cleared and an offer after every one of those would be an interruption.
      * With something caught there is no floor: the contents set the size.
+     *
+     * And nothing at all when the band only picked out part of a region that
+     * already exists - see sharedFence(). Note where that test sits: after the
+     * empty-band case, so a rectangle drawn on a fence's bare face still offers
+     * the nested region it is plainly asking for, and only a band that *caught
+     * cards* is read as reaching into one.
      */
     fencePrompt: (x, y, rect) => {
       if (board.layoutMode === 'mobile') return;
-      const count = fenced().length;
+      const inside = fenced();
+      const count = inside.length;
       if (!count && (rect.x1 - rect.x0 < MIN_SIZE || rect.y1 - rect.y0 < MIN_SIZE)) return;
-      openFencePrompt(x, y, count, () => {
+      if (sharedFence(inside)) return;
+      openFencePrompt(x, y, count, wouldFence(rect), () => {
         if (fenceable()) drawFence(rect);
       });
     },
@@ -391,6 +438,49 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
     // it - that card is built under canvas/, which cannot import ui/appearance.js.
     setWhimsy: level => setWhimsy(level),
     rearrangeSelection: () => rearrange(board.items.filter(i => selection.has(i.id))),
+
+    /**
+     * The smallest region a world point is inside, or null. The menu's question,
+     * asked once when it opens: a right-click inside a region should offer to
+     * arrange *that*, not the board it is drawn on.
+     */
+    fenceUnder: at => (board.layoutMode === 'mobile' ? null : fenceAt(at.x, at.y)?.id ?? null),
+
+    /** Is this item a region? The menu's other way in - by its name plate. */
+    isFenceItem: id => isFence(byId(id)),
+
+    /**
+     * Lay one region's contents out again, in masonry, and close it around them.
+     *
+     * Masonry whatever the board is set to, and that is a claim about what a
+     * region is for. The board's arrangement is a statement about the board -
+     * a spiral, a ring, cards thrown down - and it is chosen for the shape of the
+     * *whole*. A region is a shelf: what you want inside one is everything
+     * visible at once with nothing wasted between, which is the one thing masonry
+     * is better at than any of the others. It is also the only layout here that
+     * reads as filling a rectangle rather than as occupying a space.
+     *
+     * The whole subtree rather than the direct members, because a nested region
+     * has to arrive with its own cards - fenceFollowers() is that set, and
+     * rearrange() then lays out only what the outer region holds directly and
+     * carries the rest (see its `carried`).
+     */
+    rearrangeFence: id => {
+      const fence = byId(id);
+      if (!isFence(fence)) return;
+      if (!fenceable()) return;
+      const inside = fenceFollowers([id]).map(byId).filter(Boolean);
+      if (inside.filter(i => !isRider(i)).length < 2) {
+        toast('Put two or more cards in it first');
+        return;
+      }
+      rearrange(inside, {
+        name: 'masonry',
+        center: { x: fence.x, y: fence.y },
+        enclose: id,
+        label: 'Rearrange fence',
+      });
+    },
     // The Desktop title card's pen: opens the same style panel the Mobile masthead
     // uses. Routed through cmds so canvas/input.js (which has no business importing
     // a ui/ module) can trigger it off the pen hit.

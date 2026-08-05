@@ -12,7 +12,7 @@
 // Written out in full rather than composed from PREFIX, because save.bat bumps
 // this line by regex on every commit and would not recognise an expression.
 // tests/sw.test.js holds the two together.
-const VERSION = 'mbrd-v122';
+const VERSION = 'mbrd-v123';
 const PREFIX = 'mbrd-';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) turns the
@@ -38,6 +38,12 @@ const SHELL = [
   './assets/css/overlays.css',
   './assets/css/mobile.css',
   './assets/css/quality.css',
+  // Every icon in the app, in one sprite. Referenced by <use> from index.html
+  // and built into the right-click menu by ui/menu.js, so a board opened offline
+  // without it is a board of blank buttons - it belongs in the shell as much as
+  // a stylesheet does. Unlike the two below, this one is never an installed app
+  // icon; it is chrome.
+  './assets/icons.svg',
   './assets/img/icon.svg',
   './assets/img/icon-maskable.svg',
   // The same two icons as bitmaps, because not every place an installed icon
@@ -56,6 +62,14 @@ const SHELL = [
   // decoration that can fail to no-op: without it the board loses its tooth
   // offline and the paper reads a shade lighter than it does online.
   './assets/img/paper-grain.webp',
+  // And the stock a *region* is on at the softish end of the whimsy axis, where
+  // a fence is a cork board. Same bargain as the grain above, with one
+  // difference that makes it matter more: without this a fence offline falls
+  // back to --cork, the mean of that tile, so it is a flat brown rectangle
+  // rather than a slightly smoother one. The failure shows at every zoom instead
+  // of only up close. (No apostrophes in here - tests/sw.test.js reads this list
+  // by pairing quotes, so one in a comment shifts every entry after it.)
+  './assets/img/cork-board.webp',
   // The two faces on the credits sheet. Committed rather than fetched from
   // GitHub - see the note above the dialog in index.html - which is exactly why
   // they belong in here: a file this app ships is a file this app caches.
@@ -123,6 +137,7 @@ const SHELL = [
   './assets/js/ui/appearance.js',
   './assets/js/ui/appearance-controls.js',
   './assets/js/ui/dialog.js',
+  './assets/js/ui/color-picker.js',
   './assets/js/ui/credits.js',
   './assets/js/ui/fonts.js',
   './assets/js/ui/mobile-header.js',

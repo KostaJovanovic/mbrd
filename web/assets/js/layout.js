@@ -36,8 +36,8 @@ import {
   MOBILE_MIN_ROWS, MOBILE_BOTTOM_ROWS, mobileColumnCount,
   cloneSettings, layoutSettingsOf, settingsFor, defaultLayoutSettings,
 } from './board-model.js';
-import { isRider, attachRiders, stuckPlacement, restick } from './sticky.js';
-import { isFence, refence, refenceAround, mobileRuns } from './fences.js';
+import { isRider, attachRiders, stuckPlacement, restick, stuckFollowers } from './sticky.js';
+import { isFence, refence, refenceAround, mobileRuns, fenceFollowers } from './fences.js';
 
 /** A geometry snapshot entry as a plain rectangle, for the containment tests. */
 const boxOf = g => ({ x: g.x, y: g.y, w: g.w, h: g.h, rot: g.rot || 0 });
@@ -656,6 +656,40 @@ export function setBoardMode(mode) {
   bus.emit('layout', mode);
   bus.emit('settings', 'profile');
   return true;
+}
+
+/**
+ * Everything that travels when these ids do: the ids themselves, whatever is
+ * stuck to them, and whatever they fence.
+ *
+ * To a fixed point, and it has to be. A note stuck to a card inside a fence
+ * travels with the fence, and neither relation can see that on its own - asking
+ * one after the other in either order stops a step short of it. So both are
+ * asked until the set stops growing. Two passes settle every real board, and the
+ * loop is bounded by the item count because each pass either adds somebody or
+ * ends it.
+ *
+ * Both halves already leave out anything they are handed, which is what keeps a
+ * marquee from moving a card once as a selection and again as a follower.
+ *
+ * Here rather than in canvas/input.js, where it was written and where the drag
+ * that needed it lives, because it turned out not to be a fact about gestures:
+ * it is the set a geometry write acts on, which is this module's subject, and
+ * canvas/items.js needs the same set to lift a region and its cards together on
+ * hover. A copy in the renderer would have been the two relations meeting in a
+ * third place, and one of the two was already stale by then.
+ */
+export function travelling(ids) {
+  const out = [...ids];
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const id of [...stuckFollowers(out), ...fenceFollowers(out)]) {
+      if (out.includes(id)) continue;
+      out.push(id);
+      grew = true;
+    }
+  }
+  return out;
 }
 
 /** Geometry snapshot for a set of ids - the before/after pair of a drag. */

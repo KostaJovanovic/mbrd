@@ -22,13 +22,17 @@ test('board item shadows are mirrored into one layer below every item', async ()
   assert.match(items, /if \(shadow && item\) placeBox\(shadow,\s*item\)/);
 });
 
-test('a fence paints no sheet over the layer its own cards cast onto', async () => {
-  // The shadow layer sits under every item, so an item with a background paints
-  // over every shadow it covers. Every card wants that - it is a sheet of paper.
-  // A fence is a boundary, and left with the default it laid an opaque page
-  // across its whole area: the grid, the grain and every shadow inside it went
-  // out, and the cards in a region looked flat on the page instead of on it.
+test('the fence band is sunk below the underlay its cards cast onto', async () => {
+  // A fence has a face like any other item (.item carries the paper), and the
+  // shadow underlay is below the item layer so that no card casts across another
+  // - so a fence left in the item stack painted out the shadow of every card
+  // inside it, and the region read as a page with its cards printed flat on it.
+  // Ground goes under the shadows. Both underlays refuse the pointer, which is
+  // what makes passing beneath them free.
+  const items = await readFile(new URL('web/assets/js/canvas/items.js', root), 'utf8');
   const css = appCss();
-  assert.match(css, /\.item\s*\{[^}]*background:\s*var\(--item-bg\);/s);
-  assert.match(css, /\.item\[data-type="fence"\]\s*\{\s*background:\s*none;\s*\}/);
+  assert.match(css, /#web\s*\{[^}]*pointer-events:\s*none;/s);
+  assert.match(css, /#item-shadows\s*\{[^}]*pointer-events:\s*none;/s);
+  assert.match(items, /const UNDERLAY_Z = -2;/);
+  assert.match(items, /index < fences \? index - fences \+ UNDERLAY_Z : index/);
 });

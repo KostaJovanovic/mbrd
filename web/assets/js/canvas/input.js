@@ -22,7 +22,7 @@ import { clamp } from '../util.js';
 import {
   board, byId, selection, select, deselect, clearSelection, topZ, stackOrder,
   snapshotGeom, applyGeom, commitGeom, bus, stuckFollowers, stuckPlacement, wouldStick,
-  fenceFollowers, isFence, fenceMembers,
+  travelling, isFence,
   copyItems, cutItems, pasteItems, clipboardSize, clipboardBounds, clipboardHasOurs,
   baseStep,
 } from '../state.js';
@@ -63,33 +63,6 @@ export function isDoubleTap(previous, current) {
 /** A selected item is the only item a drag may move. */
 export function needsSelectionBeforeMove(selected, id) {
   return !selected.has(id);
-}
-
-/**
- * Everything that travels when these ids do: the ids themselves, whatever is
- * stuck to them, and whatever they fence.
- *
- * To a fixed point, and it has to be. A note stuck to a card inside a fence
- * travels with the fence, and neither relation can see that on its own - asking
- * one after the other in either order stops a step short of it. So both are
- * asked until the set stops growing. Two passes settle every real board, and the
- * loop is bounded by the item count because each pass either adds somebody or
- * ends it.
- *
- * Both halves already leave out anything they are handed, which is what keeps a
- * marquee from moving a card once as a selection and again as a follower.
- */
-function travelling(ids) {
-  const out = [...ids];
-  for (let grew = true; grew;) {
-    grew = false;
-    for (const id of [...stuckFollowers(out), ...fenceFollowers(out)]) {
-      if (out.includes(id)) continue;
-      out.push(id);
-      grew = true;
-    }
-  }
-  return out;
 }
 
 /**
@@ -148,75 +121,44 @@ export function marqueeHit(it, x0, y0, x1, y1) {
 }
 
 /**
- * Where a member sits relative to its fence's centre, and how much room it takes,
- * both in the fence's own frame: `{ x, y, hw, hh }`.
+ * The smallest a fence may be dragged while its contents still *fit* inside it -
+ * `{ w, h }`, or zeroes when it holds nothing.
  *
- * Un-rotated the way pointInItem() un-rotates, and that is the point: membership
- * is decided in the fence's frame, so a floor built to keep membership has to be
- * measured in the same one. Read in world axes, a member of a turned fence has an
- * offset the fence's own width and height say nothing about - and on the axis a
- * corner drag does not touch, that offset can exceed the side it is compared
- * against, which floors a resize open at a size nobody asked for.
+ * The carry is what makes this a different sum from the floor it replaces. Every
+ * card in a region keeps its fraction of the box (stuckPlacement), so no card can
+ * be left outside by a moving edge - but a card is a box and not a point, and its
+ * size does not shrink with the region. Past a certain width the cards are still
+ * at the right fractions and hanging over the border anyway, which is the same
+ * "a region that visibly does not hold its contents" the old floor was for, and
+ * the reason one is still needed at all.
  *
- * The half-extents come along because the floor is drawn at the card's edge and
- * not at its centre (see holdFloor). They are the card's own box seen from the
- * fence, so a card turned 10 degrees inside a fence turned 10 degrees is square
- * to it and asks for no more room than it takes.
+ * `holds` are `{ fx, fy, hw, hh }`: the fraction of the box each card sits at,
+ * frozen at grip time, and its half-extents, which do not change. A card at
+ * fraction fx has its far edge at `w * |fx| + hw`, and that has to stay inside
+ * `w / 2` - so `w >= hw / (0.5 - |fx|)`, and the binding card is whichever asks
+ * for the most. No corner arithmetic anywhere: the fraction is preserved whatever
+ * edge is dragged, so the floor is a fact about the box's size alone.
  *
- * A no-op on the ordinary board, where nothing is turned.
+ * Capped at the size the drag started from, and for the same reason as before: a
+ * card can already be hanging out of a fence - it joined by its centre, and
+ * nothing has had to move it since - and an uncapped floor would then be larger
+ * than the fence, so touching a grip would snap the region open to swallow it. A
+ * card at or past the halfway fraction can never fit, and the cap is what turns
+ * that from an infinity into "this one will not shrink".
  */
-export function holdOffset(item, fence) {
-  const dx = item.x - fence.x, dy = item.y - fence.y;
-  const rot = fence.rot || 0;
-  const { hw, hh } = rotatedExtents({ w: item.w, h: item.h, rot: (item.rot || 0) - rot });
-  if (!rot) return { x: dx, y: dy, hw, hh };
-  const rad = rot * Math.PI / 180;
-  const c = Math.cos(rad), s = Math.sin(rad);
-  return { x: c * dx + s * dy, y: c * dy - s * dx, hw, hh };
-}
-
-/**
- * The smallest width and height a resize may reach while still holding every
- * card in `holds` - centre offsets and half-extents from the *starting* box.
- *
- * Drawn at the cards' **edges**, not at their centres. Membership is decided by
- * the centre, so the centre is where the floor was first put - and the result was
- * a border sliced through the middle of the very cards it was holding, which
- * reads as a region that has lost them however the memo answers. What a fence
- * means is visible or it means nothing: it has to stop where its contents stop.
- *
- * Capped at the size the drag started from, and that cap is what makes the edge
- * rule safe. A card can perfectly well be sticking out of a fence already - it
- * joined by its centre, it may have been left half over the border, an import may
- * have put it there - and an uncapped edge floor would then be *larger* than the
- * fence, so touching a grip would snap the region open to swallow it. Capped, the
- * worst case is a fence that will not shrink on that axis, which is a grip that
- * does nothing rather than a grip that does something nobody asked for. It can
- * never hold a fence open wider than it already was.
- *
- * The opposite edge stays put through a resize, which is what makes each axis one
- * line of arithmetic. Dragging the east edge fixes the west one, so the width has
- * to reach from there to the furthest edge; dragging a corner's other axis not at
- * all (sign 0) grows the box about its centre, so it has to reach twice the
- * furthest side. Zero when nothing is held, which floors nothing.
- */
-export function holdFloor(box, corner, holds) {
+export function carryFloor(box, holds) {
   if (!holds?.length) return { w: 0, h: 0 };
-  const axis = (sign, side, at, half) => {
-    const lo = Math.min(...holds.map(p => at(p) - half(p)));
-    const hi = Math.max(...holds.map(p => at(p) + half(p)));
-    const want = sign > 0 ? hi + side / 2
-      : sign < 0 ? side / 2 - lo
-      : 2 * Math.max(hi, -lo);
-    return Math.min(side, Math.max(0, want));
+  const axis = (side, at, half) => {
+    let want = 0;
+    for (const p of holds) {
+      const room = 0.5 - Math.abs(at(p));
+      want = Math.max(want, room > 0 ? half(p) / room : Infinity);
+    }
+    return Math.min(side, want);
   };
   return {
-    w: axis(corner.includes('e') ? 1 : corner.includes('w') ? -1 : 0,
-      box.w, p => p.x, p => p.hw || 0),
-    // 'n' is the +y side of the item, because world y points up - the same
-    // reading the resize itself takes.
-    h: axis(corner.includes('n') ? 1 : corner.includes('s') ? -1 : 0,
-      box.h, p => p.y, p => p.hh || 0),
+    w: axis(box.w, p => p.fx, p => p.hw),
+    h: axis(box.h, p => p.fy, p => p.hh),
   };
 }
 
@@ -770,7 +712,7 @@ export function initInput(vp, cmds) {
     // recomputing it per frame would let notes latch on and fall off as the drag
     // swept the selection across other items, so the group you picked up would
     // not be the group you put down. What is stuck when you take hold is what
-    // travels. See travelling(), which is where the fixed point is worked out.
+    // travels. See travelling() in layout.js, where the fixed point is worked out.
     const moving = travelling(selection);
     // Snapshotted here, before anything is touched, so the raise below rides
     // along in the same undo entry as the move it belongs to.
@@ -853,11 +795,34 @@ export function initInput(vp, cmds) {
     // fractional spot on the card (stuckPlacement, per frame below), so the edge
     // that moves takes the note with it and it stays on the card.
     //
+    // A fence carries what is inside it on exactly the same terms, and it is the
+    // same sentence one relation over: a card is *in* a region the way a sticky is
+    // *on* a card, so pulling a region in gathers its cards and pushing it out
+    // spreads them. What it replaces is a floor that stopped the drag when the
+    // rectangle reached its contents - which was the honest answer while the
+    // contents stood still, and is no answer at all once they move, because
+    // nothing can be left behind by an edge that brings it along.
+    //
+    // travelling() rather than the members alone, because a note stuck to a card
+    // inside the region has to come too and neither relation can see that on its
+    // own. It is the same set a *move* of this fence would carry, which is the
+    // point: growing and dragging a region should not disagree about what is in
+    // it. Fractional placement moves a nested fence without resizing it, so a
+    // nested region's own cards spread further than it does and some may be
+    // re-measured out of it on release - the honest cost of not scaling a whole
+    // subtree, and the release re-measures anyway.
+    //
+    // Desktop only. On Mobile a band is one row of a packed column and its cards
+    // are underneath rather than inside it, so there is no fraction of it for
+    // them to hold - the same rule commitGeom() states about membership there.
+    //
     // Snapshotted into `before` so one undo puts the whole group back, but
     // deliberately left out of `driven`: a note that kept its place on the card
     // has not changed what it is stuck to, so it must not be re-measured on
     // release - the same reasoning startMove() gives for a towed follower.
-    const riders = stuckFollowers([id]);
+    const riders = isFence(it) && board.layoutMode !== 'mobile'
+      ? travelling([id]).filter(rid => rid !== id)
+      : stuckFollowers([id]);
     const followers = riders.map(rid => {
       const r = byId(rid);
       return { id: rid, box: { x: r.x, y: r.y, w: r.w, h: r.h, rot: r.rot, z: r.z } };
@@ -873,19 +838,24 @@ export function initInput(vp, cmds) {
       driven: [id],
       start: vp.toWorld(origin?.x ?? e.clientX, origin?.y ?? e.clientY),
       box: { x: it.x, y: it.y, w: it.w, h: it.h },
-      // Where this fence's cards sit relative to its centre, frozen for the
-      // length of the grip. What holds the rectangle open - see holdFloor() and
-      // the floor it feeds, below. Null for everything else, which is the test
-      // the per-frame code makes rather than asking the type again.
+      // What the region has to stay big enough to hold: where each card sits as
+      // a fraction of it, and how much room that card takes. Frozen with the
+      // grip, like everything else here, so a drag that grows past a card and
+      // comes back is not held open by something it has not formally picked up -
+      // membership is not re-measured until the release. See carryFloor().
       //
-      // Desktop only, and the same rule commitGeom() states: membership is a
-      // Desktop fact, and on Mobile the offsets read here are not the ones it was
-      // measured from. A band's cards are packed *underneath* it there, hundreds
-      // of units down, so a floor taken from those offsets was not a floor at all
-      // - it stretched the band over its whole run the moment a grip moved. There
-      // is nothing to hold open in any case: a Mobile resize re-parents nothing.
+      // Only the fence's own carry has one. A card being resized under its stuck
+      // notes has never had a floor and does not want one: a sticky hanging over
+      // the edge of a photograph is a sticky, not a mistake.
       holds: isFence(it) && board.layoutMode !== 'mobile'
-        ? fenceMembers(id).map(m => holdOffset(m, it))
+        ? followers.map(f => {
+          const { hw, hh } = rotatedExtents(f.box);
+          return {
+            fx: (f.box.x - it.x) / (it.w || 1),
+            fy: (f.box.y - it.y) / (it.h || 1),
+            hw, hh,
+          };
+        })
         : null,
       // Nothing is aspect-locked by default any more, media included. A corner
       // used to hold a photograph's proportion and let shift free it, on the
@@ -1331,22 +1301,15 @@ export function initInput(vp, cmds) {
           h = lattice.h;
         }
       }
-      // A fence may not be dragged smaller than the cards it holds. Growing one
-      // out over three more is how you say "and these too"; pulling it back in
-      // over its own contents used to be how you said the opposite, and it was
-      // the wrong gesture for it - a corner dragged in a little too far dropped
-      // cards silently, and the only sign was a region that had quietly stopped
-      // owning half of itself. Letting a card go is now the card's own gesture:
-      // drag it out, which has always worked and cannot be done by accident.
-      //
-      // Measured against where the members were when the grip was taken, not
-      // where they are now, so a drag that grows past a card and then comes back
-      // is not held open by something it picked up on the way out - nothing has
-      // joined yet, since membership is not re-measured until the release.
+      // A fence may not be dragged smaller than what it is carrying. The cards
+      // keep their fractions whatever happens here, so this is not about losing
+      // one - it is about a region drawn too small to hold what is standing in
+      // it, whose cards would hang over the border while the memo still called
+      // them members. See carryFloor(), which is the whole of the arithmetic.
       if (g.holds) {
-        const hold = holdFloor(g.box, g.corner, g.holds);
-        w = Math.max(w, hold.w);
-        h = Math.max(h, hold.h);
+        const floor = carryFloor(g.box, g.holds);
+        w = Math.max(w, floor.w);
+        h = Math.max(h, floor.h);
       }
       // A note may not be dragged smaller than its own text. The floor is
       // measured at the width being proposed, not the one on screen, because
