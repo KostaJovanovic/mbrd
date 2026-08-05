@@ -167,11 +167,21 @@ export function paintGrain(vp) {
   // The fade first, and unconditionally: it is the one write that still has to
   // happen on the frame the grain goes away, and the early return below depends
   // on it having happened.
+  //
+  // On the root rather than on the surface, which is the one write here that is
+  // not about this layer. The other two are screen-space numbers and belong to
+  // whichever layer is wearing them; the fade is a fact about the zoom, and
+  // anything else that carries this stock has to fade with it or be the only
+  // texture left on a board that has given its own up. A fence's face is that
+  // anything else (see .fence-card::after), and it is inside #viewport while
+  // this layer is deliberately outside it - so the surface is the one place the
+  // two cannot both read. Both surfaces descend from the root and inherit it, so
+  // nothing here changes for them.
   const fade = fadeFor(vp.zoom);
   const f = fade.toFixed(3);
   if (f !== lastFade) {
     lastFade = f;
-    surface.style.setProperty('--grain-fade', f);
+    document.documentElement.style.setProperty('--grain-fade', f);
   }
   // Faded out, so there is nothing to place. Skipping this is the point of the
   // band as much as the look is: below 30% the tile is at its smallest and a

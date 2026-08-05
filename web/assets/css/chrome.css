@@ -70,7 +70,12 @@
    the other way: everything to its left does something, and it decides whether
    they can. Three groups in one pill - zoom, view, and the switch over both. */
 #zoom-lock { border-left-width: 3px; border-left-style: double; }
-/* Only one shackle is ever drawn. */
+/* Only one padlock is ever drawn.
+   Two whole icons rather than two shapes inside one, because these selectors
+   have to be able to reach what they hide. The drawings now come from
+   assets/icons.svg through <use>, which renders them into a shadow tree no rule
+   here can select into; the wrappers are still ordinary elements in this
+   document, so the switch moved out to them. See the note in index.html. */
 #zoom-lock .lock-shut, #zoom-lock[aria-pressed="true"] .lock-open { display: none; }
 #zoom-lock[aria-pressed="true"] .lock-shut { display: inline; }
 /* Pressed is a state and not a hover, so it is the ink that carries it rather
@@ -79,7 +84,11 @@
    No fill behind it - the row is one pill on glass, and a filled segment in the
    middle of it reads as a second object. */
 #zoom-lock[aria-pressed="true"] { color: var(--accent-deep); }
-#zoom-lock[aria-pressed="true"] .lock-body { fill: color-mix(in srgb, var(--accent) 18%, transparent); }
+/* The wash inside the shut padlock's body is drawn into i-lock-shut itself,
+   as currentColor at 18% - for the same reason as the rule above it, and it
+   costs nothing to say there: that symbol is only ever on screen while the
+   button is pressed, and pressed is the line above, so the colour it mixes
+   into is the accent either way. */
 
 /* ---------------------------------------------------------
    The toolbar (ui/toolbar.js)

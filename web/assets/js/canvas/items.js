@@ -8,7 +8,7 @@
 // holding one costs whatever it had decoded. See disposable() and discard().
 
 import {
-  board, byId, selection, bus, renameItem, visualStackOrder, stuckFollowers,
+  board, byId, selection, bus, renameItem, visualStackOrder, travelling, isFence,
 } from '../state.js';
 import { shuffle } from '../util.js';
 import { quality } from '../quality.js';
@@ -37,10 +37,24 @@ let vp = null;
 /**
  * The set of ids currently carrying the hover lift.
  *
- * A hover raises the item and everything stuck on top of it - a photo lifts
- * its stickies with it, so the pile reads as one object - but never its host,
- * so pointing at one note in a stack lifts that note and its own riders while
- * the card beneath stays put. stuckFollowers() is exactly that upward set.
+ * The group that lifts is the group that travels: a hover raises the item and
+ * everything that a drag of it would carry - the stickies on a photo, the cards
+ * in a fence - so what answers the pointer is the object you would pick up.
+ * travelling() is exactly that set, and using it rather than a second reading of
+ * the same two relations is what keeps the lift and the drag from ever
+ * disagreeing about where one object stops.
+ *
+ * It goes one way, which is the whole of the rule. Both halves of travelling()
+ * are downward - to riders, never to a host, and to contents, never to the fence
+ * around them - so pointing at one note in a stack lifts that note and its own
+ * riders while the card beneath stays put, and pointing at a card inside a
+ * region lifts the card and leaves the region where it is. Only the region
+ * itself raises the region.
+ *
+ * The pointer never reaches a fence's face (it refuses events, see items.css),
+ * so in practice this fires from the name plate: a hand on the label lifts the
+ * area it names, which is the one gesture that says what a fence holds without
+ * moving anything.
  */
 let lastHoverId = null;
 let hoverGroup = new Set();
@@ -51,7 +65,7 @@ function setHoverLift(id, on) {
 function setHoverGroup(id) {
   if (id === lastHoverId) return;
   lastHoverId = id;
-  const next = new Set(id ? [id, ...stuckFollowers([id])] : []);
+  const next = new Set(id ? travelling([id]) : []);
   for (const gid of hoverGroup) if (!next.has(gid)) setHoverLift(gid, false);
   for (const gid of next) if (!hoverGroup.has(gid)) setHoverLift(gid, true);
   hoverGroup = next;
@@ -636,6 +650,29 @@ export function ensureMounted(id) {
   return el;
 }
 
+/**
+ * How tall this item's caption plate is, in world units. Zero if it has none.
+ *
+ * Read off the node rather than worked out, because the number is the
+ * stylesheet's: a fence's name is set at `clamp(10.5px, 2.8cqi, 30.8px)` of the
+ * region's own width, plus padding in em, so anything here that computed it
+ * would be a second copy of that clamp to keep in step. `offsetHeight` is
+ * measured before the world transform, so what comes back is already in world
+ * units - the same reading canvas/notes.js takes for a note's text.
+ *
+ * Mounted first, since a plate that is not in the document has no height and
+ * "not on screen" is not an answer to this question.
+ *
+ * The caller is the region-closing half of rearrange(): a fence's plate sits
+ * across the top of its box, so a layout packed to the box's top edge puts its
+ * first row *under the name*. This is how much room to leave it.
+ */
+export function barHeight(id) {
+  const el = ensureMounted(id);
+  const bar = el?.querySelector(':scope > .item-bar');
+  return bar ? bar.offsetHeight : 0;
+}
+
 function build(item) {
   const el = document.createElement('div');
   el.className = 'item';
@@ -661,7 +698,18 @@ function build(item) {
   // How far off square this one rests, as a fraction of whatever the whimsy
   // axis currently allows (--tilt-max). Presentational, so it stays out of
   // item.rot and the geometry model - see tiltFactor().
-  const tilt = tiltFactor().toFixed(3);
+  //
+  // A fence hangs straight, and it is the one type that has to. A lean is a
+  // *card* pinned up by hand and slightly off square; a region is a line drawn
+  // on the board, and a drawn line does not arrive crooked. The tilt also costs
+  // more the larger the box, since it turns about the centre: at a few hundred
+  // units a corner moves a hair, and across two thousand it moves far enough
+  // that the region visibly disagrees with the cards inside it - which do not
+  // turn with it, because a lean is per item and theirs are their own. It does
+  // not draw from the bag either, rather than drawing and throwing the number
+  // away: the one-in-three-hangs-straight split is a property of the pack, and
+  // a region taking a slot out of it would bend that split for the cards.
+  const tilt = isFence(item) ? '0' : tiltFactor().toFixed(3);
   el.style.setProperty('--item-tilt', tilt);
 
   const body = document.createElement('div');
@@ -1093,8 +1141,33 @@ function placeBox(el, item) {
  */
 let stackIndex = new Map();
 
+// The two underlays inside #world, from canvas.css: #item-shadows at -1 and #web
+// at -2. Named here because the fence band has to be sunk past both of them, and
+// a bare -3 in the arithmetic below would be a number nobody could check.
+const UNDERLAY_Z = -2;
+
 function paintStack() {
-  stackIndex = new Map(visualStackOrder().map((id, index) => [id, index]));
+  const order = visualStackOrder();
+  // Every fence goes *below the shadow underlay*, not merely below every card.
+  //
+  // A fence is ground: it has a face, and the cards standing on it cast onto it,
+  // which is the one thing a shared shadow layer cannot express while the ground
+  // is in the same layer as the things standing on it. Left in the item stack, a
+  // fence's paper covered the shadow of every card inside it - the region read as
+  // a page with the cards printed flat on it rather than lying on it.
+  //
+  // Both underlays take no pointer (canvas.css says so for each), so passing
+  // beneath them costs a fence nothing: its name plate is as pressable at -3 as
+  // it was at 0. The band is contiguous and comes first out of
+  // visualStackOrder(), so its size is where the first non-fence starts, and the
+  // slice keeps its own order - largest region furthest back.
+  // The frontmost fence lands exactly one below the lowest underlay and the rest
+  // count down from it, so a board with no fences is written the same numbers it
+  // always was.
+  const band = order.findIndex(id => !isFence(byId(id)));
+  const fences = band < 0 ? order.length : band;
+  stackIndex = new Map(order.map((id, index) =>
+    [id, index < fences ? index - fences + UNDERLAY_Z : index]));
   for (const [id, el] of nodes) el.style.zIndex = stackIndex.get(id) ?? 0;
 }
 

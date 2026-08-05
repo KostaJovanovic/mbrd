@@ -1,0 +1,365 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+<!--
+  Every icon in the app, drawn once.
+
+  It used to be that each drawing lived where it was used: twenty-four inline
+  <svg> blocks in index.html, three of which were the same close cross and two
+  the same pen, each a few characters different from its twin because they had
+  been edited at different times. Nothing enforced the likeness, so there was
+  none - stroke-width ran from 1.3 to 1.7 and half the set set a linejoin the
+  other half did not. A set of icons is a set only if something makes it one.
+
+  So: one file, one spec, referenced from everywhere.
+
+    <svg class="ico"><use href="assets/icons.svg#i-note"/></svg>
+
+  An external <use> is the whole point and also the whole constraint, and both
+  come from the same fact - the referenced symbol renders in a shadow tree.
+
+    - It inherits. `fill`, `stroke`, `stroke-width`, `currentColor` and custom
+      properties all cross the boundary, which is why the spec below can live in
+      one CSS rule (.ico in base.css) rather than on forty symbols.
+    - It cannot be selected. No stylesheet in the page can write a rule that
+      matches a shape *inside* one of these symbols. Anything whose insides are
+      addressed from outside cannot live here - see #origin-mark, whose three
+      rings are chosen by whimsy tier in quality.css, and which stays inline in
+      index.html for exactly that reason. The zoom lock had the same problem and
+      was solved the other way: two symbols, and chrome.css swaps which *wrapper*
+      is shown, since the wrapper is an ordinary element in the page.
+
+  The spec every symbol is drawn to, and the reason each is in CSS and not
+  repeated here: a 16x16 box, fill none, stroke currentColor, width 1.5, round
+  caps and joins. A shape that is deliberately filled says so on itself - a
+  presentation attribute on the element beats a property inherited from an
+  ancestor, so `fill="currentColor"` inside a symbol survives `.ico { fill: none }`
+  and does not need to fight it.
+
+  Two near-duplicates are deliberate. i-plus and i-zoom-in are both a cross: the
+  first is the toolbar's, whose arms run nearly the full box, and the second the
+  zoom pill's, which is set against a monospace readout and is smaller on purpose.
+  Merging them would move one of the two surfaces people look at most.
+
+  Adding one: draw it here, then reference it. tests/icons.test.js checks that
+  every reference resolves and that nothing here is unreferenced, so a typo'd id
+  fails the run rather than leaving a silent 16px hole. New file? web/sw.js
+  precaches this by name.
+-->
+
+<!-- ═════ Chrome: the drawings that were already in index.html ═════ -->
+
+<symbol id="i-close" viewBox="0 0 16 16">
+  <path d="M4 4l8 8M12 4l-8 8"/>
+</symbol>
+
+<!-- The toolbar's cross. Also the phone drawer's "Add" and the menu's Add
+     files: one action, one face. -->
+<symbol id="i-plus" viewBox="0 0 16 16">
+  <path d="M8 3.2v9.6M3.2 8h9.6"/>
+</symbol>
+
+<symbol id="i-zoom-in" viewBox="0 0 16 16">
+  <path d="M8 4v8M4 8h8"/>
+</symbol>
+
+<symbol id="i-zoom-out" viewBox="0 0 16 16">
+  <path d="M4 8h8"/>
+</symbol>
+
+<!-- A note is written, so its icon is the thing you write with. -->
+<symbol id="i-pen" viewBox="0 0 16 16">
+  <path d="M11.4 2.6a1.6 1.6 0 0 1 2.2 2.2L6.3 12.1l-3 .8.8-3z"/>
+</symbol>
+
+<!-- The Desktop title card, which is a letter because the card is a word. -->
+<symbol id="i-title" viewBox="0 0 16 16">
+  <path d="M4 4.5h8M8 4.5v7"/>
+</symbol>
+
+<!-- The saved flash, and the tick on a checked menu toggle. -->
+<symbol id="i-check" viewBox="0 0 16 16">
+  <path d="M3.5 8.5l3 3 6-7"/>
+</symbol>
+
+<symbol id="i-delete" viewBox="0 0 16 16">
+  <path d="M2.5 4h11"/>
+  <path d="M6 4V2.5h4V4"/>
+  <path d="M3.8 4l.6 9a1 1 0 0 0 1 1h5.2a1 1 0 0 0 1-1l.6-9"/>
+  <path d="M6.6 6.5v5M9.4 6.5v5"/>
+</symbol>
+
+<symbol id="i-undo" viewBox="0 0 16 16">
+  <path d="M3 6.5h6.2a3.4 3.4 0 0 1 0 6.8H6.4"/>
+  <path d="M5.6 3.6 2.7 6.5l2.9 2.9"/>
+</symbol>
+
+<symbol id="i-redo" viewBox="0 0 16 16">
+  <path d="M13 6.5H6.8a3.4 3.4 0 0 0 0 6.8h2.8"/>
+  <path d="M10.4 3.6l2.9 2.9-2.9 2.9"/>
+</symbol>
+
+<!-- Four corner brackets at the edge of the box: the whole board, framed. Its
+     pair is i-zoom-to, which is the same four brackets pulled in tight. -->
+<symbol id="i-fit" viewBox="0 0 16 16">
+  <path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/>
+</symbol>
+
+<symbol id="i-home" viewBox="0 0 16 16">
+  <circle cx="8" cy="8" r="4"/>
+  <path d="M8 1v2.4M8 12.6V15M1 8h2.4M12.6 8H15"/>
+</symbol>
+
+<!-- The zoom lock, in two. Only one is ever shown; chrome.css picks which off
+     aria-pressed, by hiding a wrapper rather than a shape. The shut one carries
+     its own wash, since it is only ever drawn while the button is pressed and
+     the button is the accent colour by then. -->
+<symbol id="i-lock-open" viewBox="0 0 16 16">
+  <rect x="3.25" y="7.25" width="9.5" height="6.5" rx="1.4"/>
+  <path d="M5.75 7.25V5.1a2.6 2.6 0 0 1 5.15-.5"/>
+</symbol>
+
+<symbol id="i-lock-shut" viewBox="0 0 16 16">
+  <rect x="3.25" y="7.25" width="9.5" height="6.5" rx="1.4"
+        fill="currentColor" fill-opacity="0.18"/>
+  <path d="M5.75 7.25V5.1a2.25 2.25 0 0 1 4.5 0v2.15"/>
+</symbol>
+
+<!-- A drop of colour. Part filled, and filled at all, which is the one thing kept
+     from what was here before: this is the tool whose subject *is* colour, and
+     an outline of a colour chip is a picture of a card. Everything in this file
+     is a line drawing except the three that cannot be.
+
+     What was here was three overlapping chips, graded from faint to solid, and
+     the idea was right. The execution could not survive the size. The toolbar
+     draws this at seventeen pixels, so a 16-unit box is about a pixel per unit:
+     three shapes each carrying a one-and-a-half unit stroke *and* a fill, set
+     overlapping, put ten edges through the middle eight pixels of the box. What
+     you saw was a dark clot with some seams in it.
+
+     Laying the same three out in a row instead does not save it, and that is
+     worth writing down so nobody tries: three chips wide enough to read, plus
+     their strokes, plus two gaps, do not fit across sixteen units - the gaps
+     come out at about a pixel and the strokes close them. Two chips are barely
+     better. The lesson is that a *count* of shapes is a size decision, and at
+     this size the count is one.
+
+     So one shape, and the fill is a level in it rather than a wash over it,
+     which needs no second outline to be read. Nothing else in the set is a
+     droplet, so there is nothing for it to be confused with. -->
+<symbol id="i-swatch" viewBox="0 0 16 16">
+  <path d="M8 2.2c1.6 1.8 4.4 4.7 4.4 6.9a4.4 4.4 0 0 1-8.8 0c0-2.2 2.8-5.1 4.4-6.9z"/>
+  <path d="M3.63 9.6a4.4 4.4 0 0 0 8.74 0z" fill="currentColor" stroke="none"/>
+</symbol>
+
+<symbol id="i-link" viewBox="0 0 16 16">
+  <path d="M6.6 9.4a2.6 2.6 0 0 0 3.7 0l2.3-2.3a2.6 2.6 0 0 0-3.7-3.7l-1 1"/>
+  <path d="M9.4 6.6a2.6 2.6 0 0 0-3.7 0L3.4 8.9a2.6 2.6 0 0 0 3.7 3.7l1-1"/>
+</symbol>
+
+<symbol id="i-connect" viewBox="0 0 16 16">
+  <circle cx="3.6" cy="12.4" r="2.1"/>
+  <circle cx="12.4" cy="3.6" r="2.1"/>
+  <path d="M5.3 10.7 10.7 5.3"/>
+</symbol>
+
+<symbol id="i-rearrange" viewBox="0 0 16 16">
+  <rect x="2.5" y="2.5" width="4.6" height="4.6" rx="1"/>
+  <rect x="8.9" y="2.5" width="4.6" height="4.6" rx="1"/>
+  <rect x="2.5" y="8.9" width="4.6" height="4.6" rx="1"/>
+  <rect x="8.9" y="8.9" width="4.6" height="4.6" rx="1"/>
+</symbol>
+
+<symbol id="i-find" viewBox="0 0 16 16">
+  <circle cx="7.1" cy="7.1" r="4.1"/>
+  <path d="M10.2 10.2L13.4 13.4"/>
+</symbol>
+
+<!-- Part filled and part stroked, which is what a speaker is. -->
+<symbol id="i-volume" viewBox="0 0 16 16">
+  <path d="M3 6h2.4L8.8 3.1v9.8L5.4 10H3z" fill="currentColor"/>
+  <path d="M11 5.6a3.4 3.4 0 0 1 0 4.8"/>
+</symbol>
+
+<!-- ═════ The right-click menu ═════ -->
+
+<!-- Lines of writing. The pen is "write a new one"; this is "the words already
+     in this one", which is the difference between Add a note and Edit text. -->
+<symbol id="i-edit-text" viewBox="0 0 16 16">
+  <path d="M3 4.8h10M3 8h10M3 11.2h6.5"/>
+</symbol>
+
+<!-- A name tag.
+     Three attempts at drawing the app's own name plate came first, and all
+     three failed the same way: a plate wide enough to look like a plate is
+     about six pixels tall inside, and anything put in it - an I-beam, a line
+     and a caret, a single dash - closes the gap to the frame and the whole
+     thing reads as one filled slug. The lesson is the size, not the marks. A
+     tag has its meaning in its outline, so there is nothing inside to lose. -->
+<symbol id="i-rename" viewBox="0 0 16 16">
+  <path d="M8.2 2.4H3.8A1.4 1.4 0 0 0 2.4 3.8v4.4a1.4 1.4 0 0 0 .41.99l4.4 4.4a1.4 1.4 0 0 0 1.98 0l4.4-4.4a1.4 1.4 0 0 0 0-1.98l-4.4-4.4a1.4 1.4 0 0 0-.99-.41z"/>
+  <circle cx="5.6" cy="5.6" r="1"/>
+</symbol>
+
+<symbol id="i-picture" viewBox="0 0 16 16">
+  <rect x="2.5" y="3.5" width="11" height="9" rx="1.5"/>
+  <circle cx="6" cy="6.6" r="1"/>
+  <path d="M3 11.8 6.2 8.6l2 2 2-2 2.8 2.8"/>
+</symbol>
+
+<!-- The frame with the picture struck out. The mountain goes: a slash over a
+     drawing this small reads as neither.
+
+     The slash runs past the frame rather than corner to corner inside it. Ended
+     on the corners it read as a box with a diagonal in it - a divided square,
+     not a struck-out one - because a line that stops exactly where two other
+     lines meet joins them instead of crossing them. -->
+<symbol id="i-picture-off" viewBox="0 0 16 16">
+  <rect x="2.5" y="3.5" width="11" height="9" rx="1.5"/>
+  <path d="M3.2 13.4 12.8 2.6"/>
+</symbol>
+
+<!-- Fill / fit: one drawing and its reflection. Arrows out, the picture grows
+     past the card; arrows in, it comes to rest inside it. No frame around
+     either - at this size the frame is what you see and the arrows are what you
+     have to look for, which is backwards. -->
+<symbol id="i-fill" viewBox="0 0 16 16">
+  <path d="M9.5 3H13V6.5"/>
+  <path d="M13 3 8.8 7.2"/>
+  <path d="M6.5 13H3V9.5"/>
+  <path d="M3 13 7.2 8.8"/>
+</symbol>
+
+<symbol id="i-fit-card" viewBox="0 0 16 16">
+  <path d="M3 9.5H6.5V13"/>
+  <path d="M13 6.5H9.5V3"/>
+  <path d="M9.5 6.5 13.2 2.8"/>
+  <path d="M2.8 13.2 6.5 9.5"/>
+</symbol>
+
+<!-- Which way is up, said as plainly as it can be said. -->
+<symbol id="i-upright" viewBox="0 0 16 16">
+  <rect x="3" y="3" width="10" height="10" rx="1.5"/>
+  <path d="M8 10.8V5.8"/>
+  <path d="M6 7.8 8 5.8l2 2"/>
+</symbol>
+
+<!-- The model itself. "Rotate model" is the moment a photograph of a model
+     becomes the model, so the icon is the thing you are being handed. -->
+<symbol id="i-rotate" viewBox="0 0 16 16">
+  <path d="M8 2.4 13.3 5.4v5.2L8 13.6 2.7 10.6V5.4z"/>
+  <path d="M2.7 5.4 8 8.4l5.3-3"/>
+  <path d="M8 8.4v5.2"/>
+</symbol>
+
+<!-- Front / back, mirrored: the same card and the same arrow, turned over.
+     Two overlapping squares would have been the other idiom, and it needs an
+     opaque fill to read - which a menu drawn on paper and a toolbar drawn on
+     glass cannot agree on. -->
+<symbol id="i-front" viewBox="0 0 16 16">
+  <rect x="4.5" y="7.5" width="7" height="6" rx="1.2"/>
+  <path d="M8 2.6v4.2"/>
+  <path d="M5.9 4.7 8 2.6l2.1 2.1"/>
+</symbol>
+
+<symbol id="i-back" viewBox="0 0 16 16">
+  <rect x="4.5" y="2.5" width="7" height="6" rx="1.2"/>
+  <path d="M8 13.4V9.2"/>
+  <path d="M5.9 11.3 8 13.4l2.1-2.1"/>
+</symbol>
+
+<!-- The size it is now, dashed, and the size it goes back to, drawn inside it.
+
+     They share a corner, and that is not decoration: the opposite edge stays put
+     through a resize, so a card coming back to its own size comes back *towards*
+     a corner that never moved. The drawing is the arithmetic.
+
+     What was here first was the box with a diagonal arrow pulling one corner in,
+     which is the truer picture of the gesture and could not be read at all. At
+     fifteen pixels the arrow is about two, its head about one, and all three
+     marks land close enough to the corner they point at to fuse with it - a
+     square with a smudge in it. Two shapes with air between them survive the
+     size; four strokes in one corner do not.
+
+     Not to be confused with i-select-all, which is also a dashed box: that one
+     holds a filled square in the middle, and the difference between "centred and
+     filled" and "in the corner and open" is one the eye makes before it has
+     read either. -->
+<symbol id="i-reset-size" viewBox="0 0 16 16">
+  <rect x="2.4" y="2.4" width="11.2" height="11.2" rx="1.5" stroke-dasharray="2.6 2"/>
+  <rect x="2.4" y="2.4" width="6.4" height="6.4" rx="1.2"/>
+</symbol>
+
+<!-- A region is drawn dashed on the board, so it is drawn dashed here. -->
+<symbol id="i-fence" viewBox="0 0 16 16">
+  <rect x="2.5" y="3.5" width="11" height="9" rx="1.5" stroke-dasharray="3 2.2"/>
+</symbol>
+
+<!-- The arrowhead is at the end the arc arrives at, and that is the whole of what
+     makes this an arrow rather than a ring.
+
+     It was drawn the other way first - a corner bracket sitting on the point
+     where the arc *starts*, arms turned inward - and what it read as was a C
+     with a square notch welded to it. Nothing about it said which way round it
+     went. The arc now runs most of the way round and then out along a short
+     tail, and the head is two arms meeting on the end of that tail, so the eye
+     follows the curve into the corner and comes out pointing. -->
+<symbol id="i-reload" viewBox="0 0 16 16">
+  <path d="M13.09 9.8a5.4 5.4 0 1 1-1.27-5.62L14.6 6.8"/>
+  <path d="M14.6 3.2V6.8H11"/>
+</symbol>
+
+<symbol id="i-duplicate" viewBox="0 0 16 16">
+  <path d="M4.2 10.2H3.9A1.4 1.4 0 0 1 2.5 8.8V3.9A1.4 1.4 0 0 1 3.9 2.5h4.9a1.4 1.4 0 0 1 1.4 1.4v.3"/>
+  <rect x="5.8" y="5.8" width="7.7" height="7.7" rx="1.4"/>
+</symbol>
+
+<!-- The band, drawn the way the band is drawn, with something caught in it. -->
+<symbol id="i-select-all" viewBox="0 0 16 16">
+  <rect x="2.2" y="2.2" width="11.6" height="11.6" rx="1.5" stroke-dasharray="2.6 2"/>
+  <rect x="5.8" y="5.8" width="4.4" height="4.4" rx="1" fill="currentColor" fill-opacity="0.2"/>
+</symbol>
+
+<!-- Show grid is the lattice; Snap to grid is the lattice with a card locked
+     onto it, corner to dot. The board's own two settings, drawn as the board
+     draws them. -->
+<symbol id="i-grid" viewBox="0 0 16 16">
+  <g fill="currentColor" stroke="none">
+    <circle cx="3.2" cy="3.2" r="0.85"/><circle cx="8" cy="3.2" r="0.85"/><circle cx="12.8" cy="3.2" r="0.85"/>
+    <circle cx="3.2" cy="8" r="0.85"/><circle cx="8" cy="8" r="0.85"/><circle cx="12.8" cy="8" r="0.85"/>
+    <circle cx="3.2" cy="12.8" r="0.85"/><circle cx="8" cy="12.8" r="0.85"/><circle cx="12.8" cy="12.8" r="0.85"/>
+  </g>
+</symbol>
+
+<symbol id="i-snap" viewBox="0 0 16 16">
+  <g fill="currentColor" stroke="none">
+    <circle cx="3.2" cy="3.2" r="0.85"/><circle cx="8" cy="3.2" r="0.85"/><circle cx="12.8" cy="3.2" r="0.85"/>
+    <circle cx="3.2" cy="8" r="0.85"/><circle cx="8" cy="8" r="0.85"/><circle cx="12.8" cy="8" r="0.85"/>
+    <circle cx="3.2" cy="12.8" r="0.85"/><circle cx="8" cy="12.8" r="0.85"/><circle cx="12.8" cy="12.8" r="0.85"/>
+  </g>
+  <rect x="3.2" y="3.2" width="4.8" height="4.8" rx="1"/>
+</symbol>
+
+<!-- The title card's style, which is type, which is a letter. Beside i-title's
+     T on the same short menu - one family, two members. -->
+<symbol id="i-style" viewBox="0 0 16 16">
+  <path d="M4.2 12.6 8 3.4l3.8 9.2"/>
+  <path d="M5.7 9.4h4.6"/>
+</symbol>
+
+<!-- Where it belongs, dashed, and where it is now. -->
+<symbol id="i-reset-position" viewBox="0 0 16 16">
+  <rect x="2.5" y="2.5" width="7" height="7" rx="1.2" stroke-dasharray="2.4 1.9"/>
+  <rect x="6.5" y="6.5" width="7" height="7" rx="1.2"/>
+</symbol>
+
+<!-- Four brackets pulled in tight: this one thing, framed. i-fit is the same
+     four at the edge of the box.
+
+     Short arms, and that is the whole of it: on a box this much smaller than
+     i-fit's the arms have to come in with it, or the four brackets meet in the
+     middle of each side and the drawing closes up into a plain square. The gap
+     is what says "brackets", and the gap is what makes the pair a pair. -->
+<symbol id="i-zoom-to" viewBox="0 0 16 16">
+  <path d="M4.6 6.4V4.6H6.4M9.6 4.6H11.4V6.4M11.4 9.6V11.4H9.6M6.4 11.4H4.6V9.6"/>
+</symbol>
+
+</svg>

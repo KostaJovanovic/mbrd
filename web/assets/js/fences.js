@@ -33,10 +33,14 @@
 // Why this is not folded into sticky.js: the predicates differ, the layout rule
 // differs, the resize rule differs, and only notes stick while anything can be
 // fenced. An abstraction over the two would have to be parameterised by all four,
-// which is a way of writing the differences down twice. They meet in exactly one
-// place - stackRoot() in stacking.js, which has to walk both to answer "what
-// moves as one when the z-order changes" - and that is the right amount of
-// meeting. If a third relation ever turns up, revisit it then.
+// which is a way of writing the differences down twice. They meet in exactly two
+// places, both of which have to walk both relations to answer a question neither
+// can answer alone: stackRoot() in stacking.js, for "what moves as one when the
+// z-order changes", and travelling() in layout.js, for "what moves as one when
+// the geometry does". Two is the right number and three would not be - every
+// caller that wants either answer takes it from one of those, which is why the
+// hover lift in canvas/items.js reads travelling() rather than composing the two
+// again. If a third relation ever turns up, revisit it then.
 
 import { pointInItem } from './geometry.js';
 import { board, byId, isFurniture, TITLE_ID } from './board-model.js';
@@ -168,6 +172,33 @@ function measure(it) {
     if (nested && area <= areaOf(box)) continue;
     if (!pointInItem(box.x, box.y, rect)) continue;
     best = other;
+    bestArea = area;
+  }
+  return best;
+}
+
+/**
+ * The smallest fence a bare world point falls inside, or null.
+ *
+ * measure()'s rule with no item to ask about - the same smallest-wins walk, so a
+ * point in a nested region answers with the nested one. Not memoised, because
+ * the only caller is a menu opening: once per right-click is not a hot path, and
+ * a point has no identity to remember an answer against.
+ *
+ * Desktop only, like everything else here. On Mobile a fence is a band with its
+ * cards packed underneath, so "inside it" names a strip of the column rather
+ * than the region, and nothing that reads this offers its action there.
+ */
+export function fenceAt(x, y) {
+  let best = null;
+  let bestArea = Infinity;
+  for (const it of board.items) {
+    if (!isFence(it)) continue;
+    const rect = desktopBox(it);
+    if (!rect) continue;
+    const area = areaOf(rect);
+    if (area >= bestArea || !pointInItem(x, y, rect)) continue;
+    best = it;
     bestArea = area;
   }
   return best;

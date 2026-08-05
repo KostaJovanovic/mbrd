@@ -75,7 +75,7 @@ import {
 // a question about where two things are, measured and remembered here, acted on
 // there.
 import {
-  isFence, fenceOf, fenceMembers, fenceFollowers, refence, refenceAround,
+  isFence, fenceOf, fenceAt, fenceMembers, fenceFollowers, refence, refenceAround,
   refenceArrivals, forgetFences, seedFences, fenceBox, nextFenceName,
 } from './fences.js';
 
@@ -83,7 +83,7 @@ import {
 // profiles and the undoable geometry writes, which had to move as one piece
 // because the pack and the profiles call each other.
 import {
-  SNAP_KEYS, activateLayoutSettings, applyGeom, baseStep, captureLayout, captureLayoutSettings, commitGeom, completeLayout, fitBoardMode, forgetPresnap, geometryOf, layoutMap, mobileBoardWidth, normalizeLayout, placeMobileItems, repackMobileBoard, snapshotGeom, usableMemo, writeLayout,
+  SNAP_KEYS, activateLayoutSettings, applyGeom, baseStep, captureLayout, captureLayoutSettings, commitGeom, completeLayout, fitBoardMode, forgetPresnap, geometryOf, layoutMap, mobileBoardWidth, normalizeLayout, placeMobileItems, repackMobileBoard, snapshotGeom, travelling, usableMemo, writeLayout,
 } from './layout.js';
 
 // Z-order - see stacking.js. Sticky notes are ordered against their host rather
@@ -96,7 +96,7 @@ export {
   setBoardMode, mobileBoardTop, mobileBoardBottom, mobileBoardWorldWidth,
 } from './layout.js';
 
-export { baseStep, snapshotGeom, applyGeom, commitGeom, placeMobileItems, mobileBoardWidth };
+export { baseStep, snapshotGeom, applyGeom, commitGeom, placeMobileItems, mobileBoardWidth, travelling };
 
 export {
   STICK_MIN, stuckTo, wouldStick, restick, forgetSticks,
@@ -104,8 +104,8 @@ export {
 };
 
 export {
-  isFence, fenceOf, fenceMembers, fenceFollowers, refence, refenceAround, forgetFences,
-  fenceBox, nextFenceName,
+  isFence, fenceOf, fenceAt, fenceMembers, fenceFollowers, refence, refenceAround,
+  forgetFences, fenceBox, nextFenceName,
 };
 
 export {

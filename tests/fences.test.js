@@ -15,11 +15,12 @@ import assert from 'node:assert/strict';
 import {
   loadBoard, serializeBoard, addItems, removeItems, byId, select, board,
   fenceOf, fenceMembers, fenceFollowers, refence, isContent,
-  stuckTo, stuckFollowers, snapshotGeom, applyGeom, commitGeom, undo,
+  stuckTo, travelling, snapshotGeom, applyGeom, commitGeom, undo,
   setBoardMode, raiseSelection, hasContent, ensureGhostCards, hasGhosts,
   mobileBoardWidth, baseStep, visualStackOrder,
 } from '../web/assets/js/state.js';
 import { mobileRuns, fenceBox, nextFenceName } from '../web/assets/js/fences.js';
+import { sharedFence } from '../web/assets/js/commands.js';
 import { itemBounds } from '../web/assets/js/geometry.js';
 import { fresh, note, photo, fence } from './state-fixtures.js';
 
@@ -159,22 +160,71 @@ test('a note stuck to a card in a fence travels with the fence', () => {
   assert.equal(stuckTo(byId(n.id))?.id, pic.id);
   assert.equal(fenceOf(byId(pic.id))?.id, f.id);
 
-  const closure = ids => {
-    const out = [...ids];
-    for (let grew = true; grew;) {
-      grew = false;
-      for (const id of [...stuckFollowers(out), ...fenceFollowers(out)]) {
-        if (out.includes(id)) continue;
-        out.push(id);
-        grew = true;
-      }
-    }
-    return out;
-  };
-  const moving = closure([f.id]);
+  const moving = travelling([f.id]);
   assert.deepEqual([...moving].sort(), [f.id, pic.id, n.id].sort());
   // Exactly once each - a double entry would move the note twice as far.
   assert.equal(new Set(moving).size, moving.length);
+});
+
+test('and the closure goes down only - a card does not travel with its region', () => {
+  // The property both readers of travelling() stand on. A drag of one card must
+  // not tow the fence around it, and the hover lift in canvas/items.js is the
+  // same statement in the other medium: pointing at a card in a region lifts the
+  // card, while pointing at the region lifts everything in it.
+  addItems([fence({ x: 0, y: 0, w: 900, h: 700 })]);
+  const [pic] = addItems([photo({ x: 0, y: 0, w: 300, h: 300 })]);
+  const [n] = addItems([note({ x: 0, y: 0, w: 80, h: 80 })]);
+
+  assert.deepEqual(travelling([pic.id]).sort(), [pic.id, n.id].sort());
+  assert.deepEqual(travelling([n.id]), [n.id]);
+});
+
+// ---------------------------------------------------------------------------
+// When the band's offer stands down
+//
+// A rubber band inside a region is how you get at some of what is in it, so the
+// offer to fence what it caught has to know the difference between a grouping
+// somebody is making and one they are reaching into. sharedFence() is that test;
+// cmds.fencePrompt reads it and returns without opening anything.
+// ---------------------------------------------------------------------------
+
+test('cards all from one region propose nothing - the region is already there', () => {
+  const [f] = addItems([fence({ x: 0, y: 0, w: 2000, h: 2000 })]);
+  const [a] = addItems([photo({ x: -300, y: 0 })]);
+  const [b] = addItems([photo({ x: 300, y: 0 })]);
+  assert.equal(sharedFence([byId(a.id), byId(b.id)])?.id, f.id);
+});
+
+test('but a band that reached outside one has caught a new grouping', () => {
+  addItems([fence({ x: 0, y: 0, w: 800, h: 800 })]);
+  const [inside] = addItems([photo({ x: 0, y: 0 })]);
+  const [outside] = addItems([photo({ x: 3000, y: 0 })]);
+  assert.equal(sharedFence([byId(inside.id), byId(outside.id)]), null);
+});
+
+test('two regions worth of cards are not one region', () => {
+  const [left] = addItems([fence({ x: -2000, y: 0, w: 800, h: 800 })]);
+  const [right] = addItems([fence({ x: 2000, y: 0, w: 800, h: 800 })]);
+  const [a] = addItems([photo({ x: -2000, y: 0 })]);
+  const [b] = addItems([photo({ x: 2000, y: 0 })]);
+  assert.equal(fenceOf(byId(a.id))?.id, left.id);
+  assert.equal(fenceOf(byId(b.id))?.id, right.id);
+  assert.equal(sharedFence([byId(a.id), byId(b.id)]), null);
+});
+
+test('a band that swallowed the region itself still offers to fence it', () => {
+  // The region is one of the caught items, and its own fence is not itself - so
+  // the set does not share one and a fence round a fence stays available.
+  const [f] = addItems([fence({ x: 0, y: 0, w: 800, h: 800 })]);
+  const [pic] = addItems([photo({ x: 0, y: 0 })]);
+  assert.equal(sharedFence([byId(f.id), byId(pic.id)]), null);
+});
+
+test('loose cards propose a region, which is the offer\'s whole job', () => {
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  const [b] = addItems([photo({ x: 900, y: 0 })]);
+  assert.equal(sharedFence([byId(a.id), byId(b.id)]), null);
+  assert.equal(sharedFence([]), null);
 });
 
 // ---------------------------------------------------------------------------

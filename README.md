@@ -75,17 +75,22 @@ Random scatter, and Free, which imposes no shape at all. `spacing` always means
 the gap between edges, so it means the same thing in every one of them.
 
 Drag a rubber band round a few cards and a small **Fence these 5** appears beside
-the cursor; take it and the band becomes a labelled region, or walk away and it
-withdraws itself. A band that caught nothing offers the empty region instead, to
-fill later. It arrives named — *Untitled fence 3* — with the name selected and
+the cursor, with the region it means held faintly on the board behind it — so you
+can see what you would get before you take it. Take it and that outline becomes a
+labelled region, or walk away and both withdraw themselves. A band that caught
+nothing offers the empty region instead, to fill later. It arrives named — *Untitled fence 3* — with the name selected and
 ready to be typed over, set large enough to read from wherever you can see the
 whole region. Drag the fence by its label and everything inside comes along; drag
 a card out and it is out; pull the fence's corner over three more and it has
-them, and pulling it back in stops at the edge of its own contents, so nothing is
-dropped or cut in half by a corner going a little too far. Everything else about a region
-carries on working inside it: the board still pans where you drag it, a band drawn
-within one takes the cards it went round and not the region around them, and
-rearranging the board moves each region whole rather than dealing its cards out.
+them. Pulling it back in gathers what is already inside, the way shrinking a card
+carries the notes stuck to it, and stops once they fill it — so nothing is dropped
+or left hanging over the edge by a corner going a little too far. Everything else
+about a region carries on working inside it: the board still pans where you drag
+it, a band drawn within one takes the cards it went round and not the region
+around them, and rearranging the board moves each region whole rather than dealing
+its cards out. Right-click inside a fence and **Rearrange everything** becomes
+**Rearrange fence** — the cards inside it are laid out in columns, below the
+region's name, and the region closes around them.
 There is no membership to manage, because there is none stored — a card is
 in a fence when it is inside it, which is a thing you can see. On a phone, where
 the board is a single column, each fence becomes a full-width heading with its
@@ -291,7 +296,10 @@ the current layout is *absent*, not greyed out.
 **Whimsy**, **Palette** and the two **type menus** are the whole of the Look tab
 until you open the fold, which holds the pigment, the count of pictures the
 palette reads, and the grid, radius and panel sliders. Whimsy is one axis from
-Softish to Harsh, and it moves everything the fold sets one control at a time.
+Softish to Harsh, and it moves everything the fold sets one control at a time. At
+the Softish end a fence stops being a marked-off part of the sheet and becomes a
+cork board, which is the one thing on that axis that changes what something is
+made of rather than how it is drawn.
 
 Four palettes ship — Papyrus (terracotta), Absinthe (acid olive), Tea rose
 (crimson) and Orca (deep teal). All four print on a near-neutral sheet, because

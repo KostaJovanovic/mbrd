@@ -671,6 +671,19 @@
      full baked strength - and there is deliberately no headroom above it. */
   --grain: 1.25;
 
+  /* The stock a *region* is on at this end, and the one colour in this file that
+     is not derived from a pigment. A fence here is a cork board - see the tile at
+     .fence-card::after in items.css - and this is that tile's own mean, sampled
+     from it: #b19770. It has to match the image rather than the palette, because
+     it is what the texture fades back to when the board is zoomed out past the
+     band where the chips still resolve. Derived from an ink instead, a region
+     would change colour on the way out, which is the one thing a flat fallback
+     must not do.
+     Only at this end of the axis. The middle and Harsh keep --paper-2, the
+     palette's own inset tone: cork is a scrapbook's idea of what a board is
+     made of, and a spec sheet has no cork on it. */
+  --cork: #b19770;
+
   /* Ghost cards at this end are still cards - the candidates layered on in
      the CSS change the edge, the mount or the stock, never the type. The ink is
      a warmer, softer version of the board's own rather than a second palette. */

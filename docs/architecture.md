@@ -414,6 +414,13 @@ Seven things about it are load-bearing and none is obvious:
   within a region also caught the region — which counted it in the offer, drew a
   fence unioned out to swallow its own parent, and towed the whole thing when the
   cards it caught were dragged. To take a region, enclose it or press its name.
+  While the offer stands, `#fence-ghost` holds the region on the board — the band
+  is the marquee's and ends with the gesture, so otherwise the question is asked
+  about an area nobody can see. It draws `wouldFence()`, the box the accept would
+  actually make, which is why it is not simply the marquee left up: the union is
+  larger than the band whenever a card was caught with part of it outside. It is
+  screen-space and placed once, because the offer closes on any view change and a
+  rectangle that cannot go stale needs no frame loop.
 - **It is an item** (`type: "fence"`), not a top-level key like `connections`.
   That is a format decision, argued in the format doc: an older build drops an
   unrecognised top-level key on save and carries an unrecognised `type` through
@@ -426,22 +433,62 @@ Seven things about it are load-bearing and none is obvious:
   computes it, which is also why you cannot re-fence a card from one.
 - **Moving a fence does not re-measure; resizing one does.** A photograph's edges
   are incidental to what lies on it and `sticky.js` says so; a fence's edges *are*
-  the fence, and dragging a corner out over three more cards is the only gesture
-  that means "and these too". `commitGeom()` carries both halves. It only works
-  outwards: a grip stops when the rectangle reaches its own contents
-  (`holdFloor()` in `canvas/input.js`, frozen at the start of the drag), because
-  a corner pulled in a little too far used to drop cards silently and the only
-  sign was a region that had quietly stopped owning half of itself. Letting a
-  card go is the card's own gesture — drag it out. `resetSize` skips fences for
-  the same reason: a fence has no size it was born at. The floor is Desktop-only
-  and measured in the fence's own frame (`holdOffset()`), because both the layout
-  and the rotation it is read through have to be the ones membership was decided
-  in. It is drawn at the cards' **edges** and capped at the size the drag started
-  from: membership is a fact about centres, but a border stopped at the centres
-  slices through the cards it is holding, and a fence that visibly cuts its
-  contents in half has lost them whatever the memo says. The cap is what makes
-  that safe — a card left half over the border would otherwise ask for a floor
-  wider than the fence, and touching a grip would snap the region open.
+  the fence, and dragging a corner out over three more cards is the gesture that
+  means "and these too". `commitGeom()` carries both halves.
+- **A resize carries the contents, exactly as a card carries its stuck notes.**
+  `startResize()` takes `travelling([id])` as its followers instead of
+  `stuckFollowers([id])`, and the per-frame code is unchanged — `stuckPlacement()`
+  already keeps a follower at the same *fractional* spot in the box, which is the
+  whole of it. So pulling a region in gathers its cards and pushing it out spreads
+  them, and a card is *in* a region the way a sticky is *on* a card.
+  `travelling()` rather than the members alone, since a note stuck to a card
+  inside the region has to come too and neither relation sees that on its own —
+  and it is the same set a *move* would carry, so the two gestures cannot disagree
+  about what is in a region. Desktop only, for the reason above: on Mobile a band
+  is a row of a packed column and its cards are underneath rather than inside it,
+  so there is no fraction of it for them to hold. Fractional placement moves a
+  nested fence without resizing it, so a nested region's own cards spread further
+  than it does and some may be re-measured out of it on release — the cost of not
+  scaling a whole subtree. `resetSize` still skips fences: a fence has no size it
+  was born at.
+- **And it still stops when the contents fill it** (`carryFloor()`). Keeping a
+  card's fraction is not the same as keeping it inside: the fraction holds a
+  *centre*, and a card is a box whose size does not shrink with the region — so
+  past a point the cards sit at the right fractions and hang over the border
+  anyway. A card at fraction `fx` needs `w >= hw / (0.5 - |fx|)`, and the binding
+  card is whichever asks for the most. There is no corner arithmetic, unlike the
+  floor this replaced: the fraction is preserved whichever edge is dragged, so the
+  floor is a fact about the box's size alone. Capped at the size the drag started
+  from, so a card already hanging out of a region cannot make a grip snap it open.
+- **A fence hangs straight.** A lean is a card pinned up by hand; a region is a
+  line drawn on the board, and it turns about its own centre, so across two
+  thousand units the corners travel far enough that the region visibly disagrees
+  with the cards inside it — which keep their own leans. `canvas/items.js` gives
+  it no resting lean *and does not draw one from the bag*, since the
+  one-in-three-straight split is a property of the pack; `items.css` zeroes
+  `rotate` outright, which also covers the drag lean and is how the snapped board
+  says the same thing. `item.rot` is untouched — that lives in `transform`.
+- **A region can be arranged from the inside**, and that is what the canvas menu
+  offers when the right-click was inside one — `cmds.fenceUnder(at)` swaps
+  *Rearrange everything* for *Rearrange fence*, since a press on a fence's face
+  falls through to the board and the board is not what that click was about. The
+  name plate is the other way in, through the item menu. It lays the contents out
+  in **masonry** whatever the board's arrangement is: the board's arrangement is
+  chosen for the shape of the whole, and a region is a shelf, where what you want
+  is everything visible at once with nothing wasted between. `rearrange()` takes
+  it as three options — `name`, `center` (the region, not the middle of its
+  contents) and `enclose` — and the last is load-bearing: the layout is bounded by
+  nothing, so the region closes around the result inside the same commit, or a
+  region that came out not holding its own contents would have them measured
+  straight out of it. Closing runs **twice**: once to the cards' bounds, then
+  again with `barHeight()` of room added at the top, because a fence's plate lies
+  across the top of its box and a block closed to a bare margin puts its first row
+  under the region's own name. The second pass is what makes the measurement
+  honest — the name is set at `2.8cqi` of the region's width, so it can only be
+  measured once that width is real, and `'geom'` places nodes synchronously. Both
+  writes land before the commit, so it is still one undo. Only here: where a fence
+  is *made*, the rectangle is one somebody drew and `fenceBox()` takes it as
+  drawn.
 - **A rearrangement carries a region rather than dealing it out.** `rearrange()`
   lays out fences and loose cards; a fence's contents ride it by the translation
   it took, the way a stuck note rides its host, and are not `driven` — so nothing
@@ -462,31 +509,70 @@ Seven things about it are load-bearing and none is obvious:
   fence needs a value under its cards and over its parent, and on a board a whole
   number apart there is none), while area can, because containment already
   requires strictly more of it. Equal areas cannot nest, so raw z still orders
-  those and Bring to front still separates them.
-- **The interior draws nothing and takes no presses**, and both halves of that
-  have to be said on `.item` rather than on `.item-body`, which is the trap this
-  type keeps walking into: `.item` is what carries a card's paper *and* what takes
-  its presses, and the body is already transparent to both for every type. Said on
-  the body, each rule was a copy of the one it meant to overturn — so a region
-  swallowed every empty-space gesture it covered, and laid an opaque page over the
-  grid, the grain and every card shadow inside it (`#item-shadows` is *below* the
-  item layer, so anything with a background paints over it). A fence is large, and
-  a large card that swallowed clicks or light would take most of the board with
-  it. The name plate is the exception to both — it keeps its paper and its press,
-  because it is the one part of a fence that is a thing rather than a boundary —
-  and the resize grips take the pointer back too (a descendant set to `auto` is
-  hit inside a `none` ancestor). The plate is the whole of its hit area otherwise
+  those and Bring to front still separates them. The band is sunk one further:
+  `paintStack()` writes it *below* `#item-shadows` and `#web`, because a fence has
+  a face like any other item and card shadows live in one underlay beneath the
+  item layer — so a region in the item stack painted out the shadow of every card
+  inside it, and read as a page with its cards printed flat on it rather than
+  lying on it. Ground goes under the shadows. Both underlays refuse the pointer,
+  so passing beneath them costs a fence no hit area.
+- **The face is a well, on the same stock as the board.** `--paper-2` is the
+  palette's inset-and-well tone, so a region reads a shade *under* the board where
+  a card (`--paper-card`) reads a shade over it, and it follows the look without
+  a colour of its own. Over it, `.fence-card::after` repeats the same grain tile
+  as `#grain` with the same blend and the same two dials — a region marked off on
+  the paper is still the paper. Two things differ, both because this copy lives
+  inside `#world`: the tile is 512px flat (world units, so the transform gives the
+  on-screen size `#grain` has to be told every frame), and the phase is the
+  element's own corner, which is invisible because the grain is isotropic noise.
+  `--grain-fade` is written to the **root** rather than to the grain layer, since
+  `#grain` sits outside `#viewport` and a fence is inside it — otherwise a
+  zoomed-out board keeps its texture in exactly the regions that have given it up.
+  At **softish only** (`[data-whimsy="0"]`) the region stops being paper and
+  becomes a cork board: `cork-board.webp` laid over `--cork` instead of the grain
+  multiplied into `--paper-2`. That tier is the one where a board is a scrapbook,
+  and every card already lands on a fence wearing a shadow, so the cards read as
+  pinned to it. `--cork` is the tile's own mean, sampled from it rather than
+  derived from a pigment, because it is what the texture fades back to on the way
+  out — derived from an ink, a region would change colour as it went. The middle
+  and Harsh keep the paper.
+- **The interior takes no presses**, and the rule that says so is on `.item`, not
+  on `.item-body` — `.item` is what takes a card's presses and the body is already
+  transparent to them for every type, so the first version of the rule was a copy
+  of the one it meant to overturn and a region went on swallowing every
+  empty-space gesture it covered. A fence is large, and a large card that
+  swallowed clicks would end "drag empty space to pan" over most of the board. The
+  name plate and the resize grips take the pointer back (a descendant set to
+  `auto` is hit inside a `none` ancestor); the plate is the whole of its hit area
   — and it is the one label set at the
-  *region's* size rather than a card's (`clamp(15px, 4cqi, 44px)`, the same
+  *region's* size rather than a card's (`clamp(10.5px, 2.8cqi, 30.8px)`, the same
   container-query trick the Desktop title card uses), the one that survives
-  `#world.zoom-far`, and the one with a default name, because zooming out to find
-  your way around is the moment a region's name is what you came for.
+  `#world.zoom-far` — **plate and label both**, since the label lives inside the
+  plate and unhiding a child of a hidden parent buys nothing — and the one with a
+  default name, because zooming out to find your way around is the moment a
+  region's name is what you came for, and because a hidden plate is a region with
+  no hit area anywhere on it.
+- **The band's offer stands down inside a region.** A rubber band drawn within a
+  fence is how you reach for part of what is in one, so when everything it caught
+  is already in the same fence `cmds.fencePrompt` opens nothing (`sharedFence()`):
+  the grouping it would propose already exists, and the button lands where the
+  hand is about to reach for the cards it just selected. Cards from two regions,
+  or a band that swallowed the fence itself, still offer. Making a *nested* region
+  from part of one is what this trades away, and it keeps the group menu's
+  *Fence these*.
 
 Two relations now answer "what travels", and they have to be closed over
 together: a note stuck to a card inside a fence travels with the fence, which
-neither can see alone. `travelling()` in `canvas/input.js` is that fixed point.
-They meet again in `stackRoot()`, which walks both — a fence is drawn behind its
-members, so raising one has to carry them or it would cover its own contents.
+neither can see alone. `travelling()` in `layout.js` is that fixed point — beside
+the geometry writes it feeds rather than in the gesture that first needed it,
+because a third reading of the two relations is exactly what it exists to
+prevent. Both halves go one way only, down: to riders and to contents, never to a
+host or to the region around one. `canvas/items.js` reads it for the **hover
+lift**, so the group that rises under the pointer is the group a drag would pick
+up — point at a region's name plate and its cards lift with it; point at one of
+those cards and the region stays put. They meet again in `stackRoot()`, which
+walks both — a fence is drawn behind its members, so raising one has to carry
+them or it would cover its own contents.
 
 `isContent()` in `board-model.js` is the second half of `isFurniture()`'s
 question, and exists for the same recorded reason: a fence is nobody's furniture
@@ -760,6 +846,47 @@ change had to touch at once. The order above is `index.html`'s, and **the order
 is the cascade** — it is not cosmetic, and `quality.css` being last is load-
 bearing rather than tidy.
 
+### The icons
+
+Every icon in the app is a `<symbol>` in `web/assets/icons.svg`, reached by name:
+
+```html
+<svg class="ico"><use href="assets/icons.svg#i-note"/></svg>
+```
+
+`index.html` writes that by hand; `ui/menu.js` builds it with `icon()`, which
+`ui/fence-prompt.js` imports so the offer under a rubber band and the
+`Fence these 5` menu entry are one drawing. **A new icon is a symbol here and a
+reference to it**, never a path pasted into a button — which is what this
+replaced: twenty-four inline `<svg>` blocks, three of them the same close cross
+and two the same pen, each a few characters from its twin because they had been
+edited at different times, and stroke weights running 1.3 to 1.7 across the set.
+
+The drawing spec is one CSS rule (`.ico` in `base.css`), and it can be, because
+**a `<use>` renders its symbol into a shadow tree that inherited properties cross
+and selectors do not.** Both halves of that are load-bearing:
+
+- Inheritance is what makes the set a set. `fill`, `stroke`, `stroke-width`,
+  the caps and joins, `currentColor` and custom properties all reach inside, so
+  forty drawings take their weight from one declaration, and an icon is the
+  colour of the row it sits on without either knowing about the other. Every
+  surface that had an opinion about size before the sprite existed still has it,
+  because every one of those is an id selector and outranks `.ico`.
+- The absence of selectors is what constrains membership. Anything whose
+  *insides* are addressed from a stylesheet cannot live here. `#origin-mark` is
+  the one that stayed inline: `quality.css` picks one of its three rings by
+  whimsy tier. `#zoom-lock` had the same problem and moved anyway — it is two
+  symbols and two wrappers now, and `chrome.css` hides a wrapper rather than a
+  path. Getting this wrong is silent: the rule matches nothing and the padlock
+  draws both shackles at once.
+
+The sprite is in `SHELL` in `web/sw.js` — without it an offline board opens with
+every button blank. `tests/icons.test.js` checks that every reference resolves,
+that nothing in the file is unreferenced, that no two symbols are the same
+drawing, that every menu entry carries one, and that nothing new has been written
+inline. A misspelled id is otherwise not an error anywhere: the browser finds no
+such fragment and draws nothing.
+
 A new rule goes next to the subsystem it styles. A new *file* has to be added to
 `index.html`, to `SHELL` in `web/sw.js`, and to `APP_CSS_ORDER` in
 `tests/helpers.js` — `tests/sw.test.js` walks `assets/css` and will fail until
@@ -784,6 +911,11 @@ list, which is where somebody opening the stylesheets will look first.
   `assets/js` for exactly that reason — put one there and the walk would rightly
   demand it be precached.
 - **The layering graph is executable** (`tests/layers.test.js`), not advice.
+- **Every icon reference resolves to a symbol in `assets/icons.svg`, and every
+  symbol is referenced** (`tests/icons.test.js`). A misspelled fragment id is not
+  an error in any browser — it draws nothing at all — so the check has to be here
+  or it is nowhere. The same test holds the line the sprite exists to hold: no
+  two symbols are the same drawing, and nothing new is written inline.
 - **Every bundled `woff2` family has its licence file beside it**
   (`tests/fonts-license.test.js`). Geist shipped without one for several
   versions; the OFL requires it.

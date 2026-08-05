@@ -5,7 +5,7 @@ import {
   isDoubleTap, needsSelectionBeforeMove, repeatsLongPressContextMenu,
   releasePointerSafely, resizeHandleAction, shortcutsSuppressed,
   readWheel, resetWheelKind, WHEEL_NOTCH, WHEEL_STREAM_MS,
-  drewRectangle, holdFloor, holdOffset, marqueeHit,
+  carryFloor, drewRectangle, marqueeHit,
 } from '../web/assets/js/canvas/input.js';
 
 test('double taps match within the touch timing and distance windows', () => {
@@ -68,103 +68,65 @@ test('a rectangle counts whichever corner it was dragged from', () => {
   assert.equal(drewRectangle({ x0: 200, y0: 200, x1: 0, y1: 0 }, 1), true);
 });
 
-// A fence may not be pulled in past its own cards. The floor is two numbers the
-// drag is clamped to, and every case below is one of the four ways an edge can
-// be the one that moves. A hold with no half-extent is a bare point, which is
-// what the first few cases below use to keep the arithmetic legible.
+// A fence carries what is inside it when it is resized, the way a card carries
+// the notes stuck to it - so nothing can be left outside by a moving edge, and
+// the floor that used to say so is gone. What is left is a different question
+// with the same shape: a card keeps its *fraction* of the region but not its
+// size, so past a point the cards are at the right places and hanging over the
+// border anyway. carryFloor() is where the region stops shrinking.
 
 const BOX = { x: 0, y: 0, w: 1000, h: 1000 };
 
-test('nothing held floors nothing', () => {
-  assert.deepEqual(holdFloor(BOX, 'se', []), { w: 0, h: 0 });
-  assert.deepEqual(holdFloor(BOX, 'se', null), { w: 0, h: 0 });
+test('a region with nothing in it has no floor', () => {
+  assert.deepEqual(carryFloor(BOX, []), { w: 0, h: 0 });
+  assert.deepEqual(carryFloor(BOX, null), { w: 0, h: 0 });
 });
 
-test('dragging the east edge in stops at the furthest card', () => {
-  // The west edge stays at -500, so the width has to reach from there to +300.
-  assert.equal(holdFloor(BOX, 'e', [{ x: 300, y: 0 }]).w, 800);
-  // And the axis the grip does not touch is not floored by it.
-  assert.equal(holdFloor(BOX, 'e', [{ x: 300, y: 400 }]).h, 800);
+test('the floor is what it takes for the card to still fit', () => {
+  // A card at a quarter of the way out has a quarter of the width between it and
+  // the border, so 100 of half-width needs 100 / (0.5 - 0.25) = 400.
+  assert.equal(carryFloor(BOX, [{ fx: 0.25, fy: 0, hw: 100, hh: 10 }]).w, 400);
+  // Dead centre it only has to be as wide as the card itself.
+  assert.equal(carryFloor(BOX, [{ fx: 0, fy: 0, hw: 60, hh: 10 }]).w, 120);
+  // Both signs read the same - the fraction is a distance from the middle.
+  assert.equal(carryFloor(BOX, [{ fx: -0.25, fy: 0, hw: 100, hh: 10 }]).w, 400);
 });
 
-test('dragging the west edge in measures from the other side', () => {
-  // East stays at +500, the furthest card left is at -200: 700 wide.
-  assert.equal(holdFloor(BOX, 'w', [{ x: -200, y: 0 }]).w, 700);
+// 0.5 - 0.4 is not 0.1 in binary, and this is a division by it.
+const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} vs ${b}`);
+
+test('the two axes are answered independently', () => {
+  const floor = carryFloor(BOX, [{ fx: 0.25, fy: 0.4, hw: 100, hh: 50 }]);
+  near(floor.w, 400);
+  near(floor.h, 500);                       // 50 / (0.5 - 0.4)
 });
 
-test('a corner floors both axes at once', () => {
-  const floor = holdFloor(BOX, 'ne', [{ x: 100, y: -50 }]);
-  assert.equal(floor.w, 600);
-  // 'n' is the +y side, so a card at -50 is on the *fixed* south side: the north
-  // edge can come all the way down to it.
-  assert.equal(floor.h, 450);
+test('the card with the least room to spare sets it', () => {
+  const holds = [
+    { fx: 0.1, fy: 0, hw: 40, hh: 10 },     // 50
+    { fx: 0.4, fy: 0, hw: 60, hh: 10 },     // 600
+    { fx: 0.2, fy: 0, hw: 30, hh: 10 },     // 100
+  ];
+  near(carryFloor(BOX, holds).w, 600);
 });
 
-test('an axis with no moving edge grows about the centre', () => {
-  // A north-south drag leaves x alone, and x then has to hold both sides - so
-  // the width is twice the furthest of them, not the span between them.
-  assert.equal(holdFloor(BOX, 'n', [{ x: 300, y: 0 }, { x: -100, y: 0 }]).w, 600);
+test('a card already hanging out cannot prise the region open', () => {
+  // At or past the halfway fraction no width fits it, so the sum is an infinity -
+  // and the cap turns that into "this one does not shrink" rather than a grip
+  // that snaps the region open the moment it is touched.
+  assert.equal(carryFloor(BOX, [{ fx: 0.5, fy: 0, hw: 10, hh: 10 }]).w, 1000);
+  assert.equal(carryFloor(BOX, [{ fx: 0.9, fy: 0, hw: 10, hh: 10 }]).w, 1000);
+  // And an ordinary card that would ask for more than the region already is.
+  assert.equal(carryFloor(BOX, [{ fx: 0.45, fy: 0, hw: 400, hh: 10 }]).w, 1000);
 });
 
-test('a card past the middle does not floor below nothing', () => {
-  // Dragging the east edge in past a card sitting west of centre: the floor is
-  // the distance from the fixed west edge, which is still positive.
-  assert.equal(holdFloor(BOX, 'e', [{ x: -400, y: 0 }]).w, 100);
-  // And a hold outside the box on the fixed side cannot ask for a negative one.
-  assert.equal(holdFloor(BOX, 'e', [{ x: -900, y: 0 }]).w, 0);
-});
-
-test('the furthest card is the one that holds it open', () => {
-  const holds = [{ x: 10, y: 0 }, { x: 420, y: 0 }, { x: 200, y: 0 }];
-  assert.equal(holdFloor(BOX, 'e', holds).w, 920);
-});
-
-test('the floor is drawn at the card edge, not through its middle', () => {
-  // The whole point of the half-extents: a border that stops at the centres cuts
-  // the cards it is holding in half, which reads as a region that has lost them.
-  assert.equal(holdFloor(BOX, 'e', [{ x: 300, y: 0, hw: 100, hh: 50 }]).w, 900);
-  assert.equal(holdFloor(BOX, 'w', [{ x: -200, y: 0, hw: 100, hh: 50 }]).w, 800);
-  // Centred, both sides count, so it is twice the furthest *edge*.
-  assert.equal(holdFloor(BOX, 'n', [{ x: 300, y: 0, hw: 100 }]).w, 800);
-});
-
-test('a card already hanging out cannot prise the fence open', () => {
-  // It joined by its centre and may have been left half over the border, so the
-  // edge it asks for is outside the fence. Capped at the size the drag started
-  // from: a grip that refuses to shrink, never one that grows on its own.
-  assert.equal(holdFloor(BOX, 'e', [{ x: 480, y: 0, hw: 100 }]).w, 1000);
-  assert.equal(holdFloor(BOX, 'se', [{ x: 900, y: -900, hw: 200, hh: 200 }]).w, 1000);
-});
-
-test('a hold is measured in the fence its own frame', () => {
-  const straight = { x: 100, y: 100, w: 400, h: 200, rot: 0 };
-  const at = holdOffset({ x: 150, y: 80, w: 60, h: 40 }, straight);
-  assert.deepEqual(at, { x: 50, y: -20, hw: 30, hh: 20 });
-
-  // Turned a quarter turn anticlockwise: a card 50 to the east of the fence's
-  // centre in world terms is 50 along the fence's own *south* axis.
-  const turned = { x: 0, y: 0, w: 400, h: 200, rot: 90 };
-  const spun = holdOffset({ x: 50, y: 0, w: 60, h: 40 }, turned);
-  assert.ok(Math.abs(spun.x - 0) < 1e-9);
-  assert.ok(Math.abs(spun.y - -50) < 1e-9);
-  // And a card turned with its fence is square to it: it asks for its own box,
-  // not for the larger one its corners sweep out in world axes.
-  const square = holdOffset({ x: 0, y: 0, w: 60, h: 40, rot: 90 }, turned);
-  assert.ok(Math.abs(square.hw - 30) < 1e-9);
-  assert.ok(Math.abs(square.hh - 20) < 1e-9);
-});
-
-test('a turned fence is not floored open by an axis its grip never touched', () => {
-  // A card near the corner of a fence turned 45 degrees. Read in world axes its
-  // offset and its extents both exceed the height, so the sign-0 axis of an east
-  // drag - which should floor nothing - pins the height at its starting value and
-  // the fence cannot be shrunk at all. In the fence's own frame the card is where
-  // it looks: square to the fence, well inside, and holding half of it.
-  const fence = { x: 0, y: 0, w: 600, h: 200, rot: 45 };
-  const member = { x: 200, y: 200, w: 100, h: 100, rot: 45 };
-  const world = { x: member.x - fence.x, y: member.y - fence.y, hw: 70.71, hh: 70.71 };
-  assert.equal(holdFloor(fence, 'e', [world]).h, fence.h, 'world axes allow no shrink at all');
-  assert.ok(Math.abs(holdFloor(fence, 'e', [holdOffset(member, fence)]).h - 100) < 1e-9);
+test('the floor never asks for growth', () => {
+  // Every case above is capped, so a grip can always be dragged outwards and a
+  // region can never widen on its own from being grabbed.
+  const holds = [{ fx: 0.49, fy: 0.49, hw: 500, hh: 500 }];
+  const floor = carryFloor(BOX, holds);
+  assert.ok(floor.w <= BOX.w);
+  assert.ok(floor.h <= BOX.h);
 });
 
 // A band catches a card by overlap and a fence only by covering it. A fence is
