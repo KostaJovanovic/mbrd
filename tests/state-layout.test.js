@@ -164,6 +164,44 @@ test('a board with nothing on it does not record an undo step', () => {
   assert.equal(undo(), false);
 });
 
+test('raising a card keeps its memory of where it sat before the lattice', () => {
+  // Bring to front rewrites z and nothing else. commitGeom() gave up the presnap
+  // memo on any GEOM_KEYS difference, and z is one of those - so raising a card
+  // on a snapped board silently threw away where it had been put, and turning
+  // snapping off later left it wherever the lattice had moved it. Undo restored
+  // the position and not the memo, so there was no way back.
+  fresh();
+  const [a] = addItems([boxAt(17, -23, 90, 140)]);
+  setSetting('snap', true);
+  const laid = geom(byId(a.id));
+  const memo = { ...byId(a.id).meta.presnap };
+
+  const before = snapshotGeom([a.id]);
+  byId(a.id).z = 99;
+  commitGeom('Bring to front', before, [a.id]);
+
+  assert.deepEqual(byId(a.id).meta.presnap, memo, 'the memo survives a z-only commit');
+  assert.deepEqual(geom(byId(a.id)), laid, 'and the card has not moved');
+  setSetting('snap', false);
+  assert.deepEqual(geom(byId(a.id)), { x: 17, y: -23, w: 90, h: 140 });
+});
+
+test('moving a card on a snapped board does give up the memo', () => {
+  // The other half, so the fix above cannot be read as "never forget". A change
+  // in any of x, y, w, h is a placement, and a placement is the user overruling
+  // where the lattice had put the card.
+  fresh();
+  const [a] = addItems([boxAt(17, -23, 90, 140)]);
+  setSetting('snap', true);
+  assert.ok(byId(a.id).meta.presnap, 'laid on the lattice, so there is a memo');
+
+  const before = snapshotGeom([a.id]);
+  byId(a.id).x += 128;
+  commitGeom('Move', before, [a.id]);
+
+  assert.ok(!byId(a.id).meta.presnap, 'placed by hand, so the memo goes');
+});
+
 test('a memo that is not a box is ignored rather than written onto the item', () => {
   // What a hand-edited .mbrd can carry. Restoring from it would otherwise put
   // a string, or a zero size, straight onto the item's geometry.

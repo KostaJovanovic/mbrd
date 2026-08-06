@@ -7,10 +7,16 @@ it serialises requests - which deadlocks the service worker's background
 revalidation fetches. This does the three things that matter:
 
   /                    -> web/index.html
-  /assets/...          -> served literally from web/
-  /anything-else       -> web/index.html (SPA fallback), or 404.html for a
-                          request that clearly wanted a real file (has an
-                          extension)
+  /assets/...          -> served literally from web/, when the file is there
+  /name                -> web/name.html, when that file is there
+  /anything-else       -> web/index.html, with a **404 status** (_serve_notfound)
+
+The last line is the whole not-found design and not a fallback: there is no
+separate error page, the app is its own, and main.js works out that it is not at
+home by looking at the URL. The status stays a 404 because that is what a crawler
+reads - handing index.html back with a 200 is a soft 404, a page that says "not
+found" while swearing it is fine. A static host is asked for the same thing in
+web/_redirects.
 
 It binds 0.0.0.0 and prints a scannable QR for the LAN URL, so a phone on the
 same Wi-Fi can open the board without typing an IP.
@@ -85,21 +91,39 @@ class BoardHandler(SimpleHTTPRequestHandler):
         # exist" is a question worth only asking inside the document root.
         if not self._inside_root(full):
             self._not_found = True
-            return '/404.html'
+            return '/index.html'
         if os.path.isfile(full):
             # Hand back the still-encoded path so the base handler unquotes it
             # exactly once, as it normally would.
             return raw
         if os.path.isfile(full + '.html'):
             return '/' + rel + '.html'
-        if os.path.splitext(rel)[1]:
-            self._not_found = True      # wanted a real file: a 404 is the truth
-            return '/404.html'
-        return '/index.html'            # SPA route
+        # Everything left is an address the app does not have, and every one of
+        # them gets the app itself with a 404 status. That is the whole of the
+        # not-found design: there is no separate error page any more, the app is
+        # it, and main.js works out that it is not at home by looking at the URL
+        # (see notFound there). The status still has to be a 404 - it is what
+        # keeps a dead address out of a search index, and what the browser and
+        # every crawler actually read.
+        #
+        # No SPA-route branch above this. The app has no path routes: it lives
+        # at / and says everything else in the hash, so an extensionless path
+        # that is not a file is a miss like any other. It used to be handed
+        # index.html with a 200, which is a soft 404 - a page that says "not
+        # found" while swearing it is fine.
+        self._not_found = True
+        return '/index.html'
 
     def _serve_notfound(self):
+        """The app, at an address it does not have, with the status that says so.
+
+        Body and status are decoupled here on purpose: the document is the same
+        index.html the root serves, and the only difference a miss makes is the
+        404 in the status line. A static host is asked to do the same thing in
+        web/_redirects.
+        """
         try:
-            with open(os.path.join(ROOT, '404.html'), 'rb') as f:
+            with open(os.path.join(ROOT, 'index.html'), 'rb') as f:
                 body = f.read()
         except OSError:
             self.send_error(404)

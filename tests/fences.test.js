@@ -325,6 +325,21 @@ test('a board holding nothing but fences is holding nothing', () => {
   assert.equal(hasGhosts(), true, 'the hints have not been earned away');
 });
 
+test('a fences-only board still shows its hints after a save and a reload', () => {
+  // The same rule one door along. loadBoard() arms the ghost latch from what the
+  // arriving board holds, and it asked `type !== 'title'` rather than isContent()
+  // - so a board of nothing but regions came back off disk latched as though it
+  // had content, and the hints that the test above proves it has earned never
+  // appeared again for the session. Drift from the commit that introduced fences,
+  // which converted hasContent() and missed this one call.
+  addItems([fence({ x: 0, y: 0 })]);
+  const file = serializeBoard();
+  loadBoard(file);
+  assert.equal(hasContent(), false, 'still a board holding nothing');
+  ensureGhostCards();
+  assert.equal(hasGhosts(), true, 'so it still gets told what to do with it');
+});
+
 test('a card in a fence is still content', () => {
   addItems([fence({ x: 0, y: 0, w: 800, h: 600 })]);
   addItems([photo({ x: 0, y: 0 })]);

@@ -67,10 +67,33 @@ html, body {
    families, this is the split doing its work; at either end both name the
    same family and the whole rule is a no-op. Grouped rather than repeated
    thirteen times, and kept next to the body rule it is the counterweight to. */
-.card-icon, .card-meta, .item-label, .wordmark h1, .wordmark .sub,
+.card-icon, .card-meta, .item-label, .wordmark :is(h1, h2), .wordmark .sub,
 .side-sec h2, .field > span, .hint, .keys li, .side-foot,
 #bin-panel h2, #bin-none, #bin-hint, #drop-overlay div, #toast {
   font-family: var(--font-display);
+}
+
+/* Present but not drawn: read aloud, found by a crawler, and out of the flow.
+
+   Not display:none and not visibility:hidden - both of those take the text out
+   of the accessibility tree too, which is the one thing this must not do. The
+   recipe is the standard one and every line of it is load-bearing: a 1x1 box so
+   it cannot be clicked into, the negative margin so it contributes nothing,
+   inset(50%) rather than the old clip rect, and overflow:hidden so the clipped
+   text cannot paint outside. The same recipe is inlined once in mobile.css for
+   the toolbar labels at the narrowest width; that one is inside a media query
+   and stays where it is.
+
+   Its only user today is the tail of the sidebar wordmark, which says what the
+   app is to a screen reader and to a search engine while the eye reads the four
+   letters the mark is. */
+.vh {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0; border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 /* The sheet. #viewport paints the grid on top of this and stays transparent,

@@ -17,6 +17,13 @@ import { writeZip, readZip } from './zip.js';
 import { getAsset, putAsset } from './assets.js';
 import { sha256, isHash, itemHashes } from '../util.js';
 import { VERSION } from '../version.js';
+// The note text model, and the only thing this module takes from canvas/. Both
+// are pure functions of a string - the format's own Markdown flavour, which the
+// renderer happens to also be the main reader of - and the sidecar reconciliation
+// in unpackBoard() cannot be written without them. Copying twenty lines of block
+// splitting in here to avoid the import would give the format a second answer to
+// what `# ` means, which is the one thing worth avoiding more than the edge.
+import { parseNoteText, flattenNoteRich } from '../canvas/note-model.js';
 
 export const FORMAT = 'mbrd';
 export const FORMAT_VERSION = 1;
@@ -222,12 +229,21 @@ function noteFile(item) {
   return `${NOTES_DIR}${slug}--${item.id}.md`;
 }
 
-/** First line as a heading, the rest as the body. */
+/**
+ * First line as a heading, the rest as the body.
+ *
+ * The marker is not added when the line already carries one. meta.text has been
+ * Markdown-flavoured since meta.rich arrived - a block writes its own `# ` or
+ * `## ` - so prefixing unconditionally exported a rich note's first line as
+ * `# # buy the smaller one`. Harmless coming back, since parseNote() eats a run
+ * of hashes, and wrong in the file, which is the half a person reads.
+ */
 function noteMarkdown(item) {
   const [title, ...rest] = (item.meta?.text || '').split('\n');
   const head = title.trim();
+  const marker = /^#+\s/.test(head) ? '' : '# ';
   const body = rest.join('\n').trim();
-  return (head ? '# ' + head + '\n' : '') + (body ? '\n' + body + '\n' : '');
+  return (head ? marker + head + '\n' : '') + (body ? '\n' + body + '\n' : '');
 }
 
 /**
@@ -439,7 +455,21 @@ export async function unpackBoard(blob) {
     const id = noteId(name);
     const item = id && notes.get(id);
     if (!item) continue;
-    item.meta = { ...item.meta, text: parseNote(dec.decode(bytes)) };
+    const text = parseNote(dec.decode(bytes));
+    item.meta = { ...item.meta, text };
+    // The .md outranks board.json, and meta.rich is *part of* board.json. Left
+    // alone it kept winning on screen while meta.text took the edit, so a
+    // hand-edited note came back showing the old words while Find matched the
+    // new ones - and the next keystroke in the editor flattened the stale rich
+    // back over text and destroyed the edit for good.
+    //
+    // Re-derived rather than dropped: the sidecar carries words, not looks, so
+    // the note keeps its face, its size and its vertical placement and only the
+    // blocks are rebuilt. Nothing happens when the two already agree, which is
+    // every file this app wrote.
+    if (item.meta.rich && flattenNoteRich(item.meta.rich) !== text) {
+      item.meta.rich = { ...item.meta.rich, blocks: parseNoteText(text) };
+    }
   }
 
   // Waveforms the same, but one file can answer for several cards: the sidecar

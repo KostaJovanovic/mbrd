@@ -127,7 +127,7 @@
    point downstream, from a font that simply has less.
    ui/appearance.js sets the attribute; see markDisplayFace() for how a stack is
    judged to be a sans. */
-:root[data-display-sans] .wordmark h1 { font-weight: 900; }
+:root[data-display-sans] .wordmark :is(h1, h2) { font-weight: 900; }
 
 #sidebar.is-open ~ #menu-btn { opacity: 0; pointer-events: none; }
 /* The mobile Edit button stays reachable with the sidebar open - editing the
@@ -215,7 +215,11 @@
   border-bottom: 1px solid var(--rule);
 }
 .wordmark { margin: 0; }
-.wordmark h1 {
+/* h1 in the sidebar, h2 in the header panel: same mark, different rank. The
+   sidebar's is the document's heading and the panel's is a section head inside
+   a page that already has one, so the pair is matched here rather than being
+   two rules that would drift. */
+.wordmark :is(h1, h2) {
   margin: 0;
   font-size: 30px;
   /* The tier's own display weight, unshifted - 400 at the soft and plain ends,

@@ -32,7 +32,7 @@ import { openFile } from '../storage/storage.js';
 const FONT_EXTS = new Set(['woff2', 'woff', 'ttf', 'otf']);
 
 /** Guard against someone dropping a whole photo library by accident. */
-const MAX_FILES = 500;
+export const MAX_FILES = 500;
 
 /**
  * How many files are prepared at once.
@@ -87,7 +87,10 @@ export function initDrop(vp) {
     // picture is what was being dragged, with the URL along for the ride.
     if (hasFiles(e.dataTransfer)) {
       const incoming = await filesFrom(e.dataTransfer);
-      await importFiles(incoming.files, at, { avoidOverlap: incoming.fromFolder });
+      await importFiles(incoming.files, at, {
+        avoidOverlap: incoming.fromFolder,
+        truncated: incoming.truncated,
+      });
       return;
     }
     const urls = urlsFrom(e.dataTransfer);
@@ -149,7 +152,10 @@ export function initDrop(vp) {
   const input = document.getElementById('file-input');
   input.addEventListener('change', async () => {
     const mode = input.dataset.mode;
-    if (!mode) return;                           // storage.js is using it for .mbrd
+    // Not ours. Either nobody set one, or storage.js has it open for a .mbrd and
+    // said so - both are the same answer here, and asking positively means a
+    // future third owner is refused rather than mistaken for content.
+    if (mode !== 'content' && mode !== 'cover') return;
     const files = [...input.files];
     input.value = '';
     delete input.dataset.mode;
@@ -182,6 +188,13 @@ export function pickFiles() {
   input.accept = '';
   input.multiple = true;
   input.dataset.mode = 'content';
+  // With accept and multiple, and for the reason above: `mode` was the one
+  // attribute the reset in the change handler owned alone, so a cancelled cover
+  // picker left mode='cover' and coverFor pointing at a card - and the *next*
+  // Add files then handed its first file to that card as a cover and dropped the
+  // rest. Cleared at open time here, which is the only moment every path passes
+  // through.
+  coverFor = null;
   input.click();
 }
 
@@ -190,9 +203,12 @@ export function pickFiles() {
  *
  * Module state rather than a closure because the one hidden input is shared
  * three ways - content here, .mbrd in storage.js, and this - and `mode` on
- * the element is how they stay out of each other's way. Cleared as soon as it
- * is read, so a cancelled picker cannot leave a card armed to receive the next
- * unrelated file.
+ * the element is how they stay out of each other's way.
+ *
+ * Cleared when it is read, *and* at the head of pickFiles(). Only the first was
+ * ever true, which left the arming to survive a cancel: a cancelled picker fires
+ * no `change`, so the card stayed armed until something opened the picker again
+ * - and the next Add files gave that card its first file as a cover.
  */
 let coverFor = null;
 
@@ -235,7 +251,7 @@ async function applyCover(id, file) {
  * Turn a list of Files into board items around `centre`.
  * A lone .mbrd opens as a board instead of being embedded.
  */
-export async function importFiles(files, centre, { avoidOverlap = false } = {}) {
+export async function importFiles(files, centre, { avoidOverlap = false, truncated = false } = {}) {
   files = [...files].filter(f => f && (f.size > 0 || f.type));
   if (!files.length) return [];
 
@@ -258,7 +274,11 @@ export async function importFiles(files, centre, { avoidOverlap = false } = {}) 
     if (!files.length) return [];
   }
 
-  let trimmed = false;
+  // Seeded from what the walk reported, because by the time the list arrives
+  // here the cut has already happened: filesFrom() stops *at* MAX_FILES, so the
+  // comparison below can only ever fire for a caller that did not cap - the
+  // picker, and the paste path.
+  let trimmed = truncated;
   if (files.length > MAX_FILES) {
     files = files.slice(0, MAX_FILES);
     trimmed = true;
@@ -716,13 +736,17 @@ function urlsFrom(dt) {
 /**
  * Files out of a DataTransfer, walking into dropped folders when the browser
  * exposes the entries API. Falls back to the flat file list elsewhere.
+ *
+ * Returns `{ files, fromFolder, truncated }`. Exported for the sake of the last
+ * of those: the cap is applied here and reported here, and a test that had to go
+ * through the whole import to see it would be testing the toast.
  */
-async function filesFrom(dt) {
+export async function filesFrom(dt) {
   const items = [...(dt.items || [])];
   const canWalk = items.length && typeof items[0].webkitGetAsEntry === 'function';
   if (!canWalk) {
     const files = [...dt.files];
-    return { files, fromFolder: files.some(file => !!file.webkitRelativePath) };
+    return { files, fromFolder: files.some(file => !!file.webkitRelativePath), truncated: false };
   }
 
   const entries = items.map(i => i.webkitGetAsEntry()).filter(Boolean);
@@ -732,7 +756,13 @@ async function filesFrom(dt) {
     await walkEntry(entry, out);
     if (out.length >= MAX_FILES) break;
   }
-  return { files: out.length ? out : [...dt.files], fromFolder };
+  // Reported rather than left to be inferred. The walk stops *at* MAX_FILES, so
+  // importFiles()'s `files.length > MAX_FILES` was unreachable from a drop and a
+  // folder of a thousand photographs brought in five hundred while saying it had
+  // brought in everything. Inferring it there with >= would be one character and
+  // wrong for the picker, where five hundred chosen files really are five hundred
+  // files and nothing was cut.
+  return { files: out.length ? out : [...dt.files], fromFolder, truncated: out.length >= MAX_FILES };
 }
 
 async function walkEntry(entry, out) {

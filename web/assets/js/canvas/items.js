@@ -14,6 +14,7 @@ import { shuffle } from '../util.js';
 import { quality } from '../quality.js';
 import { itemRadius, rotatedExtents } from '../geometry.js';
 import { buildContent, fitMode } from './renderers.js';
+import { POSTER_TIME } from './video.js';
 import { clearDisplay } from './display.js';
 import { releasePlayers } from './audio.js';
 import { flyOut } from './exit-anim.js';
@@ -309,7 +310,13 @@ function discard(el) {
  */
 function disposable(el) {
   for (const m of el.querySelectorAll('video, audio')) {
-    if (!m.paused || m.currentTime > 0) return false;
+    // POSTER_TIME, not zero. Every desktop video is mounted at the poster
+    // fragment, so `currentTime > 0` was true of a clip nobody had touched -
+    // which made every video card on the board undisposable and left the nodes
+    // map growing one detached <video> per card panned over, for the life of the
+    // tab. An audio element carries no fragment and sits at 0, so the same
+    // comparison is unchanged for it.
+    if (!m.paused || m.currentTime > POSTER_TIME) return false;
   }
   // An embedded player is another origin, so there is no asking whether it is
   // playing - `paused` is not readable across one. Its presence is the answer

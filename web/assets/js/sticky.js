@@ -252,7 +252,11 @@ export function attachRiders(riders, place, build) {
       if (pending.has(host.id)) continue;        // host is a rider, not placed yet
       const hostDst = place.get(host.id);
       if (!hostDst) continue;                     // host not laid out yet this pass
-      place.set(note.id, build(note, byId(host.id), hostDst));
+      // `host` itself, not byId(host.id). stuckTo() already returned the live
+      // item, so the round trip bought nothing and cost the one thing an index
+      // can be: out of date. It is the read that threw during a load, before
+      // loadBoard() learned to drop the index where it swaps the array.
+      place.set(note.id, build(note, host, hostDst));
       pending.delete(note.id);
       grew = true;
     }

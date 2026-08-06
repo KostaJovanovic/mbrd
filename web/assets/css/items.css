@@ -393,6 +393,69 @@
   text-wrap: pretty;
 }
 
+/* The number, on the one card that is a statement rather than a hint.
+
+   Reached through data-hint, which the ghost renderer already puts on every
+   card for exactly this kind of thing - Softish tears each hint to a silhouette
+   of its own through the same attribute. So a card that needs its own treatment
+   gets one without a new class or a branch in the renderer.
+
+   Upright, not the italic every other ghost title wears: an italic is a voice,
+   and a number is not being said. Terracotta because it is the only thing on
+   this board that is not prose, and the accent is what the app uses to mark the
+   one thing in view that is different in kind.
+
+   World pixels, like every other size on a card, so it zooms with the board.
+   That is why it is a flat 64 and not a clamp - a viewport-relative size on an
+   item would grow when the window did while the card it sits in stayed put. */
+.ghost-card[data-hint="gone"] .ghost-title {
+  margin-bottom: 6px;
+  font-size: 64px;
+  font-style: normal;
+  font-weight: var(--display-weight);
+  line-height: 0.95;
+  letter-spacing: calc(0.04em * var(--ls-scale));
+  color: var(--accent);
+}
+
+/* The one hint you follow rather than read: the way back, on the card a board
+   opened at a dead address carries. Built by the ghost renderer only for a hint
+   that names an href.
+
+   Dressed as the app's own filled control - the terracotta and --leaf that the
+   sidebar's primary button wears - and not as a link in running text. It is the
+   only thing to do on that board, and a card standing in an empty room asking
+   to be clicked should look like a button. */
+.ghost-go {
+  /* .item-body refuses the pointer so a whole card is one drag target. This is
+     the second exception on the board, and for the same reason the dial is the
+     first: it has to be pressed, not dragged. Without it the card swallows the
+     click and the only way off a dead address is the browser's back button. */
+  pointer-events: auto;
+  align-self: flex-start;
+  /* Under the line it belongs to, not pinned to the foot of the card. .ghost-card
+     centres its children as a group, and margin-top: auto opted this one out of
+     that - which left the button stranded at the bottom with a hole above it
+     while the prose floated in the middle. A card is one object; its parts stay
+     together and the whitespace goes round the outside. */
+  margin-top: 4px;
+  padding: 6px 12px;
+  border-radius: var(--leaf);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: calc(0.03em * var(--ls-scale));
+  text-decoration: none;
+  box-shadow: var(--shadow-1);
+  transition: background var(--dur-fast) var(--ease);
+}
+.ghost-go:hover { background: color-mix(in srgb, var(--accent) 88%, var(--ink)); }
+/* Replaced, never removed. A ghost card carries no other focusable child, so
+   this is the only thing a keyboard can land on out here. */
+.ghost-go:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
 /* ---- Softish: a page torn out, taped down ------------------------------
    The scrapbook end of the axis, and the scrapbook version of the dashed edge
    the other two tiers wear. Two halves, and they say the same thing twice in
@@ -563,6 +626,15 @@
   gap: 4px;
 }
 :root[data-board-mode="mobile"] .ghost-title { font-size: 17px; }
+/* The not-found number, stepped up with everything else on this layout - and it
+   has to be restated here rather than left to the rule above, because that rule
+   and the one setting the number in the ghost block have the same specificity,
+   so on document order alone the 17px was winning and the number came out the
+   size of a heading. It is the one place on this board where the two blocks
+   collide; see the note on .ghost-card[data-hint="gone"] .ghost-title. */
+:root[data-board-mode="mobile"] .ghost-card[data-hint="gone"] .ghost-title {
+  font-size: 72px;
+}
 :root[data-board-mode="mobile"] .ghost-line {
   font-size: 14px;
   line-height: 1.38;

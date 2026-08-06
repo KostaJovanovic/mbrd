@@ -21,7 +21,7 @@
 // ones in canvas/input.js's header - it is the map, and this is a paraphrase of
 // it that has to stay true.
 
-import { bus, dismissGhosts, hasContent, hasGhosts } from '../state.js';
+import { bus, dismissGhosts, hasContent, hasGhosts, isNotFoundBoard } from '../state.js';
 
 /**
  * The three hints, keyed by the meta.hint their item carries.
@@ -53,6 +53,42 @@ export const HINTS = Object.freeze({
   whimsy: {
     title: 'Whimsy',
     line: 'Playful, or plain.',
+  },
+
+  // The other set: what an empty board says when it was opened at an address
+  // that does not exist. state.js seeds these instead of the three above when
+  // main.js boots into not-found (see NOTFOUND there); nothing else about the
+  // board differs, which is the point - the app is its own 404 page, and a 404
+  // here is an ordinary blank board that knows why it is blank.
+  //
+  // Two cards, not three, and the same shape as a hint only on paper: the title
+  // here is the number itself, and items.css sets it at sixty-odd pixels for
+  // this key alone. Everything else follows the hints' discipline - a head that
+  // survives a glance, one line for whoever stopped to read.
+  //
+  // The second sentence is the one that earns the card. A visitor who has a
+  // board of their own is looking at a blank one, and needs telling in words
+  // that this is not it and that theirs has not been touched; without that, the
+  // most reasonable thing to think is that the app has just lost their work.
+  gone: {
+    title: '404',
+    line: 'Nothing of ours lives at that address. This board is blank and it is not yours - nothing on it is saved, and your own is exactly where you left it.',
+  },
+  // The way back, and the one card in either set that is a link rather than a
+  // sentence. `href` is what the renderer switches on; the dial does the same
+  // thing through DIAL, and for the same reason - a hint you use rather than
+  // read. canvas/input.js already names `a` in its widget branch, so the press
+  // reaches the link instead of starting a drag on the card.
+  back: {
+    title: 'Back to the board',
+    line: 'Open the app at its own address. Your last board comes back with it.',
+    href: '/',
+    // The button says something other than the card's own title, which it would
+    // otherwise borrow. A heading and the control under it reading the same
+    // four words is the card saying one thing twice - the same objection the
+    // dial's note makes about printing a title over a row already labelled
+    // Softish / Middle / Harsh.
+    go: 'Open mbrd',
   },
 });
 
@@ -186,6 +222,10 @@ export function initGhosts(commands) {
     // and stops here, because by then there are no ghosts left. That is the
     // whole re-entrancy story; it is one level deep and it terminates.
     if (!hasGhosts() || !hasContent()) return;
+    // The not-found set is not swept. A hint is earned away by doing the thing
+    // it describes; these are a statement about the address, and one of them is
+    // the way off it. See isNotFoundBoard() in state.js for the whole argument.
+    if (isNotFoundBoard()) return;
     dismissGhosts();
   });
 }

@@ -12,7 +12,7 @@
 // Written out in full rather than composed from PREFIX, because save.bat bumps
 // this line by regex on every commit and would not recognise an expression.
 // tests/sw.test.js holds the two together.
-const VERSION = 'mbrd-v123';
+const VERSION = 'mbrd-v124';
 const PREFIX = 'mbrd-';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) turns the
@@ -75,7 +75,11 @@ const SHELL = [
   // they belong in here: a file this app ships is a file this app caches.
   './assets/img/credit-valjdakosta.webp',
   './assets/img/credit-omarzunic.webp',
-  './404.html',
+  // No 404 page in here, because there is no 404 page. The app is served at
+  // addresses it does not have and works out from the URL that it is one of
+  // them, so what a miss needs cached is index.html - which is the first entry
+  // in this list, and the same document the navigation fallback already hands
+  // back offline.
   './assets/js/main.js',
   './assets/js/commands.js',
   './assets/js/state.js',

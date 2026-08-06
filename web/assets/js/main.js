@@ -19,8 +19,9 @@ import { ask } from './ui/dialog.js';
 import { VERSION } from './version.js';
 import {
   board, bus, selection, byId, setAssetNameLookup,
-  ensureTitleCard, isTitleHidden, TITLE_ID,
-  ensureGhostCards, hasGhosts, GHOST_IDS,
+  ensureTitleCard, isTitleHidden, TITLE_ID, setTitle,
+  ensureGhostCards, hasContent, dismissGhosts, leaveNotFoundBoard, isContent,
+  defaultBoardTitle,
 } from './state.js';
 import { Viewport } from './canvas/viewport.js';
 import { paintGrid, paintGridOnView, resetGridInk } from './canvas/grid.js';
@@ -35,7 +36,8 @@ import { initStills } from './canvas/stills.js';
 import { initInput } from './canvas/input.js';
 import { initDrop } from './import/drop.js';
 import {
-  initStorage, restoreSession, openFile, autosave, setPrompt,
+  initStorage, restoreSession, openFile, autosave, setPrompt, suspendCache,
+  resetSessionLatches,
 } from './storage/storage.js';
 import { flushNoteEdit, growNote } from './canvas/notes.js';
 import { initAssets, getAsset } from './storage/assets.js';
@@ -326,20 +328,145 @@ addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') flushEdits();
 });
 
+/**
+ * Whether this page was served at an address the app does not have.
+ *
+ * The app is its own 404 page: a host that cannot find a path serves index.html
+ * at that path with a 404 status (serve.py does it, _redirects asks a static
+ * host to), and this is how the app finds out. Nothing in the response says so
+ * - a document cannot read its own status code - so the URL is the signal.
+ *
+ * Compared against document.baseURI rather than against the string '/', because
+ * index.html carries a <base> and the app is wherever that says it is. The two
+ * agree at the root today; they would not if this were ever hosted in a
+ * subdirectory, and then this check would still be right.
+ *
+ * `/index.html` is the same page by another name and is not a miss.
+ */
+const HOME = new URL('.', document.baseURI).pathname;
+
+const notFound = (() => {
+  return location.pathname !== HOME && location.pathname !== HOME + 'index.html';
+})();
+
+/**
+ * The moment a not-found board stops being one.
+ *
+ * A blank board at a dead address is a message, and a message you have started
+ * dropping things onto is a board. So the first piece of real content hands the
+ * whole thing over: the address becomes the app's own, the two cards are swept
+ * the way any earned-away hint is, and the writer comes back on.
+ *
+ * The order below is the entire correctness argument, so:
+ *
+ * 1. The stored session is read FIRST, and what the visitor just made is put
+ *    back on top of it. This is the part that would be easy to get wrong and
+ *    expensive to get wrong: the not-found board never loaded their board, so
+ *    simply switching the writer back on would autosave a board containing one
+ *    dropped photograph over a board containing everything they own. Loading
+ *    theirs and re-adding the new items means the drop lands on their board -
+ *    which is also, as it happens, what somebody who dropped a file on mbrd
+ *    was expecting to happen.
+ * 2. The listener is detached before any of it, because restoreSession() emits
+ *    'items' itself and would otherwise re-enter this on its way through.
+ * 3. resetSessionLatches() is last. It is the one that undoes the suspendCache()
+ *    at boot, and nothing may be written until the board underneath is the real
+ *    one.
+ *
+ * replaceState rather than assign: a navigation would throw away the very thing
+ * that triggered the handover. The address is corrected in place, so a reload
+ * from here is an ordinary load of an ordinary board, and the wrong URL is not
+ * left in the history for the back button to find.
+ */
+async function leaveNotFound() {
+  bus.off('items', onFirstContent);
+  leaveNotFoundBoard();
+  // Before anything replaces the board, because an open composer holds its card
+  // outside #world: resetItems() would call el.remove() on a node living in
+  // #compose-mount, the blur re-parents it inside the browser's own removal
+  // step, and the throw takes the rest of the handover with it. This is the same
+  // synchronous close the way out of the page uses.
+  flushNoteEdit();
+  history.replaceState(null, '', HOME + location.search + location.hash);
+  // Everything the visitor has put here, collected *after* the await and not
+  // before. On this board that is all there is: the title card is furniture and
+  // the two cards are ghosts, so isContent() names exactly the new items and
+  // nothing else - but restoreSession() yields for a chunked asset read that can
+  // run for hundreds of milliseconds, and a second file dropped inside that
+  // window would otherwise go down with loadBoard()'s wholesale reassignment of
+  // board.items, undo entry and all. `held` keeps the pre-load array, which
+  // loadBoard() replaces rather than mutates, so late arrivals are still in it.
+  const held = board.items;
+  const had = await restoreSession();
+  const mine = held.filter(isContent);
+  if (had) {
+    // Straight onto the restored board, at the coordinates they already have.
+    //
+    // Not through addItems(), which commits - and the handover is not an edit
+    // somebody made, so it has no business in the undo history. And not nudged
+    // clear of what is already there either, which was tried and taken out
+    // again: two notes added on an ordinary board land on exactly the same
+    // spot, so an arrival sitting on top of a card is not a handover artefact,
+    // it is what this app does. Inventing a rule here that the board itself
+    // does not have would make the wrong-URL path the odd one out.
+    board.items.push(...mine);
+    bus.emit('items', { added: mine.map(i => i.id), removed: [] });
+    toast('Moved to your board');
+  } else {
+    // No stored board to merge into, so nothing overwrote the name the way
+    // loadBoard() does on the other branch. Left alone 'Not found' persists: the
+    // writer is about to come back on, that name fails isDefaultTitle(), and the
+    // board is called it on the title card, in the masthead and in the file
+    // Export would write.
+    setTitle(defaultBoardTitle());
+  }
+  dismissGhosts();
+  resetSessionLatches();
+  // And write it, rather than leaving it to the next edit or the 20s tick.
+  //
+  // This is the one moment the board is at its most fragile: the visitor is
+  // three seconds into a page they arrived at by mistake, the odds of them
+  // closing the tab are high, and until this line runs there is a board in
+  // memory that has never been on disk. The commit that brought them here
+  // requested a save of its own, but that request was made while the writer was
+  // still suspended and its cooldown then holds the next one off for seconds.
+  // So the handover commits itself.
+  autosave().catch(() => {});
+}
+
+/** Bound once so it can be taken off again inside the handover. */
+const onFirstContent = () => { if (hasContent()) leaveNotFound(); };
+
 const started = (async function start() {
-  const restored = await restoreSession();
+  // Before anything can fire a write. A not-found boot opens a blank board, and
+  // a blank board that autosaved would be the app quietly replacing whatever
+  // the visitor already had with nothing - the one outcome a wrong URL must not
+  // have. So the writer is stopped first and the session is never read: their
+  // board is not loaded here, not shown here, and cannot be lost here.
+  if (notFound) suspendCache();
+  const restored = notFound ? false : await restoreSession();
   // A restored or freshly-opened board runs ensureTitleCard() inside loadBoard();
   // the very first blank session never calls loadBoard, so seed the title card
   // here and mount it. initItems() has already run (module top), so its 'items'
   // listener is live and this renders the card without a reload.
   if (!restored) {
+    // The board's own name says it too, on the title card and in the Mobile
+    // masthead - the two places the board names itself. Through setTitle() so
+    // both hear about it; it marks nothing dirty, and the writer is off anyway.
+    if (notFound) setTitle('Not found');
     ensureTitleCard();
-    ensureGhostCards();
+    const ghosts = ensureGhostCards({ notFound });
     const seeded = [
       ...(isTitleHidden() ? [] : [TITLE_ID]),
-      ...(hasGhosts() ? GHOST_IDS : []),
+      ...ghosts,
     ];
     if (seeded.length) bus.emit('items', { added: seeded, removed: [] });
+    // Armed after the seeding, not before: mounting the cards emits 'items'
+    // itself, and a listener watching for the first content would have fired on
+    // the message announcing the message. hasContent() would have said no and
+    // it would have been harmless, but arming after the board is standing is
+    // the version that stays harmless when the seeding changes.
+    if (notFound) bus.on('items', onFirstContent);
   }
   openingView();
   if (restored) toast('Restored your last board');

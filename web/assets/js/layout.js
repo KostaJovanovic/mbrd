@@ -736,7 +736,14 @@ export function commitGeom(label, before, driven, options = {}) {
   // on the lattice. Turning snapping off later leaves it exactly here.
   if (board.settings.snap && !options.preservePresnap) {
     for (let i = 0; i < after.length; i++) {
-      if (GEOM_KEYS.some(k => after[i][k] !== before[i][k])) forgetPresnap(byId(after[i].id));
+      // SNAP_KEYS, not GEOM_KEYS. The memo records where a card sat before the
+      // lattice moved it, and unsnapAll() restores exactly those four - so only
+      // a spatial change can invalidate it. Bring to front rewrites z and
+      // nothing else, which the note below already lists among the callers that
+      // "change no note's position relative to anything", and it was throwing
+      // away the memory of every card it raised. Rotation is deliberately out
+      // too: turning a card does not change its snapped box.
+      if (SNAP_KEYS.some(k => after[i][k] !== before[i][k])) forgetPresnap(byId(after[i].id));
     }
     after = snapshotGeom(before.map(b => b.id));
   }

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  One URL, because there is one page. A sitemap this small buys little on its
+  own; it is here so the site has the file a crawler and Search Console both
+  look for, and so there is somewhere obvious to add the second page the day
+  there is one.
+
+  No <lastmod>: a date that is not maintained is worse than no date, and this
+  one would go stale the first time the app changed without anyone editing this
+  file. No <changefreq> or <priority> either - Google has ignored both for years
+  and states so.
+
+  The URL must match rel=canonical in index.html exactly, trailing slash and
+  all. A sitemap entry that differs from the canonical is a second opinion, and
+  the crawler resolving the disagreement is time it does not spend on the page.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://mbrd.valjdakosta.com/</loc>
+  </url>
+</urlset>

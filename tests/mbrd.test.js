@@ -190,6 +190,66 @@ test('a hand-edited note file wins over board.json', async () => {
   assert.equal(back.items[0].meta.text, 'edited by hand\nwith a body');
 });
 
+test('a hand-edited note file wins over meta.rich as well', async () => {
+  // The same promise, against the half that had never been asked. meta.rich is
+  // part of board.json, and normalizeNoteRich() prefers it whenever it is
+  // well-formed - so the sidecar took meta.text, the card went on showing the
+  // words in meta.rich, Find matched the ones nobody could see, and the next
+  // keystroke in the editor flattened the stale rich back over the edit.
+  //
+  // Every note in the file above carries meta.text and no meta.rich, which is
+  // why none of them caught it.
+  clearAssets();
+  const rich = {
+    font: 'serif', size: 1.4, valign: 'middle',
+    blocks: [
+      { tag: 'h1', align: 'center', text: 'original' },
+      { tag: 'p', align: 'left', text: 'body' },
+    ],
+  };
+  const board = boardOf([item({
+    id: 'i1', type: 'note', meta: { text: '# original\nbody', rich },
+  })]);
+  const { blob } = await packBoard(board);
+  const files = await readZip(blob);
+  const noteName = [...files.keys()].find(n => n.startsWith('notes/'));
+
+  const { writeZip } = await import('../web/assets/js/storage/zip.js');
+  const edited = await writeZip([...files].map(([name, data]) => ({
+    name,
+    data: name === noteName ? enc.encode('# edited by hand\n\nwith a body\n') : data,
+    compress: true,
+  })));
+
+  const back = (await unpackBoard(edited)).board;
+  const meta = back.items[0].meta;
+  assert.equal(meta.text, 'edited by hand\nwith a body');
+  assert.deepEqual(meta.rich.blocks.map(b => b.text), ['edited by hand', 'with a body'],
+    'the blocks are re-derived from the sidecar');
+  // Words, not looks: the .md has no way to carry a face or a size, so the note
+  // keeps the ones it had rather than being reset to the defaults.
+  assert.equal(meta.rich.font, 'serif');
+  assert.equal(meta.rich.size, 1.4);
+  assert.equal(meta.rich.valign, 'middle');
+});
+
+test('a note whose first line is already a heading is not marked twice', async () => {
+  // meta.text has been Markdown-flavoured since meta.rich arrived, so the '# '
+  // the writer added unconditionally landed on top of the block's own marker.
+  clearAssets();
+  const board = boardOf([item({
+    id: 'i1', type: 'note',
+    meta: {
+      text: '# buy the smaller one',
+      rich: { blocks: [{ tag: 'h1', align: 'left', text: 'buy the smaller one' }] },
+    },
+  })]);
+  const files = await readZip((await packBoard(board)).blob);
+  const noteName = [...files.keys()].find(n => n.startsWith('notes/'));
+  const md = new TextDecoder().decode(files.get(noteName));
+  assert.equal(md.split('\n')[0], '# buy the smaller one');
+});
+
 // ---------------------------------------------------------------------------
 // Waveform sidecars
 // ---------------------------------------------------------------------------

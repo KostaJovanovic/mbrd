@@ -9,12 +9,14 @@ and where a given change belongs.
 ## Project layout, briefly
 
 `web/` is the browser application and the static document root. Entry files
-(`index.html`, `manifest.json`, `sw.js`, `404.html`) sit at its top level;
+(`index.html`, `manifest.json`, `sw.js`) sit at its top level;
 styles are in `web/assets/css/` and JavaScript under `web/assets/js/`, split by
 responsibility into `canvas/`, `import/`, `arrange/`, `storage/`, `ui/`,
 `optimize/` and `perf/`.
 
-`serve.py` is the local threaded server with SPA fallback; `qr.py` beside it
+`serve.py` is the local threaded server; an address it does not have gets
+`index.html` back under a 404 status, because the app is its own 404 page and
+there is no separate error document. `qr.py` beside it
 holds the terminal QR encoder; `server.bat` is the Windows launcher.
 `tools/gen-formats.mjs` regenerates the committed format catalog.
 

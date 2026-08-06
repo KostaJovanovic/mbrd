@@ -27,6 +27,26 @@
 import { registerPlayer, bindScrub, PLAY_ICON, clock } from './audio.js';
 import { clamp, toast } from '../util.js';
 
+/**
+ * Where a parked video sits: the `#t=` media fragment canvas/renderers.js mounts
+ * a desktop clip at, which buys a real poster frame instead of a black
+ * rectangle.
+ *
+ * Here rather than beside the `v.src` line that writes it, because it is not a
+ * private detail of the renderer - it is the value two other places have to
+ * compare against, and comparing against zero instead is what made them both
+ * wrong. canvas/items.js read `currentTime > 0` as "this clip is doing
+ * something" and so exempted every desktop video card from the node cull, which
+ * left the cache growing one detached <video> per card panned over for the life
+ * of the tab; the transport below read the same thing as "this clip has been
+ * played" and put 0:00 where the running time goes.
+ *
+ * A tenth of a second rather than zero because a decoder handed t=0 often has
+ * nothing decoded yet and paints the black frame this exists to avoid. Small
+ * enough that it is the first frame to anybody looking at it.
+ */
+export const POSTER_TIME = 0.1;
+
 const SOUND_ICON =
   '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 6h2.4L8.8 3.1v9.8L5.4 10H3z" fill="currentColor"/>' +
   '<path d="M11 5.6a3.4 3.4 0 010 4.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
@@ -98,7 +118,14 @@ export function buildVideoPlayer(item, video) {
     // A parked clip shows how long it is; once it has started, where you are in
     // it. The old readout was currentTime alone, so every unplayed video on the
     // board said 0:00 and nothing anywhere gave its length.
-    const parked = video.paused && !video.currentTime;
+    //
+    // Measured against POSTER_TIME rather than zero, because that is where a
+    // parked clip actually sits: the desktop path mounts the source at the
+    // poster fragment, so `!video.currentTime` was false for every clip nobody
+    // had touched and the length went back to never being shown. The touch path
+    // holds the source back entirely and reads 0:00 for a different reason -
+    // `duration` is NaN until the first play - which this does not address.
+    const parked = video.paused && video.currentTime <= POSTER_TIME;
     time.textContent = clock(parked ? (video.duration || 0) : (video.currentTime || 0));
     track.setAttribute('aria-valuemax', Math.round(video.duration || 0));
     track.setAttribute('aria-valuenow', Math.round(video.currentTime || 0));

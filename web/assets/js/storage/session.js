@@ -18,7 +18,7 @@
 
 import { toast, busy, itemHashes, clearPrefs } from '../util.js';
 import {
-  board, serializeBoard, loadBoard, markDirty, isDirty, bus,
+  board, serializeBoard, loadBoard, markDirty, isDirty, bus, isNotFoundBoard,
 } from '../state.js';
 import { allAssets, putAsset } from './assets.js';
 import {
@@ -51,6 +51,14 @@ const SESSION_KEY = 'session';
 /** How often the background autosave writes, if anything has changed. */
 const AUTOSAVE_MS = 20000;
 let cacheOk = true;
+/**
+ * Whether `cacheOk` is off because somebody turned it off, rather than because a
+ * write failed. The two are the same latch and a completely different sentence:
+ * one is "this browser will not store the board", which is alarming and, on a
+ * not-found boot, untrue - the browser is fine, the app is deliberately not
+ * writing, because this address is not the visitor's board.
+ */
+let suspended = false;
 /**
  * Why the last write into this browser failed, for the button that has to say
  * so. Lives with the engine that sets it; the file half reads it through
@@ -143,7 +151,15 @@ function referencedHashes(data) {
   // so it carries the small copies alone. Here they are held, because this drives
   // the sweep and the sweep would otherwise delete the very bytes the undo entry
   // exists to put back. See swapAssets() and discardOriginals() in state.js.
-  for (const it of data.items || []) {
+  // The bin as well as the board, exactly like the walk above it. A binned item
+  // that was optimised still carries meta.was, discardOriginals() never clears
+  // it and restoreItems() brings the item back live - so sweeping its original
+  // bytes stranded it permanently: every later save then reported the hash
+  // missing, refused to call itself complete, and the board never went clean
+  // again. Preferred over stripping was/wasCover when an item is binned, because
+  // undo across a delete closes over the old ids and stripping them would break
+  // the undo the memo exists for.
+  for (const it of [...(data.items || []), ...(data.trash || []).map(t => t?.item)]) {
     if (it?.meta?.was) out.add(it.meta.was);
     if (it?.meta?.wasCover) out.add(it.meta.wasCover);
   }
@@ -240,7 +256,12 @@ export async function drainSave() {
  */
 async function writeSnapshot() {
   if (!cacheOk) {
-    lastFailure = 'This browser will not store the board (full, or blocked) - export it to a file';
+    // Which of the two it is. A suspended writer is not a broken browser, and
+    // saying it is sends somebody to check their storage settings over a board
+    // the app is refusing to write on purpose.
+    lastFailure = suspended
+      ? 'This address has no board of its own yet - put something on it, or export a file'
+      : 'This browser will not store the board (full, or blocked) - export it to a file';
     return false;
   }
   try {
@@ -326,6 +347,14 @@ function describeMissing(data, hashes) {
     if (!hash || !wanted.has(hash)) continue;
     wanted.delete(hash);
     names.push(item.name || item.type || 'item');
+  }
+  // Nothing resolved to a name. Only item.asset.hash is matched above, and a
+  // missing hash can be a cover, an optimiser original or a font - so the count
+  // was right and the sentence was "0 items () have no stored data", which names
+  // nothing and asks for nothing. Vaguer and true beats precise and absurd.
+  if (!names.length) {
+    return `${wanted.size} file${wanted.size === 1 ? '' : 's'} this board needs ` +
+      `${wanted.size === 1 ? 'is' : 'are'} not stored`;
   }
   const shown = names.slice(0, 3).join(', ');
   const rest = names.length > 3 ? ` and ${names.length - 3} more` : '';
@@ -461,6 +490,16 @@ async function clearAppCaches() {
  * Starting the page again *is* the first run, so it cannot drift.
  */
 export async function clearAllData() {
+  // The same gate New carries, for the same reason. This dialog asks about "the
+  // board kept in this browser" - but on a not-found board that is not the board
+  // on screen, it is one the visitor was deliberately never shown. Answering
+  // "Delete it all" about a message they arrived at by mistake would take a board
+  // they never saw and were never asked about, and "Export first" would offer to
+  // save the message instead of the thing at risk.
+  if (isNotFoundBoard()) {
+    toast('This address has no board to clear - go to your board first');
+    return false;
+  }
   const answer = await d.prompt({
     title: 'Clear everything?',
     body: 'The board kept in this browser, everything in it and the look you '
@@ -551,19 +590,25 @@ export const lastSaveFailure = () => lastFailure;
  */
 export function suspendCache() {
   cacheOk = false;
+  suspended = true;
 }
 
 /**
  * A fresh start is a fresh start.
  *
- * All three latches are set by a failure that belonged to the board just
- * closed - a quota error raised by its photographs, or an asset it had lost -
- * and by this point the data that caused the first one is gone. Left set, they
- * turned one full disk into a session where nothing could be saved again until
- * the page was reloaded, on a board that is now empty.
+ * The latches are set by a failure that belonged to the board just closed - a
+ * quota error raised by its photographs, or an asset it had lost - and by this
+ * point the data that caused the first one is gone. Left set, they turned one
+ * full disk into a session where nothing could be saved again until the page was
+ * reloaded, on a board that is now empty.
+ *
+ * `suspended` goes with them: this is the other end of suspendCache(), and the
+ * writer coming back on is exactly the moment the board stops being one the app
+ * is deliberately not writing.
  */
 export function resetSessionLatches() {
   cacheOk = true;
+  suspended = false;
   warnedIncomplete = false;
   lastFailure = '';
 }

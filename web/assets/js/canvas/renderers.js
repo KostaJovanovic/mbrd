@@ -15,7 +15,7 @@ import { byId, bus, markDirty, board, isDefaultTitle, setSwatchHex } from '../st
 import { latticeBox } from '../geometry.js';
 import { describeExt, PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS } from '../import/formats.js';
 import { buildTransport, registerPlayer } from './audio.js';
-import { buildVideoPlayer } from './video.js';
+import { buildVideoPlayer, POSTER_TIME } from './video.js';
 import { onTouch } from './viewport.js';
 import { embedFor, embedOffer } from './embed.js';
 import { buildModelCard } from './model.js';
@@ -450,8 +450,11 @@ const RENDERERS = {
       if (url) v.dataset.src = url;
     } else {
       v.preload = 'metadata';
-      // #t=0.1 pulls a real frame as the poster instead of a black rectangle.
-      if (url) v.src = url + '#t=0.1';
+      // The fragment pulls a real frame as the poster instead of a black
+      // rectangle. Named, because it leaves every parked clip on the board
+      // sitting at a currentTime that is not zero, and two other places have to
+      // know that in order to tell a parked clip from a played one.
+      if (url) v.src = url + '#t=' + POSTER_TIME;
     }
     // A fragment so both land as siblings inside .item-body, the same way an
     // animated picture travels with its still.
@@ -719,7 +722,7 @@ const RENDERERS = {
     // counts things that are not cards and hands two hints the same outline.
     const key = hintKey(item.meta?.hint);
     card.dataset.hint = key;
-    const { title, line } = hintFor(item.meta?.hint);
+    const { title, line, href, go: goes } = hintFor(item.meta?.hint);
     // Every hint but the dial prints its title here, at the head of the card and
     // ranged left. The dial prints its own, inside the row and centred over the
     // track - see below.
@@ -792,6 +795,19 @@ const RENDERERS = {
       body.className = 'ghost-line';
       body.textContent = line;
       card.append(body);
+      // A hint carrying an href is one you follow. Only the not-found set has
+      // one today - the way back off a dead address - and it is built here
+      // rather than being a fourth branch because it is still a line of prose;
+      // the anchor sits under it as the thing you press. The href comes from
+      // the hint, never from the item, so nothing a board could carry can put a
+      // link on a card.
+      if (href) {
+        const go = document.createElement('a');
+        go.className = 'ghost-go';
+        go.href = href;
+        go.textContent = goes || title;
+        card.append(go);
+      }
     }
     frag.append(card);
 
