@@ -34,7 +34,7 @@
 import { toast, busy } from '../util.js';
 import {
   board, serializeBoard, loadBoard, markDirty, isDirty, setTitle, bus,
-  defaultBoardTitle,
+  defaultBoardTitle, isNotFoundBoard,
 } from '../state.js';
 import { packBoard, unpackBoard, MIME } from './mbrd.js';
 import { allAssets, clearAssets } from './assets.js';
@@ -345,6 +345,12 @@ function pickViaInput() {
     const prevAccept = input.accept;
     input.accept = '.mbrd,application/zip';
     input.multiple = false;
+    // Say whose picker this is rather than saying nothing. import/drop.js
+    // listens on the same input and stands down on a mode it does not own - it
+    // used to stand down on the *absence* of one, which is the same thing only
+    // while every other opener remembers to clear it. Naming the owner makes
+    // that guard positive at both ends.
+    input.dataset.mode = 'mbrd';
 
     let settled = false;
     const finish = file => {
@@ -356,6 +362,7 @@ function pickViaInput() {
       input.accept = prevAccept;
       input.multiple = true;
       input.value = '';
+      delete input.dataset.mode;
       resolve(file);
     };
     const onChange = () => finish(input.files[0] || null);
@@ -377,6 +384,18 @@ function pickViaInput() {
 // ---------------------------------------------------------------------------
 
 export async function newBoard() {
+  // A not-found board is not the visitor's board. It was never loaded from the
+  // session slot, so clearing that slot below would delete a board they cannot
+  // see and have not been asked about - confirmDiscard() would ask about the
+  // blank message on screen, which has nothing to lose - and resetSessionLatches()
+  // would then let the blank replacement autosave over it. Refused rather than
+  // routed through leaveNotFound(): restoring their board only to discard it a
+  // line later is tidier to read and worse to be on the end of, and it would
+  // announce "Moved to your board" on the way past.
+  if (isNotFoundBoard()) {
+    toast('This address has no board to start over - put something on it first');
+    return false;
+  }
   if (!(await confirmDiscard('Starting a new one'))) return false;
   // Stop the closing board's autosave from repopulating the store after it is
   // cleared: drop the latch and drain any in-flight writer before touching the
@@ -461,6 +480,12 @@ async function confirmDiscard(what) {
 // missing should break loudly at the import, not quietly at runtime.
 export {
   autosave, restoreSession, clearAllData, clearSession,
+  // Out to main.js as well as used in here, and as a pair: a boot into
+  // not-found opens a blank board that must never be written over the one the
+  // visitor already has, so the writer is stopped before anything can fire.
+  // resetSessionLatches is how it comes back on, once the board underneath is
+  // the real one - see leaveNotFound() in main.js.
+  suspendCache, resetSessionLatches,
 } from './session.js';
 export { fileNameFor, titleFromFileName, titleForOpenedBoard } from './naming.js';
 

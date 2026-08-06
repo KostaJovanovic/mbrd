@@ -326,11 +326,17 @@ test('a lump released in one event is not multiplied into a jerk', () => {
 
 test('the lean is measured over a burst and forgotten with it', () => {
   // A gesture, then a pause, then a gesture the other way. Carrying the first
-  // one's shape into the second would lift the wrong axis for as long as it took
-  // the measure to catch up.
+  // one's shape into the second lifts the wrong axis for as long as it takes the
+  // measure to catch up - which is the whole of the first swipe on that pad.
+  //
+  // Lopsided on purpose. This used to be 20 by 20, which passed on a tie: with
+  // equal magnitudes `axisX < axisY` is false either way, so the reset of those
+  // two was enough and the presence measures - the ones the gain actually reads,
+  // and the ones a rail drives to nearly zero - were never asked about. One unit
+  // of difference is enough to name a minor axis and so to see them.
   swipe(times(40, [0, 15]));
-  const later = wheel({ deltaX: 20, deltaY: 20, timeStamp: 90_000 });
-  assert.deepEqual([later.dx, later.dy], [20, 20], 'the new swipe starts even');
+  const later = wheel({ deltaX: 20, deltaY: 21, timeStamp: 90_000 });
+  assert.deepEqual([later.dx, later.dy], [20, 21], 'the new swipe starts even');
 });
 
 test('shift is the way across a railed pad, from either device', () => {

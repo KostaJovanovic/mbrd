@@ -35,11 +35,17 @@ for a change without checking the current source first.
 
 ## Current
 
-One document, which is the point of the tier:
-
 - `scalability-readability-audit-2026-07-27.md` — all eight leverage items are
   closed; the medium and low findings it lists are the remaining work, and are
   the natural source of issues.
+
+`old/code-audit-2026-08-06.md` and its plan went down the same way, on the commit
+that fixed all twenty-one of their findings. Read the audit's "What was checked
+and found sound" before re-auditing anything near the load path, the not-found
+board or the import cap: nine plausible-looking findings were refuted there with
+reasons, and re-finding them costs hours. The plan's status block lists the three
+places its own instructions were departed from and why, which is the half most
+worth reading if a fix looks wrong.
 
 `old/fences-2026-08-04.md` went down on the commit that carried it out, which is
 the rule above being followed rather than described. Read it for why fences are

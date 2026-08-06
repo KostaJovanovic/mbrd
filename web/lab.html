@@ -4,6 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mbrd — pigment lab</title>
+<!-- Not a page of the site. This bench ships in web/ only because serve.py's
+     document root is web/ and this is the one place it can import the real
+     pigments.js; that is a build constraint, not a decision to publish it. A
+     crawler cannot know the difference, so it is told. Left indexable it would
+     compete with the app for the app's own name and put a debug harness in
+     front of anyone searching for it.
+
+     noindex, not a robots.txt Disallow: Disallow stops the fetch, which stops
+     the crawler ever reading the directive, so a page already in the index
+     stays there. noindex has to be fetched to work, and robots.txt next door
+     deliberately does not block this file for exactly that reason. -->
+<meta name="robots" content="noindex, nofollow">
 <!--
   A bench for the palette extractor. Not part of the app.
 

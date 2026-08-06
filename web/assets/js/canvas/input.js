@@ -290,7 +290,17 @@ let axisY = 0;
 let seenX = 1;
 let seenY = 1;
 
-/** Forget the current burst. For tests, and for anything that changes device. */
+/**
+ * Forget the current burst.
+ *
+ * **Nothing under web/ calls this** - it exists for tests, which need a known
+ * starting point between cases and cannot reach four module-level numbers any
+ * other way. Kept rather than deleted because the alternative is each case
+ * opening with a synthetic gap in `timeStamp`, which is the same reset written
+ * less legibly forty times over; said out loud here because it has now been
+ * mistaken twice for the live way out of a burst. The live way is the gap:
+ * WHEEL_STREAM_MS with no event.
+ */
 export function resetWheelKind() {
   wheelKind = 'zoom';
   wheelAt = -Infinity;
@@ -389,7 +399,13 @@ export function readWheel(e, pageHeight = 800) {
   const at = e.timeStamp || 0;
   const fresh = at - wheelAt > WHEEL_STREAM_MS;
   const kind = fresh ? classifyWheel(e, dx, dy) : wheelKind;
-  if (fresh) axisX = axisY = 0;
+  // Both pairs, not just the magnitudes. seenX/seenY are the presence measures
+  // the unrail gain reads, and they are the half that persists: a burst the
+  // platform railed drives the gated axis down to near zero, and leaving it
+  // there meant the *next* free swipe on the same pad opened amplified by up to
+  // UNRAIL_CAP per event until the ease walked it back. Both measures start at
+  // "delivered whole", which is what fresh means.
+  if (fresh) { axisX = axisY = 0; seenX = seenY = 1; }
   wheelKind = kind;
   wheelAt = at;
 
@@ -755,7 +771,11 @@ export function initInput(vp, cmds) {
     // internal stacking. That is what leaves a stuck note still above the thing
     // it is stuck to when the pair lands, and so still stuck.
     let z = topZ();
-    for (const sid of stackOrder(ids)) byId(sid).z = ++z;
+    // Guarded, like stackOrder()'s own byId(a)?.z a few lines up. `ids` is the
+    // selection as it was when the gesture began, and a delete arriving from
+    // anywhere else - the bin, an undo, a paste replacing the board - can leave
+    // an id in it that the board no longer has.
+    for (const sid of stackOrder(ids)) { const it = byId(sid); if (it) it.z = ++z; }
     bus.emit('geom', ids);
   }
 
@@ -1240,14 +1260,29 @@ export function initInput(vp, cmds) {
         sx = 0;
         sy = 0;
       }
-      applyGeom(g.origin.map(o => {
+      // flatMap rather than map: g.origin was taken when the gesture began, and
+      // an item can leave the board mid-drag - deleted from the bin, undone, or
+      // swapped out wholesale by a load. Dropping it here rather than reading w
+      // off undefined is the same call applyGeom() and snapshotGeom() already
+      // make; the gesture then simply carries what is left.
+      applyGeom(g.origin.flatMap(o => {
         const it = byId(o.id);
-        return { id: o.id, x: o.x + dx + sx, y: o.y + dy + sy, w: it.w, h: it.h, rot: it.rot, z: it.z };
+        return it
+          ? [{ id: o.id, x: o.x + dx + sx, y: o.y + dy + sy, w: it.w, h: it.h, rot: it.rot, z: it.z }]
+          : [];
       }));
       return;
     }
 
     if (g.kind === 'resize') {
+      // The card being resized can leave the board mid-gesture - deleted from
+      // the bin, undone, or swapped out wholesale by a load. Checked at the head
+      // of the branch rather than at the note-floor read below, which was the
+      // first line to touch it and threw; abortGesture() commits whatever the
+      // gesture had already done and lets go, which is what a release would have
+      // done a moment later anyway.
+      const it = byId(g.id);
+      if (!it) { abortGesture(); return; }
       const p = vp.toWorld(e.clientX, e.clientY);
       const dx = p.x - g.start.x, dy = p.y - g.start.y;
       // Zero on an axis the handle does not touch: dragging the east edge must
@@ -1320,7 +1355,6 @@ export function initInput(vp, cmds) {
       // on the way up, because a note taller than MAX_SIZE is only unusual
       // whereas a note with its last paragraph cut off is wrong. It can only
       // ever raise the height, so it never threatens the floor.
-      const it = byId(g.id);
       if (it.type === 'note') {
         let floor = noteFloor(g.id, w);
         // Up to the next whole cell rather than to the bare floor, so the one

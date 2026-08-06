@@ -49,7 +49,8 @@ echo ============================================
 echo.
 
 start "" "http://localhost:%PORT%"
-rem serve.py serves web/ with an SPA fallback and prints a scannable QR for the
+rem serve.py serves web/, answers an unknown address with index.html under a 404
+rem status (the app is its own 404 page), and prints a scannable QR for the
 rem Network URL at startup (LOCAL_IP passed in so it doesn't have to guess).
 python serve.py %PORT% %LOCAL_IP%
 pause

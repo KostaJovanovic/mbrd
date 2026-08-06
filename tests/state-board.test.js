@@ -18,6 +18,7 @@ import {
   mobileBoardBottom, baseStep, placeMobileItems, ensureTitleCard,
   restoreTitleCard, isTitleHidden, resetTitlePosition, TITLE_ID,
 } from '../web/assets/js/state.js';
+import { dropIdIndex } from '../web/assets/js/board-model.js';
 import { itemBounds, overlapFraction, CELL_GAP } from '../web/assets/js/geometry.js';
 import { hash } from './helpers.js';
 import { fresh, note, photo } from './state-fixtures.js';
@@ -53,6 +54,73 @@ test('serialising and reloading preserves the items', () => {
   assert.equal(board.items.length, 2);
   assert.equal(board.items[0].name, 'a.png');
   assert.equal(board.items[1].meta.text, 'hi');
+});
+
+test('opening a second board on Mobile does not read the first board index', () => {
+  // byId()'s index is dropped on the 'items' event, which loadBoard() emits as
+  // its second-to-last statement - after seedSticks(), completeLayout() and the
+  // Mobile carry have all read the board through it. Until the index was dropped
+  // where the array is *replaced*, every one of those reads was answered from
+  // the board that had just left.
+  //
+  // On Mobile that threw: attachRiders() resolved the host through the live
+  // board and then looked it up again through the index, which did not have it,
+  // and stuckOffset() dereferenced undefined. The aftermath was the worse half -
+  // openFile() catches, but board.items and board.title are already the new
+  // board's with no event fired, so the old board's DOM sat over the new board's
+  // state and the next autosave wrote the mixture over the session copy.
+  //
+  // A phone is in this mode from first paint (ui/sidebar.js reads the stored
+  // pref), so "open a second .mbrd holding a stuck note" is the whole repro.
+  fresh([photo({ id: 'only-in-a', x: 0, y: 0, w: 400, h: 300 })]);
+  setBoardMode('mobile');
+  byId('only-in-a');                       // populate the index against board A
+  assert.doesNotThrow(() => loadBoard({
+    title: 'B',
+    items: [
+      photo({ id: 'host', x: 0, y: 0, w: 400, h: 300, z: 1 }),
+      note({ id: 'rider', x: 0, y: 0, w: 100, h: 100, z: 2 }),
+    ],
+  }));
+  assert.equal(byId('only-in-a'), undefined, 'A is gone from the index');
+  assert.equal(byId('host')?.id, 'host', 'and B is in it');
+  setBoardMode('desktop');
+});
+
+test('the id index can be dropped without announcing anything', () => {
+  // The tool loadBoard() reaches for, on its own. The lazy rebuild is keyed to
+  // the 'items' event, which is right everywhere else and is exactly what cannot
+  // be used at a swap: the emit comes at the end of the load and the reads come
+  // in the middle. Dropping it has to be available *without* an announcement,
+  // because announcing early would run every listener against a board that is
+  // only half assembled.
+  fresh([photo({ id: 'a' })]);
+  byId('a');
+  const before = board.items;
+  board.items = [];
+  assert.equal(byId('a')?.id, 'a', 'the index still describes the list that left');
+  dropIdIndex();
+  assert.equal(byId('a'), undefined);
+  board.items = before;
+  dropIdIndex();
+});
+
+test('two items with the longest legal id both survive the load', () => {
+  // dedupeIds() suffixed and then truncated back to 64, so on an id already at
+  // the cap every candidate was the id itself, `seen` rejected all of them and
+  // the loop never ended - a hand-made or hand-edited file froze the tab on
+  // open. docs/mbrd-format.md declares 64 legal, so this is a file the format
+  // permits rather than a malformed one.
+  const long = 'a'.repeat(64);
+  loadBoard({
+    title: 'T',
+    items: [photo({ id: long, x: 0, y: 0 }), photo({ id: long, x: 10, y: 10 })],
+    trash: [{ at: 1, item: photo({ id: long, x: 20, y: 20 }) }],
+  });
+  const ids = board.items.map(i => i.id);
+  assert.equal(ids.length, 2);
+  assert.equal(new Set([...ids, board.trash[0].item.id]).size, 3, 'all three are distinct');
+  for (const id of ids) assert.ok(id.length <= 64, `${id} is inside the cap`);
 });
 
 test('Mobile can use a six-column grid layout', () => {

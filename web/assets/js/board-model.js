@@ -430,6 +430,26 @@ export function byId(id) {
 // (a multi-item paste, a load) then rebuilds once rather than once per item.
 bus.on('items', () => { itemIndex = null; });
 
+/**
+ * Drop the index without announcing anything.
+ *
+ * The lazy rebuild above is keyed to the *announcement*, which is right for every
+ * ordinary mutation: the array is edited in place and the emit follows in the
+ * same tick, so nothing reads between the two. loadBoard() is the exception. It
+ * replaces board.items outright and then runs a whole layout pass - place the
+ * arriving items, restick every note to its host, complete the other profile -
+ * before it emits, and every byId() in that pass would otherwise be answered
+ * from the *previous* board. On matching ids that is silent (a note stuck to the
+ * old board's card, laid out against the old card's geometry); on ids the new
+ * board does not carry it is a TypeError inside the load, which leaves the board
+ * half-swapped.
+ *
+ * So this exists to be called in the same breath as the assignment, and nothing
+ * may sit between them. A null check at the reading end would have papered over
+ * the throwing half and left the silent half exactly as it was.
+ */
+export function dropIdIndex() { itemIndex = null; }
+
 export function topZ() {
   return board.items.reduce((m, i) => Math.max(m, i.z || 0), 0);
 }
@@ -485,8 +505,20 @@ export const MAX_ITEMS = 20000;
 export function dedupeIds(list, seen) {
   for (const it of list) {
     if (!seen.has(it.id)) { seen.add(it.id); continue; }
+    // Room reserved for the suffix, rather than truncating after it is added.
+    // The cap is what made this loop non-terminating: an id already 64 characters
+    // long, truncated back to 64 characters, is the same string every time round,
+    // so `seen` rejected every candidate and the load hung the tab. Ids are
+    // capped at 64 by makeItem() and docs/mbrd-format.md declares 64 legal, so a
+    // file can reach here with two of them. 58 + '~' + five digits stays inside
+    // the cap for every k the loop can reach.
+    const stem = it.id.slice(0, 58);
     let k = 2, next;
-    do { next = (it.id + '~' + k++).slice(0, 64); } while (seen.has(next));
+    do { next = stem + '~' + k++; } while (seen.has(next) && k < 1e5);
+    // An adversarial file could still fill that space. Determinism is the point
+    // of the suffix and it is worth giving up only here, at the end of a range no
+    // real board reaches, rather than spinning.
+    if (seen.has(next)) next = uid();
     it.id = next;
     seen.add(next);
   }

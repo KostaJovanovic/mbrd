@@ -71,6 +71,25 @@ const pending = new Map();
 const JOB_TIMEOUT_MS = 15 * 60_000;
 
 /**
+ * The boot's own ceiling, and the probe's.
+ *
+ * spawn() settles on 'ready', a constructor throw, or error/messageerror. A core
+ * download that stalls without throwing fires none of the three, and the worker
+ * cannot report it either: importScripts is synchronous, so it blocks the very
+ * message loop that would carry the complaint. Left unbounded that wedged the
+ * whole feature for the session - `ready` stayed pending, so `if (!ready)` never
+ * retried, and every later firstFrame() awaited the same dead promise.
+ *
+ * Two minutes for a 32 MB download over whatever the machine has, which is long
+ * enough that a slow but working connection is never cut off, and short enough
+ * that a stall is not the rest of the afternoon. The probe gets a tenth of it: it
+ * asks for one byte, so anything past a few seconds is not a slow answer, it is
+ * no answer.
+ */
+export const BOOT_TIMEOUT_MS = 120_000;
+const PROBE_TIMEOUT_MS = 12_000;
+
+/**
  * Reject every pending job, drop the worker, and reset `ready` so the next call
  * spawns a fresh one. The one place a dead worker is cleaned up, whether the
  * death was a crash, a decode error, or a timeout.
@@ -104,7 +123,17 @@ function killWorker(err) {
 export async function mediaAvailable() {
   if (present === true) return true;
   try {
-    const res = await fetch(CORE_JS, { headers: { Range: 'bytes=0-0' }, cache: 'no-store' });
+    // On a clock, because a request that never settles is a worse answer than
+    // "no": this runs from the poster probe during an import, and an unbounded
+    // await here holds the import up with no way for the user to say stop.
+    // AbortSignal.timeout throws on expiry, which the catch below already reads
+    // as unreachable - and unreachable-for-now is not cached, so a blip does not
+    // switch the feature off for the session.
+    const res = await fetch(CORE_JS, {
+      headers: { Range: 'bytes=0-0' },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+    });
     present = res.ok || res.status === 206;
   } catch {
     present = false;
@@ -151,7 +180,8 @@ export async function firstFrame(file, say = () => {}) {
     // clear a worker that has booted since.
     // The handler names `boot` before it is initialised, which is fine because
     // it can only run a tick later, by which time it is the promise below.
-    const boot = spawn().catch(err => { if (ready === boot) ready = null; throw err; });
+    const boot = withBootTimeout(spawn())
+      .catch(err => { if (ready === boot) ready = null; throw err; });
     ready = boot;
   }
   await ready;
@@ -199,6 +229,28 @@ export async function firstFrame(file, say = () => {}) {
     if (res?.bytes?.byteLength) return new Blob([res.bytes], { type: attempt.type });
   }
   return null;
+}
+
+/**
+ * The boot promise, with a clock on it.
+ *
+ * The loser of the race is torn down rather than left running: killWorker()
+ * rejects every pending job and drops the worker, so `ready` being cleared by the
+ * caller's catch actually buys a fresh spawn next time instead of a second
+ * worker sitting behind the first, still downloading. The timer is cleared on
+ * the happy path so a successful boot does not hold a two-minute handle open for
+ * nothing.
+ */
+function withBootTimeout(booting) {
+  let timer = 0;
+  const clock = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const err = new Error('the media decoder did not finish loading');
+      killWorker(err);
+      reject(err);
+    }, BOOT_TIMEOUT_MS);
+  });
+  return Promise.race([booting, clock]).finally(() => clearTimeout(timer));
 }
 
 function spawn() {

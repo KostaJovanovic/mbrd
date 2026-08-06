@@ -7,17 +7,138 @@
      menus and the item names, none of which the canvas zoom touches. Taking
      the page's zoom away to protect a gesture is a bad trade. -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>mbrd</title>
-<meta name="description" content="An infinite freeform moodboard. Drop in anything, place it anywhere. Runs entirely in your browser.">
+<!-- Because this document is also served at addresses it does not have.
+
+     The app is its own 404 page: a host that cannot find a path answers with
+     this file at that path, and a 404 status (see serve.py, and _redirects).
+     Every URL below is relative, and a relative URL resolves against the
+     document's own address - so at /some/missing/page the stylesheets would be
+     looked for in /some/missing/, and the visitor would get an unstyled 404
+     instead of a board. This pins the whole document to the app's own root
+     regardless of what address it was served at.
+
+     It has to come before anything that resolves a URL, which is why it is
+     third in <head> and not next to the stylesheets. main.js reads it back to
+     work out whether it is at home; see notFound there. -->
+<base href="/">
+<!-- The title carries the word somebody would actually type. "mbrd" is an
+     invented four-letter string: nobody searches it, and a page whose only
+     indexable noun is its own coinage cannot be found by anyone who does not
+     already know it exists. The name still leads, because for the people who
+     do know it that is the whole query. -->
+<title>mbrd - an infinite freeform moodboard in your browser</title>
+<meta name="description" content="An infinite freeform moodboard in your browser. Drop in images, video, audio or text and place them anywhere. No account, works offline, saves as one file.">
 <meta name="author" content="valjdakosta">
+<!-- max-image-preview:large is the one directive here that is not the default:
+     without it Google shows a thumbnail rather than the share image below, in
+     Discover and in image results. index,follow is what a crawler assumes
+     anyway and is stated only so the pair reads as a decision. -->
+<meta name="robots" content="index, follow, max-image-preview:large">
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#faf8f3">
+<!-- The canonical origin. Every absolute URL on this page is built from it -
+     og:url, og:image, the JSON-LD below, and sitemap.xml next door - so the
+     four of them agree by construction. A board opened from a file handler or
+     with a hash still canonicalises here: the hash is a document, not a page.
+
+     Note the trailing slash and that it is https. A canonical that redirects
+     (http, or no slash, or www) is a canonical the crawler has to resolve, and
+     the whole point of the tag is to stop it guessing. -->
+<link rel="canonical" href="https://mbrd.valjdakosta.com/">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="assets/img/icon.svg" type="image/svg+xml">
 <!-- A PNG, and it has to be: iOS does not read an SVG here, so the home-screen
      icon of an app added from Safari was falling back to a screenshot of the
      page. The 192 is scaled down to whatever the device wants. -->
 <link rel="apple-touch-icon" href="assets/img/icon-192.png">
+
+<!-- How the link looks when somebody pastes it somewhere.
+
+     That is not a detail for this app: nothing here is discovered by browsing,
+     so essentially every first visit arrives from a link in a chat. Slack,
+     Discord, X, iMessage, LinkedIn and WhatsApp all read the og:* pairs (X
+     reads twitter:* first and falls back to og:*), and a page without them
+     renders as a bare underlined URL - the least clickable thing in a thread.
+
+     The URLs here are absolute and must stay that way; a scraper resolves
+     nothing. tools/gen-og.mjs draws the image and says what it must be.
+
+     og:image:alt is not decoration either. It is the text a screen reader gets
+     in place of the card, and several of these platforms show it as a caption
+     when the image itself fails to load. -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="mbrd">
+<meta property="og:title" content="mbrd - an infinite freeform moodboard in your browser">
+<meta property="og:description" content="Drop in images, video, audio or text and place them anywhere on an infinite board. No account, works offline, saves as one file.">
+<meta property="og:url" content="https://mbrd.valjdakosta.com/">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="https://mbrd.valjdakosta.com/assets/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The mbrd wordmark on a paper board, with cards and threads laid across it.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="mbrd - an infinite freeform moodboard in your browser">
+<meta name="twitter:description" content="Drop in images, video, audio or text and place them anywhere on an infinite board. No account, works offline, saves as one file.">
+<meta name="twitter:image" content="https://mbrd.valjdakosta.com/assets/img/og.png">
+<meta name="twitter:image:alt" content="The mbrd wordmark on a paper board, with cards and threads laid across it.">
+
+<!-- What the page is, said in the vocabulary a search engine parses rather than
+     reads. The prose in <noscript> below says the same thing to a human; this
+     says it to the machine, and the two must not drift - if you change one,
+     change the other.
+
+     SoftwareApplication rather than WebSite, because that is what this is, and
+     it is the type that carries `offers`. A price of 0 is not the same claim as
+     no price at all: stated, it is what makes the free-tools listings; omitted,
+     it is an unknown and gets treated as one. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "mbrd",
+  "alternateName": "mbrd - infinite moodboard",
+  "url": "https://mbrd.valjdakosta.com/",
+  "description": "An infinite freeform moodboard that runs entirely in the browser. Drop in images, video, audio, text or arbitrary files and place them anywhere on an unbounded canvas. No account and no server: boards save to a single .mbrd file, and the app works offline once loaded.",
+  "applicationCategory": "DesignApplication",
+  "applicationSubCategory": "Moodboard",
+  "operatingSystem": "Any",
+  "browserRequirements": "Requires JavaScript and a browser released since 2023.",
+  "image": "https://mbrd.valjdakosta.com/assets/img/og.png",
+  "screenshot": "https://mbrd.valjdakosta.com/assets/img/og.png",
+  "softwareHelp": "https://github.com/KostaJovanovic/mbrd#readme",
+  "isAccessibleForFree": true,
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "author": { "@type": "Person", "name": "valjdakosta" },
+  "featureList": [
+    "Infinite freeform canvas",
+    "Images, video, audio, text notes and arbitrary files",
+    "Works offline as an installable PWA",
+    "Boards save as a single .mbrd file",
+    "No account and no server"
+  ]
+}
+</script>
+
+<!-- Two faces fetched ahead of the stylesheet that asks for them.
+
+     A @font-face is only discovered once the CSS has parsed and something on
+     the page has asked for it, which is two round trips deep. These two are the
+     default look - Fraunces is --font-display and Geist is --font-body at the
+     middle of the whimsy axis - and the display face in particular gates first
+     paint: the inline script below holds the splash wordmark back until it has
+     landed, precisely so the name is never set in the fallback and swapped.
+
+     Only the latin subsets, and only the two the default look uses. A visitor
+     who has moved the whimsy axis makes one of these a wasted fetch, and that
+     is the right trade: the preload buys a round trip on a first visit, which
+     is the only visit that has an empty cache and the only one anybody
+     measures. `crossorigin` is not optional on a font preload even same-origin
+     - without it the preload and the real request are two different requests
+     and the file is fetched twice. -->
+<link rel="preload" href="assets/fonts/fraunces-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/geist-latin.woff2" as="font" type="font/woff2" crossorigin>
+
 <!-- The order below IS the cascade: later files win at equal specificity, and
      quality.css must stay last (see the banner at the top of base.css). A new
      stylesheet goes in this list and in SHELL in sw.js. -->
@@ -92,7 +213,69 @@
      Nothing in mbrd works without it, but a permanently covered page cannot
      even say so; uncovering at least shows the board it will not be able to
      fill. -->
-<noscript><style>#splash { display: none !important; }</style></noscript>
+<noscript>
+  <style>
+    #splash { display: none !important; }
+    /* Sized and coloured from tokens.css, which has already loaded, so this
+       reads as the app rather than as a browser default. Inline because it is
+       the only thing on the page that uses it and a tenth stylesheet would have
+       to be added to SHELL in sw.js to buy nothing. */
+    #nojs {
+      position: fixed;
+      inset: 0;
+      z-index: 90;
+      display: grid;
+      place-items: center;
+      padding: 32px;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--font-body);
+      overflow: auto;
+    }
+    #nojs > div { max-width: 46ch; }
+    #nojs h1 {
+      font-family: var(--font-display);
+      font-weight: var(--display-weight);
+      font-size: clamp(30px, 6vw, 44px);
+      line-height: 1.1;
+      letter-spacing: calc(0.02em * var(--ls-scale));
+      margin: 0 0 16px;
+    }
+    #nojs p { margin: 0 0 12px; line-height: 1.55; color: var(--ink-2); }
+    #nojs p:last-child { color: var(--ink-3); font-size: var(--t-small); }
+  </style>
+  <!-- The page's only prose, and it is here for two readers at once.
+
+       The human one is a visitor with JavaScript off, for whom this is the
+       honest exit: nothing in mbrd works without it, and a board that silently
+       stays empty is worse than a page that says why.
+
+       The other is every fetcher that does not run scripts - Slack and Discord
+       unfurling a pasted link, Bing, and the crawlers behind the answer engines
+       people now ask for tool recommendations. To all of them the rendered page
+       is chrome and no sentences, and a page with nothing to read is a page
+       with nothing to match a query against. This is that page saying, in
+       words, what it is.
+
+       It is not keyword stuffing and must not become it: every claim below is
+       true of the app, and it says the same thing as the JSON-LD in <head>. If
+       one changes, change both. -->
+  <div id="nojs">
+    <div>
+      <h1>mbrd - an infinite freeform moodboard</h1>
+      <p>mbrd is an infinite freeform board that runs entirely in your browser.
+        Drop in images, video, audio, text notes, links, colours or arbitrary
+        files, and place them anywhere on an unbounded canvas - no grid, no
+        columns, no slots to fill.</p>
+      <p>There is no account and no server. Boards save to a single
+        <code>.mbrd</code> file you keep, and once the page has loaded it works
+        offline and installs as an app.</p>
+      <p>It needs JavaScript, which is currently switched off. Everything the
+        board does - the canvas, the files you drop on it, the saving - is that
+        JavaScript, so with it off there is nothing here but paper.</p>
+    </div>
+  </div>
+</noscript>
 <div id="splash" aria-hidden="true">
   <div class="splash-inner">
     <div class="splash-word">mbrd.</div>
@@ -204,7 +387,11 @@
        mobileHeaderHeight() in canvas/viewport.js - so this is real space at the
        head of the board rather than a plate laid over the first row of items,
        and scrolling down carries it away like anything else on the board. -->
-  <div id="mobile-board-header"><h1 id="mobile-board-title"></h1></div>
+  <!-- h2: this is the open board's name, which is a document inside the app, not
+     the name of the app. It is also empty until a board loads, so as an h1 it
+     was a top-level heading that a crawler found blank. Everything that styles
+     or drives it goes through the id, so the rank is free to be honest. -->
+<div id="mobile-board-header"><h2 id="mobile-board-title"></h2></div>
   <svg id="origin-mark" viewBox="0 0 36 36" fill="none" stroke="currentColor" aria-hidden="true">
     <!-- The ring comes in all three shapes and the whimsy axis picks one: a
          circle at the soft end, a rounded square in the middle where the cards
@@ -232,8 +419,15 @@
 
 <aside id="sidebar" aria-hidden="true">
   <header class="side-head">
+    <!-- The document's one h1, and the only place the page says in words what it
+         is. The four letters are the mark; the tail after them is out of the
+         flow (.vh in base.css), so the eye reads "mbrd." exactly as before while
+         a screen reader and a crawler get the whole sentence. It is inside the
+         h1 rather than beside it deliberately - a heading whose text is an
+         invented coinage names nothing, and this page has no other heading to
+         name it. -->
     <div class="wordmark">
-      <h1>mbrd.</h1>
+      <h1>mbrd.<span class="vh"> An infinite freeform moodboard in your browser.</span></h1>
       <span class="sub">Plan it, see it. Sorted.</span>
     </div>
     <button id="side-close" type="button" aria-label="Close menu" title="Close">
@@ -288,8 +482,12 @@
          what it is, once, on the panel that opens with the app; a second panel
          repeating the trick would be a caption explaining a word that needs no
          explaining - you opened it from the masthead. -->
+    <!-- h2, not h1. The literal word "Header" was the page's third h1, which is
+         a document whose top-level heading is the name of a settings panel. It
+         is a section head inside a page that already has its heading, and the
+         rank now says so. -->
     <div class="wordmark">
-      <h1>Header</h1>
+      <h2>Header</h2>
     </div>
     <button id="header-close" type="button" aria-label="Close header options" title="Close">
       <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>

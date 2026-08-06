@@ -1,0 +1,14 @@
+# mbrd - https://mbrd.valjdakosta.com/
+#
+# Everything is allowed. This file exists to say where the sitemap is and to be
+# a 200 rather than the 404 a crawler otherwise logs on every visit.
+#
+# lab.html is deliberately NOT disallowed here. Disallow stops the fetch, and a
+# page that is never fetched is a page whose noindex is never read - so a bench
+# already in the index would stay in it forever. It carries the meta robots tag
+# instead, which is the directive that actually removes a page.
+
+User-agent: *
+Allow: /
+
+Sitemap: https://mbrd.valjdakosta.com/sitemap.xml

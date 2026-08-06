@@ -1,0 +1,16 @@
+# The app is its own 404 page.
+#
+# Anything that is not a real file is served index.html with a 404 status, and
+# main.js works out from the URL that it is not at home and opens a blank board
+# whose ghost cards say so (see notFound in main.js, NOTFOUND in state.js).
+#
+# The status is not optional and is the whole reason this is a rule rather than
+# a rewrite. A 200 here would be a soft 404: a page saying "not found" while
+# telling every crawler it is fine, which is how dead addresses end up indexed.
+#
+# This file is the Netlify / Cloudflare Pages spelling. serve.py does the same
+# thing for local development. A host that only understands a literal 404.html
+# - GitHub Pages is the one that matters - cannot express this, and would need
+# that file to be a copy of index.html instead.
+
+/*    /index.html    404

@@ -14,7 +14,8 @@ import assert from 'node:assert/strict';
 import {
   board, selection, loadBoard, serializeBoard, addItems, removeItems, undo,
   setBoardMode, ensureTitleCard, ensureGhostCards, dismissGhosts, hasContent,
-  hasGhosts, GHOST_IDS, TITLE_ID, tapeFor, setSetting, mobileBoardWidth, mobileBoardTop,
+  hasGhosts, GHOST_IDS, NOTFOUND_IDS, TITLE_ID, tapeFor, setSetting,
+  mobileBoardWidth, mobileBoardTop,
 } from '../web/assets/js/state.js';
 import { latticeBox, CELL_GAP } from '../web/assets/js/geometry.js';
 import { HINTS, hintFor, tapeStyle, STOPS, stopName, DIAL } from '../web/assets/js/canvas/ghosts.js';
@@ -327,6 +328,25 @@ test('the hints are written in whole grid spaces, so snapping cannot move them',
     assert.equal(box.y, g.y, `${g.id} keeps its y`);
     assert.ok(Math.abs(box.w - (g.w - seam)) < 1e-9, `${g.id} keeps its width but the seam`);
     assert.ok(Math.abs(box.h - (g.h - seam)) < 1e-9, `${g.id} keeps its height but the seam`);
+  }
+});
+
+test('the not-found cards are on the lattice too', () => {
+  // The same rule, and the set that broke it: the big card's left edge was at
+  // -416 and the small card's lower edge at -160, so a snapped board slid each
+  // of them half a step and the arrangement the header describes - a 64-unit
+  // channel, lower edges flush - was not the one on screen. Asserted rather than
+  // described, because the header describing it is what let it through.
+  fresh();
+  ensureGhostCards({ notFound: true });
+  const seam = 2 * 64 * CELL_GAP;
+  assert.equal(ghosts().length, NOTFOUND_IDS.length, 'a not-found board opens with its own set');
+  for (const g of ghosts()) {
+    const box = latticeBox({ x: g.x, y: g.y, w: g.w, h: g.h }, 64);
+    assert.equal(box.x, g.x, `${g.meta.hint} keeps its x`);
+    assert.equal(box.y, g.y, `${g.meta.hint} keeps its y`);
+    assert.ok(Math.abs(box.w - (g.w - seam)) < 1e-9, `${g.meta.hint} keeps its width but the seam`);
+    assert.ok(Math.abs(box.h - (g.h - seam)) < 1e-9, `${g.meta.hint} keeps its height but the seam`);
   }
 });
 

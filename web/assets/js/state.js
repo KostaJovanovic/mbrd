@@ -58,7 +58,7 @@ import {
   topZ, makeItem, isFurniture, isContent,
 } from './board-model.js';
 import {
-  cloneSettings, layoutSettingsOf, settingsFor,
+  cloneSettings, layoutSettingsOf, settingsFor, dropIdIndex,
   dedupeIds, MAX_ITEMS, MAX_CONNECTIONS, pairKey, normalizeConnections,
 } from './board-model.js';
 
@@ -565,7 +565,7 @@ const DIAL_HINT = 'whimsy';
 // width" survives that change and "four cells" does not - at six columns it
 // would be two thirds of the board and two cards would no longer sit side by
 // side. Rows are cells outright, since the row height is the step either way.
-const GHOSTS = Object.freeze([
+const HINT_GHOSTS = Object.freeze([
   { id: GHOST_IDS[0], hint: 'drop', x: -320, y:   96, w: 256, h: 192, mspan: 0.5, mrows: 2 },
   { id: GHOST_IDS[1], hint: 'move', x:  -64, y: -160, w: 256, h: 192, mspan: 0.5, mrows: 2 },
   { id: GHOST_IDS[2], hint: 'note', x:  320, y:  -32, w: 256, h: 192, mspan: 0.5, mrows: 2 },
@@ -586,6 +586,60 @@ const GHOSTS = Object.freeze([
   // rolled at minting rather than drawn from the tier.
   { id: GHOST_IDS[3], hint: 'whimsy', x: 0, y: 32, w: 256, h: 64,
     mspan: 1, mrows: 2, tape: false },
+]);
+
+/**
+ * The other set of hints: what a board opened at an address that does not exist
+ * says instead.
+ *
+ * The app is its own 404 page. A bad URL is served the app with a 404 status
+ * (see serve.py, and _redirects for a static host), main.js sees that it is not
+ * at the root and opens a blank board without restoring the session - so what
+ * the visitor gets is an ordinary empty board, and the cards that an empty board
+ * always carries are the ones telling them what happened.
+ *
+ * Two, and neither is a hint's box. The onboarding set is four equal cards in a
+ * cascade because it is four equal things to learn and no one of them is the
+ * point; this is one statement and one way out, so it is one large card and one
+ * small one beside it. Three of the first draft's cards said in sequence what
+ * the first one here says at once, which on a board reads as an argument being
+ * made rather than an answer being given.
+ *
+ * Every number is a whole count of grid spaces at the default 64 step - see the
+ * note on the hints above for why that matters at all, and it matters here for
+ * the same reason: a snapped board must not rearrange them. The rule is on the
+ * *low edges*, not the centres, because that is what the lattice rounds; the two
+ * cards below are 256 and 192 tall, so they cannot share a centre line and both
+ * satisfy it, and they are laid out from their lower edges instead.
+ *
+ *   gone  448x256 at (-160, -64)  spans x -384..64,  y -192..64
+ *   back  256x192 at ( 256, -96)  spans x  128..384, y -192..0
+ *
+ * The 64-unit channel between them is the same gap the toolbar and the panel
+ * keep; the pair spans -384..384, centred under the title card at x 0; their
+ * lower edges are flush at -192; and both sit clear of TITLE_DEFAULT_POS above -
+ * the title card's lower edge is at 160 and the taller of these two tops out at
+ * 64.
+ *
+ * Both numbers were off by a half-step when this was written - the big card's
+ * left edge landed at -416 and the small one's lower edge at -160 - so a snapped
+ * board slid each of them 32 units and the arrangement described here was not
+ * the one on screen. tests/state-ghosts.test.js now asserts the invariant rather
+ * than the prose claiming it.
+ */
+export const NOTFOUND_IDS = Object.freeze([
+  '__ghost_gone__', '__ghost_back__',
+]);
+
+const NOTFOUND = Object.freeze([
+  // The big one. Seven cells by four rather than the hint's four by three,
+  // because it carries a number set at sixty-odd pixels (see the data-hint rule
+  // in items.css) over a paragraph, and a hint's box fits neither.
+  { id: NOTFOUND_IDS[0], hint: 'gone', x: -160, y: -64, w: 448, h: 256, mspan: 1, mrows: 3 },
+  // The small one, and the only card in either set you press rather than read.
+  // Full width on Mobile as well: the card you act on does not share a row, the
+  // same call the dial makes at the top of the hints' column.
+  { id: NOTFOUND_IDS[1], hint: 'back', x:  256, y: -96, w: 256, h: 192, mspan: 1, mrows: 2 },
 ]);
 
 /**
@@ -648,15 +702,54 @@ export const hasGhosts = () => board.items.some(i => i.type === 'ghost');
 let ghostsDismissed = false;
 
 /**
+ * Whether the cards on this board are the not-found set rather than the hints.
+ *
+ * Session-scoped like the latch above, and read by canvas/ghosts.js, which
+ * sweeps the hints the moment real content lands. These must not be swept. A
+ * hint is earned away - you have dropped something, so you no longer need
+ * telling that you can - but the not-found cards are not advice, they are the
+ * only statement on the page that the address was wrong, and one of them is the
+ * only way off it. Dropping a photograph onto a board that cannot save it is
+ * exactly the moment the warning has to still be there.
+ */
+let notFoundBoard = false;
+
+/** Whether this board was opened at an address the app does not have. */
+export const isNotFoundBoard = () => notFoundBoard;
+
+/**
+ * Stop being one: the visitor has put something on the board, so it is a board
+ * now and not a message. main.js owns the rest of that handover - the address,
+ * the stored session and the writer - and this is the latch it clears on the
+ * way through, which lets canvas/ghosts.js sweep the two cards the way it
+ * sweeps any hint that has been earned away.
+ */
+export function leaveNotFoundBoard() {
+  notFoundBoard = false;
+}
+
+/**
  * Put the ghost cards on the board if it has earned them - board hydration, not
  * a user edit, so no commit and no history. Runs at startup and on load, the
  * same way ensureTitleCard() does and for the same reason.
  *
  * A board with any content at all, or one already dismissed this session, gets
  * nothing.
+ *
+ * `notFound` swaps the set for the one a board opened at a dead address carries
+ * - same geometry, different words, and one card fewer. It is a parameter and
+ * not a second function because everything below it is about *placing* cards,
+ * which is identical for both sets and was not worth saying twice.
+ *
+ * Returns the ids it seeded, so the caller can mount them without having to
+ * know which set it asked for. An empty array means the board had not earned
+ * them, which is the common case.
  */
-export function ensureGhostCards() {
-  if (ghostsDismissed || hasContent() || hasGhosts()) return;
+export function ensureGhostCards({ notFound = false } = {}) {
+  if (ghostsDismissed || hasContent() || hasGhosts()) return [];
+  notFoundBoard = notFound;
+  const GHOSTS = notFound ? NOTFOUND : HINT_GHOSTS;
+  const seeded = GHOSTS.map(g => g.id);
   const step = baseStep();
   // Mobile is a column, and the layout above is a Desktop arrangement: four
   // cards spread across nine hundred world units, on a board 512 wide. Seeding
@@ -684,7 +777,7 @@ export function ensureGhostCards() {
       meta: { hint: g.hint, tape: g.tape === false ? [] : tapeFor() },
     }));
     board.items.push(...placeMobileItems(fresh));
-    return;
+    return seeded;
   }
   for (const g of GHOSTS) {
     // Laid on the lattice on the way in, exactly as an imported item is by
@@ -705,6 +798,7 @@ export function ensureGhostCards() {
       meta: { hint: g.hint, tape: g.tape === false ? [] : tapeFor() },
     }));
   }
+  return seeded;
 }
 
 /**
@@ -1766,10 +1860,22 @@ export function loadBoard(data) {
   // here rather than trusted, which is the same treatment every other field in
   // normalizeBoard() gets.
   board.items = next.items.filter(i => i.type !== 'ghost');
+  // In the same breath as the assignment, and nothing may go between them.
+  // byId()'s index is otherwise dropped on the 'items' event at the foot of this
+  // function, which is right for every ordinary mutation and wrong for exactly
+  // this one: everything below - seedSticks(), completeLayout(), the Mobile
+  // carry - reads the board through byId(), and until the index is dropped it
+  // answers about the board that just left. See dropIdIndex() in board-model.js.
+  dropIdIndex();
   // The latch travels with the board, not the session: one that arrives with
   // content has already been past this point, and one that arrives empty earns
   // its hints. See ensureGhostCards(), which main.js calls on 'board:load'.
-  resetGhostLatch(board.items.some(i => i.type !== 'title'));
+  //
+  // isContent(), not `type !== 'title'`: fences are furniture too, so a board of
+  // nothing but regions is a board with nothing in it and has not earned its
+  // hints away. This is the same question hasContent() asks, and it drifted from
+  // it when fences arrived.
+  resetGhostLatch(board.items.some(isContent));
   // The Desktop title card is seeded by the app (main.js, on 'board:load'), not
   // here: keeping loadBoard() free of it lets state tests load and serialise a
   // board of exactly the items they gave it. See ensureTitleCard().

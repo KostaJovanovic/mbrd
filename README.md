@@ -366,7 +366,7 @@ all three are built so that it is a choice:
 
 ```
 web/
-  index.html  manifest.json  sw.js  404.html
+  index.html  manifest.json  sw.js
   assets/css/     tokens.css   design tokens, all runtime-overridable
                   fonts.css    the bundled @font-face set
                   app.css      one stylesheet, in load order

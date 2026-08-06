@@ -358,14 +358,21 @@ test.describe('the toolbar', () => {
 
   test('the colour tool asks first, with a picker', async ({ page }) => {
     // The same bargain as the note, in the shape a colour can be asked in: it is
-    // answered by pointing, so the value is set rather than typed - which is the
-    // whole reason it is a colour input and not a box.
+    // answered by pointing, so the value is set rather than typed.
+    //
+    // Against #pick and not #ask. This asserted `#ask-field` had type="color",
+    // which was true until cmds.addSwatch moved to pickColor() - a plane, a hue
+    // and a hex that all have to agree, none of which ask()'s one field can be.
+    // The assertion then read the note dialog's text field, found type="text"
+    // and failed, which is the test being out of date rather than the app being
+    // wrong; see the head of ui/color-picker.js for why the move happened.
     await ready(page);
 
     await page.locator('#toolbar [data-cmd="add-swatch"]').click();
-    await expect(page.locator('#ask-field')).toHaveAttribute('type', 'color');
-    await page.locator('#ask-field').evaluate(el => { el.value = '#3366cc'; });
-    await page.locator('#ask-go').click();
+    await expect(page.locator('#pick')).toBeVisible();
+    await page.locator('#pick-hex').fill('#3366cc');
+    // The field commits on change, which fill() raises.
+    await page.locator('#pick-go').click();
     await expect
       .poll(() => page.evaluate(() => window.mbrd.board.items
         .some(i => i.type === 'swatch' && i.meta?.hex === '#3366cc')))
@@ -374,8 +381,9 @@ test.describe('the toolbar', () => {
     // And cancelling leaves nothing behind.
     const count = await page.evaluate(() => window.mbrd.board.items.length);
     await page.locator('#toolbar [data-cmd="add-swatch"]').click();
-    await page.locator('#ask-cancel').click();
-    await expect(page.locator('#ask-field')).toBeHidden();
+    await expect(page.locator('#pick')).toBeVisible();
+    await page.locator('#pick-cancel').click();
+    await expect(page.locator('#pick')).toBeHidden();
     expect(await page.evaluate(() => window.mbrd.board.items.length)).toBe(count);
   });
 
@@ -672,11 +680,18 @@ test.describe('fences', () => {
     }, ids);
     expect(held, 'the fence opened holding both cards').toEqual([true, true]);
 
-    // And now the band that goes *inside* the region it just made. A fence is
-    // larger than anything drawn within it, so under the overlap rule a card is
-    // caught by it caught the fence as well - which counted it in the offer, drew
-    // a fence unioned out to swallow its own parent, and towed the whole region
-    // when the cards it caught were dragged. One card, one offer about one card.
+    // And now the band that goes *inside* the region it just made, where the
+    // right answer is no offer at all. Every card such a band can catch is
+    // already enclosed, by a region drawn round them for that very reason, so
+    // accepting would draw a second boundary exactly where the first one is -
+    // sharedFence() returns the region they have in common and fencePrompt()
+    // stands down. That is the behaviour worth pinning.
+    //
+    // It asserted 'Fence this one' here, from before that rule existed, and had
+    // been failing on a prompt that correctly never opens. What is given up with
+    // it is the positive in-region case, which is a nested fence and now reached
+    // through the group menu's Fence these instead.
+    //
     // Clear first: the band is additive (shift is what makes it a band at all),
     // and the fence it just drew is still selected.
     await page.locator('#viewport').click({ position: { x: 12, y: 12 } });
@@ -690,7 +705,7 @@ test.describe('fences', () => {
     await page.mouse.move(inner.x + inner.width + 12, inner.y - 12, { steps: 8 });
     await page.mouse.up();
     await page.keyboard.up('Shift');
-    await expect(prompt).toHaveText('Fence this one');
+    await expect(prompt).toHaveCount(0);
   });
 
   test('resizing a region carries the cards inside it', async ({ page }) => {
