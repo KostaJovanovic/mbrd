@@ -139,6 +139,7 @@ filename supplies one and is decoded the same way.
     "mobile":  [ { "id": "k3f9a2", "x": 0, "y": -120, "w": 320, "h": 240, "rot": 0, "z": 7 } ]
   },
   "connections": [ ["k3f9a2", "p81m4x"] ],
+  "audioOrder": [ "a91k2c", "a44m7d" ],
   "trash": [ { "at": 1753440000000, "item": { … } } ]
 }
 ```
@@ -292,6 +293,33 @@ knowing before adding another top-level key.
 `settings.web` — which predates all of this and is still called that, so an
 older build reads it and behaves — is the switch for whether they are drawn.
 
+### `audioOrder`
+
+The order the Playlist plays the board's audio in, as a flat list of item ids.
+Dragging a track to a new place in the Playlist writes it; a track with no entry
+here sorts after the ones that do, in the board's arrangement order.
+
+**Top-level, not inside a layout,** for the same reason as `connections`: it is
+an ordering of *items*, which are shared across Desktop and Mobile, so a
+per-layout copy would let a playlist re-sorted on a phone come back scrambled on
+a laptop.
+
+What is held to, on the way in and out:
+
+- Every id must name an item the file carries, **live or binned** — the same
+  union `connections` use, so an order that names a since-thrown-away track
+  survives to be restored with it.
+- Duplicates and non-string entries are dropped one at a time rather than failing
+  the load; the cap is `MAX_ITEMS`.
+- The Playlist filters this to the audio it actually has and appends anything new
+  in arrangement order, so a list that outlived some of its ids is self-healing
+  rather than wrong — the file is not rewritten to prune them until the next save.
+
+Additive with an empty default (`[]`), so it needs no format-version bump: a
+board that predates it simply has no saved order and sorts by arrangement, and —
+like `connections` — an older reader drops the unknown key rather than carrying
+it through.
+
 ### Fences
 
 A **fence** is an item of `type: "fence"` — a labelled rectangle, with the cards
@@ -376,6 +404,8 @@ promise 1 above,** and that is the open question at the bottom of this document.
 | `url`    | `link` | The address. **Revalidated on every render**, never trusted from the file. |
 | `hex`    | `swatch` | The colour, as `#rrggbb`. The item's `name` carries the same value uppercased — a swatch has no other name it could have, which is what makes one findable and what a copy of one puts on the system clipboard. Held to six hex digits on the way in and on the way out to the card (`swatchHex`); `#rgb` is folded out to the long form, and anything else falls back to the default grey rather than being stored. The item carries no asset. |
 | `peaks`  | `audio` | RMS readings in [0, 1]. Moved out to `waveforms/` when packing — see below. |
+| `trackTitle`, `artist`, `album` | `audio` | The track's tags, read off the file (ID3 / Vorbis / MP4) the first time the Mobile Playlist lens shows it, then cached here. The Playlist and the now-playing bar prefer `trackTitle` to the filename and show `artist` beneath it. Absent means the file carried no such tag; a re-encode with no title is still a track. Plain strings, additive — no `version` bump. |
+| `duration` | `audio` | The track length in seconds, read off the file's metadata and cached so the row shows it without loading the file again. A number; additive. |
 | `cover`  | any | An asset hash for the picture a card shows: album art, a diagram, a chosen image. On a `video` it is the poster — a still cut from the clip's own first frame at import, so the card is a picture of itself before it is played. Same key either way, and readers need not tell them apart. |
 | `fit`    | `image`, `video` | This one card's fit, overriding the board-wide `mediaFit`: `"cover"` fills and crops, `"contain"` fits the whole picture in. Absent means follow the board default. |
 | `fence`  | any | The id of the fence this item is inside, when it is inside one. Absent means loose — the key is written only where there is a fence to name, since a null on every card would be noise. Stamped at save from live geometry; a load seeds the runtime memo from it. A dangling id (fence deleted) falls back to measuring. |

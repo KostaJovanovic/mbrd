@@ -159,7 +159,7 @@ export function initItems(world, viewport) {
     if (key !== 'mediaFit') return;
     for (const [id, el] of nodes) {
       const item = byId(id);
-      if (item && (item.type === 'image' || item.type === 'video')) el.dataset.fit = fitMode(item);
+      if (item && (item.type === 'image' || item.type === 'video')) writeFit(el, item);
     }
   });
   // A layout-mode switch rewrites every item's geometry through writeLayout()
@@ -685,7 +685,7 @@ function build(item) {
   el.className = 'item';
   el.dataset.id = item.id;
   el.dataset.type = item.type;
-  el.dataset.fit = fitMode(item);
+  writeFit(el, item);
   // A named, self-describing card for assistive technology. The full
   // keyboard-selection model (roving tabindex, arrow navigation) is a separate,
   // browser-verified change; naming and role are the part that is safe to ship
@@ -964,6 +964,24 @@ function tiltFactor() {
   return dir && dir * (TILT_MIN + Math.random() * (1 - TILT_MIN));
 }
 
+/**
+ * Write both fit attributes onto a card.
+ *
+ * data-fit is the *effective* object-fit - the item's own meta.fit if it set
+ * one, else the board-wide default - and is what items.css keys the ordinary
+ * cover/contain off. data-fit-own carries only the choice made on this card, and
+ * exists for one rule: at whimsy 0 an image is a polaroid pinned to cover, which
+ * has to hold against the board default (whose contain would otherwise letterbox
+ * every Softish photo) but yield to somebody explicitly asking for Fit in the
+ * card. data-fit cannot tell those two contains apart; this can.
+ */
+function writeFit(el, item) {
+  el.dataset.fit = fitMode(item);
+  const own = item?.meta?.fit;
+  if (own === 'cover' || own === 'contain') el.dataset.fitOwn = own;
+  else delete el.dataset.fitOwn;
+}
+
 /** Rebuild one item's content in place (note edits, renames). */
 function rebuild(id) {
   const el = nodes.get(id);
@@ -979,7 +997,7 @@ function rebuild(id) {
   // data-fit lives on the outer .item and is otherwise only written in build(),
   // so a per-item fit change (which arrives as 'item' → rebuild) would rebuild
   // the picture but leave the old object-fit. Re-read it here.
-  el.dataset.fit = fitMode(item);
+  writeFit(el, item);
   // The bar is a sibling of the body, so replaceChildren above does not touch
   // it - only the caption inside it needs the new name. Patched rather than
   // rebuilt so the handle beside it keeps its identity, and with it any focus

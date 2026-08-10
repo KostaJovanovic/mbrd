@@ -16,6 +16,654 @@
    Written in that order, and deliberately not merged.
    --------------------------------------------------------- */
 
+/* ---------------------------------------------------------
+   The Mobile boards: Feed and Playlist
+
+   Mobile is no longer the world-space canvas. It is two DOM boards that cover the
+   canvas: the Feed (#mobile-feed), a Pinterest-style masonry of everything on the
+   board, and the Playlist (#mobile-playlist), the board's audio as a player. Which
+   one shows is the data-feed-lens attribute ui/board-view.js writes on <html> -
+   'feed' or 'playlist' - under data-board-mode="mobile". Keyed off the attribute,
+   not a width query: entry is a manual choice (the Feed / Playlist sidebar
+   buttons), so a wide tablet gets them too. Kept outside every @media block for
+   that reason - the same as the #zoom-ctl / #scale-bar hides below.
+
+   Both are real scrollers (overflow-y:auto, contained overscroll) pinned to the
+   window at z-index 2, over the hidden canvas and grain but under the chrome at
+   z-index 20 (the menu, the panels, the now-playing bar, the bin). ui/feed.js and
+   ui/playlist.js fill them.
+   --------------------------------------------------------- */
+#mobile-feed, #mobile-playlist {
+  /* How far the sheet stands off the top and bottom, clearing the chrome. */
+  --feed-inset-top: calc(max(12px, env(safe-area-inset-top)) + var(--chrome-button-h) + 20px);
+  --feed-inset-bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--chrome-button-h) + 12px);
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  box-sizing: border-box;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
+  /* The surround: a wash of ink over the paper, the same 6% the world-space board
+     laid outside its strip, so the sheet reads as a sheet. */
+  background: color-mix(in srgb, var(--ink) 6%, var(--paper));
+  contain: layout paint;
+  -webkit-overflow-scrolling: touch;
+}
+/* The Feed's sheet is wide (it holds two to five columns); the Playlist's is a
+   narrow strip, the way a track list reads. */
+#mobile-feed { --feed-w: 940px; }
+#mobile-playlist { --feed-w: 520px; }
+
+/* One lens shows, the canvas is always hidden under it. Feed is the default, so it
+   shows whenever Mobile is on and Playlist is not - robust to a missing attribute. */
+:root[data-board-mode="mobile"]:not([data-feed-lens="playlist"]) #mobile-feed { display: block; }
+:root[data-board-mode="mobile"][data-feed-lens="playlist"] #mobile-playlist { display: block; }
+/* Hidden by visibility, not display: a lens covers the canvas, but the viewport
+   must keep its box. It is position:fixed to the window, so display:none would
+   collapse it to zero size - and canvas/viewport.js caches that size, so a fit()
+   on the way back to the canvas would run against a zero rect and clamp the zoom to
+   its floor (the board snapping out to ~10%). visibility keeps the size. */
+:root[data-board-mode="mobile"] #viewport { visibility: hidden; }
+/* The world-space masthead's pen has no masthead to point at while a lens covers
+   the canvas - the Feed and Playlist carry their own title page, styled through the
+   same call but not editable here - so it comes down in Mobile. */
+:root[data-board-mode="mobile"] #mobile-header-edit-btn { display: none; }
+/* The Playlist is a player, not an editor: the board-editing cluster in the foot -
+   the bin and the undo/redo pair - has nothing to act on here (there is no
+   selection, and a reorder is off the undo stack), and it fought the now-playing
+   bar for the same corner. It comes down on the Playlist lens, leaving the foot to
+   the player: the menu, the add bar, and the transport that rises over it. The Feed
+   keeps it - a browse wall is closer to the board it edits. */
+:root[data-board-mode="mobile"][data-feed-lens="playlist"] .bin-row { display: none; }
+
+/* The board sheet: a fixed width, centred, standing clear of the chrome by its
+   margins. The near-white fill carries a little of the palette accent, exactly as
+   #mobile-board-frame does; the surround shows either side of it. On a phone it is
+   the window less a gutter, on a desktop it is the same set width - so the board
+   looks the same on both, with more ground around it on the wider one. */
+.feed-sheet {
+  box-sizing: border-box;
+  width: min(100% - 24px, var(--feed-w));
+  margin-inline: auto;
+  margin-block: var(--feed-inset-top) var(--feed-inset-bottom);
+  min-height: calc(100dvh - var(--feed-inset-top) - var(--feed-inset-bottom));
+  /* No side padding: the masthead is full-bleed to the board edge (the wrap rule
+     - the name breaks at the edge, not short of it), and the tiles inset
+     themselves. overflow:hidden clips the square masthead to the rounded sheet. */
+  padding: 0 0 20px;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 6%, #fff);
+  box-shadow: var(--shadow-1);
+}
+
+/* The masthead: the board's name across the top of the sheet, shared by the Feed
+   and the Playlist. It is the same title page the world-space Mobile board had -
+   ui/feed.js and ui/playlist.js style AND fit it through styleFeedMasthead(), so
+   the board's chosen face, size, stretch,
+   weight, italic, axes, leading and offset all show here, the name shrinks to the
+   same TITLE_LINES rule, and the pen's edits reach it. The .feed-title rules below
+   are the world-space #mobile-board-title's, resolving the size against the strip
+   width the feed hands in as --mobile-board-width; only the contenteditable half
+   is left out, since the feed's masthead is edited through the pen panel. */
+.feed-masthead {
+  /* A compact header, not a full title page: the band hugs the name with a little
+     breathing room rather than holding a fixed 3:2 page the width of the board,
+     which on the wide feed made the name enormous. The board (sheet) width is
+     untouched - only the header's own height and its title size come down. */
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 26px 16px 18px;
+  overflow: hidden;
+}
+.feed-title {
+  margin: 0;
+  min-width: 0;
+  max-width: 100%;
+  /* Fallback; styleFeedMasthead() writes the chosen face inline, and clears it to
+     fall back here when the header is on Default (which follows --font-display). */
+  font-family: var(--font-display);
+  /* Sized from the board's own title setting, but capped so a wide sheet does not
+     blow it up to a poster - the cap is what brings the header back to a normal
+     size. The min() keeps a board that chose a small title small. */
+  font-size: min(
+    calc(clamp(20px,
+      calc(var(--mobile-board-width, 0px) * var(--mobile-title-scale, 0.13)),
+      calc(var(--mobile-board-width, 0px) * var(--mobile-title-cap, 0.1875))
+    ) * var(--mobile-title-fit, 1)),
+    clamp(24px, 7vw, 40px)
+  );
+  transform:
+    translateY(calc(var(--mobile-header-height, 0px) * var(--mobile-title-offset, 0) / 100))
+    scaleY(var(--mobile-title-stretch, 1));
+  transform-origin: 50% 52%;
+  line-height: normal;
+  padding-block: 0.2em 0.45em;
+  text-align: center;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* No-wrap: the name takes its own width and the header centres the overflow, so a
+   long name trims equally at both ends rather than starting from the left. */
+.feed-title[data-nowrap] { white-space: pre; flex: none; max-width: none; }
+/* An unnamed board holds its placeholder name more quietly, as the world-space
+   masthead does. */
+.feed-title.is-default { opacity: 0.45; }
+
+/* The masonry grid: the positioning context for the absolute tiles ui/feed.js
+   lays out. Inset from the board edge (the sheet has none, so the masthead can
+   reach it); its height is written by the module once the wall is packed. */
+.feed-grid {
+  position: relative;
+  width: calc(100% - 24px);
+  margin: 0 auto;
+}
+
+/* A tile. Positioned and sized by the module (transform + width + height);
+   everything else is its look. content-visibility lets an offscreen tile skip its
+   own paint - the DOM analogue of the canvas cull a photo feed exists to respect. */
+.feed-tile {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: hidden;
+  border-radius: var(--leaf);
+  background: var(--paper-3);
+  box-shadow: var(--shadow-1);
+  content-visibility: auto;
+}
+.feed-tile > img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* Video: a poster with a play badge, swapped for a live <video> on tap. */
+.feed-tile[data-kind="video"] { cursor: pointer; }
+.feed-play {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: color-mix(in srgb, #000 18%, transparent);
+}
+.feed-play svg { width: 34px; height: 34px; filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.5)); }
+.feed-tile video { width: 100%; height: 100%; object-fit: contain; background: #000; display: block; }
+
+/* Audio: a cover (or a note glyph) with the track name over a gradient foot. A tap
+   goes to the Playlist, audio's home. */
+.feed-tile[data-kind="audio"] {
+  cursor: pointer;
+  background: color-mix(in srgb, var(--accent) 10%, var(--paper-3));
+}
+.feed-tile-art { position: absolute; inset: 0; }
+.feed-tile-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.feed-tile-art.is-placeholder {
+  display: grid;
+  place-items: center;
+  color: color-mix(in srgb, var(--accent) 70%, var(--ink-3));
+}
+.feed-tile-art.is-placeholder svg { width: 34%; height: 34%; }
+/* The still waveform on a coverless audio tile: a row of bars at fixed heights,
+   the same motif the canvas card and the playing playlist row carry. */
+.feed-bars {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 58%;
+  height: 40%;
+}
+.feed-bars i {
+  flex: 1;
+  min-width: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 58%, var(--ink-3));
+}
+/* The audio tile's corner badge: a small play glyph on a paper chip, saying this
+   is audio and a tap opens it in the player. */
+.feed-tile-badge {
+  position: absolute;
+  top: 8px; right: 8px;
+  width: 26px; height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--paper) 82%, transparent);
+  color: var(--accent);
+  box-shadow: var(--shadow-1);
+}
+.feed-tile-badge svg { width: 11px; height: 11px; margin-left: 1px; }
+.feed-tile-cap {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  padding: 16px 10px 9px;
+  font-family: var(--font-body);
+  color: #fff;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.62));
+}
+.feed-cap-title {
+  font-size: var(--t-small);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.feed-cap-sub {
+  margin-top: 1px;
+  font-size: var(--t-tiny);
+  opacity: 0.82;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Note: the words, on the note's own tint. */
+.feed-note {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 12px;
+  font-family: var(--font-body);
+  font-size: var(--t-small);
+  line-height: 1.4;
+  color: var(--ink);
+  background: var(--paper-card);
+  white-space: pre-wrap;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 9;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Link: a name and the address under it, the two lines the canvas card has. */
+.feed-link {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  background: var(--paper-card);
+}
+.feed-link-name {
+  font-family: var(--font-body);
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.feed-link-host {
+  font-size: var(--t-small);
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Swatch: the colour, with its value read under it. */
+.feed-swatch { position: absolute; inset: 0; }
+.feed-swatch-label {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  padding: 4px 8px;
+  text-align: center;
+  font-size: var(--t-tiny);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--paper) 78%, transparent);
+}
+
+/* Anything else - a model, a PDF with no thumbnail: its name and its kind. */
+.feed-file {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+  background: var(--paper-card);
+}
+.feed-file-name {
+  max-width: 100%;
+  color: var(--ink);
+  font-size: var(--t-small);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.feed-file-kind {
+  color: var(--ink-3);
+  font-size: var(--t-tiny);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* The "nothing to show yet" message, centred on the sheet under the masthead.
+   A class rather than the hidden attribute because it sets display, which would
+   beat [hidden]. */
+.feed-empty { display: none; }
+.feed-empty.is-shown {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 38vh;
+  padding: 20px;
+  text-align: center;
+  font-family: var(--font-body);
+}
+.feed-empty-title { margin: 0; color: var(--ink-2); font-size: var(--t-title); }
+.feed-empty-body { margin: 0; max-width: 34ch; color: var(--ink-3); font-size: var(--t-small); line-height: 1.5; }
+
+/* The Playlist header: the board as an album. A mosaic of the board's own covers
+   (a 2x2 when four are known, the first as a single sleeve below that, a disc when
+   none is), the board's name, an "N songs, M min" line, and the two things a
+   now-playing bar cannot be - Play and Shuffle, the way to start the board cold.
+   Centred and full on the Mobile lens; a compact left-aligned strip in the Desktop
+   window. It hides when there is no audio, leaving the empty note in its place. */
+.pl-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 28px 20px 20px;
+  text-align: center;
+  border-bottom: var(--hairline) solid var(--rule-2);
+  margin-bottom: 6px;
+}
+.pl-hero.is-empty { display: none; }
+.pl-cover {
+  width: clamp(150px, 46vw, 208px);
+  aspect-ratio: 1;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: color-mix(in srgb, var(--accent) 12%, var(--paper-3));
+  box-shadow: var(--shadow-2);
+}
+.pl-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pl-cover.is-mosaic { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.pl-cover.is-placeholder {
+  display: grid;
+  place-items: center;
+  color: color-mix(in srgb, var(--accent) 65%, var(--ink-3));
+}
+.pl-cover.is-placeholder svg { width: 44%; height: 44%; }
+.pl-hero-text { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; min-width: 0; }
+.pl-hero-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(22px, 6.4vw, 30px);
+  line-height: 1.12;
+  color: var(--ink);
+  max-width: 22ch;
+  text-wrap: balance;
+}
+.pl-hero-title.is-default { opacity: 0.5; }
+.pl-hero-meta {
+  margin-top: -4px;
+  font-family: var(--font-body);
+  font-size: var(--t-small);
+  letter-spacing: 0.02em;
+  color: var(--ink-3);
+}
+.pl-hero-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 2px; }
+.pl-play, .pl-shuffle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 132px;
+  padding: 11px 22px;
+  border-radius: 999px;
+  font-family: var(--font-body);
+  font-size: var(--t-body);
+  font-weight: 600;
+  cursor: pointer;
+  border: var(--hairline) solid transparent;
+  transition: transform 0.08s ease, background 0.15s ease, color 0.15s ease;
+}
+.pl-play { background: var(--accent); color: #fff; border-color: var(--accent); }
+.pl-play:hover { background: color-mix(in srgb, #000 8%, var(--accent)); }
+.pl-shuffle { background: var(--paper-card); color: var(--ink); border-color: var(--rule-2); }
+.pl-shuffle:hover { background: var(--paper-3); }
+.pl-shuffle.is-on {
+  background: color-mix(in srgb, var(--accent) 14%, var(--paper-card));
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.pl-play:active, .pl-shuffle:active { transform: translateY(1px); }
+.pl-play .pl-ico, .pl-shuffle .pl-ico { display: inline-flex; }
+.pl-play svg, .pl-shuffle svg { width: 16px; height: 16px; }
+
+/* The compact header the Desktop window carries: the same pieces, on a row. */
+.pl-hero.is-compact {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  text-align: left;
+}
+.pl-hero.is-compact .pl-cover { width: 58px; flex: none; border-radius: var(--leaf); box-shadow: var(--shadow-1); }
+.pl-hero.is-compact .pl-hero-text { align-items: flex-start; gap: 6px; }
+.pl-hero.is-compact .pl-hero-title {
+  font-size: var(--t-title);
+  max-width: none;
+  width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pl-hero.is-compact .pl-hero-actions { margin-top: 2px; justify-content: flex-start; }
+.pl-hero.is-compact .pl-play, .pl-hero.is-compact .pl-shuffle {
+  min-width: 0;
+  padding: 7px 15px;
+  font-size: var(--t-small);
+}
+
+/* The Playlist list, in normal flow. In the Mobile lens it sits on the board
+   sheet; in the Desktop window it fills the window body. */
+.pl-list {
+  display: flex;
+  flex-direction: column;
+  width: calc(100% - 24px);
+  margin: 0 auto 8px;
+}
+.player-window-body .pl-list { width: 100%; margin: 0; }
+
+/* A track row, Apple-Music/Spotify shape: cover, title over artist, duration, and
+   - only in a reorderable list - a grip to drag it by. The whole row is the play
+   control; the shared queue plays and the now-playing bar drives it. The current
+   row lights in the accent and its cover carries a small equalizer. */
+.pl-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border-radius: var(--leaf);
+  cursor: pointer;
+}
+.pl-row:hover { background: var(--paper-3); }
+.pl-row.is-playing { background: color-mix(in srgb, var(--accent) 13%, var(--paper-card)); }
+.pl-row.is-dragging {
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
+  position: relative;
+  z-index: 2;
+}
+.pl-art {
+  position: relative;
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border-radius: var(--leaf);
+  overflow: hidden;
+  background: color-mix(in srgb, var(--accent) 12%, var(--paper-3));
+}
+.pl-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pl-art.is-placeholder {
+  display: grid;
+  place-items: center;
+  color: color-mix(in srgb, var(--accent) 70%, var(--ink-3));
+}
+.pl-art.is-placeholder svg { width: 20px; height: 20px; }
+.pl-main { flex: 1 1 auto; min-width: 0; }
+.pl-title {
+  font-family: var(--font-body);
+  font-size: var(--t-body);
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pl-row.is-playing .pl-title { color: var(--accent); font-weight: 600; }
+.pl-artist {
+  font-size: var(--t-small);
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pl-time {
+  flex: none;
+  font-size: var(--t-small);
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.pl-grip {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--leaf);
+  background: none;
+  color: var(--ink-3);
+  cursor: grab;
+  touch-action: none;
+}
+.pl-grip:hover { background: var(--paper-3); color: var(--ink-2); }
+.pl-row.is-dragging .pl-grip { cursor: grabbing; }
+.pl-grip svg { width: 16px; height: 16px; }
+
+/* The equalizer over the cover, shown only on the playing row. Four bars of a
+   constant width; the height is what dances. */
+.pl-eq {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+  padding: 9px 0;
+  background: color-mix(in srgb, #000 34%, transparent);
+}
+.pl-row.is-playing .pl-eq { display: flex; }
+.pl-eq i {
+  width: 3px;
+  height: 100%;
+  border-radius: 1px;
+  background: #fff;
+  transform-origin: bottom;
+  animation: pl-eq 0.9s ease-in-out infinite;
+}
+.pl-eq i:nth-child(1) { animation-delay: -0.20s; }
+.pl-eq i:nth-child(2) { animation-delay: -0.55s; }
+.pl-eq i:nth-child(3) { animation-delay: -0.10s; }
+.pl-eq i:nth-child(4) { animation-delay: -0.70s; }
+@keyframes pl-eq {
+  0%, 100% { transform: scaleY(0.25); }
+  50% { transform: scaleY(1); }
+}
+
+/* The Desktop Playlist window: a floating, draggable player over the canvas,
+   opened from the sidebar's Playlist button. Chrome-level (z 22, over the now-
+   playing bar's 20) so a click reaches it; it holds the same track list, without
+   the reordering. It opens anchored lower-right and switches to left/top the first
+   time it is dragged (ui/playlist.js). */
+.player-window {
+  position: fixed;
+  right: 24px;
+  bottom: 92px;
+  z-index: 22;
+  width: min(360px, calc(100vw - 32px));
+  max-height: min(60vh, 560px);
+  display: flex;
+  flex-direction: column;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--radius);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
+  overflow: hidden;
+}
+.player-window.is-dragging { user-select: none; }
+.player-window-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: var(--hairline) solid var(--rule-2);
+  cursor: grab;
+  touch-action: none;
+}
+.player-window.is-dragging .player-window-head { cursor: grabbing; }
+.player-window-title {
+  font-family: var(--font-display);
+  font-size: var(--t-title);
+  color: var(--ink);
+}
+.player-window-spacer { flex: 1 1 auto; }
+.player-window-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--leaf);
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.player-window-close:hover { background: var(--paper-3); color: var(--ink); }
+.player-window-close svg { width: 15px; height: 15px; }
+.player-window-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+}
+.player-window-body .feed-empty.is-shown { min-height: 30vh; }
+
+/* Reduced motion: no tile reflow easing while reordering, no scroll glide, and a
+   still equalizer (the row still lights, it just does not dance). */
+@media (prefers-reduced-motion: reduce) {
+  #mobile-feed, #mobile-playlist { scroll-behavior: auto; }
+  .pl-eq i { animation: none; transform: scaleY(0.7); }
+}
+
 @media (pointer: coarse) {
   :root {
     --chrome-button-w: var(--chrome-button-touch);
@@ -252,8 +900,10 @@
                  + var(--bar-h) + var(--bar-gap)
                  + var(--tools-h) + var(--bar-gap));
   }
-  #nowplaying .np-name { display: none; }
-  #nowplaying .np-volume input { width: 56px; }
+  /* The name stays now: the seek line moved to its own row, so the top row has
+     room for the name on the left even on a phone (it ellipsises if the controls
+     crowd it). */
+  #nowplaying .np-volume input { width: 48px; }
 
   /* And here the sidebar does take it away, unlike at every wider size. The
      panel is 322 of a 390-wide screen: there is no "beside it" to move to, and

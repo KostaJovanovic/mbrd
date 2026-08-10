@@ -34,9 +34,10 @@
 // empty host with today's id and the owning module fills it exactly as before.
 
 import {
-  board, setSetting, setArrangement, MOBILE_COLUMN_OPTIONS,
+  board, setSetting, setArrangement,
 } from '../state.js';
 import { ARRANGEMENTS, MOBILE_ARRANGEMENTS } from '../arrange/arrangements.js';
+import { currentLens } from './board-view.js';
 import { itemBounds } from '../geometry.js';
 import { toUnits, formatLength, paperMm, PAPERS } from '../measure.js';
 import {
@@ -132,6 +133,28 @@ const QUALITY_HINT = {
 export const SECTIONS = [
   // --- Board -------------------------------------------------------------
   {
+    // The two ways to see a board, first of all, because on a phone this is the
+    // navigation - Feed | Playlist is how you move between them - and it was buried
+    // three rows down the System tab, next to Clear everything. It earns the top of
+    // the first tab on both: a Desktop board reaches its player from the same pair,
+    // which was otherwise a trip into System nobody would guess to take.
+    id: 'views', tab: 'board', title: 'View',
+    controls: [
+      { type: 'buttons', buttons: [
+        { id: 'view-feed', cmd: 'feed', label: 'Feed',
+          pressed: ctx => ctx.mobile && currentLens() === 'feed',
+          title: ctx => (ctx.mobile
+            ? 'Back to the canvas'
+            : 'Show everything on the board as a scrollable feed') },
+        { id: 'view-playlist', cmd: 'playlist', label: 'Playlist',
+          pressed: ctx => ctx.mobile && currentLens() === 'playlist',
+          title: ctx => (ctx.mobile
+            ? 'Back to the canvas'
+            : 'Open the board’s audio as a player') },
+      ] },
+    ],
+  },
+  {
     id: 'name', tab: 'board', title: 'Board',
     controls: [
       // A real input rather than a <p> you can click into, so it is reachable by
@@ -165,10 +188,8 @@ export const SECTIONS = [
     // within it are the same question asked three times.
     id: 'arrange', tab: 'board', title: 'Arrange',
     controls: [
-      { id: 'mobile-columns', type: 'select', label: 'Grid width', when: mobile,
-        options: () => MOBILE_COLUMN_OPTIONS.map(n => ({ value: String(n), label: `${n} spaces` })),
-        get: () => String(board.settings.mobileColumns),
-        set: v => setSetting('mobileColumns', +v) },
+      // The Feed's column count is derived from the screen width now, not chosen -
+      // a phone gets two, a wide screen more - so the old Grid width select is gone.
       // Two catalogues, because the two layouts are answering different
       // questions: Desktop picks a shape, and Mobile - which packs a column and
       // throws every computed position away - can only pick the order the
@@ -411,22 +432,27 @@ export const SECTIONS = [
     // not while you are working - and the way out, which belongs at the far end
     // of the panel where it cannot be hit on the way to Save.
     //
-    // Which of the two arrangements this machine works in is in here too, rather
+    // Which of the two presentations this machine works in is in here too, rather
     // than beside them under a heading of its own. It is not a property of the
-    // board: `board.layoutMode` is deliberately not persisted in the .mbrd, so a
-    // phone and a laptop each remember their own choice. That makes it the same
-    // kind of decision as everything else in this section - about this copy of
-    // the app, and about nobody else's.
+    // board: `board.layoutMode` is deliberately not persisted in the .mbrd, so
+    // each machine remembers its own choice. That makes it the same kind of
+    // decision as everything else in this section - about this copy of the app,
+    // and about nobody else's.
+    //
+    // The board has three faces and two of them are here: the Canvas (the freeform
+    // infinite board) is the default, and the Feed (a scrollable masonry of
+    // everything on it) and the Playlist (its audio, as a player) are the mobile
+    // pair. "Mobile" is the internal name still - board.layoutMode, data-board-mode,
+    // the .mbrd profile - but nothing the user reads says it any more: it stopped
+    // being about a device the moment it became a way to browse rather than a
+    // cramped canvas.
     id: 'browser', tab: 'system', title: 'This browser',
     controls: [
       { type: 'buttons', buttons: [{ cmd: 'optimize', label: 'Optimize' }] },
-      { type: 'buttons', buttons: [
-        { id: 'board-mode', cmd: 'toggle-board-mode', label: 'Mobile board',
-          pressed: ctx => ctx.mobile,
-          title: ctx => (ctx.mobile
-            ? 'Switch to the Desktop arrangement'
-            : 'Switch to the Mobile arrangement') },
-      ] },
+      // Feed | Playlist used to live here, next to Clear everything; it is the
+      // board's own navigation, so it moved to the top of the Board tab (the
+      // 'views' section above). What is left here is genuinely about this copy of
+      // the app in this browser: optimise its assets, reload it, wipe it.
       // The refresh gesture this app takes away: pull-to-refresh is off because
       // every downward swipe on the board is a pan, and on a home screen there
       // is no address bar either. It saves first - which is why the label says

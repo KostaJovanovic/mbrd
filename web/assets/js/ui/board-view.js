@@ -9,13 +9,44 @@
 // The viewport is handed in by initBoardView() rather than imported, so nothing
 // here touches a browser global at import time.
 
-import { board, mobileBoardWidth, mobileBoardTop, mobileBoardBottom } from '../state.js';
+import { board, bus, mobileBoardWidth, mobileBoardTop, mobileBoardBottom } from '../state.js';
 import { BASE_ZOOM } from '../canvas/viewport.js';
 
 let vp = null;
 
 export function initBoardView(viewport) {
   vp = viewport;
+}
+
+/**
+ * Which mobile lens is up: 'feed' (the masonry wall of everything) or 'playlist'
+ * (the audio player). A session choice, not board state - the same status as
+ * layoutMode, and kept beside it for the same reason. Mirrored onto
+ * documentElement.dataset.feedLens, which mobile.css keys the canvas / feed /
+ * playlist show-hide off, under data-board-mode="mobile". Removed entirely off
+ * Mobile so it can never touch the Desktop canvas.
+ */
+let lens = 'feed';
+
+/** The lens up right now. */
+export const currentLens = () => lens;
+
+/**
+ * Choose a lens. Writes it where the CSS can see it (only while Mobile) and
+ * announces it on the bus, so ui/feed.js and ui/playlist.js each render or tear
+ * down without either importing the other or this reaching into them.
+ */
+export function setLens(name) {
+  lens = name === 'playlist' ? 'playlist' : 'feed';
+  syncLens();
+  bus.emit('lens', lens);
+}
+
+/** Mirror the lens onto <html>, or clear it when the canvas is what shows. */
+export function syncLens() {
+  const root = document.documentElement;
+  if (board.layoutMode === 'mobile') root.dataset.feedLens = lens;
+  else delete root.dataset.feedLens;
 }
 
 /**
@@ -54,6 +85,10 @@ export function openingView() {
  */
 export function syncBoardMode(frame = false) {
   document.documentElement.dataset.boardMode = board.layoutMode;
+  // The lens attribute follows the mode: written on the way into Mobile, cleared
+  // on the way out, so a Desktop board never carries a feed-lens the CSS could act
+  // on. Entering Mobile lands on whichever lens was last up (feed to begin with).
+  syncLens();
   vp.setBoardMode(
     board.layoutMode,
     mobileBoardWidth(),

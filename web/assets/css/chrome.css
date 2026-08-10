@@ -252,10 +252,12 @@
   right: var(--np-right);
   max-width: 520px;
   margin-inline: auto;
+  /* Two rows now: the name-and-controls row, and the thin seek line under it. */
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px 8px 14px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 7px 12px 8px;
   border: var(--hairline) solid var(--rule-2);
   border-radius: var(--leaf);
   background: var(--paper-card);
@@ -264,6 +266,13 @@
   user-select: none;
 }
 #nowplaying[hidden] { display: none; }
+
+/* The top row: the name on the left, the controls pushed to the right. */
+#nowplaying .np-top { display: flex; align-items: center; gap: 10px; }
+#nowplaying .np-controls { display: flex; align-items: center; gap: 1px; margin-left: auto; }
+/* The four playlist buttons show only when a playlist is the sound (paintQueue
+   sets .is-queue). Play stays between prev and next either way. */
+#nowplaying:not(.is-queue) :is(.np-shuffle, .np-prev, .np-next, .np-repeat) { display: none; }
 
 /* Arriving and leaving.
    It comes up from under the edge of the window and goes back down under it.
@@ -366,43 +375,115 @@
    waveform - so a long filename ellipses rather than pushing the transport
    into a corner. The full one is on the title attribute. */
 #nowplaying .np-name {
-  flex: 0 1 auto;
-  max-width: 33%;
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
   font-size: var(--t-small);
   color: var(--ink-2);
+  /* It is a <button> now (tap to open the player), so reset the chrome and keep
+     it reading as the track name - left-aligned text, no border or fill. */
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease);
 }
-#nowplaying .np-transport {
-  flex: 1;
-  min-width: 0;
-  display: flex;
+#nowplaying .np-name:hover { color: var(--accent); }
+#nowplaying .np-name:focus-visible { outline: var(--sel-line, 2px) solid var(--select, var(--accent)); outline-offset: 2px; border-radius: 4px; }
+
+/* The seek line under the two rows: elapsed, the line, total. Thin - one row and
+   a couple of pixels of ink - so it reads as a scrubber, not a second waveform.
+   The line is not the measured shape of the sound; a bar is a remote. */
+#nowplaying .np-seek { display: flex; align-items: center; gap: 8px; }
+#nowplaying .np-time {
+  flex: none;
+  min-width: 4ch;
+  font-size: var(--t-tiny);
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
 }
-#nowplaying .transport {
-  flex: 1;
-  min-width: 0;
-  gap: 8px;
-  margin-top: 0;
+#nowplaying .np-time.np-total { text-align: right; }
+#nowplaying .np-line {
+  position: relative;
+  flex: 1 1 auto;
+  height: 14px;          /* the target; the ink is the 2px stroke centred in it */
+  cursor: pointer;
+  touch-action: none;
 }
-/* Shorter than the card's forty. A card gives the waveform the whole lower half
-   of its face and can afford to; here it is one control in a row of them, and a
-   40px band of bars would make the bar as tall as the sidebar's header. The
-   readings are the same - drawBars() resamples to whatever width it is given -
-   so this is the same shape drawn shorter, not a coarser one. */
-#nowplaying .wave { height: 26px; }
-/* The video form. Its own card gives this 14px because the bar is laid over the
-   picture and every pixel is one of the thing you pinned up; here there is no
-   picture underneath and the line is the only thing to aim at, so it gets the
-   waveform's height and the same target the waveform has. The rule it draws is
-   still 3px - .vtrack sizes the reach, not the ink. */
-#nowplaying .vtrack { height: 26px; }
-/* And the same ink as the waveform beside it. The card's 22% is judged against
-   a photograph; on paper, next to a play button in full accent, it reads as a
-   crease rather than as a track - which is the note .wave-base already carries
-   for having made exactly this mistake. */
-#nowplaying .vtrack::before { background: color-mix(in srgb, var(--ink) 38%, transparent); }
-#nowplaying .transport .play { width: 28px; height: 28px; }
+#nowplaying .np-line-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+#nowplaying .np-line-base { stroke: color-mix(in srgb, var(--ink) 22%, transparent); }
+/* The base (unplayed) line is clipped to the part *past* the playhead, so the
+   grey does not sit under the played wave - the two meet at --np-progress and the
+   line reads as wave-then-plain rather than wave-over-grey. The base svg is the
+   direct child; the fill's svg is inside .np-line-fill. */
+#nowplaying .np-line > .np-line-svg {
+  clip-path: inset(0 0 0 calc(var(--np-progress, 0) * 100%));
+}
+/* The played portion, revealed left-to-right to --np-progress - the same clip the
+   card's waveform fill uses. */
+#nowplaying .np-line-fill {
+  position: absolute;
+  inset: 0;
+  clip-path: inset(0 calc((1 - var(--np-progress, 0)) * 100%) 0 0);
+}
+#nowplaying .np-fill-line,
+#nowplaying .np-fill-wave { stroke: var(--accent); }
+/* Straight at the middle and hard ends of the whimsy axis; a Material-You wave at
+   the soft end, the tier that already rounds and softens everything else. */
+/* view-box, so the scroll below translates in the wave's own user units (which
+   sizeWave has made one-to-one with pixels) rather than in the path's bounding box. */
+#nowplaying .np-fill-wave { display: none; transform-box: view-box; }
+:root[data-whimsy="0"] #nowplaying .np-fill-line { display: none; }
+:root[data-whimsy="0"] #nowplaying .np-fill-wave {
+  display: block;
+  /* Slowly leftward by exactly one period. WAVE_HALF is 7px and one whole period is
+     2 * WAVE_HALF = 14 user units; sizeWave() makes a user unit a pixel and lays the
+     path two periods past the edge, so translating by one period and looping is
+     seamless - the wave repeats, so the reset is invisible. Keep this 14 in step with
+     WAVE_HALF in ui/nowplaying.js. Slow: a period every few seconds. */
+  animation: np-wave 3s linear infinite;
+}
+@keyframes np-wave { to { transform: translateX(-14px); } }
+/* Paused: the scroll stops, and the wave flattens all the way to a straight line -
+   scaleY(0) about the centre collapses every crest onto the centre line, and the
+   non-scaling stroke draws that line at full width. On a transition so it eases both
+   ways (flat when paused, swelling back into a wave when it plays again). Not a
+   near-zero scale: a sliver of a scale left a shallow ripple standing, which read as
+   a paused wave rather than the still line it should be. The scale lives on the
+   wrapping group so it does not fight the path's scroll animation. */
+#nowplaying .np-wave-scale {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  transform: scaleY(1);
+  transition: transform var(--dur-base) var(--ease);
+}
+#nowplaying.is-paused .np-fill-wave { animation-play-state: paused; }
+/* Paused, at the soft end: the wave becomes a plain straight line. Done by swapping
+   the wavy fill for the straight one (which is hidden while playing) rather than by
+   scaling the wave to nothing - a scaled-to-zero group left no line at all on some
+   engines, so the played part of the scrubber vanished on pause. The straight fill
+   is the played portion at full ink; the grey base carries the rest. */
+:root[data-whimsy="0"] #nowplaying.is-paused .np-fill-wave { display: none; }
+:root[data-whimsy="0"] #nowplaying.is-paused .np-fill-line { display: block; }
+@media (prefers-reduced-motion: reduce) {
+  :root[data-whimsy="0"] #nowplaying .np-fill-wave { animation: none; }
+  #nowplaying .np-wave-scale { transition: none; }
+}
+/* Play reads a touch stronger than its neighbours - it is the one reached for. */
+#nowplaying .np-play { color: var(--ink); }
 
 /* The volume, and the icon is the label. A word here would be the only text in
    the bar competing with the track's own name, and a speaker is the one glyph
@@ -431,6 +512,27 @@
 }
 #nowplaying .np-close:hover { background: var(--paper-2); color: var(--accent-deep); }
 #nowplaying .np-close svg { width: 12px; height: 12px; }
+
+/* The right-hand controls: play, and the playlist's shuffle / prev / next /
+   repeat. Round icon buttons in the bar's own idiom, like the close. */
+#nowplaying .np-qbtn {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+#nowplaying .np-qbtn:hover { background: var(--paper-2); color: var(--ink); }
+#nowplaying .np-qbtn svg { width: 16px; height: 16px; }
+/* An engaged shuffle or repeat reads in the accent. */
+#nowplaying .np-qbtn[aria-pressed="true"] { color: var(--accent); }
 
 /* Idle - fifteen seconds of nothing, and the furniture goes.
    ui/idle.js puts the class on and takes it off; what counts as "something

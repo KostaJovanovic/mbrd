@@ -47,6 +47,9 @@ import { openContextMenu } from './ui/menu.js';
 import { openFencePrompt } from './ui/fence-prompt.js';
 import { open as openSearch } from './ui/search.js';
 import { openCredits } from './ui/credits.js';
+import { setLens, currentLens } from './ui/board-view.js';
+import { togglePlayerWindow } from './ui/playlist.js';
+import { togglePlayback } from './canvas/audio.js';
 import {
   openPanel as openHeaderPanel, closePanel as closeHeaderPanel,
   isPanelOpen as isHeaderPanelOpen,
@@ -161,7 +164,7 @@ export function sharedFence(items) {
  */
 function fenceable() {
   if (board.layoutMode !== 'mobile') return true;
-  toast('Fences are a Desktop board thing');
+  toast('Fences are a canvas thing');
   return false;
 }
 
@@ -303,7 +306,7 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
     // the same seam the title card's pen and the whimsy dial already use.
     connect: () => {
       if (board.layoutMode === 'mobile') {
-        toast('Connections are a Desktop board thing');
+        toast('Connections are a canvas thing');
         return;
       }
       const on = !connectArmed();
@@ -352,7 +355,7 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
      */
     connectSelection: () => {
       if (board.layoutMode === 'mobile') {
-        toast('Connections are a Desktop board thing');
+        toast('Connections are a canvas thing');
         return;
       }
       // Fences are out with the furniture and the riders. A line to a region is
@@ -498,9 +501,41 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
       const next = board.layoutMode === 'mobile' ? 'desktop' : 'mobile';
       if (!selectBoardMode(next)) return;
       toast(next === 'mobile'
-        ? `Mobile board: ${board.settings.mobileColumns} columns, vertical scroll`
-        : 'Desktop board');
+        ? 'Feed: images, video & audio, vertical scroll'
+        : 'Back to the canvas');
     },
+
+    /**
+     * The two mobile boards, each its own sidebar button.
+     *
+     * Feed is the masonry wall of everything; Playlist is the audio player. On the
+     * canvas, Feed takes the whole board into its mobile view and Playlist opens
+     * the floating window over the canvas instead - a player, not a takeover. Once
+     * in the mobile view the pair are a switch between the two lenses, and pressing
+     * the one already up steps back out to the canvas, which is the only way back
+     * now that the old single toggle is gone. setLens before the mode switch so
+     * entering the mobile view lands on the lens that was asked for.
+     */
+    feed: () => {
+      if (board.layoutMode === 'mobile') {
+        if (currentLens() === 'feed') { selectBoardMode('desktop'); toast('Back to the canvas'); }
+        else setLens('feed');
+        return;
+      }
+      setLens('feed');
+      selectBoardMode('mobile');
+    },
+    playlist: () => {
+      if (board.layoutMode === 'mobile') {
+        if (currentLens() === 'playlist') { selectBoardMode('desktop'); toast('Back to the canvas'); }
+        else setLens('playlist');
+        return;
+      }
+      togglePlayerWindow();
+    },
+    // Space, from the canvas key handler: play or pause the current track. Returns
+    // whether it did - false when nothing is loaded, so Space falls back to pan.
+    playPause: () => togglePlayback(),
     scaleFromItem,
     // Resetting the sheet's size and resetting the board's scale are the same
     // act: the sheet is drawn at whatever A4 works out to under the current
