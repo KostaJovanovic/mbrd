@@ -114,6 +114,9 @@ export function initSidebar(cmds) {
     writePref(MODE_PREF, mode);
     paint();
   });
+  // The Feed and Playlist buttons show which lens is up, and a lens switch is the
+  // one change that moves that without a layout or a setting behind it.
+  bus.on('lens', paint);
   paint();
   restoreOpen();
 }

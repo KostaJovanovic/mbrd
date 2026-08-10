@@ -54,8 +54,10 @@ import { initNowPlaying } from './ui/nowplaying.js';
 import { initToolbar } from './ui/toolbar.js';
 import { initAppearance, resetAppearance, setWhimsy } from './ui/appearance.js';
 import { initFonts } from './ui/fonts.js';
-import { initMobileHeaderEditor, isPanelOpen as isHeaderPanelOpen, closePanel as closeHeaderPanel } from './ui/mobile-header.js';
+import { initMobileHeaderEditor, isPanelOpen as isHeaderPanelOpen, closePanel as closeHeaderPanel, styleFeedMasthead } from './ui/mobile-header.js';
 import { initAudio } from './canvas/audio.js';
+import { initFeed } from './ui/feed.js';
+import { initPlaylist } from './ui/playlist.js';
 
 import { createCommands } from './commands.js';
 import { createViewPerf, initPerfHash } from './perf/view-perf.js';
@@ -143,6 +145,15 @@ initPaper(vp);
 // The Mobile sheet and masthead, which are screen-space chrome like the paper
 // sheet and are painted off the same event for the same reason.
 initMobileFrame(vp);
+// The Mobile Playlist lens - a native-scrolling audio player shown over the
+// board's two mobile faces. The Feed is the masonry wall on #mobile-feed; the
+// Playlist is the audio player, filling #mobile-playlist as the Mobile board's
+// second lens and doubling as the floating window on the Desktop board. Each owns
+// its own surface and bus wiring, so its build is driven by the
+// 'layout'/'lens'/'board:load' events rather than by these lines, which only hand
+// each the DOM and the shared masthead styler.
+initFeed(vp, cmds, styleFeedMasthead);
+initPlaylist(vp, cmds, styleFeedMasthead);
 initInput(vp, cmds);
 initMenu(vp, cmds);
 // The offer that follows a rubber band. Takes the viewport and not cmds: the

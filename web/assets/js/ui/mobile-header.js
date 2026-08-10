@@ -543,6 +543,26 @@ function applyTitleStyle(title, style, axes) {
   title.toggleAttribute('data-nowrap', !style.wrap);
 }
 
+/**
+ * Style and fit the Mobile feed's masthead - the same title page the world-space
+ * masthead is, on the same two rules.
+ *
+ * The style is the shared header typography (face, size, stretch, weight, italic,
+ * axes, leading, offset, wrap), so an edit from this panel reaches it on the next
+ * 'settings' emit. The fit is the other half the first version dropped: fitOne()
+ * shrinks the name to TITLE_LINES lines when wrapping and to one line when not,
+ * measured against the band `box` - which is what keeps the name inside the 3:2
+ * title page rather than overflowing or clamping it. Synchronous, since the feed
+ * calls this off its own paints rather than the pan frame; each read forces the
+ * layout it needs. The caller sets --mobile-board-width (the strip the size is a
+ * fraction of) on the title before calling.
+ */
+export function styleFeedMasthead(title, box) {
+  if (!title) return;
+  applyTitleStyle(title, header(), availableAxes());
+  if (box) fitOne(title, box, header().wrap, false);
+}
+
 /** Style the Desktop title card if it is on the board right now. */
 function styleTitleCard(style = header(), axes = availableAxes()) {
   const card = titleCardEl();

@@ -708,6 +708,26 @@ export function mobileOrder(items, opts = {}) {
 }
 
 /**
+ * Order a list by a saved id order, healing gaps. The Playlist's own ordering:
+ * `order` is board.audioOrder, a hand-arranged list of ids. Anything it still
+ * names appears first, in that order; anything it does not - a fresh import, or a
+ * track whose id it never learned - follows in the list's own incoming order,
+ * which the caller has already put in the board arrangement. So a reorder sticks,
+ * a new track lands at the end rather than jumping the queue, and a list that
+ * outlived some of its ids simply skips them. Pure; the input array is not
+ * mutated (known is a copy before it is sorted).
+ */
+export function applyAudioOrder(items, order) {
+  if (!Array.isArray(order) || !order.length) return items.slice();
+  const pos = new Map(order.map((id, i) => [id, i]));
+  const known = [];
+  const fresh = [];
+  for (const it of items) (pos.has(it.id) ? known : fresh).push(it);
+  known.sort((a, b) => pos.get(a.id) - pos.get(b.id));
+  return [...known, ...fresh];
+}
+
+/**
  * A layout's licence to come out differently, or null for the canonical one.
  *
  * Null rather than a generator seeded with a constant, so that "was I given a

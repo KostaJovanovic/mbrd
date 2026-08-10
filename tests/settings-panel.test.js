@@ -88,9 +88,10 @@ test('Mobile is shown the arrangement it has and nothing it has not', () => {
     assert.equal(controlVisible(byId(id), MOBILE), false, `${id} should be absent on Mobile`);
     assert.equal(controlVisible(byId(id), DESKTOP), true, `${id} should be present on Desktop`);
   }
-  // And the one that is the other way round.
-  assert.equal(controlVisible(byId('mobile-columns'), MOBILE), true);
-  assert.equal(controlVisible(byId('mobile-columns'), DESKTOP), false);
+  // There is no longer a grid-width control the other way round: the Feed packs
+  // its columns from the sheet width (ui/feed.js), so the manual "Grid width" row
+  // was retired. Its absence from the schema is the assertion now.
+  assert.equal(byId('mobile-columns'), undefined, 'the manual Grid width row is retired');
 });
 
 test('the settings that are not about a layout are in both', () => {

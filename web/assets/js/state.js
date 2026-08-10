@@ -60,6 +60,7 @@ import {
 import {
   cloneSettings, layoutSettingsOf, settingsFor, dropIdIndex,
   dedupeIds, MAX_ITEMS, MAX_CONNECTIONS, pairKey, normalizeConnections,
+  normalizeAudioOrder,
 } from './board-model.js';
 
 export { MAX_CONNECTIONS, pairKey };
@@ -1815,6 +1816,23 @@ export function setArrangement(name) {
   bus.emit('settings', 'arrangement');
 }
 
+/**
+ * The order the Playlist plays the board's audio in, set by dragging a track to
+ * a new place. A list of ids, held to the board's live items and saved with it.
+ *
+ * Off the undo stack, like setArrangement above: reordering a playlist is a
+ * preference about how it reads, not an edit to the board's content, and a Ctrl+Z
+ * that walked back through drag positions would step over the work between them.
+ * Its own 'audioOrder' event so the Playlist repaints without every 'items'
+ * listener waking for something only it cares about.
+ */
+export function setAudioOrder(ids) {
+  const live = new Set(board.items.map(i => i.id));
+  board.audioOrder = normalizeAudioOrder(ids, live);
+  markDirty();
+  bus.emit('audioOrder', board.audioOrder);
+}
+
 export function setTitle(title) {
   board.title = cleanBoardTitle(title) || 'Untitled board';
   bus.emit('board');
@@ -1852,6 +1870,7 @@ export function loadBoard(data) {
   board.paletteSources = next.paletteSources;
   board.trash = next.trash;
   board.connections = next.connections;
+  board.audioOrder = next.audioOrder;
   board.layoutMode = layoutMode;
   // Nothing that arrives from outside is allowed to be a ghost. serializeBoard()
   // never writes one, so a file carrying the type was hand-made or came from a
@@ -2002,6 +2021,10 @@ function normalizeBoard(data) {
     // rather than pointing at whichever card won the collision. A connection to
     // a binned card is kept: restoring it has to bring its lines back with it.
     connections: normalizeConnections(src.connections, ids),
+    // Held to the same id union as connections - the board's cards and the bin's -
+    // so a saved order that names a since-thrown-away track survives to be restored
+    // with it. The Playlist filters this to the audio it actually has.
+    audioOrder: normalizeAudioOrder(src.audioOrder, ids),
   };
 }
 
@@ -2275,6 +2298,10 @@ export function serializeBoard() {
     // This is the only place dangling pairs are collected. While the app is
     // running they are simply not drawn - see the note over toggleConnection().
     connections: normalizeConnections(board.connections, filed),
+    // The Playlist's order, pruned to the same union the connections are. An
+    // empty one is written as [] rather than dropped, so a board that had its
+    // playlist arranged and then cleared does not silently re-sort on reload.
+    audioOrder: normalizeAudioOrder(board.audioOrder, filed),
   };
 }
 

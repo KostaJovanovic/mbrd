@@ -79,6 +79,17 @@
      the print would have. */
   box-shadow: 0 0 0 var(--hairline) color-mix(in srgb, var(--ink) 10%, transparent);
 }
+/* ...but Fit in the card, asked for on this one photo, still wins. The board's
+   default fit is folded into data-fit, so keying off that would letterbox every
+   Softish image; data-fit-own carries only the choice made on this card (see
+   writeFit() in canvas/items.js), so the polaroid holds by default and yields
+   only when someone reached for the menu. More specific than the cover above
+   (six classes to its five), so it holds whatever the source order. The picture
+   then letterboxes inside the mat window; the hairline traces the window, which
+   is the honest cost of a print that has been told not to crop. */
+:root[data-whimsy="0"] .item[data-type="image"][data-fit-own="contain"] .item-body img {
+  object-fit: contain;
+}
 /* The caption stops being a strip laid across the foot of the picture and
    becomes what is written on the chin. It needs no moving to get there: the bar
    sits against .item's own edges, not the picture's, so insetting the picture

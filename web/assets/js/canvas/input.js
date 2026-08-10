@@ -1633,6 +1633,10 @@ export function initInput(vp, cmds) {
     if (!mod && nativeKeyTarget(e.target) && (e.code === 'Space' || e.key === 'Enter')) return;
 
     if (e.code === 'Space' && !spaceDown) {
+      // Space is the play/pause key of every media player, so when there is a
+      // track loaded it toggles that; only with nothing playing does it fall back
+      // to the canvas's own hold-to-pan. cmds.playPause() reports which happened.
+      if (cmds.playPause?.()) { e.preventDefault(); return; }
       spaceDown = true;
       setPanCursor();
       e.preventDefault();

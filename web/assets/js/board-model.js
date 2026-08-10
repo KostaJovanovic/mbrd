@@ -293,6 +293,13 @@ export const board = {
   // layout would mean a board connected on the desktop opened unconnected on a
   // phone and then lost the connections the next time it was saved from one.
   connections: [],
+  // The order the Playlist plays the board's audio in, as a list of item ids.
+  // Top-level for the same reason as connections: it is an ordering of *items*,
+  // items are shared across Desktop and Mobile, and a per-layout copy would let a
+  // playlist re-sorted on a phone come back scrambled on a laptop. Additive with
+  // an empty default, so it costs no .mbrd version bump - a track with no entry
+  // sorts by the board's arrangement, and an older reader drops the key on save.
+  audioOrder: [],
   // Thrown away but not gone. Entries are { item, at }, newest first.
   trash: [],
 };
@@ -348,6 +355,32 @@ export function normalizeConnections(raw, live) {
     seen.add(key);
     out.push([a, b]);
     if (out.length >= MAX_CONNECTIONS) break;
+  }
+  return out;
+}
+
+/**
+ * The Playlist's saved order, out of whatever arrived: a flat list of item ids.
+ *
+ * Total like the rest of the file readers - a non-string or a duplicate is
+ * dropped rather than throwing. Held to `live` (the board's ids and the bin's,
+ * same union connections use) so an id for a card that no longer exists cannot
+ * pin a gap in the order; the Playlist then intersects this with the audio it
+ * actually has and appends anything new in arrangement order, so a list that
+ * still names a since-deleted or since-retyped card is self-healing rather than
+ * wrong. Not filtered to audio here: this layer does not know an item's type,
+ * and applyAudioOrder() does that filtering where it does.
+ */
+export function normalizeAudioOrder(raw, live) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const id of raw) {
+    if (typeof id !== 'string' || !id || seen.has(id)) continue;
+    if (live && !live.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+    if (out.length >= MAX_ITEMS) break;
   }
   return out;
 }

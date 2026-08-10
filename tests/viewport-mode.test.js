@@ -347,3 +347,43 @@ test('Mobile board mode hides the ruler and zoom controls at every screen width'
   assert.ok(css.indexOf(match[0]) < css.indexOf('@media (max-width: 700px)'),
     'the rule is not limited to a phone-sized viewport');
 });
+
+test('the Playlist lens shows the player and hides the canvas, outside any width query', async () => {
+  // Playlist is a lens on a Mobile board, entered by the switch - so its show is
+  // keyed on data-feed-lens="playlist" (under data-board-mode="mobile") and lives
+  // above every @media block in mobile.css, the same shape as the #zoom-ctl hide
+  // above. A width query would make a wide tablet asked for it get the canvas
+  // instead. Both lenses (Feed and Playlist) are DOM boards that cover the canvas,
+  // so the world-space viewport is hidden for the whole of Mobile, not only under
+  // Playlist - the hide is keyed on the mode, not the lens.
+  const css = await readFile(
+    new URL('../web/assets/css/mobile.css', import.meta.url), 'utf8');
+  const show = css.match(/:root\[data-board-mode="mobile"\]\[data-feed-lens="playlist"\] #mobile-playlist \{\s*display:\s*block;\s*\}/);
+  // visibility, not display: display:none would collapse the fixed viewport to a
+  // zero rect and a fit() on the way back to the canvas would clamp to MIN_ZOOM.
+  const hide = css.match(/:root\[data-board-mode="mobile"\] #viewport \{\s*visibility:\s*hidden;\s*\}/);
+  assert.ok(show, 'the playlist appears under the Playlist lens');
+  assert.ok(hide, 'and the world-space canvas is hidden under it');
+  // '@media (' rather than '@media', so the prose in a comment that mentions the
+  // word does not count as the first query.
+  const firstMedia = css.indexOf('@media (');
+  assert.ok(css.indexOf(show[0]) < firstMedia && css.indexOf(hide[0]) < firstMedia,
+    'the switch sits above every media query in mobile.css');
+});
+
+test('the feed surface is a sibling of #viewport, never a child of it', async () => {
+  // #viewport has paint containment and publishes --iz to its subtree; a feed
+  // nested inside would inherit that custom property and be caught by the
+  // whole-board invalidation canvas/mobile-frame.js exists to avoid.
+  const html = await readFile(new URL('../web/index.html', import.meta.url), 'utf8');
+  const viewportClose = html.indexOf('<aside id="sidebar"');
+  const feedAt = html.indexOf('id="mobile-feed"');
+  assert.ok(feedAt > -1, 'the feed surface is in the markup');
+  assert.ok(feedAt < viewportClose, 'and it stands before the sidebar, after #viewport');
+  // The div is not inside the #viewport block: everything from #viewport to its
+  // close comes before #mobile-feed.
+  const viewportOpen = html.indexOf('<div id="viewport">');
+  const worldClose = html.indexOf('<div id="marquee" hidden></div>');
+  assert.ok(viewportOpen < worldClose && worldClose < feedAt,
+    'the feed div comes after the viewport block closes');
+});

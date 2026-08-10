@@ -39,6 +39,13 @@ for a change without checking the current source first.
   closed; the medium and low findings it lists are the remaining work, and are
   the natural source of issues.
 
+`old/mobile-feed-2026-08-09.md` went down on the commit that carried it out — the
+repurposing of the Mobile layout into a native-scrolling DOM feed of images and
+video (`ui/mobile-feed.js`, the pure `arrange/feed-layout.js`, and the top-level
+`board.feedOrder` its edit mode persists). Read it for why the feed is a separate
+DOM surface rather than the world-space canvas, and why the manual order is a
+top-level key rather than a per-layout one.
+
 `old/code-audit-2026-08-06.md` and its plan went down the same way, on the commit
 that fixed all twenty-one of their findings. Read the audit's "What was checked
 and found sound" before re-auditing anything near the load path, the not-found
