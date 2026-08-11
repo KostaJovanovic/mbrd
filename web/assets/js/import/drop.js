@@ -320,20 +320,31 @@ export async function importFiles(files, centre, { avoidOverlap = false, truncat
   // files arrived in rather than the order they happened to finish.
   const prepared = new Array(files.length).fill(null);
   const failed = [];
+  // Photos this browser cannot decode that had no embedded preview to fall back on,
+  // so they came in as named cards rather than pictures - counted to say so once at
+  // the end rather than per file (prepareFile fills it).
+  const stats = { undecodable: 0 };
   let firstError = null;
   let next = 0;
   // Counted rather than indexed: six of these run at once and finish out of
   // order, so `next` is how many have been *started* and says nothing about how
   // many are done.
   let settled = 0;
-  const job = busy(files.length > 1 ? `Reading ${files.length} files` : 'Reading');
+  // A big drop (a folder of videos, each able to sit on the 2 s measureSize timeout)
+  // is otherwise minutes of unstoppable work. The cancel button on the busy strip
+  // aborts this: no new file is started, whatever finished is kept and laid out.
+  const control = new AbortController();
+  let cancelled = false;
+  const job = busy(files.length > 1 ? `Reading ${files.length} files` : 'Reading',
+    files.length > 1 ? { onCancel: () => { cancelled = true; control.abort(); } } : {});
   const worker = async () => {
     for (;;) {
+      if (control.signal.aborted) return;
       const i = next++;
       if (i >= files.length) return;
       const file = files[i];
       try {
-        prepared[i] = await prepareFile(file);
+        prepared[i] = await prepareFile(file, stats);
       } catch (err) {
         console.error('[mbrd] import failed for', file.name, err);
         firstError ??= err;
@@ -354,6 +365,10 @@ export async function importFiles(files, centre, { avoidOverlap = false, truncat
   }
   const drafts = prepared.filter(Boolean);
 
+  if (cancelled && !drafts.length) {
+    toast('Import stopped');
+    return [];
+  }
   if (!drafts.length) {
     // When every single file failed the same way it is almost never the files,
     // and the bare sentence sent people looking at their photos. It is worth
@@ -408,10 +423,15 @@ export async function importFiles(files, centre, { avoidOverlap = false, truncat
   );
   select(added.map(i => i.id));
 
-  let msg = `Added ${added.length} item${added.length === 1 ? '' : 's'}`;
+  let msg = `${cancelled ? 'Stopped — kept' : 'Added'} ${added.length} item${added.length === 1 ? '' : 's'}`;
   if (trimmed) msg += ` (capped at ${MAX_FILES})`;
   if (overBudget) msg += `, ${overBudget} too large`;
   if (failed.length) msg += `, ${failed.length} failed`;
+  // The undecodable photos still came in - as named cards - so this rides the
+  // ordinary receipt, not the error tone, and only when nothing worse happened.
+  if (stats.undecodable && !failed.length) {
+    msg += `, ${stats.undecodable} shown as cards (this browser can’t decode ${stats.undecodable === 1 ? 'it' : 'them'})`;
+  }
   toast(msg, failed.length ? 'error' : '');
 
   // Announced rather than acted on, and that is a layering constraint rather
@@ -496,8 +516,12 @@ async function posterFor(file, decodable) {
   }
 }
 
-/** One file, classified, measured, hashed and turned into a draft item. */
-async function prepareFile(file) {
+/** A PDF, by its declared type or its extension. */
+const isPdf = file => file.type === 'application/pdf' || extOf(file.name) === 'pdf';
+
+/** One file, classified, measured, hashed and turned into a draft item. `stats`
+ *  collects soft outcomes worth reporting once for the whole drop (see importFiles). */
+async function prepareFile(file, stats = { undecodable: 0 }) {
   let type = classify(file);
   let size;
   // A decodable stand-in pulled out of a picture the browser cannot draw (HEIC,
@@ -505,11 +529,31 @@ async function prepareFile(file) {
   // undecodable branch below and import/preview.js.
   let previewHash = null;
   let previewFile = null;
+  // A PDF is the same shape of problem as an undecodable photo: the app cannot
+  // draw it, but it can produce a picture of its first page (import/pdf.js, which
+  // fetches pdf.js on demand). Handled exactly like the embedded-preview path -
+  // the original PDF stays asset.hash and is still what a click opens, while the
+  // rendered page becomes meta.preview and is what the card shows. Any failure -
+  // offline, CDN down, a parse error - leaves size unset, so it falls through to
+  // the named card it would otherwise have been. This is the app's second
+  // outside-code dependency; see the header of import/pdf.js.
+  if (isPdf(file)) {
+    const { firstPageRaster } = await import('./pdf.js');
+    const page = await firstPageRaster(file).catch(() => null);
+    if (page?.blob) {
+      previewFile = new File([page.blob], 'page.webp', { type: page.blob.type || 'image/webp' });
+      previewHash = await addFile(previewFile);
+      type = 'image';
+      size = { ...fitToBox('image', page.w, page.h), measured: true, decodable: true };
+    }
+  }
   // A decode bomb - a small file that declares enormous dimensions - is caught
   // from its header before measureSize() hands it to createImageBitmap(), which
   // would otherwise allocate gigabytes. Over budget it becomes a named card, the
   // same fallback an undecodable image gets below. See import/budget.js.
-  if (type === 'image' && await overPixelBudget(file)) {
+  if (size) {
+    // Already decided - the PDF branch above rendered a page and measured it.
+  } else if (type === 'image' && await overPixelBudget(file)) {
     type = 'generic';
     size = defaultSize('generic');
   } else {
@@ -534,6 +578,7 @@ async function prepareFile(file) {
       } else {
         type = 'generic';
         size = defaultSize('generic');
+        stats.undecodable++;
       }
     }
   }
@@ -593,6 +638,11 @@ async function prepareFile(file) {
       // poster.
       ...(cover ? { cover } : poster?.hash ? { cover: poster.hash } : {}),
       ...(thumb ? { thumb } : {}),
+      // The decodable stand-in for a picture the browser won't draw. asset.hash
+      // above is still the untouched original; the image renderer draws this
+      // when it is present. Preserved and packed like any other content id - see
+      // META_HASHES in board-model.js and itemHashes() in util.js.
+      ...(previewHash ? { preview: previewHash } : {}),
       mime: file.type || '',
       ext: extOf(file.name),
       size: file.size,
@@ -765,10 +815,14 @@ function urlsFrom(dt) {
  */
 export async function filesFrom(dt) {
   const items = [...(dt.items || [])];
+  // Captured up front: DataTransfer.files is only reliably populated during the
+  // synchronous part of the drop event, and the entries walk below awaits. A
+  // fallback reading dt.files after those awaits would usually find it emptied,
+  // so the "walk yielded nothing" safety net could recover nothing.
+  const flat = [...dt.files];
   const canWalk = items.length && typeof items[0].webkitGetAsEntry === 'function';
   if (!canWalk) {
-    const files = [...dt.files];
-    return { files, fromFolder: files.some(file => !!file.webkitRelativePath), truncated: false };
+    return { files: flat, fromFolder: flat.some(file => !!file.webkitRelativePath), truncated: false };
   }
 
   const entries = items.map(i => i.webkitGetAsEntry()).filter(Boolean);
@@ -784,7 +838,7 @@ export async function filesFrom(dt) {
   // brought in everything. Inferring it there with >= would be one character and
   // wrong for the picker, where five hundred chosen files really are five hundred
   // files and nothing was cut.
-  return { files: out.length ? out : [...dt.files], fromFolder, truncated: out.length >= MAX_FILES };
+  return { files: out.length ? out : flat, fromFolder, truncated: out.length >= MAX_FILES };
 }
 
 async function walkEntry(entry, out) {

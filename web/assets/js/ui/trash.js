@@ -21,7 +21,7 @@ import {
   restoreTitleCard, isTitleHidden,
 } from '../state.js';
 import { assetURL } from '../storage/assets.js';
-import { extOf, baseName, el } from '../util.js';
+import { extOf, baseName, el, toast } from '../util.js';
 
 let vp = null;
 let panel, button, list, none, hint, emptyBtn, titleRestore;
@@ -61,6 +61,10 @@ export function initTrash(viewport) {
   bus.on('trash', paint);
   bus.on('board:load', paint);
   bus.on('selection', paintButton);
+  // A full bin drops its oldest to make room (state.js TRASH_LIMIT); say so, since
+  // those entries are past getting back by any other means.
+  bus.on('trash:evicted', n => toast(
+    n === 1 ? 'Bin full — dropped the oldest item' : `Bin full — dropped the ${n} oldest items`));
   paint();
 }
 

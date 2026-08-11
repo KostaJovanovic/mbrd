@@ -1097,7 +1097,13 @@ export function editItemName(id) {
     // Escape abandons, and must not travel through renameItem() as an empty
     // string: empty means "put the original filename back", which is an edit of
     // its own and the opposite of cancelling one.
+    const wasName = item.name;
     if (keep) renameItem(id, typed);
+    // A cancel, or a rename that resolved to the same name, commits nothing and
+    // fires no rebuild - so the field is left showing the full filename put on it
+    // above instead of the stem a .card-name renders (baseName). Repaint to the
+    // canonical caption. A real change already rebuilt via renameItem's 'item'.
+    if (item.name === wasName) rebuild(id);
   }
 
   field.addEventListener('keydown', onKey);

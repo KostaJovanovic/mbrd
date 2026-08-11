@@ -3,7 +3,8 @@
    --------------------------------------------------------- */
 
 #menu-btn,
-#mobile-header-edit-btn {
+#mobile-header-edit-btn,
+#mobile-find-btn {
   position: fixed;
   top: max(16px, env(safe-area-inset-top));
   left: max(16px, env(safe-area-inset-left));
@@ -31,7 +32,18 @@
               opacity var(--dur-base) var(--ease);
 }
 #menu-btn:hover,
-#mobile-header-edit-btn:hover { background: var(--paper-2); border-color: var(--accent); }
+#mobile-header-edit-btn:hover,
+#mobile-find-btn:hover { background: var(--paper-2); border-color: var(--accent); }
+/* Find rides the top-left under the menu button - a stable second affordance on
+   the Mobile board, on either lens (ui/mobile-header.js paintFind). It is not on
+   the [hidden] fade the pen uses: it toggles only on a layout change, not per
+   scroll, so a plain show/hide reads right. */
+#mobile-find-btn {
+  top: calc(max(16px, env(safe-area-inset-top)) + var(--chrome-button-h) + 8px);
+  left: max(16px, env(safe-area-inset-left));
+}
+#mobile-find-btn[hidden] { display: none; }
+#mobile-find-btn svg { width: 18px; height: 18px; color: var(--accent); }
 /* The far corner, level with the menu button rather than stacked under it. This
    one comes and goes with the top of the Mobile board - paintButton() in
    ui/mobile-header.js - and a control that appears and vanishes directly below
@@ -129,7 +141,8 @@
    judged to be a sans. */
 :root[data-display-sans] .wordmark :is(h1, h2) { font-weight: 900; }
 
-#sidebar.is-open ~ #menu-btn { opacity: 0; pointer-events: none; }
+#sidebar.is-open ~ #menu-btn,
+#sidebar.is-open ~ #mobile-find-btn { opacity: 0; pointer-events: none; }
 /* The mobile Edit button stays reachable with the sidebar open - editing the
    note is often why the sidebar was opened, so taking it away is a step back. It
    shares the top-left corner the sidebar (z-index 40) slides over, so it rides
@@ -600,29 +613,67 @@
    colour poking into its corners. The two pseudo-elements below are the only
    way to reach that inner element: drop its inset and its own border, then
    give it the concentric inner radius (outer minus the frame it sits in). */
-.field input[type="color"] {
+/* The pigment control is a swatch button, not a native <input type="color">: it
+   opens the app's own picker (ui/color-picker.js) so a hand-picked pigment goes
+   through the same modal every other colour choice does. The button's fill is the
+   current pigment, written inline by syncControls(). */
+.field .pigment-swatch {
   -webkit-appearance: none;
           appearance: none;
+  box-sizing: border-box;
   width: 100%;
   height: calc(30px * var(--density));
-  padding: var(--well-pad);
+  padding: 0;
   border: var(--hairline) solid var(--rule-2);
   border-radius: var(--radius-sm);
   background: var(--paper);
   cursor: pointer;
-  --well-pad: 3px;
-  --well-radius: max(0px, calc(var(--radius-sm) - var(--well-pad)));
+  transition: border-color var(--dur-fast) var(--ease);
 }
-.field input[type="color"]:hover { border-color: var(--accent); }
-.field input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
-.field input[type="color"]::-webkit-color-swatch {
-  border: none;
-  border-radius: var(--well-radius);
+.field .pigment-swatch:hover { border-color: var(--accent); }
+
+/* The board's own dropped faces, listed under the type control so each can be
+   taken back off (ui/fonts.js). The whole block is hidden until there is one. */
+#appearance-fonts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
 }
-.field input[type="color"]::-moz-color-swatch {
-  border: none;
-  border-radius: var(--well-radius);
+#appearance-fonts[hidden] { display: none; }
+.font-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: var(--leaf);
 }
+.font-row:hover { background: var(--paper-2); }
+.font-row-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--t-small);
+  color: var(--ink);
+}
+.font-row-remove {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--leaf);
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.font-row-remove:hover { color: var(--accent); background: var(--paper-3); }
+.font-row-remove svg { width: 12px; height: 12px; }
 
 /* Checkboxes as inked boxes with a hand-drawn tick. */
 .check {

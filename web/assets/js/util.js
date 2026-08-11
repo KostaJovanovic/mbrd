@@ -189,7 +189,8 @@ export const isFamily = v =>
  * hole instead.
  */
 export const itemHashes = item =>
-  [item?.asset?.hash, item?.meta?.cover, item?.meta?.shot, item?.meta?.thumb].filter(Boolean);
+  [item?.asset?.hash, item?.meta?.cover, item?.meta?.shot, item?.meta?.thumb, item?.meta?.preview]
+    .filter(Boolean);
 
 /**
  * SHA-256 hex of an ArrayBuffer/Uint8Array - the content id for assets.
@@ -411,6 +412,8 @@ let busyShownAt = 0;
  * idle. The flag is what that frame checks.
  */
 let busyOpen = false;
+/** The cancel button's one click listener is attached lazily, once. */
+let busyCancelWired = false;
 
 /**
  * Say that something is being waited on. Returns the handle that ends it.
@@ -427,8 +430,8 @@ let busyOpen = false;
  * `end()` is idempotent, so a `finally` that runs twice cannot leave the count
  * below zero - which would strand the strip open for the rest of the session.
  */
-export function busy(label = 'Working') {
-  const job = { label, done: 0, total: 0, live: true };
+export function busy(label = 'Working', { onCancel = null } = {}) {
+  const job = { label, done: 0, total: 0, live: true, onCancel };
   busyJobs.push(job);
   busySchedule();
   return {
@@ -509,6 +512,16 @@ function busyPaint() {
   node.classList.toggle('is-counting', known);
   if (fill && known) fill.style.width = Math.round(100 * Math.min(1, job.done / job.total)) + '%';
   else if (fill) fill.style.width = '';
+  // A cancel button, only for a job that offered one (the top job speaks, as with
+  // the label). Wired once to whatever job is on top when it is pressed.
+  const cancel = document.getElementById('busy-cancel');
+  if (cancel) {
+    if (!busyCancelWired) {
+      cancel.addEventListener('click', () => busyJobs[busyJobs.length - 1]?.onCancel?.());
+      busyCancelWired = true;
+    }
+    cancel.hidden = !job.onCancel;
+  }
 }
 
 /**

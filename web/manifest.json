@@ -17,6 +17,10 @@
     { "src": "assets/img/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
     { "src": "assets/img/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" }
   ],
+  "screenshots": [
+    { "src": "assets/img/screenshot-wide.png", "sizes": "1280x800", "type": "image/png", "form_factor": "wide", "label": "A board of images, audio and notes on the infinite canvas" },
+    { "src": "assets/img/screenshot-narrow.png", "sizes": "720x1280", "type": "image/png", "form_factor": "narrow", "label": "The same board as a scrollable feed on a phone" }
+  ],
   "file_handlers": [
     {
       "action": "./",

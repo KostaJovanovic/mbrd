@@ -472,15 +472,13 @@ function lattice(cells, items, gap) {
 }
 
 /**
- * Centres of every track along one axis, and the two outer edges.
+ * Cumulative track positions for one axis: the centre of every track and the
+ * two outer edges.
  *
  * Walked outward from track 0 in both directions rather than accumulated from
  * the low end, because track 0 has to straddle the origin whatever is on either
  * side of it - that is what lets `grid` promise the first item the exact point
  * it was given while the ring around it sizes itself freely.
- */
-/**
- * Cumulative track positions for one axis.
  *
  * @param {Map<number, number>} span  size of each index
  * @param {number} lo
@@ -764,9 +762,8 @@ function shuffleWith(arr, rnd) {
   return arr;
 }
 
-/** A ring cell turned a quarter at a time about the centre. */
 /**
- * One cell, turned a quarter at a time.
+ * One ring cell, turned a quarter at a time about the centre.
  *
  * @param {[number, number]} cell
  * @param {number} turn
@@ -782,11 +779,9 @@ function spin([col, row], turn) {
 }
 
 /**
- * Nth cell of a square spiral: 0 -> (0,0), then right, up, left, down in
- * growing rings. Gives "outward from the centre" without any sorting.
- */
-/**
- * The nth cell of a square spiral out from the origin.
+ * The nth cell of a square spiral out from the origin: 0 -> (0,0), then right,
+ * up, left, down in growing rings. Gives "outward from the centre" without any
+ * sorting.
  *
  * @param {number} n
  * @returns {[number, number]} column, row

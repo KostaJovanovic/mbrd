@@ -1803,6 +1803,7 @@
    (hamburger) and the edit-name (pen) buttons step aside so the two never stack. */
 :root.note-edit-mobile #menu-btn,
 :root.note-edit-mobile #mobile-header-edit-btn,
+:root.note-edit-mobile #mobile-find-btn,
 /* The zoom cluster and the scale stick step aside too: on a phone the note bar
    owns the whole screen for the edit, and a Desktop board carries these two
    where the Mobile board does not - so without this they sit under the bar. */

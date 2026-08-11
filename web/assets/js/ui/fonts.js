@@ -185,12 +185,62 @@ const AXIS_FALLBACKS = {
   YTUC: { min: 528, default: 712, max: 760 },
 };
 
+/** The panel's list of dropped faces, each with a remove control. */
+let fontListHost = null;
+
 export function initFonts() {
+  fontListHost = document.getElementById('appearance-fonts');
   bus.on('fonts:add', files => { addFontFiles(files).catch(() => {}); });
   // A board load replaces the faces wholesale, the same way it replaces the
   // items. Not awaited: the menus repaint when each face resolves.
   bus.on('board:load', () => { syncFonts().catch(() => {}); });
   bus.on('layout', () => { syncFonts().catch(() => {}); });
+  // syncFonts() and every add/remove end in bus.emit('fonts'); the list follows it.
+  bus.on('fonts', renderFontList);
+  syncFonts().catch(() => {});
+  renderFontList();
+}
+
+/**
+ * The list of the board's own faces in the Look tab, each a row of the name (set
+ * in its own face) and an X to take it back off. Hidden entirely when the board
+ * carries none, so a board that never had a dropped font shows nothing here.
+ */
+function renderFontList() {
+  if (!fontListHost) return;
+  const faces = [...live.entries()]
+    .map(([hash, e]) => ({ hash, family: e.family }))
+    .sort((a, b) => a.family.localeCompare(b.family));
+  fontListHost.replaceChildren();
+  fontListHost.hidden = faces.length === 0;
+  for (const { hash, family } of faces) {
+    const row = document.createElement('div');
+    row.className = 'font-row';
+    const name = document.createElement('span');
+    name.className = 'font-row-name';
+    name.textContent = family;
+    name.style.fontFamily = `"${family}", system-ui, sans-serif`;
+    const rm = document.createElement('button');
+    rm.type = 'button';
+    rm.className = 'font-row-remove';
+    rm.setAttribute('aria-label', `Remove ${family}`);
+    rm.title = 'Remove this face';
+    rm.innerHTML = '<svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>';
+    rm.addEventListener('click', () => removeFont(hash));
+    row.append(name, rm);
+    fontListHost.append(row);
+  }
+}
+
+/**
+ * Take one dropped face back off the board. It leaves the saved list and syncFonts()
+ * unregisters the FontFace; a look still pointing at it falls back the same way it
+ * would after opening a board whose face never arrived.
+ */
+function removeFont(hash) {
+  const list = fontList();
+  if (!list.some(f => f.hash === hash)) return;
+  setSetting('fonts', list.filter(f => f.hash !== hash));
   syncFonts().catch(() => {});
 }
 
@@ -527,7 +577,17 @@ export function familyFor(filename) {
   return isFamily(cleaned) ? cleaned : 'Custom face';
 }
 
-async function addFontFiles(files) {
+// Serialized: each drop reads the whole font list, awaits hashing/registration,
+// then writes the list back. Two files arriving as separate 'fonts:add' events
+// could both read the pre-write list, and the second setSetting would clobber the
+// first face. Chaining makes each call read what the previous one wrote.
+let fontAddQueue = Promise.resolve();
+function addFontFiles(files) {
+  fontAddQueue = fontAddQueue.then(() => runAddFontFiles(files), () => runAddFontFiles(files));
+  return fontAddQueue;
+}
+
+async function runAddFontFiles(files) {
   let added = 0;
   for (const file of files) {
     const list = fontList();

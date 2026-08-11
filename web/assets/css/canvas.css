@@ -728,6 +728,31 @@
      zoom along with everything else, and reach ten pixels wide at 8x. */
   vector-effect: non-scaling-stroke;
 }
+/* A give-up route - the router found no way round and fell back to a straight
+   line (web-route.js straight:true, its own bulk path in web.js). Dimmer than a
+   real thread and dashed, so "no clear path here" reads as a state rather than
+   passing for an ordinary direct line. */
+#web path.web-fallback {
+  stroke: color-mix(in srgb, var(--web-line) 50%, transparent);
+  stroke-dasharray: 5 5;
+}
+/* A styled connection - direction, dash or label - drawn in its own layer. It
+   inherits the stroke rule above (it is a #web path too); a dash is set per
+   line in web.js, and the arrowhead is a shade firmer than the faint line so a
+   direction reads at a glance. */
+#web .web-arrowhead { fill: var(--web-line); stroke: none; }
+#web .web-label {
+  fill: var(--ink);
+  /* A paper halo so a label stays legible where it crosses a card or a line.
+     Non-scaling so the halo is a hairline at every zoom rather than a slab. */
+  stroke: var(--paper);
+  stroke-width: 3px;
+  paint-order: stroke;
+  vector-effect: non-scaling-stroke;
+  font: 500 12px system-ui, sans-serif;
+  dominant-baseline: middle;
+  user-select: none;
+}
 
 /* ---------------------------------------------------------
    Drawing one (ui/toolbar.js)

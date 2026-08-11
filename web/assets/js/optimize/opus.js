@@ -69,7 +69,7 @@ export const opusAvailable = () =>
  * with no audio in it. None of those is a failure and all of them mean "keep
  * what you have".
  */
-export async function toOpus(blob, { kbps = OPUS_KBPS, cover = null, tags = null } = {}) {
+export async function toOpus(blob, { kbps = OPUS_KBPS, cover = null, coverW = 0, coverH = 0, tags = null } = {}) {
   if (!opusAvailable() || !blob || !blob.size || blob.size > MAX_INPUT) return null;
 
   // Read the tags before the bytes are decoded, so that a file that turns out
@@ -103,7 +103,7 @@ export async function toOpus(blob, { kbps = OPUS_KBPS, cover = null, tags = null
     channels,
     samples: buf.length,
     comments: pairs,
-    picture: cover ? await pictureBlock(cover) : null,
+    picture: cover ? await pictureBlock(cover, coverW, coverH) : null,
   });
 
   const out = new Blob([ogg], { type: 'audio/ogg' });
@@ -402,7 +402,7 @@ function opusTags(comments, picture) {
  * from the picture rather than declared, because a wrong pair of numbers here
  * is worse than none - some players lay out from them without looking.
  */
-async function pictureBlock(file) {
+async function pictureBlock(file, width = 0, height = 0) {
   let data;
   try {
     data = new Uint8Array(await file.arrayBuffer());
@@ -411,12 +411,16 @@ async function pictureBlock(file) {
   }
   if (!data.length) return null;
 
-  let width = 0, height = 0;
-  try {
-    const bmp = await createImageBitmap(file);
-    width = bmp.width; height = bmp.height;
-    bmp.close?.();
-  } catch { /* undrawable: the numbers stay 0, which is allowed */ }
+  // The caller (carried()) often already decoded this cover to shrink it and
+  // passes its dimensions; only decode when they are not in hand.
+  if (!(width > 0 && height > 0)) {
+    width = 0; height = 0;
+    try {
+      const bmp = await createImageBitmap(file);
+      width = bmp.width; height = bmp.height;
+      bmp.close?.();
+    } catch { /* undrawable: the numbers stay 0, which is allowed */ }
+  }
 
   const mime = new TextEncoder().encode(file.type || 'image/jpeg');
   const b = new Uint8Array(32 + mime.length + data.length);

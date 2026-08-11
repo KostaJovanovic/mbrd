@@ -210,12 +210,3 @@ export function stackGroups() {
   for (const group of groups.values()) group.items.sort(compare);
   return [...groups.values()].sort((a, b) => compare(a.root, b.root));
 }
-
-/**
- * The live items behind a set of ids, bottom-to-top.
- *
- * Sorted, because a copy of several things has to be laid down in the order
- * they were stacked in: addItems() gives each new item the next z as it goes,
- * so handing it the group in board order rather than stacking order would
- * reshuffle a carefully arranged pile every time it was duplicated.
- */

@@ -587,6 +587,14 @@
   <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-pen"/></svg>
 </button>
 
+<!-- Find, on the Mobile board only. The desktop toolbar Find button is data-desktop
+     (absent on the phone tier), and there is no Ctrl+K or right-click on touch, so
+     without this the palette is unreachable on a phone. Gated and wired in
+     ui/mobile-header.js alongside the pen button. -->
+<button id="mobile-find-btn" type="button" hidden aria-label="Find something">
+  <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-find"/></svg>
+</button>
+
 <!-- The bin. Opposite corner to the zoom controls, and deliberately the same
      kind of object: a small permanent affordance on the glass rather than
      something buried in the panel. Its list is built by ui/trash.js. -->
@@ -851,6 +859,9 @@
   <div class="busy-head">
     <span id="busy-label"></span>
     <span id="busy-count"></span>
+    <!-- Shown only for a job that hands busy() an onCancel (a large import); util.js
+         toggles it and wires the click to the current job. -->
+    <button id="busy-cancel" type="button" hidden>Cancel</button>
   </div>
   <div id="busy-track"><div id="busy-fill"></div></div>
 </div>

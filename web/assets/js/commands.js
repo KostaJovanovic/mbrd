@@ -15,7 +15,7 @@
 // which is built at boot, and nothing here may touch a browser global at import
 // time (tests/imports.test.js).
 
-import { toast } from './util.js';
+import { toast, busy } from './util.js';
 import { DEFAULT_SCALE } from './measure.js';
 import {
   board, selection, selectAll, removeItems, setSetting, undo, redo, byId,
@@ -23,11 +23,12 @@ import {
   duplicateItems, select, setItemCover, setItemUpAxis, setItemFit,
   setBoardMode as selectBoardMode,
   restoreTitleCard, resetTitlePosition,
-  addConnections, clearConnections, isFurniture, isRider,
+  addConnections, clearConnections, updateConnection, connectionMeta, toggleConnection,
+  isFurniture, isRider,
   addItems, baseStep, isFence, fenceAt, fenceBox, fenceFollowers, fenceOf, nextFenceName,
   snapshotGeom, applyGeom, commitGeom,
 } from './state.js';
-import { itemBounds, MAX_SIZE, MIN_SIZE, alignTargets, distributeTargets } from './geometry.js';
+import { itemBounds, MAX_SIZE, MIN_SIZE, alignTargets, distributeTargets, separateOverlaps } from './geometry.js';
 import { editItemName } from './canvas/items.js';
 // The spanning tree, which used to be the web and is now the generator behind
 // "Join these" - see cmds.connectSelection and the header of web-graph.js.
@@ -35,13 +36,16 @@ import { threads } from './web-graph.js';
 import { defaultUpAxis, meshKind } from './mesh.js';
 import { travelMs } from './canvas/viewport.js';
 import { isTurning, rotateModel } from './canvas/model.js';
+import { connectionAt } from './canvas/web.js';
 import { pickFiles, pickCover, addNote, addSwatch, addLink } from './import/drop.js';
 import { linkURL, SWATCH_DEFAULT, defaultSize } from './canvas/renderers.js';
 import { samplePixels, dominantColors } from './ui/pigments.js';
 import { arrange } from './arrange/arrangements.js';
 import { ask } from './ui/dialog.js';
 import { pickColor } from './ui/color-picker.js';
-import { exportBoard, openBoard, newBoard, shareBoard, canShareBoard } from './storage/storage.js';
+import { exportBoard, openBoard, newBoard, shareBoard, canShareBoard, saveBlob } from './storage/storage.js';
+import { boardPng, boardPdf } from './ui/snapshot.js';
+import { openLibrary } from './ui/library.js';
 import { getAsset, assetURL } from './storage/assets.js';
 import { close as closeSidebar } from './ui/sidebar.js';
 import { closeToolbar, setArmed, connectArmed, connectTap } from './ui/toolbar.js';
@@ -242,10 +246,26 @@ function drawFence(rect) {
  *              state changes, and those are the ones that need it.
  * @param deps  { resetAppearance, setWhimsy } from ui/appearance.js.
  */
+/**
+ * A download name for a board's derived PNG/PDF, from its title. Held to word
+ * characters, spaces and dashes - the artefact carries the board's name, not its
+ * punctuation, and it is a filename bound for a dozen different filesystems.
+ */
+function boardArtefactName(ext) {
+  const base = (board.title || '').replace(/[^\w -]+/g, '').trim().slice(0, 60) || 'board';
+  return `${base}.${ext}`;
+}
+
 export function createCommands(vp, { resetAppearance, setWhimsy }) {
   const cmds = {
     new: () => newBoard(),
     open: () => openBoard(),
+    // The board library - several boards kept in this browser, not just the one
+    // the session slot holds. Opens the switcher (ui/library.js); the storage
+    // behind it is in storage/library.js. Distinct from New, which still guards
+    // the single session slot by offering to export first: the library's own New
+    // has the shelf to set the old board on, so it never has to ask.
+    library: () => openLibrary(),
     save: () => saveWithCooldown(),
     export: () => exportBoard(),
     exportAs: () => exportBoard({ pickNew: true }),
@@ -253,6 +273,37 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
     // sheet instead of a download folder a phone has no good way to reach. Falls
     // back to Export where files cannot be shared - see shareBoard().
     share: () => shareBoard(),
+    // A picture of the board, for showing rather than reopening. A moodboard
+    // exists to be presented, and until these two the only thing that left mbrd
+    // was a .mbrd only mbrd can read. The board is composited onto a canvas
+    // (ui/snapshot.js) - not the live DOM, which taints the canvas the moment it
+    // holds a picture - and handed out as a PNG, or wrapped in a one-page PDF for
+    // printing. Both are derived artefacts, never .mbrd: their own types, their
+    // own filenames, and they never touch the file handle Export remembers.
+    exportImage: async () => {
+      const job = busy('Drawing the board');
+      try {
+        const blob = await boardPng();
+        if (!blob) { toast('There is nothing on the board to save yet'); return; }
+        saveBlob(blob, boardArtefactName('png'));
+        toast('Saved a picture of the board');
+      } catch (err) {
+        console.error(err);
+        toast('Could not draw the board: ' + err.message, 'error');
+      } finally { job.end(); }
+    },
+    exportPdf: async () => {
+      const job = busy('Drawing the board');
+      try {
+        const blob = await boardPdf();
+        if (!blob) { toast('There is nothing on the board to save yet'); return; }
+        saveBlob(blob, boardArtefactName('pdf'));
+        toast('Saved a PDF of the board');
+      } catch (err) {
+        console.error(err);
+        toast('Could not draw the board: ' + err.message, 'error');
+      } finally { job.end(); }
+    },
     // Strictly asked for, never automatic - see optimize/optimize.js. Loaded on
     // demand as well as run on demand: the encoder behind it is thirty megabytes
     // and a board of photographs never needs it.
@@ -361,6 +412,54 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
     },
     connectArmed,
     connectTap,
+    // Give a connection a direction, a line style or a label.
+    //
+    // No button, like connectSelection below and for the same reason its comment
+    // gives: editing a line means first pointing at one, and this app leaves
+    // connections deliberately un-hit-testable (see toggleConnection in
+    // state.js - the machinery a selectable line needs was judged too much for
+    // it). So this is the door a keyboard binding or a future menu row would bind
+    // to, and today it is reached from the console handle:
+    //
+    //   mbrd.cmds.setConnectionStyle(a, b, { dir: 'fwd', style: 'dashed', label: 'leads to' })
+    //
+    // where a and b are the two card ids. `dir` is one of none/fwd/back/both,
+    // read against the pair's stored order; `style` one of solid/dashed/dotted;
+    // `label` any short string, '' to clear it. A patch that names only some of
+    // the three leaves the rest as they were.
+    setConnectionStyle: (a, b, patch) => {
+      if (!updateConnection(a, b, patch || {})) {
+        toast('There is no connection between those two cards');
+        return false;
+      }
+      showConnections();
+      return true;
+    },
+    connectionStyle: (a, b) => connectionMeta(a, b),
+    // The menu's way in: the connection whose line runs under a right-click, or
+    // null. This is the hit-test toggleConnection's note said it was avoiding -
+    // kept as small as that note asked, a walk over the routed points web.js
+    // already holds rather than a selection model or a per-line element. Only on
+    // the canvas, where a press lands on the board rather than on a card.
+    connectionUnder: at => (board.layoutMode === 'mobile' ? null : connectionAt(at.x, at.y)),
+    // Draw-or-part again, from the menu rather than the tool: the pair is joined,
+    // so toggling parts them. Its own undo entry, like the tool's.
+    removeConnection: (a, b) => { toggleConnection(a, b); },
+    // The label is the one connection setting that is not a choice from a short
+    // list, so it is asked for rather than picked. null is every way out of the
+    // box including an empty one; the way to clear a label is the menu's Remove
+    // label, which sets it to '' through the same door.
+    editConnectionLabel: async (a, b) => {
+      const current = connectionMeta(a, b)?.label || '';
+      const typed = await ask({
+        title: 'Connection label',
+        go: 'Set',
+        field: { value: current, placeholder: 'e.g. leads to', maxLength: 60 },
+      });
+      if (typed === null) return;
+      updateConnection(a, b, { label: typed });
+      showConnections();
+    },
     // Every line off the board at once. In the panel's Debug fold rather than on
     // the toolbar: the way to remove one connection is to draw over it, and this
     // is the board-wide broom you want after trying the generator somewhere you
@@ -506,8 +605,15 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
       const ids = items.map(i => i.id);
       const label = { left: 'Align left', right: 'Align right', hcenter: 'Align centre',
         top: 'Align top', bottom: 'Align bottom', vcenter: 'Align middle' }[edge] || 'Align';
+      // Lining up on a shared edge stacks everything into one band across the
+      // other axis, so cards that were apart there now sit on top of each other.
+      // Spread them back out along that axis - the horizontal edges share an x,
+      // so they separate on y, and the vertical edges the other way round. A
+      // sweep, not a repack: only a run that would collide is opened up.
+      const spread = edge === 'top' || edge === 'bottom' || edge === 'vcenter' ? 'x' : 'y';
+      const targets = separateOverlaps(alignTargets(items, edge), items, spread, board.settings.spacing || 0);
       const before = snapshotGeom(ids);
-      applyGeom(alignTargets(items, edge));
+      applyGeom(targets);
       commitGeom(label, before, ids);
     },
     distributeSelection: axis => {

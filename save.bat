@@ -158,6 +158,23 @@ if /i not "%DOPUSH%"=="y" goto skipped
 git push -u %REMOTE% %BRANCH%
 if not errorlevel 1 goto pushed
 
+rem A push can fail for reasons a pull or a force push cannot fix - a 403 from a
+rem repo you cannot write to, a bad credential, no network. Only a non-fast-
+rem forward (the remote genuinely moved) is worth offering to pull or force. Ask
+rem the remote which one this is instead of asserting "remote is ahead" for every
+rem failure and then offering remedies that make an auth error look like the
+rem user's fault. git ls-remote hits the same endpoint the push just did: if it
+rem also fails, the push never got as far as comparing histories.
+git ls-remote %REMOTE% >nul 2>nul
+if errorlevel 1 (
+  echo.
+  echo [err]  push failed - cannot reach or authenticate to %REMOTE%
+  echo        this is not a "remote is ahead" - a pull or force push will not fix it.
+  echo        check access to the remote, then rerun. The commit is saved locally.
+  set SAVE_ERROR=1
+  goto end
+)
+
 echo.
 echo [warn] push rejected - remote is ahead of local
 echo.

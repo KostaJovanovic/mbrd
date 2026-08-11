@@ -327,6 +327,42 @@ export const pairKey = (a, b) => (a < b ? a + '\0' + b : b + '\0' + a);
 export const MAX_CONNECTIONS = 2000;
 
 /**
+ * A connection's optional third element: how it is drawn.
+ *
+ * A bare `[a, b]` is the connection it always was - undirected, plain, unlabelled
+ * - and stays exactly that on disk. When somebody gives one a direction, a line
+ * style or a label, the settings ride in a third slot, `[a, b, {dir, style,
+ * label}]`. Additive on purpose: an older reader ignores the extra element, and
+ * a connection left at its defaults carries no third element at all, so nothing
+ * about the common case changes and no .mbrd version bump is owed.
+ *
+ * `dir` is read relative to the stored order of the pair: 'fwd' points the arrow
+ * at `b`, 'back' at `a`, 'both' at each end. That the pair is otherwise unordered
+ * is why the order the file happens to carry is kept rather than sorted here -
+ * pairKey() does the sorting it needs for the dedup key without disturbing it.
+ */
+export const CONN_DIRECTIONS = ['none', 'fwd', 'back', 'both'];
+export const CONN_STYLES = ['solid', 'dashed', 'dotted'];
+export const CONN_LABEL_MAX = 60;
+const DIR_SET = new Set(CONN_DIRECTIONS);
+const STYLE_SET = new Set(CONN_STYLES);
+
+/** A connection's display settings, kept to the known values, or null if plain. */
+export function connMeta(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const out = {};
+  // Defaults are omitted, not stored: a connection at 'none'/'solid'/no-label is
+  // a bare pair, which is what keeps an ordinary board's connections `[a, b]`.
+  if (DIR_SET.has(raw.dir) && raw.dir !== 'none') out.dir = raw.dir;
+  if (STYLE_SET.has(raw.style) && raw.style !== 'solid') out.style = raw.style;
+  if (typeof raw.label === 'string') {
+    const label = raw.label.replace(/\s+/g, ' ').trim().slice(0, CONN_LABEL_MAX);
+    if (label) out.label = label;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+/**
  * The connections a board may keep, out of whatever arrived.
  *
  * Total, like everything else that reads a file here: a malformed entry is
@@ -353,7 +389,10 @@ export function normalizeConnections(raw, live) {
     const key = pairKey(a, b);
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push([a, b]);
+    // The third element, when there is one, is validated down to the known
+    // values and dropped entirely when it says nothing a default would not.
+    const meta = connMeta(pair[2]);
+    out.push(meta ? [a, b, meta] : [a, b]);
     if (out.length >= MAX_CONNECTIONS) break;
   }
   return out;
@@ -593,7 +632,7 @@ export function makeItem(partial) {
  * The list is the same one itemHashes() in util.js reports, less the item's own
  * asset. Anything added there wants adding here too.
  */
-const META_HASHES = ['cover', 'shot', 'thumb'];
+const META_HASHES = ['cover', 'shot', 'thumb', 'preview'];
 
 function normalizeMeta(meta) {
   let out = meta;

@@ -83,6 +83,8 @@ let windowMode = 'player';
 const actionGroups = new Set();
 /** The shared queue element, once we have wired play/pause listeners to it. */
 let wiredEl = null;
+/** Aborts the previous wirePlayback() listeners so board loads do not stack them. */
+let playbackAbort = null;
 
 /** Tracks whose tags/duration have been read this session, so it happens once. */
 const tagged = new Set();
@@ -192,11 +194,17 @@ function shufflePlay() {
 function wirePlayback() {
   const el = queueEl();
   if (!el || el === wiredEl) return;
+  // The shared <audio> outlives every board, but board:load resets wiredEl to
+  // re-wire it. Drop the previous board's listeners first, or each load that
+  // plays leaves another onState stacked on the one long-lived element.
+  playbackAbort?.abort();
+  playbackAbort = new AbortController();
   wiredEl = el;
   const onState = () => { refreshActions(); windowPlayer?.refresh(); };
-  el.addEventListener('play', onState);
-  el.addEventListener('pause', onState);
-  el.addEventListener('ended', onState);
+  const opts = { signal: playbackAbort.signal };
+  el.addEventListener('play', onState, opts);
+  el.addEventListener('pause', onState, opts);
+  el.addEventListener('ended', onState, opts);
 }
 
 function refreshActions() {
@@ -467,7 +475,7 @@ function trackTitle(item) {
 function beginDrag(e, view, r) {
   if (drag) return;
   e.preventDefault();
-  drag = { view, rowEl: r.el, pointerId: e.pointerId };
+  drag = { view, rowEl: r.el, pointerId: e.pointerId, mids: null, ref: undefined };
   r.el.classList.add('is-dragging');
   const grip = e.currentTarget;
   grip.setPointerCapture?.(e.pointerId);
@@ -476,18 +484,37 @@ function beginDrag(e, view, r) {
   grip.addEventListener('pointercancel', endDrag);
 }
 
+/**
+ * Midpoints of the non-dragged rows, measured once and held until a reorder
+ * reflows the list. Without the cache every pointermove read getBoundingClientRect
+ * on every row; the list only actually changes shape when the dragged row lands in
+ * a new gap, so that is the only thing that invalidates it.
+ */
+function rowMids() {
+  if (drag.mids) return drag.mids;
+  const mids = [];
+  for (const row of drag.view.listEl.querySelectorAll('.pl-row')) {
+    if (row === drag.rowEl) continue;
+    const box = row.getBoundingClientRect();
+    mids.push({ row, mid: box.top + box.height / 2 });
+  }
+  return (drag.mids = mids);
+}
+
 function onDragMove(e) {
   if (!drag) return;
   const list = drag.view.listEl;
   const y = e.clientY;
   let ref = null;
-  for (const row of list.querySelectorAll('.pl-row')) {
-    if (row === drag.rowEl) continue;
-    const box = row.getBoundingClientRect();
-    if (y < box.top + box.height / 2) { ref = row; break; }
+  for (const { row, mid } of rowMids()) {
+    if (y < mid) { ref = row; break; }
   }
+  // No change of gap, no DOM work - and the cached midpoints stay valid.
+  if (ref === drag.ref) return;
+  drag.ref = ref;
   if (ref) list.insertBefore(drag.rowEl, ref);
   else list.appendChild(drag.rowEl);
+  drag.mids = null;
 }
 
 function endDrag(e) {

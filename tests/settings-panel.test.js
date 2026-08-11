@@ -170,8 +170,11 @@ test('the Look tab opens on three dials, and type is one of them', () => {
   const look = SECTIONS.find(s => s.id === 'appearance');
   const above = look.controls.filter(c => !c.advanced);
   assert.deepEqual(above.map(c => c.id ?? c.type),
-    ['opt-whimsy', 'opt-palette', 'appearance-type', 'hint']);
+    ['opt-whimsy', 'opt-palette', 'appearance-type', 'hint', 'appearance-fonts']);
   assert.match(above[3].html, /\.woff2/, 'the dropped-face hint stayed with the menus');
+  // The dropped-face list rides with the hint and the menus, above the fold, so a
+  // face you added can be taken back off without opening the advanced controls.
+  assert.equal(above[4].id, 'appearance-fonts');
 });
 
 test('the palette source dial has one stop past its highest count', async () => {

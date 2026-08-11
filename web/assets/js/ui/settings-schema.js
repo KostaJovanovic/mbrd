@@ -166,6 +166,7 @@ export const SECTIONS = [
       { type: 'buttons', buttons: [
         { cmd: 'new', label: 'New' },
         { cmd: 'open', label: 'Open' },
+        { cmd: 'library', label: 'Boards' },
       ] },
       { type: 'buttons', buttons: [
         { cmd: 'save', label: 'Save', className: 'primary' },
@@ -178,6 +179,12 @@ export const SECTIONS = [
       { type: 'buttons',
         when: () => typeof navigator !== 'undefined' && typeof navigator.canShare === 'function',
         buttons: [{ cmd: 'share', label: 'Share' }] },
+      // A picture of the board, for showing rather than reopening - a PNG to send
+      // or a PDF to print. Derived artefacts, not board files; see cmds.exportImage.
+      { type: 'buttons', buttons: [
+        { cmd: 'export-image', label: 'Save image' },
+        { cmd: 'export-pdf', label: 'Save PDF' },
+      ] },
     ],
   },
   {
@@ -276,6 +283,9 @@ export const SECTIONS = [
       { id: 'appearance-type', type: 'slot', className: 'field-pair' },
       { type: 'hint',
         html: 'Drop a <code>.woff2</code>, <code>.ttf</code> or <code>.otf</code> on the board to add your own face.' },
+      // The board's own dropped faces, each with a way to take it back off - filled
+      // and shown/hidden by ui/fonts.js, empty (and gone) until one is dropped.
+      { id: 'appearance-fonts', type: 'slot' },
       // Everything below the fold. The three above it between them move every
       // token these set one at a time, which is what makes the rest advanced
       // rather than merely secondary.

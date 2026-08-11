@@ -540,6 +540,7 @@
    keep their own tempo instead of all drifting off at the middle one's. */
 :root.is-idle #menu-btn,
 :root.is-idle #mobile-header-edit-btn,
+:root.is-idle #mobile-find-btn,
 :root.is-idle #bin,
 :root.is-idle #corner,
 /* The toolbar goes with the rest, and it is the one entry here worth arguing

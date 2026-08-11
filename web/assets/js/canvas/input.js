@@ -33,6 +33,7 @@ import {
 } from '../geometry.js';
 import { itemIdFromEvent, ensureMounted, nodeFor, sync as syncItems, editItemName } from './items.js';
 import { noteFloor } from './notes.js';
+import { queryRect } from './spatial.js';
 
 const DRAG_SLOP = 3;      // screen px before a press becomes a drag
 const DOUBLE_TAP_MS = 350;
@@ -697,7 +698,15 @@ export function initInput(vp, cmds) {
 
   function startMarquee(e) {
     const p = vp.toWorld(e.clientX, e.clientY);
-    g = { kind: 'marquee', x0: p.x, y0: p.y, x1: p.x, y1: p.y, additive: e.shiftKey };
+    // An additive (Shift) band tracks the enclosed set both ways: the selection
+    // it started from is frozen here and re-unioned with the currently enclosed
+    // items every frame, so a card the band grew over and then left is released
+    // again. Without the frozen base, select(ids, true) only ever adds, and the
+    // live selection becomes the union of every position the band ever held.
+    g = {
+      kind: 'marquee', x0: p.x, y0: p.y, x1: p.x, y1: p.y,
+      additive: e.shiftKey, base: e.shiftKey ? [...selection] : null,
+    };
     marquee.hidden = false;
     drawMarquee();
   }
@@ -716,10 +725,19 @@ export function initInput(vp, cmds) {
   function applyMarquee() {
     const x0 = Math.min(g.x0, g.x1), x1 = Math.max(g.x0, g.x1);
     const y0 = Math.min(g.y0, g.y1), y1 = Math.max(g.y0, g.y1);
-    const hit = board.items
-      .filter(i => marqueeHit(i, x0, y0, x1, y1))
-      .map(i => i.id);
-    select(hit, g.additive);
+    // The band is a world rectangle, so the spatial index narrows the field to
+    // the cells it overlaps instead of hit-testing the whole board every move.
+    // queryRect is a superset (a cell is wider than the band's edge), so the
+    // precise marqueeHit still runs - it just runs over a handful, not O(board).
+    const hit = [];
+    for (const id of queryRect({ x0, y0, x1, y1 })) {
+      const it = byId(id);
+      if (it && marqueeHit(it, x0, y0, x1, y1)) hit.push(id);
+    }
+    // Additive: replace the live selection with base + enclosed each frame, so
+    // the enclosed set tracks the band in both directions (see startMarquee).
+    if (g.additive) select([...new Set([...g.base, ...hit])]);
+    else select(hit);
   }
 
   function startMove(e, id) {
@@ -1483,28 +1501,32 @@ export function initInput(vp, cmds) {
   el.addEventListener('pointerup', endPointer);
   el.addEventListener('pointercancel', endPointer);
 
-  function finishGesture() {
-    if (!g) return;
-    if (g.kind === 'marquee') marquee.hidden = true;
+  /**
+   * Commit whatever the gesture earned and release its DOM marks. The one place
+   * the commit rules (a moved move, any resize) and the cleanup (marquee, the
+   * resizing/panning/moving classes, the stick target) live, so finishGesture
+   * and abortGesture cannot drift apart.
+   */
+  function releaseGesture() {
     if (g.kind === 'move' && g.moved) commitGeom('Move', g.before, g.driven);
     if (g.kind === 'resize') commitGeom('Resize', g.before, g.driven);
+    if (g.kind === 'marquee') marquee.hidden = true;
     g.node?.classList.remove('is-resizing');
     el.classList.remove('is-panning', 'is-moving');
     showStickTarget(null);
     g = null;
+  }
+
+  function finishGesture() {
+    if (!g) return;
+    releaseGesture();
     syncItems();
   }
 
   /** Drop the gesture without committing (used when a pinch takes over). */
   function abortGesture() {
     if (!g) return;
-    if (g.kind === 'move' && g.moved) commitGeom('Move', g.before, g.driven);
-    if (g.kind === 'resize') commitGeom('Resize', g.before, g.driven);
-    if (g.kind === 'marquee') marquee.hidden = true;
-    g.node?.classList.remove('is-resizing');
-    el.classList.remove('is-panning', 'is-moving');
-    showStickTarget(null);
-    g = null;
+    releaseGesture();
   }
 
   // The item a dragged note would stick to on release, wearing the selection

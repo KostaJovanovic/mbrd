@@ -611,6 +611,19 @@ bus.on('geom', ids => {
   }
 });
 
+/**
+ * Drop a deleted model's per-item state. `views` and `shotSize` are keyed by id
+ * and otherwise only cleared wholesale on a board swap (resetModels), so without
+ * this a session that repeatedly adds and deletes models leaks one entry each.
+ * `meshes` is LRU-capped and `pending` self-deletes, so only these two need it.
+ */
+bus.on('items', delta => {
+  for (const id of delta?.removed || []) {
+    views.delete(id);
+    shotSize.delete(id);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Turning it over
 // ---------------------------------------------------------------------------
@@ -675,7 +688,11 @@ function drawInto(stage, mesh, view) {
 
   const ctx = stage.getContext('2d');
   ctx.clearRect(0, 0, w, h);
-  if (!renderShared(mesh, view, w, h, getComputedStyle(stage).color)) return;
+  // boardInk() rather than a per-frame getComputedStyle(stage).color: the stage's
+  // colour is always var(--ink-2) (see buildModelCard), which is exactly what
+  // boardInk() resolves and caches, so a turn no longer forces a style recalc per
+  // frame. Same value the still path (renderStill) already uses.
+  if (!renderShared(mesh, view, w, h, boardInk())) return;
   ctx.drawImage(glCanvas, 0, 0, w, h, 0, 0, w, h);
 }
 

@@ -405,7 +405,14 @@ async function carried(asset) {
   const small = await shrinkPicture(art, {
     maxSide: MAX_SIDE_COVER, quality: QUALITY, type: 'image/jpeg',
   }).catch(() => null);
-  return { tags, cover: small ? new File([small.blob], 'cover.jpg', { type: 'image/jpeg' }) : art };
+  if (!small) return { tags, cover: art };
+  // shrinkPicture already decoded the cover to resize it; carry its dimensions
+  // through so pictureBlock does not decode the same image a second time.
+  return {
+    tags,
+    cover: new File([small.blob], 'cover.jpg', { type: 'image/jpeg' }),
+    coverW: small.width, coverH: small.height,
+  };
 }
 
 /** The old name with the new extension - `holiday.png` becomes `holiday.webp`. */

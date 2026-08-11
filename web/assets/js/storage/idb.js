@@ -5,7 +5,10 @@
 // durable artefact is always the .mbrd file the user saves.
 
 const DB_NAME = 'mbrd';
-const DB_VERSION = 1;
+// v2 adds the `library` store. Purely additive - the upgrade below only creates
+// stores that are absent, so an existing `kv`/`assets` database keeps every byte
+// it had and simply gains an empty third store. See storage/library.js.
+const DB_VERSION = 2;
 
 let dbPromise = null;
 
@@ -25,6 +28,11 @@ function open() {
       const db = req.result;
       if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
       if (!db.objectStoreNames.contains('assets')) db.createObjectStore('assets');
+      // The board library: one packed .mbrd blob per saved board, keyed by board
+      // id. Self-contained, so it never touches the `assets` store the live board
+      // is swept against - a board in here survives regardless of what the active
+      // board's autosave deletes.
+      if (!db.objectStoreNames.contains('library')) db.createObjectStore('library');
     };
     req.onsuccess = () => {
       const db = req.result;

@@ -25,6 +25,7 @@ import { appearanceControlVisible } from '../layout-settings.js';
 import { clamp } from '../util.js';
 import { customFaces } from './fonts.js';
 import { field } from './controls.js';
+import { pickColor } from './color-picker.js';
 
 // Not `document.documentElement` at module scope: this file must import without
 // a browser (tests/imports.test.js), and ui/appearance.js is already one of the
@@ -85,11 +86,11 @@ export function buildControls() {
     if (!host) continue;
     const { label, out } = field(c.label, { out: true });
 
-    // A <select> rather than an <input>, and 'change' rather than 'input',
-    // because a face is a choice from a list and not a value on a scale.
-    const input = c.type === 'font' ? document.createElement('select')
-                                    : document.createElement('input');
+    // A <select> for a face (a choice from a list), a swatch button for a colour
+    // (the app's own picker, not the OS one), a range for everything else.
+    let input;
     if (c.type === 'font') {
+      input = document.createElement('select');
       // The board's own faces first, above the shipped list: a face somebody
       // went and dropped in is the one they are looking for, and burying it
       // under six they did not choose is how a feature reads as missing.
@@ -107,15 +108,25 @@ export function buildControls() {
         input.append(opt);
       }
       input.addEventListener('change', () => d.setVar(c.var, input.value));
+    } else if (c.type === 'color') {
+      // A swatch that opens pickColor() - the same modal every other colour choice
+      // in the app uses (commands.js addSwatch), rather than the native
+      // <input type="color"> that reads as a different app's control on the glass.
+      input = document.createElement('button');
+      input.type = 'button';
+      input.className = 'pigment-swatch';
+      input.addEventListener('click', async () => {
+        const raw = (d.current().vars[c.var] ?? getComputedStyle(ROOT).getPropertyValue(c.var)).trim();
+        const picked = await pickColor({ title: 'Pigment', value: toHex(raw) || '#000000' });
+        if (picked) d.setVar(c.var, picked);
+      });
     } else {
-      input.type = c.type === 'color' ? 'color' : 'range';
-      if (c.type === 'range') {
-        input.min = c.min; input.max = c.max; input.step = c.step;
-      }
+      input = document.createElement('input');
+      input.type = 'range';
+      input.min = c.min; input.max = c.max; input.step = c.step;
       input.addEventListener('input', () => {
-        const value = c.type === 'color' ? input.value : input.value + (c.unit || '');
-        out.textContent = c.type === 'color' ? '' : format(input.value, c);
-        d.setVar(c.var, value);
+        out.textContent = format(input.value, c);
+        d.setVar(c.var, input.value + (c.unit || ''));
       });
     }
 
@@ -145,7 +156,9 @@ export function syncControls() {
       input.value = d.current().vars[name] ?? '';
       out.textContent = '';
     } else if (spec.type === 'color') {
-      input.value = toHex(raw) || '#000000';
+      // The swatch shows the current pigment as its fill; the picker is a modal, so
+      // there is no mid-drag value to guard against the way the native input had.
+      input.style.background = toHex(raw) || '#000000';
       out.textContent = '';
     } else {
       const n = parseFloat(raw);

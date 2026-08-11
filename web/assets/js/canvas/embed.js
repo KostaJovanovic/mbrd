@@ -236,8 +236,12 @@ export function embedOffer(item, spec, card) {
 
 /**
  * A link card is 256x106 and a player is not. Resized on the way in, as one
- * undoable step, so the player is a player rather than a letterboxed strip -
- * and so the card goes back to being a card if the change is not wanted.
+ * undoable step, so the player is a player rather than a letterboxed strip.
+ *
+ * Only the resize is undoable. The swap to the iframe (embedOffer) is a DOM
+ * change the item model does not carry, so undoing 'Fit the player' gives the
+ * size back but not the link - the card stays a player in a link-sized box until
+ * the next rebuild. Reversing the embed itself is not offered.
  *
  * The width is whatever the card already had, so an item deliberately made
  * large stays large; only the height is derived, by the provider, from the

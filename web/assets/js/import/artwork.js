@@ -331,11 +331,11 @@ function readAPIC(b, major) {
   // v2.2 carries a bare three-letter format - 'JPG', 'PNG' - where the later
   // revisions carry a null-terminated MIME string. Different widths, same
   // treatment: skipped.
-  let at = 4;
+  let at = 5;                                 // v2.2: enc(1) + format(3) + type(1)
   if (major > 2) {
     const end = b.indexOf(0, 1);
     if (end < 0) return null;
-    at = end + 2;                             // the null, then the picture type
+    at = end + 2;                             // the MIME null, then the picture type
   }
   const wide = enc === 1 || enc === 2;        // UTF-16, with or without a BOM
   while (at < b.length) {

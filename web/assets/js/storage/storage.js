@@ -31,7 +31,11 @@
 // which is what kept the split from reaching main.js, ui/board-actions.js,
 // commands.js and four tests.
 
-import { toast, busy } from '../util.js';
+import { toast, busy, uid } from '../util.js';
+import { idbGet, idbSet } from './idb.js';
+import {
+  libraryIndex, putLibraryBoard, getLibraryBoard, removeLibraryBoard,
+} from './library.js';
 import {
   board, serializeBoard, loadBoard, markDirty, isDirty, setTitle, bus,
   defaultBoardTitle, isNotFoundBoard,
@@ -215,6 +219,16 @@ function download(blob, name) {
   a.click();
   // Revoke late: Safari needs the URL to survive the click turn.
   setTimeout(() => URL.revokeObjectURL(url), 20000);
+}
+
+/**
+ * Write any blob to disk under `name`, through the same download the exporter
+ * uses. For the derived artefacts - a PNG or PDF of the board - which are not
+ * .mbrd files and so never touch the file handle or the picker types, but do
+ * want the one Safari-safe download in this module rather than a second copy.
+ */
+export function saveBlob(blob, name) {
+  download(blob, name);
 }
 
 /** Whether the engine can hand a packed board to a native share sheet. */
@@ -509,6 +523,131 @@ async function confirmDiscard(what) {
     // the same state as never having been dirty.
     if (await exportBoard()) return true;
   }
+}
+
+// ---------------------------------------------------------------------------
+// The library - several boards kept in this browser
+// ---------------------------------------------------------------------------
+//
+// The shelf beside the single session slot. Each board is packed into its own
+// self-contained .mbrd blob and filed under a board id (storage/library.js), so
+// switching between them never disturbs the one-board-at-a-time asset store the
+// live board is swept against - the sweep, the most dangerous thing in this
+// file's neighbourhood, is left exactly as it was. Switching is pack-then-unpack,
+// the same two operations Export and Open already trust, pointed at IndexedDB
+// rather than the disk.
+
+/** The active board's library id, restored on boot and minted on first need. */
+let boardId = null;
+
+export function currentBoardId() { return boardId; }
+
+async function ensureBoardId() {
+  if (boardId) return boardId;
+  const saved = await idbGet('kv', 'current-board').catch(() => null);
+  boardId = (typeof saved === 'string' && saved) || uid('brd');
+  await idbSet('kv', 'current-board', boardId).catch(() => {});
+  return boardId;
+}
+
+async function setCurrentBoardId(id) {
+  boardId = id;
+  await idbSet('kv', 'current-board', id).catch(() => {});
+}
+
+/** The shelf, each row flagged with whether it is the board on screen now. */
+export async function listLibrary() {
+  const id = await ensureBoardId();
+  return (await libraryIndex()).map(e => ({ ...e, current: e.id === id }));
+}
+
+/**
+ * File the board on screen onto the shelf, thumbnail and all. Overwrites its own
+ * row if it already has one, which is how a board's shelf copy is kept current.
+ * The thumbnail is rendered by the caller - a ui/ concern this layer sits below -
+ * and handed in.
+ */
+export async function stashCurrent(thumb = null) {
+  const id = await ensureBoardId();
+  const data = serializeBoard();
+  const { blob, manifest } = await packBoard(data, { created });
+  created = manifest.created;
+  await putLibraryBoard(id, blob, { title: board.title, at: Date.now(), thumb });
+  return id;
+}
+
+/**
+ * Put the current board on the shelf and open another in its place.
+ *
+ * Stash-then-load, so nothing is lost in the swap and no discard prompt is owed:
+ * the board leaving the screen is safe on the shelf a moment before the next one
+ * arrives. The asset swap is the same atomic withFreshAssets() Open uses, so a
+ * corrupt shelf blob leaves the current board intact.
+ */
+export async function switchBoard(id, thumb = null) {
+  if (!id || id === boardId) return false;
+  const job = busy('Switching boards');
+  try {
+    suspendCache();
+    await drainSave();
+    await stashCurrent(thumb);
+    const blob = await getLibraryBoard(id);
+    if (!blob) { toast('That board is not on the shelf any more', 'error'); return false; }
+    await withFreshAssets(async () => {
+      const { manifest, board: data } = await unpackBoard(new File([blob], 'board.mbrd', { type: MIME }));
+      loadBoard(data);
+      created = manifest.created || null;
+    });
+    fileHandle = null;
+    await setCurrentBoardId(id);
+    return true;
+  } catch (err) {
+    console.error(err);
+    toast('Could not open that board: ' + err.message, 'error');
+    return false;
+  } finally {
+    resetSessionLatches();
+    job.end();
+  }
+}
+
+/**
+ * Start a fresh board without losing the one on screen: stash it, then load a
+ * blank. The library's own New - where the top-level one has a single slot to
+ * protect and so asks to export first, this one has the shelf to set the old
+ * board on and simply does.
+ */
+export async function newLibraryBoard(thumb = null) {
+  const job = busy('Making a new board');
+  try {
+    suspendCache();
+    await drainSave();
+    await stashCurrent(thumb);
+    clearAssets();
+    fileHandle = null;
+    created = null;
+    await setCurrentBoardId(uid('brd'));
+    bus.emit('board:new');
+    loadBoard({ title: defaultBoardTitle() });
+    return true;
+  } catch (err) {
+    console.error(err);
+    toast('Could not make a new board: ' + err.message, 'error');
+    return false;
+  } finally {
+    resetSessionLatches();
+    job.end();
+  }
+}
+
+/** Take a board off the shelf. The board on screen cannot be deleted from under itself. */
+export async function deleteLibraryBoard(id) {
+  if (id === boardId) {
+    toast('That is the board you are on - switch away from it first');
+    return false;
+  }
+  await removeLibraryBoard(id);
+  return true;
 }
 
 // ---------------------------------------------------------------------------

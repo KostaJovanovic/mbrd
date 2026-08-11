@@ -26,6 +26,7 @@ import { createMobileSliderFocus } from './sidebar.js';
 import { field, fieldStops } from './controls.js';
 import { paintTitleField, wireTitleField } from './board-title.js';
 import { registerPanel, panelShown, panelHidden } from './panel-stack.js';
+import { open as openSearch } from './search.js';
 
 /**
  * A four-letter tag, in words.
@@ -66,6 +67,7 @@ const AXIS_LABELS = {
 
 let viewport;
 let button;
+let findBtn;
 let panel;
 let sliderFocus;
 let section;
@@ -120,6 +122,11 @@ export function initMobileHeaderEditor(vp) {
   // pressable pen in front of an open panel for a fraction of a second.
   button.addEventListener('click', () => (isPanelOpen() ? closePanel() : openPanel()));
   el('header-close').addEventListener('click', closePanel);
+  // Find, the phone's only way into the palette (the desktop toolbar button is
+  // data-desktop and there is no Ctrl+K or right-click on touch). It rides the
+  // Mobile board whichever lens is up, so unlike the pen it is not lens-gated.
+  findBtn = el('mobile-find-btn');
+  findBtn.addEventListener('click', () => openSearch());
   // The name at the top of the panel, on ui/board-title.js's wiring rather than
   // on its own. It is the same field the sidebar's Board section has, and a
   // rename typed into either shows in the other because both are painted from
@@ -169,9 +176,11 @@ export function initMobileHeaderEditor(vp) {
   }
 
   viewport?.onChange?.(paintButton);
+  paintFind();
   bus.on('layout', () => {
     buildControls();
     paint();
+    paintFind();
   });
   // Feed <-> Playlist: the pen shows over the Feed and hides on the Playlist, so it
   // repaints when the lens changes (which does not emit 'layout').
@@ -182,6 +191,7 @@ export function initMobileHeaderEditor(vp) {
   bus.on('board:load', () => {
     buildControls();
     paint();
+    paintFind();
   });
   bus.on('fonts', () => {
     buildControls();
@@ -774,6 +784,13 @@ function paintButton() {
   buttonShown = visible;
   button.hidden = !visible;
   button.setAttribute('aria-hidden', String(!visible));
+}
+
+/** The Find button rides the whole Mobile board, on either lens - so it is gated on
+ *  the layout alone, not on the feed lens the way the pen is. */
+function paintFind() {
+  if (!findBtn) return;
+  findBtn.hidden = board.layoutMode !== 'mobile';
 }
 
 /** What "Default" resolves to right now: the display face the look is set in. */
