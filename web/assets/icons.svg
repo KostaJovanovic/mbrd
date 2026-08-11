@@ -293,6 +293,60 @@
   <rect x="2.5" y="3.5" width="11" height="9" rx="1.5" stroke-dasharray="3 2.2"/>
 </symbol>
 
+<!-- Align and distribute. Each align icon is a guide line and two cards of
+     different length sharing the edge the line names - the drawing is the rule,
+     the same way i-reset-size is. The distribute pair is three equal bars evenly
+     spaced, which is the whole of what "space these out" does. -->
+<symbol id="i-align-left" viewBox="0 0 16 16">
+  <path d="M2.6 2.4v11.2"/>
+  <rect x="2.6" y="4" width="9" height="2.8" rx="1"/>
+  <rect x="2.6" y="9.2" width="6" height="2.8" rx="1"/>
+</symbol>
+<symbol id="i-align-center" viewBox="0 0 16 16">
+  <path d="M8 2.4v11.2"/>
+  <rect x="3.5" y="4" width="9" height="2.8" rx="1"/>
+  <rect x="5" y="9.2" width="6" height="2.8" rx="1"/>
+</symbol>
+<symbol id="i-align-right" viewBox="0 0 16 16">
+  <path d="M13.4 2.4v11.2"/>
+  <rect x="4.4" y="4" width="9" height="2.8" rx="1"/>
+  <rect x="7.4" y="9.2" width="6" height="2.8" rx="1"/>
+</symbol>
+<symbol id="i-align-top" viewBox="0 0 16 16">
+  <path d="M2.4 2.6h11.2"/>
+  <rect x="4" y="2.6" width="2.8" height="9" rx="1"/>
+  <rect x="9.2" y="2.6" width="2.8" height="6" rx="1"/>
+</symbol>
+<symbol id="i-align-middle" viewBox="0 0 16 16">
+  <path d="M2.4 8h11.2"/>
+  <rect x="4" y="3.5" width="2.8" height="9" rx="1"/>
+  <rect x="9.2" y="5" width="2.8" height="6" rx="1"/>
+</symbol>
+<symbol id="i-align-bottom" viewBox="0 0 16 16">
+  <path d="M2.4 13.4h11.2"/>
+  <rect x="4" y="4.4" width="2.8" height="9" rx="1"/>
+  <rect x="9.2" y="7.4" width="2.8" height="6" rx="1"/>
+</symbol>
+<symbol id="i-distribute-h" viewBox="0 0 16 16">
+  <rect x="2.4" y="3" width="2.4" height="10" rx="1"/>
+  <rect x="6.8" y="3" width="2.4" height="10" rx="1"/>
+  <rect x="11.2" y="3" width="2.4" height="10" rx="1"/>
+</symbol>
+<symbol id="i-distribute-v" viewBox="0 0 16 16">
+  <rect x="3" y="2.4" width="10" height="2.4" rx="1"/>
+  <rect x="3" y="6.8" width="10" height="2.4" rx="1"/>
+  <rect x="3" y="11.2" width="10" height="2.4" rx="1"/>
+</symbol>
+
+<!-- Chevrons for the menu's drill-down: a row that opens a submenu points right,
+     the row that goes back points left. -->
+<symbol id="i-chevron-right" viewBox="0 0 16 16">
+  <path d="M6.5 4 10.5 8l-4 4"/>
+</symbol>
+<symbol id="i-chevron-left" viewBox="0 0 16 16">
+  <path d="M9.5 4 5.5 8l4 4"/>
+</symbol>
+
 <!-- The arrowhead is at the end the arc arrives at, and that is the whole of what
      makes this an arrow rather than a ring.
 

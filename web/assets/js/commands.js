@@ -25,8 +25,9 @@ import {
   restoreTitleCard, resetTitlePosition,
   addConnections, clearConnections, isFurniture, isRider,
   addItems, baseStep, isFence, fenceAt, fenceBox, fenceFollowers, fenceOf, nextFenceName,
+  snapshotGeom, applyGeom, commitGeom,
 } from './state.js';
-import { itemBounds, MAX_SIZE, MIN_SIZE } from './geometry.js';
+import { itemBounds, MAX_SIZE, MIN_SIZE, alignTargets, distributeTargets } from './geometry.js';
 import { editItemName } from './canvas/items.js';
 // The spanning tree, which used to be the web and is now the generator behind
 // "Join these" - see cmds.connectSelection and the header of web-graph.js.
@@ -35,11 +36,13 @@ import { defaultUpAxis, meshKind } from './mesh.js';
 import { travelMs } from './canvas/viewport.js';
 import { isTurning, rotateModel } from './canvas/model.js';
 import { pickFiles, pickCover, addNote, addSwatch, addLink } from './import/drop.js';
-import { linkURL, SWATCH_DEFAULT } from './canvas/renderers.js';
+import { linkURL, SWATCH_DEFAULT, defaultSize } from './canvas/renderers.js';
+import { samplePixels, dominantColors } from './ui/pigments.js';
+import { arrange } from './arrange/arrangements.js';
 import { ask } from './ui/dialog.js';
 import { pickColor } from './ui/color-picker.js';
-import { exportBoard, openBoard, newBoard } from './storage/storage.js';
-import { getAsset } from './storage/assets.js';
+import { exportBoard, openBoard, newBoard, shareBoard, canShareBoard } from './storage/storage.js';
+import { getAsset, assetURL } from './storage/assets.js';
 import { close as closeSidebar } from './ui/sidebar.js';
 import { closeToolbar, setArmed, connectArmed, connectTap } from './ui/toolbar.js';
 import { clearQualityOverrides } from './quality.js';
@@ -246,6 +249,10 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
     save: () => saveWithCooldown(),
     export: () => exportBoard(),
     exportAs: () => exportBoard({ pickNew: true }),
+    // The mobile face of Export: the same packed .mbrd, handed to the OS share
+    // sheet instead of a download folder a phone has no good way to reach. Falls
+    // back to Export where files cannot be shared - see shareBoard().
+    share: () => shareBoard(),
     // Strictly asked for, never automatic - see optimize/optimize.js. Loaded on
     // demand as well as run on demand: the encoder behind it is thirty megabytes
     // and a board of photographs never needs it.
@@ -297,6 +304,43 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
       const url = linkTyped(typed);
       if (!url) { toast('That is not an address this can open', 'error'); return; }
       addLink(vp.toWorld(vp.left + vp.cx, vp.top + vp.cy), url);
+    },
+    // Pull a picture's own colours off it and drop them beside it as swatches.
+    //
+    // The same read the Dynamic palette does - the hue vote in ui/pigments.js -
+    // but of this one image rather than the whole board, and stopped a step
+    // early so each swatch is a colour the picture actually holds. The swatches
+    // are laid in a little masonry block centred on the image and land as one
+    // undo step; each remembers the image it came from in meta.from, which is a
+    // plain id and so survives the meta normaliser (only cover/shot/thumb hashes
+    // are stripped). A picture with no colour worth taking says so and adds none.
+    canExtractSwatches: id => {
+      const it = byId(id);
+      return !!(it && it.type === 'image' && it.asset?.hash && getAsset(it.asset.hash));
+    },
+    extractSwatches: async id => {
+      const it = byId(id);
+      const hash = it?.asset?.hash;
+      if (!hash) return;
+      const url = assetURL(hash);
+      if (!url) return;
+      const [chunk] = await samplePixels([url], 1);
+      if (!chunk) { toast('Could not read colours from that picture', 'error'); return; }
+      const hexes = dominantColors(chunk, 5);
+      if (!hexes.length) { toast('That picture has no colour worth taking'); return; }
+      const size = defaultSize('swatch');
+      const partials = hexes.map(h => ({
+        type: 'swatch', name: h.toUpperCase(),
+        w: size.w, h: size.h, meta: { hex: h, from: id },
+      }));
+      const spots = arrange(partials, {
+        name: 'masonry',
+        center: { x: it.x, y: it.y + it.h / 2 + size.h },
+        spacing: board.settings.spacing,
+      });
+      spots.forEach((p, i) => { partials[i].x = p.x; partials[i].y = p.y; });
+      const made = addItems(partials, 'Extract palette');
+      select(made.map(m => m.id));
     },
     // --- connections ---
     // The one tool on the bar that is a mode. Pressing it arms; pressing it
@@ -441,6 +485,41 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
     // it - that card is built under canvas/, which cannot import ui/appearance.js.
     setWhimsy: level => setWhimsy(level),
     rearrangeSelection: () => rearrange(board.items.filter(i => selection.has(i.id))),
+
+    // Line the selection up, or space it out evenly. A family of small commands
+    // rather than a mode or a mystery drag: each names exactly the edge or axis
+    // it touches, so the menu row and the undo entry read the same word. The
+    // three-call shape - snapshot, apply live, commit - is the same one every
+    // geometry gesture uses (see resetTitlePosition), which is what makes a
+    // tidy-up one undo step and re-snaps it onto the lattice when snapping is on.
+    //
+    // Furniture and regions are left out for the reason rearrange leaves hints
+    // out: a hint card is talking to the person, and a fence is a container whose
+    // edges mean membership - neither is a card in a row being straightened. The
+    // pure arithmetic is in geometry.js; this only reads the selection and files
+    // the result. Mobile has no free positions to line up, so it declines.
+    alignSelection: edge => {
+      if (board.layoutMode === 'mobile') { toast('Aligning is a canvas thing'); return; }
+      const items = board.items.filter(i =>
+        selection.has(i.id) && !isFurniture(i) && !isFence(i));
+      if (items.length < 2) { toast('Pick two or more cards to line up'); return; }
+      const ids = items.map(i => i.id);
+      const label = { left: 'Align left', right: 'Align right', hcenter: 'Align centre',
+        top: 'Align top', bottom: 'Align bottom', vcenter: 'Align middle' }[edge] || 'Align';
+      const before = snapshotGeom(ids);
+      applyGeom(alignTargets(items, edge));
+      commitGeom(label, before, ids);
+    },
+    distributeSelection: axis => {
+      if (board.layoutMode === 'mobile') { toast('Spacing out is a canvas thing'); return; }
+      const items = board.items.filter(i =>
+        selection.has(i.id) && !isFurniture(i) && !isFence(i));
+      if (items.length < 3) { toast('Pick three or more cards to space out'); return; }
+      const ids = items.map(i => i.id);
+      const before = snapshotGeom(ids);
+      applyGeom(distributeTargets(items, axis));
+      commitGeom(axis === 'x' ? 'Distribute across' : 'Distribute down', before, ids);
+    },
 
     /**
      * The smallest region a world point is inside, or null. The menu's question,

@@ -66,10 +66,12 @@
    on the way back to the canvas would run against a zero rect and clamp the zoom to
    its floor (the board snapping out to ~10%). visibility keeps the size. */
 :root[data-board-mode="mobile"] #viewport { visibility: hidden; }
-/* The world-space masthead's pen has no masthead to point at while a lens covers
-   the canvas - the Feed and Playlist carry their own title page, styled through the
-   same call but not editable here - so it comes down in Mobile. */
-:root[data-board-mode="mobile"] #mobile-header-edit-btn { display: none; }
+/* The pen edits the title page. The Feed carries that page (the masthead), so the
+   pen belongs over the Feed - tapping it opens the same header panel, and the name
+   and its face/size/stretch edited there paint straight onto the masthead. Only the
+   Playlist, whose header is the album hero rather than the editable title page,
+   drops it. */
+:root[data-board-mode="mobile"][data-feed-lens="playlist"] #mobile-header-edit-btn { display: none; }
 /* The Playlist is a player, not an editor: the board-editing cluster in the foot -
    the bin and the undo/redo pair - has nothing to act on here (there is no
    selection, and a reorder is off the undo stack), and it fought the now-playing
@@ -109,16 +111,23 @@
    width the feed hands in as --mobile-board-width; only the contenteditable half
    is left out, since the feed's masthead is edited through the pen panel. */
 .feed-masthead {
-  /* A compact header, not a full title page: the band hugs the name with a little
-     breathing room rather than holding a fixed 3:2 page the width of the board,
-     which on the wide feed made the name enormous. The board (sheet) width is
-     untouched - only the header's own height and its title size come down. */
+  /* The constant title page: a 3:2 band, the same proportion the world-space
+     masthead holds (its height is its width over 1.5). What was too big was not the
+     ratio but the width it took on the wide Desktop feed - a 3:2 band the full 940px
+     of the sheet is a 620px poster. So the band is capped in width and centred: on a
+     phone the cap is wider than the sheet, so it stays full-bleed and phone-sized as
+     before; on Desktop it settles at that same size instead of scaling with the
+     sheet. The board (sheet) width itself is untouched. overflow:hidden clips a name
+     too large for the band; the fit (--mobile-title-fit) shrinks it to fit first. */
   width: 100%;
+  max-width: 440px;
+  margin-inline: auto;
+  aspect-ratio: 3 / 2;
   box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 26px 16px 18px;
+  padding: 24px 0;
   overflow: hidden;
 }
 .feed-title {
@@ -128,16 +137,10 @@
   /* Fallback; styleFeedMasthead() writes the chosen face inline, and clears it to
      fall back here when the header is on Default (which follows --font-display). */
   font-family: var(--font-display);
-  /* Sized from the board's own title setting, but capped so a wide sheet does not
-     blow it up to a poster - the cap is what brings the header back to a normal
-     size. The min() keeps a board that chose a small title small. */
-  font-size: min(
-    calc(clamp(20px,
-      calc(var(--mobile-board-width, 0px) * var(--mobile-title-scale, 0.13)),
-      calc(var(--mobile-board-width, 0px) * var(--mobile-title-cap, 0.1875))
-    ) * var(--mobile-title-fit, 1)),
-    clamp(24px, 7vw, 40px)
-  );
+  font-size: calc(clamp(20px,
+    calc(var(--mobile-board-width, 0px) * var(--mobile-title-scale, 0.13)),
+    calc(var(--mobile-board-width, 0px) * var(--mobile-title-cap, 0.1875))
+  ) * var(--mobile-title-fit, 1));
   transform:
     translateY(calc(var(--mobile-header-height, 0px) * var(--mobile-title-offset, 0) / 100))
     scaleY(var(--mobile-title-stretch, 1));
@@ -596,44 +599,60 @@
   50% { transform: scaleY(1); }
 }
 
-/* The Desktop Playlist window: a floating, draggable player over the canvas,
-   opened from the sidebar's Playlist button. Chrome-level (z 22, over the now-
-   playing bar's 20) so a click reaches it; it holds the same track list, without
-   the reordering. It opens anchored lower-right and switches to left/top the first
-   time it is dragged (ui/playlist.js). */
+/* The Desktop Playlist: a little floating window, opening anchored to the
+   bottom-right above the now-playing bar. It is its own surface, not a docked panel
+   - it floats over the board, sized to its content up to a cap, is independent of
+   the header edit bar and the menu (they can be open at the same time), and is
+   draggable by its title bar (ui/playlist.js makeWindowDrag). It grows up out of its
+   bottom-right corner on open. */
 .player-window {
   position: fixed;
-  right: 24px;
-  bottom: 92px;
-  z-index: 22;
-  width: min(360px, calc(100vw - 32px));
-  max-height: min(60vh, 560px);
+  z-index: 40;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  width: min(340px, calc(100vw - 32px));
+  max-height: min(72vh, 620px);
   display: flex;
   flex-direction: column;
-  border: var(--hairline) solid var(--rule-2);
-  border-radius: var(--radius);
   background: var(--paper-card);
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--ogee);
   box-shadow: var(--shadow-2);
   overflow: hidden;
+  transform-origin: bottom right;
+  transform: scale(0.96) translateY(10px);
+  opacity: 0;
+  visibility: hidden;
+  transition: transform var(--dur-base) var(--ease-back),
+              opacity var(--dur-fast) var(--ease),
+              visibility 0s linear var(--dur-base);
 }
-.player-window.is-dragging { user-select: none; }
+.player-window.is-open {
+  transform: none;
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
 .player-window-head {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: 6px;
+  padding: 12px 18px;
   border-bottom: var(--hairline) solid var(--rule-2);
   cursor: grab;
   touch-action: none;
+  user-select: none;
 }
-.player-window.is-dragging .player-window-head { cursor: grabbing; }
+.player-window.is-moving { cursor: grabbing; }
+.player-window.is-moving .player-window-head { cursor: grabbing; }
 .player-window-title {
   font-family: var(--font-display);
   font-size: var(--t-title);
   color: var(--ink);
 }
 .player-window-spacer { flex: 1 1 auto; }
+.player-window-toggle,
 .player-window-close {
   flex: none;
   display: grid;
@@ -647,15 +666,178 @@
   color: var(--ink-2);
   cursor: pointer;
 }
+.player-window-toggle:hover,
 .player-window-close:hover { background: var(--paper-3); color: var(--ink); }
+.player-window-toggle svg,
 .player-window-close svg { width: 15px; height: 15px; }
+.player-window-toggle.is-on { color: var(--accent); }
+/* The swappable region under the title bar. It holds the mode's content and takes
+   the leftover height; each mode scrolls inside it. */
+.player-window-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 .player-window-body {
   flex: 1 1 auto;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 6px;
+  padding: 6px 8px 12px;
 }
 .player-window-body .feed-empty.is-shown { min-height: 30vh; }
+
+/* The album/feed view inside the window: the Mobile lens's own furniture (compact
+   hero + list), scrolling as one, with the full-screen sheet flattened to fit the
+   window - no set width, no min-height, no paper surround of its own. */
+.player-window-feed {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.player-window .feed-sheet {
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0 0 8px;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  overflow: visible;
+}
+.player-window .pl-hero.is-compact { padding: 14px 18px; }
+.player-window .feed-sheet .pl-list { width: 100%; margin: 0; padding: 0 8px; }
+
+/* The bottom-right resize grip: a small bracket that sits over the corner. It draws
+   an L of two hairlines inside the rounded corner - subtle at rest, the accent under
+   the pointer - and takes the pointer for a resize drag (ui/playlist.js). */
+.player-window-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  z-index: 2;
+  cursor: nwse-resize;
+  touch-action: none;
+  color: var(--ink-3);
+}
+.player-window-resize::after {
+  content: "";
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  border-bottom-right-radius: 2px;
+  opacity: 0.55;
+}
+.player-window-resize:hover { color: var(--accent); }
+.player-window.is-resizing { cursor: nwse-resize; }
+.player-window.is-resizing .player-window-resize { color: var(--accent); }
+
+/* The window's player: a real transport, not a play-all button. The now-playing
+   track (cover, title, artist) over a seek line and the five controls, driving the
+   same shared queue the list below does. */
+.pw-player {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 18px 12px;
+  border-bottom: var(--hairline) solid var(--rule-2);
+}
+.pw-top { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.pw-cover {
+  flex: none;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--leaf);
+  overflow: hidden;
+  background: color-mix(in srgb, var(--accent) 12%, var(--paper-3));
+  box-shadow: var(--shadow-1);
+}
+.pw-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pw-cover.is-placeholder { display: grid; place-items: center; color: color-mix(in srgb, var(--accent) 65%, var(--ink-3)); }
+.pw-cover.is-placeholder svg { width: 46%; height: 46%; }
+.pw-info { flex: 1 1 auto; min-width: 0; }
+.pw-title {
+  font-family: var(--font-body);
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pw-artist {
+  font-size: var(--t-small);
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pw-seek { display: flex; align-items: center; gap: 8px; }
+.pw-time {
+  flex: none;
+  min-width: 4ch;
+  font-size: var(--t-tiny);
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.pw-time:last-child { text-align: right; }
+.pw-line { position: relative; flex: 1 1 auto; height: 14px; cursor: pointer; touch-action: none; }
+.pw-line::before {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; top: 50%;
+  margin-top: -1.5px;
+  height: 3px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--ink) 20%, transparent);
+}
+.pw-line-fill {
+  position: absolute;
+  left: 0; right: 0; top: 50%;
+  margin-top: -1.5px;
+  height: 3px;
+  border-radius: 3px;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+.pw-controls { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.pw-btn {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.pw-btn:hover { background: var(--paper-3); color: var(--ink); }
+.pw-btn.is-on { color: var(--accent); }
+/* Flex the glyph wrapper so the SVG is laid out as a flex item, not an inline box:
+   an inline SVG rides the text baseline and its descender space nudges every icon a
+   couple of pixels up, which read as the play circle sitting low against the row. */
+.pw-btn .pw-ico { display: flex; }
+.pw-btn svg { display: block; width: 16px; height: 16px; }
+.pw-play {
+  width: 44px;
+  height: 44px;
+  border: var(--hairline) solid var(--accent);
+  color: var(--accent);
+}
+.pw-play:hover { background: var(--accent); color: #fff; }
+.pw-play svg { width: 18px; height: 18px; }
 
 /* Reduced motion: no tile reflow easing while reordering, no scroll glide, and a
    still equalizer (the row still lights, it just does not dance). */

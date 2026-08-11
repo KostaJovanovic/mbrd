@@ -811,9 +811,9 @@
      announcing silence is furniture with no job. -->
 <div id="nowplaying" hidden>
   <div class="np-top">
-    <!-- The name is a button: tapping the bar opens the full player, the way a
-         phone's mini-player expands. ui/nowplaying.js wires it. -->
-    <button type="button" class="np-name" title="Open the playlist"></button>
+    <!-- Just the track name. Opening the full player is the dedicated playlist
+         button in the controls cluster, built by ui/nowplaying.js. -->
+    <div class="np-name"></div>
     <div class="np-controls">
       <!-- The play button and the playlist cluster are built by ui/nowplaying.js
            and inserted here, before the volume. -->

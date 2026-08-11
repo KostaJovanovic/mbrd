@@ -285,34 +285,57 @@ let queueOrder = [];      // indices into queueItems, in play order (shuffled or
 let queuePos = -1;        // where we are within queueOrder
 let shuffleOn = false;
 let repeatMode = 'off';   // 'off' | 'all' | 'one'
-let player = null;        // the one shared <audio>
+let player = null;        // the one shared <audio>, for tracks with no card on screen
+// The element the queue is driving right now. Playing a board card plays the card's
+// own <audio> (so its waveform and seek keep working) with the queue steering it;
+// only a track with no card - off the mobile board, or culled - falls back to the
+// shared player above. Either way this is the queue's current voice, and what
+// isQueuePlayer() and the "active" flag are really asking about.
+let queuePlayerEl = null;
 const queueWatchers = new Set();
 
 /** Told when the queue's shape or mode changes (the bar repaints its buttons). */
 export function onQueue(fn) { queueWatchers.add(fn); return () => queueWatchers.delete(fn); }
 function notifyQueue() { for (const fn of queueWatchers) fn(); }
 
-/** Whether `el` is the shared playlist engine (vs a card's own clip). */
-export const isQueuePlayer = el => !!player && el === player;
+/** Whether `el` is the element the queue is currently driving (shared or a card's). */
+export const isQueuePlayer = el => !!queuePlayerEl && el === queuePlayerEl;
 
 /** Shuffle mode, repeat mode, and whether the queue is the current sound. */
 export function queueState() {
   return {
     shuffle: shuffleOn,
     repeat: repeatMode,
-    active: !!player && current?.el === player,
+    active: !!queuePlayerEl && current?.el === queuePlayerEl,
     length: queueItems.length,
   };
 }
+
+/**
+ * The element to play `item` through: its card's own <audio> when that card is on
+ * the board, else the shared player. Reusing the card's element is what lets a track
+ * started from the board keep its live waveform while the queue advances it.
+ */
+function playerFor(item) {
+  for (const el of players) {
+    if (el !== player && owners.get(el) === item) return el;
+  }
+  return ensurePlayer();
+}
+
+/** Advance when the queue's current element ends, wherever that element lives. */
+function queueEnded() { advanceQueue(true); }
+let endedBound = null;
 
 function ensurePlayer() {
   if (player) return player;
   player = new Audio();
   player.preload = 'metadata';
   // Registered once - not per track - so its 'play' hook and volume wiring are
-  // set a single time. The owner is updated per track in startCurrent().
+  // set a single time. The owner is updated per track in startCurrent(). The
+  // ended -> advance hook is no longer here: it rides on whichever element is the
+  // queue's current voice (see startCurrent), because that may be a card's <audio>.
   registerPlayer(player);
-  player.addEventListener('ended', () => advanceQueue(true));
   return player;
 }
 
@@ -329,7 +352,7 @@ export function setQueue(items) {
 }
 
 function rebuildOrder() {
-  const playing = current?.el === player ? current.item : null;
+  const playing = current?.el === queuePlayerEl ? current.item : null;
   queueOrder = queueItems.map((_, i) => i);
   if (shuffleOn) {
     // Fisher-Yates, but keep the current track at the front so shuffle does not
@@ -364,9 +387,20 @@ function startCurrent() {
   const item = queueItems[queueOrder[queuePos]];
   const url = item?.asset?.hash ? assetURL(item.asset.hash) : null;
   if (!url) return;
-  const el = ensurePlayer();
-  if (el.currentSrc !== url && el.src !== url) el.src = url;
-  else el.currentTime = 0;
+  const el = playerFor(item);
+  if (el === player) {
+    // The shared element holds whatever it last played; point it at this track.
+    if (el.currentSrc !== url && el.src !== url) el.src = url;
+    else el.currentTime = 0;
+  } else {
+    // A card's own element, already holding its src; start it from the top.
+    el.currentTime = 0;
+  }
+  // The ended -> advance hook follows the current voice: bound to this element while
+  // it is the one playing, moved off it when the queue steps to another.
+  if (endedBound && endedBound !== el) endedBound.removeEventListener('ended', queueEnded);
+  if (endedBound !== el) { el.addEventListener('ended', queueEnded); endedBound = el; }
+  queuePlayerEl = el;
   owners.set(el, item);
   setCurrent({ el, item });
   el.play().catch(() => {});
@@ -379,7 +413,7 @@ export function queuePrev() {
   if (!queueItems.length) return;
   // Within the first few seconds prev restarts the track, as every player does;
   // past that it steps back.
-  if (player && player.currentTime > 3) { player.currentTime = 0; return; }
+  if (queuePlayerEl && queuePlayerEl.currentTime > 3) { queuePlayerEl.currentTime = 0; return; }
   queuePos = queuePos <= 0 ? queueOrder.length - 1 : queuePos - 1;
   startCurrent();
 }
@@ -424,11 +458,15 @@ export function cycleRepeat() {
  * now-playing entry if the queue was the sound.
  */
 export function clearQueue() {
+  const voice = queuePlayerEl;
+  if (endedBound) { endedBound.removeEventListener('ended', queueEnded); endedBound = null; }
+  if (voice) voice.pause();
   if (player) { player.pause(); player.removeAttribute('src'); }
   queueItems = [];
   queueOrder = [];
   queuePos = -1;
-  if (current?.el === player) setCurrent(null);
+  if (current && current.el === voice) setCurrent(null);
+  queuePlayerEl = null;
   notifyQueue();
 }
 
@@ -807,19 +845,24 @@ export function buildTransport(item, sound, opts = {}) {
     watch.observe(wave);
   }
 
+  // A rejected play() is never swallowed - almost always the browser refusing
+  // rather than a broken file (Firefox blocks audible playback outright when a
+  // site's autoplay permission is set to block), and an empty catch is why "the
+  // cards are unplayable" once had nothing behind it in the console.
+  const reportPlayError = err => toast(err && err.name === 'NotAllowedError'
+    ? 'Your browser blocked playback — allow audio for this site'
+    : 'Could not play this file');
+
   play.addEventListener('click', () => {
-    if (!sound.paused) { sound.pause(); return; }
-    sound.play().catch(err => {
-      // Never swallowed. A rejected play() is almost always the browser
-      // refusing rather than the file being broken - Firefox blocks audible
-      // playback outright when a site's autoplay permission is set to block,
-      // and every card then behaves exactly like a dead one. An empty catch
-      // here is the reason "the cards are unplayable" had nothing behind it,
-      // in the console or anywhere else.
-      toast(err && err.name === 'NotAllowedError'
-        ? 'Your browser blocked playback — allow audio for this site'
-        : 'Could not play this file');
-    });
+    // The card is a voice of the shared queue: pressing play starts the queue here,
+    // so the track advances to the next when it ends and the bar shows the playlist
+    // controls - the same as playing it from the Playlist. When this card is already
+    // the sounding track, the button just pauses and resumes it where it is.
+    if (current?.el === sound) {
+      if (sound.paused) sound.play().catch(reportPlayError); else sound.pause();
+    } else {
+      playTrack(item);
+    }
   });
   const on = (type, fn) => sound.addEventListener(type, fn, { signal: opts.signal });
 

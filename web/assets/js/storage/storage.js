@@ -217,6 +217,48 @@ function download(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 20000);
 }
 
+/** Whether the engine can hand a packed board to a native share sheet. */
+export const canShareBoard = () =>
+  typeof navigator !== 'undefined' && typeof navigator.canShare === 'function';
+
+/**
+ * Hand the packed .mbrd to the operating system's share sheet.
+ *
+ * The mobile answer to Export. On a phone there is no folder to file a download
+ * into that another app can then reach; the share sheet is how a file gets to
+ * Messages, mail, AirDrop or another board. So this packs the very same archive
+ * Export writes - through the same serializeBoard()/packBoard() pipeline, so a
+ * shared board and an exported one are byte-for-byte the same file - and offers
+ * it to navigator.share() instead of writing it to disk.
+ *
+ * Falls through to exportBoard() wherever sharing a file is not on offer, so the
+ * button never dead-ends: a desktop that has canShare but refuses files, or a
+ * browser without the API at all, still gets the download it would have got.
+ * A dismissed sheet is an AbortError, swallowed like the picker's - the board is
+ * untouched either way, because nothing here changes state.
+ */
+export async function shareBoard() {
+  try {
+    const data = serializeBoard();
+    const { blob, manifest } = await packBoard(data, { created });
+    created = manifest.created;
+    const file = new File([blob], fileNameFor(board.title), { type: MIME });
+    // canShare({files}) is the honest probe: a browser can have navigator.share
+    // for text and still refuse files, and share() would then throw. Where files
+    // are not shareable, the export path is the right fallback, not an error.
+    if (navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title: board.title });
+      return true;
+    }
+    return exportBoard();
+  } catch (err) {
+    if (err?.name === 'AbortError') return false;   // user dismissed the sheet
+    console.error(err);
+    toast('Share failed: ' + err.message, 'error');
+    return false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Open
 // ---------------------------------------------------------------------------

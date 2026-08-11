@@ -171,6 +171,13 @@ export const SECTIONS = [
         { cmd: 'save', label: 'Save', className: 'primary' },
         { cmd: 'export', label: 'Export' },
       ] },
+      // Share sits on its own row and only where the engine can actually put a
+      // file into the share sheet - hidden outright otherwise, the same rule the
+      // paper sheet follows, because a Share that quietly turned into a download
+      // would be a promise the phone could not read. See shareBoard().
+      { type: 'buttons',
+        when: () => typeof navigator !== 'undefined' && typeof navigator.canShare === 'function',
+        buttons: [{ cmd: 'share', label: 'Share' }] },
     ],
   },
   {

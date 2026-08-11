@@ -1078,6 +1078,32 @@ export function extractPalette(chunks, { plain = false } = {}) {
   return paletteFor(hues, { vivid: board.vivid, key: board.key, plain });
 }
 
+/**
+ * The dominant colours of one picture, as `#rrggbb` strings, strongest first.
+ *
+ * The same read the Dynamic palette does - readBoard()'s hue vote, peaksOf()'s
+ * ranked peaks - but stopped one step earlier: instead of synthesising a whole
+ * styled sheet from the hues, it hands back each peak *as it actually looks on
+ * the picture* (its measured tone), which is what a swatch wants. A peak with no
+ * measured tone is a bare angle with no colour to show, and is skipped rather
+ * than invented at a table lightness.
+ *
+ * Takes one chunk - an ImageData.data buffer, the same thing samplePixels()
+ * yields - so a caller sampling a single image gets that image's colours and no
+ * one else's. Returns fewer than `n` when the picture has fewer distinct hues in
+ * it, and nothing at all for a picture with no colour worth taking.
+ */
+export function dominantColors(chunk, n = 5) {
+  const peaks = peaksOf(readBoard([chunk]));
+  const out = [];
+  for (const p of peaks) {
+    if (out.length >= n) break;
+    if (!p.tone) continue;
+    out.push(hex(p.tone.L, p.tone.C, p.h));
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Reading the board
 // ---------------------------------------------------------------------------

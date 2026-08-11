@@ -16,6 +16,7 @@ import {
 import { iframeURL, embedFor } from '../canvas/embed.js';
 import { arrange, mobileOrder } from '../arrange/arrangements.js';
 import { coverArt, mayHaveArt } from './artwork.js';
+import { embeddedPreview } from './preview.js';
 import { makeThumb } from '../optimize/picture.js';
 import { looksLikeMbrd } from '../storage/mbrd.js';
 import { openFile } from '../storage/storage.js';
@@ -499,6 +500,11 @@ async function posterFor(file, decodable) {
 async function prepareFile(file) {
   let type = classify(file);
   let size;
+  // A decodable stand-in pulled out of a picture the browser cannot draw (HEIC,
+  // RAW), and the file it came from. Both stay null for everything else. See the
+  // undecodable branch below and import/preview.js.
+  let previewHash = null;
+  let previewFile = null;
   // A decode bomb - a small file that declares enormous dimensions - is caught
   // from its header before measureSize() hands it to createImageBitmap(), which
   // would otherwise allocate gigabytes. Over budget it becomes a named card, the
@@ -511,11 +517,24 @@ async function prepareFile(file) {
     // the item will actually occupy (see renderers.measureSize).
     size = await measureSize(type, file);
     // A photo this browser can't decode - HEIC, JPEG XL, camera RAW - would
-    // mount as a broken <img>. A named card is a better answer than a hole,
-    // and it upgrades itself for free the day a decoder lands.
+    // mount as a broken <img>. Before falling back to a named card, look inside
+    // it for the copy the camera already made (import/preview.js): most of these
+    // formats carry a full-size or thumbnail JPEG the browser *will* draw. Found
+    // and itself decodable, the card stays an image and draws that preview,
+    // while asset.hash below still names the untouched original - so it costs the
+    // original nothing and upgrades itself for free the day a real decoder lands.
+    // Not found, it is a named card, exactly as before.
     if (type === 'image' && !size.decodable) {
-      type = 'generic';
-      size = defaultSize('generic');
+      const preview = await embeddedPreview(file).catch(() => null);
+      const shot = preview && await measureSize('image', preview);
+      if (shot?.decodable) {
+        previewFile = preview;
+        previewHash = await addFile(preview);
+        size = shot;
+      } else {
+        type = 'generic';
+        size = defaultSize('generic');
+      }
     }
   }
   const hash = await addFile(file);
@@ -554,8 +573,11 @@ async function prepareFile(file) {
   // photograph dropped twice has one thumbnail. Failure is silent and total:
   // no thumbnail simply means the card keeps drawing its full-size picture,
   // which is what it did before any of this existed.
+  // From the preview when there is one: the original is undecodable, so a
+  // thumbnail of it could never be made, and the preview is what the card draws
+  // anyway.
   const thumb = type === 'image'
-    ? await thumbFor(file).catch(() => null)
+    ? await thumbFor(previewFile || file).catch(() => null)
     : null;
   return {
     type,

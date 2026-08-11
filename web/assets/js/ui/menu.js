@@ -29,6 +29,9 @@ let vp = null;
 let cmds = null;
 // Whatever had the keyboard when the menu opened, so it can be given back.
 let opener = null;
+// The anchor the menu was opened at, kept so a drill-down submenu re-renders in
+// the same place rather than jumping to wherever the pointer has drifted.
+let lastX = 0, lastY = 0;
 
 export function initMenu(viewport, commands) {
   vp = viewport;
@@ -150,6 +153,10 @@ function itemEntries(id, count, at) {
   // crosses another layer. A note covering its own host is intentionally one
   // layer and does not make these actions useful by itself.
   const stackable = cmds.selectionHasStackOverlap();
+  // A picture can hand over its own colours as swatches. Single-item, like the
+  // cover and fit actions above: it reads the one image under the cursor, and
+  // "the colours of these nine" is not a thing a person means.
+  const swatchable = !many && cmds.canExtractSwatches(id);
   return [
     // First, and only on a note: right-clicking the one item type you can
     // actually type into should offer to type into it before anything else.
@@ -175,11 +182,16 @@ function itemEntries(id, count, at) {
     // Z-up scan and a Y-up export at the same time.
     { label: 'Turn it upright', icon: 'i-upright', hidden: !flippable,
       action: () => cmds.flipUpAxis(id) },
+    // A photo's own palette, dropped beside it as swatches. On the image's own
+    // group with the picture and fit rows, because it is one more thing you do
+    // to a picture rather than to the board.
+    { label: 'Extract palette', icon: 'i-swatch', hidden: !swatchable,
+      action: () => cmds.extractSwatches(id) },
     // Above the upright toggle would put the rare fix in front of the ordinary
     // gesture; below it, this is the last thing on the model's own group.
     { label: 'Rotate model', icon: 'i-rotate', hidden: !turnable,
       action: () => cmds.rotateModel(id) },
-    { sep: true, hidden: !editable && !renamable && !coverable && !covered && !fittable && !flippable && !turnable },
+    { sep: true, hidden: !editable && !renamable && !coverable && !covered && !fittable && !flippable && !turnable && !swatchable },
     // The other mirrored pair: one card and one arrow, turned over.
     { label: 'Bring to front', icon: 'i-front', hidden: !stackable, action: () => cmds.raise() },
     { label: 'Send to back', icon: 'i-back', hidden: !stackable, action: () => cmds.lower() },
@@ -204,6 +216,12 @@ function itemEntries(id, count, at) {
     // does not move. The whole-board one is on the canvas menu.
     { label: `Rearrange these ${count}`, icon: 'i-rearrange', hidden: !many,
       action: () => cmds.rearrangeSelection() },
+    // Straighten or space out, one fold deeper. A group only, like Rearrange -
+    // one card has no edge to line up against - and behind one row because eight
+    // ways to tidy would swamp the menu the moment two cards were picked. See
+    // alignDistributeEntries().
+    { label: 'Align & distribute', icon: 'i-align-center', hidden: !many,
+      sub: alignDistributeEntries() },
     // Beside Rearrange because it is the other answer to the same question -
     // "these belong together". Rearrange says so by moving them; a fence says so
     // by drawing a line round them and leaving them where they are. Group only,
@@ -233,6 +251,28 @@ function itemEntries(id, count, at) {
     { sep: true },
     { label: `Delete ${what}`, icon: 'i-delete', accel: 'Del', danger: true,
       action: () => cmds.deleteSelection() },
+  ];
+}
+
+/**
+ * The align/distribute fold. Six edges to line up on and two axes to space
+ * along - the whole of geometry.js's alignTargets/distributeTargets, one row
+ * each, in reading order: the horizontal edges, the vertical edges, then the
+ * two distributions. Each closes the menu and files one undo step through the
+ * command, so it reads and undoes as the single tidy-up it is.
+ */
+function alignDistributeEntries() {
+  return [
+    { label: 'Align left', icon: 'i-align-left', action: () => cmds.alignSelection('left') },
+    { label: 'Align centre', icon: 'i-align-center', action: () => cmds.alignSelection('hcenter') },
+    { label: 'Align right', icon: 'i-align-right', action: () => cmds.alignSelection('right') },
+    { sep: true },
+    { label: 'Align top', icon: 'i-align-top', action: () => cmds.alignSelection('top') },
+    { label: 'Align middle', icon: 'i-align-middle', action: () => cmds.alignSelection('vcenter') },
+    { label: 'Align bottom', icon: 'i-align-bottom', action: () => cmds.alignSelection('bottom') },
+    { sep: true },
+    { label: 'Distribute across', icon: 'i-distribute-h', action: () => cmds.distributeSelection('x') },
+    { label: 'Distribute down', icon: 'i-distribute-v', action: () => cmds.distributeSelection('y') },
   ];
 }
 
@@ -276,7 +316,25 @@ function canvasEntries(at) {
 // Rendering
 // ---------------------------------------------------------------------------
 
+/**
+ * Replace the open menu's contents in place, keeping the same anchor and the
+ * same owed-keyboard. The drill-down's one primitive: `render` builds a fresh
+ * node, so the old one is dropped first - but without close()'s focus hand-back,
+ * because the menu is not closing, it is turning a page.
+ */
+function swap(entries) {
+  if (node) { node.remove(); node = null; }
+  render(entries, lastX, lastY);
+}
+
+/** A child menu, fronted by the row that walks back to its parent. */
+function subMenu(sub, parent) {
+  return [{ label: 'Back', icon: 'i-chevron-left', to: parent }, { sep: true }, ...sub];
+}
+
 function render(entries, clientX, clientY) {
+  lastX = clientX;
+  lastY = clientY;
   node = document.createElement('div');
   node.id = 'ctx-menu';
   node.setAttribute('role', 'menu');
@@ -331,10 +389,21 @@ function render(entries, clientX, clientY) {
     // the same sprite as everything else, rather than being the one glyph in
     // the row set in a typeface.
     if (entry.check != null) btn.append(icon('i-check', 'ctx-tick'));
-    btn.addEventListener('click', () => {
-      close();
-      entry.action();
-    });
+    // Three kinds of row. A `sub` opens a child menu in place; a `to` is the
+    // Back row that returns to a parent menu; everything else runs its action
+    // and closes. The two navigators re-render rather than fly a second panel
+    // out - the flat renderer, the keyboard walk and the placement all already
+    // work, and a drill-down reuses every bit of it.
+    if (entry.sub || entry.to) {
+      btn.setAttribute('aria-haspopup', 'menu');
+      if (entry.sub) btn.append(icon('i-chevron-right', 'ctx-chevron'));
+      btn.addEventListener('click', () => swap(entry.sub ? subMenu(entry.sub, entries) : entry.to));
+    } else {
+      btn.addEventListener('click', () => {
+        close();
+        entry.action();
+      });
+    }
     node.append(btn);
   }
 
