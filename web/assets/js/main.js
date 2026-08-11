@@ -288,9 +288,9 @@ bus.on('board:load', () => {
   // Parsed geometry is keyed by asset hash and the old board's assets are gone.
   resetModels();
   syncBoardMode();
-  requestAnimationFrame(() => {
-    for (const it of board.items) if (it.type === 'note') growNote(it.id);
-  });
+  // No grow-all here: loadBoard() emits a payloadless 'items' right after this,
+  // whose else-branch above already re-grows every note in one rAF pass. Doing it
+  // in both places sized every note on the board twice on each load.
   openingView();
   el('hud').hidden = !board.settings.hud;
   paintSnap();
@@ -591,6 +591,21 @@ if ('launchQueue' in window) {
 
 if ('serviceWorker' in navigator) {
   addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(err => console.warn('[mbrd] sw:', err));
+    navigator.serviceWorker.register('sw.js').then(reg => {
+      // A new worker installing while a page is already controlled means a fresh
+      // build shipped mid-session. sw.js self-promotes (skipWaiting + claim), so
+      // the code swaps under the running tab; tell the user rather than reload out
+      // from under them (jarring mid-import or mid-edit). Guarded on an existing
+      // controller so the first-ever install stays silent.
+      reg.addEventListener('updatefound', () => {
+        const fresh = reg.installing;
+        if (!fresh) return;
+        fresh.addEventListener('statechange', () => {
+          if (fresh.state === 'installed' && navigator.serviceWorker.controller) {
+            toast('New version ready — reload to update');
+          }
+        });
+      });
+    }).catch(err => console.warn('[mbrd] sw:', err));
   });
 }

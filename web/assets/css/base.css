@@ -415,3 +415,25 @@ body {
 :root[data-board-mode="mobile"] #grain { display: none; }
 
 button, input, select, textarea { font: inherit; color: inherit; }
+
+/* Windows High Contrast and other forced-colors modes.
+ *
+ * In forced-colors the browser throws out the palette: paper fills, hairlines and
+ * accents all collapse to a handful of system colours, so any control the design
+ * distinguishes by its fill alone (most of the furniture on the glass) loses its
+ * edge and any state carried by a background tint (a pressed toolbar tool, a
+ * shuffle that is on) goes invisible. This restores the two things that break:
+ * a real border on the floating furniture so it reads as an object over the board,
+ * and an outline for focus and for the on/pressed states. Kept deliberately small -
+ * the query itself is the guard, so it cannot touch the ordinary palette. */
+@media (forced-colors: active) {
+  #menu-btn, #mobile-header-edit-btn, #mobile-find-btn, #bin, #bin-btn,
+  #history-ctl, #zoom-ctl, #toolbar, #nowplaying, #busy,
+  #sidebar, #header-panel, .player-window, #search, #menu, #pick {
+    border: 1px solid CanvasText;
+  }
+  /* Keyboard focus stays obvious even where the app draws its own accent ring. */
+  :focus-visible { outline: 2px solid Highlight; outline-offset: 2px; }
+  /* States the design shows by fill: make them an outline instead. */
+  [aria-pressed="true"], .is-on, .is-selected { outline: 2px solid Highlight; }
+}

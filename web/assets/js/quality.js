@@ -128,13 +128,13 @@ const listeners = new Set();
 export const qualityLevel = () => level;
 
 /** The flags the current stop asks for, before any override. */
-export const qualityPreset = (id = level) => ({ ...(PRESETS[id] || PRESETS[DEFAULT_LEVEL]) });
+export const qualityPreset = (id = level) => ({ ...(Object.hasOwn(PRESETS, id) ? PRESETS[id] : PRESETS[DEFAULT_LEVEL]) });
 
 /** Whether a flag has been pinned by hand rather than left to the dial. */
 export const qualityOverridden = key => key in overrides;
 
 function resolve() {
-  const preset = PRESETS[level] || PRESETS[DEFAULT_LEVEL];
+  const preset = Object.hasOwn(PRESETS, level) ? PRESETS[level] : PRESETS[DEFAULT_LEVEL];
   for (const key of KEYS) {
     quality[key] = key in overrides ? overrides[key] : preset[key];
   }
@@ -156,7 +156,10 @@ function persist() {
 /** Read the saved setting. Called once, by ui/quality.js, after boot. */
 export function initQuality(stored = readPrefJSON(PREF)) {
   const saved = stored && typeof stored === 'object' ? stored : {};
-  level = PRESETS[saved.level] ? saved.level : DEFAULT_LEVEL;
+  // Object.hasOwn, not a truthy PRESETS[saved.level]: localStorage is anyone's
+  // to edit, and "__proto__"/"constructor" would resolve to a truthy prototype
+  // member, pass the guard, and make every resolved flag undefined.
+  level = Object.hasOwn(PRESETS, saved.level) ? saved.level : DEFAULT_LEVEL;
   overrides = cleanOverrides(saved.over);
   resolve();
   announce();
@@ -193,7 +196,7 @@ function cleanOverrides(from) {
  * has to give you shadows back or the stop is a lie.
  */
 export function setQualityLevel(id) {
-  if (!PRESETS[id] || id === level) return quality;
+  if (!Object.hasOwn(PRESETS, id) || id === level) return quality;
   level = id;
   overrides = {};
   resolve();

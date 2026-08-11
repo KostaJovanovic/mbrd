@@ -276,6 +276,38 @@ function alignDistributeEntries() {
   ];
 }
 
+/**
+ * The connection editor's fold, for a line the right-click landed on. Direction
+ * and style are each a short radio of ticked rows; the label is asked for, since
+ * it is the one setting that is not a choice from a list. Every row files one
+ * undo step through cmds.setConnectionStyle. "One end" and "other end" rather
+ * than a card's name, because the pair is unordered and neither end has a name a
+ * person would recognise - the two simply point opposite ways.
+ */
+function connectionEntries(conn) {
+  const meta = cmds.connectionStyle(conn.a, conn.b) || {};
+  const dir = meta.dir || 'none';
+  const style = meta.style || 'solid';
+  const set = patch => cmds.setConnectionStyle(conn.a, conn.b, patch);
+  return [
+    { label: 'No arrows', icon: 'i-connect', check: dir === 'none', action: () => set({ dir: 'none' }) },
+    { label: 'Arrow one end', icon: 'i-arrow-fwd', check: dir === 'fwd', action: () => set({ dir: 'fwd' }) },
+    { label: 'Arrow other end', icon: 'i-arrow-back', check: dir === 'back', action: () => set({ dir: 'back' }) },
+    { label: 'Arrows both ends', icon: 'i-arrow-both', check: dir === 'both', action: () => set({ dir: 'both' }) },
+    { sep: true },
+    { label: 'Solid line', icon: 'i-line-solid', check: style === 'solid', action: () => set({ style: 'solid' }) },
+    { label: 'Dashed line', icon: 'i-line-dashed', check: style === 'dashed', action: () => set({ style: 'dashed' }) },
+    { label: 'Dotted line', icon: 'i-line-dotted', check: style === 'dotted', action: () => set({ style: 'dotted' }) },
+    { sep: true },
+    { label: meta.label ? 'Change label' : 'Add a label', icon: 'i-edit-text',
+      action: () => cmds.editConnectionLabel(conn.a, conn.b) },
+    { label: 'Remove label', icon: 'i-edit-text', hidden: !meta.label, action: () => set({ label: '' }) },
+    { sep: true },
+    { label: 'Remove connection', icon: 'i-delete', danger: true,
+      action: () => cmds.removeConnection(conn.a, conn.b) },
+  ];
+}
+
 function canvasEntries(at) {
   // A press inside a region falls through to the board - the fence's face takes
   // no pointer, which is what keeps panning and banding working inside one - so
@@ -285,7 +317,14 @@ function canvasEntries(at) {
   // only swaps: there is one row either way, because the two are the same
   // question asked of different scopes.
   const fence = cmds.fenceUnder(at);
+  // A line the click landed on, if any. It leads the menu when there is one - the
+  // thing directly under the pointer is what a right-click is most likely about.
+  const conn = cmds.connectionUnder(at);
   return [
+    ...(conn ? [
+      { label: 'Connection', icon: 'i-connect', sub: connectionEntries(conn) },
+      { sep: true },
+    ] : []),
     { label: 'Add a note here', icon: 'i-pen', action: () => cmds.addNoteAt(at) },
     { label: 'Add files', icon: 'i-plus', action: () => cmds.addFiles() },
     { sep: true },

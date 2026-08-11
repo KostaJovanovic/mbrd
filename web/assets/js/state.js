@@ -60,10 +60,10 @@ import {
 import {
   cloneSettings, layoutSettingsOf, settingsFor, dropIdIndex,
   dedupeIds, MAX_ITEMS, MAX_CONNECTIONS, pairKey, normalizeConnections,
-  normalizeAudioOrder,
+  normalizeAudioOrder, connMeta, CONN_DIRECTIONS, CONN_STYLES,
 } from './board-model.js';
 
-export { MAX_CONNECTIONS, pairKey };
+export { MAX_CONNECTIONS, pairKey, CONN_DIRECTIONS, CONN_STYLES };
 
 // Stuckness, one level down - see sticky.js. Questions about geometry; the
 // mutations that act on their answers are here.
@@ -316,9 +316,11 @@ export function addConnections(pairs, label = 'Connect') {
     if (!a || !b || a === b) continue;
     const key = pairKey(a, b);
     if (keys.has(key) || taken.has(key)) continue;
+    // Checked before the push, not after: at capacity the old order pushed one
+    // pair before breaking, leaving board.connections one past MAX_CONNECTIONS.
+    if (board.connections.length + fresh.length >= MAX_CONNECTIONS) break;
     taken.add(key);
     fresh.push([a, b]);
-    if (board.connections.length + fresh.length >= MAX_CONNECTIONS) break;
   }
   if (!fresh.length) return 0;
   const before = board.connections;
@@ -345,6 +347,42 @@ export function clearConnections(label = 'Remove all connections') {
   const write = list => { board.connections = list; bus.emit('connections'); };
   commit(label, () => write([]), () => write(before), before.length);
   return before.length;
+}
+
+/**
+ * Change how one connection is drawn - its direction, line style or label.
+ *
+ * The edit door that pairs with toggleConnection's draw-or-part. `patch` is
+ * merged over the connection's current settings and run back through connMeta(),
+ * so the same validation the file reader applies also gates a live edit, and a
+ * patch that sets everything back to a default leaves a bare `[a, b]` again. One
+ * commit, and it emits 'connections' like the others - which is what makes
+ * canvas/web.js repaint the line with its new look. No geometry changes, so the
+ * cached route is reused; only the drawing is redone.
+ *
+ * Returns whether a matching connection was found to edit.
+ */
+export function updateConnection(a, b, patch) {
+  if (!a || !b) return false;
+  const key = pairKey(a, b);
+  const idx = board.connections.findIndex(p => pairKey(p[0], p[1]) === key);
+  if (idx < 0) return false;
+  const cur = board.connections[idx];
+  const meta = connMeta({ ...(cur[2] || {}), ...patch });
+  const nextPair = meta ? [cur[0], cur[1], meta] : [cur[0], cur[1]];
+  const before = board.connections;
+  const after = board.connections.map((p, i) => (i === idx ? nextPair : p));
+  const write = list => { board.connections = list; bus.emit('connections'); };
+  commit('Edit connection', () => write(after), () => write(before));
+  return true;
+}
+
+/** The display settings of one connection, or null if it is a plain line. */
+export function connectionMeta(a, b) {
+  if (!a || !b) return null;
+  const key = pairKey(a, b);
+  const found = board.connections.find(p => pairKey(p[0], p[1]) === key);
+  return found?.[2] || null;
 }
 
 /**
@@ -413,6 +451,12 @@ export function removeItems(ids, label = 'Delete') {
     // when this argument is evaluated - and it is bounded by TRASH_LIMIT
     // anyway, so counting it would change nothing worth the wrong number.
     removed.length);
+  // commit() has now run the do half once, so `evicted` holds what this delete
+  // pushed off the bottom of a full bin. Say so - those entries are past the point
+  // of getting back. Fired here, not inside the closure, so undo/redo replays (which
+  // re-run the closure) do not re-announce it. A UI module toasts (ui/trash.js);
+  // state does not reach for the DOM itself.
+  if (evicted.length) bus.emit('trash:evicted', evicted.length);
 }
 
 /**
@@ -1131,7 +1175,11 @@ export function copyItems(ids) {
  * did was reset the fade.
  */
 function take(ids) {
-  const src = itemsIn(ids);
+  return takeItems(itemsIn(ids));
+}
+
+/** The clipboard half of take(), given items already resolved and z-sorted. */
+function takeItems(src) {
   if (!src.length) return '';
   clipboard.items = src.map(i => cloneItem(i));
   clipboard.pastes = 0;
@@ -1154,9 +1202,12 @@ const count = n => `${n} item${n === 1 ? '' : 's'}`;
  * "over there".
  */
 export function cutItems(ids) {
-  const doomed = itemsIn(ids).map(i => i.id);
-  const text = take(doomed);
+  // Resolve once and reuse for both the copy and the delete, rather than
+  // itemsIn(ids) here and again inside take() - two full board filters + sorts.
+  const src = itemsIn(ids);
+  const text = takeItems(src);
   if (!text) return '';
+  const doomed = src.map(i => i.id);
   removeItems(doomed, doomed.length > 1 ? `Cut ${doomed.length} items` : 'Cut');
   toast(`Cut ${count(doomed.length)} to the bin`);
   return text;
@@ -1226,14 +1277,24 @@ export function pasteItems(at = null) {
 }
 
 
+/**
+ * A note's name is its first line, capped - the copy Search reads (ui/search.js).
+ * It is taken at creation (import/drop.js) and has to be re-taken on every edit,
+ * or Find keeps matching and showing the title the note had when it was made.
+ */
+const noteName = text => text.split('\n')[0].slice(0, 40) || 'Note';
+
 export function setItemText(id, text) {
   const it = byId(id);
   if (it?.type === 'note') text = text.slice(0, NOTE_MAX);
   if (!it || it.meta.text === text) return;
   const prev = it.meta.text;
+  const isNote = it.type === 'note';
+  const prevName = it.name;
+  const nextName = isNote ? noteName(text) : it.name;
   commit('Edit note',
-    () => { byId(id).meta.text = text; bus.emit('item', id); },
-    () => { byId(id).meta.text = prev; bus.emit('item', id); });
+    () => { const x = byId(id); if (!x) return; x.meta.text = text; x.name = nextName; bus.emit('item', id); },
+    () => { const x = byId(id); if (!x) return; x.meta.text = prev; x.name = prevName; bus.emit('item', id); });
 }
 
 /**
@@ -1295,15 +1356,21 @@ export function setNoteContent(id, rich, text) {
   text = String(text ?? '').slice(0, NOTE_MAX);
   const prevRich = it.meta.rich;
   const prevText = it.meta.text;
+  const prevName = it.name;
   if (prevText === text && JSON.stringify(prevRich) === JSON.stringify(rich)) return;
-  const write = (t, r) => {
-    const m = byId(id).meta;
+  const write = (t, r, nm) => {
+    const x = byId(id);
+    if (!x) return;
+    const m = x.meta;
     m.text = t;
     if (r === undefined) delete m.rich;
     else m.rich = r;
+    x.name = nm;
     bus.emit('item', id);
   };
-  commit('Edit note', () => write(text, rich), () => write(prevText, prevRich));
+  commit('Edit note',
+    () => write(text, rich, noteName(text)),
+    () => write(prevText, prevRich, prevName));
 }
 
 /**

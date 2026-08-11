@@ -12,7 +12,7 @@
 // Written out in full rather than composed from PREFIX, because save.bat bumps
 // this line by regex on every commit and would not recognise an expression.
 // tests/sw.test.js holds the two together.
-const VERSION = 'mbrd-v127';
+const VERSION = 'mbrd-v128';
 const PREFIX = 'mbrd-';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) turns the
@@ -101,6 +101,12 @@ const SHELL = [
   './assets/js/import/drop.js',
   './assets/js/import/budget.js',
   './assets/js/import/artwork.js',
+  './assets/js/import/preview.js',
+  // Loaded on demand when a PDF is imported. It is in the shell so the dynamic
+  // import resolves offline - where it then degrades to a named card, since the
+  // pdf.js library it reaches for is cross-origin and out of the cache by design.
+  // See the header of import/pdf.js.
+  './assets/js/import/pdf.js',
   './assets/js/import/formats.js',
   './assets/js/arrange/arrangements.js',
   './assets/js/storage/assets.js',
@@ -110,6 +116,7 @@ const SHELL = [
   './assets/js/storage/session.js',
   './assets/js/storage/naming.js',
   './assets/js/storage/zip.js',
+  './assets/js/storage/library.js',
   './assets/js/canvas/web.js',
   './assets/js/canvas/ghosts.js',
   './assets/js/canvas/stills.js',
@@ -150,6 +157,8 @@ const SHELL = [
   './assets/js/ui/panel-stack.js',
   './assets/js/ui/look.js',
   './assets/js/ui/pigments.js',
+  './assets/js/ui/snapshot.js',
+  './assets/js/ui/library.js',
   './assets/js/ui/menu.js',
   './assets/js/ui/fence-prompt.js',
   './assets/js/ui/trash.js',

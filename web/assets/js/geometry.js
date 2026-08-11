@@ -489,3 +489,47 @@ export function distributeTargets(items, axis) {
   }
   return out;
 }
+
+/**
+ * Push apart any items in a set of targets that would overlap along one axis,
+ * keeping their order and the group's centre.
+ *
+ * Aligning is what needs this: lining cards up on a shared edge puts them all in
+ * the same band across the other axis, where any two whose extents crossed now
+ * sit on top of each other. This is the fix, and it is exactly the overlap that
+ * can happen - once the aligned axis is shared, two items overlap if and only if
+ * their extents overlap on the *other* one, so a single sweep along that axis
+ * settles it. `axis` is that other axis, 'x' or 'y'.
+ *
+ * A sweep, not a repack: items already clear of each other keep the gap they
+ * had, and only a run that would collide is opened up, each pushed just past the
+ * one before it plus `gap`. The whole run is then shifted back so its centre
+ * lands where the group's centre was, so aligning a column does not also drift
+ * it off to one side. `targets` is [{id, x, y}] and `items` supplies the extents;
+ * the returned targets change only the swept axis, leaving the aligned one exact.
+ */
+export function separateOverlaps(targets, items, axis, gap = 0) {
+  if (targets.length < 2) return targets;
+  const byId = new Map(items.map(it => [it.id, it]));
+  const rows = targets.map(t => {
+    const it = byId.get(t.id) || { w: 0, h: 0 };
+    const { hw, hh } = rotatedExtents(it);
+    return { t, half: axis === 'x' ? hw : hh, pos: axis === 'x' ? t.x : t.y };
+  });
+  const origLo = Math.min(...rows.map(r => r.pos - r.half));
+  const origHi = Math.max(...rows.map(r => r.pos + r.half));
+  const order = [...rows].sort((a, b) => a.pos - b.pos);
+  let prevEdge = -Infinity;
+  for (const r of order) {
+    const min = prevEdge + gap + r.half;
+    if (r.pos < min) r.pos = min;
+    prevEdge = r.pos + r.half;
+  }
+  const newLo = order[0].pos - order[0].half;
+  const newHi = order[order.length - 1].pos + order[order.length - 1].half;
+  const shift = (origLo + origHi) / 2 - (newLo + newHi) / 2;
+  return rows.map(r => ({
+    ...r.t,
+    ...(axis === 'x' ? { x: r.pos + shift } : { y: r.pos + shift }),
+  }));
+}

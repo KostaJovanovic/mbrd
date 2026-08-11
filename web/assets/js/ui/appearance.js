@@ -736,7 +736,7 @@ async function recolourFromBoard({ silent = false } = {}) {
   // pictures is the palette standing on" is these, whatever they turn out to
   // say. Recording it afterwards would leave a board whose pictures have no
   // colour in them re-running the whole extraction on every subsequent edit.
-  lastSources = sourceKey();
+  lastSources = sourceKey(hashes);
   const failed = why => {
     if (!silent || lastFailure !== why) toast(why);
     lastFailure = why;

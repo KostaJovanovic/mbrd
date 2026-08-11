@@ -1,7 +1,7 @@
 // Getting out of the way.
 //
 // The chrome is four small things pinned to the corners of the glass, and none
-// of them is what anybody came here to look at. After five seconds of nothing
+// of them is what anybody came here to look at. After fifteen seconds of nothing
 // happening they fade out and the board is the whole window; the first sign of
 // life brings them back.
 //
@@ -35,7 +35,7 @@ export function initIdle(vp) {
   vp?.onChange?.(poke);
   // A page that comes back from a background tab has been "still" for however
   // long it was away, which is not the same as somebody sitting in front of it
-  // doing nothing. Start the five seconds again rather than fading instantly.
+  // doing nothing. Start the fifteen seconds again rather than fading instantly.
   addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') poke();
   });

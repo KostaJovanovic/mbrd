@@ -102,17 +102,33 @@ function shoot(img, twin) {
   const scale = Math.min(1, MAX_STILL / Math.max(img.naturalWidth, img.naturalHeight));
   const w = Math.max(1, Math.round(img.naturalWidth * scale));
   const h = Math.max(1, Math.round(img.naturalHeight * scale));
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
+  // Draw the current frame now - synchronously, before the GIF advances a
+  // frame - but leave the encode to an async convertToBlob. capture(true) runs
+  // mid zoom-out, once per mounted GIF; a synchronous toDataURL('image/png')
+  // per twin blocked that gesture frame. OffscreenCanvas + WebP matches what
+  // poster.js/display.js already do for exactly this reason.
+  let canvas;
   try {
+    canvas = new OffscreenCanvas(w, h);
     canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-    // is-ready is set on load rather than here: the attribute lands
-    // immediately but the data URL still has to decode, and switching to it
-    // early would show a blank where the picture was.
-    twin.addEventListener('load', () => twin.classList.add('is-ready'), { once: true });
-    twin.src = canvas.toDataURL('image/png');
   } catch {
-    // A tainted canvas. Better a GIF that keeps playing than a blank square.
+    return;
   }
+  canvas.convertToBlob({ type: 'image/webp', quality: 0.8 }).then(blob => {
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    // is-ready is set on load rather than here: the attribute lands
+    // immediately but the blob still has to decode, and switching to it early
+    // would show a blank where the picture was. The previous frame's object
+    // URL is revoked once the new one has painted, so re-shoots do not leak.
+    twin.addEventListener('load', () => {
+      twin.classList.add('is-ready');
+      if (twin._stillUrl) URL.revokeObjectURL(twin._stillUrl);
+      twin._stillUrl = url;
+    }, { once: true });
+    twin.src = url;
+  }).catch(() => {
+    // A tainted canvas rejects here. Better a GIF that keeps playing than a
+    // blank square.
+  });
 }

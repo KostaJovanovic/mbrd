@@ -28,6 +28,7 @@ import { board, bus, isDefaultTitle } from '../state.js';
 import { baseName, clamp } from '../util.js';
 import { mobileOrder } from '../arrange/arrangements.js';
 import { assetURL } from '../storage/assets.js';
+import { linkURL } from '../canvas/renderers.js';
 import {
   registerPlayer, releasePlayers, nowPlaying, onNowPlaying, playTrack, PLAY_ICON, clock,
 } from '../canvas/audio.js';
@@ -326,29 +327,27 @@ function noteText(item) {
 }
 
 function fillLink(t) {
+  // A link stores its URL in meta.url (like the canvas card, renderers.js); validate
+  // it through the same scheme check so a non-http(s) string makes an inert card
+  // rather than a live window.open.
+  const u = linkURL(t.item.meta?.url);
+  const host = u ? u.hostname.replace(/^www\./, '') : '';
   const card = div('feed-link');
   const name = div('feed-link-name');
-  name.textContent = t.item.name || t.item.meta?.href || 'Link';
-  const host = div('feed-link-host');
-  host.textContent = hostOf(t.item);
-  card.append(name, host);
+  name.textContent = t.item.name || host || t.item.meta?.url || 'Link';
+  const hostEl = div('feed-link-host');
+  hostEl.textContent = host;
+  card.append(name, hostEl);
   t.el.appendChild(card);
-  const href = t.item.meta?.href;
-  if (href) {
+  if (u) {
     t.el.setAttribute('role', 'link');
     t.el.tabIndex = 0;
-    const open = () => window.open(href, '_blank', 'noopener');
+    const open = () => window.open(u.href, '_blank', 'noopener');
     t.el.addEventListener('click', open);
     t.el.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); open(); }
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
     });
   }
-}
-
-function hostOf(item) {
-  const href = item.meta?.href;
-  if (!href) return '';
-  try { return new URL(href).hostname.replace(/^www\./, ''); } catch { return href; }
 }
 
 function fillSwatch(t) {
@@ -430,9 +429,13 @@ function releaseOffscreen() {
   const npEl = nowPlaying()?.el || null;
   const top = -root.clientHeight;
   const bottom = root.clientHeight * 2;
+  // Hoisted: the scroll container's own top does not move as fillTile swaps a
+  // child video for a poster, so reading it once keeps the loop from forcing a
+  // layout flush for the invariant rect on every mounted tile.
+  const rootTop = root.getBoundingClientRect().top;
   for (const t of tiles.values()) {
     if (!t.video || t.video === npEl) continue;
-    const y = t.el.getBoundingClientRect().top - root.getBoundingClientRect().top;
+    const y = t.el.getBoundingClientRect().top - rootTop;
     if (y < top || y > bottom) {
       releasePlayers(t.el);
       t.video = null;

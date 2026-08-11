@@ -68,6 +68,28 @@ Documented so "Safari support" does not imply feature parity on every point rele
   playback needs 18.4; WebM on iOS needs 17.4. These only matter if the optional
   ffmpeg core is bundled, which this repo does not ship.
 
+## Known limitations
+
+Deliberate boundaries rather than bugs, documented so they read as stated scope:
+
+- **HEVC/H.265 posters need the network, and show black offline.** A clip the
+  browser cannot decode itself (HEVC everywhere but Safari, AV1 on old builds,
+  ProRes) has its poster frame pulled by the optional ffmpeg core, which is a
+  one-time ~32 MB fetch from a CDN (`optimize/media.js`) and is deliberately *not*
+  in the service-worker precache. So the first HEVC poster on a fresh install
+  needs a connection, and offline it degrades to a black rectangle with a dead
+  play button. The clip itself still plays where the browser can decode it; only
+  the still is affected. This is cross-browser, not a Safari quirk — Safari is the
+  one desktop browser that decodes HEVC natively and so rarely reaches this path.
+- **No keyboard navigation on the spatial canvas.** Board items carry `role` and
+  an accessible name for assistive tech (`canvas/items.js`), but there is no
+  roving-tabindex / arrow-to-move-focus / Enter-to-select model yet: items are
+  selected and created by pointer, and the arrow keys nudge a selection made with
+  the mouse rather than moving focus between cards. The full keyboard model is a
+  browser-verified change held back to avoid a focus-order regression (AUD-09).
+  The chrome, panels, dialogs and the Find palette are all keyboard-reachable; it
+  is the canvas surface itself that is pointer-first.
+
 ## Release checklist
 
 The Node suite (`npm test`) validates pure logic and structural invariants; it

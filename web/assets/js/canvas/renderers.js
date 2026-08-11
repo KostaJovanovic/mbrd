@@ -353,7 +353,11 @@ const RENDERERS = {
     // copy. Those, and any picture whose copy is not made yet, fall back to the
     // original URL; while a copy renders the card shows its thumbnail if it has
     // one (set on the twin below), never the full-res original.
-    const hash = item.asset?.hash;
+    // The preview, when the original is a picture the browser cannot decode
+    // (HEIC, RAW): asset.hash still names the untouched original for export and
+    // for the day a decoder lands, but the pixels drawn here are the camera's
+    // own embedded JPEG - see import/preview.js and meta.preview in drop.js.
+    const hash = item.meta?.preview || item.asset?.hash;
     const vector = (getAsset(hash)?.mime || '').toLowerCase().includes('svg');
     if (hash && !isAnimated(item) && !vector) {
       const ready = displayURLReady(hash);

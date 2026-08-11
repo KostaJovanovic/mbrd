@@ -394,7 +394,16 @@ export function createViewPerf(vp) {
 export function initPerfHash(perf) {
   const armPerf = () => {
     const run = location.hash.match(/perf(\d)?/);
-    if (!run) { if (perf.active) perf.off(); return; }
+    if (!run) {
+      // off() only stops the profiler; a run entered as #perf2/#perf3 also set
+      // Mobile kill switches (hidden chrome, skipped grid writes) that would
+      // otherwise persist after the hash is cleared. Put them back to default.
+      if (perf.active) {
+        perf.off();
+        perf.mobile({ legacyVars: false, chrome: true, gridPos: true });
+      }
+      return;
+    }
     perf.mobile({
       legacyVars: run[1] === '1',
       chrome: run[1] !== '2',

@@ -730,8 +730,13 @@ function openComposer(id, added) {
       dlg.removeEventListener('cancel', onEscape);
       mount.style.width = mount.style.height = '';
       dlg.close();
-      if (home) home.insertBefore(node, after);
-      else node.remove();
+      // `after` was captured before the dialog opened; culling can detach that
+      // sibling while the note is being edited, and insertBefore(node, detached)
+      // throws NotFoundError and strands the card. Append when it is gone.
+      if (home) {
+        if (after && after.parentNode === home) home.insertBefore(node, after);
+        else home.appendChild(node);
+      } else node.remove();
       if (text?.trim()) {
         // It landed. The card is already where the note lives - it was made at
         // the middle of the view, which is where the dialog was - so this is

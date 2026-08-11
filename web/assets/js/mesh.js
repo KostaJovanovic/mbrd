@@ -286,6 +286,9 @@ export function parseOBJ(bytes) {
       // to the positions - white, which is the identity when it is multiplied
       // into a material or handed to a shader that is not using colours.
       if (n.length >= 6) {
+        // First colour seen: backfill white for every triangle vertex already
+        // emitted while outC was being skipped, so it lines up with the positions.
+        if (!hasVC) { for (let k = outC.length; k < outP.length; k++) outC.push(1); }
         hasVC = true;
         vc.push(clamp01(+n[3]), clamp01(+n[4]), clamp01(+n[5]));
       } else vc.push(1, 1, 1);
@@ -303,16 +306,21 @@ export function parseOBJ(bytes) {
       if (corners.length < 3) continue;
       for (let i = 1; i + 1 < corners.length; i++) {
         if (outP.length / 9 >= MAX_TRIANGLES) throw new MeshError(tooBig(MAX_TRIANGLES));
-        emitCorner(corners[0], vx, vn, vc, outP, outN, outC, box);
-        emitCorner(corners[i], vx, vn, vc, outP, outN, outC, box);
-        emitCorner(corners[i + 1], vx, vn, vc, outP, outN, outC, box);
+        // outC only matters when the file carried vertex colours; until the
+        // first coloured `v` line flips hasVC it is left empty rather than grown
+        // and thrown away (near the triangle ceiling that is tens of MB of
+        // transient array). The flip backfills white for what came before.
+        const wantC = hasVC ? outC : null;
+        emitCorner(corners[0], vx, vn, vc, outP, outN, wantC, box);
+        emitCorner(corners[i], vx, vn, vc, outP, outN, wantC, box);
+        emitCorner(corners[i + 1], vx, vn, vc, outP, outN, wantC, box);
         // Which material was in force, per triangle rather than per face, so it
         // stays in step with the triangles a fan actually emitted.
         triMat.push(material);
-        // A face that gave no normals gets the facet's own.
-        if (!outN[outP.length - 1] && !outN[outP.length - 2] && !outN[outP.length - 3]) {
-          fixFacetArrays(outP, outN, outP.length - 9);
-        }
+        // A corner that gave no normal gets the facet's own; corners that did
+        // keep theirs, so a face mixing explicit and missing normals (legal, e.g.
+        // `f 1//1 2//2 3`) is not flattened by one bare corner.
+        fillFacetGaps(outP, outN, outP.length - 9);
       }
     }
   }
@@ -341,8 +349,11 @@ function emitCorner(spec, vx, vn, vc, outP, outN, outC, box) {
   else outN.push(0, 0, 0);
   // Expanded to the triangle-vertex order the position buffer is already in, so
   // the two are one array length and the renderer needs no index of its own.
-  const c = pi * 3;
-  outC.push(vc[c] ?? 1, vc[c + 1] ?? 1, vc[c + 2] ?? 1);
+  // `outC` is null until a coloured `v` line has appeared - see the caller.
+  if (outC) {
+    const c = pi * 3;
+    outC.push(vc[c] ?? 1, vc[c + 1] ?? 1, vc[c + 2] ?? 1);
+  }
   grow(box, x, y, z);
 }
 
@@ -400,24 +411,20 @@ export function applyMaterials(mesh, materials) {
   if (!mesh?.triMat || !materials?.size) return false;
   const colors = new Float32Array(mesh.count * 3);
   let any = false;
+  // One pass: each triangle gets its material's Kd, or white where no material
+  // claimed it (zero would draw black; white is the neutral this file uses for an
+  // uncoloured vertex). If nothing matched at all the mesh is left untouched.
   for (let t = 0; t < mesh.triMat.length; t++) {
     const kd = materials.get(mesh.triMat[t]);
-    if (!kd) continue;
-    any = true;
+    if (kd) any = true;
+    const r = kd ? kd[0] : 1, g = kd ? kd[1] : 1, b = kd ? kd[2] : 1;
     for (let k = 0; k < 9; k += 3) {
-      colors[t * 9 + k] = kd[0];
-      colors[t * 9 + k + 1] = kd[1];
-      colors[t * 9 + k + 2] = kd[2];
+      colors[t * 9 + k] = r;
+      colors[t * 9 + k + 1] = g;
+      colors[t * 9 + k + 2] = b;
     }
   }
   if (!any) return false;
-  // Triangles no material claimed are left at zero by the fill above, which
-  // would draw them black. White is the neutral: it is what an uncoloured
-  // vertex means everywhere else in this file.
-  for (let t = 0; t < mesh.triMat.length; t++) {
-    if (materials.get(mesh.triMat[t])) continue;
-    for (let k = 0; k < 9; k++) colors[t * 9 + k] = 1;
-  }
   mesh.colors = colors;
   return true;
 }
@@ -554,8 +561,14 @@ function addPrimitive(json, buffers, prim, m, outP, outN, box) {
   // Normals transform by the inverse transpose, not the matrix - a non-uniform
   // scale would otherwise leave them off the surface and the shading wrong.
   const nm = normalMatrix(m);
+  const verts = pos.length / 3;
   for (let k = 0; k < n; k++) {
     const v = idx ? idx[k] : k;
+    // An index accessor is untrusted: a value past the POSITION accessor would
+    // read undefined -> NaN coordinates, which grow() ignores and finish() does
+    // not reject, so the model would render as garbage rather than earn the clear
+    // refusal every other bounds check in this file gives a broken file.
+    if (v < 0 || v >= verts) throw new MeshError('This model refers to vertices it does not contain');
     const p = xform(m, pos[v * 3], pos[v * 3 + 1], pos[v * 3 + 2]);
     outP.push(p[0], p[1], p[2]);
     grow(box, p[0], p[1], p[2]);
@@ -745,6 +758,23 @@ function fixFacetArrays(p, nrm, base) {
   }
 }
 
+/**
+ * Fill only the corners of the last triangle that carry no normal (0,0,0) with
+ * the facet's own, leaving supplied per-corner normals intact. The face normal
+ * is computed lazily, so a triangle that already has all three costs nothing.
+ */
+function fillFacetGaps(p, nrm, base) {
+  let n = null;
+  for (let v = 0; v < 3; v++) {
+    const o = base + v * 3;
+    if (nrm[o] || nrm[o + 1] || nrm[o + 2]) continue;
+    if (!n) n = faceNormal(p[base], p[base + 1], p[base + 2],
+                           p[base + 3], p[base + 4], p[base + 5],
+                           p[base + 6], p[base + 7], p[base + 8]);
+    nrm[o] = n[0]; nrm[o + 1] = n[1]; nrm[o + 2] = n[2];
+  }
+}
+
 function faceNormal(ax, ay, az, bx, by, bz, cx, cy, cz) {
   const ux = bx - ax, uy = by - ay, uz = bz - az;
   const vx = cx - ax, vy = cy - ay, vz = cz - az;
@@ -764,7 +794,10 @@ function finish(positions, normals, box) {
   // one whose were.
   for (let i = 0; i < normals.length; i += 3) {
     const len = Math.hypot(normals[i], normals[i + 1], normals[i + 2]);
-    if (!len) { normals[i + 2] = 1; continue; }
+    // `!(len > 0)` rather than `!len`, so a NaN component (a malformed file whose
+    // normals ran short of its positions) collapses to a clean (0,0,1) too - `!NaN`
+    // is true but only ever set z, leaving NaN in x/y for the shader.
+    if (!(len > 0)) { normals[i] = 0; normals[i + 1] = 0; normals[i + 2] = 1; continue; }
     normals[i] /= len; normals[i + 1] /= len; normals[i + 2] /= len;
   }
   return { positions, normals, count: positions.length / 3, bounds: box };

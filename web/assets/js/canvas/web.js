@@ -125,7 +125,14 @@ const WEB_FADE_BAND = 0.15;
 
 let svg = null;
 let path = null;         // every settled thread, as subpaths of one `d`
+let failPath = null;     // the give-up (straight fallback) threads, drawn dimmed and dashed
 let fadeLayer = null;    // <g> holding only the threads currently fading
+// The styled connections - the ones somebody gave a direction, a dash or a
+// label - each drawn as its own element. Kept out of the bulk path on purpose:
+// a dash and an arrowhead are per-line, where the bulk path is one shared
+// stroke, and they are rare enough (a handful a board, against hundreds of plain
+// lines) that a full rebuild of this layer on each paint costs nothing.
+let decoLayer = null;
 let vp = null;           // for the visible rect; absent in tests, which then draw everything
 
 /** The box the built geometry describes, kept by build() so paint() need not re-derive it. */
@@ -239,8 +246,37 @@ export function initWeb(worldEl, viewport) {
 
   path = document.createElementNS(SVG_NS, 'path');
   path.setAttribute('fill', 'none');
+  // A second bulk path for the routes the router gave up on (web-route.js marks
+  // them straight:true). Drawn dimmed and dashed by its class so "no way found
+  // here" is legible rather than looking like an ordinary direct line.
+  failPath = document.createElementNS(SVG_NS, 'path');
+  failPath.setAttribute('fill', 'none');
+  failPath.setAttribute('class', 'web-fallback');
   fadeLayer = document.createElementNS(SVG_NS, 'g');
-  svg.append(path, fadeLayer);
+
+  // One arrowhead marker, reused at both ends. orient="auto-start-reverse" is
+  // what lets it serve as marker-start too: at the end it points the way the
+  // line travels, and at the start the same marker is flipped to point back at
+  // the first card. Built element by element rather than through innerHTML,
+  // because an <svg> written as an HTML string is parsed into the HTML namespace,
+  // where it is markup that looks right and draws nothing (see assets/icons.svg).
+  const defs = document.createElementNS(SVG_NS, 'defs');
+  const marker = document.createElementNS(SVG_NS, 'marker');
+  marker.id = 'web-arrow';
+  marker.setAttribute('viewBox', '0 0 10 10');
+  marker.setAttribute('refX', '9');
+  marker.setAttribute('refY', '5');
+  marker.setAttribute('markerWidth', '7');
+  marker.setAttribute('markerHeight', '7');
+  marker.setAttribute('orient', 'auto-start-reverse');
+  const head = document.createElementNS(SVG_NS, 'path');
+  head.setAttribute('d', 'M0 0L10 5L0 10z');
+  head.setAttribute('class', 'web-arrowhead');
+  marker.append(head);
+  defs.append(marker);
+
+  decoLayer = document.createElementNS(SVG_NS, 'g');
+  svg.append(defs, path, failPath, fadeLayer, decoLayer);
 
   // First child of #world, and it never claims a pointer - the web is a
   // backdrop for the items, not a thing you can catch hold of.
@@ -369,6 +405,8 @@ function release() {
   paintedRect = null;
   lastBox = '';
   if (path) path.setAttribute('d', '');
+  if (failPath) failPath.setAttribute('d', '');
+  if (decoLayer) while (decoLayer.firstChild) decoLayer.removeChild(decoLayer.firstChild);
 }
 
 /**
@@ -443,7 +481,8 @@ function build() {
   // sizing the <svg> to the whole board would be an element the size of the
   // board holding one short line.
   settledBox = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
-  for (const [a, b] of board.connections) {
+  for (const conn of board.connections) {
+    const [a, b] = conn;
     const pa = where.get(a);
     const pb = where.get(b);
     if (!pa || !pb) continue;
@@ -457,6 +496,12 @@ function build() {
     const seg = held && held.sig === sig
       ? held
       : { a: pa, b: pb, sig, points: [{ x: pa.x, y: pa.y }, { x: pb.x, y: pb.y }] };
+    // The display settings ride on the seg, refreshed every build even when the
+    // route is reused - an edit changes the look without moving an end, so the
+    // sig is unchanged and the seg is the held one, which must still pick up the
+    // new meta. Its direction is read against a and b in their stored order.
+    seg.meta = conn[2] || null;
+    seg.ends = { a, b };
     wanted.set(key, seg);
     // Over the path, not only over the two ends: a route that bends out around
     // a card reaches past both of them, and an <svg> clips at its own edge.
@@ -481,7 +526,10 @@ function build() {
     if (settled.has(key)) continue;
     const live = animating.get(key);
     if (!live) {
-      if (onScreen(seg)) begin(key, seg, 'in');
+      // A styled line skips the fade and settles straight in: it is drawn by its
+      // own element in decoLayer, not by the bulk path a fade hands back to, so
+      // there is no shared stroke for it to fade against.
+      if (onScreen(seg) && !seg.meta) begin(key, seg, 'in');
       else settled.add(key);
       continue;
     }
@@ -709,21 +757,101 @@ function paint(forced = false) {
   // with a solid twin under it.
   const r = cornerRadius();
   let d = '';
+  let dFail = '';
   for (const key of settled) {
     const seg = lastSeg.get(key);
     if (!seg) continue;
+    // Styled lines are drawn in decoLayer, never the bulk stroke - a dash or an
+    // arrow is per-line and this path is one shared `d`.
+    if (seg.meta) continue;
     if (vis && !meetsRect(seg.points, vis)) continue;
-    d += pathData(seg.points, r, minX, minY);
+    // A give-up route rides its own bulk path so it can be dimmed and dashed; a
+    // real route rides the normal one. Two `d` swaps, still not per-line nodes.
+    if (seg.straight) dFail += pathData(seg.points, r, minX, minY);
+    else d += pathData(seg.points, r, minX, minY);
   }
   path.setAttribute('d', d);
+  failPath.setAttribute('d', dFail);
 
   // The box's origin moves whenever the outermost end does, so every fading
   // line is repositioned each frame as well - they are relative to a corner
   // that is itself in motion. There are only ever a handful, so they are not
   // worth culling.
   for (const { el, seg } of animating.values()) {
-    el.setAttribute('d', pathData(seg.points, r, minX, minY));
+    // A line styled while it was mid-fade is drawn by decoLayer instead, so its
+    // fading element is left blank rather than showing a solid twin under the
+    // styled one. The fade timer still removes the empty element on its own.
+    el.setAttribute('d', seg.meta ? '' : pathData(seg.points, r, minX, minY));
   }
+
+  drawDecorations(minX, minY, r, vis);
+}
+
+/**
+ * Redraw the styled connections - the ones with a direction, a dash or a label.
+ *
+ * Rebuilt from nothing each paint rather than reconciled, which is the opposite
+ * of the rule the bulk path follows and right for the same reason it is wrong
+ * there: these are a handful, not hundreds, so clearing and re-appending a few
+ * elements costs less than tracking which changed. Everything they need is on
+ * the seg - its routed points, and the meta that says how to draw them.
+ */
+function drawDecorations(minX, minY, r, vis) {
+  while (decoLayer.firstChild) decoLayer.removeChild(decoLayer.firstChild);
+  const segs = [];
+  for (const key of settled) { const s = lastSeg.get(key); if (s?.meta) segs.push(s); }
+  for (const [key, live] of animating) {
+    if (!settled.has(key) && live.seg?.meta) segs.push(live.seg);
+  }
+  for (const seg of segs) {
+    if (vis && !meetsRect(seg.points, vis)) continue;
+    const line = document.createElementNS(SVG_NS, 'path');
+    line.setAttribute('class', 'web-styled');
+    line.setAttribute('d', pathData(seg.points, r, minX, minY));
+    const style = seg.meta.style;
+    if (style === 'dashed') line.setAttribute('stroke-dasharray', '7 5');
+    else if (style === 'dotted') line.setAttribute('stroke-dasharray', '0.5 5');
+    const dir = seg.meta.dir;
+    if (dir === 'fwd' || dir === 'both') line.setAttribute('marker-end', 'url(#web-arrow)');
+    if (dir === 'back' || dir === 'both') line.setAttribute('marker-start', 'url(#web-arrow)');
+    decoLayer.append(line);
+
+    if (seg.meta.label) {
+      const mid = polyMidpoint(seg.points);
+      const text = document.createElementNS(SVG_NS, 'text');
+      text.setAttribute('class', 'web-label');
+      text.setAttribute('x', (mid.x - minX).toFixed(2));
+      text.setAttribute('y', (mid.y - minY).toFixed(2));
+      text.setAttribute('text-anchor', 'middle');
+      text.textContent = seg.meta.label;
+      decoLayer.append(text);
+    }
+  }
+}
+
+/** The point half way along a polyline by arc length - where a label sits. */
+function polyMidpoint(points) {
+  if (!points || points.length < 2) return points?.[0] || { x: 0, y: 0 };
+  const legs = [];
+  let total = 0;
+  for (let i = 1; i < points.length; i++) {
+    const len = Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+    legs.push(len);
+    total += len;
+  }
+  let half = total / 2;
+  for (let i = 1; i < points.length; i++) {
+    const len = legs[i - 1];
+    if (half <= len) {
+      const t = len ? half / len : 0;
+      return {
+        x: points[i - 1].x + (points[i].x - points[i - 1].x) * t,
+        y: points[i - 1].y + (points[i].y - points[i - 1].y) * t,
+      };
+    }
+    half -= len;
+  }
+  return points[points.length - 1];
 }
 
 /**
@@ -739,6 +867,44 @@ function meetsRect(points, rect) {
     if (segmentMeetsRect(points[i - 1], points[i], rect)) return true;
   }
   return false;
+}
+
+/** Distance from point (px, py) to the segment a-b, in the layer's own space. */
+function distToSeg(px, py, a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 ? Math.max(0, Math.min(1, ((px - a.x) * dx + (py - a.y) * dy) / len2)) : 0;
+  const cx = a.x + t * dx, cy = a.y + t * dy;
+  return Math.hypot(px - cx, py - cy);
+}
+
+/**
+ * The connection whose drawn line runs nearest a world point, or null.
+ *
+ * The one concession to connections being clickable, kept as small as the note
+ * in state.js/toggleConnection asked for: no selection model, no per-line
+ * element to hit-test against - just the routed points build() already holds,
+ * walked once against the point the right-click landed on. `tolPx` is a reach in
+ * *screen* pixels, so a hairline stays as easy to hit zoomed out as zoomed in.
+ *
+ * World y points up and this layer lays y down (see centres()), so the point is
+ * flipped before it is measured against the stored geometry.
+ */
+export function connectionAt(wx, wy, tolPx = 10) {
+  if (!svg || !webVisible()) return null;
+  const py = -wy;
+  const tol = tolPx / (vp ? vp.zoom : 1);
+  let best = null;
+  let bestD = tol;
+  for (const seg of lastSeg.values()) {
+    if (!seg.ends) continue;
+    const pts = seg.points;
+    for (let i = 1; i < pts.length; i++) {
+      const d = distToSeg(wx, py, pts[i - 1], pts[i]);
+      if (d < bestD) { bestD = d; best = seg; }
+    }
+  }
+  return best ? { a: best.ends.a, b: best.ends.b } : null;
 }
 
 /**

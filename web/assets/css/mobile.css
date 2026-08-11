@@ -1111,6 +1111,10 @@
     top: max(12px, env(safe-area-inset-top));
     left: max(12px, env(safe-area-inset-left));
   }
+  #mobile-find-btn {
+    top: calc(max(12px, env(safe-area-inset-top)) + var(--chrome-button-h) + 8px);
+    left: max(12px, env(safe-area-inset-left));
+  }
   #mobile-header-edit-btn {
     top: max(12px, env(safe-area-inset-top));
     right: max(12px, env(safe-area-inset-right));

@@ -261,6 +261,12 @@ export function releasePlayers(root) {
     players.delete(el);
     owners.delete(el);
     if (current?.el === el) setCurrent(null);
+    // If a queue voice (a board card's own <audio> driving the playlist) is the
+    // element being destroyed, release the queue's refs to it as well. Otherwise
+    // endedBound holds the orphaned element and its 'ended' listener alive until
+    // the next startCurrent()/clearQueue() happens to run.
+    if (endedBound === el) { el.removeEventListener('ended', queueEnded); endedBound = null; }
+    if (queuePlayerEl === el) queuePlayerEl = null;
   }
 }
 
