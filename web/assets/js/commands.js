@@ -460,6 +460,7 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
       updateConnection(a, b, { label: typed });
       showConnections();
     },
+    clearConnectionLabel: (a, b) => { updateConnection(a, b, { label: '' }); showConnections(); },
     // Every line off the board at once. In the panel's Debug fold rather than on
     // the toolbar: the way to remove one connection is to draw over it, and this
     // is the board-wide broom you want after trying the generator somewhere you

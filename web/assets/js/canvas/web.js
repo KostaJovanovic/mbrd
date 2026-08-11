@@ -133,6 +133,15 @@ let fadeLayer = null;    // <g> holding only the threads currently fading
 // stroke, and they are rare enough (a handful a board, against hundreds of plain
 // lines) that a full rebuild of this layer on each paint costs nothing.
 let decoLayer = null;
+// The line under the pointer, brightened so a connection reads as a thing you
+// can click. One highlight path, redrawn as the pointer moves over the board -
+// see onHoverMove and hoverConnectionAt.
+let hoverPath = null;
+let hoveredKey = null;
+let viewportEl = null;
+// The box origin paint() last drew against, so the hover highlight can be laid
+// in the same coordinates between paints without recomputing the whole box.
+let originX = 0, originY = 0;
 let vp = null;           // for the visible rect; absent in tests, which then draw everything
 
 /** The box the built geometry describes, kept by build() so paint() need not re-derive it. */
@@ -275,14 +284,32 @@ export function initWeb(worldEl, viewport) {
   marker.append(head);
   defs.append(marker);
 
+  // The hover highlight, above the bulk lines so it reads as a lift of the one
+  // under the pointer, below decoLayer so a styled line's arrows and label still
+  // draw on top of it.
+  hoverPath = document.createElementNS(SVG_NS, 'path');
+  hoverPath.setAttribute('class', 'web-hover');
+  hoverPath.setAttribute('fill', 'none');
+
   decoLayer = document.createElementNS(SVG_NS, 'g');
-  svg.append(defs, path, failPath, fadeLayer, decoLayer);
+  svg.append(defs, path, failPath, hoverPath, fadeLayer, decoLayer);
 
   // First child of #world, and it never claims a pointer - the web is a
   // backdrop for the items, not a thing you can catch hold of.
   worldEl.prepend(svg);
 
   vp = viewport || null;
+
+  // Hover lives on #viewport rather than in the input pipeline: it is a read,
+  // not a gesture, and keeping it here keeps the one-active-gesture rule in
+  // input.js intact. Only over bare board (e.target is the viewport itself, not
+  // a card) and only when no drag or pan is in flight, so it never fights the
+  // cursor those set. See onHoverMove.
+  viewportEl = typeof document !== 'undefined' ? document.getElementById('viewport') : null;
+  if (viewportEl) {
+    viewportEl.addEventListener('pointermove', onHoverMove);
+    viewportEl.addEventListener('pointerleave', endHover);
+  }
   frame = rafThrottle(tick);
   bus.on('items', requestBuild);
   bus.on('geom', requestBuild);
@@ -737,6 +764,10 @@ function paint(forced = false) {
   // with a zero extent renders nothing at all - so the box never closes fully.
   const w = Math.max(maxX - minX, 1);
   const h = Math.max(maxY - minY, 1);
+  // The origin the hover highlight lays itself against, kept so a pointer move
+  // between paints can redraw the highlight without re-deriving the box.
+  originX = minX;
+  originY = minY;
 
   const box = `${minX.toFixed(2)} ${minY.toFixed(2)} ${w.toFixed(2)} ${h.toFixed(2)}`;
   if (box !== lastBox) {
@@ -785,6 +816,10 @@ function paint(forced = false) {
   }
 
   drawDecorations(minX, minY, r, vis);
+  // The hovered line may have just moved, been rerouted, or gone; realign or
+  // clear its highlight against the box we just drew.
+  if (hoveredKey && !lastSeg.has(hoveredKey)) hoveredKey = null;
+  drawHover();
 }
 
 /**
@@ -890,21 +925,72 @@ function distToSeg(px, py, a, b) {
  * World y points up and this layer lays y down (see centres()), so the point is
  * flipped before it is measured against the stored geometry.
  */
-export function connectionAt(wx, wy, tolPx = 10) {
+function nearestSeg(wx, wy, tolPx) {
   if (!svg || !webVisible()) return null;
   const py = -wy;
   const tol = tolPx / (vp ? vp.zoom : 1);
-  let best = null;
-  let bestD = tol;
-  for (const seg of lastSeg.values()) {
+  let best = null, bestKey = null, bestD = tol;
+  for (const [key, seg] of lastSeg) {
     if (!seg.ends) continue;
     const pts = seg.points;
     for (let i = 1; i < pts.length; i++) {
       const d = distToSeg(wx, py, pts[i - 1], pts[i]);
-      if (d < bestD) { bestD = d; best = seg; }
+      if (d < bestD) { bestD = d; best = seg; bestKey = key; }
     }
   }
-  return best ? { a: best.ends.a, b: best.ends.b } : null;
+  return best ? { key: bestKey, seg: best } : null;
+}
+
+export function connectionAt(wx, wy, tolPx = 10) {
+  const hit = nearestSeg(wx, wy, tolPx);
+  return hit ? { a: hit.seg.ends.a, b: hit.seg.ends.b } : null;
+}
+
+/** Redraw the hover highlight over the currently hovered line, or clear it. */
+function drawHover() {
+  if (!hoverPath) return;
+  const seg = hoveredKey && lastSeg.get(hoveredKey);
+  hoverPath.setAttribute('d', seg ? pathData(seg.points, cornerRadius(), originX, originY) : '');
+}
+
+/**
+ * Point the hover at whatever line is under a world point, and say whether one
+ * is. Repaints the highlight only when the hovered line actually changes, so a
+ * pointer sliding along one line is not a stream of identical redraws.
+ */
+export function hoverConnectionAt(wx, wy, tolPx = 12) {
+  const hit = nearestSeg(wx, wy, tolPx);
+  const key = hit ? hit.key : null;
+  if (key !== hoveredKey) { hoveredKey = key; drawHover(); }
+  return !!key;
+}
+
+/** Drop any hover highlight - the pointer left the board, or a gesture began. */
+export function clearHover() {
+  if (hoveredKey !== null) { hoveredKey = null; drawHover(); }
+}
+
+function endHover() {
+  clearHover();
+  if (viewportEl) viewportEl.classList.remove('over-connection');
+}
+
+/**
+ * Track the line under the pointer as it moves over bare board.
+ *
+ * Gated hard: only when the pointer is on the viewport itself rather than a card
+ * (a line passing behind a card is not what the pointer is on), and only when no
+ * pan or drag is running, so the pointer, the cursor and the highlight never
+ * fight what a gesture is already doing.
+ */
+function onHoverMove(e) {
+  const root = document.documentElement;
+  const busy = viewportEl.classList.contains('is-panning') ||
+    viewportEl.classList.contains('is-moving') || root.classList.contains('is-sizing-paper');
+  if (busy || e.target !== viewportEl || !webVisible() || !vp) { endHover(); return; }
+  const w = vp.toWorld(e.clientX, e.clientY);
+  const on = hoverConnectionAt(w.x, w.y);
+  viewportEl.classList.toggle('over-connection', on);
 }
 
 /**

@@ -18,6 +18,10 @@
 /* A card held mid-drag. #viewport captures the pointer, so the grabbing hand has
    to be set here rather than on .item - the captured element owns the cursor. */
 #viewport.is-moving  { cursor: grabbing; }
+/* Over a connection line: a pointer, so it reads as clickable. After can-pan so
+   it wins the tie when both are set; web.js drops the class the moment a pan or
+   drag starts, so it never fights the grabbing cursor those bring. */
+#viewport.over-connection { cursor: pointer; }
 
 /* The one transformed layer. Sits at the viewport centre so world (0,0) is the
    centre of the screen at pan (0,0); viewport.js writes the transform and --iz
@@ -752,6 +756,19 @@
   font: 500 12px system-ui, sans-serif;
   dominant-baseline: middle;
   user-select: none;
+}
+/* The line under the pointer, lifted to the accent and a touch heavier, so a
+   connection reads as a thing you can click and edit rather than a drawn-on
+   backdrop. web.js draws it over the bulk path; the class beats the #web path
+   stroke on specificity. */
+#web .web-hover {
+  stroke: var(--accent);
+  stroke-width: calc(var(--web-weight) + 2px);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.75;
+  pointer-events: none;
 }
 
 /* ---------------------------------------------------------

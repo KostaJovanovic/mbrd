@@ -91,7 +91,12 @@ export function openContextMenu(clientX, clientY, itemId, selectionSize) {
   close();
   opener = document.activeElement;
   const at = vp.toWorld(clientX, clientY);
-  const entries = !itemId ? canvasEntries(at)
+  // A right-click that lands on a connection line, on bare board, is about that
+  // line: open its editor directly rather than a fold down the board menu. Only
+  // when nothing else is under the cursor - over a card the press is the card's.
+  const conn = !itemId ? cmds.connectionUnder(at) : null;
+  const entries = conn ? connectionEntries(conn)
+    : !itemId ? canvasEntries(at)
     // The title card is a singleton with its own short menu - never the group
     // menu's copy/duplicate/cover/stack actions. Only when it is the whole
     // selection; right-clicked inside a larger group it takes the group menu,
@@ -301,7 +306,8 @@ function connectionEntries(conn) {
     { sep: true },
     { label: meta.label ? 'Change label' : 'Add a label', icon: 'i-edit-text',
       action: () => cmds.editConnectionLabel(conn.a, conn.b) },
-    { label: 'Remove label', icon: 'i-edit-text', hidden: !meta.label, action: () => set({ label: '' }) },
+    { label: 'Remove label', icon: 'i-edit-text', hidden: !meta.label,
+      action: () => cmds.clearConnectionLabel(conn.a, conn.b) },
     { sep: true },
     { label: 'Remove connection', icon: 'i-delete', danger: true,
       action: () => cmds.removeConnection(conn.a, conn.b) },
@@ -317,14 +323,7 @@ function canvasEntries(at) {
   // only swaps: there is one row either way, because the two are the same
   // question asked of different scopes.
   const fence = cmds.fenceUnder(at);
-  // A line the click landed on, if any. It leads the menu when there is one - the
-  // thing directly under the pointer is what a right-click is most likely about.
-  const conn = cmds.connectionUnder(at);
   return [
-    ...(conn ? [
-      { label: 'Connection', icon: 'i-connect', sub: connectionEntries(conn) },
-      { sep: true },
-    ] : []),
     { label: 'Add a note here', icon: 'i-pen', action: () => cmds.addNoteAt(at) },
     { label: 'Add files', icon: 'i-plus', action: () => cmds.addFiles() },
     { sep: true },
