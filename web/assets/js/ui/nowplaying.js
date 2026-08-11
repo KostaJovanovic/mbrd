@@ -78,6 +78,8 @@ const NEXT_ICON = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="tru
 const SHUFFLE_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 4.5h2.5L11 11.5h3"/><path d="M2 11.5h2.5l2-2.2"/><path d="M9.5 6.7 11 4.5"/><path d="M12.2 2.8 14 4.5l-1.8 1.7"/><path d="M12.2 9.8 14 11.5l-1.8 1.7"/></svg>';
 const REPEAT_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6V5.2A1.7 1.7 0 0 1 6.2 3.5H12"/><path d="m10.3 1.8 1.9 1.7-1.9 1.7"/><path d="M11.5 10v.8a1.7 1.7 0 0 1-1.7 1.7H4"/><path d="m5.7 14.2-1.9-1.7 1.9-1.7"/></svg>';
 const REPEAT_ONE_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6V5.2A1.7 1.7 0 0 1 6.2 3.5H12"/><path d="m10.3 1.8 1.9 1.7-1.9 1.7"/><path d="M11.5 10v.8a1.7 1.7 0 0 1-1.7 1.7H4"/><path d="m5.7 14.2-1.9-1.7 1.9-1.7"/><text x="8" y="10.2" font-size="6" fill="currentColor" stroke="none" text-anchor="middle">1</text></svg>';
+// A little list with a play triangle: the way in to the full player.
+const LIST_ICON = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="2" y="3.2" width="8" height="1.6" rx="0.8"/><rect x="2" y="7.2" width="8" height="1.6" rx="0.8"/><rect x="2" y="11.2" width="5" height="1.6" rx="0.8"/><path d="M11.4 7v5l3.3-2.5z"/></svg>';
 
 // A sine drawn in the seek line's own pixels, 8 tall (centre line at 4), so its
 // wavelength is the same on a narrow phone bar and a wide desktop one. The bug
@@ -163,25 +165,21 @@ export function initNowPlaying() {
 
   closeBtn?.addEventListener('click', close);
 
-  // Tapping the bar's name opens the full player - the Playlist lens on a Mobile
-  // board (a second tap on it steps back to the Feed), the floating window on the
-  // Desktop. The mini-player-expands idiom: the bar is the way in.
-  caption?.addEventListener('click', () => {
-    if (board.layoutMode === 'mobile') setLens(currentLens() === 'playlist' ? 'feed' : 'playlist');
-    else togglePlayerWindow();
-  });
-
-  // The controls on the right, in order: shuffle, prev, play, next, repeat, then
-  // volume and close (already in the markup). Play is always shown; the four
-  // playlist buttons show only while the queue is the sound - CSS keys that off
-  // the .is-queue class paintQueue() sets. All inserted before the volume.
+  // The controls on the right, in order: a Playlist button, then shuffle, prev,
+  // play, next, repeat, then volume and close (already in the markup). Play is
+  // always shown; the four playlist buttons show only while the queue is the sound -
+  // CSS keys that off the .is-queue class paintQueue() sets. All inserted before the
+  // volume.
   const before = controls.querySelector('.np-volume') || closeBtn;
+  // The way in to the full player: the Playlist lens on a Mobile board (a second
+  // press steps back to the Feed), the floating window on the Desktop.
+  const listBtn = ctlBtn('np-list', 'Open the playlist', LIST_ICON, openPlaylist);
   shuffleBtn = ctlBtn('np-shuffle', 'Shuffle', SHUFFLE_ICON, toggleShuffle);
   const prevBtn = ctlBtn('np-prev', 'Previous', PREV_ICON, queuePrev);
   playBtn = ctlBtn('np-play', 'Play', PLAY_ICON, togglePlay);
   const nextBtn = ctlBtn('np-next', 'Next', NEXT_ICON, queueNext);
   repeatBtn = ctlBtn('np-repeat', 'Repeat', REPEAT_ICON, cycleRepeat);
-  for (const b of [shuffleBtn, prevBtn, playBtn, nextBtn, repeatBtn]) {
+  for (const b of [listBtn, shuffleBtn, prevBtn, playBtn, nextBtn, repeatBtn]) {
     controls.insertBefore(b, before);
   }
   onQueue(paintQueue);
@@ -344,6 +342,16 @@ function onSeekKey(e) {
   }
   e.preventDefault();
   e.stopPropagation();
+}
+
+/**
+ * Open the full player. On a Mobile board that is the Playlist lens - and a second
+ * press, while it is up, steps back to the Feed; on the Desktop it is the floating
+ * window, toggled open and shut.
+ */
+function openPlaylist() {
+  if (board.layoutMode === 'mobile') setLens(currentLens() === 'playlist' ? 'feed' : 'playlist');
+  else togglePlayerWindow();
 }
 
 /** Play or pause whatever the bar is bound to. */

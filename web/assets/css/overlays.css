@@ -648,6 +648,15 @@
   visibility: hidden;
 }
 .ctx-item.is-checked .ctx-tick { visibility: visible; }
+/* The submenu marker, in the same trailing column as the tick. A row that opens
+   a fold points right; it warms with the row like every other action icon,
+   because unlike the tick it is a picture of what the row does. */
+.ctx-item .ctx-chevron {
+  grid-column: 3;
+  justify-self: end;
+  width: 13px;
+  height: 13px;
+}
 /* Unlike every other icon here it does not warm with the row: it is a reading
    of the current state rather than a picture of the action, and the accent is
    the whole of what it says. */

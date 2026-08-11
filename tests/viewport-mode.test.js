@@ -239,7 +239,11 @@ test('the top-stop pen opens persisted header typography controls', async () => 
     assert.match(html, new RegExp(`id="${id}"`));
   }
   assert.match(css, /#mobile-header-edit-btn\s*\{[\s\S]*var\(--chrome-button-h\)/);
-  assert.match(module, /viewport\?\.atMobileTop\?\.\(\)/);
+  // The pen shows over the Feed's masthead (the editable title page) and comes down
+  // on the Playlist lens - gated on the lens, not on the now-dormant canvas scroll
+  // stop it used to read (atMobileTop, moot behind a DOM lens).
+  assert.match(module, /dataset\.feedLens/);
+  assert.match(css, /\[data-feed-lens="playlist"\]\s*#mobile-header-edit-btn\s*\{\s*display:\s*none/);
   assert.match(module, /headerFontAxes/);
   assert.match(module, /fontVariationSettings/);
   // The title's vertical position dial rides ahead of the stretch, as a fraction

@@ -416,3 +416,76 @@ export function topEdge(it) {
     { x: it.x + c * hw - s * hh, y: it.y + s * hw + c * hh },
   ];
 }
+
+/**
+ * Move each item so a chosen edge or centre of the selection lines up.
+ *
+ * `edge` is one of 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom'.
+ * An item is a centre, so lining up a left edge is setting each centre to the
+ * selection's shared left plus that item's own half-width - and the half-extents
+ * are the rotated ones (rotatedExtents), so a turned card aligns by the box you
+ * can see, the same box Fit frames and a marquee catches. `top` is the larger y
+ * because +y is up here.
+ *
+ * Returns [{id, x, y}] for every item, in input order, for applyGeom to merge -
+ * only the axis the edge names is moved; the other keeps its value. The commit
+ * path is what makes it one undo step and what re-snaps it if snapping is on, so
+ * nothing here snaps or clamps.
+ */
+export function alignTargets(items, edge) {
+  const b = itemBounds(items);
+  if (!b) return [];
+  return items.map(it => {
+    const { hw, hh } = rotatedExtents(it);
+    let { x, y } = it;
+    switch (edge) {
+      case 'left':    x = b.x0 + hw; break;
+      case 'right':   x = b.x1 - hw; break;
+      case 'hcenter': x = (b.x0 + b.x1) / 2; break;
+      case 'top':     y = b.y1 - hh; break;
+      case 'bottom':  y = b.y0 + hh; break;
+      case 'vcenter': y = (b.y0 + b.y1) / 2; break;
+    }
+    return { id: it.id, x, y };
+  });
+}
+
+/**
+ * Space the selection evenly along one axis, with equal clear gaps between
+ * neighbours. `axis` is 'x' or 'y'.
+ *
+ * The two outermost items stay put - they define the span - and everything
+ * between them is dealt so the space you can see between adjacent boxes is the
+ * same. Gaps rather than centres on purpose: three cards of different widths
+ * distributed by centre still read as bunched, because a wide card eats into the
+ * gap on both sides of it. With fewer than three items there is nothing to even
+ * out, and it returns nothing.
+ *
+ * Rotation-aware through the per-axis half-extent, so a turned card takes the
+ * width of the box it actually occupies. Returns [{id, x, y}] only for the
+ * interior items that move.
+ */
+export function distributeTargets(items, axis) {
+  if (items.length < 3) return [];
+  const half = it => (axis === 'x' ? rotatedExtents(it).hw : rotatedExtents(it).hh);
+  const pos = it => (axis === 'x' ? it.x : it.y);
+  const sorted = [...items].sort((a, b) => pos(a) - pos(b));
+  const first = sorted[0], last = sorted[sorted.length - 1];
+  const lead = pos(first) + half(first);          // trailing edge of the first
+  const tail = pos(last) - half(last);            // leading edge of the last
+  let span = tail - lead;
+  for (let i = 1; i < sorted.length - 1; i++) span -= 2 * half(sorted[i]);
+  const gap = span / (sorted.length - 1);
+  const out = [];
+  let cursor = lead;
+  for (let i = 1; i < sorted.length - 1; i++) {
+    const it = sorted[i];
+    const h = half(it);
+    const centre = cursor + gap + h;
+    cursor = centre + h;
+    out.push(axis === 'x'
+      ? { id: it.id, x: centre, y: it.y }
+      : { id: it.id, x: it.x, y: centre });
+  }
+  return out;
+}

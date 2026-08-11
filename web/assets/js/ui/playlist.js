@@ -4,8 +4,9 @@
 // screen as an Apple-Music-style player: an album header (a mosaic of the board's
 // own covers, the board's name, "N songs, M min", and Play / Shuffle) over a
 // track list you can drag to reorder. The other is a floating window on the
-// Desktop board, opened from the sidebar - the same header and list, compact, and
-// without the reordering (it is a player, not an editor).
+// Desktop board, opened from the sidebar - draggable and resizable, with a toggle
+// in its title bar between two bodies: a compact transport over a plain list
+// ('player'), and that same album view in miniature ('feed').
 //
 // It owns no <audio>. It drives the shared queue in canvas/audio.js - setQueue,
 // playTrack, toggleShuffle - and the global now-playing bar is the transport, so
@@ -35,6 +36,7 @@ import {
   isQueuePlayer, clearQueue, PLAY_ICON, PAUSE_ICON,
 } from '../canvas/audio.js';
 import { audioTags, coverArt } from '../import/artwork.js';
+import { resetPanels } from './panel-stack.js';
 
 const NOTE_ICON =
   '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.5 2.5v7.1a2.2 2.2 0 11-1-1.84V4.3l-4.5.98v5.06a2.2 2.2 0 11-1-1.84V3.2z"/></svg>';
@@ -54,11 +56,28 @@ const REPEAT_ONE_ICON =
   '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6V5.2A1.7 1.7 0 0 1 6.2 3.5H12"/><path d="m10.3 1.8 1.9 1.7-1.9 1.7"/><path d="M11.5 10v.8a1.7 1.7 0 0 1-1.7 1.7H4"/><path d="m5.7 14.2-1.9-1.7 1.9-1.7"/><text x="8" y="10.2" font-size="6" fill="currentColor" stroke="none" text-anchor="middle">1</text></svg>';
 const CLOSE_ICON =
   '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>';
+// The window's view toggle wears the face of the view it switches *to*: a grid of
+// tiles for the album/feed view, a stack of rows for the compact player view.
+const GRID_ICON =
+  '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>';
+const ROWS_ICON =
+  '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="2" y="3" width="12" height="2" rx="1"/><rect x="2" y="7" width="12" height="2" rx="1"/><rect x="2" y="11" width="12" height="2" rx="1"/></svg>';
+// The big play button's own triangle. Bounding box centred on the viewBox, then
+// nudged a touch right (+1 unit) for the optical balance a right-pointing triangle
+// wants in a round button. Vertices (5.25,3.5) (12.75,8) (5.25,12.5); y centres on
+// 8. Pause stays the shared symmetric bars.
+const PW_PLAY_ICON =
+  '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5.25 3.5L12.75 8L5.25 12.5Z"/></svg>';
 
 let mobileView = null;    // the Mobile lens
 let windowEl = null;      // the Desktop floating window, or null when closed
+let windowContent = null; // the swappable region under the window's title bar
 let windowView = null;    // the list inside it
-let windowPlayer = null;  // the Desktop window's transport, or null when closed
+let windowPlayer = null;  // the Desktop window's transport (player view only), or null
+let windowToggle = null;  // the view-toggle button in the window's title bar
+// The window's body: 'player' is the compact transport over a list, 'feed' is the
+// album view (cover, big Play/Shuffle, reorderable list). Remembered across opens.
+let windowMode = 'player';
 
 /** Every visible header's Play / Shuffle pair, so play state paints in both. */
 const actionGroups = new Set();
@@ -75,7 +94,7 @@ export function initPlaylist(_viewport, _commands, _headerStyle) {
   const host = document.getElementById('mobile-playlist');
   if (host) mobileView = createView(host, { reorderable: true, variant: 'lens' });
 
-  bus.on('board:load', () => { clearQueue(); tagged.clear(); wiredEl = null; closePlayerWindow(); renderAll(); });
+  bus.on('board:load', () => { clearQueue(); tagged.clear(); wiredEl = null; resetPanels(); closePlayerWindow(); renderAll(); });
   bus.on('layout', () => {
     // The window is a Desktop thing; leaving for the Mobile board takes it away.
     if (board.layoutMode === 'mobile') closePlayerWindow();
@@ -113,13 +132,16 @@ function orderedAudio() {
  */
 function renderAll() {
   const audio = orderedAudio();
+  // The queue is always the board's audio, whether or not a playlist home is on
+  // screen: a board card plays into this same queue (canvas/audio.js), so the track
+  // has to be in it to be reached, advanced past, or shuffled.
+  setQueue(audio);
   if (board.layoutMode === 'mobile') {
     windowView && windowView.clear();
-    setQueue(audio);
     mobileView && mobileView.fill(audio);
   } else {
     mobileView && mobileView.clear();
-    if (windowView) { setQueue(audio); windowView.fill(audio); }
+    windowView && windowView.fill(audio);
   }
   markPlaying();
   refreshActions();
@@ -224,7 +246,7 @@ function makeActions() {
  * 'window') gets no hero here: it carries a real transport instead, built by
  * makeWindowPlayer() and placed above this list. So this only builds the list.
  */
-function createView(container, { reorderable, variant }) {
+function createView(container, { reorderable, variant, compactHero }) {
   container.replaceChildren();
   const rows = new Map();   // id -> { el, item }
   const lens = variant === 'lens';
@@ -236,6 +258,7 @@ function createView(container, { reorderable, variant }) {
   let hero = null, cover = null, titleEl = null, metaEl = null, group = null;
   if (lens) {
     hero = div('pl-hero');
+    if (compactHero) hero.classList.add('is-compact');
     cover = div('pl-cover');
     const heroText = div('pl-hero-text');
     titleEl = document.createElement('h2');
@@ -560,37 +583,181 @@ export function openPlayerWindow() {
   const title = div('player-window-title');
   title.textContent = 'Playlist';
   const spacer = div('player-window-spacer');
+  windowToggle = document.createElement('button');
+  windowToggle.type = 'button';
+  windowToggle.className = 'player-window-toggle';
+  windowToggle.addEventListener('click', () => {
+    windowMode = windowMode === 'feed' ? 'player' : 'feed';
+    renderWindowMode();
+  });
   const close = document.createElement('button');
   close.type = 'button';
   close.className = 'player-window-close';
   close.setAttribute('aria-label', 'Close player');
   close.innerHTML = CLOSE_ICON;
   close.addEventListener('click', closePlayerWindow);
-  head.append(title, spacer, close);
+  head.append(title, spacer, windowToggle, close);
+  // The title bar is the grab handle: drag it to move the window around the board.
+  makeWindowDrag(windowEl, head);
 
-  // The window is a real player, not a list with a play-all button: a now-playing
-  // panel (cover, title, seek, transport) over the queue.
-  windowPlayer = makeWindowPlayer();
-  const body = div('player-window-body');
-  windowEl.append(head, windowPlayer.el, body);
+  // The body under the title bar is swapped whole when the view toggles.
+  windowContent = div('player-window-content');
+  windowEl.append(head, windowContent);
   document.body.appendChild(windowEl);
 
-  windowView = createView(body, { reorderable: false, variant: 'window' });
-  makeDraggable(windowEl, head, close);
-  renderAll();
-  windowPlayer.bind();
+  // A grip in the bottom-right corner to resize the window by.
+  const resize = div('player-window-resize');
+  resize.setAttribute('aria-hidden', 'true');
+  windowEl.appendChild(resize);
+  makeWindowResize(windowEl, resize);
+
+  renderWindowMode();
+
+  // Out of the scaled-down state and up into place, next frame - it needs two
+  // computed styles to run between for the transition to take (see ui/nowplaying.js
+  // raise()).
+  requestAnimationFrame(() => windowEl?.classList.add('is-open'));
 }
+
+/**
+ * Build the window's body for the current mode, tearing down the other one first.
+ * 'player' is the compact transport (cover, seek, five controls) over a plain list;
+ * 'feed' is the album view - the same hero the Mobile lens carries, compact, over a
+ * reorderable list, with the now-playing bar as its transport. The toggle button in
+ * the title bar flips between them and this rebuilds.
+ */
+function renderWindowMode() {
+  if (!windowEl) return;
+  windowPlayer?.destroy();
+  windowPlayer = null;
+  windowView?.destroy();
+  windowView = null;
+  windowContent.replaceChildren();
+  windowEl.classList.toggle('is-feed', windowMode === 'feed');
+
+  if (windowMode === 'feed') {
+    const scroller = div('player-window-feed');
+    windowContent.appendChild(scroller);
+    windowView = createView(scroller, { reorderable: true, variant: 'lens', compactHero: true });
+  } else {
+    windowPlayer = makeWindowPlayer();
+    const body = div('player-window-body');
+    windowContent.append(windowPlayer.el, body);
+    windowView = createView(body, { reorderable: false, variant: 'window' });
+  }
+  paintToggle();
+  renderAll();
+  windowPlayer?.bind();
+}
+
+/** The view toggle wears the face - and name - of the view it would switch to. */
+function paintToggle() {
+  if (!windowToggle) return;
+  const toFeed = windowMode !== 'feed';
+  windowToggle.innerHTML = toFeed ? GRID_ICON : ROWS_ICON;
+  const label = toFeed ? 'Album view' : 'Player view';
+  windowToggle.setAttribute('aria-label', label);
+  windowToggle.title = label;
+  windowToggle.classList.toggle('is-on', windowMode === 'feed');
+}
+
+/** The slide-out backstop, so a close that never sees transitionend still finishes. */
+let windowExit = 0;
 
 export function closePlayerWindow() {
   if (!windowEl) return;
+  const el = windowEl;
   // The queue is deliberately left running - closing the player is not stopping
   // the music, any more than leaving the Mobile playlist is.
   windowPlayer?.destroy();
   windowView?.destroy();
-  windowEl.remove();
   windowEl = null;
+  windowContent = null;
   windowView = null;
   windowPlayer = null;
+  windowToggle = null;
+  // Scale it back down, then take it away once the transform has run.
+  el.classList.remove('is-open');
+  clearTimeout(windowExit);
+  const done = () => { clearTimeout(windowExit); el.remove(); };
+  el.addEventListener('transitionend', e => { if (e.propertyName === 'transform') done(); }, { once: true });
+  windowExit = setTimeout(done, 500);
+}
+
+/**
+ * Drag the window by its title bar. It opens anchored to the bottom-right (right /
+ * bottom in the stylesheet); the first grab reads that resolved position, switches
+ * to top / left so it can move freely, and from then on pointer moves set top / left
+ * directly, clamped to keep the whole window on screen. A press on the close button
+ * is left alone so it still closes rather than starting a move.
+ */
+function makeWindowDrag(win, handle) {
+  let d = null;
+  handle.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || e.target.closest('.player-window-close')) return;
+    const r = win.getBoundingClientRect();
+    win.style.left = `${r.left}px`;
+    win.style.top = `${r.top}px`;
+    win.style.right = 'auto';
+    win.style.bottom = 'auto';
+    d = { dx: e.clientX - r.left, dy: e.clientY - r.top, w: r.width, h: r.height };
+    handle.setPointerCapture?.(e.pointerId);
+    win.classList.add('is-moving');
+    e.preventDefault();
+  });
+  handle.addEventListener('pointermove', e => {
+    if (!d) return;
+    const m = 8;
+    win.style.left = `${clamp(e.clientX - d.dx, m, window.innerWidth - d.w - m)}px`;
+    win.style.top = `${clamp(e.clientY - d.dy, m, window.innerHeight - d.h - m)}px`;
+  });
+  const end = e => {
+    if (!d) return;
+    d = null;
+    handle.releasePointerCapture?.(e.pointerId);
+    win.classList.remove('is-moving');
+  };
+  handle.addEventListener('pointerup', end);
+  handle.addEventListener('pointercancel', end);
+}
+
+/**
+ * Resize the window by its bottom-right grip. Like the move drag, the first grab
+ * pins the window to top / left (it opens anchored bottom-right) so the corner is
+ * free to travel, then pointer moves set an explicit width and height, clamped to a
+ * sane floor and to what stays on screen. The height cap the stylesheet puts on the
+ * un-sized window is lifted the moment a size is set by hand.
+ */
+function makeWindowResize(win, handle) {
+  const MIN_W = 260, MIN_H = 220;
+  let d = null;
+  handle.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    const r = win.getBoundingClientRect();
+    win.style.left = `${r.left}px`;
+    win.style.top = `${r.top}px`;
+    win.style.right = 'auto';
+    win.style.bottom = 'auto';
+    win.style.maxHeight = 'none';
+    d = { x: e.clientX, y: e.clientY, w: r.width, h: r.height, left: r.left, top: r.top };
+    handle.setPointerCapture?.(e.pointerId);
+    win.classList.add('is-resizing');
+    e.preventDefault();
+  });
+  handle.addEventListener('pointermove', e => {
+    if (!d) return;
+    const m = 8;
+    win.style.width = `${clamp(d.w + (e.clientX - d.x), MIN_W, window.innerWidth - d.left - m)}px`;
+    win.style.height = `${clamp(d.h + (e.clientY - d.y), MIN_H, window.innerHeight - d.top - m)}px`;
+  });
+  const end = e => {
+    if (!d) return;
+    d = null;
+    handle.releasePointerCapture?.(e.pointerId);
+    win.classList.remove('is-resizing');
+  };
+  handle.addEventListener('pointerup', end);
+  handle.addEventListener('pointercancel', end);
 }
 
 /**
@@ -629,7 +796,7 @@ function makeWindowPlayer() {
   const controls = div('pw-controls');
   const shuffleBtn = pwBtn('pw-shuffle', SHUFFLE_ICON, 'Shuffle', toggleShuffle);
   const prevBtn = pwBtn('pw-prev', PREV_ICON, 'Previous', queuePrev);
-  const playBtn = pwBtn('pw-play', PLAY_ICON, 'Play', () => {
+  const playBtn = pwBtn('pw-play', PW_PLAY_ICON, 'Play', () => {
     if (!togglePlayback()) { const a = orderedAudio(); if (a.length) playTrack(a[0]); }
   });
   const nextBtn = pwBtn('pw-next', NEXT_ICON, 'Next', queueNext);
@@ -665,7 +832,7 @@ function makeWindowPlayer() {
   function refresh() {
     const s = queueEl();
     const playing = !!s && !s.paused;
-    playBtn.querySelector('.pw-ico').innerHTML = playing ? PAUSE_ICON : PLAY_ICON;
+    playBtn.querySelector('.pw-ico').innerHTML = playing ? PAUSE_ICON : PW_PLAY_ICON;
     playBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
     const { shuffle, repeat } = queueState();
     shuffleBtn.classList.toggle('is-on', shuffle);
@@ -732,42 +899,6 @@ function pwBtn(cls, icon, label, onClick) {
 }
 
 export const isPlayerWindowOpen = () => !!windowEl;
-
-/**
- * Drag the window by its header. Fixed positioning, moved by left/top; the first
- * drag switches it off the right/bottom anchor it opened on so it does not fight
- * the new coordinates. The close button is excluded so a press on it closes
- * rather than begins a drag.
- */
-function makeDraggable(win, handle, ignore) {
-  let start = null;
-  handle.addEventListener('pointerdown', e => {
-    if (ignore && ignore.contains(e.target)) return;
-    const box = win.getBoundingClientRect();
-    win.style.left = `${box.left}px`;
-    win.style.top = `${box.top}px`;
-    win.style.right = 'auto';
-    win.style.bottom = 'auto';
-    start = { x: e.clientX - box.left, y: e.clientY - box.top, id: e.pointerId };
-    handle.setPointerCapture?.(e.pointerId);
-    win.classList.add('is-dragging');
-  });
-  handle.addEventListener('pointermove', e => {
-    if (!start || e.pointerId !== start.id) return;
-    const x = Math.max(4, Math.min(window.innerWidth - win.offsetWidth - 4, e.clientX - start.x));
-    const y = Math.max(4, Math.min(window.innerHeight - 48, e.clientY - start.y));
-    win.style.left = `${x}px`;
-    win.style.top = `${y}px`;
-  });
-  const end = () => {
-    if (!start) return;
-    handle.releasePointerCapture?.(start.id);
-    start = null;
-    win.classList.remove('is-dragging');
-  };
-  handle.addEventListener('pointerup', end);
-  handle.addEventListener('pointercancel', end);
-}
 
 function div(className) {
   const el = document.createElement('div');

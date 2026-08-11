@@ -28,9 +28,8 @@ import { board, bus, isDefaultTitle } from '../state.js';
 import { baseName, clamp } from '../util.js';
 import { mobileOrder } from '../arrange/arrangements.js';
 import { assetURL } from '../storage/assets.js';
-import { setLens } from './board-view.js';
 import {
-  registerPlayer, releasePlayers, nowPlaying, onNowPlaying, PLAY_ICON, clock,
+  registerPlayer, releasePlayers, nowPlaying, onNowPlaying, playTrack, PLAY_ICON, clock,
 } from '../canvas/audio.js';
 
 /** The types the Feed does not draw: furniture and the leaving hints. */
@@ -207,7 +206,11 @@ function fillImage(t) {
   img.decoding = 'async';
   img.draggable = false;
   img.alt = t.item.name || '';
-  const url = pictureURL(t.item);
+  // The full-size picture, not the hundred-pixel thumb the card swaps in when the
+  // board is zoomed right out: a feed tile is far bigger than 100px, so the thumb
+  // reads as blurry. Thumb (via pictureURL) is only the fallback if there is no
+  // asset to show.
+  const url = (t.item.asset?.hash && assetURL(t.item.asset.hash)) || pictureURL(t.item);
   if (url) img.src = url;
   t.el.appendChild(img);
 }
@@ -266,8 +269,9 @@ function fillAudio(t) {
     art.classList.add('is-placeholder');
     art.appendChild(waveBars());
   }
-  // A tap opens the Playlist; the corner badge says so - it is audio, and this is
-  // the way in to the player.
+  // A tap plays the track right here on the Feed; the corner badge says so. The
+  // shared queue is the board's audio, so it plays into the now-playing bar and the
+  // Playlist follows along - but the Feed stays put, it does not jump to the Playlist.
   const badge = div('feed-tile-badge');
   badge.innerHTML = PLAY_ICON;
 
@@ -284,10 +288,10 @@ function fillAudio(t) {
     cap.appendChild(sub);
   }
   t.el.append(art, badge, cap);
-  // Audio's home is the Playlist; a tap on it in the Feed goes there.
+  // A tap plays the track, in place - it does not leave the Feed.
   t.el.setAttribute('role', 'button');
   t.el.tabIndex = 0;
-  const go = () => setLens('playlist');
+  const go = () => playTrack(item);
   t.el.addEventListener('click', go);
   t.el.addEventListener('keydown', e => {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); }

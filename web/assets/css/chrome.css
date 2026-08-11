@@ -382,19 +382,7 @@
   text-overflow: ellipsis;
   font-size: var(--t-small);
   color: var(--ink-2);
-  /* It is a <button> now (tap to open the player), so reset the chrome and keep
-     it reading as the track name - left-aligned text, no border or fill. */
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: color var(--dur-fast) var(--ease);
 }
-#nowplaying .np-name:hover { color: var(--accent); }
-#nowplaying .np-name:focus-visible { outline: var(--sel-line, 2px) solid var(--select, var(--accent)); outline-offset: 2px; border-radius: 4px; }
 
 /* The seek line under the two rows: elapsed, the line, total. Thin - one row and
    a couple of pixels of ink - so it reads as a scrubber, not a second waveform.

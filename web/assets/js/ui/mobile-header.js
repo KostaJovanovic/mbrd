@@ -25,6 +25,7 @@ import {
 import { createMobileSliderFocus } from './sidebar.js';
 import { field, fieldStops } from './controls.js';
 import { paintTitleField, wireTitleField } from './board-title.js';
+import { registerPanel, panelShown, panelHidden } from './panel-stack.js';
 
 /**
  * A four-letter tag, in words.
@@ -172,6 +173,12 @@ export function initMobileHeaderEditor(vp) {
     buildControls();
     paint();
   });
+  // Feed <-> Playlist: the pen shows over the Feed and hides on the Playlist, so it
+  // repaints when the lens changes (which does not emit 'layout').
+  bus.on('lens', paintButton);
+  // The edit bar is one of the exclusive right-side panels: it and the player hide
+  // and restore each other through the stack.
+  registerPanel('header', openPanel, closePanel);
   bus.on('board:load', () => {
     buildControls();
     paint();
@@ -247,6 +254,9 @@ export const isPanelOpen = () => !!panel?.classList.contains('is-open');
 
 export function openPanel() {
   if (!panel) return;
+  // The player panel shares this right edge: opening the edit bar hides it (and
+  // remembers it, to bring back when this closes) through the stack.
+  panelShown('header');
   setPanelOpen(true);
   // The panel is not modal and takes no focus by force; the section is given it
   // once, so a keyboard arrives inside the controls rather than back at the top
@@ -266,6 +276,9 @@ export function closePanel() {
   if (!panel) return;
   sliderFocus?.clear();
   setPanelOpen(false);
+  // If the player was hidden to make room for this bar, closing it brings the
+  // player back (ignored when the coordinator is the one closing us).
+  panelHidden('header');
 }
 
 function setPanelOpen(want) {
@@ -745,7 +758,13 @@ function fitOne(title, box, wrap, off) {
 let buttonShown = null;
 
 function paintButton() {
-  const visible = board.layoutMode === 'mobile' && !!viewport?.atMobileTop?.();
+  // In the lens era the world-space canvas is dormant behind the Feed, so its
+  // scroll stop (atMobileTop) no longer tracks the masthead - the masthead is the
+  // Feed's, at the top of its own sheet. The pen shows over the Feed and comes down
+  // on the Playlist (album hero, not the editable title page) and on Desktop (the
+  // title card carries its own edit there).
+  const lens = document.documentElement.dataset.feedLens;
+  const visible = board.layoutMode === 'mobile' && lens !== 'playlist';
   // This runs on every view change, and the answer changes exactly twice in a
   // scroll - on leaving the top stop and on returning to it. Writing it on
   // every frame in between is two attribute sets a frame to arrive at the state
