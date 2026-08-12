@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The one memory policy the importer answers to.
 //
 // import/drop.js caps a drop at 500 *files*, which is a UX guard against
@@ -42,10 +34,10 @@ export const IMPORT_LIMITS = {
  * batch budget, charging it when it does. Called in file order before the work
  * pool starts, so which files are accepted near the ceiling is deterministic.
  */
-export function makeByteBudget(limit = IMPORT_LIMITS.batchBytes) {
+export function makeByteBudget(limit: number = IMPORT_LIMITS.batchBytes) {
   let spent = 0;
   return {
-    take(bytes) {
+    take(bytes: number) {
       const n = Number.isFinite(bytes) ? bytes : 0;
       if (n > IMPORT_LIMITS.fileBytes) return false;
       if (spent + n > limit) return false;
@@ -56,10 +48,13 @@ export function makeByteBudget(limit = IMPORT_LIMITS.batchBytes) {
   };
 }
 
-const u16be = (b, o) => (b[o] << 8) | b[o + 1];
-const u16le = (b, o) => b[o] | (b[o + 1] << 8);
-const u24le = (b, o) => b[o] | (b[o + 1] << 8) | (b[o + 2] << 16);
-const u32be = (b, o) => b[o] * 2 ** 24 + (b[o + 1] << 16) + (b[o + 2] << 8) + b[o + 3];
+const u16be = (b: Uint8Array, o: number) => (b[o] << 8) | b[o + 1];
+const u16le = (b: Uint8Array, o: number) => b[o] | (b[o + 1] << 8);
+const u24le = (b: Uint8Array, o: number) => b[o] | (b[o + 1] << 8) | (b[o + 2] << 16);
+const u32be = (b: Uint8Array, o: number) => b[o] * 2 ** 24 + (b[o + 1] << 16) + (b[o + 2] << 8) + b[o + 3];
+
+/** Pixel dimensions of a raster image, in pixels. */
+export type Dimensions = { w: number, h: number };
 
 /**
  * Pixel dimensions read from a raster header, without decoding.
@@ -70,7 +65,7 @@ const u32be = (b, o) => b[o] * 2 ** 24 + (b[o + 1] << 16) + (b[o + 2] << 8) + b[
  * which case the byte caps still apply and the decoder's own failure is the
  * backstop.
  */
-export function imageDimensions(b) {
+export function imageDimensions(b: Uint8Array): Dimensions | null {
   const n = b.length;
   // PNG: IHDR width/height are big-endian at fixed offsets 16 and 20.
   if (n >= 24 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) {
@@ -126,7 +121,7 @@ const HEADER_BYTES = 128 * 1024;
  * the byte caps and the decoder remain the backstop for anything this cannot
  * measure cheaply.
  */
-export async function overPixelBudget(file) {
+export async function overPixelBudget(file: Blob): Promise<boolean> {
   try {
     const head = new Uint8Array(await file.slice(0, HEADER_BYTES).arrayBuffer());
     const dims = imageDimensions(head);

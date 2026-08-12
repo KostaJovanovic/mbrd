@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The view-change frame, profiled - a dev tool and nothing else.
 //
 // Lifted out of main.js, where it was a 340-line IIFE in the middle of the
@@ -27,16 +19,17 @@ import { mobilePerfFlags } from '../canvas/viewport.ts';
 
 /**
  * @param vp  the live Viewport - only `mobile()` touches it, to re-apply after
- *            a kill switch is thrown.
+ *            a kill switch is thrown, which is the whole of what is asked of it
+ *            and so the whole of what the parameter names.
  */
-export function createViewPerf(vp) {
+export function createViewPerf(vp: { apply(): void }) {
   let on = false, raf = 0, lastRaf = 0, moved = false;
   // An on-screen readout, built lazily the first time it is asked for. The
   // point of it is the phone: a device with no console the median frame rate can
   // be read off, so a real touch device can be measured on the glass instead of
   // over a debugging cable. Desktop gets it too - a live number beside the
   // gesture is worth more than one printed after it.
-  let hud = null, hudText = null, hudAt = 0;
+  let hud: HTMLDivElement | null = null, hudText: HTMLDivElement | null = null, hudAt = 0;
   // JS cost of the main.js view listener, per view frame.
   let gridMs = 0, restMs = 0, frames = 0, worstFrame = 0;
   // True frame cadence: the interval between animation frames, but recorded only
@@ -45,13 +38,13 @@ export function createViewPerf(vp) {
   // stalls and drown the real in-motion cadence - which was the trap in the
   // first cut of this. Held as raw intervals so report() can take percentiles;
   // the median is the honest frame rate, the tail is the jank.
-  const gaps = [];
+  const gaps: number[] = [];
   const CAP = 8000;                 // ~a minute of 120fps motion; then it wraps
   const reset = () => {
     gridMs = restMs = frames = worstFrame = 0; gaps.length = 0; lastRaf = 0; moved = false;
     cullProfile.reset();
   };
-  const pct = (sorted, p) => sorted.length
+  const pct = (sorted: number[], p: number) => sorted.length
     ? sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))] : 0;
   /**
    * How far a gap is off the display's own beat, in frames.
@@ -115,8 +108,8 @@ export function createViewPerf(vp) {
       mobilePerfFlags.legacyVars && 'legacy',
       !mobilePerfFlags.chrome && 'nochrome',
       !mobilePerfFlags.gridPos && 'nogrid',
-    ].filter(Boolean);
-    const runs = { legacy: 1, nochrome: 2, nogrid: 3 };
+    ].filter((name): name is string => !!name);
+    const runs: Record<string, number> = { legacy: 1, nochrome: 2, nogrid: 3 };
     if (!off.length) return '#perf shipped';
     return off.length === 1 ? `#perf${runs[off[0]]} ${off[0]}` : off.join(' ');
   };
@@ -135,7 +128,7 @@ export function createViewPerf(vp) {
     const m = viewStats();
     const cullAvg = cullProfile.runs ? cullProfile.ms / cullProfile.runs : 0;
     const fullPct = cullProfile.runs ? 100 * cullProfile.fullSyncs / cullProfile.runs : 0;
-    const share = k => (100 * k / gaps.length).toFixed(1) + '%';
+    const share = (k: number) => (100 * k / gaps.length).toFixed(1) + '%';
     return [
       runLabel(),
       `${board.layoutMode} ${board.items.length} items`,
@@ -171,7 +164,7 @@ export function createViewPerf(vp) {
    * user copies it by hand. A dev tool that says "copied" without copying is
    * worse than one that hands you the text.
    */
-  const copyText = text => {
+  const copyText = (text: string): Promise<boolean> => {
     // execCommand first, and synchronously, which is the whole point of the
     // order. Both paths need the tap that is still in progress, and awaiting
     // the Clipboard API's rejection would spend it: by the time the promise
@@ -211,8 +204,12 @@ export function createViewPerf(vp) {
     // The figures and the button are two children now, because the readout is
     // rewritten four times a second and a button inside that string would be
     // destroyed on the next repaint.
-    hudText = document.createElement('div');
-    hudText.textContent = 'perf — move the board';
+    // Held as a local as well, because the copy handler below reads it a tap
+    // later - and by then the closure sees the outer binding, which the HUD
+    // being taken down is allowed to have set back to null.
+    const line = document.createElement('div');
+    hudText = line;
+    line.textContent = 'perf — move the board';
     const copy = document.createElement('button');
     copy.type = 'button';
     copy.textContent = 'copy';
@@ -228,15 +225,17 @@ export function createViewPerf(vp) {
       const ok = await copyText(text);
       copy.textContent = ok ? 'copied' : 'select and copy ↓';
       // Nothing could reach the clipboard, so hand over the text instead.
-      if (!ok) hudText.textContent = text;
+      if (!ok) line.textContent = text;
       setTimeout(() => { copy.textContent = 'copy'; }, 1500);
     });
-    hud.append(hudText, copy);
+    hud.append(line, copy);
     document.body.appendChild(hud);
   };
   const hideHud = () => { hud?.remove(); hud = hudText = null; };
-  const paintHud = now => {
-    if (!hud || now - hudAt < 250) return;   // four updates a second is plenty
+  const paintHud = (now: number) => {
+    // hud and hudText are put up and taken down together, so either one standing
+    // alone is not a state this has - but only the pair being tested says so.
+    if (!hud || !hudText || now - hudAt < 250) return;   // four updates a second is plenty
     hudAt = now;
     const { median, base, twos, overs, off } = stats();
     if (!gaps.length) return;
@@ -257,14 +256,14 @@ export function createViewPerf(vp) {
     // the same board in the same mode.
     const cullAvg = cullProfile.runs ? cullProfile.ms / cullProfile.runs : 0;
     const m = viewStats();
-    const share = k => (100 * k / gaps.length).toFixed(1);
+    const share = (k: number) => (100 * k / gaps.length).toFixed(1);
     hudText.textContent =
       `${(1000 / median).toFixed(0)} fps   beat ${base.toFixed(1)}ms   n ${gaps.length}\n`
       + `2f ${share(twos)}%   3f+ ${share(overs)}%   offbeat ${share(off)}%\n`
       + `cull ${cullAvg.toFixed(2)}ms   mnt ${m.mounted}  vid ${m.videos}  img ${(m.imgBytes / 1048576).toFixed(0)}MB\n`
       + `${board.layoutMode} ${board.items.length} items   ${runLabel()}`;
   };
-  const tick = now => {
+  const tick = (now: number) => {
     if (!on) return;
     // Only a moved frame counts. requestAnimationFrame still fires at the
     // display rate on an idle board, and those intervals are not what we are
@@ -304,7 +303,7 @@ export function createViewPerf(vp) {
      * Returns the resulting flags, which is what makes this usable from a phone
      * - there is no console to read a global out of, so the call has to answer.
      */
-    mobile(patch = {}) {
+    mobile(patch: Partial<typeof mobilePerfFlags> = {}) {
       Object.assign(mobilePerfFlags, patch);
       document.documentElement.classList.toggle(
         'perf-no-mobile-chrome', !mobilePerfFlags.chrome);
@@ -312,7 +311,7 @@ export function createViewPerf(vp) {
       return { ...mobilePerfFlags };
     },
     /** JS timings for one view frame, in ms: grid paint and the rest. */
-    sample(grid, rest) {
+    sample(grid: number, rest: number) {
       gridMs += grid; restMs += rest; frames++; moved = true;
       const f = grid + rest;
       if (f > worstFrame) worstFrame = f;
@@ -321,7 +320,7 @@ export function createViewPerf(vp) {
       if (!gaps.length) { console.log('[perf] no motion sampled — mbrd.perf.on(), then pan'); return null; }
       const { sorted, median, janks, base, twos, overs, off } = stats();
       const mem = viewStats();
-      const share = k => +(100 * k / gaps.length).toFixed(1);
+      const share = (k: number) => +(100 * k / gaps.length).toFixed(1);
       const r = {
         // Which board and which layout, because two runs of this are only
         // comparable if they were the same board in the same mode - and the
@@ -399,7 +398,7 @@ export function createViewPerf(vp) {
  * is more than can be said for two readings either side of a reload. Arming an
  * already-armed profiler restarts its counters, so each run is measured clean.
  */
-export function initPerfHash(perf) {
+export function initPerfHash(perf: ReturnType<typeof createViewPerf>) {
   const armPerf = () => {
     const run = location.hash.match(/perf(\d)?/);
     if (!run) {

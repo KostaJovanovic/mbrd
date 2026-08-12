@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The button's half of optimising: what it says before, during and after.
 //
 // Separate from optimize.js for the same reason ui/look.js is separate from
@@ -24,11 +16,11 @@ import { opusAvailable, OPUS_KBPS } from './opus.ts';
  * What the waiting strip calls each pass - what it is doing, and what one item
  * of it is called. Anything not listed is the main encoding pass.
  */
-const PHASE = {
+const PHASE: Record<string, [string, string]> = {
   thumbs: ['Making thumbnails', 'Thumbnail'],
   posters: ['Taking video stills', 'Video still'],
 };
-const MAIN = ['Optimizing', 'Optimizing'];
+const MAIN: [string, string] = ['Optimizing', 'Optimizing'];
 
 /**
  * Ask, run, and say what happened.
@@ -140,7 +132,7 @@ export async function optimizeBoard() {
       // so without that the bar would appear to run three times for no stated
       // reason.
       onProgress: ({ done, total, name, phase }) => {
-        const [bare, one] = PHASE[phase] || MAIN;
+        const [bare, one] = (phase && PHASE[phase]) || MAIN;
         job.step(done, total);
         job.label(name ? `${one} - ${name}` : bare);
       },

@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Arrangement engine.
 //
 // Every arrangement is a pure `(items, opts) => [{x, y}, ...]` in the same order
@@ -52,6 +44,39 @@
 
 import { cellInset } from '../geometry.ts';
 
+/** A position in world units - what every layout hands back, one per item. */
+export type Point = { x: number, y: number };
+
+/** A box already on the board that a freshly laid block must not land on. */
+export type Obstacle = { x: number, y: number, w: number, h: number };
+
+/**
+ * As much of an item as a layout reads.
+ *
+ * A rectangle, and where it currently is; plus the three fields the layouts
+ * that order rather than shape sort on. Nothing here is about what a card *is* -
+ * an arrangement that asked would be a layout with an opinion about content.
+ */
+export type ArrangeItem = {
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  id?: string,
+  type?: string,
+  name?: string,
+  meta?: { mtime?: number } | null,
+};
+
+/** The room an item wants, as half-extents: its rectangle plus half a gap. */
+type Box = { hw: number, hh: number };
+
+/** One box already down, in the coordinates the slide is computed in. */
+type Placed = Box & Point;
+
+/** The extent of a laid block, low and high on each axis. */
+type Extent = { x0: number, x1: number, y0: number, y1: number };
+
 export const ARRANGEMENTS = [
   // First because it is the default a new board carries, and a menu whose top
   // entry is not what the thing is currently set to reads as a menu you have
@@ -68,26 +93,37 @@ export const ARRANGEMENTS = [
   { id: 'scatter', label: 'Random scatter' },
 ];
 
+/** What a caller may ask for. Every field has a default or a meaning when absent. */
+export type ArrangeOpts = {
+  /** which layout; defaults to 'grid' */
+  name?: string,
+  /** where the block is built around */
+  center?: Point,
+  /** edge-to-edge gap, always */
+  spacing?: number,
+  /** snap lattice cell size, 0 for none */
+  cellStep?: number,
+  /** makes a layout move its slots; seedless calls stay reproducible */
+  seed?: number,
+  /** boxes already on the board to clear */
+  obstacles?: Obstacle[],
+};
+
+/** The same options as a layout receives them: the caller's, defaults filled in. */
+type Laying = ArrangeOpts & { center: Point, spacing: number };
+
+/** One layout: items in, one position per item out, in the same order. */
+type Layout = (items: ArrangeItem[], o: Laying) => Point[];
+
 /**
  * World y points up, but every layout below is written the way you read a page:
  * successive rows go *down*. So the centre goes in negated and the results come
  * back negated, and each layout gets to stay in the orientation it reads best
  * in. `free` is exempt - it hands back real world coordinates untouched.
  *
- * @typedef {object} ArrangeOpts
- * @property {string}  [name]      which layout; defaults to 'grid'
- * @property {{x: number, y: number}} [center]  where the block is built around
- * @property {number}  [spacing]   edge-to-edge gap, always
- * @property {number}  [cellStep]  snap lattice cell size, 0 for none
- * @property {number}  [seed]      makes a layout move its slots; seedless calls
- *                                 stay reproducible
- * @property {Array<object>} [obstacles]  boxes already on the board to clear
- *
- * @param {Array<object>} items
- * @param {ArrangeOpts} [opts]
- * @returns {Array<{x: number, y: number}>} one position per item, in input order
+ * One position per item, in input order.
  */
-export function arrange(items, opts = {}) {
+export function arrange(items: ArrangeItem[], opts: ArrangeOpts = {}): Point[] {
   const o = { center: { x: 0, y: 0 }, spacing: 12, ...opts };
   const name = o.name || 'grid';
   const fn = LAYOUTS[name] || LAYOUTS.grid;
@@ -100,7 +136,8 @@ export function arrange(items, opts = {}) {
   // afterwards and both round toward the same line, so a tight Rearrange or a
   // snapped drop came back with cards overlapping. The positions returned are
   // still the real items' - only the room set aside for them grew.
-  const laid = o.cellStep > 0 ? items.map(it => toCells(it, o.cellStep)) : items;
+  const step = o.cellStep ?? 0;
+  const laid = step > 0 ? items.map(it => toCells(it, step)) : items;
   const out = fn(laid, { ...o, center: { x: o.center.x, y: -o.center.y } });
   const world = out.map(p => ({ x: p.x, y: -p.y }));
   // `obstacles` are boxes already on the board that the fresh block must not land
@@ -123,9 +160,10 @@ export function arrange(items, opts = {}) {
  * clear ray returns it untouched - so the block keeps its shape and only what
  * would have collided flows around the things in the way.
  */
-function avoidObstacles(items, world, o) {
+function avoidObstacles(items: ArrangeItem[], world: Point[], o: Laying): Point[] {
   const c = o.center;
-  const placed = o.obstacles.map(r => ({ x: r.x - c.x, y: r.y - c.y, hw: r.w / 2, hh: r.h / 2 }));
+  const placed: Placed[] = (o.obstacles ?? [])
+    .map(r => ({ x: r.x - c.x, y: r.y - c.y, hw: r.w / 2, hh: r.h / 2 }));
   return world.map((p, i) => {
     const box = roomFor(items[i], o.spacing);
     const dx = p.x - c.x, dy = p.y - c.y;
@@ -150,9 +188,9 @@ function avoidObstacles(items, world, o) {
  * which every real grid is - the default step is 64. A grid finer than that is
  * degenerate (a card cannot fit one cell) and is not a board the app offers.
  */
-function toCells(it, step) {
+function toCells(it: ArrangeItem, step: number): ArrangeItem {
   const gap = 2 * cellInset(step);
-  const cells = v => Math.max(Math.round((v + gap) / step), 1);
+  const cells = (v: number) => Math.max(Math.round((v + gap) / step), 1);
   return { ...it, w: cells(it.w) * step, h: cells(it.h) * step };
 }
 
@@ -223,7 +261,7 @@ const PAGE_ASPECT = 1.6;
 const SPIRAL_SWEEP = Math.PI / 2;
 const SPIRAL_TRIES = 7;
 
-const LAYOUTS = {
+const LAYOUTS: Record<string, Layout> = {
   /**
    * Free imposes no structure, so unseeded it hands back exactly what the items
    * already have.
@@ -296,18 +334,23 @@ const LAYOUTS = {
     // directions starting somewhere else, so the packing is exactly as good.
     const rnd = variation(o);
     const phase = rnd ? rnd() * Math.PI * 2 : 0;
-    const placed = [];
+    const placed: Placed[] = [];
     return items.map((it, n) => {
       const box = roomFor(it, o.spacing);
-      let best = null, near = Infinity;
+      let best: Point | null = null, near = Infinity;
       for (let k = 0; k < SPIRAL_TRIES; k++) {
         const a = n * golden + phase + SPIRAL_SWEEP * (k / (SPIRAL_TRIES - 1) - 0.5);
         const at = slideOut({ x: Math.cos(a), y: Math.sin(a) }, box, placed);
         const r = Math.hypot(at.x, at.y);
         if (r < near) { near = r; best = at; }
       }
-      placed.push({ ...box, x: best.x, y: best.y });
-      return { x: o.center.x + best.x, y: o.center.y + best.y };
+      // The first try always sets it: a slide comes to rest at a finite distance
+      // whenever the ray is not exactly on an axis, and no angle this deals is.
+      // See the note on slideOut() about a standing ban, which is the one shape
+      // that could leave nothing chosen.
+      const landed = best as Point;
+      placed.push({ ...box, x: landed.x, y: landed.y });
+      return { x: o.center.x + landed.x, y: o.center.y + landed.y };
     });
   },
 
@@ -325,8 +368,8 @@ const LAYOUTS = {
     // Which column an item lands in depends only on heights, so the widths can
     // be gathered on the way past and spent afterwards - each column exactly as
     // wide as the widest thing that chose it.
-    const heights = new Array(cols).fill(0);
-    const widths = new Array(cols).fill(0);
+    const heights = new Array<number>(cols).fill(0);
+    const widths = new Array<number>(cols).fill(0);
     const placed = items.map(it => {
       let c = 0;
       for (let k = 1; k < cols; k++) if (heights[k] < heights[c]) c = k;
@@ -336,7 +379,7 @@ const LAYOUTS = {
       return { c, y };
     });
 
-    const mid = [];
+    const mid: number[] = [];
     let edge = 0;
     for (const w of widths) { mid.push(edge + w / 2); edge += w; }
     // Centre the whole block on the target point.
@@ -349,10 +392,11 @@ const LAYOUTS = {
 
   /** One block per type, blocks laid side by side in a stable order. */
   type(items, o) {
-    const groups = new Map();
+    const groups = new Map<string, number[]>();
     items.forEach((it, i) => {
       const k = it.type || 'generic';
-      (groups.get(k) || groups.set(k, []).get(k)).push(i);
+      // Set on the way past, so the get that follows it always has one.
+      (groups.get(k) || groups.set(k, []).get(k)!).push(i);
     });
     // Alphabetical, so an unseeded run of the same board deals the blocks the
     // same way twice. Seeded, the blocks change places: the clustering is what
@@ -365,7 +409,7 @@ const LAYOUTS = {
     // Lay every block first, so they can be spaced by the width each one
     // actually came out at rather than by a cell count times a shared cell.
     const laid = order.map(key => {
-      const idx = groups.get(key);
+      const idx = groups.get(key)!;      // the keys came out of the map itself
       const sub = idx.map(i => items[i]);
       // Each block reshapes as well as moving. Needed on its own account: a
       // board of one type is a single block, and shuffling a list of one
@@ -373,14 +417,14 @@ const LAYOUTS = {
       // there is would be the one board Rearrange could not rearrange.
       let cols = Math.max(1, Math.ceil(Math.sqrt(sub.length)));
       if (rnd) cols = reflow(cols, sub.length, rnd);
-      const cells = sub.map((_, n) => [n % cols, Math.floor(n / cols)]);
+      const cells = sub.map((_, n): [number, number] => [n % cols, Math.floor(n / cols)]);
       return { idx, ...lattice(cells, sub, o.spacing) };
     });
     const seam = o.spacing * BLOCK_GAP;
-    const width = b => b.box.x1 - b.box.x0;
+    const width = (b: { box: Extent }) => b.box.x1 - b.box.x0;
     const total = laid.reduce((s, b) => s + width(b), 0) + seam * (laid.length - 1);
 
-    const out = new Array(items.length);
+    const out = new Array<Point>(items.length);
     let cursor = o.center.x - total / 2;
     for (const b of laid) {
       const mid = (b.box.y0 + b.box.y1) / 2;
@@ -406,7 +450,7 @@ const LAYOUTS = {
     const rnd = variation(o);
     let cols = Math.max(1, Math.ceil(Math.sqrt(items.length * PAGE_ASPECT)));
     if (rnd) cols = reflow(cols, items.length, rnd);
-    const cells = new Array(items.length);
+    const cells = new Array<[number, number]>(items.length);
     order.forEach((itemIndex, n) => { cells[itemIndex] = [n % cols, Math.floor(n / cols)]; });
     const { pos, box } = lattice(cells, items, o.spacing);
     const mx = (box.x0 + box.x1) / 2, my = (box.y0 + box.y1) / 2;
@@ -422,7 +466,7 @@ const LAYOUTS = {
     // "Rearrange everything" passes a fresh one, because there the whole point
     // is that it comes out different.
     const rnd = mulberry32(o.seed ?? (items.length * 2654435761 >>> 0));
-    const placed = [];
+    const placed: Placed[] = [];
     return items.map(it => {
       const a = rnd() * Math.PI * 2;
       const r = Math.sqrt(rnd()) * R;   // sqrt keeps the density even across the disc
@@ -462,8 +506,12 @@ const LAYOUTS = {
  * different rows and each sits inside its own row's height, and the other way
  * about. That is why the four layouts built on this need no separation pass.
  */
-function lattice(cells, items, gap) {
-  const colW = new Map(), rowH = new Map();
+function lattice(
+  cells: [number, number][],
+  items: ArrangeItem[],
+  gap: number,
+): { pos: Point[], box: Extent } {
+  const colW = new Map<number, number>(), rowH = new Map<number, number>();
   let c0 = 0, c1 = 0, r0 = 0, r1 = 0;
   cells.forEach(([c, r], i) => {
     colW.set(c, Math.max(colW.get(c) || 0, items[i].w + gap));
@@ -474,7 +522,9 @@ function lattice(cells, items, gap) {
   const [colX, xs] = track(colW, c0, c1);
   const [rowY, ys] = track(rowH, r0, r1);
   return {
-    pos: cells.map(([c, r]) => ({ x: colX.get(c), y: rowY.get(r) })),
+    // Every column and row between the two extremes got a centre from track(),
+    // and no cell is outside them - they were measured off these same cells.
+    pos: cells.map(([c, r]) => ({ x: colX.get(c)!, y: rowY.get(r)! })),
     box: { x0: xs[0], x1: xs[1], y0: ys[0], y1: ys[1] },
   };
 }
@@ -494,8 +544,12 @@ function lattice(cells, items, gap) {
  * @returns {[Map<number, number>, [number, number]]} centre per index, and the
  *          low/high edge of the whole run
  */
-function track(span, lo, hi) {
-  const mid = new Map();
+function track(
+  span: Map<number, number>,
+  lo: number,
+  hi: number,
+): [Map<number, number>, [number, number]] {
+  const mid = new Map<number, number>();
   const first = span.get(0) || 0;
   let edge = -first / 2;
   for (let k = 0; k <= hi; k++) {
@@ -514,7 +568,8 @@ function track(span, lo, hi) {
 }
 
 /** The room an item wants: its own rectangle with half a gap all round. */
-const roomFor = (it, gap) => ({ hw: (it.w + gap) / 2, hh: (it.h + gap) / 2 });
+const roomFor = (it: ArrangeItem, gap: number): Box =>
+  ({ hw: (it.w + gap) / 2, hh: (it.h + gap) / 2 });
 
 /**
  * Slide a box out along a ray from the origin and stop at the first distance
@@ -540,10 +595,10 @@ const roomFor = (it, gap) => ({ hw: (it.w + gap) / 2, hh: (it.h + gap) / 2 });
  * about 40ms, a board of 2000 in half a second. Both are paid once, by a
  * gesture that already animates every card on the board to somewhere new.
  */
-function slideOut(dir, box, placed, from = 0) {
-  const bans = [];
+function slideOut(dir: Point, box: Box, placed: Placed[], from = 0): Point {
+  const bans: [number, number][] = [];
   for (const p of placed) {
-    const span = (d, c, reach) => {
+    const span = (d: number, c: number, reach: number): [number, number] | null => {
       if (d === 0) return Math.abs(c) < reach ? [-Infinity, Infinity] : null;
       const a = (c - reach) / d, b = (c + reach) / d;
       return a < b ? [a, b] : [b, a];
@@ -590,9 +645,9 @@ function slideOut(dir, box, placed, from = 0) {
  * names fall through to the order they arrived in, which is stable and is the
  * order the caller chose.
  */
-function dateOrder(items) {
-  const when = i => items[i].meta?.mtime || 0;
-  const named = i => items[i].name || '';
+function dateOrder(items: ArrangeItem[]): number[] {
+  const when = (i: number) => items[i].meta?.mtime || 0;
+  const named = (i: number) => items[i].name || '';
   return items.map((_, i) => i).sort((a, b) => {
     const ta = when(a), tb = when(b);
     if (!ta !== !tb) return ta ? -1 : 1;
@@ -659,8 +714,10 @@ export const MOBILE_DEFAULT = 'fit';
  * spiral, grid rings, masonry - have no order in them at all and become the
  * default, which is also what an unknown id from a newer file gets.
  */
-export function mobileArrangement(name) {
-  if (MOBILE_ARRANGEMENTS.some(a => a.id === name)) return name;
+export function mobileArrangement(name?: string): string {
+  // The `name &&` is the typechecker's, not the logic's: no entry has an id of
+  // undefined, so the search already answered no for one.
+  if (name && MOBILE_ARRANGEMENTS.some(a => a.id === name)) return name;
   return name === 'scatter' ? 'shuffle' : MOBILE_DEFAULT;
 }
 
@@ -672,11 +729,14 @@ export function mobileArrangement(name) {
  * a fresh drop, where every draft is still at the origin - come back in the
  * order they arrived rather than in an order this invented for them.
  */
-const readingOrder = items =>
+const readingOrder = (items: ArrangeItem[]): ArrangeItem[] =>
   [...items].sort((a, b) => (b.y || 0) - (a.y || 0) || (a.x || 0) - (b.x || 0));
 
+/** One order: the same items, in the sequence the packer should meet them. */
+type Order = (items: ArrangeItem[], o: ArrangeOpts) => ArrangeItem[];
+
 /** Each order, as a comparator over the reading order beneath it. */
-const ORDERS = {
+const ORDERS: Record<string, Order> = {
   free: items => readingOrder(items),
   // Tall first, then wide. Height is what leaves holes in a row-major pack -
   // a card three cells deep walls off the two rows under it for anything that
@@ -708,7 +768,7 @@ const ORDERS = {
  * chosen order, the input untouched, and no seed means the same input gives the
  * same output every time. placeMobileItems() in state.js does the rest.
  */
-export function mobileOrder(items, opts = {}) {
+export function mobileOrder(items: ArrangeItem[], opts: ArrangeOpts = {}): ArrangeItem[] {
   const fn = ORDERS[mobileArrangement(opts.name)] || ORDERS[MOBILE_DEFAULT];
   return items.length ? fn(items, opts) : [];
 }
@@ -723,13 +783,14 @@ export function mobileOrder(items, opts = {}) {
  * outlived some of its ids simply skips them. Pure; the input array is not
  * mutated (known is a copy before it is sorted).
  */
-export function applyAudioOrder(items, order) {
+export function applyAudioOrder<T extends { id: string }>(items: T[], order: unknown): T[] {
   if (!Array.isArray(order) || !order.length) return items.slice();
-  const pos = new Map(order.map((id, i) => [id, i]));
-  const known = [];
-  const fresh = [];
+  const pos = new Map<string, number>(order.map((id: string, i: number) => [id, i]));
+  const known: T[] = [];
+  const fresh: T[] = [];
   for (const it of items) (pos.has(it.id) ? known : fresh).push(it);
-  known.sort((a, b) => pos.get(a.id) - pos.get(b.id));
+  // Only ids the map knows reached `known` - that is what put them there.
+  known.sort((a, b) => pos.get(a.id)! - pos.get(b.id)!);
   return [...known, ...fresh];
 }
 
@@ -741,7 +802,7 @@ export function applyAudioOrder(items, order) {
  * variation to a layout can never accidentally cost an unseeded caller its
  * reproducibility - there is nothing to draw from.
  */
-function variation(o) {
+function variation(o: ArrangeOpts): (() => number) | null {
   return o.seed == null ? null : mulberry32(o.seed);
 }
 
@@ -756,13 +817,13 @@ function variation(o) {
 const COL_STEPS = [-2, -1, 1, 2];
 
 /** A column count moved off its natural value, kept inside 1..n. */
-function reflow(cols, n, rnd) {
+function reflow(cols: number, n: number, rnd: () => number): number {
   const step = COL_STEPS[Math.floor(rnd() * COL_STEPS.length)];
   return Math.max(1, Math.min(n, cols + step));
 }
 
 /** Fisher-Yates, in place, from a supplied generator. */
-function shuffleWith(arr, rnd) {
+function shuffleWith<T>(arr: T[], rnd: () => number): T[] {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(rnd() * (i + 1));
     [arr[i], arr[j]] = [arr[j], arr[i]];
@@ -777,7 +838,7 @@ function shuffleWith(arr, rnd) {
  * @param {number} turn
  * @returns {[number, number]}
  */
-function spin([col, row], turn) {
+function spin([col, row]: [number, number], turn: number): [number, number] {
   switch (turn & 3) {
     case 1:  return [-row, col];
     case 2:  return [-col, -row];
@@ -794,7 +855,7 @@ function spin([col, row], turn) {
  * @param {number} n
  * @returns {[number, number]} column, row
  */
-function ringCell(n) {
+function ringCell(n: number): [number, number] {
   if (n === 0) return [0, 0];
   const ring = Math.ceil((Math.sqrt(n + 1) - 1) / 2);
   const side = 2 * ring;
@@ -811,7 +872,7 @@ function ringCell(n) {
 }
 
 /** Small deterministic PRNG, so a scatter re-run looks the same. */
-function mulberry32(seed) {
+function mulberry32(seed: number): () => number {
   return function () {
     seed |= 0; seed = seed + 0x6D2B79F5 | 0;
     let t = Math.imul(seed ^ seed >>> 15, 1 | seed);

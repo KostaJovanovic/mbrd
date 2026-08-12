@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // A still poster for a clip the browser cannot open, through ffmpeg.
 //
 // This module used to encode sound and video too. It no longer does: the browser
@@ -60,15 +52,42 @@ const CORE_JS = CORE_DIR + 'ffmpeg-core.js';
 /** Roughly what it weighs, for the sentence in the dialog. */
 export const MEDIA_MB = 32;
 
-let worker = null;
-let ready = null;
-let present = null;
+/**
+ * One run of the encoder, as the worker is asked for it. `bytes` is transferred
+ * rather than copied, which is why it is named as an ArrayBuffer-backed view:
+ * its buffer is what goes in the transfer list.
+ */
+type RunJob = {
+  type: 'run',
+  inName: string,
+  out: string,
+  bytes: Uint8Array<ArrayBuffer>,
+  argv: string[],
+};
+
+/** What comes back: the id it answers, and either the frame or a complaint. */
+type WorkerReply = {
+  id: number,
+  bytes?: Uint8Array<ArrayBuffer>,
+  error?: string,
+};
+
+/** A job parked in `pending`, waiting for that reply or for its clock. */
+type PendingJob = {
+  resolve: (reply: WorkerReply) => void,
+  reject: (err: unknown) => void,
+  timer: number,
+};
+
+let worker: Worker | null = null;
+let ready: Promise<void> | null = null;
+let present: boolean | null = null;
 
 // Every in-flight job, id -> { resolve, reject, timer }. A worker that crashes
 // mid-encode used to leave its ask() promise pending forever, and a rejected
 // boot promise was retained so no later attempt could respawn. Both are settled
 // through this map and killWorker(). See AUD-10.
-const pending = new Map();
+const pending = new Map<number, PendingJob>();
 
 /**
  * A single job's ceiling. Generous on purpose: a real settlement is the worker's
@@ -102,7 +121,7 @@ const PROBE_TIMEOUT_MS = 12_000;
  * spawns a fresh one. The one place a dead worker is cleaned up, whether the
  * death was a crash, a decode error, or a timeout.
  */
-function killWorker(err) {
+function killWorker(err: unknown) {
   for (const job of pending.values()) { clearTimeout(job.timer); job.reject(err); }
   pending.clear();
   if (worker) { try { worker.terminate(); } catch { /* already gone */ } }
@@ -128,7 +147,7 @@ function killWorker(err) {
  * encoder cannot be loaded for the rest of the session with the network long
  * back. So every negative is retried, and only success sticks.
  */
-export async function mediaAvailable() {
+export async function mediaAvailable(): Promise<boolean> {
   if (present === true) return true;
   try {
     // On a clock, because a request that never settles is a worse answer than
@@ -174,7 +193,7 @@ const FRAME_MAX_SIDE = 1280;
  * not readable, the encoder is missing a format. The caller treats that as "no
  * poster", which is the black rectangle it was already going to be.
  */
-export async function firstFrame(file, say = () => {}) {
+export async function firstFrame(file: File, say: (msg: string) => void = () => {}): Promise<Blob | null> {
   if (!(await mediaAvailable())) return null;
   if (!ready) {
     say(`Loading the media decoder (${MEDIA_MB} MB, once)…`);
@@ -215,7 +234,7 @@ export async function firstFrame(file, say = () => {}) {
     } catch {
       return null;
     }
-    let res = null;
+    let res: WorkerReply | null = null;
     try {
       res = await ask({
         type: 'run',
@@ -249,9 +268,9 @@ export async function firstFrame(file, say = () => {}) {
  * the happy path so a successful boot does not hold a two-minute handle open for
  * nothing.
  */
-function withBootTimeout(booting) {
+function withBootTimeout(booting: Promise<void>): Promise<void> {
   let timer = 0;
-  const clock = new Promise((_, reject) => {
+  const clock = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
       const err = new Error('the media decoder did not finish loading');
       killWorker(err);
@@ -261,8 +280,8 @@ function withBootTimeout(booting) {
   return Promise.race([booting, clock]).finally(() => clearTimeout(timer));
 }
 
-function spawn() {
-  return new Promise((resolve, reject) => {
+function spawn(): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
     let w;
     // A CSP that forbids workers, or a blocked script URL. Rejecting is the
     // whole of what this can do: clearing `ready` is the caller's, for the
@@ -272,7 +291,7 @@ function spawn() {
     worker = w;
 
     // The boot handshake. Removed once, because everything after it is a job.
-    const onBoot = e => {
+    const onBoot = (e: MessageEvent) => {
       if (e.data?.type !== 'ready') return;
       w.removeEventListener('message', onBoot);
       if (e.data.ok) { resolve(); return; }
@@ -310,8 +329,8 @@ function spawn() {
 }
 
 let seq = 0;
-function ask(msg) {
-  return new Promise((resolve, reject) => {
+function ask(msg: RunJob): Promise<WorkerReply> {
+  return new Promise<WorkerReply>((resolve, reject) => {
     if (!worker) { reject(new Error('the media worker is not running')); return; }
     const id = ++seq;
     // A wedge backstop: a worker that never replies and never errors would

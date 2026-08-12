@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The picture a document already has of itself.
 //
 // A Word file, a spreadsheet, a Krita painting, a Procreate canvas, a Keynote
@@ -67,7 +59,7 @@ const MIN_IMAGE = 512;
  * a full-size composite before a thumbnail, since the card is drawn far larger
  * than a file browser's icon.
  */
-const WELLS = {
+const WELLS: Record<string, string[]> = {
   // OpenDocument. The specification *requires* Thumbnails/thumbnail.png in a
   // package, so this is the one family where a hit is close to guaranteed.
   odf: [
@@ -122,23 +114,23 @@ const WELLS = {
 };
 
 /** Extension -> which family's paths to look down. */
-const FAMILY = new Map([
+const FAMILY = new Map<string, string>([
   ...['odt', 'ott', 'ods', 'ots', 'odp', 'otp', 'odg', 'otg', 'odf', 'odc', 'odb']
-    .map(e => [e, 'odf']),
+    .map((e): [string, string] => [e, 'odf']),
   ...['docx', 'docm', 'dotx', 'dotm', 'xlsx', 'xlsm', 'xltx', 'xltm',
       'pptx', 'pptm', 'ppsx', 'ppsm', 'potx', 'potm', 'vsdx']
-    .map(e => [e, 'ooxml']),
+    .map((e): [string, string] => [e, 'ooxml']),
   ['kra', 'krita'],
   ['krz', 'krita'],
   ['procreate', 'procreate'],
-  ...['pages', 'numbers', 'key', 'keynote'].map(e => [e, 'iwork']),
+  ...['pages', 'numbers', 'key', 'keynote'].map((e): [string, string] => [e, 'iwork']),
   ['sketch', 'sketch'],
   ['f3d', 'fusion'],
   ['f3z', 'fusion'],
 ]);
 
 /** Whether this file is one this module knows how to look inside. */
-export function hasBakedPreview(file) {
+export function hasBakedPreview(file: File) {
   const ext = extOf(file.name);
   return FAMILY.has(ext) || ext === 'psd' || ext === 'psb';
 }
@@ -150,7 +142,7 @@ export function hasBakedPreview(file) {
  * measureSize(), which is what import/preview.js returns too - the two are used
  * interchangeably by prepareFile().
  */
-export async function bakedPreview(file) {
+export async function bakedPreview(file: File): Promise<File | null> {
   try {
     const ext = extOf(file.name);
     if (ext === 'psd' || ext === 'psb') return await fromPsd(file);
@@ -167,7 +159,7 @@ export async function bakedPreview(file) {
 // ZIP containers
 // ---------------------------------------------------------------------------
 
-async function fromZip(file, paths) {
+async function fromZip(file: Blob, paths: string[]): Promise<File | null> {
   // readZip throws on anything that is not a well-formed archive, on an entry
   // whose checksum does not match, and on the expansion ratios a zip bomb needs.
   // All of that is caught by the caller and comes back as null.
@@ -186,7 +178,7 @@ async function fromZip(file, paths) {
 }
 
 /** JPEG or PNG, by signature. The only two anything here is allowed to return. */
-function imageType(b) {
+function imageType(b: Uint8Array): { ext: string, mime: string } | null {
   if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) {
     return { ext: 'jpg', mime: 'image/jpeg' };
   }
@@ -220,7 +212,7 @@ const PSD_MAX_RECORDS = 4096;
 const RES_THUMBNAIL = 1036;      // kJpegRGB, Photoshop 5 and later
 const RES_THUMBNAIL_OLD = 1033;  // the same picture, BGR order
 
-async function fromPsd(file) {
+async function fromPsd(file: Blob): Promise<File | null> {
   const head = new Uint8Array(await file.slice(0, Math.min(PSD_SCAN, file.size)).arrayBuffer());
   if (head.length < 34) return null;
   // '8BPS'
@@ -240,7 +232,7 @@ async function fromPsd(file) {
   // walk below simply stops where the buffer does.
   const end = Math.min(head.length, p + resLen);
 
-  let best = null;
+  let best: Uint8Array<ArrayBuffer> | null = null;
   for (let n = 0; n < PSD_MAX_RECORDS && p + 12 <= end; n++) {
     // '8BIM'
     if (view.getUint32(p, false) !== 0x3842494d) break;
@@ -278,4 +270,7 @@ async function fromPsd(file) {
   return best ? file1(best) : null;
 }
 
-const file1 = bytes => new File([bytes], 'preview.jpg', { type: 'image/jpeg' });
+// The bytes are a view onto a buffer this module read itself, which is what the
+// File constructor needs to be told - a view onto a shared one is not a BlobPart.
+const file1 = (bytes: Uint8Array<ArrayBuffer>) =>
+  new File([bytes], 'preview.jpg', { type: 'image/jpeg' });
