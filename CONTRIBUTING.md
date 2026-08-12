@@ -27,11 +27,17 @@ a QR for the LAN URL, so a phone on the same Wi-Fi opens the same board.
 
 On Windows, `server.bat` is a convenience wrapper around exactly that.
 
-No `npm install` to run the app or its tests. `package.json` declares no runtime
-dependencies at all, and its three devDependencies are for the optional lint,
-typecheck and end-to-end runs below — `npm test` uses Node's own runner and needs
-nothing fetched. **Node 22 or newer**: the test script hands `node --test` a
-glob, and Node only expands one itself from 21 onwards.
+`package.json` declares no runtime dependencies at all, and its three
+devDependencies are for the lint, the typecheck and the build below. `npm test`
+uses Node's own runner and needs nothing fetched. **Node 22.18 or newer**, and
+the floor is exact rather than cautious: Node strips TypeScript types natively
+from 22.18, which is the whole reason the suite still runs on a clean clone with
+nothing installed.
+
+Running the *app* does need one build — the browser cannot fetch a `.ts` module,
+so `npm run build` (or `npm run dev` to watch) writes the bundle `index.html`
+actually loads. The built artifact is committed, so a clone can be served as-is;
+you only need the build once you have changed something.
 
 ## Test it
 
@@ -46,8 +52,10 @@ container and its hardening, the `.mbrd` sidecars, board state and undo, the
 clipboard, the sticky and fence relations, geometry, the arrangement engine, the
 grid.
 
-Worth running on any change you touched: `node --check` on each changed `.js`,
-and `python -m py_compile tools/serve.py tools/qr.py` if you touched either.
+Worth running on any change you touched: `npm run typecheck`, which is what
+`node --check` used to be for now that the modules are TypeScript, and
+`python -m py_compile tools/serve.py tools/qr.py` if you touched either. CI runs
+both, plus a parse of every committed module and a build of the bundle.
 
 ### Two optional runs
 
@@ -80,7 +88,7 @@ count with a ceiling that may only fall. So a green typecheck means *everything
 not on that list is clean under strict*. Converting a module is deleting its
 pragma, fixing what tsc then says, and lowering the ceiling in the same commit.
 Do it a module at a time with the run clean at each step. Its ancestor earned
-its keep immediately: it found `web-graph.js` calling two `geometry.js` helpers it
+its keep immediately: it found `web-graph.ts` calling two `geometry.ts` helpers it
 had never imported, which threw out of `threads()` and stopped the relationship
 web drawing.
 
@@ -107,7 +115,7 @@ fussy.
    {`import`, `storage`, `canvas`} ← `ui`. A `ui/` module imported from
    `canvas/` is a regression, not a style note. Enforced by
    `tests/layers.test.js`, which also lists the base layer — the modules
-   `state.js` was split onto may never import `state.js` back.
+   `state.ts` was split onto may never import `state.ts` back.
 2. **No browser globals at module import time.** Reaching for `document` inside
    a function is fine; reaching for it in a module body is not, because it makes
    the module untestable headlessly. Exactly three modules are exempt —
@@ -127,7 +135,7 @@ fussy.
    requires it and Geist shipped without one for several versions. Enforced by
    `tests/fonts-license.test.js`. A new face also means a row in
    `THIRD-PARTY.md`.
-5. **`web/assets/js/import/formats.js` is generated.** Regenerate it with
+5. **`web/assets/js/import/formats.ts` is generated.** Regenerate it with
    `node tools/gen-formats.mjs`; never hand-edit it.
 
 One more that no test can catch: **do not edit `VERSION` / `COMMIT_COUNT` in
@@ -160,30 +168,30 @@ land, and none of them require touching anything else:
 
 | you want to add | you edit |
 | --- | --- |
-| a new arrangement | `arrange/arrangements.js` — a pure `(items, opts) => [{x, y}]` in input order |
-| support for a new file type | a branch in `classify()` plus an entry in `RENDERERS`, both in `canvas/renderers.js` |
-| a setting | one entry in `ui/settings-schema.js` — id, tab, section, type, `get`/`set` |
-| a user-facing action | one entry in `cmds` (`commands.js`), which the sidebar, toolbar, keyboard and context menu all drive |
+| a new arrangement | `arrange/arrangements.ts` — a pure `(items, opts) => [{x, y}]` in input order |
+| support for a new file type | a branch in `classify()` plus an entry in `RENDERERS`, both in `canvas/renderers.ts` |
+| a setting | one entry in `ui/settings-schema.ts` — id, tab, section, type, `get`/`set` |
+| a user-facing action | one entry in `cmds` (`commands.ts`), which the sidebar, toolbar, keyboard and context menu all drive |
 | a tool on the toolbar | a `<button data-cmd="…">` in `index.html`, plus the `cmds` entry above. `data-desktop` keeps it off the phone's tier, `data-phone` off every other width |
 
 Two things not to do, both of which look like improvements:
 
-- **Do not split `canvas/input.js`.** It is one Pointer Events pipeline with
+- **Do not split `canvas/input.ts`.** It is one Pointer Events pipeline with
   exactly one active gesture (`g`), for mouse, pen and touch together. A second
   finger always wins and converts a drag into a pinch. Splitting it reintroduces
   precisely the class of bug that single-`g` design exists to prevent. Its
   header carries the full gesture map — read it before adding a binding.
 - **Do not add a runtime dependency.** A new format is a few hundred lines of
-  header reading in the same style as `mesh.js` or `import/artwork.js`, not an
-  npm package. `storage/zip.js` inflates its own entries; `ui/pigments.js` does
+  header reading in the same style as `mesh.ts` or `import/artwork.ts`, not an
+  npm package. `storage/zip.ts` inflates its own entries; `ui/pigments.ts` does
   its own OKLCh. Dev-only tooling in `package.json` is a separate question and
   is fine to propose — there are three, all optional, and `npm test` still runs
   without any of them.
 
 Three modules reach outside the machine, and each is built so that reaching out
-is a choice the user makes: `canvas/embed.js` (a link card becomes a player per
-click, never by default), `ui/fonts.js` (a dropped `.woff2` is embedded, never
-fetched), and `optimize/media.js` (the ffmpeg core, on first use only). Adding a
+is a choice the user makes: `canvas/embed.ts` (a link card becomes a player per
+click, never by default), `ui/fonts.ts` (a dropped `.woff2` is embedded, never
+fetched), and `optimize/media.ts` (the ffmpeg core, on first use only). Adding a
 fourth needs a good argument in the pull request.
 
 ---
