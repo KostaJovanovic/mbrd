@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Trimming a board down to what a board actually needs.
 //
 // Strictly asked for. Nothing here runs on import, on save, or on a timer -
@@ -43,6 +35,109 @@ import { coverArt, audioTags } from '../import/artwork.ts';
 import { shrinkPicture, makeThumb, MAX_SIDE, MAX_SIDE_COVER, QUALITY } from './picture.ts';
 import { toOpus, opusAvailable } from './opus.ts';
 
+/** Which of the encoders a file belongs to. Null is "leave it alone". */
+type MediaKind = 'image' | 'audio' | 'video';
+
+/** One set of bytes the plan has decided about. */
+type Job = {
+  hash: string,
+  size: number,
+  name: string,
+  isCover: boolean,
+  kind: MediaKind | null,
+};
+
+/** A card carrying a file with no bytes in it, and which half of it is hollow. */
+type EmptyEntry = { id: string, asset: boolean, cover: boolean, name: string };
+
+/** What optimising this board would do - see planOptimize(). */
+export type Plan = {
+  pictures: Job[],
+  sounds: Job[],
+  skipped: Job[],
+  empty: EmptyEntry[],
+  done: number,
+  total: number,
+  posters: number,
+};
+
+/**
+ * What a run says about itself as it goes. `phase` names the two sweeps at the
+ * end; the main encoding pass leaves it off - see optimize/ui.js, which turns
+ * each into a sentence.
+ */
+export type Progress = {
+  done: number,
+  total: number,
+  name: string,
+  phase?: 'thumbs' | 'posters',
+};
+
+/**
+ * What a run says about itself afterwards. The four counts at the end are
+ * filled in as the passes that produce them finish, which is why they are
+ * optional rather than zeroed: describeSaving() reads "not said" and "none" the
+ * same way, and nothing else reads them at all.
+ */
+export type Report = {
+  done: number,
+  changed: number,
+  before: number,
+  after: number,
+  failed: number,
+  skipped: number,
+  emptied?: number,
+  items?: number,
+  thumbs?: number,
+  posters?: number,
+};
+
+/**
+ * As much of a card as this module reads.
+ *
+ * Structural and local on purpose: state.js is still unchecked, so there is no
+ * shared item type to import yet. When there is, this goes and the import takes
+ * its place - what is written here is only the handful of fields the passes
+ * below touch, not an opinion about what an item is.
+ */
+type ItemMeta = {
+  cover?: string,
+  poster?: string,
+  shot?: string,
+  preview?: string,
+  thumb?: string,
+  ext?: string,
+  opt?: string[],
+};
+
+type ItemView = {
+  id: string,
+  type?: string,
+  name?: string,
+  asset?: { hash?: string } | null,
+  meta?: ItemMeta | null,
+};
+
+/**
+ * The board's cards, seen as those few fields.
+ *
+ * board.items is still an unchecked module's bare `[]`, which types as never[] -
+ * so the widening happens here, once and named, rather than at each of the four
+ * passes that walk it. When board-model.js is annotated this whole seam goes:
+ * the accessor, ItemView and ItemMeta with it. A function rather than a binding
+ * because loading a board replaces the array.
+ */
+const cards = (): ItemView[] => board.items;
+
+/**
+ * An entry in the asset registry, as much of one as this module reads - see
+ * storage/assets.js, which is where the real shape lives.
+ */
+type AssetEntry = { blob: Blob, size: number, name?: string, mime?: string };
+
+/** One instruction for swapAssets(): replace, drop (null), or leave alone. */
+type Swap = { id: string, asset: string | undefined, cover: string | null | undefined };
+
 /**
  * What optimising this board would do, without doing any of it.
  *
@@ -51,11 +146,11 @@ import { toOpus, opusAvailable } from './opus.ts';
  * truth before anything is touched - and the sizes are exact, because every
  * asset is already in memory.
  */
-export function planOptimize() {
-  const seen = new Set();
-  const plan = { pictures: [], sounds: [], skipped: [], empty: [], done: 0, total: 0, posters: 0 };
+export function planOptimize(): Plan {
+  const seen = new Set<string>();
+  const plan: Plan = { pictures: [], sounds: [], skipped: [], empty: [], done: 0, total: 0, posters: 0 };
 
-  for (const item of board.items) {
+  for (const item of cards()) {
     // Files with no bytes in them, which is the one case here that is a removal
     // rather than a re-encode. An empty file cannot be made smaller and can
     // never draw anything: what it leaves is a card claiming to be a photograph
@@ -116,7 +211,7 @@ export function planOptimize() {
         type: item.type,
         isCover,
       });
-      const entry = { hash, size: asset.size, name, isCover, kind };
+      const entry: Job = { hash, size: asset.size, name, isCover, kind };
       if (kind === 'image') plan.pictures.push(entry);
       else if (kind === 'audio') plan.sounds.push(entry);
       // Video is bucketed with the skips - counted so a dialog can say how many
@@ -143,7 +238,14 @@ export function planOptimize() {
  * type describes the sound and not the art - hence `isCover` never falls through
  * to the type check.
  */
-function mediaKind({ mime, ext, type, isCover }) {
+function mediaKind({ mime, ext, type, isCover }: {
+  mime: string,
+  ext: string,
+  // The item's own type, which a card is not obliged to carry - the three
+  // branches above answer for most files without ever reaching it.
+  type: string | undefined,
+  isCover: boolean,
+}): MediaKind | null {
   if (/^image\//i.test(mime) || SVG_EXTS.has(ext) || PHOTO_EXTS.has(ext)) return 'image';
   if (ext && AUDIO_EXTS.has(ext)) return 'audio';
   if (ext && VIDEO_EXTS.has(ext)) return 'video';
@@ -174,7 +276,9 @@ function mediaKind({ mime, ext, type, isCover }) {
  * was never content, rather than rewriting what is - and the note over it says
  * why the two should not share a Ctrl+Z.
  */
-export async function runOptimize({ onProgress = () => {} } = {}) {
+export async function runOptimize(
+  { onProgress = () => {} }: { onProgress?: (p: Progress) => void } = {},
+): Promise<Report> {
   const plan = planOptimize();
 
   // The empty files, before anything else runs.
@@ -203,8 +307,10 @@ export async function runOptimize({ onProgress = () => {} } = {}) {
   const jobs = [...plan.pictures, ...plan.sounds];
   // hash -> the hash of the smaller file that replaces it. One entry per set of
   // bytes, not per card, so nine tracks sharing one cover re-encode it once.
-  const replacement = new Map();
-  const report = { done: 0, changed: 0, before: 0, after: 0, failed: 0, skipped: 0 };
+  // Keyed by hash, and asked with a hash that a card may not have: `undefined`
+  // is admitted as a key so the lookups below need no guard, and it is never set.
+  const replacement = new Map<string | undefined, string>();
+  const report: Report = { done: 0, changed: 0, before: 0, after: 0, failed: 0, skipped: 0 };
 
   let n = 0;
   for (const job of jobs) {
@@ -249,8 +355,8 @@ export async function runOptimize({ onProgress = () => {} } = {}) {
   // own file was empty have already gone by now.
   const hollowCover = new Set(
     plan.empty.filter(e => e.cover).map(e => e.id).filter(id => byId(id)));
-  const swaps = [];
-  for (const item of board.items) {
+  const swaps: Swap[] = [];
+  for (const item of cards()) {
     const asset = replacement.get(item.asset?.hash);
     const cover = hollowCover.has(item.id) ? null : replacement.get(item.meta?.cover);
     // `!== undefined`, not truthiness: null is a real instruction here, and the
@@ -286,8 +392,8 @@ export async function runOptimize({ onProgress = () => {} } = {}) {
  * Only ever adds. setItemPoster() refuses an item that already carries a
  * picture, so a cover somebody chose by hand survives this untouched.
  */
-async function backfillPosters(onProgress) {
-  const wanted = board.items.filter(it =>
+async function backfillPosters(onProgress: (p: Progress) => void): Promise<number> {
+  const wanted = cards().filter(it =>
     it.type === 'video' && it.asset?.hash && !(it.meta?.cover && getAsset(it.meta.cover)));
   if (!wanted.length) return 0;
 
@@ -300,10 +406,13 @@ async function backfillPosters(onProgress) {
   for (const item of wanted) {
     onProgress({ done: n, total: wanted.length, name: item.name || '', phase: 'posters' });
     n++;
-    const asset = getAsset(item.asset.hash);
+    const asset = getAsset(item.asset?.hash);
     if (!asset) continue;
     try {
-      const frame = await videoFrame(asset.blob);
+      // The second half of the same seam `cards()` names: canvas/poster.js is
+      // unchecked, so its promise types as unknown. This says what it resolves
+      // with, and goes when that module says so itself.
+      const frame = await videoFrame(asset.blob) as { blob: Blob } | null;
       if (!frame) continue;
       const hash = await addFile(new File([frame.blob], 'poster.webp', { type: 'image/webp' }));
       setItemPoster(item.id, hash);
@@ -362,21 +471,24 @@ async function backfillPosters(onProgress) {
  * Preview first for exactly that reason: where one exists it *is* the picture
  * the card draws, and the original underneath it may not be decodable at all.
  */
-function thumbSource(it) {
+function thumbSource(it: ItemView): string | null {
   if (it.meta?.preview && getAsset(it.meta.preview)) return it.meta.preview;
   if (it.type === 'image' && it.asset?.hash) return it.asset.hash;
   // The poster, under whichever key it landed on: setItemPoster writes cover,
   // and older boards carry it as poster.
   if (it.type === 'video') {
-    for (const key of ['cover', 'poster', 'shot']) {
+    for (const key of ['cover', 'poster', 'shot'] as const) {
       if (it.meta?.[key] && getAsset(it.meta[key])) return it.meta[key];
     }
   }
   return null;
 }
 
-async function backfillThumbs(restaged, onProgress) {
-  const wanted = board.items.filter(it => {
+async function backfillThumbs(
+  restaged: Set<string>,
+  onProgress: (p: Progress) => void,
+): Promise<number> {
+  const wanted = cards().filter(it => {
     if (!thumbSource(it)) return false;
     // Its picture was just rewritten, so whatever thumbnail it has is of the
     // old bytes. Re-cut regardless of what it already holds.
@@ -417,7 +529,7 @@ async function backfillThumbs(restaged, onProgress) {
  * would be ffmpeg - a video, or sound on a browser too old for WebCodecs Opus -
  * returns null and is left exactly as it was.
  */
-async function encodeOne(asset, job) {
+async function encodeOne(asset: AssetEntry, job: Job) {
   // job.kind is the category planOptimize() resolved (see mediaKind), not a
   // second read of asset.mime - so the AAC that reached the sound bucket by its
   // extension is encoded as sound rather than being re-doubted here.
@@ -444,7 +556,7 @@ async function encodeOne(asset, job) {
  * is for whatever opens the file outside this app, and a WebP in a comment
  * header is a picture some players will not draw.
  */
-async function carried(asset) {
+async function carried(asset: AssetEntry) {
   const tags = await audioTags(asset.blob).catch(() => []);
   const art = await coverArt(asset.blob).catch(() => null);
   if (!art) return { tags };
@@ -462,14 +574,15 @@ async function carried(asset) {
 }
 
 /** The old name with the new extension - `holiday.png` becomes `holiday.webp`. */
-function renameFor(name, mime) {
-  const ext = { 'image/webp': 'webp', 'audio/ogg': 'opus', 'video/webm': 'webm' }[mime] || 'bin';
+function renameFor(name: string, mime: string) {
+  const exts: Record<string, string> = { 'image/webp': 'webp', 'audio/ogg': 'opus', 'video/webm': 'webm' };
+  const ext = exts[mime] || 'bin';
   const stem = String(name || 'file').replace(/\.[^.]*$/, '') || 'file';
   return `${stem}.${ext}`;
 }
 
 /** "3 files, 41.2 MB smaller" - the sentence the toast says afterwards. */
-export function describeSaving(report) {
+export function describeSaving(report: Report) {
   // The derived passes on their own still count as work done, and saying so
   // matters on the one board where it is the only thing that happened: an old
   // board of already-small pictures, where the honest report used to be
@@ -496,4 +609,4 @@ export function describeSaving(report) {
 export const boardWeight = () => planOptimize().total;
 
 /** Whether an item still holds bytes this replaced. Used by the menu. */
-export const wasOptimized = id => !!byId(id)?.meta?.was;
+export const wasOptimized = (id: string) => !!byId(id)?.meta?.was;

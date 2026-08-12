@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The first page of a PDF, rendered to a picture, through pdf.js on demand.
 //
 // A PDF is a page-description language - paths, fonts, shadings, usually inside
@@ -52,13 +44,49 @@ export const PDF_MB = 4;
 /** Long-edge ceiling for the rendered page, in device pixels. */
 const TARGET = 1600;
 
-let libPromise = null;
+// ---------------------------------------------------------------------------
+// As much of pdf.js as this module speaks
+// ---------------------------------------------------------------------------
+//
+// The library is fetched at a URL, so there is nothing for the typechecker to
+// read it out of and no package to take a declaration from. What is written
+// here is only the handful of calls below - four methods and two numbers - so
+// that the rest of the module is checked against something rather than against
+// whatever a CDN answers with. It is a description of this module's use of
+// pdf.js, not of pdf.js.
+
+/** A page's geometry at some scale. Handed straight back to render(). */
+type PdfViewport = { width: number, height: number };
+
+type PdfPage = {
+  getViewport(opts: { scale: number }): PdfViewport,
+  render(opts: { canvasContext: CanvasRenderingContext2D, viewport: PdfViewport }): {
+    promise: Promise<void>,
+  },
+};
+
+type PdfDocument = {
+  numPages: number,
+  getPage(n: number): Promise<PdfPage>,
+  destroy?(): void,
+};
+
+type PdfJs = {
+  GlobalWorkerOptions: { workerSrc: string },
+  getDocument(opts: {
+    data: Uint8Array,
+    disableAutoFetch?: boolean,
+    disableStream?: boolean,
+  }): { promise: Promise<PdfDocument> },
+};
+
+let libPromise: Promise<PdfJs> | null = null;
 
 /**
  * pdf.js, fetched once. The worker source is set on the shared module the first
  * time through; it is cross-origin, so the service worker leaves it alone.
  */
-function loadPdfjs() {
+function loadPdfjs(): Promise<PdfJs> {
   if (!libPromise) {
     libPromise = import(PDF_BASE + 'pdf.min.mjs').then(mod => {
       const pdfjs = mod.default && mod.default.getDocument ? mod.default : mod;
@@ -69,8 +97,8 @@ function loadPdfjs() {
   return libPromise;
 }
 
-async function toBlob(canvas, type, quality) {
-  return new Promise(resolve => canvas.toBlob(resolve, type, quality));
+async function toBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob | null> {
+  return new Promise<Blob | null>(resolve => canvas.toBlob(resolve, type, quality));
 }
 
 /**
@@ -91,14 +119,14 @@ async function toBlob(canvas, type, quality) {
  * different things: a thumbnail that cannot be made is a card without one, and a
  * document that cannot be opened is a viewer with something to say.
  */
-export async function openPdf(file) {
+export async function openPdf(file: Blob) {
   const pdfjs = await loadPdfjs();
   const data = new Uint8Array(await file.arrayBuffer());
   const doc = await pdfjs.getDocument({ data, disableAutoFetch: true, disableStream: true }).promise;
   return {
     pages: doc.numPages,
     destroy: () => { try { doc.destroy?.(); } catch { /* nothing to clean up */ } },
-    async render(n, width) {
+    async render(n: number, width: number) {
       const page = await doc.getPage(n);
       const base = page.getViewport({ scale: 1 });
       // Scaled to the box it is going into rather than to a fixed target: a
@@ -126,8 +154,8 @@ export async function openPdf(file) {
  * one is brought down rather than rendered at hundreds of megapixels. WebP where
  * the browser will encode it, PNG otherwise - the same picture either way.
  */
-export async function firstPageRaster(file) {
-  let doc = null;
+export async function firstPageRaster(file: Blob) {
+  let doc: PdfDocument | null = null;
   try {
     const pdfjs = await loadPdfjs();
     // pdf.js keeps the buffer; a copy is handed over so nothing else that holds

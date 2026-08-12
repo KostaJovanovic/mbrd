@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // What an audio file says about itself: its cover art, and its tags.
 //
 // Three container formats, parsed by hand: ID3v2 for .mp3, the MP4 atom tree
@@ -31,6 +23,35 @@
 import { extOf } from '../util.ts';
 
 /**
+ * One tag, as a Vorbis-comment pair: `['ARTIST', 'Talk Talk']`.
+ *
+ * Named because it is what leaves this module and what optimize/opus.js writes -
+ * see audioTags() for why the pairs are Vorbis-shaped whatever they were read
+ * out of.
+ */
+export type TagPair = [string, string];
+
+/**
+ * The picture types a browser will draw, which is what sniff() answers with and
+ * the only set extFor() has to be total over.
+ */
+type ImageType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+
+/** The payload bounds of one MP4 atom - what findAtom() hands back. */
+type AtomRange = { start: number, end: number };
+
+/**
+ * A run of bytes read out of a file.
+ *
+ * Spelled with its buffer named rather than as a bare Uint8Array because the
+ * picture at the end of the walk is handed to the File constructor, and a view
+ * onto a SharedArrayBuffer is not a BlobPart. Everything here is read through
+ * Blob.slice(), so it is always this one - and saying so keeps the whole chain
+ * of subarrays assignable at the end of it.
+ */
+type Bytes = Uint8Array<ArrayBuffer>;
+
+/**
  * The biggest picture worth taking out of a tag.
  *
  * Not a safety limit - the bytes are already on the user's disk and they chose
@@ -50,7 +71,7 @@ const MAX_ATOMS = 4096;
  * storage/assets.js, which wants a name and a type - and so the asset registry
  * remembers it arrived as "cover.jpg" rather than as nothing.
  */
-export async function coverArt(file) {
+export async function coverArt(file: Blob): Promise<File | null> {
   try {
     const head = await bytes(file, 0, 16);
     const data = isID3(head) ? await id3Art(file, head)
@@ -78,7 +99,7 @@ export async function coverArt(file) {
 }
 
 /** Does this extension have any chance of carrying art? Saves a read. */
-export const mayHaveArt = name =>
+export const mayHaveArt = (name: string) =>
   ['mp3', 'm4a', 'm4b', 'mp4', 'aac', 'alac', 'flac'].includes(extOf(name));
 
 /**
@@ -94,7 +115,7 @@ export const mayHaveArt = name =>
  * with an empty list, because a re-encoded track with no title is still a track
  * and failing the whole optimisation over a missing field would be absurd.
  */
-export async function audioTags(file) {
+export async function audioTags(file: Blob): Promise<TagPair[]> {
   try {
     const head = await bytes(file, 0, 16);
     const pairs = isID3(head) ? await id3Tags(file, head)
@@ -116,9 +137,9 @@ export async function audioTags(file) {
 const MAX_TAG = 400;
 
 /** Drop the empty, trim the long, and keep the first of any repeated key. */
-function clean(pairs) {
-  const seen = new Set();
-  const out = [];
+function clean(pairs: TagPair[] | null): TagPair[] {
+  const seen = new Set<string>();
+  const out: TagPair[] = [];
   for (const [key, value] of pairs || []) {
     const k = String(key || '').toUpperCase();
     // '=' is the separator inside a comment string, so a key containing one
@@ -136,25 +157,25 @@ function clean(pairs) {
 // Reading
 // ---------------------------------------------------------------------------
 
-async function bytes(file, start, length) {
+async function bytes(file: Blob, start: number, length: number): Promise<Bytes> {
   if (start < 0 || length <= 0 || start >= file.size) return new Uint8Array(0);
   return new Uint8Array(await file.slice(start, start + length).arrayBuffer());
 }
 
-const be32 = (b, i) => ((b[i] << 24) | (b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3]) >>> 0;
-const be24 = (b, i) => (b[i] << 16) | (b[i + 1] << 8) | b[i + 2];
-const ascii = (b, i, n) => String.fromCharCode(...b.subarray(i, i + n));
+const be32 = (b: Bytes, i: number) => ((b[i] << 24) | (b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3]) >>> 0;
+const be24 = (b: Bytes, i: number) => (b[i] << 16) | (b[i + 1] << 8) | b[i + 2];
+const ascii = (b: Bytes, i: number, n: number) => String.fromCharCode(...b.subarray(i, i + n));
 
 /**
  * ID3's "synchsafe" integer: seven bits per byte, so the encoded size can never
  * contain a 0xFF byte that a player scanning for an audio frame would mistake
  * for the start of one.
  */
-const syncsafe = (b, i) =>
+const syncsafe = (b: Bytes, i: number) =>
   (b[i] << 21) | (b[i + 1] << 14) | (b[i + 2] << 7) | b[i + 3];
 
 /** The picture formats a browser will draw, identified by their own first bytes. */
-function sniff(b) {
+function sniff(b: Bytes): ImageType | '' {
   if (b.length < 12) return '';
   if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
   if (b[0] === 0x89 && ascii(b, 1, 3) === 'PNG') return 'image/png';
@@ -164,7 +185,7 @@ function sniff(b) {
 }
 
 // Total over what sniff() can return, which is the only thing that reaches it.
-const extFor = type => ({
+const extFor = (type: ImageType) => ({
   'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp',
 }[type]);
 
@@ -172,7 +193,7 @@ const extFor = type => ({
 // ID3v2  -  .mp3
 // ---------------------------------------------------------------------------
 
-const isID3 = h => h.length >= 10 && ascii(h, 0, 3) === 'ID3' && h[3] < 5;
+const isID3 = (h: Bytes) => h.length >= 10 && ascii(h, 0, 3) === 'ID3' && h[3] < 5;
 
 /**
  * The whole ID3v2 tag, unsynchronised if it said it was.
@@ -181,7 +202,7 @@ const isID3 = h => h.length >= 10 && ascii(h, 0, 3) === 'ID3' && h[3] < 5;
  * of it is read at once and walked in memory - it is kilobytes plus the
  * picture, and the picture is what we came for anyway.
  */
-async function id3Body(file, head) {
+async function id3Body(file: Blob, head: Bytes): Promise<Bytes | null> {
   const size = syncsafe(head, 6);
   if (size <= 0) return null;
   const footer = (head[5] & 0x10) ? 10 : 0;
@@ -201,7 +222,11 @@ async function id3Body(file, head) {
  * v2.3 sizes are common enough that the size is sanity-checked rather than
  * trusted, and a frame that runs past the end of the tag ends the walk.
  */
-function eachID3Frame(tag, major, visit) {
+function eachID3Frame(
+  tag: Bytes,
+  major: number,
+  visit: (id: string, body: Bytes) => boolean | void,
+) {
   const idLen = major <= 2 ? 3 : 4;
   const headLen = major <= 2 ? 6 : 10;
 
@@ -223,7 +248,7 @@ function eachID3Frame(tag, major, visit) {
     if (len <= 0 || at + headLen + len > tag.length) break;
     let start = at + headLen;
     const end = start + len;
-    let body = null;
+    let body: Bytes | null = null;
     if (major >= 3) {
       const flags = tag[at + headLen - 1];
       // A data-length indicator adds four bytes in front of the frame body.
@@ -237,12 +262,12 @@ function eachID3Frame(tag, major, visit) {
 }
 
 /** The APIC (v2.3+) or PIC (v2.2) frame of an ID3v2 tag. */
-async function id3Art(file, head) {
+async function id3Art(file: Blob, head: Bytes): Promise<Bytes | null> {
   const tag = await id3Body(file, head);
   if (!tag) return null;
   const major = head[3];
   const want = major <= 2 ? 'PIC' : 'APIC';
-  let art = null;
+  let art: Bytes | null = null;
   eachID3Frame(tag, major, (id, body) => {
     if (id !== want) return;
     art = readAPIC(body, major);
@@ -258,7 +283,7 @@ async function id3Art(file, head) {
  * circulation on anything ripped before about 2005 - which is most of what
  * anybody has a FLAC or a 320k MP3 of in the first place.
  */
-const ID3_TAGS = {
+const ID3_TAGS: Record<string, string> = {
   TIT2: 'TITLE', TT2: 'TITLE',
   TPE1: 'ARTIST', TP1: 'ARTIST',
   TPE2: 'ALBUMARTIST', TP2: 'ALBUMARTIST',
@@ -270,11 +295,11 @@ const ID3_TAGS = {
   TDRC: 'DATE', TYER: 'DATE', TYE: 'DATE',
 };
 
-async function id3Tags(file, head) {
+async function id3Tags(file: Blob, head: Bytes): Promise<TagPair[]> {
   const tag = await id3Body(file, head);
   if (!tag) return [];
   const major = head[3];
-  const out = [];
+  const out: TagPair[] = [];
   eachID3Frame(tag, major, (id, body) => {
     const key = ID3_TAGS[id];
     if (key) out.push([key, id3Text(body)]);
@@ -291,7 +316,7 @@ async function id3Tags(file, head) {
  * and then stepped over so it does not survive as a zero-width character at the
  * front of every title.
  */
-function id3Text(body) {
+function id3Text(body: Bytes): string {
   if (!body || body.length < 2) return '';
   const enc = body[0];
   let raw = body.subarray(1);
@@ -313,7 +338,7 @@ function id3Text(body) {
 }
 
 /** Undo unsynchronisation: a 0x00 inserted after every 0xFF comes back out. */
-function desync(b) {
+function desync(b: Bytes): Bytes {
   const out = new Uint8Array(b.length);
   let n = 0;
   for (let i = 0; i < b.length; i++) {
@@ -333,7 +358,7 @@ function desync(b) {
  * - and a single zero byte inside a UTF-16 character is not the end of it. That
  * distinction is why this is written out rather than done with an indexOf.
  */
-function readAPIC(b, major) {
+function readAPIC(b: Bytes, major: number): Bytes | null {
   if (b.length < 4) return null;
   const enc = b[0];
   // v2.2 carries a bare three-letter format - 'JPG', 'PNG' - where the later
@@ -359,7 +384,7 @@ function readAPIC(b, major) {
 // FLAC
 // ---------------------------------------------------------------------------
 
-const isFLAC = h => ascii(h, 0, 4) === 'fLaC';
+const isFLAC = (h: Bytes) => ascii(h, 0, 4) === 'fLaC';
 
 /**
  * FLAC's METADATA_BLOCK_PICTURE, block type 6.
@@ -369,7 +394,7 @@ const isFLAC = h => ascii(h, 0, 4) === 'fLaC';
  * walk through four-byte headers and the only block ever read in full is the
  * one we want.
  */
-async function flacArt(file) {
+async function flacArt(file: Blob): Promise<Bytes | null> {
   let at = 4;
   for (let n = 0; n < MAX_ATOMS; n++) {
     const head = await bytes(file, at, 4);
@@ -394,7 +419,7 @@ async function flacArt(file) {
  * The one container here that already speaks the language the optimiser writes
  * in, so the pairs come straight back out with nothing translated.
  */
-async function flacTags(file) {
+async function flacTags(file: Blob): Promise<TagPair[]> {
   let at = 4;
   for (let n = 0; n < MAX_ATOMS; n++) {
     const head = await bytes(file, at, 4);
@@ -419,10 +444,10 @@ const MAX_COMMENT = 256 * 1024;
  * length in this file is big-endian, because every other format here came from
  * somewhere else.
  */
-function readVorbis(b) {
-  const le32 = i => (b[i] | (b[i + 1] << 8) | (b[i + 2] << 16) | (b[i + 3] << 24)) >>> 0;
+function readVorbis(b: Bytes): TagPair[] {
+  const le32 = (i: number) => (b[i] | (b[i + 1] << 8) | (b[i + 2] << 16) | (b[i + 3] << 24)) >>> 0;
   const dec = new TextDecoder();
-  const out = [];
+  const out: TagPair[] = [];
   let at = 0;
   if (b.length < 8) return out;
   at += 4 + le32(at);                           // the vendor string, stepped over
@@ -438,7 +463,7 @@ function readVorbis(b) {
   return out;
 }
 
-function readFlacPicture(b) {
+function readFlacPicture(b: Bytes): Bytes | null {
   // type(4) | mimeLen(4) mime | descLen(4) desc | w h depth colours (16) | len(4) data
   let at = 4;
   at += 4 + be32(b, at);                      // the MIME string, stepped over
@@ -453,7 +478,7 @@ function readFlacPicture(b) {
 // MP4  -  .m4a and friends
 // ---------------------------------------------------------------------------
 
-const isMP4 = h => h.length >= 12 && ascii(h, 4, 4) === 'ftyp';
+const isMP4 = (h: Bytes) => h.length >= 12 && ascii(h, 4, 4) === 'ftyp';
 
 /**
  * The 'covr' atom, down at moov/udta/meta/ilst/covr/data.
@@ -469,7 +494,7 @@ const isMP4 = h => h.length >= 12 && ascii(h, 4, 4) === 'ftyp';
  * immediately. A walk that misses that reads the first child's size out of the
  * middle of the version field and goes nowhere.
  */
-async function mp4Art(file) {
+async function mp4Art(file: Blob): Promise<Bytes | null> {
   const moov = await findAtom(file, 0, file.size, 'moov');
   if (!moov) return null;
   const udta = await findAtom(file, moov.start, moov.end, 'udta');
@@ -497,7 +522,7 @@ async function mp4Art(file) {
  * friends - which ascii() hands back as '\xa9nam' because it reads bytes, not
  * UTF-8. Written here the same way so the two sides compare equal.
  */
-const MP4_TAGS = {
+const MP4_TAGS: Record<string, string> = {
   '\xa9nam': 'TITLE',
   '\xa9ART': 'ARTIST',
   aART: 'ALBUMARTIST',
@@ -514,7 +539,7 @@ const MP4_TAGS = {
  * which is a scan per field through a list that holds a dozen - and reuses the
  * walker that already works instead of adding a second one that might not.
  */
-async function mp4Tags(file) {
+async function mp4Tags(file: Blob): Promise<TagPair[]> {
   const moov = await findAtom(file, 0, file.size, 'moov');
   if (!moov) return [];
   const udta = await findAtom(file, moov.start, moov.end, 'udta');
@@ -524,7 +549,7 @@ async function mp4Tags(file) {
   const ilst = await findAtom(file, meta.start + 4, meta.end, 'ilst');
   if (!ilst) return [];
 
-  const out = [];
+  const out: TagPair[] = [];
   for (const [name, key] of Object.entries(MP4_TAGS)) {
     const value = await mp4Value(file, ilst, name);
     if (value) out.push([key, new TextDecoder().decode(value)]);
@@ -540,7 +565,7 @@ async function mp4Tags(file) {
 }
 
 /** The payload of one named field's 'data' atom, capped. */
-async function mp4Value(file, ilst, name) {
+async function mp4Value(file: Blob, ilst: AtomRange, name: string): Promise<Bytes | null> {
   const box = await findAtom(file, ilst.start, ilst.end, name);
   if (!box) return null;
   const data = await findAtom(file, box.start, box.end, 'data');
@@ -557,7 +582,7 @@ async function mp4Value(file, ilst, name) {
  * a time, so a stray 'data' somewhere else in the tree is never mistaken for
  * the one being looked for.
  */
-async function findAtom(file, from, to, type) {
+async function findAtom(file: Blob, from: number, to: number, type: string): Promise<AtomRange | null> {
   let at = from;
   for (let n = 0; n < MAX_ATOMS && at + 8 <= to; n++) {
     const head = await bytes(file, at, 16);

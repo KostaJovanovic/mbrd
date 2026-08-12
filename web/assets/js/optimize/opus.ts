@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Sound, through the browser's own Opus encoder.
 //
 // The browser already has everything this needs and has for years: it decodes
@@ -25,7 +17,27 @@
 // MP4 is a different and much larger problem than muxing an Ogg. Sound no
 // longer waits on it.
 
-import { audioTags } from '../import/artwork.ts';
+import { audioTags, type TagPair } from '../import/artwork.ts';
+
+/** One encoded frame, and the encoder's own idea of how long it is (in µs). */
+type Packet = { bytes: Uint8Array, duration: number | null };
+
+/** What toOpus() hands back when the swap is worth making. */
+export type OpusResult = {
+  blob: Blob,
+  from: number,
+  to: number,
+  seconds: number,
+};
+
+/** What may be asked of a re-encode; every field has a default. */
+export type OpusOptions = {
+  kbps?: number,
+  cover?: Blob | null,
+  coverW?: number,
+  coverH?: number,
+  tags?: TagPair[] | null,
+};
 
 /** Opus's own rate. Everything is resampled to it on the way in. */
 const RATE = 48000;
@@ -77,7 +89,10 @@ export const opusAvailable = () =>
  * with no audio in it. None of those is a failure and all of them mean "keep
  * what you have".
  */
-export async function toOpus(blob, { kbps = OPUS_KBPS, cover = null, coverW = 0, coverH = 0, tags = null } = {}) {
+export async function toOpus(
+  blob: Blob | null | undefined,
+  { kbps = OPUS_KBPS, cover = null, coverW = 0, coverH = 0, tags = null }: OpusOptions = {},
+): Promise<OpusResult | null> {
   if (!opusAvailable() || !blob || !blob.size || blob.size > MAX_INPUT) return null;
 
   // Read the tags before the bytes are decoded, so that a file that turns out
@@ -131,10 +146,10 @@ export async function toOpus(blob, { kbps = OPUS_KBPS, cover = null, coverW = 0,
  * the entire decoded track in the encoder's own queue on top of the copy this
  * function is already holding.
  */
-async function encode(buf, channels, config) {
-  const packets = [];
-  let head = null;
-  let failed = null;
+async function encode(buf: AudioBuffer, channels: number, config: AudioEncoderConfig) {
+  const packets: Packet[] = [];
+  let head: Uint8Array | null = null;
+  let failed: unknown = null;
 
   const encoder = new AudioEncoder({
     output: (chunk, meta) => {
@@ -152,7 +167,7 @@ async function encode(buf, channels, config) {
 
   try {
     encoder.configure(config);
-    const planes = [];
+    const planes: Float32Array[] = [];
     for (let c = 0; c < channels; c++) planes.push(buf.getChannelData(c));
 
     for (let at = 0; at < buf.length && !failed; at += FRAME) {
@@ -205,7 +220,7 @@ const CRC = (() => {
   return table;
 })();
 
-function crc32(b) {
+function crc32(b: Uint8Array): number {
   let c = 0;
   for (let i = 0; i < b.length; i++) c = ((c << 8) ^ CRC[((c >>> 24) ^ b[i]) & 0xff]) >>> 0;
   return c >>> 0;
@@ -232,7 +247,14 @@ const SERIAL = 0x6d627264;                      // 'mbrd'
  * reports a track a few milliseconds longer than it is and gates open on
  * silence at the end.
  */
-function writeOgg({ packets, head, channels, samples, comments, picture }) {
+function writeOgg({ packets, head, channels, samples, comments, picture }: {
+  packets: Packet[],
+  head: Uint8Array | null,
+  channels: number,
+  samples: number,
+  comments: TagPair[],
+  picture: string | null,
+}) {
   const id = usableHead(head, channels) || opusHead(channels);
   const preSkip = id[10] | (id[11] << 8);
   const ogg = pager();
@@ -278,9 +300,9 @@ const NO_GRANULE = -1;
  * a small machine rather than a loop.
  */
 function pager() {
-  const pages = [];
-  let laces = [];
-  let body = [];
+  const pages: Uint8Array[] = [];
+  let laces: number[] = [];
+  let body: Uint8Array[] = [];
   let bodyLen = 0;
   let granule = NO_GRANULE;
   let seq = 0;
@@ -288,7 +310,7 @@ function pager() {
   let continued = false;
   let inPacket = false;
 
-  const write = (flags, gran) => {
+  const write = (flags: number, gran: number) => {
     const buf = new Uint8Array(27 + laces.length + bodyLen);
     const dv = new DataView(buf.buffer);
     buf[0] = 0x4f; buf[1] = 0x67; buf[2] = 0x67; buf[3] = 0x53;   // 'OggS'
@@ -322,7 +344,7 @@ function pager() {
 
   return {
     page,
-    packet(bytes, gran) {
+    packet(bytes: Uint8Array, gran: number) {
       inPacket = true;
       let off = 0;
       for (;;) {
@@ -348,7 +370,7 @@ function pager() {
 }
 
 /** The encoder's own header, if it gave one and it is the shape it should be. */
-function usableHead(head, channels) {
+function usableHead(head: Uint8Array | null, channels: number): Uint8Array | null {
   if (!head || head.length < 19) return null;
   if (String.fromCharCode(...head.subarray(0, 8)) !== 'OpusHead') return null;
   if (head[9] !== channels) return null;
@@ -362,7 +384,7 @@ function usableHead(head, channels) {
  * the track by six milliseconds, which is inaudible - but getting it right
  * costs nothing.
  */
-function opusHead(channels) {
+function opusHead(channels: number) {
   const b = new Uint8Array(19);
   b.set([0x4f, 0x70, 0x75, 0x73, 0x48, 0x65, 0x61, 0x64], 0);     // 'OpusHead'
   b[8] = 1;                                                       // version
@@ -381,7 +403,7 @@ function opusHead(channels) {
  * block, base64'd, which is the roundabout but entirely standard way an Opus
  * stream carries a picture, and what every player that shows one reads.
  */
-function opusTags(comments, picture) {
+function opusTags(comments: TagPair[] | null, picture: string | null) {
   const enc = new TextEncoder();
   const vendor = enc.encode('mbrd');
   const list = (comments || []).map(([k, v]) => enc.encode(`${k}=${v}`));
@@ -410,7 +432,7 @@ function opusTags(comments, picture) {
  * from the picture rather than declared, because a wrong pair of numbers here
  * is worse than none - some players lay out from them without looking.
  */
-async function pictureBlock(file, width = 0, height = 0) {
+async function pictureBlock(file: Blob, width = 0, height = 0): Promise<string | null> {
   let data;
   try {
     data = new Uint8Array(await file.arrayBuffer());
@@ -455,7 +477,7 @@ async function pictureBlock(file, width = 0, height = 0) {
  * of three so no chunk boundary lands mid-triplet and produces padding in the
  * middle of the string.
  */
-function base64(bytes) {
+function base64(bytes: Uint8Array): string {
   const CHUNK = 12288;
   let s = '';
   for (let i = 0; i < bytes.length; i += CHUNK) {

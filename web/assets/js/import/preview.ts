@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // A viewable picture pulled out of one the browser cannot decode.
 //
 // HEIC, camera RAW (CR2/NEF/ARW/DNG and the rest) and a few others are formats
@@ -41,6 +33,12 @@ const MIN_JPEG = 1024;        // a "preview" under a kilobyte is not one
 const MAX_JPEG = 128 * 1024 * 1024;
 const SCAN_CAP = 12 * 1024 * 1024;   // window the marker-scan fallback reads
 
+/** One candidate JPEG: where the container says it is, and how long it claims. */
+type Candidate = { off: number, len: number };
+
+/** One TIFF directory entry, as much of it as the walk below reads. */
+type TiffEntry = { type: number, count: number, valueOff: number };
+
 /**
  * A viewable JPEG for a file the browser will not decode, or null.
  *
@@ -52,7 +50,7 @@ const SCAN_CAP = 12 * 1024 * 1024;   // window the marker-scan fallback reads
  * bytes before it is handed on, so a wrong offset yields null rather than a
  * broken picture.
  */
-export async function embeddedPreview(file) {
+export async function embeddedPreview(file: Blob): Promise<File | null> {
   try {
     const head = await bytes(file, 0, 16);
     if (head.length < 12) return null;
@@ -71,14 +69,14 @@ export async function embeddedPreview(file) {
 // Reading
 // ---------------------------------------------------------------------------
 
-async function bytes(file, start, length) {
+async function bytes(file: Blob, start: number, length: number): Promise<Uint8Array> {
   if (start < 0 || length <= 0 || start >= file.size) return new Uint8Array(0);
   const end = Math.min(start + length, file.size);
   return new Uint8Array(await file.slice(start, end).arrayBuffer());
 }
 
 /** JPEG by its own first bytes, the one format this module ever returns. */
-const isJpeg = b => b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff;
+const isJpeg = (b: Uint8Array) => b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff;
 
 // ---------------------------------------------------------------------------
 // TIFF / RAW
@@ -94,7 +92,7 @@ const isJpeg = b => b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 
 
 const II = 0x4949, MM = 0x4d4d;
 
-function isTiff(h) {
+function isTiff(h: Uint8Array) {
   const order = (h[0] << 8) | h[1];
   const magic = order === MM ? (h[2] << 8) | h[3] : (h[3] << 8) | h[2];
   return (order === II || order === MM) && magic === 42;
@@ -102,9 +100,9 @@ function isTiff(h) {
 
 // TIFF field types, in bytes. Only the two that carry offsets and counts here
 // matter; anything else is read for its size and otherwise ignored.
-const TYPE_BYTES = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 6: 1, 7: 1, 8: 2, 9: 4, 10: 8, 11: 4, 12: 8 };
+const TYPE_BYTES: Record<number, number> = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 6: 1, 7: 1, 8: 2, 9: 4, 10: 8, 11: 4, 12: 8 };
 
-async function fromTiff(file) {
+async function fromTiff(file: Blob): Promise<Blob | null> {
   const head = await bytes(file, 0, 8);
   const le = ((head[0] << 8) | head[1]) === II;
   const dv0 = new DataView(head.buffer, head.byteOffset, head.byteLength);
@@ -113,9 +111,9 @@ async function fromTiff(file) {
   // The candidates gathered across every directory, then the largest verified
   // one wins: a camera writes both a postage-stamp thumbnail and a full-screen
   // preview, and the big one is the picture worth showing.
-  const found = [];
-  const seen = new Set();
-  const queue = [first];
+  const found: Candidate[] = [];
+  const seen = new Set<number>();
+  const queue: number[] = [first];
   let walked = 0;
 
   while (queue.length && walked < MAX_IFDS) {
@@ -136,7 +134,7 @@ async function fromTiff(file) {
     if (block.length < entries * 12) continue;
     const dv = new DataView(block.buffer, block.byteOffset, block.byteLength);
 
-    const tags = new Map();       // tag -> { type, count, valueOff }
+    const tags = new Map<number, TiffEntry>();   // tag -> { type, count, valueOff }
     for (let i = 0; i < entries; i++) {
       const off = i * 12;
       const tag = dv.getUint16(off, le);
@@ -148,11 +146,11 @@ async function fromTiff(file) {
     // The scalar in an entry's value slot. When the value fits in four bytes it
     // sits inline; otherwise those four bytes are an offset into the file, which
     // is only chased for single values (the counts and offsets this needs).
-    const scalar = async e => {
+    const scalar = async (e: TiffEntry | undefined): Promise<number | null> => {
       if (!e) return null;
       const size = TYPE_BYTES[e.type] || 0;
       if (!size || e.count !== 1) return null;
-      const read = (buf, o) =>
+      const read = (buf: Uint8Array, o: number) =>
         size === 2 ? new DataView(buf.buffer, buf.byteOffset, buf.byteLength).getUint16(o, le)
         : size === 4 ? new DataView(buf.buffer, buf.byteOffset, buf.byteLength).getUint32(o, le)
         : buf[o];
@@ -207,10 +205,10 @@ async function fromTiff(file) {
 // because a thumbnail lives in the metadata near the start, not past megabytes
 // of picture data.
 
-async function scanForJpeg(file) {
+async function scanForJpeg(file: Blob): Promise<Blob | null> {
   const buf = await bytes(file, 0, Math.min(file.size, SCAN_CAP));
   if (buf.length < MIN_JPEG) return null;
-  let best = null;
+  let best: Candidate | null = null;
   for (let i = 0; i + 1 < buf.length; i++) {
     if (buf[i] !== 0xff || buf[i + 1] !== 0xd8 || buf[i + 2] !== 0xff) continue;
     // Found a start; find its matching end. Scanning forward for FF D9 is not

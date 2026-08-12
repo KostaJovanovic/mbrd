@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Shrinking a picture, with the browser's own decoder and encoder.
 //
 // No dependency and none wanted: `createImageBitmap` reads every format the
@@ -52,6 +44,22 @@ const WORTH_IT = 0.1;
  */
 const SKIP = /^image\/(gif|svg\+xml|avif)$/i;
 
+/** A re-encoded picture, with what it cost before and after. */
+export type ShrunkPicture = {
+  blob: Blob,
+  width: number,
+  height: number,
+  from: number,
+  to: number,
+};
+
+/** What a caller may ask of a shrink; every field has a default. */
+export type ShrinkOptions = {
+  maxSide?: number,
+  quality?: number,
+  type?: string,
+};
+
 /**
  * A smaller version of this picture, or null to leave it alone.
  *
@@ -60,7 +68,10 @@ const SKIP = /^image\/(gif|svg\+xml|avif)$/i;
  * because none of those is a failure. The caller counts them as "left alone",
  * which is what they are.
  */
-export async function shrinkPicture(blob, { maxSide = MAX_SIDE, quality = QUALITY, type = 'image/webp' } = {}) {
+export async function shrinkPicture(
+  blob: Blob | null | undefined,
+  { maxSide = MAX_SIDE, quality = QUALITY, type = 'image/webp' }: ShrinkOptions = {},
+): Promise<ShrunkPicture | null> {
   if (!blob || !/^image\//i.test(blob.type) || SKIP.test(blob.type)) return null;
   // An animated WebP is a still WebP as far as the canvas is concerned, so it
   // is caught by its own bytes rather than by its type - see isAnimated().
@@ -87,6 +98,11 @@ export async function shrinkPicture(blob, { maxSide = MAX_SIDE, quality = QUALIT
 
     const canvas = new OffscreenCanvas(w, h);
     const ctx = canvas.getContext('2d', { alpha: true });
+    // A canvas with no 2D context is one more thing this browser cannot do with
+    // this picture, and it is answered the way all the others are - see the note
+    // above. Unreachable on a fresh canvas; the type says it is possible and the
+    // module's contract already says what to do about it.
+    if (!ctx) return null;
     // The default is 'low' on some engines, which on a 4:1 downscale is visible
     // as aliasing along every hard edge in the picture.
     ctx.imageSmoothingEnabled = true;
@@ -128,6 +144,9 @@ export const THUMB_SIDE = 100;
  */
 const THUMB_QUALITY = 0.5;
 
+/** A thumbnail: the small bytes and the size they were written at. */
+export type Thumbnail = { blob: Blob, width: number, height: number };
+
 /**
  * A hundred-pixel-wide copy of a picture, or null if it does not want one.
  *
@@ -147,7 +166,7 @@ const THUMB_QUALITY = 0.5;
  * instruction, and a tall picture that obeys it is still only a few thousand
  * pixels of WebP.
  */
-export async function makeThumb(blob) {
+export async function makeThumb(blob: Blob | null | undefined): Promise<Thumbnail | null> {
   if (!blob || !/^image\//i.test(blob.type)) return null;
   if (/^image\/svg\+xml$/i.test(blob.type)) return null;
   if (await isAnimated(blob)) return null;
@@ -165,6 +184,7 @@ export async function makeThumb(blob) {
     const h = Math.max(1, Math.round(bmp.height * scale));
     const canvas = new OffscreenCanvas(w, h);
     const ctx = canvas.getContext('2d', { alpha: true });
+    if (!ctx) return null;   // one more thing this browser cannot do - see shrinkPicture()
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(bmp, 0, 0, w, h);
@@ -197,7 +217,7 @@ export async function makeThumb(blob) {
  * WebP: the RIFF chunk list carries 'ANIM' when it is animated. The header is
  * enough; there is no need to walk the frames.
  */
-async function isAnimated(blob) {
+async function isAnimated(blob: Blob): Promise<boolean> {
   const head = new Uint8Array(await blob.slice(0, 4096).arrayBuffer());
   const tag = String.fromCharCode(...head.subarray(0, 4));
   if (tag === 'GIF8') {
