@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // A coarse uniform grid over world space, so "which items are near the screen"
 // stops being a walk over the whole board.
 //
@@ -42,17 +34,26 @@
  */
 const DEFAULT_CELL = 512;
 
+/**
+ * A box in the index: an item id and its centre-and-full-size footprint. The
+ * whole vocabulary of this module - see the header on what the caller owes.
+ */
+export type SpatialBox = { id: string; x: number; y: number; w: number; h: number };
+
+/** A world rectangle to query with, as two opposite corners. */
+export type SpatialRect = { x0: number; y0: number; x1: number; y1: number };
+
 let cell = DEFAULT_CELL;
 /** cellKey -> Set<id>. A cell with no members is deleted, not left empty. */
-const cells = new Map();
+const cells = new Map<string, Set<string>>();
 /** id -> the cell keys it currently occupies, so update/remove are cheap. */
-const placed = new Map();
+const placed = new Map<string, string[]>();
 
-const keyOf = (cx, cy) => cx + ',' + cy;
-const cellIndex = v => Math.floor(v / cell);
+const keyOf = (cx: number, cy: number) => cx + ',' + cy;
+const cellIndex = (v: number) => Math.floor(v / cell);
 
 /** The cell keys a centre-and-size box overlaps, one per cell it touches. */
-function cellsFor(box) {
+function cellsFor(box: SpatialBox): string[] {
   const cx0 = cellIndex(box.x - box.w / 2);
   const cx1 = cellIndex(box.x + box.w / 2);
   const cy0 = cellIndex(box.y - box.h / 2);
@@ -64,7 +65,7 @@ function cellsFor(box) {
 }
 
 /** Drop an id from every cell it was in. Safe to call for an unknown id. */
-export function remove(id) {
+export function remove(id: string): void {
   const keys = placed.get(id);
   if (!keys) return;
   for (const k of keys) {
@@ -82,20 +83,20 @@ export function remove(id) {
  * Idempotent by way of remove() first, so the geom path can call it per moved id
  * without tracking whether the item was indexed before. A null box just removes.
  */
-export function update(id, box) {
+export function update(id: string, box: SpatialBox | null | undefined): void {
   remove(id);
   if (!box) return;
   const keys = cellsFor(box);
   for (const k of keys) {
     let set = cells.get(k);
-    if (!set) cells.set(k, set = new Set());
+    if (!set) cells.set(k, set = new Set<string>());
     set.add(id);
   }
   placed.set(id, keys);
 }
 
 /** Throw the whole index away and rebuild it from a fresh list of boxes. */
-export function rebuild(boxes, cellSize = DEFAULT_CELL) {
+export function rebuild(boxes: Iterable<SpatialBox>, cellSize = DEFAULT_CELL): void {
   cell = cellSize;
   cells.clear();
   placed.clear();
@@ -110,8 +111,8 @@ export function rebuild(boxes, cellSize = DEFAULT_CELL) {
  * the rectangle's edge. Deduped: an id listed in several of the visited cells
  * comes back once.
  */
-export function queryRect(rect) {
-  const out = new Set();
+export function queryRect(rect: SpatialRect): Set<string> {
+  const out = new Set<string>();
   const cx0 = cellIndex(rect.x0);
   const cx1 = cellIndex(rect.x1);
   const cy0 = cellIndex(rect.y0);

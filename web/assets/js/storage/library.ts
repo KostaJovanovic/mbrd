@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The board library: several boards kept in this browser, not just the one.
 //
 // The working cache (session.js) has always held exactly one board - the one on
@@ -36,6 +28,20 @@ const STORE = 'library';
 const INDEX_KEY = 'library-index';
 
 /**
+ * One row of the shelf's index - everything the switcher draws a card from,
+ * and nothing that would need the packed board opened to know.
+ *
+ * `thumb` is a data URL rather than a Blob because it goes straight into an
+ * `<img>` src and is small by construction - see ui/snapshot.js boardThumb().
+ */
+export type LibraryEntry = {
+  id: string,
+  title: string,
+  at: number,
+  thumb: string | null,
+};
+
+/**
  * The shelf's index: `[{ id, title, at, thumb }]`, newest first.
  *
  * Kept in `kv` beside the session snapshot rather than derived from the blob
@@ -43,18 +49,23 @@ const INDEX_KEY = 'library-index';
  * the thumbnail a card needs are right here, and the megabytes of packed board
  * are only read when one is actually opened.
  */
-export async function libraryIndex() {
+export async function libraryIndex(): Promise<LibraryEntry[]> {
   const list = await idbGet('kv', INDEX_KEY);
   if (!Array.isArray(list)) return [];
-  return [...list].sort((a, b) => (b.at || 0) - (a.at || 0));
+  // Safe: writeIndex() below is the only thing that has ever written this key,
+  // and it writes exactly the rows putLibraryBoard() builds. The Array.isArray
+  // above is the one shape check worth making - a key holding something else
+  // entirely is the case a hand-edited database produces.
+  const rows = list as LibraryEntry[];
+  return [...rows].sort((a, b) => (b.at || 0) - (a.at || 0));
 }
 
-async function writeIndex(list) {
+async function writeIndex(list: LibraryEntry[]) {
   await idbSet('kv', INDEX_KEY, list);
 }
 
 /** Whether the shelf holds a board under this id. */
-export async function hasLibraryBoard(id) {
+export async function hasLibraryBoard(id: string) {
   return (await libraryIndex()).some(e => e.id === id);
 }
 
@@ -63,7 +74,9 @@ export async function hasLibraryBoard(id) {
  * already present is overwritten in place - this is how the active board's shelf
  * copy is kept current as it is worked on and switched away from.
  */
-export async function putLibraryBoard(id, blob, { title, at, thumb }) {
+export async function putLibraryBoard(
+  id: string, blob: Blob, { title, at, thumb }: Partial<Omit<LibraryEntry, 'id'>>,
+) {
   await idbSet(STORE, id, blob);
   const rest = (await libraryIndex()).filter(e => e.id !== id);
   rest.push({ id, title: title || 'Untitled board', at: at || 0, thumb: thumb || null });
@@ -71,12 +84,14 @@ export async function putLibraryBoard(id, blob, { title, at, thumb }) {
 }
 
 /** The packed blob for a board, or null if the shelf has no such id. */
-export async function getLibraryBoard(id) {
-  return (await idbGet(STORE, id)) || null;
+export async function getLibraryBoard(id: string): Promise<Blob | null> {
+  // Safe: putLibraryBoard() above is the only writer of this store, and what it
+  // puts under a board id is the packed .mbrd Blob.
+  return ((await idbGet(STORE, id)) || null) as Blob | null;
 }
 
 /** Take a board off the shelf - both its blob and its index row. */
-export async function removeLibraryBoard(id) {
+export async function removeLibraryBoard(id: string) {
   await idbDel(STORE, id);
   await writeIndex((await libraryIndex()).filter(e => e.id !== id));
 }

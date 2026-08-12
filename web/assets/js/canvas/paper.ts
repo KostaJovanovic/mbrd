@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // A sheet of paper, outlined on the board - and the way the board gets measured.
 //
 // The measurement feature answers "how big is this" for one item at a time and
@@ -69,14 +61,36 @@ const GRIPS = [
   { id: 'se', sx: 1, sy: -1 },
 ];
 
-let vp = null;
-let node = null;
-let caption = null;
+/** A world or screen point, which here are the same two numbers. */
+type Point = { x: number; y: number };
+
+/**
+ * What this module asks of the viewport, and no more. Structural rather than
+ * the `Viewport` class itself, because canvas/viewport.ts is still on the
+ * migration ledger and a .ts class publishes no fields it does not declare.
+ * `axisOrigin` is optional for the same reason the call site tests it: the
+ * render harnesses mount a viewport that does not draw axes.
+ */
+type PaperViewport = {
+  el: HTMLElement | null;
+  zoom: number;
+  onChange(fn: () => void): unknown;
+  toScreen(wx: number, wy: number): Point;
+  toWorld(sx: number, sy: number): Point;
+  axisOrigin?: () => Point;
+};
+
+/** A corner drag in flight: the scale and corner it started from - see onDown(). */
+type PaperDrag = { scale: number; cx: number; cy: number; from: Point };
+
+let vp: PaperViewport | null = null;
+let node: HTMLElement | null = null;
+let caption: HTMLElement | null = null;
 let last = '';
 /** The live corner drag, or null. See onDown() for what each field is for. */
-let drag = null;
+let drag: PaperDrag | null = null;
 
-export function initPaper(viewport) {
+export function initPaper(viewport: PaperViewport | null): void {
   vp = viewport;
   if (!vp || !build(vp.el)) return;
   // Straight onto the viewport's change event rather than through a throttle of
@@ -93,7 +107,9 @@ export function initPaper(viewport) {
 export const paintPaper = () => draw();
 
 function draw() {
-  if (!node || !vp) return;
+  // `caption` is built with `node` and never without it, so the extra test
+  // costs a comparison and rules out nothing that can happen.
+  if (!node || !caption || !vp) return;
   const s = board.settings;
   const mm = paperMm(s.paper, s.paperLandscape);
 
@@ -116,7 +132,7 @@ function draw() {
   // breathe by a pixel as it is panned: rounding a position and a length
   // independently lets the far edge land on either side of the same device row
   // depending on where the near one fell.
-  const snap = v => Math.round(Math.min(Math.max(v, -LIMIT), LIMIT) * d) / d;
+  const snap = (v: number) => Math.round(Math.min(Math.max(v, -LIMIT), LIMIT) * d) / d;
   const left = snap(o.x - w / 2);
   const top = snap(o.y - h / 2);
   const right = snap(o.x + w / 2);
@@ -171,8 +187,10 @@ function draw() {
  * a corner grabbed a few pixels off its true position would snap to the pointer
  * on the first move - the sheet would jump before it grew.
  */
-function onDown(e) {
-  const grip = e.target.closest?.('[data-grip]');
+function onDown(e: PointerEvent) {
+  // The listener is on #paper, so the target is an element of it; the optional
+  // call is kept because a harness can dispatch at something plainer.
+  const grip = (e.target as Element).closest?.<HTMLElement>('[data-grip]');
   // The setting as well as the class, because a hidden grip is a stylesheet's
   // opinion and this is the board's. The two only disagree if a look ever
   // overrode the display, which is exactly the kind of thing a look should not
@@ -199,7 +217,7 @@ function onDown(e) {
   document.documentElement.classList.add('is-sizing-paper');
 }
 
-function onMove(e) {
+function onMove(e: PointerEvent) {
   if (!drag || !vp) return;
   const p = vp.toWorld(e.clientX, e.clientY);
   // Where the corner would be if it had simply followed the pointer.
@@ -223,11 +241,11 @@ function onMove(e) {
   setSetting('scale', clampScale(drag.scale * k));
 }
 
-function onUp(e) {
+function onUp(e: PointerEvent) {
   if (!drag) return;
   drag = null;
   document.documentElement.classList.remove('is-sizing-paper');
-  e.target.releasePointerCapture?.(e.pointerId);
+  (e.target as Element).releasePointerCapture?.(e.pointerId);
 }
 
 // ---------------------------------------------------------------------------
@@ -244,9 +262,9 @@ function onUp(e) {
  * The whole fallback path is for the tests and the render harnesses, which
  * mount a bare #viewport.
  */
-function build(host) {
+function build(host: HTMLElement | null): HTMLElement | null {
   if (!host) return null;
-  node = host.querySelector(':scope > #paper');
+  node = host.querySelector<HTMLElement>(':scope > #paper');
   if (!node) {
     node = document.createElement('div');
     node.id = 'paper';
@@ -257,7 +275,7 @@ function build(host) {
     const grid = host.querySelector(':scope > #grid-ink');
     grid ? grid.after(node) : host.prepend(node);
   }
-  caption = node.querySelector('#paper-label');
+  caption = node.querySelector<HTMLElement>('#paper-label');
   if (!caption) {
     caption = document.createElement('span');
     caption.id = 'paper-label';

@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Who made this, and the one screen that says so.
 //
 // The credit used to be a single anchor at the quiet end of the sidebar footer.
@@ -39,9 +31,12 @@ import { el } from '../util.ts';
 let wired = false;
 
 /** Open the credits sheet. Idempotent; safe without a document. */
-export function openCredits() {
+export function openCredits(): void {
   if (typeof document === 'undefined') return;
-  const dlg = el('credits');
+  // el() answers with the base element type; #credits is a <dialog> in
+  // index.html. The duck-type check below is the runtime half of that claim and
+  // is what makes a browser without <dialog> fall out here rather than throw.
+  const dlg = el('credits') as HTMLDialogElement | null;
   if (!dlg || typeof dlg.showModal !== 'function') return;
 
   if (!wired) {

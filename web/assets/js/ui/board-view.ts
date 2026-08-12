@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // How the board is framed, and which geometry profile the viewport is on.
 //
 // Three functions that were loose in main.js and are called from four places
@@ -19,10 +11,14 @@
 
 import { board, bus, mobileBoardWidth, mobileBoardTop, mobileBoardBottom } from '../state.ts';
 import { BASE_ZOOM } from '../canvas/viewport.ts';
+import type { Viewport } from '../canvas/viewport.ts';
 
-let vp = null;
+/** Which mobile lens is up. */
+export type Lens = 'feed' | 'playlist';
 
-export function initBoardView(viewport) {
+let vp: Viewport | null = null;
+
+export function initBoardView(viewport: Viewport): void {
   vp = viewport;
 }
 
@@ -34,24 +30,24 @@ export function initBoardView(viewport) {
  * playlist show-hide off, under data-board-mode="mobile". Removed entirely off
  * Mobile so it can never touch the Desktop canvas.
  */
-let lens = 'feed';
+let lens: Lens = 'feed';
 
 /** The lens up right now. */
-export const currentLens = () => lens;
+export const currentLens = (): Lens => lens;
 
 /**
  * Choose a lens. Writes it where the CSS can see it (only while Mobile) and
  * announces it on the bus, so ui/feed.js and ui/playlist.js each render or tear
  * down without either importing the other or this reaching into them.
  */
-export function setLens(name) {
+export function setLens(name: string): void {
   lens = name === 'playlist' ? 'playlist' : 'feed';
   syncLens();
   bus.emit('lens', lens);
 }
 
 /** Mirror the lens onto <html>, or clear it when the canvas is what shows. */
-export function syncLens() {
+export function syncLens(): void {
   const root = document.documentElement;
   if (board.layoutMode === 'mobile') root.dataset.feedLens = lens;
   else delete root.dataset.feedLens;
@@ -76,28 +72,32 @@ export function syncLens() {
  * where the movement says which way the board went. There is nothing to travel
  * from at load.
  */
-export function openingView() {
+export function openingView(): void {
   // An empty board - only the title card, which is furniture rather than
   // content - opens at the origin at 100%, where a fresh board should. Fitting
   // the title card alone would frame that one card and read as "this is all
   // there is", which is exactly what a blank board is trying not to say.
-  if (!vp.isMobile && board.items.every(it => it.type === 'title')) return vp.recenter(0);
+  // board-model.ts still carries its migration pragma, so `board.items` infers
+  // as an empty array and its element type is unknowable from here. The
+  // parameter names the one field this predicate reads and nothing more; it
+  // comes out when that module declares what an item is.
+  if (!vp!.isMobile && board.items.every((it: { type: string }) => it.type === 'title')) return vp!.recenter(0);
   // Capped at 100%: a small board opens at actual size, not magnified. A board
   // bigger than the window still zooms out to frame it - see fit()'s maxZoom.
-  vp.fit(board.items, 80, 0, BASE_ZOOM);
+  vp!.fit(board.items, 80, 0, BASE_ZOOM);
 }
 
 /**
  * Publish the active geometry profile to the viewport and CSS. The choice is a
  * local device preference; state.js keeps both arrangements in the board.
  */
-export function syncBoardMode(frame = false) {
+export function syncBoardMode(frame = false): void {
   document.documentElement.dataset.boardMode = board.layoutMode;
   // The lens attribute follows the mode: written on the way into Mobile, cleared
   // on the way out, so a Desktop board never carries a feed-lens the CSS could act
   // on. Entering Mobile lands on whichever lens was last up (feed to begin with).
   syncLens();
-  vp.setBoardMode(
+  vp!.setBoardMode(
     board.layoutMode,
     mobileBoardWidth(),
     mobileBoardTop(),
@@ -107,7 +107,7 @@ export function syncBoardMode(frame = false) {
 }
 
 /** Follow the lowest Mobile item without resetting or reframing the view. */
-export function syncMobileBoardBounds() {
+export function syncMobileBoardBounds(): void {
   if (board.layoutMode !== 'mobile') return;
-  vp.setMobileBounds(mobileBoardWidth(), mobileBoardTop(), mobileBoardBottom());
+  vp!.setMobileBounds(mobileBoardWidth(), mobileBoardTop(), mobileBoardBottom());
 }

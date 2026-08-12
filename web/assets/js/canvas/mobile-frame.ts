@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The Mobile strip's sheet and masthead, in screen space.
 //
 // Both used to be positioned by canvas/viewport.js, from five custom properties
@@ -45,9 +37,42 @@
 
 import { mobilePerfFlags } from './viewport.ts';
 
-let vp = null;
-let frameEl = null;
-let mastEl = null;
+/** The board's sheet as the screen sees it - what mobileScreenRect() answers. */
+export type MobileScreenRect = {
+  left: number;
+  width: number;
+  top: number;
+  bottom: number;
+};
+
+/** The sheet's clipped box, with a radius per end - see sheetBox(). */
+export type SheetBox = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  topRadius: string;
+  bottomRadius: string;
+};
+
+/**
+ * What this module asks of the viewport. Structural rather than the `Viewport`
+ * class itself, because canvas/viewport.ts is still on the migration ledger and
+ * a .ts class publishes no fields it does not declare.
+ */
+type FrameViewport = {
+  el: HTMLElement;
+  width: number;
+  height: number;
+  isMobile: boolean;
+  onChange(fn: () => void): unknown;
+  mobileScreenRect(): MobileScreenRect;
+  mobileHeaderPx(): number;
+};
+
+let vp: FrameViewport | null = null;
+let frameEl: HTMLElement | null = null;
+let mastEl: HTMLElement | null = null;
 
 /** What was last written, so a scroll through the middle of a board writes none. */
 let lastSheet = '';
@@ -59,11 +84,11 @@ let lastMast = '';
  * pass over a board opened anywhere but the top stop, and leave the band
  * standing at the top of the window with no transform on it.
  */
-let lastShift = null;
+let lastShift: string | null = null;
 /** Whether the last pass was a Mobile one, so leaving the mode drops the cache. */
-let wasMobile = null;
+let wasMobile: boolean | null = null;
 
-export function initMobileFrame(viewport) {
+export function initMobileFrame(viewport: FrameViewport | null | undefined): void {
   vp = viewport || null;
   if (!vp || !vp.el) return;
   // Queried off the viewport rather than the document, and tolerant of their
@@ -71,8 +96,8 @@ export function initMobileFrame(viewport) {
   // harnesses mount a bare #viewport without the rest of the page around it.
   // #mobile-surround needs no reference at all - it is a static wash that canvas.css
   // shows in Mobile and hides everywhere else, and no frame ever touches it.
-  frameEl = vp.el.querySelector(':scope > #mobile-board-frame');
-  mastEl = vp.el.querySelector(':scope > #mobile-board-header');
+  frameEl = vp.el.querySelector<HTMLElement>(':scope > #mobile-board-frame');
+  mastEl = vp.el.querySelector<HTMLElement>(':scope > #mobile-board-header');
   if (!frameEl || !mastEl) return;
   // Straight onto the change event rather than through a throttle of its own -
   // the event is already emitted from inside the viewport's rAF, so this paints
@@ -136,7 +161,7 @@ function draw() {
  * answers with three different roundings and that is worth asserting without
  * standing up a browser to look at it.
  */
-export function sheetBox(r, width, height) {
+export function sheetBox(r: MobileScreenRect, width: number, height: number): SheetBox {
   const x = Math.max(0, r.left);
   const y = Math.max(0, r.top);
   return {
@@ -160,13 +185,19 @@ export function sheetBox(r, width, height) {
  * Pure for the same reason as sheetBox() - "does the band go away when it
  * leaves the screen" is a question with a right answer at each end of a board.
  */
-export function mastShift(r, headerH, height) {
+export function mastShift(
+  r: Pick<MobileScreenRect, 'top'>,
+  headerH: number,
+  height: number,
+): { visible: boolean; y: number } {
   const bottom = r.top;
   const visible = bottom > 0 && bottom - headerH < height;
   return { visible, y: bottom - headerH };
 }
 
-function paintSheet(r) {
+function paintSheet(r: MobileScreenRect) {
+  // Only ever reached from draw(), which has already tested both.
+  if (!vp || !frameEl) return;
   const box = sheetBox(r, vp.width, vp.height);
   const next = `${box.x},${box.y},${box.w},${box.h},${box.topRadius},${box.bottomRadius}`;
   if (next === lastSheet) return;
@@ -192,7 +223,9 @@ function paintSheet(r) {
  * completely different clocks: the size answers to the window and the board's
  * column count, the position to every frame of a scroll.
  */
-function paintMasthead(r, headerH) {
+function paintMasthead(r: MobileScreenRect, headerH: number) {
+  // Only ever reached from draw(), which has already tested both.
+  if (!vp || !mastEl) return;
   const box = `${r.left},${r.width},${headerH}`;
   if (box !== lastMast) {
     lastMast = box;

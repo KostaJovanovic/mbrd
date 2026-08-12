@@ -31,7 +31,7 @@ import { join } from 'node:path';
  * This number may be lowered and never raised. It started at 103 of 105 on the
  * commit that renamed the tree.
  */
-const CEILING = 82;
+const CEILING = 62;
 
 const unchecked = walk(JS, ['.ts'])
   .filter(rel => read(join(WEB, rel)).startsWith('// @ts-nocheck'));

@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Moving and resizing a floating window, for the two of them the Desktop board
 // has: the Playlist's player and the sticker pad.
 //
@@ -39,10 +31,13 @@ const MARGIN = 8;
  * In the player the close button was exempt and the view toggle was not, which
  * is how "Album view" came to do nothing whatsoever.
  */
-export function makeWindowDrag(win, handle) {
-  let d = null;
+export function makeWindowDrag(win: HTMLElement, handle: HTMLElement): void {
+  /** The grab: where in the window the pointer took hold, and how big it was. */
+  let d: { dx: number; dy: number; w: number; h: number } | null = null;
   handle.addEventListener('pointerdown', e => {
-    if (e.button !== 0 || e.target.closest('button')) return;
+    // A pointerdown's target is the element it landed on; the cast says that
+    // where the DOM types only promise an EventTarget.
+    if (e.button !== 0 || (e.target as Element).closest('button')) return;
     const r = win.getBoundingClientRect();
     win.style.left = `${r.left}px`;
     win.style.top = `${r.top}px`;
@@ -58,7 +53,7 @@ export function makeWindowDrag(win, handle) {
     win.style.left = `${clamp(e.clientX - d.dx, MARGIN, window.innerWidth - d.w - MARGIN)}px`;
     win.style.top = `${clamp(e.clientY - d.dy, MARGIN, window.innerHeight - d.h - MARGIN)}px`;
   });
-  const end = e => {
+  const end = (e: PointerEvent) => {
     if (!d) return;
     d = null;
     handle.releasePointerCapture?.(e.pointerId);
@@ -77,8 +72,13 @@ export function makeWindowDrag(win, handle) {
  * puts on an unsized window is lifted the moment a size is set by hand -
  * otherwise the grip would refuse to grow it downwards and look broken.
  */
-export function makeWindowResize(win, handle, { minW = 260, minH = 220 } = {}) {
-  let d = null;
+export function makeWindowResize(
+  win: HTMLElement,
+  handle: HTMLElement,
+  { minW = 260, minH = 220 }: { minW?: number; minH?: number } = {},
+): void {
+  /** The grab: where the pointer started, and the rectangle it started from. */
+  let d: { x: number; y: number; w: number; h: number; left: number; top: number } | null = null;
   handle.addEventListener('pointerdown', e => {
     if (e.button !== 0) return;
     const r = win.getBoundingClientRect();
@@ -99,7 +99,7 @@ export function makeWindowResize(win, handle, { minW = 260, minH = 220 } = {}) {
     win.style.height =
       `${clamp(d.h + (e.clientY - d.y), minH, window.innerHeight - d.top - MARGIN)}px`;
   });
-  const end = e => {
+  const end = (e: PointerEvent) => {
     if (!d) return;
     d = null;
     handle.releasePointerCapture?.(e.pointerId);

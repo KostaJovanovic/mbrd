@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The animation a card plays as it is deleted.
 //
 // A delete is instant in state - removeItems() drops the item and items.js
@@ -29,6 +21,12 @@
 // bin dock: it simply vanishes, and a small chip tumbles down to the bin in its
 // place - a hint at where it went, not the whole card sailing over.
 
+/** The four feels, each of which is a `.exit-<kind>` rule in the stylesheet. */
+export type ExitKind = 'chip' | 'fall' | 'shatter' | 'dissolve';
+
+/** The whimsy tiers, as the dataset string or the raw number tests pass. */
+const TIER_KIND: Record<string, ExitKind> = { 0: 'fall', 2: 'shatter' };
+
 /**
  * The exit animation kind for an item, as a bare string the CSS turns into
  * keyframes (`.exit-<kind>`). Pure and DOM-free so it can be unit-tested:
@@ -38,17 +36,20 @@
  *   - otherwise the whimsy tier picks the feel, defaulting to a plain dissolve
  *     for the middle tier and any unset/unknown value.
  */
-export function exitKindFor(type, whimsy) {
+export function exitKindFor(
+  type: string | undefined,
+  whimsy: string | number | null | undefined,
+): ExitKind {
   if (type === 'title') return 'chip';
-  return { 0: 'fall', 2: 'shatter' }[whimsy] ?? 'dissolve';
+  return (whimsy == null ? undefined : TIER_KIND[whimsy]) ?? 'dissolve';
 }
 
 /** ms to keep a clone before force-removing it, if animationend never fires. */
 const FALLBACK_MS = 700;
 
 /** The lazily-created overlay every fly-out clone lives in. */
-function exitLayer() {
-  let layer = document.getElementById('exit-layer');
+function exitLayer(): HTMLElement {
+  let layer: HTMLElement | null = document.getElementById('exit-layer');
   if (!layer) {
     layer = document.createElement('div');
     layer.id = 'exit-layer';
@@ -58,7 +59,7 @@ function exitLayer() {
 }
 
 /** Remove `node` when its animation ends, with a timeout in case it never does. */
-function sweepOnEnd(node) {
+function sweepOnEnd(node: Element): void {
   let done = false;
   const finish = () => { if (done) return; done = true; clearTimeout(timer); node.remove(); };
   const timer = setTimeout(finish, FALLBACK_MS);
@@ -91,7 +92,7 @@ function dropChip() {
  * tier's keyframes. A no-op for a node that is detached or off-screen - there
  * is nothing to watch leave.
  */
-export function flyOut(el) {
+export function flyOut(el: HTMLElement | null | undefined): void {
   if (!el?.isConnected) return;
   const rect = el.getBoundingClientRect();
   if (rect.width === 0 || rect.height === 0) return;
@@ -99,7 +100,7 @@ export function flyOut(el) {
   const kind = exitKindFor(el.dataset.type, document.documentElement.dataset.whimsy);
   if (kind === 'chip') { dropChip(); return; }
 
-  const g = el.cloneNode(true);
+  const g = el.cloneNode(true) as HTMLElement;
   // The ghost is not selected and holds nothing that could play or fetch.
   g.classList.remove('is-selected', 'is-stick-target');
   for (const m of g.querySelectorAll('video, audio, iframe')) m.removeAttribute('src');

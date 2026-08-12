@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // What the ghost cards say, and when they go.
 //
 // state.js owns the three items themselves - their ids, their geometry and the
@@ -32,6 +24,21 @@
 import { bus, dismissGhosts, hasContent, hasGhosts, isNotFoundBoard } from '../state.ts';
 
 /**
+ * One card's copy. `href`/`go` are the link card's alone - every hint has the
+ * same shape so nothing downstream has to check, which is why they are optional
+ * here rather than a second type.
+ */
+export type Hint = {
+  title: string;
+  line: string;
+  href?: string;
+  go?: string;
+};
+
+/** The keys a ghost item's `meta.hint` may name - the two sets, in one union. */
+export type HintKey = 'drop' | 'move' | 'note' | 'whimsy' | 'gone' | 'back';
+
+/**
  * The three hints, keyed by the meta.hint their item carries.
  *
  * A title and one line. The title has to survive being read at a glance and
@@ -39,7 +46,7 @@ import { bus, dismissGhosts, hasContent, hasGhosts, isNotFoundBoard } from '../s
  * stopped to look. Anything longer stops being a hint and starts being a manual
  * pinned to the board.
  */
-export const HINTS = Object.freeze({
+export const HINTS: Readonly<Record<HintKey, Hint>> = Object.freeze({
   drop: {
     title: 'Drop anything',
     line: 'Pictures, video, sound, text, 3D models. Straight onto the board, from anywhere.',
@@ -114,13 +121,29 @@ export const DIAL = 'whimsy';
  * card would still have to be changed together, so the trailing full stop on
  * "Harsh." is kept exactly - it is the joke the panel already tells.
  */
-export const STOPS = Object.freeze(['Softish', 'Middle', 'Harsh.']);
+export const STOPS: readonly string[] = Object.freeze(['Softish', 'Middle', 'Harsh.']);
 
 /** The stop name for a level, for the value a screen reader reads out. */
-export const stopName = level => STOPS[level] || STOPS[1];
+export const stopName = (level: number): string => STOPS[level] || STOPS[1];
 
-/** The key an item actually resolves to, falling back to the first hint. */
-export const hintKey = key => (HINTS[key] ? key : 'drop');
+/**
+ * The key an item actually resolves to, falling back to the first hint.
+ *
+ * The test is on the entry, not on the key, and the cast says only that: a key
+ * out of a file is checked by what it looks up rather than by its spelling.
+ */
+export const hintKey = (key: string | undefined): HintKey =>
+  (HINTS[key as HintKey] ? key as HintKey : 'drop');
+
+/**
+ * A strip of tape as state.js's tapeFor() places it: an edge, how far along it,
+ * an optional turn and a length in px. `edge` stays a plain string because it
+ * arrives from a stored board and tapeStyle() falls back rather than refuses.
+ */
+export type Tape = { edge: string; pos: number; rot?: number; len: number };
+
+/** The same strip as CSS wants it: two percentages, an angle and a length. */
+export type TapeStyle = { x: string; y: string; rot: string; len: string };
 
 /**
  * Where one strip of tape sits, as the four numbers CSS needs.
@@ -136,16 +159,17 @@ export const hintKey = key => (HINTS[key] ? key : 'drop');
  *
  * Pure, so tests can check the geometry without a DOM.
  */
-export function tapeStyle(t) {
+export function tapeStyle(t: Tape): TapeStyle {
   const pos = `${t.pos}%`;
-  const along = { top: [pos, '0%'], bottom: [pos, '100%'], left: ['0%', pos], right: ['100%', pos] };
+  const along: Record<string, [string, string]> =
+    { top: [pos, '0%'], bottom: [pos, '100%'], left: ['0%', pos], right: ['100%', pos] };
   const [x, y] = along[t.edge] || along.top;
   const turn = t.edge === 'left' || t.edge === 'right' ? 90 : 0;
   return { x, y, rot: `${(t.rot || 0) + turn}deg`, len: `${t.len}px` };
 }
 
 /** Copy for a ghost item, falling back to the first hint for an unknown key. */
-export function hintFor(key) {
+export function hintFor(key: string | undefined): Hint {
   return HINTS[hintKey(key)];
 }
 
@@ -174,10 +198,12 @@ export function hintFor(key) {
  * down here, the same move it makes for storage's confirmation prompt
  * (setPrompt). So the dial drives the one command surface everything else does.
  */
-let cmds = null;
+type GhostCommands = { setWhimsy?: (level: number) => unknown };
+
+let cmds: GhostCommands | null = null;
 
 /** Move the whole interface along the whimsy axis, from the card's dial. */
-export const setWhimsyLevel = level => cmds?.setWhimsy?.(level);
+export const setWhimsyLevel = (level: number) => cmds?.setWhimsy?.(level);
 
 /**
  * Put a dial on a level: the thumb, and the word a screen reader reads out.
@@ -187,7 +213,7 @@ export const setWhimsyLevel = level => cmds?.setWhimsy?.(level);
  * dial announces "1 of 2", which names nothing. Same move ui/mobile-header.js
  * makes on the weight dial.
  */
-function showLevel(dial, level) {
+function showLevel(dial: HTMLInputElement, level: string) {
   if (dial.value !== level) dial.value = level;
   dial.setAttribute('aria-valuetext', stopName(+level));
 }
@@ -209,12 +235,13 @@ function watchWhimsy() {
   const root = document.documentElement;
   new MutationObserver(() => {
     const level = root.dataset.whimsy ?? '1';
-    for (const dial of document.querySelectorAll('.ghost-dial input')) showLevel(dial, level);
+    for (const dial of document.querySelectorAll<HTMLInputElement>('.ghost-dial input'))
+      showLevel(dial, level);
   }).observe(root, { attributes: true, attributeFilter: ['data-whimsy'] });
 }
 
 /** Wire a freshly built dial: drive the axis, and keep its own valuetext true. */
-export function bindDial(dial) {
+export function bindDial(dial: HTMLInputElement): void {
   showLevel(dial, dial.value);
   dial.addEventListener('input', () => {
     showLevel(dial, dial.value);
@@ -222,7 +249,7 @@ export function bindDial(dial) {
   });
 }
 
-export function initGhosts(commands) {
+export function initGhosts(commands: GhostCommands | null | undefined): void {
   cmds = commands || null;
   watchWhimsy();
   bus.on('items', () => {

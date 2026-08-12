@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // What a look is allowed to be.
 //
 // Split out of appearance.js so it can be tested: appearance.js reaches for
@@ -103,8 +95,8 @@ const SAFE_FN = new Set([
  * Filtered rather than rejected wholesale: a board carrying one token this
  * version has never heard of should lose that token, not its whole look.
  */
-export function safeVars(vars) {
-  const out = {};
+export function safeVars(vars: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
   if (!vars || typeof vars !== 'object') return out;
   for (const [key, value] of Object.entries(vars)) {
     if (!TOKENS.has(key) || typeof value !== 'string') continue;

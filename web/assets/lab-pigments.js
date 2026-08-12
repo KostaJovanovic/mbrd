@@ -1,36 +1,26 @@
+// web/assets/js/notify.ts
+var NOWHERE = Object.freeze({
+  label() {
+  },
+  step() {
+  },
+  end() {
+  }
+});
+
 // web/assets/js/util.ts
 var clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
 
-// web/assets/js/layout-settings.ts
-var PALETTE_TOKENS = [
-  "--paper",
-  "--paper-2",
-  "--paper-3",
-  "--paper-card",
-  "--ink",
-  "--ink-2",
-  "--ink-3",
-  "--rule",
-  "--rule-2",
-  "--accent",
-  "--accent-warm",
-  "--accent-deep",
-  "--leafy",
-  "--accent-fg"
-];
-var TYPOGRAPHY_TOKENS = ["--font-display", "--font-body"];
-var paletteToken = /* @__PURE__ */ new Set([...PALETTE_TOKENS, ...TYPOGRAPHY_TOKENS]);
-
-// web/assets/js/ui/pigments.ts
+// web/assets/js/color.ts
 var cbrt = Math.cbrt;
-var toLinear = (c) => {
+function toLinear(c) {
   c /= 255;
   return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-};
-var toSrgb = (c) => {
+}
+function toSrgb(c) {
   const v = c <= 31308e-7 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055;
   return Math.round(Math.min(1, Math.max(0, v)) * 255);
-};
+}
 function oklch(r, g, b) {
   const R = toLinear(r), G = toLinear(g), B = toLinear(b);
   const l = cbrt(0.4122214708 * R + 0.5363325363 * G + 0.0514459929 * B);
@@ -56,10 +46,10 @@ function oklchToLinear(L, C, h) {
     -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s
   ];
 }
-var inGamut = ([r, g, b]) => {
+function inGamut([r, g, b]) {
   const lo = -1e-4, hi = 1 + 1e-4;
   return r >= lo && r <= hi && g >= lo && g <= hi && b >= lo && b <= hi;
-};
+}
 function hex(L, C, h) {
   let lo = 0, hi = C;
   if (!inGamut(oklchToLinear(L, C, h))) {
@@ -72,12 +62,47 @@ function hex(L, C, h) {
   const [r, g, b] = oklchToLinear(L, lo, h);
   return "#" + [r, g, b].map((v) => toSrgb(v).toString(16).padStart(2, "0")).join("");
 }
-var luminance = (r, g, b) => 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
-var parseHex = (s) => [1, 3, 5].map((i) => parseInt(s.slice(i, i + 2), 16));
+function luminance(r, g, b) {
+  return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+}
+function parseHex(s) {
+  return [
+    parseInt(s.slice(1, 3), 16),
+    parseInt(s.slice(3, 5), 16),
+    parseInt(s.slice(5, 7), 16)
+  ];
+}
 function contrast(a, b) {
   const x = luminance(...parseHex(a)), y = luminance(...parseHex(b));
   return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
 }
+function mixHex(a, b, t) {
+  const [ar, ag, ab] = parseHex(a), [br, bg, bb] = parseHex(b);
+  const m = (x, y) => Math.round(x + (y - x) * t).toString(16).padStart(2, "0");
+  return "#" + m(ar, br) + m(ag, bg) + m(ab, bb);
+}
+
+// web/assets/js/layout-settings.ts
+var PALETTE_TOKENS = [
+  "--paper",
+  "--paper-2",
+  "--paper-3",
+  "--paper-card",
+  "--ink",
+  "--ink-2",
+  "--ink-3",
+  "--rule",
+  "--rule-2",
+  "--accent",
+  "--accent-warm",
+  "--accent-deep",
+  "--leafy",
+  "--accent-fg"
+];
+var TYPOGRAPHY_TOKENS = ["--font-display", "--font-body"];
+var paletteToken = /* @__PURE__ */ new Set([...PALETTE_TOKENS, ...TYPOGRAPHY_TOKENS]);
+
+// web/assets/js/ui/pigments.ts
 var apart = (a, b) => {
   const d = Math.abs(a - b) % 360;
   return Math.min(d, 360 - d);
@@ -372,11 +397,6 @@ function midHue(a, b) {
 function warmer(h) {
   const d = (WARM_ANCHOR - h + 540) % 360 - 180;
   return h + Math.sign(d) * Math.min(Math.abs(d), WARM_TURN);
-}
-function mixHex(a, b, t) {
-  const [ar, ag, ab] = parseHex(a), [br, bg, bb] = parseHex(b);
-  const m = (x, y) => Math.round(x + (y - x) * t).toString(16).padStart(2, "0");
-  return "#" + m(ar, br) + m(ag, bg) + m(ab, bb);
 }
 function extractPalette(chunks, { plain = false } = {}) {
   const board = readBoard(chunks);

@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Pure helpers for the one part of board settings shared by both layouts.
 //
 // Color is one identity for the board, even when Desktop and Mobile otherwise
@@ -25,10 +17,10 @@ const paletteToken = new Set([...PALETTE_TOKENS, ...TYPOGRAPHY_TOKENS]);
  * The whimsy axis may suggest Desktop snapping, but Mobile's grid choice is a
  * layout setting controlled only by its own checkbox after the profile exists.
  */
-export const whimsyControlsSnap = mode => mode !== 'mobile';
+export const whimsyControlsSnap = (mode: string) => mode !== 'mobile';
 
 /** Some layout-local appearance controls still make sense on Desktop alone. */
-export const appearanceControlVisible = (name, mode) =>
+export const appearanceControlVisible = (name: string, mode: string) =>
   name !== '--sidebar-w' || mode === 'desktop';
 
 /**
@@ -62,26 +54,34 @@ export const AUTO_PALETTE_FLOOR = 3;
  * that has been colouring itself since its third photograph must not stop
  * agreeing with its own pictures the moment you delete one.
  */
-export const autoPaletteReady = (pictures, dynamic) =>
+export const autoPaletteReady = (pictures: number, dynamic: boolean) =>
   dynamic || pictures >= AUTO_PALETTE_FLOOR;
 
 /**
- * Split one complete look into its board-wide and layout-local halves.
+ * One complete look: the board's palette choice and the custom properties it
+ * resolves to.
  *
- * @typedef {object} Look
- * @property {number}  [whimsy]
- * @property {string}  [palette]
- * @property {Record<string, string>} [vars]
- * @property {boolean} [auto]
- * @property {boolean} [derived]
- *
- * @param {Look} [look]
- * @returns {{shared: Look, local: {vars: Record<string, string>}}}
+ * Every field is optional because this type stands at a boundary in both
+ * directions - it describes what arrives out of somebody else's board.json as
+ * well as what the app builds - and the two halves below are total functions
+ * over it, coercing rather than trusting. `vars` is declared as a map of
+ * strings because that is what the app writes and what board-schema.ts holds an
+ * arriving one to; the runtime `typeof` guards are what make that safe for the
+ * file that says otherwise.
  */
-export function splitAppearance(look = {}) {
+export interface Look {
+  whimsy?: number;
+  palette?: string;
+  vars?: Record<string, string>;
+  auto?: boolean;
+  derived?: boolean;
+}
+
+/** Split one complete look into its board-wide and layout-local halves. */
+export function splitAppearance(look: Look = {}): { shared: Look, local: { vars: Record<string, string> } } {
   const source = look && typeof look === 'object' ? look : {};
-  /** @type {Record<string, string>} */ const sharedVars = {};
-  /** @type {Record<string, string>} */ const localVars = {};
+  const sharedVars: Record<string, string> = {};
+  const localVars: Record<string, string> = {};
   const vars = source.vars && typeof source.vars === 'object' ? source.vars : {};
   for (const [key, value] of Object.entries(vars)) {
     (paletteToken.has(key) ? sharedVars : localVars)[key] = value;
@@ -98,7 +98,7 @@ export function splitAppearance(look = {}) {
 }
 
 /** Rebuild the complete look consumed by ui/appearance.js. */
-export function mergeAppearance(shared = {}, local = {}) {
+export function mergeAppearance(shared: Look = {}, local: Look = {}): Look {
   return {
     ...(shared && typeof shared === 'object' ? shared : {}),
     vars: {

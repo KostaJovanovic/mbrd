@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The tooth of the stock, moved with the board.
 //
 // The tile itself is described where it is styled, at the #grain rule in
@@ -45,6 +37,23 @@
 
 import { deviceRatio } from './viewport.ts';
 import { sheetBox } from './mobile-frame.ts';
+import type { MobileScreenRect } from './mobile-frame.ts';
+
+/**
+ * What this module asks of the viewport. Structural rather than the `Viewport`
+ * class itself, because canvas/viewport.ts is still on the migration ledger and
+ * a .ts class publishes no fields it does not declare. `mobileScreenRect` is
+ * optional for the same reason the call site tests it - the render harnesses
+ * mount a viewport that never went into the strip layout.
+ */
+type GrainViewport = {
+  zoom: number;
+  width: number;
+  height: number;
+  isMobile: boolean;
+  toScreen(wx: number, wy: number): { x: number; y: number };
+  mobileScreenRect?: () => MobileScreenRect;
+};
 
 /**
  * The tile's side in *world* units - its on-screen size at 100%.
@@ -56,7 +65,7 @@ import { sheetBox } from './mobile-frame.ts';
 const TILE = 512;
 
 /** Positive remainder. `-3 % 512` is -3 in JavaScript, and a tile has no -3. */
-const wrap = (n, tile) => ((n % tile) + tile) % tile;
+const wrap = (n: number, tile: number) => ((n % tile) + tile) % tile;
 
 /**
  * Where the stock stops being stock.
@@ -82,7 +91,7 @@ const wrap = (n, tile) => ((n % tile) + tile) % tile;
 export const FADE_FULL = 0.40;
 export const FADE_GONE = 0.30;
 
-export const fadeFor = zoom =>
+export const fadeFor = (zoom: number): number =>
   zoom >= FADE_FULL ? 1
     : zoom <= FADE_GONE ? 0
       : (zoom - FADE_GONE) / (FADE_FULL - FADE_GONE);
@@ -95,7 +104,7 @@ export const fadeFor = zoom =>
  * about what the Mobile sheet is currently wearing, and believing it would
  * leave the new surface at whatever the old one happened to be.
  */
-let lastEl = null, lastPos = '', lastSize = '', lastFade = '';
+let lastEl: HTMLElement | null = null, lastPos = '', lastSize = '', lastFade = '';
 
 /**
  * The layer, resolved once.
@@ -104,7 +113,7 @@ let lastEl = null, lastPos = '', lastSize = '', lastFade = '';
  * page's permanent layers rather than something a gesture puts up. Absent - the
  * render harnesses mount a bare #viewport - every function here is a no-op.
  */
-let el = null, sheetEl = null;
+let el: HTMLElement | null = null, sheetEl: HTMLElement | null = null;
 
 /**
  * Whether there is any grain to move.
@@ -123,11 +132,15 @@ let el = null, sheetEl = null;
  * board wants; fadeFor() asks what the zoom allows; they are different
  * questions and only the first one is worth caching.
  */
-let inked = null;
+let inked: number | null = null;
 
 function hasGrain() {
   // Either surface answers: --grain is a token on :root and both inherit it.
   const from = el || sheetEl;
+  // Only reached from paintGrain(), which has already found one of the two. If
+  // that ever stopped being true, this is the same answer an unreadable token
+  // gets below: paint rather than hide.
+  if (!from) return true;
   const v = inked ?? (inked = parseFloat(getComputedStyle(from).getPropertyValue('--grain')));
   // An unreadable token paints rather than hides: a missing dial should not be
   // the thing that silently takes the stock off the board.
@@ -135,7 +148,7 @@ function hasGrain() {
 }
 
 /** Forget the resolved strength - the look changed. */
-export function resetGrain() {
+export function resetGrain(): void {
   inked = null;
 }
 
@@ -157,7 +170,7 @@ export function resetGrain() {
  * already there. This is what makes the settling tail of an inertial pan, and a
  * trackpad zoom arriving in fractions, cost nothing here.
  */
-export function paintGrain(vp) {
+export function paintGrain(vp: GrainViewport): void {
   const tile = TILE * vp.zoom;
   if (!(tile > 0)) return;
 
@@ -198,7 +211,7 @@ export function paintGrain(vp) {
   if (fade === 0) return;
 
   const d = deviceRatio();
-  const q = n => Math.round(n * d) / d;
+  const q = (n: number) => Math.round(n * d) / d;
 
   // Size first: the position below is a phase within the tile, so writing a new
   // phase against the old size would put the sheet in the wrong place for one
@@ -243,7 +256,7 @@ export function paintGrain(vp) {
  * re-tier, reads no setting and has no hole in it, and the only thing the two
  * share is an origin.
  */
-export function initGrain(vp) {
+export function initGrain(vp: GrainViewport): void {
   el = document.getElementById('grain');
   sheetEl = document.getElementById('mobile-board-frame');
   if (!el && !sheetEl) return;

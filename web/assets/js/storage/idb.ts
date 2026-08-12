@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Tiny IndexedDB wrapper for the working-state cache.
 //
 // Two stores: `kv` holds the board snapshot and bookkeeping, `assets` holds the
@@ -18,11 +10,20 @@ const DB_NAME = 'mbrd';
 // it had and simply gains an empty third store. See storage/library.js.
 const DB_VERSION = 2;
 
-let dbPromise = null;
+/**
+ * The three stores this database has, spelled out rather than left as `string`.
+ *
+ * Every store is created in the upgrade below, so the set is closed and a typo
+ * in a caller is a compile error rather than a transaction that throws
+ * NotFoundError at the moment somebody tries to save.
+ */
+export type StoreName = 'kv' | 'assets' | 'library';
 
-function open() {
+let dbPromise: Promise<IDBDatabase> | null = null;
+
+function open(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
-  dbPromise = new Promise((resolve, reject) => {
+  dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     // `blocked` is not the end of an open request - it means "waiting on the
     // other connections", and success can still follow once they close. So the
@@ -87,17 +88,50 @@ function open() {
 // putting a photo board away a few hundred sequential round trips, each waiting
 // on the last because the caller awaited it. Issued together they are one
 // commit, and IndexedDB was built to be driven this way.
-function tx(store, mode, fn) {
-  return open().then(db => new Promise((resolve, reject) => {
+/**
+ * The four members of a request this module touches, named structurally rather
+ * than as `IDBRequest<unknown>`.
+ *
+ * IDBRequest is invariant in its result - its handlers carry a `this` of the
+ * same type - so an IDBRequest<IDBValidKey> from put() is not an
+ * IDBRequest<unknown>, and a union of the latter would reject every call below.
+ * This says what the body actually needs, which every request satisfies
+ * whatever it resolves to.
+ */
+type PendingRequest = {
+  result: unknown,
+  error: DOMException | null,
+  onsuccess: ((ev: Event) => void) | null,
+  onerror: ((ev: Event) => void) | null,
+};
+
+/** What `fn` may issue: one request, or a batch of them. */
+type Issued = PendingRequest | PendingRequest[];
+
+/**
+ * The value a caller gets back, worked out from what `fn` issued: the request's
+ * own result for one, an array of them for a batch. The two shapes are the two
+ * branches of the body, restated so the callers below need no cast.
+ */
+type ResultOf<F extends Issued> =
+  F extends IDBRequest<infer R>[] ? R[] :
+  F extends IDBRequest<infer R> ? R : unknown;
+
+function tx<F extends Issued>(
+  store: StoreName, mode: IDBTransactionMode, fn: (s: IDBObjectStore) => F,
+): Promise<ResultOf<F>> {
+  return open().then(db => new Promise<unknown>((resolve, reject) => {
     const t = db.transaction(store, mode);
-    let result;
+    let result: unknown;
     let settled = false;
-    const fail = err => { if (!settled) { settled = true; reject(err); } };
-    const req = fn(t.objectStore(store));
+    const fail = (err: unknown) => { if (!settled) { settled = true; reject(err); } };
+    // Annotated rather than inferred so the Array.isArray branch below narrows
+    // to a concrete request type instead of to a piece of the generic.
+    const req: Issued = fn(t.objectStore(store));
     if (Array.isArray(req)) {
       // Results in the order the requests were issued, filled as they succeed
       // and handed over only at oncomplete like everything else here.
-      const out = new Array(req.length);
+      const out: unknown[] = new Array(req.length);
       req.forEach((r, i) => {
         r.onsuccess = () => { out[i] = r.result; };
         r.onerror = () => fail(r.error);
@@ -110,26 +144,41 @@ function tx(store, mode, fn) {
     t.oncomplete = () => { if (!settled) { settled = true; resolve(result); } };
     t.onerror = () => fail(t.error);
     t.onabort = () => fail(t.error);
-  }));
+    // Safe: `result` is exactly what the requests `fn` issued produced, and
+    // ResultOf<F> is the same two-way branch the code above just took - one
+    // request's result, or an array of them in issue order.
+  })) as Promise<ResultOf<F>>;
 }
 
-export const idbGet = (store, key) => tx(store, 'readonly', s => s.get(key));
-export const idbSet = (store, key, value) => tx(store, 'readwrite', s => s.put(value, key));
-export const idbDel = (store, key) => tx(store, 'readwrite', s => s.delete(key));
-export const idbKeys = store => tx(store, 'readonly', s => s.getAllKeys());
-export const idbClear = store => tx(store, 'readwrite', s => s.clear());
+/**
+ * The value stored under `key`, or undefined if there is none.
+ *
+ * `unknown` rather than a shape: what comes out was written by some build of
+ * this app, possibly an older one, and deciding whether it is recognisable is
+ * the reader's job. Every caller already checks - Array.isArray, instanceof
+ * Blob, a version field - and this is the type saying they must.
+ */
+export const idbGet = (store: StoreName, key: IDBValidKey): Promise<unknown> =>
+  tx(store, 'readonly', s => s.get(key));
+export const idbSet = (store: StoreName, key: IDBValidKey, value: unknown) =>
+  tx(store, 'readwrite', s => s.put(value, key));
+export const idbDel = (store: StoreName, key: IDBValidKey) =>
+  tx(store, 'readwrite', s => s.delete(key));
+export const idbKeys = (store: StoreName): Promise<IDBValidKey[]> =>
+  tx(store, 'readonly', s => s.getAllKeys());
+export const idbClear = (store: StoreName) => tx(store, 'readwrite', s => s.clear());
 
 // The batch forms. Empty in, empty out, without opening a transaction to do
 // nothing - the autosave sweep reaches all three of these on a board where
 // nothing changed, which is most of the time.
 
 /** Values for `keys`, in that order. A missing key reads as undefined. */
-export const idbGetMany = (store, keys) =>
+export const idbGetMany = (store: StoreName, keys: IDBValidKey[]): Promise<unknown[]> =>
   keys.length ? tx(store, 'readonly', s => keys.map(k => s.get(k))) : Promise.resolve([]);
 
 /** Write `[key, value]` pairs. All of them land, or none do. */
-export const idbSetMany = (store, entries) =>
+export const idbSetMany = (store: StoreName, entries: [IDBValidKey, unknown][]) =>
   entries.length ? tx(store, 'readwrite', s => entries.map(([k, v]) => s.put(v, k))) : Promise.resolve([]);
 
-export const idbDelMany = (store, keys) =>
+export const idbDelMany = (store: StoreName, keys: IDBValidKey[]) =>
   keys.length ? tx(store, 'readwrite', s => keys.map(k => s.delete(k))) : Promise.resolve([]);

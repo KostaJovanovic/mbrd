@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The sticky-note formatting model.
 //
 // Lifted out of canvas/renderers.js, and the move fixes a backwards arrow as
@@ -36,16 +28,55 @@ import { NOTE_MAX } from '../state.ts';
 // the tests all read the one model through these functions.
 // ---------------------------------------------------------------------------
 
-export const NOTE_TAGS = ['h1', 'h2', 'p'];
-export const NOTE_ALIGNS = ['left', 'center', 'right'];
-export const NOTE_VALIGNS = ['top', 'middle', 'bottom'];
+/**
+ * The four vocabularies a note is written in. They are unions of string
+ * literals rather than anything richer because every one of them also has to
+ * survive a round trip through a file somebody else wrote - the arrays below
+ * are the runtime half of the same statement, and the `is*` guards are how an
+ * unknown value out of `meta.rich` gets to be one of these.
+ */
+export type NoteTag = 'h1' | 'h2' | 'p';
+export type NoteAlign = 'left' | 'center' | 'right';
+export type NoteValign = 'top' | 'middle' | 'bottom';
+export type NoteFont = 'sheet' | 'sans' | 'serif' | 'mono';
+
+/** One line of a note: its block level, its alignment and its single line. */
+export type NoteBlock = { tag: NoteTag; align: NoteAlign; text: string };
+
+/** A whole note's formatting model, after normalizeNoteRich() has had it. */
+export type NoteRich = {
+  font: NoteFont;
+  size: number;
+  valign: NoteValign;
+  blocks: NoteBlock[];
+};
+
+/**
+ * What a *caller* may hand in: anything at all. `meta.rich` comes off disk, so
+ * every field is unknown until a guard has looked at it.
+ */
+export type NoteRichInput = { [key: string]: unknown } | null | undefined;
+
+export const NOTE_TAGS: NoteTag[] = ['h1', 'h2', 'p'];
+export const NOTE_ALIGNS: NoteAlign[] = ['left', 'center', 'right'];
+export const NOTE_VALIGNS: NoteValign[] = ['top', 'middle', 'bottom'];
+
+// The widening to `readonly string[]` is only so `.includes()` will take an
+// arbitrary string: a NoteTag[] *is* a readonly string[], so nothing is claimed
+// here that is not already true.
+const isTag = (v: unknown): v is NoteTag =>
+  typeof v === 'string' && (NOTE_TAGS as readonly string[]).includes(v);
+const isAlign = (v: unknown): v is NoteAlign =>
+  typeof v === 'string' && (NOTE_ALIGNS as readonly string[]).includes(v);
+const isValign = (v: unknown): v is NoteValign =>
+  typeof v === 'string' && (NOTE_VALIGNS as readonly string[]).includes(v);
 
 /**
  * The font families a note may wear, as an allowlist. The value reaches the DOM
  * as a `font-family` string, so it is only ever chosen from this table and never
  * taken from a file - the same rule the token allowlist keeps for the board.
  */
-export const NOTE_FONTS = {
+export const NOTE_FONTS: Record<NoteFont, string> = {
   sheet: 'var(--font-display)',
   sans: 'system-ui, sans-serif',
   serif: 'Georgia, "Times New Roman", serif',
@@ -53,19 +84,22 @@ export const NOTE_FONTS = {
 };
 export const NOTE_FONT_KEYS = Object.keys(NOTE_FONTS);
 
+const isFont = (v: unknown): v is NoteFont =>
+  typeof v === 'string' && NOTE_FONT_KEYS.includes(v);
+
 /** Size is a multiplier on the note's own zoom-scaled type, not an absolute. */
 export const NOTE_SIZE_MIN = 0.7;
 export const NOTE_SIZE_MAX = 1.8;
 export const NOTE_SIZE_STEP = 0.1;
 
-const clampSize = n =>
-  Math.min(NOTE_SIZE_MAX, Math.max(NOTE_SIZE_MIN, Number.isFinite(+n) ? +n : 1));
+const clampSize = (n: unknown) =>
+  Math.min(NOTE_SIZE_MAX, Math.max(NOTE_SIZE_MIN, Number.isFinite(Number(n)) ? Number(n) : 1));
 
 /** The Markdown marker a tag writes at the head of its line. */
-export const NOTE_MARKER = { h1: '# ', h2: '## ', p: '' };
+export const NOTE_MARKER: Record<NoteTag, string> = { h1: '# ', h2: '## ', p: '' };
 
 /** The block a single line of Markdown-ish text describes, given its position. */
-function lineToBlock(line, index) {
+function lineToBlock(line: string, index: number): NoteBlock {
   if (line.startsWith('## ')) return { tag: 'h2', align: 'left', text: line.slice(3) };
   if (line.startsWith('# ')) return { tag: 'h1', align: 'left', text: line.slice(2) };
   // No marker: the first line is the note's title, as it always was, so a note
@@ -74,20 +108,23 @@ function lineToBlock(line, index) {
 }
 
 /** Blocks from the plaintext fallback - a legacy note, or an older reader's file. */
-export function parseNoteText(text) {
+export function parseNoteText(text: unknown): NoteBlock[] {
   const lines = String(text ?? '').split('\n');
   return lines.map(lineToBlock);
 }
 
 /** One clean block, or null to drop it. */
-function normalizeBlock(raw) {
+function normalizeBlock(raw: unknown): NoteBlock | null {
   if (!raw || typeof raw !== 'object') return null;
+  const tag = 'tag' in raw ? raw.tag : undefined;
+  const align = 'align' in raw ? raw.align : undefined;
+  const text = 'text' in raw ? raw.text : undefined;
   return {
-    tag: NOTE_TAGS.includes(raw.tag) ? raw.tag : 'p',
-    align: NOTE_ALIGNS.includes(raw.align) ? raw.align : 'left',
+    tag: isTag(tag) ? tag : 'p',
+    align: isAlign(align) ? align : 'left',
     // One line per block: a stray newline in stored text would otherwise smuggle
     // a second, unstyled line into a block the editor cannot address.
-    text: typeof raw.text === 'string' ? raw.text.replace(/\n/g, ' ') : '',
+    text: typeof text === 'string' ? text.replace(/\n/g, ' ') : '',
   };
 }
 
@@ -98,9 +135,9 @@ function normalizeBlock(raw) {
  * total text is held to NOTE_MAX here as well as in the editor, so a hand-edited
  * file cannot get a novel onto a sticky.
  */
-export function normalizeNoteRich(rich, text = '') {
-  let blocks = Array.isArray(rich?.blocks)
-    ? rich.blocks.map(normalizeBlock).filter(Boolean)
+export function normalizeNoteRich(rich: NoteRichInput, text: unknown = ''): NoteRich {
+  let blocks: NoteBlock[] = Array.isArray(rich?.blocks)
+    ? rich.blocks.map(normalizeBlock).filter((b): b is NoteBlock => Boolean(b))
     : parseNoteText(text);
   if (!blocks.length) blocks = [{ tag: 'h1', align: 'left', text: '' }];
   // Trim from the end until the flattened text fits, keeping at least one block.
@@ -115,10 +152,12 @@ export function normalizeNoteRich(rich, text = '') {
     const last = blocks[blocks.length - 1];
     last.text = last.text.slice(0, Math.max(0, last.text.length + budget));
   }
+  const font = rich?.font;
+  const valign = rich?.valign;
   return {
-    font: NOTE_FONT_KEYS.includes(rich?.font) ? rich.font : 'sheet',
+    font: isFont(font) ? font : 'sheet',
     size: clampSize(rich?.size),
-    valign: NOTE_VALIGNS.includes(rich?.valign) ? rich.valign : 'top',
+    valign: isValign(valign) ? valign : 'top',
     blocks,
   };
 }
@@ -128,22 +167,24 @@ export function normalizeNoteRich(rich, text = '') {
  * Font, size, alignment and vertical placement have no plaintext form and are
  * simply absent from it; that is the deal meta.text makes to stay portable.
  */
-export function flattenNoteRich(rich) {
+export function flattenNoteRich(rich: NoteRichInput): string {
   return normalizeNoteRich(rich).blocks
     .map(b => NOTE_MARKER[b.tag] + b.text)
     .join('\n');
 }
 
 /** Write a note's board-wide look onto its rich wrapper (font, size, vAlign). */
-export function applyNoteStyle(wrap, rich) {
+export function applyNoteStyle(wrap: HTMLElement, rich: NoteRich): void {
   wrap.style.fontFamily = NOTE_FONTS[rich.font];
-  wrap.style.setProperty('--note-scale', rich.size);
+  // setProperty takes a string; the number was being converted by the binding
+  // layer on the way in, and String() is that same conversion said out loud.
+  wrap.style.setProperty('--note-scale', String(rich.size));
   wrap.dataset.font = rich.font;
   wrap.dataset.valign = rich.valign;
 }
 
 /** One block as an editable line element. */
-export function buildNoteLine(block) {
+export function buildNoteLine(block: NoteBlock): HTMLDivElement {
   const line = document.createElement('div');
   line.className = `note-line note-${block.tag} al-${block.align}`;
   line.textContent = block.text;

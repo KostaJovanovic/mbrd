@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The toolbar: the surface that says a board is made by putting things on it.
 //
 // Three jobs. It presses commands - every button in the markup carries a
@@ -42,21 +34,33 @@ import { setConnectPick } from '../canvas/items.ts';
 import { setDraftFrom } from '../canvas/web.ts';
 
 /** data-cmd="add-files" -> cmds.addFiles. The panel's own mapping. */
-const camel = s => s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+const camel = (s: string): string => s.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
 
-let bar = null;
-let toggle = null;
+/**
+ * The command surface, as this module sees it: a lookup by name and nothing
+ * else. Every button on the bar carries a data-cmd, so the index signature is
+ * the whole of the contract - see the note above about knowing nothing of what
+ * any of them do.
+ */
+export interface ToolbarCommands {
+  [name: string]: ((...args: never[]) => unknown) | undefined;
+}
 
-export function initToolbar(cmds) {
+let bar: HTMLElement | null = null;
+let toggle: HTMLElement | null = null;
+
+export function initToolbar(cmds: ToolbarCommands): void {
   bar = el('toolbar');
   toggle = el('toolbar-toggle');
 
-  toggle.addEventListener('click', () => setOpen(!isOpen()));
+  // Both ids are declared in index.html; this module has always read them
+  // straight through, and an absent one is a broken build.
+  toggle!.addEventListener('click', () => setOpen(!isOpen()));
 
-  bar.addEventListener('click', e => {
-    const btn = e.target.closest('[data-cmd]');
+  bar!.addEventListener('click', e => {
+    const btn = (e.target as Element).closest<HTMLElement>('[data-cmd]');
     if (!btn) return;
-    const fn = cmds[camel(btn.dataset.cmd)];
+    const fn = cmds[camel(btn.dataset.cmd!)];
     if (!fn) return;
     fn();
     // Except the one command whose whole result is a menu hanging off the bar.
@@ -100,10 +104,10 @@ export const isOpen = () => !!bar?.classList.contains('is-open');
  * listener because three other things close this - a command firing, a board
  * loading, Escape - and each of them owes both halves.
  */
-export function setOpen(open) {
+export function setOpen(open: boolean): void {
   if (!bar) return;
   bar.classList.toggle('is-open', !!open);
-  toggle.setAttribute('aria-expanded', String(!!open));
+  toggle!.setAttribute('aria-expanded', String(!!open));
 }
 
 /** Escape's half. See cmds.closeSidebar - one key, every sheet that is up, and
@@ -117,7 +121,7 @@ export const closeToolbar = () => { setOpen(false); setArmed(false); };
 /** Whether a press on a card means "connect this" rather than "select this". */
 let armed = false;
 /** The first end, once one has been chosen. Null between pairs. */
-let pick = null;
+let pick: string | null = null;
 
 /**
  * What one press does, as a total function of the state and what was hit.
@@ -138,7 +142,10 @@ let pick = null;
  * "not that one" rather than "stop" - Escape and the button are the two ways to
  * stop, and both of them are unmistakable.
  */
-export function connectStep(from, id) {
+export function connectStep(
+  from: string | null,
+  id: string | null,
+): { pick: string | null; connect: [string, string] | null } {
   if (!id) return { pick: null, connect: null };
   if (!from) return { pick: id, connect: null };
   if (from === id) return { pick: null, connect: null };
@@ -155,7 +162,7 @@ export function connectStep(from, id) {
  * standing - which is why the two are one write rather than an arm and a
  * separate seed that a `bus.on('items')` could land between.
  */
-export function setArmed(on, from = null) {
+export function setArmed(on: boolean, from: string | null = null): void {
   armed = !!on;
   setPick(armed ? from : null);
   bar?.querySelector('[data-cmd="connect"]')?.setAttribute('aria-pressed', String(armed));
@@ -168,7 +175,7 @@ export function setArmed(on, from = null) {
 
 export const connectArmed = () => armed;
 
-function setPick(id) {
+function setPick(id: string | null): void {
   pick = id || null;
   setConnectPick(pick);
   setDraftFrom(pick);
@@ -181,7 +188,7 @@ function setPick(id) {
  * ordinary board and on every press of an unarmed one, which is what keeps this
  * to a single boolean read on the pointer path in canvas/input.js.
  */
-export function connectTap(id) {
+export function connectTap(id: string | null): boolean {
   if (!armed) return false;
   const next = connectStep(pick, id);
   setPick(next.pick);
