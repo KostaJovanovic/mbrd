@@ -75,6 +75,9 @@ the ES modules under `web/` directly — an edit is one refresh away.
 - **A new user-facing action is an entry in `cmds`** (`commands.js`), not a
   second event listener. A new setting is one entry in `ui/settings-schema.js`.
   A new toolbar tool is a `<button data-cmd>` in `index.html` plus that entry.
+  A hover flyout on one of those buttons is one entry in `FLYOUTS`
+  (`ui/flyout.js`) — never a second menu implementation; `ui/menu.js` renders
+  every menu in the app, and `openAnchored()` is how a non-cursor one is opened.
   A new file type is a branch in `classify()` plus an entry in `RENDERERS`,
   both in `canvas/renderers.js`. A new arrangement is a pure
   `(items, opts) => [{x, y}]` in `arrange/arrangements.js`.

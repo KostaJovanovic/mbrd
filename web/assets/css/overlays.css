@@ -733,12 +733,14 @@
   min-width: 34px;
   text-align: right;
 }
+/* Where the slider sits, and nothing about what it looks like. The ruled track
+   and the terracotta lozenge are in sidebar.css, named for .ctx-range along
+   with .field and .np-volume - a slider looks the same on this paper wherever
+   it is, and the browser default riding a menu row was the one thing on this
+   panel that came from somewhere else. */
 .ctx-range input[type="range"] {
   grid-column: 1 / -1;
-  width: 100%;
   margin: 0;
-  accent-color: var(--accent);
-  cursor: pointer;
 }
 
 /* ---------------------------------------------------------
