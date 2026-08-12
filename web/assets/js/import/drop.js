@@ -6,7 +6,9 @@
 // forty photos lands as a spiral around the cursor rather than a stack.
 
 import { toast, busy, extOf } from '../util.js';
-import { board, bus, addItems, select, setItemCover, NOTE_MAX, baseStep } from '../state.js';
+import {
+  board, bus, addItems, select, setItemCover, NOTE_MAX, baseStep, startSettling,
+} from '../state.js';
 import { addFile } from '../storage/assets.js';
 import { makeByteBudget, overPixelBudget } from './budget.js';
 import {
@@ -20,6 +22,7 @@ import { embeddedPreview } from './preview.js';
 import { makeThumb } from '../optimize/picture.js';
 import { looksLikeMbrd } from '../storage/mbrd.js';
 import { openFile } from '../storage/storage.js';
+import { stickerShape, stickerTint, DEFAULT_SHAPE } from '../stickers/catalogue.js';
 
 /**
  * Extensions a browser can turn into a FontFace.
@@ -681,6 +684,63 @@ export function addNote(centre, text = '') {
     x: centre.x, y: centre.y, w: size.w, h: size.h,
     meta: { text, tint },
   }], 'Add note');
+  // A note written onto a card is a note that has just been let go, so it gets
+  // the same ten seconds a dropped one does before it sets - see the settling
+  // block in sticky.js. Without this a note added over a photograph would be
+  // pinned from the first keystroke, and the editor you are typing into would
+  // be attached to something you could no longer move.
+  startSettling([item.id]);
+  select([item.id]);
+  return item;
+}
+
+/**
+ * How far off square a sticker lands, in degrees either way.
+ *
+ * Small. This is the difference between a sticker and a diagram element, and
+ * eight degrees is about as far as a thumb pressing something down actually
+ * takes it - past that it stops reading as hand-placed and starts reading as
+ * broken.
+ */
+const STICKER_TILT = 8;
+
+/**
+ * A shape pressed onto the board. The third item type with no file behind it.
+ *
+ * **The tilt is re-rolled here rather than kept**, which is the one decision in
+ * this function. A sticker gets a fresh angle every time it lands somewhere,
+ * because that is what peeling one off and pressing it down again looks like -
+ * and it has to happen on the *drop* rather than per frame, or the shape would
+ * shimmer while you dragged it. Undo gets it for free: `rot` goes into the same
+ * geometry snapshot as x and y (GEOM_KEYS in layout.js), so stepping back puts
+ * the old angle back along with the old position.
+ *
+ * The one part of that worth revisiting once it is in the hand: a sticker you
+ * have deliberately turned to 45 degrees is re-rolled too if you move it to
+ * another card. The fix, if it grates, is to re-roll only while `rot` is still
+ * the angle it was born with - cheap, but it means remembering that angle.
+ *
+ * The colour comes off the catalogue rather than out of a cycle, unlike
+ * addNote's pad above. A sticker comes out of the window looking the way it
+ * looked *in* the window - the heart red, the star gold - so the tint belongs
+ * to the shape and the palette is an override rather than a lottery.
+ */
+export function addSticker(shape, centre, tint) {
+  const entry = stickerShape(shape) || stickerShape(DEFAULT_SHAPE);
+  const size = defaultSize('sticker');
+  const [item] = addItems([{
+    type: 'sticker',
+    // What the trash, Find and the accessible name show. There is nothing else
+    // it could be called: a sticker has no filename and no text of its own.
+    name: entry.name,
+    x: centre.x, y: centre.y, w: size.w, h: size.h,
+    rot: (Math.random() * 2 - 1) * STICKER_TILT,
+    meta: { shape: entry.id, tint: stickerTint(tint, entry.id) },
+  }], 'Add sticker');
+  // Just pressed down, so it lies where it landed for ten seconds before it
+  // sets - the same window a drag gives, and the one that lets you nudge a
+  // star you placed a hair off centre. See addNote above and sticky.js.
+  startSettling([item.id]);
   select([item.id]);
   return item;
 }

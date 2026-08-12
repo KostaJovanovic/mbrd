@@ -55,7 +55,7 @@ import {
   MOBILE_COLUMNS, MOBILE_COLUMN_OPTIONS, MOBILE_TOP_ROWS, MOBILE_MIN_ROWS,
   MOBILE_BOTTOM_ROWS, MOBILE_APPEARANCE_VARS, cleanBoardTitleDraft, cleanBoardTitle,
   defaultBoardTitle, isDefaultTitle, mobileColumnCount, board, TITLE_ID, byId,
-  topZ, makeItem, isFurniture, isContent,
+  topZ, makeItem, isFurniture, isContent, isJoinEnd,
 } from './board-model.js';
 import {
   cloneSettings, layoutSettingsOf, settingsFor, dropIdIndex,
@@ -69,7 +69,8 @@ export { MAX_CONNECTIONS, pairKey, CONN_DIRECTIONS, CONN_STYLES };
 // mutations that act on their answers are here.
 import {
   STICK_MIN, stuckTo, wouldStick, restick, forgetSticks, seedSticks,
-  stuckPlacement, isRider, stuckFollowers,
+  stuckPlacement, isRider, stuckFollowers, isPinned, dragRoot, hostUnder, isSticky,
+  startSettling, isSettling, settlesIn, SETTLE_MS,
 } from './sticky.js';
 
 // Fence membership, one level down - see fences.js. Same bargain as sticky.js:
@@ -79,6 +80,11 @@ import {
   isFence, fenceOf, fenceAt, fenceMembers, fenceFollowers, refence, refenceAround,
   refenceArrivals, forgetFences, seedFences, fenceBox, nextFenceName,
 } from './fences.js';
+
+// The sticker catalogue - a leaf module of plain data, imported here for the
+// one thing a mutator has to do with it: hold an arriving tint to the palette
+// that exists.
+import { stickerTint } from './stickers/catalogue.js';
 
 // Where everything is - see layout.js. The Mobile pack, the two geometry
 // profiles and the undoable geometry writes, which had to move as one piece
@@ -101,7 +107,8 @@ export { baseStep, snapshotGeom, applyGeom, commitGeom, placeMobileItems, mobile
 
 export {
   STICK_MIN, stuckTo, wouldStick, restick, forgetSticks,
-  stuckPlacement, isRider, stuckFollowers,
+  stuckPlacement, isRider, stuckFollowers, isPinned, dragRoot, isSticky,
+  startSettling, isSettling, settlesIn, SETTLE_MS,
 };
 
 export {
@@ -114,7 +121,7 @@ export {
   MOBILE_COLUMNS, MOBILE_COLUMN_OPTIONS, MOBILE_TOP_ROWS, MOBILE_MIN_ROWS,
   MOBILE_BOTTOM_ROWS, MOBILE_APPEARANCE_VARS, cleanBoardTitleDraft, cleanBoardTitle,
   defaultBoardTitle, isDefaultTitle, mobileColumnCount, board, TITLE_ID, byId,
-  topZ, makeItem, isFurniture, isContent,
+  topZ, makeItem, isFurniture, isContent, isJoinEnd,
 };
 
 
@@ -393,8 +400,49 @@ export function connectionMeta(a, b) {
  */
 const TRASH_LIMIT = 60;
 
+/**
+ * The stickers that go with a delete: everything of type `sticker` stuck, at
+ * any depth, to something being removed.
+ *
+ * **Two rules rather than one, and they are two because the things are two.** A
+ * star on a photograph is a remark *about* that photograph and means nothing
+ * once it is gone; a note is something you wrote, and losing it to a delete you
+ * aimed at a picture would be the app throwing away your words. So notes keep
+ * today's behaviour exactly - left on the board, re-measured against whatever
+ * is underneath - and only stickers follow.
+ *
+ * The walk collects stickers alone, which is also what cuts it short at the
+ * first surviving host: a sticker on a *note* on a deleted photograph stays,
+ * because the note it is stuck to stays and the note never joins the going set
+ * for the sticker to follow it through. The naive version - stuckFollowers()
+ * and then a filter - takes that sticker too, because the note is a follower
+ * even though it is not being deleted.
+ */
+function stickerCascade(ids) {
+  const going = new Set(ids);
+  const out = [];
+  // Passes, like stuckFollowers(): a sticker on a sticker can only join once
+  // the one underneath it has, and board.items is in no particular order.
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const it of board.items) {
+      if (it.type !== 'sticker' || going.has(it.id)) continue;
+      const host = stuckTo(it);
+      if (!host || !going.has(host.id)) continue;
+      going.add(it.id);
+      out.push(it.id);
+      grew = true;
+    }
+  }
+  return out;
+}
+
 export function removeItems(ids, label = 'Delete') {
-  const set = new Set(ids);
+  // One undo entry for the cascade and the delete that caused it, which is the
+  // whole reason it is folded in here rather than run by the caller: Ctrl+Z
+  // brings the photograph and its stickers back together, and nobody has to
+  // press it twice.
+  const set = new Set([...ids, ...stickerCascade(ids)]);
   // Keep the original index so undo restores z-order position, not just the item.
   const removed = board.items
     .map((item, index) => ({ item, index }))
@@ -959,6 +1007,12 @@ function snapAll(snapTo) {
   const step = baseStep();
   const before = [], after = [];
   for (const it of board.items) {
+    // A pinned item is not on the board, it is on its host - see isPinned() in
+    // sticky.js. Its place is a fraction of the card underneath it, and putting
+    // that fraction on the lattice would slide a sticky off the photograph it
+    // was pressed onto, in a sweep the person asked of the *board*. The host
+    // lands on the grid and the rider comes along.
+    if (isPinned(it)) continue;
     const pre = it.meta?.presnap || null;
     before.push({ id: it.id, x: it.x, y: it.y, w: it.w, h: it.h, pre });
 
@@ -997,6 +1051,10 @@ function unsnapAll(snapTo) {
     // Checked rather than trusted: a memo arrives from a .mbrd like everything
     // else, and a hand-edited one holding a string would write it straight onto
     // the item's geometry. A memo that does not describe a box is no memo.
+    //
+    // Pinned items are skipped for the same reason snapAll() skips them: the
+    // sweep never moved one, so there is nothing of its to put back.
+    if (isPinned(it)) continue;
     const pre = usableMemo(it.meta?.presnap);
     if (!pre) { forgetPresnap(it); continue; }
     before.push({ id: it.id, x: it.x, y: it.y, w: it.w, h: it.h, pre });
@@ -1726,6 +1784,119 @@ export function setItemFit(id, fit) {
 }
 
 /**
+ * One sticker's colour. The palette is an override of the shape's own default,
+ * not a lottery - see the head of stickers/catalogue.js on why a heart is born
+ * red rather than taking whatever came next off a cycle.
+ *
+ * Held to the palette that exists on the way in, because the value ends up as a
+ * data-tint attribute the stylesheet keys eight rules off, and a number outside
+ * that set is a sticker with no colour at all. Emits 'item', which rebuilds the
+ * node - the same shape setItemFit uses, and the tint is read on the way out of
+ * canvas/items.js rather than by the renderer.
+ */
+export function setStickerTint(id, tint) {
+  const it = byId(id);
+  if (!it || it.type !== 'sticker') return;
+  const next = stickerTint(tint, it.meta?.shape);
+  const prev = stickerTint(it.meta?.tint, it.meta?.shape);
+  if (next === prev) return;
+  const write = value => {
+    const item = byId(id);
+    if (!item) return;
+    item.meta = { ...item.meta, tint: value };
+    bus.emit('item', id);
+  };
+  commit('Sticker colour', () => write(next), () => write(prev));
+}
+
+// ---------------------------------------------------------------------------
+// Unsticking
+//
+// The two mutations that own meta.loose - see the header of sticky.js for what
+// the flag means and why it is the one piece of stickiness that is stored.
+// They are a pair and they are asymmetric on purpose: one is a menu entry, the
+// other is a consequence of a gesture, and only the first is worth a history
+// entry of its own.
+// ---------------------------------------------------------------------------
+
+/**
+ * "Unstick" - the only way off a host that is not dropping the item somewhere
+ * else. Sets the flag on everything given that is actually pinned.
+ *
+ * Its own history entry, unlike the clearing half below, because it is the
+ * whole of what the person did: they opened a menu and asked for this, and
+ * nothing else happened that it could ride along inside.
+ *
+ * The undo direction just removes the flag and lets the measurement speak
+ * again. It cannot get a different answer than it had: nothing moved, so
+ * whatever the item was lying on it is still lying on.
+ */
+export function unstickItems(ids) {
+  // isRider, not isPinned: an item dropped three seconds ago is stuck and has
+  // not set yet, and unsticking it then is the whole point of being able to -
+  // it is how you keep it from ever pinning. See cmds.canUnstick, which asks
+  // the same question, and the settling block in sticky.js.
+  const affected = [...new Set(ids)].filter(id => isRider(byId(id)));
+  if (!affected.length) return;
+  const write = loose => {
+    for (const id of affected) {
+      const it = byId(id);
+      if (!it) continue;
+      if (loose) it.meta = { ...it.meta, loose: true };
+      else { const { loose: _drop, ...rest } = it.meta || {}; it.meta = rest; }
+    }
+    // The memo still holds the host each of these was stuck to, and the flag is
+    // read in front of it rather than instead of it - so putting the flag back
+    // has to send the question to the measurement again.
+    restick(affected);
+    // Nothing moved. 'geom' is still the right announcement: what changed is
+    // what travels when the host does, which is a fact about position, and it
+    // is the event the renderers already listen to for exactly that.
+    bus.emit('geom', affected);
+  };
+  commit(affected.length > 1 ? `Unstick ${affected.length} items` : 'Unstick',
+    () => write(true), () => write(false));
+}
+
+/**
+ * The way back: a drop that found a host un-looses what it dropped.
+ *
+ * Called with the ids a *pointer* gesture drove, from canvas/input.js, and only
+ * when the gesture actually moved something. Not from commitGeom(), and that is
+ * the distinction the whole design rests on:
+ *
+ * - It must not run on undo or redo. commitGeom() re-asks restick() inside the
+ *   committed pair, deliberately, because a note put back by the history has
+ *   moved and its memo must not outlive the geometry that justified it. This is
+ *   the opposite kind of thing - a decision, not a measurement - so replaying it
+ *   would mean undo could never restore "loose" at all. It runs once, in front
+ *   of the commit, and the before/after snapshot pair carries it in both
+ *   directions from there (see snapshotGeom, which records the flag).
+ * - It must not run on the arrow keys. Those *set* the flag, and the item they
+ *   set it on is almost always still over its old host - so a resettle on the
+ *   same gesture would take it straight back off again. The asymmetry is the
+ *   design: the keyboard positions a loose item and leaves it loose, however
+ *   long that takes, and only a pointer drop puts it back on a card.
+ *
+ * No commit of its own, and no 'geom' either: the caller commits a moment later
+ * and announces the whole gesture at once.
+ */
+export function resettle(ids) {
+  const cleared = [];
+  for (const id of ids) {
+    const it = byId(id);
+    // hostUnder(), not stuckTo(): the flag being decided here is exactly what
+    // stuckTo() refuses to look past.
+    if (!it?.meta?.loose || !hostUnder(it)) continue;
+    const { loose: _drop, ...rest } = it.meta;
+    it.meta = rest;
+    cleared.push(id);
+  }
+  if (cleared.length) restick(cleared);
+  return cleared;
+}
+
+/**
  * The still a model card shows instead of running WebGL, and the angle it was
  * taken from.
  *
@@ -2301,7 +2472,7 @@ export function serializeBoard() {
     // Stamp the durable stick record. Measured now from live geometry, not read
     // from a stale field, so the file records where the note actually sits; a
     // load seeds the memo back from it. Null is a real answer and is kept.
-    if (item.type === 'note') meta.stuckTo = stuckTo(item)?.id ?? null;
+    if (isSticky(item)) meta.stuckTo = stuckTo(item)?.id ?? null;
     // And the durable membership record, on any type rather than on one - a
     // fence nested in a bigger fence carries it too. It does the same small job
     // the stick record does, keeping a pixel of drift across a save from losing

@@ -9,6 +9,7 @@
 
 import {
   board, byId, selection, bus, renameItem, visualStackOrder, travelling, isFence,
+  isPinned, settlesIn,
 } from '../state.js';
 import { extOf, shuffle } from '../util.js';
 import { quality } from '../quality.js';
@@ -81,12 +82,49 @@ export function onHoverItem(fn) { hoverWatcher = fn; }
 
 function setHoverGroup(id) {
   if (id === lastHoverId) return;
+  // The pin badge, and the reason it is worked out here rather than written
+  // onto the node when the item is built: pinning is a fact about two items and
+  // it changes without either of them being rebuilt - a host deleted, an undo,
+  // a card dragged out from under a note. Hover is the only moment the badge is
+  // visible, so hover is the only moment it has to be right, and asking then
+  // costs one measurement of one item instead of a class that can go stale.
+  //
+  // On the hovered item alone, not on the group. The lift already says "these
+  // move together"; this says "and this one is fixed to that one", which is
+  // only true of the thing under the pointer.
+  nodes.get(lastHoverId)?.classList.remove('is-pinned');
+  clearTimeout(settleWatch);
   lastHoverId = id;
+  paintPinBadge(id);
   const next = new Set(id ? travelling([id]) : []);
   for (const gid of hoverGroup) if (!next.has(gid)) setHoverLift(gid, false);
   for (const gid of next) if (!hoverGroup.has(gid)) setHoverLift(gid, true);
   hoverGroup = next;
   hoverWatcher?.(hoverGroup);
+}
+
+/**
+ * Write the pin badge onto the hovered item, and come back for it if the item
+ * is still settling.
+ *
+ * The one timer this feature has, and it is here rather than in sticky.js
+ * because it is not about the rule - it is about the *badge*, which is a thing
+ * on screen and only visible while the pointer is on the card. A hand resting
+ * on a note it dropped eight seconds ago should see it become pinned; without
+ * this it would have to leave and come back for the class to be recomputed.
+ *
+ * One outstanding timer at a time, cleared by the next hover change, so there
+ * is nothing to cancel on a delete or a board swap - the item stops being
+ * hovered and the callback finds no node.
+ */
+let settleWatch = 0;
+function paintPinBadge(id) {
+  const it = byId(id);
+  nodes.get(id)?.classList.toggle('is-pinned', isPinned(it));
+  const left = settlesIn(it);
+  // +50ms, so the callback lands the far side of the comparison rather than on
+  // the exact millisecond it turns over.
+  if (left) settleWatch = setTimeout(() => paintPinBadge(id), left + 50);
 }
 
 /**
@@ -222,6 +260,26 @@ export function initItems(world, viewport) {
 }
 
 export function nodeFor(id) { return nodes.get(id); }
+
+/**
+ * The item something being dropped would stick to, wearing the selection ring
+ * while it is aimed at. Null clears it.
+ *
+ * One at a time, and the caller clears it when the gesture ends. Written here
+ * rather than by each gesture because the mark belongs to a node and this
+ * module owns the nodes - and because there are two gestures now: a note or
+ * sticker dragged across the board (canvas/input.js) and a shape dragged out of
+ * the sticker window (ui/sticker-window.js), which cannot see into the other's
+ * closure. Two copies of one mark is two chances for one of them to be left on.
+ */
+let stickTargetId = null;
+export function showStickTarget(host) {
+  const id = host?.id ?? null;
+  if (id === stickTargetId) return;
+  if (stickTargetId) nodes.get(stickTargetId)?.classList.remove('is-stick-target');
+  stickTargetId = id;
+  if (id) nodes.get(id)?.classList.add('is-stick-target');
+}
 
 /** Subscribe to view changes (pan/zoom); returns the unsubscribe. */
 export function onViewChange(fn) { return vp?.onChange(fn); }
@@ -780,7 +838,13 @@ function build(item) {
   // not draw from the bag either, rather than drawing and throwing the number
   // away: the one-in-three-hangs-straight split is a property of the pack, and
   // a region taking a slot out of it would bend that split for the cards.
-  const tilt = isFence(item) ? '0' : tiltFactor().toFixed(3);
+  // A sticker joins the fence in hanging straight, and for the opposite reason.
+  // A fence gets no lean because it is a drawn line rather than a pinned card;
+  // a sticker gets none *here* because it already has one of its own - the
+  // +/-8 degrees rolled onto item.rot when it was pressed down (see
+  // addSticker). Two leans would compound, and only one of them is a fact about
+  // the board rather than about the whimsy dial.
+  const tilt = isFence(item) || item.type === 'sticker' ? '0' : tiltFactor().toFixed(3);
   el.style.setProperty('--item-tilt', tilt);
 
   const body = document.createElement('div');
@@ -821,7 +885,12 @@ function build(item) {
   // shadow under a two-thousand-unit rectangle reads as an enormous card lying
   // on the board rather than as a region drawn on it, and it would be cast over
   // every card the fence contains.
-  if (quality.shadows && item.type !== 'title' && item.type !== 'ghost' && item.type !== 'fence') {
+  // And a sticker, for the first reason again and more so: its silhouette is a
+  // star or an arrow, and a rounded rectangle laid under one is a card-shaped
+  // halo around a shape that is not a card - the one thing the whole type is
+  // trying not to be. Its shadow is a drop-shadow() on .sticker-art, which
+  // follows the glyph.
+  if (quality.shadows && !NO_TWIN.has(item.type)) {
     shadows.set(item.id, buildShadow(item, tilt));
   }
   // The title card's pen and rename buttons live for the card's whole life - CSS
@@ -1024,9 +1093,23 @@ const NO_HEAD = new Set([
   'image',    // a photograph is its own name at any size, and a plate across the
   'video',    // bottom of one is a caption on something that did not ask for it.
   'swatch',   // a colour, and the hex under it is the only name it has.
+  'sticker',  // a shape pressed onto a picture. Its name exists for the trash
+              // and for Find; printing "Star" across a star at the index rung
+              // would be a caption on a mark, which is a caption on a caption.
 ]);
 
 export const wantsHead = item => !NO_HEAD.has(item.type);
+
+/**
+ * The types that get no geometry twin in #item-shadows.
+ *
+ * Every one of them for the same underlying reason: the twin is a rounded
+ * rectangle at the item box, so it is only ever right for a type whose
+ * silhouette *is* that box. Where it is not, the twin lays a card's shadow
+ * under something that is not a card. The four cases are argued one by one at
+ * the call site, which is where the shadow is decided; this is only the list.
+ */
+const NO_TWIN = new Set(['title', 'ghost', 'fence', 'sticker']);
 
 /**
  * The word printed above the rule at the index rung.

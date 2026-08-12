@@ -20,11 +20,11 @@ import { DEFAULT_SCALE } from './measure.js';
 import {
   board, selection, selectAll, removeItems, setSetting, undo, redo, byId,
   raiseSelection, lowerSelection, selectionHasStackOverlap,
-  duplicateItems, select, setItemCover, setItemUpAxis, setItemFit,
+  duplicateItems, select, setItemCover, setItemUpAxis, setItemFit, setStickerTint,
   setBoardMode as selectBoardMode,
   restoreTitleCard, resetTitlePosition,
   addConnections, clearConnections, updateConnection, connectionMeta, toggleConnection,
-  isFurniture, isRider,
+  isFurniture, isRider, unstickItems, isJoinEnd,
   addItems, baseStep, isFence, fenceAt, fenceBox, fenceFollowers, fenceOf, nextFenceName,
   snapshotGeom, applyGeom, commitGeom,
 } from './state.js';
@@ -39,7 +39,8 @@ import { isTurning, rotateModel } from './canvas/model.js';
 import {
   connectionAt, activeConnection, setActiveConnection, clearActiveConnection,
 } from './canvas/web.js';
-import { pickFiles, pickCover, addNote, addSwatch, addLink } from './import/drop.js';
+import { pickFiles, pickCover, addNote, addSwatch, addLink, addSticker } from './import/drop.js';
+import { stickerTint } from './stickers/catalogue.js';
 import { linkURL, SWATCH_DEFAULT, defaultSize } from './canvas/renderers.js';
 import { samplePixels, dominantColors } from './ui/pigments.js';
 import { arrange } from './arrange/arrangements.js';
@@ -61,6 +62,7 @@ import { open as openSearch } from './ui/search.js';
 import { openCredits } from './ui/credits.js';
 import { setLens, currentLens } from './ui/board-view.js';
 import { togglePlayerWindow } from './ui/playlist.js';
+import { toggleStickerWindow } from './ui/sticker-window.js';
 import { togglePlayback } from './canvas/audio.js';
 import {
   openPanel as openHeaderPanel, closePanel as closeHeaderPanel,
@@ -140,7 +142,8 @@ function showConnections() {
  * One predicate rather than three copies of it: both doors into the generator
  * ask the same question, and so does the tool when it reads the selection.
  */
-const joinable = items => items.filter(i => !isFurniture(i) && !isRider(i) && !isFence(i));
+const joinable = items =>
+  items.filter(i => !isFurniture(i) && !isRider(i) && !isFence(i) && isJoinEnd(i));
 
 /**
  * Run the generator over a pool of cards and say what it drew.
@@ -678,8 +681,13 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
     // the result. Mobile has no free positions to line up, so it declines.
     alignSelection: edge => {
       if (board.layoutMode === 'mobile') { toast('Aligning is a canvas thing'); return; }
+      // Pinned items are out for the same reason furniture and fences are: this
+      // straightens a row of cards, and a sticky fixed to one of them is not a
+      // card in that row. Lining it up would peel it off the photograph it was
+      // pressed onto - and it comes along anyway, at its own fraction of a host
+      // the sweep did move.
       const items = board.items.filter(i =>
-        selection.has(i.id) && !isFurniture(i) && !isFence(i));
+        selection.has(i.id) && !isFurniture(i) && !isFence(i) && !isRider(i));
       if (items.length < 2) { toast('Pick two or more cards to line up'); return; }
       const ids = items.map(i => i.id);
       const label = { left: 'Align left', right: 'Align right', hcenter: 'Align centre',
@@ -697,8 +705,9 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
     },
     distributeSelection: axis => {
       if (board.layoutMode === 'mobile') { toast('Spacing out is a canvas thing'); return; }
+      // Riders out, as in alignSelection above and for the same reason.
       const items = board.items.filter(i =>
-        selection.has(i.id) && !isFurniture(i) && !isFence(i));
+        selection.has(i.id) && !isFurniture(i) && !isFence(i) && !isRider(i));
       if (items.length < 3) { toast('Pick three or more cards to space out'); return; }
       const ids = items.map(i => i.id);
       const before = snapshotGeom(ids);
@@ -903,7 +912,61 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
       const item = addNote(at);
       requestAnimationFrame(() => cmds.editNote(item.id));
     },
+    /**
+     * Press a sticker onto the board at a world point.
+     *
+     * The one door onto the type, and everything that places one goes through
+     * it: the window's pointer drag, its tap-to-arm, and - until either of
+     * those exists - `mbrd.cmds.addStickerAt('s-star', mbrd.vp.centre())` from
+     * the console. A drop that lands over a card sticks to it and is pinned
+     * immediately, which is not special-cased anywhere: addItems() puts the
+     * sticker on top, and the ordinary measurement does the rest.
+     */
+    addStickerAt: (shape, at, tint) => addSticker(shape, at, tint),
+    /**
+     * The toolbar's Stickers button. A tool that opens a drawer rather than one
+     * that makes something: which shape it is *is* the whole of the decision,
+     * so there is no default sticker the way there is a default note.
+     */
+    stickers: () => toggleStickerWindow(),
     canEditNote: id => byId(id)?.type === 'note',
+    /**
+     * Is there anything in the selection that is stuck to a host?
+     *
+     * Stuck, not pinned - isRider() rather than isPinned(). An item dropped
+     * three seconds ago is stuck and has not set yet (see sticky.js), and
+     * Unstick during that window is a real thing to want: it is how you say
+     * "leave this here but do not fix it", without waiting for it to fix itself
+     * so that you can unfix it.
+     *
+     * The selection rather than the item under the cursor, because Unstick acts
+     * on the selection - "these nine are all stuck to that photograph and I
+     * want them off it" is the same sentence for one as for nine.
+     */
+    canUnstick: () => board.items.some(i => selection.has(i.id) && isRider(i)),
+    /**
+     * The sticker colour row: is this one item a sticker, what colour is it,
+     * and set it.
+     *
+     * Single-item, like the picture and fit rows above and for the same reason
+     * - it is an edit to one thing, and the menu has nowhere to show a tick for
+     * nine stickers that are three different colours.
+     */
+    canTintSticker: id => byId(id)?.type === 'sticker',
+    stickerTintOf: id => {
+      const it = byId(id);
+      return it ? stickerTint(it.meta?.tint, it.meta?.shape) : 1;
+    },
+    setStickerTint: (id, tint) => setStickerTint(id, tint),
+    /**
+     * Take the selection off whatever it is stuck to and leave it where it is.
+     *
+     * The only way off a host that is not dropping the item on something else,
+     * and deliberately without a matching "stick to this card": putting it on
+     * the card is already how you say that, and a menu entry for it would be a
+     * second vocabulary for a gesture that works.
+     */
+    unstick: () => unstickItems([...selection]),
     resetSize,
     // Album art, and nothing else. A cover is the picture a card that cannot be
     // looked at borrows so it can be recognised from across the board, and in

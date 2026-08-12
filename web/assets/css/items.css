@@ -137,6 +137,41 @@
   --lift: 0px;
   --grow: 1;
 }
+
+/* The pin badge.
+   A press on a pinned item takes hold of its *host* - the pile moves as one
+   object - and this is the only thing in the interface that says the thing
+   under your hand is not the thing that will move. The hover lift already says
+   most of it, since the photograph and its stickies rise together; all that is
+   left is which one of them is fixed to the other, and it needs saying only
+   while you are pointing at it.
+
+   Hover-only for that reason and one more: pinning is a fact about two items
+   and it changes without either being rebuilt, so a class written when the node
+   was built would go stale. items.js sets .is-pinned in setHoverGroup(), where
+   the argument is.
+
+   No disc behind it. A badge over a photograph has to be legible on whatever
+   the photograph happens to be, and a paper circle solves that by covering up
+   part of the picture at every corner it lands on. The accent plus a paper-
+   coloured drop-shadow does the same job in the shape of the glyph itself,
+   which is the same bargain the stickers make with their paper body. */
+.item.is-pinned::after {
+  --pin-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 2h6M6.5 2v4.2c0 .9-.6 1.4-1.3 1.9-.6.4-1 .8-1 1.4h7.6c0-.6-.4-1-1-1.4-.7-.5-1.3-1-1.3-1.9V2M8 9.5V14'/%3E%3C/svg%3E");
+  content: '';
+  position: absolute;
+  top: calc(5px * var(--iz));
+  right: calc(5px * var(--iz));
+  width: calc(13px * var(--iz));
+  height: calc(13px * var(--iz));
+  background: var(--select);
+  -webkit-mask: var(--pin-glyph) center / contain no-repeat;
+  mask: var(--pin-glyph) center / contain no-repeat;
+  filter: drop-shadow(0 0 calc(1.5px * var(--iz)) var(--paper));
+  /* The badge is decoration on a thing you cannot drag anyway - it must not be
+     the one part of the item that swallows the press. */
+  pointer-events: none;
+}
 /* The selection ring, drawn rather than outlined.
    `outline` would be the obvious tool and is the wrong one: engines disagree
    about whether outline-offset grows the outline's corner radius along with
@@ -1329,7 +1364,7 @@
 .wave-lane i {
   flex: 1;
   min-width: 1px;
-  border-radius: min(var(--radius-xs), 2px);
+  border-radius: var(--radius-pill);
 }
 /* Enough ink to read as a waveform on paper. At 22% it was a grey suggestion
    next to a play button in full accent, and the two did not look like parts of
@@ -1819,14 +1854,20 @@
   display: flex;
   gap: 10px;
   padding: 8px 10px;
-  border-radius: var(--radius-md, 14px);
+  /* --ogee, because that is what this is: a panel with controls in it. It read
+     var(--radius-md, 14px) for a long time and --radius-md has never existed,
+     so every board at every tier got the 14px fallback - a rounded bar floating
+     over square cards on the plain tier, and a tight one over 26px cards on the
+     soft. The fallback was near enough to the middle tier's --ogee that nobody
+     saw it, which is exactly why it lasted. */
+  border-radius: var(--ogee);
   background: var(--paper-card);
   box-shadow:
     0 3px 10px color-mix(in srgb, var(--ink) 16%, transparent),
     inset 0 0 0 var(--hairline) var(--item-border);
   white-space: nowrap;
   z-index: 6;
-  font-family: system-ui, sans-serif;
+  font-family: var(--font-body);
   pointer-events: auto;
   /* Its own compositor layer, so the note's growing shadow underneath cannot
      bleed into the bar's and read as the bar's shadow deepening on each press. */
@@ -1846,7 +1887,10 @@
   height: 36px;
   padding: 0 8px;
   border: 0;
-  border-radius: var(--radius-xs, 8px);
+  /* --leaf sizes controls; this is one. The old var(--radius-xs, 8px) named the
+     small-fry token and then handed it a fallback twice its value, so whichever
+     way it resolved it was wrong about something. */
+  border-radius: var(--leaf);
   background: transparent;
   color: var(--ink-2);
   font: inherit;
@@ -1893,12 +1937,14 @@
 }
 .note-toolbar .ntb-btn.is-active {
   background: var(--accent);
-  color: var(--paper-card);
+  /* --accent-fg, not --paper-card: this is ink printed *on* the accent, and
+     --accent-fg is the one mixed to stay legible when the palette moves. */
+  color: var(--accent-fg);
 }
 .note-toolbar .ntb-select {
   height: 36px;
   border: 0;
-  border-radius: var(--radius-xs, 8px);
+  border-radius: var(--leaf);
   background: color-mix(in srgb, var(--ink) 6%, transparent);
   color: var(--ink);
   font: inherit;
@@ -1999,6 +2045,114 @@
   -webkit-line-clamp: 2;
   overflow: hidden;
 }
+/* ---- Stickers (canvas/renderers.js/sticker) -------------------------------
+   The one item that is not a card at all: no paper, no border, no caption, no
+   cover slot. A sticker is a shape lying on a picture, and a shape in a
+   bordered box is a card with a star in it - which is a different object and
+   not the one anybody asked for. So everything the .item wrapper normally
+   contributes is taken back off here, and what is left is the SVG.
+
+   A sticker is a paper body with an inked outline - the same reading the app's
+   own icons have, one size up. That is what makes it belong to this board
+   rather than to a phone keyboard, and it is also the only version of the idea
+   that stays legible over a dark photograph, which bare line work does not.
+
+   **Nothing here is stroked**, and that is Phosphor's doing rather than a
+   choice: it draws every weight as a *filled* path, its outline weights
+   included, where the line is a closed path tracing the outline of a stroke.
+   So the line weight is upstream's, `stroke: none` is written out rather than
+   left to chance, and a sticker resized is a bigger drawing at the same
+   proportions - which is what the old, hand-drawn, actually-stroked version had
+   to work for.
+
+   Both properties are *inherited*, which is what lets them be set in a
+   stylesheet at all: the shape lives in an externally referenced <use>, so no
+   selector in this file can reach a path inside it, and only what the <svg>
+   passes down arrives. `color` is how the ink gets to the paths that opt out of
+   the default paint - a duotone glyph's foreground is `fill="currentColor"` -
+   since a presentation attribute beats an inherited property and
+   `currentColor` is the one value that still follows the tint from outside. */
+/* No card, at all: no paper, no hairline, no shadow. The three lines below
+   switch off the ones .item paints itself. The fourth was invisible from here
+   and is the one that showed: the geometry twin in #item-shadows is a separate
+   element in a separate layer, so `--item-shadow: none` on the card never
+   reached it and every sticker sat in a rounded-rectangle halo the size of its
+   box. Switched off where it is built - see NO_TWIN in canvas/items.js - since
+   a twin that paints nothing is still an element per sticker, placed and
+   mirrored on every move. */
+.item[data-type="sticker"] {
+  background: transparent;
+  --item-shadow: none;
+  --item-border: transparent;
+  box-shadow: none;
+}
+/* No caption and no menu handle. The far-zoom headline is refused in JS
+   instead (NO_HEAD in canvas/items.js), because it is never built rather than
+   built and hidden. The name still exists - the trash and Find want it - it
+   just is not printed across the shape. */
+.item[data-type="sticker"] .item-bar { display: none; }
+/* The shape may hang past the box's rounded corners: it is a star, not a
+   picture that needs cropping to the card it is in. */
+.item[data-type="sticker"] .item-body { overflow: visible; }
+
+.sticker-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  color: var(--sticker-tint);
+  fill: var(--sticker-body);
+  stroke: none;
+  /* A drop-shadow rather than a box-shadow, and that is the point of using one
+     at all: it follows the outline the filter is given, and the outline is the
+     whole reason this thing is not a card. A box-shadow would draw a
+     rectangle's shadow under a star.
+
+     Tight and close, like the note's - a sticker is pressed flat, not floating.
+     Light, because a paper body with a thin outline has not the mass to carry a
+     heavy one; a solid silhouette could, and this was heavier when the shapes
+     were solid. */
+  filter: drop-shadow(0 1px 1px color-mix(in srgb, var(--ink) 16%, transparent))
+          drop-shadow(0 3px 5px color-mix(in srgb, var(--ink) 15%, transparent));
+  /* The shape must not eat presses that the item's own box would have taken.
+     Hit-testing on a sticker is rectangular like everything else - see the
+     item, which keeps its pointer-events - so this is only here to stop the
+     SVG from becoming a second, differently shaped target inside it. */
+  pointer-events: none;
+}
+
+/* The pad, out of tokens.css.
+   Eight rules rather than one var(--sticker-{n}), because CSS cannot build a
+   custom property name out of an attribute - and the alternative is each
+   renderer writing a colour into a style attribute, which would take this file
+   out of the question of what a sticker looks like.
+
+   Keyed on the artwork rather than on whatever is around it, which is what
+   keeps it to eight lines. A sticker is drawn in five places - on the board, on
+   a pad tile, on the ghost following the pointer out of the pad, on a Mobile
+   feed tile, and in the bin - and every one of them builds the same
+   .sticker-art element, so every one of them can carry the tint on it. Five
+   selectors per rule was the first version, and it was five chances to forget
+   the sixth place. */
+.sticker-art { --sticker-tint: var(--sticker-1); }
+.sticker-art[data-tint="2"] { --sticker-tint: var(--sticker-2); }
+.sticker-art[data-tint="3"] { --sticker-tint: var(--sticker-3); }
+.sticker-art[data-tint="4"] { --sticker-tint: var(--sticker-4); }
+.sticker-art[data-tint="5"] { --sticker-tint: var(--sticker-5); }
+.sticker-art[data-tint="6"] { --sticker-tint: var(--sticker-6); }
+.sticker-art[data-tint="7"] { --sticker-tint: var(--sticker-7); }
+.sticker-art[data-tint="8"] { --sticker-tint: var(--sticker-8); }
+
+/* The copy on a Mobile feed tile. Placed in percentages of the tile by
+   ui/feed.js, so it holds its fraction of the host through every relayout of
+   the wall underneath it; the translate is what puts the shape's own centre
+   over that point rather than its corner. */
+.feed-sticker {
+  position: absolute;
+  translate: -50% -50%;
+  pointer-events: none;
+  z-index: 2;
+}
+
 /* ---- A model on a card (canvas/model.js) ---------------------------------
    The canvas fills the card above the filename and takes the pointer, because
    dragging it turns the model rather than moving the item. Everything around

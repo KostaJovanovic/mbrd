@@ -70,6 +70,19 @@ test('the sprite carries nothing nobody asks for', () => {
   assert.deepEqual(orphans, [], `unreferenced symbols: ${orphans.join(', ')}`);
 });
 
+test('no comment in the sprite holds two hyphens in a row', () => {
+  // SVG is XML, so this is a parse error, and a parse error takes down the
+  // whole file rather than the comment - every icon in the app disappears at
+  // once, with no console warning and no failed request. It has happened once,
+  // in the sticker sprite (tests/stickers.test.js carries the same check), and
+  // the thing that caused it was a section heading written as a rule of
+  // hyphens: the house style everywhere else in this codebase, and illegal
+  // here. Hence the ═ rules above.
+  for (const [, inner] of sprite.matchAll(/<!--([\s\S]*?)-->/g)) {
+    assert.ok(!inner.includes('--'), `two hyphens inside a comment: "${inner.trim().slice(0, 48)}"`);
+  }
+});
+
 test('every symbol is drawn to the same box', () => {
   // The spec that is not in CSS. Stroke and fill are inherited properties and
   // live on .ico in base.css, so they are written once; the viewBox cannot be,

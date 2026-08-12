@@ -227,7 +227,7 @@
 .feed-bars i {
   flex: 1;
   min-width: 3px;
-  border-radius: 2px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--accent) 58%, var(--ink-3));
 }
 /* The audio tile's corner badge: a small play glyph on a paper chip, saying this
@@ -434,16 +434,22 @@
   gap: 8px;
   min-width: 132px;
   padding: 11px 22px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-family: var(--font-body);
   font-size: var(--t-body);
   font-weight: 600;
   cursor: pointer;
   border: var(--hairline) solid transparent;
-  transition: transform 0.08s ease, background 0.15s ease, color 0.15s ease;
+  transition: transform var(--dur-fast) var(--ease),
+              background var(--dur-fast) var(--ease),
+              color var(--dur-fast) var(--ease);
 }
-.pl-play { background: var(--accent); color: #fff; border-color: var(--accent); }
-.pl-play:hover { background: color-mix(in srgb, #000 8%, var(--accent)); }
+/* --accent-fg and --accent-deep rather than #fff and a black mix: these two are
+   the loudest controls on the phone and they were the pair that did not move
+   with the palette, so a teal or sage board still printed cold white on its
+   primary button and darkened it towards grey on hover. */
+.pl-play { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.pl-play:hover { background: var(--accent-deep); }
 .pl-shuffle { background: var(--paper-card); color: var(--ink); border-color: var(--rule-2); }
 .pl-shuffle:hover { background: var(--paper-3); }
 .pl-shuffle.is-on {
@@ -454,31 +460,6 @@
 .pl-play:active, .pl-shuffle:active { transform: translateY(1px); }
 .pl-play .pl-ico, .pl-shuffle .pl-ico { display: inline-flex; }
 .pl-play svg, .pl-shuffle svg { width: 16px; height: 16px; }
-
-/* The compact header the Desktop window carries: the same pieces, on a row. */
-.pl-hero.is-compact {
-  flex-direction: row;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  text-align: left;
-}
-.pl-hero.is-compact .pl-cover { width: 58px; flex: none; border-radius: var(--leaf); box-shadow: var(--shadow-1); }
-.pl-hero.is-compact .pl-hero-text { align-items: flex-start; gap: 6px; }
-.pl-hero.is-compact .pl-hero-title {
-  font-size: var(--t-title);
-  max-width: none;
-  width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.pl-hero.is-compact .pl-hero-actions { margin-top: 2px; justify-content: flex-start; }
-.pl-hero.is-compact .pl-play, .pl-hero.is-compact .pl-shuffle {
-  min-width: 0;
-  padding: 7px 15px;
-  font-size: var(--t-small);
-}
 
 /* The Playlist list, in normal flow. In the Mobile lens it sits on the board
    sheet; in the Desktop window it fills the window body. */
@@ -585,7 +566,7 @@
 .pl-eq i {
   width: 3px;
   height: 100%;
-  border-radius: 1px;
+  border-radius: var(--radius-pill);
   background: #fff;
   transform-origin: bottom;
   animation: pl-eq 0.9s ease-in-out infinite;
@@ -670,9 +651,8 @@
 .player-window-close:hover { background: var(--paper-3); color: var(--ink); }
 .player-window-toggle svg,
 .player-window-close svg { width: 15px; height: 15px; }
-.player-window-toggle.is-on { color: var(--accent); }
-/* The swappable region under the title bar. It holds the mode's content and takes
-   the leftover height; each mode scrolls inside it. */
+/* The region under the title bar. It holds the body and takes the leftover
+   height; the body scrolls inside it. */
 .player-window-content {
   flex: 1 1 auto;
   min-height: 0;
@@ -687,28 +667,6 @@
   padding: 6px 8px 12px;
 }
 .player-window-body .feed-empty.is-shown { min-height: 30vh; }
-
-/* The album/feed view inside the window: the Mobile lens's own furniture (compact
-   hero + list), scrolling as one, with the full-screen sheet flattened to fit the
-   window - no set width, no min-height, no paper surround of its own. */
-.player-window-feed {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-.player-window .feed-sheet {
-  width: 100%;
-  min-height: 0;
-  margin: 0;
-  padding: 0 0 8px;
-  border-radius: 0;
-  background: none;
-  box-shadow: none;
-  overflow: visible;
-}
-.player-window .pl-hero.is-compact { padding: 14px 18px; }
-.player-window .feed-sheet .pl-list { width: 100%; margin: 0; padding: 0 8px; }
 
 /* The bottom-right resize grip: a small bracket that sits over the corner. It draws
    an L of two hairlines inside the rounded corner - subtle at rest, the accent under
@@ -858,7 +816,7 @@
   border: var(--hairline) solid var(--accent);
   color: var(--accent);
 }
-.pw-play:hover { background: var(--accent); color: #fff; }
+.pw-play:hover { background: var(--accent); color: var(--accent-fg); }
 .pw-play svg { width: 18px; height: 18px; }
 
 /* Reduced motion: no tile reflow easing while reordering, no scroll glide, and a

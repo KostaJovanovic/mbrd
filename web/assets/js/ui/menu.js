@@ -23,6 +23,7 @@
 // a second name for it and nothing else. canvas/notes.js takes the same
 // shortcut to the same module for the same reason.
 import { canRenameItem, editItemName } from '../canvas/items.js';
+import { STICKER_TINT_NAMES } from '../stickers/catalogue.js';
 
 let node = null;
 let vp = null;
@@ -158,10 +159,18 @@ function itemEntries(id, count, at) {
   // crosses another layer. A note covering its own host is intentionally one
   // layer and does not make these actions useful by itself.
   const stackable = cmds.selectionHasStackOverlap();
+  // Anything in the selection fixed to a host. Asked of the selection rather
+  // than of the item under the cursor, like the stacking pair above and unlike
+  // the edit group before them: taking nine stickies off one photograph means
+  // exactly what taking one off means.
+  const unstickable = cmds.canUnstick();
   // A picture can hand over its own colours as swatches. Single-item, like the
   // cover and fit actions above: it reads the one image under the cursor, and
   // "the colours of these nine" is not a thing a person means.
   const swatchable = !many && cmds.canExtractSwatches(id);
+  // A sticker's colour, as a fold rather than eight rows in the main column.
+  // Single-item, like the picture and fit rows: it is an edit to one shape.
+  const tintable = !many && cmds.canTintSticker(id);
   return [
     // First, and only on a note: right-clicking the one item type you can
     // actually type into should offer to type into it before anything else.
@@ -196,10 +205,26 @@ function itemEntries(id, count, at) {
     // gesture; below it, this is the last thing on the model's own group.
     { label: 'Rotate model', icon: 'i-rotate', hidden: !turnable,
       action: () => cmds.rotateModel(id) },
-    { sep: true, hidden: !editable && !renamable && !coverable && !covered && !fittable && !flippable && !turnable && !swatchable },
+    // Every shape can take every tint, so this is the whole palette on every
+    // sticker rather than a set that varies by shape. It is an override: the
+    // shape arrived wearing the colour it wore in the pad, and the tick shows
+    // which one it is on now.
+    { label: 'Colour', icon: 'i-swatch', hidden: !tintable,
+      sub: tintable ? stickerTintEntries(id) : undefined },
+    { sep: true, hidden: !editable && !renamable && !coverable && !covered && !fittable && !flippable && !turnable && !swatchable && !tintable },
     // The other mirrored pair: one card and one arrow, turned over.
     { label: 'Bring to front', icon: 'i-front', hidden: !stackable, action: () => cmds.raise() },
     { label: 'Send to back', icon: 'i-back', hidden: !stackable, action: () => cmds.lower() },
+    // Off its host and left exactly where it is. A stuck note is *pinned* - a
+    // drag on it moves the card underneath it instead - so this is the only way
+    // out that is not dropping it somewhere else, and the menu is the only place
+    // it can be. An open padlock rather than a pin, because the entry is the act
+    // of letting go and the badge on the card is already the pin.
+    //
+    // With the stacking pair for the reason the row below gives: it is about how
+    // a card sits on the board rather than about what the card is.
+    { label: many ? 'Unstick these' : 'Unstick', icon: 'i-lock-open',
+      hidden: !unstickable, action: () => cmds.unstick() },
     // The way back from a corner dragged too far. With the stacking pair rather
     // than in the group above, because those are all edits to what a card *is*
     // and this is one to how it sits on the board - the same kind of thing as
@@ -315,14 +340,33 @@ function connectionEntries(conn) {
     { label: 'Colour', icon: 'i-swatch', sub: connectionColorEntries(conn, color) },
     { label: 'Weight', icon: 'i-line-solid', sub: connectionWeightEntries(conn, weight) },
     { sep: true },
-    { label: meta.label ? 'Change label' : 'Add a label', icon: 'i-edit-text',
+    { label: meta.label ? 'Change label' : 'Add a label', icon: 'i-style',
       action: () => cmds.editConnectionLabel(conn.a, conn.b) },
-    { label: 'Remove label', icon: 'i-edit-text', hidden: !meta.label,
+    { label: 'Remove label', icon: 'i-style', hidden: !meta.label,
       action: () => cmds.clearConnectionLabel(conn.a, conn.b) },
     { sep: true },
     { label: 'Remove connection', icon: 'i-delete', danger: true,
       action: () => cmds.removeConnection(conn.a, conn.b) },
   ];
+}
+
+/**
+ * The eight colours a sticker may be set to.
+ *
+ * The names come from the catalogue rather than being spelled out here, so the
+ * words and the tokens they describe are one list - the same bargain the
+ * connection palette below makes with canvas.css, one relation over. The
+ * numbers are what reaches meta.tint and items.css, and nothing but the index
+ * ties them together, which is exactly why the list has one home.
+ */
+function stickerTintEntries(id) {
+  const now = cmds.stickerTintOf(id);
+  return STICKER_TINT_NAMES.map((text, i) => ({
+    label: text,
+    icon: 'i-swatch',
+    check: now === i + 1,
+    action: () => cmds.setStickerTint(id, i + 1),
+  }));
 }
 
 /**

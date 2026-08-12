@@ -22,7 +22,7 @@ import { clamp } from '../util.js';
 import {
   board, byId, selection, select, deselect, clearSelection, topZ, stackOrder,
   snapshotGeom, applyGeom, commitGeom, bus, stuckFollowers, stuckPlacement, wouldStick,
-  travelling, isFence,
+  travelling, isFence, dragRoot, isPinned, isSticky, resettle,
   copyItems, cutItems, pasteItems, clipboardSize, clipboardBounds, clipboardHasOurs,
   baseStep,
 } from '../state.js';
@@ -31,7 +31,9 @@ import {
   itemInRect, itemWithinRect, rotatedExtents,
   latticeBox, latticeLow, cellInset, MIN_SIZE, MAX_SIZE,
 } from '../geometry.js';
-import { itemIdFromEvent, ensureMounted, nodeFor, sync as syncItems, editItemName } from './items.js';
+import {
+  itemIdFromEvent, ensureMounted, nodeFor, sync as syncItems, editItemName, showStickTarget,
+} from './items.js';
 import { noteFloor } from './notes.js';
 import { queryRect } from './spatial.js';
 
@@ -741,19 +743,41 @@ export function initInput(vp, cmds) {
   }
 
   function startMove(e, id) {
+    // A pinned item is not what a press on it takes hold of - its host is. The
+    // pile reads as one object under the pointer: press the photograph or press
+    // the star lying on it, and the photograph moves with the star riding along.
+    // That is already what the hover lift promises (setHoverGroup() lifts the
+    // whole pile), so this brings the drag into line with the lift rather than
+    // inventing a rule.
+    //
+    // **The selection is deliberately not touched.** Clicking a pinned star
+    // still selects the star, so its own menu, its colour and Delete all still
+    // reach it - it just drags the photograph. Those two coming apart, what you
+    // have selected and what you are moving, is the one genuinely new idea in
+    // this change, and it is why the redirect lives here and not in the
+    // selection code a few lines up the call.
+    //
+    // Mapped across the whole selection rather than off `id` alone, so a
+    // multi-select holding a pinned item and something else drives both roots;
+    // dedupe, because two stickers on one photo resolve to the same root.
+    const roots = [...new Set([...selection].map(sid => dragRoot(byId(sid))?.id ?? sid))];
     // Whatever is stuck to the selection comes with it, and whatever is fenced
     // by it. Worked out once, here, and then held for the length of the gesture:
     // recomputing it per frame would let notes latch on and fall off as the drag
     // swept the selection across other items, so the group you picked up would
     // not be the group you put down. What is stuck when you take hold is what
     // travels. See travelling() in layout.js, where the fixed point is worked out.
-    const moving = travelling(selection);
+    const moving = travelling(roots);
     // Snapshotted here, before anything is touched, so the raise below rides
     // along in the same undo entry as the move it belongs to.
     const before = snapshotGeom(moving);
     const start = vp.toWorld(e.clientX, e.clientY);
     g = {
-      kind: 'move', id, moving, before, start,
+      // `id` is what the pointer landed on and `lead` is what it has hold of -
+      // the same thing except on a pinned item. The lift keeps `id`, because a
+      // modified click peels the card you clicked; the drag arithmetic and the
+      // stick preview read `lead`, because those are about the thing moving.
+      kind: 'move', id, lead: dragRoot(byId(id))?.id ?? id, moving, before, start,
       // The sides come along as well as the corner: snapping puts the lead's low
       // edges on lines, and an edge is its centre less half its size.
       origin: before.map(b => ({ id: b.id, x: b.x, y: b.y, w: b.w, h: b.h })),
@@ -763,7 +787,12 @@ export function initInput(vp, cmds) {
       // across the board by the photo underneath it has not moved relative to
       // anything, and re-parenting it would take apart the pile you built by
       // moving it. See restick() in state.js.
-      driven: [...selection],
+      //
+      // The roots, not the selection: a pinned star did not move relative to the
+      // photograph under it, the photograph moved, so the star must not be
+      // re-measured on release. It is a towed follower now, whatever the
+      // selection says.
+      driven: roots,
     };
     for (const sid of moving) ensureMounted(sid);
   }
@@ -1269,7 +1298,7 @@ export function initInput(vp, cmds) {
       // pushed both its sides half a cell off instead. Edges are also what
       // snapAll() lines up when snapping is switched on, so this is the same
       // arrangement being kept rather than a second one being imposed.
-      const lead = g.origin.find(o => o.id === g.id) || g.origin[0];
+      const lead = g.origin.find(o => o.id === g.lead) || g.origin[0];
       const low = { x: lead.x + dx - lead.w / 2, y: lead.y + dy - lead.h / 2 };
       let sx = snapLow(low.x) - low.x;
       let sy = snapLow(low.y) - low.y;
@@ -1279,9 +1308,14 @@ export function initInput(vp, cmds) {
       // than on the nearest grid line, since it is being stuck to that host and a
       // sticky that jumps a few pixels off the picture reads as a refusal. Only
       // the note being dragged is measured; everything else keeps snapping.
-      const leadItem = byId(g.id);
-      const host = leadItem?.type === 'note'
-        ? wouldStick({ x: lead.x + dx, y: lead.y + dy, w: leadItem.w, h: leadItem.h }, g.id)
+      //
+      // g.lead, not g.id: a press on a pinned star is dragging the photograph,
+      // and the photograph is not looking for a host. Asking about the star
+      // would light up whatever it is about to be carried over.
+      const leadItem = byId(g.lead);
+      const host = isSticky(leadItem)
+        ? wouldStick(
+          { x: lead.x + dx, y: lead.y + dy, w: leadItem.w, h: leadItem.h }, g.lead, leadItem)
         : null;
       showStickTarget(host);
       if (board.settings.snap && host) {
@@ -1518,7 +1552,16 @@ export function initInput(vp, cmds) {
    * and abortGesture cannot drift apart.
    */
   function releaseGesture() {
-    if (g.kind === 'move' && g.moved) commitGeom('Move', g.before, g.driven);
+    // A drop that found a host is the way back from Unstick, and it is the only
+    // way back - there is no "stick to this card" menu entry, because putting it
+    // on the card is already how you say that. In front of the commit, not
+    // inside it, so undo restores the flag instead of re-deriving it; resettle()
+    // in state.js argues the whole of it. Only on a gesture that moved, so a
+    // plain click on a loose note cannot quietly re-pin it.
+    if (g.kind === 'move' && g.moved) {
+      resettle(g.driven);
+      commitGeom('Move', g.before, g.driven);
+    }
     if (g.kind === 'resize') commitGeom('Resize', g.before, g.driven);
     if (g.kind === 'marquee') marquee.hidden = true;
     g.node?.classList.remove('is-resizing');
@@ -1539,16 +1582,10 @@ export function initInput(vp, cmds) {
     releaseGesture();
   }
 
-  // The item a dragged note would stick to on release, wearing the selection
-  // ring while it is aimed at. Only one at a time; cleared when the drag ends.
-  let stickTargetId = null;
-  function showStickTarget(host) {
-    const id = host?.id ?? null;
-    if (id === stickTargetId) return;
-    if (stickTargetId) nodeFor(stickTargetId)?.classList.remove('is-stick-target');
-    stickTargetId = id;
-    if (id) nodeFor(id)?.classList.add('is-stick-target');
-  }
+  // The stick-target ring moved to canvas/items.js, which owns the nodes it
+  // marks. It was a closure in here while a note drag was the only thing that
+  // could aim at a host; a shape dragged out of the sticker window aims at one
+  // too, and ui/sticker-window.js cannot reach into this function.
 
   // ---- wheel ------------------------------------------------------------
 
@@ -1761,7 +1798,29 @@ export function initInput(vp, cmds) {
     const before = snapshotGeom(travelling(selection));
     const { dx, dy } = nudgeBy(sx, sy, e.shiftKey, before);
     if (!dx && !dy) return;
-    applyGeom(before.map(b => ({ ...b, x: b.x + dx, y: b.y + dy })));
+    // The one door where "immovable" answers differently: an arrow key on a
+    // pinned item unsticks it and nudges *it*, rather than redirecting to its
+    // host the way a pointer drag does. The keyboard is the fine-positioning
+    // tool - it is how you place a sticker exactly - and having a left arrow
+    // move a photograph would be a very large effect from a very small key.
+    //
+    // Note what it leaves behind: the item stays loose afterwards, indefinitely,
+    // until the next *pointer* drag drops it on a host. That asymmetry is the
+    // design and not an oversight - see resettle() in state.js, which is
+    // deliberately not called from here.
+    //
+    // Written into the applied snapshot rather than onto the item, because these
+    // snapshots carry the flag (see snapshotGeom) and applyGeom would otherwise
+    // write the old value straight back over it. The `before` pair still holds
+    // the pinned state, which is what undo puts back.
+    applyGeom(before.map(b => ({
+      ...b,
+      x: b.x + dx,
+      y: b.y + dy,
+      // Only what the keys drove. A follower towed along by a nudged host has
+      // not been unstuck, the same way it has not been unstuck by a drag.
+      loose: b.loose || (selection.has(b.id) && isPinned(byId(b.id))),
+    })));
     commitGeom('Nudge', before, [...selection]);
   }
 

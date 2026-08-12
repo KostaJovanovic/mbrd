@@ -300,6 +300,13 @@
 }
 .bin-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .bin-thumb.is-note { background: var(--note-1); color: var(--ink-2); }
+/* A binned sticker shows its shape, which is the only thing that tells it from
+   the next one - every star is called Star. Padded, because these are drawn to
+   the edges of their own box and a 38px square with the thumb border round it
+   would clip the outline off. The tint mapping is the one in items.css, shared
+   with the board, the pad and the feed. */
+.bin-thumb.is-sticker { padding: 4px; }
+.bin-thumb.is-sticker .sticker-art { filter: none; }
 .bin-name {
   flex: 1;
   min-width: 0;
@@ -461,7 +468,13 @@
   width: 100%;
   padding: 11px 13px;
   border: 0;
-  border-radius: calc(var(--ogee) - 6px);
+  /* max(0px, ...) because --ogee is 0px on the plain tier and a bare subtraction
+     lands at -6px, which is not a valid radius - so the browser threw the whole
+     declaration away rather than clamping it. It happened to look right there
+     (square inside square), which is why it went unnoticed; it is still the
+     rule being dropped rather than applied. Same guard as the card's inner rule
+     in items.css. */
+  border-radius: max(0px, calc(var(--ogee) - 6px));
   background: none;
   font-family: var(--font-display);
   font-size: var(--t-title);
@@ -733,7 +746,7 @@
   width: 100%;
   padding: 0;
   border: var(--hairline) solid var(--rule-2);
-  border-radius: var(--radius-sm, 8px);
+  border-radius: var(--radius-sm);
   background: var(--paper-card);
   cursor: pointer;
   overflow: hidden;
@@ -840,7 +853,7 @@
   height: 28px;
   padding: 0;
   border: 0;
-  border-radius: calc(var(--radius-sm) - 2px);
+  border-radius: max(0px, calc(var(--radius-sm) - 2px));
   background: none;
   color: var(--ink);
   cursor: pointer;
@@ -848,9 +861,10 @@
 }
 /* A seam rather than a gap, the toolbar's idiom: the chip is one small object,
    and five buttons floating apart inside it would read as five. */
-#conn-chip button + button { border-left: 1px solid var(--rule); border-radius: 0; }
+#conn-chip button + button { border-left: var(--hairline) solid var(--rule); border-radius: 0; }
 #conn-chip button:last-child {
-  border-radius: 0 calc(var(--radius-sm) - 2px) calc(var(--radius-sm) - 2px) 0;
+  border-radius: 0 max(0px, calc(var(--radius-sm) - 2px))
+                   max(0px, calc(var(--radius-sm) - 2px)) 0;
 }
 #conn-chip button:hover,
 #conn-chip button:focus-visible { background: var(--paper-2); color: var(--accent-deep); }
@@ -1155,11 +1169,11 @@
 #ask-field[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
 #ask-field[type="color"]::-webkit-color-swatch {
   border: 0;
-  border-radius: calc(var(--leaf) - 3px);
+  border-radius: max(0px, calc(var(--leaf) - 3px));
 }
 #ask-field[type="color"]::-moz-color-swatch {
   border: 0;
-  border-radius: calc(var(--leaf) - 3px);
+  border-radius: max(0px, calc(var(--leaf) - 3px));
 }
 
 
@@ -1399,7 +1413,7 @@
   width: 100%;
   height: 16px;
   margin: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: var(--hairline) solid var(--rule-2);
   cursor: pointer;
   touch-action: none;
@@ -1586,9 +1600,317 @@
   text-wrap: pretty;
 }
 
+/* What the app is standing on, folded away under the two names.
+
+   A <details>, so the open state is the element's own and ui/credits.js stays
+   two listeners and no builder. The dressing is the app's: the summary is a
+   quiet row that behaves like every other button here on hover and focus, and
+   the marker is a chevron drawn with a border rather than the platform's
+   triangle, which is the one part of a <details> that looks like nobody chose
+   it. */
+.credits-more {
+  margin: 4px 0 18px;
+  border-top: var(--hairline) solid var(--rule);
+  padding-top: 12px;
+}
+.credits-more > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* The platform marker off, in both spellings that turn it off. */
+  list-style: none;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: var(--t-small);
+  color: var(--ink-2);
+  border-radius: var(--leaf);
+  padding: 4px 6px;
+  margin: -4px -6px;
+  user-select: none;
+  transition: color var(--dur-fast) var(--ease),
+              background var(--dur-fast) var(--ease);
+}
+.credits-more > summary::-webkit-details-marker { display: none; }
+.credits-more > summary:hover { color: var(--ink); background: var(--paper-2); }
+.credits-more > summary:focus { outline: none; }
+.credits-more > summary:focus-visible {
+  outline: var(--sel-line) solid var(--select);
+  outline-offset: var(--sel-gap);
+}
+/* The chevron: two borders on a square, turned. Points right when shut and down
+   when open, which is the one thing a disclosure has to say. */
+.credits-more > summary::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-right: 1.6px solid currentColor;
+  border-bottom: 1.6px solid currentColor;
+  rotate: -45deg;
+  translate: 1px 0;
+  transition: rotate var(--dur-fast) var(--ease), translate var(--dur-fast) var(--ease);
+}
+.credits-more[open] > summary::before { rotate: 45deg; translate: 0 -1px; }
+
+.credits-note {
+  margin: 12px 0 0;
+  font-size: var(--t-small);
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+.credits-note code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  color: var(--ink);
+}
+/* One borrowed thing per row: what it is, what it is under, and why it is here.
+   The licence sits on the same line as the name rather than under it, because
+   it is a two-word fact and a line of its own would make it look like a
+   heading for the sentence below. */
+.credits-deps {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 12px;
+}
+.credits-deps > li {
+  display: grid;
+  gap: 3px;
+  font-size: var(--t-small);
+}
+.credits-deps a {
+  font-family: var(--font-display);
+  color: var(--ink);
+  text-decoration: none;
+  transition: color var(--dur-fast) var(--ease);
+}
+.credits-deps a:hover { color: var(--accent); text-decoration: underline; }
+.credits-deps a:focus { outline: none; }
+.credits-deps a:focus-visible {
+  outline: var(--sel-line) solid var(--select);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+/* A chip, not a word: the licence is metadata about the row and should read as
+   a label rather than as part of the sentence. */
+.credits-lic {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  letter-spacing: calc(0.04em * var(--ls-scale));
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.credits-why {
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+.credits-why code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
 .toast-line.is-going { opacity: 0; }
 .toast-line.is-error { border-color: var(--danger); color: var(--danger); }
 @keyframes rise { from { opacity: 0; transform: translateY(10px) rotate(-3deg); } }
+
+/* ---------------------------------------------------------
+   The sticker pad (ui/sticker-window.js)
+   ---------------------------------------------------------
+
+   A floating window of shapes, opening anchored to the bottom-right the way
+   the Playlist's player does - the two share their move and resize gestures
+   (ui/float-window.js) and deliberately share their proportions, so a board
+   with both open reads as two of the same thing rather than as two designs.
+
+   What is different is what it holds. The player shows the board's own
+   contents and is a list; this is a drawer of things that are not on the board
+   yet, so it is a grid, and it is on both layouts rather than Desktop alone -
+   tap-to-place is the one creation gesture that works on a phone. */
+.sticker-window {
+  position: fixed;
+  z-index: 40;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  width: min(320px, calc(100vw - 32px));
+  max-height: min(68vh, 560px);
+  display: flex;
+  flex-direction: column;
+  background: var(--paper-card);
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--ogee);
+  box-shadow: var(--shadow-2);
+  overflow: hidden;
+  transform-origin: bottom right;
+  transform: scale(0.96) translateY(10px);
+  opacity: 0;
+  visibility: hidden;
+  transition: transform var(--dur-base) var(--ease-back),
+              opacity var(--dur-fast) var(--ease),
+              visibility 0s linear var(--dur-base);
+}
+.sticker-window.is-open {
+  transform: none;
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
+/* While a shape is being carried out of the window, the window itself gets out
+   of the way rather than sitting opaque over the board you are aiming at. */
+.sticker-window.is-dragging { opacity: 0.55; }
+
+.sticker-window-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 18px;
+  border-bottom: var(--hairline) solid var(--rule-2);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.sticker-window.is-moving,
+.sticker-window.is-moving .sticker-window-head { cursor: grabbing; }
+.sticker-window-title {
+  font-family: var(--font-display);
+  font-size: var(--t-title);
+  color: var(--ink);
+}
+.sticker-window-spacer { flex: 1 1 auto; }
+.sticker-window-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--leaf);
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.sticker-window-close:hover { background: var(--paper-3); color: var(--ink); }
+.sticker-window-close svg { width: 15px; height: 15px; }
+
+.sticker-window-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 10px 14px;
+}
+
+/* One heading per category, and no filter field. At forty-five shapes the
+   whole set is a short scroll and a search box would be a control you have to
+   use before you can see anything; past about sixty that trade turns over. */
+.sticker-cat {
+  margin: 12px 2px 6px;
+  font-family: var(--font-display);
+  font-size: var(--t-tiny);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.sticker-cat:first-child { margin-top: 6px; }
+
+.sticker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+  gap: 4px;
+}
+
+.sticker-tile {
+  position: relative;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  padding: 7px;
+  border-radius: var(--leaf);
+  cursor: grab;
+  /* The tile is a pointer-driven drag source, so the browser must not decide
+     the gesture is a scroll and take it away halfway through. */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.sticker-tile:hover { background: var(--paper-2); }
+.sticker-tile:focus-visible { outline: 2px solid var(--select); outline-offset: -2px; }
+/* Held down: this shape is in your hand and the next tap on the board places
+   it. Loud on purpose - see the head of ui/sticker-window.js on why an armed
+   board has to look armed. */
+.sticker-tile.is-armed {
+  background: var(--select-fill);
+  box-shadow: inset 0 0 0 2px var(--select);
+}
+.sticker-tile .sticker-art {
+  width: 100%;
+  height: 100%;
+  /* No drop-shadow here, unlike the sticker on the board. A grid of forty-five
+     shadows reads as texture rather than as depth, and the tile already has a
+     background to sit on. */
+  filter: none;
+}
+
+/* The favourite star, in the tile's corner. Hidden until the tile is pointed
+   at or the shape is already pinned, because forty-five of them showing at
+   once is a grid of stars with the shapes hiding behind them. */
+.sticker-fav {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--ink-3);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+.sticker-fav svg { width: 100%; height: 100%; }
+.sticker-tile:hover .sticker-fav,
+.sticker-tile:focus-within .sticker-fav { opacity: 1; }
+.sticker-fav[aria-pressed="true"] {
+  opacity: 1;
+  color: var(--accent-warm);
+  fill: currentColor;
+}
+/* In the favourites row itself the star is always the way back out, so it does
+   not wait to be hovered. */
+.sticker-tile.is-favourite .sticker-fav { opacity: 1; }
+
+/* The shape following the pointer out of the window. Fixed to the viewport and
+   centred on the pointer, because that is where the sticker's own centre will
+   be when it lands - what you are carrying is the thing you are placing. */
+.sticker-ghost {
+  position: fixed;
+  z-index: 60;
+  width: 64px;
+  height: 64px;
+  margin: -32px 0 0 -32px;
+  pointer-events: none;
+  opacity: 0.9;
+  rotate: -6deg;
+}
+
+/* A board with a shape in hand. The cursor is the whole of it: a copy cursor
+   says "this press puts something down" in the one place the person is
+   looking, and it costs nothing to take off again. */
+:root.sticker-arming #viewport,
+:root.sticker-arming #viewport * { cursor: copy; }
 
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }

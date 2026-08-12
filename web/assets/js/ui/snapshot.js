@@ -19,6 +19,16 @@
 import { board } from '../state.js';
 import { itemBounds } from '../geometry.js';
 import { assetURL } from '../storage/assets.js';
+import { STICKER_SPRITE, STICKER_VIEWBOX } from '../stickers/catalogue.js';
+
+/**
+ * The side of the box the sticker paths are drawn in, as a number.
+ *
+ * The canvas wants a scale factor and the DOM wants a viewBox string, so one of
+ * the two has to be derived from the other rather than written twice - and the
+ * string is the one the five renderers already share.
+ */
+const STICKER_GRID = +STICKER_VIEWBOX.split(' ')[2] || 256;
 
 /** A frame of clear board around the outermost items, in world units. */
 const MARGIN = 48;
@@ -67,9 +77,78 @@ const pixelHash = it =>
   it.type === 'image' ? (it.meta?.preview || it.asset?.hash)
   : (it.meta?.cover || it.meta?.shot || null);
 
+/**
+ * The sprite's paths, by shape id, read once and kept.
+ *
+ * The least pleasant part of this file, and unavoidable. Everything else here
+ * is a rectangle, a photograph or some text; a sticker is a vector outline, and
+ * the only place its geometry exists is the sprite. Rasterising it the obvious
+ * way - an <img> pointed at the SVG - would either taint the canvas or need the
+ * whole file inlined as a data URI per sticker, so the paths are fetched once
+ * as text and handed to Path2D, which is the platform's own way of drawing an
+ * SVG path onto a canvas.
+ *
+ * A failure is silence rather than an error. The board thumbnail is a
+ * convenience; a sticker missing from one is worth less than a snapshot that
+ * refuses to be taken because the sprite was not in the cache.
+ */
+let shapePaths = null;
+async function stickerPaths() {
+  if (shapePaths) return shapePaths;
+  shapePaths = new Map();
+  try {
+    const text = await (await fetch(STICKER_SPRITE)).text();
+    for (const [, id, chunk] of text.matchAll(/<symbol id="([^"]+)"([\s\S]*?)<\/symbol>/g)) {
+      // Every <path> in the symbol, not only the first: a duotone shape is a
+      // body *and* the outline over it, and the two are painted differently.
+      // The convention read here is the sprite's own, so a path that opts out
+      // of the default paint there opts out here too - no fill attribute is the
+      // paper, `fill="currentColor"` is the ink.
+      const parts = [...chunk.matchAll(/<path([^>]*)\/>/g)].map(([, attrs]) => ({
+        d: attrs.match(/\sd="([^"]+)"/)?.[1] || '',
+        ink: /\sfill="currentColor"/.test(attrs),
+        evenodd: attrs.includes('fill-rule="evenodd"'),
+      })).filter(p => p.d);
+      if (parts.length) shapePaths.set(id, parts);
+    }
+  } catch { /* offline, or the sprite is not cached: the stickers go unpainted */ }
+  return shapePaths;
+}
+
+/**
+ * One sticker, drawn the way items.css draws it: a paper body with the inked
+ * outline over it.
+ *
+ * Fills only, and no stroke anywhere - the shapes are Phosphor's and it draws
+ * even its outline weights as filled paths, where the line is a closed path
+ * tracing the outline of a stroke. So this is two `fill()` calls in the order
+ * the sprite lists them, which is the whole of the drawing.
+ */
+async function drawSticker(ctx, it, w, h) {
+  const parts = (await stickerPaths()).get(it.meta?.shape);
+  if (!parts) return;
+  const tint = Math.trunc(+it.meta?.tint) || 1;
+  const ink = cssVar(`--sticker-${tint}`) || cssVar('--sticker-1') || '#31261b';
+  const body = cssVar('--sticker-body') || cssVar('--paper-card') || '#fdfdfa';
+  ctx.save();
+  ctx.translate(-w / 2, -h / 2);
+  ctx.scale(w / STICKER_GRID, h / STICKER_GRID);
+  for (const part of parts) {
+    ctx.fillStyle = part.ink ? ink : body;
+    ctx.fill(new Path2D(part.d), part.evenodd ? 'evenodd' : 'nonzero');
+  }
+  ctx.restore();
+}
+
 async function drawItem(ctx, it, w, h) {
   const ink = cssVar('--ink') || '#222';
   const card = cssVar('--paper-2') || '#e9e5db';
+
+  // Before the picture branch and before the card face, because a sticker is
+  // neither: it has no asset to draw and no edge to put a name on. A board
+  // covered in stars would otherwise come out of here bare, or - worse - as a
+  // wall of small grey cards each labelled "Star".
+  if (it.type === 'sticker') return drawSticker(ctx, it, w, h);
 
   if (it.type === 'swatch') {
     ctx.fillStyle = it.meta?.hex || '#888';

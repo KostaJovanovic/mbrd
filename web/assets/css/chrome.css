@@ -269,17 +269,17 @@
 /* And down while a full player that has its own transport is up.
 
    The bar exists for when you cannot see the thing making the noise. With the
-   Desktop window open in *player* mode you can: its play button and seek line are
-   on screen, and the bar is a second copy of them laid over the bottom of the
-   window showing the first.
+   Desktop window open you can: its play button and seek line are on screen, and
+   the bar is a second copy of them laid over the bottom of the window showing the
+   first.
 
-   **Not in album mode, and that is the whole of the condition.** The window's
-   album view is a hero and a list with no transport in it at all - it is built to
-   use this bar as its transport (see renderWindowMode in ui/playlist.js). Hiding
-   the bar there left the album view with no way to play, pause or seek anything,
-   which read as the view toggle being broken. So the class ui/playlist.js writes
-   is `.playlist-transport`, not `.playlist-up`: it says "a transport is already on
-   screen", which is the fact this rule actually depends on.
+   The class ui/playlist.js writes is `.playlist-transport`, not `.playlist-up`,
+   and the difference has already earned itself once. The window used to have a
+   second body - an album view, a hero and a list with no transport in it at all,
+   built to use this bar as its transport - and a flag meaning "the window is open"
+   hid the bar there too, leaving that view with no way to play, pause or seek
+   anything. The name says the fact this rule depends on rather than the one that
+   usually comes with it, which is what makes it safe for the next body.
 
    The Mobile lens is the same test by a different name - the lens carries its own
    hero and controls, so `data-feed-lens` stands in for it there.

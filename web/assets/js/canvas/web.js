@@ -32,7 +32,7 @@
 // the cards are snapped to it (see axisMoved in ui/appearance.js), so a route
 // that turns anywhere else is the axis half-applied. Read here and handed to
 // the router, which may not read anything - see look().
-import { board, bus, isRider, baseStep, selection } from '../state.js';
+import { board, bus, isRider, isJoinEnd, baseStep, selection } from '../state.js';
 import { rafThrottle } from '../util.js';
 import { segmentMeetsRect } from '../geometry.js';
 // Where a line runs when there are cards in the way - see web-route.js. Pure,
@@ -472,14 +472,14 @@ function centres() {
   // points up and this layer lays y down, so a card turned by `rot` in the world
   // is turned by `-rot` here - the reflection that takes (x, y) to (x, -y) flips
   // the sense of the angle.
-  // Ghost cards are not ends either. A hint relates to nothing - it is talking
-  // to the person, not to the board - and serializeBoard() strips them, so a
-  // connection to one could not survive a save even if one could be drawn.
+  // Ghost cards are not ends either, and neither are stickers - see isJoinEnd()
+  // in board-model.js, where the two reasons are. A rider is left out here
+  // rather than there because being stuck is not a fact about the item.
   // How far a card may lean at this look, once for the whole pass - see
   // drawnTilt(), and the bug the lean is read for at all.
   const maxLean = drawnTilt();
   return board.items
-    .filter(i => !isRider(i) && i.type !== 'ghost')
+    .filter(i => !isRider(i) && isJoinEnd(i))
     .map(i => {
       // The lean this card is actually drawn with, sign and all - not the
       // tier's maximum. The sign is the whole reason it is read per card: an
@@ -1330,7 +1330,7 @@ export function setDraftFrom(id) {
 /** One item's box in this layer's coordinates - centres() for a single id. */
 function boxOf(id) {
   const it = board.items.find(i => i.id === id);
-  if (!it || isRider(it) || it.type === 'ghost') return null;
+  if (!it || isRider(it) || !isJoinEnd(it)) return null;
   return { id: it.id, x: it.x, y: -it.y, w: it.w, h: it.h, rot: -(it.rot || 0) };
 }
 

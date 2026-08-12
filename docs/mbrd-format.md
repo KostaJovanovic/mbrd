@@ -405,10 +405,10 @@ item type and not a new top-level key like `connections`.
 | field  | meaning |
 | ------ | ------- |
 | `id`   | Unique within the board. `[A-Za-z0-9_-]{1,64}`. |
-| `type` | `image`, `video`, `audio`, `text`, `note`, `link`, `swatch`, `model`, `fence`, `generic`. |
+| `type` | `image`, `video`, `audio`, `text`, `note`, `link`, `swatch`, `sticker`, `model`, `fence`, `generic`. |
 | `x`, `y` | The item's **centre**, in world units. **`y` points up** — this is the one convention that surprises people, and it is why the renderer lays items out at `-y`. |
 | `w`, `h` | Size in world units. Bounded to 48…20000 (`geometry.js`). |
-| `rot`  | Degrees, anticlockwise-positive. Nothing sets it yet; every geometry helper already respects it. |
+| `rot`  | Degrees, anticlockwise-positive. Only stickers set it so far — ±8° rolled fresh every time one is pressed down — but every geometry helper has always respected it, and a hand-rotated card of any type round-trips. |
 | `z`    | Stacking order. Higher is nearer. |
 | `name` | The label on the card. Editable, and independent of the filename. |
 | `asset`| `{ hash, embedded: true }`, or `null` for items that are only text. |
@@ -417,9 +417,14 @@ item type and not a new top-level key like `connections`.
 **An unknown `type`** — a reader that does not recognise one shows the item as a
 plain named card rather than dropping it (`RENDERERS[item.type] ||
 RENDERERS.generic`), and writes it back out untouched. `type` is a free-form
-string in the model for exactly that reason. It is what let `swatch` be added
-without older builds losing those items, or losing the board they were on, and
-it is the same extension point unknown `meta` keys get below.
+string in the model for exactly that reason. It is what let `swatch` and then
+`sticker` be added without older builds losing those items, or losing the board
+they were on, and it is the same extension point unknown `meta` keys get below.
+
+For a sticker that fallback is worth picturing: an older build draws a plain
+grey card, named "Star", where the star was, and writes the item back out
+untouched. Honest, and not pretty. There is no version gate in this format and
+adding one for a decoration would cost more than it saves.
 
 **`asset.external`** — `{ external: { path } }` is reserved for a
 link-instead-of-embed setting that does not exist. Unpack tolerates it; pack has
@@ -433,6 +438,9 @@ promise 1 above,** and that is the open question at the bottom of this document.
 | `text`   | `note` | The note's whole text, Markdown-flavoured: `# ` a title line, `## ` a heading line, anything else a paragraph. The plaintext half — what search, linkify and older readers read. Capped at 512 characters (`NOTE_MAX`). A note with no `#` markers reads its first line as the title, so a note written before `rich` existed still shows titled. |
 | `rich`   | `note` | The formatted content when present, and then authoritative over `text` (which it flattens to). `{ font, size, valign, blocks: [{ tag, align, text }] }` — `tag` is `h1`/`h2`/`p`, `align` is `left`/`center`/`right`, `font` is an allowlist key (`sheet`/`sans`/`serif`/`mono`), `size` a multiplier clamped to 0.7–1.8, `valign` is `top`/`middle`/`bottom`. Normalised on the way in (`normalizeNoteRich`): unknown values fall back, and the flattened text is held to `NOTE_MAX`. Absent on a legacy note, which is parsed back from `text`. |
 | `stuckTo`| `note` | The id of the item this sticky note is pinned to, or `null` for loose. Stamped from live geometry at save; a load seeds the runtime memo from it so the pin survives a reload and a Mobile reflow even when the note no longer visibly overlaps its host. A dangling id (host deleted) falls back to measuring overlap. |
+| `loose`  | `note` | `true` when the author explicitly unstuck this note (right-click → Unstick). Present only then; absent means the ordinary case. A stuck note is *pinned* — a drag on it takes hold of its host instead — and this is the one thing about stickiness that is a decision rather than a measurement, so it is the one thing stored rather than derived. It has to be: the usual reason to unstick a note is to nudge it, so the note is normally still lying on the card it was unstuck from and no geometry could tell you otherwise. Cleared by any drop that finds a host. **A reader that ignores it degrades one way**: it will measure the overlap, find the host, and treat the note as stuck again — so a board unstuck in a new build opens pinned in an old one, and unstuck again in the new one. Nothing is lost, and the older build writes the key back out untouched. |
+| `shape`  | `sticker` | Which shape it is: a `<symbol>` id in `web/assets/stickers.svg`, e.g. `"s-star"`. Checked against the catalogue on every render (`stickerShape`), never trusted from the file — the value goes straight into a `<use href>`, where a name that matches nothing draws nothing at all and says nothing about it. An unknown id falls back to the first shape rather than leaving a hole. |
+| `tint`   | `note`, `sticker` | Which colour off the pad, as a number. A note cycles 1–4 (`--note-1..4`) as it is made; a sticker is born wearing its shape's own default and 1–8 (`--sticker-1..8`) are the overrides the item menu offers. Out-of-range or missing falls back to the shape's default. |
 | `url`    | `link` | The address. **Revalidated on every render**, never trusted from the file. |
 | `hex`    | `swatch` | The colour, as `#rrggbb`. The item's `name` carries the same value uppercased — a swatch has no other name it could have, which is what makes one findable and what a copy of one puts on the system clipboard. Held to six hex digits on the way in and on the way out to the card (`swatchHex`); `#rgb` is folded out to the long form, and anything else falls back to the default grey rather than being stored. The item carries no asset. |
 | `peaks`  | `audio` | RMS readings in [0, 1]. Moved out to `waveforms/` when packing — see below. |

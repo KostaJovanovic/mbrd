@@ -22,6 +22,9 @@ import {
 } from '../state.js';
 import { assetURL } from '../storage/assets.js';
 import { extOf, baseName, el, toast } from '../util.js';
+import {
+  STICKER_SPRITE, STICKER_VIEWBOX, DEFAULT_SHAPE, stickerShape, stickerTint,
+} from '../stickers/catalogue.js';
 
 let vp = null;
 let panel, button, list, none, hint, emptyBtn, titleRestore;
@@ -138,6 +141,17 @@ function binRow(entry) {
     // The note's own first line, so a wall of notes is still tellable apart.
     thumb.classList.add('is-note');
     thumb.textContent = (item.meta?.text || '').split('\n')[0].slice(0, 12) || 'note';
+  } else if (item.type === 'sticker') {
+    // The shape itself, which is the only thing that tells one binned sticker
+    // from another - the name is "Star" and so is the next one's. Its own tint,
+    // too: a red heart and a gold one are the same shape and not the same
+    // sticker. items.css owns both, off the same data-tint the board uses.
+    const shape = stickerShape(item.meta?.shape) ? item.meta.shape : DEFAULT_SHAPE;
+    thumb.classList.add('is-sticker');
+    thumb.innerHTML =
+      `<svg class="sticker-art" viewBox="${STICKER_VIEWBOX}" aria-hidden="true"
+            data-tint="${stickerTint(item.meta?.tint, shape)}">`
+      + `<use href="${STICKER_SPRITE}#${shape}"/></svg>`;
   } else if (item.type === 'link') {
     // A link's name is a hostname, not a filename, and extOf() reads the last
     // dot in it - so "example.com" came out as a card badged "com" filed under

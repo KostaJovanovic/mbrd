@@ -23,6 +23,9 @@ import { hintFor, hintKey, tapeStyle, bindDial, STOPS, DIAL } from './ghosts.js'
 import { ensureDisplay, displayURLReady } from './display.js';
 import { meshKind } from '../mesh.js';
 import { normalizeNoteRich, applyNoteStyle, buildNoteLine } from './note-model.js';
+import {
+  STICKER_SPRITE, STICKER_VIEWBOX, DEFAULT_SHAPE, stickerShape, stickerTint,
+} from '../stickers/catalogue.js';
 
 // The façade: both moved out of this file, and every caller still asks here.
 // Written out rather than as a star re-export for the reason state.js is - a
@@ -114,6 +117,14 @@ export function defaultSize(type) {
     // Already the small one, and left at 120 while everything around it came
     // down - the gap it was written to hold has simply closed a little.
     case 'note':    return { w: 120, h: 120 };
+    // Square, and *fixed* - not a fraction of whatever it lands on. The
+    // alternative makes the same star come out three different sizes on three
+    // different photographs, and then the size of a sticker means something
+    // about the picture under it rather than about the sticker. The one you
+    // place should be the one you saw in the window. Smaller than a note,
+    // because a note is something you wrote and a sticker is a mark you made;
+    // the resize grips are right there for the times that is wrong.
+    case 'sticker': return { w: 96, h: 96 };
     // Wide and short: an address is a wide thing, and there is no body under
     // it - a link card is a name, a URL, and nothing else.
     case 'link':    return { w: 256, h: 106 };
@@ -880,6 +891,49 @@ const RENDERERS = {
 
     card.append(well, code);
     return card;
+  },
+
+  /**
+   * A sticker: one shape out of web/assets/stickers.svg, and nothing else.
+   *
+   * **No `.card` wrapper**, and that is the whole design rather than an
+   * omission. Everything else here hands back a card because everything else
+   * *is* one - a thing with an edge, a caption and a place to put a picture. A
+   * sticker is a shape lying on a picture, and a shape in a bordered box is a
+   * card with a star in it, which is a different object.
+   *
+   * It also means buildContent()'s cover test - `content.classList.contains('card')`
+   * - declines to attach a cover here, which is correct and is already how
+   * image and video behave. A sticker with a photograph behind it is not a
+   * thing.
+   *
+   * The shape is checked against the catalogue rather than trusted, because the
+   * value goes straight into a `<use href>` and arrives from a .mbrd that
+   * anybody can edit by hand. An unknown id draws *nothing* - no warning, no
+   * failed request, just a hole where the sticker was - so an unknown one falls
+   * back to the first shape in the catalogue and the card is at least a
+   * sticker. The tint goes through the same gate and onto the artwork itself,
+   * which is where items.css reads it from in all five places a sticker is
+   * drawn - here, the pad, the pad's drag ghost, a Mobile feed tile and the
+   * bin. A colour is not written into a style attribute; the stylesheet keeps
+   * the say in what a sticker looks like.
+   */
+  sticker(item) {
+    const shape = stickerShape(item.meta?.shape) ? item.meta.shape : DEFAULT_SHAPE;
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'sticker-art');
+    svg.dataset.tint = stickerTint(item.meta?.tint, shape);
+    // The box the paths in the sprite are drawn to. Set here rather than left
+    // to the <symbol>, so the shape scales to whatever the item has been
+    // resized to instead of arriving at its authored size.
+    svg.setAttribute('viewBox', STICKER_VIEWBOX);
+    // Decorative: the item carries an accessible name already, and the star is
+    // that name drawn. Announcing it twice reads the card out twice.
+    svg.setAttribute('aria-hidden', 'true');
+    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', `${STICKER_SPRITE}#${shape}`);
+    svg.append(use);
+    return svg;
   },
 
   /**

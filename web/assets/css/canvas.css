@@ -692,7 +692,11 @@
   place-items: center;
   padding: 0;
   border: var(--board-hairline) solid var(--rule-2);
-  border-radius: calc(9px * var(--iz, 1));
+  /* --leaf, scaled into world units like the rest of this button. It was a flat
+     9px, which is within a pixel of --leaf at Middle and nowhere near it at
+     either end - the one control on the board that stayed rounded when the
+     Corner radius slider went to 0, and stayed tight when it went to 28. */
+  border-radius: calc(var(--leaf) * var(--iz, 1));
   background: var(--paper-card);
   box-shadow: var(--shadow-1);
   color: var(--ink-2);
@@ -898,7 +902,11 @@
    layer - the bulk path is one shared stroke and can only be one colour. */
 #web .web-c-accent { stroke: var(--accent); }
 #web .web-c-warm   { stroke: var(--accent-warm); }
-#web .web-c-leaf   { stroke: var(--leaf); }
+/* --leafy, the olive pigment. This read var(--leaf) - the *control corner*, a
+   length - so the declaration was invalid and dropped, and a line set to Leaf
+   came out whatever the bulk stroke already was. One letter, and the two tokens
+   are unrelated: --leaf is 10px, --leafy is #66842b. */
+#web .web-c-leaf   { stroke: var(--leafy); }
 #web .web-c-danger { stroke: var(--danger); }
 /* Weight is relative to the board's own, so a bold line stays bold when the
    whimsy axis or a hand-set token moves --web-weight underneath it. */
@@ -912,7 +920,11 @@
   stroke-width: 3px;
   paint-order: stroke;
   vector-effect: non-scaling-stroke;
-  font: 500 12px system-ui, sans-serif;
+  /* 12px is not a step on the scale (--t-small is 13, --t-tiny 11); it is a
+     world-space label that gets scaled by the board transform, so it was sized
+     by eye against the lines rather than against the panel type. Left as a
+     literal deliberately - the face follows the axis, the size does not. */
+  font: 500 12px var(--font-body);
   dominant-baseline: middle;
   user-select: none;
 }
