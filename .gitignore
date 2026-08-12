@@ -32,3 +32,7 @@ graphify-out/
 
 # Local tunnel binary - a 52MB vendored exe, not source.
 cloudflared.exe
+
+# Wrangler's scratch directory. The deploy config itself (wrangler.jsonc) is
+# source and is committed; this is the cache it writes beside it.
+.wrangler/

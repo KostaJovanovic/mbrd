@@ -1,0 +1,39 @@
+// Cloudflare Workers deploy config - the production host runs `npx wrangler
+// deploy` from the repo root on every push to main.
+//
+// This file exists so that deploy is not a guess. Without it wrangler sniffs
+// the repo, prints "Detected Project Settings", answers its own prompts with
+// fallback values in the non-interactive build, and writes a config it invents
+// on the spot - one that is never committed and so can change under the app
+// whenever wrangler's detection does. Everything the deploy depends on is here
+// instead, and the only knob that matters is the last one.
+//
+// There is no Worker script: no `main`, only `assets`. The app is static files
+// and a service worker, and nothing is asked of the edge beyond handing them
+// back, which is the same bargain serve.py makes locally.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mbrd",
+  "compatibility_date": "2026-08-12",
+  "assets": {
+    // web/ is the site. Everything above it - tests/, tools/, docs/, research/
+    // - is repo, not app, and never ships.
+    "directory": "./web",
+
+    // The whole not-found design, in one setting. A path this app does not
+    // have is answered with web/404.html - a byte copy of index.html, see
+    // save.bat - carrying a real 404 status, and main.js works out from the URL
+    // that it is not at home (see notFound there). The status is the point: the
+    // default here is "none", a bare edge 404 that never reaches the app, and
+    // the other option is "single-page-application", which serves the shell
+    // with a 200 - a soft 404, a page saying "not found" while telling every
+    // crawler it is fine. Neither is what this app wants.
+    //
+    // This used to be a `404` status in web/_redirects, which is the Netlify
+    // and Pages spelling of the same rule. Workers rejects that status in a
+    // _redirects file outright - the deploy fails, it does not degrade - so the
+    // rule is expressed as a literal 404 page instead. That spelling is also
+    // the more portable one: Netlify, Pages and GitHub Pages all honour it.
+    "not_found_handling": "404-page"
+  }
+}

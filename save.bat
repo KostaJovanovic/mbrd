@@ -117,6 +117,22 @@ rem Bump the service-worker cache epoch, so every commit ships fresh JS/CSS
 rem instead of leaving already-installed clients on a stale shell.
 powershell -NoProfile -Command "(Get-Content 'web/sw.js' -Encoding UTF8) -replace 'const VERSION = ''mbrd-v\d*'';', 'const VERSION = ''mbrd-v%NEXT_COUNT%'';' | Set-Content 'web/sw.js' -Encoding utf8"
 
+rem The app is its own 404 page, and a static host wants that spelled as a file:
+rem web/404.html is index.html byte for byte, served with a 404 status at every
+rem address the app does not have (see wrangler.jsonc). Copied here rather than
+rem maintained, because two hand-edited copies of a 60KB document drift the first
+rem time only one of them is touched - and the drift is silent, since the copy is
+rem the page nobody looks at. Byte copy, not a re-render: tests/notfound.test.js
+rem compares them and fails on a single differing byte. Runs after the stamps
+rem above so it carries them, though neither of them writes index.html today.
+copy /y "web\index.html" "web\404.html" >nul
+if errorlevel 1 (
+  echo.
+  echo [err]  could not refresh web/404.html from web/index.html
+  set SAVE_ERROR=1
+  goto end
+)
+
 echo [git]  stage
 git add .
 git status

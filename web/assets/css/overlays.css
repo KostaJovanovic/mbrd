@@ -580,6 +580,23 @@
 #ctx-menu:focus { outline: none; }
 @keyframes ctx-in { from { opacity: 0; transform: translateY(-3px); } }
 
+/* The same panel, hung off the toolbar (ui/flyout.js).
+   Square across the top and no border there, because it is not floating free -
+   it is the underside of a bar that is already drawn, and a rounded lip with
+   its own hairline a pixel below the bar's reads as a second object that has
+   landed on the first. The bottom keeps the menu's corner, which is the whole
+   point of leaving the rest of the rule alone.
+
+   The max-height counts from the bar rather than from the top of the window,
+   so a long flyout scrolls inside what is actually below it. --toolbar-h is
+   published by chrome.css for exactly this kind of arithmetic. */
+#ctx-menu.is-flyout {
+  border-top: 0;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  max-height: calc(100vh - var(--toolbar-h) - max(16px, env(safe-area-inset-top)) - 8px);
+}
+
 /* Three columns: the icon, the label, and whatever sits on the trailing edge -
    an accel key, a tick, or nothing.
 
@@ -669,6 +686,59 @@
   justify-self: end;
   width: 13px;
   height: 13px;
+}
+
+/* A colour standing in the icon column, for the rows whose subject *is* one -
+   the four sheets of note paper and the board's own pigments (ui/flyout.js).
+   Sized to the icons beside it and set in the same column, so a menu that
+   mixes the two still reads as one column of marks.
+
+   Sitting *in* a hairline rather than beside one: --note-4 is a hair off the
+   paper it is drawn on, and an unbordered chip of it would be a blank gap in
+   the column where the other three had colours. inset, so the ring does not
+   change the chip's footprint and nudge its row's label out of line. */
+.ctx-chip {
+  width: 13px;
+  height: 13px;
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 var(--hairline) color-mix(in srgb, var(--ink) 22%, transparent);
+}
+
+/* The one row here that is a dial and not an action - Spacing, under Arrange.
+   A <label> rather than a .ctx-item, so it is out of the arrow-key walk (Left
+   and Right belong to the slider) and is not announced as one of the menu's
+   commands. Laid out on the same three columns all the same, with the name
+   where the labels are and the reading where the accel keys sit, because a row
+   that broke the column would look like a piece of a different menu.
+
+   cursor is the default and not a pointer: nothing happens if you click the
+   words, and the whole row is not the target - the track is. */
+.ctx-range {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 6px 10px 8px;
+  font-size: var(--t-small);
+  color: var(--ink);
+}
+.ctx-range span { grid-column: 1; }
+.ctx-range output {
+  grid-column: 2;
+  justify-self: end;
+  color: var(--ink-3);
+  font-size: 10px;
+  /* A number that changes as the thumb moves must not shove the label about as
+     it goes from 8px to 108px. Wide enough for the widest reading. */
+  min-width: 34px;
+  text-align: right;
+}
+.ctx-range input[type="range"] {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 
 /* ---------------------------------------------------------

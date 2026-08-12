@@ -15,8 +15,8 @@ The last line is the whole not-found design and not a fallback: there is no
 separate error page, the app is its own, and main.js works out that it is not at
 home by looking at the URL. The status stays a 404 because that is what a crawler
 reads - handing index.html back with a 200 is a soft 404, a page that says "not
-found" while swearing it is fine. A static host is asked for the same thing in
-web/_redirects.
+found" while swearing it is fine. A static host is asked for the same thing with
+web/404.html, a byte copy of index.html (see wrangler.jsonc).
 
 It binds 0.0.0.0 and prints a scannable QR for the LAN URL, so a phone on the
 same Wi-Fi can open the board without typing an IP.
@@ -121,8 +121,9 @@ class BoardHandler(SimpleHTTPRequestHandler):
 
         Body and status are decoupled here on purpose: the document is the same
         index.html the root serves, and the only difference a miss makes is the
-        404 in the status line. A static host is asked to do the same thing in
-        web/_redirects.
+        404 in the status line. A static host cannot decouple the two and is
+        handed web/404.html instead, which is that same document copied byte for
+        byte (see wrangler.jsonc, and save.bat which makes the copy).
         """
         try:
             with open(os.path.join(ROOT, 'index.html'), 'rb') as f:
