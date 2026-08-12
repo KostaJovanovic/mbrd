@@ -1512,7 +1512,8 @@
 /* Words: top-left, monospaced, the whole file. The grid centring above is undone
    per-item rather than turned off, because most of what this dialog shows is a
    picture and centring is right for those. */
-#viewer-body:has(> .viewer-text) { place-items: start stretch; }
+#viewer-body:has(> .viewer-text),
+#viewer-body:has(> .viewer-md) { place-items: start stretch; }
 .viewer-text {
   margin: 0;
   max-width: 88ch;
@@ -1522,6 +1523,99 @@
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* Markdown, read as prose. Set in the board's own body face rather than in the
+   mono the source view uses, at a measure that stops before the line gets long
+   enough to lose - which is the whole reason to render it at all.
+
+   Everything below is one selector list per construct rather than a nested
+   `.viewer-md *` sweep: the parser (ui/markdown.js) emits ordinary elements, so
+   these are ordinary element rules and a construct that is not there costs
+   nothing. */
+.viewer-md {
+  max-width: 74ch;
+  color: var(--ink);
+  font-size: var(--t-body);
+  line-height: 1.65;
+}
+.viewer-md > :first-child { margin-top: 0; }
+.viewer-md > :last-child { margin-bottom: 0; }
+.viewer-md h1, .viewer-md h2, .viewer-md h3,
+.viewer-md h4, .viewer-md h5, .viewer-md h6 {
+  margin: 1.6em 0 0.5em;
+  font-family: var(--font-display);
+  font-weight: 600;
+  line-height: 1.25;
+}
+.viewer-md h1 { font-size: 1.7em; }
+.viewer-md h2 { font-size: 1.35em; }
+.viewer-md h3 { font-size: 1.15em; }
+.viewer-md h4, .viewer-md h5, .viewer-md h6 { font-size: 1em; }
+/* A rule under the top two, the way a printed page separates its sections. Not
+   under h3 and below: those are already close enough together that a line every
+   few paragraphs reads as a ladder. */
+.viewer-md h1, .viewer-md h2 {
+  padding-bottom: 0.25em;
+  border-bottom: var(--hairline) solid var(--rule-2);
+}
+.viewer-md p { margin: 0 0 1em; }
+.viewer-md ul, .viewer-md ol { margin: 0 0 1em; padding-left: 1.6em; }
+.viewer-md li { margin: 0.25em 0; }
+.viewer-md li > ul, .viewer-md li > ol { margin: 0.25em 0 0; }
+/* A task list drops the marker: the checkbox is the marker. */
+.viewer-md li.md-task { list-style: none; margin-left: -1.4em; }
+.viewer-md li.md-task input { margin-right: 0.5em; accent-color: var(--accent); }
+.viewer-md blockquote {
+  margin: 0 0 1em;
+  padding: 0.1em 0 0.1em 1em;
+  border-left: 3px solid var(--rule);
+  color: var(--ink-2);
+}
+.viewer-md hr {
+  margin: 1.8em 0;
+  border: 0;
+  border-top: var(--hairline) solid var(--rule-2);
+}
+.viewer-md code {
+  padding: 0.12em 0.35em;
+  border-radius: 4px;
+  background: var(--paper-3);
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+.viewer-md pre {
+  margin: 0 0 1em;
+  padding: 12px 14px;
+  border-radius: var(--leaf);
+  background: var(--paper-3);
+  /* The one thing in a rendered document that may not wrap - a broken line of
+     code is a different line of code - so it scrolls inside its own box rather
+     than widening the page. */
+  overflow-x: auto;
+}
+.viewer-md pre code { padding: 0; border-radius: 0; background: none; }
+.viewer-md a { color: var(--accent-deep); }
+.viewer-md table {
+  margin: 0 0 1em;
+  border-collapse: collapse;
+  font-size: 0.94em;
+}
+.viewer-md th, .viewer-md td {
+  padding: 6px 10px;
+  border: var(--hairline) solid var(--rule-2);
+  text-align: left;
+}
+.viewer-md th { background: var(--paper-3); font-weight: 600; }
+/* An image in a Markdown file points at a path on somebody else disk. Nothing
+   fetches it (see ui/markdown.js); this is what its alt text looks like when it
+   stands in for the picture. */
+.viewer-md .md-image {
+  padding: 0.1em 0.45em;
+  border: var(--hairline) dashed var(--rule);
+  border-radius: 4px;
+  color: var(--ink-3);
+  font-size: 0.9em;
 }
 
 .viewer-note-sheet {

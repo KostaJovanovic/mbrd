@@ -27,6 +27,7 @@ import { byId } from '../state.js';
 import { assetURL, getAsset, readText } from '../storage/assets.js';
 import { baseName, formatBytes } from '../util.js';
 import { linkURL } from '../canvas/renderers.js';
+import { renderMarkdown } from './markdown.js';
 
 /**
  * How much of a text file the viewer reads.
@@ -38,6 +39,9 @@ import { linkURL } from '../canvas/renderers.js';
  * so at the bottom.
  */
 const TEXT_MAX = 200000;
+
+/** The extensions that get read as prose rather than shown as source. */
+export const MARKDOWN = new Set(['md', 'markdown', 'mdown', 'mkd']);
 
 let dlg = null;
 let titleEl = null;
@@ -196,29 +200,39 @@ const VIEWS = {
   },
 
   /**
-   * A text file, whole and scrolling.
+   * A text file, whole and scrolling - as prose if it is Markdown, as source if
+   * it is anything else.
    *
-   * <pre> and textContent, the same rule the card and the tile follow: half of
-   * what classify() routes to 'text' is markup, and a viewer that rendered the
-   * HTML file it was asked to show would be executing a file the app did not
-   * write.
+   * The split is by extension and only by extension. Markdown is the one thing
+   * in this bucket written to be *read*, and reading a README as hashes and
+   * asterisks is reading the scaffolding instead of the building. Everything
+   * else classify() routes here - JSON, CSS, a log, a Python file - is written
+   * to be read as source, and rendering it would be the viewer deciding it knew
+   * better.
+   *
+   * Both paths end in text nodes. <pre> plus textContent for source; for
+   * Markdown, ui/markdown.js builds DOM and never touches innerHTML, so raw HTML
+   * inside the file shows as the characters it is made of rather than running.
+   * That is not a nicety here: these are files the app did not write.
    */
   text(item, host) {
-    const pre = document.createElement('pre');
-    pre.className = 'viewer-text';
-    host.append(pre);
+    const md = MARKDOWN.has(item.meta?.ext || '');
+    const holder = document.createElement(md ? 'div' : 'pre');
+    holder.className = md ? 'viewer-md' : 'viewer-text';
+    host.append(holder);
     const hash = item.asset?.hash;
     if (!hash) return;
     readText(hash, TEXT_MAX).then(text => {
-      if (!pre.isConnected) return;
-      pre.textContent = text;
+      if (!holder.isConnected) return;
+      if (md) holder.append(renderMarkdown(text));
+      else holder.textContent = text;
       if (text.length >= TEXT_MAX) {
         const more = document.createElement('p');
         more.className = 'viewer-note';
         more.textContent = `first ${formatBytes(TEXT_MAX)} shown`;
-        pre.after(more);
+        holder.after(more);
       }
-    }).catch(() => { pre.textContent = ''; });
+    }).catch(() => { holder.textContent = ''; });
   },
 
   /** A sticky, at reading size rather than at whatever the board shrank it to. */

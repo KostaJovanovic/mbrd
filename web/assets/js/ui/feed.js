@@ -36,7 +36,8 @@ import {
   STICKER_SPRITE, STICKER_VIEWBOX, stickerShape, DEFAULT_SHAPE,
 } from '../stickers/catalogue.js';
 import { armedSticker, disarm } from './sticker-window.js';
-import { openViewer, canView } from './viewer.js';
+import { openViewer, canView, MARKDOWN } from './viewer.js';
+import { renderMarkdown } from './markdown.js';
 
 /**
  * The types the Feed does not draw as tiles: furniture, the leaving hints, and
@@ -567,11 +568,15 @@ const TILE_TEXT = 2000;
  * would be executing a file the app did not write.
  */
 function fillText(t) {
+  const md = MARKDOWN.has(t.item.meta?.ext || '');
   const card = div('feed-text');
   const name = div('feed-text-name');
   name.textContent = baseName(t.item.name) || t.item.name || 'untitled';
-  const body = document.createElement('pre');
-  body.className = 'feed-text-body';
+  // Markdown reads as prose here as it does in the viewer - a tile showing a
+  // README's hashes and asterisks is showing its scaffolding. Everything else
+  // classify() routes to 'text' is source and stays source.
+  const body = document.createElement(md ? 'div' : 'pre');
+  body.className = md ? 'feed-text-md' : 'feed-text-body';
   card.append(name, body);
   t.el.appendChild(card);
 
@@ -583,7 +588,8 @@ function fillText(t) {
     // harmless and writing into a *rebuilt* one is not, so check the body is
     // still the one this call built.
     if (!body.isConnected) return;
-    body.textContent = text;
+    if (md) body.append(renderMarkdown(text));
+    else body.textContent = text;
   }).catch(() => { /* an unreadable file keeps its name and nothing else */ });
 }
 
