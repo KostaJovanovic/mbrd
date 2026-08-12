@@ -10,10 +10,11 @@
   "scripts": {
     "start": "python tools/serve.py",
     "dev": "esbuild web/assets/js/main.ts --bundle --sourcemap --format=esm --target=es2022 --outfile=web/assets/app.js --watch",
+    "dev:lab": "esbuild web/assets/js/ui/pigments.ts --bundle --format=esm --target=es2022 --outfile=web/assets/lab-pigments.js --watch",
     "test": "node --test \"tests/**/*.test.js\" \"tests/**/*.test.ts\"",
     "lint": "oxlint web tests tools",
     "typecheck": "tsc -p tsconfig.json",
-    "build": "esbuild web/assets/js/main.ts --bundle --minify --format=esm --target=es2022 --outfile=web/assets/app.js"
+    "build": "esbuild web/assets/js/main.ts --bundle --minify --format=esm --target=es2022 --outfile=web/assets/app.js && esbuild web/assets/js/ui/pigments.ts --bundle --format=esm --target=es2022 --outfile=web/assets/lab-pigments.js"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",

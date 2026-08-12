@@ -299,7 +299,28 @@
      thread - 1-3px tall, where any shared corner token rounds it into a
      circle) and a pill button. Both used to be written as literals - 1px, 2px,
      999px - so they were the one part of the interface that ignored the axis
-     entirely and stayed capped on a tier that has declared nothing curves. */
+     entirely and stayed capped on a tier that has declared nothing curves.
+
+     ── And the circles do not come with them ──
+
+     Fourteen elements across the stylesheets are `border-radius: 50%` and stay
+     perfectly round at Harsh, where this token is 0px and nothing else curves.
+     That looks like the same fault and it is not, which is why it is written
+     down here rather than left to be rediscovered and "fixed".
+
+     A swatch dot, a slider thumb, a colour-picker handle and an EQ bar cap are
+     not rectangles with eased corners. They are circles - the shape carries the
+     meaning, and a square swatch dot on a square board is not a firmer reading
+     of the same control, it is a different control that no longer says "colour"
+     at a glance. The axis governs how much the interface *softens*; it does not
+     get to redraw what a thing is. So: an eased corner follows --radius, a
+     capped end follows --radius-pill, and a circle is drawn as a circle at
+     every tier. If you are adding a 50% and it is really a rounded rectangle
+     that happens to be square, it wants --radius-pill instead.
+
+     (Left correct-by-accident until now: nobody had chosen it, which is the
+     only reason it was worth a paragraph. See research/visual-audit-2026-08-12.md,
+     item 1 of its remaining plan.) */
   --radius-pill: 999px;
   /* Gap between a card's edge and its inner rule. The rule's own radius is
      --radius minus this, so the two curves stay concentric. */

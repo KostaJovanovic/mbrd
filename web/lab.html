@@ -4,9 +4,31 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mbrd — pigment lab</title>
-<!-- Not a page of the site. This bench ships in web/ only because the dev
+<!-- ── Off the design system on purpose ──
+
+     This file declares its own colours and its own eight literal corner radii
+     and imports none of tokens.css. research/visual-audit-2026-08-12.md graded
+     it C for that and said the only bad option was to leave the question
+     unanswered, so here is the answer: it stays off-system, deliberately.
+
+     The bench exists to look at what the pigment extractor produced. If it
+     rendered at the current whimsy tier it would be showing those pigments
+     through the same palette, easing and type the app is wearing - which is the
+     one thing a test bench must not do, because then a colour that is wrong and
+     a colour that is merely being displayed warmly look identical. Its flat
+     vocabulary is not neglect; it is the neutral ground the readings are taken
+     against.
+
+     What that costs is real and worth naming: this page is useless for auditing
+     the axis, and anything learned here about how a colour *feels* does not
+     transfer to the app. Use the app at the three stops for that - the audit's
+     own closing rule is to audit at the ends, and this page has no ends.
+
+     ── Not a page of the site ──
+
+     This bench ships in web/ only because the dev
      server's document root is web/ and this is the one place it can import the real
-     pigments.js; that is a build constraint, not a decision to publish it. A
+     pigments.ts; that is a build constraint, not a decision to publish it. A
      crawler cannot know the difference, so it is told. Left indexable it would
      compete with the app for the app's own name and put a debug harness in
      front of anyone searching for it.
@@ -20,14 +42,20 @@
   A bench for the palette extractor. Not part of the app.
 
   It is here in web/ rather than in tools/ for one reason: tools/serve.py's
-  document root is web/, so this is the only place a page can `import` the real
-  pigments.js instead of a copy of it. It is deliberately absent from sw.js's
-  SHELL - a dev bench has no business in the offline shell - which is also why
-  it is a single file with no module of its own under assets/js, since the
-  SHELL test walks that directory and would rightly object.
+  document root is web/, so this is the only place a page can reach the real
+  ui/pigments.ts instead of a copy of it. It is deliberately absent from sw.js's
+  SHELL - a dev bench has no business in the offline shell.
+
+  It reaches it through assets/lab-pigments.js, which is that module bundled on
+  its own, and the indirection is not a copy: `npm run build` writes it from
+  ui/pigments.ts and `npm run dev:lab` rewatches it. The app went to TypeScript
+  and a browser cannot fetch a .ts file, so a page that is loaded directly -
+  which this one is, being outside the app bundle - needs a built entry of its
+  own or it needs a duplicate. A build product cannot drift; a duplicate is
+  exactly what the paragraph below says must not happen.
 
   What it imports is the real thing: oklch(), hex(), contrast() and
-  samplePixels() come straight from pigments.js, so colour conversion, gamut
+  samplePixels() come straight from ui/pigments.ts, so colour conversion, gamut
   clipping and the 48x48 sampling are not reimplemented here and cannot drift.
 
   What it *does* reimplement is the census, the peak finder, the role
@@ -268,7 +296,7 @@
 // Everything colour-exact comes from the app. Only the tunable pipeline is
 // restated below, and #drift holds the restatement to the original.
 import { oklch, hex, contrast, samplePixels, extractPalette }
-  from './assets/js/ui/pigments.js';
+  from './assets/lab-pigments.js';
 
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 const apart = (a, b) => { const d = Math.abs(a - b) % 360; return Math.min(d, 360 - d); };
@@ -707,8 +735,8 @@ function checkDrift(chunks, vars) {
   const off = real ? keys.filter(k => real[k] !== vars[k]) : keys;
   box.style.color = off.length ? 'var(--bad)' : 'var(--ok)';
   box.textContent = off.length
-    ? `bench has drifted from pigments.js: ${off.join(' ')}`
-    : 'matches pigments.js exactly';
+    ? `bench has drifted from pigments.ts: ${off.join(' ')}`
+    : 'matches pigments.ts exactly';
 }
 
 const named = c => { const { L, C, h } = oklch(...[1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16))); return { L, C, h }; };
