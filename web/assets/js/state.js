@@ -923,6 +923,47 @@ export function resetGhostLatch(content = false) {
 }
 
 /**
+ * Mint the hint cards again for the layout that is now live.
+ *
+ * The one thing on the board that cannot carry two layout profiles. Every other
+ * item is completed into the profile it is missing from (completeLayout), but a
+ * hint is seeded straight into whichever layout happened to be live when the
+ * board turned out to be empty - sized against the Mobile column or laid on the
+ * Desktop lattice by ensureGhostCards()'s own fork - and it was never in
+ * board.layouts at all, because it is never saved. So a switch carried the
+ * column's sizes and places onto the canvas: four cards at strip width, stacked
+ * one under the other in the middle of an infinite board.
+ *
+ * Re-minting rather than teaching them to travel, because they are the cheapest
+ * items in the app: no content, no history, no file, dismissed the moment
+ * anything real arrives. Throwing them away and asking for them again is less
+ * code than a migration and cannot drift from the seeding rule, since it *is*
+ * the seeding rule.
+ *
+ * The latch is untouched, which is the whole reason this is not dismiss +
+ * ensure: dismissGhosts() means "the user has seen these and is done with
+ * them", and a layout switch is not that. Returns the ids now on the board, or
+ * an empty array on a board that had none - the common case, and one press of
+ * this costs one scan of the item list.
+ */
+export function reseedGhostCards() {
+  if (!hasGhosts()) return [];
+  const gone = board.items.filter(i => i.type === 'ghost').map(i => i.id);
+  board.items = board.items.filter(i => i.type !== 'ghost');
+  for (const id of gone) selection.delete(id);
+  dropIdIndex();
+  const seeded = ensureGhostCards();
+  // The ids are stable - HINT_GHOSTS names them - so the profile just written by
+  // completeLayout() is still holding the places these cards had a moment ago,
+  // under the same ids. Recapturing the live layout is what puts the fresh ones
+  // in; it is a no-op for everything else on the board, since writeLayout() has
+  // just handed every other item exactly what this would write back.
+  captureLayout();
+  bus.emit('items', { added: seeded, removed: gone });
+  return seeded;
+}
+
+/**
  * Take things back out of the bin.
  *
  * `at` is where the item should land - the point it was dropped on when it was

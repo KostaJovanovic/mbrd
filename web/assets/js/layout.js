@@ -28,7 +28,7 @@ import {
   itemBounds, latticeBox, cellInset, MIN_SIZE, MAX_SIZE,
 } from './geometry.js';
 import { splitAppearance } from './layout-settings.js';
-import { mobileArrangement } from './arrange/arrangements.js';
+import { arrange, mobileArrangement, mobileOrder } from './arrange/arrangements.js';
 import { bus, markDirty } from './board-store.js';
 import { commit, clearHistory } from './history.js';
 import {
@@ -566,9 +566,93 @@ export function completeLayout(mode) {
     return out;
   }
 
+  // Desktop, and it has the same shape as the Mobile branch above for the same
+  // reason: an item with no geometry in this profile has to be *placed*, not
+  // copied off the live board.
+  //
+  // `geometryOf(it)` was the whole of this, and it is where the two layouts
+  // leaked into each other. This runs from setBoardMode() the instant the switch
+  // happens, and at that instant the live item is still whatever the layout being
+  // left made of it - fitted to the strip by fitMobile() and packed into the
+  // column. So a board built on the phone arrived on Desktop as the same two
+  // columns, one under the other, and the hint cards arrived at column width.
+  // Neither had ever had a Desktop place, and copying the Mobile one was the
+  // app answering a question it had no answer to.
+  const known = [];
+  const missing = [];
+  const riders = [];
+  for (const it of board.items) {
+    const saved = map.get(it.id);
+    if (saved) { known.push({ ...it, ...saved }); continue; }
+    // Furniture places itself and must not be packed. The title card is a
+    // singleton with a default spot of its own (ensureTitleCard), and a fence is
+    // a rectangle drawn round its members rather than a card in a wall - putting
+    // either in a masonry would be laying out the frame along with the pictures.
+    if (it.type === 'title' || isFence(it)) {
+      map.set(it.id, geometryOf(it));
+      known.push(it);
+      continue;
+    }
+    // A note stuck to something rides its host here exactly as it does on Mobile,
+    // rather than taking a slot of its own in the wall.
+    if (isRider(it)) { riders.push(it); continue; }
+    missing.push(it);
+  }
+
+  if (missing.length) {
+    const profile = board.layoutSettings.desktop || defaultLayoutSettings('desktop');
+    const spacing = Math.max(0, profile.spacing || 0);
+    const step = profile.gridStep > 0 ? profile.gridStep : DEFAULT_SETTINGS.gridStep;
+    // In the order the Feed meets them, not in board.items order. The two are
+    // different the moment the Mobile arrangement is anything but 'placed', and
+    // the sequence somebody scrolled through on the phone is the sequence they
+    // expect to read across on the desktop.
+    const ordered = mobileOrder(missing, { name: board.arrangements.mobile });
+    // Masonry, and it is the same rule the Feed itself packs by: shortest column
+    // first, leftmost on a tie (LAYOUTS.masonry in arrange/arrangements.js, and
+    // feedMasonry() in ui/feed.js, which were written from each other). Fed the
+    // Feed's order it reproduces the Feed's wall as a rectangular block, which is
+    // the one arrangement that can honestly be called "the same board".
+    //
+    // Below whatever is already placed rather than on top of it, and `obstacles`
+    // is the belt to that braces: arrange() pushes only the newcomers that would
+    // still have landed on something, and leaves every saved position untouched.
+    // So one file dropped on the phone and carried across appends one card; a
+    // board that has never been here lays out whole.
+    const bounds = known.length ? itemBounds(known) : null;
+    const center = bounds
+      ? { x: (bounds.x0 + bounds.x1) / 2, y: bounds.y0 - spacing - step }
+      : { x: 0, y: 0 };
+    const spots = arrange(ordered, {
+      name: 'masonry',
+      center,
+      spacing,
+      cellStep: profile.snap ? step : 0,
+      obstacles: known,
+    });
+    ordered.forEach((it, i) => {
+      const at = spots[i];
+      if (at) map.set(it.id, geometryOf({ ...it, x: at.x, y: at.y }));
+    });
+  }
+
+  // Riders last, so their hosts have somewhere to be first.
+  const stranded = attachRiders(riders, map, (note, hostSrc, hostDst) => {
+    const at = stuckPlacement(note, hostSrc, hostDst);
+    return geometryOf({ ...note, x: at.x, y: at.y });
+  });
+  // A rider whose host never resolved - deleted, or a stuck-to-stuck cycle - is
+  // left where it is, which is at least somewhere. The Mobile branch packs it
+  // instead; here there is no packer running by then and one note at the live
+  // coordinates is a smaller wrong than none.
+  for (const note of riders) {
+    if (stranded.has(note.id) && !map.has(note.id)) map.set(note.id, geometryOf(note));
+  }
+
   const out = [];
   for (const it of board.items) {
     let geometry = map.get(it.id);
+    // Everything above should have set one; this is the backstop, not the path.
     if (!geometry) geometry = geometryOf(it);
     out.push(geometry);
   }
