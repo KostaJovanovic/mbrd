@@ -184,10 +184,21 @@ for anything visual. Call out explicitly if you changed the `.mbrd` schema, the
 generated format catalog, or the service worker's `SHELL` — those three have
 consequences beyond the diff.
 
-There is no CI: nothing runs on push, so the suite runs where you run it. That
-puts one hazard on you. This codebase was developed on a case-insensitive
+CI runs the suite, the lint, the typecheck and a parse of every committed module
+on every push and pull request. It runs on `ubuntu-latest`, which is the point
+rather than a default: this codebase was developed on a case-insensitive
 filesystem, so an import path with the wrong case works locally and 404s on the
-Pages demo, which serves off a case-sensitive one. Check the case by hand.
+Pages demo, which serves off a case-sensitive one. A Linux runner is what turns
+that into a red run instead of a broken page.
+
+One thing it is not, said plainly: the production host runs `npx wrangler
+deploy` on every push to main, triggered by the push rather than by the
+workflow. The two run alongside each other and neither waits, so a push that
+breaks the app still deploys the broken app. Making a red run block the deploy
+needs branch protection with this job as a required status check, which lives in
+GitHub's repository settings and cannot be committed as a file. Until somebody
+sets that, CI is a smoke alarm and not a lock — so still run the suite before
+you push.
 
 ---
 

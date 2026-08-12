@@ -1,0 +1,134 @@
+# Continuous integration - the leg this repository spent its whole life
+# without, and the one thing a laptop cannot be.
+#
+# Until this file existed nothing ran on push. The suite ran where the author
+# ran it, which is a Windows machine with a case-insensitive filesystem, and
+# that gap is not theoretical: it is the trap CLAUDE.md and CONTRIBUTING.md
+# both spell out by name. Both of those files still say "there is no CI" in
+# prose. They are now out of date and want a small edit; this file does not
+# make it, because a workflow that quietly rewrites the docs beside it is a
+# worse thing than a stale sentence.
+#
+# What this does NOT do, said plainly rather than left to be discovered: the
+# production host runs `npx wrangler deploy` from the repo root on every push
+# to main (see the header of wrangler.jsonc). That deploy is triggered by the
+# push, not by this workflow, so a push that breaks the app still deploys the
+# broken app - these two run alongside each other and neither waits. Turning a
+# red run here into a blocked deploy needs branch protection with this job as a
+# required status check, which lives in GitHub's repository settings and cannot
+# be committed as a file. Until somebody sets that, this is a smoke alarm and
+# not a lock: it tells you the build is broken, roughly as fast as the deploy
+# tells everybody else.
+#
+# The whole job is one lane on purpose. There is no matrix, no cache, no
+# artefact, no second runner and nothing handed from one job to the next. The
+# app has no runtime dependency and the browser loads the modules under web/
+# directly, so there is nothing a fan-out would make faster here - only more
+# machinery to keep true.
+
+name: CI
+
+# `on` is the GitHub Actions key, not a boolean. YAML 1.1 parsers read a bare
+# `on` as true; Actions' own parser does not, and every example in its docs is
+# written bare, so it stays bare here.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Read-only is all any step below needs - nothing here comments, tags, or
+# publishes. Naming it also pins the token down if the default for the
+# repository is ever widened.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    # ubuntu-latest is load-bearing, and is the single best reason this file
+    # exists. From CLAUDE.md: "Import paths are case-sensitive on the deployed
+    # host and not on this machine. Windows resolves './Foo.js' for foo.js
+    # happily; the Pages demo, served off a Linux filesystem, 404s. There is no
+    # CI leg to catch it either." A Linux runner IS that leg. Every import this
+    # suite reaches resolves here against a case-sensitive filesystem, exactly
+    # as it will on the host, so a miscased path fails in a pull request rather
+    # than in somebody's browser. Do not move this job to windows-latest for
+    # convenience: that would delete the reason for the file while leaving the
+    # file.
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned at 22 rather than lts/* or latest, because 22 is the floor
+      # package.json declares and the floor is what wants testing - the test
+      # script hands `node --test` a glob and relies on Node expanding it,
+      # which is a 21+ behaviour. Running only on a newer Node would let a
+      # 24-only API in and say nothing.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # This step is deliberately BEFORE `npm ci`, and the ordering is the
+      # point of it.
+      #
+      # package.json's own description says `npm test` needs no install, and
+      # CLAUDE.md and CONTRIBUTING.md both repeat it. That is a claim about the
+      # project, not a convenience: the suite runs on Node's built-in runner
+      # over pure modules, and it is what lets a stranger clone the repository
+      # and get a green bar with nothing fetched. A claim like that decays
+      # silently, because on any machine that has already run `npm install`
+      # once nobody can tell. Running the suite on a runner with an empty
+      # node_modules is the only honest way to keep asking the question.
+      #
+      # So: if this step ever needs the install below to pass, the claim has
+      # broken and this is what says so. The fix is to take the dependency back
+      # out of the test path, not to move this step downwards.
+      #
+      # No `cache: npm` on setup-node above for the same reason - it would put
+      # a fetch of some kind ahead of this line, and the dev tooling is far too
+      # small to be worth muddying the demonstration for.
+      - name: Test with nothing installed
+        run: npm test
+
+      # Everything from here needs the optional dev tooling. It is dev only;
+      # nothing it pulls in ever ships, and `web/` never sees it.
+      - name: Install dev tooling
+        run: npm ci
+
+      # oxlint, correctness only. No formatter, and adding one would be a
+      # regression - see the header of .oxlintrc.json.
+      - name: Lint
+        run: npm run lint
+
+      # tsc --noEmit over JSDoc, scoped by jsconfig.json to the pure layer.
+      # Nothing is compiled and no TypeScript ships.
+      - name: Typecheck
+        run: npm run typecheck
+
+      # The syntax checks. CLAUDE.md and CONTRIBUTING.md both ask for these on
+      # every change and nothing has ever run them, which is the worst kind of
+      # instruction: one that is followed when it is remembered. The failure
+      # mode is specific - `npm test` only parses the modules it imports, so a
+      # syntax error in a module no test touches (most of ui/, canvas/ and the
+      # tools) sails past a green suite and reaches a browser before it reaches
+      # a failure. This is the cheapest possible catch for it.
+      #
+      # Two pathspecs, because git's `**` does not do what it looks like it
+      # does here: 'web/**/*.js' wants at least one directory between web/ and
+      # the file, so on its own it silently skips web/sw.js - the service
+      # worker, which is about the last file in the tree you want unparsed.
+      # 'web/*.js' picks it up. git ls-files lists each match once, so the
+      # overlap costs nothing.
+      #
+      # git ls-files rather than find, so the check follows what is actually
+      # committed: no node_modules, no stray scratch file, nothing ignored.
+      # xargs -n1 keeps going after a failure and reports every broken file in
+      # one run, and exits 123 - non-zero - so the step still fails.
+      - name: Parse every committed module
+        run: git ls-files 'web/**/*.js' 'web/*.js' 'tools/*.mjs' | xargs -r -n1 node --check
+
+      # python3, not python. Locally these are run as `python tools/serve.py`
+      # on Windows; on the runner python3 is the name that is guaranteed to be
+      # there.
+      - name: Parse the Python tools
+        run: python3 -m py_compile tools/serve.py tools/qr.py
