@@ -19,6 +19,10 @@ import { iframeURL, embedFor } from '../canvas/embed.js';
 import { arrange, mobileOrder } from '../arrange/arrangements.js';
 import { coverArt, mayHaveArt } from './artwork.js';
 import { embeddedPreview } from './preview.js';
+// Statically, unlike import/pdf.js below it: this one reaches storage/zip.js and
+// nothing else, and the zip reader is already in memory - it is what opens every
+// .mbrd. There is no dependency to defer and so no reason to defer it.
+import { hasBakedPreview, bakedPreview } from './document.js';
 import { makeThumb } from '../optimize/picture.js';
 import { looksLikeMbrd } from '../storage/mbrd.js';
 import { openFile } from '../storage/storage.js';
@@ -495,7 +499,9 @@ async function posterFor(file, decodable) {
       const frame = await videoFrame(file);
       if (frame) {
         const named = new File([frame.blob], 'poster.webp', { type: 'image/webp' });
-        return { hash: await addFile(named), w: frame.w, h: frame.h };
+        // The file comes back beside the hash so the caller can cut a thumbnail
+        // from it without going to the asset store for bytes it just handed over.
+        return { hash: await addFile(named), w: frame.w, h: frame.h, file: named };
       }
     } catch { /* fall through - a clip with no poster is what it was before */ }
     // Deliberately not falling through to ffmpeg. The browser opened this clip,
@@ -513,14 +519,34 @@ async function posterFor(file, decodable) {
     // Measured as a picture, which it now is, and hashed like any other asset -
     // so two copies of the same clip share one poster.
     const [shape, hash] = await Promise.all([measureSize('image', named), addFile(named)]);
-    return { hash, w: shape.measured ? shape.w : 0, h: shape.measured ? shape.h : 0 };
+    return {
+      hash,
+      w: shape.measured ? shape.w : 0,
+      h: shape.measured ? shape.h : 0,
+      file: named,
+    };
   } catch {
     return null;
   }
 }
 
-/** A PDF, by its declared type or its extension. */
-const isPdf = file => file.type === 'application/pdf' || extOf(file.name) === 'pdf';
+/**
+ * A PDF, by its declared type or its extension.
+ *
+ * `.ai` is in here, and it is not a mistake. Every Illustrator file written this
+ * century is a PDF - Adobe stopped using its own container and started writing a
+ * PDF with the editable artwork tucked inside it as private data, which is why
+ * a browser, a printer and every viewer on a phone will open one. So an .ai gets
+ * page one rendered like any other PDF, and a design file that used to land as a
+ * grey named card now lands showing its own artwork.
+ *
+ * The pre-2000 EPS-based .ai is not a PDF and pdf.js declines it; that comes back
+ * null and the card is what it always was.
+ */
+const isPdf = file => file.type === 'application/pdf'
+  || PDF_EXTS.has(extOf(file.name));
+
+const PDF_EXTS = new Set(['pdf', 'ai']);
 
 /** One file, classified, measured, hashed and turned into a draft item. `stats`
  *  collects soft outcomes worth reporting once for the whole drop (see importFiles). */
@@ -548,6 +574,26 @@ async function prepareFile(file, stats = { undecodable: 0 }) {
       previewHash = await addFile(previewFile);
       type = 'image';
       size = { ...fitToBox('image', page.w, page.h), measured: true, decodable: true };
+    }
+  }
+  // And the same trade for every other document that carries a picture of
+  // itself. A Word file, a spreadsheet, a Krita painting, a Procreate canvas, a
+  // Keynote deck and a PSD all ship a rendered thumbnail their own application
+  // wrote for the file browser, at a known path inside a zip or in a known
+  // record near the front of the file - so this costs a container read and no
+  // renderer, no library and no network. See import/document.js.
+  //
+  // After the PDF branch and gated on `size` for the reason it is: a hit here
+  // has already decided what the card is, and nothing below should measure it a
+  // second time. A miss is silent and leaves the card exactly as it was.
+  if (!size && hasBakedPreview(file)) {
+    const baked = await bakedPreview(file).catch(() => null);
+    const shot = baked && await measureSize('image', baked);
+    if (shot?.decodable) {
+      previewFile = baked;
+      previewHash = await addFile(baked);
+      type = 'image';
+      size = shot;
     }
   }
   // A decode bomb - a small file that declares enormous dimensions - is caught
@@ -624,9 +670,17 @@ async function prepareFile(file, stats = { undecodable: 0 }) {
   // From the preview when there is one: the original is undecodable, so a
   // thumbnail of it could never be made, and the preview is what the card draws
   // anyway.
-  const thumb = type === 'image'
-    ? await thumbFor(previewFile || file).catch(() => null)
+  //
+  // And from the poster for a clip, which was the gap. The rule was "images get
+  // thumbnails" and everything else drew its full-size picture at every zoom -
+  // so a board of video, which is the heaviest thing a board can hold, was the
+  // one board that never got the cheap copy. A poster is a picture like any
+  // other by the time it is here; the only reason it was not thumbed is that the
+  // condition was written before posters existed.
+  const thumbSource = type === 'image' ? (previewFile || file)
+    : type === 'video' ? poster?.file || null
     : null;
+  const thumb = thumbSource ? await thumbFor(thumbSource).catch(() => null) : null;
   return {
     type,
     name: file.name,

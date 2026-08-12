@@ -310,7 +310,7 @@ async function backfillPosters(onProgress) {
 }
 
 /**
- * Give every photograph on the board a thumbnail, if it has not got one.
+ * Give everything on the board with a picture a thumbnail, if it has not got one.
  *
  * Import makes these, so on a board built since they existed this finds
  * nothing and costs one pass over the item list. It is here for the two cases
@@ -319,6 +319,12 @@ async function backfillPosters(onProgress) {
  * is keyed to the *item*, but its source is whatever the item now holds, and
  * re-encoding a photograph without re-cutting its thumbnail would leave the
  * zoomed-out view showing a copy of the old one.
+ *
+ * "Everything with a picture" rather than "every photograph": see thumbSource()
+ * above. What changed is coverage and not aggression - a thumbnail that is
+ * present and current is still left alone, because re-cutting four hundred of
+ * them to produce four hundred identical files is a minute of somebody's time
+ * spent on nothing.
  *
  * Runs after swapAssets(), deliberately: that is the commit that decides what
  * each item's bytes finally are, and cutting thumbnails from anything earlier
@@ -329,9 +335,41 @@ async function backfillPosters(onProgress) {
  * one zoom and nothing about what it *is*. The undo entry that matters - the
  * asset swap - is already closed above.
  */
+/**
+ * Which bytes an item's thumbnail should be cut from, or null for one that has
+ * no picture at all.
+ *
+ * The rule used to be "images, from asset.hash", which was written when an image
+ * was the only thing on a board that had a picture. Three things have a picture
+ * now and the other two were quietly excluded:
+ *
+ *   - a clip carries a poster, which is a picture like any other by the time it
+ *     is here. A board of video is the heaviest kind there is and was the one
+ *     kind that never got the cheap copy.
+ *   - a document (PDF, DOCX, ODT, Krita, PSD - see import/pdf.js and
+ *     import/document.js) arrives as an image card whose asset is the original
+ *     file and whose picture is meta.preview, so cutting from asset.hash would
+ *     be cutting a thumbnail out of a zip.
+ *
+ * Preview first for exactly that reason: where one exists it *is* the picture
+ * the card draws, and the original underneath it may not be decodable at all.
+ */
+function thumbSource(it) {
+  if (it.meta?.preview && getAsset(it.meta.preview)) return it.meta.preview;
+  if (it.type === 'image' && it.asset?.hash) return it.asset.hash;
+  // The poster, under whichever key it landed on: setItemPoster writes cover,
+  // and older boards carry it as poster.
+  if (it.type === 'video') {
+    for (const key of ['cover', 'poster', 'shot']) {
+      if (it.meta?.[key] && getAsset(it.meta[key])) return it.meta[key];
+    }
+  }
+  return null;
+}
+
 async function backfillThumbs(restaged, onProgress) {
   const wanted = board.items.filter(it => {
-    if (it.type !== 'image' || !it.asset?.hash) return false;
+    if (!thumbSource(it)) return false;
     // Its picture was just rewritten, so whatever thumbnail it has is of the
     // old bytes. Re-cut regardless of what it already holds.
     if (restaged.has(it.id)) return true;
@@ -346,7 +384,7 @@ async function backfillThumbs(restaged, onProgress) {
   for (const item of wanted) {
     onProgress({ done: n, total: wanted.length, name: item.name || '', phase: 'thumbs' });
     n++;
-    const asset = getAsset(item.asset.hash);
+    const asset = getAsset(thumbSource(item));
     if (!asset) continue;
     try {
       const small = await makeThumb(asset.blob);
