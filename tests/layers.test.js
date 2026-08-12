@@ -239,6 +239,22 @@ function inverted(from, to) {
   if (from === 'state.ts' && !BASE.has(to)) return true;   // state is below the services and the ui
   if (from.startsWith('storage/') && to.startsWith('ui/')) return true;   // storage must not open the interface
   if (from.startsWith('canvas/') && to.startsWith('import/') && to !== 'import/formats.ts') return true; // canvas -> import: catalog only
+  // The service layer must not reach up into the interface. CLAUDE.md and
+  // architecture.md have both called a ui/ import from canvas/ "a layering
+  // regression, not a style note" for as long as they have existed, and until
+  // now nothing checked it: the graph happened to be clean, so the claim was
+  // true by luck rather than by enforcement. There are still zero such edges,
+  // which is exactly why this is cheap to add - a rule written while the ledger
+  // is empty costs nothing and can only be paid for later.
+  //
+  // canvas/ reaches ui/ through commands.ts, which is the sanctioned seam, and
+  // import/ has drop.ts doing the same. optimize/ is deliberately left out of
+  // this, as it is left out of the rest of the ranking - it is dynamically
+  // imported and half of it is orchestration, and optimize/ui.ts genuinely does
+  // open a dialog. Ranking it here would be this test asserting an opinion the
+  // guide does not hold.
+  if (from.startsWith('canvas/') && to.startsWith('ui/')) return true;
+  if (from.startsWith('import/') && to.startsWith('ui/')) return true;
   return false;
 }
 
