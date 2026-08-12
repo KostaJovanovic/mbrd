@@ -380,7 +380,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.feed-text-body {
+/* Two bodies, one box. Source is monospaced and pre-wrapped; Markdown is prose
+   in the board's own face, at tile scale. Everything they share - the flex box,
+   the clip and the fade - is here, and only the type differs below. */
+.feed-text-body,
+.feed-text-md {
   flex: 1 1 auto;
   min-height: 0;
   margin: 0;
@@ -398,6 +402,52 @@
   -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 2.4em), transparent);
   mask-image: linear-gradient(to bottom, #000 calc(100% - 2.4em), transparent);
 }
+
+/* The Markdown half. Prose, not source: the board's own face, normal wrapping,
+   and the block spacing crushed to about a third of the viewer's - a tile has
+   room for a heading and a few lines, and full paragraph margins would spend
+   most of it on white. Everything set here is a departure from the shared block
+   above; the clip and the fade are inherited from it. */
+.feed-text-md {
+  font-family: inherit;
+  white-space: normal;
+  line-height: 1.4;
+}
+.feed-text-md > :first-child { margin-top: 0; }
+.feed-text-md h1, .feed-text-md h2, .feed-text-md h3,
+.feed-text-md h4, .feed-text-md h5, .feed-text-md h6 {
+  margin: 0.6em 0 0.25em;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-weight: 600;
+  line-height: 1.2;
+}
+.feed-text-md h1 { font-size: 1.45em; }
+.feed-text-md h2 { font-size: 1.2em; }
+.feed-text-md h3, .feed-text-md h4,
+.feed-text-md h5, .feed-text-md h6 { font-size: 1.05em; }
+.feed-text-md p { margin: 0 0 0.5em; }
+.feed-text-md ul, .feed-text-md ol { margin: 0 0 0.5em; padding-left: 1.2em; }
+.feed-text-md li.md-task { list-style: none; margin-left: -1.1em; }
+.feed-text-md blockquote {
+  margin: 0 0 0.5em;
+  padding-left: 0.6em;
+  border-left: 2px solid var(--rule);
+}
+.feed-text-md hr { margin: 0.6em 0; border: 0; border-top: var(--hairline) solid var(--rule-2); }
+.feed-text-md code { font-family: var(--font-mono); font-size: 0.9em; }
+.feed-text-md pre {
+  margin: 0 0 0.5em;
+  /* No scroller inside a tile - the tile is a glance. A long line is clipped by
+     the card's own overflow, like everything else in here. */
+  overflow: hidden;
+}
+/* Tiles are not interactive surfaces for the things inside them: the whole tile
+   is one button that opens the viewer, and a link inside it would be a second
+   target competing with that one on a thumb-sized box. The links are live in the
+   viewer, which is where the document is actually being read. */
+.feed-text-md a { color: inherit; pointer-events: none; text-decoration: underline; }
+.feed-text-md table { display: none; }
 
 .feed-file {
   width: 100%;
