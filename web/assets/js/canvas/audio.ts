@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Sound on the board: one volume for the whole site, one clip at a time, and
 // the answer to "what is playing".
 //
@@ -59,6 +51,18 @@
 
 import { clamp } from '../util.ts';
 import { readPref, writePref } from '../prefs.ts';
+import type { Item } from '../board-model.ts';
+
+/**
+ * <audio> or <video>, always both. A video card registers here for the global
+ * volume and for the one-clip-at-a-time rule, and every path below that says
+ * "player" means either of them - see releasePlayers() on what it cost when one
+ * of them said 'audio' alone.
+ */
+export type Player = HTMLMediaElement;
+
+/** The clip the board is currently about: the element, and what it is playing. */
+export type NowPlaying = { el: Player; item: Item };
 
 const VOLUME_KEY = 'mbrd.volume';
 /** Loud enough to hear on laptop speakers, quiet enough not to make you jump. */
@@ -66,7 +70,7 @@ const DEFAULT_VOLUME = 0.6;
 
 let volume = DEFAULT_VOLUME;
 /** Every <audio> currently on the board, so a slider move reaches all of them. */
-const players = new Set();
+const players = new Set<Player>();
 
 /**
  * Which item each element is playing.
@@ -75,12 +79,12 @@ const players = new Set();
  * releasePlayers() is the deliberate teardown and does the real work; this map
  * is only here so a path that misses it leaks nothing.
  */
-const owners = new WeakMap();
+const owners = new WeakMap<Player, Item>();
 
 /** Anyone who wants to be told the volume moved, whoever moved it. */
-const volumeWatchers = new Set();
+const volumeWatchers = new Set<(v: number) => void>();
 /** Anyone who wants to be told which clip is the current one. */
-const playingWatchers = new Set();
+const playingWatchers = new Set<(now: NowPlaying | null) => void>();
 
 /**
  * Anyone who has their own references to an element being destroyed.
@@ -101,7 +105,7 @@ const playingWatchers = new Set();
  * up - and a boot sequence that has to remember it would be a boot sequence that
  * can forget it.
  */
-const releaseWatchers = new Set();
+const releaseWatchers = new Set<(el: Player) => void>();
 
 /**
  * The clip the board is currently about: `{ el, item }`, or null.
@@ -111,7 +115,7 @@ const releaseWatchers = new Set();
  * listening to, and a bar that vanished on pause would mean finding the card
  * again to resume. It is cleared only when the element itself goes away.
  */
-let current = null;
+let current: NowPlaying | null = null;
 
 export const nowPlaying = () => current;
 export const getVolume = () => volume;
@@ -143,18 +147,18 @@ export function clearNowPlaying() {
   setNowPlaying(null);
 }
 
-export function onNowPlaying(fn) {
+export function onNowPlaying(fn: (now: NowPlaying | null) => void) {
   playingWatchers.add(fn);
   return () => playingWatchers.delete(fn);
 }
 
-export function onVolume(fn) {
+export function onVolume(fn: (v: number) => void) {
   volumeWatchers.add(fn);
   return () => volumeWatchers.delete(fn);
 }
 
 /** Told when an element is torn down, so its own references can go with it. */
-export function onPlayerReleased(fn) {
+export function onPlayerReleased(fn: (el: Player) => void) {
   releaseWatchers.add(fn);
   return () => releaseWatchers.delete(fn);
 }
@@ -165,7 +169,7 @@ export function onPlayerReleased(fn) {
  * element does - it points a long-lived element at a new file, and the pair
  * `{ el, item }` moves without any event firing on the element itself.
  */
-export function setNowPlaying(next) {
+export function setNowPlaying(next: NowPlaying | null): void {
   if (current?.el === next?.el && current?.item === next?.item) return;
   current = next;
   for (const fn of playingWatchers) fn(current);
@@ -175,10 +179,10 @@ export function setNowPlaying(next) {
 export const registeredPlayers = () => players.values();
 
 /** What `el` is playing, or undefined. There is no way back from an element otherwise. */
-export const ownerOf = el => owners.get(el);
+export const ownerOf = (el: Player) => owners.get(el);
 
 /** Say that `el` is now playing `item`. What the queue does as it repoints a player. */
-export function claimPlayer(el, item) {
+export function claimPlayer(el: Player, item: Item | null | undefined): void {
   if (item) owners.set(el, item);
 }
 
@@ -220,7 +224,7 @@ export function volumeLocked() {
   }
 }
 
-export function setVolume(v) {
+export function setVolume(v: number): void {
   volume = clamp(+v || 0, 0, 1);
   for (const a of players) a.volume = volume;
   writePref(VOLUME_KEY, volume);
@@ -228,7 +232,10 @@ export function setVolume(v) {
 }
 
 function readVolume() {
-  const n = parseFloat(readPref(VOLUME_KEY));
+  // readPref answers null for a key that was never written, and parseFloat was
+  // stringifying that to "null" and getting NaN. The empty string is the same
+  // NaN with nothing to work out.
+  const n = parseFloat(readPref(VOLUME_KEY) ?? '');
   return Number.isFinite(n) ? clamp(n, 0, 1) : DEFAULT_VOLUME;
 }
 
@@ -247,7 +254,7 @@ function readVolume() {
  * when this matters. Optional so a caller with nothing to say can say nothing;
  * an element with no item simply never becomes the current one.
  */
-export function registerPlayer(el, item = null) {
+export function registerPlayer(el: Player, item: Item | null = null): void {
   el.volume = volume;
   players.add(el);
   if (item) owners.set(el, item);
@@ -303,12 +310,12 @@ export function registerPlayer(el, item = null) {
  * would sit there holding a node no longer attached to anything, offering a
  * play button that would start a clip with no card behind it.
  */
-export function releasePlayers(root) {
+export function releasePlayers(root: Element): void {
   // 'audio, video' - a <video> registers here too, for the global volume and
   // for the one-clip-at-a-time rule, so it has to be let go of by the same
   // path. While this said 'audio' alone, every rename of a video card left a
   // player in the set holding a decoded stream that nothing could ever pause.
-  for (const el of root.querySelectorAll?.('audio, video') || []) {
+  for (const el of root.querySelectorAll?.<Player>('audio, video') || []) {
     el.pause();
     players.delete(el);
     owners.delete(el);

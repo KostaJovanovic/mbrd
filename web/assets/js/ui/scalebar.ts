@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The scale bar: a stick of known length, laid on the board.
 //
 // The one piece of chrome that answers "how big is any of this" without being
@@ -27,6 +19,7 @@
 import { board, bus } from '../state.ts';
 import { el, rafThrottle } from '../util.ts';
 import { toUnits, scaleStep, formatMm } from '../measure.ts';
+import type { Viewport } from '../canvas/viewport.ts';
 
 /**
  * How long the bar is allowed to be, in screen pixels.
@@ -38,13 +31,21 @@ import { toUnits, scaleStep, formatMm } from '../measure.ts';
  */
 const MAX_BAR_PX = 116;
 
-let vp = null;
-let node = null;
-let label = null;
-let stick = null;
+/**
+ * canvas/viewport.ts still carries its migration pragma, so the class type it
+ * exports has the methods but not the fields the constructor assigns. The
+ * intersection names the one field this module reads; it becomes redundant, and
+ * comes out, the day that module is annotated.
+ */
+type ScaleViewport = Viewport & { zoom: number };
+
+let vp: ScaleViewport | null = null;
+let node: HTMLElement | null = null;
+let label: HTMLElement | null = null;
+let stick: HTMLElement | null = null;
 let last = '';
 
-export function initScaleBar(viewport) {
+export function initScaleBar(viewport: ScaleViewport | null): void {
   vp = viewport;
   node = el('scale-bar');
   if (!node || !vp) return;
@@ -60,7 +61,7 @@ export function initScaleBar(viewport) {
   draw();
 }
 
-function draw() {
+function draw(): void {
   if (!node || !vp) return;
   // Screen pixels per millimetre, which is the zoom and the scale composed:
   // toUnits(1, …) is how many world units one millimetre buys, and the zoom is
@@ -83,6 +84,8 @@ function draw() {
   const key = step.mm + '|' + Math.round(step.px);
   if (key === last) return;
   last = key;
-  stick.style.width = Math.round(step.px) + 'px';
-  label.textContent = formatMm(step.mm, board.settings.units);
+  // Both were found beside #scale-bar at init; the guard above is on the pair
+  // that decides whether there is anything to draw at all.
+  stick!.style.width = Math.round(step.px) + 'px';
+  label!.textContent = formatMm(step.mm, board.settings.units);
 }

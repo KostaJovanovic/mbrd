@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The offer that follows a rubber band: "make these a fence?"
 //
 // Stardock's Fences puts a small button under the cursor the moment you finish
@@ -30,6 +22,23 @@
 // takes the menu's stock; wearing the row and then not the mark on it would
 // have made the offer read as a lesser copy of the entry it stands in for.
 import { icon } from './menu.ts';
+import type { Viewport } from '../canvas/viewport.ts';
+
+/**
+ * canvas/viewport.ts still carries its migration pragma, so the class type it
+ * exports has the methods but not the fields the constructor assigns. The
+ * intersection names the two this module reads, and comes out the day that
+ * module is annotated.
+ */
+type PromptViewport = Viewport & { el: HTMLElement; zoom: number };
+
+/** A rectangle in world space, as the marquee hands it over. */
+interface WorldBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
 
 /**
  * How far the pointer may stray before the offer is withdrawn, in CSS pixels.
@@ -47,7 +56,7 @@ import { icon } from './menu.ts';
 export const REACH = 95;
 
 /** The offer's wording. Plural, singular, and the empty region get their own. */
-export function fencePromptLabel(count) {
+export function fencePromptLabel(count: number): string {
   if (!count) return 'Fence this area';
   if (count === 1) return 'Fence this one';
   return `Fence these ${count}`;
@@ -62,19 +71,25 @@ export function fencePromptLabel(count) {
  * nearest corner. The corner distance would make the popup harder to keep alive
  * from above and below than from either side, for no reason a user could see.
  */
-export function outOfReach(rect, x, y, reach) {
+export function outOfReach(
+  rect: { left: number; right: number; top: number; bottom: number },
+  x: number,
+  y: number,
+  reach: number,
+): boolean {
   const dx = Math.max(rect.left - x, 0, x - rect.right);
   const dy = Math.max(rect.top - y, 0, y - rect.bottom);
   return Math.hypot(dx, dy) > reach;
 }
 
-let node = null;
-let ghost = null;
-let box = null;
-let vp = null;
-let offView = null;
+let node: HTMLDivElement | null = null;
+let ghost: HTMLDivElement | null = null;
+let box: DOMRect | null = null;
+let vp: PromptViewport | null = null;
+/** The viewport subscription, held so close() can drop it. */
+let offView: (() => void) | null = null;
 
-export function initFencePrompt(viewport) {
+export function initFencePrompt(viewport: PromptViewport | null): void {
   vp = viewport;
 
   // Withdrawn by distance, and by everything that makes the spot it is pinned to
@@ -90,7 +105,7 @@ export function initFencePrompt(viewport) {
     if (outOfReach(box, e.clientX, e.clientY, REACH)) close();
   }, { passive: true });
   addEventListener('pointerdown', e => {
-    if (node && !node.contains(e.target)) close();
+    if (node && !node.contains(e.target as Node | null)) close();
   }, true);
   addEventListener('keydown', e => {
     if (node && e.key === 'Escape') { e.stopPropagation(); close(); }
@@ -99,7 +114,7 @@ export function initFencePrompt(viewport) {
   addEventListener('blur', close);
 }
 
-export function close() {
+export function close(): void {
   node?.remove();
   ghost?.remove();
   node = null;
@@ -128,7 +143,7 @@ export function close() {
  * board cannot move under this while it is up, and a rectangle that cannot go
  * stale does not need to be re-placed on a frame.
  */
-function drawGhost(world) {
+function drawGhost(world: WorldBox | null): HTMLDivElement | null {
   if (!vp?.el || !world) return null;
   const el = document.createElement('div');
   el.id = 'fence-ghost';
@@ -153,7 +168,13 @@ function drawGhost(world) {
  * never learns what a fence is - it is a button with a label, a rectangle to
  * draw and one thing to do.
  */
-export function openFencePrompt(clientX, clientY, count, world, action) {
+export function openFencePrompt(
+  clientX: number,
+  clientY: number,
+  count: number,
+  world: WorldBox | null,
+  action: () => void,
+): void {
   close();
 
   // Before the button, so the offer is never the thing painted under: the two go

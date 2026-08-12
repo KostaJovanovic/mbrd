@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Getting out of the way.
 //
 // The chrome is four small things pinned to the corners of the glass, and none
@@ -23,12 +15,15 @@
 // Nothing here touches the sidebar. A panel left open is a decision somebody
 // made and is still working inside; the corners are furniture.
 
+import type { Viewport } from '../canvas/viewport.ts';
+
 const IDLE_MS = 15000;
 
-let root = null;
+/** <html>, cached at init - poke() runs on every pointermove. */
+let root: HTMLElement | null = null;
 let last = 0, timer = 0, idle = false;
 
-export function initIdle(vp) {
+export function initIdle(vp: Viewport | null): void {
   root = document.documentElement;
 
   // Capture, so a control that stops an event on its way up cannot also stop
@@ -52,11 +47,11 @@ export function initIdle(vp) {
 }
 
 /** Something happened. */
-function poke() {
+function poke(): void {
   last = now();
   if (idle) {
     idle = false;
-    root.classList.remove('is-idle');
+    root!.classList.remove('is-idle');
   }
   // One timer for the life of the page, not one per event. pointermove arrives
   // a hundred times a second while the mouse is moving, and clearing and
@@ -66,7 +61,7 @@ function poke() {
   if (!timer) timer = setTimeout(check, IDLE_MS);
 }
 
-function check() {
+function check(): void {
   const left = IDLE_MS - (now() - last);
   // A frame's slack: rearming for the last few milliseconds of a wait buys
   // nothing anybody can see and costs another trip through the timer queue.
@@ -76,7 +71,7 @@ function check() {
   }
   timer = 0;
   idle = true;
-  root.classList.add('is-idle');
+  root!.classList.add('is-idle');
 }
 
 const now = () => (typeof performance === 'object' ? performance.now() : Date.now());

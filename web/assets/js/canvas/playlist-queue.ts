@@ -49,6 +49,7 @@
 // canvas/transport.js. This module has an <audio> and no elements - the shared
 // player is not a node anybody sees, it is a decoder with a volume.
 
+import type { Item } from '../board-model.ts';
 import { assetURL } from '../storage/assets.ts';
 import {
   claimPlayer, nowPlaying, onPlayerReleased, ownerOf,
@@ -58,15 +59,16 @@ import {
 /**
  * The one field of a board item the queue reads.
  *
- * Structural and narrow for the reason canvas/waveform.ts gives at more length:
- * there is no shared `Item` type yet - state.ts and board-model.ts are still
- * carried under @ts-nocheck - and a queue that named the whole of one would be
- * asserting a shape it does not use. Everything else about a track (its title,
- * its cover, where it sits on the board) belongs to whoever drew the row.
+ * This was a narrow structural type - `{ asset }` and nothing else - written
+ * while there was no shared `Item` to name, on the argument that a queue should
+ * not assert a shape it does not use. `board-model.ts` states that shape now, so
+ * the argument has expired: what this queue holds *is* a board item, it arrives
+ * from the board, and two names for one thing is how they drift apart. The
+ * alias stays because the queue's own vocabulary is worth keeping at its
+ * signatures - a track is what a queue holds - but there is one definition
+ * underneath it.
  */
-export interface Track {
-  asset?: { hash?: string | null } | null;
-}
+export type Track = Item;
 
 /** off, wrap the list, or hold on the one track. */
 export type RepeatMode = 'off' | 'all' | 'one';

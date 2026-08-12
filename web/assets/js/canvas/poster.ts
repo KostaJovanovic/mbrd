@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // A clip's own first frame, grabbed in the browser.
 //
 // Lifted out of canvas/renderers.js, where it sat between the sizing helpers
@@ -34,6 +26,15 @@ const POSTER_SIDE = 640;
 const POSTER_MS = 6000;
 
 /**
+ * A grabbed frame: the WebP itself, and the clip's *own* pixel size.
+ *
+ * The dimensions are the video's, not the blob's - the blob is capped at
+ * POSTER_SIDE, while a caller sizing a card wants the aspect the clip really
+ * has.
+ */
+export type VideoFrameShot = { blob: Blob; w: number; h: number };
+
+/**
  * The first frame of a clip, as a WebP blob, or null.
  *
  * This exists because of what a video card looks like before it is played. On a
@@ -56,12 +57,12 @@ const POSTER_MS = 6000;
  * almost nothing - because storing a black rectangle as a picture of a black
  * rectangle is strictly worse than storing no picture.
  */
-export function videoFrame(file) {
+export function videoFrame(file: Blob): Promise<VideoFrameShot | null> {
   const url = URL.createObjectURL(file);
   const v = document.createElement('video');
-  return new Promise(resolve => {
+  return new Promise<VideoFrameShot | null>(resolve => {
     let settled = false;
-    const done = value => {
+    const done = (value: VideoFrameShot | null) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -112,12 +113,13 @@ export function videoFrame(file) {
 }
 
 /** Draw whatever the element is showing into a capped WebP. */
-async function capture(v) {
+async function capture(v: HTMLVideoElement): Promise<VideoFrameShot | null> {
   const scale = Math.min(1, POSTER_SIDE / Math.max(v.videoWidth, v.videoHeight));
   const w = Math.max(1, Math.round(v.videoWidth * scale));
   const h = Math.max(1, Math.round(v.videoHeight * scale));
   const canvas = new OffscreenCanvas(w, h);
   const ctx = canvas.getContext('2d', { alpha: false });
+  if (!ctx) return null;
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(v, 0, 0, w, h);

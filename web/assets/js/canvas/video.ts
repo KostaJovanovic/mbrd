@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Moving pictures on the board, with a transport the board owns.
 //
 // What was here before was a bare <video>: no controls, muted, looping, and
@@ -36,6 +28,7 @@ import { registerPlayer } from './audio.ts';
 import { clamp } from '../util.ts';
 import { toast } from '../notify.ts';
 import { bindScrub, clock, PLAY_ICON, seekInnerHTML, sizeSeekWave } from '../media/transport.ts';
+import type { Item } from '../board-model.ts';
 
 /**
  * Where a parked video sits: the `#t=` media fragment canvas/renderers.js mounts
@@ -71,7 +64,7 @@ const MUTED_ICON =
  * the <audio>: the element is the engine, and canvas/renderers.js is where an
  * item's media gets its source and its aspect handling.
  */
-export function buildVideoPlayer(item, video) {
+export function buildVideoPlayer(item: Item, video: HTMLVideoElement): HTMLElement {
   const player = document.createElement('div');
   player.className = 'vplayer';
 
@@ -149,8 +142,10 @@ export function buildVideoPlayer(item, video) {
     // `duration` is NaN until the first play - which this does not address.
     const parked = video.paused && video.currentTime <= POSTER_TIME;
     time.textContent = clock(parked ? (video.duration || 0) : (video.currentTime || 0));
-    track.setAttribute('aria-valuemax', Math.round(video.duration || 0));
-    track.setAttribute('aria-valuenow', Math.round(video.currentTime || 0));
+    // String() rather than the number these two used to be handed: setAttribute
+    // was doing the conversion itself, and this is that conversion said aloud.
+    track.setAttribute('aria-valuemax', String(Math.round(video.duration || 0)));
+    track.setAttribute('aria-valuenow', String(Math.round(video.currentTime || 0)));
     track.setAttribute('aria-valuetext',
       `${clock(video.currentTime || 0)} of ${clock(video.duration || 0)}`);
   };
@@ -217,7 +212,7 @@ export function buildVideoPlayer(item, video) {
 
   // ---- scrubbing --------------------------------------------------------
 
-  const seekTo = clientX => {
+  const seekTo = (clientX: number) => {
     if (!video.duration) return;
     const box = track.getBoundingClientRect();
     if (!box.width) return;
@@ -232,7 +227,7 @@ export function buildVideoPlayer(item, video) {
   bindScrub(track, seekTo);
 
   /** Seek by `secs`, or to an absolute point when `to` is given. */
-  const seekBy = (secs, to = null) => {
+  const seekBy = (secs: number, to: number | null = null) => {
     if (!video.duration) return;
     video.currentTime = clamp(to != null ? to : video.currentTime + secs, 0, video.duration);
     paint();
@@ -264,7 +259,7 @@ export function buildVideoPlayer(item, video) {
   return player;
 }
 
-function iconButton(className, label, icon) {
+function iconButton(className: string, label: string, icon: string): HTMLButtonElement {
   const b = document.createElement('button');
   b.type = 'button';
   b.className = className;

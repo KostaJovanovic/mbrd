@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The panel's control shapes, built in one place.
 //
 // Every settings row in this app is the same three elements - a `label.field`,
@@ -39,11 +31,19 @@
  * least two of them afterwards - the label to place or hide, the head to hang a
  * class on, the output to write into on every input event.
  */
-export function field(labelText, { out: wantOut = false } = {}) {
+/** The three pieces of a row, handed back for the caller to finish. */
+export interface Field {
+  label: HTMLLabelElement;
+  head: HTMLSpanElement;
+  /** Only when `out` was asked for; see the note above. */
+  out: HTMLOutputElement | null;
+}
+
+export function field(labelText: string, { out: wantOut = false }: { out?: boolean } = {}): Field {
   const label = document.createElement('label');
   label.className = 'field';
   const head = document.createElement('span');
-  let out = null;
+  let out: HTMLOutputElement | null = null;
   if (wantOut) {
     const text = document.createElement('span');
     text.textContent = labelText;
@@ -75,7 +75,14 @@ export function field(labelText, { out: wantOut = false } = {}) {
  * whimsy stops are set in the three tiers they name, the weight stops in the
  * weights. Given a stop it returns the CSS to wear, or nothing for a plain one.
  */
-export function fieldStops(labels, { id = '', specimen = null } = {}) {
+export function fieldStops<T extends string | { label: string }>(
+  labels: readonly T[],
+  { id = '', specimen = null }: {
+    id?: string;
+    /** Given a stop, the CSS it should wear - or nothing for a plain one. */
+    specimen?: ((stop: T) => Partial<CSSStyleDeclaration> | null) | null;
+  } = {},
+): HTMLSpanElement {
   const stops = document.createElement('span');
   stops.className = 'field-stops';
   if (id) stops.id = id;

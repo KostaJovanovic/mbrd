@@ -775,7 +775,10 @@ function chip(color) {
  * not be in an app that routes: nothing in this codebase calls pushState, and a
  * fragment cannot move the base a relative URL is resolved against.
  */
-export function icon(name, extra) {
+// Annotated ahead of the rest of this module: every other file in ui/ builds
+// its icons through here, and an unannotated `extra` reads to tsc as a
+// parameter they all forgot to pass.
+export function icon(name, extra?: string) {
   const NS = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(NS, 'svg');
   svg.setAttribute('class', extra ? `ico ${extra}` : 'ico');

@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Freezing GIFs when the board is zoomed out.
 //
 // Past a certain distance an animation stops being content and becomes
@@ -33,14 +25,30 @@ import { stillZoom } from './viewport.ts';
 /** Long edge of a captured frame. It is only ever shown at a third size. */
 const MAX_STILL = 640;
 
-let worldEl = null;
+/**
+ * All this module wants of the viewport: the magnification, and somewhere to
+ * hear that it moved. Structural rather than `Viewport` itself, because that is
+ * the whole of the dependency - and because canvas/viewport.ts is still on the
+ * migration ledger, where a .ts class does not get its fields from the
+ * `this.x =` assignments in its constructor the way a .js one did.
+ */
+type ZoomSource = { zoom: number; onChange(fn: () => void): unknown };
+
+/**
+ * The twin <img>, with the object URL it is currently showing hung off it. The
+ * URL lives on the node rather than in a map here because the node is what
+ * culling throws away, and a map would be the leak this property prevents.
+ */
+type StillImage = HTMLImageElement & { _stillUrl?: string };
+
+let worldEl: HTMLElement | null = null;
 let stilled = false;
 /** How many nodes were mounted at the last sweep - see the guard in update(). */
 let mounted = -1;
 /** The live update, so a quality change can ask the question again. */
 let recheck = () => {};
 
-export function initStills(world, vp) {
+export function initStills(world: HTMLElement, vp: ZoomSource): void {
   worldEl = world;
 
   const update = () => {
@@ -93,17 +101,19 @@ export function initStills(world, vp) {
 export const refreshStills = () => recheck();
 
 /** @param force  true to re-shoot every twin, false to fill in only the blanks. */
-function capture(force) {
+function capture(force: boolean) {
   if (!worldEl) return;
-  for (const img of worldEl.querySelectorAll('img[data-gif]')) {
-    const twin = img.nextElementSibling;
+  for (const img of worldEl.querySelectorAll<HTMLImageElement>('img[data-gif]')) {
+    // The twin is built as the GIF's next sibling <img> by the renderer - the
+    // `.still` class is what says so, so the assertion is the class test.
+    const twin = img.nextElementSibling as StillImage | null;
     if (!twin?.classList.contains('still')) continue;
     if (!force && twin.classList.contains('is-ready')) continue;
     shoot(img, twin);
   }
 }
 
-function shoot(img, twin) {
+function shoot(img: HTMLImageElement, twin: StillImage) {
   // Nothing has been decoded yet - there is no frame to take. The next pass
   // picks it up, and until then the GIF simply keeps playing.
   if (!img.complete || !img.naturalWidth) return;
@@ -115,10 +125,13 @@ function shoot(img, twin) {
   // mid zoom-out, once per mounted GIF; a synchronous toDataURL('image/png')
   // per twin blocked that gesture frame. OffscreenCanvas + WebP matches what
   // poster.js/display.js already do for exactly this reason.
-  let canvas;
+  let canvas: OffscreenCanvas;
   try {
     canvas = new OffscreenCanvas(w, h);
-    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+    const ctx = canvas.getContext('2d');
+    // A context this browser will not hand over lands where the throw did.
+    if (!ctx) return;
+    ctx.drawImage(img, 0, 0, w, h);
   } catch {
     return;
   }

@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Board title <-> file name, and nothing else.
 //
 // Pure string work, pulled out when storage.js was split so that both halves
@@ -17,12 +9,12 @@
 
 import { cleanBoardTitle } from '../state.ts';
 
-export function fileNameFor(title) {
+export function fileNameFor(title: string): string {
   const base = cleanBoardTitle(title) || 'board';
   return base.replace(/\.mbrd$/i, '').replace(/ /g, '_') + '.mbrd';
 }
 
-export function titleFromFileName(name) {
+export function titleFromFileName(name: string): string {
   return stripExt(name).replace(/_/g, ' ');
 }
 
@@ -37,7 +29,7 @@ export function titleFromFileName(name) {
  * stored title may be a filename in disguise is exactly "written before 0.51",
  * and manifest.json has recorded which build wrote each file all along.
  */
-const PACKED_TITLES_BEFORE = [0, 51];
+const PACKED_TITLES_BEFORE: [number, number] = [0, 51];
 
 /**
  * The title an opened file should carry.
@@ -59,14 +51,16 @@ const PACKED_TITLES_BEFORE = [0, 51];
  * ever written lacks the field, so the only way to arrive here is by hand, and a
  * hand-made title is one to believe.
  */
-export function titleForOpenedBoard(storedTitle, fileName, writtenBy = '') {
+export function titleForOpenedBoard(
+  storedTitle: unknown, fileName: string, writtenBy: unknown = '',
+): string {
   const stored = typeof storedTitle === 'string' && storedTitle ? storedTitle : '';
   if (!stored) return titleFromFileName(fileName);
   return packedFilenames(writtenBy) ? stored.replace(/_/g, ' ') : stored;
 }
 
 /** Whether `app` names a build from before the packing stopped. See above. */
-function packedFilenames(app) {
+function packedFilenames(app: unknown): boolean {
   const m = /^mbrd\s+v?(\d+)\.(\d+)/i.exec(typeof app === 'string' ? app : '');
   if (!m) return false;
   const [major, minor] = [+m[1], +m[2]];
@@ -74,6 +68,6 @@ function packedFilenames(app) {
   return major < limitMajor || (major === limitMajor && minor < limitMinor);
 }
 
-function stripExt(name) {
+function stripExt(name: string): string {
   return name.replace(/\.mbrd$/i, '');
 }

@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // A stack of the exclusive right-side panels, so they hide and come back rather
 // than just replacing each other.
 //
@@ -21,15 +13,21 @@
 // coordinator closes one panel to make way for another, that panel's own "I closed"
 // report is the coordinator's doing, not a user action, so it is ignored.
 
+/** What one panel has to be able to do to take part. */
+interface PanelDriver {
+  open: () => void;
+  close: () => void;
+}
+
 /** name -> { open, close } */
-const reg = new Map();
+const reg = new Map<string, PanelDriver>();
 /** The panels currently open, oldest first; the last is the one on screen. */
-const stack = [];
+const stack: string[] = [];
 /** True while the coordinator is itself opening or closing a panel. */
 let busy = false;
 
 /** Teach the stack how to drive one panel. Called once, at the panel's init. */
-export function registerPanel(name, open, close) {
+export function registerPanel(name: string, open: () => void, close: () => void): void {
   reg.set(name, { open, close });
 }
 
@@ -38,7 +36,7 @@ export function registerPanel(name, open, close) {
  * put this one on top. A no-op when this panel is already the top - reopening the
  * visible one must not hide it from itself.
  */
-export function panelShown(name) {
+export function panelShown(name: string): void {
   if (busy) return;
   const top = stack[stack.length - 1];
   if (top === name) return;
@@ -53,7 +51,7 @@ export function panelShown(name) {
  * back the one that was under it. A panel closed while already hidden (it was not the
  * top) just leaves the stack quietly.
  */
-export function panelHidden(name) {
+export function panelHidden(name: string): void {
   if (busy) return;
   const i = stack.lastIndexOf(name);
   if (i < 0) return;
@@ -65,6 +63,6 @@ export function panelHidden(name) {
 }
 
 /** Forget everything is open - for a board swap, where every panel is torn down. */
-export function resetPanels() {
+export function resetPanels(): void {
   stack.length = 0;
 }

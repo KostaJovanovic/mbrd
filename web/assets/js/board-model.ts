@@ -9,6 +9,64 @@
 // The board's shape: what a board is, what an item is, and what the defaults
 // are when a file does not say.
 //
+// ── The Item type, and why it is here while the file is still unchecked ──
+//
+// This module still carries the pragma above, but the types below are exported
+// and usable regardless: a `@ts-nocheck` suppresses errors *in* a file, it does
+// not hide its declarations. That distinction is load-bearing right now.
+//
+// Before these existed, `board.items` inferred as `never[]` from the empty
+// literal in the default board, so every property access on an item anywhere in
+// the app was a hard error and every module that walks the board was blocked
+// behind this one file. Modules were starting to grow private re-declarations
+// of an item to get around it - one of them said so in its own header and asked
+// to be deleted once this existed. Two or three of those and "what an item is"
+// would have had no single answer, which is the thing this module exists to be.
+//
+// So the shape is stated here first, ahead of the rest of the annotation. The
+// eleven fields are exactly what board-schema.ts's serializeItem writes, which
+// is the authoritative list: a field not written to a .mbrd is not part of an
+// item, it is something a subsystem hangs off one.
+//
+// `meta` is deliberately NOT a discriminated union on `type`. It is tempting -
+// a note's meta and a sticker's meta share almost nothing - but it would be a
+// promise this codebase does not keep: meta is where every subsystem parks what
+// it needs (fit, cover, tint, upAxis, rich, presnap…), the reader accepts
+// whatever a file carries, and several keys are written for types that are not
+// supposed to have them. A union would be checked at the door and wrong
+// underneath, which is worse than an honest `unknown` at each key that the
+// reader has to narrow. Narrow it where you use it; that is where the knowledge
+// actually is.
+
+/** Every type classify() can produce, and the whole of what RENDERERS answers. */
+export type ItemType =
+  | 'image' | 'video' | 'audio' | 'note' | 'link' | 'text' | 'model'
+  | 'title' | 'ghost' | 'swatch' | 'sticker' | 'fence' | 'generic';
+
+/**
+ * The bytes an item points at, or null for one that is only geometry and text.
+ * `hash` names the content in the asset store; `family` is the format catalogue
+ * entry. See the note above normalizeAssets() in board-schema.ts.
+ */
+export type ItemAsset = { hash: string; family?: string } | null;
+
+/** See the paragraph above: unknown per key on purpose, narrowed at the use. */
+export type ItemMeta = Record<string, unknown>;
+
+export type Item = {
+  id: string;
+  type: ItemType;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  rot: number;
+  z: number;
+  name: string;
+  asset: ItemAsset;
+  meta: ItemMeta;
+};
+//
 // The second floor under state.js (see board-store.js for the first). state.js
 // is the app's one mutation door and it grew to hold about ten concerns; the
 // obstacle to lifting any of them out was that they all reach for the same two

@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The one question this app stops to ask.
 //
 // It replaces confirm(), which was wrong here for three reasons. It is drawn by
@@ -23,10 +15,34 @@
 // own name. Like toast(), it reaches for `document` only inside a function, so
 // storage.js can import it and stay loadable without a browser.
 
-const DEFAULTS = { title: 'Are you sure?', body: '', go: 'Yes', cancel: 'Cancel', keep: '', field: null };
+/** Which button was pressed, for the question that has buttons. */
+export type Answer = 'go' | 'keep' | 'cancel';
+
+/** The one box, for the question that has one. All of it is optional. */
+export interface AskField {
+  value?: string;
+  placeholder?: string;
+  type?: string;
+  maxLength?: number;
+}
+
+/** What a caller may ask for. Everything falls back to DEFAULTS. */
+export interface AskOptions {
+  title?: string;
+  body?: string;
+  go?: string;
+  cancel?: string;
+  keep?: string;
+  field?: AskField | null;
+}
+
+/** The same, once the defaults have been folded in - nothing is missing here. */
+type AskSettled = Required<Omit<AskOptions, 'field'>> & { field: AskField | null };
+
+const DEFAULTS: AskSettled = { title: 'Are you sure?', body: '', go: 'Yes', cancel: 'Cancel', keep: '', field: null };
 
 /** Nothing is open twice: a second ask() while one is up waits for it. */
-let current = null;
+let current: Promise<Answer | string | null> | null = null;
 
 /**
  * Ask, and resolve to which button was pressed: 'go', 'keep' or 'cancel'.
@@ -59,9 +75,16 @@ let current = null;
  * canvas/notes.js: it puts the real editor in a dialog rather than describing a
  * second one here.
  */
-export async function ask(opts = {}) {
+// The two contracts the note above describes, said in the signature: without a
+// field this answers with a button, with one it answers with what was typed.
+export function ask(opts?: AskOptions & { field?: null }): Promise<Answer>;
+export function ask(opts: AskOptions & { field: AskField }): Promise<string | null>;
+export async function ask(opts: AskOptions = {}): Promise<Answer | string | null> {
   if (typeof document === 'undefined') return 'cancel';
-  const el = document.getElementById('ask');
+  // #ask is a <dialog> in index.html; the duck-type check below is the runtime
+  // half of that claim, and is what makes a browser without <dialog> fall out
+  // here rather than throw.
+  const el = document.getElementById('ask') as HTMLDialogElement | null;
   if (!el || typeof el.showModal !== 'function') return 'cancel';
 
   // Queued rather than stacked. Two modals open at once is a focus trap fighting
@@ -78,13 +101,16 @@ export async function ask(opts = {}) {
   }
 }
 
-function openWith(el, o) {
-  const title = document.getElementById('ask-title');
-  const body = document.getElementById('ask-body');
-  const go = document.getElementById('ask-go');
-  const cancel = document.getElementById('ask-cancel');
-  const keep = document.getElementById('ask-keep');
-  const field = document.getElementById('ask-field');
+function openWith(el: HTMLDialogElement, o: AskSettled): Promise<Answer | string | null> {
+  // index.html declares all six inside #ask itself, which ask() has already
+  // found; this module has always read them straight through, and an absent one
+  // is a broken build rather than a state to recover from.
+  const title = document.getElementById('ask-title')!;
+  const body = document.getElementById('ask-body')!;
+  const go = document.getElementById('ask-go')!;
+  const cancel = document.getElementById('ask-cancel')!;
+  const keep = document.getElementById('ask-keep')!;
+  const field = document.getElementById('ask-field') as HTMLInputElement;
 
   title.textContent = o.title;
   body.textContent = o.body;
@@ -114,10 +140,10 @@ function openWith(el, o) {
   // for. Leaving it red would make "what size is this?" look like a threat.
   go.classList.toggle('danger', !o.field);
 
-  return new Promise(resolve => {
-    let answer = 'cancel';
+  return new Promise<Answer | string | null>(resolve => {
+    let answer: Answer = 'cancel';
 
-    const close = choice => {
+    const close = (choice: Answer) => {
       answer = choice;
       el.close();
     };
@@ -128,7 +154,7 @@ function openWith(el, o) {
     // Clicking the backdrop. A <dialog> fills the top layer, so a click that
     // lands on the element itself rather than on anything inside it landed
     // outside the panel - which is what ::backdrop actually is here.
-    const onClick = e => { if (e.target === el) close('cancel'); };
+    const onClick = (e: MouseEvent) => { if (e.target === el) close('cancel'); };
 
     // Escape, which the browser handles by firing this and closing on its own.
     const onCancelEvent = () => { answer = 'cancel'; };
@@ -136,7 +162,7 @@ function openWith(el, o) {
     // Enter in the field is the same press as the go button. Without it the
     // only way to answer a one-box question is to reach for the mouse, having
     // just been typing.
-    const onKey = e => { if (e.key === 'Enter') { e.preventDefault(); close('go'); } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Enter') { e.preventDefault(); close('go'); } };
 
     const onClose = () => {
       go.removeEventListener('click', onGo);

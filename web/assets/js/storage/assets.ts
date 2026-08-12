@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // In-memory asset registry: content hash -> bytes + a lazily-created object URL.
 //
 // Items never hold a Blob or a URL, only `{ hash, embedded: true }`. Everything
@@ -16,14 +8,43 @@
 import { sha256 } from '../crypto.ts';
 import { extOf } from '../util.ts';
 
-/** hash -> { blob, url, mime, ext, size, name } */
-const store = new Map();
+/**
+ * One registered asset: the bytes, and the object URL once something has asked
+ * for one.
+ *
+ * `url` is null until assetURL() mints it and null again after a real pagehide
+ * revokes it - see initAssets(), where the difference between "never made one"
+ * and "made one and it is dead" is the whole point of writing the field back.
+ */
+export type Asset = {
+  blob: Blob,
+  url: string | null,
+  mime: string,
+  ext: string,
+  size: number,
+  name: string,
+};
 
-export function getAsset(hash) { return store.get(hash); }
+/** What a caller may say about an asset that the blob itself does not carry. */
+type AssetMeta = Partial<Pick<Asset, 'mime' | 'ext' | 'name'>>;
+
+/** hash -> { blob, url, mime, ext, size, name } */
+const store = new Map<string, Asset>();
+
+/**
+ * The asset registered under a hash, or undefined for one that is not here.
+ *
+ * The parameter admits the two spellings of "no hash" because that is how it is
+ * called: `getAsset(item.asset?.hash)` for an item that may carry no asset, and
+ * `getAsset(thumbSource(it))` for a lookup that answers null. "There is nothing
+ * under that hash" is the answer both want. The cast is safe for the same
+ * reason: a key that cannot be in the map finds nothing.
+ */
+export function getAsset(hash: string | null | undefined) { return store.get(hash as string); }
 export function allAssets() { return store; }
 
 /** Object URL for an asset, created on first use and reused after. */
-export function assetURL(hash) {
+export function assetURL(hash: string): string | null {
   const a = store.get(hash);
   if (!a) return null;
   if (!a.url) a.url = URL.createObjectURL(a.blob);
@@ -31,10 +52,10 @@ export function assetURL(hash) {
 }
 
 /** Register a blob under a known hash (used when unpacking a .mbrd). */
-export function putAsset(hash, blob, meta = {}) {
+export function putAsset(hash: string, blob: Blob, meta: AssetMeta = {}): Asset {
   const existing = store.get(hash);
   if (existing) return existing;
-  const entry = {
+  const entry: Asset = {
     blob,
     url: null,
     mime: meta.mime || blob.type || 'application/octet-stream',
@@ -47,7 +68,7 @@ export function putAsset(hash, blob, meta = {}) {
 }
 
 /** Hash a File/Blob and register it. Returns the hash (same bytes -> same hash). */
-export async function addFile(file) {
+export async function addFile(file: File): Promise<string> {
   const buf = await file.arrayBuffer();
   const hash = await sha256(buf);
   if (!store.has(hash)) {
@@ -67,7 +88,7 @@ export async function addFile(file) {
 }
 
 /** Read an asset back as text - used by the text renderer. */
-export async function readText(hash, limit = 20000) {
+export async function readText(hash: string, limit = 20000): Promise<string> {
   const a = store.get(hash);
   if (!a) return '';
   const slice = a.blob.size > limit ? a.blob.slice(0, limit) : a.blob;

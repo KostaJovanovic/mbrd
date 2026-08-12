@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The slide-in sidebar: opening it, closing it, and the four things inside it
 // that are not a row in a table.
 //
@@ -30,13 +22,37 @@ import { readPref, writePref } from '../prefs.ts';
 import { buildPanel, paintPanel } from './panel.ts';
 import { paintTitleField, wireTitleField } from './board-title.ts';
 
-let sidebar, menuBtn;
-let sliderFocus;
+/**
+ * What this module needs of the command surface.
+ *
+ * Every action button in the panel is a `data-cmd` reached by name, so the
+ * index signature is the real contract here - commands.ts builds one object
+ * literal and this file only ever looks into it with a string. `setBoardMode`
+ * is spelled out because it is the one command called directly rather than by a
+ * button, and it takes what readPref() gives back.
+ */
+export interface SidebarCommands {
+  setBoardMode: (mode: string | null) => void;
+  [name: string]: ((...args: never[]) => unknown) | undefined;
+}
+
+/** The pointer lifecycle of one isolated slider, as createMobileSliderFocus() returns it. */
+export interface SliderFocus {
+  begin: (target: Element | null, id?: number | null) => boolean;
+  end: (id?: number | null) => boolean;
+  clear: () => void;
+}
+
+let sidebar: HTMLElement | null, menuBtn: HTMLElement | null;
+let sliderFocus: SliderFocus;
 const MODE_PREF = 'mbrd.boardMode';
 const MOBILE_LAYOUT_QUERY = '(max-width: 700px)';
 
 /** Match the same narrow-screen breakpoint used by the CSS. */
-export function mobileLayoutDetected(media = query => globalThis.matchMedia?.(query)) {
+export function mobileLayoutDetected(
+  media: (query: string) => MediaQueryList | undefined =
+    query => globalThis.matchMedia?.(query),
+): boolean {
   return typeof media === 'function' && !!media(MOBILE_LAYOUT_QUERY)?.matches;
 }
 
@@ -47,11 +63,11 @@ export function mobileLayoutDetected(media = query => globalThis.matchMedia?.(qu
  * headless-testable. Delegation in initSidebar means controls built at runtime
  * are covered without maintaining a second list of sliders here.
  */
-export function createMobileSliderFocus(root, {
+export function createMobileSliderFocus(root: HTMLElement, {
   isMobile = mobileLayoutDetected,
-} = {}) {
-  let active = null;
-  let pointerId = null;
+}: { isMobile?: () => boolean } = {}): SliderFocus {
+  let active: Element | null = null;
+  let pointerId: number | null = null;
 
   const restore = () => {
     active?.classList.remove('is-slider-active');
@@ -62,7 +78,7 @@ export function createMobileSliderFocus(root, {
 
   const clear = () => restore();
 
-  const begin = (target, id = null) => {
+  const begin = (target: Element | null, id: number | null = null) => {
     if (!isMobile() || !target?.matches?.('input[type="range"]')) return false;
     active?.classList.remove('is-slider-active');
     active = target;
@@ -72,7 +88,7 @@ export function createMobileSliderFocus(root, {
     return true;
   };
 
-  const end = (id = null) => {
+  const end = (id: number | null = null) => {
     if (!active) return false;
     if (pointerId !== null && id !== null && pointerId !== id) return false;
     restore();
@@ -82,27 +98,30 @@ export function createMobileSliderFocus(root, {
   return { begin, end, clear };
 }
 
-export function initSidebar(cmds) {
+export function initSidebar(cmds: SidebarCommands): void {
+  // Every id below is declared in index.html beside #sidebar itself; this
+  // module has always read them straight through, and an absent one is a broken
+  // build rather than a state to recover from.
   sidebar = el('sidebar');
   menuBtn = el('menu-btn');
-  sliderFocus = createMobileSliderFocus(sidebar);
+  sliderFocus = createMobileSliderFocus(sidebar!);
 
-  menuBtn.addEventListener('click', () => (isOpen() ? close() : open()));
-  el('side-close').addEventListener('click', close);
+  menuBtn!.addEventListener('click', () => (isOpen() ? close() : open()));
+  el('side-close')!.addEventListener('click', close);
 
-  sidebar.addEventListener('pointerdown', e => {
-    sliderFocus.begin(e.target, e.pointerId);
+  sidebar!.addEventListener('pointerdown', e => {
+    sliderFocus.begin(e.target as Element | null, e.pointerId);
   });
-  const endSliderFocus = e => sliderFocus.end(e.pointerId);
+  const endSliderFocus = (e: PointerEvent) => sliderFocus.end(e.pointerId);
   globalThis.addEventListener('pointerup', endSliderFocus);
   globalThis.addEventListener('pointercancel', endSliderFocus);
-  sidebar.addEventListener('lostpointercapture', endSliderFocus, true);
+  sidebar!.addEventListener('lostpointercapture', endSliderFocus, true);
 
   // Every action button in the panel is a data-cmd; the map is the whole API.
-  sidebar.addEventListener('click', e => {
-    const btn = e.target.closest('[data-cmd]');
+  sidebar!.addEventListener('click', e => {
+    const btn = (e.target as Element).closest<HTMLElement>('[data-cmd]');
     if (!btn) return;
-    const fn = cmds[camel(btn.dataset.cmd)];
+    const fn = cmds[camel(btn.dataset.cmd!)];
     if (fn) fn();
   });
 
@@ -115,11 +134,11 @@ export function initSidebar(cmds) {
   wirePaperOrientation();
   wireTitleField(el('board-title'));
 
-  el('version').textContent = 'v' + VERSION;
+  el('version')!.textContent = 'v' + VERSION;
 
   bus.on('board', paint);
   bus.on('settings', paint);
-  bus.on('layout', mode => {
+  bus.on('layout', (mode: string) => {
     writePref(MODE_PREF, mode);
     paint();
   });
@@ -137,10 +156,10 @@ export function initSidebar(cmds) {
  * as the current state to a screen reader as well as to the eye - the panel
  * paints that; this is only what a press means.
  */
-function wirePaperOrientation() {
+function wirePaperOrientation(): void {
   const row = document.getElementById('paper-orient');
   if (!row) return;
-  for (const btn of row.querySelectorAll('[data-orient]')) {
+  for (const btn of row.querySelectorAll<HTMLElement>('[data-orient]')) {
     btn.addEventListener('click', () => {
       // Choosing an orientation with no sheet chosen would be setting a state
       // nothing can show, so it puts a sheet up as well. A4 because it is the
@@ -153,7 +172,7 @@ function wirePaperOrientation() {
 }
 
 /** Push state back into the controls (after opening a board, or an undo). */
-function paint() {
+function paint(): void {
   // The name field's behaviour lives in ui/board-title.js now - the masthead's
   // panel grew a second one, and one rename showing up in both is only true
   // while there is one implementation of it.
@@ -171,35 +190,35 @@ const OPEN_KEY = 'mbrd.sidebar';
 
 const isOpen = () => sidebar?.classList.contains('is-open');
 
-export function open() {
+export function open(): void {
   setOpen(true);
 }
 
-export function close() {
+export function close(): void {
   if (!sidebar) return;
   sliderFocus?.clear();
   setOpen(false);
 }
 
-function setOpen(want, remember = true) {
-  sidebar.classList.toggle('is-open', want);
-  sidebar.setAttribute('aria-hidden', String(!want));
-  menuBtn.setAttribute('aria-expanded', String(want));
+function setOpen(want: boolean, remember = true): void {
+  sidebar!.classList.toggle('is-open', want);
+  sidebar!.setAttribute('aria-hidden', String(!want));
+  menuBtn!.setAttribute('aria-expanded', String(want));
   if (!remember) return;
   writePref(OPEN_KEY, want ? '1' : '0');
 }
 
 /** Reopen the panel on load, without playing the slide-in for it. */
-function restoreOpen() {
+function restoreOpen(): void {
   if (readPref(OPEN_KEY) !== '1') return;
   // Already-open is a fact about the page, not a thing that just happened, so
   // it should not animate. One frame with the transition off is enough.
-  sidebar.style.transition = 'none';
+  sidebar!.style.transition = 'none';
   setOpen(true, false);
-  requestAnimationFrame(() => { sidebar.style.transition = ''; });
+  requestAnimationFrame(() => { sidebar!.style.transition = ''; });
 }
 
 /** Build the panel's DOM. Called before the modules that reach into it. */
 export { buildPanel };
 
-const camel = s => s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+const camel = (s: string): string => s.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
