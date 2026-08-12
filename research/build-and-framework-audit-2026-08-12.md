@@ -10,6 +10,62 @@ So the code is what was read. This document reaches the same verdict as
 disagrees with it on something that document never separated out, which is the
 half worth reading.
 
+**Half of its list has since been carried out — see *Status*, immediately
+below.** It stays at the top level because the other half has not; read the
+status block before acting on anything here, because four of the eight items now
+describe the repository you are already standing in.
+
+---
+
+## Status — what has since been carried out
+
+Written the day this document was, in the ten commits that followed it. The
+ordered list at the foot is annotated the same way; this is the summary.
+
+**Item 1, CI — done** (`fea074a`). `.github/workflows/ci.yml`, on
+`ubuntu-latest`, which is the point rather than a default: it is the
+case-sensitivity leg the repository never had, and it runs the suite with
+nothing installed so that *"`npm test` needs no install"* goes on being asked
+rather than assumed. Finding 3's premise is therefore gone, and so is the
+sentence in `CLAUDE.md` it quotes.
+
+**Item 2, the bundler — done** (`c85cf85`, wired in `317d4e0`). `npm run build`
+is one esbuild line, `index.html` loads `assets/app.js`, and `SHELL` in
+`web/sw.js` precaches that one artifact in place of the ninety-six modules it
+used to name — `tests/sw.test.js` no longer walks the sources, because they are
+no longer shipped assets. Finding 1's trade landed on the side this document did
+not predict: **the sources still ship beside the bundle**, so view-source on the
+deployed app is still this repository. What was dropped instead is the source
+map (`3797da6`) — 2.9 MB rewritten and committed on every build, for a devtools
+convenience nobody reviews.
+
+**Item 3, TypeScript — done as the move, not as the types** (`317d4e0`). 104 of
+106 modules are `.ts` under `strict`; `version.js` and `optimize/media-worker.js`
+stay `.js` for reasons that would break silently otherwise, and `jsconfig.json`
+is replaced by `tsconfig.json`, whose header is now the better statement of
+Finding 2's argument than Finding 2 is. But a mechanical rename left **4,935
+errors under `strict`**, so the 103 unannotated modules carry `@ts-nocheck` and
+`tests/ts-debt.test.js` holds the count with a ceiling that may only fall. What
+the typecheck asserts today is that everything *not* on that list is clean.
+**The annotations are the open half of this item**, and they are most of the
+value Finding 2 was asking for — the large stateful modules it names are exactly
+the ones still carried unchecked.
+
+**Item 7, continue the `state.js` split — done** (`6e28f0e`). 2,607 lines to
+1,260, onto five new base modules — `board-schema.js`, `onboarding.js`,
+`clipboard.js`, `connections.js`, `trash.js` — plus selection into
+`board-store.js` and board-wide snapping into `layout.js`. Every one is in
+`BASE` in `tests/layers.test.js` and `DEBT` is still empty. The four undoable
+meta writes Finding 4 did not mention are one `patchMeta()`.
+
+**Still open: 4, 5, 6, 8.** `initInput` is untouched and remains the largest
+single risk named here. The CSP was in hand at the time of writing and is not
+this document's to record. The global error handler and the question of what
+`old/` should look like to a stranger have not been started.
+
+**Finding 7 is unaffected and Finding 4's other two rows have moved:**
+`createCommands` is where it was, `state.js` is at 1,260 rather than 2,607.
+
 ---
 
 ## What was measured, and found sound
@@ -52,6 +108,11 @@ None of what follows is a complaint about any of that.
 ---
 
 ## Finding 1 — "no framework" and "no build step" are two decisions, and only one of them was ever priced
+
+*Carried out. The build step exists, `index.html` loads `assets/app.js`, and the
+numbers below are what the repository looked like before it. Kept because the
+argument for pricing the two decisions apart is the finding, and it will be
+asked again.*
 
 This is the substantive disagreement with `old/open-source-readiness-2026-08-02.md`,
 and it is a disagreement about scope rather than about conclusions.
@@ -130,6 +191,13 @@ win.
 
 ## Finding 2 — the typecheck was the right answer to the right question, and is scoped away from where it matters
 
+*Half carried out. Option 2 below was taken: `jsconfig.json` is gone, every
+module is `.ts` and `tsconfig.json` is `strict` over the tree. The nine-file
+scope this finding is about no longer exists — but the modules it names are
+still unchecked, now behind `@ts-nocheck` and a falling ceiling rather than
+behind an `include` list, so the finding's substance stands and only its
+mechanism has changed.*
+
 `old/open-source-readiness-2026-08-02.md` Part 1 named the one real argument for
 a framework rewrite — "hand-written DOM has no compile-time safety" — and
 answered it correctly: JSDoc, `checkJs`, `tsc --noEmit`. That was carried out.
@@ -167,6 +235,13 @@ fast enough that no user waits on them.
 
 ## Finding 3 — there is no CI, so none of the above is enforced
 
+*Carried out, and first, exactly as the closing list asks. There is a
+`.github/workflows/ci.yml` and it runs on `ubuntu-latest`. Everything below is
+the argument for why, which is worth keeping because the one thing CI still does
+**not** do is named at the end of it and is still true: the host deploys on push,
+triggered by the push and not by the workflow, so a red run does not block a
+deploy until somebody sets branch protection.*
+
 `CLAUDE.md` says it plainly: "There is no CI, so nothing runs these for you and
 a green `npm test` is not the whole bar." There is no `.github/` directory.
 
@@ -179,6 +254,10 @@ out. It is the one item on that list that did not land, and the README's line
 about that document — "the plan this repository's public layout, CI, linting,
 typecheck and file splits were carried out from" — is currently wrong about a
 quarter of itself. Worth correcting there whichever way this goes.
+
+*It went the other way: the line is now right rather than corrected. CI exists,
+so the sentence describes the repository again, and `research/README.md` says
+where it came from instead of what it claimed.*
 
 Twenty lines of workflow YAML converts the whole test suite from a claim into a
 guarantee, and it is the prerequisite for Findings 1 and 2 both: a bundle nobody
@@ -195,6 +274,10 @@ Not a style note. These are where the next real defect will be.
 | `initInput` (`canvas/input.js:477`) | **1,509** | one closure, ~20 mutable `let`s, a 230-line `pointerdown` and a 270-line `pointermove` |
 | `createCommands` (`commands.js:306`) | 831 | one closure returning the whole command surface |
 | `state.js` | 2,607 | ten concerns, two lifted out so far |
+
+*The third row is settled: `state.js` is 1,260 lines and seven more concerns are
+out of it (`6e28f0e`). The first two are as measured, and `initInput` is now the
+whole of this finding.*
 
 `initInput` is the one to act on. `spaceDown`, `midButtonDown`, `midDragged`,
 `armSelect`, `cardTap`, `lastEmptyTap`, `emptyTapCandidate`, `pressTimer`,
@@ -344,22 +427,27 @@ that port cheap. If there is one budget, it should go there.
 
 ## The list, in order
 
-1. **Add CI.** ~20 lines. Everything below depends on it.
-2. **Add a bundler for the release artifact.** 3.8× on transfer, 96 requests to
-   1, no framework, no runtime dependency. `sw.js`'s `SHELL` is the one thing
-   that has to move in step.
-3. **`.ts` and `strict`, or widen `jsconfig.json` module by module.** The same
-   decision as 2 if it is the first of those.
-4. **Turn `initInput` into an explicit state machine.** The pure helpers at the
-   top of the file are already the right shape.
-5. **Write a CSP.** Hash the two inline scripts; pin `frame-src` to the embed
-   hosts.
+1. ~~**Add CI.**~~ **Done** — `fea074a`. ~20 lines. Everything below depended on
+   it, and it went first for that reason.
+2. ~~**Add a bundler for the release artifact.**~~ **Done** — `c85cf85`, wired
+   in `317d4e0`. `sw.js`'s `SHELL` moved in step, and the sources ship beside
+   the bundle rather than being replaced by it.
+3. **`.ts` and `strict`** — **the move is done** (`317d4e0`), the annotations
+   are not. `jsconfig.json` is gone; the second half of this item is now
+   measured by `tests/ts-debt.test.js` rather than by this list.
+4. **Turn `initInput` into an explicit state machine.** *Open.* The pure helpers
+   at the top of the file are already the right shape.
+5. **Write a CSP.** *Open here* — hash the two inline scripts; pin `frame-src`
+   to the embed hosts.
 6. **A global error handler that raises a toast and confirms the autosave.**
-7. **Continue the `state.js` split.** It has regrown 44% of what the last one
-   removed.
-8. **Decide what `old/` should look like to a stranger.** Cosmetic, and last.
+   *Open.*
+7. ~~**Continue the `state.js` split.**~~ **Done** — `6e28f0e`. 2,607 lines to
+   1,260, onto five new base modules.
+8. **Decide what `old/` should look like to a stranger.** *Open.* Cosmetic, and
+   last.
 
 Items 1, 5 and 6 are each an afternoon and none of them touch application code.
+Two of those three are still true.
 
 ## What this document does not claim
 

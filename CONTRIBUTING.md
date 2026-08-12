@@ -52,11 +52,15 @@ and `python -m py_compile tools/serve.py tools/qr.py` if you touched either.
 ### Two optional runs
 
 Neither is needed to contribute, and `npm test` still needs no install at all.
-Both want `npm install` first, which pulls exactly two devDependencies.
+Both want `npm install` first, which pulls exactly three devDependencies -
+oxlint, typescript and esbuild. Only the third produces anything, and what it
+produces is the bundle.
 
 ```bash
 npm run lint        # oxlint; correctness only, no formatter
-npm run typecheck   # tsc --noEmit over JSDoc types; no TypeScript ships
+npm run typecheck   # tsc --noEmit under strict; nothing is emitted
+npm run build       # esbuild -> web/assets/app.js, the artifact that ships
+npm run dev         # the same build, watched. This is the edit loop now.
 ```
 
 `npm run lint` is deliberately about mistakes and not about taste — unused
@@ -66,12 +70,17 @@ one would be a regression**: Prettier would rewrite all 31,000 lines and destroy
 the blame that makes this codebase's module headers worth having.
 
 `npm run typecheck` is the answer to the one thing hand-written JavaScript
-genuinely lacks. Nothing is compiled and nothing is emitted - `jsconfig.json`
-points tsc at the **pure layer** (geometry, measurement, the arrangement engine,
-quality, the layout split, the thread graph, the spatial grid, the import
-budget) and it reads types out of JSDoc. Widening that `include` is how it
-grows; do it a module at a time with the run clean at each step. It earned its
-keep immediately: it found `web-graph.js` calling two `geometry.js` helpers it
+genuinely lacks, and it is no longer answered with JSDoc: the app is TypeScript,
+`tsconfig.json` runs tsc `--noEmit` under **strict** over the whole tree, and
+esbuild - not tsc - builds what ships.
+
+Not every module is annotated yet. The rename moved 104 files in one step and
+the ones still untyped carry `// @ts-nocheck`; `tests/ts-debt.test.js` holds the
+count with a ceiling that may only fall. So a green typecheck means *everything
+not on that list is clean under strict*. Converting a module is deleting its
+pragma, fixing what tsc then says, and lowering the ceiling in the same commit.
+Do it a module at a time with the run clean at each step. Its ancestor earned
+its keep immediately: it found `web-graph.js` calling two `geometry.js` helpers it
 had never imported, which threw out of `threads()` and stopped the relationship
 web drawing.
 
@@ -102,12 +111,16 @@ fussy.
 2. **No browser globals at module import time.** Reaching for `document` inside
    a function is fine; reaching for it in a module body is not, because it makes
    the module untestable headlessly. Exactly three modules are exempt —
-   `main.js`, `ui/appearance.js`, `optimize/media-worker.js` — and adding a
+   `main.ts`, `ui/appearance.ts`, `optimize/media-worker.js` — and adding a
    fourth is a regression. Enforced by `tests/imports.test.js`. In practice this
    means a new module exports an `init*()` rather than doing work on import.
+   (The worker keeps its `.js`: it is fetched by URL at runtime rather than
+   imported, and a browser cannot fetch a `.ts` file.)
 3. **Every shipped asset appears in `SHELL` in `web/sw.js`.** That list drifted
    once and left a font uncached offline. Enforced by `tests/sw.test.js`, which
-   walks `assets/js`, `assets/css` and `assets/fonts`. Note the constraint in
+   walks `assets/css` and `assets/fonts` — and no longer `assets/js`, because
+   the modules are not what ships any more. The bundle is, and it is asserted by
+   name alongside the media worker. Note the constraint in
    that file's comment: **no apostrophes inside the `SHELL` array**, comments
    included, because the test parses it by pulling out single-quoted runs.
 4. **Every bundled `woff2` family has its licence file beside it.** The OFL
