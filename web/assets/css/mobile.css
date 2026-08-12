@@ -87,6 +87,8 @@
    looks the same on both, with more ground around it on the wider one. */
 .feed-sheet {
   box-sizing: border-box;
+  /* The containing block for the grain below. */
+  position: relative;
   width: min(100% - 24px, var(--feed-w));
   margin-inline: auto;
   margin-block: var(--feed-inset-top) var(--feed-inset-bottom);
@@ -99,6 +101,27 @@
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--accent) 6%, #fff);
   box-shadow: var(--shadow-1);
+}
+
+/* The tooth of the stock, on the board the Feed is. The image, the blend and
+   the two dials are all in base.css, shared with #grain and the world-space
+   strip's own ::after - this rule is only the box.
+
+   ::before and not ::after, which is the one decision in it: the blend mode is
+   multiply, and a pseudo-element blends against whatever has been painted under
+   it inside its stacking context. Painted first, that is the sheet's own fill,
+   which is what paper on paper should darken. Painted last it would multiply
+   over every photograph on the wall and the board would go muddy.
+
+   inset: 0 covers the sheet's full scrolled height rather than the window, so
+   the grain is a property of the board and scrolls with it. border-radius
+   inherits, so the corners are the sheet's - the same trick #mobile-board-frame
+   uses to follow a radius that is rewritten as the board scrolls. */
+.feed-sheet::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
 }
 
 /* The masthead: the board's name across the top of the sheet, shared by the Feed
