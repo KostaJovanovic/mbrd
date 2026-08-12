@@ -98,7 +98,7 @@ Spotify card, and generating a preview image for video your browser cannot read.
 ## Browsers
 
 Chrome, Firefox, Edge and Safari 18.4 or newer. Safari 16.3 and older will not
-work at all. Details in [`docs/browser-support.md`](docs/browser-support.md).
+work at all. Details in [`research/docs/browser-support.md`](research/docs/browser-support.md).
 
 ## Developing
 
@@ -111,8 +111,8 @@ npm test            # run the tests, no install needed
 ```
 
 [`CONTRIBUTING.md`](CONTRIBUTING.md) is where to start,
-[`docs/architecture.md`](docs/architecture.md) explains how it is put together,
-and [`docs/mbrd-format.md`](docs/mbrd-format.md) specifies the file format.
+[`research/docs/architecture.md`](research/docs/architecture.md) explains how it is put together,
+and [`research/docs/mbrd-format.md`](research/docs/mbrd-format.md) specifies the file format.
 Contributions welcome.
 
 ## Licence

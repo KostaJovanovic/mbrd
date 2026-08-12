@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 Conventions for working in this repository. **Structure and design live in
-[`docs/architecture.md`](docs/architecture.md)** — the layering graph, the state
+[`research/docs/architecture.md`](research/docs/architecture.md)** — the layering graph, the state
 model, coordinates and culling, the stylesheet order, the invariants — and are
 not repeated here. [`CONTRIBUTING.md`](CONTRIBUTING.md) covers running, testing
 and where a given change belongs.

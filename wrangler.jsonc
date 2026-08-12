@@ -16,7 +16,7 @@
   "name": "mbrd",
   "compatibility_date": "2026-08-12",
   "assets": {
-    // web/ is the site. Everything above it - tests/, tools/, docs/, research/
+    // web/ is the site. Everything above it - tests/, tools/, research/
     // - is repo, not app, and never ships.
     "directory": "./web",
 

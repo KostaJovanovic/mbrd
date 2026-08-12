@@ -15,7 +15,7 @@
 // same ids in both directions, which is what stops one of them drifting.
 //
 // The ids are mbrd's rather than Phosphor's, and that is load-bearing: an id
-// here is written into a .mbrd as meta.shape (see docs/mbrd-format.md), so it
+// here is written into a .mbrd as meta.shape (see research/docs/mbrd-format.md), so it
 // is part of the file format and cannot move because an upstream icon was
 // renamed.
 //

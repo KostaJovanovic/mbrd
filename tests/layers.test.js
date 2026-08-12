@@ -129,7 +129,7 @@ const BASE = new Set([
   // them and ui/quality.js writes them, and a setting canvas has to import
   // cannot sit in ui/ without inverting the whole graph.
   'quality.js',
-  // The arrangement catalogue, which docs/architecture.md already names among
+  // The arrangement catalogue, which research/docs/architecture.md already names among
   // the pure modules at the bottom: no DOM, no state import, geometry.js and
   // nothing else. state.js reads mobileArrangement() from it to know which of
   // the two catalogues a stored id belongs to, and that read is downward.
@@ -163,7 +163,7 @@ const BASE = new Set([
 
 /**
  * True when this edge points the wrong way through the declared layering.
- * Only the rules CLAUDE.md and docs/architecture.md state outright are encoded;
+ * Only the rules CLAUDE.md and research/docs/architecture.md state outright are encoded;
  * anything they leave to judgement is left to the cycle check above.
  */
 function inverted(from, to) {

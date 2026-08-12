@@ -617,7 +617,7 @@ export function dedupeIds(list, seen) {
     // The cap is what made this loop non-terminating: an id already 64 characters
     // long, truncated back to 64 characters, is the same string every time round,
     // so `seen` rejected every candidate and the load hung the tab. Ids are
-    // capped at 64 by makeItem() and docs/mbrd-format.md declares 64 legal, so a
+    // capped at 64 by makeItem() and research/docs/mbrd-format.md declares 64 legal, so a
     // file can reach here with two of them. 58 + '~' + five digits stays inside
     // the cap for every k the loop can reach.
     const stem = it.id.slice(0, 58);

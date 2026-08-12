@@ -2,7 +2,7 @@
 
 The one canonical description of the app's structure. `README.md` is for people
 using a board; `CONTRIBUTING.md` is for working on the repository;
-`docs/mbrd-format.md` and `docs/layout-settings.md` are specifications. This is
+`research/docs/mbrd-format.md` and `research/docs/layout-settings.md` are specifications. This is
 the map.
 
 Read it before a first change, and read the header of any file you are about to
@@ -380,7 +380,7 @@ no fences is untouched by any of it.
 `layout-settings.js` is the pure split: `splitAppearance()` / `mergeAppearance()`
 send palette and typography tokens board-wide and keep radius, density, grid ink
 and panel dimensions layout-local. Paper is Desktop-only. Adding a setting means
-deciding which half it belongs to. `docs/layout-settings.md` is the reference,
+deciding which half it belongs to. `research/docs/layout-settings.md` is the reference,
 and the `.mbrd` schema keeps top-level `items`/`settings`/`arrangement`
 describing Desktop for older readers.
 
@@ -746,7 +746,7 @@ was exactly where it used to disappear. What that costs is named in
 ### Fences
 
 A **fence** is a labelled rectangle, and the cards inside it belong to it.
-`fences.js` holds the relation and `docs/mbrd-format.md` holds the schema; what
+`fences.js` holds the relation and `research/docs/mbrd-format.md` holds the schema; what
 matters here is that it is `sticky.js`'s argument with a different predicate —
 membership is a fact about where two things are, measured and remembered, never
 stored as a list that could disagree with the geometry beside it. Delete, undo,
@@ -1214,7 +1214,7 @@ Items never hold a Blob or URL, only `asset: { hash, embedded: true }`.
 `storage/assets.js` is the hash → bytes registry, which is what makes
 dedupe-by-content free. `storage/zip.js` is a hand-rolled ZIP over the browser's
 own `CompressionStream('deflate-raw')`; `storage/mbrd.js` is the `.mbrd`
-container on top of it (`docs/mbrd-format.md` is the spec).
+container on top of it (`research/docs/mbrd-format.md` is the spec).
 
 `storage/storage.js` keeps **Save and Export deliberately separate**: Save writes
 to IndexedDB (same store as the autosave interval), Export packs the `.mbrd` file

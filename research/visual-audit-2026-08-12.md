@@ -198,7 +198,7 @@ rather than a comment defending it, so the next reader does not delete it.
 
 **6 — Write the z-index table.** The stack is correct and each site explains
 itself, but the order is reconstructible only by reading eight files. One table,
-in `docs/architecture.md`.
+in `research/docs/architecture.md`.
 
 ## The rule this leaves behind
 

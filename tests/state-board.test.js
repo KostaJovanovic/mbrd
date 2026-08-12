@@ -109,7 +109,7 @@ test('two items with the longest legal id both survive the load', () => {
   // dedupeIds() suffixed and then truncated back to 64, so on an id already at
   // the cap every candidate was the id itself, `seen` rejected all of them and
   // the loop never ended - a hand-made or hand-edited file froze the tab on
-  // open. docs/mbrd-format.md declares 64 legal, so this is a file the format
+  // open. research/docs/mbrd-format.md declares 64 legal, so this is a file the format
   // permits rather than a malformed one.
   const long = 'a'.repeat(64);
   loadBoard({
@@ -483,7 +483,7 @@ test('content is shared between both layouts, settings are not', () => {
   assert.equal(byId('shared').meta.text, 'same note');
 
   // Spacing is layout-local, so each of the two keeps the gap it was given and
-  // neither can see the other's - see docs/layout-settings.md. Mobile starts at
+  // neither can see the other's - see research/docs/layout-settings.md. Mobile starts at
   // zero rather than at Desktop's 12, which is what every board saved before it
   // had a gap of its own actually looked like.
   assert.equal(board.settings.spacing, 12, 'Desktop keeps its own spacing');

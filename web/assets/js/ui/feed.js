@@ -28,7 +28,8 @@ import { board, bus, isDefaultTitle, byId, stuckTo, isRider } from '../state.js'
 import { baseName, clamp } from '../util.js';
 import { mobileOrder } from '../arrange/arrangements.js';
 import { assetURL, readText } from '../storage/assets.js';
-import { linkURL } from '../canvas/renderers.js';
+import { linkURL, buildContent } from '../canvas/renderers.js';
+import { bindDial } from '../canvas/ghosts.js';
 import {
   registerPlayer, releasePlayers, nowPlaying, onNowPlaying, playTrack, PLAY_ICON, clock,
 } from '../canvas/audio.js';
@@ -40,10 +41,17 @@ import { openViewer, canView, MARKDOWN } from './viewer.js';
 import { renderMarkdown } from './markdown.js';
 
 /**
- * The types the Feed does not draw as tiles: furniture, the leaving hints, and
- * stickers.
+ * The types the Feed does not draw as tiles: furniture and stickers.
  *
- * A sticker is here for a different reason from the other three, and it is the
+ * The hint cards used to be on this list and should not have been. They are the
+ * whole of what a brand-new board has on it - four cards saying what to do with
+ * it - and hiding them left the one board that most needs them showing "Nothing
+ * to show yet" instead. That is the Feed telling somebody their empty board is
+ * empty, which they knew, in place of the four cards telling them what to do
+ * about it. They are drawn as tiles now, through the same buildContent() the
+ * canvas draws them with.
+ *
+ * A sticker is here for a different reason from the two above, and it is the
  * one worth stating. It is not hidden - a *pinned* one is drawn on its host's
  * tile, at the fraction of the host it holds on the canvas, because the board
  * you made should be the board you see. What it does not get is a tile of its
@@ -55,7 +63,7 @@ import { renderMarkdown } from './markdown.js';
  * open questions in research/stickers-2026-08-12.md. Not drawing it is the safe
  * read: the alternative is that lone panel.
  */
-const HIDDEN = new Set(['title', 'ghost', 'fence', 'sticker']);
+const HIDDEN = new Set(['title', 'fence', 'sticker']);
 
 let root = null;        // #mobile-feed, the scroller
 let sheet = null;       // the centred column the wall sits in
@@ -307,6 +315,7 @@ function kindOf(item) {
   // it. classify() routes some fifty extensions to this, so it is most of the
   // notes, code and prose anybody drops on a board.
   if (item.type === 'text') return 'text';
+  if (item.type === 'ghost') return 'hint';
   return pictureURL(item) ? 'image' : 'file';
 }
 
@@ -317,6 +326,11 @@ function ratioOf(item) {
   if (kind === 'swatch') return 1;
   if (kind === 'audio') return 1;
   if (kind === 'file') return 1.4;
+  // A hint keeps the shape it was seeded at. ensureGhostCards() sizes these
+  // against the column when Mobile is the live layout - the dial takes the whole
+  // width, the three hints half of it - so the item's own box is already the
+  // right proportion and the clamp below would only fight it.
+  if (kind === 'hint') return clamp(item.w / Math.max(1, item.h), 0.5, 3);
   // Taller than wide, because a page of words is a page. The canvas card is
   // 300x360 and this is the same proportion; anything squarer shows four lines
   // and a lot of paper.
@@ -383,7 +397,35 @@ function fillTile(t) {
   if (kind === 'link') return fillLink(t);
   if (kind === 'swatch') return fillSwatch(t);
   if (kind === 'text') return fillText(t);
+  if (kind === 'hint') return fillHint(t);
   return fillFile(t);
+}
+
+/**
+ * A hint card, drawn by the canvas's own renderer.
+ *
+ * buildContent() rather than a second hint card written for this surface. There
+ * is one place that knows what a hint says, which of them carries the whimsy
+ * dial and how the tape is laid on it (canvas/renderers.js, RENDERERS.ghost),
+ * and a copy here would be a second thing to remember every time the words
+ * change. The fragment it hands back is the same one canvas/items.js appends.
+ *
+ * Two things the canvas provides and this surface has to provide for itself.
+ * --iz is the inverse of the board's zoom, which the ghost card's dashed border
+ * is measured in so it stays one screen pixel at every zoom; the Feed has no
+ * zoom, so the inverse is exactly 1. And the dial has to be wired: on the canvas
+ * items.js binds it after mounting, and a slider nobody bound is a slider that
+ * moves and changes nothing.
+ */
+function fillHint(t) {
+  const host = div('feed-hint');
+  // The value the border width is computed from. Not inherited from anywhere on
+  // this surface - #world is where the canvas writes it.
+  host.style.setProperty('--iz', '1');
+  host.append(buildContent(t.item));
+  t.el.appendChild(host);
+  const dial = host.querySelector('input[type="range"]');
+  if (dial) bindDial(dial);
 }
 
 function fillImage(t) {
