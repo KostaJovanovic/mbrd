@@ -1156,10 +1156,14 @@
      dev` rebuilds it on every save, which is what replaces "edit a file and
      refresh" with "save and refresh".
 
-     The sources still ship beside it and app.js.map points at them, so
-     view-source on the deployed app is still this repository - it is now one
-     step behind a devtools panel instead of being the page itself. That is the
-     trade the bundle was costed at; nothing else about it was free either. -->
+     The sources still ship beside it, so view-source on the deployed app is
+     still this repository - one directory away instead of being the page
+     itself. That is the trade the bundle was costed at; nothing else about it
+     was free either.
+
+     No source map ships. `npm run dev` emits one for devtools and .gitignore
+     keeps it out, because it is 2.9MB rewritten on every build and a repository
+     should not grow by that much for a convenience nobody reviews. -->
 <script type="module" src="assets/app.js"></script>
 </body>
 </html>
