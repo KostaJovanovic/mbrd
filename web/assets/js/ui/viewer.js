@@ -28,6 +28,11 @@ import { assetURL, getAsset, readText } from '../storage/assets.js';
 import { baseName, formatBytes } from '../util.js';
 import { linkURL } from '../canvas/renderers.js';
 import { renderMarkdown } from './markdown.js';
+// Statically: the reader's only import is storage/zip.js, which is already in
+// memory because it is what opens every .mbrd, and the browser's own DOMParser.
+// There is no dependency to defer, so deferring it would only buy a second
+// module fetch at the moment somebody asked to see something.
+import { canReadDocument, readDocument } from './documents.js';
 
 /**
  * How much of a text file the viewer reads.
@@ -47,6 +52,9 @@ let dlg = null;
 let titleEl = null;
 let metaEl = null;
 let bodyEl = null;
+
+/** The blob URLs the open document minted, if this viewing is showing one. */
+let releaseDoc = null;
 
 export function initViewer() {
   dlg = document.getElementById('viewer');
@@ -81,13 +89,28 @@ export function initViewer() {
 export function canView(id) {
   const item = byId(id);
   if (!item) return false;
-  return !!VIEWS[item.type];
+  return !!viewFor(item);
+}
+
+/**
+ * Which view opens this item.
+ *
+ * Documents are asked about *first*, and by extension rather than by type,
+ * because a document does not have a type of its own on this board: a .docx that
+ * carried a thumbnail imported as an `image` (import/document.js found its baked
+ * preview) and one that did not imported as `generic`. Neither says "document",
+ * and both should open as one. The type table below is the fallback and covers
+ * everything the board draws natively.
+ */
+function viewFor(item) {
+  if (item.asset?.hash && canReadDocument(item.meta?.ext)) return documentView;
+  return VIEWS[item.type] || null;
 }
 
 export function openViewer(id) {
   const item = byId(id);
   if (!dlg || typeof dlg.showModal !== 'function' || !item) return;
-  const view = VIEWS[item.type];
+  const view = viewFor(item);
   if (!view) return;
 
   titleEl.textContent = baseName(item.name) || item.name || item.type;
@@ -121,6 +144,12 @@ function teardown() {
     el.removeAttribute('src');
     el.load?.();
   }
+  // A document's pictures come out of its own container as blob URLs this app
+  // minted, and those are not in the asset store - nothing else will ever revoke
+  // them. Opening a hundred-page comic and closing it again would otherwise leak
+  // a hundred decoded images for the life of the tab.
+  releaseDoc?.();
+  releaseDoc = null;
   bodyEl?.replaceChildren();
   delete dlg.dataset.type;
 }
@@ -261,6 +290,34 @@ const VIEWS = {
     host.append(a);
   },
 };
+
+/**
+ * A document, read out of its own container.
+ *
+ * Asynchronous and slow enough to say so: a .docx has to be unzipped, its XML
+ * parsed and its pictures decoded, and the dialog is already open by then. A
+ * line of text while that happens is the honest thing to show - the alternative
+ * is a blank sheet that looks like the file was empty.
+ */
+function documentView(item, host) {
+  const asset = getAsset(item.asset?.hash);
+  if (!asset) return void host.append(nothing('That file is not in this board'));
+  const waiting = nothing('Reading it…');
+  host.append(waiting);
+  readDocument(asset.blob, item.meta?.ext)
+    .then(({ node, release }) => {
+      if (!waiting.isConnected) { release(); return; }
+      releaseDoc = release;
+      waiting.replaceWith(node);
+    })
+    .catch(err => {
+      if (!waiting.isConnected) return;
+      // The reader's own message where it has one - "that presentation has no
+      // slides" says more than "could not be read" - and a plain fallback where
+      // the failure came from somewhere with nothing to say.
+      waiting.textContent = err?.message || 'That file could not be read';
+    });
+}
 
 /** A card is not always openable, and saying so beats an empty sheet. */
 function nothing(words) {
