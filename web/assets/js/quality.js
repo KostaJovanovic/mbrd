@@ -5,7 +5,7 @@
 // picture it is about to shrink into a card is a fact about the phone, and
 // shipping it inside someone else's moodboard would be telling their laptop to
 // hold GIFs still because ours could not keep up. So it lives in localStorage
-// beside the Desktop/Mobile choice, and `docs/mbrd-format.md` never hears about
+// beside the Desktop/Mobile choice, and `research/docs/mbrd-format.md` never hears about
 // it.
 //
 // One dial with three stops, and Full is the default and is *exactly* what the

@@ -3,7 +3,7 @@
 //
 // Two subjects that belong in one file because they are the same claim seen
 // from two ends. `swatch` is the first item type added since the format was
-// written down, so it is also the first real test of what `docs/mbrd-format.md`
+// written down, so it is also the first real test of what `research/docs/mbrd-format.md`
 // says about an unknown `type` - that an older reader shows the item as a plain
 // card and writes it back untouched, rather than dropping it and taking the
 // board with it. If that promise is empty then adding this type was a breaking
@@ -89,7 +89,7 @@ test('a swatch survives serialize and reload with its colour and its name', () =
 // ---------------------------------------------------------------------------
 
 test('a type this build has never heard of loads, keeps its meta and is written back', () => {
-  // The claim in docs/mbrd-format.md, as a test. An older build meeting a
+  // The claim in research/docs/mbrd-format.md, as a test. An older build meeting a
   // swatch is this case exactly, and the whole of what makes adding a type a
   // non-breaking change: the item is carried, not dropped, and unknown `meta`
   // comes with it.

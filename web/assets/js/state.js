@@ -2226,7 +2226,7 @@ function normalizeBoard(data) {
   // The Mobile profile, as far as it can be read out of a Desktop-shaped file.
   //
   // Spacing is zeroed on the way through and that is a migration, not a rule:
-  // top-level `settings` describes Desktop (see docs/mbrd-format.md), so a file
+  // top-level `settings` describes Desktop (see research/docs/mbrd-format.md), so a file
   // with no Mobile record of its own would hand the column Desktop's 12 - and
   // for every board written before Mobile had a gap at all, zero is what it was
   // actually saved looking like. A file that *does* carry a Mobile record keeps

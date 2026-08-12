@@ -4,16 +4,25 @@ Why things are the way they are. Most of this was written before or during the
 work it describes, so it records the reasoning — including the options that were
 rejected and why — rather than the outcome. The outcome is in the code.
 
-**None of it is a specification.** For that, read `docs/` (the `.mbrd` format,
-the layout-settings split, the browser floor) and `docs/architecture.md`.
+**The reasoning is not a specification, and one directory in here is.** Keep the
+two apart: `research/docs/` is the current, authoritative description of what the
+app *is* — the architecture, the `.mbrd` format, the layout-settings split, the
+browser floor — and everything else under `research/` is the argument that led
+there. When the two disagree, `docs/` wins; when `docs/` and the code disagree,
+the code wins.
 
-Three tiers, and the tier is the whole meaning:
+Four directories, and which one a file is in is the whole meaning:
 
 | directory | what it holds | is it current? |
 | --- | --- | --- |
+| `research/docs/` | the **specifications** — what the app is | yes — authoritative |
 | `research/` (top level) | work that is **still open** | yes — read this |
 | `research/old/` | work that was **carried out**, or abandoned | no — history only |
 | `research/future/` | **not started**, and may never be | speculative |
+
+`docs/` sits in here rather than at the repo root because everything written
+about this app belongs in one place; it is the only directory under `research/`
+that is not an argument, and the table above is what says so.
 
 The top level is deliberately short. Anything carried out moves down to `old/`
 on the same commit that finishes it; if a document at the top level describes
@@ -46,6 +55,19 @@ for a change without checking the current source first.
   patches. Read the closing rule before auditing anything else here — the whole
   document is an argument for checking work at the ends of the axis rather than
   at the default board, which is where every fault in it hid.
+- `build-and-framework-audit-2026-08-12.md` — nothing carried out. An outside
+  pass over the whole repository, written to answer whether this should be on a
+  framework or in another language. It agrees with
+  `old/open-source-readiness-2026-08-02.md` Part 1 and is not a reopening of it:
+  the layer byte counts reproduce that document's finding, and the
+  module-by-module argument for why `canvas/` resists a reconciler is still
+  better made there. What is new is its Finding 1 — that document costed a
+  bundler only ever as a rider on a framework rewrite, and priced apart from one
+  it is the cheapest large win in the repository: 664 KB of JavaScript over 96
+  requests becomes about 174 KB over one, because 61.5% of the shipped bytes are
+  comments. Read Findings 1 and 3 together. The CI half of the 2026-08-02 plan
+  is the one item on it that never landed, and the paragraph at the foot of this
+  file saying it did is wrong until it does.
 
 `old/connections-2026-08-12.md` went down on the commit that carried it out, and
 its status block is the part to read first: three of its own instructions were

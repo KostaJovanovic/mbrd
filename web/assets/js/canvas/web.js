@@ -15,7 +15,7 @@
 // The module kept its name, and the setting kept its key. `settings.web` is
 // what an older build reads to decide whether to draw anything at all between
 // cards, and renaming either would have cost the SHELL list, the layers test,
-// three passages of docs/architecture.md and a silent change to every board
+// three passages of research/docs/architecture.md and a silent change to every board
 // that had the web switched on, for nothing.
 //
 // Drawn inside #world, so pan and zoom come for free from the layer transform.

@@ -4,7 +4,7 @@ mbrd has no dependencies, no bundler and no build step. The browser loads the ES
 modules under `web/` directly, so an edit is one refresh away. That is the
 project's one real property, and most of what follows exists to keep it true.
 
-Please read [`docs/architecture.md`](docs/architecture.md) before a first
+Please read [`research/docs/architecture.md`](research/docs/architecture.md) before a first
 change. It is the one canonical description of how the app is put together; this
 file is only about working on it.
 

@@ -560,7 +560,7 @@ function warnMissingCapabilities() {
   if (!inflate || degraded.length) {
     console.warn('[mbrd] below the supported floor (Safari 16.4+). Unavailable: ' +
       [...(inflate ? [] : ['opening .mbrd files from a newer browser']), ...degraded].join(', ') +
-      '. See docs/browser-support.md.');
+      '. See research/docs/browser-support.md.');
   }
   if (!inflate) {
     toast('This browser can’t open .mbrd files made by a newer one — update it, or use the latest Safari, Chrome or Firefox.', 'error');

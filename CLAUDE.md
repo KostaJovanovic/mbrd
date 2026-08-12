@@ -4,7 +4,7 @@ Guidance for Claude Code (claude.ai/code) working in this repository.
 
 ## Read these first
 
-- **[`docs/architecture.md`](docs/architecture.md)** — the canonical description
+- **[`research/docs/architecture.md`](research/docs/architecture.md)** — the canonical description
   of how the app is put together: the layering graph, `state.js` as the only
   door, the command surface, coordinates and culling, the two layouts, assets
   and persistence, the stylesheet order, and the invariants the tests enforce.
@@ -125,9 +125,9 @@ the ES modules under `web/` directly — an edit is one refresh away.
 
 ## Where the reasoning lives
 
-`docs/` holds the specifications: [`mbrd-format.md`](docs/mbrd-format.md),
-[`layout-settings.md`](docs/layout-settings.md),
-[`browser-support.md`](docs/browser-support.md).
+`research/docs/` holds the specifications: [`mbrd-format.md`](research/docs/mbrd-format.md),
+[`layout-settings.md`](research/docs/layout-settings.md),
+[`browser-support.md`](research/docs/browser-support.md).
 
 `research/` holds why things are the way they are, in three tiers — open work at
 the top level, carried-out work in `old/`, speculative work in `future/`. See
