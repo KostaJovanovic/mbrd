@@ -1524,6 +1524,13 @@ function resnap() {
   if (!worldEl || !vp || vp.moving) return;
   for (const [id, el] of nodes) {
     if (!el.isConnected) continue;
+    // Connected, but not necessarily *here*. The note composer lifts a live card
+    // out of the world layer and into a dialog (openComposer, canvas/notes.js),
+    // where it is scaled by the dialog rather than placed by the board - so the
+    // device-pixel snap, which is a correction against the world transform, has
+    // nothing to correct and would overwrite the scale that is drawing the sheet.
+    // A node outside the world layer is not on the board's transform at all.
+    if (el.parentElement !== worldEl) continue;
     const item = byId(id);
     if (!item) continue;
     const t = itemTransform(item);

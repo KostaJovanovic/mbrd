@@ -46,6 +46,14 @@ for a change without checking the current source first.
   patches. Read the closing rule before auditing anything else here — the whole
   document is an argument for checking work at the ends of the axis rather than
   at the default board, which is where every fault in it hid.
+- `fix-list-2026-08-12.md` — thirteen reports from one sitting, investigated and
+  ordered into four phases. Phase 1 is five defects with a proven cause each (the
+  note composer drawing at 1×, the Feed's missing paper tooth, the unclipped Add
+  button); Phase 2 is the one correctness item — the two layout profiles bleed
+  into each other, so a board built on the phone arrives on Desktop still packed
+  as a column. Phase 4 is blocked on a question that has to be put to the
+  maintainer first: which file types a document viewer should cover, and whether a
+  third outside-code dependency is allowed to answer it.
 
 `old/connections-2026-08-12.md` went down on the commit that carried it out, and
 its status block is the part to read first: three of its own instructions were

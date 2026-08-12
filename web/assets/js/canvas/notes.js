@@ -718,6 +718,25 @@ function openComposer(id, added) {
   const after = node.nextSibling;
   mount.append(node);
 
+  // The card's own transform comes off while it is out of the world layer, and
+  // this is not tidiness - without it the sheet is drawn at life size against
+  // the left edge of a mount reserved at twice that.
+  //
+  // canvas/items.js writes `transform` *inline* on every item (placeBox), and an
+  // inline declaration outranks the stylesheet rule that scales the sheet here
+  // (#compose-mount .item in overlays.css). The string is almost never empty:
+  // deviceSnap() returns a sub-pixel correction at any zoom and any device pixel
+  // ratio, and a rotated note carries a rotate() instead. So the scale never
+  // applied and the mount's reserved box was twice the size of what stood in it.
+  //
+  // Stashed rather than recomputed, and put back below: what it was is a fact
+  // about the board's zoom at the moment the dialog opened, and placeBox() is
+  // not called again on the way home. resnap() would rewrite it on the next view
+  // change anyway - it is now barred from doing so while the node is out of the
+  // world layer, which is the other half of this fix.
+  const worldTransform = node.style.transform;
+  node.style.transform = '';
+
   const go = document.getElementById('compose-go');
   const cancel = document.getElementById('compose-cancel');
 
@@ -729,6 +748,9 @@ function openComposer(id, added) {
       cancel.removeEventListener('click', onCancel);
       dlg.removeEventListener('cancel', onEscape);
       mount.style.width = mount.style.height = '';
+      // Before the node goes home, so it is never drawn in the world layer
+      // without the snap it was mounted with. See the stash above.
+      node.style.transform = worldTransform;
       dlg.close();
       // `after` was captured before the dialog opened; culling can detach that
       // sibling while the note is being edited, and insertBefore(node, detached)
