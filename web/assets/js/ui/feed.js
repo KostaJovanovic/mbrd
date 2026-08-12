@@ -71,6 +71,7 @@ let cols = 2;
 let mastheadRaf = 0;
 let layoutRaf = 0;
 let resizeObs = null;
+let mastheadObs = null;
 
 const TILE_TARGET = 210;   // the width a column aims for; more screen, more columns
 const MAX_COLS = 5;
@@ -138,6 +139,31 @@ export function initFeed(_viewport, _commands, headerStyle) {
   if (typeof ResizeObserver === 'function') {
     resizeObs = new ResizeObserver(scheduleLayout);
     resizeObs.observe(root);
+  }
+
+  // Is the title page on screen? The pen top-right edits *that page* and nothing
+  // else, so it has no business riding a wall of photographs a thousand pixels
+  // below it. It used to be gated on the world-space board being at its top stop
+  // (atMobileTop); the Feed replaced that board and the gate went with it.
+  //
+  // An observer rather than a line in the scroll handler below, for the reason
+  // ui/mobile-header.js's own latch gives: the answer changes exactly twice in a
+  // scroll, and asking on every frame to arrive at the state already there is the
+  // cost every view listener in this app is written to avoid. The observer is the
+  // browser answering instead of being asked.
+  //
+  // Announced rather than acted on. The button belongs to ui/mobile-header.js and
+  // this module does not import it - same bargain initFeed() already makes with
+  // the viewport and the command set.
+  if (typeof IntersectionObserver === 'function') {
+    mastheadObs = new IntersectionObserver(
+      entries => {
+        const last = entries[entries.length - 1];
+        if (last) bus.emit('feed:masthead', last.isIntersecting);
+      },
+      { root },
+    );
+    mastheadObs.observe(mastheadEl);
   }
   addEventListener('resize', paintMasthead);
   root.addEventListener('scroll', releaseOffscreen, { passive: true });
