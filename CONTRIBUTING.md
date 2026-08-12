@@ -13,11 +13,11 @@ file is only about working on it.
 ## Run it
 
 ```bash
-python serve.py            # dev server on http://localhost:6273
-python serve.py 8000       # or any port
+python tools/serve.py      # dev server on http://localhost:6273
+python tools/serve.py 8000 # or any port
 ```
 
-Python 3 with no packages. `serve.py` is a static server with three behaviours
+Python 3 with no packages. `tools/serve.py` is a static server with three behaviours
 `python -m http.server` does not have: `web/` as the document root, an SPA
 fallback so a deep link does not 404, and threading — without it the service
 worker's background revalidation fetches deadlock. It binds `0.0.0.0` and prints
@@ -45,7 +45,7 @@ clipboard, the sticky and fence relations, geometry, the arrangement engine, the
 grid.
 
 Worth running on any change you touched: `node --check` on each changed `.js`,
-and `python -m py_compile serve.py qr.py` if you touched either.
+and `python -m py_compile tools/serve.py tools/qr.py` if you touched either.
 
 ### Three optional runs
 
@@ -185,9 +185,10 @@ for anything visual. Call out explicitly if you changed the `.mbrd` schema, the
 generated format catalog, or the service worker's `SHELL` — those three have
 consequences beyond the diff.
 
-CI runs the suite on Linux and Windows. The Linux run matters more than it
-looks: this codebase was developed on a case-insensitive filesystem, so an
-import path with the wrong case works locally and 404s in CI.
+There is no CI: nothing runs on push, so the suite runs where you run it. That
+puts one hazard on you. This codebase was developed on a case-insensitive
+filesystem, so an import path with the wrong case works locally and 404s on the
+Pages demo, which serves off a case-sensitive one. Check the case by hand.
 
 ---
 

@@ -288,13 +288,32 @@
 /* The inner rule. Two nested rounded rectangles only look concentric when the
    inner radius is the outer radius *minus* the gap between them - otherwise
    the corners bow outward and the gap reads wider at the corners than along
-   the sides. That subtraction is the whole point of this rule. */
+   the sides. That subtraction is the whole point of this rule.
+
+   **The gap is in world units, and the width is not**, which looks like an
+   oversight and is the one arrangement that works. The border is chrome: a line
+   drawn on the screen over a card, so it holds one screen pixel at every zoom
+   (--board-hairline, canvas.css). The gap is not chrome. It is ornament
+   *printed on* the card, like its padding, its type and its corner - the margin
+   a plate or a bookplate is ruled inside - so it scales with the card the way
+   every other printed thing on it does.
+
+   Derived like the width it briefly was, and the result was a plate rule that
+   walked into the edge as you zoomed in: at 2.5x a five-screen-pixel gap is two
+   world pixels, so the two lines arrived on top of each other and a ruled card
+   read as one thick doubled outline. What that change was chasing - two rules
+   two screen pixels apart at low zoom, which is one thick border from the other
+   direction - cannot happen either, because #world.zoom-far retires this
+   pseudo-element (further down this file) well before the board is that small.
+
+   --own-radius is in world units too, so the subtraction below has both sides
+   in the same units again, which is what keeps the corners concentric. */
 .card::after {
   content: '';
   position: absolute;
-  inset: var(--board-rule-gap);
+  inset: var(--card-rule-gap);
   border: var(--board-hairline) solid var(--rule);
-  border-radius: max(0px, calc(var(--own-radius) - var(--board-rule-gap)));
+  border-radius: max(0px, calc(var(--own-radius) - var(--card-rule-gap)));
   pointer-events: none;
 }
 /* ---------------------------------------------------------------------------
@@ -328,11 +347,11 @@
      exactly as .title-card carries its own for the same reason. */
   box-shadow: var(--item-shadow);
   /* In screen units, like every other line drawn inside the transform - see
-     --board-hairline in canvas.css. --ghost-weight is a look token and stays
-     one, so this is derived from it rather than replacing it, and the inner
-     rule below reads the derived value so the two are subtracted in the same
-     units. Left in world units the dash was the one edge on the board that
-     still thickened as you zoomed in. */
+     --board-hairline in canvas.css. It stands in for .card's ring, so it is
+     measured the way the ring is. --ghost-weight is a look token and stays one,
+     so this is derived from it rather than replacing it. Left in world units
+     the dash was the one edge on the board that still thickened as you zoomed
+     in. */
   --board-ghost-weight: calc(var(--ghost-weight) * var(--iz));
   border: var(--board-ghost-weight) dashed var(--ghost-edge);
   border-radius: inherit;
@@ -344,8 +363,11 @@
   --card-pad-y: 16px;
 }
 /* The border draws where .card's inset hairline used to, so the inner rule has
-   to step in by the width of it or the two sit on top of each other. */
-.ghost-card::after { inset: calc(var(--board-rule-gap) - var(--board-ghost-weight)); }
+   to step in by the width of it or the two sit on top of each other. Two units
+   in one subtraction on purpose: `inset` measures from the padding box, which on
+   a card with a real border is the *inside* of that border, so what has to come
+   off the world-unit gap is the screen-unit width. */
+.ghost-card::after { inset: calc(var(--card-rule-gap) - var(--board-ghost-weight)); }
 /* The inner rule is a filed card's, and Softish is not printing filed cards -
    its candidates carry their own edge treatment instead, and pencil uses this
    pseudo-element for the second stroke. */
@@ -2419,10 +2441,11 @@ plates do: below a third of size a card is a coloured tile, and a click on
 /* The inner rule goes at the rung, for every card that still has a body out here.
    It is a bookplate ruling - a second line just inside the edge - and a second
    line only says anything while you can see daylight between it and the first.
-   Held five screen pixels off the edge (--board-rule-gap in canvas.css) it stays
-   distinct at any zoom, but on a card that is itself only a few dozen pixels
-   across, five of them in from the edge is not an inset, it is the middle. The
-   card keeps the one line that says where it ends. */
+   The gap is printed on the card (--card-rule-gap, world units - see .card::after
+   near the top of this file), so it shrinks with the board, and past this rung
+   there is no daylight left in it: two hairlines a fraction of a pixel apart are
+   not two rules, they are one thick border. The card keeps the one line that says
+   where it ends. */
 #world.zoom-far .card::after { content: none; }
 /* The card's edge, out where the thing that used to draw it is switched off.
    ---------------------------------------------------------------------------

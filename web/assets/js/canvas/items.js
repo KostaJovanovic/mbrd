@@ -63,6 +63,22 @@ function setHoverLift(id, on) {
   nodes.get(id)?.classList.toggle('is-hover', on);
   shadows.get(id)?.classList.toggle('is-hover', on);
 }
+/**
+ * Told which cards the pointer is on, whenever that changes.
+ *
+ * One subscriber, for canvas/web.js, which lifts a card's connections out of the
+ * rest of the board while the pointer is on it. A callback rather than an event
+ * on the board's bus for the reason the web's own move hook gives: this fires on
+ * pointer moves, and anything every module can hear is something one of them
+ * will eventually answer with a rebuild.
+ *
+ * The *group*, not the id: a sticky rides on the card it is pinned to and lifts
+ * with it, so a hand on the note is a hand on the photograph, and the
+ * photograph is the end a connection is drawn to.
+ */
+let hoverWatcher = null;
+export function onHoverItem(fn) { hoverWatcher = fn; }
+
 function setHoverGroup(id) {
   if (id === lastHoverId) return;
   lastHoverId = id;
@@ -70,6 +86,7 @@ function setHoverGroup(id) {
   for (const gid of hoverGroup) if (!next.has(gid)) setHoverLift(gid, false);
   for (const gid of next) if (!hoverGroup.has(gid)) setHoverLift(gid, true);
   hoverGroup = next;
+  hoverWatcher?.(hoverGroup);
 }
 
 /**
@@ -286,6 +303,28 @@ export function setConnectAim(id) {
   if (aimedId) nodeFor(aimedId)?.removeAttribute('data-aim');
   aimedId = id || null;
   if (aimedId) nodeFor(aimedId)?.setAttribute('data-aim', '');
+}
+
+/**
+ * How far this card leans, as the fraction of `--tilt-max` it was dealt.
+ *
+ * Read off the live node, because that is the only place the number exists: the
+ * lean is presentational, it is dealt from a bag when the card is built (see
+ * tiltFactor), and it is dealt *again* when a card that was culled comes back.
+ * Nothing stores it and nothing can - it is not the item's rotation, which is
+ * geometry and lives in item.rot.
+ *
+ * An inline custom property, so this is a string read and not a computed style:
+ * canvas/web.js asks for every connected card on every frame of a drag, and a
+ * getComputedStyle there would be a style flush per card per frame.
+ *
+ * 0 for a card with no node - one that is culled is off screen, and a lean
+ * nobody can see does not change where a line should stop.
+ */
+export function tiltOf(id) {
+  const el = nodeFor(id);
+  if (!el) return 0;
+  return parseFloat(el.style.getPropertyValue('--item-tilt')) || 0;
 }
 
 /** The item id owning a DOM node, or null for canvas chrome. */

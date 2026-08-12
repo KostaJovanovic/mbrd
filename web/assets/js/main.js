@@ -46,6 +46,7 @@ import { buildPanel } from './ui/panel.js';
 import { armQuality, watchQuality } from './ui/quality.js';
 import { initMenu } from './ui/menu.js';
 import { initFencePrompt } from './ui/fence-prompt.js';
+import { initConnChip } from './ui/conn-chip.js';
 import { initSearch } from './ui/search.js';
 import { initIdle } from './ui/idle.js';
 import { initScaleBar } from './ui/scalebar.js';
@@ -175,6 +176,10 @@ initHud(vp, cmds);
 // inside initHud() as the phone's add bar. Handed cmds for the same reason: its
 // buttons are data-cmd and nothing else.
 initToolbar(cmds);
+// The five buttons that follow a marked connection. After the toolbar because
+// it is the same kind of thing - chrome over the board driven by cmds - and it
+// needs the viewport to know where on the screen the line it is pinned to is.
+initConnChip(cmds, vp);
 // The board's name, on the masthead and on the Desktop card.
 initBoardTitle();
 // Hand storage the confirmation prompt it cannot import (ui sits above storage

@@ -15,8 +15,8 @@
 //   npx playwright install chromium
 //   npm run test:e2e
 //
-// The dev server is started for you (serve.py, on a port of its own so it never
-// argues with one you already have open on 6273).
+// The dev server is started for you (tools/serve.py, on a port of its own so it
+// never argues with one you already have open on 6273).
 
 import { defineConfig, devices } from '@playwright/test';
 
@@ -44,7 +44,7 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: `python serve.py ${PORT}`,
+    command: `python tools/serve.py ${PORT}`,
     url: `http://localhost:${PORT}/`,
     reuseExistingServer: true,
     stdout: 'ignore',

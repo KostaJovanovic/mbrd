@@ -23,14 +23,14 @@ of a file before changing it**, and keep that convention when adding one.
 npm test                          # node --test over tests/ — no install, no deps; Node 22+
 node --test tests/state-history.test.js                            # one file
 node --test --test-name-pattern "undo" tests/state-history.test.js # one test
-python serve.py [port]            # dev server on 6273; server.bat is the Windows launcher
+python tools/serve.py [port]      # dev server on 6273; server.bat is the Windows launcher
 node tools/gen-formats.mjs [path-to-file-analyser]   # regenerate import/formats.js
 save.bat                          # bump version stamps, commit, optionally push
 ```
 
 Three optional runs, all needing `npm install` first (three devDependencies —
-`npm test` still needs none). CI gates the first two, so a green `npm test` is
-not the whole bar:
+`npm test` still needs none). There is no CI, so nothing runs these for you and
+a green `npm test` is not the whole bar:
 
 ```bash
 npm run lint        # oxlint, correctness only — no formatter, and adding one is a regression
@@ -39,8 +39,9 @@ npm run test:e2e    # Playwright on 6274; also needs `npx playwright install chr
 ```
 
 Syntax checks worth running on a change: `node --check` on touched `.js`,
-`python -m py_compile` on `serve.py` / `qr.py`. CI runs both over every tracked
-file, so a syntax error in a module no test imports still fails.
+`python -m py_compile` on `tools/serve.py` / `tools/qr.py`. Nothing runs these
+automatically, so a syntax error in a module no test imports reaches a browser
+before it reaches a failure.
 
 There is no bundler, no build step and no runtime dependency. The browser loads
 the ES modules under `web/` directly — an edit is one refresh away.
@@ -86,9 +87,10 @@ the ES modules under `web/` directly — an edit is one refresh away.
   step the player up a tier when the phone's toolbar opens are general sibling
   combinators, which only look forward. Reordering the two breaks the layout
   silently and only on a phone.
-- **Import paths are case-sensitive in CI and not on this machine.** Windows
-  resolves `'./Foo.js'` for `foo.js` happily; the Linux leg 404s. Match the
-  filename exactly.
+- **Import paths are case-sensitive on the deployed host and not on this
+  machine.** Windows resolves `'./Foo.js'` for `foo.js` happily; the Pages
+  demo, served off a Linux filesystem, 404s. There is no CI leg to catch it
+  either — match the filename exactly.
 - Call out `.mbrd` schema, generated-catalog or service-worker cache changes
   explicitly when reporting work.
 

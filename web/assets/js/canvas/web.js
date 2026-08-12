@@ -38,14 +38,14 @@ import { segmentMeetsRect } from '../geometry.js';
 // Where a line runs when there are cards in the way - see web-route.js. Pure,
 // and deliberately not in this file for the same reason web-graph.js is not:
 // the algorithm is the half that can be tested without a browser.
-import { routeConnection, pathData, blockOf, CLEARANCE } from '../web-route.js';
+import { routeConnection, pathData, blockOf, exitTowards, CLEARANCE } from '../web-route.js';
 // Which cards are near enough to be in the way. The index is kept current by
 // canvas/items.js on every add, remove and move.
 import { queryRect } from './spatial.js';
 // The card under the pointer, and the mark that says the draft is aimed at it.
 // Both live in items.js because that module owns the card's DOM - a mark
 // written from here would be undone by the next rebuild of that node.
-import { itemIdFromEvent, setConnectAim } from './items.js';
+import { itemIdFromEvent, setConnectAim, tiltOf, onHoverItem } from './items.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -154,6 +154,8 @@ let activeKey = null;
 // setFocus(). One more path and one class on the <svg>; nothing is stored.
 let focusPath = null;
 let focusIds = null;
+/** The cards the pointer is resting on, which focus when nothing is selected. */
+let hoverIds = null;
 // The line in flight: the connector tool has one end and the pointer has the
 // other. See setDraftFrom - it is the whole of the tool's feedback, and until
 // it existed the only thing a picked card said was that it had been picked.
@@ -305,9 +307,9 @@ export function initWeb(worldEl, viewport) {
   marker.append(head);
   defs.append(marker);
 
-  // The hover highlight, above the bulk lines so it reads as a lift of the one
-  // under the pointer, below decoLayer so a styled line's arrows and label still
-  // draw on top of it.
+  // The hover, under the bulk lines beside the active mark: both are haloes
+  // rather than overpaints, so the line under the pointer keeps its own dash and
+  // colour while it is being pointed at. See the rules in canvas.css.
   hoverPath = document.createElementNS(SVG_NS, 'path');
   hoverPath.setAttribute('class', 'web-hover');
   hoverPath.setAttribute('fill', 'none');
@@ -332,7 +334,12 @@ export function initWeb(worldEl, viewport) {
   draftPath.setAttribute('fill', 'none');
 
   decoLayer = document.createElementNS(SVG_NS, 'g');
-  svg.append(defs, path, focusPath, hoverPath, activePath, fadeLayer, decoLayer, draftPath);
+  // The active mark goes *under* everything, which is the one ordering decision
+  // in this list that is not about layering but about legibility - see the rule
+  // in canvas.css. Everything else stacks the way it is read: the bulk lines,
+  // the focused copy of some of them, the hover, the fading ones, the styled
+  // ones with their arrows and labels, and the draft over the lot.
+  svg.append(defs, activePath, hoverPath, path, focusPath, fadeLayer, decoLayer, draftPath);
 
   // First child of #world, and it never claims a pointer - the web is a
   // backdrop for the items, not a thing you can catch hold of.
@@ -361,6 +368,20 @@ export function initWeb(worldEl, viewport) {
   // Which cards are selected decides which threads are lifted. A repaint, never
   // a rebuild: nothing about the geometry changes when the selection does.
   bus.on('selection', () => { focusIds = null; requestPaint(); });
+  // And the pointer resting on a card, which says the same thing more quietly -
+  // see focusSet(). Dropped outright while a gesture is running: a pan drags
+  // every card on the board under the cursor, and each one arriving would
+  // re-dim every line on screen.
+  onHoverItem(ids => {
+    const busy = !!viewportEl && (viewportEl.classList.contains('is-panning') ||
+      viewportEl.classList.contains('is-moving'));
+    const next = busy || !ids?.size ? null : new Set(ids);
+    if (!next && !hoverIds) return;
+    hoverIds = next;
+    // Only when it can be seen. With something selected the hover has nothing
+    // to say, and a repaint per card crossed would be the cost of saying it.
+    if (!selection.size) requestPaint();
+  });
   // Only the web toggle changes what is drawn; other settings (spacing, units)
   // fire the same event and must not drag a rebuild in with them. The whimsy
   // axis is the exception, and it arrives on this event as 'appearance' - see
@@ -454,9 +475,62 @@ function centres() {
   // Ghost cards are not ends either. A hint relates to nothing - it is talking
   // to the person, not to the board - and serializeBoard() strips them, so a
   // connection to one could not survive a save even if one could be drawn.
+  // How far a card may lean at this look, once for the whole pass - see
+  // drawnTilt(), and the bug the lean is read for at all.
+  const maxLean = drawnTilt();
   return board.items
     .filter(i => !isRider(i) && i.type !== 'ghost')
-    .map(i => ({ id: i.id, x: i.x, y: -i.y, w: i.w, h: i.h, rot: -(i.rot || 0) }));
+    .map(i => {
+      // The lean this card is actually drawn with, sign and all - not the
+      // tier's maximum. The sign is the whole reason it is read per card: an
+      // axis-aligned box does not care which way a card leans, and the point on
+      // a card's *edge* that a line should stop at cares about nothing else.
+      //
+      // No negation on the lean, where item.rot gets one: rot is world
+      // geometry, where y points up, and this layer lays y down. The lean is a
+      // CSS rotation, which is already in the layer's own sense.
+      const lean = i.type === 'fence' ? 0 : tiltOf(i.id) * maxLean;
+      return {
+        id: i.id, x: i.x, y: -i.y, w: i.w, h: i.h,
+        rot: -(i.rot || 0) + lean,
+      };
+    });
+}
+
+/**
+ * The most a card leans at this look, in degrees. Multiplied by each card's own
+ * dealt fraction (items.js/tiltOf) to get the lean it is actually drawn with.
+ *
+ * The bug this exists for: hovering a card revealed the end of a line that had
+ * been hidden underneath it. Cards away from the hard end of the axis rest
+ * crooked - `--item-tilt` times `--tilt-max`, up to three degrees - and that
+ * lean is presentational, so it is deliberately not in `item.rot` and this
+ * module never knew about it. A route therefore ended on the *untilted* box,
+ * which a tilted card's own corners stick out past, so the last units of the
+ * line sat under the picture: invisible, since #web is below the items, until
+ * the hover lift moved the card off it and left a stub floating in the gap.
+ *
+ * The answer is not to pad the box outward, which was the first attempt and
+ * traded a stub that appeared on hover for a gap that was there all the time.
+ * A card's drawn outline is exactly knowable, so the line stops exactly on it -
+ * see exitTowards() in web-route.js, which clips against the leaning rectangle
+ * rather than against the box around it.
+ *
+ * The tier is read rather than the token alone, because the token is not the
+ * whole answer: Harsh zeroes `rotate` on `.item` in quality.css rather than
+ * zeroing `--tilt-max`, and a snapped board does the same in items.css - both
+ * would otherwise pay for a lean nothing is drawn with. The token itself is
+ * cached and dropped by reshape(), which is exactly the event that can change
+ * it.
+ */
+let leanDeg = null;
+function drawnTilt() {
+  if (leanDeg === null) {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue('--tilt-max');
+    leanDeg = Math.abs(parseFloat(raw)) || 0;
+  }
+  if (document.documentElement.dataset.whimsy === '2' || board.settings.snap) return 0;
+  return leanDeg;
 }
 
 /**
@@ -483,6 +557,7 @@ function release() {
   clearTimeout(draftTimer);
   activeKey = null;
   focusIds = null;
+  hoverIds = null;
   if (focusPath) focusPath.setAttribute('d', '');
   if (svg) svg.classList.remove('is-focused');
   if (activePath) activePath.setAttribute('d', '');
@@ -509,6 +584,7 @@ function release() {
  * the pass lands, on the same settle a drop uses.
  */
 function reshape() {
+  leanDeg = null;
   for (const seg of lastSeg.values()) seg.routed = false;
   requestPaint();
   scheduleRoute();
@@ -604,7 +680,16 @@ function build() {
     const held = lastSeg.get(key);
     const seg = held && held.sig === sig
       ? held
-      : { a: pa, b: pb, sig, points: [{ x: pa.x, y: pa.y }, { x: pb.x, y: pb.y }] };
+      // Edge to edge, not centre to centre. The straight line a drag trails is
+      // the one every card on the board is dragged over, and a line drawn from
+      // a middle runs half a card deep under each end - invisible while the
+      // card is flat, and revealed as a stub the moment the hover lift raises
+      // it off the board. It also aims at the two middles, which is what the
+      // routed line it is standing in for will do when the pass lands.
+      : {
+        a: pa, b: pb, sig,
+        points: [exitTowards(pa, pb), exitTowards(pb, pa)],
+      };
     // The display settings ride on the seg, refreshed every build even when the
     // route is reused - an edit changes the look without moving an end, so the
     // sig is unchanged and the seg is the held one, which must still pick up the
@@ -876,26 +961,36 @@ function paint(forced = false) {
   const lit = focusSet();
   let d = '';
   let focusD = '';
+  // Whether the selection lit *anything* on screen, styled lines included.
+  // Counted separately from the string below, and that separation is the bug
+  // this had: a styled line is drawn as its own element in decoLayer and never
+  // enters `d`, so a card whose connections all carry a colour or an arrow lit
+  // an empty string, which read as nothing to focus - and the board did not dim
+  // at all for exactly the cards somebody had bothered to mark up.
+  let litAny = false;
   for (const key of settled) {
     const seg = lastSeg.get(key);
     if (!seg) continue;
-    // Styled lines are drawn in decoLayer, never the bulk stroke - a dash or an
-    // arrow is per-line and this path is one shared `d`.
-    if (seg.meta) continue;
     if (vis && !meetsRect(seg.points, vis)) continue;
+    const isLit = !!(lit && seg.ends && (lit.has(seg.ends.a) || lit.has(seg.ends.b)));
+    if (isLit) litAny = true;
+    // Styled lines are drawn in decoLayer, never the bulk stroke - a dash or an
+    // arrow is per-line and this path is one shared `d`. drawDecorations marks
+    // the lit ones with .web-lit, which is how they stay at full strength.
+    if (seg.meta) continue;
     const sub = pathData(seg.points, r, minX, minY);
     d += sub;
     // The same subpath twice, in the one case where that is cheaper than the
     // alternative: the focused threads are drawn again over the dimmed bulk
     // path rather than held out of it, which would mean two strings that have
     // to agree about which lines exist instead of one string and a copy.
-    if (lit && seg.ends && (lit.has(seg.ends.a) || lit.has(seg.ends.b))) focusD += sub;
+    if (isLit) focusD += sub;
   }
   path.setAttribute('d', d);
   focusPath.setAttribute('d', focusD);
   // Only when something was actually lit. A selected card with no lines of its
-  // own would otherwise dim the whole board to say nothing.
-  svg.classList.toggle('is-focused', !!focusD);
+  // own, or none on screen, would otherwise dim the whole board to say nothing.
+  svg.classList.toggle('is-focused', litAny);
 
   // The box's origin moves whenever the outermost end does, so every fading
   // line is repositioned each frame as well - they are relative to a corner
@@ -1091,6 +1186,37 @@ export function setActiveConnection(a, b) {
 export function clearActiveConnection() { setActiveConnection(null, null); }
 
 /**
+ * Where the marked line's middle is, in *world* coordinates, or null.
+ *
+ * For ui/conn-chip.js, which pins a small editor over the line. The midpoint by
+ * arc length rather than the average of the two ends - polyMidpoint, the same
+ * one a label sits at - so on a route that bends round three cards the chip is
+ * on the line rather than beside it.
+ *
+ * This layer lays y down and the world points up (see centres()), so the
+ * answer is flipped back on the way out: everything above the canvas thinks in
+ * world coordinates and this is the only place that has to know.
+ */
+export function activeConnectionAnchor() {
+  const seg = activeKey && lastSeg.get(activeKey);
+  if (!seg?.points?.length) return null;
+  const mid = polyMidpoint(seg.points);
+  return { x: mid.x, y: -mid.y };
+}
+
+/**
+ * Be told when the marked line has been redrawn, so something pinned to it can
+ * follow.
+ *
+ * One subscriber, deliberately - this is a callback and not a bus event because
+ * it fires on paints, and an event on the board's bus is a thing every module
+ * can hear and one of them will eventually answer with a rebuild. The chip is
+ * the only thing that has any business following a line.
+ */
+let activeMoved = null;
+export function onActiveConnectionMove(fn) { activeMoved = fn; }
+
+/**
  * The cards whose threads are lifted, or null for "no focus at all".
  *
  * A board with a few hundred lines on it draws them all at the same weight, and
@@ -1099,22 +1225,37 @@ export function clearActiveConnection() { setActiveConnection(null, null); }
  * least readable. Selecting a card lifts its own threads and drops everything
  * else back, so one card's relationships can be read out of the tangle.
  *
- * Selection rather than hover, and that is a judgement about how the board
- * feels rather than a technical one. Hover is discoverable and needs no
- * teaching; it also means a pan across a dense board is a strobe, since every
- * card the pointer crosses re-dims every line on screen. Selection is quiet,
- * survives the pointer moving away, composes with everything else the selection
- * already does, and is the state somebody is in when they are actually asking
- * what a card is connected to.
+ * Two triggers, and the order between them is the whole of the rule: a
+ * selection wins, and the pointer only speaks when there is no selection to
+ * drown out.
  *
- * Nothing is stored, and the set is derived from the selection rather than kept
- * beside it - a second copy of the selection is a second thing to keep true.
- * The memo is dropped whenever the selection changes and rebuilt on the next
- * paint, which is once per change rather than once per frame of a pan.
+ * Selection is the deliberate one - quiet, survives the pointer moving away,
+ * composes with everything else the selection already does, and is the state
+ * somebody is in when they are actually asking what a card is connected to.
+ * Hover is the one nobody has to be taught, and it is why it is second rather
+ * than absent: pointing at a card is what a person does when they want to know
+ * about that card, and answering only a click made the feature something you
+ * had to already know was there.
+ *
+ * What hover costs is real, which is why it is fenced twice. It is ignored
+ * outright while a gesture runs - a pan drags the whole board under the cursor,
+ * and every card arriving would re-dim every line on screen - and it is ignored
+ * whenever anything is selected, so it can never argue with a lift somebody
+ * asked for. The opacity transition in canvas.css does the rest: a pointer
+ * crossing three cards on its way somewhere reads as the board breathing rather
+ * than flashing.
+ *
+ * Nothing is stored either way, and the selected set is derived rather than
+ * kept beside the selection - a second copy is a second thing to keep true. The
+ * memo is dropped whenever the selection changes and rebuilt on the next paint,
+ * which is once per change rather than once per frame of a pan.
  */
 function focusSet() {
-  if (!focusIds) focusIds = new Set(selection);
-  return focusIds.size ? focusIds : null;
+  if (selection.size) {
+    if (!focusIds) focusIds = new Set(selection);
+    return focusIds;
+  }
+  return hoverIds;
 }
 
 /** Redraw the mark over the active line, or clear it. */
@@ -1122,6 +1263,10 @@ function drawActive() {
   if (!activePath) return;
   const seg = activeKey && lastSeg.get(activeKey);
   activePath.setAttribute('d', seg ? pathData(seg.points, cornerRadius(), originX, originY) : '');
+  // After the draw, not before: whatever follows this line is placed against
+  // where it has just been put, and the mark going away is as much a move as
+  // the mark moving.
+  activeMoved?.();
 }
 
 /** Redraw the hover highlight over the currently hovered line, or clear it. */
@@ -1209,7 +1354,11 @@ function aimDraft(e) {
   const aim = overId && overId !== draftFrom ? overId : null;
   setConnectAim(aim);
   const to = (aim && boxOf(aim)) || { id: '', x: w.x, y: -w.y, w: 1, h: 1, rot: 0 };
-  draftPoints = [{ x: draftBox.x, y: draftBox.y }, { x: to.x, y: to.y }];
+  // From the edge of the picked card towards wherever the far end is, and to
+  // the far card's edge when there is one - the same clip the drawn lines take,
+  // so the draft is the line that would be drawn rather than an approximation
+  // of it that jumps when it lands.
+  draftPoints = [exitTowards(draftBox, to), aim ? exitTowards(to, draftBox) : { x: to.x, y: to.y }];
   requestPaint();
   // Routed on the settle, exactly as a dropped card is. The straight line in
   // the meantime is not a placeholder for the route - it is what a line looks
