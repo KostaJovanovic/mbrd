@@ -1,0 +1,678 @@
+/* =========================================================
+   mbrd - what is drawn over a card rather than in it
+
+   LAST OF SIX, and it has to be. The order they load in IS the cascade and is
+   listed in the banner at the top of items.css.
+
+   Not chrome.css, which is the HUD around the board. This is the chrome on an
+   item: the states a card wears while it is being typed into, the caption
+   plate and its label, the head a card grows once the board pulls away, what
+   it stops paying for while the view is still moving, and the eight resize
+   grips.
+
+   **It must stay below the five sheets above it.** Three pairs of rules say
+   why, and all three are ties that document order settles rather than
+   specificity - which is exactly the kind of thing a split moves silently:
+
+     .item.is-editing .note-rich weighs the same as the
+     .item[data-type="note"] .note-rich in cards.css, and the two disagree
+     about overflow. Later wins, so a note being written scrolls; earlier and
+     it would clip what is being typed into it.
+
+     .vbig is declared absolute in media.css and raised to z-index 3 down here
+     with position: relative beside it. Later wins, and the button keeps the
+     centring it has always had.
+
+     A fence keeps its plate and its label at far zoom only because both
+     exemptions sit below the rules they exempt. tests/stylesheets.test.js
+     asserts that pair directly, by index into the concatenated cascade.
+
+   Pairs with canvas/items.ts - bottomBar(), farHead(), the shadow twins - and
+   with canvas/viewport.ts, which writes zoom-far, zoom-tiny, zoom-grab and
+   is-viewing onto #world. Every rung below is one of those four classes.
+   ========================================================= */
+
+.item.is-editing { cursor: text; }
+.item.is-editing .item-body { pointer-events: auto; }
+.item.is-editing .card-text,
+.item.is-editing .card-name,
+.item.is-editing .item-label,
+.item.is-editing .note-rich { outline: none; overflow: auto; cursor: text; }
+/* The caption plate refuses the pointer and ellipsises whatever it cannot fit -
+   both right for a label, both wrong for a field. While it is being renamed it
+   takes the caret and scrolls instead of truncating. */
+.item.is-editing .item-label { pointer-events: auto; text-overflow: clip; }
+/* An empty line collapses to nothing and becomes unclickable, so each keeps a
+   line's worth of height while the note is open for editing. */
+.item.is-editing .note-line:empty { min-height: 1em; }
+
+/* Caption plate: a strip of paper across the foot of a picture, not a black
+   gradient. Reads like a museum label. */
+/* The strip across the foot of a card: caption on the left, menu handle on the
+   right, one sheet under both.
+
+   It is a flex row and not two absolutely positioned boxes, and that is the
+   whole fix: the first version sized the handle to the caption's height by
+   copying its padding and line-height into a magic 28px, which was off by the
+   caption's own border and drew a one-pixel step between two things that are
+   meant to be one bar. A row cannot disagree with itself.
+
+   Anchored right rather than stretched, so an item with no caption gets a strip
+   the width of the handle instead of an empty bar across the whole card. */
+.item-bar {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  display: flex;
+  align-items: stretch;
+  /* A caption plate along the card's foot, and nothing else now - the three-dot
+     handle that used to share it is gone. It spans the card, since it only
+     appears when there is a name to draw across it (see the hide rule below).
+
+     Solid, and no backdrop-filter - the two halves of one change. The plate used
+     to be translucent paper with a blur behind it, and a backdrop blur cannot be
+     composited once and reused: the pixels behind it change on every frame of a
+     zoom, so every plate on screen was re-sampled every frame, the single most
+     expensive per-item effect on a moving board. Opaque paper reads over any
+     picture without sampling through it, costs nothing per frame, and looks
+     identical moving and still. */
+  background: var(--paper-card);
+  border-top: 1px solid var(--rule);
+  border-radius: 0 0 var(--radius) var(--radius);
+  overflow: hidden;
+}
+.item-label {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 11px 7px;
+  font-size: 12px;
+  font-style: var(--display-italic);
+  line-height: 1.25;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.item-label[hidden] { display: none; }
+
+/* The bar shows only where there is a name to draw across it. It disappears on
+   an unnamed card, and on the types that keep their name inside the card (audio,
+   text, note, link, model, generic) - the first selector tests the [hidden]
+   attribute nameplate sets, the type selectors catch the ones painted out by
+   type instead, where a name is present but nothing on the board draws it.
+
+   .item-bar-always is the one exemption from the first half, set by bottomBar()
+   on a fence: an unnamed card simply has no plate, while an unnamed fence with
+   no plate would have no hit area anywhere on it - its interior refuses the
+   pointer - and could never be selected, moved or renamed again. It is excluded
+   here with a class rather than unhidden below, for the reason the next comment
+   gives. */
+.item-bar:not(.item-bar-always):not(:has(> .item-label:not([hidden]))),
+.item[data-type="audio"] .item-bar,
+.item[data-type="text"] .item-bar,
+.item[data-type="note"] .item-bar,
+.item[data-type="link"] .item-bar,
+.item[data-type="model"] .item-bar,
+.item[data-type="generic"] .item-bar { display: none; }
+/* :not(), rather than an override that unhides it again - winning on
+   specificity here would also unhide the plates that particular item types
+   hide on purpose. A plate being typed into is the one that must survive. */
+#world.zoom-far .item:not(.is-editing) .item-label { display: none; }
+/* Except a fence's, which is the one label zooming out is *for*. The rule above
+   exists because a hundred captions at three pixels are a hundred text nodes
+   nobody can read; a fence is the opposite case on both counts - it is set at the
+   region's own size, so it is still legible out here, and finding your way around
+   a large board is precisely the moment the names of its areas are what you are
+   looking at. There are few of them, so the saving is not one a fence is
+   spending. Below the rule it exempts, not above: the two selectors weigh the
+   same, and document order is what settles a tie.
+
+   :not([hidden]) because this outweighs the [hidden] rule above and would
+   otherwise put an empty plate back on a fence somebody cleared the name of. */
+#world.zoom-far .item[data-type="fence"] .item-label:not([hidden]) { display: block; }
+
+/* ---------------------------------------------------------------------------
+   The index rung: what a card is between 40% and 10%.
+
+   Past the detail rung a card used to keep rendering its body at three pixels a
+   line - a smear of grey where words had been, on every card at once, on the one
+   view whose whole purpose is to show you the shape of a board. The way back was
+   to zoom in on each card in turn until you found the one you meant.
+
+   The answer before this one was a nameplate: the body switched off and the name
+   put on an opaque band across the card's foot. It fixed the smear and left the
+   real problem standing. Six types - text, link, model, embed, generic and any
+   file the app has no renderer for - all became *the same blank white rectangle
+   with a small name at the bottom*, on the one view whose entire job is telling
+   you what is where. And the card's own type mark, the extension set in accent
+   caps at its head, was thrown away at exactly the zoom where three letters are
+   worth more than thirty.
+
+   So: zooming out does not replace a card with a symbol of itself. It reprints
+   the card at a size you can read from where you are standing. Below the point
+   where even that fails, a card becomes what it is made of.
+
+   Three rungs, and each one is a different *kind* of answer rather than the same
+   answer at a different size:
+
+     detail   >= 40%    the card, as built
+     index    40 - 10%  what it is, and what it is called
+     swatch   < 10%     picture, tint or paper. no text at all
+
+   The index rung splits on one question - **is there anything to look at?**
+
+   **Nothing to look at** (text, link, model, embed, generic, audio without cover
+   art) - the card becomes a specimen label. The extension in accent caps at the
+   head, a hairline under it, the name set large beneath in the display face, up
+   to three lines. That is the card's own anatomy - kicker, rule, name - at the
+   card's own scale rather than at the stylesheet's, which is the same move the
+   nameplate was reaching for and the same one .item-bar makes at every other
+   zoom. It is not a new language, it is the card printed larger.
+
+   **A picture** (image, video, a sleeve, a swatch) - the picture, edge to edge,
+   and nothing else. A photograph is its own name at any size, and a plate laid
+   across the bottom of one is a caption on something that did not ask for one.
+   This is the one place the design spends its silence.
+
+   **A note** - its tint and its opening line, set large. No kicker and no rule:
+   a sticky is not a specimen, and NOTE printed over the top of one says nothing
+   that the colour and the handwriting have not already said. A note's name *is*
+   its first line (drop.js takes the first forty characters), so this costs
+   nothing to produce and turns a wall of yellow squares into something you can
+   actually read across.
+
+   The structural idea, and the reason the two are not unified into one band:
+   **where the name sits tells you whether there is anything to look at.** A
+   label above paper, nothing at all over a picture. You learn it in one glance
+   at one board and it holds for every board after.
+
+   Two things about the wiring.
+
+   **One element draws all of it.** .far-head is built once in canvas/items.js
+   with two children - the kind and the name - and styled two ways here. The
+   alternative was to restyle each renderer's own head, which sounds truer to
+   "the same card, larger" and is not: a text card has no .card-icon, a model
+   card is a .title-card, and a swatch is neither, so "one rule for every type"
+   would have been six rules and a standing invitation for the seventh renderer
+   to forget. The result on screen is the same words in the same faces.
+
+   **The size is in screen units, capped against the card.** Every other piece of
+   item chrome multiplies by --iz to hold a constant on-screen size, and this has
+   to as well: a type size that is a share of the card shrinks *with* the card as
+   you zoom out, so the further out you go the less readable the one thing out
+   here you are meant to be reading. That was tried first and it drew a 180-unit
+   card's name at under seven screen pixels. The cost is one --iz relayout, which
+   canvas/viewport.js already paid down - --iz moves in 8% rungs while the board
+   is in motion and is written exact the moment it stops, so a 14px name steps by
+   under a pixel during a gesture and lands true when you let go. The cap is what
+   keeps a small card from wearing type taller than itself, and it is also the
+   graceful end: the label gives up its screen size, shrinks with the card, and
+   at the swatch rung goes entirely.
+   --------------------------------------------------------------------------- */
+#world.zoom-far .item {
+  /* 14 screen px, and no more than 18% of the card's height (--half-h is half of
+     it). The name is the one loud thing out here; everything else is derived
+     from it so the head cannot drift out of proportion with itself. */
+  --ix-name: min(calc(14px * var(--iz, 1)), calc(var(--half-h, 60px) * 0.36));
+  --ix-kind: calc(var(--ix-name) * 0.62);
+  --ix-pad:  calc(var(--ix-name) * 0.72);
+  /* The head's full height, for the one card that keeps something underneath it
+     - see the audio rules below. Padding top and bottom, the kind, the two gaps
+     around its rule, and one line of name. */
+  --ix-head: calc(var(--ix-pad) * 2.84 + var(--ix-kind) + var(--ix-name) * 1.1);
+}
+/* The swatch rung. At a tenth there is no card left to label - everything on the
+   board is a piece of coloured paper, and that is the honest thing for it to be:
+   telling a .txt from a .link at thirty pixels is information nobody is steering
+   by at that scale. Picture, tint, paper, ring. */
+#world.zoom-tiny .far-head { display: none; }
+
+.far-head {
+  position: absolute;
+  inset: 0;
+  /* Off at every ordinary zoom. The rung rule below is the only place this
+     element is ever visible. */
+  display: none;
+  flex-direction: column;
+  align-items: stretch;
+  padding: var(--ix-pad);
+  gap: calc(var(--ix-pad) * 0.42);
+  overflow: hidden;
+  pointer-events: none;   /* the whole card is one drag target */
+  z-index: 1;
+}
+/* :not(.is-editing) because a card being typed into has to keep showing what is
+   being typed, at whatever zoom. */
+#world.zoom-far .item:not(.is-editing) > .far-head:not([hidden]) { display: flex; }
+/* And nothing over a picture. An audio card is the one type that can go either
+   way - a sleeve makes it a picture, no sleeve makes it a filed track - so this
+   is keyed on the artwork actually being there rather than on the type. */
+#world.zoom-far .item:has(.card-cover) > .far-head { display: none; }
+
+/* The kind, and the rule under it.
+   The rule is a border on the kind rather than a line of its own, so it can only
+   ever be exactly where the kind ends - and it runs the card's measure rather
+   than its full width, because a specimen label is ruled inside its margins.
+   The card is ruled *around* at reading size (.card::after) and ruled *across*
+   out here; one line either way, and the change is what says which view you are
+   in. */
+.fh-kind {
+  flex: none;
+  font-family: var(--font-display);
+  font-style: var(--display-italic);
+  font-weight: calc(var(--display-weight) + 100);
+  font-size: var(--ix-kind);
+  line-height: 1;
+  /* The card's own kicker tracking (see .card-icon), which is most of what makes
+     three uppercase letters read as a classification rather than as a word. */
+  letter-spacing: calc(0.16em * var(--ls-scale));
+  text-transform: uppercase;
+  color: var(--accent);
+  border-bottom: var(--board-hairline) solid var(--rule);
+  padding-bottom: calc(var(--ix-pad) * 0.42);
+  white-space: nowrap;
+  overflow: hidden;
+}
+/* The name. Three lines rather than one ellipsised line, which is what the band
+   could afford and a label can: out here the first few words are what you are
+   scanning for, and the third line is often where the one that distinguishes two
+   files from the same shoot actually lives. Left-aligned, because a label reads
+   from its left edge. */
+.fh-name {
+  font-family: var(--font-display);
+  /* +200 over the tier's display weight, the same step .card-name takes. */
+  font-weight: calc(var(--display-weight) + 200);
+  font-size: var(--ix-name);
+  line-height: 1.1;
+  letter-spacing: 0.005em;
+  /* --ink, not --ink-2. At this size the name is the darkest thing on the card
+     and has to be: it is doing the work the whole body used to do. */
+  color: var(--ink);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  /* Filenames are one long token more often than prose is. Without this a
+     40-character name with no spaces in it sets one line and clips, which on a
+     board of camera output is most of the board. */
+  overflow-wrap: anywhere;
+}
+
+/* A note is not a specimen. No kind, no rule, and the line centred in the sheet
+   rather than hung from its top edge - a sticky is written in the middle of
+   itself. Four lines instead of three: there is no head above it to make room
+   for, and a note's name is a sentence rather than a filename. */
+#world.zoom-far .item[data-type="note"] > .far-head { justify-content: center; }
+#world.zoom-far .item[data-type="note"] .fh-kind { display: none; }
+#world.zoom-far .item[data-type="note"] .fh-name { -webkit-line-clamp: 4; }
+
+/* Audio without a sleeve is the one card that keeps something under its head:
+   the play button is the one control worth hitting from across a board, and a
+   track you can start without zooming in is the whole reason it is drawn big out
+   here. So the head takes a fixed slice off the top - one line of name, not
+   three - and the button centres in what is left, which is what --ix-head is
+   for. With a sleeve there is no head at all and the button sits on the artwork,
+   which is the case the rules further up this file already handle. */
+#world.zoom-far .item[data-type="audio"]:not(:has(.card-cover)) > .far-head {
+  bottom: auto;
+  height: var(--ix-head);
+}
+#world.zoom-far .item[data-type="audio"] .fh-name { -webkit-line-clamp: 1; }
+
+/* The inner rule goes at the rung, for every card that still has a body out here.
+   It is a bookplate ruling - a second line just inside the edge - and a second
+   line only says anything while you can see daylight between it and the first.
+   The gap is printed on the card (--card-rule-gap, world units - see .card::after
+   near the top of this file), so it shrinks with the board, and past this rung
+   there is no daylight left in it: two hairlines a fraction of a pixel apart are
+   not two rules, they are one thick border. The card keeps the one line that says
+   where it ends. */
+#world.zoom-far .card::after { content: none; }
+/* The card's edge, out where the thing that used to draw it is switched off.
+   ---------------------------------------------------------------------------
+   A card's hairline is an inset shadow on `.card`, and `.card` lives inside
+   `.item-body` - so the rule above, which hides the body once its contents are a
+   smear, takes the card's own border away with it. The types that keep their body
+   out here (audio, and any picture) kept their edge; note, text, link, model,
+   embed and generic lost theirs, which is a board where some cards have edges and
+   some do not, at exactly the zoom where an edge is the only thing still telling
+   you where one card stops and the next starts.
+
+   So the edge moves to .item itself for as long as the body is down. ::after
+   rather than a box-shadow on .item, for the reason quality.css gives about
+   photographs: an inset shadow paints beneath its element's children, and the
+   band and any surviving body are children.
+
+   Ghosts, fences and the title card are out: each draws its own edge already - a
+   dashed one, a region's, and the title card's own - and a second ring on top of
+   it is a doubled line rather than a fixed one. */
+/* And .card gives its own ring up while that one is drawn, or the cards that
+   still have a body out here draw both - two hairlines in the same place, which
+   is not a thicker line by accident, it is 16% ink over 16% ink. That is why
+   audio came out darker-edged than the photograph beside it: a photo has no
+   `.card` to double with. One ring per card, drawn in one place. */
+#world.zoom-far .item:not([data-type="ghost"]) .card { box-shadow: none; }
+#world.zoom-far .item:not([data-type="ghost"]):not([data-type="fence"]):not([data-type="title"])::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 var(--board-hairline) var(--item-border);
+  pointer-events: none;
+  z-index: 1;
+}
+/* And the body goes, for every card that grew a head - it is the smear the head
+   replaced. Not visibility:hidden but display, so the contents stop being laid
+   out at all.
+
+   Keyed on the head being there rather than on a list of types: a picture never
+   gets one (wantsHead in canvas/items.js), so a picture is never hidden by this
+   and no exclusion has to say so. Audio is the single exception written out, and
+   it is written out because it is genuinely one: its play button survives the
+   rung, so it keeps its body and takes the head as a slice off the top instead.
+   One selector rather than a rule and an override, so there is no cascade to
+   lose track of. */
+#world.zoom-far .item:not(.is-editing):not([data-type="audio"]):has(> .far-head:not([hidden])) .item-body { display: none; }
+/* ---------------------------------------------------------------------------
+   Cheap mode: what the board stops paying for while it is being moved.
+
+   Set by canvas/viewport.js for as long as the view keeps changing, and taken
+   off 140ms after it stops. Everything here is an effect that is free on a
+   still board and priced per item per frame on a moving one - so what it buys
+   scales with exactly the thing that makes zooming heavy, which is how many
+   cards are on screen.
+
+   `backdrop-filter` is the whole reason this exists. A backdrop blur cannot be
+   composited once and reused the way a shadow can: the pixels behind the box
+   change on every frame of a zoom, so a blurred control on screen is re-sampled
+   every frame. The only one left blurred is the audio play button when it sits
+   over cover art at far zoom - artwork is the one background this app does not
+   choose, so the button needs a plate to stay legible on a dark sleeve. It is
+   rare on screen and keeps its frosted look, paying the toll only while moving.
+   The caption plate and the video controls gave their blur up entirely (see
+   .item-bar, .vbig, .transport-video) and need no toggle here any more.
+
+   The blur returning is not animated. A transition here would put the cost back
+   on the frame after the gesture, spread over a few hundred milliseconds, which
+   is precisely the frames a zoom lands on and the user is looking at. */
+#world.is-viewing .card-audio.has-cover .play {
+  /* Cancels the prefixed blur above too, or Safari 16.4-17.x keeps re-sampling
+     it every frame of a moving board - the cost this whole block exists to shed. */
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* Resize handles. Everything on the board takes all eight - four corners that
+   move both axes, four edges that move one.
+   Every size is multiplied by --iz (= 1/zoom) so the handles stay a constant
+   size on screen and remain grabbable at any zoom instead of shrinking away.
+
+   The grip itself is an invisible hit area; the only thing drawn is a heavier
+   stretch of the selection ring at each corner - see .item::before, which the
+   marks share their geometry with. */
+/* At that scale a card is a swatch, not a thing you operate. */
+#world.zoom-far .item-bar { display: none; }
+/* Except a region's, which is the one plate zooming out is *for* - see the label
+   exemption further up, which this is the other half of. That one survives the
+   caption cull and would have been for nothing: the label lives *inside* the bar,
+   so a hidden plate takes its own contents with it however loudly the child is
+   unhidden. The rule above is priced in captions per screen, and a fence is the
+   opposite case on every count - there are few of them, the name is set at the
+   region's own size so it is still legible out here, and finding your way around
+   a large board is exactly the moment its areas' names are what you came for.
+
+   The plate is also a fence's only hit area (its face refuses the pointer), so
+   without this a zoomed-out board is one where no region can be grabbed, renamed
+   or selected at all - which is the view where you are most likely to want to. */
+#world.zoom-far .item[data-type="fence"] .item-bar { display: flex; }
+
+/* And the drop-shadow twins with it. At swatch scale the shadow is a smudge no
+   one reads, but each twin is a multi-layer box-shadow element the compositor
+   still has to paint - one per item, and a full-board zoom-out puts every item
+   on screen at once. Dropping them is the same trade the chrome above makes, and
+   it cuts the compositor's layer count on exactly the view that strains it most
+   (see the shadow underlay in canvas/items.js and #item-shadows). */
+#world.zoom-far .item-shadow { display: none; }
+
+.grip {
+  position: absolute;
+  /* Capped at half the *ring*, not half the item: opposite marks then meet
+     exactly at the middle of each side without crossing, and a small item at
+     low zoom still gets a box big enough to hold its own curve. This sizes the
+     drawn mark (::after); the grab (::before) no longer reads it - the grab lives
+     entirely outside the card now, so the whole face stays a move target. */
+  width:  min(var(--mark-size), calc(50% + var(--sel-edge)));
+  height: min(var(--mark-size), calc(50% + var(--sel-edge)));
+  display: none;
+  z-index: 2;
+}
+.item.is-selected .grip { display: block; }
+/* Grips outlast the labels: gone only when the card is too small to aim at, two
+   rungs below where the chrome drops. See GRIP_MIN_ZOOM in viewport.js. */
+#world.zoom-tiny .grip { display: none; }
+/* Below the grab rung (zoom-grab, 25%) a corner resizes only from the part of its
+   hitbox outside the card, and the whole face becomes a move target; above the
+   rung the corner resizes normally, on-card lap included. Done by clipping the
+   hitbox geometry per zoom (see the zoom-grab .grip::before rule), so the face's
+   own cursor and move behaviour are correct on the first frame - no JS. */
+
+/* The corner mark. Not a separate line near the ring - the *same* line, drawn
+   heavier for a stretch either side of each corner.
+   The ring's outer edge sits --sel-edge out from the item, so this box is
+   inset by exactly that much and its border grows inwards from the same edge,
+   over the same radius. The two are flush, and a corner reads as the ring
+   swelling. Only the two outward-facing borders are drawn; the inward pair
+   would close it into a box floating around the handle. */
+.grip:not(.grip-edge)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: calc(var(--sel-corner) * var(--grip-swell, 1) * var(--iz)) solid var(--select);
+  pointer-events: none;
+  transition: border-width var(--dur-fast) var(--ease);
+}
+/* Under the pointer, and for as long as it is being dragged. The mark grows
+   inwards from the ring's outer edge, so thickening it does not move it - the
+   line the eye is following stays exactly where it was and simply gets heavier.
+   Written as a multiplier on the whole corner rather than as a border-width of
+   its own, because the four corners each blank two of their own borders and a
+   `border-width` here would put those back. */
+.grip:not(.grip-edge):hover,
+.item.is-resizing .grip:not(.grip-edge) { --grip-swell: 1.6; }
+/* The mark follows the corner it traces rather than turning a hard 90 degrees
+   against a rounded item. A curve of radius R offset outwards by d is a curve
+   of radius R + d, so the two stay concentric - and because both terms are in
+   the item's own units, they stay concentric at every zoom, even though the
+   offset is a constant size on screen and the item's radius is not. Only the
+   corner where the two strokes meet is curved; a radius on the open ends would
+   hook them inwards. --radius comes off the whimsy axis, so this rounds and
+   squares up along with everything else. */
+.grip[data-g="nw"]::after {
+  border-right-width: 0; border-bottom-width: 0;
+  border-radius: var(--mark-radius) 0 0 0;
+}
+.grip[data-g="ne"]::after {
+  border-left-width: 0; border-bottom-width: 0;
+  border-radius: 0 var(--mark-radius) 0 0;
+}
+.grip[data-g="se"]::after {
+  border-left-width: 0; border-top-width: 0;
+  border-radius: 0 0 var(--mark-radius) 0;
+}
+.grip[data-g="sw"]::after {
+  border-right-width: 0; border-top-width: 0;
+  border-radius: 0 0 0 var(--mark-radius);
+}
+
+/* Straddling the corner: the box's outer corner lands exactly on the
+   ring's, so the drawn mark and the grab area are the same place. */
+.grip[data-g="nw"] { left:  calc(-1 * var(--sel-edge)); top:    calc(-1 * var(--sel-edge)); cursor: nwse-resize; }
+.grip[data-g="ne"] { right: calc(-1 * var(--sel-edge)); top:    calc(-1 * var(--sel-edge)); cursor: nesw-resize; }
+.grip[data-g="sw"] { left:  calc(-1 * var(--sel-edge)); bottom: calc(-1 * var(--sel-edge)); cursor: nesw-resize; }
+.grip[data-g="se"] { right: calc(-1 * var(--sel-edge)); bottom: calc(-1 * var(--sel-edge)); cursor: nwse-resize; }
+
+/* The grab area, which is not the mark.
+   The honest fix for a target that is hard to hit is to make the target bigger
+   without making the drawing bigger - so the grab area is an invisible box of
+   its own, and .grip itself takes no pointer at all. In --iz units like
+   everything else in the ring, so every number here is a constant size on
+   screen at any zoom. */
+.grip {
+  pointer-events: none;
+  /* The grab area holds a constant size on screen at every zoom (--iz = 1/zoom),
+     so a corner is as easy to aim at pulled right out as it is at 100% - a card
+     is resized as far out as 10% (see GRIP_MIN_ZOOM). That constant is the reach
+     *outward*, which costs the card nothing; how far the same box is allowed to
+     lap back over the face is a separate number, and it is capped against the
+     card's own size by the corner rule below. */
+  --grip-reach: var(--iz);
+}
+.grip::before {
+  content: '';
+  position: absolute;
+  /* Edges only; the corner rule below replaces this outright. Non-zero on a
+     mouse now: four pixels of forgiveness costs nothing and a hairline strip
+     that has to be hit exactly is a strip people miss. The touch block at the
+     foot of this file opens it further. */
+  inset: calc(-1 * var(--grip-slop, 4px) * var(--iz));
+  pointer-events: auto;
+}
+
+/* The corner target: a constant square, laid *outside* the item.
+   Two things wrong with using the mark's own box, which is what this used to
+   do. It was sized from --mark-size, which is built out of the item's own
+   corner radius - so the same handle on the same card was a 30px target when
+   the whimsy axis rounded it and a 10px one at the plain end, where the radius
+   is zero. And it straddled the corner, so the outer third of the card was a
+   resize and the rest of it a drag, with nothing to tell you where the line
+   was.
+   Now it ends where the item does. The inner corner of this square sits
+   exactly on the item's corner, so what you grab to resize is the outline and
+   the space beyond it, and the card itself is always the card. Placed by
+   geometry rather than by putting the box behind the card, because "behind"
+   depends on what is painted in front - a transparent PNG, a card with no
+   background - and this does not. */
+.grip:not(.grip-edge)::before {
+  /* Straddling the corner at ordinary zoom: it reaches --grip-out past the ring
+     and laps --grip-lap-* back onto the card, and its whole span resizes - the
+     on-card lap included. Below the grab rung it is clipped to the outside alone
+     instead (see the zoom-grab rule below), which is where the move-vs-resize
+     split lives. This is only the corner; the outside strips along the edges are
+     the edge grips. */
+  inset: auto;
+  /* Outward. A constant size on screen, and the card's size has no say in it:
+     the space past a card's edge belongs to nothing else, so a small card is
+     grabbed from outside exactly as easily as a large one. */
+  --grip-out: calc(var(--grip-corner, 24px) * var(--grip-reach));
+  /* Inward, and the reason this pair exists. The lap used to be --grip-out as
+     well, so a corner claimed a constant 24px of the face however small the card
+     was: at MIN_SIZE (48) the four corners met in the middle and the *entire*
+     card resized, with no move target left on it at all, and at 96 they still
+     took a quarter of it. The lap is now that same constant or an eighth of the
+     side it laps along, whichever is less - so it stops scaling with the pointer
+     and starts scaling with the card, and the share of a face it can ever cover
+     is fixed (four corners, 6.25%) instead of running to everything.
+
+     Per axis, because a 400x60 banner has to give up an eighth of 400 across and
+     an eighth of 60 down; capping both against the shorter side would leave a
+     wide card with a target sized for a narrow one. --half-w / --half-h are
+     w/2 and h/2, written per item by canvas/items.js/place() - a percentage
+     cannot say this, since a percentage here resolves against the grip's own
+     box, which is itself already capped. The 9999px fallbacks mean an element
+     that has not been placed yet behaves exactly as it did before. */
+  --grip-lap-x: min(var(--grip-out), calc(var(--half-w, 9999px) * 0.25));
+  --grip-lap-y: min(var(--grip-out), calc(var(--half-h, 9999px) * 0.25));
+  width:  calc(var(--grip-out) + var(--grip-lap-x));
+  height: calc(var(--grip-out) + var(--grip-lap-y));
+}
+/* Hung on the card's corner (--sel-edge is the ring's offset): --grip-out reaches
+   out past it, and the box's width carries the lap back in. The offsets are the
+   *outward* reach alone, so the outer corner is pinned and every cap above eats
+   into the inner side only - which is what keeps a capped grip in the same place
+   as an uncapped one. */
+.grip[data-g="nw"]::before,
+.grip[data-g="sw"]::before { left:   calc(var(--sel-edge) - var(--grip-out)); }
+.grip[data-g="ne"]::before,
+.grip[data-g="se"]::before { right:  calc(var(--sel-edge) - var(--grip-out)); }
+.grip[data-g="nw"]::before,
+.grip[data-g="ne"]::before { top:    calc(var(--sel-edge) - var(--grip-out)); }
+.grip[data-g="sw"]::before,
+.grip[data-g="se"]::before { bottom: calc(var(--sel-edge) - var(--grip-out)); }
+
+/* Below the grab rung (zoom-grab, 25%) a card is a swatch its corners would
+   otherwise cover, so there the hitbox is clipped to just its outside - the
+   inner corner lands exactly on the card's own corner and it reaches only outward
+   (width falls to --grip-out, dropping the lap entirely; the offsets above hold
+   the outer corner in place). The proportional cap above does not make this
+   redundant: the cap is about how big the *card* is and this is about how big it
+   is *on screen*, and a large card zoomed out is small on screen while its eighth
+   is still an eighth. This is geometry, not a JS patch:
+   with no hitbox over the face, the face itself takes every press and its own
+   cursor - so the card moves and reads as movable the instant it is drawn, no
+   pointermove needed to correct a cursor after the fact. And the corner mark's
+   hover swell cannot fire over the card either, because there is no grip there to
+   hover. Only the part sticking out past the card resizes, and shows the resize
+   cursor. Above the rung the hitbox straddles and its on-card lap resizes as
+   usual. */
+#world.zoom-grab .grip:not(.grip-edge)::before {
+  width:  var(--grip-out);
+  height: var(--grip-out);
+}
+
+/* Debug: paint the corner grab hitbox, which otherwise has no ink of its own.
+   The square straddles onto the card at ordinary zoom and clips to its outside
+   half below the grab rung (the two rules above), and none of that reach is
+   visible - so a hitbox that feels wrong cannot be checked by eye. Off for
+   everyone; toggled by mbrd.debugGrips() or opening the board at `.../#grips`,
+   which set data-debug-grips on <html>. Grips only show on a selected card, so
+   this appears there too. */
+[data-debug-grips] .grip:not(.grip-edge)::before {
+  background: color-mix(in srgb, var(--select) 28%, transparent);
+  outline: max(1px, calc(1px * var(--iz))) solid var(--select);
+  outline-offset: calc(-1 * max(1px, calc(1px * var(--iz))));
+}
+
+/* Interior controls ride above the grips (z-index 2) so the corner mark and its
+   grab box, which straddle onto the card at ordinary zoom, do not tint them or
+   show a resize cursor over them - the control keeps the eye and the pointer. It
+   works without this too (input.js hands a grip press over a control back to it),
+   but the raise keeps the cursor honest. Only the ones sitting *inside* the card
+   face are raised: the big video play, a link's anchor, the two scrubbers. */
+.vbig,
+.wave,
+.vtrack,
+.card-link .card-name { position: relative; z-index: 3; }
+
+/* Edge handles are invisible strips running between the corners. Drawing them
+   would put eight marks around a small item and make the selection read as a
+   dotted ring; leaving them bare keeps the corners as the only marks while
+   the sides are still grabbable. They stop short of the corners so a corner
+   drag is never stolen by the edge next to it.
+
+   Laid *outside* the item, for the reason the corner squares above are: these
+   used to be anchored at the ring and run inward, so the outer ten pixels of a
+   card's own face resized it while the corners of the same card dragged. One
+   card, two rules, and nothing on screen to say where the line was. Now both
+   end where the item does, and the whole face is always a drag.
+
+   One length for the thickness and the offset, so the touch block at the foot
+   of this file widens the strip without sliding it back over the card. */
+.grip-edge { background: none; }
+.grip[data-g="n"], .grip[data-g="s"] {
+  left:  min(var(--mark-size), 40%);
+  right: min(var(--mark-size), 40%);
+  width: auto;
+  height: calc(var(--grip-edge, 14px) * var(--grip-reach));
+  cursor: ns-resize;
+}
+.grip[data-g="n"] { top:    calc(-1 * var(--grip-edge, 14px) * var(--grip-reach)); }
+.grip[data-g="s"] { bottom: calc(-1 * var(--grip-edge, 14px) * var(--grip-reach)); }
+.grip[data-g="w"], .grip[data-g="e"] {
+  top:    min(var(--mark-size), 40%);
+  bottom: min(var(--mark-size), 40%);
+  height: auto;
+  width: calc(var(--grip-edge, 14px) * var(--grip-reach));
+  cursor: ew-resize;
+}
+.grip[data-g="w"] { left:  calc(-1 * var(--grip-edge, 14px) * var(--grip-reach)); }
+.grip[data-g="e"] { right: calc(-1 * var(--grip-edge, 14px) * var(--grip-reach)); }

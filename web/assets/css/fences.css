@@ -1,0 +1,295 @@
+/* =========================================================
+   mbrd - fences: a region drawn on the board, not a card lying on it
+
+   One of the six sheets the old items.css was split into. The order they load
+   in IS the cascade and is listed in the banner at the top of items.css.
+
+   After items.css for the reason ghosts.css is - .fence-card weighs exactly
+   what .card weighs and only wins by coming later - and before
+   item-chrome.css, which holds the two far-zoom exemptions that keep a region
+   its name and its only hit area once the board pulls away. Those two live
+   beside the rules they exempt rather than here, because an exemption means
+   nothing apart from the rule it is an exemption from, and each pair is one
+   specificity tie apart. tests/stylesheets.test.js asserts both.
+
+   Pairs with fences.ts in the base layer and the fence entries in
+   commands.ts, and with canvas/items.ts - whose paintStack() sinks the whole
+   fence band below both shadow underlays, which is the thing that makes a
+   region with a background safe to draw at all.
+   ========================================================= */
+
+/* ---------------------------------------------------------------------------
+   Fences: a region drawn on the board, not a card lying on it
+   ---------------------------------------------------------------------------
+
+   Everything here follows from one thing being true: a fence is *large*. Two
+   thousand world units across is an ordinary one, which makes it the only item
+   on the board bigger than the screen it is looked at through, and every rule
+   an ordinary card wears is wrong at that size.
+
+   So it is drawn as an outline rather than a sheet. No paper fill, because a
+   fill at this size is a wall the board is behind rather than a boundary drawn
+   on it; no drop shadow, which canvas/items.js also skips for this type (an
+   enormous card casting a shadow over everything it contains); and a dashed
+   edge, which says "drawn on" the way a solid one says "lying on". */
+/* The face keeps `.item`'s paper, and where it sits in the stack is what makes
+   that safe. Card shadows are painted in #item-shadows, one underlay below the
+   item layer, so that no card can cast across the face of another - and a fence
+   with a background is a page laid over that underlay, which put every shadow
+   inside a region out. The answer is not to make the region transparent (with
+   nothing but a hairline left, a fence stops reading as an area at all) but to
+   put it under the shadows, where ground belongs: paintStack() in
+   canvas/items.js sinks the whole fence band below both underlays. So the cards
+   in a region cast onto it, which is what they do on a table. */
+/* A well, not a card. --paper-card is a shade *brighter* than the board because
+   an item is a sheet lying on it; a region is the opposite gesture - it is a part
+   of the board somebody has marked off, so it takes --paper-2, the palette's own
+   inset-and-well tone. Every look defines it, so a fence follows the board's
+   colour the way everything else does rather than carrying a tint of its own. */
+.item[data-type="fence"] { background: var(--paper-2); }
+.fence-card {
+  background: none;
+  border: 2px dashed var(--rule-2);
+  border-radius: var(--radius);
+  box-shadow: none;
+}
+
+/* And the same stock the board is printed on.
+
+   The tile, the blend and the two dials are #grain's, from base.css - a region
+   marked off on the paper is still the paper, so it has the tooth of it, and
+   taking the same image and the same dials rather than inventing a second texture
+   is what keeps that true when the look changes. --grain is the look's dial and
+   --grain-fade is the zoom's, written onto :root by canvas/grain.js; below 40% the
+   board's grain goes and this goes with it.
+
+   The pitch and the weight are its own - see the rule below, which is where that
+   is argued. Everything else here is the board's.
+
+   The size is flat rather than per-frame, and that is the second difference: it
+   is the tile's side in *world* units. #grain is a fixed layer and has to be told
+   its size x zoom on every frame to look anchored to the board; this is inside
+   the transformed layer already, so a constant world size gives the same
+   on-screen behaviour for free.
+
+   The phase is the element's own corner rather than the world origin, so a
+   fence's grain does not continue the board's exactly. That is deliberate and
+   costs nothing to see: the grain is isotropic noise, which is the property
+   grain.js leans on for the moire argument, and noise has no period for an eye
+   to catch across a seam. What marks the edge of a region is the tint and the
+   dashed rule, which are marks somebody made.
+
+   mix-blend-mode inside .item blends against the tint above and nothing further:
+   the item carries a numeric z-index from paintStack(), which makes it a stacking
+   context, so the multiply cannot reach the board underneath. That is the whole
+   reason the tint is on the item and this is on the card. */
+.fence-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image: url("../img/paper-grain.webp");
+  background-repeat: repeat;
+  /* 1.4x the board's 512, and at full weight rather than the board's 0.8 - the
+     two numbers that no longer copy #grain, and the only two.
+
+     Same tile, same blend, same dials: this is the same stock, and the argument
+     above still holds. What differs is that a region is *read as a surface* and
+     the board is read as the space behind one. The board's tooth has to stay
+     under everything on it without competing with any of it, which is what 0.8 at
+     512 buys; a region has an edge somebody drew and a tint of its own, so its
+     face is a thing being looked at, and at the board's settings the texture on it
+     read as the board showing through rather than as the region having a surface.
+     Coarser and heavier is the same paper held closer.
+
+     Full weight is the ceiling, not a number picked: opacity clamps at 1, so
+     `calc(--grain * --grain-fade)` is as far up as this goes before the fade stops
+     meaning anything. Leaving --grain in it keeps Harsh's 0 authoritative - a spec
+     sheet has no tooth on its regions either. */
+  background-size: 717px 717px;
+  mix-blend-mode: multiply;
+  opacity: calc(var(--grain) * var(--grain-fade, 1));
+}
+
+/* Softish: a region is a cork board.
+
+   The one place on this axis where a fence stops being a marked-off part of the
+   sheet and becomes a different material. It earns that at this end and nowhere
+   else: this is the end where a board is a scrapbook, cork is what a pinboard is
+   actually made of, and every card already lands on it wearing a shadow (see the
+   band's sinking in paintStack) - so the cards read as pinned to it rather than
+   printed on it, which is the whole picture the tier is going for. The middle and
+   Harsh keep the paper: a spec sheet has no cork on it.
+
+   Three changes, and the third is the one worth reading.
+
+   The tile is laid *over* the tint rather than multiplied into it - cork is a
+   material and not a tooth, so this is the surface itself and there is nothing
+   underneath for it to darken. Which is why --grain is out of the opacity here:
+   that dial is how heavily the stock's tooth is pressed into the paper, and a
+   cork board is not more or less cork for being at the decorated end.
+
+   --grain-fade stays, and it is doing something different from what it does for
+   the grain. On the way out the chips stop resolving and the tile would become a
+   flat film of its own mean - so it is faded to exactly that mean instead, which
+   is what --cork is (the image's own average, sampled from it). A region zoomed
+   out is a cork-coloured rectangle rather than a grey one, and nothing about it
+   changes colour on the way there. The paper's grain fades to nothing for the
+   same reason and gets to keep the sheet it was lying on; cork has to bring its
+   own. */
+:root[data-whimsy="0"] .item[data-type="fence"] { background: var(--cork); }
+:root[data-whimsy="0"] .fence-card::after {
+  background-image: url("../img/cork-board.webp");
+  /* And laid at half the grain's tile, still repeating (the `repeat` above is
+     inherited and is what makes the smaller number free). 512 world units is the
+     right pitch for paper, whose tooth is meant to read as the surface having a
+     texture at all rather than as a pattern; cork has *chips*, and a chip is a
+     thing of a certain size. At the paper pitch they came out coarse enough to
+     read as a print of cork rather than as the material, which is exactly the
+     illusion this tier is buying. Nothing else moves with it - the tile is
+     isotropic, so the phase and the seam argument above are untouched. */
+  background-size: 256px 256px;
+  mix-blend-mode: normal;
+  opacity: var(--grain-fade, 1);
+}
+.item[data-type="fence"].is-selected .fence-card { border-color: var(--select); }
+
+/* The interior refuses the pointer, and this is the load-bearing rule of the
+   whole feature.
+
+   On an infinite canvas, dragging empty space pans the board - and inside a
+   fence there would be no empty space left. A fence that took presses across its
+   whole face would end panning, marqueeing and every empty-space gesture
+   everywhere it covered, which on a board organised into fences is most of the
+   board. So presses fall straight through the interior to whatever is under it:
+   a card, or the board itself.
+
+   What takes the press instead is the caption bar below. That leaves exactly one
+   unambiguous place to grab a fence, which is also what settles the question an
+   overlapping card would otherwise raise - there is no "did that press mean the
+   fence or the photo on top of it", because the fence's face is never a target.
+
+   The shadow twin is not built for this type at all (canvas/items.js), so there
+   is nothing to exclude here.
+
+   It has to be said on `.item` and not on `.item-body`, which is where it was
+   said first and where it did nothing at all: every card's body already refuses
+   the pointer (`the whole card is one drag target`, further up), and the target
+   it is refusing *in favour of* is `.item` itself. So the rule that was supposed
+   to hand a press through a region was a second copy of the rule that made the
+   region take it - and the interior swallowed every empty-space gesture it
+   covered, which is exactly what this is written against.
+
+   Two children take it back. A descendant set to `auto` is hit even inside a
+   `none` ancestor, which is what makes the exemption list this short: the name
+   plate, so a region can be grabbed and renamed, and the resize grips, whose own
+   target is `.grip::before` and is already `auto` for its own reasons. */
+.item[data-type="fence"] { pointer-events: none; }
+.item[data-type="fence"] .item-bar { pointer-events: auto; }
+
+/* And it hangs straight, at every tier and in every state.
+
+   A lean is a card pinned up by hand and a degree off square. A region is a line
+   drawn on the board, and a drawn line does not arrive crooked - it also turns
+   about its own centre, so across two thousand units the corners travel far
+   enough that the region visibly disagrees with the cards inside it, which keep
+   their own leans and do not turn with it.
+
+   canvas/items.js already declines to deal one a resting lean, for a reason of
+   its own (the one-in-three straight is a property of the pack, so a region must
+   not take a slot out of it). This is the other half: --tilt is the *drag* lean,
+   which is set by state and not by the deal, and a region does not pick up a
+   tilt for being carried either. Written the way the snapped board writes it -
+   `rotate` outright on .item rather than zeroing a token, since the tilt tokens
+   are on the Appearance panel's list and can be set inline on :root, which no
+   selector can outrank. item.rot is untouched: that lives in `transform`. */
+.item[data-type="fence"] { rotate: 0deg; }
+
+/* And it rises without growing.
+
+   Hovering a region now lifts its cards with it (setHoverGroup in
+   canvas/items.js, over travelling()), which only reads as one object if all of
+   them move the same way - and the grow does not. A scale is about the element's
+   own centre, so a 3% swell moves a card a pixel or two and moves the corner of a
+   two-thousand-unit region thirty: the border would pull away from the very cards
+   it is holding, at the moment the gesture is meant to be showing what it holds.
+   The lift is a translate and is identical for everybody, so it survives.
+
+   Which is the size argument the rest of this block makes, in the one place it
+   bites hardest. A fence's edges *are* the fence - the whole feature rests on
+   that - so nudging them outward under a pointer is a small lie about which cards
+   are inside, told about the largest object on the board. Cards keep their swell:
+   they are small enough for it to be the flicker of life it was written to be. */
+.item[data-type="fence"].is-hover { --grow: 1; }
+
+/* The label sits on the top edge, not the foot.
+
+   A caption under a card names the thing above it; a caption over a region names
+   everything below it, which is what a fence's name is for. It is the ordinary
+   .item-bar every card carries, moved - so a rename keeps working, the plate
+   keeps its paper and its rule, and there is no second caption to keep in step.
+
+   It is also the one bar that is drawn when it is empty - see .item-bar-always
+   at the hide rule further down, which is where that exemption is made rather
+   than here. */
+.item[data-type="fence"] .item-bar {
+  top: 0;
+  bottom: auto;
+  border-top: 0;
+  border-bottom: 1px solid var(--rule);
+  border-radius: var(--radius) var(--radius) 0 0;
+  /* A minimum, not a height: the plate spans the fence, so the whole top edge is
+     the handle, and it has to stay grabbable while the fence has no name yet. */
+  min-height: 22px;
+  cursor: grab;
+}
+.item[data-type="fence"].is-dragging .item-bar { cursor: grabbing; }
+
+/* And it is set at the region's size, not a card's.
+
+   12px is a caption under a photograph and is the wrong size for the name of an
+   area two thousand units across - at the zoom where you can see the whole fence
+   it is a smudge, which is the one moment its name is the thing you came for. So
+   the label is measured against the fence itself, the way the Desktop title card
+   is measured against its own width (canvas.css), rather than set to a bigger
+   fixed number that would then be wrong at the other end of the range.
+
+   The container is the .item and not .fence-card, because the plate is the item's
+   child and not the card's - see bottomBar() in canvas/items.js.
+
+   The clamp is the whole design. 2.8% of the width is a heading on an ordinary
+   fence; the floor keeps a small one legible, and the ceiling stops a fence drawn
+   across half a board from setting its name in letters a foot high. Padding in em
+   so the plate grows with the type instead of being sized twice.
+
+   Every term is 0.7 of what it was (4cqi between 15 and 44), and that is one
+   change rather than three: the padding is in em, so scaling the type scales the
+   whole plate with it, and the *strip* is what came down. A name across the top of
+   a region is a label on it and not a masthead over it - at the original size a
+   fence with a short name was mostly plate, and the band the eye reads as "this
+   area is called X" was competing with the area. Scaled rather than re-picked, so
+   the ratio holds at every size and the clamp still says the same thing about
+   small, ordinary and enormous regions.
+
+   The floor comes down with the rest, to 10.5px. It could have been held at 15
+   and was not, because a floor that does not scale would make the plate 0.7x high
+   on every fence except the small ones - and the small ones are where a plate is
+   most of what you can see. The floor is against a *container* width, and the
+   board still zooms, so this is the size the name is drawn at and not the size it
+   is read at.
+
+   min-height on the bar above is deliberately not scaled: it is a hit area, not a
+   type size, and an unnamed region still has to be grabbable.
+
+   A fence also keeps its name while the board is zoomed out, where every other
+   label is dropped. That exemption is made at the hide rule further down and not
+   here, for the same reason .item-bar-always is: it only means anything beside
+   the rule it is an exemption from, and the two are one specificity tie apart. */
+.item[data-type="fence"] { container-type: inline-size; }
+.item[data-type="fence"] .item-label {
+  font-size: clamp(10.5px, 2.8cqi, 30.8px);
+  padding: 0.45em 0.6em 0.5em;
+  color: var(--ink);
+}
+

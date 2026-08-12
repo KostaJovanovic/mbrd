@@ -1,0 +1,593 @@
+/* =========================================================
+   mbrd - the cards whose face the app draws: notes, links, stickers,
+   models and embeds
+
+   One of the six sheets the old items.css was split into. The order they load
+   in IS the cascade and is listed in the banner at the top of items.css. It
+   comes after items.css because nearly every rule here is a per-[data-type]
+   correction to the .item box and the .card plate declared there.
+
+   Five renderers and their furniture: canvas/note-model.ts and
+   canvas/notes.ts (the sticky, its block lines and the formatting bar),
+   canvas/renderers.ts (link, sticker, feed sticker), canvas/model.ts (the
+   turned STL and the still it parks on) and canvas/embed.ts (the standing
+   offer, and the frame it becomes once it is taken).
+
+   Filed together because none of them is a picture. Each is a card this app
+   draws the whole of, which is what separates them from the two types in
+   media.css and from an image, whose only rule is to get out of the way.
+
+   Several class names here are built by string interpolation and no grep will
+   find them: canvas/note-model.ts builds `note-` + tag, canvas/notes.ts
+   builds `ntb-ico-` + icon. Do not delete a selector because nothing appears
+   to reference it.
+   ========================================================= */
+
+/* Notes: the one item type born on the board, so it is drawn as a sticky
+   rather than as a filed card - a square of coloured pad paper, cut corners,
+   pressed flat to the board.
+   The tint comes from data-tint (1-4, cycled at creation and stored in
+   meta.tint), so a wall of notes reads as a pack rather than a monotone. */
+.item[data-type="note"] {
+  --item-shadow: var(--note-shadow);
+  --shape-radius: var(--note-radius);
+  --note-paper: var(--note-1);
+  /* Every measurement on a sticky is a fraction of the sticky.
+     A note was 240px square and its furniture was written as the fixed numbers
+     that suited a note that size - 20px of margin, a 30px adhesive band, a
+     title off the display ramp. Halve the square and none of that halves with
+     it: the title alone takes a third of the sheet, the margins take most of
+     what is left, and a note that holds 512 characters shows about three lines
+     of them before .note-rich's clip quietly eats the rest. A small note has
+     to be a small note, not a big note's fittings crammed into a smaller
+     square.
+
+     --half-min is min(w, h) / 2, written per item by canvas/items.js/place().
+     Every coefficient below is calibrated on the 240px default, so a note that
+     size still resolves to exactly the number it was drawn with and nothing on
+     an existing board moves; only the smaller ones change. The clamps are
+     floors and ceilings, not the operative value - the ceiling is what keeps a
+     note that has been dragged out to 900px from setting its title in 110pt,
+     and the floor is the size below which type stops being type. */
+  --note-half:    var(--half-min, 120px);
+  --note-pad:     clamp(9px,  calc(var(--note-half) * 0.167),  20px);
+  --note-gap:     clamp(4px,  calc(var(--note-half) * 0.075),  9px);
+  --note-band:    clamp(12px, calc(var(--note-half) * 0.25),   30px);
+  --note-t-title: clamp(12px, calc(var(--note-half) * 0.25),   var(--t-display));
+  --note-t-body:  clamp(10px, calc(var(--note-half) * 0.1333), 16px);
+  /* The item under the card takes the pad colour too. Two rounded boxes of the
+     same radius stacked exactly on top of each other still leave a hairline of
+     the lower one showing along the curve, where the antialiasing of the two
+     edges does not quite agree - and a near-white hairline around a coloured
+     sticky reads as a printing misregistration. */
+  background: var(--note-paper);
+}
+.item[data-type="note"][data-tint="2"] { --note-paper: var(--note-2); }
+.item[data-type="note"][data-tint="3"] { --note-paper: var(--note-3); }
+.item[data-type="note"][data-tint="4"] { --note-paper: var(--note-4); }
+
+.item[data-type="note"] .card {
+  padding: var(--note-pad);
+  /* The band at the head is the adhesive strip reading through the sheet. It
+     is a fixed share of the sheet rather than a fixed depth, because a strip
+     of glue is as wide as the pad it came off. */
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--ink) 6%, transparent) 0,
+      transparent var(--note-band)),
+    var(--note-paper);
+  /* No ruled border - pad paper has no printed edge. Just enough of an inset
+     line to keep a pale note off a pale board. */
+  box-shadow: inset 0 0 0 var(--board-hairline) color-mix(in srgb, var(--ink) 7%, transparent);
+}
+/* The filed-card inner rule has no business on a sticky. */
+.item[data-type="note"] .card::after { content: none; }
+
+/* A note is a column of formatted block-lines (renderers.js/note). The column
+   carries the note's font, its size (through --note-scale) and its vertical
+   placement (justify-content); each line carries only its own kind and its
+   alignment. font-family is written inline by applyNoteStyle from an allowlist,
+   so the rule here is just the fallback before that runs. */
+.item[data-type="note"] .note-rich {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--note-gap);
+  overflow: hidden;
+  font-family: var(--font-display);
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.item[data-type="note"] .note-rich[data-valign="top"] { justify-content: flex-start; }
+.item[data-type="note"] .note-rich[data-valign="middle"] { justify-content: center; }
+.item[data-type="note"] .note-rich[data-valign="bottom"] { justify-content: flex-end; }
+
+/* The three kinds. Each scales with the note (--note-t-* is a share of the
+   sticky's own size) and with the user's chosen multiplier (--note-scale,
+   default 1). h1/h2 inherit the note's font so a font change carries the whole
+   sheet; only weight and size set them apart. */
+.item[data-type="note"] .note-line { line-height: 1.4; }
+.item[data-type="note"] .note-line.note-h1 {
+  font-weight: calc(var(--display-weight) + 300);
+  line-height: 1.2;
+  color: var(--ink);
+  font-size: calc(var(--note-t-title) * var(--note-scale, 1));
+}
+.item[data-type="note"] .note-line.note-h2 {
+  font-weight: calc(var(--display-weight) + 300);
+  line-height: 1.25;
+  color: var(--ink);
+  font-size: calc((var(--note-t-title) + var(--note-t-body)) / 2 * var(--note-scale, 1));
+}
+.item[data-type="note"] .note-line.note-p {
+  color: var(--ink-2);
+  font-size: calc(var(--note-t-body) * var(--note-scale, 1));
+}
+.item[data-type="note"] .note-line.al-left { text-align: left; }
+.item[data-type="note"] .note-line.al-center { text-align: center; }
+.item[data-type="note"] .note-line.al-right { text-align: right; }
+
+/* The formatting toolbar floats above the note while it is edited. Outside .card
+   so the card's clip cannot cut it, and scaled by --iz like the rest of the item
+   chrome so it holds its size on screen at any zoom. */
+.note-toolbar {
+  /* Lives in screen space (#viewport), never in the item: positioned by JS for
+     the desktop float (.is-float) and pinned by CSS on mobile (.is-mobile), so
+     it is never scaled by zoom nor clipped by the item box. */
+  position: fixed;
+  display: flex;
+  gap: 10px;
+  padding: 8px 10px;
+  /* --ogee, because that is what this is: a panel with controls in it. It read
+     var(--radius-md, 14px) for a long time and --radius-md has never existed,
+     so every board at every tier got the 14px fallback - a rounded bar floating
+     over square cards on the plain tier, and a tight one over 26px cards on the
+     soft. The fallback was near enough to the middle tier's --ogee that nobody
+     saw it, which is exactly why it lasted. */
+  border-radius: var(--ogee);
+  background: var(--paper-card);
+  box-shadow:
+    0 3px 10px color-mix(in srgb, var(--ink) 16%, transparent),
+    inset 0 0 0 var(--hairline) var(--item-border);
+  white-space: nowrap;
+  z-index: 6;
+  font-family: var(--font-body);
+  pointer-events: auto;
+  /* Its own compositor layer, so the note's growing shadow underneath cannot
+     bleed into the bar's and read as the bar's shadow deepening on each press. */
+  isolation: isolate;
+}
+/* Desktop float: JS sets left/top (top-left the anchor point); centre on it. */
+.note-toolbar.is-float { transform: translateX(-50%); transform-origin: 50% 0; }
+
+.note-toolbar .ntb-group { display: flex; gap: 3px; align-items: center; }
+.note-toolbar .ntb-group + .ntb-group {
+  margin-left: 5px;
+  padding-left: 10px;
+  border-left: var(--hairline) solid color-mix(in srgb, var(--ink) 12%, transparent);
+}
+.note-toolbar .ntb-btn {
+  min-width: 36px;
+  height: 36px;
+  padding: 0 8px;
+  border: 0;
+  /* --leaf sizes controls; this is one. The old var(--radius-xs, 8px) named the
+     small-fry token and then handed it a fallback twice its value, so whichever
+     way it resolved it was wrong about something. */
+  border-radius: var(--leaf);
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 19px;
+  line-height: 36px;
+  cursor: pointer;
+}
+.note-toolbar .ntb-icon { display: inline-flex; align-items: center; justify-content: center; }
+
+/* On a phone the bar takes the top of the screen for the length of the edit, in
+   place of the menu and edit-name buttons that live in the two top corners (both
+   hidden by the :root.note-edit-mobile rule below). It spans the board on the
+   same insets those buttons used, and its groups wrap so the controls fall into
+   two rows and stay readable rather than shrinking to fit one. */
+.note-toolbar.is-mobile {
+  box-sizing: border-box;
+  z-index: 21;
+  bottom: auto;
+  top: max(12px, env(safe-area-inset-top));
+  left: max(12px, env(safe-area-inset-left));
+  right: max(12px, env(safe-area-inset-right));
+  width: auto;
+  transform: none;
+  flex-wrap: wrap;
+  justify-content: center;
+  row-gap: 6px;
+  padding: 8px;
+}
+.note-toolbar.is-mobile .ntb-btn { min-width: 34px; height: 36px; }
+
+/* While a note is edited on the phone, its bar owns the top edge: the menu
+   (hamburger) and the edit-name (pen) buttons step aside so the two never stack. */
+:root.note-edit-mobile #menu-btn,
+:root.note-edit-mobile #mobile-header-edit-btn,
+:root.note-edit-mobile #mobile-find-btn,
+/* The zoom cluster and the scale stick step aside too: on a phone the note bar
+   owns the whole screen for the edit, and a Desktop board carries these two
+   where the Mobile board does not - so without this they sit under the bar. */
+:root.note-edit-mobile #zoom-ctl,
+:root.note-edit-mobile #scale-bar { display: none; }
+.note-toolbar .ntb-btn:hover {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  color: var(--ink);
+}
+.note-toolbar .ntb-btn.is-active {
+  background: var(--accent);
+  /* --accent-fg, not --paper-card: this is ink printed *on* the accent, and
+     --accent-fg is the one mixed to stay legible when the palette moves. */
+  color: var(--accent-fg);
+}
+.note-toolbar .ntb-select {
+  height: 36px;
+  border: 0;
+  border-radius: var(--leaf);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  color: var(--ink);
+  font: inherit;
+  font-size: 18px;
+  padding: 0 8px;
+  cursor: pointer;
+}
+
+/* The alignment and vertical-placement glyphs, drawn as bars rather than trusted
+   to a font. currentColor tracks the button, so they invert on the active one.
+   Alignment: three bars pushed to one side. Vertical: two bars grouped high,
+   centred or low in the box. */
+.note-toolbar .ntb-ico { display: inline-block; background-repeat: no-repeat; }
+.note-toolbar .ntb-ico-al-left,
+.note-toolbar .ntb-ico-al-center,
+.note-toolbar .ntb-ico-al-right {
+  width: 22px;
+  height: 16px;
+  background-image:
+    linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor);
+  background-size: 22px 2px, 14px 2px, 18px 2px;
+}
+.note-toolbar .ntb-ico-al-left { background-position: left 2px, left 8px, left 14px; }
+.note-toolbar .ntb-ico-al-center { background-position: center 2px, center 8px, center 14px; }
+.note-toolbar .ntb-ico-al-right { background-position: right 2px, right 8px, right 14px; }
+.note-toolbar .ntb-ico-va-top,
+.note-toolbar .ntb-ico-va-middle,
+.note-toolbar .ntb-ico-va-bottom {
+  width: 16px;
+  height: 18px;
+  background-image:
+    linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor);
+  background-size: 14px 2px, 10px 2px;
+}
+.note-toolbar .ntb-ico-va-top { background-position: center 1px, center 5px; }
+.note-toolbar .ntb-ico-va-middle { background-position: center 6px, center 10px; }
+.note-toolbar .ntb-ico-va-bottom { background-position: center 11px, center 15px; }
+
+/* How much room is left, while a note is being written. Outside .item-body so
+   the body's clip cannot cut it off, and scaled by --iz like the rest of the
+   item chrome so it stays the same size on screen at any zoom. */
+.note-count {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: calc(6px * var(--iz));
+  transform: scale(var(--iz));
+  transform-origin: 100% 0;
+  font-family: var(--font-display);
+  font-size: var(--t-tiny);
+  font-style: var(--display-italic);
+  color: var(--ink-3);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.note-count.is-low { color: var(--danger); }
+
+/* Links: the other item born on the board, and the only one whose subject is
+   somewhere else entirely. Drawn as an ordinary filed card, because that is
+   what it is - a name, an address, and no body. The one part that behaves
+   differently is the name, which is the anchor. */
+.card-link .card-name {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: from-font;
+  text-underline-offset: 2px;
+  /* .item-body refuses the pointer so that the whole card is one drag target;
+     the anchor is the exception, the same bargain .transport makes for the
+     audio scrubber. Everything around it - the badge, the address, the card's
+     own padding - still drags, selects and resizes as usual. */
+  pointer-events: auto;
+  cursor: pointer;
+  /* An address has no spaces to break at, so a long one is allowed to break
+     anywhere rather than shouldering the card's edge out of the way. */
+  overflow-wrap: anywhere;
+}
+.card-link .card-name:hover { text-decoration-thickness: 2px; }
+/* The address itself: monospaced, so that a URL reads as a URL and not as
+   prose, and upright rather than in the italic the other card metadata wears -
+   an address is a literal, and slanting one is a small lie about it. */
+.card-link .card-meta {
+  font-family: var(--font-mono);
+  font-style: normal;
+  overflow-wrap: anywhere;
+  /* Two lines of address is as much orientation as anyone wants, and the whole
+     of it is on the anchor's tooltip for the rare time it is not.
+
+     Prefixed only, deliberately. The unprefixed `line-clamp` was here as
+     future-proofing and bought nothing: there is no engine that supports it and
+     not the -webkit- form, Firefox aliases the prefixed one, and the unprefixed
+     declaration's only observable effect was a dropped-declaration warning in
+     every Firefox console that opened this page. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+/* ---- Stickers (canvas/renderers.js/sticker) -------------------------------
+   The one item that is not a card at all: no paper, no border, no caption, no
+   cover slot. A sticker is a shape lying on a picture, and a shape in a
+   bordered box is a card with a star in it - which is a different object and
+   not the one anybody asked for. So everything the .item wrapper normally
+   contributes is taken back off here, and what is left is the SVG.
+
+   A sticker is a paper body with an inked outline - the same reading the app's
+   own icons have, one size up. That is what makes it belong to this board
+   rather than to a phone keyboard, and it is also the only version of the idea
+   that stays legible over a dark photograph, which bare line work does not.
+
+   **Nothing here is stroked**, and that is Phosphor's doing rather than a
+   choice: it draws every weight as a *filled* path, its outline weights
+   included, where the line is a closed path tracing the outline of a stroke.
+   So the line weight is upstream's, `stroke: none` is written out rather than
+   left to chance, and a sticker resized is a bigger drawing at the same
+   proportions - which is what the old, hand-drawn, actually-stroked version had
+   to work for.
+
+   Both properties are *inherited*, which is what lets them be set in a
+   stylesheet at all: the shape lives in an externally referenced <use>, so no
+   selector in this file can reach a path inside it, and only what the <svg>
+   passes down arrives. `color` is how the ink gets to the paths that opt out of
+   the default paint - a duotone glyph's foreground is `fill="currentColor"` -
+   since a presentation attribute beats an inherited property and
+   `currentColor` is the one value that still follows the tint from outside. */
+/* No card, at all: no paper, no hairline, no shadow. The three lines below
+   switch off the ones .item paints itself. The fourth was invisible from here
+   and is the one that showed: the geometry twin in #item-shadows is a separate
+   element in a separate layer, so `--item-shadow: none` on the card never
+   reached it and every sticker sat in a rounded-rectangle halo the size of its
+   box. Switched off where it is built - see NO_TWIN in canvas/items.js - since
+   a twin that paints nothing is still an element per sticker, placed and
+   mirrored on every move. */
+.item[data-type="sticker"] {
+  background: transparent;
+  --item-shadow: none;
+  --item-border: transparent;
+  box-shadow: none;
+}
+/* No caption and no menu handle. The far-zoom headline is refused in JS
+   instead (NO_HEAD in canvas/items.js), because it is never built rather than
+   built and hidden. The name still exists - the trash and Find want it - it
+   just is not printed across the shape. */
+.item[data-type="sticker"] .item-bar { display: none; }
+/* The shape may hang past the box's rounded corners: it is a star, not a
+   picture that needs cropping to the card it is in. */
+.item[data-type="sticker"] .item-body { overflow: visible; }
+
+.sticker-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  color: var(--sticker-tint);
+  fill: var(--sticker-body);
+  stroke: none;
+  /* A drop-shadow rather than a box-shadow, and that is the point of using one
+     at all: it follows the outline the filter is given, and the outline is the
+     whole reason this thing is not a card. A box-shadow would draw a
+     rectangle's shadow under a star.
+
+     Tight and close, like the note's - a sticker is pressed flat, not floating.
+     Light, because a paper body with a thin outline has not the mass to carry a
+     heavy one; a solid silhouette could, and this was heavier when the shapes
+     were solid. */
+  filter: drop-shadow(0 1px 1px color-mix(in srgb, var(--ink) 16%, transparent))
+          drop-shadow(0 3px 5px color-mix(in srgb, var(--ink) 15%, transparent));
+  /* The shape must not eat presses that the item's own box would have taken.
+     Hit-testing on a sticker is rectangular like everything else - see the
+     item, which keeps its pointer-events - so this is only here to stop the
+     SVG from becoming a second, differently shaped target inside it. */
+  pointer-events: none;
+}
+
+/* The pad, out of tokens.css.
+   Eight rules rather than one var(--sticker-{n}), because CSS cannot build a
+   custom property name out of an attribute - and the alternative is each
+   renderer writing a colour into a style attribute, which would take this file
+   out of the question of what a sticker looks like.
+
+   Keyed on the artwork rather than on whatever is around it, which is what
+   keeps it to eight lines. A sticker is drawn in five places - on the board, on
+   a pad tile, on the ghost following the pointer out of the pad, on a Mobile
+   feed tile, and in the bin - and every one of them builds the same
+   .sticker-art element, so every one of them can carry the tint on it. Five
+   selectors per rule was the first version, and it was five chances to forget
+   the sixth place. */
+.sticker-art { --sticker-tint: var(--sticker-1); }
+.sticker-art[data-tint="2"] { --sticker-tint: var(--sticker-2); }
+.sticker-art[data-tint="3"] { --sticker-tint: var(--sticker-3); }
+.sticker-art[data-tint="4"] { --sticker-tint: var(--sticker-4); }
+.sticker-art[data-tint="5"] { --sticker-tint: var(--sticker-5); }
+.sticker-art[data-tint="6"] { --sticker-tint: var(--sticker-6); }
+.sticker-art[data-tint="7"] { --sticker-tint: var(--sticker-7); }
+.sticker-art[data-tint="8"] { --sticker-tint: var(--sticker-8); }
+
+/* The copy on a Mobile feed tile. Placed in percentages of the tile by
+   ui/feed.js, so it holds its fraction of the host through every relayout of
+   the wall underneath it; the translate is what puts the shape's own centre
+   over that point rather than its corner. */
+.feed-sticker {
+  position: absolute;
+  translate: -50% -50%;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* ---- A model on a card (canvas/model.js) ---------------------------------
+   The canvas fills the card above the filename and takes the pointer, because
+   dragging it turns the model rather than moving the item. Everything around
+   it - the padding, the name - still drags the card, which is the same bargain
+   the audio scrubber and the link anchor make. */
+.card-model { gap: 6px; }
+.model-stage {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  pointer-events: auto;
+  cursor: grab;
+  /* A pinch on a phone must reach the board, and a drag must not scroll the
+     page out from under the model. */
+  touch-action: none;
+}
+.model-stage.is-turning { cursor: grabbing; }
+/* The photograph the card shows when nobody is turning it - see
+   canvas/model.js. It stands in the stage's place and has to sit in the box the
+   same way: the still was taken at the card's own proportions, so `contain`
+   changes nothing on a card that has not been reshaped since, and keeps the
+   model whole rather than cropping it on one that has.
+   No cursor and no pointer: this is a picture, and a drag on it moves the card
+   like a drag on any other picture does. Turning it over is a menu away. */
+.model-still {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  object-fit: contain;
+  /* The stage draws on a transparent buffer, so a still of a pale model on a
+     pale card is the same picture the canvas would have shown. */
+  background: none;
+}
+/* And it stays visible however far out the board goes. The stage below hides
+   at the detail rung because a WebGL canvas is the most expensive thing on the
+   card and a turned model is a grey smudge out there - but the still is an
+   <img> of at most 450px, the cheapest picture on the board and cheaper than
+   any photograph beside it, none of which are hidden either. Taking it away
+   turned every model into an empty card at exactly the zoom where the board
+   stops being a set of things to read and becomes a composition to look at,
+   which is the one job a picture of the model still has out there. */
+.card-model .card-name {
+  flex: none;
+  font-size: var(--t-tiny);
+  color: var(--ink-3);
+  font-style: var(--display-italic);
+}
+/* Reading a large STL is a real pause, and the card says so rather than
+   sitting empty. Replaced by the drawing, or by the reason there is not one. */
+.model-note {
+  display: grid;
+  place-items: center;
+  flex: 1;
+  min-height: 0;
+  font-family: var(--font-display);
+  font-size: var(--t-tiny);
+  font-style: var(--display-italic);
+  color: var(--ink-3);
+  text-align: center;
+  padding: 0 8px;
+}
+.model-note.is-error { color: var(--danger); }
+/* Far out, a turned model is a grey smudge and the canvas is the most
+   expensive thing on the card. Same rung as every other detail (viewport.js). */
+#world.zoom-far .model-stage { visibility: hidden; }
+
+/* ---- The links that can become players (canvas/embed.js) -----------------
+   The button is a standing offer, not a state: nothing has been requested from
+   anyone until it is pressed, and it is styled to say so - the same accent a
+   link wears, on the card's own paper, rather than the filled red of a control
+   that is already doing something. One rule for both providers: a card that
+   dressed itself in YouTube red or Spotify green would be two more palettes on
+   a board whose whole premise is that you chose the pigments. */
+.embed-go {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: auto;
+  padding: 5px 11px 5px 9px;
+  border: var(--board-hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper-2);
+  color: var(--accent-deep);
+  font-family: var(--font-display);
+  font-size: var(--t-tiny);
+  letter-spacing: calc(0.04em * var(--ls-scale));
+  cursor: pointer;
+  pointer-events: auto;   /* same bargain the anchor above makes */
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.embed-go:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.embed-go svg { width: 11px; height: 11px; }
+/* Far out, the offer is unreadable and un-pressable, and it would be the only
+   thing left saying anything on a card whose text has already stood down. */
+#world.zoom-far .embed-go { display: none; }
+
+/* Taken. The name row survives as the only part of the card still ours to
+   grab - see embed.js - and the frame takes everything under it. */
+.card.has-embed { gap: 6px; }
+.card.has-embed .card-name { flex: none; }
+.embed-frame {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  border: 0;
+  border-radius: var(--radius-xs);
+  pointer-events: auto;
+}
+/* A video is letterboxed against black because that is what a film is shown
+   against, and any other colour reads as a bug in the player. */
+.embed-frame[data-provider="youtube"] { background: #000; }
+
+/* Spotify's player, made to sit on this board rather than on Spotify.
+   ---------------------------------------------------------------------------
+   Only so much of this is ours to decide, and it is worth being exact about
+   which: inside the frame is Spotify's document on Spotify's origin, and no
+   stylesheet of ours reaches across that boundary - by design, and there is no
+   version of the web where it does not. `?theme=0` in the src is the one lever
+   the player offers, and it swaps their black slab for a light variant that at
+   least shares this board's brightness.
+
+   Everything else here is the ring around it, which is all ours: the card's own
+   paper behind the frame so the corners are this app's radius and not the
+   twelve-pixel one their generator writes inline, the hairline that every other
+   card wears, and a height chosen so the player's own compact layout lands
+   exactly in the box with no dead band above or below it. The result is a
+   Spotify card that reads as one of ours holding a player, rather than a
+   rectangle of somebody else's interface pasted on top. */
+.embed-frame[data-provider="spotify"] {
+  background: var(--paper-2);
+  border-radius: var(--leaf);
+  /* The player draws its own rounded corners at a radius it picked. Clipping to
+     ours means the two never disagree at the corner, which is the single most
+     obviously-foreign thing about an embed at rest. */
+  overflow: hidden;
+}
+/* The card behind a Spotify player closes up: their layout carries its own
+   padding, so ours on top of it reads as a mat around a picture that did not
+   ask for one. */
+.card.has-embed[data-provider="spotify"] { gap: 4px; }
+
+/* Nothing to see at a distance, and a cross-origin frame is the most expensive
+   thing on the board to keep composited. */
+#world.zoom-far .embed-frame { visibility: hidden; }
+
+/* The anchor stands down at far zoom, for the reason the grips and the caption
+plates do: below a third of size a card is a coloured tile, and a click on
+   one is a click on the board rather than a considered press on a line of text
+   five pixels tall. Opening a tab is not a thing to do by accident. */
+#world.zoom-far .card-link .card-name { pointer-events: none; }
+
