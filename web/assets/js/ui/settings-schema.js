@@ -495,9 +495,17 @@ export const SECTIONS = [
     // Development aids, last of all: none of this is part of using a board. The
     // grip overlay paints the resize corner grab zones - invisible by design -
     // so their reach can be seen. Grips only show on a selected card.
-    id: 'debug', tab: 'system', title: 'Debug',
+    //
+    // Folded, like the keyboard rows two sections up, and for a stronger version
+    // of the same reason: a keyboard row is read once and scrolled past forever,
+    // and these three are not read at all by anybody using a board. Three
+    // permanent rows at the foot of the tab, none of which is about the board,
+    // is the panel ending on a footnote. `fold` with no `title` is what makes the
+    // summary stand where the heading did rather than hang off a list above it -
+    // see buildFold() and the is-head class in ui/panel.js.
+    id: 'debug', tab: 'system', fold: 'Debug', foldId: 'debug-fold',
     controls: [
-      { type: 'buttons', buttons: [
+      { type: 'buttons', advanced: true, buttons: [
         // No `pressed` here on purpose: cmds.debugGrips writes aria-pressed
         // itself - the #grips URL and mbrd.debugGrips() drive the same toggle -
         // and a painted value would put the button back to false behind it.
