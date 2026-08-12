@@ -28,12 +28,12 @@
 // clearQualityOverrides().
 //
 // This module is the bottom of the graph: pure, no DOM, and the only thing it
-// touches outside itself is localStorage through util.js, and only from
+// touches outside itself is localStorage through prefs.js, and only from
 // functions. canvas/* imports `quality` and reads it; ui/quality.js is what
 // writes. Deliberately *not* an event on state.js's bus: quality is not board
 // state, and a subscriber list of three is not worth pretending otherwise.
 
-import { readPrefJSON, writePref } from './util.ts';
+import { readPrefJSON, writePref } from './prefs.ts';
 
 const PREF = 'mbrd.quality';
 

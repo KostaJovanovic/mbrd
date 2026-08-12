@@ -25,7 +25,8 @@
 
 import { board, bus, setSetting } from '../state.ts';
 import { VERSION } from '../version.js';
-import { el, readPref, writePref } from '../util.ts';
+import { el } from '../util.ts';
+import { readPref, writePref } from '../prefs.ts';
 import { buildPanel, paintPanel } from './panel.ts';
 import { paintTitleField, wireTitleField } from './board-title.ts';
 

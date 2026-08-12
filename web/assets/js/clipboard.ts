@@ -41,7 +41,7 @@
 //
 // Nothing here imports state.js - see tests/layers.test.js, where this is BASE.
 
-import { toast } from './util.ts';
+import { toast } from './notify.ts';
 import { itemBounds } from './geometry.ts';
 import { board } from './board-model.ts';
 

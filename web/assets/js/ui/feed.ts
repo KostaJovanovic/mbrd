@@ -539,7 +539,19 @@ function fillAudio(t) {
 const WAVE_PATTERN = [38, 62, 90, 54, 78, 100, 46, 70, 58, 84, 42, 66];
 function waveBars() {
   const w = div('feed-bars');
-  w.innerHTML = WAVE_PATTERN.map(h => `<i style="height:${h}%"></i>`).join('');
+  // Built rather than written as markup, and the reason is the policy in
+  // web/_headers rather than safety: the pattern above is twelve literals and
+  // was never foreign, so the innerHTML this replaces was not the bug the
+  // no-innerHTML rule is about. But a `style=` attribute *parsed from markup* is
+  // exactly what style-src governs, and this one line was the whole of what
+  // forced 'unsafe-inline' into the policy for the entire site. Assigning
+  // .style through the CSSOM is not parsed from markup and is not covered by
+  // it, so the same bars cost nothing.
+  for (const h of WAVE_PATTERN) {
+    const bar = document.createElement('i');
+    bar.style.height = `${h}%`;
+    w.append(bar);
+  }
   return w;
 }
 

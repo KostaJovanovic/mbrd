@@ -101,7 +101,7 @@
 // list - so canvas/web.js is what turns a data-whimsy attribute and a board's
 // grid step into the three lines above.
 
-import { rotatedExtents, segmentMeetsRect } from './geometry.ts';
+import { rotatedExtents, segmentMeetsRect, distSqToMidpoint } from './geometry.ts';
 
 /** Degrees to radians, for the one place here that needs the card's own frame. */
 const RAD = Math.PI / 180;
@@ -336,7 +336,7 @@ export function routeConnection(from, to, obstacles = [], opts = {}) {
   // Nearest first, so a cap that bites drops the cards least likely to be in
   // the way rather than whichever the caller happened to list last.
   const near = obstacles.length <= MAX_OBSTACLES ? obstacles : [...obstacles]
-    .sort((p, q) => dist2(p, from, to) - dist2(q, from, to))
+    .sort((p, q) => distSqToMidpoint(p, from, to) - distSqToMidpoint(q, from, to))
     .slice(0, MAX_OBSTACLES);
 
   // The two ends are obstacles too, and with no margin. Without them a route is
@@ -348,7 +348,7 @@ export function routeConnection(from, to, obstacles = [], opts = {}) {
 
   // Sorted nearest-first once, so every attempt drops the same furthest cards
   // first when it has to trim.
-  const ordered = [...near].sort((p, q) => dist2(p, from, to) - dist2(q, from, to));
+  const ordered = [...near].sort((p, q) => distSqToMidpoint(p, from, to) - distSqToMidpoint(q, from, to));
 
   /** The obstacle blocks at a given margin, on the lattice or off it. */
   const blocksAt = (pad, snap) => ordered.map(it => {
@@ -597,13 +597,6 @@ function pull(points, blocks) {
     }
   }
   return trim(out);
-}
-
-/** How far a card is from the corridor between the two ends, roughly. */
-function dist2(it, from, to) {
-  const mx = (from.x + to.x) / 2;
-  const my = (from.y + to.y) / 2;
-  return (it.x - mx) ** 2 + (it.y - my) ** 2;
 }
 
 const nearestIn = (values, v) =>

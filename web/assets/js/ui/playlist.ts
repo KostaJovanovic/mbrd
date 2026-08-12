@@ -40,7 +40,8 @@
 import {
   board, bus, isDefaultTitle, markDirty, setAudioOrder,
 } from '../state.ts';
-import { baseName, clamp, seekInnerHTML, sizeSeekWave } from '../util.ts';
+import { baseName, clamp } from '../util.ts';
+import { seekInnerHTML, sizeSeekWave } from '../media/transport.ts';
 import { mobileOrder, applyAudioOrder } from '../arrange/arrangements.ts';
 import { assetURL, getAsset, addFile } from '../storage/assets.ts';
 import {
@@ -801,7 +802,7 @@ function makeWindowPlayer() {
   // clipped fill, and the fill carrying both a straight line and a wave, of which
   // the stylesheet shows one per whimsy tier. It was a div scaled on X, which is
   // the one thing a wave cannot be: scaling a wave horizontally changes its
-  // frequency as the track plays. See the note in util.js.
+  // frequency as the track plays. See the note in media/transport.js.
   line.innerHTML = seekInnerHTML('pw-line');
   const waveSvg = line.querySelector('.pw-line-wave-svg');
   const wavePathEl = line.querySelector('.pw-line-fill-wave');

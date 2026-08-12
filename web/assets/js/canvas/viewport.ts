@@ -27,7 +27,7 @@
 // (cssX, cssY) at centre + (t + css*z). Items are laid out at cssY = -worldY
 // (see items.js), which makes the vertical translate +panY*zoom, not -panY*zoom.
 
-import { clamp, rafThrottle, emitter } from '../util.ts';
+import { clamp, rafThrottle, emitter, readToken } from '../util.ts';
 import { itemBounds } from '../geometry.ts';
 
 /**
@@ -348,7 +348,7 @@ export const zoomMs = () => cssMs('--dur-zoom', 190);
 export const travelMs = () => cssMs('--dur-travel', 400);
 
 function cssMs(name, fallback) {
-  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const raw = readToken(name);
   const n = parseFloat(raw);
   if (!Number.isFinite(n)) return fallback;
   return raw.endsWith('ms') ? n : n * 1000;   // CSS times are ms or s

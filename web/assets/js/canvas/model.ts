@@ -27,6 +27,7 @@
 // something asks it to - which for a still model on a moodboard is what you
 // want anyway.
 
+import { clamp } from '../util.ts';
 import { addFile, allAssets, assetURL, getAsset, readText } from '../storage/assets.ts';
 import { applyMaterials, meshKind, parseMesh, parseMTL, MeshError } from '../mesh.ts';
 import { board, bus, byId, selection, setModelShot } from '../state.ts';
@@ -678,8 +679,6 @@ function orbit(stage, view, paint) {
     paint();
   }, { passive: false });
 }
-
-const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
 // ---------------------------------------------------------------------------
 // The draw

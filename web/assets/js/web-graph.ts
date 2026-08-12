@@ -41,14 +41,18 @@
 // leaves behind is the caution its wall-clock dependence earned, which still
 // applies to every test in this file: assert the arithmetic, never a duration.
 //
-// geometry.js is the only thing this imports, and both names are used by
-// CardGrid below. They were being called without being imported at all, which
+// geometry.js is the only thing this imports. corners and pointInItem are used
+// by CardGrid below; distSq is the squared point-to-point distance the spanning
+// tree compares, which lived here under the name dist2 until web-route.js was
+// found to have a *different* function under the same name - see the polylines
+// section of geometry.js. They were being called without being imported at all,
+// which
 // threw a ReferenceError out of threads() on any board with enough sized items
 // to reach the extra-thread pass - so the web stopped drawing past the spanning
 // tree and said nothing about it. Found by `npm run typecheck`, which is the
 // first thing that ever looked; tests/web.test.js now covers the path.
 
-import { corners, pointInItem } from './geometry.ts';
+import { corners, pointInItem, distSq } from './geometry.ts';
 
 /**
  * Every thread that fits: the spanning tree, then everything else that can be
@@ -428,7 +432,7 @@ function spanningTree(pts) {
 
   inTree[0] = true;
   for (let i = 1; i < n; i++) {
-    best[i] = dist2(pts[0], pts[i]);
+    best[i] = distSq(pts[0], pts[i]);
     from[i] = 0;
   }
 
@@ -443,14 +447,9 @@ function spanningTree(pts) {
     edges.push([from[pick], pick]);
     for (let i = 0; i < n; i++) {
       if (inTree[i]) continue;
-      const d = dist2(pts[pick], pts[i]);
+      const d = distSq(pts[pick], pts[i]);
       if (d < best[i]) { best[i] = d; from[i] = pick; }
     }
   }
   return edges;
-}
-
-function dist2(a, b) {
-  const dx = a.x - b.x, dy = a.y - b.y;
-  return dx * dx + dy * dy;
 }

@@ -13,7 +13,8 @@
 // comes through here, which is what makes dedupe-by-content free: the same photo
 // dropped twice is one entry and one object URL.
 
-import { sha256, extOf } from '../util.ts';
+import { sha256 } from '../crypto.ts';
+import { extOf } from '../util.ts';
 
 /** hash -> { blob, url, mime, ext, size, name } */
 const store = new Map();

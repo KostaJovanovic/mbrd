@@ -16,7 +16,7 @@
 // the useful one being "no, let me keep this first", which confirm() cannot
 // express and which is the answer most people actually want.
 //
-// Kept in its own module rather than in util.js beside toast(), even though the
+// Kept in its own module rather than in ui/overlays.js beside toast(), even though the
 // two are the same kind of thing - a small piece of interface anything may
 // reach for. toast() says something and returns; this one asks something and
 // waits, which is a different enough contract to be worth its own file and its

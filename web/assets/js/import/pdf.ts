@@ -38,6 +38,8 @@
 // else's code, and it bends the no-runtime-dependency rule the same controlled
 // way. Called out here so the bending is on the record.
 
+import { clamp } from '../util.ts';
+
 // The library and its worker, from the same versioned directory so the two
 // always match. The ESM build loads as a module; its worker is a module worker
 // pdf.js spawns itself once workerSrc points at it.
@@ -66,8 +68,6 @@ function loadPdfjs() {
   }
   return libPromise;
 }
-
-const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
 async function toBlob(canvas, type, quality) {
   return new Promise(resolve => canvas.toBlob(resolve, type, quality));
