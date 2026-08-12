@@ -948,6 +948,18 @@
     display: flex;
     flex: 1;
     height: 100%;
+    /* The corner the bar's own `overflow: hidden` draws on a desktop, drawn by
+       the button itself here - because the container above has to be
+       `overflow: visible` for the tier to hang outside it, and an unclipped
+       :active fill is a square of --paper-3 painted over a rounded bar. It only
+       showed on the press, which is why it read as the button being the wrong
+       shape rather than the clip being gone.
+
+       `inherit` and not a repeat of --leaf: the toggle is the only child and
+       fills the bar exactly, so its corner *is* the bar's corner - and that
+       radius is struck from --radius now (see research/visual-audit-2026-08-12.md),
+       so a second literal here would drift the day the slider moves. */
+    border-radius: inherit;
   }
 
   /* The tier. Its own card rather than part of the handle's - it comes and goes
