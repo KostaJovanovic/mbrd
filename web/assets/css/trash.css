@@ -119,7 +119,18 @@
   /* visibility with it, so a mark faded to nothing is not still a hit target
      over the board - the same pairing #bin makes when the panel covers it. */
   visibility: hidden;
-  transition: opacity 640ms var(--ease), visibility 0s 640ms;
+  /* 640ms was a literal here, and it was the last piece of chrome that ignored
+     the whimsy axis in the one direction that shows: every other duration
+     compresses at Harsh, and this one stayed 640ms, so a tier that declares
+     nothing lingers had a status mark taking two thirds of a second to leave.
+     Struck from --dur-travel rather than declared beside it, the way
+     --note-radius is struck from --radius: 1.6 x 400ms is exactly the 640 this
+     always was, so Middle does not move at all, and the ends come out for free
+     - 1120ms at Softish, 352ms at Harsh. The visibility delay has to be the
+     same expression or the mark stops being a hit target before it has
+     finished fading. */
+  transition: opacity calc(var(--dur-travel) * 1.6) var(--ease),
+              visibility 0s calc(var(--dur-travel) * 1.6);
 }
 #saved.is-on {
   opacity: 1;

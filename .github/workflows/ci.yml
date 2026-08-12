@@ -100,10 +100,24 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      # tsc --noEmit over JSDoc, scoped by jsconfig.json to the pure layer.
-      # Nothing is compiled and no TypeScript ships.
+      # tsc --noEmit under strict, over the whole tree. Nothing is compiled here
+      # and no TypeScript ships: esbuild builds the bundle, tsc only checks.
+      #
+      # Modules still carrying // @ts-nocheck are skipped, which is migration
+      # debt rather than a hole - tests/ts-debt.test.js holds the count with a
+      # ceiling that may only fall, and that test runs in the step above. So a
+      # green run here means everything not on that list is clean under strict,
+      # and the step above is what stops the list quietly growing.
       - name: Typecheck
         run: npm run typecheck
+
+      # The bundle has to build, and nothing else in this job would notice if it
+      # stopped. `npm test` runs the modules through Node, which strips types and
+      # resolves the same specifiers - but the browser gets the esbuild output,
+      # and the two disagree exactly when an import is unresolvable or a dynamic
+      # import names something that moved. A deploy ships this artifact.
+      - name: Build
+        run: npm run build
 
       # The syntax checks. CLAUDE.md and CONTRIBUTING.md both ask for these on
       # every change and nothing has ever run them, which is the worst kind of
