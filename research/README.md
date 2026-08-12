@@ -50,24 +50,33 @@ for a change without checking the current source first.
 - `visual-audit-2026-08-12.md` — partly carried out. An element-by-element pass
   at all three whimsy stops, graded worst to best. Its spine is applied: the five
   corner tokens are now struck from `--radius`, so the Corner radius slider moves
-  the whole interface rather than a third of it. Six items remain, listed under
-  *The plan for what is left*, and two of them are taste calls rather than
-  patches. Read the closing rule before auditing anything else here — the whole
-  document is an argument for checking work at the ends of the axis rather than
-  at the default board, which is where every fault in it hid.
-- `build-and-framework-audit-2026-08-12.md` — nothing carried out. An outside
-  pass over the whole repository, written to answer whether this should be on a
-  framework or in another language. It agrees with
-  `old/open-source-readiness-2026-08-02.md` Part 1 and is not a reopening of it:
-  the layer byte counts reproduce that document's finding, and the
-  module-by-module argument for why `canvas/` resists a reconciler is still
-  better made there. What is new is its Finding 1 — that document costed a
-  bundler only ever as a rider on a framework rewrite, and priced apart from one
-  it is the cheapest large win in the repository: 664 KB of JavaScript over 96
-  requests becomes about 174 KB over one, because 61.5% of the shipped bytes are
-  comments. Read Findings 1 and 3 together. The CI half of the 2026-08-02 plan
-  is the one item on it that never landed, and the paragraph at the foot of this
-  file saying it did is wrong until it does.
+  the whole interface rather than a third of it. **Five** items remain, listed
+  under *The plan for what is left* — the sixth, the z-index table, is written
+  and lives in `docs/architecture.md` under *The stack* — and two of the five are
+  taste calls rather than patches. One thing to know before reading it at all:
+  `overlays.css` was split into eight sheets after it was written, so every
+  `overlays.css:NNN` in it points into a file that is gone, and its own opening
+  note says so. Read the closing rule before auditing anything else here — the
+  whole document is an argument for checking work at the ends of the axis rather
+  than at the default board, which is where every fault in it hid.
+- `build-and-framework-audit-2026-08-12.md` — **half carried out**, and it opens
+  with a status block saying which half. An outside pass over the whole
+  repository, written to answer whether this should be on a framework or in
+  another language. It agrees with `old/open-source-readiness-2026-08-02.md`
+  Part 1 and is not a reopening of it: the layer byte counts reproduce that
+  document's finding, and the module-by-module argument for why `canvas/` resists
+  a reconciler is still better made there. What is new is its Finding 1 — that
+  document costed a bundler only ever as a rider on a framework rewrite, and
+  priced apart from one it is the cheapest large win in the repository: 664 KB of
+  JavaScript over 96 requests becomes about 174 KB over one, because 61.5% of the
+  shipped bytes are comments. Read Findings 1 and 3 together, and read them as
+  history: four of its eight items are done — CI, the bundle, the move to
+  TypeScript, and the continuation of the `state.js` split — so most of what it
+  measured describes the repository as it was on the morning it was written. What
+  is still live is the other four: `initInput` as an explicit state machine, the
+  CSP, a global error handler, and what `old/` should look like to a stranger.
+  The annotations under `strict` are the open half of an item counted as done,
+  and `tests/ts-debt.test.js` is where that is now measured rather than here.
 
 `old/connections-2026-08-12.md` went down on the commit that carried it out, and
 its status block is the part to read first: three of its own instructions were
@@ -136,3 +145,12 @@ splits were carried out from, and it moved down the moment it was finished -
 which is the rule above being followed rather than described. Read it for the
 reasoning behind *not* rewriting the app on a UI framework: the line counts are
 in it, and it is the answer to a question that will be asked again.
+
+That sentence was wrong about a quarter of itself for ten days, and the way it
+was found is the argument for keeping this index in prose rather than as a list
+of filenames. CI was on that plan's carried-out list and had never been written;
+`build-and-framework-audit-2026-08-12.md` Finding 3 is what noticed, by reading
+the claim against the tree instead of against the plan. It is true again now —
+`.github/workflows/ci.yml` exists — so the line stands as written rather than
+being corrected. **A carried-out list is a claim about the code, and it decays
+the same way a comment does.**

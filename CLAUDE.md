@@ -10,9 +10,19 @@ Guidance for Claude Code (claude.ai/code) working in this repository.
   and persistence, the stylesheet order, and the invariants the tests enforce.
   It is the single source of truth; this file does not repeat it.
 - **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — how to run it, how to test it, the
-  five invariants that are easy to break by accident, and where a given kind of
-  change belongs.
-- **[`AGENTS.md`](AGENTS.md)** — style, naming, commit and PR conventions.
+  five invariants that are easy to break by accident, where a given kind of
+  change belongs, and the conventions: indentation, quoting and naming under
+  *Style*, commit subjects and what a pull request has to say under *Commits and
+  pull requests*.
+
+  That last pair used to be an `AGENTS.md` this list linked to, and the link
+  outlived the file — it went at v0.156, in the commit that also took the
+  Playwright suite out. It is deliberately not coming back: every line it held
+  was a second copy of a section of `CONTRIBUTING.md`, and a repository that
+  states its conventions in two places is one where they disagree by the end of
+  the quarter. The same rule this list opens with — architecture.md is the single
+  source of truth and this file does not repeat it — applies to the conventions
+  as well.
 
 Module headers in this codebase carry the *why*, often at length. **Read the top
 of a file before changing it**, and keep that convention when adding one.
@@ -35,7 +45,7 @@ own is still not the whole bar:
 
 ```bash
 npm run lint        # oxlint, correctness only — no formatter, and adding one is a regression
-npm run typecheck   # tsc --noEmit over JSDoc; jsconfig.json scopes it to the pure layer
+npm run typecheck   # tsc --noEmit under strict, over the whole tree; nothing is emitted
 ```
 
 There is no browser-driven suite. `npm test` is the whole automated bar, and it
@@ -105,7 +115,9 @@ error rather than becoming a broken runner.
 - **`state.js` is the only door, and it is being split downward.** The base
   layer under it — `board-store.js`, `board-model.js`, `history.js`,
   `sticky.js`, `fences.js`, `layout.js`, `stacking.js`, `web-graph.js`,
-  `web-route.js` — may never import `state.js` back. That one-way edge is the
+  `web-route.js`, and the five the last split added (`board-schema.js`,
+  `onboarding.js`, `clipboard.js`, `connections.js`, `trash.js`) — may never
+  import `state.js` back. That one-way edge is the
   whole reason they are separate files: a concern lifted out of `state.js` only
   stays out if what it stands on is lower than what it left.
   `tests/layers.test.js` holds the list.

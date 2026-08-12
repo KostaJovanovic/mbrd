@@ -5,6 +5,13 @@ three whimsy stops, ranked worst to best, with the corner scale rebuilt as a
 scale. The high-severity half is **already applied** — see* Applied *below; the
 rest is the plan.*
 
+**`overlays.css` no longer exists.** Every `overlays.css:NNN` below is a
+reference into a file that was split into eight subsystem sheets the same week
+(`6e28f0e`) — `trash`, `menu`, `library`, `status`, `dialog`, `viewer`,
+`color-picker`, `sticker-pad` — as a pure move, 1,665 rules in and 1,665 out.
+The findings survive the move; the line numbers do not, so where one mattered it
+has been rewritten to name the sheet the rule is in now.
+
 ---
 
 ## The finding, in one paragraph
@@ -99,12 +106,12 @@ is the point.
 | 3 | **Web connection colours** — `canvas.css` `.web-c-leaf` | **F** | `stroke: var(--leaf)` — a *length*, 10px. The intended token is `--leafy`, the olive pigment, one letter away. The declaration was invalid and dropped, so a connection set to **Green** (`CONN_COLORS` in `board-model.js:355`, labelled in `ui/menu.js:341`) came out whatever the bulk stroke already was. A real user-facing bug, not a style drift. |
 | 4 | **Hairline meters** — waveform bars, playlist EQ, range tracks, splash thread | **D** | `1px` and `2px` literals across all three tiers: the one class of element that never followed the axis at all. |
 | 5 | **Canvas add-button** — `canvas.css` | **D** | `calc(9px * var(--iz, 1))`. Within a pixel of `--leaf` at Middle and nowhere near it at either end — the only control *on the board itself* that ignored the Corner radius slider. |
-| 6 | **Nested-radius `calc()`s** — 5 sites in `overlays.css` | **C** | Unguarded subtraction against a token that is 0px at Harsh, so `calc(0px - 6px)` is an invalid radius and the browser drops the whole declaration. Latent rather than visible — the dropped rule happened to leave a square corner on a square tier — but it is the rule failing, not applying. `items.css:316` already had the `max(0px, …)` guard; the other five did not. |
+| 6 | **Nested-radius `calc()`s** — 5 sites in what was `overlays.css` | **C** | Unguarded subtraction against a token that is 0px at Harsh, so `calc(0px - 6px)` is an invalid radius and the browser drops the whole declaration. Latent rather than visible — the dropped rule happened to leave a square corner on a square tier — but it is the rule failing, not applying. `items.css:316` already had the `max(0px, …)` guard; the other five did not. |
 | 7 | **The type scale** | **C** | Five steps declared (`30 / 21 / 15 / 13 / 11`), ~15 distinct sizes actually used, across 29 hardcoded `font-size` declarations. Unlike the corners, most of these are defensible one-offs (a 64px ghost glyph, a `clamp()` on a masthead) — but there is no line between "off-scale on purpose" and "never looked at the scale". |
 | 8 | **`lab.html`** | **C** | Eight literal radii, its own `--edge` colour vocabulary, no token imports. Off-system by construction. It is a dev harness and not shipped chrome, so this is a deliberate-neglect grade rather than a defect. |
 | 9 | **Chrome, overlays, sidebar, items** | **B+** | Token-clean on corners and colour. Three stray literal durations (`640ms`, `300ms`, and the mobile pair now fixed) and a handful of `#0009` shadows on the web-mode handles, which are arguably justified as they sit over arbitrary board content. |
 | 10 | **`#conn-chip`** (uncommitted) | **A−** | Written to the system throughout — reads `--radius-sm`, `--dur-fast`, `--ease`, `--accent-deep`, `--danger`, `--btn-grow`. One `1px` where `--hairline` belonged, and it inherited the unguarded-`calc()` pattern from its neighbours. The best-behaved new code in the tree. |
-| 11 | **`z-index`** | **A** | Looks like an outlier field (`1`…`90`, plus a `100000 !important`) and is not. Each site documents its own place in the stack, `base.css:259` writes the order out, and the `100000` is world-space items competing among themselves in a different stacking context from the chrome. No change wanted; it only lacks one central table. |
+| 11 | **`z-index`** | **A** | Looks like an outlier field (`1`…`90`, plus a `100000 !important`) and is not. Each site documents its own place in the stack, `base.css:259` writes the order out, and the `100000` is world-space items competing among themselves in a different stacking context from the chrome. No change wanted; it only lacked one central table. **It has one now** — `research/docs/architecture.md`, *The stack*, and it is four tables rather than one because there are four stacking contexts and the whole confusion was reading them as one. |
 | 12 | **`tokens.css`, palettes, pigments** | **A** | The reason this audit was possible at all. Every finding above is measured against rules this file states plainly. |
 
 ### Why the note toolbar is bottom
@@ -156,7 +163,18 @@ transitions → `--dur-fast` / `--ease`.
 again.
 
 **Guards.** Six `max(0px, calc(…))` wraps across `overlays.css`, matching the
-existing precedent in `items.css`. `#conn-chip`'s seam → `--hairline`.
+existing precedent in `items.css`. `#conn-chip`'s seam → `--hairline`. All six
+rode the split into their new sheets untouched, so they are where the rules are
+and not where this list says.
+
+**Since, and not from this document.** Two things the split turned up on its own
+and worth knowing before re-finding them: the forced-colors rule that named
+`#menu` was styling nothing — the context menu is `#ctx-menu`, and it is
+`tests/id-contract.test.js`, added the same week, that caught it. And three
+comments described classes that no longer exist (`.note-body` in `items.css`,
+`.playlist-up` and `.is-queue` in `chrome.css`); each now names the class the
+rule actually depends on, which in the `.playlist-up` case is the difference
+that had already broken the album view once.
 
 Untouched on purpose: the `50%` circles (a dot is a shape, not a corner — though
 see below), the two intentional `border-radius: 0` resets, `#000`/`#fff` inside
@@ -166,6 +184,9 @@ one is now commented as a deliberate exception rather than left to look like an
 oversight.
 
 ## The plan for what is left
+
+*Six when this was written; **five** now — item 6 is done, and where it went is
+under it. The other five are as written.*
 
 **1 — Decide the circle question.** Harsh says nothing curves; ~13 elements are
 `border-radius: 50%` and stay perfectly round there. A swatch dot and a slider
@@ -181,10 +202,13 @@ tokens" — most should stay. The work is to sort them into *on-scale*,
 third pile to be small; the corners were the systemic failure, the type mostly
 is not.
 
-**3 — Three stray durations.** `overlays.css:110` (`640ms`), `overlays.css:1069`
-(`300ms`), and `#mobile-header-edit-btn`'s `0.3s`, which `sidebar.css:60` already
-documents as *asked for as a number*. Two to fix, one to leave — but they should
-be told apart explicitly, the way the type sizes should.
+**3 — Three stray durations.** The autosave mark's `640ms` (now `trash.css`),
+`.toast-line`'s `300ms` (now `status.css`), and `#mobile-header-edit-btn`'s
+`0.3s`, which `sidebar.css:60` already documents as *asked for as a number*. Two
+to fix, one to leave — but they should be told apart explicitly, the way the type
+sizes should. The `300ms` is the interesting one and may well be a *leave*: it is
+paired with `TOAST_FADE_MS` on the JavaScript side, and a duration the axis could
+flatten to zero would leave the timer holding an invisible line on screen.
 
 **4 — `lab.html`, or not.** Eight literal radii and a private colour vocabulary.
 Either import the tokens and let the lab render at the current tier — which would
@@ -196,9 +220,19 @@ already explains why it stays (Playfair is offered by name in two font menus and
 saved boards may carry it). That reasoning is sound; it wants a test asserting it
 rather than a comment defending it, so the next reader does not delete it.
 
-**6 — Write the z-index table.** The stack is correct and each site explains
-itself, but the order is reconstructible only by reading eight files. One table,
-in `research/docs/architecture.md`.
+~~**6 — Write the z-index table.**~~ **Done.** *The stack* in
+`research/docs/architecture.md`. It came out as four tables rather than one, and
+that is the finding rather than an expansion of the brief: the app has four
+stacking contexts, not one axis — the root, inside `#viewport`, inside `#world`,
+and inside a single `.item` — with the top layer above all four and not a number
+at all. Every value in the field means something only within its own. Which is
+the whole explanation of the `100000 !important` this document
+graded A and could not otherwise account for: it is sealed inside `#world` by a
+permanent `transform`, and `#world` is sealed inside `#viewport` by
+`contain: layout paint`, so a hundred thousand there cannot reach the toolbar at
+20. Twelve of the seventeen sheets declare one, and two more sites are not
+sheets at all — the `<noscript>` block in `index.html` and one inline write in
+`perf/view-perf.js`. Fourteen files, not eight.
 
 ## The rule this leaves behind
 

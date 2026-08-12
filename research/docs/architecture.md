@@ -35,7 +35,8 @@ tools/                   serve.py + qr.py (dev server and its terminal QR),
                          gen-formats.mjs, gen-stickers.mjs, preset-oklch.mjs
 server.bat, save.bat     the Windows launcher, and the release stamper
 tests/                   node --test, no install
-docs/, research/         specifications, and the reasoning behind past decisions
+research/                the reasoning behind past decisions; research/docs/
+                         is the specifications, this file among them
 ```
 
 ### Layering
@@ -63,8 +64,9 @@ and only `canvas/web.js` draws what they decide. The router's
 obstacles are handed in, which is what keeps it down here rather than reaching
 up into `canvas/spatial.js` for them.
 
-Six more sit down there for a different reason: they are what `state.js` was
-split onto, and they took nearly half of it with them.
+Eleven more sit down there for a different reason: they are what `state.js` was
+split onto, and across two rounds of it they have taken two thirds of the file —
+3,202 lines to 1,806, then a regrowth to 2,607, then 2,607 to 1,260.
 
 | module | holds |
 | --- | --- |
@@ -73,8 +75,31 @@ split onto, and they took nearly half of it with them.
 | `history.js` | the undo/redo engine |
 | `sticky.js` | which note or sticker is stuck to what, and which of them are pinned |
 | `fences.js` | which card is inside which region |
-| `layout.js` | the Mobile pack, both geometry profiles, the undoable geometry writes |
+| `layout.js` | the Mobile pack, both geometry profiles, the undoable geometry writes, and the board-wide snap sweep |
 | `stacking.js` | z-order |
+| `board-schema.js` | the `.mbrd` in both directions — every `normalize*` and `serialize*`, and `loadBoard` |
+| `onboarding.js` | the ghost, hint and 404 cards: their ids, their geometry, and the two session latches |
+| `clipboard.js` | the internal clipboard |
+| `connections.js` | every write to `board.connections` |
+| `trash.js` | the bin — delete and restore, which are two directions of one door |
+
+The second round is worth reading as a set of arguments rather than as five more
+files, because each one answers *why is this allowed out of the mutation door*
+differently. `board-schema.js` is out because reading a file is a pure
+`raw → clean` transformation and only the assignment that swaps the result in is
+a mutation — the reader has to be reachable without the door, or every change to
+the format is a change to the door. `onboarding.js` is out because it is content
+and policy: every function in it is hydration, no commit and no history, which is
+what made it the wrong tenant. `clipboard.js` is out because nothing in it
+touches the board at all — the clipboard is not board state, is never saved and
+has nothing about it to undo — so cut and paste stayed up in `state.js` and call
+down into it. `connections.js` and `trash.js` are the two that are simply
+mutations of one concern that had been filed by accident: `board-model.js`
+already owned the *shape* of a connection, and delete and restore had been
+sitting four hundred lines apart. `TRASH_LIMIT` went to `board-model.js` rather
+than to `trash.js`, because the file reader holds an arriving bin to it too and a
+base module cannot reach up. There is now both a `trash.js` at the base and a
+`ui/trash.js` at the top, which is the relation between them said out loud.
 
 All of them are re-exported by `state.js` under their old names, so nothing
 imports them directly and no caller knows they exist — and **none may ever import
@@ -145,8 +170,10 @@ restore control in the dock, and a dismissed ghost does not come back at all.
 
 ### The entry point and the command surface
 
-`main.js` is the wiring point and nothing else: it builds the `Viewport`, calls
+`main.ts` is the wiring point and nothing else: it builds the `Viewport`, calls
 every `init*()`, and hands `cmds` to whoever needs it. It is deliberately small.
+It is also the module esbuild is pointed at, so the import graph reachable from
+it *is* the bundle.
 
 `commands.js` owns `cmds` — the single command surface that sidebar buttons
 (`data-cmd="…"`), the keyboard and the context menu all drive. **A new
@@ -165,6 +192,18 @@ subject lives:
 | `ui/board-actions.js` | save-with-cooldown, reset, the three-press clear, rearrange, reload |
 | `ui/board-view.js` | the framing — opening view, geometry profile, Mobile bounds |
 | `ui/viewer.js` | one item, full size — the dialog and the table of views |
+
+One of those seven is quietly still doing the job it was lifted out of.
+**`ui/board-actions.js` is a second wiring point** — it reaches into ten
+different modules under `canvas/`, from a file that is otherwise a set of small
+policies about single controls. That is the widest reach in `ui/` and it
+is wider than `main.js`'s, which is the tell: it was the half of `main.js` that
+kept the reaching rather than the half that kept the wiring. Nothing is wrong
+with any one of those imports — a Rearrange has to repaint the grid, the grain,
+the paper and the frame, and something has to know that — but it is worth
+knowing before adding to it that the alternative shape is a `repaintBoard()` the
+canvas owns, and that every import added here makes that shape more expensive to
+reach. The module's own header says the same thing.
 
 #### The viewer
 
@@ -1161,10 +1200,12 @@ switched on, which in this codebase is a short list by design: `RENDERERS`, a
 Ghost cards — the hints a blank board opens with, three sentences and the whimsy
 dial — are **real items** in `board.items`, not an overlay, because an overlay
 would have meant a second gesture pipeline beside `canvas/input.js` for the sake
-of four cards. `state.js` owns their ids (`GHOST_IDS`) and their geometry;
-`canvas/ghosts.js` owns the words and the moment they go, since `state.js` sits
-below the canvas and holds no user-facing prose — an item carries only a key in
-`meta.hint`. Being furniture rather than content is enforced at exactly three
+of four cards. `onboarding.js` owns their ids (`GHOST_IDS`) and their geometry —
+it is under `state.js` rather than in it, because every function in it is
+hydration and none of it goes through the door — and `canvas/ghosts.js` owns the
+words and the moment they go, since neither of those two sits anywhere near
+user-facing prose. An item carries only a key in `meta.hint`. Being furniture
+rather than content is enforced at exactly three
 places: `serializeBoard()` strips them so no `.mbrd` carries one, `removeItems()`
 does not bin them, and `dismissGhosts()` is hydration rather than a command — no
 commit, no history — which is what makes their leaving survive an undo of the
@@ -1353,6 +1394,124 @@ subsystems in it and had become the thing the first split was for. The order
 above is `index.html`'s, and **the order is the cascade** — it is not cosmetic,
 and `quality.css` being last is load-bearing rather than tidy.
 
+### The stack
+
+Every `z-index` in the app, in one place, because the order was reconstructible
+only by opening fourteen files and each of them could only ever explain its own
+number.
+
+The field runs `1` to `90` with a `100000 !important` at the top of it, which
+looks like one axis with an outlier on the end and is not. **There are four
+stacking contexts, and a number only ever means something against its siblings
+inside one of them.** Two of the three seams are made by properties nobody wrote
+for the purpose: `#viewport` carries `contain: layout paint`, and `#world`
+carries a permanent `transform`. Both of those create a stacking context as a
+side effect, which is what seals the board's own numbers away from the chrome's —
+and is the whole explanation of the `100000`, which cannot reach the toolbar at
+`20` however large it is. The third seam is `paintStack()`'s own inline number,
+which makes every mounted card a context as well. Above all four is the **top
+layer**, which is not a z-index at all.
+
+**The root context** — the children of `<body>`. This is the only table where a
+number is a claim about the whole screen.
+
+| z | what | declared in |
+| --- | --- | --- |
+| *top layer* | `#ask`, `#pick`, `#compose`, `#viewer`, `#credits` — a `<dialog>` opened with `showModal()` is promoted out of the page entirely | `dialog.css`, `color-picker.css`, `viewer.css` — **none of them declares a `z-index`, and none can**: the top layer is above every number here by definition |
+| 99999 | the view-change debug strip | `perf/view-perf.js`, as an inline style — the one thing in the app that outranks the app |
+| 90 | `#splash`, the boot cover; `#nojs`, its no-JavaScript twin | `base.css`; the `<noscript>` `<style>` in `index.html` |
+| 70 | `#search` — over the context menu, which it can be opened from | `menu.css` |
+| 61 | `#fence-prompt`, the offer under a rubber band | `menu.css` |
+| 60 | `#ctx-menu`; `#bin-ghost`; `.sticker-ghost` | `menu.css`; `trash.css`; `sticker-pad.css` |
+| 59 | `#conn-chip` — deliberately *under* the menu, because the menu is opened from the chip and then covers it | `menu.css` |
+| 55 | `#busy`, the waiting strip | `status.css` |
+| 50 | `#toast` | `status.css` |
+| 41 | `#mobile-header-edit-btn`, but only while `#sidebar.is-open` | `sidebar.css` |
+| 40 | `#sidebar`, `#header-panel`; `#library`; `.player-window`; `.sticker-window` | `sidebar.css`; `library.css`; `mobile.css`; `sticker-pad.css` |
+| 30 | `#menu-btn`, `#mobile-header-edit-btn`, `#mobile-find-btn` | `sidebar.css` |
+| 25 | `#drop-overlay` | `status.css` |
+| 24 | `#exit-layer`, the delete fly-out | `trash.css` |
+| 20 | `#corner`, `#toolbar`, `#nowplaying`; `#bin` | `chrome.css`; `trash.css` |
+| 2 | `#mobile-feed`, `#mobile-playlist` | `mobile.css` |
+| *auto* | `#viewport`, then `#grain`, then the paper on `<body>` — document order, no number | `canvas.css`, `base.css` |
+
+Three of those are worth reading as decisions rather than as numbers. **59, 60,
+61 are one conversation**: the connection chip is below the context menu because
+the menu can be opened *from* the chip, and the fence offer is above it because
+the two can never be up together and a right-click withdraws the offer. **41 over
+40** is the masthead pen keeping the top-left corner the sidebar slides over,
+which is right on a desktop and wrong on a phone, where `mobile.css` takes the
+pen away instead. And **the two feed surfaces at 2 are siblings of `#viewport`,
+never children of it** — `index.html` says why, and it is not about layering: a
+surface nested inside `#viewport` would inherit `--iz` and be caught by the
+whole-board style invalidation `canvas/mobile-frame.js` exists to avoid.
+
+One comment disagrees with this table and nothing depends on it. `base.css`
+justifies the boot cover as sitting "above the sidebar (40), the dialogs (70) and
+the toast (50)": 70 is `#search`, and a modal `<dialog>` is in the top layer and
+therefore *above* `#splash` rather than below it. Nothing opens a dialog before
+the cover is dismissed, so the arrangement is fine and only the reason given for
+it is not.
+
+**Inside `#viewport`** — sealed by `contain: layout paint`. Every number here is
+under all of the chrome, because `#viewport` itself is `auto` in the table above.
+
+| z | what | declared in |
+| --- | --- | --- |
+| 21 | `.note-toolbar.is-mobile`, the formatting bar across the top of a phone | `items.css` |
+| 6 | `.note-toolbar`, the desktop float — screen space, so it is never scaled by zoom nor clipped by the item box | `items.css` |
+| 5 | `#marquee`; `#fence-ghost` — the same number for the same reason, both being board furniture the toolbar and the panels have to stay over | `canvas.css`; `menu.css` |
+| *auto* | `#world` | `canvas.css` |
+
+The `21` is the one that looks like it is reaching for the chrome and is not: it
+cannot outrank `#toolbar` at 20 from in here, which is why the phone's note edit
+mode *hides* the two corner buttons through `:root.note-edit-mobile` rather than
+trying to cover them. When the same bar is mounted in the note composer instead,
+it is inside a `<dialog>` and so in the top layer, and none of this applies.
+
+**Inside `#world`** — sealed by the permanent `transform` that makes pan and zoom
+one composited layer.
+
+| z | what | declared in |
+| --- | --- | --- |
+| 100000 `!important` | `.item[data-type="title"]` while hovered or selected, at every zoom rung except `.zoom-tiny` | `canvas.css` |
+| *per item, inline* | the visual stack — `paintStack()` in `canvas/items.js` writes each `.item` its rank, with every fence in a band below every card | `canvas/items.js` |
+| −1 | `#item-shadows`, the shared underlay every card's shadow is painted into | `canvas.css` |
+| −2 | `#web`, the connection lines — under the items, which is why a route that cannot go around goes *behind* and still reads as a wire | `canvas.css` |
+
+**The `100000` is correct and should stay.** It is not competing with the
+chrome — it cannot, from inside two nested stacking contexts — it is competing
+with the other cards, and it has to beat all of them at once because the number
+it must exceed is whatever `paintStack()` last wrote to the topmost item. The
+title card's pen and buttons straddle its edge and hang outside its box, so
+without the lift they are reachable only when the card happens to be on top
+already. `!important` because the inline z-index it is overriding is written by
+JavaScript, and an inline declaration cannot be beaten by a stylesheet any other
+way.
+
+**Inside one `.item`** — every mounted item is a stacking context of its own,
+because `paintStack()` gives it a numeric `z-index`. So these four numbers repeat
+on every card on the board and never interact between two of them.
+
+| z | what | declared in |
+| --- | --- | --- |
+| 3 | the title card's pen; and the controls raised over the grips — `.vbig`, `.wave`, `.vtrack`, `.card-link .card-name` | `canvas.css`; `items.css` |
+| 2 | the resize grips and corner marks | `items.css` |
+| 1 | the title card's strike-out gutter; `.far-head`; the ring drawn at `#world.zoom-far`; the flat shadow substitute under `[data-q-shadows="off"]` | `canvas.css`; `items.css`; `quality.css` |
+
+`.feed-sticker` in `items.css` also carries a `2`, and it is the exception that
+proves the arrangement: it is drawn on a Feed tile rather than on a board item,
+so it is inside `#mobile-feed` at the root's `2` and has nothing to do with the
+grips it shares a number with.
+
+**Adding one.** Decide which of the four contexts the element is actually in
+before choosing a number — the mistake this table exists to prevent is picking a
+value from the wrong table, which produces an element that is either invisible or
+permanently on top and no console anywhere will say so. New chrome that must
+cover the panels goes above 40 and below 50; new board furniture goes at 5 beside
+the marquee; anything that must cover *everything* is a `<dialog>`, not a bigger
+number.
+
 ### The icons
 
 Every icon in the app is a `<symbol>` in `web/assets/icons.svg`, reached by name:
@@ -1406,17 +1565,29 @@ list, which is where somebody opening the stylesheets will look first.
 
 - **No browser globals at import time.** Reaching for `document` inside a
   function is fine; reaching for it in a module body is not. The only exceptions
-  are `main.js`, `ui/appearance.js` and `optimize/media-worker.js`, listed in
-  `tests/imports.test.js`. Adding a fourth is a regression.
+  are `main.ts`, `ui/appearance.ts` and `optimize/media-worker.js`, listed in
+  `tests/imports.test.js`. Adding a fourth is a regression. The odd extension on
+  the third is not a slip: it is fetched by URL at runtime as a *classic* worker
+  and a browser cannot fetch a `.ts` file, which is also why it is the one module
+  outside the bundle and named in `SHELL` on its own.
 - **Every shipped asset appears in `SHELL` in `web/sw.js`** (`tests/sw.test.js`).
-  That list drifted once and left a font uncached offline. The test walks
-  `assets/js`, `assets/css` and `assets/fonts`, which is what makes `web/lab.html`
-  possible: a bench for the palette extractor, deliberately out of the offline
-  shell, sitting at `web/`'s top level only because the dev server's document root is
-  `web/` and that is the one place a page can `import` the real `ui/pigments.js`
-  rather than a copy. It is a single file with no module of its own under
-  `assets/js` for exactly that reason — put one there and the walk would rightly
-  demand it be precached.
+  That list drifted once and left a font uncached offline. What counts as a
+  shipped asset changed when the bundle landed: the test walks `assets/css` and
+  `assets/fonts` and **no longer walks `assets/js`**, because the modules under
+  it are sources rather than assets — what the page loads is `assets/app.js`, and
+  the shell names that one artifact plus the media worker beside it. The test
+  gained a check that no `.ts` path ever appears in the shell, which is the guard
+  against somebody re-adding the module list it used to walk.
+
+  `web/lab.html` is the thing that arrangement has to keep possible: a bench for
+  the palette extractor, deliberately out of the offline shell, sitting at
+  `web/`'s top level only because the dev server's document root is `web/` and
+  that is the one place a page can reach the real `ui/pigments.ts` rather than a
+  copy of it. It is a single file with no module of its own under `assets/js`,
+  which used to be because the walk would have demanded it be precached and is
+  now because a module of its own would be a second thing to build. `robots.txt`
+  deliberately does not block it — the `noindex` in its head has to be fetched to
+  work, and a `Disallow` would stop the fetch that delivers it.
 - **The layering graph is executable** (`tests/layers.test.js`), not advice.
 - **Every icon reference resolves to a symbol in `assets/icons.svg`, and every
   symbol is referenced** (`tests/icons.test.js`). A misspelled fragment id is not
@@ -1447,9 +1618,10 @@ the browser console.
 
 It gets asked, so the numbers are here rather than in someone's memory.
 
-Of ~31,600 lines of JavaScript, about **11,500 are in modules that never touch
-`document` or `window`** — struct reading, ZIP containers, OKLCh arithmetic,
-spanning trees, packing. A view framework has nothing to say about any of it.
+Of ~31,600 lines of application code, about **11,500 are in modules that never
+touch `document` or `window`** — struct reading, ZIP containers, OKLCh
+arithmetic, spanning trees, packing. A view framework has nothing to say about
+any of it.
 
 Of the rest, most is imperative because the app is. `canvas/input.js` runs one
 Pointer Events pipeline where a synthetic event system would be the thing to
@@ -1461,8 +1633,19 @@ modules must **not** remount, because remounting a `<video>` stops playback.
 That leaves the genuinely view-shaped code — the panel, sidebar, menu, dialog,
 search, bin, now-playing bar, mobile header — at roughly 5,000 lines, of which
 maybe 3,000 is actual view. A rewrite would put 32,000 lines at risk to shorten
-3,000, and would trade away the zero-dependency, zero-build property that is the
+3,000, and would trade away the zero-runtime-dependency property that is the
 project's whole shape.
+
+There *is* a build step now, and it is worth being exact about what that does and
+does not concede. It converts the source tree from the artifact into the input to
+one, which is the trade the bundler was bought for. It does not put anything
+between the app and the browser at runtime: nothing is fetched, nothing is
+polyfilled, `THIRD-PARTY.md` is still four fonts long, and the three
+devDependencies are a linter, a typechecker and a bundler, none of which ships.
+The property a framework would take is a different one — a reconciler owning the
+DOM, a synthetic event system over the pointer pipeline, a component lifecycle
+over the cull — and none of that is any cheaper to adopt for esbuild being in the
+loop.
 
 And the declarative layer a framework would sell already exists here:
 `ui/settings-schema.js` plus `ui/panel.js` is data-driven UI with a test on it.

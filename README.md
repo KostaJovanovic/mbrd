@@ -102,12 +102,16 @@ work at all. Details in [`research/docs/browser-support.md`](research/docs/brows
 
 ## Developing
 
-Plain JavaScript, no framework, no dependencies, no build step — edit a file in
-`web/` and refresh.
+TypeScript, no framework, no runtime dependency. There is a build step — a
+browser cannot fetch a `.ts` module, so what the page loads is `assets/app.js`,
+one bundle esbuild writes — which makes an edit `npm run dev` and a refresh
+rather than a refresh alone. The built bundle is committed, so *running* it still
+needs nothing fetched.
 
 ```bash
 python tools/serve.py   # dev server on port 6273
-npm test            # run the tests, no install needed
+npm test                # run the tests, no install needed
+npm run dev             # rebuild the bundle on save (needs npm install)
 ```
 
 [`CONTRIBUTING.md`](CONTRIBUTING.md) is where to start,
