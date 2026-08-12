@@ -99,9 +99,20 @@ files instead of quietly at runtime.
 `storage/zip.js` inflates its own entries, `mesh.js` reads STL/OBJ/GLB by hand,
 `import/artwork.js` walks ID3v2 / MP4 atoms / FLAC blocks itself,
 `optimize/opus.js` wraps WebCodecs' bare Opus packets in an Ogg container it
-writes by hand, and `ui/pigments.js` does its own OKLCh. That is the repo's one
-real property: zero runtime dependencies. A new format is a few hundred lines of
-header reading in the same style, not an npm package.
+writes by hand, `ui/markdown.js` is its own CommonMark-and-GFM parser,
+`import/document.js` and `ui/documents.js` read Office, OpenDocument, Krita,
+Procreate, iWork and PSD out of their own containers, and `ui/pigments.js` does
+its own OKLCh. That is the repo's one real property: zero runtime dependencies.
+A new format is a few hundred lines of header reading in the same style, not an
+npm package.
+
+The two document readers are the clearest illustration of what that buys and
+what it costs. Between them they open eleven formats and neither imports
+anything: every one of those formats is a ZIP with XML inside it, this repo
+already owns a bounds-checking ZIP reader because a `.mbrd` *is* one, and the
+browser owns an XML parser. What it costs is stated in `ui/documents.js`'s own
+header — it is layout and not typesetting, so a `.docx` reads as a flow of styled
+runs rather than as the page Word would print.
 
 ---
 
@@ -149,6 +160,32 @@ subject lives:
 | `ui/board-title.js` | the board name and title card, on both layouts |
 | `ui/board-actions.js` | save-with-cooldown, reset, the three-press clear, rearrange, reload |
 | `ui/board-view.js` | the framing — opening view, geometry profile, Mobile bounds |
+| `ui/viewer.js` | one item, full size — the dialog and the table of views |
+
+#### The viewer
+
+`ui/viewer.js` is one `<dialog>` and a dispatch table, and the table is the whole
+of its design: `VIEWS` is keyed by item type the way `RENDERERS` in
+`canvas/renderers.js` is, so a new thing to show is one entry and neither the
+module nor the markup changes.
+
+It is asked *before* that table whether the file is a document, and by extension
+rather than by type — because a document has no type of its own on this board. A
+`.docx` that carried a baked thumbnail imported as an `image` (see
+`import/document.js`); one that did not imported as `generic`. Neither says
+"document" and both must open as one.
+
+Three readers stand behind it. `ui/markdown.js` renders `.md`. `ui/documents.js`
+reads Word, OpenDocument, slides, sheets, CSV, SVG and comic archives out of
+their containers. `import/pdf.js` gained `openPdf()`, a paging entry point beside
+the single-raster one import uses. Every one of them lands its text in the page
+as a **text node** — nothing in that chain touches `innerHTML` once, which is
+what makes it safe to point at a file this app did not write, since there is then
+no escaping to get right. SVG is the single exception, and it is parsed detached
+and walked against an allow-list before anything of it reaches the page.
+
+The Feed opens it on a tap and the canvas on a double-click; both also reach it
+from the **Open** row that now leads the item menu.
 
 #### One menu, drawn in three places
 
@@ -174,6 +211,17 @@ button without one is a button. The press is untouched in every case: hovering
 Arrange shows the seven layouts, clicking it still rearranges. It binds only
 under `(hover: hover)` and ignores `pointerType === 'touch'`, because Note and
 Colour are on the phone's tier and a tap there has to add the thing.
+
+Two more callers, both later. `cmds.moreTools` hangs an anchored menu under the
+phone toolbar's **More** button — a tap and not a hover, which is why it is a
+command opening `openAnchored()` and not a fourth `FLYOUTS` entry. And the Feed
+opens the item menu on a right-click or a hold, through
+`openContextMenu(..., { mobile: true })`. That flag takes rows away and never
+adds any: about a third of the item menu is spatial — z-order, sizes, zoom, a
+note placed *here*, a fence — and the Feed throws every computed position away.
+It is a flag on the existing rows rather than a second entry list, because two
+lists of one menu drift the first time only one is edited, which is the whole
+argument for there being one `ui/menu.js`.
 
 One thing to know before adding a seventh module here. `commands.js` takes
 `resetAppearance` and `setWhimsy` as arguments rather than importing them:
