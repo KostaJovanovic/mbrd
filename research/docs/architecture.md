@@ -28,7 +28,7 @@ web/                     the application, and the document root
   assets/css/            eight subsystem files, in load order (= the cascade)
   assets/js/             the app, split by responsibility
 tools/                   serve.py + qr.py (dev server and its terminal QR),
-                         gen-formats.mjs, gen-og.mjs, preset-oklch.mjs
+                         gen-formats.mjs, gen-stickers.mjs, preset-oklch.mjs
 server.bat, save.bat     the Windows launcher, and the release stamper
 tests/                   node --test, no install
 docs/, research/         specifications, and the reasoning behind past decisions
@@ -1330,15 +1330,24 @@ specificity:
 | `canvas.css` | `#viewport`, `#world`, the transform layer, the grid, the connections, item shadows, the paper outline, the Mobile sheet and masthead in screen space |
 | `items.css` | the cards per type, the ghost hints, the grips, and what the board stops paying for while it is being moved |
 | `sidebar.css` | the panel — tabs, sections, folds, `.field` and its variants |
-| `chrome.css` | the corner, HUD readouts, the drop overlay, toasts, the now-playing bar |
-| `overlays.css` | the bin, the delete fly-out, the context menu, Find, the waiting strip |
+| `chrome.css` | the corner, HUD readouts, the toolbar, the now-playing bar |
+| `trash.css` | the bin and its panel (`ui/trash.js`), and the fly-out a deleted card plays (`canvas/exit-anim.js`) |
+| `menu.css` | the panels that open over the board to be answered — Find, the context menu and the toolbar flyouts, the fence offer, the connection chip |
+| `library.css` | the board switcher (`ui/library.js`) |
+| `status.css` | what the app says while it works — the drop target, the waiting strip, the toast slips — plus the global `prefers-reduced-motion` stop, which is here because its one exception is the indeterminate bar |
+| `dialog.css` | the sheets — the question dialog, the note composer, the credits roll |
+| `viewer.css` | the viewer (`ui/viewer.js`) and documents read inside it (`ui/documents.js`) |
+| `color-picker.css` | the saturation square and the hue (`ui/color-picker.js`) |
+| `sticker-pad.css` | the drawer of shapes (`ui/sticker-window.js`) |
 | `mobile.css` | touch, small screens, and the mobile-only rules |
 | `quality.css` | the `[data-whimsy]` and `[data-quality]` tails — **must stay last**, because both have the same specificity as what they override and win on document order alone |
 
 This was one 6,000-line `app.css` until it became the file every interface
-change had to touch at once. The order above is `index.html`'s, and **the order
-is the cascade** — it is not cosmetic, and `quality.css` being last is load-
-bearing rather than tidy.
+change had to touch at once. The eight from `trash.css` to `sticker-pad.css`
+were then one 2,370-line `overlays.css` until *that* file had eleven unrelated
+subsystems in it and had become the thing the first split was for. The order
+above is `index.html`'s, and **the order is the cascade** — it is not cosmetic,
+and `quality.css` being last is load-bearing rather than tidy.
 
 ### The icons
 
