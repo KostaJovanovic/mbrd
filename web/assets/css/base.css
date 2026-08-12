@@ -165,21 +165,34 @@ body {
    The 512px below is the tile at 100%. grain.js scales it with the zoom and
    carries the same number, so what is written here is only what the layer
    wears between first paint and the first view change. */
-/* Two surfaces, one stock. Desktop's paper is the window, so the grain is a
+/* Three surfaces, one stock. Desktop's paper is the window, so the grain is a
    full-bleed layer under #viewport. Mobile's paper is the *sheet* - a finite,
-   deliberately opaque strip painted inside #viewport, above that layer - so on
-   Mobile the full-bleed one is covered by the board and shows only in the
-   surround around it, which is the board wearing its texture inside out. The
-   sheet therefore carries its own, and the full-bleed layer is taken off; see
-   the two rules below the shared block.
+   deliberately opaque strip - so on Mobile the full-bleed one is covered by the
+   board and shows only in the surround around it, which is the board wearing
+   its texture inside out. The sheet therefore carries its own, and the
+   full-bleed layer is taken off; see the two rules below the shared block.
 
-   Both read their placement from custom properties rather than being written
-   directly, because one of the two surfaces is a pseudo-element. That is safe
-   here in a way it would not be on <body>: #grain is childless and
-   #mobile-board-frame has only this ::after, so an inherited custom property on
-   either invalidates nothing but itself. */
+   There are two Mobile sheets because there were two Mobile boards.
+   #mobile-board-frame is the world-space strip; .feed-sheet is the Feed that
+   replaced it (mobile.css), and it did not inherit the tooth on the way - so
+   the phone board has been printing on untextured stock since that migration.
+   Joining it to this selector rather than writing a second texture is the whole
+   argument for the rule being shared: one image, one blend, two dials, and a
+   change to the look reaches every surface that is meant to be paper.
+
+   All three read their placement from custom properties rather than being
+   written directly, because two of them are pseudo-elements. That is safe here
+   in a way it would not be on <body>: #grain is childless, and
+   #mobile-board-frame and .feed-sheet each have only this one pseudo-element
+   reading them, so an inherited custom property invalidates nothing but itself.
+
+   The Feed writes neither property: it has no zoom, so there is no tile to
+   scale and no fade to run, and the 512px fallback in the shared block is the
+   whole answer. Position 0 0 against the sheet is what makes the grain travel
+   with the board rather than sit still behind a scrolling one. */
 #grain,
-#mobile-board-frame::after {
+#mobile-board-frame::after,
+.feed-sheet::before {
   background-image: url("../img/paper-grain.webp");
   background-repeat: repeat;
   background-position: var(--grain-pos, 0 0);
