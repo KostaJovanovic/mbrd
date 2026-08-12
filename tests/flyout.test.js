@@ -185,8 +185,8 @@ test('ui/menu.js can draw the two row kinds these lists use', () => {
 });
 
 test('the flyout panel is styled and does not scroll off the bottom of the bar', () => {
-  const css = read(join(WEB, 'assets', 'css', 'overlays.css'));
-  assert.match(css, /#ctx-menu\.is-flyout\s*\{/, 'no is-flyout block in overlays.css');
+  const css = read(join(WEB, 'assets', 'css', 'menu.css'));
+  assert.match(css, /#ctx-menu\.is-flyout\s*\{/, 'no is-flyout block in menu.css');
   assert.match(css, /\.ctx-chip\s*\{/, 'the colour chips have no rule');
   assert.match(css, /\.ctx-range\s*\{/, 'the spacing row has no rule');
 });

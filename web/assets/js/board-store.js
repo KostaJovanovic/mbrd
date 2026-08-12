@@ -49,6 +49,45 @@ export const bus = emitter();
 export const selection = new Set();
 
 /**
+ * The three writes to that Set that announce themselves.
+ *
+ * They live beside it rather than in state.js because they are not board
+ * mutations: nothing about the board changes, nothing is dirtied and there is
+ * nothing to undo - which is exactly why they never needed the mutation door in
+ * the first place. What they do need is the Set and the bus, and both are here.
+ *
+ * Callers that hold the Set directly and want *no* announcement still write to
+ * it themselves - loadBoard() clears it in the middle of replacing everything
+ * and emits 'selection' once at the end with the rest, and a command's undo half
+ * drops ids while it is already emitting. That is deliberate and is why these
+ * are three small functions rather than a wrapper around the Set: the quiet
+ * write has to stay available, and making it impossible would mean an event per
+ * id on every delete.
+ *
+ * `selectAll()` is not here, and cannot be: it needs the item list, which lives
+ * in board-model.js, which imports this module. It stays in state.js as a
+ * one-liner over this.
+ */
+export function select(ids, additive = false) {
+  if (!additive) selection.clear();
+  for (const id of ids) selection.add(id);
+  bus.emit('selection');
+}
+
+export function clearSelection() {
+  if (!selection.size) return;
+  selection.clear();
+  bus.emit('selection');
+}
+
+/** Remove one item from the current selection, leaving the rest intact. */
+export function deselect(id) {
+  if (!selection.delete(id)) return false;
+  bus.emit('selection');
+  return true;
+}
+
+/**
  * Whether the board holds changes that are not in a file.
  *
  * Emits only when the answer *changes*, which is what keeps a drag from

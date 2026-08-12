@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------
-   HUD, drop overlay, toast
+   HUD, toolbar, now-playing bar
    --------------------------------------------------------- */
 
 /* The corner stack: zoom controls over the coordinate readout. */
@@ -100,7 +100,7 @@
 
    The height is the glass's own button height, so the bar lines up with the
    menu button in the opposite corner the way the zoom pill lines up with the
-   bin. That number is also what #busy is pushed down by in overlays.css - a
+   bin. That number is also what #busy is pushed down by in status.css - a
    strip announcing an import has no business landing on top of the button that
    started it - so it is published as a token rather than left implicit. */
 :root { --toolbar-h: var(--chrome-button-h); }
@@ -324,8 +324,9 @@
 /* Four things, all of them always there: open the playlist, play/pause, the
    volume, close. Shuffle, prev, next and repeat used to live here too and be
    shown or hidden off an .is-queue class depending on whether a playlist was the
-   sound; they are in the playlist window now, beside the list they act on, and so
-   is that class. */
+   sound. They are in the playlist window now, beside the list they act on, where
+   there is always a queue to act on and so nothing left to hide them for: the
+   class went with the buttons and then went away. */
 
 /* Arriving and leaving.
    It comes up from under the edge of the window and goes back down under it.

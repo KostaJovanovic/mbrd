@@ -17,20 +17,60 @@
 //                every subscriber to that one would repaint for a change that
 //                moved nothing and added nothing.
 
-import { clamp, isFamily, isHash, itemHashes, toast } from './util.js';
+import { isHash, itemHashes, toast } from './util.js';
 // Pure geometry, shared with the canvas and the input layer so that "where is
 // this item and what does it cover" has exactly one answer in this app. Kept
 // at the top level rather than under canvas/ because it depends on nothing and
 // belongs to no one layer - see geometry.js.
-import {
-  itemBounds, latticeBox,
-} from './geometry.js';
-// The board's link to real-world sizes. Pure arithmetic with no state of its
-// own, at the same level as geometry.js and imported here for the same reason:
-// the default belongs with the rest of the defaults, and the clamp has to run
-// on every board that arrives from a file.
-import { clampScale, PAPERS } from './measure.js';
+import { latticeBox } from './geometry.js';
 import { splitAppearance, mergeAppearance } from './layout-settings.js';
+// The .mbrd format, one level down - see board-schema.js. Everything about the
+// shape of a file, in both directions: what an arriving board is held to and
+// what a saved one is written as. serializeBoard() is re-exported below under
+// its old name; the four normalizers are this file's own working set, since
+// setSetting() writes the same board-level fields the reader validates and the
+// two must agree on what a legal value is.
+import {
+  normalizeBoard, normalizeFonts, normalizeMediaFit, normalizeMobileHeader,
+  normalizePaletteSources, serializeBoard,
+} from './board-schema.js';
+
+export { serializeBoard };
+
+// The cards an empty board puts on itself, one level down - see onboarding.js.
+// Hydration rather than mutation: no commit, no history, and two session
+// latches that must survive an undo of the import that cleared them. Every name
+// is re-exported below, because callers have always reached them through here.
+import {
+  GHOST_IDS, NOTFOUND_IDS, tapeFor, hasContent, hasGhosts, isNotFoundBoard,
+  leaveNotFoundBoard, ensureGhostCards, dismissGhosts, resetGhostLatch,
+  reseedGhostCards,
+} from './onboarding.js';
+
+export {
+  GHOST_IDS, NOTFOUND_IDS, tapeFor, hasContent, hasGhosts, isNotFoundBoard,
+  leaveNotFoundBoard, ensureGhostCards, dismissGhosts, resetGhostLatch,
+  reseedGhostCards,
+};
+
+// The internal clipboard, one level down - see clipboard.js. Nothing in it
+// touches the board, which is exactly why it could go: the clipboard is not
+// board state, it is not saved and there is nothing about it to undo. The two
+// commands that *do* touch the board - cut and paste - stayed here.
+import {
+  clearClipboard, clipboardBounds, clipboardHasOurs, clipboardSize, cloneItem,
+  copyItems, itemCount, itemsIn, pasteCopies, takeItems,
+} from './clipboard.js';
+
+export { clipboardBounds, clipboardHasOurs, clipboardSize, copyItems };
+
+// The bin, one level down - see trash.js. Delete and restore are two directions
+// of one door and they sat four hundred lines apart in here; the bin's bound is
+// in board-model.js beside MAX_ITEMS, because it is part of the board's shape
+// and the file reader applies it too.
+import { removeItems, restoreItems, emptyTrash } from './trash.js';
+
+export { removeItems, restoreItems, emptyTrash };
 // Downward: the catalogue is pure - geometry.js and nothing else - and this is
 // the one thing state needs from it, which of the two lists a stored
 // arrangement id belongs to. See tests/layers.test.js, where it is BASE.
@@ -38,12 +78,15 @@ import { splitAppearance, mergeAppearance } from './layout-settings.js';
 // split; they are re-exported below under exactly their old names, because
 // "state.js is the only door" is a rule about where mutations go and not about
 // which file a symbol happens to be declared in. See board-store.js.
-import { bus, selection, isDirty, markDirty, resetDirty } from './board-store.js';
+import {
+  bus, selection, isDirty, markDirty, resetDirty,
+  select, clearSelection, deselect,
+} from './board-store.js';
 import {
   commit, undo, redo, historyState, clearHistory, lastCommand, takeBack,
 } from './history.js';
 
-export { bus, selection, isDirty, markDirty };
+export { bus, selection, isDirty, markDirty, select, clearSelection, deselect };
 export { commit, undo, redo, historyState, lastCommand, takeBack };
 
 // The board's shape and its index, one level down - see board-model.js. The
@@ -58,12 +101,26 @@ import {
   topZ, makeItem, isFurniture, isContent, isJoinEnd,
 } from './board-model.js';
 import {
-  cloneSettings, layoutSettingsOf, settingsFor, dropIdIndex,
-  dedupeIds, MAX_ITEMS, MAX_CONNECTIONS, pairKey, normalizeConnections,
-  normalizeAudioOrder, connMeta, CONN_DIRECTIONS, CONN_STYLES,
+  cloneSettings, layoutSettingsOf, dropIdIndex,
+  MAX_CONNECTIONS, pairKey, normalizeAudioOrder, CONN_DIRECTIONS, CONN_STYLES,
 } from './board-model.js';
 
 export { MAX_CONNECTIONS, pairKey, CONN_DIRECTIONS, CONN_STYLES };
+
+// Every write to board.connections, one level down - see connections.js. The
+// shape of a connection stayed in board-model.js and the pruning stayed in
+// board-schema.js; what moved is the mutation half, which is all of it that had
+// to sit beside commit(). Re-exported by name: callers have always drawn and
+// parted lines through state.js.
+import {
+  areConnected, connectedTo, toggleConnection, addConnections, clearConnections,
+  updateConnection, connectionMeta,
+} from './connections.js';
+
+export {
+  areConnected, connectedTo, toggleConnection, addConnections, clearConnections,
+  updateConnection, connectionMeta,
+};
 
 // Stuckness, one level down - see sticky.js. Questions about geometry; the
 // mutations that act on their answers are here.
@@ -90,8 +147,15 @@ import { stickerTint } from './stickers/catalogue.js';
 // profiles and the undoable geometry writes, which had to move as one piece
 // because the pack and the profiles call each other.
 import {
-  SNAP_KEYS, activateLayoutSettings, applyGeom, baseStep, captureLayout, captureLayoutSettings, commitGeom, completeLayout, fitBoardMode, forgetPresnap, geometryOf, layoutMap, mobileBoardWidth, normalizeLayout, placeMobileItems, repackMobileBoard, snapshotGeom, travelling, usableMemo, writeLayout,
+  activateLayoutSettings, applyGeom, baseStep, commitGeom, completeLayout, fitBoardMode, mobileBoardWidth, placeMobileItems, recheckBoardGeometry, repackMobileBoard, snapAll, snapshotGeom, travelling, unsnapAll, writeLayout,
 } from './layout.js';
+
+// Board-wide snapping moved down with the rest of the geometry writes - see the
+// tail of layout.js. setSetting() still owns the `snap` key and hands the value
+// over; snapAll/unsnapAll take the flag as well as the sweep, because the two
+// are one command (an undo that put the board back and left the checkbox ticked
+// was the bug that made them one).
+export { recheckBoardGeometry };
 
 // Z-order - see stacking.js. Sticky notes are ordered against their host rather
 // than against the board, which is why this is not a sort by z.
@@ -218,295 +282,6 @@ function onLattice(it) {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Connections
-//
-// Lines between two cards, drawn by hand. The list is `board.connections` -
-// unordered pairs of item ids, top-level because items are shared across both
-// layouts while geometry is not (see board-model.js).
-//
-// **Dangling is tolerated, not prevented,** and that one decision is why there
-// is no bookkeeping here for delete, undo, trash or restore. A connection whose
-// item is not on the board is simply not drawn; the item comes back and its
-// connections come back with it, because they never left. Every alternative -
-// stripping pairs on delete and restoring them on undo, or refusing to let an
-// item go while something points at it - is a second undoable thing to get
-// right at four call sites, to arrive at the same picture.
-//
-// The pruning happens once, at the edges: on the way into a file and on the way
-// out of one, against the items that file actually holds (live *and* binned).
-// So nothing accumulates on disk, and nothing is lost while the app is running.
-// ---------------------------------------------------------------------------
-
-/**
- * key -> true for every pair on the board, rebuilt lazily.
- *
- * The same arrangement byId() has with board.items, for the same reason: the
- * array is the truth and an index maintained by hand is one missed write away
- * from lying. `connections` is the only event that can change membership, so it
- * is the only one that drops this.
- */
-let connIndex = null;
-
-function connKeys() {
-  if (!connIndex) {
-    connIndex = new Set();
-    for (const [a, b] of board.connections) connIndex.add(pairKey(a, b));
-  }
-  return connIndex;
-}
-bus.on('connections', () => { connIndex = null; });
-bus.on('board:load', () => { connIndex = null; });
-
-/** Whether these two cards are joined. Order does not matter. */
-export const areConnected = (a, b) => !!a && !!b && connKeys().has(pairKey(a, b));
-
-/** The ids joined to this one. Linear, and called once per reroute. */
-export function connectedTo(id) {
-  const out = [];
-  for (const [a, b] of board.connections) {
-    if (a === id) out.push(b);
-    else if (b === id) out.push(a);
-  }
-  return out;
-}
-
-/**
- * Join these two, or part them if they are already joined.
- *
- * One function rather than a connect and a disconnect, because it is one
- * gesture: the connector tool run again on a pair that already has a line is
- * how a line is removed. The alternative was making connections selectable,
- * which means hit-testing a path in canvas/input.js and a selection model
- * holding things that are not items - a great deal of machinery for a delete
- * key. See research/toolbar-2026-08-03.md.
- *
- * Returns whether the pair is connected now, so the caller can say which of the
- * two things just happened.
- */
-export function toggleConnection(a, b) {
-  if (!a || !b || a === b) return false;
-  const key = pairKey(a, b);
-  const had = connKeys().has(key);
-  if (!had && board.connections.length >= MAX_CONNECTIONS) {
-    toast('That is as many connections as one board can hold', 'error');
-    return false;
-  }
-  const write = list => {
-    board.connections = list;
-    bus.emit('connections');
-  };
-  const before = board.connections;
-  const after = had
-    ? board.connections.filter(p => pairKey(p[0], p[1]) !== key)
-    : [...board.connections, [a, b]];
-  commit(had ? 'Remove connection' : 'Connect',
-    () => write(after), () => write(before));
-  return !had;
-}
-
-/**
- * Add several at once, skipping the ones already there. One undo entry.
- *
- * The generator's door (cmds.connectSelection). One commit rather than one per
- * pair for the reason swapAssets() gives: you asked for a set of connections
- * and one Ctrl+Z has to take back a set, and forty separate entries would also
- * be forty of the history limit spent on a single button press.
- *
- * Returns how many were actually new, which is what the toast reports.
- */
-export function addConnections(pairs, label = 'Connect') {
-  const keys = connKeys();
-  const fresh = [];
-  const taken = new Set();
-  for (const [a, b] of pairs || []) {
-    if (!a || !b || a === b) continue;
-    const key = pairKey(a, b);
-    if (keys.has(key) || taken.has(key)) continue;
-    // Checked before the push, not after: at capacity the old order pushed one
-    // pair before breaking, leaving board.connections one past MAX_CONNECTIONS.
-    if (board.connections.length + fresh.length >= MAX_CONNECTIONS) break;
-    taken.add(key);
-    fresh.push([a, b]);
-  }
-  if (!fresh.length) return 0;
-  const before = board.connections;
-  const after = [...board.connections, ...fresh];
-  const write = list => { board.connections = list; bus.emit('connections'); };
-  commit(label, () => write(after), () => write(before), fresh.length);
-  return fresh.length;
-}
-
-/**
- * Take every line off the board, in one undoable step.
- *
- * The board-wide counterpart to drawing over a pair, and the answer to the one
- * thing the generator makes easy to regret: running it on a board you did not
- * mean to leaves forty lines that would otherwise be forty trips with the Join
- * tool. Returns how many went, so the caller can say.
- *
- * One commit rather than one per pair, for the reason swapAssets() gives: you
- * asked to clear a board and one Ctrl+Z has to give a board back.
- */
-export function clearConnections(label = 'Remove all connections') {
-  const before = board.connections;
-  if (!before.length) return 0;
-  const write = list => { board.connections = list; bus.emit('connections'); };
-  commit(label, () => write([]), () => write(before), before.length);
-  return before.length;
-}
-
-/**
- * Change how one connection is drawn - its direction, line style or label.
- *
- * The edit door that pairs with toggleConnection's draw-or-part. `patch` is
- * merged over the connection's current settings and run back through connMeta(),
- * so the same validation the file reader applies also gates a live edit, and a
- * patch that sets everything back to a default leaves a bare `[a, b]` again. One
- * commit, and it emits 'connections' like the others - which is what makes
- * canvas/web.js repaint the line with its new look. No geometry changes, so the
- * cached route is reused; only the drawing is redone.
- *
- * Returns whether a matching connection was found to edit.
- */
-export function updateConnection(a, b, patch) {
-  if (!a || !b) return false;
-  const key = pairKey(a, b);
-  const idx = board.connections.findIndex(p => pairKey(p[0], p[1]) === key);
-  if (idx < 0) return false;
-  const cur = board.connections[idx];
-  const meta = connMeta({ ...(cur[2] || {}), ...patch });
-  const nextPair = meta ? [cur[0], cur[1], meta] : [cur[0], cur[1]];
-  const before = board.connections;
-  const after = board.connections.map((p, i) => (i === idx ? nextPair : p));
-  const write = list => { board.connections = list; bus.emit('connections'); };
-  commit('Edit connection', () => write(after), () => write(before));
-  return true;
-}
-
-/** The display settings of one connection, or null if it is a plain line. */
-export function connectionMeta(a, b) {
-  if (!a || !b) return null;
-  const key = pairKey(a, b);
-  const found = board.connections.find(p => pairKey(p[0], p[1]) === key);
-  return found?.[2] || null;
-}
-
-/**
- * How many things the bin holds before the oldest start falling out the
- * bottom. A bin is a safety net, not an archive - and every entry pins its
- * asset's bytes into the saved file, so an unbounded one would quietly make a
- * board grow forever as you worked on it.
- */
-const TRASH_LIMIT = 60;
-
-/**
- * The stickers that go with a delete: everything of type `sticker` stuck, at
- * any depth, to something being removed.
- *
- * **Two rules rather than one, and they are two because the things are two.** A
- * star on a photograph is a remark *about* that photograph and means nothing
- * once it is gone; a note is something you wrote, and losing it to a delete you
- * aimed at a picture would be the app throwing away your words. So notes keep
- * today's behaviour exactly - left on the board, re-measured against whatever
- * is underneath - and only stickers follow.
- *
- * The walk collects stickers alone, which is also what cuts it short at the
- * first surviving host: a sticker on a *note* on a deleted photograph stays,
- * because the note it is stuck to stays and the note never joins the going set
- * for the sticker to follow it through. The naive version - stuckFollowers()
- * and then a filter - takes that sticker too, because the note is a follower
- * even though it is not being deleted.
- */
-function stickerCascade(ids) {
-  const going = new Set(ids);
-  const out = [];
-  // Passes, like stuckFollowers(): a sticker on a sticker can only join once
-  // the one underneath it has, and board.items is in no particular order.
-  for (let grew = true; grew;) {
-    grew = false;
-    for (const it of board.items) {
-      if (it.type !== 'sticker' || going.has(it.id)) continue;
-      const host = stuckTo(it);
-      if (!host || !going.has(host.id)) continue;
-      going.add(it.id);
-      out.push(it.id);
-      grew = true;
-    }
-  }
-  return out;
-}
-
-export function removeItems(ids, label = 'Delete') {
-  // One undo entry for the cascade and the delete that caused it, which is the
-  // whole reason it is folded in here rather than run by the caller: Ctrl+Z
-  // brings the photograph and its stickers back together, and nobody has to
-  // press it twice.
-  const set = new Set([...ids, ...stickerCascade(ids)]);
-  // Keep the original index so undo restores z-order position, not just the item.
-  const removed = board.items
-    .map((item, index) => ({ item, index }))
-    .filter(r => set.has(r.item.id));
-  if (!removed.length) return;
-  // The Desktop title card does not go to the bin - it is a singleton the board
-  // is meant to have, so it is hidden and offered back by its own restore button
-  // (see ui/trash.js) rather than filed among thrown-away items. Only the rest
-  // are binned; deleting the title also flips the flag, and undo flips it back.
-  const titleGone = removed.some(r => r.item.type === 'title');
-  const wasHidden = board.titleHidden;
-  // Ghost cards are not binned either, for a different reason than the title
-  // card: they are hints rather than anything of the user's, so a thrown-away
-  // one is finished rather than filed. Deleting one by hand is a dismissal like
-  // any other - see dismissGhosts() - and it does not come back.
-  const binned = removed
-    .filter(r => r.item.type !== 'title' && r.item.type !== 'ghost')
-    .map(r => ({ item: r.item, at: Date.now() }));
-  const binIds = new Set(binned.map(b => b.item.id));
-  // What this delete pushed out the bottom of the bin, so undo can put it back.
-  //
-  // Truncating used to be a one-liner on the grounds that the entries falling
-  // out are older than the delete and so belong to no undo entry being replayed
-  // - which is true and beside the point. They were still in the bin before
-  // this command ran and gone after it, which makes them part of what it did.
-  // On a full bin, deleting one item and immediately undoing it left the bin
-  // one entry short for good, and the entry that vanished was the oldest thing
-  // in there: the one furthest past the point of being able to get it back any
-  // other way.
-  let evicted = [];
-  commit(label,
-    () => { board.items = board.items.filter(i => !set.has(i.id));
-            set.forEach(id => selection.delete(id));
-            if (titleGone) board.titleHidden = true;
-            board.trash.unshift(...binned);
-            evicted = board.trash.splice(TRASH_LIMIT);   // [] while under the limit
-            bus.emit('items', { added: [], removed: [...set] });
-            bus.emit('selection'); bus.emit('trash'); },
-    () => { for (const r of removed) board.items.splice(r.index, 0, r.item);
-            // A fence coming back has to be noticed by what it comes back
-            // around; see refenceArrivals(). The redo half is the delete, and a
-            // fence leaving heals itself.
-            refenceArrivals(removed.map(r => r.item));
-            board.titleHidden = wasHidden;
-            board.trash = board.trash.filter(t => !binIds.has(t.item.id));
-            // Back on the end, which is where they were: the entries this
-            // command added went on the front, and undo has just taken them off.
-            board.trash.push(...evicted);
-            evicted = [];
-            bus.emit('items', { added: removed.map(r => r.item.id), removed: [] });
-            bus.emit('trash'); },
-    // Pins every removed item. Not the trash entries this evicts as well:
-    // `evicted` is filled by the redo above, which commit() has not run yet
-    // when this argument is evaluated - and it is bounded by TRASH_LIMIT
-    // anyway, so counting it would change nothing worth the wrong number.
-    removed.length);
-  // commit() has now run the do half once, so `evicted` holds what this delete
-  // pushed off the bottom of a full bin. Say so - those entries are past the point
-  // of getting back. Fired here, not inside the closure, so undo/redo replays (which
-  // re-run the closure) do not re-announce it. A UI module toasts (ui/trash.js);
-  // state does not reach for the DOM itself.
-  if (evicted.length) bus.emit('trash:evicted', evicted.length);
-}
-
 /**
  * The Desktop title card: its fixed geometry and the two helpers that keep it a
  * singleton. Defined here, below the item plumbing, so it can lean on makeItem.
@@ -585,622 +360,6 @@ export function restoreTitleCard(at = null) {
             bus.emit('selection'); bus.emit('trash'); });
 }
 
-/**
- * Ghost cards: the three hints a brand-new board opens with.
- *
- * A blank board cannot say what to do with itself, so it is handed three cards
- * that do - drop things here, drag to move around, add a note. The moment real
- * content arrives they leave, and that board never shows them again.
- *
- * They are furniture, not content, and the difference is enforced at exactly
- * three places rather than by a special case sprinkled everywhere:
- *
- *   1. serializeBoard() strips them, so no .mbrd ever carries one and the
- *      format does not have to learn the type;
- *   2. dismissGhosts() is hydration, not a command - no commit, no history -
- *      which is what makes their leaving survive an undo of the very import
- *      that triggered it;
- *   3. removeItems() does not bin them, the way it does not bin the title card.
- *
- * Everything else about a ghost is an ordinary card: it is selectable,
- * draggable, resizable and rotatable, its geometry travels in board.layouts,
- * and Mobile packs it into a column like anything else. That is deliberate -
- * the alternative was a separate overlay layer outside board.items, which
- * would have meant a second gesture pipeline beside canvas/input.js for the
- * sake of three cards.
- *
- * What each one *says* is not decided here. state.js has no business holding
- * user-facing prose, so an item carries only its key in meta.hint and
- * canvas/ghosts.js maps that to words and pixels.
- */
-export const GHOST_IDS = Object.freeze([
-  '__ghost_drop__', '__ghost_move__', '__ghost_note__', '__ghost_whimsy__',
-]);
-
-// The one hint that is a control rather than a sentence. Named here because the
-// Mobile column orders itself around it; canvas/ghosts.js exports the same
-// string as DIAL for the renderer, which is the layer that knows what it means.
-const DIAL_HINT = 'whimsy';
-
-// Keyed by id so the two stay in step, and ordered the way they are read.
-//
-// Every number here is a whole number of grid spaces at the default 64 step,
-// and that is the point rather than a coincidence. A snapped board (which is
-// what Harsh means on Desktop) lays a box on the lattice by rounding its sides
-// to whole cells and its low edges to lines, so geometry that is *already*
-// there survives the trip unchanged - the cards look the same snapped and
-// unsnapped, and the layout below is the layout in both. Written at the sizes
-// that fit a paragraph after rounding, not the sizes that read best before it:
-// 216x144 rounded down to 187x123 and clipped its own copy.
-//
-// 4:3 rather than the title card's 3:2, because a card three cells tall is the
-// smallest one the longest hint fits in. The title card snaps to 4x3 as well,
-// so on the board that most people see the whole set matches anyway. Fixed
-// rather than a starting size, since a ghost carries no resize grips (see
-// setGrips in canvas/items.js); canvas/renderers.js defaultSize() names the
-// same box.
-//
-// The positions sit below TITLE_DEFAULT_POS so a fresh board reads top to
-// bottom: name, then the dial, then what to do. +y is up.
-//
-// They are a cascade rather than a row, and each one is placed against the two
-// beside it rather than on a line: down and to the right from the drop card,
-// past the dial, with the move card dropped below and back to the left. A row
-// of three is a table of contents, and this is a board - the first thing it
-// says about itself is that things sit where they were put. Every centre is
-// still a whole number of grid spaces, so a snapped board keeps the
-// arrangement exactly; see the note above.
-//
-// `mspan` and `mrows` are the box the same card takes on Mobile, where it is
-// packed into a column rather than placed: a fraction of the board's width, and
-// a whole number of grid rows. A fraction rather than a column count because
-// the Mobile board is eight columns by default and six by setting, so "half the
-// width" survives that change and "four cells" does not - at six columns it
-// would be two thirds of the board and two cards would no longer sit side by
-// side. Rows are cells outright, since the row height is the step either way.
-const HINT_GHOSTS = Object.freeze([
-  { id: GHOST_IDS[0], hint: 'drop', x: -320, y:   96, w: 256, h: 192, mspan: 0.5, mrows: 2 },
-  { id: GHOST_IDS[1], hint: 'move', x:  -64, y: -160, w: 256, h: 192, mspan: 0.5, mrows: 2 },
-  { id: GHOST_IDS[2], hint: 'note', x:  320, y:  -32, w: 256, h: 192, mspan: 0.5, mrows: 2 },
-  // The odd one out: a control rather than a sentence, so it is 4:1 on Desktop -
-  // four grid spaces by one. Parked under the title card and in the gap the
-  // cascade leaves between the drop card and the note card: the title's lower
-  // edge is at 158.5 (130.56 once the board is snapped) and this spans 0 to 64.
-  //
-  // On Mobile it takes the full width and two rows - the whole top of the column
-  // over two half-width hints - so the one control on the board is the one card
-  // that never shares a row.
-  //
-  // And untaped, because it is the one hint that stays an ordinary card at every
-  // tier: a torn scrap is a fine thing to write on and a poor thing to mount a
-  // working control in, and half a strip of tape across a slider is worse. The
-  // rest of that decision is in the CSS, which keeps the Softish page treatment
-  // off this hint; the tape is the half that has to be refused here, since it is
-  // rolled at minting rather than drawn from the tier.
-  { id: GHOST_IDS[3], hint: 'whimsy', x: 0, y: 32, w: 256, h: 64,
-    mspan: 1, mrows: 2, tape: false },
-]);
-
-/**
- * The other set of hints: what a board opened at an address that does not exist
- * says instead.
- *
- * The app is its own 404 page. A bad URL is served the app with a 404 status
- * (see serve.py, and 404.html for a static host), main.js sees that it is not
- * at the root and opens a blank board without restoring the session - so what
- * the visitor gets is an ordinary empty board, and the cards that an empty board
- * always carries are the ones telling them what happened.
- *
- * Two, and neither is a hint's box. The onboarding set is four equal cards in a
- * cascade because it is four equal things to learn and no one of them is the
- * point; this is one statement and one way out, so it is one large card and one
- * small one beside it. Three of the first draft's cards said in sequence what
- * the first one here says at once, which on a board reads as an argument being
- * made rather than an answer being given.
- *
- * Every number is a whole count of grid spaces at the default 64 step - see the
- * note on the hints above for why that matters at all, and it matters here for
- * the same reason: a snapped board must not rearrange them. The rule is on the
- * *low edges*, not the centres, because that is what the lattice rounds; the two
- * cards below are 256 and 192 tall, so they cannot share a centre line and both
- * satisfy it, and they are laid out from their lower edges instead.
- *
- *   gone  448x256 at (-160, -64)  spans x -384..64,  y -192..64
- *   back  256x192 at ( 256, -96)  spans x  128..384, y -192..0
- *
- * The 64-unit channel between them is the same gap the toolbar and the panel
- * keep; the pair spans -384..384, centred under the title card at x 0; their
- * lower edges are flush at -192; and both sit clear of TITLE_DEFAULT_POS above -
- * the title card's lower edge is at 160 and the taller of these two tops out at
- * 64.
- *
- * Both numbers were off by a half-step when this was written - the big card's
- * left edge landed at -416 and the small one's lower edge at -160 - so a snapped
- * board slid each of them 32 units and the arrangement described here was not
- * the one on screen. tests/state-ghosts.test.js now asserts the invariant rather
- * than the prose claiming it.
- */
-export const NOTFOUND_IDS = Object.freeze([
-  '__ghost_gone__', '__ghost_back__',
-]);
-
-const NOTFOUND = Object.freeze([
-  // The big one. Seven cells by four rather than the hint's four by three,
-  // because it carries a number set at sixty-odd pixels (see the data-hint rule
-  // in items.css) over a paragraph, and a hint's box fits neither.
-  { id: NOTFOUND_IDS[0], hint: 'gone', x: -160, y: -64, w: 448, h: 256, mspan: 1, mrows: 3 },
-  // The small one, and the only card in either set you press rather than read.
-  // Full width on Mobile as well: the card you act on does not share a row, the
-  // same call the dial makes at the top of the hints' column.
-  { id: NOTFOUND_IDS[1], hint: 'back', x:  256, y: -96, w: 256, h: 192, mspan: 1, mrows: 2 },
-]);
-
-/**
- * Where the strips of tape holding a hint down are stuck, at Softish.
- *
- * One or two per card, each straddling a different edge at an angle. Rolled
- * once, here, and carried in the item - *not* decided when the card is drawn.
- * canvas/items.js throws a culled card's node away and rebuilds it from nothing
- * when it comes back on screen, so a placement chosen at render time would put
- * the tape somewhere new every time the board panned past it. Random for each
- * board, and then fixed for that board's life.
- *
- * `pos` is a percentage along the chosen edge, kept well inside the corners so
- * a strip never hangs off one. `rot` is the angle it was pressed down at,
- * relative to that edge. Lengths are world px, the unit the card is sized in.
- *
- * `rand` is injectable so a test can pin the roll.
- */
-const TAPE_EDGES = ['top', 'right', 'bottom', 'left'];
-
-export function tapeFor(rand = Math.random) {
-  // Two often enough to be a pattern, one often enough that the trio is not a
-  // set of matching parcels.
-  const count = rand() < 0.45 ? 2 : 1;
-  const edges = [...TAPE_EDGES];
-  const out = [];
-  for (let i = 0; i < count; i++) {
-    // Different edges, so two strips on one card never sit on top of each other.
-    const edge = edges.splice(Math.floor(rand() * edges.length), 1)[0];
-    out.push({
-      edge,
-      pos: Math.round(24 + rand() * 52),
-      rot: Math.round((rand() * 18 - 9) * 10) / 10,
-      len: Math.round(56 + rand() * 42),
-    });
-  }
-  return out;
-}
-
-/**
- * Whether the board holds anything the user put there *as content*.
- *
- * isContent() rather than !isFurniture(), which is the same rule the HUD count
- * asks - see board-model.js. A board holding nothing but fences is a board
- * holding nothing: the regions are drawn around content, so with no content in
- * them there is nothing to be drawn around, and the hints have not been earned
- * away yet.
- */
-export function hasContent() {
-  return board.items.some(isContent);
-}
-
-/** Whether any ghost card is currently on the board. */
-export const hasGhosts = () => board.items.some(i => i.type === 'ghost');
-
-// Session-scoped and deliberately never written anywhere. Its whole job is the
-// undo case: content arrives, the ghosts go, and undoing that import must not
-// bring them back. A board:new clears it (a new board earns its hints again);
-// a board:load sets it from whether the arriving board already has content.
-let ghostsDismissed = false;
-
-/**
- * Whether the cards on this board are the not-found set rather than the hints.
- *
- * Session-scoped like the latch above, and read by canvas/ghosts.js, which
- * sweeps the hints the moment real content lands. These must not be swept. A
- * hint is earned away - you have dropped something, so you no longer need
- * telling that you can - but the not-found cards are not advice, they are the
- * only statement on the page that the address was wrong, and one of them is the
- * only way off it. Dropping a photograph onto a board that cannot save it is
- * exactly the moment the warning has to still be there.
- */
-let notFoundBoard = false;
-
-/** Whether this board was opened at an address the app does not have. */
-export const isNotFoundBoard = () => notFoundBoard;
-
-/**
- * Stop being one: the visitor has put something on the board, so it is a board
- * now and not a message. main.js owns the rest of that handover - the address,
- * the stored session and the writer - and this is the latch it clears on the
- * way through, which lets canvas/ghosts.js sweep the two cards the way it
- * sweeps any hint that has been earned away.
- */
-export function leaveNotFoundBoard() {
-  notFoundBoard = false;
-}
-
-/**
- * Put the ghost cards on the board if it has earned them - board hydration, not
- * a user edit, so no commit and no history. Runs at startup and on load, the
- * same way ensureTitleCard() does and for the same reason.
- *
- * A board with any content at all, or one already dismissed this session, gets
- * nothing.
- *
- * `notFound` swaps the set for the one a board opened at a dead address carries
- * - same geometry, different words, and one card fewer. It is a parameter and
- * not a second function because everything below it is about *placing* cards,
- * which is identical for both sets and was not worth saying twice.
- *
- * Returns the ids it seeded, so the caller can mount them without having to
- * know which set it asked for. An empty array means the board had not earned
- * them, which is the common case.
- */
-export function ensureGhostCards({ notFound = false } = {}) {
-  if (ghostsDismissed || hasContent() || hasGhosts()) return [];
-  notFoundBoard = notFound;
-  const GHOSTS = notFound ? NOTFOUND : HINT_GHOSTS;
-  const seeded = GHOSTS.map(g => g.id);
-  const step = baseStep();
-  // Mobile is a column, and the layout above is a Desktop arrangement: four
-  // cards spread across nine hundred world units, on a board 512 wide. Seeding
-  // straight into it put two of them off the side of the frame entirely. So the
-  // same fork addItems() makes for an import - pack them into the feed when
-  // Mobile is the live layout, lay them on the lattice when Desktop is.
-  //
-  // It has to happen here rather than being left to the mode switch, because a
-  // phone never makes that switch: it opens in Mobile, and completeLayout() only
-  // fills in a profile that is *not* the live one. The hints are the one thing
-  // on the board that can be born into a layout nobody switched to.
-  if (board.layoutMode === 'mobile') {
-    // Sized against the column rather than carried over from Desktop: the dial
-    // takes the whole width, the hints half of it, and both are two rows tall.
-    // placeMobileItems() takes it from here - it fits, packs and (if the Mobile
-    // profile is snapped, which it is by default) lays each one on the lattice.
-    const width = mobileBoardWidth(step);
-    // The dial goes first, under the masthead, which is where it sits on Desktop
-    // too - directly below the title card. The packer takes the order it is
-    // given, and a stable sort keeps the three hints in reading order behind it.
-    const order = [...GHOSTS].sort((a, b) =>
-      Number(b.hint === DIAL_HINT) - Number(a.hint === DIAL_HINT));
-    const fresh = order.map(g => makeItem({
-      id: g.id, type: 'ghost', x: 0, y: 0, w: width * g.mspan, h: g.mrows * step,
-      meta: { hint: g.hint, tape: g.tape === false ? [] : tapeFor() },
-    }));
-    board.items.push(...placeMobileItems(fresh));
-    return seeded;
-  }
-  for (const g of GHOSTS) {
-    // Laid on the lattice on the way in, exactly as an imported item is by
-    // onLattice(). The positions above are written for an unsnapped board, and a
-    // snapped one is a different board: its cards sit flush in cells, and four
-    // that arrived at their own coordinates would be the only things on it that
-    // did not. This is the hydration path rather than the import path, so it
-    // does no commit and keeps no presnap memo - a hint is never unsnapped back
-    // to anything, because it is never saved and never survives content
-    // arriving.
-    //
-    // The step is the board's own, not 64: gridStep is a setting, and hardcoding
-    // geometry that happens to be whole cells at the default would come apart
-    // the moment somebody moved it.
-    const box = board.settings.snap ? latticeBox(g, step) : g;
-    board.items.push(makeItem({
-      id: g.id, type: 'ghost', x: box.x, y: box.y, w: box.w, h: box.h,
-      meta: { hint: g.hint, tape: g.tape === false ? [] : tapeFor() },
-    }));
-  }
-  return seeded;
-}
-
-/**
- * Take the ghost cards off the board for good.
- *
- * No commit on purpose - see the note above. Returns the ids it removed so the
- * caller can animate them out; an empty array means there was nothing to do,
- * which is the common case once a board is in use.
- */
-export function dismissGhosts() {
-  ghostsDismissed = true;
-  const gone = board.items.filter(i => i.type === 'ghost').map(i => i.id);
-  if (!gone.length) return gone;
-  board.items = board.items.filter(i => i.type !== 'ghost');
-  let dropped = false;
-  for (const id of gone) if (selection.delete(id)) dropped = true;
-  bus.emit('items', { added: [], removed: gone });
-  if (dropped) bus.emit('selection');
-  return gone;
-}
-
-/**
- * Reset the latch for a board that is arriving. `content` is whether that board
- * has any of its own - a board with things on it is dismissed before it is even
- * drawn, so its first edit does not try to sweep hints that were never there.
- */
-export function resetGhostLatch(content = false) {
-  ghostsDismissed = !!content;
-}
-
-/**
- * Mint the hint cards again for the layout that is now live.
- *
- * The one thing on the board that cannot carry two layout profiles. Every other
- * item is completed into the profile it is missing from (completeLayout), but a
- * hint is seeded straight into whichever layout happened to be live when the
- * board turned out to be empty - sized against the Mobile column or laid on the
- * Desktop lattice by ensureGhostCards()'s own fork - and it was never in
- * board.layouts at all, because it is never saved. So a switch carried the
- * column's sizes and places onto the canvas: four cards at strip width, stacked
- * one under the other in the middle of an infinite board.
- *
- * Re-minting rather than teaching them to travel, because they are the cheapest
- * items in the app: no content, no history, no file, dismissed the moment
- * anything real arrives. Throwing them away and asking for them again is less
- * code than a migration and cannot drift from the seeding rule, since it *is*
- * the seeding rule.
- *
- * The latch is untouched, which is the whole reason this is not dismiss +
- * ensure: dismissGhosts() means "the user has seen these and is done with
- * them", and a layout switch is not that. Returns the ids now on the board, or
- * an empty array on a board that had none - the common case, and one press of
- * this costs one scan of the item list.
- */
-export function reseedGhostCards() {
-  if (!hasGhosts()) return [];
-  const gone = board.items.filter(i => i.type === 'ghost').map(i => i.id);
-  board.items = board.items.filter(i => i.type !== 'ghost');
-  for (const id of gone) selection.delete(id);
-  dropIdIndex();
-  const seeded = ensureGhostCards();
-  // The ids are stable - HINT_GHOSTS names them - so the profile just written by
-  // completeLayout() is still holding the places these cards had a moment ago,
-  // under the same ids. Recapturing the live layout is what puts the fresh ones
-  // in; it is a no-op for everything else on the board, since writeLayout() has
-  // just handed every other item exactly what this would write back.
-  captureLayout();
-  bus.emit('items', { added: seeded, removed: gone });
-  return seeded;
-}
-
-/**
- * Take things back out of the bin.
- *
- * `at` is where the item should land - the point it was dropped on when it was
- * dragged out of the bin panel. Without one it goes back exactly where it was
- * deleted from, which is what the bin's own Restore does.
- *
- * Restored items are stacked on top rather than returned to their old z: they
- * were absent while everything else moved on, and coming back underneath a
- * pile is the same as not coming back.
- */
-export function restoreItems(ids, at = null, label = 'Restore') {
-  const set = new Set(ids);
-  const entries = board.trash.filter(t => set.has(t.item.id));
-  if (!entries.length) return [];
-  let z = topZ();
-  const items = entries.map(e => fitBoardMode({
-    ...e.item,
-    ...(at ? { x: at.x, y: at.y } : null),
-    z: ++z,
-  }));
-  const back = new Set(items.map(i => i.id));
-  commit(label,
-    () => { const fresh = items.filter(i => !byId(i.id));
-            board.items.push(...fresh);
-            // The third door a fence can come back through, and it needs the
-            // same notice as the other two. See refenceArrivals(). Note that a
-            // fence dragged out of the bin lands where the drag put it, not
-            // where it was deleted from, so what it now holds is a fresh
-            // question in the strongest sense.
-            refenceArrivals(items);
-            board.trash = board.trash.filter(t => !set.has(t.item.id));
-            bus.emit('items', { added: fresh.map(i => i.id), removed: [] });
-            bus.emit('trash'); },
-    () => { board.items = board.items.filter(i => !back.has(i.id));
-            back.forEach(id => selection.delete(id));
-            board.trash.unshift(...entries);
-            bus.emit('items', { added: [], removed: [...back] });
-            bus.emit('selection'); bus.emit('trash'); });
-  return items;
-}
-
-/** Throw the bin out. Undoable - emptying it by accident is a bad afternoon. */
-export function emptyTrash() {
-  if (!board.trash.length) return;
-  const held = board.trash;
-  commit('Empty trash',
-    () => { board.trash = []; bus.emit('trash'); },
-    () => { board.trash = held; bus.emit('trash'); });
-}
-
-// ---------------------------------------------------------------------------
-// Snapping the whole board
-// ---------------------------------------------------------------------------
-
-/**
- * Turning snapping on lays every item on the lattice at once, rather than only
- * governing the next thing you drag - so the board *looks* snapped the moment
- * the setting is on, which is the only way a grid reads as a grid.
- *
- * Turning it off puts everything back. That needs the old geometry kept
- * somewhere, and it goes in `meta.presnap` on the item: per item, so an item
- * touched during a snapped session can drop its own memo without affecting the
- * rest, and serialised with the board, so the promise survives a save and a
- * reload rather than lasting only as long as the tab.
- *
- * Two consequences worth being explicit about:
- *
- * - **The step is the base step, not the one on screen.** `gridStep()` picks a
- *   spacing from the current zoom so the lattice never becomes a fill, which is
- *   right for something drawn and wrong for something stored: snapping at 20%
- *   zoom would otherwise commit a board to a coarser geometry than snapping at
- *   100%, and the same click would do two different things depending on how far
- *   out you happened to be.
- * - **Edges land on the lattice, not centres**, and the arithmetic is latticeBox() in
- *   geometry.js, shared with the gestures in canvas/input.js so that laying the
- *   board out and then dragging one item across it agree about where things go.
- *   What makes a snapped board look snapped is items sitting flush in cells; an
- *   item whose size is an odd number of cells therefore ends up with its centre
- *   on a half-step, which is correct and is not a rounding error.
- */
-function snapAll(snapTo) {
-  const step = baseStep();
-  const before = [], after = [];
-  for (const it of board.items) {
-    // A pinned item is not on the board, it is on its host - see isPinned() in
-    // sticky.js. Its place is a fraction of the card underneath it, and putting
-    // that fraction on the lattice would slide a sticky off the photograph it
-    // was pressed onto, in a sweep the person asked of the *board*. The host
-    // lands on the grid and the rider comes along.
-    if (isPinned(it)) continue;
-    const pre = it.meta?.presnap || null;
-    before.push({ id: it.id, x: it.x, y: it.y, w: it.w, h: it.h, pre });
-
-    const box = latticeBox(it, step);
-    after.push({
-      id: it.id,
-      x: box.x,
-      y: box.y,
-      w: box.w,
-      h: box.h,
-      // A board snapped, unsnapped and snapped again remembers the first
-      // position, not the second - the memo is of life before the lattice.
-      pre: pre || { x: it.x, y: it.y, w: it.w, h: it.h },
-    });
-  }
-  applySnapState(before, after, 'Snap to grid', snapTo);
-}
-
-/**
- * Re-assert the geometry rules that can drift from their rendered result.
- *
- * A reload is not an edit by itself. Snapping only records history and dirties
- * the board when it actually repairs a box; the final event also makes every
- * renderer re-read positions when nothing in the data needed changing.
- */
-export function recheckBoardGeometry() {
-  if (board.settings.snap) snapAll();
-  const ids = board.items.map(item => item.id);
-  if (ids.length) bus.emit('geom', ids);
-}
-
-/** Put back what snapAll() remembered, for everything still carrying a memo. */
-function unsnapAll(snapTo) {
-  const before = [], after = [];
-  for (const it of board.items) {
-    // Checked rather than trusted: a memo arrives from a .mbrd like everything
-    // else, and a hand-edited one holding a string would write it straight onto
-    // the item's geometry. A memo that does not describe a box is no memo.
-    //
-    // Pinned items are skipped for the same reason snapAll() skips them: the
-    // sweep never moved one, so there is nothing of its to put back.
-    if (isPinned(it)) continue;
-    const pre = usableMemo(it.meta?.presnap);
-    if (!pre) { forgetPresnap(it); continue; }
-    before.push({ id: it.id, x: it.x, y: it.y, w: it.w, h: it.h, pre });
-    after.push({ id: it.id, x: pre.x, y: pre.y, w: pre.w, h: pre.h, pre: null });
-  }
-  applySnapState(before, after, 'Leave the grid', snapTo);
-}
-
-
-/**
- * Write the snap flag itself - the setting half of the same act.
- *
- * The layoutSettings mirror is written with it and not left to setSetting()'s
- * tail: the two are one value kept in two places, and an undo that restored the
- * flag while leaving the mirror behind would put the lie back at the next
- * layout switch instead of at the next drag.
- */
-function writeSnapSetting(v) {
-  board.settings.snap = v;
-  board.layoutSettings[board.layoutMode] = layoutSettingsOf(board.settings);
-  markDirty();
-  bus.emit('settings', 'snap');
-}
-
-/**
- * The geometry, and - when a person actually turned the setting - the setting
- * with it, as one command.
- *
- * `snapTo` is the flag the user asked for, or undefined for
- * recheckBoardGeometry(), which re-asserts a rule that is already on rather than
- * toggling one. Folding the flag in is the whole point: it used to be written by
- * setSetting() *outside* this command, so one Ctrl+Z took the board off the
- * lattice and left the checkbox ticked - the only place in the app where undo
- * produced a state nobody could have produced by hand.
- *
- * Nothing moved is not nothing happened: an empty board, or one already flush on
- * the lattice, still has a setting to write. It goes in without history, the way
- * every other setting does - there is no geometry to take back, so there is
- * nothing for an undo entry to be about.
- */
-function applySnapState(before, after, label, snapTo) {
-  const moved = after.some((a, i) =>
-    SNAP_KEYS.some(k => a[k] !== before[i][k]) || !!a.pre !== !!before[i].pre);
-  if (!moved) {
-    if (snapTo !== undefined) writeSnapSetting(snapTo);
-    return;
-  }
-  const apply = (list, flag) => {
-    if (flag !== undefined) writeSnapSetting(flag);
-    writeSnapState(list);
-  };
-  // commit() runs its redo half itself, which is what applies `after` here.
-  commit(label,
-    () => apply(after, snapTo),
-    () => apply(before, snapTo === undefined ? undefined : !snapTo));
-}
-
-function writeSnapState(list) {
-  const ids = [];
-  for (const g of list) {
-    const it = byId(g.id);
-    if (!it) continue;
-    const next = fitBoardMode({ ...it, ...g });
-    for (const k of SNAP_KEYS) it[k] = next[k];
-    if (g.pre) it.meta = { ...it.meta, presnap: g.pre };
-    else forgetPresnap(it);
-    ids.push(g.id);
-  }
-  if (ids.length) bus.emit('geom', ids);
-}
-
-function itemsIn(ids) {
-  const set = ids instanceof Set ? ids : new Set(ids);
-  // The title card is a board-bound singleton: it cannot be copied, cut,
-  // duplicated or pasted. Excluded here - the one funnel all four go through
-  // (copy, cut, duplicate; paste reads the clipboard this fills) - so a group
-  // that happens to include it simply leaves it behind rather than the whole
-  // operation refusing.
-  return board.items
-    .filter(i => set.has(i.id) && i.type !== 'title')
-    .sort((a, b) => (a.z || 0) - (b.z || 0));
-}
-
-/**
- * The copy that Duplicate and Paste both make: everything about an item except
- * its identity and its place in the stack.
- *
- * `id` and `z` are left off so makeItem() mints a fresh id and puts the copy on
- * top. The asset is copied by *reference*, never by bytes: assets are keyed by
- * content hash and the packer writes each hash once, so duplicating a 40 MB
- * video costs nothing on disk. meta is shallow-copied because every field in it
- * is a scalar - text, tint, mime, size and the rest.
- */
-function cloneItem(i, dx = 0, dy = 0) {
-  return {
-    type: i.type,
-    x: i.x + dx,
-    y: i.y + dy,
-    w: i.w, h: i.h, rot: i.rot,
-    name: i.name,
-    asset: i.asset ? { ...i.asset } : null,
-    meta: { ...i.meta },
-  };
-}
-
 /** Copy items, offset a little so the copy is visibly on top of the original. */
 export function duplicateItems(ids, offset = { x: 28, y: -28 }) {
   const src = itemsIn(ids);
@@ -1210,84 +369,14 @@ export function duplicateItems(ids, offset = { x: 28, y: -28 }) {
 }
 
 // ---------------------------------------------------------------------------
-// The internal clipboard
+// The two clipboard commands that touch the board
 //
-// Items are held here rather than pushed onto the system clipboard, because an
-// item is not text. It can reference an embedded asset of any size, which has
-// no honest text/plain form and which round-tripping through the system
-// clipboard would make us re-encode and re-hash on every paste - where a copy
-// held in memory shares the original's asset hash for free, exactly as
-// Duplicate does. What does go out to the system clipboard is a readable
-// summary, so that copying a sticky note and pasting it into a text editor
-// gives you its words.
+// Everything else about the clipboard is in clipboard.js: what is held, what a
+// copy of an item is, the receipt that tells our own paste from somebody
+// else's. These two are here because they are board mutations - one deletes and
+// one adds - and every board mutation is one undoable command with a label,
+// which is what this file is for. See the head of clipboard.js for the seam.
 // ---------------------------------------------------------------------------
-
-const clipboard = { items: [], text: '', pastes: 0 };
-
-export const clipboardSize = () => clipboard.items.length;
-
-/** The box the clipboard's contents were copied from, or null when it is empty. */
-export const clipboardBounds = () => itemBounds(clipboard.items);
-
-/**
- * Whether the text the system clipboard is offering is the text *we* put there.
- *
- * This is the one question that decides a paste, and the browser gives no way
- * to ask it directly: two clipboards exist - ours and the machine's - and
- * nothing reports which of them was filled more recently. So a copy leaves a
- * receipt. The exact string handed to the system clipboard is remembered here,
- * and a paste that arrives carrying it is a paste of our own copy: nothing has
- * been copied anywhere else since. A paste carrying anything else means the
- * user has been somewhere else and copied something there, and that newer thing
- * is what they mean by Ctrl+V.
- *
- * The receipt is the summary text itself rather than a hidden token, so that
- * what lands in a text editor is clean. The cost is a collision no wider than
- * copying a note, going away, copying that same text back verbatim from
- * somewhere else, and returning - which yields a copy of the note instead of a
- * new note of the same words, and is not a bad answer to a question nobody can
- * answer correctly.
- */
-export function clipboardHasOurs(systemText) {
-  return !!clipboard.items.length && !!clipboard.text && systemText === clipboard.text;
-}
-
-/**
- * Take a copy of some items. Not a board mutation, so nothing to undo.
- *
- * Returns the text the caller should hand to the system clipboard, or '' when
- * there was nothing to copy. That half is the caller's, because only a real
- * `copy`/`cut` event may write to the system clipboard synchronously.
- */
-export function copyItems(ids) {
-  const text = take(ids);
-  if (text) toast(`Copied ${count(clipboard.items.length)}`);
-  return text;
-}
-
-/**
- * The copy itself, without the receipt.
- *
- * Cut takes exactly this copy but has something else to say about it, and two
- * toasts in the same turn are not two messages - the second replaces the first
- * inside a frame, so all the user sees is the last one and all the first one
- * did was reset the fade.
- */
-function take(ids) {
-  return takeItems(itemsIn(ids));
-}
-
-/** The clipboard half of take(), given items already resolved and z-sorted. */
-function takeItems(src) {
-  if (!src.length) return '';
-  clipboard.items = src.map(i => cloneItem(i));
-  clipboard.pastes = 0;
-  clipboard.text = summarise(src);
-  return clipboard.text;
-}
-
-/** "1 item" / "3 items", for the three clipboard receipts. */
-const count = n => `${n} item${n === 1 ? '' : 's'}`;
 
 /**
  * Copy, then delete: one undo entry, because removeItems() is the only half
@@ -1301,77 +390,37 @@ const count = n => `${n} item${n === 1 ? '' : 's'}`;
  * "over there".
  */
 export function cutItems(ids) {
-  // Resolve once and reuse for both the copy and the delete, rather than
-  // itemsIn(ids) here and again inside take() - two full board filters + sorts.
+  // Resolved once and reused for both the copy and the delete, rather than
+  // letting copyItems() resolve them again - two full board filters + sorts.
+  // That is also why this calls takeItems() rather than copyItems(): the latter
+  // toasts, and two toasts in the same turn are not two messages, since the
+  // second replaces the first inside a frame.
   const src = itemsIn(ids);
   const text = takeItems(src);
   if (!text) return '';
   const doomed = src.map(i => i.id);
   removeItems(doomed, doomed.length > 1 ? `Cut ${doomed.length} items` : 'Cut');
-  toast(`Cut ${count(doomed.length)} to the bin`);
+  toast(`Cut ${itemCount(doomed.length)} to the bin`);
   return text;
 }
 
 /**
- * What a copied selection says on the system clipboard. A note gives up its
- * text, a link its address, and everything else its name - in each case the
- * only part of that item which means anything outside this app. A link's name
- * would be the wrong half here: it is a label, editable and often nothing like
- * the URL, and a link copied out of the board is copied in order to be pasted
- * somewhere that wants the address. The bracketed count is the fallback for a
- * selection with nothing to say - an unnamed photo - because the receipt above
- * only works while the string is never empty.
- */
-function summarise(src) {
-  const lines = src.map(i => (i.type === 'note' ? i.meta.text
-                            : i.type === 'link' ? i.meta.url
-                            : i.name) || '').filter(Boolean);
-  if (lines.length) return lines.join('\n\n');
-  return `[mbrd: ${src.length} item${src.length === 1 ? '' : 's'}]`;
-}
-
-/**
- * How far each paste steps off the one before it. The same offset Duplicate
- * uses - up and to the right, where a copy lands on a physical desk.
- */
-const PASTE_STEP = { x: 28, y: -28 };
-
-/**
  * Put the internal clipboard on the board.
  *
- * `at` is an optional world point to centre the pasted group on. The caller
- * passes one only when the place the copy was taken from is off screen;
- * otherwise it passes nothing and the copy lands beside its original. Pasting
- * in place is what makes copy/paste usable as "another one of these": the pair
- * appears side by side where you can compare them. It is only when the original
- * is somewhere you are not looking that the middle of the screen beats it,
- * because a paste that lands off screen is indistinguishable from one that did
- * nothing at all.
- *
- * Either way the step accumulates across pastes of the same clipboard, so the
- * second Ctrl+V clears the first instead of hiding underneath it.
+ * `at` is an optional world point to centre the pasted group on - see
+ * pasteCopies(), which owns that arithmetic and the step that accumulates
+ * across repeated pastes. This half is the undoable one: one command, one
+ * label, one Ctrl+Z for the whole group however many items it holds.
  */
 export function pasteItems(at = null) {
-  if (!clipboard.items.length) return [];
-  const n = clipboard.pastes++;
-  let dx, dy;
-  if (at) {
-    // n rather than n + 1, so the first paste at a given point lands *on* it
-    // and only the ones after it fan out.
-    const b = itemBounds(clipboard.items);
-    dx = at.x - (b.x0 + b.x1) / 2 + n * PASTE_STEP.x;
-    dy = at.y - (b.y0 + b.y1) / 2 + n * PASTE_STEP.y;
-  } else {
-    dx = (n + 1) * PASTE_STEP.x;
-    dy = (n + 1) * PASTE_STEP.y;
-  }
-  const copies = clipboard.items.map(i => cloneItem(i, dx, dy));
+  const copies = pasteCopies(at);
+  if (!copies.length) return [];
   const added = addItems(copies, copies.length > 1 ? `Paste ${copies.length} items` : 'Paste');
   // Worth saying even though the copies are visible: a paste that lands under
   // the pointer looks like a paste, but one that fanned out from an original
   // off the edge of the screen can put every copy somewhere you are not
   // looking, and then a working paste and a dead key are the same event.
-  toast(`Pasted ${count(added.length)}`);
+  toast(`Pasted ${itemCount(added.length)}`);
   return added;
 }
 
@@ -1547,6 +596,60 @@ export function renameItem(id, name) {
 }
 
 /**
+ * One undoable write to one key of one item's `meta`.
+ *
+ * Four setters below were the same fourteen lines with the key name changed -
+ * cover, upAxis, fit and tint. The tell was setItemFit(), which had to rename
+ * its destructured key to `fit: _drop` to keep the removal branch from
+ * shadowing its own parameter: a rename that only exists because the shape was
+ * copied rather than shared.
+ *
+ * `validate` is what each caller keeps for itself, and it is the only part that
+ * genuinely differed. It runs twice - over the arriving value and over what the
+ * item already holds - so the *same* rule decides both, which is what makes the
+ * no-op check honest: a board out of a hand-written file may be carrying a
+ * value this app would refuse, and comparing a validated `next` against a raw
+ * `prev` would record a history entry for a change that never happened. Null
+ * means "no value", and writing one removes the key rather than setting it to
+ * null: the board should not hold a field it does not have.
+ *
+ * `label` may be a function of the validated value, for the one setter whose
+ * two directions are different acts - setting a picture and removing one.
+ *
+ * The **type** guard stays at each call site rather than folding in here. It is
+ * a different question: a validator says whether a value is legal, and the
+ * guard says whether this item is the kind of thing the setting is about, and
+ * running them together would let a bad value on the right kind of item look
+ * like the wrong kind of item.
+ *
+ * The item is looked up again inside the write rather than captured, because
+ * undo may be pressed long after the item was replaced - see retypeItem().
+ *
+ * Deliberately **not** used by setItemThumb() or setItemPoster(). Those two are
+ * non-undoable on purpose and their headers say why; folding them in would make
+ * the shared shape decide something it has no business deciding.
+ */
+function patchMeta(id, key, raw, label, validate) {
+  const it = byId(id);
+  if (!it) return;
+  const next = validate(raw);
+  const prev = validate(it.meta?.[key]);
+  if (next === prev) return;
+  const write = value => {
+    const item = byId(id);
+    if (!item) return;
+    if (value == null) { const { [key]: _drop, ...rest } = item.meta || {}; item.meta = rest; }
+    else item.meta = { ...item.meta, [key]: value };
+    bus.emit('item', id);
+  };
+  commit(typeof label === 'function' ? label(next) : label,
+    () => write(next), () => write(prev));
+}
+
+/** A validator over a closed set: the value, or null for anything else. */
+const oneOf = (...allowed) => value => (allowed.includes(value) ? value : null);
+
+/**
  * Give an item a picture of its own, or take it away with a null.
  *
  * A card that is not itself a picture - a sound file, a text file, a named
@@ -1567,19 +670,9 @@ export function renameItem(id, name) {
  * is what eventually collects anything no item points at.
  */
 export function setItemCover(id, hash) {
-  const it = byId(id);
-  if (!it) return;
-  const next = isHash(hash) ? hash : null;
-  const prev = isHash(it.meta?.cover) ? it.meta.cover : null;
-  if (next === prev) return;
-  const write = value => {
-    const item = byId(id);
-    if (!item) return;
-    if (value) item.meta = { ...item.meta, cover: value };
-    else { const { cover, ...rest } = item.meta || {}; item.meta = rest; }
-    bus.emit('item', id);
-  };
-  commit(next ? 'Set picture' : 'Remove picture', () => write(next), () => write(prev));
+  patchMeta(id, 'cover', hash,
+    next => (next ? 'Set picture' : 'Remove picture'),
+    value => (isHash(value) ? value : null));
 }
 
 /**
@@ -1786,19 +879,7 @@ export const originalsHeld = () =>
  * change to an item is.
  */
 export function setItemUpAxis(id, axis) {
-  const it = byId(id);
-  if (!it) return;
-  const next = axis === 'z' || axis === 'y' ? axis : null;
-  const prev = it.meta?.upAxis === 'z' || it.meta?.upAxis === 'y' ? it.meta.upAxis : null;
-  if (next === prev) return;
-  const write = value => {
-    const item = byId(id);
-    if (!item) return;
-    if (value) item.meta = { ...item.meta, upAxis: value };
-    else { const { upAxis, ...rest } = item.meta || {}; item.meta = rest; }
-    bus.emit('item', id);
-  };
-  commit('Turn model upright', () => write(next), () => write(prev));
+  patchMeta(id, 'upAxis', axis, 'Turn model upright', oneOf('z', 'y'));
 }
 
 /**
@@ -1811,17 +892,7 @@ export function setItemUpAxis(id, axis) {
 export function setItemFit(id, fit) {
   const it = byId(id);
   if (!it || (it.type !== 'image' && it.type !== 'video')) return;
-  const next = fit === 'cover' || fit === 'contain' ? fit : null;
-  const prev = it.meta?.fit === 'cover' || it.meta?.fit === 'contain' ? it.meta.fit : null;
-  if (next === prev) return;
-  const write = value => {
-    const item = byId(id);
-    if (!item) return;
-    if (value) item.meta = { ...item.meta, fit: value };
-    else { const { fit: _drop, ...rest } = item.meta || {}; item.meta = rest; }
-    bus.emit('item', id);
-  };
-  commit('Fit media', () => write(next), () => write(prev));
+  patchMeta(id, 'fit', fit, 'Fit media', oneOf('cover', 'contain'));
 }
 
 /**
@@ -1838,16 +909,11 @@ export function setItemFit(id, fit) {
 export function setStickerTint(id, tint) {
   const it = byId(id);
   if (!it || it.type !== 'sticker') return;
-  const next = stickerTint(tint, it.meta?.shape);
-  const prev = stickerTint(it.meta?.tint, it.meta?.shape);
-  if (next === prev) return;
-  const write = value => {
-    const item = byId(id);
-    if (!item) return;
-    item.meta = { ...item.meta, tint: value };
-    bus.emit('item', id);
-  };
-  commit('Sticker colour', () => write(next), () => write(prev));
+  // The one validator that always answers, so the removal branch of patchMeta()
+  // is unreachable here: a sticker with no tint of its own is a sticker wearing
+  // its shape's default, which is a colour and not an absence.
+  patchMeta(id, 'tint', tint, 'Sticker colour',
+    value => stickerTint(value, it.meta?.shape));
 }
 
 // ---------------------------------------------------------------------------
@@ -1973,25 +1039,10 @@ export function setModelShot(id, { hash, ink, view } = {}) {
 // Selection
 // ---------------------------------------------------------------------------
 
-export function select(ids, additive = false) {
-  if (!additive) selection.clear();
-  for (const id of ids) selection.add(id);
-  bus.emit('selection');
-}
-
-export function clearSelection() {
-  if (!selection.size) return;
-  selection.clear();
-  bus.emit('selection');
-}
-
-/** Remove one item from the current selection, leaving the rest intact. */
-export function deselect(id) {
-  if (!selection.delete(id)) return false;
-  bus.emit('selection');
-  return true;
-}
-
+// select(), clearSelection() and deselect() moved down to board-store.js, which
+// owns the Set they write to - see the note beside them there. This one stayed:
+// it needs the item list, and board-model.js sits *above* board-store.js in the
+// graph, so the module holding the selection cannot ask what is on the board.
 export function selectAll() {
   select(board.items.map(i => i.id));
 }
@@ -2189,13 +1240,8 @@ export function loadBoard(data) {
   writeLayout(completeLayout(layoutMode));
   selection.clear();
   clearHistory();
-  // The clipboard cannot cross a board. Opening one calls clearAssets(), so a
-  // copy taken from the old board would paste an item whose asset hash no
-  // longer resolves to any bytes - a card with a hole in it, which is worse
-  // than a Ctrl+V that politely does nothing.
-  clipboard.items = [];
-  clipboard.text = '';
-  clipboard.pastes = 0;
+  // The clipboard cannot cross a board - see clearClipboard() for why.
+  clearClipboard();
   resetDirty();
   // 'board:load' is the "everything was replaced" signal - distinct from
   // 'board', which also fires for a title change or a dirty-flag flip and so
@@ -2212,396 +1258,3 @@ export function loadBoard(data) {
   bus.emit('connections');
 }
 
-/**
- * A whole board, built from whatever arrived, with no way to fail.
- *
- * Every container is checked for the shape it is about to be used as rather
- * than assumed, so a hand-written or truncated board.json degrades to defaults
- * one field at a time instead of throwing half-way through a load.
- */
-function normalizeBoard(data) {
-  const src = data && typeof data === 'object' ? data : {};
-  const rawSettings = src.settings && typeof src.settings === 'object' ? src.settings : {};
-  const desktopSettings = normalizeSettings(rawSettings, 'desktop');
-  // The Mobile profile, as far as it can be read out of a Desktop-shaped file.
-  //
-  // Spacing is zeroed on the way through and that is a migration, not a rule:
-  // top-level `settings` describes Desktop (see research/docs/mbrd-format.md), so a file
-  // with no Mobile record of its own would hand the column Desktop's 12 - and
-  // for every board written before Mobile had a gap at all, zero is what it was
-  // actually saved looking like. A file that *does* carry a Mobile record keeps
-  // whatever gap that record names; normalizeLayoutSettings() spreads the
-  // record over this, so the record wins wherever it has an opinion.
-  const mobileSettings = { ...normalizeSettings(rawSettings, 'mobile'), spacing: 0 };
-  const { shared: sharedAppearance } = splitAppearance(desktopSettings.appearance);
-  const items = (Array.isArray(src.items) ? src.items : [])
-    .filter(it => it && typeof it === 'object')
-    .slice(0, MAX_ITEMS);
-  const trash = (Array.isArray(src.trash) ? src.trash : [])
-    .filter(t => t && t.item && typeof t.item === 'object')
-    .slice(0, TRASH_LIMIT);
-  // One id space across the live board and the bin: a restored item must not
-  // collide with a live one.
-  const ids = new Set();
-  // makeItem() defaults a missing `z` to topZ() + 1, which reads the *live*
-  // board - and the live board here is still the previous one, about to be
-  // thrown away. Harmless, and worth recording why rather than fixing: every
-  // file this app writes carries a z, and for one that does not,
-  // normalizeLayout()/completeLayout() below overwrite the geometry anyway. What
-  // it must never become is load-bearing.
-  const normalizedItems = dedupeIds(items.map(makeItem), ids);
-  const rawLayouts = src.layouts && typeof src.layouts === 'object' ? src.layouts : {};
-  const desktopRecord = layoutRecord(rawLayouts.desktop);
-  const mobileRecord = layoutRecord(rawLayouts.mobile);
-  const desktop = normalizeLayout(desktopRecord.items, normalizedItems);
-  const mobile = normalizeLayout(mobileRecord.items, normalizedItems);
-  const desktopById = layoutMap(desktop);
-  const legacyArrangement = typeof src.arrangement === 'string' && src.arrangement
-    ? src.arrangement : 'spiral';
-
-  return {
-    title: cleanBoardTitle(src.title) || 'Untitled board',
-    view: {
-      pan: { x: +src.view?.pan?.x || 0, y: +src.view?.pan?.y || 0 },
-      zoom: +src.view?.zoom || 1,
-    },
-    // Board-level now; a file written before it moved here carries the style
-    // under settings.mobileHeader, so that is the fallback source.
-    mobileHeader: normalizeMobileHeader(src.mobileHeader ?? rawSettings.mobileHeader),
-    titleHidden: !!src.titleHidden,
-    mediaFit: normalizeMediaFit(src.mediaFit),
-    paletteSources: normalizePaletteSources(src.paletteSources),
-    sharedAppearance,
-    layoutSettings: {
-      desktop: desktopRecord.settings
-        ? normalizeLayoutSettings(desktopRecord.settings, 'desktop', desktopSettings)
-        : layoutSettingsOf(desktopSettings),
-      mobile: mobileRecord.settings
-        ? normalizeLayoutSettings(mobileRecord.settings, 'mobile', mobileSettings)
-        : layoutSettingsOf(mobileSettings),
-    },
-    arrangements: {
-      desktop: desktopRecord.arrangement || legacyArrangement,
-      mobile: mobileRecord.arrangement || legacyArrangement,
-    },
-    layouts: {
-      // `items` remains the Desktop-compatible representation. A file written
-      // before profiles existed therefore already contains its desktop layout,
-      // and an older reader opening a new file still sees the desktop board.
-      desktop: normalizedItems.map(it => desktopById.get(it.id) || geometryOf(it)),
-      mobile,
-    },
-    items: normalizedItems,
-    trash: dedupeIds(trash.map(t => makeItem(t.item)), ids)
-      .map((item, i) => ({ item, at: +trash[i].at || 0 })),
-    // Against `ids`, which dedupeIds() has by now filled with every id on the
-    // board *and* every id in the bin - and filled with the ids as they ended
-    // up, so a pair naming a duplicate that was renamed on the way in is pruned
-    // rather than pointing at whichever card won the collision. A connection to
-    // a binned card is kept: restoring it has to bring its lines back with it.
-    connections: normalizeConnections(src.connections, ids),
-    // Held to the same id union as connections - the board's cards and the bin's -
-    // so a saved order that names a since-thrown-away track survives to be restored
-    // with it. The Playlist filters this to the audio it actually has.
-    audioOrder: normalizeAudioOrder(src.audioOrder, ids),
-  };
-}
-
-function layoutRecord(raw) {
-  if (Array.isArray(raw)) return { items: raw, settings: null, arrangement: '' };
-  if (!raw || typeof raw !== 'object') return { items: [], settings: null, arrangement: '' };
-  return {
-    items: Array.isArray(raw.items) ? raw.items : [],
-    settings: raw.settings && typeof raw.settings === 'object' ? raw.settings : null,
-    arrangement: typeof raw.arrangement === 'string' && raw.arrangement
-      ? raw.arrangement : '',
-  };
-}
-
-function normalizeLayoutSettings(raw, mode, fallback) {
-  const source = raw && typeof raw === 'object' ? raw : {};
-  const base = settingsFor(layoutSettingsOf(fallback), {});
-  const baseLook = base.appearance || {};
-  const sourceLook = source.appearance && typeof source.appearance === 'object'
-    ? source.appearance : {};
-  return layoutSettingsOf(normalizeSettings({
-    ...base,
-    ...source,
-    appearance: {
-      ...baseLook,
-      ...sourceLook,
-      vars: { ...(baseLook.vars || {}), ...(sourceLook.vars || {}) },
-    },
-  }, mode));
-}
-
-function normalizeSettings(raw, mode) {
-  const settings = raw && typeof raw === 'object' ? raw : {};
-  const appearance = settings.appearance && typeof settings.appearance === 'object'
-    ? settings.appearance : {};
-  const vars = {
-    ...(mode === 'mobile' ? MOBILE_APPEARANCE_VARS : {}),
-    ...(appearance.vars && typeof appearance.vars === 'object' ? appearance.vars : {}),
-  };
-  return {
-    ...DEFAULT_SETTINGS,
-    snap: mode === 'mobile',
-    ...settings,
-    mobileColumns: mode === 'mobile'
-      ? mobileColumnCount(settings.mobileColumns ?? MOBILE_COLUMNS)
-      : DEFAULT_SETTINGS.mobileColumns,
-    appearance: {
-      ...(appearance.whimsy != null ? { whimsy: appearance.whimsy } : {}),
-      palette: typeof appearance.palette === 'string' ? appearance.palette : '',
-      vars,
-      ...(appearance.auto === false ? { auto: false } : {}),
-      ...(appearance.derived === true && Object.keys(vars).length ? { derived: true } : {}),
-    },
-    // Both names and hashes become declarations or asset paths downstream.
-    fonts: normalizeFonts(settings.fonts),
-    scale: clampScale(settings.scale),
-    units: settings.units === 'imperial' ? 'imperial' : 'metric',
-    paper: PAPERS.some(p => p.id === settings.paper) ? settings.paper : '',
-    paperLandscape: !!settings.paperLandscape,
-    paperResize: !!settings.paperResize,
-  };
-}
-
-/**
- * The faces a board carries, reduced to the ones it may.
- *
- * `{ hash, family }` and nothing else - the hash names bytes in the asset store
- * and the family becomes a CSS family name, so a bad one of either is a bad
- * declaration or a dangling reference. Filtered entry by entry rather than
- * rejected wholesale, which is how everything else in this function behaves: a
- * board carrying four faces and one broken record should open with four.
- *
- * Capped, because this list is walked by the packer and registered against the
- * document, and neither wants a thousand entries out of a hand-written file.
- */
-function normalizeFonts(raw) {
-  if (!Array.isArray(raw)) return [];
-  const out = [];
-  const seen = new Set();
-  for (const f of raw) {
-    if (!f || typeof f !== 'object') continue;
-    if (!isHash(f.hash) || seen.has(f.hash) || !isFamily(f.family)) continue;
-    seen.add(f.hash);
-    const font = { hash: f.hash, family: f.family };
-    const axes = normalizeFontAxes(f.axes);
-    // One or the other, never both. `variable` says only "this file has an
-    // fvar", which is all a bracketless .woff2 can be asked - its axes are
-    // behind Brotli. It exists so ui/fonts.js can still declare a weight range
-    // wide enough to reach the axis instead of defaulting to a flat 400; with
-    // real axes present that range comes from them and this would be a second
-    // source for the same fact.
-    if (axes.length) font.axes = axes;
-    else if (f.variable === true) font.variable = true;
-    out.push(font);
-    if (out.length >= MAX_FONTS) break;
-  }
-  return out;
-}
-
-/** Variable axes a font record may carry from its OpenType `fvar` table. */
-function normalizeFontAxes(raw) {
-  if (!Array.isArray(raw)) return [];
-  const out = [];
-  const seen = new Set();
-  for (const axis of raw) {
-    const tag = typeof axis?.tag === 'string' ? axis.tag : '';
-    const min = +axis?.min, max = +axis?.max, fallback = +axis?.default;
-    if (!/^[A-Za-z0-9 ]{4}$/.test(tag) || seen.has(tag)) continue;
-    if (![min, max, fallback].every(Number.isFinite) || !(max > min)) continue;
-    seen.add(tag);
-    out.push({ tag, min, default: clamp(fallback, min, max), max });
-    if (out.length >= MAX_FONT_AXES) break;
-  }
-  return out;
-}
-
-/** The Mobile title style, held to values its controls and CSS can represent. */
-/** The board-wide media fit, defaulting to fit (contain) - fill is opt-in. */
-function normalizeMediaFit(value) {
-  return value === 'cover' ? 'cover' : 'contain';
-}
-
-/**
- * How many pictures the palette reads: [1, 24], or 0 for every one of them.
- *
- * Zero is past the top of the dial rather than below its bottom - the slider's
- * last stop reads "Every photo" - and it is stored as 0 because a number cannot
- * say "all" and the alternative was a second key saying it instead. 24 is the
- * highest *count* the sampler defaults to (MAX_SOURCES); asking for all of them
- * lifts that, which is the whole of what this option does.
- */
-function normalizePaletteSources(value) {
-  const n = Math.round(+value);
-  if (!Number.isFinite(n)) return 12;
-  return n === 0 ? 0 : Math.max(1, Math.min(24, n));
-}
-
-function normalizeMobileHeader(raw) {
-  const header = raw && typeof raw === 'object' ? raw : {};
-  const axes = {};
-  if (header.axes && typeof header.axes === 'object') {
-    for (const [tag, value] of Object.entries(header.axes)) {
-      if (!/^[A-Za-z0-9 ]{4}$/.test(tag) || !Number.isFinite(+value)) continue;
-      axes[tag] = +value;
-      if (Object.keys(axes).length >= MAX_FONT_AXES) break;
-    }
-  }
-  return {
-    font: header.font === '' || isFamily(header.font) ? header.font : '',
-    size: clamp(+header.size || DEFAULT_MOBILE_HEADER.size, 7, 24),
-    // Half height to five times it. The top of that range already fills the
-    // band and spills past what its overflow will show, which is a thing
-    // somebody may well want on a title page; the floor is a floor because a
-    // scaleY heading for 0 erases the name rather than styling it.
-    stretch: clamp(+header.stretch || DEFAULT_MOBILE_HEADER.stretch, 50, 500),
-    // 100 is `normal` - the face's own line height. See the default above.
-    leading: clamp(+header.leading || DEFAULT_MOBILE_HEADER.leading, 60, 250),
-    weight: clamp(Math.round(+header.weight || DEFAULT_MOBILE_HEADER.weight), 1, 1000),
-    // Signed, so `|| 0` cannot swallow a real value - only 0 itself falls back
-    // to 0, which is where it belongs. Half the band either way is enough to sit
-    // the name against the top or bottom edge; further only pushes it out under
-    // the band's own overflow clip.
-    offset: clamp(Number.isFinite(+header.offset) ? +header.offset : 0, -50, 50),
-    italic: !!header.italic,
-    // Absent means on. Every board written before this setting existed wrapped
-    // its name, and !!undefined would quietly turn that off for all of them.
-    wrap: header.wrap !== false,
-    axes,
-  };
-}
-
-/** Matches MAX_FONTS in ui/fonts.js - the two are one limit in two layers. */
-const MAX_FONTS = 8;
-/**
- * Matches MAX_AXES in ui/fonts.js. 32, up from 16: the parametric families are
- * the reason - Roboto Flex ships thirteen axes and Amstelvar more than twenty,
- * and a limit that truncated them was cutting off exactly the fonts a variable
- * axis panel exists for. Still a bound rather than none, since this is what a
- * hand-made .mbrd is held to on the way in.
- */
-const MAX_FONT_AXES = 32;
-
-/** The serialisable board, exactly as it lands in board.json. */
-export function serializeBoard() {
-  captureLayout();
-  captureLayoutSettings();
-  // Ghost cards never reach a file. They are onboarding hints the app puts on a
-  // blank board, not anything of the user's, and a .mbrd carrying three of them
-  // would hand them to whoever opened it - on a board that is by then no longer
-  // empty, so nothing would ever take them away again. Stripping here rather
-  // than at each of the three sinks below is what keeps the format from having
-  // to know the type exists at all.
-  const ghost = new Set(board.items.filter(i => i.type === 'ghost').map(i => i.id));
-  const real = ghost.size ? board.items.filter(i => !ghost.has(i.id)) : board.items;
-  const shed = list => (ghost.size ? list.filter(g => !ghost.has(g.id)) : list);
-  const desktop = shed(completeLayout('desktop'));
-  const mobile = shed(completeLayout('mobile'));
-  // Every id this file will carry: the real items and the bin's. What
-  // connections are pruned against - see the note beside them below.
-  const filed = new Set([...real.map(i => i.id), ...board.trash.map(t => t.item.id)]);
-  const desktopSettings = settingsFor(board.layoutSettings.desktop, board.sharedAppearance);
-  const desktopById = layoutMap(desktop);
-  const itemIn = (item, geometry) => {
-    const meta = { ...item.meta };
-    if (geometry?.presnap) meta.presnap = { ...geometry.presnap };
-    else delete meta.presnap;
-    // Stamp the durable stick record. Measured now from live geometry, not read
-    // from a stale field, so the file records where the note actually sits; a
-    // load seeds the memo back from it. Null is a real answer and is kept.
-    if (isSticky(item)) meta.stuckTo = stuckTo(item)?.id ?? null;
-    // And the durable membership record, on any type rather than on one - a
-    // fence nested in a bigger fence carries it too. It does the same small job
-    // the stick record does, keeping a pixel of drift across a save from losing
-    // a grouping somebody plainly made, and one larger one that has no
-    // equivalent: a board opened straight into Mobile cannot measure membership
-    // at all, since it is measured on Desktop geometry and there is none of that
-    // on screen. For that board this key *is* the membership. See seedFences().
-    //
-    // Written only when there is one, unlike stuckTo, which keeps its null. A
-    // note is one item in a hundred and a fence record would otherwise land on
-    // every card on the board; `"fence": null` five hundred times is noise in a
-    // format whose second promise is that you can read it. Absent means loose,
-    // which is also what a fresh measurement says, so the two agree. Deleted
-    // rather than left when it goes, or a card dragged out of a fence would keep
-    // the stale key it arrived with.
-    const fence = fenceOf(item)?.id;
-    if (fence) meta.fence = fence;
-    else delete meta.fence;
-    return { ...item, ...(geometry || null), meta };
-  };
-  return {
-    title: board.title,
-    view: { pan: { ...board.view.pan }, zoom: board.view.zoom },
-    // Board-level: the one style behind the Mobile masthead and the Desktop
-    // title card. Also mirrored into settings below (see desktopSettings) so a
-    // reader predating the move still finds it.
-    mobileHeader: normalizeMobileHeader(board.mobileHeader),
-    titleHidden: !!board.titleHidden,
-    mediaFit: normalizeMediaFit(board.mediaFit),
-    paletteSources: normalizePaletteSources(board.paletteSources),
-    // Legacy readers see the Desktop half, matching the Desktop geometry kept in
-    // items. New readers use each layout record below.
-    settings: { ...desktopSettings, mobileHeader: normalizeMobileHeader(board.mobileHeader) },
-    arrangement: board.arrangements.desktop,
-    // Desktop stays in the traditional item fields for readers predating
-    // profiles. New readers take the active geometry from `layouts`.
-    items: real.map(item => serializeItem(itemIn(item, desktopById.get(item.id)))),
-    layouts: {
-      desktop: {
-        items: desktop.map(serializeGeometry),
-        settings: cloneSettings(board.layoutSettings.desktop),
-        arrangement: board.arrangements.desktop,
-      },
-      mobile: {
-        items: mobile.map(serializeGeometry),
-        settings: cloneSettings(board.layoutSettings.mobile),
-        arrangement: board.arrangements.mobile,
-      },
-    },
-    // The bin travels with the board. Saving is the moment a board becomes a
-    // file you might not open again for a month, and a bin that emptied itself
-    // at exactly that moment would be a trapdoor rather than a safety net.
-    trash: board.trash.map(t => ({ at: t.at, item: serializeItem(t.item) })),
-    // Pruned against what this file actually holds, which is the *shed* item
-    // list plus the bin. Two things fall out of that and both are meant to:
-    // a connection to a hint card cannot reach a file, because ghosts are
-    // stripped a few lines up and a pair naming one would dangle in every
-    // reader; and a connection to a binned card is kept, because restoring
-    // that card has to bring its lines back with it.
-    //
-    // This is the only place dangling pairs are collected. While the app is
-    // running they are simply not drawn - see the note over toggleConnection().
-    connections: normalizeConnections(board.connections, filed),
-    // The Playlist's order, pruned to the same union the connections are. An
-    // empty one is written as [] rather than dropped, so a board that had its
-    // playlist arranged and then cleared does not silently re-sort on reload.
-    audioOrder: normalizeAudioOrder(board.audioOrder, filed),
-  };
-}
-
-const serializeItem = i => ({
-  id: i.id, type: i.type,
-  x: round(i.x), y: round(i.y), w: round(i.w), h: round(i.h),
-  rot: round(i.rot), z: i.z,
-  name: i.name, asset: i.asset, meta: i.meta,
-});
-
-const serializeGeometry = geometry => ({
-  id: geometry.id,
-  x: round(geometry.x), y: round(geometry.y),
-  w: round(geometry.w), h: round(geometry.h),
-  rot: round(geometry.rot), z: geometry.z,
-  ...(geometry.presnap ? {
-    presnap: {
-      x: round(geometry.presnap.x), y: round(geometry.presnap.y),
-      w: round(geometry.presnap.w), h: round(geometry.presnap.h),
-    },
-  } : {}),
-});
-
-const round = n => Math.round(n * 100) / 100;

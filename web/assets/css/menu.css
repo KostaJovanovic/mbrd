@@ -1,0 +1,449 @@
+/* =========================================================
+   mbrd - the panels that open over the board to be answered
+
+   One of the eight sheets the old overlays.css was split into. The order they
+   load in IS the cascade and is listed in the banner at the top of base.css.
+
+   Five things wearing one set of clothes: Find (Ctrl+K), the right-click menu
+   and the toolbar flyouts that are the same panel hung off a bar (ui/menu.js,
+   ui/flyout.js), the fence offer (ui/fence-prompt.js) and the marked
+   connection's chip (ui/conn-chip.js). Every one of them is card paper, a
+   hairline, the menu's shadow and `ctx-in` on the way in, and the last two say
+   so in their own comments below. That is why they are one file rather than
+   four: the stock is only shared if it is written once, and #fence-prompt
+   borrows .ctx-item outright.
+
+   The tick's hover and the separator are at the end of the menu block rather
+   than beside the entries they qualify. They were stranded in the middle of the
+   board switcher in the file this came out of; both are more specific than what
+   they override, so nothing turns on where in here they land.
+   ========================================================= */
+
+/* ---------------------------------------------------------
+   Find (Ctrl+K)
+
+   Pinned near the top rather than centred, and that is the one layout decision
+   here worth defending: the answers are places on the board, and the moment a
+   row is picked the viewport flies to it. A panel in the middle of the screen
+   would be sitting on the very thing it is about to show you. Up here it takes
+   the strip of board you are least likely to be looking at, and gives it back.
+   --------------------------------------------------------- */
+#search {
+  position: fixed;
+  z-index: 70;               /* over the context menu, which it can be opened from */
+  top: 12vh;
+  left: 50%;
+  translate: -50% 0;
+  width: min(560px, calc(100vw - 32px));
+  padding: 6px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--ogee);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
+  animation: ctx-in var(--dur-fast) var(--ease);
+}
+#search-field {
+  width: 100%;
+  padding: 11px 13px;
+  border: 0;
+  /* max(0px, ...) because --ogee is 0px on the plain tier and a bare subtraction
+     lands at -6px, which is not a valid radius - so the browser threw the whole
+     declaration away rather than clamping it. It happened to look right there
+     (square inside square), which is why it went unnoticed; it is still the
+     rule being dropped rather than applied. Same guard as the card's inner rule
+     in items.css. */
+  border-radius: max(0px, calc(var(--ogee) - 6px));
+  background: none;
+  font-family: var(--font-display);
+  font-size: var(--t-title);
+  color: var(--ink);
+}
+#search-field::placeholder { color: var(--ink-3); font-style: var(--display-italic); }
+#search-field:focus { outline: none; }
+/* Cleared by pressing Escape, which this palette already answers to. The
+   engine's own X is a second, differently-shaped affordance for the same verb,
+   drawn in a style no token here can reach. */
+#search-field::-webkit-search-cancel-button { display: none; }
+
+#search-hits {
+  max-height: min(46vh, 420px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+#search-hits:not(:empty) {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: var(--hairline) solid var(--rule);
+}
+
+.search-hit {
+  display: grid;
+  /* The kind column is fixed so the names line up down the list - a ragged
+     left edge on a list you are scanning is what makes you read it twice.
+     Wide enough for "generic", which is the longest of the seven and was
+     coming out as "GENER…". */
+  grid-template-columns: 68px 1fr;
+  align-items: baseline;
+  gap: 2px 10px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.search-kind {
+  grid-row: 1 / span 2;
+  font-family: var(--font-display);
+  font-size: var(--t-tiny);
+  font-style: var(--display-italic);
+  letter-spacing: calc(0.14em * var(--ls-scale));
+  text-transform: uppercase;
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.search-name {
+  font-family: var(--font-display);
+  font-size: var(--t-body);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-where {
+  font-size: var(--t-small);
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* One highlight, driven by the keyboard, and hover only *shows* it rather than
+   moving it - the pointer is usually resting wherever it was left, and letting
+   that win would drag the selection back every time the list reflowed. */
+.search-hit.is-at { background: var(--paper-2); }
+.search-hit:hover { background: var(--paper-3); }
+.search-hit:focus-visible { outline: var(--sel-line) solid var(--select); outline-offset: -2px; }
+
+.search-note {
+  margin: 0;
+  padding: 9px 10px 10px;
+  font-size: var(--t-small);
+  font-style: var(--display-italic);
+  color: var(--ink-3);
+}
+
+#ctx-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 208px;
+  /* The 8px the placement keeps at each edge (ui/menu.js). A picture card's
+     menu is a dozen entries, which is taller than a phone held sideways - so
+     the overflow scrolls rather than hanging off the bottom where the last
+     entries could not be reached at all. */
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 5px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--radius);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
+  animation: ctx-in var(--dur-fast) var(--ease);
+  user-select: none;
+}
+/* The menu takes focus when it opens so the keyboard has somewhere to land;
+   the ring belongs on the entry the arrows reach, not round the whole stock. */
+#ctx-menu:focus { outline: none; }
+@keyframes ctx-in { from { opacity: 0; transform: translateY(-3px); } }
+
+/* The same panel, hung off the toolbar (ui/flyout.js).
+   Square across the top and no border there, because it is not floating free -
+   it is the underside of a bar that is already drawn, and a rounded lip with
+   its own hairline a pixel below the bar's reads as a second object that has
+   landed on the first. The bottom keeps the menu's corner, which is the whole
+   point of leaving the rest of the rule alone.
+
+   The max-height counts from the bar rather than from the top of the window,
+   so a long flyout scrolls inside what is actually below it. --toolbar-h is
+   published by chrome.css for exactly this kind of arithmetic. */
+#ctx-menu.is-flyout {
+  border-top: 0;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  max-height: calc(100vh - var(--toolbar-h) - max(16px, env(safe-area-inset-top)) - 8px);
+}
+
+/* Three columns: the icon, the label, and whatever sits on the trailing edge -
+   an accel key, a tick, or nothing.
+
+   A grid rather than the flex row this was, because the middle column is the
+   only one that should take the slack. Under space-between an entry with no
+   accel pushed its label out to the right-hand edge, which was invisible while
+   every row was words but is not once there is a column of marks to line up
+   against. `1fr` on the label and `auto` on the two ends says that outright.
+
+   And centred rather than baseline-aligned: an icon has no baseline to share
+   with the text, so it was sitting a pixel or two low against every label. */
+.ctx-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--ink);
+  font-size: var(--t-small);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.ctx-item:hover,
+.ctx-item:focus-visible {
+  background: var(--paper-2);
+  color: var(--accent-deep);
+  outline: none;
+}
+.ctx-item.is-danger:hover,
+.ctx-item.is-danger:focus-visible { color: var(--danger); }
+.ctx-item kbd {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--ink-3);
+  font-size: 10px;
+  /* The third column, whether it is reached in two children or three. */
+  grid-column: 3;
+  justify-self: end;
+}
+
+/* The icons (assets/icons.svg, built by ui/menu.js).
+
+   Dimmed at rest and up to the row's colour when the row is hovered or focused:
+   the same grey the accel keys wear, on the same reasoning. A menu is read by
+   its words, and a column of marks at full ink beside them competes with the
+   thing it is there to help you find. Warmed one row at a time, the column is
+   quiet until you are looking at a particular line, and then it is not.
+
+   `color`, not `stroke` or `fill` - every symbol in the sprite draws in
+   currentColor, so this one property moves the whole drawing, including the
+   parts of it that are filled. It is also what puts the bin in the danger
+   colour on hover without a rule of its own: .is-danger:hover sets the row's
+   colour, and the icon is already following it. */
+.ctx-item .ico {
+  width: 15px;
+  height: 15px;
+  color: var(--ink-3);
+  transition: color var(--dur-fast) var(--ease);
+}
+.ctx-item:hover .ico,
+.ctx-item:focus-visible .ico { color: inherit; }
+
+/* The tick. On the trailing edge, in the accel keys' column and never beside
+   one - the two settings that carry it have no shortcut, which is what made the
+   move possible. Held there whether it is drawn or not, so a toggle's row does
+   not change width as it flips and the two settings stay a matched pair. */
+.ctx-item .ctx-tick {
+  grid-column: 3;
+  justify-self: end;
+  width: 13px;
+  height: 13px;
+  color: var(--accent);
+  visibility: hidden;
+}
+.ctx-item.is-checked .ctx-tick { visibility: visible; }
+/* The submenu marker, in the same trailing column as the tick. A row that opens
+   a fold points right; it warms with the row like every other action icon,
+   because unlike the tick it is a picture of what the row does. */
+.ctx-item .ctx-chevron {
+  grid-column: 3;
+  justify-self: end;
+  width: 13px;
+  height: 13px;
+}
+
+/* A colour standing in the icon column, for the rows whose subject *is* one -
+   the four sheets of note paper and the board's own pigments (ui/flyout.js).
+   Sized to the icons beside it and set in the same column, so a menu that
+   mixes the two still reads as one column of marks.
+
+   Sitting *in* a hairline rather than beside one: --note-4 is a hair off the
+   paper it is drawn on, and an unbordered chip of it would be a blank gap in
+   the column where the other three had colours. inset, so the ring does not
+   change the chip's footprint and nudge its row's label out of line. */
+.ctx-chip {
+  width: 13px;
+  height: 13px;
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 var(--hairline) color-mix(in srgb, var(--ink) 22%, transparent);
+}
+
+/* The one row here that is a dial and not an action - Spacing, under Arrange.
+   A <label> rather than a .ctx-item, so it is out of the arrow-key walk (Left
+   and Right belong to the slider) and is not announced as one of the menu's
+   commands. Laid out on the same three columns all the same, with the name
+   where the labels are and the reading where the accel keys sit, because a row
+   that broke the column would look like a piece of a different menu.
+
+   cursor is the default and not a pointer: nothing happens if you click the
+   words, and the whole row is not the target - the track is. */
+.ctx-range {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 6px 10px 8px;
+  font-size: var(--t-small);
+  color: var(--ink);
+}
+.ctx-range span { grid-column: 1; }
+.ctx-range output {
+  grid-column: 2;
+  justify-self: end;
+  color: var(--ink-3);
+  font-size: 10px;
+  /* A number that changes as the thumb moves must not shove the label about as
+     it goes from 8px to 108px. Wide enough for the widest reading. */
+  min-width: 34px;
+  text-align: right;
+}
+/* Where the slider sits, and nothing about what it looks like. The ruled track
+   and the terracotta lozenge are in sidebar.css, named for .ctx-range along
+   with .field and .np-volume - a slider looks the same on this paper wherever
+   it is, and the browser default riding a menu row was the one thing on this
+   panel that came from somewhere else. */
+.ctx-range input[type="range"] {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+/* Unlike every other icon here it does not warm with the row: it is a reading
+   of the current state rather than a picture of the action, and the accent is
+   the whole of what it says. */
+.ctx-item:hover .ctx-tick,
+.ctx-item:focus-visible .ctx-tick { color: var(--accent); }
+
+.ctx-sep {
+  height: 1px;
+  margin: 5px 8px;
+  background: var(--rule);
+}
+
+/* The fence offer (ui/fence-prompt.js).
+   The context menu's stock and the context menu's items, because it is the same
+   kind of thing appearing in the same way - but snug rather than a column, since
+   it holds exactly one entry and a 208px minimum would make a two-word button
+   look like a menu with everything missing. Above #ctx-menu in the stack: the
+   two cannot both be up, and a right-click while the offer stands closes it. */
+#fence-prompt {
+  position: fixed;
+  z-index: 61;
+  padding: 4px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--radius);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
+  animation: ctx-in var(--dur-fast) var(--ease);
+  user-select: none;
+}
+#fence-prompt .ctx-item { white-space: nowrap; }
+
+/* The marked connection's own five buttons (ui/conn-chip.js).
+
+   The same stock again - hairline, card paper, the menu's shadow and the menu's
+   entrance - because it is the third thing in the app that appears over the
+   board to be answered, and a fourth appearance would be a fourth thing to
+   recognise. What it is not is a menu: a row of icons rather than a column of
+   labelled rows, because every one of these is either a cycle whose icon is
+   also its readout or a single verb, and a 208px column of five words hanging
+   over a hairline would be the menu it exists to save.
+
+   Below #ctx-menu and the offer in the stack, and above the board. The menu can
+   be opened *from* this chip and then covers it, which is the right order: the
+   thing just opened is the thing being used. */
+#conn-chip {
+  position: fixed;
+  z-index: 59;
+  display: flex;
+  align-items: stretch;
+  padding: 2px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--radius-sm);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
+  animation: ctx-in var(--dur-fast) var(--ease);
+  user-select: none;
+}
+#conn-chip button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: max(0px, calc(var(--radius-sm) - 2px));
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+/* A seam rather than a gap, the toolbar's idiom: the chip is one small object,
+   and five buttons floating apart inside it would read as five. */
+#conn-chip button + button { border-left: var(--hairline) solid var(--rule); border-radius: 0; }
+#conn-chip button:last-child {
+  border-radius: 0 max(0px, calc(var(--radius-sm) - 2px))
+                   max(0px, calc(var(--radius-sm) - 2px)) 0;
+}
+#conn-chip button:hover,
+#conn-chip button:focus-visible { background: var(--paper-2); color: var(--accent-deep); }
+#conn-chip button.is-danger:hover,
+#conn-chip button.is-danger:focus-visible { color: var(--danger); }
+#conn-chip .ico {
+  width: 16px;
+  height: 16px;
+  color: var(--accent);
+  transition: transform var(--dur-base) var(--ease-back);
+}
+#conn-chip button:hover .ico { transform: scale(var(--btn-grow)) translateY(var(--btn-lift)); }
+#conn-chip button.is-danger:hover .ico { color: var(--danger); }
+
+/* The region the offer is about, held on the board for as long as the offer is.
+
+   The band that asked the question is the marquee's and ends with the gesture,
+   so without this the offer names an area that is no longer drawn anywhere -
+   "Fence these 5" over a board that looks exactly as it did before the drag. It
+   is the fence's own box rather than the band's; see drawGhost().
+
+   Faint, and deliberately fainter than the thing it stands for: this is not a
+   fence yet, and one that looked finished would read as though the work were
+   already done and the button an undo. The tone and the dashed rule are a real
+   fence's, at a third of its weight, so what fades in on the accept is the same
+   rectangle arriving rather than a second one replacing it.
+
+   Inside #viewport beside #marquee, at the same z-index and for the same reason:
+   it is board furniture, so the toolbar and the panels have to stay over it. It
+   takes no pointer at all - the offer is the only thing here that can be
+   answered, and a rectangle that could be clicked would be a second target for
+   the same question. */
+#fence-ghost {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  border: 2px dashed var(--rule-2);
+  border-radius: var(--radius);
+  background: var(--paper-2);
+  opacity: 0.34;
+  animation: ctx-in var(--dur-fast) var(--ease);
+}
+/* The flat tone of whatever a region is made of at this end of the axis, for the
+   same reason the ghost exists at all: it is a promise about what the accept
+   will make, and a grey one over a board whose fences are cork would be showing
+   the wrong thing. The tile itself is not repeated here - at a third of full
+   weight the chips would be a texture nobody can read, and the colour is the
+   part that carries the promise. */
+:root[data-whimsy="0"] #fence-ghost { background: var(--cork); }

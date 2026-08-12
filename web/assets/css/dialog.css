@@ -1,0 +1,475 @@
+/* =========================================================
+   mbrd - the sheets: a question, a note being written, the credits
+
+   One of the eight sheets the old overlays.css was split into. The order they
+   load in IS the cascade and is listed in the banner at the top of base.css.
+
+   #ask is ui/dialog.js and #credits is ui/credits.js, and they share every rule
+   about being a sheet - the same paper, hairline, leaf radius and arrival -
+   parting company only at their width. That shared block is the reason the two
+   are one file, and it has to stay above the credits rules below it: the two
+   selectors weigh the same, so document order is what settles the width.
+
+   The note composer (composeNote, canvas/notes.js) is here as the exception
+   that proves it. It is the one dialog in the app that is not a sheet, because
+   the thing in the middle of it is a card and a card inside a card is two
+   pieces of paper - and a comment saying "unlike every other dialog in this
+   file" is only true while the other dialogs are in this file.
+   ========================================================= */
+
+/* The question dialog, and the credits sheet beside it. Dressed as the app
+   rather than as the browser: the same sheet, hairline, leaf radius and lift
+   budget every other surface uses, so the one moment this thing interrupts you
+   it still looks like the thing you were using.
+   The two share every rule below that is about being a sheet, and part company
+   only at their width - which is the point of writing them together rather than
+   twice. */
+#ask, #credits {
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 22px 24px 18px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--ogee);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
+  color: var(--ink);
+  /* A <dialog> in the top layer is centred by its own margin:auto, which the
+     reset's `margin: 0` takes away. */
+  margin: auto;
+  animation: ask-in var(--dur-base) var(--ease-back);
+}
+#ask::backdrop, #credits::backdrop {
+  /* Tinted with the board's own ink rather than plain black, so the sheet
+     behind it dims into the palette instead of going grey. */
+  background: color-mix(in srgb, var(--ink) 42%, transparent);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+#ask h2, #credits h2 {
+  margin: 0 0 8px;
+  font-family: var(--font-display);
+  font-size: var(--t-title);
+  font-style: var(--display-italic);
+  font-weight: 400;
+  color: var(--ink);
+}
+/* On the `text-wrap: pretty` and the Firefox warning it prints, see the note on
+   .ghost-line in items.css. Kept for the same reason: the question text is a
+   sentence or two at whatever width the dialog happens to be, and an orphan
+   under it reads as a mistake in a box that is asking for an answer. */
+#ask p {
+  margin: 0 0 18px;
+  font-size: var(--t-body);
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+#ask p[hidden] { display: none; }
+/* The box on the questions that want a value rather than a choice. Dressed as
+   the panel's own controls are, and given the row of buttons' full width -
+   there is only ever one of these, and a short box beside a long sentence reads
+   as an afterthought. */
+#ask-field {
+  display: block;
+  width: 100%;
+  min-height: calc(35px * var(--density));
+  margin: 0 0 14px;
+  padding: 0 10px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+#ask-field:focus { outline: none; border-color: var(--accent); }
+#ask-field[hidden] { display: none; }
+/* And the same box asked for a colour instead of a word. Taller than a line of
+   text, because what it is showing is the answer rather than holding a caret,
+   and undressed the way .swatch-well is undressed in items.css - a colour input
+   arrives wearing a platform border, a platform radius and its own inner
+   padding, and this sheet has none of those anywhere else in it. The four
+   pixels it keeps are a mount, so the colour sits inside the dialog's own
+   hairline rather than fighting it.
+
+   Two vendor spellings of the same two parts, neither of which the other
+   browser understands. Held in step with .swatch-well: the well on the card and
+   the picker in this dialog are the same control asked at different moments,
+   and a swatch that changes shape between the two reads as two features. */
+#ask-field[type="color"] {
+  min-height: calc(52px * var(--density));
+  padding: 4px;
+  cursor: pointer;
+  -webkit-appearance: none;
+     -moz-appearance: none;
+          appearance: none;
+}
+#ask-field[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+#ask-field[type="color"]::-webkit-color-swatch {
+  border: 0;
+  border-radius: max(0px, calc(var(--leaf) - 3px));
+}
+#ask-field[type="color"]::-moz-color-swatch {
+  border: 0;
+  border-radius: max(0px, calc(var(--leaf) - 3px));
+}
+
+
+.ask-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* Pushes the two paired answers to the far end, away from the one that keeps
+   your work. Collapses to nothing when the row wraps on a narrow screen. */
+.ask-gap { flex: 1 1 0; min-width: 0; }
+.ask-row button {
+  min-height: calc(35px * var(--density));
+  padding: 0 14px;
+  color: var(--ink);
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease),
+              transform var(--dur-base) var(--ease-back),
+              color var(--dur-fast) var(--ease);
+}
+.ask-row button:hover {
+  background: var(--paper-2);
+  border-color: var(--accent);
+  color: var(--accent-deep);
+  transform: translateY(var(--btn-lift)) scale(var(--btn-grow));
+}
+.ask-row button:active { transform: scale(var(--btn-press)); background: var(--paper-3); }
+/* The dialog opens with a button already focused, so whatever ring this is
+   lands on screen every single time rather than only for people who tab - which
+   made the browser's default black outline the most prominent thing in the
+   panel. Suppressed for the plain case and drawn in the app's own ring when the
+   focus is one somebody navigated to. Same ring the search hits and the context
+   menu use. */
+.ask-row button:focus { outline: none; }
+.ask-row button:focus-visible {
+  outline: var(--sel-line) solid var(--select);
+  outline-offset: var(--sel-gap);
+}
+.ask-row button[hidden] { display: none; }
+/* The irreversible one is the only thing in the panel wearing the danger
+   colour, and it is not the one that has focus when the dialog opens. */
+.ask-row button.danger { border-color: var(--danger); color: var(--danger); }
+.ask-row button.danger:hover {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--paper-card);
+}
+@keyframes ask-in { from { opacity: 0; transform: translateY(8px) scale(0.97); } }
+
+/* The dialog a new note is written in - and it is not a sheet, unlike every
+   other dialog in this file. There is no card, no border and no shadow here,
+   because the thing in the middle of it is a note card and a card inside a card
+   is two pieces of paper. All this element does is centre what is put into it,
+   hold the backdrop, and stack the formatting bar, the note and the buttons in
+   that order.
+
+   The bar comes from canvas/notes.js and lands last in the DOM, so `order` is
+   what puts it back on top. Written on the three children rather than on the
+   bar alone, so the reading order of the rule is the reading order on screen. */
+#compose {
+  max-width: min(560px, calc(100vw - 32px));
+  margin: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  overflow: visible;
+  animation: ask-in var(--dur-base) var(--ease-back);
+}
+/* What hides a closed <dialog> is `display: none` in the UA stylesheet, and a
+   flat `display: flex` here outranks it - so the dialog stayed on screen after
+   close(), holding the board under a backdrop nothing could dismiss. The layout
+   belongs to the open state, and this is how it is written. */
+#compose[open] { display: flex; }
+#compose::backdrop {
+  background: color-mix(in srgb, var(--ink) 42%, transparent);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+#compose .note-toolbar { order: 1; }
+#compose-mount { order: 2; }
+#compose .ask-row { order: 3; align-self: stretch; }
+
+/* The mount, and the one thing in the app that holds a live item outside the
+   world layer.
+
+   An item is absolutely positioned and carries its board coordinates inline -
+   canvas/items.js writes left/top/width/height on the node itself - so the only
+   way to show one anywhere else is to take the positioning away. `static` does
+   that: the two coordinates stop meaning anything and the two sizes go on
+   meaning exactly what they mean on the board, which is what keeps the sheet
+   the size a note is. It is also why the note grows here as it is typed, from
+   the same growNote() that grows one on the board.
+
+   --sheet-zoom is how much bigger than life the sheet is drawn, set by
+   composeNote() along with the box the mount reserves for the scaled card. --iz
+   is the inverse of the board's zoom, which the item chrome uses to hold its
+   size on screen; here the zoom is this one, so the counter comes out the size
+   it is on the board rather than twice it. */
+#compose-mount {
+  position: relative;
+  --sheet-zoom: 1;
+  --iz: calc(1 / var(--sheet-zoom));
+}
+#compose-mount .item {
+  position: static;
+  transform: scale(var(--sheet-zoom));
+  /* Top left, so the scaled card lands exactly on the box the mount reserved -
+     from the centre it would grow out of it in every direction. */
+  transform-origin: 0 0;
+  /* The board's own item transition would slide the card in from wherever it
+     was; it is not going anywhere, it is being written on. */
+  transition: none;
+}
+/* The sheet and its counter, and nothing else. A note in the world layer is
+   also selected - the grips, the ring and the bottom bar belong to a thing you
+   can drag, resize, rotate and rename, and none of those are true of a note
+   being written in a dialog.
+   .item-body is what holds the card (see build() in canvas/items.js); naming
+   .card here instead would hide the wrapper and leave the sheet with no box at
+   all, which is a zero-height contenteditable and a caret with nowhere to go. */
+#compose-mount .item > :not(.item-body, .note-count) { display: none; }
+
+/* The bar, in a row of the dialog rather than floating over a board. */
+.note-toolbar.is-inline {
+  position: static;
+  max-width: 100%;
+  flex-wrap: wrap;
+  justify-content: center;
+  transform: none;
+}
+
+/* And the landing. The card is put back into the world layer at the spot it was
+   made - the middle of the view, which is where the dialog just was - so this is
+   the end of a movement rather than a journey: it settles onto the board from
+   very slightly above it. */
+.item.is-landing { animation: note-land var(--dur-base) var(--ease-back); }
+@keyframes note-land {
+  from { transform: translateY(-10px) scale(1.06); }
+}
+
+/* The credits sheet. Everything about it being a sheet is shared with #ask
+   above; what is left here is the list, and the list is two rows of a face
+   beside a name.
+   Wider than the question dialog by sixty pixels and no more. A quote set on
+   two lines reads as a quote; set on four it reads as a paragraph, and a
+   paragraph is not what anybody opened this for. */
+#credits { max-width: min(480px, calc(100vw - 32px)); }
+#credits h2 { margin-bottom: 16px; }
+.credit-list {
+  margin: 0 0 18px;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 18px;
+}
+.credit {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 14px;
+}
+/* Round, and round at every whimsy level - the one radius in this stylesheet
+   that is not var(--leaf) or var(--ogee) and is not meant to become one. The
+   corner tokens travel with the dial, and a face that squares off as the board
+   gets sharper reads as a card with a photograph cropped into it; these are
+   people, not items, and the shape says so however the rest of the board is
+   set. object-fit covers because both sources are square but nothing promises
+   the next one will be.
+   Sized in one place: the width, the height and the intrinsic attributes on
+   the <img> all say 56, so the row never reflows as the file decodes. */
+.credit-face {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 50%;
+  border: var(--hairline) solid var(--rule-2);
+  background: var(--paper-2);
+  box-shadow: var(--shadow-1);
+  transition: border-color var(--dur-fast) var(--ease),
+              transform var(--dur-base) var(--ease-back);
+}
+/* The face is a link to the same place the name is. `display: block` because an
+   inline anchor sits on the text baseline and leaves a strip of descender space
+   under a picture that has none.
+   No focus ring is written for it: it is out of the tab order (see the note in
+   index.html), so the only ring it could ever show would be one nobody asked
+   for. */
+.credit-face-link {
+  display: block;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.credit-face-link:hover .credit-face {
+  border-color: var(--accent);
+  transform: translateY(var(--btn-lift)) scale(var(--btn-grow));
+}
+/* Hovering the picture lights the name, because the name is the half of this
+   row that says where the click goes and the picture is the half people aim
+   at. `~` rather than a hover on the whole row: the quote is in there too, and
+   passing over a sentence is not reaching for a link. */
+.credit-face-link:hover ~ .credit-who .credit-name {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.credit-who { min-width: 0; }
+.credit-name {
+  display: inline-block;
+  font-family: var(--font-display);
+  font-size: var(--t-body);
+  color: var(--ink);
+  text-decoration: none;
+  transition: color var(--dur-fast) var(--ease);
+}
+.credit-name:hover { color: var(--accent); text-decoration: underline; }
+.credit-name:focus { outline: none; }
+.credit-name:focus-visible {
+  outline: var(--sel-line) solid var(--select);
+  outline-offset: var(--sel-gap);
+}
+/* The address under the name, in the voice every other aside in this app is
+   set in. Quiet enough to be scenery and legible enough to be typed out by
+   somebody who would rather not click a link. */
+.credit-site {
+  display: block;
+  font-family: var(--font-display);
+  font-size: var(--t-tiny);
+  font-style: var(--display-italic);
+  letter-spacing: calc(0.06em * var(--ls-scale));
+  color: var(--ink-3);
+}
+/* Marked as a quotation by the rule down its left rather than by quote marks,
+   because one of the two lines below is a placeholder in square brackets and
+   nested punctuation around it reads as a mistake. */
+.credit-quote {
+  margin: 8px 0 0;
+  padding-left: 10px;
+  border-left: var(--hairline) solid var(--rule-2);
+  font-size: var(--t-small);
+  font-style: var(--display-italic);
+  color: var(--ink-2);
+  /* Again the note on .ghost-line in items.css. A pull quote is the worst place
+     on the page for a one-word last line, and this one is short enough that the
+     ragged edge is most of what you see. */
+  text-wrap: pretty;
+}
+
+/* What the app is standing on, folded away under the two names.
+
+   A <details>, so the open state is the element's own and ui/credits.js stays
+   two listeners and no builder. The dressing is the app's: the summary is a
+   quiet row that behaves like every other button here on hover and focus, and
+   the marker is a chevron drawn with a border rather than the platform's
+   triangle, which is the one part of a <details> that looks like nobody chose
+   it. */
+.credits-more {
+  margin: 4px 0 18px;
+  border-top: var(--hairline) solid var(--rule);
+  padding-top: 12px;
+}
+.credits-more > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* The platform marker off, in both spellings that turn it off. */
+  list-style: none;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: var(--t-small);
+  color: var(--ink-2);
+  border-radius: var(--leaf);
+  padding: 4px 6px;
+  margin: -4px -6px;
+  user-select: none;
+  transition: color var(--dur-fast) var(--ease),
+              background var(--dur-fast) var(--ease);
+}
+.credits-more > summary::-webkit-details-marker { display: none; }
+.credits-more > summary:hover { color: var(--ink); background: var(--paper-2); }
+.credits-more > summary:focus { outline: none; }
+.credits-more > summary:focus-visible {
+  outline: var(--sel-line) solid var(--select);
+  outline-offset: var(--sel-gap);
+}
+/* The chevron: two borders on a square, turned. Points right when shut and down
+   when open, which is the one thing a disclosure has to say. */
+.credits-more > summary::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-right: 1.6px solid currentColor;
+  border-bottom: 1.6px solid currentColor;
+  rotate: -45deg;
+  translate: 1px 0;
+  transition: rotate var(--dur-fast) var(--ease), translate var(--dur-fast) var(--ease);
+}
+.credits-more[open] > summary::before { rotate: 45deg; translate: 0 -1px; }
+
+.credits-note {
+  margin: 12px 0 0;
+  font-size: var(--t-small);
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+.credits-note code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  color: var(--ink);
+}
+/* One borrowed thing per row: what it is, what it is under, and why it is here.
+   The licence sits on the same line as the name rather than under it, because
+   it is a two-word fact and a line of its own would make it look like a
+   heading for the sentence below. */
+.credits-deps {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 12px;
+}
+.credits-deps > li {
+  display: grid;
+  gap: 3px;
+  font-size: var(--t-small);
+}
+.credits-deps a {
+  font-family: var(--font-display);
+  color: var(--ink);
+  text-decoration: none;
+  transition: color var(--dur-fast) var(--ease);
+}
+.credits-deps a:hover { color: var(--accent); text-decoration: underline; }
+.credits-deps a:focus { outline: none; }
+.credits-deps a:focus-visible {
+  outline: var(--sel-line) solid var(--select);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+/* A chip, not a word: the licence is metadata about the row and should read as
+   a label rather than as part of the sentence. */
+.credits-lic {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  letter-spacing: calc(0.04em * var(--ls-scale));
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.credits-why {
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+.credits-why code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}

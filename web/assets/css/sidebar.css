@@ -571,7 +571,7 @@
 /* Ruled slider: a hairline track with a terracotta lozenge riding it.
    Most sliders in the app are inside a .field. Two are not - the now-playing
    bar's volume, which is a row of controls rather than a labelled setting, and
-   the Spacing row in the toolbar's Arrange flyout (.ctx-range, overlays.css),
+   the Spacing row in the toolbar's Arrange flyout (.ctx-range, menu.css),
    which is a dial sitting in a menu. Named here rather than given a .field each
    would then have to undo, because what these rules describe is what a slider
    looks like on this paper, not where it sits. :is() so the three stay one rule
