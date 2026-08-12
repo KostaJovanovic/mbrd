@@ -111,6 +111,9 @@
     text-align: center; color: var(--dim); cursor: pointer; transition: .12s;
   }
   #drop:hover, #drop.over { border-color: var(--hot); color: var(--fg); background: #ffffff08; }
+  /* Was a style= attribute on the span. Moved here so the whole site can drop
+     'unsafe-inline' from style-src - see web/_headers. */
+  .drop-hint { font-size: 11px; }
   #thumbs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
   #thumbs figure { margin: 0; position: relative; width: 48px; }
   #thumbs img {
@@ -203,7 +206,7 @@
   <div id="rail">
     <section>
       <h2>Sources</h2>
-      <div id="drop">Drop photographs here<br><span style="font-size:11px">or click to choose</span></div>
+      <div id="drop">Drop photographs here<br><span class="drop-hint">or click to choose</span></div>
       <input id="file" type="file" accept="image/*" multiple hidden>
       <div id="thumbs"></div>
     </section>
@@ -822,15 +825,39 @@ function paintMocks(roles, board) {
       `radial-gradient(52% 40% at 84% 78%, color-mix(in srgb, ${vars['--leafy']} ${4 * w.wash}%, transparent), transparent 72%)`,
       `radial-gradient(120% 100% at 50% 50%, transparent 55%, color-mix(in srgb, ${vars['--ink']} ${5 * w.vignette}%, transparent))`,
     ].join(',');
-    m.innerHTML = `
-      <div class="card" style="background:${vars['--paper-card']};border:1px solid ${vars['--rule']}">
-        <h3 style="color:${vars['--ink']}">A board of photographs</h3>
-        <p style="color:${vars['--ink-2']}">The sheet is the dominant hue at a chroma
-          somebody would have to be told about.</p>
-        <div class="rule" style="background:${vars['--leafy']}"></div>
-        <button class="btn" style="background:${vars['--accent']};color:${vars['--accent-fg']}">Rearrange all</button>
-        <span class="meta" style="color:${vars['--ink-3']};margin-left:8px">edited just now</span>
-      </div>`;
+    // Built rather than written as markup. These are runtime colours, so no
+    // hash could ever cover them, and a `style=` attribute parsed from markup is
+    // exactly what style-src governs - this block was the last thing on the site
+    // forcing 'unsafe-inline' into web/_headers. Assigning .style through the
+    // CSSOM is not parsed from markup and is not covered by it. Same seven
+    // declarations, same output.
+    const card = el('div', 'card');
+    card.style.background = vars['--paper-card'];
+    card.style.border = `1px solid ${vars['--rule']}`;
+
+    const h3 = el('h3');
+    h3.textContent = 'A board of photographs';
+    h3.style.color = vars['--ink'];
+
+    const p = el('p');
+    p.textContent = 'The sheet is the dominant hue at a chroma somebody would have to be told about.';
+    p.style.color = vars['--ink-2'];
+
+    const rule = el('div', 'rule');
+    rule.style.background = vars['--leafy'];
+
+    const btn = el('button', 'btn');
+    btn.textContent = 'Rearrange all';
+    btn.style.background = vars['--accent'];
+    btn.style.color = vars['--accent-fg'];
+
+    const meta = el('span', 'meta');
+    meta.textContent = 'edited just now';
+    meta.style.color = vars['--ink-3'];
+    meta.style.marginLeft = '8px';
+
+    card.append(h3, p, rule, btn, meta);
+    m.append(card);
 
     const cell = el('div');
     cell.append(head, m);
