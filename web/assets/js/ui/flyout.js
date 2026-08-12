@@ -22,13 +22,24 @@
 // a second implementation would have got wrong differently. What is left in
 // this file is the timing, the anchoring, and the three lists.
 //
-// ── Touch is excluded outright ──
+// ── Touch is excluded per gesture, not per device ──
 //
-// Bound only where the primary pointer hovers. Note and Colour are on the
-// phone's tier, and a tap there has to add a note: `pointerover` fires on a
-// touch too, so without the gate a phone would open a menu instead of doing the
-// thing, and the thing would need a second tap. Arrange is data-desktop and is
-// not on that tier at all.
+// Note and Colour are on the phone's tier, and a tap there has to add a note:
+// `pointerover` fires on a touch too, so without a guard a phone would open a
+// menu instead of doing the thing, and the thing would need a second tap.
+// Arrange is data-desktop and is not on that tier at all.
+//
+// That guard is the `pointerType === 'touch'` test in onOver(), and it is the
+// only one. This used to bind the listeners behind `(hover: hover)` as well,
+// which asked the wrong question in a way that failed silently and totally: the
+// query describes the machine's *primary* pointer, not whether a pointer that
+// hovers exists. A laptop with a touchscreen in tablet mode, and a window with
+// device emulation left on in DevTools, both answer `none` - and on either of
+// them nothing was ever bound, so all three flyouts were simply gone with no
+// error to find. `any-hover` is the better-behaved spelling of the same idea and
+// is still the wrong shape: what matters is the pointer in your hand right now,
+// which is a question about the event and not about the hardware. So the event
+// is what answers it, and a finger is refused whatever it is attached to.
 
 import { openAnchored, close, setMenuCloseHook } from './menu.js';
 import { el } from '../util.js';
@@ -114,8 +125,10 @@ export function initFlyouts(commands) {
     open(btn, true);
   });
 
-  if (!matchMedia('(hover: hover)').matches) return;
-
+  // Bound unconditionally - see the head of this file. The gesture, not the
+  // machine, is what decides whether a flyout comes down, and onOver() turns a
+  // touch away on its first line.
+  //
   // One listener on the window rather than a pair on each button, because the
   // question is not "is the pointer on this button" but "is it anywhere it
   // should keep the panel alive" - and one of those places is the panel, which
@@ -188,7 +201,12 @@ function open(btn, focus, delay = 0) {
   // the button nor the panel - which is exactly the kind of gap a pointer
   // crossing between them lands in.
   const box = btn.getBoundingClientRect();
-  const rect = { left: box.left, bottom: bar.getBoundingClientRect().bottom };
+  // `top` is the button's own, and it is here because render() flips the panel
+  // above the anchor when below will not fit and reads `anchor.top` to do it.
+  // Left off, that arithmetic is NaN, the test is quietly false, and the flip
+  // never fires - which looks like nothing at all on a bar pinned to the top of
+  // the window, right up until a flyout is taller than the space under it.
+  const rect = { left: box.left, top: box.top, bottom: bar.getBoundingClientRect().bottom };
   const label = btn.querySelector('span')?.textContent?.trim() || 'Menu';
   openAnchored(rect, FLYOUTS[btn.dataset.cmd](cmds), { label, focus });
   openFor = btn;

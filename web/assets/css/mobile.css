@@ -992,16 +992,34 @@
   /* Every hover reaction in the chrome fires on the *first* tap on a touch
      screen and then sticks until something else is tapped, so a bin button
      stays lit long after you have finished with it. The reactions are
-     decoration; the pressed state below is the one that carries information. */
-  #menu-btn:hover, #mobile-header-edit-btn:hover, #bin-btn:hover, #zoom-ctl button:hover,
-  .btn-row button:hover, #side-close:hover, #header-close:hover {
-    background: var(--paper-card);
-    border-color: var(--rule-2);
-    color: inherit;
-    transform: none;
+     decoration; the pressed state below is the one that carries information.
+
+     Nested inside `any-hover: none` rather than left on the `pointer: coarse`
+     this block opens with, and the difference is a machine with both. A laptop
+     with a touchscreen reports its *primary* pointer as coarse - and in tablet
+     mode, or with a touch display attached, that is what Windows says even
+     while a mouse is sitting there. On `pointer: coarse` alone this cancelled
+     the hover reaction on every piece of chrome for that machine: the menu
+     button, the bin, the zoom pill and the sidebar's own close all went inert
+     under a real cursor, which reads as the app being dead rather than as a
+     deliberate touch accommodation.
+
+     `any-hover: none` asks the question the comment above was always asking -
+     is there anything here that can hover at all - and answers it no only on a
+     device where nothing can. The sizing and the :active state outside this
+     nest stay on `pointer: coarse`, because a finger is still a finger on a
+     machine that also has a mouse. */
+  @media (any-hover: none) {
+    #menu-btn:hover, #mobile-header-edit-btn:hover, #bin-btn:hover, #zoom-ctl button:hover,
+    .btn-row button:hover, #side-close:hover, #header-close:hover {
+      background: var(--paper-card);
+      border-color: var(--rule-2);
+      color: inherit;
+      transform: none;
+    }
+    #zoom-ctl button:hover:not(:disabled) svg,
+    #bin-btn:hover svg { transform: none; }
   }
-  #zoom-ctl button:hover:not(:disabled) svg,
-  #bin-btn:hover svg { transform: none; }
   #menu-btn:active, #mobile-header-edit-btn:active, #bin-btn:active, #zoom-ctl button:active,
   .btn-row button:active { background: var(--paper-3); }
 
@@ -1314,7 +1332,7 @@
   #hud { display: none; }
 
   /* The top edge is clear again - the toolbar went to the foot - so the waiting
-     strip takes it back. See the note on #busy in overlays.css. */
+     strip takes it back. See the note on #busy in status.css. */
   #busy { top: max(14px, env(safe-area-inset-top)); }
 
   /* And with the panel open, the view controls go too - so nothing is left on
