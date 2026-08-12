@@ -24,6 +24,7 @@
 
 import { el } from './util.ts';
 import { toast } from './notify.ts';
+import { initErrors, setBoardProbe } from './errors.ts';
 import { initOverlays } from './ui/overlays.ts';
 import { ask } from './ui/dialog.ts';
 import { VERSION } from './version.js';
@@ -48,7 +49,7 @@ import { initInput } from './canvas/input.ts';
 import { initDrop } from './import/drop.ts';
 import {
   initStorage, restoreSession, openFile, autosave, setPrompt, suspendCache,
-  resetSessionLatches,
+  resetSessionLatches, boardSafety,
 } from './storage/storage.ts';
 import { flushNoteEdit, growNote } from './canvas/notes.ts';
 import { initAssets, getAsset } from './storage/assets.ts';
@@ -91,6 +92,21 @@ import { initBoardActions, resetSave } from './ui/board-actions.ts';
 // setPrompt() below; this one goes first because a lost toast is not an error,
 // it is worse, it is nothing at all.
 initOverlays();
+
+// And immediately after it, for the same reason one step further on: an
+// exception that reaches the top of the stack, or a promise nobody was waiting
+// on, has no other way of being seen by the person it happened to. Everything
+// below this line - the viewport against real elements, every init*() in the
+// wiring block, the session restore - is inside its reach, which is the whole
+// point of it going second. See errors.ts; the toast it raises goes out through
+// the channel the line above just wired, so the order of these two is the order
+// they have to be in.
+//
+// The probe is what makes the message worth reading: storage/session.ts holds
+// the latches that know whether the autosave covered the last edit, and this
+// hands that question over without errors.ts ever learning what a save is.
+initErrors();
+setBoardProbe(boardSafety);
 
 const vp = new Viewport(el('viewport'), el('world'), el('origin-mark'));
 

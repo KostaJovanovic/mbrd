@@ -9,7 +9,7 @@
 // Run: node tools/preset-oklch.mjs
 
 import { readFileSync } from 'node:fs';
-import { oklch } from '../web/assets/js/ui/pigments.js';
+import { oklch } from '../web/assets/js/ui/pigments.ts';
 
 const css = readFileSync(new URL('../web/assets/css/tokens.css', import.meta.url), 'utf8');
 

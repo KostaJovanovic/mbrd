@@ -595,6 +595,47 @@ export function initSessionStorage() {
 export const lastSaveFailure = () => lastFailure;
 
 /**
+ * Is the user's work safe? Asked by the global error handler (errors.ts) at the
+ * moment it has to tell somebody something, and by nobody else.
+ *
+ * Synchronous, and it never starts a write. The app is already in trouble when
+ * this is called - kicking off a save from inside an error handler would be
+ * asking the broken thing to prove itself, and the answer would arrive after
+ * the message that needed it.
+ *
+ * The ladder falls towards 'unknown' rather than towards reassurance, because
+ * the one unrecoverable mistake here is telling somebody their board is kept
+ * when it is not. Every latch this reads is above; nothing about it is new
+ * state.
+ *
+ * The dirty flag is load-bearing in the middle of it. `saveGen` counts *changes
+ * worth a snapshot*, and panning is one of those - a board reopens where it was
+ * left, so 'view' bumps the generation - while it is emphatically not an edit.
+ * A clean board with a pending generation therefore has nothing of the person's
+ * waiting to be written, only where they were looking, and calling that
+ * "unsaved changes" would send somebody to export a file over a scroll.
+ */
+export function boardSafety() {
+  // Not a broken browser: a not-found address, which the app is deliberately
+  // not writing. There is no work of theirs here to be at risk, and saying
+  // "unsaved" would send them looking for a board they never had.
+  if (suspended) {
+    return { state: 'unknown', detail: 'this address has no board of its own, so nothing here was being saved' };
+  }
+  if (!cacheOk) {
+    return { state: 'unsaved', detail: 'your board is not being kept in this browser, export it to a file' };
+  }
+  // Every change is covered by a write that succeeded.
+  if (committedGen >= saveGen && lastResult) return { state: 'saved' };
+  // Nothing the person did is waiting, whatever the generation says.
+  if (!isDirty()) return { state: 'saved' };
+  // A writer already running may well land this, but it has not landed yet and
+  // the app is mid-failure. Neither answer is knowable, so neither is given.
+  if (saving) return { state: 'unknown', detail: 'a save was still running, so the last few changes may not have landed' };
+  return { state: 'unsaved' };
+}
+
+/**
  * Stop accepting writes, so a closing board's autosave cannot repopulate the
  * store after it has been cleared. Paired with drainSave() - see AUD-03.
  */

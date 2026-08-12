@@ -670,6 +670,11 @@ export async function deleteLibraryBoard(id) {
 // missing should break loudly at the import, not quietly at runtime.
 export {
   autosave, restoreSession, clearAllData, clearSession,
+  // Out to main.js, which hands it to the global error handler. It is not part
+  // of saving at all - it is the one question a broken app has to be able to
+  // answer about a board - but the latches that answer it are session.js's, so
+  // it is asked where they live rather than reconstructed anywhere else.
+  boardSafety,
   // Out to main.js as well as used in here, and as a pair: a boot into
   // not-found opens a blank board that must never be written over the one the
   // visitor already has, so the writer is stopped before anything can fire.

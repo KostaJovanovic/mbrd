@@ -44,12 +44,12 @@ import { baseName, clamp } from '../util.ts';
 import { seekInnerHTML, sizeSeekWave } from '../media/transport.ts';
 import { mobileOrder, applyAudioOrder } from '../arrange/arrangements.ts';
 import { assetURL, getAsset, addFile } from '../storage/assets.ts';
+import { nowPlaying, onNowPlaying, togglePlayback } from '../canvas/audio.ts';
 import {
-  nowPlaying, onNowPlaying, onQueue, clock,
-  setQueue, playTrack, toggleShuffle, cycleRepeat, queueState,
-  queueNext, queuePrev, togglePlayback, bindScrub,
-  isQueuePlayer, clearQueue, PLAY_ICON, PAUSE_ICON,
-} from '../canvas/audio.ts';
+  clearQueue, cycleRepeat, isQueuePlayer, onQueue, playTrack, queueNext,
+  queuePrev, queueState, setQueue, toggleShuffle,
+} from '../canvas/playlist-queue.ts';
+import { bindScrub, clock, PAUSE_ICON, PLAY_ICON } from '../media/transport.ts';
 import { audioTags, coverArt } from '../import/artwork.ts';
 import { resetPanels } from './panel-stack.ts';
 import { makeWindowDrag, makeWindowResize } from './float-window.ts';

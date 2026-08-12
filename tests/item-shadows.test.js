@@ -18,7 +18,14 @@ test('board item shadows are mirrored into one layer below every item', async ()
   assert.match(css, /#web\s*\{[^}]*z-index:\s*-2;/s);
   assert.match(css, /\.item-shadow\s*\{[^}]*box-shadow:\s*var\(--item-shadow\);/s);
   assert.match(css, /\.item\s*\{[^}]*box-shadow:\s*none;/s);
-  assert.match(items, /shadows\.set\(item\.id,\s*buildShadow\(item,\s*tilt\)\)/);
+  // Built, placed and filed under the item's own id. Three lines rather than
+  // one since the builder moved to canvas/item-dom.ts, which hands the twin back
+  // unplaced - placeBox() is arithmetic against the viewport and stayed in
+  // items.ts. Asserted as three because the middle one is the part that would
+  // otherwise go missing silently: an unplaced twin is a shadow at the origin.
+  assert.match(items, /const twin = buildShadow\(item,\s*tilt\)/);
+  assert.match(items, /placeBox\(twin,\s*item\)/);
+  assert.match(items, /shadows\.set\(item\.id,\s*twin\)/);
   assert.match(items, /if \(shadow && item\) placeBox\(shadow,\s*item\)/);
 });
 
