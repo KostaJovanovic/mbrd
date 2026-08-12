@@ -179,6 +179,15 @@
 
 #toolbar button:hover { background: var(--paper-2); color: var(--accent-deep); }
 #toolbar button:active { background: var(--paper-3); color: var(--accent-deep); }
+/* A button whose flyout is down (ui/flyout.js), held at the hover look while
+   the pointer is off it and inside the panel.
+   Without this the button goes cold the moment you reach for a row in its own
+   menu, and the panel is left hanging off a bar with nothing on it to say which
+   segment it belongs to - which on a row of six identically sized segments is
+   the only thing that says so.
+   #toolbar-toggle wears the same attribute on a phone, and being lit while the
+   drawer it opened is out is right there too. */
+#toolbar button[aria-expanded="true"] { background: var(--paper-2); color: var(--accent-deep); }
 #toolbar svg {
   width: 17px; height: 17px;
   color: var(--accent);

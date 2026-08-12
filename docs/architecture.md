@@ -150,7 +150,32 @@ subject lives:
 | `ui/board-actions.js` | save-with-cooldown, reset, the three-press clear, rearrange, reload |
 | `ui/board-view.js` | the framing — opening view, geometry profile, Mobile bounds |
 
-One thing to know before adding a seventh. `commands.js` takes
+#### One menu, drawn in three places
+
+`ui/menu.js` is the right-click menu, and it is also the renderer every other
+menu in the app is drawn by. An array of plain entry objects goes in — `label`,
+`icon`, `check`, `sep`, `sub`, `danger`, `action`, plus `swatch` for a row whose
+subject is a colour and `range` for the one row that is a dial — and a placed
+panel comes out, walked by the arrow keys and closed by the listeners
+`initMenu()` puts on outside pointerdown, wheel, scroll, resize, blur and
+Escape. `openContextMenu()` drops it at a cursor; `openAnchored()` hangs it
+under an element. There is one `node`: a right-click and a flyout can never be
+up at once, because the capture-phase pointerdown that closes on an outside
+press fires before either could open the other.
+
+The toolbar's hover flyouts are the second caller. Three buttons on the bar had
+a choice behind them that was not on the bar — Arrange used a layout picked in
+the settings panel, Note used a counter in `import/drop.js` that nothing could
+address, Colour opened a picker on grey — and dwelling on one of those three now
+brings the choices down under it. `ui/flyout.js` holds the timing, the anchoring
+and the three lists, and nothing else; the `FLYOUTS` table maps a `data-cmd` to
+the rows it shows, so **a button with a flyout is one entry there**, and a
+button without one is a button. The press is untouched in every case: hovering
+Arrange shows the seven layouts, clicking it still rearranges. It binds only
+under `(hover: hover)` and ignores `pointerType === 'touch'`, because Note and
+Colour are on the phone's tier and a tap there has to add the thing.
+
+One thing to know before adding a seventh module here. `commands.js` takes
 `resetAppearance` and `setWhimsy` as arguments rather than importing them:
 `ui/appearance.js` is one of the three modules that touch a browser global at
 import time, so importing it would make `commands.js` unloadable without a DOM

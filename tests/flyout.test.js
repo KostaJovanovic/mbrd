@@ -190,3 +190,22 @@ test('the flyout panel is styled and does not scroll off the bottom of the bar',
   assert.match(css, /\.ctx-chip\s*\{/, 'the colour chips have no rule');
   assert.match(css, /\.ctx-range\s*\{/, 'the spacing row has no rule');
 });
+
+test('the spacing dial is drawn as a slider on this paper, not the browser default', () => {
+  // The ruled track and the terracotta lozenge live in sidebar.css, named for
+  // every place a slider appears rather than for where the panel it is in
+  // lives. quality.css squares that lozenge at the plain end of the whimsy
+  // axis off the same list - so the two are one list in two files, and a
+  // .ctx-range that fell out of either would be a slider that either came from
+  // the browser or kept its diamond while the others went square.
+  const bar = /:is\(([^)]*)\)\s*input\[type="range"\]/;
+  const named = css => css.match(bar)?.[1].split(',').map(s => s.trim()) ?? [];
+
+  const sidebar = named(read(join(WEB, 'assets', 'css', 'sidebar.css')));
+  assert.ok(sidebar.includes('.ctx-range'), `sidebar.css draws sliders for ${sidebar.join(', ')}`);
+
+  const whimsy = read(join(WEB, 'assets', 'css', 'quality.css'))
+    .match(/data-whimsy="2"\]\s*:is\(([^)]*)\)\s*input\[type="range"\]/)?.[1]
+    .split(',').map(s => s.trim()) ?? [];
+  assert.deepEqual(whimsy, sidebar, 'the whimsy override and the slider rule name different sliders');
+});

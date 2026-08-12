@@ -569,12 +569,19 @@
 .field select:hover { border-color: var(--accent); }
 
 /* Ruled slider: a hairline track with a terracotta lozenge riding it.
-   Every slider in the app is inside a .field, bar one: the now-playing bar's
-   volume, which is a row of controls rather than a labelled setting. Named here
-   rather than given a .field it would then have to undo, because what these
-   rules describe is what a slider looks like on this paper, not where it sits.
-   :is() so the two stay one rule and cannot drift. */
-:is(.field, .np-volume) input[type="range"] {
+   Most sliders in the app are inside a .field. Two are not - the now-playing
+   bar's volume, which is a row of controls rather than a labelled setting, and
+   the Spacing row in the toolbar's Arrange flyout (.ctx-range, overlays.css),
+   which is a dial sitting in a menu. Named here rather than given a .field each
+   would then have to undo, because what these rules describe is what a slider
+   looks like on this paper, not where it sits. :is() so the three stay one rule
+   and cannot drift - a fourth slider drawn in the browser default beside three
+   of these is the whole reason this is not three copies.
+   One other sheet carries the same list and has to be kept with it: quality.css
+   squares the lozenge at the plain end of the whimsy axis. (The slider rule in
+   mobile.css is not part of this - it is the panel dimming itself around a
+   slider being dragged on a phone, and it is scoped to #sidebar.) */
+:is(.field, .np-volume, .ctx-range) input[type="range"] {
   width: 100%;
   height: 22px;
   -webkit-appearance: none;
@@ -582,17 +589,17 @@
   background: transparent;
   cursor: pointer;
 }
-:is(.field, .np-volume) input[type="range"]::-webkit-slider-runnable-track {
+:is(.field, .np-volume, .ctx-range) input[type="range"]::-webkit-slider-runnable-track {
   height: 3px;
   border-radius: var(--radius-pill);
   background: linear-gradient(90deg, var(--rule-2), var(--rule));
 }
-:is(.field, .np-volume) input[type="range"]::-moz-range-track {
+:is(.field, .np-volume, .ctx-range) input[type="range"]::-moz-range-track {
   height: 3px;
   border-radius: var(--radius-pill);
   background: linear-gradient(90deg, var(--rule-2), var(--rule));
 }
-:is(.field, .np-volume) input[type="range"]::-webkit-slider-thumb {
+:is(.field, .np-volume, .ctx-range) input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 15px; height: 15px;
   margin-top: -6px;
@@ -601,7 +608,7 @@
   background: var(--accent);
   transform: rotate(45deg);
 }
-:is(.field, .np-volume) input[type="range"]::-moz-range-thumb {
+:is(.field, .np-volume, .ctx-range) input[type="range"]::-moz-range-thumb {
   width: 13px; height: 13px;
   border: 1.5px solid var(--paper-card);
   border-radius: var(--radius-xs);
