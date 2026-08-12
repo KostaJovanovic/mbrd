@@ -1417,12 +1417,12 @@ list, which is where somebody opening the stylesheets will look first.
   release — do not hand-edit or reformat those lines.
 - `web/assets/js/import/formats.js` is generated. Regenerate it, never edit it.
 
-Three optional runs sit beside the suite, none required to contribute:
+Two optional runs sit beside the suite, neither required to contribute:
 `npm run lint` (oxlint, correctness only, no formatter — adding one would be a
-regression), `npm run typecheck` (above) and `npm run test:e2e`, a small Playwright set
-covering what a headless test structurally cannot see — pan and zoom,
-add/select/delete/undo, save → refresh → recover, and that the app boots with a
-clean console. Both want `npm install`; `npm test` never does.
+regression) and `npm run typecheck` (above). Both want `npm install`; `npm test`
+never does. There is no browser-driven suite: what a headless test structurally
+cannot see — pan and zoom, add/select/delete/undo, save → refresh → recover, and
+that the app boots with a clean console — is checked by launching the app.
 
 Tests are still not a substitute for looking: for canvas or storage changes,
 launch the app and exercise pan/zoom, selection, save/open, refresh recovery and
