@@ -822,6 +822,20 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
      * now that the old single toggle is gone. setLens before the mode switch so
      * entering the mobile view lands on the lens that was asked for.
      */
+    /**
+     * The third segment of the View row: back to the freeform board.
+     *
+     * Idempotent, unlike the two below it, and that is the whole of the
+     * difference. Feed and Playlist are toggles - pressing the lens you are
+     * already on steps back out to the canvas, which is the only way back now
+     * that the old single toggle is gone - so neither can be the button that
+     * *names* the canvas. This one can: pressed from the canvas it does nothing,
+     * pressed from either lens it comes back. selectBoardMode() already returns
+     * false for a mode that is live, so the toast is only for a real crossing.
+     */
+    canvas: () => {
+      if (selectBoardMode('desktop')) toast('Back to the canvas');
+    },
     feed: () => {
       if (board.layoutMode === 'mobile') {
         if (currentLens() === 'feed') { selectBoardMode('desktop'); toast('Back to the canvas'); }
