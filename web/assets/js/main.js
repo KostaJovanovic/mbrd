@@ -53,6 +53,7 @@ import { initScaleBar } from './ui/scalebar.js';
 import { initTrash } from './ui/trash.js';
 import { initNowPlaying } from './ui/nowplaying.js';
 import { initToolbar } from './ui/toolbar.js';
+import { initFlyouts } from './ui/flyout.js';
 import { initStickerWindow } from './ui/sticker-window.js';
 import { initAppearance, resetAppearance, setWhimsy } from './ui/appearance.js';
 import { initFonts } from './ui/fonts.js';
@@ -177,6 +178,11 @@ initHud(vp, cmds);
 // inside initHud() as the phone's add bar. Handed cmds for the same reason: its
 // buttons are data-cmd and nothing else.
 initToolbar(cmds);
+// What is behind three of those buttons, shown by hovering them. After the
+// toolbar because it marks the bar's own markup with aria-haspopup, and after
+// initMenu() because the panel it opens is that module's and the close hook it
+// registers would otherwise be overwritten on init.
+initFlyouts(cmds);
 // The sticker pad. After the toolbar, because the toolbar is what opens it, and
 // handed both the viewport and cmds: it turns a pointer position into a world
 // point itself (a drag ends over the board, not over a button) and then presses
@@ -354,8 +360,9 @@ addEventListener('visibilitychange', () => {
  * Whether this page was served at an address the app does not have.
  *
  * The app is its own 404 page: a host that cannot find a path serves index.html
- * at that path with a 404 status (serve.py does it, _redirects asks a static
- * host to), and this is how the app finds out. Nothing in the response says so
+ * at that path with a 404 status (serve.py does it; a static host is handed
+ * 404.html, a byte copy of index.html, to do the same), and this is how the app
+ * finds out. Nothing in the response says so
  * - a document cannot read its own status code - so the URL is the signal.
  *
  * Compared against document.baseURI rather than against the string '/', because

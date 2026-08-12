@@ -55,6 +55,12 @@ the ES modules under `web/` directly — an edit is one refresh away.
 - **No apostrophes anywhere inside the `SHELL` array in `web/sw.js`**, comments
   included. `tests/sw.test.js` reads that list by pulling out single-quoted
   runs, so one apostrophe in a comment there breaks it.
+- **Do not hand-edit `web/404.html`.** It is `web/index.html` byte for byte —
+  the static host's only way to say "the app, with a 404 status", where
+  `serve.py` can just set the status. `save.bat` remakes the copy on every
+  commit and `tests/notfound.test.js` fails on a single differing byte; the
+  setting that makes the file mean anything is `assets.not_found_handling` in
+  `wrangler.jsonc`.
 - **Do not hand-edit `web/assets/js/import/formats.js` or
   `web/assets/stickers.svg`.** Both are generated — `tools/gen-formats.mjs` and
   `tools/gen-stickers.mjs`. The sticker sprite is vendored Phosphor art at a

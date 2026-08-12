@@ -1,4 +1,5 @@
-// Right-click menu.
+// Right-click menu - and, through openAnchored(), the renderer every other menu
+// in the app is drawn by.
 //
 // The canvas already suppresses the browser's own menu (input.js), because a
 // board's useful actions are all spatial - "put a note *here*", "zoom to
@@ -8,6 +9,20 @@
 //
 // One menu exists at a time. It is built fresh on each open rather than kept
 // hidden, so entries can be enabled, checked or omitted per context.
+//
+// ── The renderer, and who else uses it ──
+//
+// render() below is the whole of what a menu is here: an array of plain entry
+// objects in, a placed panel out, with the arrow keys walking it and initMenu's
+// listeners closing it on every event that would make its anchor a lie. The
+// toolbar's hover flyouts (ui/flyout.js) are the same panel opened under a
+// button instead of at a cursor, and they are drawn through openAnchored()
+// rather than through a second implementation - which is why the entry
+// vocabulary grew `swatch` and `range` rows that no right-click fold uses yet.
+//
+// The single `node` is right for both. A right-click and a hover flyout cannot
+// be up at once: the capture-phase pointerdown that closes on an outside press
+// fires before either could open the other.
 //
 // Every entry carries an `icon`, naming a <symbol> in assets/icons.svg - the
 // same file the toolbar and the rest of the chrome draw from, so an action that
@@ -31,8 +46,23 @@ let cmds = null;
 // Whatever had the keyboard when the menu opened, so it can be given back.
 let opener = null;
 // The anchor the menu was opened at, kept so a drill-down submenu re-renders in
-// the same place rather than jumping to wherever the pointer has drifted.
+// the same place rather than jumping to wherever the pointer has drifted. The
+// options go with it for the same reason: a fold opened inside a flyout must
+// still hang below the bar and must still not grab the keyboard.
 let lastX = 0, lastY = 0;
+let lastOpts = {};
+
+/**
+ * Told after every close, whoever caused it.
+ *
+ * One hook and not a list, because there is one thing that needs to hear this:
+ * the toolbar owes its button an aria-expanded, and the panel can go without
+ * ui/flyout.js being the one to take it - Escape, a press on the board, a
+ * right-click somewhere else. A second subscriber would mean this module
+ * growing a subscription list for an audience of one.
+ */
+let onClose = null;
+export function setMenuCloseHook(fn) { onClose = fn; }
 
 export function initMenu(viewport, commands) {
   vp = viewport;
@@ -79,6 +109,28 @@ export function close() {
   // means the browser is about to decide where focus goes on its own, and
   // taking it back first would fight that.
   if (held && back?.isConnected) back.focus({ preventScroll: true });
+  // Last, and after the node has gone: the flyout driver writes aria-expanded
+  // back onto its button from here, and it must not be able to see a panel that
+  // is on its way out as one that is still up.
+  onClose?.();
+}
+
+/**
+ * The same panel, hung under an element instead of dropped at a cursor.
+ *
+ * `rect` is the anchor's getBoundingClientRect(). The toolbar's flyouts are the
+ * only caller (ui/flyout.js); everything about the panel below this line is the
+ * right-click menu's, which is the point.
+ *
+ * `focus` is false for a hover, and that is not a detail: a panel that took the
+ * keyboard because a pointer drifted over a button would move the caret out of
+ * whatever was being typed. The keyboard route (ArrowDown on the button) passes
+ * true and gets the ordinary behaviour.
+ */
+export function openAnchored(rect, entries, { label = 'Menu', focus = false } = {}) {
+  close();
+  opener = document.activeElement;
+  render(entries, rect.left, rect.bottom, { anchor: rect, label, focus, flyout: true });
 }
 
 /**
@@ -443,8 +495,13 @@ function canvasEntries(at) {
  * because the menu is not closing, it is turning a page.
  */
 function swap(entries) {
+  // A page turn keeps whatever the outgoing page had. It matters for the one
+  // caller that opens without the keyboard: a flyout drilled into by hand
+  // should not suddenly start swallowing arrow keys, and one drilled into from
+  // the keyboard must not drop them.
+  const held = !!node && node.contains(document.activeElement);
   if (node) { node.remove(); node = null; }
-  render(entries, lastX, lastY);
+  render(entries, lastX, lastY, { ...lastOpts, focus: lastOpts.focus || held });
 }
 
 /** A child menu, fronted by the row that walks back to its parent. */
@@ -452,13 +509,18 @@ function subMenu(sub, parent) {
   return [{ label: 'Back', icon: 'i-chevron-left', to: parent }, { sep: true }, ...sub];
 }
 
-function render(entries, clientX, clientY) {
+function render(entries, clientX, clientY, opts = {}) {
   lastX = clientX;
   lastY = clientY;
+  lastOpts = opts;
   node = document.createElement('div');
   node.id = 'ctx-menu';
   node.setAttribute('role', 'menu');
-  node.setAttribute('aria-label', 'Board actions');
+  node.setAttribute('aria-label', opts.label || 'Board actions');
+  // A hover flyout is the same panel wearing a different corner: it hangs off
+  // the bar rather than floating free, so the top of it is square. One class,
+  // because everything else about it is the menu's.
+  if (opts.flyout) node.classList.add('is-flyout');
   // Focusable but not tabbable: the menu takes the keyboard when it opens, so
   // a screen reader announces it and Escape and the arrows have somewhere to
   // land. The entries themselves are what Tab and the arrows then walk.
@@ -470,6 +532,16 @@ function render(entries, clientX, clientY) {
       const hr = document.createElement('div');
       hr.className = 'ctx-sep';
       node.append(hr);
+      continue;
+    }
+    // A dial rather than an action, and the one row here that is not a button.
+    // It has to stay put while it is being dragged - a slider that closed the
+    // menu on its first pointerdown would be unusable - so it is not in the
+    // arrow-key walk and it does not close anything. Live: the value is written
+    // on every input event, because a spacing you cannot see change is a
+    // spacing you set by guessing.
+    if (entry.range) {
+      node.append(rangeRow(entry));
       continue;
     }
     const btn = document.createElement('button');
@@ -487,7 +559,14 @@ function render(entries, clientX, clientY) {
     // The icon first, and always - the row is a grid of three columns and this
     // is the first of them, so an entry that somehow had none would still line
     // its label up with the others rather than sliding under their icons.
-    if (entry.icon) btn.append(icon(entry.icon));
+    //
+    // A `swatch` takes that column instead, for the rows whose subject *is* a
+    // colour. The sticker tints get away with a grey i-swatch on all eight
+    // because each one is named - Red, Amber, Terracotta - and the word does the
+    // work. Four sheets of note paper have no such names, and "Yellow" beside a
+    // grey icon is a menu asking you to take its word for it.
+    if (entry.swatch) btn.append(chip(entry.swatch));
+    else if (entry.icon) btn.append(icon(entry.icon));
 
     const label = document.createElement('span');
     label.textContent = entry.label;
@@ -535,14 +614,78 @@ function render(entries, clientX, clientY) {
   document.body.append(node);
   const { width, height } = node.getBoundingClientRect();
   const pad = 8;
-  // Flip rather than clamp when there isn't room: a menu pinned to the edge
-  // ends up under the cursor, and the first entry gets clicked by accident.
-  const x = clientX + width + pad > innerWidth ? Math.max(pad, clientX - width) : clientX;
-  const y = clientY + height + pad > innerHeight ? Math.max(pad, clientY - height) : clientY;
+  let x, y;
+  if (opts.anchor) {
+    // Hung under a button, so the two rules the cursor case uses are both
+    // wrong. Horizontally it *clamps* rather than flips - a flyout that jumped
+    // to the far side of its button would leave the pointer outside itself and
+    // close again on the way in. Vertically it does not flip at all: the bar is
+    // pinned to the top of the window, so below is the only side there is, and
+    // a panel too tall for what is left scrolls (max-height, overlays.css).
+    x = Math.min(Math.max(pad, clientX), Math.max(pad, innerWidth - width - pad));
+    y = clientY;
+  } else {
+    // Flip rather than clamp when there isn't room: a menu pinned to the edge
+    // ends up under the cursor, and the first entry gets clicked by accident.
+    x = clientX + width + pad > innerWidth ? Math.max(pad, clientX - width) : clientX;
+    y = clientY + height + pad > innerHeight ? Math.max(pad, clientY - height) : clientY;
+  }
   node.style.left = Math.round(x) + 'px';
   node.style.top = Math.round(y) + 'px';
   node.style.visibility = '';
-  node.focus({ preventScroll: true });
+  // A hover must not take the keyboard - see openAnchored. Everything else
+  // does, and the default is the context menu's because that is the caller
+  // that has always been here.
+  if (opts.focus !== false) node.focus({ preventScroll: true });
+}
+
+/**
+ * A slider row. `entry.range` is `{min, max, step, unit, get, set}`.
+ *
+ * A <label> and not a menuitem: it is a dial, and announcing it as one of a
+ * menu's actions would be a lie to a screen reader and would put it in the
+ * arrow-key walk, where Left and Right belong to the slider itself.
+ */
+function rangeRow(entry) {
+  const { min, max, step, unit = '', get, set } = entry.range;
+  const row = document.createElement('label');
+  row.className = 'ctx-range';
+
+  const name = document.createElement('span');
+  name.textContent = entry.label;
+  row.append(name);
+
+  const slider = document.createElement('input');
+  slider.type = 'range';
+  slider.min = String(min);
+  slider.max = String(max);
+  slider.step = String(step);
+  slider.value = String(get());
+  row.append(slider);
+
+  const read = document.createElement('output');
+  read.textContent = slider.value + unit;
+  row.append(read);
+
+  slider.addEventListener('input', () => {
+    read.textContent = slider.value + unit;
+    set(Number(slider.value));
+  });
+  return row;
+}
+
+/**
+ * A colour, drawn as a colour, in the column the icons use.
+ *
+ * A <span> with a background rather than a filled i-swatch, because the sprite
+ * symbol is a drawing of a paint chip and the drawing is not the point - the
+ * colour is. Sized to the icons beside it so the column stays a column.
+ */
+function chip(color) {
+  const dot = document.createElement('span');
+  dot.className = 'ctx-chip';
+  dot.style.background = color;
+  return dot;
 }
 
 /**

@@ -686,7 +686,7 @@ const HINT_GHOSTS = Object.freeze([
  * says instead.
  *
  * The app is its own 404 page. A bad URL is served the app with a 404 status
- * (see serve.py, and _redirects for a static host), main.js sees that it is not
+ * (see serve.py, and 404.html for a static host), main.js sees that it is not
  * at the root and opens a blank board without restoring the session - so what
  * the visitor gets is an ordinary empty board, and the cards that an empty board
  * always carries are the ones telling them what happened.

@@ -668,16 +668,31 @@ async function prepareFile(file, stats = { undecodable: 0 }) {
 }
 
 /** How many colours the sticky pad comes in (see --note-1..4 in tokens.css). */
-const NOTE_TINTS = 4;
+export const NOTE_TINTS = 4;
 
-/** A text card with no source file - the one item type born on the board. */
-export function addNote(centre, text = '') {
+/**
+ * A text card with no source file - the one item type born on the board.
+ *
+ * `want` is a sheet asked for by number, 1..NOTE_TINTS, and it arrives from one
+ * place: the Note button's hover flyout, which draws the pad and lets you take
+ * a colour off it. Anything else - every drop, every paste, every plain press
+ * of the button - passes nothing and gets the cycle, which is the behaviour
+ * this had before there was any way to choose.
+ */
+export function addNote(centre, text = '', want = 0) {
   text = text.slice(0, NOTE_MAX);
   const size = defaultSize('note');
   // Cycled rather than random, so a run of notes comes off the pad in order
   // and you never get three of the same colour in a row. Stored on the item,
   // so a note keeps its colour across a save.
-  const tint = board.items.filter(i => i.type === 'note').length % NOTE_TINTS + 1;
+  //
+  // A number out of range is treated as no answer rather than clamped: the
+  // tints are a set of four sheets, not a scale, so there is no nearest one to
+  // round a 9 to, and falling back to the cycle is the only reading that leaves
+  // the board with a colour it actually has.
+  const asked = Number.isInteger(want) && want >= 1 && want <= NOTE_TINTS ? want : 0;
+  const tint = asked
+    || board.items.filter(i => i.type === 'note').length % NOTE_TINTS + 1;
   const [item] = addItems([{
     type: 'note',
     name: text ? text.split('\n')[0].slice(0, 40) : 'Note',

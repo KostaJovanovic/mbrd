@@ -24,7 +24,7 @@ import {
   setBoardMode as selectBoardMode,
   restoreTitleCard, resetTitlePosition,
   addConnections, clearConnections, updateConnection, connectionMeta, toggleConnection,
-  isFurniture, isRider, unstickItems, isJoinEnd,
+  isFurniture, isRider, unstickItems, isJoinEnd, setArrangement,
   addItems, baseStep, isFence, fenceAt, fenceBox, fenceFollowers, fenceOf, nextFenceName,
   snapshotGeom, applyGeom, commitGeom,
 } from './state.js';
@@ -372,7 +372,15 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
     // It is handed *how* to make the note rather than a note, because taking one
     // back needs the command that made it, and holding that command is easier
     // than reasoning about where it ended up in the history.
-    addNote: () => composeNote(() => addNote(vp.toWorld(vp.left + vp.cx, vp.top + vp.cy))),
+    //
+    // `tint` is the one thing this takes, and it arrives from the toolbar's
+    // hover flyout - the four sheets of note paper, which had no way of being
+    // chosen before. Omitted is the whole of the old behaviour: addNote() in
+    // import/drop.js cycles NOTE_TINTS when it is given nothing, and the
+    // toolbar's click handler calls every command with no arguments, so a plain
+    // press of the Note button is unchanged by construction.
+    addNote: tint => composeNote(
+      () => addNote(vp.toWorld(vp.left + vp.cx, vp.top + vp.cy), '', tint)),
     // A colour of your own, chosen before the card exists. The well on the card
     // is a real colour input and still is, so this is not the only way to set
     // one - but arriving grey and waiting to be told meant every swatch was two
@@ -387,6 +395,11 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
       if (!picked) return;
       addSwatch(vp.toWorld(vp.left + vp.cx, vp.top + vp.cy), picked);
     },
+    // The same card, for a colour that has already been chosen - the toolbar's
+    // hover flyout offers the board's own pigments, and picking one of those is
+    // not a question to open a dialog about. The dialog is still the row at the
+    // foot of that flyout, and still the plain click on the button.
+    addSwatchOf: hex => addSwatch(vp.toWorld(vp.left + vp.cx, vp.top + vp.cy), hex),
     // A card for somewhere else, typed rather than dropped. Nothing is fetched:
     // a link card is a name and an address until somebody clicks it, and that
     // stays true however the address arrived.
@@ -662,10 +675,30 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
     // board's contents relate, and three cards that are about to leave are not
     // contents - dealing them slots would also scatter them out of reading order.
     rearrange: () => rearrange(board.items.filter(i => i.type !== 'ghost')),
+    // Which layout the board is in, and the way to change it from the toolbar's
+    // hover flyout. Two writes on one press, deliberately: the layout is a
+    // property of the board that outlives the press - the panel's own hint says
+    // new drops use it - so picking Masonry and watching nothing move would be
+    // the button lying about what it just did, and picking Masonry without the
+    // setting following would leave the flyout and the panel disagreeing about
+    // what this board's layout is.
+    //
+    // Only the second half is on the undo stack. setArrangement is off it by
+    // design (see state.js) and rearrange files its own geometry entry, so one
+    // Ctrl+Z puts the cards back and leaves the board set to the layout you
+    // asked for - which is the right half to keep, since the setting is a
+    // statement of intent and the positions are the thing you might regret.
+    arrangement: () => board.arrangement,
+    arrangeAs: name => {
+      setArrangement(name);
+      rearrange(board.items.filter(i => i.type !== 'ghost'));
+    },
     // The whimsy axis, as a command so the dial on the fourth hint card can drive
     // it - that card is built under canvas/, which cannot import ui/appearance.js.
     setWhimsy: level => setWhimsy(level),
     rearrangeSelection: () => rearrange(board.items.filter(i => selection.has(i.id))),
+    /** Whether Rearrange selection would do anything - the flyout greys it out. */
+    hasSelection: () => selection.size > 0,
 
     // Line the selection up, or space it out evenly. A family of small commands
     // rather than a mode or a mystery drag: each names exactly the edge or axis
@@ -1044,6 +1077,10 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
     find: () => openSearch(),
     getSetting: key => board.settings[key],
     toggleSetting: key => setSetting(key, !board.settings[key]),
+    // The dial's half of the pair. The panel writes settings through
+    // ui/settings-schema.js, which imports setSetting straight; the flyout's
+    // Spacing slider is outside that schema and goes through here.
+    setSetting: (key, value) => setSetting(key, value),
   };
 
   return cmds;

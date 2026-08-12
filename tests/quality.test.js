@@ -175,7 +175,11 @@ test('the wired sites read the dial rather than a constant', async () => {
     read('canvas/web.js'), read('canvas/stills.js'),
   ]);
   assert.match(items, /built >= buildBudget\(\)/, 'the build budget is the dial’s');
-  assert.match(items, /quality\.shadows && item\.type !== 'title'/, 'no twin is built when shadows are off');
+  // The dial first, and the type list second. Which types get no twin is not
+  // this test's business - it has grown from one to four and will grow again -
+  // so it is matched loosely, and what is pinned is that `quality.shadows` is
+  // still the thing standing in front of buildShadow().
+  assert.match(items, /quality\.shadows && [^)]*NO_TWIN/, 'no twin is built when shadows are off');
   assert.match(display, /displayMax\(\) \/ Math\.max/, 'the display copy takes the dial’s long edge');
   // canvas/web.js is deliberately *not* in this list any more. It is the one
   // site that stopped reading the dial: what it draws is a stored list rather
