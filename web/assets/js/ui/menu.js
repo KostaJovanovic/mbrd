@@ -136,8 +136,22 @@ export function openAnchored(rect, entries, { label = 'Menu', focus = false } = 
 /**
  * Open the menu for a right-click at (clientX, clientY).
  * `itemId` is the item under the cursor, or null for bare canvas.
+ *
+ * `mobile` is the Feed asking rather than the canvas, and it changes two things.
+ * The item menu drops its spatial rows (see itemEntries), and a press on
+ * anything that is not a tile opens nothing at all - the canvas menu below is
+ * half zoom and half board-wide placement, and the Feed can honour neither.
  */
-export function openContextMenu(clientX, clientY, itemId, selectionSize) {
+export function openContextMenu(clientX, clientY, itemId, selectionSize, { mobile = false } = {}) {
+  if (mobile) {
+    if (!itemId) return;
+    close();
+    opener = document.activeElement;
+    // No `at`: the only row that reads it is "Add a note here", and that is one
+    // of the rows the Feed drops. The wall has no *here* to add anything at.
+    render(itemEntries(itemId, 1, null, true), clientX, clientY);
+    return;
+  }
   // After the close, not before it: a second right-click while a menu is up
   // has the old menu holding focus, and close() has just handed it back to
   // whatever owned it first. That is the element this menu owes it to as well.
@@ -182,7 +196,22 @@ function titleEntries(_id, _at) {
 // Entry sets
 // ---------------------------------------------------------------------------
 
-function itemEntries(id, count, at) {
+/**
+ * The menu for a card, on either board.
+ *
+ * `mobile` is the Feed asking, and it takes rows away rather than adding any.
+ * About a third of what follows is spatial - z-order, sizes, zoom, a note placed
+ * *here*, a fence - and the Feed is a wall that throws every computed position
+ * away, so those rows would either do nothing visible or quietly rearrange the
+ * canvas from a surface that cannot show the canvas. The rest is about what the
+ * card *is*, and all of it means exactly the same thing on both boards.
+ *
+ * Gated as a flag on the rows rather than as a second entry list, which was the
+ * alternative and the worse one: two lists of the same menu drift the first time
+ * only one of them is edited, and one ui/menu.js for every menu in the app is
+ * the whole arrangement here.
+ */
+function itemEntries(id, count, at, mobile = false) {
   const many = count > 1;
   const what = many ? `${count} items` : 'item';
   // Both are single-item edits: they act on the one thing under the cursor, and
@@ -209,13 +238,14 @@ function itemEntries(id, count, at) {
   const turnable = !many && cmds.canRotateModel(id);
   // Z-order only has a visible meaning where this selection's sticky layer
   // crosses another layer. A note covering its own host is intentionally one
-  // layer and does not make these actions useful by itself.
-  const stackable = cmds.selectionHasStackOverlap();
+  // layer and does not make these actions useful by itself. Never on the Feed,
+  // where nothing overlaps anything: the wall is packed, not stacked.
+  const stackable = !mobile && cmds.selectionHasStackOverlap();
   // Anything in the selection fixed to a host. Asked of the selection rather
   // than of the item under the cursor, like the stacking pair above and unlike
   // the edit group before them: taking nine stickies off one photograph means
   // exactly what taking one off means.
-  const unstickable = cmds.canUnstick();
+  const unstickable = !mobile && cmds.canUnstick();
   // A picture can hand over its own colours as swatches. Single-item, like the
   // cover and fit actions above: it reads the one image under the cursor, and
   // "the colours of these nine" is not a thing a person means.
@@ -223,9 +253,19 @@ function itemEntries(id, count, at) {
   // A sticker's colour, as a fold rather than eight rows in the main column.
   // Single-item, like the picture and fit rows: it is an edit to one shape.
   const tintable = !many && cmds.canTintSticker(id);
+  // Anything with something worth seeing full size. Single-item: the viewer
+  // shows one thing, which is the whole of what it is for.
+  const viewable = !many && cmds.canViewItem(id);
   return [
-    // First, and only on a note: right-clicking the one item type you can
-    // actually type into should offer to type into it before anything else.
+    // First of all, because on a wall of thumbnails it is the thing you most
+    // often want and the one row that was not reachable any other way. Above
+    // Edit text and not below it: a note is the one type where both apply, and
+    // there the editor is the nearer meaning - which is why this row carries no
+    // accelerator on a note, since the double-click belongs to the other one.
+    { label: 'Open', icon: 'i-expand', accel: editable ? '' : 'dbl-click',
+      hidden: !viewable, action: () => cmds.openViewer(id) },
+    // Only on a note: right-clicking the one item type you can actually type
+    // into should offer to type into it before anything else on the card.
     { label: 'Edit text', icon: 'i-edit-text', accel: 'dbl-click', hidden: !editable,
       action: () => cmds.editNote(id) },
     { label: 'Rename', icon: 'i-rename', accel: 'F2', hidden: !renamable,
@@ -283,13 +323,17 @@ function itemEntries(id, count, at) {
     // raising it or zooming to it. Works on a group: unlike renaming or setting
     // a picture, "put these back to their own size" means one thing for nine
     // cards as clearly as for one.
+    // Not on the Feed: a tile's size is the packer's, computed from the column
+    // count and the item's aspect, so putting a card back to "its own size"
+    // changes a number that surface never draws.
     { label: many ? `Reset ${count} sizes` : 'Reset size', icon: 'i-reset-size',
-      action: () => cmds.resetSize() },
+      hidden: mobile, action: () => cmds.resetSize() },
     // A region right-clicked by its name plate - which is the only part of one a
     // press can land on - arranges what is inside it. Single-item, because with a
     // group selected "these" is the group and this row is about one region's
     // contents; the row below still covers that case.
-    { label: 'Rearrange fence', icon: 'i-rearrange', hidden: many || !cmds.isFenceItem(id),
+    { label: 'Rearrange fence', icon: 'i-rearrange',
+      hidden: mobile || many || !cmds.isFenceItem(id),
       action: () => cmds.rearrangeFence(id) },
     // The board's arrangement, applied to these and nowhere else. Only offered
     // for a group, because one card has nothing to be arranged against - and it
@@ -324,12 +368,19 @@ function itemEntries(id, count, at) {
     { sep: true },
     { label: `Duplicate ${what}`, icon: 'i-duplicate', accel: 'Ctrl D',
       action: () => cmds.duplicate() },
+    // The zoom pair and "here" are the two most spatial rows on the menu, and
+    // the Feed has neither a zoom nor a here: it is a packed wall, so a note
+    // placed at the point somebody pressed would be picked up by the packer and
+    // put wherever the column had room. Add is on the toolbar there, which is
+    // the surface that means "somewhere on this board" rather than "at this
+    // spot" - and that is the only promise the Feed can keep.
     { label: 'Zoom to it', icon: 'i-zoom-to', accel: 'dbl-click',
-      action: () => cmds.zoomToSelection(), hidden: many },
+      action: () => cmds.zoomToSelection(), hidden: mobile || many },
     { label: 'Zoom to them', icon: 'i-zoom-to',
-      action: () => cmds.zoomToSelection(), hidden: !many },
-    { sep: true },
-    { label: 'Add a note here', icon: 'i-pen', action: () => cmds.addNoteAt(at) },
+      action: () => cmds.zoomToSelection(), hidden: mobile || !many },
+    { sep: true, hidden: mobile },
+    { label: 'Add a note here', icon: 'i-pen', hidden: mobile,
+      action: () => cmds.addNoteAt(at) },
     { sep: true },
     { label: `Delete ${what}`, icon: 'i-delete', accel: 'Del', danger: true,
       action: () => cmds.deleteSelection() },

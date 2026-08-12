@@ -74,6 +74,24 @@ let layoutRaf = 0;
 let resizeObs = null;
 let mastheadObs = null;
 
+// The hold that opens a tile's menu on touch. See the listeners in initFeed().
+const HOLD_MS = 500;
+const HOLD_SLOP = 10;
+let holdTimer = 0;
+let holdFrom = null;
+let heldOpen = false;
+
+function cancelHold() {
+  clearTimeout(holdTimer);
+  holdTimer = 0;
+  holdFrom = null;
+}
+
+/** The item a press landed on, or null for the sheet between the tiles. */
+function tileIdAt(target) {
+  return target?.closest?.('.feed-tile')?.dataset.id || null;
+}
+
 const TILE_TARGET = 210;   // the width a column aims for; more screen, more columns
 const MAX_COLS = 5;
 const GAP = 10;
@@ -122,6 +140,63 @@ export function initFeed(_viewport, _commands, headerStyle) {
     // placing one on the background would make something the person then could
     // not see - which is worse than doing nothing and saying so by disarming.
     if (at) cmds?.addStickerAt(shape, at);
+  }, true);
+
+  // The right-click slot, which the Feed did not own.
+  //
+  // There is exactly one contextmenu listener on the canvas side and it is bound
+  // to #viewport (canvas/input.js). #mobile-feed is a fixed scroller at z-index 2
+  // that covers the viewport entirely, so a press here never reached it and the
+  // browser's own menu opened instead - on the surface that on a phone *is* the
+  // board. Same for the hold gesture: the long-press timer is in the pointer
+  // pipeline on #viewport, and a tile is not in it.
+  //
+  // Its own pair of listeners rather than an extension of that pipeline, and
+  // that is deliberate: canvas/input.js is one pipeline with exactly one active
+  // gesture and must not be split (CLAUDE.md). This is a hold timer beside the
+  // sticker drag's own slop check, which is the same shape of decision in the
+  // same file.
+  root.addEventListener('contextmenu', e => {
+    const id = tileIdAt(e.target);
+    // Off a tile the browser menu is welcome to it - there is nothing this app
+    // can usefully offer for the sheet itself, and suppressing a menu to then
+    // show nothing is a press that goes nowhere.
+    if (!id) return;
+    e.preventDefault();
+    cancelHold();
+    cmds?.contextMenu(e.clientX, e.clientY, id, 1, { mobile: true });
+  });
+  root.addEventListener('pointerdown', e => {
+    // Touch only. A mouse has the button above, and a pen reports its own
+    // contextmenu on a barrel press; arming a timer for either would open the
+    // menu twice or open it on a drag that was going to scroll.
+    if (e.pointerType !== 'touch' || !tileIdAt(e.target)) return;
+    holdFrom = { x: e.clientX, y: e.clientY, id: tileIdAt(e.target) };
+    holdTimer = setTimeout(() => {
+      holdTimer = 0;
+      if (!holdFrom) return;
+      // Suppress the tap that would otherwise follow this press: the tile's own
+      // click handler opens the viewer, and a hold that opened a menu and an
+      // item is a press that did two things.
+      heldOpen = true;
+      cmds?.contextMenu(holdFrom.x, holdFrom.y, holdFrom.id, 1, { mobile: true });
+    }, HOLD_MS);
+  }, { passive: true });
+  // A finger that moved is scrolling, and a scroll is not a hold. The slop is
+  // the sticker drag's, for the reason it is the same question: how far a thumb
+  // wanders while meaning to stay still.
+  root.addEventListener('pointermove', e => {
+    if (!holdFrom) return;
+    if (Math.hypot(e.clientX - holdFrom.x, e.clientY - holdFrom.y) > HOLD_SLOP) cancelHold();
+  }, { passive: true });
+  root.addEventListener('pointerup', cancelHold, { passive: true });
+  root.addEventListener('pointercancel', cancelHold, { passive: true });
+  // Capture, so it runs before the tile's own click handler rather than after it.
+  root.addEventListener('click', e => {
+    if (!heldOpen) return;
+    heldOpen = false;
+    e.preventDefault();
+    e.stopPropagation();
   }, true);
 
   bus.on('board:load', () => { teardown(); render(); });
