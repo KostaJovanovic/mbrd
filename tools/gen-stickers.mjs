@@ -78,7 +78,7 @@ const RAW = `https://raw.githubusercontent.com/phosphor-icons/core/${REV}/assets
  * file format and may not move because an upstream icon was renamed. `from` is
  * the Phosphor name and `w` the weight, per the rule in the header.
  *
- * Keep this in the same order as STICKERS in web/assets/js/stickers/catalogue.js.
+ * Keep this in the same order as STICKERS in web/assets/js/stickers/catalogue.ts.
  * Nothing enforces the order - tests/stickers.test.js enforces that the two
  * lists hold the same ids, which is the half that matters.
  */

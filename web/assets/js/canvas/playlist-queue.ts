@@ -1,0 +1,311 @@
+// One track at a time, running through a list.
+//
+// The Mobile feed's Playlist lens is a real player: next, previous, shuffle,
+// repeat, and a track that hands over to the following one when it ends. That
+// needs a single engine the whole board shares rather than an <audio> per row -
+// so this is it. One long-lived element plays whatever track the queue points
+// at; the rows are just a list that calls playTrack(), and the now-playing bar
+// drives it with the transport canvas/transport.js builds plus the four buttons
+// ui/nowplaying.js adds.
+//
+// It registers like any other player, so exclusivity still holds: starting a
+// card pauses the queue and starting the queue pauses a card. nowPlaying() names
+// the queue's element while it is the one sounding, and onNowPlaying() is how
+// the list highlights the current row and the bar shows its controls.
+//
+// ── Why this is a file and not a section ──
+//
+// It is one *policy* about what plays next, sitting on canvas/audio.js's
+// invariant that only one thing plays at all. The two were interleaved in one
+// module and read as one subject, which they are not: the invariant is not
+// negotiable and this is a set of choices - that prev restarts a track within
+// three seconds, that shuffle keeps the current track at the front, that repeat
+// cycles off/all/one. Anything importing the engine used to have to take all of
+// that with it.
+//
+// ── The current voice, and why it is not always the shared element ──
+//
+// Playing a board card plays that card's own <audio>, with the queue steering
+// it, so its waveform and its seek keep working; only a track with no card on
+// screen - off the mobile board, or culled - falls back to the shared element
+// this file makes. That is what queuePlayerEl means, and it is what
+// isQueuePlayer() and queueState().active are really asking about.
+//
+// Which is also why the teardown is a subscription rather than a call. The
+// element the queue is driving may be a card's, and a card can be thrown away
+// underneath it: canvas/audio.js announces every release through
+// onPlayerReleased() and this drops its two references when the element it hears
+// about is the one it holds. The reverse - the engine reaching in here - is the
+// import that would make these two files a cycle, and the cycle would be true.
+//
+// ── What must not move in here ──
+//
+// The exclusivity rule, the volume, and the record of what is playing. Those are
+// properties of the device and belong to every player on the board, queue or
+// not; a second copy of any of them in here would be a second answer to a
+// question that has one.
+//
+// Nor any DOM. The rows, the buttons and the transport are ui/playlist.js and
+// canvas/transport.js. This module has an <audio> and no elements - the shared
+// player is not a node anybody sees, it is a decoder with a volume.
+
+import { assetURL } from '../storage/assets.ts';
+import {
+  claimPlayer, nowPlaying, onPlayerReleased, ownerOf,
+  registerPlayer, registeredPlayers, setNowPlaying,
+} from './audio.ts';
+
+/**
+ * The one field of a board item the queue reads.
+ *
+ * Structural and narrow for the reason canvas/waveform.ts gives at more length:
+ * there is no shared `Item` type yet - state.ts and board-model.ts are still
+ * carried under @ts-nocheck - and a queue that named the whole of one would be
+ * asserting a shape it does not use. Everything else about a track (its title,
+ * its cover, where it sits on the board) belongs to whoever drew the row.
+ */
+export interface Track {
+  asset?: { hash?: string | null } | null;
+}
+
+/** off, wrap the list, or hold on the one track. */
+export type RepeatMode = 'off' | 'all' | 'one';
+
+/** What onQueue() subscribers are told, which is only that something moved. */
+export interface QueueSnapshot {
+  shuffle: boolean;
+  repeat: RepeatMode;
+  active: boolean;
+  length: number;
+}
+
+let queueItems: Track[] = [];   // the audio items, in list order
+let queueOrder: number[] = [];  // indices into queueItems, in play order (shuffled or not)
+let queuePos = -1;              // where we are within queueOrder
+let shuffleOn = false;
+let repeatMode: RepeatMode = 'off';
+/** The one shared <audio>, for tracks with no card on screen. */
+let player: HTMLAudioElement | null = null;
+// The element the queue is driving right now. See the header: this is a card's
+// own <audio> whenever the track has a card, and the shared player otherwise.
+let queuePlayerEl: HTMLMediaElement | null = null;
+const queueWatchers = new Set<() => void>();
+
+/** Told when the queue's shape or mode changes (the bar repaints its buttons). */
+export function onQueue(fn: () => void): () => boolean {
+  queueWatchers.add(fn);
+  return () => queueWatchers.delete(fn);
+}
+function notifyQueue(): void { for (const fn of queueWatchers) fn(); }
+
+/** Whether `el` is the element the queue is currently driving (shared or a card's). */
+export const isQueuePlayer = (el: unknown): boolean => !!queuePlayerEl && el === queuePlayerEl;
+
+/** Shuffle mode, repeat mode, and whether the queue is the current sound. */
+export function queueState(): QueueSnapshot {
+  return {
+    shuffle: shuffleOn,
+    repeat: repeatMode,
+    active: !!queuePlayerEl && nowPlaying()?.el === queuePlayerEl,
+    length: queueItems.length,
+  };
+}
+
+/**
+ * The element to play `item` through: its card's own <audio> when that card is on
+ * the board, else the shared player. Reusing the card's element is what lets a track
+ * started from the board keep its live waveform while the queue advances it.
+ */
+function playerFor(item: Track): HTMLMediaElement {
+  for (const el of registeredPlayers() as Iterable<HTMLMediaElement>) {
+    if (el !== player && ownerOf(el) === item) return el;
+  }
+  return ensurePlayer();
+}
+
+/** Advance when the queue's current element ends, wherever that element lives. */
+function queueEnded(): void { advanceQueue(true); }
+let endedBound: HTMLMediaElement | null = null;
+
+/**
+ * Drop what this file holds on an element that is being destroyed.
+ *
+ * Registered at load rather than wired from main.js, for the reason
+ * onPlayerReleased()'s own comment gives: there is one queue and one thing to
+ * clean up, so this is not a decision about assembly that a boot sequence should
+ * be able to get wrong. Without it, endedBound keeps an orphaned element and its
+ * 'ended' listener alive until the next startCurrent() or clearQueue() happens
+ * to run.
+ */
+onPlayerReleased((el: HTMLMediaElement) => {
+  if (endedBound === el) { el.removeEventListener('ended', queueEnded); endedBound = null; }
+  if (queuePlayerEl === el) queuePlayerEl = null;
+});
+
+function ensurePlayer(): HTMLAudioElement {
+  if (player) return player;
+  player = new Audio();
+  player.preload = 'metadata';
+  // Registered once - not per track - so its 'play' hook and volume wiring are
+  // set a single time. The owner is updated per track in startCurrent(). The
+  // ended -> advance hook is no longer here: it rides on whichever element is the
+  // queue's current voice (see startCurrent), because that may be a card's <audio>.
+  registerPlayer(player);
+  return player;
+}
+
+/**
+ * Set the tracks the queue runs through, keeping the current one's place.
+ *
+ * Called by the feed whenever the playlist's order changes. It does not start or
+ * stop anything - only what next/previous will reach.
+ */
+export function setQueue(items: readonly Track[] | null | undefined): void {
+  queueItems = Array.isArray(items) ? items.slice() : [];
+  rebuildOrder();
+  notifyQueue();
+}
+
+function rebuildOrder(): void {
+  const current = nowPlaying();
+  const playing = current?.el === queuePlayerEl ? current.item : null;
+  queueOrder = queueItems.map((_, i) => i);
+  if (shuffleOn) {
+    // Fisher-Yates, but keep the current track at the front so shuffle does not
+    // jump away from what is playing.
+    for (let i = queueOrder.length - 1; i > 0; i--) {
+      const j = Math.floor(mulberryLike() * (i + 1));
+      [queueOrder[i], queueOrder[j]] = [queueOrder[j], queueOrder[i]];
+    }
+  }
+  if (playing) {
+    const idx = queueItems.indexOf(playing as Track);
+    const at = queueOrder.indexOf(idx);
+    if (at > 0 && shuffleOn) { queueOrder.splice(at, 1); queueOrder.unshift(idx); }
+    queuePos = queueOrder.indexOf(idx);
+  }
+}
+
+// A tiny time-free source of variation for shuffle. Date.now()/Math.random are
+// available at runtime here (this is not the workflow sandbox); a plain
+// Math.random keeps the shuffle genuinely random per press.
+function mulberryLike(): number { return Math.random(); }
+
+/** Start playing a specific item (a row tap), if it is in the queue. */
+export function playTrack(item: Track): void {
+  const idx = queueItems.indexOf(item);
+  if (idx < 0) return;
+  queuePos = queueOrder.indexOf(idx);
+  startCurrent();
+}
+
+function startCurrent(): void {
+  const item: Track | undefined = queueItems[queueOrder[queuePos]];
+  const url: string | null = item?.asset?.hash ? assetURL(item.asset.hash) : null;
+  if (!url) return;
+  const el = playerFor(item);
+  if (el === player) {
+    // The shared element holds whatever it last played; point it at this track.
+    if (el.currentSrc !== url && el.src !== url) el.src = url;
+    else el.currentTime = 0;
+  } else {
+    // A card's own element, already holding its src; start it from the top.
+    el.currentTime = 0;
+  }
+  // The ended -> advance hook follows the current voice: bound to this element while
+  // it is the one playing, moved off it when the queue steps to another.
+  if (endedBound && endedBound !== el) endedBound.removeEventListener('ended', queueEnded);
+  if (endedBound !== el) { el.addEventListener('ended', queueEnded); endedBound = el; }
+  queuePlayerEl = el;
+  claimPlayer(el, item);
+  setNowPlaying({ el, item });
+  el.play().catch(() => {});
+  notifyQueue();
+}
+
+/** The next track (or previous), respecting shuffle and repeat. */
+export function queueNext(): void { advanceQueue(false); }
+export function queuePrev(): void {
+  if (!queueItems.length) return;
+  // Within the first few seconds prev restarts the track, as every player does;
+  // past that it steps back.
+  if (queuePlayerEl && queuePlayerEl.currentTime > 3) { queuePlayerEl.currentTime = 0; return; }
+  queuePos = queuePos <= 0 ? queueOrder.length - 1 : queuePos - 1;
+  startCurrent();
+}
+
+/**
+ * Whether a track that has ended may start the next one.
+ *
+ * Injected by the interface (ui/nowplaying.js/playlistOpen) rather than asked
+ * for, because the answer is "is the playlist on screen" and this module sits
+ * below ui/ - the same one-way seam setAssetNameLookup and setPrompt take, kept
+ * that way by tests/layers.test.js. Unset - in a test, or before the bar is
+ * wired - means yes, so the queue's own behaviour is the default and the gate is
+ * something the interface adds.
+ */
+let advanceGate: (() => boolean) | null = null;
+export const setAdvanceGate = (fn: (() => boolean) | null | undefined): void => {
+  advanceGate = typeof fn === 'function' ? fn : null;
+};
+
+/**
+ * Move on. `auto` is an ended track handing over versus a Next press.
+ *
+ * repeat 'one' replays the same track only when it ended on its own - a Next
+ * press still moves on. At the end of the list, repeat 'all' wraps; otherwise an
+ * automatic end stops and a Next press wraps.
+ *
+ * And an automatic hand-over needs the gate above to agree. Only the automatic
+ * one: a Next press is somebody asking, and the whole point of the gate is the
+ * difference between playback you asked for and playback that happened to you.
+ * It sits *after* the repeat-'one' branch on purpose - repeating one track is not
+ * moving on to another, it is an instruction already given about the track you
+ * chose, and revoking it here would make a setting mean different things
+ * depending on which window was up.
+ */
+function advanceQueue(auto: boolean): void {
+  if (!queueItems.length) return;
+  if (auto && repeatMode === 'one') { startCurrent(); return; }
+  if (auto && advanceGate && !advanceGate()) return;
+  const last = queuePos >= queueOrder.length - 1;
+  if (last) {
+    if (repeatMode === 'all' || !auto) queuePos = 0;
+    else return;
+  } else {
+    queuePos += 1;
+  }
+  startCurrent();
+}
+
+export function toggleShuffle(): void {
+  shuffleOn = !shuffleOn;
+  rebuildOrder();
+  notifyQueue();
+}
+
+/** off -> all -> one -> off. */
+export function cycleRepeat(): void {
+  repeatMode = repeatMode === 'off' ? 'all' : repeatMode === 'all' ? 'one' : 'off';
+  notifyQueue();
+}
+
+/**
+ * Empty the queue and silence its player.
+ *
+ * For a board being replaced: its tracks are about to leave and their asset URLs
+ * are revoked, so the shared element must let go of the one it holds. Clears the
+ * now-playing entry if the queue was the sound.
+ */
+export function clearQueue(): void {
+  const voice = queuePlayerEl;
+  if (endedBound) { endedBound.removeEventListener('ended', queueEnded); endedBound = null; }
+  if (voice) voice.pause();
+  if (player) { player.pause(); player.removeAttribute('src'); }
+  queueItems = [];
+  queueOrder = [];
+  queuePos = -1;
+  if (nowPlaying()?.el === voice) setNowPlaying(null);
+  queuePlayerEl = null;
+  notifyQueue();
+}

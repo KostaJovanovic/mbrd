@@ -13,22 +13,37 @@
 // not a size, so the directory is media/ and the module is named for the part
 // of a player this is - the transport - rather than for the file it left.
 //
-// ── What goes here next ──
+// ── How much of the control strip landed here, and why not all of it ──
 //
-// Track D of the refactor plan moves canvas/audio.ts's 376-line transport block
-// down beside this: the play/pause/seek furniture is DOM construction living in
-// canvas/ and consumed by four modules, which is the same argument this module
-// already won on a smaller scale. When that lands, this file grows and its
-// callers stop reaching into canvas/ for a control strip. Nothing here presumes
-// it, and nothing here should acquire an import that would block it - in
-// particular not state.ts. A transport is told what to draw; it does not ask
-// the board what is playing.
+// Track D of the refactor plan said canvas/audio.ts's transport block belonged
+// down beside this. Most of it does not, and the sentence that decided it is the
+// one this header carried while the move was still hypothetical: *nothing here
+// should acquire an import that would block it - in particular not state.ts. A
+// transport is told what to draw; it does not ask the board what is playing.*
+//
+// buildTransport() asks. It reads `bus` and `selection` to know a card has been
+// let go of, measures the file through canvas/waveform.ts (which reaches
+// storage/ and marks the board dirty), starts playback through the queue, and
+// complains through notify.ts. Four dependencies, three of them upward of this
+// tier. So it stayed in canvas/, as canvas/transport.ts, whose header carries
+// the full argument - and what came down here is exactly the part that keeps
+// this module's promise:
+//
+//   bindScrub()   listeners on an element it is handed. No lookup, no document.
+//   clock()       seconds -> m:ss. Arithmetic on a number.
+//   PLAY_ICON     two strings of SVG. Every character written above.
+//   PAUSE_ICON
+//
+// which is the same test everything else in this file passes, and the reason the
+// split is a real one rather than a rename: these four are what a *second* kind
+// of player would reuse, and buildTransport is the one this app happens to have.
 //
 // ── What must not move in here ──
 //
 // The audio *analysis*. The waveform DSP that turns a decoded buffer into peaks
 // is arithmetic over sample data with no interface in it at all, and pairing it
-// with a control strip would recreate the mixture this split exists to undo.
+// with a control strip would recreate the mixture this split exists to undo. It
+// is canvas/waveform.ts, which says the same thing back.
 //
 // ── The geometry, and the bug it replaced ──
 //
@@ -121,4 +136,55 @@ export function sizeSeekWave(
   if (w < 1) return;
   waveSvg.setAttribute('viewBox', `0 0 ${w} 8`);
   wavePathEl.setAttribute('d', wavePath(w));
+}
+
+/**
+ * Make a seek track draggable, not merely clickable.
+ *
+ * Shared, because there are three of these - the card's waveform, the video
+ * card's line, and whichever of the two the now-playing bar is showing - and a
+ * scrub that behaved differently depending on which one you had hold of would be
+ * three controls wearing one costume.
+ *
+ * Captured, and the capture is doing two jobs. It keeps the drag alive once the
+ * pointer leaves the track, which on something fourteen pixels tall is most of
+ * the gesture: without it a scrub ends the moment your hand strays off the
+ * line, which is exactly when you are moving fastest. And it keeps
+ * canvas/input.js out of it - a pointer sequence that got through to the canvas
+ * would be read as a drag of the card, so seeking a clip would carry it across
+ * the board.
+ *
+ * stopPropagation on the down as well as the capture, because the capture only
+ * redirects the *later* events: the pointerdown itself has already begun
+ * bubbling towards the canvas by the time this runs.
+ *
+ * The element is handed in, like everything else here. That is what keeps this
+ * off `document` and out of any one caller's naming scheme.
+ */
+export function bindScrub(el: HTMLElement, seekTo: (clientX: number) => void): void {
+  el.addEventListener('pointerdown', e => {
+    el.setPointerCapture(e.pointerId);
+    seekTo(e.clientX);
+    e.stopPropagation();
+  });
+  el.addEventListener('pointermove', e => {
+    if (el.hasPointerCapture(e.pointerId)) seekTo(e.clientX);
+  });
+}
+
+/* The two glyphs every transport in the app draws. Strings rather than a
+   <symbol> in assets/icons.svg because they are set with innerHTML on a button
+   that swaps between them on every play and pause, where a <use href> would be a
+   second document fetch on the first press; and because canvas/video.js draws
+   the same two triangles, and a video transport that invented its own play glyph
+   would be a second visual language for the same verb on the same board. */
+export const PLAY_ICON =
+  '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5 3.4l7.5 4.6L5 12.6z"/></svg>';
+export const PAUSE_ICON =
+  '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.6 3.2h2.6v9.6H4.6zM8.8 3.2h2.6v9.6H8.8z"/></svg>';
+
+/** m:ss. Hours are possible and would be a strange thing to pin to a board. */
+export function clock(secs: number): string {
+  const s = Math.max(0, Math.floor(secs));
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
 }

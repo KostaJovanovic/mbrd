@@ -34,11 +34,12 @@ import {
 } from '../state.ts';
 import { autoPaletteReady, whimsyControlsSnap } from '../layout-settings.ts';
 import { clamp, readToken } from '../util.ts';
+import { oklch, parseHex } from '../color.ts';
 import { toast } from '../notify.ts';
 import { readPrefJSON, writePref } from '../prefs.ts';
 import { assetURL, getAsset } from '../storage/assets.ts';
 import {
-  extractPalette, oklch, paletteFromAccent, samplePixels, MAX_SOURCES, PALETTE_TOKENS,
+  extractPalette, paletteFromAccent, samplePixels, MAX_SOURCES, PALETTE_TOKENS,
 } from './pigments.ts';
 // What a board is allowed to ask for. Kept in its own module because this one
 // touches document at import time and that one must stay testable - see look.js.
@@ -800,7 +801,7 @@ async function recolourFromBoard({ silent = false } = {}) {
   // the question this feature is actually judged on, and two hex codes do not
   // answer it. Read back off the palette rather than passed out of the
   // extractor, so it costs nothing and cannot disagree with what was applied.
-  const hueOf = c => Math.round(oklch(...[1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16))).h);
+  const hueOf = c => Math.round(oklch(...parseHex(c)).h);
   console.info(`[mbrd] palette: sheet ${vars['--paper']} (hue ${hueOf(vars['--paper'])}), `
     + `accent ${vars['--accent']} (hue ${hueOf(vars['--accent'])}), `
     + `wash ${vars['--leafy']} (hue ${hueOf(vars['--leafy'])})`);

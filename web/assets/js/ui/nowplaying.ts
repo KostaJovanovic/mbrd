@@ -22,7 +22,8 @@
 // waveform, which is buildTransport's `line` option and nothing more.
 //
 // It is deliberately not a second player. The <audio> in the card is still the
-// engine; this binds a second buildTransport() to that same element, so the card
+// engine; this builds its own strip over that same element - bindScrub() and
+// clock() from media/transport.ts, not a second buildTransport() - so the card
 // and the bar are two views of one clip and stay in step without a line of
 // syncing code between them. Seek from either and both move, because there is
 // only one thing to move.
@@ -59,8 +60,9 @@
 import {
   nowPlaying, onNowPlaying, clearNowPlaying,
   getVolume, onVolume, setVolume, volumeLocked,
-  bindScrub, clock, PLAY_ICON, PAUSE_ICON, setAdvanceGate,
 } from '../canvas/audio.ts';
+import { setAdvanceGate } from '../canvas/playlist-queue.ts';
+import { bindScrub, clock, PAUSE_ICON, PLAY_ICON } from '../media/transport.ts';
 import { board } from '../state.ts';
 import { setLens, currentLens } from './board-view.ts';
 import { togglePlayerWindow, isPlayerWindowOpen } from './playlist.ts';

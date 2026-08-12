@@ -32,10 +32,10 @@
 
 // No PAUSE_ICON: the only button here is the big one over the picture, and it
 // is a play button that goes away rather than one that turns into a pause.
-import { registerPlayer, bindScrub, PLAY_ICON, clock } from './audio.ts';
+import { registerPlayer } from './audio.ts';
 import { clamp } from '../util.ts';
 import { toast } from '../notify.ts';
-import { seekInnerHTML, sizeSeekWave } from '../media/transport.ts';
+import { bindScrub, clock, PLAY_ICON, seekInnerHTML, sizeSeekWave } from '../media/transport.ts';
 
 /**
  * Where a parked video sits: the `#t=` media fragment canvas/renderers.js mounts

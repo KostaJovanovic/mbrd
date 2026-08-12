@@ -39,6 +39,16 @@
 // That is the one exception the "dependency-free" claim gets, and it is
 // justified by the same argument as everything else here: every layer looks
 // things up by id and by token name, and neither lookup has a subject.
+//
+// The one import below is the other exception, and it is emitter()'s alone.
+// "Dependency-free" was always a claim about *subjects* - this file carries no
+// assets, no preferences, no messages - and errors.ts is not a subject, it is
+// the place a thing that was caught goes so that it is not also lost. The
+// alternative was an injected reporter and a fifth setter, which would have
+// bought nothing: errors.ts imports notify.ts and nothing else, so the edge is
+// two modules deep and stays inside the base layer.
+
+import { reportCaught } from './errors.ts';
 
 export const clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
 
@@ -95,7 +105,23 @@ export function uid(prefix = 'i') {
   return prefix + (++_seq).toString(36) + '-' + Math.random().toString(36).slice(2, 8);
 }
 
-/** Minimal string-keyed event bus. Handlers never throw into the emitter. */
+/**
+ * Minimal string-keyed event bus. Handlers never throw into the emitter.
+ *
+ * The catch below is not defensive tidying, it is the contract: twenty
+ * subscribers listen to 'geom' and one of them being broken must not stop the
+ * other nineteen from repainting. That is right and it stays.
+ *
+ * What it used to do as well was lose the error. A subscriber that throws on
+ * every geom - which is several a second while a card is being dragged - wrote
+ * to a console nobody has open and reached window.onerror never, because the
+ * throw was caught right here. It was the audit's own example of a board that
+ * stops responding with nothing to read (Finding 6,
+ * research/build-and-framework-audit-2026-08-12.md), and a global handler alone
+ * would not have seen a single one of them. So the catch also says so, once:
+ * errors.ts holds it to one toast per distinct fault however many times it
+ * arrives, which is what makes this safe to call from the hot path at all.
+ */
 export function emitter() {
   const map = new Map();
   return {
@@ -106,7 +132,7 @@ export function emitter() {
     off(evt, fn) { map.get(evt)?.delete(fn); },
     emit(evt, payload) {
       for (const fn of map.get(evt) || []) {
-        try { fn(payload); } catch (e) { console.error('[mbrd] handler for "' + evt + '"', e); }
+        try { fn(payload); } catch (e) { reportCaught(e, 'handler for "' + evt + '"'); }
       }
     },
   };

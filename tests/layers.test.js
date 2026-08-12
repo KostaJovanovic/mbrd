@@ -226,6 +226,26 @@ const BASE = new Set([
   //                never reaches for `document`, which is what lets it be down
   //                here rather than in ui/.
   'crypto.ts', 'prefs.ts', 'notify.ts', 'media/transport.ts',
+  // Colour as arithmetic, lifted out of ui/pigments.js's own "Colour" heading.
+  // Here for the same reason as the four above: it imports nothing, it knows
+  // nothing about this app - OKLab conversion, a gamut-safe hex, a WCAG ratio
+  // are the same functions in any program - and it is reached from more than one
+  // tier. ui/pigments.js, ui/appearance.js and ui/color-picker.js all read it,
+  // and the last two had been copying the six-digit hex parse rather than
+  // importing across a section comment. Everything that knows which colour does
+  // which job stayed in ui/pigments.js, which is what keeps this one down here.
+  'color.ts',
+  // The handler of last resort, beside notify.js and importing nothing but it.
+  // It is down here for two reasons that point the same way. It has to be
+  // installed before anything else in the app can fail, which means before any
+  // layer above it exists; and util.js's emitter reaches it from the catch that
+  // stops one broken subscriber taking the bus down with it, which puts a base
+  // module among its callers. Whether the board is safe is the one thing it
+  // cannot work out for itself, so storage/session.js's boardSafety() is
+  // injected by main.js through setBoardProbe() - the same shape as
+  // setOverlays() above and for the same reason: the answer lives up the graph,
+  // the question has to be askable from the bottom of it.
+  'errors.ts',
 ]);
 
 /**

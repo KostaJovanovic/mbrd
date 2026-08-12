@@ -24,7 +24,8 @@
     "graphify-out",
     "web/assets/js/import/formats.ts",
     "web/assets/app.js",
-    "web/assets/app.js.map"
+    "web/assets/app.js.map",
+    "web/assets/lab-pigments.js"
   ],
   "rules": {
     "no-undef": "error",

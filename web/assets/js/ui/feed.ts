@@ -39,8 +39,10 @@ import { assetURL, readText } from '../storage/assets.ts';
 import { linkURL, buildContent } from '../canvas/renderers.ts';
 import { bindDial } from '../canvas/ghosts.ts';
 import {
-  registerPlayer, releasePlayers, nowPlaying, onNowPlaying, playTrack, PLAY_ICON, clock,
+  registerPlayer, releasePlayers, nowPlaying, onNowPlaying,
 } from '../canvas/audio.ts';
+import { playTrack } from '../canvas/playlist-queue.ts';
+import { clock, PLAY_ICON } from '../media/transport.ts';
 import {
   STICKER_SPRITE, STICKER_VIEWBOX, stickerShape, DEFAULT_SHAPE,
 } from '../stickers/catalogue.ts';

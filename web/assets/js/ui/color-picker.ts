@@ -38,6 +38,9 @@
 // without a browser like every other one here.
 
 import { clamp } from '../util.ts';
+// Only the six-digit parse, which is arithmetic and shared. The space this
+// module works in is still HSV, for the reason the header gives.
+import { parseHex } from '../color.ts';
 
 /** The one open at a time, if any. Two modal dialogs is two focus traps. */
 let current = null;
@@ -85,7 +88,7 @@ export function hexToHsv(raw) {
       : null;
   if (!full) return null;
 
-  const [r, g, b] = [1, 3, 5].map(i => parseInt(full.slice(i, i + 2), 16) / 255);
+  const [r, g, b] = parseHex(full).map(n => n / 255);
   const max = Math.max(r, g, b);
   const d = max - Math.min(r, g, b);
   let h = 0;

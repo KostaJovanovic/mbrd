@@ -15,6 +15,7 @@ import { appCss } from './helpers.js';
 import {
   TABS, SECTIONS, sectionsFor, controlVisible, sectionVisible,
 } from '../web/assets/js/ui/settings-schema.ts';
+import { createCommands } from '../web/assets/js/commands.ts';
 
 const DESKTOP = { mobile: false };
 const MOBILE = { mobile: true };
@@ -50,22 +51,26 @@ test('no id is used twice', () => {
 test('every button names a command that exists', () => {
   // The panel reaches the app through one delegated listener on data-cmd, so a
   // typo here is a button that does nothing at all, silently.
-  // The command surface lives in commands.js, built by createCommands(vp) so it
-  // can close over the Viewport without touching a browser global at import
-  // time. The object is one indent in, hence the closing brace this matches.
-  return readFile(new URL('../web/assets/js/commands.ts', import.meta.url), 'utf8').then(main => {
-    const block = main.match(/const cmds = \{([\s\S]*?)\n {2}\};/);
-    assert.ok(block, 'the cmds object moved - this test cannot find it');
-    const camel = s => s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-    for (const [, c] of allControls()) {
-      for (const b of c.buttons || []) {
-        if (!b.cmd) continue;
-        const key = camel(b.cmd);
-        assert.match(block[1], new RegExp(`(^|\\n)\\s*${key}\\s*[:,(]`),
-          `data-cmd="${b.cmd}" has no cmds.${key}`);
-      }
+  //
+  // Asked of the real object rather than of the source text. This used to match
+  // `const cmds = { ... }` in commands.ts with a regex and look for each key
+  // inside it, which was only ever a stand-in for the question - and it stopped
+  // being even that when createCommands() was split, since five contiguous runs
+  // of the surface moved into commands/ and are spread back in. Building the
+  // object costs nothing here (it is a factory precisely so it touches no
+  // browser global at import time, and tests/connections.test.js already builds
+  // one the same way), and `key in cmds` is the thing the panel actually does.
+  const cmds = createCommands(
+    { toWorld: () => ({ x: 0, y: 0 }), left: 0, top: 0, cx: 0, cy: 0, fit() {}, recenter() {} },
+    { resetAppearance() {}, setWhimsy() {} });
+  const camel = s => s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+  for (const [, c] of allControls()) {
+    for (const b of c.buttons || []) {
+      if (!b.cmd) continue;
+      const key = camel(b.cmd);
+      assert.ok(key in cmds, `data-cmd="${b.cmd}" has no cmds.${key}`);
     }
-  });
+  }
 });
 
 test('a control that can be set can also be read', () => {

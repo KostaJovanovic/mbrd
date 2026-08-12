@@ -49,107 +49,25 @@
 // that touches the DOM and the only one the tests do not call - they hand
 // extractPalette() the pixels directly, which is also how a failing board can
 // be reproduced from its colours rather than from its photographs.
+//
+// The colour arithmetic this rests on - OKLab conversion, the gamut-safe hex,
+// WCAG contrast - is in ../color.ts and no longer here. It is the part of this
+// file that knows nothing about photographs or boards, its own section comment
+// had said so for as long as the section existed, and two other modules were
+// copying pieces of it rather than importing across a heading. The three
+// functions this file's callers have always reached for through it are
+// re-exported below so that nothing outside had to move.
 
 import { clamp } from '../util.ts';
+import { contrast, hex, mixHex, oklch, parseHex } from '../color.ts';
 import { PALETTE_TOKENS } from '../layout-settings.ts';
 export { PALETTE_TOKENS };
-
-// ---------------------------------------------------------------------------
-// Colour
-// ---------------------------------------------------------------------------
-//
-// OKLab rather than HSL, and this is the decision the whole file rests on.
-// HSL's lightness is not lightness: #ff0000 and #0000ff are both "50%" in HSL
-// and one of them is nearly three times brighter than the other. Clustering
-// hues in HSL therefore groups by something nobody sees, and holding a palette
-// to a contrast ratio afterwards would fight the clustering the whole way.
-// OKLab's L is perceptual, so "same lightness, different hue" means it.
-
-const cbrt = Math.cbrt;
-
-/** sRGB 0-255 -> linear-light 0-1. */
-const toLinear = c => {
-  c /= 255;
-  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-};
-
-/** linear-light 0-1 -> sRGB 0-255, clamped. */
-const toSrgb = c => {
-  const v = c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055;
-  return Math.round(Math.min(1, Math.max(0, v)) * 255);
-};
-
-/** sRGB 0-255 -> OKLCh. Hue in degrees, 0-360; L and C in OKLab's own units. */
-export function oklch(r, g, b) {
-  const R = toLinear(r), G = toLinear(g), B = toLinear(b);
-  const l = cbrt(0.4122214708 * R + 0.5363325363 * G + 0.0514459929 * B);
-  const m = cbrt(0.2119034982 * R + 0.6806995451 * G + 0.1073969566 * B);
-  const s = cbrt(0.0883024619 * R + 0.2817188376 * G + 0.6299787005 * B);
-  const L = 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s;
-  const A = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s;
-  const Bb = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s;
-  const C = Math.hypot(A, Bb);
-  let h = Math.atan2(Bb, A) * 180 / Math.PI;
-  if (h < 0) h += 360;
-  return { L, C, h };
-}
-
-/** OKLCh -> linear-light sRGB, which may fall outside the gamut. */
-function oklchToLinear(L, C, h) {
-  const rad = h * Math.PI / 180;
-  const A = Math.cos(rad) * C, B = Math.sin(rad) * C;
-  const l = (L + 0.3963377774 * A + 0.2158037573 * B) ** 3;
-  const m = (L - 0.1055613458 * A - 0.0638541728 * B) ** 3;
-  const s = (L - 0.0894841775 * A - 1.2914855480 * B) ** 3;
-  return [
-    +4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
-    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
-    -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s,
-  ];
-}
-
-const inGamut = ([r, g, b]) => {
-  const lo = -1e-4, hi = 1 + 1e-4;
-  return r >= lo && r <= hi && g >= lo && g <= hi && b >= lo && b <= hi;
-};
-
-/**
- * OKLCh -> `#rrggbb`, kept inside sRGB by giving up chroma rather than
- * lightness.
- *
- * Which of the two to sacrifice is a real choice and this one is forced: every
- * contrast guarantee below is a statement about lightness, so a gamut clip that
- * moved L would quietly undo the repair pass that had just run. Clipping the
- * channels instead - the obvious thing - is worse still, because it shifts the
- * hue: clamping a too-blue blue drags it towards cyan, and the palette stops
- * being the one that was chosen.
- *
- * Bisection rather than a loop of small steps, because the first attempt is
- * usually in gamut already and this then costs one test.
- */
-export function hex(L, C, h) {
-  let lo = 0, hi = C;
-  if (!inGamut(oklchToLinear(L, C, h))) {
-    for (let i = 0; i < 18; i++) {
-      const mid = (lo + hi) / 2;
-      if (inGamut(oklchToLinear(L, mid, h))) lo = mid; else hi = mid;
-    }
-  } else lo = C;
-  const [r, g, b] = oklchToLinear(L, lo, h);
-  return '#' + [r, g, b].map(v => toSrgb(v).toString(16).padStart(2, '0')).join('');
-}
-
-/** WCAG relative luminance from sRGB 0-255. */
-const luminance = (r, g, b) =>
-  0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
-
-const parseHex = s => [1, 3, 5].map(i => parseInt(s.slice(i, i + 2), 16));
-
-/** WCAG contrast ratio between two `#rrggbb` strings. */
-export function contrast(a, b) {
-  const x = luminance(...parseHex(a)), y = luminance(...parseHex(b));
-  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
-}
+// tests/pigments.test.js, web/lab.html and ui/appearance.ts all read colour
+// through this module because this is where it used to live. Re-exported by
+// name rather than with `export *`, for the reason state.ts gives for the same
+// choice: an export that stops existing should break loudly here rather than
+// quietly at a call site.
+export { contrast, hex, oklch };
 
 // ---------------------------------------------------------------------------
 // Which hues the pictures are made of
@@ -1059,13 +977,6 @@ function warmer(h) {
   // than the long way down through the greens.
   const d = ((WARM_ANCHOR - h + 540) % 360) - 180;
   return h + Math.sign(d) * Math.min(Math.abs(d), WARM_TURN);
-}
-
-/** `a` and `b` mixed in sRGB, `t` of the way to `b`. Matches color-mix(). */
-function mixHex(a, b, t) {
-  const [ar, ag, ab] = parseHex(a), [br, bg, bb] = parseHex(b);
-  const m = (x, y) => Math.round(x + (y - x) * t).toString(16).padStart(2, '0');
-  return '#' + m(ar, br) + m(ag, bg) + m(ab, bb);
 }
 
 /**

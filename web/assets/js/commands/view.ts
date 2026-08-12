@@ -1,0 +1,187 @@
+// The view half of the command surface: where the camera is, which board face
+// is up, and the handful of chrome resets.
+//
+// Canvas / Feed / Playlist, play-pause, the scale, fit and recenter, the two
+// debug overlays, the zoom lock, the appearance and quality resets, reload,
+// restart, credits. One contiguous run of the object in commands.ts, lifted
+// whole - see commands/file.ts for why the five runs became five files.
+//
+// ── The one factory that needs the Viewport ──
+//
+// createCommands() closes over the live Viewport because several commands are
+// *journeys* rather than state changes, and every one of those is in this run:
+// fit, recenter and the zoom lock are the whole of the app's relationship with
+// the camera. So this factory takes `vp` and the other four take nothing, which
+// is not an inconsistency - it is the split telling the truth about which
+// quarter of the surface is about looking rather than about the board.
+//
+// `resetAppearance` is handed in rather than imported, and that is not this
+// file's decision either: ui/appearance.ts touches a browser global at import
+// time, so importing it anywhere but main.ts would cost a fourth exemption in
+// tests/imports.test.js. main.ts already has one, so the function comes in from
+// there and travels through createCommands to here.
+//
+// ── What must not move in here ──
+//
+// The Viewport itself. What a pan or a zoom *is* belongs to canvas/viewport.ts,
+// and this file only ever asks it for one. A command that started doing the
+// arithmetic would be the second place the camera lives.
+//
+// Nor the lens machinery. Which of Feed and Playlist is up is ui/board-view.ts;
+// the three commands here are the buttons that ask for one, including the
+// deliberate asymmetry that Canvas is idempotent and the other two are toggles.
+
+import { toast } from '../notify.ts';
+import { board, setSetting, setBoardMode as selectBoardMode } from '../state.ts';
+import { DEFAULT_SCALE } from '../measure.ts';
+import { clearQualityOverrides } from '../quality.ts';
+import { travelMs } from '../canvas/viewport.ts';
+import { togglePlayback } from '../canvas/audio.ts';
+import { currentLens, setLens } from '../ui/board-view.ts';
+import { togglePlayerWindow } from '../ui/playlist.ts';
+import { openCredits } from '../ui/credits.ts';
+import { paintZoom, zoomText } from '../ui/hud.ts';
+import { reloadBoard, restartApp, scaleFromItem } from '../ui/board-actions.ts';
+
+/**
+ * The half of the Viewport this run asks for.
+ *
+ * Structural and only these five, for the reason the item-facing factories give
+ * about board items: canvas/viewport.ts is still carried under @ts-nocheck, so
+ * there is no Viewport type to import, and naming the whole of one here would be
+ * asserting a shape this file does not use. When the real type lands this
+ * becomes an import.
+ */
+export interface CommandViewport {
+  fit(items: unknown[], pad: number, ms: number): void;
+  recenter(ms: number): void;
+  isMobile: boolean;
+  zoomLocked: boolean;
+}
+
+/** What main.ts hands in through createCommands, of which this run wants one. */
+export interface ViewDeps {
+  resetAppearance: () => void;
+}
+
+export function viewCommands(vp: CommandViewport, { resetAppearance }: ViewDeps) {
+  return {
+    /**
+     * The two mobile boards, each its own sidebar button.
+     *
+     * Feed is the masonry wall of everything; Playlist is the audio player. On the
+     * canvas, Feed takes the whole board into its mobile view and Playlist opens
+     * the floating window over the canvas instead - a player, not a takeover. Once
+     * in the mobile view the pair are a switch between the two lenses, and pressing
+     * the one already up steps back out to the canvas, which is the only way back
+     * now that the old single toggle is gone. setLens before the mode switch so
+     * entering the mobile view lands on the lens that was asked for.
+     */
+    /**
+     * The third segment of the View row: back to the freeform board.
+     *
+     * Idempotent, unlike the two below it, and that is the whole of the
+     * difference. Feed and Playlist are toggles - pressing the lens you are
+     * already on steps back out to the canvas, which is the only way back now
+     * that the old single toggle is gone - so neither can be the button that
+     * *names* the canvas. This one can: pressed from the canvas it does nothing,
+     * pressed from either lens it comes back. selectBoardMode() already returns
+     * false for a mode that is live, so the toast is only for a real crossing.
+     */
+    canvas: () => {
+      if (selectBoardMode('desktop')) toast('Back to the canvas');
+    },
+    feed: () => {
+      if (board.layoutMode === 'mobile') {
+        if (currentLens() === 'feed') { selectBoardMode('desktop'); toast('Back to the canvas'); }
+        else setLens('feed');
+        return;
+      }
+      setLens('feed');
+      selectBoardMode('mobile');
+    },
+    playlist: () => {
+      if (board.layoutMode === 'mobile') {
+        if (currentLens() === 'playlist') { selectBoardMode('desktop'); toast('Back to the canvas'); }
+        else setLens('playlist');
+        return;
+      }
+      togglePlayerWindow();
+    },
+    // Space, from the canvas key handler: play or pause the current track. Returns
+    // whether it did - false when nothing is loaded, so Space falls back to pan.
+    playPause: () => togglePlayback(),
+    scaleFromItem,
+    // Resetting the sheet's size and resetting the board's scale are the same
+    // act: the sheet is drawn at whatever A4 works out to under the current
+    // scale, so there is nothing else its size could be stored in. Named for the
+    // scale rather than for the paper because it also puts the readout, the
+    // scale bar and every item's measurement back.
+    resetScale: () => {
+      if (board.settings.scale === DEFAULT_SCALE) return;
+      setSetting('scale', DEFAULT_SCALE);
+      toast('Back to the default size');
+    },
+    // The title card is left out on Mobile for the same reason canvas/items.js
+    // does not mount it there: it is not on that board. Fitting the view to a card
+    // nobody can see - parked above the column by completeLayout() - would zoom
+    // out to make room for nothing.
+    fit: () => vp.fit(
+      board.items.filter((i: { type: string }) =>
+        board.layoutMode !== 'mobile' || i.type !== 'title'),
+      80, travelMs()),
+    recenter: () => vp.recenter(travelMs()),
+    // Dev: paint the resize corner grab zones, which have no ink of their own, so
+    // their reach can be checked by eye (see [data-debug-grips] in canvas.css). A
+    // toggle that reflects on its own sidebar button; also on mbrd.debugGrips()
+    // and the #grips URL. Grips only show on a selected card, so select one first.
+    debugGrips: () => {
+      const on = document.documentElement.toggleAttribute('data-debug-grips');
+      document.querySelector('[data-cmd="debug-grips"]')?.setAttribute('aria-pressed', String(on));
+      return on;
+    },
+    // Dev: print what each swipe of a touchpad actually delivered - see the
+    // wheel handler in canvas/input.js. The same shape as the grip overlay: an
+    // attribute that module reads, a button that reflects it, and mbrd.debugWheel()
+    // or the #wheel URL for the console.
+    //
+    // This one exists because the wheel handler is the only place in the app
+    // that guesses at hardware, and the guess cannot be checked by reading it.
+    // A two-finger scroll is railed by the platform before the page ever sees
+    // it, and whether the sideways half arrives as nothing, as a trickle or in
+    // hundred-pixel lumps decides which fix is the right one - a question only
+    // the machine under the hand can answer.
+    debugWheel: () => {
+      const on = document.documentElement.toggleAttribute('data-debug-wheel');
+      document.querySelector('[data-cmd="debug-wheel"]')?.setAttribute('aria-pressed', String(on));
+      toast(on ? 'Swipe the board - each gesture prints to the console' : 'Wheel logging off');
+      return on;
+    },
+    // Hold the magnification where it is. A command rather than two lines in the
+    // click handler, because that is what a user-facing action is here - the one
+    // surface a key binding or a menu row would bind to if either ever wants it.
+    lockZoom: () => {
+      if (vp.isMobile) {
+        toast(`Mobile zoom follows the ${board.settings.mobileColumns}-column width`);
+        return;
+      }
+      vp.zoomLocked = !vp.zoomLocked;
+      paintZoom(true);
+      toast(vp.zoomLocked ? `Zoom locked at ${zoomText()}` : 'Zoom unlocked');
+    },
+    resetAppearance,
+    // Hands every quality flag back to the dial. The same way back Appearance's
+    // fold keeps, for the same reason: a panel of overrides with no way home is a
+    // panel you stop touching.
+    resetQuality: () => {
+      clearQualityOverrides();
+      toast('Quality back to the dial');
+    },
+    reload: reloadBoard,
+    restart: () => restartApp(),
+    // Who made this. A command rather than a listener on the footer button, for
+    // the reason every other action here is one: the sidebar knows about data-cmd
+    // and about nothing else, so this is the only wiring the panel needs.
+    credits: () => openCredits(),
+  };
+}
