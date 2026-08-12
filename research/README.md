@@ -46,14 +46,6 @@ for a change without checking the current source first.
   patches. Read the closing rule before auditing anything else here — the whole
   document is an argument for checking work at the ends of the axis rather than
   at the default board, which is where every fault in it hid.
-- `fix-list-2026-08-12.md` — thirteen reports from one sitting, investigated and
-  ordered into four phases. Phase 1 is five defects with a proven cause each (the
-  note composer drawing at 1×, the Feed's missing paper tooth, the unclipped Add
-  button); Phase 2 is the one correctness item — the two layout profiles bleed
-  into each other, so a board built on the phone arrives on Desktop still packed
-  as a column. Phase 4 is blocked on a question that has to be put to the
-  maintainer first: which file types a document viewer should cover, and whether a
-  third outside-code dependency is allowed to answer it.
 
 `old/connections-2026-08-12.md` went down on the commit that carried it out, and
 its status block is the part to read first: three of its own instructions were
@@ -66,6 +58,25 @@ because no card moved and nothing else would notice. It also carries the reasons
 behind the four affordances that went in with it (the draft line, the marked
 connection, colour and weight, the focus lift), including the ones that were
 argued down: no single-gesture drag-to-connect, and no membership in `selection`.
+
+`old/fix-list-2026-08-12.md` went down on the commit that finished it, and its
+status block is the part to read first: five departures from its own instructions,
+one item left open, and one thing that turned out not to need doing at all. Read
+it before the two things it is most likely to be re-derived from. The first is why
+the two layout profiles are separate — a board built on the phone used to arrive
+on the canvas still packed as a column, because `completeLayout()`'s Desktop
+branch fell back to the *live* item, which at the moment of a switch is whatever
+the layout being left made of it. The second is why three defects in it are the
+same defect: the Feed replaced the world-space Mobile board and did not inherit
+its paper grain, its scroll-gated pen, or its right-click menu. A fourth may
+still be out there and nobody has swept for one.
+
+Its most useful negative result is decision 1 in §4.5. The maintainer approved
+vendoring third-party libraries locally, and then nothing was vendored — because
+every feature on the approved list turned out to be dependency-free. Eleven
+document formats are read by `import/document.js` and `ui/documents.js` with no
+library at all, on the ZIP reader this repo already owns because a `.mbrd` is a
+ZIP. Read that before reaching for a package.
 
 `old/mobile-feed-2026-08-09.md` went down on the commit that carried it out — the
 repurposing of the Mobile layout into a native-scrolling DOM feed of images and

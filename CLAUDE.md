@@ -94,10 +94,24 @@ the ES modules under `web/` directly — an edit is one refresh away.
   stays out if what it stands on is lower than what it left.
   `tests/layers.test.js` holds the list.
 - **The hand-written binary readers parse files the app did not write.**
-  `storage/zip.js`, `mesh.js`, `import/artwork.js` and `optimize/opus.js` all
-  bounds-check before they allocate, and their tests are largely about
-  malformed input. A change near them wants a test that feeds it something
-  broken.
+  `storage/zip.js`, `mesh.js`, `import/artwork.js`, `import/preview.js`,
+  `import/document.js` and `optimize/opus.js` all bounds-check before they
+  allocate, and their tests are largely about malformed input. A change near
+  them wants a test that feeds it something broken.
+- **Nothing that reads a foreign document may touch `innerHTML`.**
+  `ui/markdown.js` and `ui/documents.js` turn somebody else's file into a
+  document tree, and both do it entirely through `createElement` and
+  `createTextNode` — so there is no escaping to get right, by construction. Raw
+  markup in a source file shows as the characters it is made of. The one
+  exception is SVG in `ui/documents.js`, which is parsed detached and walked
+  against an **allow-list** of elements and attributes; a block-list there would
+  be a promise that the author thought of everything.
+- **A new thing the viewer can show is one entry in `VIEWS`**
+  (`ui/viewer.js`), the way a new card type is one entry in `RENDERERS`. The
+  dialog, the head, the scroller and the teardown are already there — and the
+  teardown is load-bearing: a `<video>` left mounted keeps its decoder, a
+  document's blob URLs are this module's to revoke, and a parsed PDF holds the
+  whole file.
 - **`#toolbar` must stay before `#nowplaying` in `index.html`.** The rules that
   step the player up a tier when the phone's toolbar opens are general sibling
   combinators, which only look forward. Reordering the two breaks the layout
