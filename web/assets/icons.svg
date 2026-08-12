@@ -235,6 +235,24 @@
   <path d="M2.8 13.2 6.5 9.5"/>
 </symbol>
 
+<!-- Open it full size (the viewer). Two arrows on one diagonal, pointing out of
+     opposite corners - the gesture everything on a screen uses for "make this as
+     big as it goes".
+
+     Not i-fill's four-corner drawing and not i-zoom-to's brackets, though all
+     three are about size, because those two are already spoken for on the same
+     menu: fill/fit is what a picture does *inside* its card, and zoom-to is the
+     board moving to a card. This one takes the card off the board entirely, and
+     three near-identical drawings in one column would say the three are variants
+     of one action. Two arms rather than four is the difference you can see at
+     15px. -->
+<symbol id="i-expand" viewBox="0 0 16 16">
+  <path d="M9.5 2.5H13.5V6.5"/>
+  <path d="M13.5 2.5 9.3 6.7"/>
+  <path d="M6.5 13.5H2.5V9.5"/>
+  <path d="M2.5 13.5 6.7 9.3"/>
+</symbol>
+
 <!-- Which way is up, said as plainly as it can be said. -->
 <symbol id="i-upright" viewBox="0 0 16 16">
   <rect x="3" y="3" width="10" height="10" rx="1.5"/>

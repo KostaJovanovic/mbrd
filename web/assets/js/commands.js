@@ -944,7 +944,7 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
     editNote,
 
     // --- right-click menu ---
-    contextMenu: (x, y, id, count) => openContextMenu(x, y, id, count),
+    contextMenu: (x, y, id, count, opts) => openContextMenu(x, y, id, count, opts),
     selectionHasStackOverlap,
     raise: raiseSelection,
     lower: lowerSelection,
