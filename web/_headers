@@ -75,34 +75,33 @@
 # ffmpeg core - runs in a worker with its own policy. See the second rule below.
 #
 # ---------------------------------------------------------------------------
-# style-src 'self' 'unsafe-inline' - the honest weak spot
+# style-src 'self' + two hashes - no 'unsafe-inline'
 # ---------------------------------------------------------------------------
 #
-# This is the one directive that is wider than it should be, and it is worth
-# being exact about why rather than quietly writing it.
+# This was the one directive wider than it should be, and it is not any more.
+# The three things that forced 'unsafe-inline' were:
 #
-# Three things force it:
+#   - ui/feed.ts's waveform, which wrote `<i style="height:N%">` per bar into
+#     innerHTML. A hash cannot cover a value computed at runtime, so this was
+#     the blocker: it now builds the bars and assigns .style, which is CSSOM.
+#   - the style="..." attributes in lab.html's generated preview card, same fix.
+#   - the last static one, a font-size on a span in lab.html, now a class.
 #
-#   - the inline <style> inside <noscript> in index.html, and the inline <style>
-#     in lab.html. Both could be hashed instead.
-#   - the inline style="..." attributes in lab.html's generated preview markup.
-#   - ui/feed.ts's waveform, which writes `<i style="height:N%">` per bar into
-#     innerHTML. A hash cannot cover a value computed at runtime;
-#     'unsafe-hashes' plus one hash per possible height would be a joke.
+# With the attributes gone the two inline <style> blocks can be hashed, which
+# is what the two sha256 values below are - one for the block in index.html, one
+# for lab.html. Hashes and 'unsafe-inline' cannot be mixed anyway: a browser
+# ignores the keyword the moment a hash is present, which is exactly the
+# property being relied on here.
 #
-# So it is 'unsafe-inline' until the third one is a class or a CSSOM write. Note
-# that hashes and 'unsafe-inline' cannot be mixed - a browser ignores the
-# keyword the moment a hash is present - so hashing the two <style> blocks buys
-# nothing while the attributes are there.
-#
-# What this actually costs is smaller than it looks. CSS injection's usual prize
-# is exfiltration through a url() that phones home, and img-src and font-src
-# below have no remote host in them at all, so there is nowhere for it to phone.
+# The cost of this is a real maintenance edge and is worth stating plainly.
+# Editing either <style> block by one character changes its hash, and the
+# deploy will then refuse to apply that block - the page renders unstyled rather
+# than failing loudly. tests/csp.test.js recomputes both and fails first, which
+# is the only reason this is a reasonable trade rather than a trap.
 #
 # It does NOT cover ui/look.ts and ui/appearance.ts writing custom properties
 # onto :root, or the pre-paint script doing the same. Those go through
-# style.setProperty(), which is CSSOM and outside CSP by design - they would
-# work under a bare style-src 'self'.
+# style.setProperty(), which is CSSOM and outside CSP by design.
 #
 # ---------------------------------------------------------------------------
 # img-src / media-src / font-src - 'self' plus the two local schemes
@@ -235,7 +234,7 @@
 # report to, which is the whole architecture).
 
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-DkygY3dxoCj3zPATesYHPgON9mIeqlu6UbH2c+3mStw=' 'sha256-eJzJ8523EitoBKAS5A1tCSnraL7SAmf2gesGT63wGSk=' 'sha256-TXFmC+WkJ7pej6GG4eilTgWXAPfRfnxeO2p8iCMvh/k=' 'sha256-0G0B78DEoO53bqqyaMDK9hePabjl4u8UNOS3m+uFnls='; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self' blob:; connect-src 'self' blob: https://cdn.jsdelivr.net; worker-src 'self'; manifest-src 'self'; frame-src https://www.youtube-nocookie.com https://open.spotify.com; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-TXFmC+WkJ7pej6GG4eilTgWXAPfRfnxeO2p8iCMvh/k=' 'sha256-DkygY3dxoCj3zPATesYHPgON9mIeqlu6UbH2c+3mStw=' 'sha256-eJzJ8523EitoBKAS5A1tCSnraL7SAmf2gesGT63wGSk=' 'sha256-7MOXuzYEVnwtGN5LaHmnA8It5SPyIoYzkvOEItbnkGg='; style-src 'self' 'sha256-wkVFcbpQLLLncGzQDSypPX4g+PgpgKuYUfkJ3D7xrA8=' 'sha256-9MwbduHoYcvGbMyIKsXKkXLfI0H0ks+ah6sfj4TrmeA='; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self' blob:; connect-src 'self' blob: https://cdn.jsdelivr.net; worker-src 'self'; manifest-src 'self'; frame-src https://www.youtube-nocookie.com https://open.spotify.com; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
 
 # The one exemption, and the only interesting thing about the whole file.
 #

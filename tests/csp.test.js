@@ -34,7 +34,7 @@ import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { WEB, JS, read } from './helpers.js';
+import { WEB, JS, read, walk } from './helpers.js';
 
 const HEADERS = join(WEB, '_headers');
 
@@ -151,13 +151,35 @@ const inlineScripts = readdirSync(WEB)
       `${name} <script ${m[1].trim()}>`.replace(' >', '>'),
     ]));
 
-/** The hashes the policy allows, whichever directive carries them. */
-const allowed = new Set(tokens.filter(t => t.startsWith("'sha")).map(t => t.slice(1, -1)));
+/**
+ * The same for inline <style> blocks.
+ *
+ * These are hashed for the same reason the scripts are, and they became
+ * hashable only once the last `style=` attribute in the tree was gone - a hash
+ * covers an element, never an attribute, and a browser ignores 'unsafe-inline'
+ * the moment any hash is present, so the two cannot be mixed. See the style-src
+ * section of web/_headers.
+ */
+const INLINE_STYLE = /<style(?![^>]*\ssrc=)([^>]*)>([\s\S]*?)<\/style>/g;
+
+const inlineStyles = readdirSync(WEB)
+  .filter(name => name.endsWith('.html'))
+  .flatMap(name => [...read(join(WEB, name)).replace(/\r\n?/g, '\n').matchAll(INLINE_STYLE)]
+    .map(m => [
+      'sha256-' + createHash('sha256').update(m[2], 'utf8').digest('base64'),
+      `${name} <style ${m[1].trim()}>`.replace(' >', '>'),
+    ]));
+
+/** Hashes per directive, because a script hash in style-src would allow nothing. */
+const hashesIn = name => new Set((directives.get(name) ?? [])
+  .filter(t => t.startsWith("'sha")).map(t => t.slice(1, -1)));
+const scriptHashes = hashesIn('script-src');
+const styleHashes = hashesIn('style-src');
 
 test('the policy carries a hash for every inline script in the app', () => {
   assert.ok(inlineScripts.length >= 4,
     `only ${inlineScripts.length} inline scripts found - has the regex stopped matching?`);
-  const missing = inlineScripts.filter(([hash]) => !allowed.has(hash));
+  const missing = inlineScripts.filter(([hash]) => !scriptHashes.has(hash));
   assert.deepEqual(missing, [],
     `no hash in web/_headers for: ${missing.map(([h, where]) => `${where} (${h})`).join(', ')}`);
 });
@@ -167,8 +189,60 @@ test('the policy carries no hash for a script that is gone', () => {
   // nothing and costs nothing, so it survives every deploy and every reading,
   // and the next person cannot tell which of five hashes is load-bearing.
   const asked = new Set(inlineScripts.map(([hash]) => hash));
-  const orphans = [...allowed].filter(hash => !asked.has(hash));
+  const orphans = [...scriptHashes].filter(hash => !asked.has(hash));
   assert.deepEqual(orphans, [], `hashes matching no inline script: ${orphans.join(', ')}`);
+});
+
+test('the policy carries a hash for every inline style, and none for one that is gone', () => {
+  // Both directions in one test, because a style hash has a sharper failure
+  // than a script hash and the two halves are the same sentence. A block whose
+  // hash has drifted is not refused loudly - the browser simply declines to
+  // apply it, and the page renders unstyled. So this is the only thing standing
+  // between a one-character edit and a deploy that looks like a broken
+  // stylesheet.
+  assert.ok(inlineStyles.length >= 2,
+    `only ${inlineStyles.length} inline style blocks found - has the regex stopped matching?`);
+
+  const missing = inlineStyles.filter(([hash]) => !styleHashes.has(hash));
+  assert.deepEqual(missing, [],
+    `no hash in web/_headers for: ${missing.map(([h, where]) => `${where} (${h})`).join(', ')}`);
+
+  const asked = new Set(inlineStyles.map(([hash]) => hash));
+  const orphans = [...styleHashes].filter(hash => !asked.has(hash));
+  assert.deepEqual(orphans, [], `hashes matching no inline style: ${orphans.join(', ')}`);
+});
+
+test('style-src allows nothing but self and those hashes', () => {
+  // The directive this app spent a while unable to tighten. It is only holdable
+  // while nothing writes a style attribute: assigning .style through the CSSOM
+  // is outside CSP, but a `style="..."` parsed from markup is not, and one of
+  // those anywhere in web/ would silently stop applying under this policy.
+  const sources = directives.get('style-src') ?? [];
+  assert.ok(sources.includes("'self'"), 'style-src has no self - the stylesheets would not load');
+  assert.ok(!sources.includes("'unsafe-inline'"),
+    "style-src has taken 'unsafe-inline' back - the hashes below it are now dead weight, "
+    + 'since a browser ignores the keyword whenever a hash is present');
+  const rest = sources.filter(s => s !== "'self'" && !s.startsWith("'sha"));
+  assert.deepEqual(rest, [], `style-src has grown a source: ${rest.join(' ')}`);
+});
+
+test('nothing in web/ writes a style attribute', () => {
+  // The invariant the directive above rests on, checked at its source rather
+  // than inferred. Markup and modules both: a template string that interpolates
+  // a runtime value into style="..." is the exact shape that cannot be hashed,
+  // and it is how this policy was stuck at 'unsafe-inline' to begin with.
+  const offenders = [];
+  for (const name of readdirSync(WEB).filter(n => n.endsWith('.html'))) {
+    const src = read(join(WEB, name));
+    // Strip comments first - the reasoning about this rule mentions the pattern.
+    if (/style\s*=\s*["']/.test(src.replace(/<!--[\s\S]*?-->/g, ''))) offenders.push(name);
+  }
+  for (const rel of walk(JS, ['.ts', '.js'])) {
+    const src = read(join(WEB, rel));
+    if (/setAttribute\(\s*['"]style['"]/.test(src)) offenders.push(`${rel} (setAttribute)`);
+  }
+  assert.deepEqual(offenders, [],
+    `these write a style attribute, which style-src will refuse: ${offenders.join(', ')}`);
 });
 
 test('script-src allows nothing but self and those hashes', () => {
