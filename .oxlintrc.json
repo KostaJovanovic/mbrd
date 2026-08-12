@@ -21,8 +21,6 @@
   },
   "ignorePatterns": [
     "node_modules",
-    "test-results",
-    "playwright-report",
     "graphify-out",
     "web/assets/js/import/formats.js"
   ],
@@ -62,8 +60,7 @@
     {
       "files": [
         "tests/**",
-        "tools/**",
-        "playwright.config.js"
+        "tools/**"
       ],
       "env": {
         "node": true

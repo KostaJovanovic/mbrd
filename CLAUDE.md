@@ -28,15 +28,19 @@ node tools/gen-formats.mjs [path-to-file-analyser]   # regenerate import/formats
 save.bat                          # bump version stamps, commit, optionally push
 ```
 
-Three optional runs, all needing `npm install` first (three devDependencies —
+Two optional runs, both needing `npm install` first (two devDependencies —
 `npm test` still needs none). There is no CI, so nothing runs these for you and
 a green `npm test` is not the whole bar:
 
 ```bash
 npm run lint        # oxlint, correctness only — no formatter, and adding one is a regression
 npm run typecheck   # tsc --noEmit over JSDoc; jsconfig.json scopes it to the pure layer
-npm run test:e2e    # Playwright on 6274; also needs `npx playwright install chromium`
 ```
+
+There is no browser-driven suite. `npm test` is the whole automated bar, and it
+is a headless one — pan and zoom, drag and marquee, save → refresh → recover and
+a clean boot console are checked by launching the app and looking, not by a
+runner.
 
 Syntax checks worth running on a change: `node --check` on touched `.js`,
 `python -m py_compile` on `tools/serve.py` / `tools/qr.py`. Nothing runs these

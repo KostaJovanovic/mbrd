@@ -47,15 +47,14 @@ grid.
 Worth running on any change you touched: `node --check` on each changed `.js`,
 and `python -m py_compile tools/serve.py tools/qr.py` if you touched either.
 
-### Three optional runs
+### Two optional runs
 
-None is needed to contribute, and `npm test` still needs no install at all.
-All three want `npm install` first, which pulls exactly three devDependencies.
+Neither is needed to contribute, and `npm test` still needs no install at all.
+Both want `npm install` first, which pulls exactly two devDependencies.
 
 ```bash
 npm run lint        # oxlint; correctness only, no formatter
 npm run typecheck   # tsc --noEmit over JSDoc types; no TypeScript ships
-npm run test:e2e    # Playwright; also needs `npx playwright install chromium`
 ```
 
 `npm run lint` is deliberately about mistakes and not about taste — unused
@@ -74,11 +73,11 @@ keep immediately: it found `web-graph.js` calling two `geometry.js` helpers it
 had never imported, which threw out of `threads()` and stopped the relationship
 web drawing.
 
-`npm run test:e2e` covers the four things a headless unit test structurally
-cannot see: pan and zoom, add/select/delete/undo, save → refresh → recover, and
-that the app **boots with a clean console**. That last one is the cheapest real
-safety net in the repository - every module resolving is not the same as every
-module running.
+There is no browser-driven suite. The four things a headless unit test
+structurally cannot see — pan and zoom, add/select/delete/undo, save → refresh →
+recover, and that the app **boots with a clean console** — are yours to check by
+launching it. The console is the cheapest of the four and the one worth making a
+habit: every module resolving is not the same as every module running.
 
 **Tests are not a substitute for looking.** Launch the app and exercise the
 affected workflow. For canvas or storage changes that means pan/zoom, selection,

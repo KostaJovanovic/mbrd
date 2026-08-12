@@ -2,7 +2,13 @@
  * Draw web/assets/img/og.png - the 1200x630 card every chat app shows when
  * somebody pastes a link to mbrd.
  *
- *   node tools/gen-og.mjs            # needs devDependencies + `npx playwright install chromium`
+ *   npm i --no-save playwright && npx playwright install chromium
+ *   node tools/gen-og.mjs
+ *
+ * The browser is a one-off install and deliberately not a devDependency. This
+ * script runs about once a palette change; carrying a 100MB download in every
+ * clone to serve it would cost every contributor for something almost nobody
+ * runs, and the PNG it makes is committed anyway.
  *
  * Why a script and not a hand-made image. The card is the app's own paper,
  * pigment and display face, and all three of those live in tokens.css and
