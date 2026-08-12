@@ -1,7 +1,7 @@
 /* =========================================================
    mbrd - the reset, the page, and the sheet it is printed on
 
-   FIRST OF FIFTEEN. This was one 6,000-line app.css until it became the file
+   FIRST OF TWENTY. This was one 6,000-line app.css until it became the file
    every interface change had to touch at once. It is now split by subsystem, and
    index.html loads the parts in this order - which IS the cascade, so the order
    is not cosmetic:
@@ -9,8 +9,14 @@
      base      this file: reset, type, the page, paper, grain, the boot cover
      canvas    #viewport, #world, the transform layer, the grid, the threads,
                the paper outline, the Mobile sheet and masthead in screen space
-     items     the cards per type, the ghost hints, the grips, and what the
-               board stops paying for while it is being moved
+     items     the item box, its selection ring, and the plate a filed card
+               is printed on
+     ghosts    the hint cards a brand-new board opens with
+     fences    a region drawn on the board, not a card lying on it
+     media     cover art, the audio card, the video player, both transports
+     cards     notes, links, stickers, models, embeds
+     item-chrome  what is drawn over a card rather than in it: the caption
+               plate, the far-zoom head, cheap mode and the resize grips
      sidebar   the panel: tabs, sections, folds, .field and its variants
      chrome    the HUD, the toolbar, the now-playing bar
      trash     the bin and its panel, and the fly-out a deleted card plays
@@ -29,6 +35,10 @@
 
    The eight from trash to sticker-pad were one overlays.css until that file had
    grown eleven unrelated subsystems and become the thing this split was for.
+   The six from items to item-chrome were one items.css for the same reason, and
+   the two ends of that run are load-bearing rather than tidy: items.css declares
+   .card before the type sheets redress it, and item-chrome.css settles three
+   ties on document order. Its own banner names them.
 
    A new rule goes next to the subsystem it styles. A new *file* has to be added
    to index.html and to SHELL in sw.js - tests/sw.test.js walks this directory

@@ -1,0 +1,454 @@
+/* =========================================================
+   mbrd - ghost cards: the hints a brand-new board opens with
+
+   One of the six sheets the old items.css was split into. The order they load
+   in IS the cascade and is listed in the banner at the top of items.css.
+
+   It sits after items.css and not before, because .ghost-card is a second
+   class on the same element as .card and weighs exactly what .card weighs -
+   the paper it keeps, the hairline it trades for a dash and the gap it resets
+   are all won on document order alone.
+
+   Pairs with onboarding.ts - GHOST_IDS, HINT_GHOSTS, NOTFOUND and tapeFor(),
+   which decide what the four cards say and where each strip of tape was
+   pressed down - and with canvas/ghosts.ts, which builds them. What a hint
+   *says* is over there; what it looks like is here.
+
+   The block below carries the argument in full, and it is the reason this is
+   a sheet of its own rather than a section: the two ends of the whimsy axis
+   want different *techniques* here, not one card with its numbers turned up.
+   ========================================================= */
+
+/* ---------------------------------------------------------------------------
+   Ghost cards - the three hints a brand-new board opens with.
+
+   Two looks along the whimsy axis, and they are different *techniques* rather
+   than the same card with its numbers turned up, for the same reason the grid
+   has two: Middle and Harsh want an ordinary card whose edge happens to be
+   dashed, which is a border; Softish wants an object that came from somewhere
+   else, which is a silhouette and a stack of gradients.
+
+   At Middle and Harsh a hint is an ordinary card in every respect but one: it
+   keeps the paper, the inner rule and the reading weight of the text, and the
+   *only* thing that marks it as provisional is that its edge is dashed rather
+   than drawn. That is a deliberate correction of a first attempt which made it
+   transparent with faded text as well - three cues saying the same thing, which
+   read as a broken card rather than as an invitation, and at Middle (the level
+   most boards are actually looked at) left the words too pale to read.
+
+   The fourth card is outside all of this. It holds the whimsy dial rather than a
+   sentence, and a control is not provisional - so it keeps an ordinary card's
+   edge at every stop on the axis it moves. Its rules are at the foot of this
+   block, and the `:not([data-hint="whimsy"])` on the Softish ones is the same
+   decision written from the other side.
+   --------------------------------------------------------------------------- */
+.ghost-card {
+  /* .card gives us var(--paper-card) and an inset hairline. The paper stays;
+     the hairline is what the dash replaces, so it is the box-shadow that goes -
+     and with it the drop shadow that .card never had, since canvas/items.js
+     builds no #item-shadows twin for this type. Carried here in CSS instead,
+     exactly as .title-card carries its own for the same reason. */
+  box-shadow: var(--item-shadow);
+  /* In screen units, like every other line drawn inside the transform - see
+     --board-hairline in canvas.css. It stands in for .card's ring, so it is
+     measured the way the ring is. --ghost-weight is a look token and stays one,
+     so this is derived from it rather than replacing it. Left in world units
+     the dash was the one edge on the board that still thickened as you zoomed
+     in. */
+  --board-ghost-weight: calc(var(--ghost-weight) * var(--iz));
+  border: var(--board-ghost-weight) dashed var(--ghost-edge);
+  border-radius: inherit;
+  justify-content: center;
+  gap: 5px;
+  /* Overriding .card's own inset, because that padding is sized for a card with
+     a badge and a caption in it and this one holds two lines of prose. */
+  --card-pad-x: 18px;
+  --card-pad-y: 16px;
+}
+/* The border draws where .card's inset hairline used to, so the inner rule has
+   to step in by the width of it or the two sit on top of each other. Two units
+   in one subtraction on purpose: `inset` measures from the padding box, which on
+   a card with a real border is the *inside* of that border, so what has to come
+   off the world-unit gap is the screen-unit width. */
+.ghost-card::after { inset: calc(var(--card-rule-gap) - var(--board-ghost-weight)); }
+/* The inner rule is a filed card's, and Softish is not printing filed cards -
+   its candidates carry their own edge treatment instead, and pencil uses this
+   pseudo-element for the second stroke. */
+:root[data-whimsy="0"] .ghost-card:not([data-hint="whimsy"])::after { content: none; }
+/* .item-body clips every card to the item's rounded rectangle, which crops
+   anything a card wants to hang outside itself - the masking tape strip, the
+   pencil's overshot second line. The radius still comes from the item; only the
+   clipping goes.
+
+   Not for the dial, which keeps the clip because it keeps the rectangle: it is
+   the one hint that stays an ordinary card at every tier (see below), and it
+   carries no tape to hang out of one. */
+:root[data-whimsy="0"] .item[data-type="ghost"]:not(:has([data-hint="whimsy"])) .item-body {
+  overflow: visible;
+}
+
+/* The item box paints a card face across its whole extent (var(--item-bg)) on
+   the assumption that content covers it corner to corner. A Softish hint does
+   not - it is clipped to a torn polygon - so that face would show through every
+   chip as a square of undercard behind the scrap. The same move
+   .item[data-type="title"] makes, for the same reason. Harmless at the other two
+   tiers, where the card covers the box anyway. */
+.item[data-type="ghost"] { background: transparent; }
+/* No caption strip: a hint has no filename, and the empty bar would still claim
+   its height at the foot of a card whose text is meant to sit centred. */
+.item[data-type="ghost"] .item-bar { display: none; }
+
+/* Both weights are the ones an ordinary card uses - the title reads like
+   .card-name, the line like secondary text. No transparency anywhere: a hint is
+   meant to be read, and the dashed edge is already carrying the whole "this is
+   not yours and is not staying" message on its own. */
+.ghost-title {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-style: var(--display-italic);
+  letter-spacing: calc(0.01em * var(--ls-scale));
+  color: var(--ghost-ink);
+}
+/* `text-wrap: pretty` here, and on the prose blocks in dialog.css, is
+   kept knowing Firefox drops it and says so in the console. It is not the same
+   case as the unprefixed `line-clamp` further down, which was removed for
+   exactly that warning: this one earns it. A hint line is two or three lines of
+   centred text with no fixed measure, which is the shape that strands a single
+   short word on the last line, and pretty is the only thing that fixes it in
+   the engines that have it. Three console lines in one browser is the price of
+   better breaks in the other two. Leave it. */
+.ghost-line {
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.42;
+  color: var(--ghost-ink-2);
+  text-wrap: pretty;
+}
+
+/* The number, on the one card that is a statement rather than a hint.
+
+   Reached through data-hint, which the ghost renderer already puts on every
+   card for exactly this kind of thing - Softish tears each hint to a silhouette
+   of its own through the same attribute. So a card that needs its own treatment
+   gets one without a new class or a branch in the renderer.
+
+   Upright, not the italic every other ghost title wears: an italic is a voice,
+   and a number is not being said. Terracotta because it is the only thing on
+   this board that is not prose, and the accent is what the app uses to mark the
+   one thing in view that is different in kind.
+
+   World pixels, like every other size on a card, so it zooms with the board.
+   That is why it is a flat 64 and not a clamp - a viewport-relative size on an
+   item would grow when the window did while the card it sits in stayed put. */
+.ghost-card[data-hint="gone"] .ghost-title {
+  margin-bottom: 6px;
+  /* Off the type scale on purpose, and one of the few that is. This is a glyph
+     rather than text - it is read as a shape at a glance, the way the sticker
+     sprite is - so the step it would land on says nothing useful about it, and
+     --t-display at 30px would make it a heading instead of a mark. World space
+     as well: it sits on a card and zooms with the board, while every --t-* step
+     is chrome type at a fixed screen size. Sized against the card it lives in.
+     (Sorted deliberately-off-scale by research/visual-audit-2026-08-12.md item
+     2, which asked for exactly this line rather than a token.) */
+  font-size: 64px;
+  font-style: normal;
+  font-weight: var(--display-weight);
+  line-height: 0.95;
+  letter-spacing: calc(0.04em * var(--ls-scale));
+  color: var(--accent);
+}
+
+/* The one hint you follow rather than read: the way back, on the card a board
+   opened at a dead address carries. Built by the ghost renderer only for a hint
+   that names an href.
+
+   Dressed as the app's own filled control - the terracotta and --leaf that the
+   sidebar's primary button wears - and not as a link in running text. It is the
+   only thing to do on that board, and a card standing in an empty room asking
+   to be clicked should look like a button. */
+.ghost-go {
+  /* .item-body refuses the pointer so a whole card is one drag target. This is
+     the second exception on the board, and for the same reason the dial is the
+     first: it has to be pressed, not dragged. Without it the card swallows the
+     click and the only way off a dead address is the browser's back button. */
+  pointer-events: auto;
+  align-self: flex-start;
+  /* Under the line it belongs to, not pinned to the foot of the card. .ghost-card
+     centres its children as a group, and margin-top: auto opted this one out of
+     that - which left the button stranded at the bottom with a hole above it
+     while the prose floated in the middle. A card is one object; its parts stay
+     together and the whitespace goes round the outside. */
+  margin-top: 4px;
+  padding: 6px 12px;
+  border-radius: var(--leaf);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: calc(0.03em * var(--ls-scale));
+  text-decoration: none;
+  box-shadow: var(--shadow-1);
+  transition: background var(--dur-fast) var(--ease);
+}
+.ghost-go:hover { background: color-mix(in srgb, var(--accent) 88%, var(--ink)); }
+/* Replaced, never removed. A ghost card carries no other focusable child, so
+   this is the only thing a keyboard can land on out here. */
+.ghost-go:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* ---- Softish: a page torn out, taped down ------------------------------
+   The scrapbook end of the axis, and the scrapbook version of the dashed edge
+   the other two tiers wear. Two halves, and they say the same thing twice in
+   two registers: the sheet was ripped out of something, and it is only stuck
+   here for now.
+
+   The page. Perforation stubs down the left edge where it left the pad, faint
+   rules, and the margin the rules stop at. The perforation is a repeating mask
+   rather than a clip-path, because clip-path draws polygons and a torn stub is
+   a circle - this is the one shape a polygon cannot do cheaply.
+
+   Watch the mask: it applies to the element *and its descendants*, so anything
+   drawn inside this card is perforated along with it. That is why the tape is a
+   sibling of the card rather than a child - see the ghost renderer, which
+   returns a fragment for exactly this reason.
+
+   The dial is excluded, here and everywhere else at this tier. A torn scrap is
+   a fine thing to write a sentence on and a poor thing to mount a working
+   control in: the perforation eats the left end of the track, the tape lands
+   across the thumb, and a mask cannot spare its descendants. It stays the same
+   ordinary card at all three stops - which also means the one thing on the board
+   that moves the axis looks the same from wherever on the axis you reach for it.
+   --------------------------------------------------------------------------- */
+:root[data-whimsy="0"] .ghost-card:not([data-hint="whimsy"]) {
+  border: 0;
+  box-shadow: none;
+  background:
+    repeating-linear-gradient(180deg,
+      transparent 0 21px,
+      color-mix(in srgb, #6f86a8 17%, transparent) 21px 22px),
+    linear-gradient(90deg,
+      transparent 0 26px,
+      color-mix(in srgb, #b4544a 42%, transparent) 26px 27px,
+      transparent 27px),
+    var(--paper-card);
+  /* Square where it was torn, rounded where it was not. */
+  border-radius: 0 var(--radius) var(--radius) 0;
+  --card-pad-x: 34px;
+  -webkit-mask-image: radial-gradient(circle 6px at 0 11px, transparent 6px, #000 6.5px);
+  mask-image: radial-gradient(circle 6px at 0 11px, transparent 6px, #000 6.5px);
+  -webkit-mask-size: 100% 22px;
+  mask-size: 100% 22px;
+  -webkit-mask-repeat: repeat-y;
+  mask-repeat: repeat-y;
+}
+
+/* The tape. One or two strips per card, straddling an edge at an angle - which
+   is the whole reason .item-body stops clipping at this tier, since half of a
+   piece of tape is outside the thing it is holding down.
+
+   Where each strip sits is decided once, when the hint is minted (see tapeFor()
+   in state.js), and travels in the item rather than being rolled here. Culling
+   throws a card's node away and rebuilds it from scratch when it comes back on
+   screen, so a placement chosen at render time would move every time the board
+   panned past. Random per board; fixed for that board's life.
+
+   The strip is only laid at this tier, but it is built at every one - hidden
+   rather than absent, so sliding the whimsy dial shows and hides it without
+   anything having to rebuild a card. */
+/* ---- The dial ----------------------------------------------------------
+   The fourth hint is a control rather than a paragraph, and the control is the
+   sidebar's, borrowed whole: the renderer gives the row .field, so the track,
+   the lozenge thumb, the stop names and everything the whimsy axis does to the
+   three of them arrive from the panel's own block. Nothing is restyled here.
+   What is left is where it sits.
+
+   The card is 4:1 and 64 world px tall, and it holds three lines: the word
+   Whimsy over the middle of the track, the track, and the three stop names
+   under it. Three lines in 64px is the whole problem, and it is solved by
+   spending the height where it shows rather than by squeezing all three:
+
+   - The gaps go. The panel leaves five pixels under a head because a column of
+     controls needs to say where one ends and the next begins; a card holding one
+     control has no next, and the three lines want to read as one block anyway.
+   - The slider's box comes down from 22px to 18. Nothing about it *looks*
+     different - the track is 3px and the thumb 15 - it is the dead air in a
+     form-sized hit box, which a card that cannot be dragged by its slider does
+     not need.
+   - The line heights are set rather than left to the faces, because the whimsy
+     axis changes the face under all three and a card this tight cannot take a
+     serif's leading arriving in place of a sans's.
+
+   That leaves the hierarchy, which is the part that makes it a card rather than
+   a form: head, track, stops, each a step quieter than the last. The panel's
+   head is 13px and its stops are 11 - and both arrive here at 13, because
+   .field > span outranks .field-stops - so the sizes are set here in the order
+   the eye should take them. It is the one place this card restyles the row it
+   borrowed, and it is spacing and weight only: the track, the thumb and every
+   answer they make to the whimsy axis are still the panel's.
+   --------------------------------------------------------------------------- */
+.ghost-card[data-hint="whimsy"] {
+  /* No dashed edge. The dash is what marks a hint as provisional - something
+     written on the board rather than put on it - and this card is not a hint:
+     it is a control that happens to be shown while the board is empty. So it
+     takes .card's own inset hairline back, with the drop shadow the ghost rule
+     put in place of it. An ordinary card at all three stops.
+
+     The inner rule goes with the dash for a plainer reason: it draws 5px in, and
+     a card 64 world px tall spends every one of those on the slider. */
+  border: 0;
+  box-shadow: inset 0 0 0 var(--board-hairline) var(--item-border), var(--item-shadow);
+  justify-content: center;
+  --card-pad-x: 20px;
+  --card-pad-y: 9px;
+}
+.ghost-card[data-hint="whimsy"]::after { content: none; }
+/* Softish rounds this card almost to a pill (--radius runs to 20px there), and a
+   corner that is still turning at the point the first stop name starts leaves
+   the two outer names looking pushed against the edge. The names step in as the
+   corner grows; the track steps in with them, which is right - a track that ran
+   into the curve would look like it continued behind it. */
+:root[data-whimsy="0"] .ghost-card[data-hint="whimsy"] { --card-pad-x: 28px; }
+.item[data-type="ghost"] .ghost-dial {
+  /* Sized by its contents, not stretched to the card. The card centres what is
+     in it (justify-content on .ghost-card), and a row told to fill the height
+     leaves its three lines sitting at the top of whatever it filled - which is
+     invisible on a Desktop card that is exactly as tall as the row, and half a
+     card of empty space on Mobile, where the dial is two rows tall. */
+  min-width: 0;
+  /* The row is the last thing in the card and the only thing in it, so the
+     margin a stacked field leaves for the next control is height this card does
+     not have. Same for the stops' own gap under the head they do not follow. */
+  margin: 0;
+  /* .item-body refuses the pointer so a whole card is one drag target. The dial
+     is the exception on the board: it has to be operated, not dragged. */
+  pointer-events: auto;
+}
+/* The name of the axis. The loudest of the three lines and still a quiet one -
+   letter-spaced rather than enlarged, the way a caption on a plate is. */
+.item[data-type="ghost"] .ghost-dial > span:first-child {
+  margin: 0;
+  font-size: var(--t-small);
+  line-height: 1.15;
+  letter-spacing: calc(0.04em * var(--ls-scale));
+  color: var(--ink-2);
+}
+/* The stops. Quieter again, and inset by half a thumb: a name marks the point
+   the thumb comes to rest on, and the thumb's centre stops half its own width
+   short of each end of the track. Ranged flush with the card's padding they sit
+   a little wide of the positions they name - and at Softish, where the corners
+   are turning hard, the outer two crowd them. */
+.item[data-type="ghost"] .ghost-dial .field-stops {
+  margin: 0;
+  padding: 0 5px;
+  font-size: var(--t-tiny);
+  line-height: 1.15;
+  color: var(--ink-3);
+}
+/* 18px rather than 22. The dead air in a form-sized hit box, and nothing that
+   is drawn: track 3px, thumb 15, both the panel's. */
+.item[data-type="ghost"] .ghost-dial input[type="range"] { height: 18px; }
+
+/* ---- Mobile ------------------------------------------------------------
+   A phone reads these at arm's length, and it reads them zoomed out: the Mobile
+   board is 512 world units laid across a screen four hundred and something
+   across, so every size here arrives on the glass about a fifth smaller than it
+   is written. Type set for a Desktop card, seen through that, is small twice
+   over. So the hints and the dial are both stepped up, and the padding comes in
+   to pay for it - a card two rows tall has no spare height, and the words are
+   what the card is for.
+
+   Keyed on the board mode rather than a width query, because it is the layout
+   that changed and not the window: main.js writes data-board-mode on <html>,
+   and a Mobile board shown on a laptop is still a Mobile board. */
+:root[data-board-mode="mobile"] .ghost-card {
+  --card-pad-x: 16px;
+  --card-pad-y: 13px;
+  gap: 4px;
+}
+:root[data-board-mode="mobile"] .ghost-title { font-size: 17px; }
+/* The not-found number, stepped up with everything else on this layout - and it
+   has to be restated here rather than left to the rule above, because that rule
+   and the one setting the number in the ghost block have the same specificity,
+   so on document order alone the 17px was winning and the number came out the
+   size of a heading. It is the one place on this board where the two blocks
+   collide; see the note on .ghost-card[data-hint="gone"] .ghost-title. */
+:root[data-board-mode="mobile"] .ghost-card[data-hint="gone"] .ghost-title {
+  font-size: 72px;
+}
+:root[data-board-mode="mobile"] .ghost-line {
+  font-size: 14px;
+  line-height: 1.38;
+}
+/* The torn page holds its text clear of the perforation down the left edge. A
+   third of the width of a Desktop card is one thing; a third of a phone's is a
+   column of nothing beside four lines of prose, so it comes in to the width of
+   the stubs and no further. */
+:root[data-board-mode="mobile"][data-whimsy="0"] .ghost-card:not([data-hint="whimsy"]) {
+  --card-pad-x: 26px;
+}
+
+/* The dial, where the same card is two rows tall and eight columns wide instead
+   of one by four. It gets its full 22px hit box back with the larger type - this
+   is the one layout where the control is worked with a thumb, not a pointer. */
+:root[data-board-mode="mobile"] .item[data-type="ghost"] .ghost-dial > span:first-child {
+  font-size: 17px;
+  margin-bottom: 3px;
+}
+:root[data-board-mode="mobile"] .item[data-type="ghost"] .ghost-dial .field-stops {
+  font-size: 14px;
+  margin-top: 3px;
+}
+:root[data-board-mode="mobile"] .item[data-type="ghost"] .ghost-dial input[type="range"] {
+  height: 22px;
+}
+
+/* The shadow, and it cannot live on the card.
+   A mask is applied *after* both box-shadow and filter, so anything the card
+   casts is punched out along with the card - a shadow declared there simply
+   does not appear. It goes on .item-body instead, which is not masked and which
+   holds the page and its tape together: one filter, and the shadow traces the
+   perforated silhouette and the strips hanging off it rather than a rectangle.
+   Two layers, mirroring the two in --item-shadow, since a filter cannot take a
+   box-shadow value directly.
+
+   The dial is out of this too: it is still an ordinary card at this tier, so it
+   still carries its own box-shadow, and a filter here would lay a second one
+   under the first. */
+:root[data-whimsy="0"] .item[data-type="ghost"]:not(:has([data-hint="whimsy"])) .item-body {
+  filter:
+    drop-shadow(0 1px 1px color-mix(in srgb, var(--ink) 12%, transparent))
+    drop-shadow(0 7px 10px color-mix(in srgb, var(--ink) 20%, transparent));
+}
+/* Off with every other CSS-drawn shadow when the quality dial asks - same two
+   selectors as the block at the foot of tokens.css. */
+:root[data-quality="light"]:not([data-q-shadows]) .item[data-type="ghost"] .item-body,
+:root[data-q-shadows="off"] .item[data-type="ghost"] .item-body {
+  filter: none;
+}
+
+.ghost-tape { display: none; }
+:root[data-whimsy="0"] .ghost-tape {
+  display: block;
+  position: absolute;
+  width: var(--t-len);
+  height: 26px;
+  /* Set by the renderer from the placement: the point on the edge it straddles,
+     and the angle it was pressed down at. */
+  left: var(--t-x);
+  top: var(--t-y);
+  transform: translate(-50%, -50%) rotate(var(--t-rot));
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(90deg,
+      color-mix(in srgb, #a8814a 7%, transparent) 0 2px, transparent 2px 6px),
+    linear-gradient(180deg,
+      color-mix(in srgb, #e8cf9c 78%, transparent),
+      color-mix(in srgb, #dcc08a 72%, transparent));
+  /* Torn across, straight along: tape tears against the roll, not with it. */
+  clip-path: polygon(
+    3% 0, 97% 4%, 100% 22%, 96% 41%, 100% 62%, 97% 82%, 99% 100%,
+    2% 96%, 0 78%, 4% 58%, 0 38%, 3% 19%
+  );
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 18%, transparent);
+}
+

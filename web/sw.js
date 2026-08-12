@@ -33,6 +33,15 @@ const SHELL = [
   './assets/css/base.css',
   './assets/css/canvas.css',
   './assets/css/items.css',
+  // The five sheets the old items.css was split into, in cascade order. The
+  // first and the last are load-bearing: items.css declares .card before the
+  // type sheets redress it, and item-chrome.css settles three ties on document
+  // order. See the banner at the top of items.css.
+  './assets/css/ghosts.css',
+  './assets/css/fences.css',
+  './assets/css/media.css',
+  './assets/css/cards.css',
+  './assets/css/item-chrome.css',
   './assets/css/sidebar.css',
   './assets/css/chrome.css',
   './assets/css/trash.css',
