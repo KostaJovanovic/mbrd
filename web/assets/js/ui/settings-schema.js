@@ -133,28 +133,6 @@ const QUALITY_HINT = {
 export const SECTIONS = [
   // --- Board -------------------------------------------------------------
   {
-    // The two ways to see a board, first of all, because on a phone this is the
-    // navigation - Feed | Playlist is how you move between them - and it was buried
-    // three rows down the System tab, next to Clear everything. It earns the top of
-    // the first tab on both: a Desktop board reaches its player from the same pair,
-    // which was otherwise a trip into System nobody would guess to take.
-    id: 'views', tab: 'board', title: 'View',
-    controls: [
-      { type: 'buttons', buttons: [
-        { id: 'view-feed', cmd: 'feed', label: 'Feed',
-          pressed: ctx => ctx.mobile && currentLens() === 'feed',
-          title: ctx => (ctx.mobile
-            ? 'Back to the canvas'
-            : 'Show everything on the board as a scrollable feed') },
-        { id: 'view-playlist', cmd: 'playlist', label: 'Playlist',
-          pressed: ctx => ctx.mobile && currentLens() === 'playlist',
-          title: ctx => (ctx.mobile
-            ? 'Back to the canvas'
-            : 'Open the board’s audio as a player') },
-      ] },
-    ],
-  },
-  {
     id: 'name', tab: 'board', title: 'Board',
     controls: [
       // A real input rather than a <p> you can click into, so it is reachable by
@@ -163,32 +141,56 @@ export const SECTIONS = [
       // back to it. ui/sidebar.js owns the typing behaviour - see wireTitle().
       { id: 'board-title', type: 'text', external: true, className: 'board-title',
         maxlength: 32, placeholder: 'Untitled board', ariaLabel: 'Board name' },
+      // Save alone on its row, and it is the only button on this tab with a
+      // deadline attached to it. It used to sit second in a row of two, at the
+      // same weight as Export - which is the panel saying that keeping your work
+      // and producing a copy of it are the same size of decision.
+      { type: 'buttons', buttons: [
+        { cmd: 'save', label: 'Save', className: 'primary' },
+      ] },
+      // Which board you are on. Three verbs, one row, none of them about the
+      // board's contents.
       { type: 'buttons', buttons: [
         { cmd: 'new', label: 'New' },
         { cmd: 'open', label: 'Open' },
         { cmd: 'library', label: 'Boards' },
       ] },
-      { type: 'buttons', buttons: [
-        { cmd: 'save', label: 'Save', className: 'primary' },
+      // And the four that produce a file which is not this board, behind one
+      // fold. They were four rows of the five this section had, they are the four
+      // least-pressed things on the tab, and they are one idea - make something
+      // to send somebody - stated four ways. A section may have exactly one fold
+      // (buildSection, ui/panel.js), which is the whole reason they group rather
+      // than each getting its own heading.
+      //
+      // Export is in here with them and not beside Save, which is the arguable
+      // half: it writes the real .mbrd and is the only one of the four that
+      // round-trips. But what it writes is still a file you go and put somewhere,
+      // where Save is the board keeping itself, and putting the two on one row
+      // was what made Save look like an option rather than the answer.
+      { type: 'buttons', advanced: true, buttons: [
         { cmd: 'export', label: 'Export' },
       ] },
-      // Share sits on its own row and only where the engine can actually put a
-      // file into the share sheet - hidden outright otherwise, the same rule the
-      // paper sheet follows, because a Share that quietly turned into a download
-      // would be a promise the phone could not read. See shareBoard().
-      { type: 'buttons',
+      // Share keeps its own row and its own guard: it shows only where the engine
+      // can actually put a file into the share sheet - hidden outright otherwise,
+      // the same rule the paper sheet follows, because a Share that quietly
+      // turned into a download would be a promise the phone could not read. See
+      // shareBoard().
+      { type: 'buttons', advanced: true,
         when: () => typeof navigator !== 'undefined' && typeof navigator.canShare === 'function',
         buttons: [{ cmd: 'share', label: 'Share' }] },
       // A picture of the board, for showing rather than reopening - a PNG to send
       // or a PDF to print. Derived artefacts, not board files; see cmds.exportImage.
-      { type: 'buttons', buttons: [
+      { type: 'buttons', advanced: true, buttons: [
         { cmd: 'export-image', label: 'Save image' },
         { cmd: 'export-pdf', label: 'Save PDF' },
       ] },
     ],
   },
   {
-    id: 'content', tab: 'board', title: 'Content',
+    // Named for the verb rather than for the noun. "Content" is what the two
+    // buttons under it produce; Add is what pressing them does, and a heading
+    // that says what the row does is the one you can find without reading it.
+    id: 'add', tab: 'board', title: 'Add',
     controls: [
       { type: 'buttons', buttons: [
         { cmd: 'add-files', label: 'Add files' },
@@ -202,6 +204,43 @@ export const SECTIONS = [
     // within it are the same question asked three times.
     id: 'arrange', tab: 'board', title: 'Arrange',
     controls: [
+      // How the board is shown, above how it is laid out, because they are the
+      // same question at two scales: which of the board's three faces you are
+      // looking at, and how things are placed within it.
+      //
+      // This pair had a section of its own at the top of the tab, put there
+      // because on a phone it is the navigation and it had been buried in System
+      // next to Clear everything. Reaching it easily was the right instinct and
+      // is kept - it is still on the first tab, above the fold, two rows down
+      // instead of none. What it cost was a naked pair of buttons standing over
+      // the board's own name, reading as a toolbar that had wandered in.
+      //
+      // Three segments now, not two, and that is the reason the move was worth
+      // making. There was no button anywhere that said "you are on the canvas":
+      // Feed and Playlist were two ways off it and nothing named the place you
+      // left, so on a Desktop board neither was pressed and the row said nothing
+      // about the current state. Three, with exactly one lit, is the same shape
+      // the zoom cluster and the history pair already have.
+      //
+      // The commands underneath are unchanged, deliberately. Playlist pressed on
+      // the canvas still opens the floating player rather than taking the board
+      // over - a player, not a takeover - so Canvas stays lit through it, which
+      // is the truth: you are still on the canvas, with a player window open.
+      { type: 'buttons', buttons: [
+        { id: 'view-canvas', cmd: 'canvas', label: 'Canvas',
+          pressed: ctx => !ctx.mobile,
+          title: () => 'The freeform board' },
+        { id: 'view-feed', cmd: 'feed', label: 'Feed',
+          pressed: ctx => ctx.mobile && currentLens() === 'feed',
+          title: ctx => (ctx.mobile
+            ? 'Back to the canvas'
+            : 'Show everything on the board as a scrollable feed') },
+        { id: 'view-playlist', cmd: 'playlist', label: 'Playlist',
+          pressed: ctx => ctx.mobile && currentLens() === 'playlist',
+          title: ctx => (ctx.mobile
+            ? 'Back to the canvas'
+            : 'Open the board’s audio as a player') },
+      ] },
       // The Feed's column count is derived from the screen width now, not chosen -
       // a phone gets two, a wide screen more - so the old Grid width select is gone.
       // Two catalogues, because the two layouts are answering different
