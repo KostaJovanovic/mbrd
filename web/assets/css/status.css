@@ -1,0 +1,236 @@
+/* =========================================================
+   mbrd - what the app says while it is working
+
+   One of the eight sheets the old overlays.css was split into. The order they
+   load in IS the cascade and is listed in the banner at the top of base.css.
+
+   Three surfaces that report and do not detain: the drop target a file is let
+   fall onto (import/drop.js), the waiting strip at the top edge and the toast
+   slips at the foot - busy() and toast(), both in util.js. None of them can be
+   answered, none of them takes the board away, and that is what they have in
+   common. The drop target was filed under the bin in the file this came out of,
+   which it never had anything to do with.
+
+   The global prefers-reduced-motion stop is at the foot of this file, which is
+   the one piece of filing here that wants a reason. Its single exception is the
+   indeterminate bar - a strip stopped dead reads as a progress figure, and a
+   false one - so the rule and the thing it exempts are kept together. It is a
+   universal selector and an !important, so where it sits among the other sheets
+   settles nothing else.
+   ========================================================= */
+
+#drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--accent-warm) 14%, transparent);
+  pointer-events: none;
+}
+/* An explicit display value beats the UA's [hidden] rule, so it needs saying. */
+#drop-overlay[hidden] { display: none; }
+/* Same reason, for the three sidebar wrappers that carry one: a control hidden
+   by script (the Desktop-only paper block) would otherwise stay on screen. */
+.field[hidden], .check[hidden], .btn-row[hidden] { display: none; }
+#drop-overlay div {
+  padding: 16px 30px;
+  border: 2px dashed var(--accent);
+  border-radius: var(--ogee);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
+  font-size: 19px;
+  font-style: var(--display-italic);
+  color: var(--accent-deep);
+  animation: bloom var(--dur-base) var(--ease-back);
+}
+@keyframes bloom { from { opacity: 0; transform: scale(0.94) rotate(-1deg); } }
+
+/* ---------------------------------------------------------
+   The waiting strip (busy() in util.js)
+
+   A card of the same stock as everything else, slid down from the top edge
+   while the app cannot answer. Deliberately not a modal, not a veil over the
+   board and not a spinner in the middle of the screen: none of the work it
+   covers stops you from panning, reading what is already there, or writing a
+   note while it finishes. It reports; it does not detain.
+
+   Top centre, opposite the toast at the foot - see the note in index.html.
+   --------------------------------------------------------- */
+#busy {
+  position: fixed;
+  z-index: 55;
+  /* Below the toolbar, which holds the same middle of the same edge. This
+     strip is over it in the stack and would simply land on top, and the button
+     it would cover is very often the one that started the import it is
+     reporting. Each term is the thing it names rather than a literal, so the
+     bar moving takes this with it: the bar's height and a gap. The hairlines
+     are not added on - box-sizing is border-box and the bar carries its own
+     height, so --toolbar-h is the whole of it. mobile.css hands the plain inset
+     back at the width where the toolbar leaves this edge for the foot. */
+  top: calc(max(14px, env(safe-area-inset-top)) + var(--toolbar-h) + 10px);
+  left: 50%;
+  width: min(330px, calc(100vw - 28px));
+  padding: 10px 14px 11px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
+  /* The entrance and the exit are one declaration: is-up moves it to rest and
+     removing the class sends it back up under the top edge it came from. */
+  translate: -50% -14px;
+  opacity: 0;
+  transition: translate var(--dur-base) var(--ease-back),
+              opacity var(--dur-base) var(--ease);
+}
+#busy.is-up { translate: -50% 0; opacity: 1; }
+#busy[hidden] { display: none; }
+
+.busy-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+#busy-label {
+  min-width: 0;
+  /* Grows to fill so the count and the cancel button sit together at the right. */
+  flex: 1 1 auto;
+  /* One line, and the end cut rather than wrapped: the strip is a fixed shape
+     and a filename long enough to wrap would change its height mid-job. */
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--t-small);
+  font-style: var(--display-italic);
+  color: var(--ink);
+}
+#busy-count {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+}
+/* Only up for a cancellable job (a large import). A quiet text button, not a
+   second piece of chrome competing with the label. */
+#busy-cancel {
+  flex: none;
+  margin: -2px -2px -2px 0;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--leaf);
+  background: none;
+  font: inherit;
+  font-size: var(--t-tiny);
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+#busy-cancel:hover { color: var(--accent); background: var(--paper-2); }
+#busy-cancel[hidden] { display: none; }
+
+#busy-track {
+  position: relative;
+  overflow: hidden;
+  height: 3px;
+  border-radius: var(--radius-xs);
+  background: var(--rule);
+}
+#busy-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+/* Not counting: a short bar sliding the length of the track and back.
+
+   A CSS animation rather than anything this app drives, and that is the whole
+   reason this element exists in two modes instead of one. Most of what the
+   strip covers - hashing a video by hand where crypto.subtle is missing,
+   decoding a folder of images, packing an archive - is synchronous work on the
+   thread that draws. Anything animated from JavaScript stops dead underneath
+   it, at precisely the moment somebody is watching the bar to find out whether
+   the app has hung. A transform animation is the compositor's to run, so it
+   keeps moving while this thread is fully occupied, which is the one honest
+   thing it can do.
+
+   Which also decides the shape: `translate` and nothing else. Animating width
+   or left would put it back on the main thread and undo the point. */
+#busy:not(.is-counting) #busy-fill {
+  width: 38%;
+  animation: busy-slide 1.15s var(--ease) infinite;
+}
+@keyframes busy-slide {
+  0%   { translate: -100% 0; }
+  50%  { translate: 163% 0; }
+  100% { translate: -100% 0; }
+}
+
+/* Counting: a width this app sets, eased so a batch that finishes several files
+   between frames fills smoothly instead of jumping. */
+#busy.is-counting #busy-fill {
+  width: 0%;
+  transition: width var(--dur-base) var(--ease);
+}
+
+/* A slip of paper, pinned briefly at the foot of the sheet. */
+/* The toast host: a bottom-anchored column of stacked lines. Anchored by its
+   bottom edge so a new line appended at the foot lifts the older ones above it
+   rather than pushing the stack off screen. Transparent and click-through; only
+   the lines themselves are furniture. */
+#toast {
+  position: fixed;
+  z-index: 50;
+  left: 50%;
+  bottom: max(24px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: min(520px, 90vw);
+  pointer-events: none;
+}
+.toast-line {
+  max-width: 100%;
+  padding: 10px 20px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
+  font-size: var(--t-small);
+  font-style: var(--display-italic);
+  text-align: center;
+  transform: rotate(-0.5deg);
+  pointer-events: auto;
+  animation: rise var(--dur-base) var(--ease-back);
+  /* Paired with TOAST_FADE_MS in util.js, which is what decides when the line is
+     actually removed. Kept as a literal on both sides rather than a token: a
+     duration the axis could flatten to zero would leave the JS timer holding an
+     invisible line on screen for its own 300ms, and the two disagreeing is worse
+     than neither following the axis. */
+  transition: opacity 300ms var(--ease);
+}
+.toast-line.is-going { opacity: 0; }
+.toast-line.is-error { border-color: var(--danger); color: var(--danger); }
+@keyframes rise { from { opacity: 0; transform: translateY(10px) rotate(-3deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+
+  /* One exception, and it is about honesty rather than about motion. The
+     indeterminate bar is a short block that means "something is happening"
+     only because it is travelling; stopped dead by the rule above it becomes a
+     short block sitting at 38%, which is a progress reading, and a false one.
+     So with motion off it is drawn as a full dim track instead - the label and
+     the strip's presence carry the message, and nothing on screen claims to
+     know how far along the work is. The counting bar is unaffected: its width
+     is a fact and it can be shown standing still. */
+  #busy:not(.is-counting) #busy-fill {
+    width: 100%;
+    opacity: 0.4;
+    animation: none;
+  }
+}

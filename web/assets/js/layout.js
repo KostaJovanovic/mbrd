@@ -38,6 +38,7 @@ import {
 } from './board-model.js';
 import {
   isRider, attachRiders, stuckPlacement, restick, stuckFollowers, startSettling,
+  isPinned,
 } from './sticky.js';
 import { isFence, refence, refenceAround, mobileRuns, fenceFollowers } from './fences.js';
 
@@ -929,5 +930,169 @@ export function usableMemo(pre) {
   const ok = SNAP_KEYS.every(k => Number.isFinite(pre[k]));
   if (!ok || pre.w < MIN_SIZE || pre.h < MIN_SIZE || pre.w > MAX_SIZE || pre.h > MAX_SIZE) return null;
   return { x: pre.x, y: pre.y, w: pre.w, h: pre.h };
+}
+
+// ---------------------------------------------------------------------------
+// Snapping the whole board
+//
+// The board-wide half of the lattice, beside SNAP_KEYS and the presnap memo it
+// is written in terms of rather than in state.js, where it used to sit calling
+// down into all three. It is a geometry write like every other one in this
+// file: a before list, an after list, and one commit that carries them.
+//
+// The setting comes with it and that is the whole reason it is one block. The
+// flag used to be written by setSetting() *outside* this command, so one Ctrl+Z
+// took the board off the lattice and left the checkbox ticked - the only place
+// in the app where undo produced a state nobody could have produced by hand.
+// state.js still owns setSetting(); what it hands over on the `snap` key is the
+// value, and everything after that is here.
+// ---------------------------------------------------------------------------
+
+/**
+ * Turning snapping on lays every item on the lattice at once, rather than only
+ * governing the next thing you drag - so the board *looks* snapped the moment
+ * the setting is on, which is the only way a grid reads as a grid.
+ *
+ * Turning it off puts everything back. That needs the old geometry kept
+ * somewhere, and it goes in `meta.presnap` on the item: per item, so an item
+ * touched during a snapped session can drop its own memo without affecting the
+ * rest, and serialised with the board, so the promise survives a save and a
+ * reload rather than lasting only as long as the tab.
+ *
+ * Two consequences worth being explicit about:
+ *
+ * - **The step is the base step, not the one on screen.** `gridStep()` picks a
+ *   spacing from the current zoom so the lattice never becomes a fill, which is
+ *   right for something drawn and wrong for something stored: snapping at 20%
+ *   zoom would otherwise commit a board to a coarser geometry than snapping at
+ *   100%, and the same click would do two different things depending on how far
+ *   out you happened to be.
+ * - **Edges land on the lattice, not centres**, and the arithmetic is latticeBox() in
+ *   geometry.js, shared with the gestures in canvas/input.js so that laying the
+ *   board out and then dragging one item across it agree about where things go.
+ *   What makes a snapped board look snapped is items sitting flush in cells; an
+ *   item whose size is an odd number of cells therefore ends up with its centre
+ *   on a half-step, which is correct and is not a rounding error.
+ */
+export function snapAll(snapTo) {
+  const step = baseStep();
+  const before = [], after = [];
+  for (const it of board.items) {
+    // A pinned item is not on the board, it is on its host - see isPinned() in
+    // sticky.js. Its place is a fraction of the card underneath it, and putting
+    // that fraction on the lattice would slide a sticky off the photograph it
+    // was pressed onto, in a sweep the person asked of the *board*. The host
+    // lands on the grid and the rider comes along.
+    if (isPinned(it)) continue;
+    const pre = it.meta?.presnap || null;
+    before.push({ id: it.id, x: it.x, y: it.y, w: it.w, h: it.h, pre });
+
+    const box = latticeBox(it, step);
+    after.push({
+      id: it.id,
+      x: box.x,
+      y: box.y,
+      w: box.w,
+      h: box.h,
+      // A board snapped, unsnapped and snapped again remembers the first
+      // position, not the second - the memo is of life before the lattice.
+      pre: pre || { x: it.x, y: it.y, w: it.w, h: it.h },
+    });
+  }
+  applySnapState(before, after, 'Snap to grid', snapTo);
+}
+
+/**
+ * Re-assert the geometry rules that can drift from their rendered result.
+ *
+ * A reload is not an edit by itself. Snapping only records history and dirties
+ * the board when it actually repairs a box; the final event also makes every
+ * renderer re-read positions when nothing in the data needed changing.
+ */
+export function recheckBoardGeometry() {
+  if (board.settings.snap) snapAll();
+  const ids = board.items.map(item => item.id);
+  if (ids.length) bus.emit('geom', ids);
+}
+
+/** Put back what snapAll() remembered, for everything still carrying a memo. */
+export function unsnapAll(snapTo) {
+  const before = [], after = [];
+  for (const it of board.items) {
+    // Checked rather than trusted: a memo arrives from a .mbrd like everything
+    // else, and a hand-edited one holding a string would write it straight onto
+    // the item's geometry. A memo that does not describe a box is no memo.
+    //
+    // Pinned items are skipped for the same reason snapAll() skips them: the
+    // sweep never moved one, so there is nothing of its to put back.
+    if (isPinned(it)) continue;
+    const pre = usableMemo(it.meta?.presnap);
+    if (!pre) { forgetPresnap(it); continue; }
+    before.push({ id: it.id, x: it.x, y: it.y, w: it.w, h: it.h, pre });
+    after.push({ id: it.id, x: pre.x, y: pre.y, w: pre.w, h: pre.h, pre: null });
+  }
+  applySnapState(before, after, 'Leave the grid', snapTo);
+}
+
+/**
+ * Write the snap flag itself - the setting half of the same act.
+ *
+ * The layoutSettings mirror is written with it and not left to setSetting()'s
+ * tail: the two are one value kept in two places, and an undo that restored the
+ * flag while leaving the mirror behind would put the lie back at the next
+ * layout switch instead of at the next drag.
+ */
+function writeSnapSetting(v) {
+  board.settings.snap = v;
+  board.layoutSettings[board.layoutMode] = layoutSettingsOf(board.settings);
+  markDirty();
+  bus.emit('settings', 'snap');
+}
+
+/**
+ * The geometry, and - when a person actually turned the setting - the setting
+ * with it, as one command.
+ *
+ * `snapTo` is the flag the user asked for, or undefined for
+ * recheckBoardGeometry(), which re-asserts a rule that is already on rather than
+ * toggling one. Folding the flag in is the whole point: it used to be written by
+ * setSetting() *outside* this command, so one Ctrl+Z took the board off the
+ * lattice and left the checkbox ticked - the only place in the app where undo
+ * produced a state nobody could have produced by hand.
+ *
+ * Nothing moved is not nothing happened: an empty board, or one already flush on
+ * the lattice, still has a setting to write. It goes in without history, the way
+ * every other setting does - there is no geometry to take back, so there is
+ * nothing for an undo entry to be about.
+ */
+function applySnapState(before, after, label, snapTo) {
+  const moved = after.some((a, i) =>
+    SNAP_KEYS.some(k => a[k] !== before[i][k]) || !!a.pre !== !!before[i].pre);
+  if (!moved) {
+    if (snapTo !== undefined) writeSnapSetting(snapTo);
+    return;
+  }
+  const apply = (list, flag) => {
+    if (flag !== undefined) writeSnapSetting(flag);
+    writeSnapState(list);
+  };
+  // commit() runs its redo half itself, which is what applies `after` here.
+  commit(label,
+    () => apply(after, snapTo),
+    () => apply(before, snapTo === undefined ? undefined : !snapTo));
+}
+
+function writeSnapState(list) {
+  const ids = [];
+  for (const g of list) {
+    const it = byId(g.id);
+    if (!it) continue;
+    const next = fitBoardMode({ ...it, ...g });
+    for (const k of SNAP_KEYS) it[k] = next[k];
+    if (g.pre) it.meta = { ...it.meta, presnap: g.pre };
+    else forgetPresnap(it);
+    ids.push(g.id);
+  }
+  if (ids.length) bus.emit('geom', ids);
 }
 

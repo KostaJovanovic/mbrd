@@ -147,6 +147,32 @@ const BASE = new Set([
   // separate files, since a concern lifted out of state.js can only stay out if
   // what it stands on is lower than what it left.
   'board-store.js', 'board-model.js', 'history.js', 'sticky.js', 'layout.js', 'stacking.js',
+  // The .mbrd format, in both directions. Below state.js for the reason its own
+  // header gives: reading a file is a pure raw -> clean transformation over
+  // data, and only the assignment that swaps the result in is a mutation. The
+  // reader must be reachable without the mutation door, or every change to the
+  // format is a change to the door.
+  'board-schema.js',
+  // The cards an empty board puts on itself. Content and policy rather than
+  // mutation: every function in it is hydration - no commit, no history - which
+  // is what made it the wrong tenant for the mutation door. It holds two
+  // session latches, so it is a module with state and not a table of data, and
+  // loadBoard() resets one of them on every board that arrives.
+  'onboarding.js',
+  // The internal clipboard. Nothing in it touches the board - the clipboard is
+  // not board state, is never saved and has nothing about it to undo - which is
+  // what let it out. The two commands that do touch the board, cut and paste,
+  // stayed in state.js and call into this.
+  'clipboard.js',
+  // Every write to board.connections. board-model.js already owned the shape of
+  // a connection - pairKey, the CONN_* tables, connMeta, normalizeConnections -
+  // and board-schema.js owns the pruning at the file boundary; this is the
+  // mutation half, which only ever needed to sit beside commit().
+  'connections.js',
+  // The bin. Delete and restore are two directions of one door, and they sat
+  // four hundred lines apart in state.js; the limit itself is in board-model.js,
+  // because the file reader holds an arriving bin to it too.
+  'trash.js',
   // Fence membership, beside sticky.js and for the same reason: it is a question
   // about where two things are, and the mutations that act on the answer stay in
   // state.js. It reads board.layouts directly rather than layout.js's helper for

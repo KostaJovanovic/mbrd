@@ -52,8 +52,10 @@ export const read = path => readFileSync(path, 'utf8');
  * and the @font-face set, and a test wanting either should say so.
  */
 export const APP_CSS_ORDER = [
-  'base.css', 'canvas.css', 'items.css', 'sidebar.css',
-  'chrome.css', 'overlays.css', 'mobile.css', 'quality.css',
+  'base.css', 'canvas.css', 'items.css', 'sidebar.css', 'chrome.css',
+  'trash.css', 'menu.css', 'library.css', 'status.css', 'dialog.css',
+  'viewer.css', 'color-picker.css', 'sticker-pad.css',
+  'mobile.css', 'quality.css',
 ];
 
 export const appCss = () => APP_CSS_ORDER

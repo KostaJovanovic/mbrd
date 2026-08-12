@@ -1,0 +1,423 @@
+/* =========================================================
+   mbrd - deleting: the bin, and the way out
+
+   One of the eight sheets the old overlays.css was split into. The order they
+   load in IS the cascade and is listed in the banner at the top of base.css.
+
+   Two modules, one moment. The bin in the bottom-left corner and the panel it
+   opens are ui/trash.js; what a card plays on its way off the board is
+   canvas/exit-anim.js, and the animation ends at that button. Filing them apart
+   would put the start and the end of one gesture in two places.
+
+   The undo/redo pair, the autosave mark and the title card's way back share the
+   bin's row and its stock, so they are here too - which is a fact about the
+   layout rather than about ui/trash.js.
+   ========================================================= */
+
+#bin {
+  position: fixed;
+  z-index: 20;
+  left: max(16px, env(safe-area-inset-left));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  user-select: none;
+  transition: opacity var(--dur-base) var(--ease), visibility 0s;
+}
+
+/* The panel opens over this corner, so the bin gets out of the way - the same
+   move #menu-btn makes, and for the same reason.
+
+   visibility, not opacity alone: a button faded to nothing is still in the tab
+   order and still announced, so it would be a control you can reach but cannot
+   see. Delaying it by the fade's own duration lets it hide only once it has
+   finished fading, and drop instantly on the way back in. The whole #bin goes
+   rather than just the button, so a panel left open goes with it - and comes
+   back open when the sidebar closes, which is what leaving it open meant. */
+#sidebar.is-open ~ #bin {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity var(--dur-base) var(--ease), visibility 0s var(--dur-base);
+}
+
+#bin-btn {
+  display: grid;
+  place-items: center;
+  width: var(--chrome-button-w);
+  height: var(--chrome-button-h);
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-1);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease);
+}
+/* An empty bin has nothing to offer, and says so by receding: the faintest ink
+   and the fainter of the two hairlines, so it sits on the glass at about the
+   weight of the board's own furniture rather than asking to be pressed. It is
+   deliberately not the disabled treatment used elsewhere (no dimmed cursor, no
+   half opacity) - the button still works, and pressing it opens a panel that
+   tells you in words that there is nothing in there.
+
+   This has to come before :hover, which it ties with on specificity: source
+   order is what lets the hover colour win over the muted one. */
+#bin-btn:not(.has-things) { color: var(--ink-3); }
+/* The icon goes grey, not just faint - the ink it inherits carries the
+   palette's hue like every other ink on the board, so an empty bin on Peacock
+   was a *teal* trash can, quietly. saturate(0) is what takes the hue out and
+   leaves the shape, which is the difference between a control that is resting
+   and one that has been recoloured.
+   On the glyph and not the button: a filter on the button would take the
+   background and the hairline with it, and the outline is the one thing that
+   has to stay identical across the whole set. */
+#bin-btn:not(.has-things) svg { filter: saturate(0); }
+#bin-btn:hover { background: var(--paper-2); color: var(--accent-deep); }
+/* Hovering an empty bin brings its edge back up to the normal hairline, so the
+   pointer gets the same "this is a control" answer it gets from a full one. */
+#bin-btn:not(.has-things):hover { border-color: var(--rule-2); }
+#bin-btn svg {
+  width: 17px; height: 17px;
+  transition: transform var(--dur-base) var(--ease-back);
+}
+#bin-btn:hover svg { transform: scale(var(--btn-grow)) translateY(var(--btn-lift)); }
+/* Something is in there. Not a number in a badge - the whole button simply
+   comes up to full strength, the way a physical bin tells you it is filling up
+   by being visibly not empty. The icon inherits currentColor, so this carries
+   the state without anything extra being drawn on top of it. */
+#bin-btn.has-things { color: var(--accent-deep); border-color: var(--accent); }
+
+/* The autosave mark. Sits above the row, out of the flow, so it can appear and
+   go without anything else on the glass moving an inch.
+
+   Deliberately the quietest thing in the corner: no card, no shadow, no border
+   - it is a note to yourself, not a control, and the moment it looks like a
+   button somebody will try to press it. It leaves slowly and arrives quickly,
+   the same asymmetry #toolbar uses when the furniture idles away: arriving
+   answers something you just did and is late at a quarter of a second, whereas
+   leaving is only the app getting out of the way again. */
+#saved {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px 3px 6px;
+  border-radius: var(--leaf);
+  background: color-mix(in oklab, var(--paper-card) 82%, transparent);
+  color: var(--ink-3);
+  font-size: var(--t-tiny);
+  letter-spacing: calc(0.02em * var(--ls-scale));
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  /* visibility with it, so a mark faded to nothing is not still a hit target
+     over the board - the same pairing #bin makes when the panel covers it. */
+  visibility: hidden;
+  transition: opacity 640ms var(--ease), visibility 0s 640ms;
+}
+#saved.is-on {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity var(--dur-fast) var(--ease), visibility 0s;
+}
+#saved svg { width: 12px; height: 12px; color: var(--accent); }
+
+/* The bin and the history pair, on one line. The bin stays flush in the corner
+   and the pair grows to its right, so nothing that was already there moves. */
+.bin-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+/* The pop-up and its restore button in one row, the button to the right and
+   aligned to the panel's foot, so it sits beside the open trash pop-up and reads
+   as belonging to it. flex-end keeps it near the corner when the panel grows
+   tall upward. When the panel is hidden it is display:none and takes no space,
+   and the button is hidden by ui/trash.js in the same breath - so the row
+   collapses to nothing while the bin is shut. */
+.bin-pop {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+/* The title card's way back, beside the trash pop-up. A square that carries the
+   same weight as the chrome buttons; ui/trash.js shows it only while the bin is
+   open and the card is gone. The accent edge says "there is a thing here to
+   press", the way a full bin does. */
+#title-restore {
+  display: grid;
+  place-items: center;
+  width: var(--chrome-button-w);
+  height: var(--chrome-button-h);
+  /* The same hairline every other control on the glass wears. This was the
+     accent, which made the button carry its message in its outline - and an
+     outline is the one part of a control that has to be the same on all of
+     them for the set to read as a set. The message did not go anywhere: it
+     moved into the glyph, which is already accent-deep below. Same trade the
+     bin makes when it is empty. */
+  border: var(--hairline) solid var(--rule-2);
+  /* On the glass, so --leaf - the corner the bin, the history pair and the
+     zoom pill wear. It used to take --radius-sm to match #bin-panel, the trash
+     pop-up it sits beside, which is a fair thing to want and the wrong half to
+     match: this is a button on the board, not part of that panel, and it is up
+     whether the panel is or not. */
+  border-radius: var(--leaf);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-1);
+  color: var(--accent-deep);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease);
+}
+#title-restore[hidden] { display: none; }
+#title-restore:hover { background: var(--paper-2); }
+#title-restore svg { width: 17px; height: 17px; }
+
+/* The same segmented pill as #zoom-ctl in the opposite corner - one object with
+   a hairline seam, not two buttons that happen to be adjacent. Each half takes
+   exactly the space of one permanent chrome button, so the bin, undo, redo and
+   menu all carry the same visual weight. */
+#history-ctl {
+  display: flex;
+  align-items: stretch;
+  width: calc(var(--chrome-button-w) + var(--chrome-button-w));
+  height: var(--chrome-button-h);
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  overflow: hidden;
+  background: var(--paper-card);
+  box-shadow: var(--shadow-1);
+}
+#history-ctl button {
+  display: grid;
+  place-items: center;
+  flex: 1 1 50%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+#history-ctl button + button { border-left: 1px solid var(--rule); }
+#history-ctl button:hover:not(:disabled) { background: var(--paper-2); color: var(--accent-deep); }
+#history-ctl button:active:not(:disabled) { background: var(--paper-3); }
+/* Nothing to take back. The faintest ink and no pointer reaction, which is the
+   disabled treatment the zoom controls already use - and unlike the empty bin
+   this one really is inert, so it says so. */
+#history-ctl button:disabled { color: var(--ink-3); cursor: default; }
+#history-ctl svg {
+  width: 16px; height: 16px;
+  /* The glyph takes the reaction, not the button: scaling the button would drag
+     the seam between the two around. Same bargain as #zoom-ctl. */
+  transition: transform var(--dur-base) var(--ease-back);
+}
+#history-ctl button:hover:not(:disabled) svg { transform: scale(var(--btn-grow)) translateY(var(--btn-lift)); }
+#history-ctl button:active:not(:disabled) svg { transform: scale(calc(var(--btn-press) - 0.08)); }
+
+/* Open while a drag is in flight: you are dragging *out* of the panel and onto
+   the board, so the panel must not shut the moment the pointer leaves it. */
+#bin-panel {
+  width: 268px;
+  max-height: min(52vh, 420px);
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--radius-sm);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
+}
+#bin-panel[hidden] { display: none; }
+#bin-panel header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 9px;
+}
+#bin-panel h2 {
+  margin: 0;
+  font-size: var(--t-small);
+  font-style: var(--display-italic);
+  font-weight: 400;
+  letter-spacing: calc(0.1em * var(--ls-scale));
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+#bin-empty {
+  padding: 2px 7px;
+  border: var(--hairline) solid transparent;
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--danger);
+  font-size: var(--t-tiny);
+  cursor: pointer;
+}
+#bin-empty:hover { border-color: var(--danger); }
+#bin-empty:disabled { color: var(--ink-3); cursor: default; border-color: transparent; }
+
+#bin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule-2) transparent;
+}
+#bin-none, #bin-hint {
+  margin: 0;
+  font-size: var(--t-tiny);
+  font-style: var(--display-italic);
+  color: var(--ink-3);
+}
+#bin-hint { margin-top: 9px; }
+#bin-none[hidden], #bin-hint[hidden] { display: none; }
+
+.bin-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px;
+  border: var(--hairline) solid transparent;
+  border-radius: var(--radius-xs);
+  cursor: grab;
+  touch-action: none;
+}
+.bin-item:hover { border-color: var(--rule-2); background: var(--paper-2); }
+.bin-item.is-lifting { opacity: 0.4; cursor: grabbing; }
+.bin-thumb {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: var(--hairline) solid var(--rule);
+  border-radius: var(--radius-xs);
+  background: var(--paper-2);
+  font-size: 8px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.bin-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.bin-thumb.is-note { background: var(--note-1); color: var(--ink-2); }
+/* A binned sticker shows its shape, which is the only thing that tells it from
+   the next one - every star is called Star. Padded, because these are drawn to
+   the edges of their own box and a 38px square with the thumb border round it
+   would clip the outline off. The tint mapping is the one in items.css, shared
+   with the board, the pad and the feed. */
+.bin-thumb.is-sticker { padding: 4px; }
+.bin-thumb.is-sticker .sticker-art { filter: none; }
+.bin-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--t-tiny);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bin-when { flex: none; font-size: 10px; color: var(--ink-3); font-family: var(--font-mono); }
+
+/* The thing under the pointer while it is being carried back to the board. */
+#bin-ghost {
+  position: fixed;
+  z-index: 60;
+  width: 54px;
+  height: 54px;
+  margin: -27px 0 0 -27px;
+  overflow: hidden;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--radius-xs);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
+  pointer-events: none;
+  rotate: -4deg;
+}
+#bin-ghost img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* ----------------------------------------------------------
+   The delete fly-out. A deleted card's node is discarded at once (state and
+   undo do not wait); what animates is a clone lifted into this screen-space
+   overlay by canvas/exit-anim.js. The overlay sits above the board but below
+   the panels and menus, and never takes a pointer - it only ever shows a ghost
+   on its way out.
+
+   Four feels: the whimsy tier picks fall/dissolve/shatter, and the title card
+   vacuums toward the bin button (--to-x/--to-y are set per-clone in JS). The
+   global prefers-reduced-motion rule collapses every duration below, so with
+   motion off these are effectively instant and exit-anim.js's timeout still
+   sweeps the clone up.
+   ---------------------------------------------------------- */
+#exit-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 24;
+  pointer-events: none;
+  overflow: hidden;
+}
+.exit-anim {
+  will-change: transform, opacity, filter;
+  transform-origin: center;
+}
+.exit-dissolve { animation: exit-dissolve var(--dur-base) var(--ease) forwards; }
+.exit-fall    { animation: exit-fall     var(--dur-base) var(--ease-in, ease-in) forwards; }
+.exit-shatter { animation: exit-shatter  var(--dur-base) var(--ease) forwards; }
+
+/* The title card leaves no clone - it just vanishes. This chip is the only
+   thing drawn: a scrap of card centred on the bin button (the negative margins
+   centre it on the point exit-anim.js parks it at) that appears just above the
+   bin, lifts a touch, then drops into it. The whole motion is local to the bin
+   - the chip does not travel from where the card was. */
+.exit-chip {
+  position: fixed;
+  width: 46px;
+  height: 30px;
+  margin-left: -23px;
+  margin-top: -15px;
+  background: var(--paper-card);
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  box-shadow: var(--item-shadow);
+  animation: exit-chip-fall calc(var(--dur-base) * 1.6) linear forwards;
+}
+/* Real projectile motion, not eased segments. The translateY stops below sample
+   an actual toss - height u(t) = 40 + 100.5t - 140.5t^2 under constant gravity -
+   and the timing is *linear*, so the parabola itself carries the physics: the
+   stops bunch near the apex (slow, the hangtime) and spread out toward the bin
+   (fast, accelerating in). Rises from just above the bin to an apex ~36% through,
+   then falls the longer way down into it, shrinking and fading as it enters. */
+@keyframes exit-chip-fall {
+  0%   { opacity: 0; transform: translateY(-40px) scale(1); }
+  6%   { opacity: 1; transform: translateY(-45px) scale(1); }
+  20%  {            transform: translateY(-54px) scale(1); }
+  36%  {            transform: translateY(-58px) scale(1); }   /* apex */
+  50%  {            transform: translateY(-55px) scale(1); }
+  60%  {            transform: translateY(-50px) scale(1); }
+  70%  {            transform: translateY(-41px) scale(0.96); }
+  80%  {            transform: translateY(-30px) scale(0.88); }
+  90%  { opacity: 1; transform: translateY(-16px) scale(0.74); }
+  100% { opacity: 0; transform: translateY(0)     scale(0.5); }
+}
+@keyframes exit-dissolve {
+  to { transform: scale(0.9); opacity: 0; }
+}
+@keyframes exit-fall {
+  to { transform: translateY(90px) rotate(7deg); opacity: 0; }
+}
+@keyframes exit-shatter {
+  0%   { transform: scale(1); filter: blur(0); }
+  20%  { transform: scale(1.06); filter: blur(0); }
+  100% { transform: scale(0); filter: blur(6px); opacity: 0; }
+}

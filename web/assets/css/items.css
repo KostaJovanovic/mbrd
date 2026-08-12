@@ -441,7 +441,7 @@
   letter-spacing: calc(0.01em * var(--ls-scale));
   color: var(--ghost-ink);
 }
-/* `text-wrap: pretty` here, and on the two prose blocks in overlays.css, is
+/* `text-wrap: pretty` here, and on the prose blocks in dialog.css, is
    kept knowing Firefox drops it and says so in the console. It is not the same
    case as the unprefixed `line-clamp` further down, which was removed for
    exactly that warning: this one earns it. A hint line is two or three lines of
@@ -1752,7 +1752,7 @@
      title off the display ramp. Halve the square and none of that halves with
      it: the title alone takes a third of the sheet, the margins take most of
      what is left, and a note that holds 512 characters shows about three lines
-     of them before .note-body's clip quietly eats the rest. A small note has
+     of them before .note-rich's clip quietly eats the rest. A small note has
      to be a small note, not a big note's fittings crammed into a smaller
      square.
 

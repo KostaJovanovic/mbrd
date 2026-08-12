@@ -602,6 +602,20 @@ function size(v, fallback) {
 export const MAX_ITEMS = 20000;
 
 /**
+ * How many things the bin holds before the oldest start falling out the
+ * bottom. A bin is a safety net, not an archive - and every entry pins its
+ * asset's bytes into the saved file, so an unbounded one would quietly make a
+ * board grow forever as you worked on it.
+ *
+ * Here rather than beside the bin's own mutations, because it is read from two
+ * directions that must not import each other: the runtime bin truncates to it
+ * on every delete, and the file reader slices an arriving `trash` array to it
+ * before anything else looks at the entries. Both are rules about the shape a
+ * board may have, which is what this module is.
+ */
+export const TRASH_LIMIT = 60;
+
+/**
  * Force item ids unique, regenerating collisions deterministically.
  *
  * A duplicate id conflicts with the renderer's module-level Map, selection,

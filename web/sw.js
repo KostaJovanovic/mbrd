@@ -27,15 +27,22 @@ const SHELL = [
   './index.html',
   './manifest.json',
   './assets/css/tokens.css',
-  // The eight subsystem stylesheets, in the order index.html loads them, which
-  // is the cascade - see the banner at the top of base.css. quality.css is last
-  // there and is last here.
+  // The subsystem stylesheets, in the order index.html loads them, which is the
+  // cascade - see the banner at the top of base.css. quality.css is last there
+  // and is last here.
   './assets/css/base.css',
   './assets/css/canvas.css',
   './assets/css/items.css',
   './assets/css/sidebar.css',
   './assets/css/chrome.css',
-  './assets/css/overlays.css',
+  './assets/css/trash.css',
+  './assets/css/menu.css',
+  './assets/css/library.css',
+  './assets/css/status.css',
+  './assets/css/dialog.css',
+  './assets/css/viewer.css',
+  './assets/css/color-picker.css',
+  './assets/css/sticker-pad.css',
   './assets/css/mobile.css',
   './assets/css/quality.css',
   // Every icon in the app, in one sprite. Referenced by <use> from index.html
@@ -153,6 +160,11 @@ const SHELL = [
   './assets/js/mesh.js',
   './assets/js/board-store.js',
   './assets/js/board-model.js',
+  './assets/js/board-schema.js',
+  './assets/js/onboarding.js',
+  './assets/js/clipboard.js',
+  './assets/js/connections.js',
+  './assets/js/trash.js',
   './assets/js/sticky.js',
   './assets/js/stickers/catalogue.js',
   './assets/js/fences.js',

@@ -1,0 +1,124 @@
+/* =========================================================
+   mbrd - the board switcher (ui/library.js)
+
+   One of the eight sheets the old overlays.css was split into. The order they
+   load in IS the cascade and is listed in the banner at the top of base.css.
+
+   Its own overlay rather than an ask() dialog, and the note on #library below
+   says why. Small, and deliberately its own file: it is the one piece of
+   furniture in the app that is about the boards rather than about a board.
+   ========================================================= */
+
+/* Its own overlay, not the ask() dialog: that is a question and this is a
+   gallery of the boards this browser is keeping. */
+#library {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: max(24px, env(safe-area-inset-top)) 24px;
+  background: color-mix(in oklab, var(--ink) 34%, transparent);
+}
+.library-panel {
+  width: min(880px, 100%);
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
+}
+.library-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 16px;
+  border-bottom: var(--hairline) solid var(--rule);
+}
+.library-head h2 { margin: 0; font-size: 1rem; font-weight: 600; }
+.library-spacer { flex: 1; }
+.library-new {
+  padding: 6px 12px;
+  border: var(--hairline) solid var(--accent);
+  border-radius: var(--leaf);
+  background: var(--paper-card);
+  color: var(--accent-deep);
+  cursor: pointer;
+}
+.library-new:hover { background: var(--paper-2); }
+.library-close {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  background: none;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.library-close:hover { color: var(--ink); }
+.library-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 14px;
+  padding: 16px;
+  overflow-y: auto;
+}
+.library-empty {
+  grid-column: 1 / -1;
+  padding: 28px 8px;
+  text-align: center;
+  color: var(--ink-3);
+  font-size: var(--t-small, 0.85rem);
+}
+.library-card { position: relative; }
+.library-open {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--radius-sm);
+  background: var(--paper-card);
+  cursor: pointer;
+  overflow: hidden;
+  text-align: left;
+  color: inherit;
+}
+.library-open:hover:not(:disabled) { border-color: var(--accent); }
+.library-card.is-current .library-open { border-color: var(--accent); cursor: default; }
+.library-thumb {
+  aspect-ratio: 4 / 3;
+  background: var(--paper-2);
+  overflow: hidden;
+}
+.library-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.library-name {
+  padding: 8px 10px 2px;
+  font-size: var(--t-small, 0.85rem);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.library-when { padding: 0 10px 9px; font-size: var(--t-tiny); color: var(--ink-3); }
+.library-del {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--paper) 82%, transparent);
+  color: var(--ink-2);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+.library-card:hover .library-del,
+.library-del:focus-visible { opacity: 1; }
+.library-del:hover { color: var(--danger); }

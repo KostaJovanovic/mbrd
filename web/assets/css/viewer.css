@@ -1,0 +1,381 @@
+/* =========================================================
+   mbrd - the viewer, and the documents read inside it
+
+   One of the eight sheets the old overlays.css was split into. The order they
+   load in IS the cascade and is listed in the banner at the top of base.css.
+
+   ui/viewer.js opens one item as big as the window will allow: a fixed head, a
+   scrolling body, and a set of rules for each kind of thing it can show.
+   ui/documents.js turns a .docx, an .odt or a .pptx into ordinary elements
+   inside that body, which is why the two are one file - the document rules are
+   written in the viewer's own Markdown measure and face, and every one of them
+   reads against #viewer-body.
+   ========================================================= */
+
+/* One item, as big as the window will allow. Not sized like #ask and #credits,
+   which are questions and fit their words: this is a thing being looked at, so
+   it takes the window less a margin and lets what is in it decide the rest.
+
+   A column with a fixed head and a scrolling body. The head does not move, so a
+   long file scrolls under a name that stays put and the way out is always in the
+   same corner. */
+#viewer {
+  width: min(1100px, calc(100vw - 32px));
+  height: min(860px, calc(100dvh - 32px));
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--ogee);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
+  color: var(--ink);
+  overflow: hidden;
+  /* A <dialog> in the top layer is centred by its own margin:auto, which the
+     reset's `margin: 0` takes away. */
+  margin: auto;
+  animation: ask-in var(--dur-base) var(--ease-back);
+}
+/* The layout belongs to the open state - a flat `display: flex` outranks the UA
+   stylesheet's `display: none` and leaves a closed dialog on screen. Same rule
+   #compose learned the hard way. */
+#viewer[open] { display: flex; flex-direction: column; }
+#viewer::backdrop {
+  background: color-mix(in srgb, var(--ink) 42%, transparent);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+
+#viewer-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px 12px 20px;
+  border-bottom: var(--hairline) solid var(--rule-2);
+}
+#viewer-names { min-width: 0; flex: 1 1 auto; }
+#viewer-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--t-body);
+  font-weight: 600;
+  /* One line, ellipsised. A filename can be any length and a head that wrapped
+     to three lines would take the room off the thing being looked at. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#viewer-meta {
+  margin: 2px 0 0;
+  color: var(--ink-3);
+  font-size: var(--t-tiny);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+#viewer-meta:empty { display: none; }
+#viewer-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px; height: 32px;
+  border: 0;
+  border-radius: var(--leaf);
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+#viewer-close:hover { background: var(--paper-2); color: var(--accent-deep); }
+#viewer-close svg { width: 15px; height: 15px; }
+
+/* The body. One scroller, and the only one in here.
+
+   `display: grid; place-items: center` is what centres a picture smaller than
+   the window without stretching one larger than it - the media rules below cap
+   themselves at 100% of this box and keep their aspect. Text overrides the
+   centring, because a page of words starts at the top left. */
+#viewer-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  display: grid;
+  place-items: center;
+  padding: 16px 20px 20px;
+  background: var(--paper-2);
+}
+#viewer-body:focus { outline: none; }
+
+.viewer-media {
+  max-width: 100%;
+  max-height: 100%;
+  /* A tall picture in a short window and a wide one in a tall window are the
+     same rule from either side: fit the box, keep the shape. */
+  object-fit: contain;
+  border-radius: var(--leaf);
+  background: var(--paper-3);
+}
+.viewer-cover {
+  max-width: min(420px, 100%);
+  border-radius: var(--leaf);
+  box-shadow: var(--shadow-1);
+}
+.viewer-audio { width: min(640px, 100%); margin-top: 16px; }
+
+/* Words: top-left, monospaced, the whole file. The grid centring above is undone
+   per-item rather than turned off, because most of what this dialog shows is a
+   picture and centring is right for those. */
+#viewer-body:has(> .viewer-text),
+#viewer-body:has(> .viewer-md) { place-items: start stretch; }
+.viewer-text {
+  margin: 0;
+  max-width: 88ch;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Markdown, read as prose. Set in the board's own body face rather than in the
+   mono the source view uses, at a measure that stops before the line gets long
+   enough to lose - which is the whole reason to render it at all.
+
+   Everything below is one selector list per construct rather than a nested
+   `.viewer-md *` sweep: the parser (ui/markdown.js) emits ordinary elements, so
+   these are ordinary element rules and a construct that is not there costs
+   nothing. */
+.viewer-md {
+  max-width: 74ch;
+  color: var(--ink);
+  font-size: var(--t-body);
+  line-height: 1.65;
+}
+.viewer-md > :first-child { margin-top: 0; }
+.viewer-md > :last-child { margin-bottom: 0; }
+.viewer-md h1, .viewer-md h2, .viewer-md h3,
+.viewer-md h4, .viewer-md h5, .viewer-md h6 {
+  margin: 1.6em 0 0.5em;
+  font-family: var(--font-display);
+  font-weight: 600;
+  line-height: 1.25;
+}
+.viewer-md h1 { font-size: 1.7em; }
+.viewer-md h2 { font-size: 1.35em; }
+.viewer-md h3 { font-size: 1.15em; }
+.viewer-md h4, .viewer-md h5, .viewer-md h6 { font-size: 1em; }
+/* A rule under the top two, the way a printed page separates its sections. Not
+   under h3 and below: those are already close enough together that a line every
+   few paragraphs reads as a ladder. */
+.viewer-md h1, .viewer-md h2 {
+  padding-bottom: 0.25em;
+  border-bottom: var(--hairline) solid var(--rule-2);
+}
+.viewer-md p { margin: 0 0 1em; }
+.viewer-md ul, .viewer-md ol { margin: 0 0 1em; padding-left: 1.6em; }
+.viewer-md li { margin: 0.25em 0; }
+.viewer-md li > ul, .viewer-md li > ol { margin: 0.25em 0 0; }
+/* A task list drops the marker: the checkbox is the marker. */
+.viewer-md li.md-task { list-style: none; margin-left: -1.4em; }
+.viewer-md li.md-task input { margin-right: 0.5em; accent-color: var(--accent); }
+.viewer-md blockquote {
+  margin: 0 0 1em;
+  padding: 0.1em 0 0.1em 1em;
+  border-left: 3px solid var(--rule);
+  color: var(--ink-2);
+}
+.viewer-md hr {
+  margin: 1.8em 0;
+  border: 0;
+  border-top: var(--hairline) solid var(--rule-2);
+}
+.viewer-md code {
+  padding: 0.12em 0.35em;
+  border-radius: 4px;
+  background: var(--paper-3);
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+.viewer-md pre {
+  margin: 0 0 1em;
+  padding: 12px 14px;
+  border-radius: var(--leaf);
+  background: var(--paper-3);
+  /* The one thing in a rendered document that may not wrap - a broken line of
+     code is a different line of code - so it scrolls inside its own box rather
+     than widening the page. */
+  overflow-x: auto;
+}
+.viewer-md pre code { padding: 0; border-radius: 0; background: none; }
+.viewer-md a { color: var(--accent-deep); }
+.viewer-md table {
+  margin: 0 0 1em;
+  border-collapse: collapse;
+  font-size: 0.94em;
+}
+.viewer-md th, .viewer-md td {
+  padding: 6px 10px;
+  border: var(--hairline) solid var(--rule-2);
+  text-align: left;
+}
+.viewer-md th { background: var(--paper-3); font-weight: 600; }
+/* An image in a Markdown file points at a path on somebody else disk. Nothing
+   fetches it (see ui/markdown.js); this is what its alt text looks like when it
+   stands in for the picture. */
+.viewer-md .md-image {
+  padding: 0.1em 0.45em;
+  border: var(--hairline) dashed var(--rule);
+  border-radius: 4px;
+  color: var(--ink-3);
+  font-size: 0.9em;
+}
+
+/* ---------------------------------------------------------
+   Documents in the viewer (ui/documents.js)
+
+   A document is read into ordinary elements - headings, paragraphs, lists,
+   tables, images - so these are ordinary element rules under one class. The
+   shape of the tree is the same whether it came out of a .docx, an .odt or a
+   .pptx, which is the point of reading them all into the same one.
+
+   Set in the viewer's Markdown measure and face, because a rendered document
+   and a rendered README are the same kind of thing to read and two type ramps
+   for that would be two answers to one question. --------------------------- */
+
+#viewer-body:has(> .doc-flow),
+#viewer-body:has(> .doc-slide),
+#viewer-body:has(> .doc-sheet),
+#viewer-body:has(> .doc-table-wrap),
+#viewer-body:has(> .doc-pages) { place-items: start stretch; }
+
+.doc-flow {
+  max-width: 74ch;
+  color: var(--ink);
+  font-size: var(--t-body);
+  line-height: 1.65;
+}
+.doc-flow > :first-child { margin-top: 0; }
+.doc-flow p { margin: 0 0 0.9em; }
+.doc-flow h1, .doc-flow h2, .doc-flow h3,
+.doc-flow h4, .doc-flow h5, .doc-flow h6 {
+  margin: 1.4em 0 0.45em;
+  font-family: var(--font-display);
+  font-weight: 600;
+  line-height: 1.25;
+}
+.doc-flow h1 { font-size: 1.6em; }
+.doc-flow h2 { font-size: 1.3em; }
+.doc-flow h3 { font-size: 1.12em; }
+.doc-flow h4, .doc-flow h5, .doc-flow h6 { font-size: 1em; }
+.doc-list { margin: 0 0 0.9em; padding-left: 1.5em; }
+.doc-list li { margin: 0.2em 0; }
+.doc-quote {
+  padding-left: 1em;
+  border-left: 3px solid var(--rule);
+  color: var(--ink-2);
+}
+/* A link out of a document is shown and not offered: an address inside a file
+   somebody sent is the last thing this app should make one click away. The words
+   are all there; the underline says it was a link where it came from. */
+.doc-link { text-decoration: underline; text-decoration-style: dotted; }
+.doc-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.8em 0;
+  border-radius: var(--leaf);
+}
+.doc-missing { color: var(--ink-3); font-style: italic; }
+
+/* A slide and a sheet are the same object: a named part of a longer document,
+   with a rule above the name so the parts read as parts. */
+.doc-slide, .doc-sheet { margin: 0 0 28px; }
+.doc-part {
+  margin: 0 0 10px;
+  padding-bottom: 6px;
+  border-bottom: var(--hairline) solid var(--rule-2);
+  color: var(--ink-3);
+  font-family: var(--font-display);
+  font-size: var(--t-small);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* A table scrolls inside its own box rather than widening the page - a
+   spreadsheet is as wide as it is, and the alternative is a dialog with a
+   horizontal scrollbar under everything else in it. */
+.doc-table-wrap { max-width: 100%; overflow-x: auto; margin: 0 0 1em; }
+.doc-table {
+  border-collapse: collapse;
+  font-size: var(--t-small);
+  white-space: nowrap;
+}
+.doc-table th, .doc-table td {
+  padding: 5px 10px;
+  border: var(--hairline) solid var(--rule-2);
+  text-align: left;
+}
+.doc-table th { background: var(--paper-3); font-weight: 600; }
+
+/* Pages - a comic's, a PDF's - in one column, full width, the way a phone reads
+   one. A canvas needs the explicit height:auto as much as an image does: it has
+   intrinsic pixel dimensions and would otherwise be drawn at them. */
+.doc-pages { display: flex; flex-direction: column; gap: 10px; align-items: center; }
+.doc-page {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--leaf);
+  background: #fff;
+  box-shadow: var(--shadow-1);
+}
+
+/* Ask for the next batch. Centred under the pages, styled as the quiet button it
+   is - it is a continuation and not an action. */
+.viewer-more {
+  display: block;
+  margin: 14px auto 0;
+  padding: 8px 18px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper-card);
+  color: var(--ink-2);
+  font-size: var(--t-small);
+  cursor: pointer;
+}
+.viewer-more:hover { background: var(--paper-2); color: var(--accent-deep); }
+.viewer-more:disabled { opacity: 0.5; cursor: default; }
+
+/* An SVG at its own size, or the box's, whichever is smaller. */
+.doc-svg { display: grid; place-items: center; }
+.doc-svg svg { max-width: 100%; max-height: 70dvh; height: auto; }
+
+.viewer-note-sheet {
+  width: min(520px, 100%);
+  box-sizing: border-box;
+  padding: 28px;
+  border-radius: var(--leaf);
+  background: var(--note-1);
+  box-shadow: var(--shadow-1);
+  font-size: var(--t-body);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.viewer-link {
+  max-width: 100%;
+  color: var(--accent-deep);
+  font-size: var(--t-body);
+  word-break: break-all;
+  text-align: center;
+}
+
+.viewer-note {
+  margin: 12px 0 0;
+  color: var(--ink-3);
+  font-size: var(--t-small);
+}
+

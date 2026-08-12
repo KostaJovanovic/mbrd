@@ -62,7 +62,11 @@
      renders as a bare underlined URL - the least clickable thing in a thread.
 
      The URLs here are absolute and must stay that way; a scraper resolves
-     nothing. tools/gen-og.mjs draws the image and says what it must be.
+     nothing. og.png is 1200x630 - the size Facebook, LinkedIn, Slack and
+     Discord all size a large card to, and 1.91:1 is what X crops
+     summary_large_image to. Remake it at that size or every one of them
+     re-crops, and keep the wordmark clear of the edges: a small unfurl and a
+     WhatsApp reply thumbnail both take a centre crop.
 
      og:image:alt is not decoration either. It is the text a screen reader gets
      in place of the card, and several of these platforms show it as a caption
@@ -150,7 +154,14 @@
 <link rel="stylesheet" href="assets/css/items.css">
 <link rel="stylesheet" href="assets/css/sidebar.css">
 <link rel="stylesheet" href="assets/css/chrome.css">
-<link rel="stylesheet" href="assets/css/overlays.css">
+<link rel="stylesheet" href="assets/css/trash.css">
+<link rel="stylesheet" href="assets/css/menu.css">
+<link rel="stylesheet" href="assets/css/library.css">
+<link rel="stylesheet" href="assets/css/status.css">
+<link rel="stylesheet" href="assets/css/dialog.css">
+<link rel="stylesheet" href="assets/css/viewer.css">
+<link rel="stylesheet" href="assets/css/color-picker.css">
+<link rel="stylesheet" href="assets/css/sticker-pad.css">
 <link rel="stylesheet" href="assets/css/mobile.css">
 <link rel="stylesheet" href="assets/css/quality.css">
 <script>
@@ -219,7 +230,7 @@
     #splash { display: none !important; }
     /* Sized and coloured from tokens.css, which has already loaded, so this
        reads as the app rather than as a browser default. Inline because it is
-       the only thing on the page that uses it and a tenth stylesheet would have
+       the only thing on the page that uses it and another stylesheet would have
        to be added to SHELL in sw.js to buy nothing. */
     #nojs {
       position: fixed;
