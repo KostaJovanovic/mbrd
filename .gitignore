@@ -25,6 +25,15 @@ node_modules/
 # Tool output: code-graph dumps, including session transcripts.
 graphify-out/
 
+# The dev bundle's source map. `npm run dev` writes it and devtools reads it;
+# `npm run build` does not emit one at all, so nothing that ships refers to it.
+# Ignored rather than committed because it is 2.9MB that changes on every build,
+# which is a repository growing by a browser convenience nobody reviews. The
+# sources themselves still ship beside the bundle, so the deployed app is still
+# readable - one step further away than it was, which is the trade the bundle
+# was costed at.
+web/assets/app.js.map
+
 # Local tunnel binary - a 52MB vendored exe, not source.
 cloudflared.exe
 
