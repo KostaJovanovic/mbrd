@@ -5,7 +5,7 @@ Guidance for Claude Code (claude.ai/code) working in this repository.
 ## Read these first
 
 - **[`research/docs/architecture.md`](research/docs/architecture.md)** — the canonical description
-  of how the app is put together: the layering graph, `state.js` as the only
+  of how the app is put together: the layering graph, `state.ts` as the only
   door, the command surface, coordinates and culling, the two layouts, assets
   and persistence, the stylesheet order, and the invariants the tests enforce.
   It is the single source of truth; this file does not repeat it.
@@ -34,7 +34,7 @@ npm test                          # node --test over tests/ — no install, no d
 node --test tests/state-history.test.js                            # one file
 node --test --test-name-pattern "undo" tests/state-history.test.js # one test
 python tools/serve.py [port]      # dev server on 6273; server.bat is the Windows launcher
-node tools/gen-formats.mjs [path-to-file-analyser]   # regenerate import/formats.js
+node tools/gen-formats.mjs [path-to-file-analyser]   # regenerate import/formats.ts
 save.bat                          # bump version stamps, commit, optionally push
 ```
 
@@ -87,55 +87,66 @@ error rather than becoming a broken runner.
   commit and `tests/notfound.test.js` fails on a single differing byte; the
   setting that makes the file mean anything is `assets.not_found_handling` in
   `wrangler.jsonc`.
-- **Do not hand-edit `web/assets/js/import/formats.js` or
+- **Do not hand-edit `web/assets/js/import/formats.ts` or
   `web/assets/stickers.svg`.** Both are generated — `tools/gen-formats.mjs` and
   `tools/gen-stickers.mjs`. The sticker sprite is vendored Phosphor art at a
   pinned revision; the shapes it carries are chosen in the generator's own
   `SHAPES` table, and everything *about* them (names, categories, default
-  tints) is hand-written in `web/assets/js/stickers/catalogue.js`, which is not
+  tints) is hand-written in `web/assets/js/stickers/catalogue.ts`, which is not
   generated. Adding a shape is one entry in each, then re-run the generator.
-- **Do not split `canvas/input.js`.** One pipeline, exactly one active gesture.
+- **Do not split `canvas/input.ts`.** One pipeline, exactly one active gesture.
 - **A new module must not touch `document` at import time** — export an
   `init*()`. Exactly three modules are exempt and `tests/imports.test.js` lists
   them.
-- **A new user-facing action is an entry in `cmds`** (`commands.js`), not a
-  second event listener. A new setting is one entry in `ui/settings-schema.js`.
+- **A new user-facing action is an entry in `cmds`** (`commands.ts`), not a
+  second event listener. A new setting is one entry in `ui/settings-schema.ts`.
   A new toolbar tool is a `<button data-cmd>` in `index.html` plus that entry.
   A hover flyout on one of those buttons is one entry in `FLYOUTS`
-  (`ui/flyout.js`) — never a second menu implementation; `ui/menu.js` renders
+  (`ui/flyout.ts`) — never a second menu implementation; `ui/menu.ts` renders
   every menu in the app, and `openAnchored()` is how a non-cursor one is opened.
   A new file type is a branch in `classify()` plus an entry in `RENDERERS`,
-  both in `canvas/renderers.js`. A new arrangement is a pure
-  `(items, opts) => [{x, y}]` in `arrange/arrangements.js`.
+  both in `canvas/renderers.ts`. A new arrangement is a pure
+  `(items, opts) => [{x, y}]` in `arrange/arrangements.ts`.
 - **Icons are `<symbol>`s in `web/assets/icons.svg`, reached by name** —
   `<use href="assets/icons.svg#i-note">`. A misspelled id fails silently: no
   console warning, no failed request, just a hole where the icon was.
   `tests/icons.test.js` checks the references against the sprite and the sprite
   against the references.
-- **`state.js` is the only door, and it is being split downward.** The base
-  layer under it — `board-store.js`, `board-model.js`, `history.js`,
-  `sticky.js`, `fences.js`, `layout.js`, `stacking.js`, `web-graph.js`,
-  `web-route.js`, and the five the last split added (`board-schema.js`,
-  `onboarding.js`, `clipboard.js`, `connections.js`, `trash.js`) — may never
-  import `state.js` back. That one-way edge is the
-  whole reason they are separate files: a concern lifted out of `state.js` only
-  stays out if what it stands on is lower than what it left.
+- **`state.ts` is the only door, and it is being split downward.** The base
+  layer under it — `board-store.ts`, `board-model.ts`, `history.ts`,
+  `sticky.ts`, `fences.ts`, `layout.ts`, `stacking.ts`, `web-graph.ts`,
+  `web-route.ts`, the five the state split added (`board-schema.ts`,
+  `onboarding.ts`, `clipboard.ts`, `connections.ts`, `trash.ts`) and the four
+  the `util.ts` split added (`crypto.ts`, `prefs.ts`, `notify.ts`,
+  `media/transport.ts`) — may never import `state.ts` back. That one-way edge is
+  the whole reason they are separate files: a concern lifted out of `state.ts`
+  only stays out if what it stands on is lower than what it left.
+- **`notify.ts` is a channel, not a renderer, and that is the point.** Five
+  modules the layering forbids from importing `ui/` still need to say something
+  to the person using the app — `state.ts`, `clipboard.ts`, `connections.ts` and
+  the two in `storage/`. So `toast()` and `busy()` live at the bottom of the
+  graph with no DOM in them at all, and `ui/overlays.ts` hands them an
+  implementation through `setOverlays()`, the same shape as
+  `setAssetNameLookup()`. Unwired, a toast is a no-op and `busy()` returns a
+  frozen job that does nothing — which is what makes every one of those modules
+  still loadable in a test with no browser. `main.ts` calls `initOverlays()`
+  first, before the viewport exists.
   `tests/layers.test.js` holds the list.
 - **The hand-written binary readers parse files the app did not write.**
-  `storage/zip.js`, `mesh.js`, `import/artwork.js`, `import/preview.js`,
-  `import/document.js` and `optimize/opus.js` all bounds-check before they
+  `storage/zip.ts`, `mesh.ts`, `import/artwork.ts`, `import/preview.ts`,
+  `import/document.ts` and `optimize/opus.ts` all bounds-check before they
   allocate, and their tests are largely about malformed input. A change near
   them wants a test that feeds it something broken.
 - **Nothing that reads a foreign document may touch `innerHTML`.**
-  `ui/markdown.js` and `ui/documents.js` turn somebody else's file into a
+  `ui/markdown.ts` and `ui/documents.ts` turn somebody else's file into a
   document tree, and both do it entirely through `createElement` and
   `createTextNode` — so there is no escaping to get right, by construction. Raw
   markup in a source file shows as the characters it is made of. The one
-  exception is SVG in `ui/documents.js`, which is parsed detached and walked
+  exception is SVG in `ui/documents.ts`, which is parsed detached and walked
   against an **allow-list** of elements and attributes; a block-list there would
   be a promise that the author thought of everything.
 - **A new thing the viewer can show is one entry in `VIEWS`**
-  (`ui/viewer.js`), the way a new card type is one entry in `RENDERERS`. The
+  (`ui/viewer.ts`), the way a new card type is one entry in `RENDERERS`. The
   dialog, the head, the scroller and the teardown are already there — and the
   teardown is load-bearing: a `<video>` left mounted keeps its decoder, a
   document's blob URLs are this module's to revoke, and a parsed PDF holds the

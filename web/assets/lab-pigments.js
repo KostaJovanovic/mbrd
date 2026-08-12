@@ -1,3 +1,6 @@
+// web/assets/js/util.ts
+var clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
+
 // web/assets/js/layout-settings.ts
 var PALETTE_TOKENS = [
   "--paper",
@@ -79,7 +82,6 @@ var apart = (a, b) => {
   const d = Math.abs(a - b) % 360;
   return Math.min(d, 360 - d);
 };
-var clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 var BINS = 72;
 var NEUTRAL_C = 0.045;
 var NEUTRAL_FAINT = 0.018;
