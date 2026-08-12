@@ -55,6 +55,8 @@ let bodyEl = null;
 
 /** The blob URLs the open document minted, if this viewing is showing one. */
 let releaseDoc = null;
+/** The open PDF, if this viewing is one. Parsed documents are not small. */
+let pdfDoc = null;
 
 export function initViewer() {
   dlg = document.getElementById('viewer');
@@ -103,9 +105,14 @@ export function canView(id) {
  * everything the board draws natively.
  */
 function viewFor(item) {
-  if (item.asset?.hash && canReadDocument(item.meta?.ext)) return documentView;
+  if (!item.asset?.hash) return VIEWS[item.type] || null;
+  if (PDF_EXTS.has(item.meta?.ext)) return pdfView;
+  if (canReadDocument(item.meta?.ext)) return documentView;
   return VIEWS[item.type] || null;
 }
+
+/** The two extensions the PDF renderer opens. See isPdf() in import/drop.js. */
+const PDF_EXTS = new Set(['pdf', 'ai']);
 
 export function openViewer(id) {
   const item = byId(id);
@@ -150,6 +157,11 @@ function teardown() {
   // a hundred decoded images for the life of the tab.
   releaseDoc?.();
   releaseDoc = null;
+  // And the parsed PDF, which holds the whole file plus its object graph. The
+  // body is emptied a line below, which is also what stops a batch still running
+  // - it checks that the page list is still connected between pages.
+  pdfDoc?.destroy();
+  pdfDoc = null;
   bodyEl?.replaceChildren();
   delete dlg.dataset.type;
 }
@@ -317,6 +329,81 @@ function documentView(item, host) {
       // the failure came from somewhere with nothing to say.
       waiting.textContent = err?.message || 'That file could not be read';
     });
+}
+
+/** How many pages of a PDF are rendered before it waits to be asked for more. */
+const PDF_BATCH = 5;
+
+/**
+ * A PDF, page by page.
+ *
+ * The one view here that reaches the network, and the reason it is the only one:
+ * a PDF is a page-description language and rendering it is an interpreter, which
+ * is the app's first outside-code dependency (import/pdf.js, fetched on demand
+ * from a CDN). Offline or CDN down, this says so and the file is still what it
+ * was - which is the same degradation the import path takes.
+ *
+ * In batches, because a two-hundred-page report rendered eagerly is two hundred
+ * canvases and a tab that stops answering. Five is about a screenful and a half
+ * on a desktop; the button below asks for the next five.
+ */
+function pdfView(item, host) {
+  const asset = getAsset(item.asset?.hash);
+  if (!asset) return void host.append(nothing('That file is not in this board'));
+  const waiting = nothing('Opening it…');
+  host.append(waiting);
+
+  const pages = document.createElement('div');
+  pages.className = 'doc-pages';
+
+  import('../import/pdf.js').then(({ openPdf }) => openPdf(asset.blob)).then(async doc => {
+    if (!waiting.isConnected) { doc.destroy(); return; }
+    pdfDoc = doc;
+    waiting.replaceWith(pages);
+    // The width the page is drawn at, taken from the box it is going into, at
+    // device resolution so it is sharp on a phone and on a retina display.
+    const width = Math.max(320, pages.clientWidth || bodyEl.clientWidth || 800)
+      * Math.min(2, globalThis.devicePixelRatio || 1);
+    let shown = 0;
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'viewer-more';
+
+    const batch = async () => {
+      more.disabled = true;
+      const to = Math.min(doc.pages, shown + PDF_BATCH);
+      for (let n = shown + 1; n <= to; n++) {
+        // Checked every page, not once: closing the dialog part way through a
+        // long document must stop the work rather than finish it into a node
+        // nobody will see.
+        if (!pages.isConnected) return;
+        try {
+          const canvas = await doc.render(n, width);
+          canvas.className = 'doc-page';
+          pages.append(canvas);
+        } catch {
+          const bad = document.createElement('p');
+          bad.className = 'doc-missing';
+          bad.textContent = `Page ${n} could not be drawn.`;
+          pages.append(bad);
+        }
+      }
+      shown = to;
+      more.disabled = false;
+      if (shown >= doc.pages) more.remove();
+      else {
+        more.textContent = `Show more (${shown} of ${doc.pages})`;
+        pages.after(more);
+      }
+    };
+
+    more.addEventListener('click', batch);
+    await batch();
+  }).catch(() => {
+    if (!waiting.isConnected) return;
+    waiting.textContent = 'That PDF could not be opened. It needs the page renderer, '
+      + 'which is fetched the first time one is used - so this may be an offline session.';
+  });
 }
 
 /** A card is not always openable, and saying so beats an empty sheet. */

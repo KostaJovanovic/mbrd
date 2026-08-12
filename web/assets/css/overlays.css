@@ -1706,9 +1706,33 @@
 }
 .doc-table th { background: var(--paper-3); font-weight: 600; }
 
-/* Comic pages: one column, full width, the way a phone reads one. */
+/* Pages - a comic's, a PDF's - in one column, full width, the way a phone reads
+   one. A canvas needs the explicit height:auto as much as an image does: it has
+   intrinsic pixel dimensions and would otherwise be drawn at them. */
 .doc-pages { display: flex; flex-direction: column; gap: 10px; align-items: center; }
-.doc-page { max-width: 100%; height: auto; border-radius: var(--leaf); }
+.doc-page {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--leaf);
+  background: #fff;
+  box-shadow: var(--shadow-1);
+}
+
+/* Ask for the next batch. Centred under the pages, styled as the quiet button it
+   is - it is a continuation and not an action. */
+.viewer-more {
+  display: block;
+  margin: 14px auto 0;
+  padding: 8px 18px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper-card);
+  color: var(--ink-2);
+  font-size: var(--t-small);
+  cursor: pointer;
+}
+.viewer-more:hover { background: var(--paper-2); color: var(--accent-deep); }
+.viewer-more:disabled { opacity: 0.5; cursor: default; }
 
 /* An SVG at its own size, or the box's, whichever is smaller. */
 .doc-svg { display: grid; place-items: center; }

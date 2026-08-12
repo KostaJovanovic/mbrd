@@ -66,6 +66,51 @@ async function toBlob(canvas, type, quality) {
 }
 
 /**
+ * A PDF opened for reading, page by page: `{ pages, render(n, scale) }`.
+ *
+ * The viewer's half of this module, and the reason it is a separate entry point
+ * from firstPageRaster() below: that one wants a single raster and closes the
+ * document again, while this one is opened, paged through and then destroyed by
+ * the caller. Sharing them would mean either re-parsing the file per page or
+ * leaving a document handle open after a thumbnail.
+ *
+ * `render` hands back a canvas rather than a blob - it is going straight into
+ * the page, so there is nothing to encode and nothing to make a URL for. The
+ * caller destroys the document when it is finished; failing to is a parsed PDF
+ * held for the life of the tab.
+ *
+ * Throws where firstPageRaster() returns null, because the two failures mean
+ * different things: a thumbnail that cannot be made is a card without one, and a
+ * document that cannot be opened is a viewer with something to say.
+ */
+export async function openPdf(file) {
+  const pdfjs = await loadPdfjs();
+  const data = new Uint8Array(await file.arrayBuffer());
+  const doc = await pdfjs.getDocument({ data, disableAutoFetch: true, disableStream: true }).promise;
+  return {
+    pages: doc.numPages,
+    destroy: () => { try { doc.destroy?.(); } catch { /* nothing to clean up */ } },
+    async render(n, width) {
+      const page = await doc.getPage(n);
+      const base = page.getViewport({ scale: 1 });
+      // Scaled to the box it is going into rather than to a fixed target: a
+      // viewer is as wide as the window and a thumbnail is not, so the same
+      // ceiling would either blur one or waste memory on the other. Capped at 3
+      // so a business card does not become a wall.
+      const scale = clamp(width / base.width, 0.1, 3);
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.ceil(viewport.width));
+      canvas.height = Math.max(1, Math.ceil(viewport.height));
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('This browser would not give us a canvas');
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      return canvas;
+    },
+  };
+}
+
+/**
  * Page one of `file` as `{ blob, w, h }`, or null.
  *
  * The page is drawn at whatever scale brings its long edge near TARGET, capped
