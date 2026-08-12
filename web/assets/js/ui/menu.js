@@ -667,14 +667,26 @@ function render(entries, clientX, clientY, opts = {}) {
   const pad = 8;
   let x, y;
   if (opts.anchor) {
-    // Hung under a button, so the two rules the cursor case uses are both
-    // wrong. Horizontally it *clamps* rather than flips - a flyout that jumped
-    // to the far side of its button would leave the pointer outside itself and
-    // close again on the way in. Vertically it does not flip at all: the bar is
-    // pinned to the top of the window, so below is the only side there is, and
-    // a panel too tall for what is left scrolls (max-height, overlays.css).
+    // Hung off a button, so the horizontal rule the cursor case uses is wrong:
+    // it *clamps* rather than flips, because a flyout that jumped to the far
+    // side of its button would leave the pointer outside itself and close again
+    // on the way in.
     x = Math.min(Math.max(pad, clientX), Math.max(pad, innerWidth - width - pad));
-    y = clientY;
+    // Vertically it hangs below and flips above when below will not fit.
+    //
+    // It used to hang below unconditionally, on the argument that the toolbar is
+    // pinned to the top of the window so below is the only side there is. That
+    // was true while the desktop bar's three hover flyouts were the only
+    // callers. The phone's More button is on a bar pinned to the *bottom*, and
+    // a menu hung under it went off the screen - the third row was simply not
+    // there. The panel is adjacent to its button either way, so the pointer-path
+    // argument above is untouched by this.
+    //
+    // The anchor's own box, not clientY, is what it flips about: above means
+    // above the *button*, and hanging a panel over the thing it belongs to is
+    // how you lose track of which one it belongs to.
+    const above = opts.anchor.top - height - pad;
+    y = (clientY + height + pad > innerHeight && above >= pad) ? above : clientY;
   } else {
     // Flip rather than clamp when there isn't room: a menu pinned to the edge
     // ends up under the cursor, and the first entry gets clicked by accident.
