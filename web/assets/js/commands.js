@@ -49,7 +49,7 @@ import { ask } from './ui/dialog.js';
 // moves that change the mark without redrawing it - see pickConnection.
 import { syncConnChip } from './ui/conn-chip.js';
 import { pickColor } from './ui/color-picker.js';
-import { exportBoard, openBoard, newBoard, shareBoard, canShareBoard, saveBlob } from './storage/storage.js';
+import { exportBoard, openBoard, newBoard, shareBoard, saveBlob } from './storage/storage.js';
 import { boardPng, boardPdf } from './ui/snapshot.js';
 import { openLibrary } from './ui/library.js';
 import { getAsset, assetURL } from './storage/assets.js';

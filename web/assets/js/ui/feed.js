@@ -374,7 +374,7 @@ function wireOpen(t) {
 const OPENS = new Set(['image', 'text', 'note', 'file']);
 
 function fillTile(t) {
-  const { el, item, kind } = t;
+  const { el, kind } = t;
   el.replaceChildren();
   if (kind === 'image') return fillImage(t);
   if (kind === 'video') return fillVideo(t);
