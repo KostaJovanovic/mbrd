@@ -13,20 +13,24 @@ more specific than anything below.
 
 ## The shape of the thing
 
-There is no bundler, no build step and no runtime dependency. The browser loads
-the ES modules under `web/` directly, so an edit is one refresh away.
+There is no runtime dependency and no framework. There is a build step: the app
+is TypeScript, and `index.html` loads `assets/app.js`, one bundle esbuild
+writes from `main.ts`. `npm run dev` rebuilds it on save. The sources ship
+beside it; no source map does.
+
 `package.json` declares no runtime dependencies; its three devDependencies are
-for the optional lint, typecheck and end-to-end runs only, and `npm test` needs
-none of them.
-Nothing in `tests/` is served.
+for the lint, the typecheck and the build. `npm test` needs none of them and no
+install at all — Node strips types natively from 22.18. Nothing in `tests/` is
+served.
 
 ```
 web/                     the application, and the document root
   index.html             head, an empty tab strip, an empty panel body, dialogs
   sw.js                  the offline shell
   lab.html               a bench for the palette extractor, deliberately not cached
-  assets/css/            eight subsystem files, in load order (= the cascade)
-  assets/js/             the app, split by responsibility
+  assets/css/            fifteen subsystem files, in load order (= the cascade)
+  assets/app.js          the built bundle - what the page actually loads
+  assets/js/             the app in TypeScript, split by responsibility
 tools/                   serve.py + qr.py (dev server and its terminal QR),
                          gen-formats.mjs, gen-stickers.mjs, preset-oklch.mjs
 server.bat, save.bat     the Windows launcher, and the release stamper
@@ -1463,11 +1467,18 @@ project's whole shape.
 And the declarative layer a framework would sell already exists here:
 `ui/settings-schema.js` plus `ui/panel.js` is data-driven UI with a test on it.
 
-The one real gap — no compile-time safety — is closed with JSDoc types and
-`checkJs`: `npm run typecheck` runs `tsc --noEmit` over plain JavaScript, no
-TypeScript ships, nothing is emitted and there is still no build step.
-`jsconfig.json` scopes it to the pure layer and lists what is in; widening that
-`include` is how it grows, a module at a time. It paid for itself on the first
+The one real gap — no compile-time safety — was closed with JSDoc and `checkJs`
+over nine files, and then closed properly: the app is TypeScript. `npm run
+typecheck` runs `tsc --noEmit` under `strict`, nothing is emitted, and no
+TypeScript ships — esbuild builds the bundle, tsc only checks.
+
+The types are not all written yet, and the ledger is explicit rather than
+implied. A mechanical rename moved 104 modules in one step and left 4,935
+errors under `strict`; the unannotated ones carry `// @ts-nocheck` and
+`tests/ts-debt.test.js` holds the count with a ceiling that may only fall. So
+what the typecheck asserts is *everything not on that list is clean under
+strict* — true today, truer each time a module is converted. Converting one is
+deleting its pragma and lowering the ceiling. It paid for itself on the first
 run by finding `web-graph.js` calling `corners()` and `pointInItem()` without
 importing either — a `ReferenceError` out of `threads()` that stopped the
 relationship web drawing past its spanning tree, silently, for the life of the

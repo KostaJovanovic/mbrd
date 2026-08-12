@@ -1,8 +1,10 @@
 # Contributing to mbrd
 
-mbrd has no dependencies, no bundler and no build step. The browser loads the ES
-modules under `web/` directly, so an edit is one refresh away. That is the
-project's one real property, and most of what follows exists to keep it true.
+mbrd has no runtime dependencies and ships no framework. It is written in
+TypeScript and builds to one bundle: `npm run dev` watches and rebuilds, so an
+edit is a save and a refresh. The property most of what follows exists to keep
+true is the one underneath that — **`npm test` needs no install**, on a clean
+clone, with nothing fetched.
 
 Please read [`research/docs/architecture.md`](research/docs/architecture.md) before a first
 change. It is the one canonical description of how the app is put together; this
