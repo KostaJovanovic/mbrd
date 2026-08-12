@@ -994,6 +994,41 @@
   </div>
 </dialog>
 
+<!-- The viewer: one item, as big as the window will allow.
+
+     A board is a wall of things at a glance, and until this there was no way to
+     look at any one of them properly. A photograph was however many pixels its
+     card happened to be, a clip had no full-screen, and a text file showed its
+     first screenful and stopped. On the Feed - which is the whole board on a
+     phone - a tap did nothing at all for most types.
+
+     One surface for every type rather than one per type: ui/viewer.js dispatches
+     on the item and fills the body, the way canvas/renderers.js dispatches on a
+     card. A new type is an entry in that table and nothing here changes.
+
+     A real <dialog>, opened with showModal(), for the reasons #ask is one - the
+     top layer, the backdrop and Escape all come with it, and canvas/input.js
+     already stands the board shortcuts down while a modal is up.
+
+     The head does not scroll and the body does: a long file scrolls under a name
+     that stays. -->
+<dialog id="viewer" aria-labelledby="viewer-title">
+  <header id="viewer-head">
+    <div id="viewer-names">
+      <h2 id="viewer-title"></h2>
+      <p id="viewer-meta"></p>
+    </div>
+    <button type="button" id="viewer-close" aria-label="Close">
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>
+    </button>
+  </header>
+  <!-- tabindex so the scroller can hold focus. A dialog gives focus to the first
+       focusable thing in it, which would be the close button - and a focused
+       button swallows the Space that scrolls a long file, which is the first
+       thing anybody does in here. -->
+  <div id="viewer-body" tabindex="-1"></div>
+</dialog>
+
 <!-- The credits sheet the footer opens. A real <dialog> for the same four
      reasons #ask is one, and written out here rather than built by ui/credits.js
      because two names are not data: nothing about this list is decided at run

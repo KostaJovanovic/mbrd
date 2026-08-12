@@ -1395,6 +1395,163 @@
 }
 
 /* ---------------------------------------------------------
+   The viewer (openViewer, ui/viewer.js)
+   --------------------------------------------------------- */
+
+/* One item, as big as the window will allow. Not sized like #ask and #credits,
+   which are questions and fit their words: this is a thing being looked at, so
+   it takes the window less a margin and lets what is in it decide the rest.
+
+   A column with a fixed head and a scrolling body. The head does not move, so a
+   long file scrolls under a name that stays put and the way out is always in the
+   same corner. */
+#viewer {
+  width: min(1100px, calc(100vw - 32px));
+  height: min(860px, calc(100dvh - 32px));
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--ogee);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
+  color: var(--ink);
+  overflow: hidden;
+  /* A <dialog> in the top layer is centred by its own margin:auto, which the
+     reset's `margin: 0` takes away. */
+  margin: auto;
+  animation: ask-in var(--dur-base) var(--ease-back);
+}
+/* The layout belongs to the open state - a flat `display: flex` outranks the UA
+   stylesheet's `display: none` and leaves a closed dialog on screen. Same rule
+   #compose learned the hard way. */
+#viewer[open] { display: flex; flex-direction: column; }
+#viewer::backdrop {
+  background: color-mix(in srgb, var(--ink) 42%, transparent);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+
+#viewer-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px 12px 20px;
+  border-bottom: var(--hairline) solid var(--rule-2);
+}
+#viewer-names { min-width: 0; flex: 1 1 auto; }
+#viewer-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--t-body);
+  font-weight: 600;
+  /* One line, ellipsised. A filename can be any length and a head that wrapped
+     to three lines would take the room off the thing being looked at. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#viewer-meta {
+  margin: 2px 0 0;
+  color: var(--ink-3);
+  font-size: var(--t-tiny);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+#viewer-meta:empty { display: none; }
+#viewer-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px; height: 32px;
+  border: 0;
+  border-radius: var(--leaf);
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+#viewer-close:hover { background: var(--paper-2); color: var(--accent-deep); }
+#viewer-close svg { width: 15px; height: 15px; }
+
+/* The body. One scroller, and the only one in here.
+
+   `display: grid; place-items: center` is what centres a picture smaller than
+   the window without stretching one larger than it - the media rules below cap
+   themselves at 100% of this box and keep their aspect. Text overrides the
+   centring, because a page of words starts at the top left. */
+#viewer-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  display: grid;
+  place-items: center;
+  padding: 16px 20px 20px;
+  background: var(--paper-2);
+}
+#viewer-body:focus { outline: none; }
+
+.viewer-media {
+  max-width: 100%;
+  max-height: 100%;
+  /* A tall picture in a short window and a wide one in a tall window are the
+     same rule from either side: fit the box, keep the shape. */
+  object-fit: contain;
+  border-radius: var(--leaf);
+  background: var(--paper-3);
+}
+.viewer-cover {
+  max-width: min(420px, 100%);
+  border-radius: var(--leaf);
+  box-shadow: var(--shadow-1);
+}
+.viewer-audio { width: min(640px, 100%); margin-top: 16px; }
+
+/* Words: top-left, monospaced, the whole file. The grid centring above is undone
+   per-item rather than turned off, because most of what this dialog shows is a
+   picture and centring is right for those. */
+#viewer-body:has(> .viewer-text) { place-items: start stretch; }
+.viewer-text {
+  margin: 0;
+  max-width: 88ch;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.viewer-note-sheet {
+  width: min(520px, 100%);
+  box-sizing: border-box;
+  padding: 28px;
+  border-radius: var(--leaf);
+  background: var(--note-1);
+  box-shadow: var(--shadow-1);
+  font-size: var(--t-body);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.viewer-link {
+  max-width: 100%;
+  color: var(--accent-deep);
+  font-size: var(--t-body);
+  word-break: break-all;
+  text-align: center;
+}
+
+.viewer-note {
+  margin: 12px 0 0;
+  color: var(--ink-3);
+  font-size: var(--t-small);
+}
+
+/* ---------------------------------------------------------
    Choosing a colour (pickColor, ui/color-picker.js)
    --------------------------------------------------------- */
 

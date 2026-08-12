@@ -1666,6 +1666,12 @@ export function initInput(vp, cmds) {
     // A double-click on the title card renames the board inline, the same as its
     // T button - the one gesture besides the note edit that survives here.
     else if (byId(id)?.type === 'title') cmds.editTitleText?.();
+    // And on anything else it opens the item full size. A double-click on a file
+    // is what every file manager in existence means by "open it", and until the
+    // viewer existed this gesture had nothing to do on a photograph - which is
+    // most of what a board holds. The note and the title card keep theirs: both
+    // are things you write on, and editing is the nearer meaning of the two.
+    else cmds.openViewer?.(id);
   });
 
   // ---- keyboard ---------------------------------------------------------
