@@ -771,6 +771,17 @@
       <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-link"/></svg>
       <span>Link</span>
     </button>
+    <!-- The fifth creation tool, and the only one that opens a chooser rather
+         than making something at once: there is no default sticker the way
+         there is a default note, because which shape it is *is* the whole of
+         the decision. So the button opens the pad and the pad places them. On
+         both layouts, unlike Join, Arrange and Find - a phone board is exactly
+         where a tap-to-place mark is worth having, and it is the one creation
+         tool that works there without a spatial map. -->
+    <button type="button" data-cmd="stickers" title="Stickers">
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-sticker"/></svg>
+      <span>Stickers</span>
+    </button>
     <!-- The one tool here that is a mode, and the only one in the app. It stays
          pressed while it is armed - aria-pressed, the way #zoom-lock marks a
          held zoom - and Escape always puts it down. Desktop only: a phone board
@@ -1003,6 +1014,58 @@
       </div>
     </li>
   </ul>
+  <!-- What the app is standing on, folded away.
+       A <details> rather than a button and a class, which keeps ui/credits.js
+       at two listeners and no builder: the open/closed state is the element's
+       own, the keyboard and the screen reader already know what a summary is,
+       and there is nothing here for a script to remember. Shut by default
+       because the two names above are what somebody opened this for.
+       The list is written out rather than generated from THIRD-PARTY.md - that
+       file is for the licence audit and says which files each notice covers;
+       this is for a person, and says what was borrowed and why. They are
+       checked against each other by tests/credits.test.js so the short version
+       cannot quietly fall behind the long one. -->
+  <details class="credits-more">
+    <summary>What this is built on</summary>
+    <p class="credits-note">
+      No frameworks, no build step, and nothing fetched at run time — the
+      browser loads the source directly. Three devDependencies exist for the
+      optional lint, typecheck and end-to-end runs; none of them ships.
+      What <em>does</em> ship that somebody else made:
+    </p>
+    <ul class="credits-deps">
+      <li>
+        <!-- The repository rather than phosphoricons.com, and the same for the
+             three faces below: every link in this list goes to the source
+             THIRD-PARTY.md names, so the two lists can be checked against each
+             other by string rather than by judgement. -->
+        <a href="https://github.com/phosphor-icons/core" target="_blank" rel="noopener noreferrer">Phosphor Icons</a>
+        <span class="credits-lic">MIT</span>
+        <span class="credits-why">The sticker shapes. Vendored at a pinned
+          revision, two weights, paint rewritten to this board&rsquo;s paper and ink.</span>
+      </li>
+      <li>
+        <a href="https://github.com/valjdakosta/file-analyser" target="_blank" rel="noopener noreferrer">file&#8209;analyser</a>
+        <span class="credits-lic">borrowed data</span>
+        <span class="credits-why">Its catalogue of 1,359 file extensions, so a
+          dropped <code>.sldprt</code> says &ldquo;SolidWorks&rdquo; and not &ldquo;file&rdquo;.
+          The data, not the code around it.</span>
+      </li>
+      <li>
+        <a href="https://github.com/googlefonts/Playfair" target="_blank" rel="noopener noreferrer">Playfair</a>,
+        <a href="https://github.com/undercasetype/Fraunces" target="_blank" rel="noopener noreferrer">Fraunces</a>,
+        <a href="https://github.com/vercel/geist-font" target="_blank" rel="noopener noreferrer">Geist</a>
+        <span class="credits-lic">OFL 1.1</span>
+        <span class="credits-why">The typefaces, subset to Latin and Latin
+          Extended and otherwise untouched.</span>
+      </li>
+    </ul>
+    <p class="credits-note">
+      Full notices are in <code>THIRD&#8209;PARTY.md</code>, and each licence sits
+      beside the thing it covers. mbrd itself is GPL&#8209;3.0&#8209;or&#8209;later.
+    </p>
+  </details>
+
   <!-- Borrowing #ask's row and its gap: one button, pushed to the end, wearing
        the same dressing every other dialog button in the app wears. -->
   <div class="ask-row">

@@ -4,9 +4,15 @@
 // screen as an Apple-Music-style player: an album header (a mosaic of the board's
 // own covers, the board's name, "N songs, M min", and Play / Shuffle) over a
 // track list you can drag to reorder. The other is a floating window on the
-// Desktop board, opened from the sidebar - draggable and resizable, with a toggle
-// in its title bar between two bodies: a compact transport over a plain list
-// ('player'), and that same album view in miniature ('feed').
+// Desktop board, opened from the sidebar - draggable and resizable, and one body
+// only: a compact transport over a plain list.
+//
+// The window used to be able to wear the album view too, in miniature, which made
+// the same view reachable two ways and made the window's title-bar button a switch
+// between two things it held itself. It is one thing each now: the album view is
+// the lens, the transport is the window, and that button switches *homes* - it
+// hands the board over to the lens, which is the album view at the size it was
+// drawn for. Nothing is lost but the miniature.
 //
 // It owns no <audio>. It drives the shared queue in canvas/audio.js - setQueue,
 // playTrack, toggleShuffle - and the global now-playing bar is the transport, so
@@ -37,6 +43,11 @@ import {
 } from '../canvas/audio.js';
 import { audioTags, coverArt } from '../import/artwork.js';
 import { resetPanels } from './panel-stack.js';
+import { makeWindowDrag, makeWindowResize } from './float-window.js';
+// Which Mobile lens comes up, for the title-bar button's one job. Set before the
+// mode switch, the same order cmds.feed / cmds.playlist use, so entering the
+// Mobile view lands on the lens that was asked for rather than on the last one.
+import { setLens } from './board-view.js';
 
 const NOTE_ICON =
   '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.5 2.5v7.1a2.2 2.2 0 11-1-1.84V4.3l-4.5.98v5.06a2.2 2.2 0 11-1-1.84V3.2z"/></svg>';
@@ -56,12 +67,11 @@ const REPEAT_ONE_ICON =
   '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6V5.2A1.7 1.7 0 0 1 6.2 3.5H12"/><path d="m10.3 1.8 1.9 1.7-1.9 1.7"/><path d="M11.5 10v.8a1.7 1.7 0 0 1-1.7 1.7H4"/><path d="m5.7 14.2-1.9-1.7 1.9-1.7"/><text x="8" y="10.2" font-size="6" fill="currentColor" stroke="none" text-anchor="middle">1</text></svg>';
 const CLOSE_ICON =
   '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>';
-// The window's view toggle wears the face of the view it switches *to*: a grid of
-// tiles for the album/feed view, a stack of rows for the compact player view.
+// The window's title-bar button wears the face of where it sends you: a grid of
+// tiles for the album view. It never wears a second face, because it only ever
+// goes one way - the window is not there to come back to.
 const GRID_ICON =
   '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>';
-const ROWS_ICON =
-  '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="2" y="3" width="12" height="2" rx="1"/><rect x="2" y="7" width="12" height="2" rx="1"/><rect x="2" y="11" width="12" height="2" rx="1"/></svg>';
 // The big play button's own triangle. Bounding box centred on the viewBox, then
 // nudged a touch right (+1 unit) for the optical balance a right-pointing triangle
 // wants in a round button. Vertices (5.25,3.5) (12.75,8) (5.25,12.5); y centres on
@@ -73,11 +83,10 @@ let mobileView = null;    // the Mobile lens
 let windowEl = null;      // the Desktop floating window, or null when closed
 let windowContent = null; // the swappable region under the window's title bar
 let windowView = null;    // the list inside it
-let windowPlayer = null;  // the Desktop window's transport (player view only), or null
-let windowToggle = null;  // the view-toggle button in the window's title bar
-// The window's body: 'player' is the compact transport over a list, 'feed' is the
-// album view (cover, big Play/Shuffle, reorderable list). Remembered across opens.
-let windowMode = 'player';
+let windowPlayer = null;  // the Desktop window's transport, or null when closed
+// The command set, for the one thing the window's title-bar button does that is
+// not about the window: hand the board over to the Mobile view.
+let cmds = null;
 
 /** Every visible header's Play / Shuffle pair, so play state paints in both. */
 const actionGroups = new Set();
@@ -93,6 +102,7 @@ const tagged = new Set();
 let drag = null;
 
 export function initPlaylist(_viewport, _commands, _headerStyle) {
+  cmds = _commands;
   const host = document.getElementById('mobile-playlist');
   if (host) mobileView = createView(host, { reorderable: true, variant: 'lens' });
 
@@ -257,7 +267,7 @@ function makeActions() {
  * 'window') gets no hero here: it carries a real transport instead, built by
  * makeWindowPlayer() and placed above this list. So this only builds the list.
  */
-function createView(container, { reorderable, variant, compactHero }) {
+function createView(container, { reorderable, variant }) {
   container.replaceChildren();
   const rows = new Map();   // id -> { el, item }
   const lens = variant === 'lens';
@@ -269,7 +279,6 @@ function createView(container, { reorderable, variant, compactHero }) {
   let hero = null, cover = null, titleEl = null, metaEl = null, group = null;
   if (lens) {
     hero = div('pl-hero');
-    if (compactHero) hero.classList.add('is-compact');
     cover = div('pl-cover');
     const heroText = div('pl-hero-text');
     titleEl = document.createElement('h2');
@@ -614,24 +623,24 @@ export function openPlayerWindow() {
   const title = div('player-window-title');
   title.textContent = 'Playlist';
   const spacer = div('player-window-spacer');
-  windowToggle = document.createElement('button');
-  windowToggle.type = 'button';
-  windowToggle.className = 'player-window-toggle';
-  windowToggle.addEventListener('click', () => {
-    windowMode = windowMode === 'feed' ? 'player' : 'feed';
-    renderWindowMode();
-  });
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'player-window-toggle';
+  toggle.innerHTML = GRID_ICON;
+  toggle.setAttribute('aria-label', 'Album view');
+  toggle.title = 'Album view';
+  toggle.addEventListener('click', showAlbumView);
   const close = document.createElement('button');
   close.type = 'button';
   close.className = 'player-window-close';
   close.setAttribute('aria-label', 'Close player');
   close.innerHTML = CLOSE_ICON;
   close.addEventListener('click', closePlayerWindow);
-  head.append(title, spacer, windowToggle, close);
+  head.append(title, spacer, toggle, close);
   // The title bar is the grab handle: drag it to move the window around the board.
   makeWindowDrag(windowEl, head);
 
-  // The body under the title bar is swapped whole when the view toggles.
+  // One body, built once. It used to be swapped whole by a view toggle.
   windowContent = div('player-window-content');
   windowEl.append(head, windowContent);
   document.body.appendChild(windowEl);
@@ -642,7 +651,7 @@ export function openPlayerWindow() {
   windowEl.appendChild(resize);
   makeWindowResize(windowEl, resize);
 
-  renderWindowMode();
+  renderWindowBody();
 
   // Out of the scaled-down state and up into place, next frame - it needs two
   // computed styles to run between for the transition to take (see ui/nowplaying.js
@@ -651,48 +660,43 @@ export function openPlayerWindow() {
 }
 
 /**
- * Build the window's body for the current mode, tearing down the other one first.
- * 'player' is the compact transport (cover, seek, five controls) over a plain list;
- * 'feed' is the album view - the same hero the Mobile lens carries, compact, over a
- * reorderable list, with the now-playing bar as its transport. The toggle button in
- * the title bar flips between them and this rebuilds.
+ * Build the window's body: the compact transport (cover, seek, five controls) over
+ * a plain list. The only body there is - see the note at the top of this file.
+ *
+ * Still its own function rather than a run of lines inside openPlayerWindow,
+ * because it tears down what it replaces first: it is the one place that owns the
+ * pair of things the window holds, and a rebuild that leaked a windowPlayer would
+ * leave a dead transport bound to the shared queue.
  */
-function renderWindowMode() {
+function renderWindowBody() {
   if (!windowEl) return;
   windowPlayer?.destroy();
   windowPlayer = null;
   windowView?.destroy();
   windowView = null;
   windowContent.replaceChildren();
-  windowEl.classList.toggle('is-feed', windowMode === 'feed');
 
-  if (windowMode === 'feed') {
-    const scroller = div('player-window-feed');
-    windowContent.appendChild(scroller);
-    windowView = createView(scroller, { reorderable: true, variant: 'lens', compactHero: true });
-  } else {
-    windowPlayer = makeWindowPlayer();
-    const body = div('player-window-body');
-    windowContent.append(windowPlayer.el, body);
-    windowView = createView(body, { reorderable: false, variant: 'window' });
-  }
-  paintToggle();
-  // Player mode has a transport, album mode does not - so the now-playing bar
-  // comes and goes with the view, not with the window. See markTransport().
+  windowPlayer = makeWindowPlayer();
+  const body = div('player-window-body');
+  windowContent.append(windowPlayer.el, body);
+  windowView = createView(body, { reorderable: false, variant: 'window' });
+
   markTransport();
   renderAll();
   windowPlayer?.bind();
 }
 
-/** The view toggle wears the face - and name - of the view it would switch to. */
-function paintToggle() {
-  if (!windowToggle) return;
-  const toFeed = windowMode !== 'feed';
-  windowToggle.innerHTML = toFeed ? GRID_ICON : ROWS_ICON;
-  const label = toFeed ? 'Album view' : 'Player view';
-  windowToggle.setAttribute('aria-label', label);
-  windowToggle.title = label;
-  windowToggle.classList.toggle('is-on', windowMode === 'feed');
+/**
+ * Leave for the album view - the Mobile lens, full size, which is the album view
+ * this window used to carry a miniature of.
+ *
+ * Nothing here closes the window: the mode switch lands on bus 'layout', and the
+ * handler at the top of this file already takes it away on the way into Mobile.
+ * Two roads to the same close would be two chances to disagree about it.
+ */
+function showAlbumView() {
+  setLens('playlist');
+  cmds?.setBoardMode('mobile');
 }
 
 /** The slide-out backstop, so a close that never sees transitionend still finishes. */
@@ -712,7 +716,6 @@ export function closePlayerWindow() {
   windowContent = null;
   windowView = null;
   windowPlayer = null;
-  windowToggle = null;
   // Scale it back down, then take it away once the transform has run.
   el.classList.remove('is-open');
   clearTimeout(windowExit);
@@ -731,14 +734,15 @@ export function closePlayerWindow() {
  * line are right there, and the bar is then a second copy of a control already on
  * screen, laid over the bottom of the window showing the first.
  *
- * **Album mode is the case this is named for.** That view is a hero and a
- * reorderable list and has no transport in it at all - it is built to use the bar
- * as its transport (see renderWindowMode). A flag that meant "the window is open"
- * took the bar away there too, which left the album view with nothing to play,
- * pause or seek with and read as the view toggle doing nothing. So the flag says
- * what the stylesheet actually depends on rather than what happens to correlate
- * with it, and switching views has to write it again - hence the call in
- * renderWindowMode as well as in open and close.
+ * The window has one body now and it is that transport, so "open" and "a transport
+ * is on screen" have come back into step. The name stays as it is anyway: it is
+ * what chrome.css keys off, and it is still the true statement of the two. The
+ * window once had a second body - the album view - which had no transport in it
+ * and used the bar as one, and a flag meaning "the window is open" took the bar
+ * away there and left that view with nothing to play or seek with. The lesson
+ * outlived the mode: a flag that says what the stylesheet depends on survives the
+ * next body being added, and a flag that says what happens to correlate with it
+ * does not.
  *
  * A class on the root and nothing else, the same shape `is-connecting` and
  * `data-snap` use. It is written here rather than read from ui/nowplaying.js
@@ -750,90 +754,13 @@ export function closePlayerWindow() {
  * keep in step.
  */
 function markTransport() {
-  document.documentElement.classList
-    .toggle('playlist-transport', !!windowEl && windowMode !== 'feed');
+  document.documentElement.classList.toggle('playlist-transport', !!windowEl);
 }
 
-/**
- * Drag the window by its title bar. It opens anchored to the bottom-right (right /
- * bottom in the stylesheet); the first grab reads that resolved position, switches
- * to top / left so it can move freely, and from then on pointer moves set top / left
- * directly, clamped to keep the whole window on screen.
- *
- * A press on either title-bar button is left alone. Not just so the button still
- * works: setPointerCapture on the bar retargets the eventual click to the bar
- * itself, so a captured press over a button never reaches it at all. The close
- * button was exempt and the view toggle was not, which is how "Album view" came
- * to do nothing at all.
- */
-function makeWindowDrag(win, handle) {
-  let d = null;
-  handle.addEventListener('pointerdown', e => {
-    if (e.button !== 0 || e.target.closest('button')) return;
-    const r = win.getBoundingClientRect();
-    win.style.left = `${r.left}px`;
-    win.style.top = `${r.top}px`;
-    win.style.right = 'auto';
-    win.style.bottom = 'auto';
-    d = { dx: e.clientX - r.left, dy: e.clientY - r.top, w: r.width, h: r.height };
-    handle.setPointerCapture?.(e.pointerId);
-    win.classList.add('is-moving');
-    e.preventDefault();
-  });
-  handle.addEventListener('pointermove', e => {
-    if (!d) return;
-    const m = 8;
-    win.style.left = `${clamp(e.clientX - d.dx, m, window.innerWidth - d.w - m)}px`;
-    win.style.top = `${clamp(e.clientY - d.dy, m, window.innerHeight - d.h - m)}px`;
-  });
-  const end = e => {
-    if (!d) return;
-    d = null;
-    handle.releasePointerCapture?.(e.pointerId);
-    win.classList.remove('is-moving');
-  };
-  handle.addEventListener('pointerup', end);
-  handle.addEventListener('pointercancel', end);
-}
-
-/**
- * Resize the window by its bottom-right grip. Like the move drag, the first grab
- * pins the window to top / left (it opens anchored bottom-right) so the corner is
- * free to travel, then pointer moves set an explicit width and height, clamped to a
- * sane floor and to what stays on screen. The height cap the stylesheet puts on the
- * un-sized window is lifted the moment a size is set by hand.
- */
-function makeWindowResize(win, handle) {
-  const MIN_W = 260, MIN_H = 220;
-  let d = null;
-  handle.addEventListener('pointerdown', e => {
-    if (e.button !== 0) return;
-    const r = win.getBoundingClientRect();
-    win.style.left = `${r.left}px`;
-    win.style.top = `${r.top}px`;
-    win.style.right = 'auto';
-    win.style.bottom = 'auto';
-    win.style.maxHeight = 'none';
-    d = { x: e.clientX, y: e.clientY, w: r.width, h: r.height, left: r.left, top: r.top };
-    handle.setPointerCapture?.(e.pointerId);
-    win.classList.add('is-resizing');
-    e.preventDefault();
-  });
-  handle.addEventListener('pointermove', e => {
-    if (!d) return;
-    const m = 8;
-    win.style.width = `${clamp(d.w + (e.clientX - d.x), MIN_W, window.innerWidth - d.left - m)}px`;
-    win.style.height = `${clamp(d.h + (e.clientY - d.y), MIN_H, window.innerHeight - d.top - m)}px`;
-  });
-  const end = e => {
-    if (!d) return;
-    d = null;
-    handle.releasePointerCapture?.(e.pointerId);
-    win.classList.remove('is-resizing');
-  };
-  handle.addEventListener('pointerup', end);
-  handle.addEventListener('pointercancel', end);
-}
+// Moving and resizing the window are in ui/float-window.js. They were written
+// here and lifted out when the sticker pad turned out to want exactly the same
+// two gestures - which is the argument for the move: dragging a window by its
+// title bar and pulling it bigger by its corner is not a fact about music.
 
 /**
  * The Desktop window's transport: the now-playing track (cover, title, artist), a

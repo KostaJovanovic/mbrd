@@ -134,6 +134,12 @@ const BASE = new Set([
   // nothing else. state.js reads mobileArrangement() from it to know which of
   // the two catalogues a stored id belongs to, and that read is downward.
   'arrange/arrangements.js',
+  // The sticker catalogue, beside the arrangement catalogue and for the same
+  // reason: it is a hand-written table and nothing else. It imports *nothing* -
+  // not even geometry.js - which makes it the lowest module in the graph, and
+  // state.js reads stickerTint() from it to hold an arriving tint to the
+  // palette that exists. That read is downward.
+  'stickers/catalogue.js',
   // The floor state.js is being split onto. board-store.js holds the bus, the
   // selection and the dirty flag; board-model.js holds the board's shape, its
   // defaults and the id index; history.js holds the undo/redo engine over them.

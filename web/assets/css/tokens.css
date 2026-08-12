@@ -228,14 +228,79 @@
                  0 5px 9px -5px color-mix(in srgb, var(--ink) 32%, transparent),
                  0 13px 16px -13px color-mix(in srgb, var(--ink) 28%, transparent);
 
+  /* ---- stickers ----
+     Eight inks, every one mixed out of this palette's own pigment - the same
+     bargain the note tints above make and for the same reason. The shapes are
+     drawn in the app's own line language (a paper body and an inked outline,
+     see web/assets/stickers.svg), so a stock primary in the middle of a
+     sage-green board would look doubly borrowed: wrong colour, and wrong colour
+     on a drawing that is otherwise this board's. What "red" means here is
+     whatever this board's red is.
+
+     Pulled towards the ink rather than taken neat, and that is about the
+     drawing rather than about taste. What the tint colours is a *line* - the
+     outline over the paper body - and a line at full chroma over a photograph
+     reads as highlighter; a few percent of ink in it is what makes it read as
+     pigment.
+
+     Eight, and every shape may be set to any of them (meta.tint), which is what
+     makes this a constraint rather than a list: each has to hold a line against
+     a pale photograph as well as against the board. That rules out pastels,
+     which is why the faintest of them is the palette's own faint ink rather
+     than a tint of something. */
+  --sticker-1: color-mix(in srgb, var(--danger) 90%, var(--ink));       /* red */
+  --sticker-2: color-mix(in srgb, var(--accent-warm) 84%, var(--ink));  /* amber */
+  --sticker-3: var(--accent);                                           /* terracotta */
+  --sticker-4: var(--accent-deep);                                      /* sienna */
+  --sticker-5: color-mix(in srgb, var(--leafy) 88%, var(--ink));        /* olive */
+  --sticker-6: color-mix(in srgb, var(--leafy) 50%, var(--ink));        /* moss */
+  --sticker-7: var(--ink);                                              /* ink */
+  --sticker-8: var(--ink-3);                                            /* faded */
+  /* The paper a sticker is printed on, and one stock for all eight: a printed
+     thing is ink on paper, and paper does not change colour with the ink. The
+     card stock rather than the sheet, because a sticker is an object lying *on*
+     the board and belongs to the family of the cards beside it - which is the
+     argument the note tints make one line up. */
+  --sticker-body: var(--paper-card);
+  /* There is no line-weight token, and there cannot be one: the shapes are
+     Phosphor's, which draws every weight as a filled path - even the outline
+     ones, whose line is a closed path tracing the outline of a stroke. The
+     weight is chosen per shape in tools/gen-stickers.mjs by picking which
+     Phosphor weight to vendor, and nothing downstream can change it. */
+
   /* ---- shape ----
      Every corner is even. --leaf sizes controls, --ogee the panels that hold
-     them, --radius-xs the small fry (checkboxes, chips, kbd). */
+     them, --radius-xs the small fry (checkboxes, chips, kbd).
+
+     One number, four ratios. --radius is the only corner a tier declares and
+     the only one the Corner radius slider writes; the rest are struck from it,
+     the way --note-radius already was. They used to be five independent
+     literals, and the slider only moved the first of them - so dragging it to
+     0 gave you square cards inside a toolbar still rounded at 10px, and
+     dragging it to 28 rounded the cards past the panel holding them. Half the
+     interface followed the control and half ignored it.
+
+     The ratios are the middle tier's own numbers divided through by its 13, so
+     this level resolves to the same 8 / 4 / 10 / 15 it always did. What changes
+     is that the ends now fall out for free: the soft tier declares 26px and
+     gets 16 / 8 / 20 / 30, and the plain tier declares 0px and gets zeroes
+     without listing them.
+
+     --ogee lands a hair over --radius on purpose: it is the panel *around*
+     controls, so it has to clear the --leaf inside it by roughly the padding
+     between them or the two curves fight. */
   --radius:    13px;
-  --radius-sm: 8px;
-  --radius-xs: 4px;
-  --leaf:      10px;
-  --ogee:      15px;
+  --radius-sm: calc(var(--radius) * 0.615);
+  --radius-xs: calc(var(--radius) * 0.308);
+  --leaf:      calc(var(--radius) * 0.77);
+  --ogee:      calc(var(--radius) * 1.154);
+  /* Fully round, for the two things that want their ends capped rather than
+     their corners eased: a hairline meter (waveform bar, slider track, splash
+     thread - 1-3px tall, where any shared corner token rounds it into a
+     circle) and a pill button. Both used to be written as literals - 1px, 2px,
+     999px - so they were the one part of the interface that ignored the axis
+     entirely and stayed capped on a tier that has declared nothing curves. */
+  --radius-pill: 999px;
   /* Gap between a card's edge and its inner rule. The rule's own radius is
      --radius minus this, so the two curves stay concentric. */
   --card-rule-gap: 5px;
@@ -653,11 +718,12 @@
    Shape, motion, ornament and reactivity only. No pigment: the palette is the
    palette, and the shadows below take their colour from its ink. */
 :root[data-whimsy="0"] {
+  /* Twice the middle's, and the one line does all five: the ratios above carry
+     it to 16 / 8 / 20 / 30. --leaf lands at 20px, which on a 35px control is
+     all but a pill. The four it replaces were 17 / 9 / 20 / 30 - within a
+     pixel, but drifting, because each end was eyed on its own rather than
+     struck from a scale. */
   --radius:    26px;
-  --radius-sm: 17px;
-  --radius-xs: 9px;
-  --leaf:      20px;    /* on a 35px control this is all but a pill */
-  --ogee:      30px;
   --card-rule-gap: 8px;
 
   /* Ornament up, shading left alone. This used to be one dial and 2.2 took the
@@ -888,13 +954,16 @@
   /* 0px, not 0. These are lengths, and a bare 0 is a *number*: calc() cannot
      add a number to a length, so an unsuffixed zero here silently invalidated
      every expression downstream that offsets a radius - including the one that
-     sizes the selection's corner marks, which collapsed to nothing. */
+     sizes the selection's corner marks, which collapsed to nothing.
+
+     One line now instead of six: the ratios at the top multiply through, and
+     --note-radius was always struck from --radius anyway. The five that used to
+     be listed here were the tell that the scale was not a scale - a set of
+     numbers that has to be zeroed one at a time is a set of numbers nothing
+     derives from. */
   --radius:      0px;
-  --radius-sm:   0px;
-  --radius-xs:   0px;
-  --leaf:        0px;
-  --ogee:        0px;
-  --note-radius: 0px;
+  /* Nothing curves at this end - the hairline meters and the pills included. */
+  --radius-pill: 0px;
 
   --sel-gap:    4px;
   --sel-line:   2px;

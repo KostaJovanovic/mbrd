@@ -481,6 +481,27 @@ export const isFurniture = it => it?.type === 'title' || it?.type === 'ghost';
  */
 export const isContent = it => !!it && !isFurniture(it) && it.type !== 'fence';
 
+/**
+ * May a connection have this item as an end - and, the same list for the same
+ * reason, does the router have to route around it?
+ *
+ * Two exclusions and they are unrelated. A hint card relates to nothing: it is
+ * talking to the person rather than to the board, and serializeBoard() strips
+ * it, so a line drawn to one could not survive a save even if it could be
+ * drawn. A sticker is the other end of the same idea - it is a *remark about*
+ * the card underneath it, and a line from a star to a photograph is a line from
+ * a thing to what it already says. It is not an obstacle either: decoration
+ * lying on a picture should not push a route around itself.
+ *
+ * Note what this is deliberately *not*: isContent(). That one refuses the title
+ * card and fences, which are both perfectly good things for a line to reach and
+ * to bend around, and the two questions only look alike. They were nearly one
+ * predicate, and the loose sticker is the case that would have gone wrong -
+ * a loose sticker is a member of the fence it is standing in, so a shared test
+ * would have taken it out of the fence to keep it out of the web.
+ */
+export const isJoinEnd = it => !!it && it.type !== 'ghost' && it.type !== 'sticker';
+
 
 /**
  * id -> item, an index beside board.items rather than a replacement for it.

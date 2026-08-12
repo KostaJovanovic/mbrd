@@ -55,7 +55,13 @@ the ES modules under `web/` directly — an edit is one refresh away.
 - **No apostrophes anywhere inside the `SHELL` array in `web/sw.js`**, comments
   included. `tests/sw.test.js` reads that list by pulling out single-quoted
   runs, so one apostrophe in a comment there breaks it.
-- **Do not hand-edit `web/assets/js/import/formats.js`.** It is generated.
+- **Do not hand-edit `web/assets/js/import/formats.js` or
+  `web/assets/stickers.svg`.** Both are generated — `tools/gen-formats.mjs` and
+  `tools/gen-stickers.mjs`. The sticker sprite is vendored Phosphor art at a
+  pinned revision; the shapes it carries are chosen in the generator's own
+  `SHAPES` table, and everything *about* them (names, categories, default
+  tints) is hand-written in `web/assets/js/stickers/catalogue.js`, which is not
+  generated. Adding a shape is one entry in each, then re-run the generator.
 - **Do not split `canvas/input.js`.** One pipeline, exactly one active gesture.
 - **A new module must not touch `document` at import time** — export an
   `init*()`. Exactly three modules are exempt and `tests/imports.test.js` lists

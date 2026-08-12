@@ -36,7 +36,9 @@ import {
   MOBILE_MIN_ROWS, MOBILE_BOTTOM_ROWS, mobileColumnCount,
   cloneSettings, layoutSettingsOf, settingsFor, defaultLayoutSettings,
 } from './board-model.js';
-import { isRider, attachRiders, stuckPlacement, restick, stuckFollowers } from './sticky.js';
+import {
+  isRider, attachRiders, stuckPlacement, restick, stuckFollowers, startSettling,
+} from './sticky.js';
 import { isFence, refence, refenceAround, mobileRuns, fenceFollowers } from './fences.js';
 
 /** A geometry snapshot entry as a plain rectangle, for the containment tests. */
@@ -701,6 +703,13 @@ export function snapshotGeom(ids) {
     for (const k of GEOM_KEYS) g[k] = it[k];
     const presnap = usableMemo(it.meta?.presnap);
     g.presnap = presnap ? { ...presnap } : null;
+    // Not geometry, and here anyway. "Unstuck on purpose" is the one durable
+    // piece of stickiness state (see sticky.js) and the two things that change
+    // it - the arrow keys, and a drop that finds a host - are both gestures that
+    // move something. So it belongs to the same undo entry as the movement that
+    // set it, and riding in the pair is how it gets there without a second
+    // history entry sitting beside every nudge.
+    g.loose = !!it.meta?.loose;
     return g;
   }).filter(Boolean);
 }
@@ -718,6 +727,7 @@ export function applyGeom(snap) {
       if (presnap) it.meta = { ...it.meta, presnap: { ...presnap } };
       else forgetPresnap(it);
     }
+    if ('loose' in g) writeLoose(it, !!g.loose);
     ids.push(g.id);
   }
   bus.emit('geom', ids);
@@ -729,7 +739,14 @@ export function applyGeom(snap) {
  */
 export function commitGeom(label, before, driven, options = {}) {
   let after = snapshotGeom(before.map(b => b.id));
-  const changed = after.some((a, i) => GEOM_KEYS.some(k => a[k] !== before[i][k]));
+  // The loose flag counts as a change even where nothing moved. A drag that
+  // ends a pixel from where it began has still dropped a loose note onto a
+  // card, and on a snapped board it can end *exactly* where it began - so
+  // testing geometry alone would clear the flag and then decline to record it,
+  // which is the one shape of bug this pair exists to rule out: a real change
+  // with no entry to reverse it.
+  const changed = after.some((a, i) =>
+    a.loose !== before[i].loose || GEOM_KEYS.some(k => a[k] !== before[i][k]));
   if (!changed) return;
   // Placed by hand while snapping was on: this *is* where the item belongs
   // now, so it gives up its memory of where it sat before the board was laid
@@ -782,12 +799,38 @@ export function commitGeom(label, before, driven, options = {}) {
     applyGeom(snap);
     if (!driven) return;
     restick(driven);
+    // These have just been let go, so their ten seconds start now - see the
+    // settling block in sticky.js. Beside restick() and handed the same set for
+    // the same reason: a note towed across the board by the photograph under it
+    // was not put down, and its grace period is not its to have again.
+    //
+    // Inside the committed pair, like restick(), so an undo that puts an item
+    // back on a card gives it the same window a hand would have. Stepping back
+    // is a thing you did to it.
+    startSettling(driven);
     refence(driven);
     refenceAround(resized);
   };
   // Weighted: this pair retains two snapshots of everything it moved, and a
   // whole-board drag or arrange is where the history's memory actually goes.
   commit(label, () => move(after), () => move(before), before.length * 2);
+}
+
+/**
+ * Set or clear "unstuck on purpose" on one item.
+ *
+ * Guarded on no-change, because it runs from applyGeom - which a drag calls
+ * every frame - and the restick() below must not fire sixty times a second.
+ * That restick is the point of routing this through a function at all: the
+ * memo in sticky.js still holds whatever the item was stuck to before it was
+ * unstuck, and the flag is read *in front of* the memo rather than instead of
+ * it, so clearing the flag has to send the question back to the measurement.
+ */
+function writeLoose(it, loose) {
+  if (loose === !!it.meta?.loose) return;
+  if (loose) it.meta = { ...it.meta, loose: true };
+  else { const { loose: _drop, ...rest } = it.meta || {}; it.meta = rest; }
+  restick([it.id]);
 }
 
 export function forgetPresnap(it) {

@@ -288,6 +288,16 @@
   <rect x="2.4" y="2.4" width="6.4" height="6.4" rx="1.2"/>
 </symbol>
 
+<!-- The sticker pad. A star with a peeled corner - the star says which drawer
+     of the app this opens and the fold says the things in it come off a sheet,
+     which is the one thing a bare star would not say. Stroked like everything
+     else here; the shapes themselves are filled silhouettes in their own
+     sprite (assets/stickers.svg) and this is chrome, not one of them. -->
+<symbol id="i-sticker" viewBox="0 0 16 16">
+  <path d="M8 1.8 9.6 5.6 13.7 5.9 10.6 8.6 11.5 12.6 8 10.4 4.5 12.6 5.4 8.6 2.3 5.9 6.4 5.6z"/>
+  <path d="M11.6 11.2 14.2 13.8h-2.6z"/>
+</symbol>
+
 <!-- A region is drawn dashed on the board, so it is drawn dashed here. -->
 <symbol id="i-fence" viewBox="0 0 16 16">
   <rect x="2.5" y="3.5" width="11" height="9" rx="1.5" stroke-dasharray="3 2.2"/>
@@ -345,6 +355,19 @@
 </symbol>
 <symbol id="i-chevron-left" viewBox="0 0 16 16">
   <path d="M9.5 4 5.5 8l4 4"/>
+</symbol>
+
+<!-- "Everything else, in the menu" - the connection chip's way through to the
+     right-click editor (ui/conn-chip.js). Three equal rules: a menu, drawn the
+     way menus have been drawn since there were menus.
+
+     Equal is the whole of it, and it is what keeps this apart from i-edit-text
+     on the same strip. That one is lines of writing, so its last line stops
+     short the way a last line does; this one is a stack of identical bars,
+     because a menu's rows are not a paragraph. Ragged means text, flush means
+     menu, and at 16px that one difference is the only thing carrying it. -->
+<symbol id="i-more" viewBox="0 0 16 16">
+  <path d="M3 4.5h10M3 8h10M3 11.5h10"/>
 </symbol>
 
 <!-- Connection direction and line style, for the right-click editor. The arrows
@@ -419,7 +442,12 @@
 </symbol>
 
 <!-- The title card's style, which is type, which is a letter. Beside i-title's
-     T on the same short menu - one family, two members. -->
+     T on the same short menu - one family, two members.
+
+     It carries a connection's label too, in the chip and in the menu (see
+     connectionEntries in ui/menu.js). Same reading in both places: a letter is
+     type, and the label is the one thing on a line that is typed. -->
+
 <symbol id="i-style" viewBox="0 0 16 16">
   <path d="M4.2 12.6 8 3.4l3.8 9.2"/>
   <path d="M5.7 9.4h4.6"/>

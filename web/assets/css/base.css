@@ -355,7 +355,7 @@ body {
   flex: 1;
   height: 2px;
   background: var(--accent);
-  border-radius: 2px;
+  border-radius: var(--radius-pill);
   /* Reaches from the card that has just landed towards the next one, so it
      grows from its left end. --ease and not --ease-back: a thread that
      overshoots is a thread that pokes out the far side of the card it just

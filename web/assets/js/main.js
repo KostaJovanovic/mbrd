@@ -53,6 +53,7 @@ import { initScaleBar } from './ui/scalebar.js';
 import { initTrash } from './ui/trash.js';
 import { initNowPlaying } from './ui/nowplaying.js';
 import { initToolbar } from './ui/toolbar.js';
+import { initStickerWindow } from './ui/sticker-window.js';
 import { initAppearance, resetAppearance, setWhimsy } from './ui/appearance.js';
 import { initFonts } from './ui/fonts.js';
 import { initMobileHeaderEditor, isPanelOpen as isHeaderPanelOpen, closePanel as closeHeaderPanel, styleFeedMasthead } from './ui/mobile-header.js';
@@ -176,6 +177,11 @@ initHud(vp, cmds);
 // inside initHud() as the phone's add bar. Handed cmds for the same reason: its
 // buttons are data-cmd and nothing else.
 initToolbar(cmds);
+// The sticker pad. After the toolbar, because the toolbar is what opens it, and
+// handed both the viewport and cmds: it turns a pointer position into a world
+// point itself (a drag ends over the board, not over a button) and then presses
+// the ordinary command with it.
+initStickerWindow(vp, cmds);
 // The five buttons that follow a marked connection. After the toolbar because
 // it is the same kind of thing - chrome over the board driven by cmds - and it
 // needs the viewport to know where on the screen the line it is pinned to is.

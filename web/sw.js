@@ -12,7 +12,7 @@
 // Written out in full rather than composed from PREFIX, because save.bat bumps
 // this line by regex on every commit and would not recognise an expression.
 // tests/sw.test.js holds the two together.
-const VERSION = 'mbrd-v131';
+const VERSION = 'mbrd-v132';
 const PREFIX = 'mbrd-';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) turns the
@@ -44,6 +44,20 @@ const SHELL = [
   // a stylesheet does. Unlike the two below, this one is never an installed app
   // icon; it is chrome.
   './assets/icons.svg',
+  // The sticker shapes, and a second sprite on purpose - see the head of the
+  // file for why they are not in the one above. Same argument for caching it:
+  // a board covered in stars, opened on a plane, would draw forty holes.
+  './assets/stickers.svg',
+  // And the licence for them, because the shapes were drawn by other people.
+  // Phosphor is MIT and its one condition is that the notice travels with the
+  // copies, so an installed app that carries the drawings offline and leaves
+  // the notice on the server is an installed app that does not meet it. The
+  // bundled faces predate this reading and their OFL files are not here; that
+  // is a gap rather than a decision. See THIRD-PARTY.md.
+  // (No apostrophes anywhere in this array, comments included - see CLAUDE.md.
+  // tests/sw.test.js reads SHELL by pulling out single-quoted runs, and one
+  // apostrophe up here silently unlists every entry below it.)
+  './assets/phosphor-LICENSE.txt',
   './assets/img/icon.svg',
   './assets/img/icon-maskable.svg',
   // The same two icons as bitmaps, because not every place an installed icon
@@ -133,6 +147,7 @@ const SHELL = [
   './assets/js/board-store.js',
   './assets/js/board-model.js',
   './assets/js/sticky.js',
+  './assets/js/stickers/catalogue.js',
   './assets/js/fences.js',
   './assets/js/layout.js',
   './assets/js/stacking.js',
@@ -142,6 +157,8 @@ const SHELL = [
   './assets/js/ui/search.js',
   './assets/js/ui/sidebar.js',
   './assets/js/ui/panel.js',
+  './assets/js/ui/float-window.js',
+  './assets/js/ui/sticker-window.js',
   './assets/js/ui/controls.js',
   './assets/js/ui/settings-schema.js',
   './assets/js/ui/quality.js',

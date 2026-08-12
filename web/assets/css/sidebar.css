@@ -584,12 +584,12 @@
 }
 :is(.field, .np-volume) input[type="range"]::-webkit-slider-runnable-track {
   height: 3px;
-  border-radius: 2px;
+  border-radius: var(--radius-pill);
   background: linear-gradient(90deg, var(--rule-2), var(--rule));
 }
 :is(.field, .np-volume) input[type="range"]::-moz-range-track {
   height: 3px;
-  border-radius: 2px;
+  border-radius: var(--radius-pill);
   background: linear-gradient(90deg, var(--rule-2), var(--rule));
 }
 :is(.field, .np-volume) input[type="range"]::-webkit-slider-thumb {

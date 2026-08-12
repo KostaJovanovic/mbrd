@@ -67,7 +67,7 @@ split onto, and they took nearly half of it with them.
 | `board-store.js` | the `bus`, the `selection`, the dirty flag |
 | `board-model.js` | the board's shape, its defaults, the `byId` index |
 | `history.js` | the undo/redo engine |
-| `sticky.js` | which note is stuck to what |
+| `sticky.js` | which note or sticker is stuck to what, and which of them are pinned |
 | `fences.js` | which card is inside which region |
 | `layout.js` | the Mobile pack, both geometry profiles, the undoable geometry writes |
 | `stacking.js` | z-order |
@@ -941,6 +941,143 @@ unchanged text and `dismissGhosts()` is hydration. All three are true; none of
 them is this file's business, and one of them changing would have silently
 undone something else. `takeBack()` asks the question, and `removeItems()` is
 the fallback when the answer is no.
+
+### Stickers, and what "stuck" means
+
+Two changes that only look like one: what stuckness *does*, and a second kind of
+thing that has it.
+
+**A stuck item pins — ten seconds after you let go of it.** A note lying on a
+card used to travel with the card and still be free to be dragged off it; it now
+becomes fixed there, and a press on it takes hold of its host instead —
+`dragRoot()` walks up the pile, so a sticker on a note on a photograph moves the
+photograph. The pile reads as one object under the pointer, which is what the
+hover lift has always promised (`travelling()` lifts the whole group), so the
+drag was brought into line with the lift rather than given a rule of its own.
+**Selection is deliberately not redirected**: clicking a pinned star still
+selects the star, so its menu, its colour and Delete all still reach it. What
+you have selected and what you are moving coming apart is the one genuinely new
+idea here.
+
+**Stuck and pinned are the same relation a few seconds apart**, and only the
+second half waits. Sticking is instant and has to be — a photograph dragged
+straight after a note was dropped on it must take the note along. Pinning is the
+trap if it is: you drop a sticky, see it is two millimetres off, reach for it,
+and the photograph moves. So `SETTLE_MS` (10s) buys a window in which the item
+is stuck and still free, `isPinned()` is `stuckTo() && !isSettling()`, and
+`dragRoot()` stops at the first thing that has not set. The clock starts
+wherever `restick()` runs — `commitGeom()`'s committed pair, so an undo that puts
+an item back on a card gives it the same window a hand would — and at `addNote()`
+and `addSticker()`, since a thing that has just appeared has just been let go.
+
+Runtime only, and absence of a stamp means *set*: a board being opened has been
+sitting still however long ago it was written, so `seedSticks()` clears the
+clocks with the memo. There is no timer in the rule, either — the drag redirect
+and the hover badge both ask at the moment they run, so a comparison against a
+stamp is the whole mechanism. The one `setTimeout` is in `canvas/items.js`, and
+it exists only so the badge appears under a hand that is already resting on the
+card rather than waiting for the next hover.
+
+"Immovable" has four doors and three answers, which is why `isPinned()` is one
+predicate and the responses are not. A pointer drag redirects to the host; the
+arrow keys **unstick and nudge**, because the keyboard is the fine-positioning
+tool and having ← move a photograph would be an enormous effect from a very
+small key; align, distribute, rearrange and the snap sweep **skip** pinned
+items, since a rider's place is a fraction of its host and the host is what the
+sweep moved.
+
+**Unstick asks a wider question than the rest** — `isRider()`, not `isPinned()`.
+Unsticking something inside its settle window is exactly what you want to be
+able to do: it is how you say "leave this here but do not fix it", without
+waiting for it to fix itself so that you can unfix it.
+
+**`meta.loose` is the app's first durable piece of stickiness**, and it is the
+exception that keeps `sticky.js`'s rule honest. The positive relation stays
+measured — a file that also recorded it could disagree with its own geometry —
+but "I unstuck this on purpose" cannot be re-derived, because the usual reason
+to unstick a note is to nudge it and the note is therefore still lying on the
+card it came off. One guard at the top of `stuckTo()` implements the whole of
+it: a loose item behaves exactly as one lying over nothing, so riders, travel,
+Mobile placement, stack order and the `meta.stuckTo` stamp all follow with no new
+code path. `wouldStick()` is deliberately *not* guarded — a drag that finds a
+host is the way back, and `resettle()` clears the flag on any pointer drop that
+lands on a card. The flag rides the geometry snapshot pair (`snapshotGeom`), so
+one undo restores the decision along with the position; `resettle()` runs in
+front of the commit rather than inside it, since replaying it would mean undo
+could never restore "loose" at all.
+
+**A sticker is a board item of `type: 'sticker'`**, not a decoration in the
+host's `meta`, and that is the load-bearing choice. As an item it gets undo,
+selection, z-order, the trash, `.mbrd` serialization, the hover lift, culling —
+and every line of the stick machinery above. As a field it would need a parallel
+implementation of all of them. The cost is one more branch wherever a type is
+switched on, which in this codebase is a short list by design: `RENDERERS`, a
+`defaultSize`, and what the feed, the trash and the snapshot should say.
+
+- **`isSticky()`** is the predicate that says which kinds stick, read by
+  `sticky.js`, `stacking.js` and the serializer. Completeness is the point of
+  exporting it: a kind that sticks in `stuckTo()` and is not recognised by
+  `stuckFollowers()` is a thing that gets left behind when its host moves.
+- **`cannotHost()` gets a sticker exemption**, not a general loosening. A sticker
+  may land on a fence and on the title card, both of which a note may not, and
+  both refusals had the same reason — a note riding a Mobile band or landing in
+  the packed first row as an obstacle nothing packed around. For decoration that
+  is the desired behaviour, not the bug it was for a note. Hint cards are still
+  refused: a hint is deleted the moment real content arrives.
+- **Deleting the host takes its stickers and leaves its notes**, in one undo
+  entry (`stickerCascade()`). Two rules because the things are two: a star on a
+  photograph is a remark about it and means nothing once it is gone, while a note
+  is something you wrote. The walk collects stickers alone, which is also what
+  cuts it short at the first surviving host.
+- **A loose sticker is a fence member and a pinned one is a rider**, which needs
+  no new code — it falls out of `isRider()`. `isJoinEnd()` in `board-model.js` is
+  what keeps a sticker out of the web, and it is deliberately not `isContent()`:
+  the same predicate serving connection eligibility *and* fence membership would
+  have taken loose stickers out of fences to keep them out of the web.
+- **The artwork is Phosphor, and `web/assets/stickers.svg` is generated.**
+  `tools/gen-stickers.mjs` vendors forty-five glyphs at a pinned revision — the
+  same bargain `tools/gen-formats.mjs` makes with file-analyser, and the same
+  do-not-hand-edit rule. It is a second sprite, kept out of `icons.svg` so
+  `tests/icons.test.js` can stay strict in both directions: these are content
+  picked at runtime, so nothing static can reference them.
+
+  Two weights, by one rule. **Duotone** for anything with a body — it is two
+  paths, a background silhouette and the outline over it, which is exactly the
+  paper-and-ink construction a sticker wanted, already drawn. **Bold** for the
+  marks that *are* a line (the cross, the plus, the arrows), because Phosphor
+  gives a line glyph a generic rounded-square plate as its duotone background,
+  and a plus sticker that came out as a paper card with a plus on it is a
+  different object.
+
+  Nothing is stroked. Phosphor draws every weight as a *filled* path, outline
+  weights included, so there is no line-weight token and `items.css` writes
+  `stroke: none` out. The paint arrives by inheritance — `fill` is the paper,
+  `color` is the tint — and a path opts out with `fill="currentColor"`, which is
+  the only value that still follows the tint. Inherited properties are the only
+  reason a stylesheet can reach past an external `<use>` at all, which is the
+  same fact the icon sprite turns on. The generator is what inverts Phosphor's
+  own convention (`fill="currentColor"` on the root, `opacity="0.2"` on the
+  background) into this one.
+- **`stickers/catalogue.js`** is a hand-written table and stays one, which is
+  the line between the drawings and the decisions: which glyph a shape is drawn
+  as is upstream's business, while which forty-five are worth having, what each
+  is called, where it is filed and what colour it is *born* is not. The ids are
+  mbrd's rather than Phosphor's, because an id is written into a `.mbrd` as
+  `meta.shape` and cannot move when an upstream icon is renamed. It imports
+  nothing at all, which makes it the lowest module in the graph.
+- **`ui/sticker-window.js`** is the pad: a floating window sharing its move and
+  resize gestures with the Playlist's player (`ui/float-window.js`). Drag a tile
+  onto the board, or tap a tile and then tap the board — the second is the only
+  one that works on a phone and it works on both. Favourites are app-wide and
+  live in `localStorage`, not in the `.mbrd`: a board you send somebody carries
+  your stickers and not your picks.
+- **Mobile is the one genuinely new mechanism.** The feed is a DOM masonry rather
+  than the world drawn small, so there is no transform between a tap and a world
+  point — `feedPointToWorld()` goes through the *item* instead: which tile, where
+  in the tile, then the same fraction of that item's own box. Pinned stickers are
+  drawn on their host's tile at the fraction they hold on the canvas; a loose one
+  has no tile to be drawn on and is not drawn, which is the one place this view is
+  knowingly not the board.
 
 ### Ghosts, exits, grain, models
 

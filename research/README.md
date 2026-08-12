@@ -38,13 +38,14 @@ for a change without checking the current source first.
 - `scalability-readability-audit-2026-07-27.md` — all eight leverage items are
   closed; the medium and low findings it lists are the remaining work, and are
   the natural source of issues.
-- `stickers-2026-08-12.md` — not started. Two changes that only look like one:
-  a stuck note becomes *pinned* (a drag on it moves the card underneath, and
-  right-click → Unstick is the way off), and a new `sticker` item type — die-cut
-  shapes dragged onto cards out of their own floating window. Its *Decisions*
-  table at the foot is the specification; the body is the argument, and the part
-  worth reading before touching `sticky.js` is what pinning does to a relation
-  that file deliberately refuses to store.
+- `visual-audit-2026-08-12.md` — partly carried out. An element-by-element pass
+  at all three whimsy stops, graded worst to best. Its spine is applied: the five
+  corner tokens are now struck from `--radius`, so the Corner radius slider moves
+  the whole interface rather than a third of it. Six items remain, listed under
+  *The plan for what is left*, and two of them are taste calls rather than
+  patches. Read the closing rule before auditing anything else here — the whole
+  document is an argument for checking work at the ends of the axis rather than
+  at the default board, which is where every fault in it hid.
 
 `old/connections-2026-08-12.md` went down on the commit that carried it out, and
 its status block is the part to read first: three of its own instructions were

@@ -24,7 +24,7 @@
 // the now-playing one is released and its element dropped back to a poster; the
 // now-playing one is kept mounted wherever it has scrolled to.
 
-import { board, bus, isDefaultTitle } from '../state.js';
+import { board, bus, isDefaultTitle, byId, stuckTo, isRider } from '../state.js';
 import { baseName, clamp } from '../util.js';
 import { mobileOrder } from '../arrange/arrangements.js';
 import { assetURL } from '../storage/assets.js';
@@ -32,9 +32,28 @@ import { linkURL } from '../canvas/renderers.js';
 import {
   registerPlayer, releasePlayers, nowPlaying, onNowPlaying, playTrack, PLAY_ICON, clock,
 } from '../canvas/audio.js';
+import {
+  STICKER_SPRITE, STICKER_VIEWBOX, stickerShape, DEFAULT_SHAPE,
+} from '../stickers/catalogue.js';
+import { armedSticker, disarm } from './sticker-window.js';
 
-/** The types the Feed does not draw: furniture and the leaving hints. */
-const HIDDEN = new Set(['title', 'ghost', 'fence']);
+/**
+ * The types the Feed does not draw as tiles: furniture, the leaving hints, and
+ * stickers.
+ *
+ * A sticker is here for a different reason from the other three, and it is the
+ * one worth stating. It is not hidden - a *pinned* one is drawn on its host's
+ * tile, at the fraction of the host it holds on the canvas, because the board
+ * you made should be the board you see. What it does not get is a tile of its
+ * own, since a wall panel containing one star is not a thing anybody wants in
+ * their feed.
+ *
+ * A *loose* sticker has no host tile to be drawn on, and so is not drawn at
+ * all. That is the one place this view is knowingly not the board - see the
+ * open questions in research/stickers-2026-08-12.md. Not drawing it is the safe
+ * read: the alternative is that lone panel.
+ */
+const HIDDEN = new Set(['title', 'ghost', 'fence', 'sticker']);
 
 let root = null;        // #mobile-feed, the scroller
 let sheet = null;       // the centred column the wall sits in
@@ -43,6 +62,7 @@ let titleEl = null;
 let gridEl = null;      // the positioning context for the absolute tiles
 let empty = null;       // the "nothing to show" plate
 let styleHeader = null; // styleFeedMasthead, injected from main.js
+let cmds = null;        // the command surface, for the armed-sticker tap
 
 /** id -> { el, item, ratio, kind, video } for every tile currently rendered. */
 const tiles = new Map();
@@ -58,6 +78,7 @@ const GAP = 10;
 
 export function initFeed(_viewport, _commands, headerStyle) {
   styleHeader = typeof headerStyle === 'function' ? headerStyle : null;
+  cmds = _commands;
   root = document.getElementById('mobile-feed');
   if (!root) return;
 
@@ -81,6 +102,25 @@ export function initFeed(_viewport, _commands, headerStyle) {
   sheet.appendChild(empty);
 
   paintMasthead();
+
+  // Tap-to-place. Capture, and on the scroller rather than on each tile: the
+  // tiles are rebuilt whenever the board changes and a per-tile listener would
+  // be re-wired forty times for a gesture that fires once. Capture because an
+  // armed board is placing a sticker and doing nothing else - the tap must not
+  // also open a link card or start a track.
+  root.addEventListener('pointerdown', e => {
+    if (!armedSticker() || e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const shape = armedSticker().shape;
+    const at = feedPointToWorld(e.clientX, e.clientY);
+    disarm();
+    // A tap that missed every tile puts the shape down instead of placing it.
+    // There is nowhere for a loose sticker to go in the feed (see HIDDEN), so
+    // placing one on the background would make something the person then could
+    // not see - which is worse than doing nothing and saying so by disarming.
+    if (at) cmds?.addStickerAt(shape, at);
+  }, true);
 
   bus.on('board:load', () => { teardown(); render(); });
   bus.on('layout', () => (board.layoutMode === 'mobile' ? render() : teardown()));
@@ -393,6 +433,91 @@ function feedMasonry(list, width) {
   return { boxes, colW, height: Math.max(0, ...heights) - GAP };
 }
 
+// ---------------------------------------------------------------------------
+// Stickers on the wall
+//
+// The one mechanism in the Feed with no equivalent on the canvas, and the whole
+// of it is the function below. Everywhere else in the app a screen point
+// becomes a world point through vp.toWorld(), which is a pan and a zoom; the
+// Feed is not the world drawn small, it is a different arrangement of the same
+// items, and there is no transform between the two. So the way back is through
+// the *item*: which tile the tap landed on, where in that tile, and then the
+// same place in the item's own box.
+// ---------------------------------------------------------------------------
+
+/**
+ * A tap on the wall, as a world point on the item it landed on - or null if it
+ * landed on no tile at all.
+ *
+ * Two steps, and only the first is new. The tap becomes a fraction of the tile
+ * it hit; the fraction becomes a point in the item's current-layout box, which
+ * is the arithmetic stuckPlacement() already does for a rider crossing between
+ * layouts. Item coordinates are centres and world y points up, which is where
+ * the halves and the minus come from.
+ *
+ * The fraction is *approximate* and knowingly so: a tile's aspect is clamped to
+ * between 1:2 and 2:1 (ratioOf) so no one picture can own a column, and a very
+ * tall photograph is therefore drawn shorter here than it is on the board. A
+ * star pressed onto the bottom of such a tile lands a little higher up the
+ * photograph than the thumb did. The alternative is refusing to place on the
+ * clamped tiles at all, which is a worse answer to a smaller problem.
+ */
+export function feedPointToWorld(clientX, clientY) {
+  const el = document.elementFromPoint(clientX, clientY)?.closest('.feed-tile');
+  const item = el && byId(el.dataset.id);
+  if (!item) return null;
+  const r = el.getBoundingClientRect();
+  if (!r.width || !r.height) return null;
+  const fx = (clientX - r.left) / r.width;
+  const fy = (clientY - r.top) / r.height;
+  return { x: item.x + (fx - 0.5) * item.w, y: item.y - (fy - 0.5) * item.h };
+}
+
+/**
+ * Draw every pinned sticker on its host's tile.
+ *
+ * Positioned as a percentage of the tile rather than in pixels, which is what
+ * lets this run once per render and survive every relayout underneath it: the
+ * columns are re-measured on every resize and the sticker's *fraction* of its
+ * host does not change when the tile does.
+ *
+ * A sticker on a note on a photograph is drawn on the note's tile, because the
+ * note is what it is stuck to - the same walk stuckTo() gives everywhere else,
+ * taken one step rather than to the root.
+ */
+function paintStickers() {
+  if (!gridEl) return;
+  for (const el of gridEl.querySelectorAll('.feed-sticker')) el.remove();
+  for (const it of board.items) {
+    if (it.type !== 'sticker' || !isRider(it)) continue;
+    const host = stuckTo(it);
+    const tile = host && tiles.get(host.id);
+    if (!tile || !host.w || !host.h) continue;
+    tile.el.append(stickerOverlay(it, host));
+  }
+}
+
+function stickerOverlay(it, host) {
+  const shape = stickerShape(it.meta?.shape) ? it.meta.shape : DEFAULT_SHAPE;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'sticker-art feed-sticker');
+  svg.setAttribute('viewBox', STICKER_VIEWBOX);
+  svg.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+  use.setAttribute('href', `${STICKER_SPRITE}#${shape}`);
+  svg.append(use);
+  if (it.meta?.tint) svg.dataset.tint = it.meta.tint;
+  // Centre-relative fractions turned into the top-left percentages CSS wants,
+  // with the shape's own centre pulled back over the point by a translate.
+  svg.style.left = `${((it.x - host.x) / host.w + 0.5) * 100}%`;
+  svg.style.top = `${(0.5 - (it.y - host.y) / host.h) * 100}%`;
+  svg.style.width = `${(it.w / host.w) * 100}%`;
+  svg.style.height = `${(it.h / host.h) * 100}%`;
+  // Negated, like canvas/items.js: world angles run the other way from screen.
+  svg.style.rotate = `${-(it.rot || 0)}deg`;
+  return svg;
+}
+
 function scheduleLayout() {
   if (layoutRaf || typeof requestAnimationFrame !== 'function') return;
   layoutRaf = requestAnimationFrame(() => { layoutRaf = 0; layout(); });
@@ -412,6 +537,11 @@ function layout() {
     b.t.el.style.transform = `translate(${b.x.toFixed(2)}px, ${b.y.toFixed(2)}px)`;
   }
   gridEl.style.height = `${Math.max(0, height)}px`;
+  // Here rather than in render(), because a sticker's *fraction* of its host
+  // changes when the host is resized - which arrives as a bare 'geom' and never
+  // rebuilds a tile. layout() is what already listens for that, and it is
+  // rAF-throttled, so this cannot run twice in a frame however the event storms.
+  paintStickers();
   releaseOffscreen();
 }
 

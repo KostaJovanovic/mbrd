@@ -14,3 +14,4 @@ export const note = (props = {}) => ({ type: 'note', w: 100, h: 100, meta: { tex
 export const photo = (props = {}) => ({ type: 'image', w: 200, h: 200, ...props });
 export const clip = (props = {}) => ({ type: 'video', w: 288, h: 162, ...props });
 export const fence = (props = {}) => ({ type: 'fence', w: 800, h: 600, name: 'F', ...props });
+export const sticker = (props = {}) => ({ type: 'sticker', w: 96, h: 96, name: 'Star', meta: { shape: 's-star', tint: 2 }, ...props });

@@ -24,7 +24,7 @@
 import { overlapFraction } from './geometry.js';
 import { bus, selection } from './board-store.js';
 import { board, byId, topZ } from './board-model.js';
-import { stuckTo } from './sticky.js';
+import { stuckTo, isSticky } from './sticky.js';
 import { fenceOf, isFence } from './fences.js';
 import { snapshotGeom, commitGeom } from './layout.js';
 
@@ -96,7 +96,7 @@ export function visualStackOrder() {
   const order = stackGroups().flatMap(group => group.items);
   const fences = [], notes = [], rest = [];
   for (const item of order) {
-    (isFence(item) ? fences : item.type === 'note' ? notes : rest).push(item.id);
+    (isFence(item) ? fences : isSticky(item) ? notes : rest).push(item.id);
   }
   return [...sortFences(fences), ...rest, ...notes];
 }
@@ -185,7 +185,7 @@ export function stackRoot(item) {
   const seen = new Set();
   while (root && !seen.has(root.id)) {
     seen.add(root.id);
-    const up = (root.type === 'note' ? stuckTo(root) : null) || fenceOf(root);
+    const up = stuckTo(root) || fenceOf(root);
     if (!up) break;
     root = up;
   }
