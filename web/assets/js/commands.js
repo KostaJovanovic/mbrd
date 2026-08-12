@@ -56,7 +56,7 @@ import { getAsset, assetURL } from './storage/assets.js';
 import { close as closeSidebar } from './ui/sidebar.js';
 import { closeToolbar, setArmed, connectArmed, connectTap } from './ui/toolbar.js';
 import { clearQualityOverrides } from './quality.js';
-import { openContextMenu } from './ui/menu.js';
+import { openContextMenu, openAnchored } from './ui/menu.js';
 import { openFencePrompt } from './ui/fence-prompt.js';
 import { open as openSearch } from './ui/search.js';
 import { openCredits } from './ui/credits.js';
@@ -962,6 +962,30 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
      * so there is no default sticker the way there is a default note.
      */
     stickers: () => toggleStickerWindow(),
+    /**
+     * The phone's More button: the three creation tools that no longer fit the
+     * bar, as a menu hanging off the one that replaced them.
+     *
+     * A menu and not a second tier, because that is what ui/menu.js is for and
+     * there is exactly one of it in this app - openAnchored() is how a menu that
+     * is not at a cursor gets opened. Not a FLYOUTS entry either: those open on
+     * hover and this is a tap, on the one layout that has no hover at all.
+     *
+     * It reads the button out of the document rather than being handed it,
+     * because a command takes no arguments from the toolbar - ui/toolbar.js
+     * calls every one of them bare. The rect is captured at open time, so the
+     * drawer closing underneath (which it does, after every command) leaves the
+     * menu where it was rather than dragging it down.
+     */
+    moreTools: () => {
+      const btn = document.querySelector('#toolbar [data-cmd="more-tools"]');
+      if (!btn) return;
+      openAnchored(btn.getBoundingClientRect(), [
+        { label: 'Add a colour', icon: 'i-swatch', action: () => cmds.addSwatch() },
+        { label: 'Add a link', icon: 'i-link', action: () => cmds.addLink() },
+        { label: 'Stickers', icon: 'i-sticker', action: () => cmds.stickers() },
+      ], { label: 'More tools' });
+    },
     canEditNote: id => byId(id)?.type === 'note',
     /**
      * Is there anything in the selection that is stuck to a host?
