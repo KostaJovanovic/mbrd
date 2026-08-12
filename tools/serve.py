@@ -21,7 +21,7 @@ web/_redirects.
 It binds 0.0.0.0 and prints a scannable QR for the LAN URL, so a phone on the
 same Wi-Fi can open the board without typing an IP.
 
-Run: python serve.py [port] [lan-ip]   (defaults to 6273; server.bat passes both)
+Run: python tools/serve.py [port] [lan-ip]  (defaults to 6273; server.bat passes both)
 """
 import os
 import socket
@@ -33,9 +33,11 @@ from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from qr import qr_terminal
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 6273
-# serve.py lives in the repo root but its document root is web/, so paths match
-# what a static host would serve.
-ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web')
+# serve.py lives in tools/ but its document root is the repo's web/, so paths
+# match what a static host would serve. Resolved from __file__, not the working
+# directory, so the launch directory never matters.
+ROOT = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'web')
 
 # .mbrd is a renamed ZIP; without this the dev server would hand it back as
 # text/plain and a fetch/drop round-trip would look subtly broken.

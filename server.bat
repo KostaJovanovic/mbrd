@@ -17,7 +17,7 @@ rem The test is "a python process whose command line mentions this repo's
 rem serve.py". Anything else is reported and left alone, and the server below
 rem then fails to bind and says so.
 powershell -NoProfile -Command ^
-  "$mine = '%~dp0serve.py'.Replace('\\','\');" ^
+  "$mine = '%~dp0tools\serve.py'.Replace('\\','\');" ^
   "Get-NetTCPConnection -LocalPort %PORT% -State Listen -ErrorAction SilentlyContinue |" ^
   "  Select-Object -ExpandProperty OwningProcess -Unique | Where-Object { $_ -ne 0 } | ForEach-Object {" ^
   "    $p = Get-CimInstance Win32_Process -Filter \"ProcessId = $_\" -ErrorAction SilentlyContinue;" ^
@@ -49,8 +49,8 @@ echo ============================================
 echo.
 
 start "" "http://localhost:%PORT%"
-rem serve.py serves web/, answers an unknown address with index.html under a 404
-rem status (the app is its own 404 page), and prints a scannable QR for the
+rem tools\serve.py serves web/, answers an unknown address with index.html under
+rem a 404 status (the app is its own 404 page), and prints a scannable QR for the
 rem Network URL at startup (LOCAL_IP passed in so it doesn't have to guess).
-python serve.py %PORT% %LOCAL_IP%
+python tools\serve.py %PORT% %LOCAL_IP%
 pause

@@ -95,6 +95,9 @@
 
 import { rotatedExtents, segmentMeetsRect } from './geometry.js';
 
+/** Degrees to radians, for the one place here that needs the card's own frame. */
+const RAD = Math.PI / 180;
+
 /**
  * How far a route stays off a card it is passing.
  *
@@ -242,6 +245,54 @@ export function anchorFor(from, to) {
 }
 
 /**
+ * Where a line drawn from this card's *middle* towards `target` leaves it.
+ *
+ * anchorFor's opposite number, and the difference is the whole of why both
+ * exist. An orthogonal route runs perpendicular out of a face, so the middle of
+ * the face is exactly where it should start - a right-angled line leaving from
+ * anywhere else would immediately have to bend to get square. A taut line has
+ * no such obligation: it is a ruled line between two cards, and a ruled line
+ * between two cards is aimed at their *centres*. Started at the middle of a
+ * face instead, it points a few degrees off, arrives a few degrees off, and
+ * reads as a line that happens to touch two cards rather than one that joins
+ * them - most visibly on a tall card beside a wide one, where the two face
+ * midpoints are nowhere near the line between the middles.
+ *
+ * So this clips the centre-to-target ray at the card itself - the *leaning*
+ * rectangle, not the box around it, and that distinction is the whole
+ * correctness of it. Everything else in this file works from `blockOf`, the
+ * axis-aligned box that contains the card, because everything else here is
+ * asking what a route must keep clear of and a box that is too big is the safe
+ * mistake. An endpoint is the one question where too big is not safe: a card
+ * leaning three degrees pokes out past its own box near the corners and falls
+ * short of it everywhere else, so a line clipped at the box stops either
+ * visibly outside the card or hidden inside it, depending on where along the
+ * edge it arrives. Clipped at the rectangle it stops on the drawn edge, at any
+ * lean and anywhere along it.
+ *
+ * `rot` therefore has to be the rotation the card is *drawn* with, lean
+ * included and signed - see centres() in canvas/web.js, which is where that is
+ * put together.
+ */
+export function exitTowards(it, target) {
+  const dx = target.x - it.x;
+  const dy = target.y - it.y;
+  if (!dx && !dy) return { x: it.x, y: it.y };
+  // The ray in the card's own frame, where the walls are the two half-extents.
+  // Only its direction matters: a rotation preserves length, so the scale that
+  // lands on a wall in there is the scale that lands on it out here.
+  const rad = (it.rot || 0) * RAD;
+  const c = Math.cos(rad);
+  const s = Math.sin(rad);
+  const lx = dx * c + dy * s;
+  const ly = dy * c - dx * s;
+  const tx = Math.abs(lx) > EPS ? (it.w / 2) / Math.abs(lx) : Infinity;
+  const ty = Math.abs(ly) > EPS ? (it.h / 2) / Math.abs(ly) : Infinity;
+  const t = Math.min(tx, ty);
+  return { x: it.x + dx * t, y: it.y + dy * t };
+}
+
+/**
  * The path a connection takes, as a list of points to draw straight lines
  * between. Always at least two, and always something: a pair with no route at
  * all still gets a line.
@@ -297,8 +348,40 @@ export function routeConnection(from, to, obstacles = [], opts = {}) {
     return snap && step ? snapOut(k, step) : k;
   });
 
-  /** The taut pass, or nothing, depending on the shape asked for. */
-  const done = (points, blocks) => ({ points: taut ? pull(points, blocks) : points });
+  /**
+   * The taut passes, or nothing, depending on the shape asked for. `obstacles`
+   * is the other cards alone; the two ends are added where they belong.
+   *
+   * Pull first and aim second, in that order and not the other way round: which
+   * way the first leg points is not known until the turns it was going to make
+   * have been dropped, and aiming a leg that is about to be removed is work
+   * thrown away.
+   */
+  const done = (points, obstacles) => {
+    if (!taut) return { points };
+    return { points: aim(pull(points, [...obstacles, ...ends]), obstacles) };
+  };
+
+  /**
+   * Move the two ends from the middle of a face to where the leg leaving them
+   * actually crosses the card - see exitTowards.
+   *
+   * Checked rather than assumed. The leg the pull left behind was verified from
+   * the old anchor, and the new one is a different segment: it starts elsewhere
+   * on the same card and can therefore pass on the other side of something the
+   * old one cleared. When it does, the face midpoint is kept - a line that
+   * leaves squarely is worse-looking than one that aims at the middle, and
+   * better than one that cuts a corner off a photograph.
+   */
+  const aim = (points, obstacles) => {
+    if (points.length < 2) return points;
+    const last = points.length - 1;
+    const head = exitTowards(from, points[1]);
+    if (!crosses(head, points[1], obstacles)) points[0] = head;
+    const tail = exitTowards(to, points[last - 1]);
+    if (!crosses(tail, points[last - 1], obstacles)) points[last] = tail;
+    return points;
+  };
 
   // The straight line, tried before anything else and only at 'taut'. A route
   // that has nothing between its two ends is a ruled line from one card to the
@@ -306,15 +389,27 @@ export function routeConnection(from, to, obstacles = [], opts = {}) {
   // say so - which is the difference somebody moving the slider to the middle
   // is looking for. The end cards are tested along with everything else: two
   // overlapping cards joined by a line is a real board.
-  if (taut && !crosses(a.edge, b.edge, [...blocksAt(clearance, false), ...ends])) {
-    return { points: [a.edge, b.edge] };
+  if (taut) {
+    const straight = [exitTowards(from, to), exitTowards(to, from)];
+    // The other cards, and deliberately not these two. A point on a leaning
+    // card's own outline is *inside* the axis-aligned box around it, so a test
+    // that included the ends would reject every straight line between two cards
+    // that were not perfectly square - which is most of them at the soft end.
+    //
+    // Nothing is given up by leaving them out, and the reason is worth writing
+    // down rather than trusting: this segment runs along the ray from one
+    // centre to the other, and a rectangle is convex, so it leaves each card at
+    // the point it was clipped to and can never come back.
+    if (!crosses(straight[0], straight[1], blocksAt(clearance, false))) {
+      return { points: straight };
+    }
   }
 
   // The two-bend path, tried first and taken whenever it is clear. It is the
   // answer on most boards, the search would only rediscover it, and it is one
   // loop over a handful of segments against the cost of building a lattice.
-  const easyBlocks = [...blocksAt(clearance, true), ...ends];
-  const easy = simple(a, b, easyBlocks);
+  const easyBlocks = blocksAt(clearance, true);
+  const easy = simple(a, b, [...easyBlocks, ...ends]);
   if (easy) return done(easy.points, easyBlocks);
 
   // -------------------------------------------------------------------------
@@ -395,18 +490,18 @@ export function routeConnection(from, to, obstacles = [], opts = {}) {
   for (const [pad, snap] of rungs) {
     const pool = blocksAt(pad, snap);
     const got = attempt(pool);
-    if (got) return done(got.points, [...pool, ...ends]);
+    if (got) return done(got.points, pool);
   }
   const uncovered = blocksAt(0, false).filter(k => !overlapsEnd(k));
   if (uncovered.length !== ordered.length) {
     const got = attempt(uncovered);
-    if (got) return done(got.points, [...uncovered, ...ends]);
+    if (got) return done(got.points, uncovered);
   }
   // Even the elbow is offered to the taut pass. Nothing routed, which at this
   // point means the search could not find a way round rather than that there is
   // none - and if a straight run between two of the elbow's own corners is in
   // fact clear, that is a better picture than a line through a card.
-  return done(elbow(a, b), [...blocksAt(clearance, false), ...ends]);
+  return done(elbow(a, b), blocksAt(clearance, false));
 }
 
 /**

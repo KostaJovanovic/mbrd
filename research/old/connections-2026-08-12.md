@@ -36,9 +36,36 @@ it made the reason plain:
    the card it just left — and a stub eighteen units out would be swallowed by a
    block grown sixty-four.
 
-The midpoint chip left open under item 3 was not built. With the active state in
-place the context menu is one press from the marked line and complete; the chip
-would have been a second editor for the same five settings.
+The midpoint chip left open under item 3 **was** built, a beat later and on
+request, as `ui/conn-chip.js`. What the argument against it got right is in its
+shape: it is not a second editor. It carries the two settings that are cycled
+rather than chosen (arrows, dash), the one that is typed, the one that is final,
+and a button through to the menu for everything else - so there are not two
+places to choose a colour, and the menu stays the complete one.
+
+One thing this document did not predict at all, found the moment the lines were
+bright enough to look at: **hovering a card revealed the end of the line under
+it.** A card's lean at the soft end is presentational and therefore not in
+`item.rot`, so routes ended on the untilted box while the drawn card's corners
+stuck out past it - and the hover lift then slid the card off the last few units
+of its own line. The first fix was wrong in an
+instructive way - padding every card's box out to the tier's maximum lean traded
+a stub that appeared on hover for a gap that was there all the time. A card's
+drawn outline is exactly knowable, so the answer is to stop exactly on it:
+`items.js/tiltOf` reports the lean a card was actually dealt, `centres()` folds
+it into the rotation the router sees, and `exitTowards()` clips the endpoint
+against the *leaning rectangle* rather than the box around it. Everything else
+in the router goes on using the box, because everywhere else too big is the safe
+mistake and at an endpoint it is not.
+
+Two more things the writing did not foresee, both about a taut line rather than
+an orthogonal one. `anchorFor()` puts an end at the middle of a *face*, which is
+exactly right for a route that leaves perpendicular and wrong for a ruled line:
+a taut line is aimed at the two cards' middles, so its ends are where that line
+crosses their edges. And the selected line was drawn as an opaque accent stroke
+*over* the connection, which hid whether it was dashed or dotted at the one
+moment somebody had selected it to change that - so the mark and the hover are
+both haloes underneath now.
 
 Colour and weight reached the menu as two folds rather than a row of swatches
 (`sub:` entries, the same mechanism align/distribute uses). Direction and style

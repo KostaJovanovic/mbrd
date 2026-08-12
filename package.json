@@ -8,7 +8,7 @@
   },
   "description": "Dev-only test harness. The app itself has no dependencies and no build step - the browser loads web/ directly. `npm test` needs no install; the three devDependencies are for the optional lint, typecheck and e2e runs only.",
   "scripts": {
-    "start": "python serve.py",
+    "start": "python tools/serve.py",
     "test": "node --test \"tests/**/*.test.js\"",
     "lint": "oxlint web tests tools",
     "typecheck": "tsc -p jsconfig.json",

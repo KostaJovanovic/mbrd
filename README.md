@@ -9,7 +9,7 @@ Nothing is uploaded and there is no account. Everything stays on your computer.
 ## Run it
 
 ```
-python serve.py
+python tools/serve.py
 ```
 
 Then open `http://localhost:6273`. It also prints a QR code, so a phone on the
@@ -106,7 +106,7 @@ Plain JavaScript, no framework, no dependencies, no build step — edit a file i
 `web/` and refresh.
 
 ```bash
-python serve.py     # dev server on port 6273
+python tools/serve.py   # dev server on port 6273
 npm test            # run the tests, no install needed
 ```
 

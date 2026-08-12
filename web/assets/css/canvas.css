@@ -76,15 +76,17 @@
      which is a frame around a card rather than a hairline on it.
 
      Under its own name rather than by redeclaring --hairline here, and that
-     distinction is worth the extra name. --hairline and --card-rule-gap are both
-     on the TOKENS list in ui/look.js, so a .mbrd may set either inline on :root -
-     and #world is a descendant of :root, so a declaration on this selector
-     outranks anything an author writes and silently takes the control away from
-     everything on the board. It is the same trap the [data-snap] rule in
-     items.css names for --tilt-max. Derived, both keep working: a look that asks
-     for a two-pixel hairline gets two screen pixels out here, and the wider
-     inner rule Softish sets (--card-rule-gap: 8px, tokens.css) is still eight
-     rather than being flattened to the middle's five.
+     distinction is worth the extra name. --hairline is on the TOKENS list in
+     ui/look.js, so a .mbrd may set it inline on :root - and #world is a
+     descendant of :root, so a declaration on this selector outranks anything an
+     author writes and silently takes the control away from everything on the
+     board. It is the same trap the [data-snap] rule in items.css names for
+     --tilt-max. Derived, it keeps working: a look that asks for a two-pixel
+     hairline gets two screen pixels out here.
+
+     Only the *width* is derived, and that is the whole of the scope. A card's
+     inner rule sits at a gap that stays in world units, and .card::after in
+     items.css says why.
 
      --iz is quantised to 8% rungs while the board is moving (IZ_STEP in
      canvas/viewport.js) and written exact the moment it stops, so a line drawn
@@ -94,39 +96,43 @@
      a custom-property write on #world on every frame, which invalidates the
      computed style of every card on screen. It is the exact cost IZ_STEP exists
      to avoid, and it would be spent correcting something nobody can see. */
-  --board-hairline: calc(max(var(--device-px), round(down, var(--hairline), var(--device-px))) * var(--iz));
-  /* One physical pixel, expressed in CSS pixels, which is the unit this whole
-     problem is actually in.
+  --board-hairline: calc(var(--hairline) * var(--iz));
+  /* One physical pixel, expressed in CSS pixels. Read by the Harsh override
+     below; nothing else on the board wants it.
 
      --dpr is published on this element by canvas/viewport.js and refreshed on
-     resize. On a 1x or 2x display it changes nothing: a 1px hairline is one or
+     resize. On a 1x or 2x display it says nothing new: a 1px hairline is one or
      two whole device pixels already. On the fractional scalings Windows hands
      out - 125%, 150% - it is the difference between a line and a smear, because
      1 CSS px is then 1.25 or 1.5 device pixels and a line one and a quarter
      pixels wide has a quarter-pixel of grey down one side of it *wherever* it
-     lands. Rounding the width down to a whole device pixel is what lets the
-     snap below deliver an edge with a hard boundary at both ends rather than
-     just at the near one; the floor keeps it from rounding away to nothing if a
-     look asks for a hairline finer than the screen can draw. */
+     lands. */
   --device-px: calc(1px / var(--dpr, 1));
-  /* And the gap the inner rule sits at, for the half of the same problem the
-     hairline alone does not fix.
+}
 
-     A card wears two lines: the ring round its edge and .card::after, a second
-     rule set --card-rule-gap inside it. Left in world units the gap shrank with
-     the board while the two lines it separates did not - at half zoom it is two
-     screen pixels, and two one-pixel rules two pixels apart are not two rules,
-     they are one thick border. Which is why the edges came out uneven *between*
-     cards rather than around one: image and video have no `.card` and so no
-     inner rule (canvas/renderers.js hands back the picture itself, because it
-     *is* the card), so a photograph kept its clean edge while every audio, text
-     and note card beside it thickened.
+/* Harsh, and Harsh alone, rounds the hairline down to a whole device pixel.
 
-     Two lines that have to read as two need their separation in the same units
-     as the lines themselves. The corner subtraction in .card::after still holds -
-     it reads this, so the inner radius follows the gap up and clamps at 0 rather
-     than bowing. */
-  --board-rule-gap: calc(var(--card-rule-gap) * var(--iz));
+   Rounding it is what lets deviceSnap() below deliver an edge with a hard
+   boundary at *both* ends rather than only at the near one, and at this tier
+   that is worth almost any price: --item-shadow is none and --item-border is
+   full-strength ink, so the ring is not part of the card's elevation, it *is*
+   the elevation, and it is the only thing on the screen.
+
+   It was briefly on #world, for every tier, and that was the mistake this rule
+   exists to undo. On a 150% display the floor takes a 1px line to 0.667px - a
+   third of its coverage - and at Middle and Softish the line it takes it from is
+   --item-border at 16% ink and .card::after in a pale --rule, with a drop shadow
+   already carrying the elevation. A third off full-strength ink reads as crisper.
+   A third off a pale line reads as the border having gone. Both tiers lost their
+   card edges to this, at every zoom, and the tier it was written for could not
+   show the damage because it is the one tier with no pale line on it.
+
+   So: crispness where the edge is the whole design, weight everywhere else. The
+   floor under the round keeps it from vanishing if a look asks for a hairline
+   finer than the screen can draw, and this is still derived from --hairline, so
+   a .mbrd setting that token keeps its say. */
+:root[data-whimsy="2"] #world {
+  --board-hairline: calc(max(var(--device-px), round(down, var(--hairline), var(--device-px))) * var(--iz));
 }
 
 /* A one-pixel line is a width and a *position*, and the stylesheet only owns the
@@ -910,17 +916,22 @@
   dominant-baseline: middle;
   user-select: none;
 }
-/* The line under the pointer, lifted to the accent and a touch heavier, so a
-   connection reads as a thing you can click and edit rather than a drawn-on
-   backdrop. web.js draws it over the bulk path; the class beats the #web path
-   stroke on specificity. */
+/* The line under the pointer, so a connection reads as a thing you can click and
+   edit rather than a drawn-on backdrop.
+
+   A halo under the line, like the mark below and for the same reason - this one
+   used to be an opaque accent stroke drawn over the top, which meant pointing
+   at a dotted line to click it was the moment it stopped looking dotted. Half
+   the mark's strength and a little narrower, so the two are legible together:
+   pointing at the line you have already marked is the commonest way to have
+   both on screen at once. */
 #web .web-hover {
   stroke: var(--accent);
-  stroke-width: calc(var(--web-weight) + 2px);
+  stroke-width: calc(var(--web-weight) + 6px);
   stroke-linecap: round;
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
-  opacity: 0.95;
+  opacity: 0.18;
   pointer-events: none;
 }
 
@@ -952,16 +963,24 @@
 
 /* The line a press landed on, which stays lit after the pointer has moved on -
    the hover says "this is a thing", this says "this is the thing", and Delete
-   means it. The same accent as the hover and a shade heavier again, because the
-   two are on screen together whenever the pointer is resting on the line it just
-   picked and a difference in colour would read as two kinds of line rather than
-   two states of one. */
+   means it.
+
+   A halo *under* the line rather than a stroke over it, and that is the whole
+   design of it. Drawn on top - which is what this was at first - it is an
+   opaque accent-coloured line four pixels wide, and a marked connection stops
+   showing whether it is dashed or dotted or what colour it was given at the
+   exact moment somebody has selected it to change those things. Underneath, the
+   line keeps its own dash, its own colour and its own weight, and reads against
+   the halo instead of against the board. web.js appends it first for this
+   reason; the accent is the same one the hover uses, because they are two
+   states of one thing and not two kinds of line. */
 #web .web-active {
   stroke: var(--accent);
-  stroke-width: calc(var(--web-weight) + 3.5px);
+  stroke-width: calc(var(--web-weight) + 9px);
   stroke-linecap: round;
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
+  opacity: 0.34;
   pointer-events: none;
 }
 

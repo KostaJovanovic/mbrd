@@ -14,18 +14,19 @@ styles are in `web/assets/css/` and JavaScript under `web/assets/js/`, split by
 responsibility into `canvas/`, `import/`, `arrange/`, `storage/`, `ui/`,
 `optimize/` and `perf/`.
 
-`serve.py` is the local threaded server; an address it does not have gets
-`index.html` back under a 404 status, because the app is its own 404 page and
-there is no separate error document. `qr.py` beside it
-holds the terminal QR encoder; `server.bat` is the Windows launcher.
-`tools/gen-formats.mjs` regenerates the committed format catalog.
+`tools/` holds the development scripts. `tools/serve.py` is the local threaded
+server; an address it does not have gets `index.html` back under a 404 status,
+because the app is its own 404 page and there is no separate error document.
+`tools/qr.py` beside it holds the terminal QR encoder, and
+`tools/gen-formats.mjs` regenerates the committed format catalog. `server.bat`
+at the repo root is the Windows launcher.
 
 ## Build, test and development commands
 
 There is no dependency installation, bundler or build step for the application.
 `package.json` exists only to run the tests and declares no dependencies.
 
-- `python serve.py [port]` — dev server on 6273; edits appear after refresh.
+- `python tools/serve.py [port]` — dev server on 6273; edits appear after refresh.
 - `server.bat` — the same thing, on Windows, plus the LAN QR.
 - `npm test` — Node's built-in runner over `tests/`, no install required.
 - `node tools/gen-formats.mjs [path-to-file-analyser]` — rebuild
@@ -61,9 +62,10 @@ workflow in a modern browser. For canvas or storage changes, check pan/zoom,
 selection, save/open, refresh recovery and the browser console. Verify
 responsive or touch-facing changes using the LAN URL when possible.
 
-CI runs the suite on Linux and Windows. The Linux leg matters: this codebase is
-developed on a case-insensitive filesystem, so a wrong-case import path resolves
-locally and 404s there.
+There is no CI; nothing runs on push. One consequence is worth knowing: this
+codebase is developed on a case-insensitive filesystem, so a wrong-case import
+path resolves locally and 404s on the Pages demo, which is case-sensitive.
+Nothing catches that but you.
 
 ## Commit and pull request guidelines
 

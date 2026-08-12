@@ -806,6 +806,65 @@
 }
 #fence-prompt .ctx-item { white-space: nowrap; }
 
+/* The marked connection's own five buttons (ui/conn-chip.js).
+
+   The same stock again - hairline, card paper, the menu's shadow and the menu's
+   entrance - because it is the third thing in the app that appears over the
+   board to be answered, and a fourth appearance would be a fourth thing to
+   recognise. What it is not is a menu: a row of icons rather than a column of
+   labelled rows, because every one of these is either a cycle whose icon is
+   also its readout or a single verb, and a 208px column of five words hanging
+   over a hairline would be the menu it exists to save.
+
+   Below #ctx-menu and the offer in the stack, and above the board. The menu can
+   be opened *from* this chip and then covers it, which is the right order: the
+   thing just opened is the thing being used. */
+#conn-chip {
+  position: fixed;
+  z-index: 59;
+  display: flex;
+  align-items: stretch;
+  padding: 2px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--radius-sm);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
+  animation: ctx-in var(--dur-fast) var(--ease);
+  user-select: none;
+}
+#conn-chip button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: calc(var(--radius-sm) - 2px);
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+/* A seam rather than a gap, the toolbar's idiom: the chip is one small object,
+   and five buttons floating apart inside it would read as five. */
+#conn-chip button + button { border-left: 1px solid var(--rule); border-radius: 0; }
+#conn-chip button:last-child {
+  border-radius: 0 calc(var(--radius-sm) - 2px) calc(var(--radius-sm) - 2px) 0;
+}
+#conn-chip button:hover,
+#conn-chip button:focus-visible { background: var(--paper-2); color: var(--accent-deep); }
+#conn-chip button.is-danger:hover,
+#conn-chip button.is-danger:focus-visible { color: var(--danger); }
+#conn-chip .ico {
+  width: 16px;
+  height: 16px;
+  color: var(--accent);
+  transition: transform var(--dur-base) var(--ease-back);
+}
+#conn-chip button:hover .ico { transform: scale(var(--btn-grow)) translateY(var(--btn-lift)); }
+#conn-chip button.is-danger:hover .ico { color: var(--danger); }
+
 /* The region the offer is about, held on the board for as long as the offer is.
 
    The band that asked the question is the marquee's and ends with the gesture,

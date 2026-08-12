@@ -27,8 +27,9 @@ web/                     the application, and the document root
   lab.html               a bench for the palette extractor, deliberately not cached
   assets/css/            eight subsystem files, in load order (= the cascade)
   assets/js/             the app, split by responsibility
-serve.py, qr.py          the dev server and its terminal QR
-tools/                   gen-formats.mjs, preset-oklch.mjs
+tools/                   serve.py + qr.py (dev server and its terminal QR),
+                         gen-formats.mjs, gen-og.mjs, preset-oklch.mjs
+server.bat, save.bat     the Windows launcher, and the release stamper
 tests/                   node --test, no install
 docs/, research/         specifications, and the reasoning behind past decisions
 ```
@@ -330,13 +331,25 @@ reads as the borders changing weight every time the board is touched.
 pixels.** A line authored in world units is scaled by the layer transform, so at
 half zoom a one-pixel border is asked to paint half a device pixel and each of
 its four edges rounds independently — a card comes out with a left and a top and
-no right or bottom, and changes its mind as you pan. So `#world` derives two
-variables and everything on the board reads those instead: `--board-hairline`
-(`--hairline × --iz`) and `--board-rule-gap` (`--card-rule-gap × --iz`).
-*Derived*, not redeclared — `--hairline` and `--card-rule-gap` are on
-`ui/look.js`'s `TOKENS` list, and a declaration for either **on** `#world` would
-outrank anything a `.mbrd` writes inline on `:root`, silently taking the control
-away from every item.
+no right or bottom, and changes its mind as you pan. So `#world` derives
+`--board-hairline` (`--hairline × --iz`) and everything on the board reads that
+instead. *Derived*, not redeclared — `--hairline` is on `ui/look.js`'s `TOKENS`
+list, and a declaration for it **on** `#world` would outrank anything a `.mbrd`
+writes inline on `:root`, silently taking the control away from every item.
+
+**Only the width.** A card's inner rule (`.card::after`) sits at
+`--card-rule-gap` in *world* units, because that gap is ornament printed on the
+card — like its padding, its type and its corner — rather than chrome laid over
+it. Deriving it too pins the plate rule a constant number of screen pixels from
+the edge, so zooming in walks it into the ring and a ruled card reads as one
+doubled outline.
+
+The width has a second, narrower derivation at Harsh only: there
+`--board-hairline` rounds down to a whole device pixel (`--device-px`, below).
+That belongs to the one tier where `--item-shadow` is `none` and the ring is the
+whole elevation model. Applied to every tier it costs a 150% display a third of
+every line's coverage, which on Middle's 16%-ink border and Softish's pale
+`--rule` is the difference between a drawn edge and no edge.
 
 Width is only half of a one-pixel line, though. The other half is **position**,
 and a card's four edges land at four unrelated positions *between* device pixels
@@ -351,10 +364,11 @@ ends on whole device pixels, and everything measured from that box — ring, inn
 rule, caption plate — comes along. It rides `transform` (which nothing
 transitions and which costs no layout) and runs on the settling frame, not per
 frame, via the same `vp.onChange` listener as the cull. Two things make it mean
-anything: the width must be a whole number of device pixels, which is why
+its most: the width should be a whole number of device pixels, which is why
 `--device-px` rounds against a `--dpr` published by `canvas/viewport.js` (125%
 and 150% display scaling otherwise put a quarter-pixel of grey down one side of
-every line), and the card must not be rotated, since a leaning edge crosses pixel
+every line) — Harsh takes that trade and the other two tiers do not, above — and
+the card must not be rotated, since a leaning edge crosses pixel
 rows along its own length and has no crisp case at any position — which is why
 Harsh stands its cards up. **An item's drawn box is therefore up to one device
 pixel off its stored box**; resize arithmetic, the marquee and everything saved
@@ -590,6 +604,28 @@ all assume — widening it would put an "is this an item" clause in every one of
 them to make one line clickable. One key in `canvas/web.js`, beside the hover it
 is the deliberate half of.
 
+`ui/conn-chip.js` is what the mark is worth: five icon buttons pinned over the
+line's own midpoint (`activeConnectionAnchor`, `polyMidpoint` again, so on a
+route that bends round three cards the chip is *on* the line). Arrows and dash
+are cycles whose icon is also their readout, then label, then a way through to
+the menu, then remove. It is not a second editor — colour and weight are a
+choice from a list, which is what the menu is for — and it has no dismissal
+logic of its own: the mark going away takes it, and every path that drops the
+mark already runs through `canvas/input.js` and `cmds`. It follows the line on
+two signals, because one is not enough: `onActiveConnectionMove` covers an edit,
+a reroute and a dragged card, and `vp.onChange` covers the pan `paint()`
+deliberately returns from without redrawing.
+
+**A card's drawn lean is part of its box here.** Cards rest crooked at the soft
+end (`--item-tilt` × `--tilt-max`, up to 3°) and that lean is presentational, so
+it is not in `item.rot` — which meant a route ended on the *untilted* box, and a
+tilted card's corners stick out past it, so a line's last few units sat under the
+picture. Invisible, until the hover lift moved the card off it and left a stub in
+the gap. `drawnTilt()` adds the tier's maximum lean to the magnitude of every
+card's rotation (never a fence, never at Harsh or on a snapped board, where
+nothing is drawn crooked), so a line may stop a hair further out than it must and
+can never stop underneath.
+
 **What a line can say** is its third element: `dir`, `style`, `label`, and now
 `color` and `weight`. All five are *names* validated against closed lists in
 `connMeta()`, resolved to tokens by one CSS rule each — this object arrives out
@@ -599,11 +635,17 @@ and no version bump was owed. A line with meta already leaves the bulk path for
 its own element in the decoration layer (one shared `d` can only carry one
 stroke), so colour and weight cost nothing structurally.
 
-**Selecting a card lifts its own threads.** The focused subpaths are drawn a
-second time into `.web-focus` over a bulk path the `is-focused` class dims, which
-is one extra `d` string while a focus exists and nothing stored at all. Selection
-rather than hover on purpose: hover needs no teaching and turns a pan across a
-dense board into a strobe.
+**Selecting or pointing at a card lifts its own threads.** The focused subpaths
+are drawn a second time into `.web-focus` over a bulk path the `is-focused` class
+dims, which is one extra `d` string while a focus exists and nothing stored at
+all. Two triggers, and the precedence is the rule: a selection wins, and the
+pointer speaks only when there is nothing selected to drown out. Hover is fenced
+twice — ignored while a gesture runs, since a pan drags the whole board under the
+cursor, and ignored whenever anything is selected — and the opacity transition
+does the rest. Whether anything lit is counted over *every* line on screen and
+not off the bulk path's string: a styled line is its own element in the
+decoration layer, so a card whose connections all carried a colour used to light
+an empty string and dim nothing.
 
 **Dangling is tolerated, not prevented.** A connection whose item is gone is
 simply not drawn, which is why delete, undo, trash and restore need no
@@ -1147,7 +1189,7 @@ list, which is where somebody opening the stylesheets will look first.
   That list drifted once and left a font uncached offline. The test walks
   `assets/js`, `assets/css` and `assets/fonts`, which is what makes `web/lab.html`
   possible: a bench for the palette extractor, deliberately out of the offline
-  shell, sitting at `web/`'s top level only because `serve.py`'s document root is
+  shell, sitting at `web/`'s top level only because the dev server's document root is
   `web/` and that is the one place a page can `import` the real `ui/pigments.js`
   rather than a copy. It is a single file with no module of its own under
   `assets/js` for exactly that reason — put one there and the walk would rightly

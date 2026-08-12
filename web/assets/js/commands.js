@@ -44,6 +44,9 @@ import { linkURL, SWATCH_DEFAULT, defaultSize } from './canvas/renderers.js';
 import { samplePixels, dominantColors } from './ui/pigments.js';
 import { arrange } from './arrange/arrangements.js';
 import { ask } from './ui/dialog.js';
+// The editor that follows the marked line. Kept true from here for the two
+// moves that change the mark without redrawing it - see pickConnection.
+import { syncConnChip } from './ui/conn-chip.js';
 import { pickColor } from './ui/color-picker.js';
 import { exportBoard, openBoard, newBoard, shareBoard, canShareBoard, saveBlob } from './storage/storage.js';
 import { boardPng, boardPdf } from './ui/snapshot.js';
@@ -517,10 +520,14 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
     pickConnection: at => {
       const hit = board.layoutMode === 'mobile' ? null : connectionAt(at.x, at.y);
       setActiveConnection(hit ? hit.a : null, hit ? hit.b : null);
+      // setActiveConnection redraws the mark, and the chip follows the mark - so
+      // this is only here for the press that lands on nothing while nothing was
+      // marked, which changes neither and would leave a stale chip up.
+      syncConnChip();
       return !!hit;
     },
     activeConnection: () => activeConnection(),
-    clearActiveConnection: () => { clearActiveConnection(); },
+    clearActiveConnection: () => { clearActiveConnection(); syncConnChip(); },
     // Delete's half. Answers whether there was one, so the key can fall through
     // to deleting the selection when there was not.
     deleteActiveConnection: () => {
