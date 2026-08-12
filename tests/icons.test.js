@@ -21,7 +21,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { WEB, JS, read } from './helpers.js';
+import { WEB, JS, read, walk } from './helpers.js';
 
 const sprite = read(join(WEB, 'assets', 'icons.svg'));
 const html = read(join(WEB, 'index.html'));
@@ -34,14 +34,25 @@ const defined = new Set([...sprite.matchAll(/<symbol\s+id="([^"]+)"/g)].map(m =>
 /**
  * Every icon the app asks for, with where it asked.
  *
- * Two shapes, because there are two ways in: markup written by hand in
- * index.html, and the name handed to icon() in the modules that build a row.
+ * Three shapes, because there are three ways in: markup written by hand in
+ * index.html, the name handed to icon() in the modules that build a row, and the
+ * same <use href> written into a string by a module that builds its own markup.
+ *
+ * That third one is swept over every module rather than listed, and it is worth
+ * saying why: it was a list of two files, and the day the volume slider moved
+ * from index.html into ui/playlist.js the sprite grew an orphan that this file
+ * reported as a symbol nobody asks for - the reference was real and simply not
+ * being looked at. A pattern this exact is cheap to grep for everywhere, and the
+ * alternative is a list that is only correct until the next module writes an
+ * icon into a template string.
  */
 const referenced = [
   ...[...html.matchAll(/href="assets\/icons\.svg#([^"]+)"/g)].map(m => [m[1], 'index.html']),
   ...[...menu.matchAll(/icon: '([^']+)'/g)].map(m => [m[1], 'ui/menu.js']),
   ...[...menu.matchAll(/icon\('([^']+)'/g)].map(m => [m[1], 'ui/menu.js']),
   ...[...fencePrompt.matchAll(/icon\('([^']+)'/g)].map(m => [m[1], 'ui/fence-prompt.js']),
+  ...walk(JS, ['.js']).flatMap(rel => [...read(join(WEB, rel))
+    .matchAll(/href="assets\/icons\.svg#([^"]+)"/g)].map(m => [m[1], rel])),
 ];
 
 test('the sprite defines something for every icon the app asks for', () => {

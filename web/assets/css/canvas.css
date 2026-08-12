@@ -33,9 +33,132 @@
   width: 0;
   height: 0;
   transform-origin: 0 0;
+  /* Promoted, and permanently.
+
+     This was briefly moved onto .is-viewing - promote for the gesture, demote
+     140ms after it stops - on the reasoning that a permanently composited layer
+     is rasterised once and then *scaled*, so every one-pixel line on the board
+     is resampled rather than redrawn. The premise is true. The conclusion is
+     backwards, because toggling the property does not avoid that resample: it
+     adds two full re-rasters of the whole board to every interaction, one when
+     the layer is created and one when it is thrown away. Each of them lands
+     every hairline on a different pixel phase, so every edge on screen changes
+     weight twice per pan, twice per wheel notch, twice per pinch - which is the
+     flicker the change was meant to cure, made periodic and tied to the pointer.
+
+     A uniformly soft line beats a line that redraws itself whenever the board is
+     touched. So: promoted for good. The compositor keeps a pan at sixty frames,
+     the resample is the same for every card because every card goes through the
+     same transform, and nothing re-rasters merely because a class went on or
+     off. */
   will-change: transform;
   --iz: 1;
+  /* A hairline stays a hair, at every zoom - and stays the *token's* hair, so a
+     look can still set it.
+
+     --hairline is 1px, and that is right on the screen: a panel rule sits on the
+     window and one CSS pixel is one CSS pixel. Inside here it is not, because
+     everything in #world is drawn *before* the layer transform and then scaled
+     by it - so at zoom 0.5 a one-pixel ring is asked to paint half a device
+     pixel, and each of the four edges rounds on its own depending on where it
+     lands on the pixel grid. The symptom does not look like a rounding problem:
+     a card comes out with a left and a top border and no right or bottom, its
+     neighbour two hundred units away comes out whole, and both change their
+     minds as you pan. Nothing is inconsistent - each edge is independently
+     either side of a boundary.
+
+     Multiplying by --iz (= 1/zoom) makes it one *screen* pixel instead, which is
+     the whole meaning of the word: the same thing canvas/web.js asks the browser
+     for with vector-effect: non-scaling-stroke - "a thread, not a beam" - and
+     what canvas/grid.js gets for free by painting in screen space. It also
+     settles what a border does when you zoom *in*, which was never decided so
+     much as inherited: a ring that scaled reached four device pixels at 4x,
+     which is a frame around a card rather than a hairline on it.
+
+     Under its own name rather than by redeclaring --hairline here, and that
+     distinction is worth the extra name. --hairline and --card-rule-gap are both
+     on the TOKENS list in ui/look.js, so a .mbrd may set either inline on :root -
+     and #world is a descendant of :root, so a declaration on this selector
+     outranks anything an author writes and silently takes the control away from
+     everything on the board. It is the same trap the [data-snap] rule in
+     items.css names for --tilt-max. Derived, both keep working: a look that asks
+     for a two-pixel hairline gets two screen pixels out here, and the wider
+     inner rule Softish sets (--card-rule-gap: 8px, tokens.css) is still eight
+     rather than being flattened to the middle's five.
+
+     --iz is quantised to 8% rungs while the board is moving (IZ_STEP in
+     canvas/viewport.js) and written exact the moment it stops, so a line drawn
+     from it sits within a twelfth of a pixel of its settled weight during a
+     gesture - under the resample a moving layer is already doing. That is why
+     nothing here reaches for an unquantised copy of it: publishing one would be
+     a custom-property write on #world on every frame, which invalidates the
+     computed style of every card on screen. It is the exact cost IZ_STEP exists
+     to avoid, and it would be spent correcting something nobody can see. */
+  --board-hairline: calc(max(var(--device-px), round(down, var(--hairline), var(--device-px))) * var(--iz));
+  /* One physical pixel, expressed in CSS pixels, which is the unit this whole
+     problem is actually in.
+
+     --dpr is published on this element by canvas/viewport.js and refreshed on
+     resize. On a 1x or 2x display it changes nothing: a 1px hairline is one or
+     two whole device pixels already. On the fractional scalings Windows hands
+     out - 125%, 150% - it is the difference between a line and a smear, because
+     1 CSS px is then 1.25 or 1.5 device pixels and a line one and a quarter
+     pixels wide has a quarter-pixel of grey down one side of it *wherever* it
+     lands. Rounding the width down to a whole device pixel is what lets the
+     snap below deliver an edge with a hard boundary at both ends rather than
+     just at the near one; the floor keeps it from rounding away to nothing if a
+     look asks for a hairline finer than the screen can draw. */
+  --device-px: calc(1px / var(--dpr, 1));
+  /* And the gap the inner rule sits at, for the half of the same problem the
+     hairline alone does not fix.
+
+     A card wears two lines: the ring round its edge and .card::after, a second
+     rule set --card-rule-gap inside it. Left in world units the gap shrank with
+     the board while the two lines it separates did not - at half zoom it is two
+     screen pixels, and two one-pixel rules two pixels apart are not two rules,
+     they are one thick border. Which is why the edges came out uneven *between*
+     cards rather than around one: image and video have no `.card` and so no
+     inner rule (canvas/renderers.js hands back the picture itself, because it
+     *is* the card), so a photograph kept its clean edge while every audio, text
+     and note card beside it thickened.
+
+     Two lines that have to read as two need their separation in the same units
+     as the lines themselves. The corner subtraction in .card::after still holds -
+     it reads this, so the inner radius follows the gap up and clamps at 0 rather
+     than bowing. */
+  --board-rule-gap: calc(var(--card-rule-gap) * var(--iz));
 }
+
+/* A one-pixel line is a width and a *position*, and the stylesheet only owns the
+   width. This is the half it does not own, written here because this is where
+   anyone chasing an uneven border will come looking.
+
+   A line drawn inside this layer lands at (world coordinate x zoom) + pan. The
+   zoom is fractional, the pan is fractional, and an item's own coordinates are
+   fractional - so a card's four edges land at four unrelated positions *between*
+   device pixels. The width is exactly one pixel; what varies is how that pixel
+   is split across the two rows it straddles. An edge at 0.9/0.1 reads as a black
+   hairline and the one on the other side of the same card at 0.5/0.5 reads as
+   two rows of grey - same width, half the weight, twice the apparent thickness.
+   At Middle a drop shadow hides all of it. At Harsh, where the ring is the whole
+   card, it is the only thing on the screen.
+
+   Making the line thicker hides it and is not a fix - it trades an uneven hair
+   for an even beam, which is the wrong object. That was tried here and taken out.
+
+   The fix is to move the *card* onto the grid, and it lives in canvas/items.js:
+   deviceSnap() nudges each item by under a pixel so its drawn box lands on whole
+   device pixels, on the settle pass rather than per frame. Same principle
+   canvas/grid.js and canvas/paper.js already work on - see the note on #paper
+   below, "a page edge is one device pixel at every zoom or it is not a drawn
+   edge" - applied to items, which are the one thing on the board that could not
+   simply be moved out of the transform.
+
+   Two things have to hold for it to mean anything, and both are arranged
+   elsewhere: the width has to be a whole number of device pixels (--device-px,
+   above) and the card must not be rotated, since a leaning edge crosses pixel
+   rows along its own length and has no crisp case at any position. That is why
+   Harsh stands its cards up - see quality.css. */
 
 /* Every item shadow is painted here, below every item.
 
@@ -425,7 +548,7 @@
      (canvas/items.js skips the twin for the title). */
   border-radius: inherit;
   background: var(--paper-card);
-  box-shadow: inset 0 0 0 var(--hairline) var(--item-border), var(--item-shadow);
+  box-shadow: inset 0 0 0 var(--board-hairline) var(--item-border), var(--item-shadow);
   /* The size query the font-size reads. Content-box, so it is the card's width. */
   container-type: size;
   overflow: hidden;
@@ -562,7 +685,7 @@
   display: grid;
   place-items: center;
   padding: 0;
-  border: var(--hairline) solid var(--rule-2);
+  border: var(--board-hairline) solid var(--rule-2);
   border-radius: calc(9px * var(--iz, 1));
   background: var(--paper-card);
   box-shadow: var(--shadow-1);
@@ -732,19 +855,49 @@
      zoom along with everything else, and reach ten pixels wide at 8x. */
   vector-effect: non-scaling-stroke;
 }
-/* A give-up route - the router found no way round and fell back to a straight
-   line (web-route.js straight:true, its own bulk path in web.js). Dimmer than a
-   real thread and dashed, so "no clear path here" reads as a state rather than
-   passing for an ordinary direct line. */
-#web path.web-fallback {
-  stroke: color-mix(in srgb, var(--web-line) 50%, transparent);
-  stroke-dasharray: 5 5;
-}
+/* There was a give-up style here - dimmer and dashed - for the straight line the
+   router drew when it found no way round. Both are gone. The router's last resort
+   is an orthogonal elbow now, which passes *behind* the cards in its way rather
+   than across them, and #web is under the items - so it reads as a wire going
+   under a photograph and out the other side, which is a connector rather than a
+   failure. A state worth marking as a failure has to look like one. */
 /* A styled connection - direction, dash or label - drawn in its own layer. It
    inherits the stroke rule above (it is a #web path too); a dash is set per
    line in web.js, and the arrowhead is a shade firmer than the faint line so a
    direction reads at a glance. */
-#web .web-arrowhead { fill: var(--web-line); stroke: none; }
+/* The arrowhead follows its own line's colour where the engine can tell it
+   which line that is. One marker is shared by every connection on the board, so
+   the only way it can be two colours at once is context-stroke - and the two
+   declarations are the fallback: an engine that does not know the keyword drops
+   the second and keeps the grey, which leaves a coloured line with a grey head
+   rather than no head at all. Safari is the floor here (see
+   docs/browser-support.md), and this is a difference in shade on an arrow, not
+   a feature that fails to work. */
+#web .web-arrowhead {
+  fill: var(--web-line);
+  fill: context-stroke;
+  stroke: none;
+}
+
+/* ---- what a line can be told to mean ----
+
+   A connection carries a colour and a weight by *name* (see connMeta() in
+   board-model.js), and this is where a name becomes a value. One rule each, no
+   arithmetic on a stored string, and nothing here that a file could reach into:
+   a name that matches no rule below draws the ordinary line, which is the right
+   answer to a board written by a newer version of the app.
+
+   These are on .web-styled alone. A coloured line has meta, and a line with
+   meta has already left the bulk path for its own element in the decoration
+   layer - the bulk path is one shared stroke and can only be one colour. */
+#web .web-c-accent { stroke: var(--accent); }
+#web .web-c-warm   { stroke: var(--accent-warm); }
+#web .web-c-leaf   { stroke: var(--leaf); }
+#web .web-c-danger { stroke: var(--danger); }
+/* Weight is relative to the board's own, so a bold line stays bold when the
+   whimsy axis or a hand-set token moves --web-weight underneath it. */
+#web .web-w-fine { stroke-width: calc(var(--web-weight) * 0.7); }
+#web .web-w-bold { stroke-width: calc(var(--web-weight) * 2.2); }
 #web .web-label {
   fill: var(--ink);
   /* A paper halo so a label stays legible where it crosses a card or a line.
@@ -767,7 +920,48 @@
   stroke-linecap: round;
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
-  opacity: 0.75;
+  opacity: 0.95;
+  pointer-events: none;
+}
+
+/* One card's own threads, lifted out of a board full of them.
+
+   The lift is done by dropping everything else rather than by brightening the
+   few: the lines are already at the weight they are meant to read at, and a
+   board that got *louder* when you selected something would be the wrong way
+   round. canvas/web.js draws the focused threads a second time into .web-focus
+   over the dimmed bulk path, which is why this rule can dim the bulk path
+   wholesale without dimming what it is trying to show.
+
+   .web-lit is the styled lines' half of the same idea - those are their own
+   elements, so they are lifted by being left alone.
+
+   The fading threads are deliberately not in here. Each carries an inline
+   opacity that is the fade itself, so a rule aimed at them would either lose to
+   it or fight it; a line arriving or leaving is on screen for a third of a
+   second, and it settles into the bulk path this rule does reach. */
+#web .web-bulk,
+#web .web-styled { transition: opacity var(--dur-fast) var(--ease); }
+#web.is-focused .web-bulk,
+#web.is-focused .web-styled:not(.web-lit) { opacity: 0.18; }
+
+/* The lifted copy. No stroke of its own: it inherits the same rule the bulk
+   path takes, so a focused thread and an unfocused one are the same line at two
+   strengths rather than two lines. */
+#web .web-focus { opacity: 1; }
+
+/* The line a press landed on, which stays lit after the pointer has moved on -
+   the hover says "this is a thing", this says "this is the thing", and Delete
+   means it. The same accent as the hover and a shade heavier again, because the
+   two are on screen together whenever the pointer is resting on the line it just
+   picked and a difference in colour would read as two kinds of line rather than
+   two states of one. */
+#web .web-active {
+  stroke: var(--accent);
+  stroke-width: calc(var(--web-weight) + 3.5px);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
   pointer-events: none;
 }
 
@@ -801,4 +995,34 @@
   outline: 2px solid var(--accent);
   outline-offset: 3px;
   border-radius: inherit;
+}
+
+/* The card the draft line is currently aimed at. The same ring as the pick and
+   deliberately quieter - dashed and one pixel thinner - because the two are on
+   screen at the same time and they are not the same claim: one end has been
+   chosen, the other is only where the pointer happens to be. Written on the
+   live node alone by canvas/items.js/setConnectAim; unlike the pick it does not
+   survive a rebuild, and should not - a card that has been culled is not under
+   the pointer. */
+.item[data-aim] {
+  outline: 1px dashed var(--accent);
+  outline-offset: 3px;
+  border-radius: inherit;
+}
+
+/* The line in flight, from the picked card to the pointer.
+   Dashed and in the accent so it never reads as a connection that exists: a
+   drawn line is grey and solid, and the difference between "this is a line" and
+   "this would be a line" has to be visible at a glance without a legend.
+   Above everything else in #web and, like the rest of it, untouchable - the
+   pointer it is following must never land on it. */
+#web .web-draft {
+  stroke: var(--accent);
+  stroke-width: calc(var(--web-weight) + 0.6px);
+  stroke-dasharray: 7 6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.85;
+  pointer-events: none;
 }

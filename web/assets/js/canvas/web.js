@@ -7,8 +7,10 @@
 // and it was nobody's: the board decided what related to what, and there was no
 // way to say otherwise. So the same picture is now a list of pairs somebody
 // drew (`board.connections`), and the spanning tree survives as a generator
-// that offers to draw a set of them for you - see web-graph.js, which is
-// unchanged, and cmds.connectSelection.
+// that offers to draw a set of them for you - see web-graph.js and
+// cmds.connectSelection. Its adaptive governor went at the same time: it sized
+// a board to a frame, and there is no frame to size to once the thing runs on a
+// button press instead of on every frame of a drag.
 //
 // The module kept its name, and the setting kept its key. `settings.web` is
 // what an older build reads to decide whether to draw anything at all between
@@ -26,9 +28,12 @@
 // panning across a board never rebuilds the geometry and moving an item never
 // waits on the view.
 
-import { board, bus, isRider } from '../state.js';
+// baseStep is the board's own lattice, and it is here for one reason: at Harsh
+// the cards are snapped to it (see axisMoved in ui/appearance.js), so a route
+// that turns anywhere else is the axis half-applied. Read here and handed to
+// the router, which may not read anything - see look().
+import { board, bus, isRider, baseStep, selection } from '../state.js';
 import { rafThrottle } from '../util.js';
-import { webZoom } from './viewport.js';
 import { segmentMeetsRect } from '../geometry.js';
 // Where a line runs when there are cards in the way - see web-route.js. Pure,
 // and deliberately not in this file for the same reason web-graph.js is not:
@@ -37,6 +42,10 @@ import { routeConnection, pathData, blockOf, CLEARANCE } from '../web-route.js';
 // Which cards are near enough to be in the way. The index is kept current by
 // canvas/items.js on every add, remove and move.
 import { queryRect } from './spatial.js';
+// The card under the pointer, and the mark that says the draft is aimed at it.
+// Both live in items.js because that module owns the card's DOM - a mark
+// written from here would be undone by the next rebuild of that node.
+import { itemIdFromEvent, setConnectAim } from './items.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -95,37 +104,35 @@ const CULL_MARGIN_MAX = 400;
 const FADE_IN_MS = 400;
 const FADE_OUT_MS = 300;
 
-/**
- * How far out the web is worth drawing at all.
- *
- * The stroke is non-scaling, so a thread stays the same hairline however far
- * out you go while the board it is drawn over shrinks. Zoomed right out, a few
- * hundred hairlines over a board the size of a postage stamp stop reading as
- * connections between things and become a grey scribble laid across the one
- * view whose whole purpose is to show the shape of the board.
- *
- * So it goes, and it goes in a band rather than at a line: full strength a
- * band's width above the rung, thinning to nothing at the rung itself, and
- * below that not drawn at all - which is the half that also gives the work
- * back, since the furthest-out view is the one with every thread inside it and
- * nothing culled.
- *
- * The floor is the board's own detail rung, imported rather than written again
- * here, so the threads leave at the same moment the labels and the grips do
- * rather than at a number of this file's own choosing four hundredths away.
- *
- * Which is why this is a width and not a second threshold. The rung is higher
- * under a finger than under a mouse, and a fixed ceiling written here would
- * have been *below* the floor on a phone - a band of negative width, which
- * divides by zero on the way to an opacity. Expressed as the distance above the
- * rung, the fade is the same fifteen hundredths of travel wherever the rung
- * happens to be.
- */
-const WEB_FADE_BAND = 0.15;
+// ---------------------------------------------------------------------------
+// Why the web has no zoom floor
+//
+// It had one. The threads used to leave on the way out - full strength a band
+// above the board's detail rung, thinning to nothing at the rung itself, gone
+// below it - on the argument that the stroke is non-scaling, so a few hundred
+// hairlines over a board the size of a postage stamp stop reading as
+// connections and become a grey scribble across the one view whose purpose is
+// to show the shape of the board.
+//
+// That argument was about the *derived* web, and it did not survive the
+// connections becoming somebody's. Zoomed out is exactly where a drawn line is
+// worth the most: the far view is the only one that shows the whole graph at
+// once, and the moment it is worth reading is the moment it used to disappear.
+// A line you drew and cannot see is a bug, which is the same sentence that
+// turned settings.web on by default - so the same answer applies here, and the
+// checkbox in View is still the way to say otherwise.
+//
+// What that costs is real and worth naming: the furthest-out view is the one
+// with every thread inside the visible rect, so nothing is culled and the `d`
+// string is at its longest exactly where it used to be skipped. It is one
+// string swap on a view that is not moving, and paint() already returns without
+// touching it while the screen stays inside the rect the last pass culled
+// against - but a board of many hundreds of connections pays for that string on
+// the frame it lands there.
+// ---------------------------------------------------------------------------
 
 let svg = null;
 let path = null;         // every settled thread, as subpaths of one `d`
-let failPath = null;     // the give-up (straight fallback) threads, drawn dimmed and dashed
 let fadeLayer = null;    // <g> holding only the threads currently fading
 // The styled connections - the ones somebody gave a direction, a dash or a
 // label - each drawn as its own element. Kept out of the bulk path on purpose:
@@ -138,6 +145,23 @@ let decoLayer = null;
 // see onHoverMove and hoverConnectionAt.
 let hoverPath = null;
 let hoveredKey = null;
+// The line a press landed on, kept lit until something else is pressed. See the
+// note over activeConnection() for why it is a key here rather than a member of
+// the selection.
+let activePath = null;
+let activeKey = null;
+// The threads of the selected cards, lifted out of everything else - see
+// setFocus(). One more path and one class on the <svg>; nothing is stored.
+let focusPath = null;
+let focusIds = null;
+// The line in flight: the connector tool has one end and the pointer has the
+// other. See setDraftFrom - it is the whole of the tool's feedback, and until
+// it existed the only thing a picked card said was that it had been picked.
+let draftPath = null;
+let draftFrom = null;    // the picked item's id, or null when nothing is armed
+let draftBox = null;     // that item's box in this layer's coordinates
+let draftPoints = null;  // what is drawn: straight while moving, routed on the settle
+let draftTimer = 0;
 let viewportEl = null;
 // The box origin paint() last drew against, so the hover highlight can be laid
 // in the same coordinates between paints without recomputing the whole box.
@@ -255,12 +279,9 @@ export function initWeb(worldEl, viewport) {
 
   path = document.createElementNS(SVG_NS, 'path');
   path.setAttribute('fill', 'none');
-  // A second bulk path for the routes the router gave up on (web-route.js marks
-  // them straight:true). Drawn dimmed and dashed by its class so "no way found
-  // here" is legible rather than looking like an ordinary direct line.
-  failPath = document.createElementNS(SVG_NS, 'path');
-  failPath.setAttribute('fill', 'none');
-  failPath.setAttribute('class', 'web-fallback');
+  // Named so the focus rule can dim this path without dimming the highlights
+  // drawn over it - `#web path` matches every one of them.
+  path.setAttribute('class', 'web-bulk');
   fadeLayer = document.createElementNS(SVG_NS, 'g');
 
   // One arrowhead marker, reused at both ends. orient="auto-start-reverse" is
@@ -291,8 +312,27 @@ export function initWeb(worldEl, viewport) {
   hoverPath.setAttribute('class', 'web-hover');
   hoverPath.setAttribute('fill', 'none');
 
+  // The focused card's own threads, drawn over the dimmed bulk path at full
+  // strength. Below the hover and the active mark, which are about the pointer
+  // rather than about the board.
+  focusPath = document.createElementNS(SVG_NS, 'path');
+  focusPath.setAttribute('class', 'web-focus');
+  focusPath.setAttribute('fill', 'none');
+
+  // The active line, above the hover: the two are the same shape and the
+  // difference between them is that one of them survives the pointer moving on.
+  activePath = document.createElementNS(SVG_NS, 'path');
+  activePath.setAttribute('class', 'web-active');
+  activePath.setAttribute('fill', 'none');
+
+  // The draft, above everything: it is the only line on the board that is not
+  // there yet, and the one the eye is following.
+  draftPath = document.createElementNS(SVG_NS, 'path');
+  draftPath.setAttribute('class', 'web-draft');
+  draftPath.setAttribute('fill', 'none');
+
   decoLayer = document.createElementNS(SVG_NS, 'g');
-  svg.append(defs, path, failPath, hoverPath, fadeLayer, decoLayer);
+  svg.append(defs, path, focusPath, hoverPath, activePath, fadeLayer, decoLayer, draftPath);
 
   // First child of #world, and it never claims a pointer - the web is a
   // backdrop for the items, not a thing you can catch hold of.
@@ -318,9 +358,17 @@ export function initWeb(worldEl, viewport) {
   // A line drawn or removed. Its own event rather than 'items', which fires for
   // a drag, a delete and an undo as well - see the note beside it in state.js.
   bus.on('connections', requestBuild);
+  // Which cards are selected decides which threads are lifted. A repaint, never
+  // a rebuild: nothing about the geometry changes when the selection does.
+  bus.on('selection', () => { focusIds = null; requestPaint(); });
   // Only the web toggle changes what is drawn; other settings (spacing, units)
-  // fire the same event and must not drag a rebuild in with them.
-  bus.on('settings', key => { if (key === 'web') requestBuild(); });
+  // fire the same event and must not drag a rebuild in with them. The whimsy
+  // axis is the exception, and it arrives on this event as 'appearance' - see
+  // reshape() for why it cannot be ignored and cannot be a rebuild either.
+  bus.on('settings', key => {
+    if (key === 'web') requestBuild();
+    else if (key === 'appearance') reshape();
+  });
   // Panning and zooming change which threads are worth drawing and nothing
   // else, so they ask for a paint and never for a build.
   if (vp) vp.onChange(viewMoved);
@@ -431,9 +479,39 @@ function release() {
   settledBox = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
   paintedRect = null;
   lastBox = '';
+  draftPoints = null;
+  clearTimeout(draftTimer);
+  activeKey = null;
+  focusIds = null;
+  if (focusPath) focusPath.setAttribute('d', '');
+  if (svg) svg.classList.remove('is-focused');
+  if (activePath) activePath.setAttribute('d', '');
+  if (draftPath) draftPath.setAttribute('d', '');
   if (path) path.setAttribute('d', '');
-  if (failPath) failPath.setAttribute('d', '');
   if (decoLayer) while (decoLayer.firstChild) decoLayer.removeChild(decoLayer.firstChild);
+}
+
+/**
+ * The look moved: every route is owed again, and no line has changed.
+ *
+ * A route is cached on `sigOf()` - the two end boxes - and a slider move does
+ * not move a card, so every signature still matches and build() would hand back
+ * the shape each line had at the *old* level. The whole board would re-skin
+ * around a set of connectors that did not. Dropping the `routed` flag is the
+ * narrow version of what resetWeb() does: it says the geometry is owed again
+ * without saying the lines are.
+ *
+ * Not resetWeb(), and not a rebuild. resetWeb() releases the settled set and
+ * the fading elements as well, so every line on the board would blink out and
+ * back on a slider move - which is the loudest possible reading of a change to
+ * how corners are drawn. The paint is asked for straight away because the
+ * corner radius is read there and applies immediately; the shapes follow when
+ * the pass lands, on the same settle a drop uses.
+ */
+function reshape() {
+  for (const seg of lastSeg.values()) seg.routed = false;
+  requestPaint();
+  scheduleRoute();
 }
 
 /**
@@ -495,6 +573,10 @@ function build() {
   // been deleted. That is the whole of the dangling story on this side: not
   // drawn, no bookkeeping, and it comes back when the item does.
   const where = new Map(centres().map(p => [p.id, p]));
+  // The picked end can move under a draft that is already up - an undo, a
+  // rearrange, a card arriving from a paste - and the draft is drawn from a
+  // cached box because the pointer asks for it sixty times a second.
+  if (draftFrom) draftBox = where.get(draftFrom) || null;
 
   const wanted = new Map();
   // The box the geometry describes, worked out here rather than in paint().
@@ -607,15 +689,18 @@ function routePass() {
   // did.
   const order = [...owed.filter(([, s]) => near(s)), ...owed.filter(([, s]) => !near(s))];
 
+  // One read of the axis for the whole pass. Every route in it is being worked
+  // out against the same look, and a slider moved half way through a pass would
+  // otherwise leave a board carrying two shapes at once.
+  const opts = look();
   let spent = 0;
   for (const [, seg] of order) {
     if (spent++ >= ROUTE_BUDGET) break;
     // seg.a and seg.b already carry the id and the box - centres() puts both on
     // every point - so there is nothing to look up here.
     const { a, b } = seg;
-    const routed = routeConnection(a, b, obstaclesBetween(a, b, where));
+    const routed = routeConnection(a, b, obstaclesBetween(a, b, where, opts.clearance), opts);
     seg.points = routed.points;
-    seg.straight = routed.straight;
     seg.routed = true;
     for (const p of seg.points) stretchBox(p);
   }
@@ -633,8 +718,12 @@ function routePass() {
  * so the query rectangle flips and the ids that come back are looked up in the
  * already-flipped map rather than converted a second time.
  */
-function obstaclesBetween(a, b, where) {
-  const pad = CLEARANCE * 2;
+function obstaclesBetween(a, b, where, clearance = CLEARANCE) {
+  // Twice whatever room the route is keeping, not twice the constant: at
+  // Softish the clearance is raised so a curve has somewhere to be drawn, and a
+  // query still sized to the plain figure would hand the router a card list
+  // that stopped just short of the cards it now has to go round.
+  const pad = clearance * 2;
   const box = {
     x0: Math.min(a.x, b.x) - pad, x1: Math.max(a.x, b.x) + pad,
     y0: Math.min(a.y, b.y) - pad, y1: Math.max(a.y, b.y) + pad,
@@ -703,24 +792,17 @@ function paint(forced = false) {
     paintedRect = null;
     return;
   }
-  // Nothing to draw, or too far out for it to mean anything. Both answers are
-  // the same answer, and taking it here means the whole `d` string below is
-  // never built at the zoom where it would be longest.
-  const z = vp ? vp.zoom : 1;
-  if ((!settled.size && !animating.size) || z < webZoom()) {
+  // Nothing to draw. The only remaining reason to skip the whole `d` string
+  // below - zoom is not one of them any more, see the note by the fade
+  // constants that used to be here. A draft counts as something to draw: on a
+  // board with no connections at all, it is the only line there is.
+  if (!settled.size && !animating.size && !draftPoints) {
     svg.style.display = 'none';
     // Nothing was drawn, so nothing below is true of what is on screen.
     paintedRect = null;
     return;
   }
   svg.style.display = '';
-  // Linear across the band. Not eased: this tracks a continuous gesture rather
-  // than playing on its own, so what it has to be is proportional to the pinch,
-  // and any curve on it reads as the web lagging the fingers.
-  const floor = webZoom();
-  svg.style.opacity = z >= floor + WEB_FADE_BAND
-    ? ''
-    : ((z - floor) / WEB_FADE_BAND).toFixed(3);
 
   // Everything from here down is a function of where the *threads* are, not of
   // where the eye is - the only thing the view decides is which of them are
@@ -760,6 +842,10 @@ function paint(forced = false) {
     if (p.y > maxY) maxY = p.y;
   };
   for (const entry of animating.values()) for (const p of entry.seg.points) stretch(p);
+  // And the draft, which is the one line here that regularly reaches outside
+  // everything else: it runs to wherever the pointer is, and an <svg> clips at
+  // its own edge.
+  if (draftPoints) for (const p of draftPoints) stretch(p);
   // A board whose items all sit on one row has a zero-height box, and an SVG
   // with a zero extent renders nothing at all - so the box never closes fully.
   const w = Math.max(maxX - minX, 1);
@@ -787,8 +873,9 @@ function paint(forced = false) {
   // below, and drawing a line in both places at once would leave a fading one
   // with a solid twin under it.
   const r = cornerRadius();
+  const lit = focusSet();
   let d = '';
-  let dFail = '';
+  let focusD = '';
   for (const key of settled) {
     const seg = lastSeg.get(key);
     if (!seg) continue;
@@ -796,13 +883,19 @@ function paint(forced = false) {
     // arrow is per-line and this path is one shared `d`.
     if (seg.meta) continue;
     if (vis && !meetsRect(seg.points, vis)) continue;
-    // A give-up route rides its own bulk path so it can be dimmed and dashed; a
-    // real route rides the normal one. Two `d` swaps, still not per-line nodes.
-    if (seg.straight) dFail += pathData(seg.points, r, minX, minY);
-    else d += pathData(seg.points, r, minX, minY);
+    const sub = pathData(seg.points, r, minX, minY);
+    d += sub;
+    // The same subpath twice, in the one case where that is cheaper than the
+    // alternative: the focused threads are drawn again over the dimmed bulk
+    // path rather than held out of it, which would mean two strings that have
+    // to agree about which lines exist instead of one string and a copy.
+    if (lit && seg.ends && (lit.has(seg.ends.a) || lit.has(seg.ends.b))) focusD += sub;
   }
   path.setAttribute('d', d);
-  failPath.setAttribute('d', dFail);
+  focusPath.setAttribute('d', focusD);
+  // Only when something was actually lit. A selected card with no lines of its
+  // own would otherwise dim the whole board to say nothing.
+  svg.classList.toggle('is-focused', !!focusD);
 
   // The box's origin moves whenever the outermost end does, so every fading
   // line is repositioned each frame as well - they are relative to a corner
@@ -815,11 +908,14 @@ function paint(forced = false) {
     el.setAttribute('d', seg.meta ? '' : pathData(seg.points, r, minX, minY));
   }
 
-  drawDecorations(minX, minY, r, vis);
-  // The hovered line may have just moved, been rerouted, or gone; realign or
-  // clear its highlight against the box we just drew.
+  drawDecorations(minX, minY, r, vis, lit);
+  drawDraft(minX, minY, r);
+  // The hovered and the active line may each have just moved, been rerouted, or
+  // gone; realign or clear them against the box we just drew.
   if (hoveredKey && !lastSeg.has(hoveredKey)) hoveredKey = null;
+  if (activeKey && !lastSeg.has(activeKey)) activeKey = null;
   drawHover();
+  drawActive();
 }
 
 /**
@@ -831,7 +927,7 @@ function paint(forced = false) {
  * elements costs less than tracking which changed. Everything they need is on
  * the seg - its routed points, and the meta that says how to draw them.
  */
-function drawDecorations(minX, minY, r, vis) {
+function drawDecorations(minX, minY, r, vis, lit) {
   while (decoLayer.firstChild) decoLayer.removeChild(decoLayer.firstChild);
   const segs = [];
   for (const key of settled) { const s = lastSeg.get(key); if (s?.meta) segs.push(s); }
@@ -841,7 +937,19 @@ function drawDecorations(minX, minY, r, vis) {
   for (const seg of segs) {
     if (vis && !meetsRect(seg.points, vis)) continue;
     const line = document.createElementNS(SVG_NS, 'path');
-    line.setAttribute('class', 'web-styled');
+    // Colour and weight are class names, never values written into a style -
+    // see connMeta() in board-model.js for why that distinction is the whole
+    // safety of the feature. Both are validated to a closed list before they
+    // are stored, so the worst a hostile file can do here is name a class that
+    // no rule matches.
+    const colour = seg.meta.color ? ` web-c-${seg.meta.color}` : '';
+    const weight = seg.meta.weight ? ` web-w-${seg.meta.weight}` : '';
+    // A styled line is its own element, so it is lifted by keeping its strength
+    // rather than by being drawn twice - the dim rule in canvas.css is what
+    // this class is read by.
+    const focus = lit && seg.ends && (lit.has(seg.ends.a) || lit.has(seg.ends.b))
+      ? ' web-lit' : '';
+    line.setAttribute('class', 'web-styled' + colour + weight + focus);
     line.setAttribute('d', pathData(seg.points, r, minX, minY));
     const style = seg.meta.style;
     if (style === 'dashed') line.setAttribute('stroke-dasharray', '7 5');
@@ -946,6 +1054,76 @@ export function connectionAt(wx, wy, tolPx = 10) {
   return hit ? { a: hit.seg.ends.a, b: hit.seg.ends.b } : null;
 }
 
+// ---------------------------------------------------------------------------
+// The line the board is pointing at
+//
+// A connection could be edited exactly one way: right-click it. The editor
+// behind that click is complete - direction, style, label, remove - and it was
+// reachable by the button most people never press on the one element on the
+// board with no other affordance at all. Meanwhile the line lit up under the
+// pointer, which is a promise that pressing it does something.
+//
+// So a press on a line makes it *active*: it stays lit, Delete removes it, and
+// a double click asks for its label. That is the whole feature.
+//
+// It is deliberately not part of the selection. `selection` in state.js is a
+// set of item ids and every consumer of it assumes so - band-select, group
+// drag, arrange, align, delete, the trash, the sidebar's count - so widening it
+// to hold a second kind of thing would put an "is this an item" clause in all
+// of them to make one line clickable. One key, held here beside the hover it is
+// the deliberate half of, costs nothing anywhere else.
+// ---------------------------------------------------------------------------
+
+/** The connection currently pointed at, as its two ends, or null. */
+export function activeConnection() {
+  const seg = activeKey && lastSeg.get(activeKey);
+  return seg?.ends ? { a: seg.ends.a, b: seg.ends.b } : null;
+}
+
+/** Point at a connection, or at none - both ends null puts the mark away. */
+export function setActiveConnection(a, b) {
+  const key = a && b ? keyOf(a, b) : null;
+  if (key === activeKey) return;
+  activeKey = key;
+  drawActive();
+}
+
+export function clearActiveConnection() { setActiveConnection(null, null); }
+
+/**
+ * The cards whose threads are lifted, or null for "no focus at all".
+ *
+ * A board with a few hundred lines on it draws them all at the same weight, and
+ * the far view - the one whose whole purpose is to show the shape of the board,
+ * and the reason the web has no zoom floor any more - is exactly where that is
+ * least readable. Selecting a card lifts its own threads and drops everything
+ * else back, so one card's relationships can be read out of the tangle.
+ *
+ * Selection rather than hover, and that is a judgement about how the board
+ * feels rather than a technical one. Hover is discoverable and needs no
+ * teaching; it also means a pan across a dense board is a strobe, since every
+ * card the pointer crosses re-dims every line on screen. Selection is quiet,
+ * survives the pointer moving away, composes with everything else the selection
+ * already does, and is the state somebody is in when they are actually asking
+ * what a card is connected to.
+ *
+ * Nothing is stored, and the set is derived from the selection rather than kept
+ * beside it - a second copy of the selection is a second thing to keep true.
+ * The memo is dropped whenever the selection changes and rebuilt on the next
+ * paint, which is once per change rather than once per frame of a pan.
+ */
+function focusSet() {
+  if (!focusIds) focusIds = new Set(selection);
+  return focusIds.size ? focusIds : null;
+}
+
+/** Redraw the mark over the active line, or clear it. */
+function drawActive() {
+  if (!activePath) return;
+  const seg = activeKey && lastSeg.get(activeKey);
+  activePath.setAttribute('d', seg ? pathData(seg.points, cornerRadius(), originX, originY) : '');
+}
+
 /** Redraw the hover highlight over the currently hovered line, or clear it. */
 function drawHover() {
   if (!hoverPath) return;
@@ -963,6 +1141,94 @@ export function hoverConnectionAt(wx, wy, tolPx = 12) {
   const key = hit ? hit.key : null;
   if (key !== hoveredKey) { hoveredKey = key; drawHover(); }
   return !!key;
+}
+
+// ---------------------------------------------------------------------------
+// The line in flight
+//
+// The connector tool used to draw nothing at all. Arming it and pressing a card
+// put a ring round that card, and from there until the second press the board
+// said no more than "this one is picked" - not where the line would run, not
+// which card the pointer was over, not what the thing being made would look
+// like. The one gesture in the app that makes a *drawing* was the one gesture
+// with no drawing in it.
+//
+// So: one more path in the SVG this module already owns, from the picked card
+// to wherever the pointer is. It costs nothing structurally - same layer, same
+// transform, same non-scaling stroke - and it follows the same rule everything
+// else here follows about when it is allowed to be routed. Straight while the
+// pointer is moving, worked out properly once it stops. A draft is a drag by
+// another name, and the reason routing waits for a drag to end is the reason it
+// waits here.
+//
+// ui/toolbar.js owns the pick and calls setDraftFrom; this module owns the
+// pointer, because it already listens for one (see onHoverMove) and because
+// canvas/input.js holds exactly one active gesture and a draft is not one.
+// ---------------------------------------------------------------------------
+
+/**
+ * Aim the draft at a card, or put it away.
+ *
+ * Called by ui/toolbar.js whenever the pick changes - including the null that
+ * arrives when the tool is disarmed, a pair is completed, or Escape is pressed,
+ * which is what makes those three put the line away without knowing they have.
+ */
+export function setDraftFrom(id) {
+  draftFrom = id || null;
+  draftBox = draftFrom ? boxOf(draftFrom) : null;
+  draftPoints = null;
+  clearTimeout(draftTimer);
+  setConnectAim(null);
+  if (!draftFrom) requestPaint();
+}
+
+/** One item's box in this layer's coordinates - centres() for a single id. */
+function boxOf(id) {
+  const it = board.items.find(i => i.id === id);
+  if (!it || isRider(it) || it.type === 'ghost') return null;
+  return { id: it.id, x: it.x, y: -it.y, w: it.w, h: it.h, rot: -(it.rot || 0) };
+}
+
+/**
+ * Follow the pointer with the draft line.
+ *
+ * The far end is the card under the pointer when there is one and the pointer
+ * itself when there is not, so the draft is the line that would actually be
+ * drawn rather than an arrow at a cursor - and the card it would join is marked
+ * while it is under there, because a line arriving at a card and a line passing
+ * over one look the same until it lands.
+ */
+function aimDraft(e) {
+  if (!draftFrom || !vp || !webVisible()) return;
+  if (!draftBox) draftBox = boxOf(draftFrom);
+  if (!draftBox) return;
+  const w = vp.toWorld(e.clientX, e.clientY);
+  const overId = itemIdFromEvent(e.target);
+  // Not the card it started from: pressing that is how somebody changes their
+  // mind, and marking it as a target would say the opposite.
+  const aim = overId && overId !== draftFrom ? overId : null;
+  setConnectAim(aim);
+  const to = (aim && boxOf(aim)) || { id: '', x: w.x, y: -w.y, w: 1, h: 1, rot: 0 };
+  draftPoints = [{ x: draftBox.x, y: draftBox.y }, { x: to.x, y: to.y }];
+  requestPaint();
+  // Routed on the settle, exactly as a dropped card is. The straight line in
+  // the meantime is not a placeholder for the route - it is what a line looks
+  // like while it is still being aimed.
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(() => {
+    if (!draftFrom || !draftBox) return;
+    const where = new Map(centres().map(p => [p.id, p]));
+    const opts = look();
+    draftPoints = routeConnection(
+      draftBox, to, obstaclesBetween(draftBox, to, where, opts.clearance), opts).points;
+    requestPaint();
+  }, ROUTE_SETTLE_MS);
+}
+
+/** Draw the draft where paint() has just laid the box out, or clear it. */
+function drawDraft(minX, minY, r) {
+  if (!draftPath) return;
+  draftPath.setAttribute('d', draftPoints ? pathData(draftPoints, r, minX, minY) : '');
 }
 
 /** Drop any hover highlight - the pointer left the board, or a gesture began. */
@@ -984,6 +1250,10 @@ function endHover() {
  * fight what a gesture is already doing.
  */
 function onHoverMove(e) {
+  // The connector has an end picked: the pointer is drawing, not reading. The
+  // draft takes the move whether it is over bare board or over a card, which is
+  // the one case the gate below deliberately refuses.
+  if (draftFrom) { aimDraft(e); return; }
   const root = document.documentElement;
   const busy = viewportEl.classList.contains('is-panning') ||
     viewportEl.classList.contains('is-moving') || root.classList.contains('is-sizing-paper');
@@ -994,16 +1264,53 @@ function onHoverMove(e) {
 }
 
 /**
- * How round a corner is, off the whimsy axis.
+ * How far a Softish route stands off the cards it passes, over and above the
+ * clearance every route keeps.
  *
- * Square at Harsh, rounded at Softish, read from the attribute ui/appearance.js
- * writes on the root element - the same source the stylesheets take every other
- * tier decision from. A connector with a corner style of its own would be the
- * one element on the board with an opinion about how the interface looks.
+ * It is the corner radius, and it is the same number twice on purpose. A fillet
+ * cuts *inside* the corner it rounds; a corner in a route is precisely where
+ * the path is hugging a card at the clearance, because that is what put the
+ * corner there. Smooth a path routed at plain clearance and the curve is drawn
+ * through the card. So the room the curve is about to take is bought before the
+ * search rather than out of the card afterwards, and the two figures have to
+ * match or one of them is guesswork.
  */
-function cornerRadius() {
+const SOFT_RADIUS = 22;
+
+/**
+ * What the whimsy axis asks of a connection: its shape, the room it needs, and
+ * how round its corners are - one read of the attribute ui/appearance.js writes
+ * on the root element, which is the source the stylesheets take every other
+ * tier decision from.
+ *
+ * A connector with a look of its own would be the one element on the board with
+ * an opinion about how the interface looks. This used to say that about the
+ * corner alone, which was the smallest possible reading of it: Harsh squares
+ * every edge on the board and snaps the cards to the lattice, Softish rounds
+ * and softens everything it touches, and the connectors ran between them as the
+ * same right-angled staircase at three radii. The *shape* is the tier decision;
+ * the corner is a detail of it.
+ *
+ *   Harsh    orthogonal, turning on the board's own grid, square corners
+ *   Middle   taut - straight where it can be, and no obligation to 90 degrees
+ *   Softish  the same taut path, given room to curve round what it passes
+ *
+ * The router is pure and reads none of this; see its header. This is the half
+ * that may read the DOM and the board, which is why the translation is here.
+ */
+function look() {
   const level = document.documentElement.dataset.whimsy;
-  if (level === '2') return 0;      // Harsh: the board is a lattice, so are these
-  if (level === '0') return 14;     // Softish
-  return 9;                         // Middle, and the fallback before the dial is read
+  if (level === '2') {
+    return { shape: 'grid', step: baseStep(), clearance: CLEARANCE, radius: 0 };
+  }
+  if (level === '0') {
+    return { shape: 'taut', clearance: CLEARANCE + SOFT_RADIUS, radius: SOFT_RADIUS };
+  }
+  // Middle, and the fallback before the dial has been read.
+  return { shape: 'taut', clearance: CLEARANCE, radius: 9 };
+}
+
+/** How round a corner is - the half of look() that paint() and the hover want. */
+function cornerRadius() {
+  return look().radius;
 }

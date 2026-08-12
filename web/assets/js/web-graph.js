@@ -25,13 +25,13 @@
 // and provably contains no crossing; then every other candidate that still
 // fits, shortest first, each tested against what is already there.
 //
-// The governor is the second half and is here for the same reason - it is
-// arithmetic over measured times, not a rendering concern. It learns what a
-// tree and a pass actually cost on this machine and picks the largest board it
-// will still attempt inside a frame, so a slow laptop draws fewer threads
-// rather than dropping frames. It is wall-clock dependent, which is what made
-// its test flaky once; the tests around it assert the arithmetic, never a
-// duration.
+// The second half used to be a governor: arithmetic over measured times that
+// learned what a tree and a pass cost on this machine and picked the largest
+// board it would still attempt inside a frame, so a slow laptop drew fewer
+// threads rather than dropping frames. It went with the automatic web that
+// needed it - see DENSE_LIMIT, which is the flat number it had become. What it
+// leaves behind is the caution its wall-clock dependence earned, which still
+// applies to every test in this file: assert the arithmetic, never a duration.
 //
 // geometry.js is the only thing this imports, and both names are used by
 // CardGrid below. They were being called without being imported at all, which
@@ -57,116 +57,44 @@ import { corners, pointInItem } from './geometry.js';
 const NEIGHBOURS = 14;
 
 /**
- * Past so many items the second pass is skipped and the tree alone is drawn -
- * and how many that is, this machine decides for itself.
+ * The most cards one press of "Join these" will run the second pass over.
  *
- * It used to be a flat 700, which is a number picked on one computer. The same
- * board on a phone or an old laptop is the same 700 and several times the work,
- * so the constant was really "700 on hardware like the author's". The whole of
- * the quality-modes question in the roadmap came down to this one lever, and
- * making it measure rather than assume is what closes that item: there is no
- * setting to find, nothing to explain, and a slow machine simply draws a
- * slightly sparser web instead of dropping frames.
+ * Past it the spanning tree alone is drawn, which is still a connected web -
+ * just a sparser one - so a selection of the whole of a very large board comes
+ * back with something rather than with a locked tab.
  *
- * **The timing has to come from the spanning tree, not from the whole call**,
- * and that is the one thing here worth reading twice. The obvious version -
- * time the whole of `threads()` and solve for n - measures nothing at all the
- * moment it does any work: once the limit drops below the board size the second
- * pass is skipped, so no further sample is ever taken and the limit is frozen
- * wherever it happened to land. A single slow warm-up frame then thins the web
- * for the rest of the session. That version was written, measured, and threw
- * the limit to 119 on a board it rebuilds in 1.65ms.
+ * **This was an adaptive governor, and the thing it adapted to is gone.** It
+ * timed the tree on every call, fitted a cost per n^2 and a cost per n, and
+ * solved a*n^2 + b*n = 8ms for the largest board this machine could rebuild
+ * inside half a frame - with a deadband on top so the limit could not oscillate
+ * and change the web's shape while you dragged. Every clause of that sentence
+ * was about a web rebuilt on every frame of a drag, which is what this module
+ * used to be run for and has not been since the connections became somebody's.
  *
- * The tree runs on every single rebuild, so timing *it* gives a fresh reading
- * forever, on every board, whether or not the second pass ran.
+ * Run once, on a button press, it could not work and did not: the warmup ate
+ * the first four calls, the 0.85/0.15 smoothing needs dozens more, and a call
+ * happens when somebody presses a button - so measured over a hundred presses
+ * the limit wandered between 580 and 700 on noise and never converged on
+ * anything. Multiplied by the eight-frame allowance the button press was given,
+ * the number that actually bounded the pass was this one all along.
  *
- * The two passes are then fitted separately, and that is the second thing this
- * got wrong on the way here. Treating the second pass as a fixed multiple of
- * the tree's cost looks reasonable and is not: the tree is O(n^2) and the pass,
- * since it got its grid, is about O(n), so the ratio between them falls as the
- * board grows. Measured at a small board it says the pass is twenty times the
- * tree, and the limit lands at 328 - which would have made a 400-item board
- * that rebuilds comfortably in 5ms drop to a bare tree.
- *
- * So: `a` is ms per n^2 for the tree, `b` is ms per n for the pass, both
- * scale-invariant properties of the machine, and the limit is the n that solves
- * a*n^2 + b*n = budget.
- *
- * Solving for n directly rather than nudging the limit up and down is what
- * keeps this from oscillating - a servo would lower the limit, skip the second
- * pass, measure a fast frame, raise it again, and the web would visibly change
- * shape every few frames while you dragged.
- *
- * It only ever goes *below* the ceiling, and the first thing it found is that
- * the old constant was too high even here: on the machine this was written on
- * it settles around 450, because a 400-point board already spends 7.6ms of an
- * 8ms budget and 700 spends over eight on its own - with items.js still to run
- * in the same frame. So this is not only a concession to slow hardware. The
- * flat 700 was optimistic on the computer that chose it.
+ * So it is written down instead of measured. There is no frame to stay inside
+ * any more, nobody is dragging, and a pause after a deliberate press is not a
+ * dropped frame - which is the whole reason the measuring was worth its
+ * complexity and now is not.
  */
-const DENSE_CEILING = 700;
-/** Below this the web stops being a web, so a slow machine still gets one. */
-const DENSE_FLOOR = 60;
-/** Half a 60fps frame. The rest of it belongs to items.js and the browser. */
-const FRAME_BUDGET_MS = 8;
-/**
- * Rebuilds ignored before any of this starts.
- *
- * The first few calls are the JIT's, not the machine's, and they can be an
- * order of magnitude slow. Reacting to them would thin the web at exactly the
- * moment a board is being opened.
- */
-const WARMUP = 4;
-
-let denseLimit = DENSE_CEILING;
-/**
- * `a` and `b`, both seeded from a real measurement rather than from zero.
- *
- * On the machine this was written on, a 700-point board spends about 2.2ms in
- * the tree and 6.1ms in the second pass, which is where these two numbers come
- * from. Starting at a real board's figures means the first rebuild of a session
- * is budgeted roughly right instead of being handed the whole ceiling and then
- * jerked back off it.
- */
-let treeCost = 4.5e-6;   // ms per n^2
-let passCost = 0.009;    // ms per n
-let warmup = WARMUP;
-
-/** What the limit currently is. Exported for tests; nothing in the app reads it. */
-export const denseLimitNow = () => denseLimit;
-
-/**
- * How much of the ceiling one call is allowed, as a multiple of the learned
- * limit. One is the frame budget the governor was written for.
- *
- * The governor learned its limit under a hard constraint that no longer exists.
- * This module used to be run on every frame of a drag - canvas/web.js rebuilt
- * the whole web as a card moved - so "how large a board will this machine
- * finish inside half a frame" was exactly the right question, and thinning the
- * web was the only alternative to dropping frames.
- *
- * It is a generator now. Nothing runs it per frame; it runs when somebody
- * presses "Join these" and waits for the answer, and there is no frame to stay
- * inside. So the limit stays - a selection of nine hundred cards should still
- * not lock the tab - but its urgency drops, and this is that: the same learned
- * number, multiplied. Four frames rather than half of one, which is a pause
- * nobody notices after a button press and still a bound.
- */
-const GENEROUS = 8;
+const DENSE_LIMIT = 5600;
 
 /**
  * Every thread that fits, as index pairs into `pts`.
  *
- * `generous` relaxes the governor for a call that is not inside a frame. See
- * GENEROUS; the default is the frame budget this was written for.
+ * There was a `generous` option, which relaxed the governor for a call that was
+ * not inside a frame. Every call is that call now - see DENSE_LIMIT.
  */
-export function threads(pts, { generous = false } = {}) {
+export function threads(pts) {
   const n = pts.length;
-  const t0 = performance.now();
   const edges = spanningTree(pts);
-  const tTree = performance.now() - t0;
-  learnTree(n, tTree);
-  if (n > denseLimit * (generous ? GENEROUS : 1)) return edges;
+  if (n > DENSE_LIMIT) return edges;
 
   const taken = new Set(edges.map(([a, b]) => pair(a, b, n)));
   const k = Math.min(NEIGHBOURS, n - 1);
@@ -232,73 +160,7 @@ export function threads(pts, { generous = false } = {}) {
     taken.add(pair(a, b, n));
   }
 
-  learnPass(n, performance.now() - t0 - tTree);
   return edges;
-}
-
-/**
- * The tree's timing. Taken on every rebuild, which is the whole point.
- *
- * Smoothed hard, because a single frame is mostly noise - a collection pause or
- * a tab regaining focus lands here as a board twice as expensive as it is, and
- * reacting to that would visibly thin the web for no reason.
- */
-function learnTree(n, ms) {
-  // Too few points to time anything but the clock's own resolution.
-  if (n < 24 || !(ms > 0)) return;
-  if (warmup > 0) { warmup--; return; }
-  treeCost = treeCost * 0.85 + (ms / (n * n)) * 0.15;
-  settle();
-}
-
-/** The same for the second pass, on its own scale: ms per point. */
-function learnPass(n, ms) {
-  if (n < 24 || !(ms > 0) || warmup > 0) return;
-  passCost = passCost * 0.85 + (ms / n) * 0.15;
-  settle();
-}
-
-/**
- * The largest n whose whole rebuild fits the budget: solve a*n^2 + b*n = budget
- * for n, which is the quadratic formula and nothing cleverer.
- *
- * Pure, and exported, because the property that matters here cannot be tested
- * any other way. What this code has to get right is that the limit *converges*
- * - a version that chases its own tail would drop, skip the second pass,
- * measure a fast frame, climb, and change the web's shape every few frames
- * while you dragged. Asserting that by running the real thing forty times and
- * checking the answer stopped moving is asserting that the machine was quiet
- * for the duration, which on a laptop compiling something else it is not: that
- * test failed about one run in three, and every failure was the room and not
- * the code. Split in two - the solve here, the deadband below - both halves are
- * ordinary functions of their arguments and the convergence is provable rather
- * than observed.
- */
-export function denseLimitFor(tree, pass) {
-  if (!(tree > 0)) return null;
-  const root = Math.sqrt(pass * pass + 4 * tree * FRAME_BUDGET_MS);
-  return clampi(Math.round((root - pass) / (2 * tree)), DENSE_FLOOR, DENSE_CEILING);
-}
-
-/**
- * Where the limit goes next, given where it is and where the maths points.
- *
- * Moved only when the answer differs by a sixth, so the limit sits still
- * instead of trembling around a boundary and taking the web's shape with it.
- * That deadband is also what makes convergence a fact rather than a hope: a
- * steady `want` moves the limit at most once and then never again, because
- * after the move the difference is zero.
- *
- * A non-finite `want` holds. It arrives when a cost estimate has gone to NaN,
- * which is a measurement that failed, not a board that got faster.
- */
-export function nextDenseLimit(current, want) {
-  if (!Number.isFinite(want)) return current;
-  return Math.abs(want - current) > current / 6 ? want : current;
-}
-
-function settle() {
-  denseLimit = nextDenseLimit(denseLimit, denseLimitFor(treeCost, passCost));
 }
 
 export const pair = (a, b, n) => (a < b ? a * n + b : b * n + a);

@@ -340,12 +340,25 @@ export const MAX_CONNECTIONS = 2000;
  * at `b`, 'back' at `a`, 'both' at each end. That the pair is otherwise unordered
  * is why the order the file happens to carry is kept rather than sorted here -
  * pairKey() does the sorting it needs for the dedup key without disturbing it.
+ *
+ * `color` and `weight` are the same bargain again, and they are the reason a
+ * board can say that two lines mean different things. Both are **names, never
+ * values**: a colour is 'leaf', not a hex triple, and it is resolved to a token
+ * by one CSS rule per name in canvas.css. That is not tidiness. This object
+ * arrives out of a file somebody else wrote, and a value that reaches a stroke
+ * is a value that reaches the CSSOM - the same reason ui/look.js holds its
+ * tokens to an alphabet. A closed list cannot carry a url() into a stylesheet.
  */
 export const CONN_DIRECTIONS = ['none', 'fwd', 'back', 'both'];
 export const CONN_STYLES = ['solid', 'dashed', 'dotted'];
+/** 'line' is the board's own grey - the default, and what a plain pair draws. */
+export const CONN_COLORS = ['line', 'accent', 'warm', 'leaf', 'danger'];
+export const CONN_WEIGHTS = ['fine', 'normal', 'bold'];
 export const CONN_LABEL_MAX = 60;
 const DIR_SET = new Set(CONN_DIRECTIONS);
 const STYLE_SET = new Set(CONN_STYLES);
+const COLOR_SET = new Set(CONN_COLORS);
+const WEIGHT_SET = new Set(CONN_WEIGHTS);
 
 /** A connection's display settings, kept to the known values, or null if plain. */
 export function connMeta(raw) {
@@ -355,6 +368,8 @@ export function connMeta(raw) {
   // a bare pair, which is what keeps an ordinary board's connections `[a, b]`.
   if (DIR_SET.has(raw.dir) && raw.dir !== 'none') out.dir = raw.dir;
   if (STYLE_SET.has(raw.style) && raw.style !== 'solid') out.style = raw.style;
+  if (COLOR_SET.has(raw.color) && raw.color !== 'line') out.color = raw.color;
+  if (WEIGHT_SET.has(raw.weight) && raw.weight !== 'normal') out.weight = raw.weight;
   if (typeof raw.label === 'string') {
     const label = raw.label.replace(/\s+/g, ' ').trim().slice(0, CONN_LABEL_MAX);
     if (label) out.label = label;

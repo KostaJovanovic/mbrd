@@ -36,7 +36,9 @@ import { threads } from './web-graph.js';
 import { defaultUpAxis, meshKind } from './mesh.js';
 import { travelMs } from './canvas/viewport.js';
 import { isTurning, rotateModel } from './canvas/model.js';
-import { connectionAt } from './canvas/web.js';
+import {
+  connectionAt, activeConnection, setActiveConnection, clearActiveConnection,
+} from './canvas/web.js';
 import { pickFiles, pickCover, addNote, addSwatch, addLink } from './import/drop.js';
 import { linkURL, SWATCH_DEFAULT, defaultSize } from './canvas/renderers.js';
 import { samplePixels, dominantColors } from './ui/pigments.js';
@@ -120,6 +122,44 @@ export function linkTyped(text) {
  */
 function showConnections() {
   if (board.settings.web === false) setSetting('web', true);
+}
+
+/**
+ * What may carry a line, out of some set of items.
+ *
+ * Furniture is out because a hint card relates to nothing - it is talking to
+ * the person, not to the board - and the title card is the board's name. Riders
+ * are out because a stuck note is part of the card it is pinned to, and the web
+ * layer will not draw a line to one anyway. Fences are out because a line to a
+ * region is a line to no particular card, and the generator would spend edges
+ * joining boxes to the things already inside them.
+ *
+ * One predicate rather than three copies of it: both doors into the generator
+ * ask the same question, and so does the tool when it reads the selection.
+ */
+const joinable = items => items.filter(i => !isFurniture(i) && !isRider(i) && !isFence(i));
+
+/**
+ * Run the generator over a pool of cards and say what it drew.
+ *
+ * The spanning tree that used to *be* the web, turned into real connections -
+ * the same ones a hand would have drawn, editable and removable one at a time
+ * afterwards. One undo entry for the set, because you asked for a set.
+ *
+ * The graph works in the same plane the cards do; y is not flipped for it the
+ * way canvas/web.js flips it to draw, because a reflection cannot turn a
+ * non-crossing set into a crossing one and the tree is the same tree.
+ */
+function joinAll(pool, label = 'Join cards') {
+  showConnections();
+  const pts = pool.map(i => ({ id: i.id, x: i.x, y: i.y, w: i.w, h: i.h, rot: i.rot || 0 }));
+  const made = addConnections(
+    threads(pts).map(([a, b]) => [pts[a].id, pts[b].id]),
+    label);
+  toast(made
+    ? `Joined ${made} pair${made === 1 ? '' : 's'}`
+    : 'Those are already joined');
+  return made;
 }
 
 // ---------------------------------------------------------------------------
@@ -404,11 +444,29 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
         toast('Connections are a canvas thing');
         return;
       }
-      const on = !connectArmed();
-      setArmed(on);
-      if (!on) return;
+      if (connectArmed()) { setArmed(false); return; }
+      // A selection made before the tool was pressed is already an answer to
+      // "which cards", and the tool used to throw it away and ask again. So it
+      // is read once, here, at the moment of arming - not on every press, which
+      // would make what a click means depend on what happened to be picked
+      // three clicks ago.
+      //
+      // Two selected or twenty is the generator's question, not the tool's, so
+      // it goes straight to joinAll: you pointed at a set and asked for it to be
+      // joined, and the answer is a set of lines in one undoable step. Exactly
+      // one selected is half a pair, so it becomes the picked end and the next
+      // card you press completes it.
+      //
+      // Armed either way, and that is the point of doing it here rather than in
+      // a separate command: what follows the join is more joining, on the same
+      // board, with the same tool already in your hand.
+      const picked = joinable(board.items.filter(i => selection.has(i.id)));
+      setArmed(true, picked.length === 1 ? picked[0].id : null);
       showConnections();
-      toast('Pick two cards to join them. Same two again to part them.');
+      if (picked.length > 1) { joinAll(picked); return; }
+      toast(picked.length
+        ? 'Now pick the card to join that one to'
+        : 'Pick two cards to join them. Same two again to part them.');
     },
     connectArmed,
     connectTap,
@@ -445,6 +503,33 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
     // Draw-or-part again, from the menu rather than the tool: the pair is joined,
     // so toggling parts them. Its own undo entry, like the tool's.
     removeConnection: (a, b) => { toggleConnection(a, b); },
+    // ---- the line the board is pointing at ----
+    //
+    // A press on a line marks it, and the mark is what gives Delete something to
+    // delete that is not a card. The hit-test is connectionUnder's, the mark
+    // lives in canvas/web.js beside the hover it is the deliberate half of, and
+    // it is deliberately not part of the selection - see the note over
+    // activeConnection() there.
+    //
+    // Returns whether a line was found, which is what lets the press path tell a
+    // click on a connection from a click on bare board. Called with nothing
+    // under the pointer it clears the mark, so one call covers both.
+    pickConnection: at => {
+      const hit = board.layoutMode === 'mobile' ? null : connectionAt(at.x, at.y);
+      setActiveConnection(hit ? hit.a : null, hit ? hit.b : null);
+      return !!hit;
+    },
+    activeConnection: () => activeConnection(),
+    clearActiveConnection: () => { clearActiveConnection(); },
+    // Delete's half. Answers whether there was one, so the key can fall through
+    // to deleting the selection when there was not.
+    deleteActiveConnection: () => {
+      const at = activeConnection();
+      if (!at) return false;
+      clearActiveConnection();
+      toggleConnection(at.a, at.b);
+      return true;
+    },
     // The label is the one connection setting that is not a choice from a short
     // list, so it is asked for rather than picked. null is every way out of the
     // box including an empty one; the way to clear a label is the menu's Remove
@@ -481,48 +566,34 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
      * which is the same "everything, whatever happens to be picked" split
      * rearrange/rearrangeSelection already make.
      *
-     * **No button.** It is on `mbrd.cmds.connectSelection()` and nowhere else,
-     * deliberately: this is a thing you do once to a board rather than a tool
-     * you reach for, and it sat on the toolbar as a seventh segment that made
-     * the bar read as a menu. An entry here with no surface on it is not dead
-     * code - the console handle is a shipped feature, and this is the door a
-     * keyboard binding or a menu row would bind to if either ever wants it.
+     * **No button**, and it no longer needs one for the case it was written for:
+     * pressing the connector tool with two or more cards selected runs the same
+     * generator over them, which is the shape somebody who has just picked a set
+     * of cards actually reaches for. What survives here is the *whole board*
+     * half - the thing you do once to a board rather than a tool you reach for,
+     * which sat on the toolbar as a seventh segment that made the bar read as a
+     * menu. The console handle is a shipped feature, and this is still the door
+     * a keyboard binding or a menu row would bind to if either ever wants it.
      *
      * It is also the migration. A board that had the automatic web switched on
      * lost it the day connections became a stored list; this is how it comes
      * back, as something that can then be argued with.
      *
-     * Furniture is left out. A hint card relates to nothing - it is talking to
-     * the person, not to the board - and the title card is the board's name.
-     * Riders too: a stuck note is part of the card it is pinned to, and the web
-     * layer will not draw a line to one anyway.
+     * What is left out - furniture, riders, fences - is `joinable`'s answer, and
+     * the same one the tool gets when it reads the selection.
      */
     connectSelection: () => {
       if (board.layoutMode === 'mobile') {
         toast('Connections are a canvas thing');
         return;
       }
-      // Fences are out with the furniture and the riders. A line to a region is
-      // a line to no particular card, and the tree would spend edges joining
-      // boxes to the things already inside them.
-      const pool = board.items.filter(i =>
-        !isFurniture(i) && !isRider(i) && !isFence(i)
-        && (selection.size < 2 || selection.has(i.id)));
+      const pool = joinable(board.items.filter(i =>
+        selection.size < 2 || selection.has(i.id)));
       if (pool.length < 2) {
         toast('Pick two or more cards, or put something on the board');
         return;
       }
-      // The graph works in the same plane the cards do; y is not flipped for it
-      // the way canvas/web.js flips it to draw, because a reflection cannot turn
-      // a non-crossing set into a crossing one and the tree is the same tree.
-      showConnections();
-      const pts = pool.map(i => ({ id: i.id, x: i.x, y: i.y, w: i.w, h: i.h, rot: i.rot || 0 }));
-      const made = addConnections(
-        threads(pts, { generous: true }).map(([a, b]) => [pts[a].id, pts[b].id]),
-        'Join cards');
-      toast(made
-        ? `Joined ${made} pair${made === 1 ? '' : 's'}`
-        : 'Those are already joined');
+      joinAll(pool);
     },
 
     /**

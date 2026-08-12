@@ -38,7 +38,7 @@
 
 import { getAsset, assetURL } from '../storage/assets.js';
 import { bus, markDirty, selection } from '../state.js';
-import { toast, clamp, readPref, writePref } from '../util.js';
+import { toast, clamp, readPref, writePref, seekInnerHTML, sizeSeekWave } from '../util.js';
 
 const VOLUME_KEY = 'mbrd.volume';
 /** Loud enough to hear on laptop speakers, quiet enough not to make you jump. */
@@ -425,15 +425,37 @@ export function queuePrev() {
 }
 
 /**
+ * Whether a track that has ended may start the next one.
+ *
+ * Injected by the interface (ui/nowplaying.js/playlistOpen) rather than asked
+ * for, because the answer is "is the playlist on screen" and this module sits
+ * below ui/ - the same one-way seam setAssetNameLookup and setPrompt take, kept
+ * that way by tests/layers.test.js. Unset - in a test, or before the bar is
+ * wired - means yes, so the queue's own behaviour is the default and the gate is
+ * something the interface adds.
+ */
+let advanceGate = null;
+export const setAdvanceGate = fn => { advanceGate = typeof fn === 'function' ? fn : null; };
+
+/**
  * Move on. `auto` is an ended track handing over versus a Next press.
  *
  * repeat 'one' replays the same track only when it ended on its own - a Next
  * press still moves on. At the end of the list, repeat 'all' wraps; otherwise an
  * automatic end stops and a Next press wraps.
+ *
+ * And an automatic hand-over needs the gate above to agree. Only the automatic
+ * one: a Next press is somebody asking, and the whole point of the gate is the
+ * difference between playback you asked for and playback that happened to you.
+ * It sits *after* the repeat-'one' branch on purpose - repeating one track is not
+ * moving on to another, it is an instruction already given about the track you
+ * chose, and revoking it here would make a setting mean different things
+ * depending on which window was up.
  */
 function advanceQueue(auto) {
   if (!queueItems.length) return;
   if (auto && repeatMode === 'one') { startCurrent(); return; }
+  if (auto && advanceGate && !advanceGate()) return;
   const last = queuePos >= queueOrder.length - 1;
   if (last) {
     if (repeatMode === 'all' || !auto) queuePos = 0;
@@ -747,13 +769,38 @@ export function buildTransport(item, sound, opts = {}) {
   // two thirds.
   wave.setAttribute('role', 'slider');
   wave.setAttribute('aria-label', 'Seek');
-  wave.tabIndex = 0;
   wave.setAttribute('aria-valuemin', '0');
+  /**
+   * A stopped track's seek is not a control, so it does not answer the pointer,
+   * take the Tab, or announce itself as something to operate. Written together
+   * because they are one fact: `.is-playing` on the transport is what the
+   * stylesheet reads for the pointer half, and these two are the keyboard and
+   * screen-reader halves of the same sentence.
+   */
+  const setSeekable = on => {
+    wave.tabIndex = on ? 0 : -1;
+    wave.setAttribute('aria-disabled', String(!on));
+  };
+  setSeekable(false);
   let base = null, fill;
+  let vtWave = null, vtWavePath = null;
   if (line) {
-    fill = document.createElement('div');
-    fill.className = 'vtrack-fill';
-    wave.append(fill);
+    // The same shape the now-playing bar and the playlist window draw, so all
+    // three scrubbers wave together at the soft end of the whimsy axis - see the
+    // note in util.js. It was a div scaled on X, which is the one thing a wave
+    // cannot be: scaling one horizontally changes its frequency as it plays, so
+    // the played part is revealed with a clip instead.
+    wave.innerHTML = seekInnerHTML('vt');
+    fill = wave.querySelector('.vt-fill');
+    vtWave = wave.querySelector('.vt-wave-svg');
+    vtWavePath = wave.querySelector('.vt-fill-wave');
+    // On a resize, not on a playback frame. The path is a string built in a loop
+    // over the line's width, so laying it every frame would rebuild it sixty
+    // times a second to arrive at the same characters; the width is what it
+    // actually depends on, and a video card is resizable.
+    if (typeof ResizeObserver === 'function') {
+      new ResizeObserver(() => sizeSeekWave(wave, vtWave, vtWavePath)).observe(wave);
+    }
   } else {
     base = lane('wave-base');
     fill = lane('wave-fill');
@@ -797,7 +844,7 @@ export function buildTransport(item, sound, opts = {}) {
     // move the one it belongs to: the waveform's fill has to reveal shaped ink
     // so it is cut rather than resized, where the line is a plain rectangle and
     // scaleX never touches layout. Both run on every frame of playback.
-    if (line) fill.style.transform = `scaleX(${at.toFixed(4)})`;
+    if (line) wave.style.setProperty('--vt-progress', at.toFixed(4));
     else fill.style.clipPath = `inset(0 ${((1 - at) * 100).toFixed(3)}% 0 0)`;
     // How long it is until it starts, where it is once it has. A card sitting
     // at the top of a track has nothing to report about the playhead - it is at
@@ -874,12 +921,14 @@ export function buildTransport(item, sound, opts = {}) {
 
   on('play', () => {
     transport.classList.add('is-playing');
+    setSeekable(true);
     play.innerHTML = PAUSE_ICON;
     play.setAttribute('aria-label', 'Pause');
     if (!frame) frame = requestAnimationFrame(follow);
   });
   on('pause', () => {
     transport.classList.remove('is-playing');
+    setSeekable(false);
     play.innerHTML = PLAY_ICON;
     play.setAttribute('aria-label', 'Play');
     paint();
@@ -897,6 +946,7 @@ export function buildTransport(item, sound, opts = {}) {
   // element is new - but the bar is handed a clip mid-flight every time.
   if (!sound.paused) {
     transport.classList.add('is-playing');
+    setSeekable(true);
     play.innerHTML = PAUSE_ICON;
     play.setAttribute('aria-label', 'Pause');
     frame = requestAnimationFrame(follow);
@@ -909,6 +959,17 @@ export function buildTransport(item, sound, opts = {}) {
   // the last guess landed. bindScrub() is the same gesture the video card's
   // line has always had.
   bindScrub(wave, clientX => {
+    // Not while it is stopped. A card sitting on a board is a thing you drag, and
+    // the waveform is most of its face - so a scrub on a paused track meant every
+    // attempt to move the card by the part of it you were nearest scrubbed it
+    // instead, and left a clip you had not asked to hear parked somewhere in the
+    // middle. Playing, the same gesture is unmistakably a seek: there is a sound
+    // to move through and a playhead moving through it.
+    //
+    // Press play and it is scrubbable again immediately - which is the honest
+    // shape of it, since seeking a track you are not listening to has no
+    // feedback anyway.
+    if (sound.paused) return;
     if (!sound.duration) return;
     const box = wave.getBoundingClientRect();
     if (!box.width) return;
@@ -918,6 +979,7 @@ export function buildTransport(item, sound, opts = {}) {
 
   /** Seek by `secs`, or to an absolute point when `to` is given. */
   const seekBy = (secs, to = null) => {
+    if (sound.paused) return;      // the keyboard half of the rule above
     if (!sound.duration) return;
     const next = to != null ? to : sound.currentTime + secs;
     sound.currentTime = clamp(next, 0, sound.duration);

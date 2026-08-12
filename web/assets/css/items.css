@@ -87,7 +87,7 @@
    on the hovered card *and* every sticky riding on top of it, so a photo and its
    notes rise as one object while only the photo carries the ring. */
 .item:hover {
-  box-shadow: 0 0 0 calc(1px * var(--iz)) var(--rule-2);
+  box-shadow: 0 0 0 var(--board-hairline) var(--rule-2);
 }
 .item.is-hover {
   --lift: var(--lift-hover);
@@ -281,7 +281,7 @@
   /* The card fills .item exactly, and .item clips at the same radius - so a
      real border would be shaved away at the corners by that clip. An inset
      shadow draws inside the padding box and survives it. */
-  box-shadow: inset 0 0 0 var(--hairline) var(--item-border);
+  box-shadow: inset 0 0 0 var(--board-hairline) var(--item-border);
   overflow: hidden;
 }
 
@@ -292,9 +292,9 @@
 .card::after {
   content: '';
   position: absolute;
-  inset: var(--card-rule-gap);
-  border: var(--hairline) solid var(--rule);
-  border-radius: max(0px, calc(var(--own-radius) - var(--card-rule-gap)));
+  inset: var(--board-rule-gap);
+  border: var(--board-hairline) solid var(--rule);
+  border-radius: max(0px, calc(var(--own-radius) - var(--board-rule-gap)));
   pointer-events: none;
 }
 /* ---------------------------------------------------------------------------
@@ -327,7 +327,14 @@
      builds no #item-shadows twin for this type. Carried here in CSS instead,
      exactly as .title-card carries its own for the same reason. */
   box-shadow: var(--item-shadow);
-  border: var(--ghost-weight) dashed var(--ghost-edge);
+  /* In screen units, like every other line drawn inside the transform - see
+     --board-hairline in canvas.css. --ghost-weight is a look token and stays
+     one, so this is derived from it rather than replacing it, and the inner
+     rule below reads the derived value so the two are subtracted in the same
+     units. Left in world units the dash was the one edge on the board that
+     still thickened as you zoomed in. */
+  --board-ghost-weight: calc(var(--ghost-weight) * var(--iz));
+  border: var(--board-ghost-weight) dashed var(--ghost-edge);
   border-radius: inherit;
   justify-content: center;
   gap: 5px;
@@ -338,7 +345,7 @@
 }
 /* The border draws where .card's inset hairline used to, so the inner rule has
    to step in by the width of it or the two sit on top of each other. */
-.ghost-card::after { inset: calc(var(--card-rule-gap) - var(--ghost-weight)); }
+.ghost-card::after { inset: calc(var(--board-rule-gap) - var(--board-ghost-weight)); }
 /* The inner rule is a filed card's, and Softish is not printing filed cards -
    its candidates carry their own edge treatment instead, and pencil uses this
    pseudo-element for the second stroke. */
@@ -556,7 +563,7 @@
      The inner rule goes with the dash for a plainer reason: it draws 5px in, and
      a card 64 world px tall spends every one of those on the slider. */
   border: 0;
-  box-shadow: inset 0 0 0 var(--hairline) var(--item-border), var(--item-shadow);
+  box-shadow: inset 0 0 0 var(--board-hairline) var(--item-border), var(--item-shadow);
   justify-content: center;
   --card-pad-x: 20px;
   --card-pad-y: 9px;
@@ -782,7 +789,7 @@
   background: var(--swatch, #8a8a8a);
   /* Same hairline .card-cover wears, and for the same reason: a pale swatch on
      pale card stock has no edge of its own. */
-  box-shadow: 0 0 0 var(--hairline) color-mix(in srgb, var(--ink) 10%, transparent);
+  box-shadow: 0 0 0 var(--board-hairline) color-mix(in srgb, var(--ink) 10%, transparent);
   cursor: pointer;
   /* -moz- and -webkit- name the same two parts under different vendors. Both
      are the same undressing; neither browser understands the other's. */
@@ -1105,7 +1112,7 @@
   border-radius: var(--radius-sm);
   /* A pale cover on pale card stock has no edge of its own - the same problem
      the polaroid mat has, and the same hairline answers it. */
-  box-shadow: 0 0 0 var(--hairline) color-mix(in srgb, var(--ink) 10%, transparent);
+  box-shadow: 0 0 0 var(--board-hairline) color-mix(in srgb, var(--ink) 10%, transparent);
 }
 
 /* The kicker earns its place on a card that is only words. Above a picture of
@@ -1262,7 +1269,7 @@
   width: 32px;
   height: 32px;
   padding: 0;
-  border: var(--hairline) solid var(--accent);
+  border: var(--board-hairline) solid var(--accent);
   border-radius: 50%;
   background: none;
   color: var(--accent);
@@ -1356,18 +1363,33 @@
   margin-top: 0;           /* nothing above it left to be pushed away from */
   justify-content: center;
   /* The handle is hidden down here (see #world.zoom-far .item-bar), so there is
-     no corner to keep clear - and the reservation would push the one button
-     left on the card off the middle of it, which is the one place it has to be. */
+     no corner to keep clear. */
   padding-right: 0;
+  /* The foot is the name's. The button centres in what is left above the band
+     rather than in the whole card - without this the two share the middle and the
+     name comes out across the button on anything that is not tall. --ix-head is
+     declared once, with the head itself, at the foot of this file. */
+  padding-top: var(--ix-head);
 }
 #world.zoom-far .card-audio .play {
-  width:  calc(var(--half-min, 98px) * 0.86);
-  height: calc(var(--half-min, 98px) * 0.86);
+  /* Slightly off the 0.86 this was when the button was the whole far-zoom design,
+     because it is no longer: there is a name under it now, and a button still
+     claiming the entire face would read as the name being squeezed in beneath
+     rather than as a record with its title on it. Still generous - it is the one
+     control worth hitting from across a board. */
+  width:  calc(var(--half-min, 98px) * 0.6);
+  height: calc(var(--half-min, 98px) * 0.6);
   /* The ring has to thicken with the button or it antialiases away exactly
-     when the button is all there is left to see. */
-  border-width: max(var(--hairline), calc(var(--half-min, 98px) * 0.03));
+     when the button is most of what there is left to see. */
+  border-width: max(var(--board-hairline), calc(var(--half-min, 98px) * 0.03));
 }
 #world.zoom-far .card-audio .play svg { width: 38%; height: 38%; }
+
+/* Audio needs no bespoke label out here any more, and that is the point of the
+   band: it wears the same nameplate every other card wears, in the same place, at
+   the same size. What was here was a centred headline with its own type scale, its
+   own line clamp and a translucent plate for the sleeve case - three special cases
+   for one card type, all of which the band answers by being where a label goes. */
 
 /* An audio card that has album art is the one case where zooming out should
    leave *more* than a button. A sleeve is recognisable at a size a name is not
@@ -1380,6 +1402,7 @@
    radius, so the cover can simply fill the box. */
 #world.zoom-far .card-audio.has-cover { padding: 0; }
 #world.zoom-far .card-audio.has-cover::after { content: none; }   /* no rule left to be inside of */
+
 #world.zoom-far .card-audio.has-cover .card-cover {
   position: absolute;
   inset: 0;
@@ -1437,7 +1460,7 @@
   width:  clamp(30px, calc(var(--half-min, 100px) * 0.42), 92px);
   height: clamp(30px, calc(var(--half-min, 100px) * 0.42), 92px);
   padding: 0;
-  border: var(--hairline) solid var(--accent);
+  border: var(--board-hairline) solid var(--accent);
   border-radius: 50%;
   background: var(--paper-card);
   color: var(--accent);
@@ -1470,7 +1493,7 @@
   padding: 6px var(--handle-w) 6px 9px;
   gap: 8px;
   background: var(--paper-card);
-  border-top: var(--hairline) solid var(--rule);
+  border-top: var(--board-hairline) solid var(--rule);
   opacity: 0;
   /* Quick in, and out two seconds after the reason to show it stopped being
      true. The delay is the whole auto-hide, and it is a transition-delay rather
@@ -1530,25 +1553,58 @@
   height: 14px;
   cursor: pointer;
 }
-.vtrack::before,
-.vtrack-fill {
-  content: '';
+/* Drawn as the same three-svg shape the now-playing bar and the playlist window
+   use, so all three scrubbers wave together at the soft end of the whimsy axis -
+   see the note in util.js. It was a ::before rail and a div scaled on X, which
+   cannot carry a wave: scaling one horizontally changes its frequency as the
+   clip plays. The clip below moves it instead, and a clip-path is the same
+   never-touches-layout write the transform was. */
+.vt-svg {
   position: absolute;
-  left: 0; right: 0;
-  top: 50%;
-  height: 3px;
-  margin-top: -1.5px;
-  border-radius: min(var(--radius-xs), 2px);
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
 }
-.vtrack::before { background: color-mix(in srgb, var(--ink) 22%, transparent); }
-.vtrack-fill {
-  background: var(--accent);
-  /* Scaled rather than resized: this is written on every frame of playback,
-     and a transform is the one way to move it that never touches layout. */
-  transform-origin: 0 50%;
-  transform: scaleX(0);
+.vtrack > .vt-svg { clip-path: inset(0 0 0 calc(var(--vt-progress, 0) * 100%)); }
+.vt-base { stroke: color-mix(in srgb, var(--ink) 22%, transparent); }
+.vt-fill {
+  position: absolute;
+  inset: 0;
+  clip-path: inset(0 calc((1 - var(--vt-progress, 0)) * 100%) 0 0);
+}
+.vt-fill-line,
+.vt-fill-wave { stroke: var(--accent); }
+.vt-fill-wave { display: none; transform-box: view-box; }
+:root[data-whimsy="0"] .vt-fill-line { display: none; }
+:root[data-whimsy="0"] .vt-fill-wave {
+  /* One period is 2 * WAVE_HALF = 14 user units; keep the 14 in step with it. */
+  display: block;
+  animation: seek-wave 3s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-whimsy="0"] .vt-fill-wave { animation: none; }
 }
 .vtrack:focus-visible { outline: var(--sel-line) solid var(--select); outline-offset: 2px; }
+
+/* A stopped track's waveform is not a control.
+
+   The waveform is most of an audio card's face, so while the clip was not playing
+   every attempt to pick the card up by the part of it you were nearest scrubbed
+   it instead - and left a track you had not asked to hear parked in the middle of
+   itself. Playing, the same gesture is unmistakably a seek. So the face goes back
+   to being a drag target until there is something to seek through, and the
+   pointer says so rather than only refusing.
+
+   Off `.is-playing`, which canvas/audio.js already toggles on the transport at
+   exactly the two moments this turns on; the keyboard and screen-reader halves of
+   the same rule are setSeekable() beside it. */
+.transport:not(.is-playing) .wave {
+  pointer-events: none;
+  cursor: inherit;
+}
 
 .vmute {
   flex: none;
@@ -1679,7 +1735,7 @@
     var(--note-paper);
   /* No ruled border - pad paper has no printed edge. Just enough of an inset
      line to keep a pale note off a pale board. */
-  box-shadow: inset 0 0 0 var(--hairline) color-mix(in srgb, var(--ink) 7%, transparent);
+  box-shadow: inset 0 0 0 var(--board-hairline) color-mix(in srgb, var(--ink) 7%, transparent);
 }
 /* The filed-card inner rule has no business on a sticky. */
 .item[data-type="note"] .card::after { content: none; }
@@ -2001,7 +2057,7 @@
   gap: 6px;
   margin-top: auto;
   padding: 5px 11px 5px 9px;
-  border: var(--hairline) solid var(--rule-2);
+  border: var(--board-hairline) solid var(--rule-2);
   border-radius: var(--leaf);
   background: var(--paper-2);
   color: var(--accent-deep);
@@ -2171,6 +2227,248 @@ plates do: below a third of size a card is a coloured tile, and a click on
    :not([hidden]) because this outweighs the [hidden] rule above and would
    otherwise put an empty plate back on a fence somebody cleared the name of. */
 #world.zoom-far .item[data-type="fence"] .item-label:not([hidden]) { display: block; }
+
+/* ---------------------------------------------------------------------------
+   The index rung: what a card is between 40% and 10%.
+
+   Past the detail rung a card used to keep rendering its body at three pixels a
+   line - a smear of grey where words had been, on every card at once, on the one
+   view whose whole purpose is to show you the shape of a board. The way back was
+   to zoom in on each card in turn until you found the one you meant.
+
+   The answer before this one was a nameplate: the body switched off and the name
+   put on an opaque band across the card's foot. It fixed the smear and left the
+   real problem standing. Six types - text, link, model, embed, generic and any
+   file the app has no renderer for - all became *the same blank white rectangle
+   with a small name at the bottom*, on the one view whose entire job is telling
+   you what is where. And the card's own type mark, the extension set in accent
+   caps at its head, was thrown away at exactly the zoom where three letters are
+   worth more than thirty.
+
+   So: zooming out does not replace a card with a symbol of itself. It reprints
+   the card at a size you can read from where you are standing. Below the point
+   where even that fails, a card becomes what it is made of.
+
+   Three rungs, and each one is a different *kind* of answer rather than the same
+   answer at a different size:
+
+     detail   >= 40%    the card, as built
+     index    40 - 10%  what it is, and what it is called
+     swatch   < 10%     picture, tint or paper. no text at all
+
+   The index rung splits on one question - **is there anything to look at?**
+
+   **Nothing to look at** (text, link, model, embed, generic, audio without cover
+   art) - the card becomes a specimen label. The extension in accent caps at the
+   head, a hairline under it, the name set large beneath in the display face, up
+   to three lines. That is the card's own anatomy - kicker, rule, name - at the
+   card's own scale rather than at the stylesheet's, which is the same move the
+   nameplate was reaching for and the same one .item-bar makes at every other
+   zoom. It is not a new language, it is the card printed larger.
+
+   **A picture** (image, video, a sleeve, a swatch) - the picture, edge to edge,
+   and nothing else. A photograph is its own name at any size, and a plate laid
+   across the bottom of one is a caption on something that did not ask for one.
+   This is the one place the design spends its silence.
+
+   **A note** - its tint and its opening line, set large. No kicker and no rule:
+   a sticky is not a specimen, and NOTE printed over the top of one says nothing
+   that the colour and the handwriting have not already said. A note's name *is*
+   its first line (drop.js takes the first forty characters), so this costs
+   nothing to produce and turns a wall of yellow squares into something you can
+   actually read across.
+
+   The structural idea, and the reason the two are not unified into one band:
+   **where the name sits tells you whether there is anything to look at.** A
+   label above paper, nothing at all over a picture. You learn it in one glance
+   at one board and it holds for every board after.
+
+   Two things about the wiring.
+
+   **One element draws all of it.** .far-head is built once in canvas/items.js
+   with two children - the kind and the name - and styled two ways here. The
+   alternative was to restyle each renderer's own head, which sounds truer to
+   "the same card, larger" and is not: a text card has no .card-icon, a model
+   card is a .title-card, and a swatch is neither, so "one rule for every type"
+   would have been six rules and a standing invitation for the seventh renderer
+   to forget. The result on screen is the same words in the same faces.
+
+   **The size is in screen units, capped against the card.** Every other piece of
+   item chrome multiplies by --iz to hold a constant on-screen size, and this has
+   to as well: a type size that is a share of the card shrinks *with* the card as
+   you zoom out, so the further out you go the less readable the one thing out
+   here you are meant to be reading. That was tried first and it drew a 180-unit
+   card's name at under seven screen pixels. The cost is one --iz relayout, which
+   canvas/viewport.js already paid down - --iz moves in 8% rungs while the board
+   is in motion and is written exact the moment it stops, so a 14px name steps by
+   under a pixel during a gesture and lands true when you let go. The cap is what
+   keeps a small card from wearing type taller than itself, and it is also the
+   graceful end: the label gives up its screen size, shrinks with the card, and
+   at the swatch rung goes entirely.
+   --------------------------------------------------------------------------- */
+#world.zoom-far .item {
+  /* 14 screen px, and no more than 18% of the card's height (--half-h is half of
+     it). The name is the one loud thing out here; everything else is derived
+     from it so the head cannot drift out of proportion with itself. */
+  --ix-name: min(calc(14px * var(--iz, 1)), calc(var(--half-h, 60px) * 0.36));
+  --ix-kind: calc(var(--ix-name) * 0.62);
+  --ix-pad:  calc(var(--ix-name) * 0.72);
+  /* The head's full height, for the one card that keeps something underneath it
+     - see the audio rules below. Padding top and bottom, the kind, the two gaps
+     around its rule, and one line of name. */
+  --ix-head: calc(var(--ix-pad) * 2.84 + var(--ix-kind) + var(--ix-name) * 1.1);
+}
+/* The swatch rung. At a tenth there is no card left to label - everything on the
+   board is a piece of coloured paper, and that is the honest thing for it to be:
+   telling a .txt from a .link at thirty pixels is information nobody is steering
+   by at that scale. Picture, tint, paper, ring. */
+#world.zoom-tiny .far-head { display: none; }
+
+.far-head {
+  position: absolute;
+  inset: 0;
+  /* Off at every ordinary zoom. The rung rule below is the only place this
+     element is ever visible. */
+  display: none;
+  flex-direction: column;
+  align-items: stretch;
+  padding: var(--ix-pad);
+  gap: calc(var(--ix-pad) * 0.42);
+  overflow: hidden;
+  pointer-events: none;   /* the whole card is one drag target */
+  z-index: 1;
+}
+/* :not(.is-editing) because a card being typed into has to keep showing what is
+   being typed, at whatever zoom. */
+#world.zoom-far .item:not(.is-editing) > .far-head:not([hidden]) { display: flex; }
+/* And nothing over a picture. An audio card is the one type that can go either
+   way - a sleeve makes it a picture, no sleeve makes it a filed track - so this
+   is keyed on the artwork actually being there rather than on the type. */
+#world.zoom-far .item:has(.card-cover) > .far-head { display: none; }
+
+/* The kind, and the rule under it.
+   The rule is a border on the kind rather than a line of its own, so it can only
+   ever be exactly where the kind ends - and it runs the card's measure rather
+   than its full width, because a specimen label is ruled inside its margins.
+   The card is ruled *around* at reading size (.card::after) and ruled *across*
+   out here; one line either way, and the change is what says which view you are
+   in. */
+.fh-kind {
+  flex: none;
+  font-family: var(--font-display);
+  font-style: var(--display-italic);
+  font-weight: calc(var(--display-weight) + 100);
+  font-size: var(--ix-kind);
+  line-height: 1;
+  /* The card's own kicker tracking (see .card-icon), which is most of what makes
+     three uppercase letters read as a classification rather than as a word. */
+  letter-spacing: calc(0.16em * var(--ls-scale));
+  text-transform: uppercase;
+  color: var(--accent);
+  border-bottom: var(--board-hairline) solid var(--rule);
+  padding-bottom: calc(var(--ix-pad) * 0.42);
+  white-space: nowrap;
+  overflow: hidden;
+}
+/* The name. Three lines rather than one ellipsised line, which is what the band
+   could afford and a label can: out here the first few words are what you are
+   scanning for, and the third line is often where the one that distinguishes two
+   files from the same shoot actually lives. Left-aligned, because a label reads
+   from its left edge. */
+.fh-name {
+  font-family: var(--font-display);
+  /* +200 over the tier's display weight, the same step .card-name takes. */
+  font-weight: calc(var(--display-weight) + 200);
+  font-size: var(--ix-name);
+  line-height: 1.1;
+  letter-spacing: 0.005em;
+  /* --ink, not --ink-2. At this size the name is the darkest thing on the card
+     and has to be: it is doing the work the whole body used to do. */
+  color: var(--ink);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  /* Filenames are one long token more often than prose is. Without this a
+     40-character name with no spaces in it sets one line and clips, which on a
+     board of camera output is most of the board. */
+  overflow-wrap: anywhere;
+}
+
+/* A note is not a specimen. No kind, no rule, and the line centred in the sheet
+   rather than hung from its top edge - a sticky is written in the middle of
+   itself. Four lines instead of three: there is no head above it to make room
+   for, and a note's name is a sentence rather than a filename. */
+#world.zoom-far .item[data-type="note"] > .far-head { justify-content: center; }
+#world.zoom-far .item[data-type="note"] .fh-kind { display: none; }
+#world.zoom-far .item[data-type="note"] .fh-name { -webkit-line-clamp: 4; }
+
+/* Audio without a sleeve is the one card that keeps something under its head:
+   the play button is the one control worth hitting from across a board, and a
+   track you can start without zooming in is the whole reason it is drawn big out
+   here. So the head takes a fixed slice off the top - one line of name, not
+   three - and the button centres in what is left, which is what --ix-head is
+   for. With a sleeve there is no head at all and the button sits on the artwork,
+   which is the case the rules further up this file already handle. */
+#world.zoom-far .item[data-type="audio"]:not(:has(.card-cover)) > .far-head {
+  bottom: auto;
+  height: var(--ix-head);
+}
+#world.zoom-far .item[data-type="audio"] .fh-name { -webkit-line-clamp: 1; }
+
+/* The inner rule goes at the rung, for every card that still has a body out here.
+   It is a bookplate ruling - a second line just inside the edge - and a second
+   line only says anything while you can see daylight between it and the first.
+   Held five screen pixels off the edge (--board-rule-gap in canvas.css) it stays
+   distinct at any zoom, but on a card that is itself only a few dozen pixels
+   across, five of them in from the edge is not an inset, it is the middle. The
+   card keeps the one line that says where it ends. */
+#world.zoom-far .card::after { content: none; }
+/* The card's edge, out where the thing that used to draw it is switched off.
+   ---------------------------------------------------------------------------
+   A card's hairline is an inset shadow on `.card`, and `.card` lives inside
+   `.item-body` - so the rule above, which hides the body once its contents are a
+   smear, takes the card's own border away with it. The types that keep their body
+   out here (audio, and any picture) kept their edge; note, text, link, model,
+   embed and generic lost theirs, which is a board where some cards have edges and
+   some do not, at exactly the zoom where an edge is the only thing still telling
+   you where one card stops and the next starts.
+
+   So the edge moves to .item itself for as long as the body is down. ::after
+   rather than a box-shadow on .item, for the reason quality.css gives about
+   photographs: an inset shadow paints beneath its element's children, and the
+   band and any surviving body are children.
+
+   Ghosts, fences and the title card are out: each draws its own edge already - a
+   dashed one, a region's, and the title card's own - and a second ring on top of
+   it is a doubled line rather than a fixed one. */
+/* And .card gives its own ring up while that one is drawn, or the cards that
+   still have a body out here draw both - two hairlines in the same place, which
+   is not a thicker line by accident, it is 16% ink over 16% ink. That is why
+   audio came out darker-edged than the photograph beside it: a photo has no
+   `.card` to double with. One ring per card, drawn in one place. */
+#world.zoom-far .item:not([data-type="ghost"]) .card { box-shadow: none; }
+#world.zoom-far .item:not([data-type="ghost"]):not([data-type="fence"]):not([data-type="title"])::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 var(--board-hairline) var(--item-border);
+  pointer-events: none;
+  z-index: 1;
+}
+/* And the body goes, for every card that grew a head - it is the smear the head
+   replaced. Not visibility:hidden but display, so the contents stop being laid
+   out at all.
+
+   Keyed on the head being there rather than on a list of types: a picture never
+   gets one (wantsHead in canvas/items.js), so a picture is never hidden by this
+   and no exclusion has to say so. Audio is the single exception written out, and
+   it is written out because it is genuinely one: its play button survives the
+   rung, so it keeps its body and takes the head as a slice off the top instead.
+   One selector rather than a rule and an override, so there is no cascade to
+   lose track of. */
+#world.zoom-far .item:not(.is-editing):not([data-type="audio"]):has(> .far-head:not([hidden])) .item-body { display: none; }
 /* ---------------------------------------------------------------------------
    Cheap mode: what the board stops paying for while it is being moved.
 

@@ -334,12 +334,13 @@ export const SECTIONS = [
       { id: 'opt-mediafit', type: 'check', label: 'Fill photos & videos',
         get: () => board.mediaFit !== 'contain',
         set: v => setSetting('mediaFit', v ? 'cover' : 'contain') },
-      // Volume was the last row here and is not any more. It lives on the
-      // now-playing bar, which is the only place it is ever wanted: a volume
-      // slider is reached for while something is playing, and the bar is up
-      // exactly then. In the panel it was a control you had to go and find, two
-      // clicks from the sound it was about, and it sat there the rest of the
-      // time as a dial for a board with nothing to hear on it.
+      // Volume was the last row here and is not any more, for a reason that has
+      // outlived one move: in the panel it was a control you had to go and find,
+      // two clicks from the sound it was about, and it sat there the rest of the
+      // time as a dial for a board with nothing to hear on it. It went to the
+      // now-playing bar and has since gone on to the playlist window, which is
+      // where the rest of the transport lives - the bar is down to what is
+      // playing, play/pause, and the way to that window.
     ],
   },
   {

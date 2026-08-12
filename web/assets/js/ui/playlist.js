@@ -26,7 +26,7 @@
 import {
   board, bus, isDefaultTitle, markDirty, setAudioOrder,
 } from '../state.js';
-import { baseName, clamp } from '../util.js';
+import { baseName, clamp, seekInnerHTML, sizeSeekWave } from '../util.js';
 import { mobileOrder, applyAudioOrder } from '../arrange/arrangements.js';
 import { assetURL, getAsset, addFile } from '../storage/assets.js';
 import {
@@ -110,7 +110,10 @@ export function initPlaylist(_viewport, _commands, _headerStyle) {
   bus.on('board', updateMetaAll);
   bus.on('fonts', updateMetaAll);
   onNowPlaying(() => { wirePlayback(); markPlaying(); refreshActions(); windowPlayer?.bind(); });
-  onQueue(refreshActions);
+  // Both transports, not just the hero pair: the window player's shuffle and repeat
+  // buttons are the only readout of a mode that lives in canvas/audio.js, and a
+  // press that changes nothing on screen reads as a dead button.
+  onQueue(() => { refreshActions(); windowPlayer?.refresh(); });
 
   renderAll();
 }
@@ -605,6 +608,7 @@ export function togglePlayerWindow() {
 export function openPlayerWindow() {
   if (windowEl) return;
   windowEl = div('player-window');
+  markTransport();
 
   const head = div('player-window-head');
   const title = div('player-window-title');
@@ -673,6 +677,9 @@ function renderWindowMode() {
     windowView = createView(body, { reorderable: false, variant: 'window' });
   }
   paintToggle();
+  // Player mode has a transport, album mode does not - so the now-playing bar
+  // comes and goes with the view, not with the window. See markTransport().
+  markTransport();
   renderAll();
   windowPlayer?.bind();
 }
@@ -692,7 +699,10 @@ function paintToggle() {
 let windowExit = 0;
 
 export function closePlayerWindow() {
-  if (!windowEl) return;
+  // Before the early return, not after: if the window ever goes away by some
+  // other road the flag has to be able to come off, and this is the one call
+  // every road ends at.
+  if (!windowEl) { markTransport(); return; }
   const el = windowEl;
   // The queue is deliberately left running - closing the player is not stopping
   // the music, any more than leaving the Mobile playlist is.
@@ -709,19 +719,57 @@ export function closePlayerWindow() {
   const done = () => { clearTimeout(windowExit); el.remove(); };
   el.addEventListener('transitionend', e => { if (e.propertyName === 'transform') done(); }, { once: true });
   windowExit = setTimeout(done, 500);
+  markTransport();
+}
+
+/**
+ * Say on <html> whether a transport is already on screen, so the now-playing bar
+ * can stand down while one is.
+ *
+ * The bar is the transport for when you cannot see the thing making the noise.
+ * With this window open in *player* mode you can see it: its play button and seek
+ * line are right there, and the bar is then a second copy of a control already on
+ * screen, laid over the bottom of the window showing the first.
+ *
+ * **Album mode is the case this is named for.** That view is a hero and a
+ * reorderable list and has no transport in it at all - it is built to use the bar
+ * as its transport (see renderWindowMode). A flag that meant "the window is open"
+ * took the bar away there too, which left the album view with nothing to play,
+ * pause or seek with and read as the view toggle doing nothing. So the flag says
+ * what the stylesheet actually depends on rather than what happens to correlate
+ * with it, and switching views has to write it again - hence the call in
+ * renderWindowMode as well as in open and close.
+ *
+ * A class on the root and nothing else, the same shape `is-connecting` and
+ * `data-snap` use. It is written here rather than read from ui/nowplaying.js
+ * because that module imports *this* one, and the arrow may only go one way. The
+ * Mobile half needs nothing - the lens carries its own controls, and
+ * `data-feed-lens` is already on the root from ui/board-view.js/syncLens().
+ *
+ * Written straight off the two facts it is made of, so there is no third truth to
+ * keep in step.
+ */
+function markTransport() {
+  document.documentElement.classList
+    .toggle('playlist-transport', !!windowEl && windowMode !== 'feed');
 }
 
 /**
  * Drag the window by its title bar. It opens anchored to the bottom-right (right /
  * bottom in the stylesheet); the first grab reads that resolved position, switches
  * to top / left so it can move freely, and from then on pointer moves set top / left
- * directly, clamped to keep the whole window on screen. A press on the close button
- * is left alone so it still closes rather than starting a move.
+ * directly, clamped to keep the whole window on screen.
+ *
+ * A press on either title-bar button is left alone. Not just so the button still
+ * works: setPointerCapture on the bar retargets the eventual click to the bar
+ * itself, so a captured press over a button never reaches it at all. The close
+ * button was exempt and the view toggle was not, which is how "Album view" came
+ * to do nothing at all.
  */
 function makeWindowDrag(win, handle) {
   let d = null;
   handle.addEventListener('pointerdown', e => {
-    if (e.button !== 0 || e.target.closest('.player-window-close')) return;
+    if (e.button !== 0 || e.target.closest('button')) return;
     const r = win.getBoundingClientRect();
     win.style.left = `${r.left}px`;
     win.style.top = `${r.top}px`;
@@ -814,8 +862,16 @@ function makeWindowPlayer() {
   line.setAttribute('role', 'slider');
   line.setAttribute('aria-label', 'Seek');
   line.tabIndex = 0;
-  const fill = div('pw-line-fill');
-  line.appendChild(fill);
+  // The same shape the now-playing bar and the video card draw - a base line, a
+  // clipped fill, and the fill carrying both a straight line and a wave, of which
+  // the stylesheet shows one per whimsy tier. It was a div scaled on X, which is
+  // the one thing a wave cannot be: scaling a wave horizontally changes its
+  // frequency as the track plays. See the note in util.js.
+  line.innerHTML = seekInnerHTML('pw-line');
+  const waveSvg = line.querySelector('.pw-line-wave-svg');
+  const wavePathEl = line.querySelector('.pw-line-fill-wave');
+  const sizeWave = () => sizeSeekWave(line, waveSvg, wavePathEl);
+  if (typeof ResizeObserver === 'function') new ResizeObserver(sizeWave).observe(line);
   const total = document.createElement('span');
   total.className = 'pw-time'; total.textContent = '0:00';
   seek.append(elapsed, line, total);
@@ -830,6 +886,11 @@ function makeWindowPlayer() {
   const repeatBtn = pwBtn('pw-repeat', REPEAT_ICON, 'Repeat', cycleRepeat);
   controls.append(shuffleBtn, prevBtn, playBtn, nextBtn, repeatBtn);
 
+  // No volume row here. It belongs on the now-playing bar, which is up whenever
+  // there is anything to turn down - a level is a property of the room rather
+  // than of this list, so putting it here would mean opening a window to quiet a
+  // noise. What this window has that the bar does not is the four controls that
+  // act on the list itself.
   el.append(top, seek, controls);
 
   bindScrub(line, clientX => {
@@ -847,7 +908,7 @@ function makeWindowPlayer() {
     const s = queueEl();
     const dur = s?.duration || 0;
     const cur = s?.currentTime || 0;
-    fill.style.transform = `scaleX(${dur ? clamp(cur / dur, 0, 1).toFixed(4) : 0})`;
+    line.style.setProperty('--pw-progress', (dur ? clamp(cur / dur, 0, 1) : 0).toFixed(4));
     elapsed.textContent = clock(cur);
     total.textContent = clock(dur);
   }

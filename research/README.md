@@ -39,6 +39,18 @@ for a change without checking the current source first.
   closed; the medium and low findings it lists are the remaining work, and are
   the natural source of issues.
 
+`old/connections-2026-08-12.md` went down on the commit that carried it out, and
+its status block is the part to read first: three of its own instructions were
+departed from during the work, each with the reason. It is the argument for why
+the *shape* of a connection answers the whimsy axis rather than only its corner
+radius — lattice-bound at Harsh, taut at the middle, curving at Softish — and it
+names the two things that make that safe: the router stays pure because the shape
+is a parameter, and a cached route has to be dropped when the slider moves,
+because no card moved and nothing else would notice. It also carries the reasons
+behind the four affordances that went in with it (the draft line, the marked
+connection, colour and weight, the focus lift), including the ones that were
+argued down: no single-gesture drag-to-connect, and no membership in `selection`.
+
 `old/mobile-feed-2026-08-09.md` went down on the commit that carried it out — the
 repurposing of the Mobile layout into a native-scrolling DOM feed of images and
 video (`ui/mobile-feed.js`, the pure `arrange/feed-layout.js`, and the top-level

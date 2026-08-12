@@ -293,6 +293,8 @@ function connectionEntries(conn) {
   const meta = cmds.connectionStyle(conn.a, conn.b) || {};
   const dir = meta.dir || 'none';
   const style = meta.style || 'solid';
+  const color = meta.color || 'line';
+  const weight = meta.weight || 'normal';
   const set = patch => cmds.setConnectionStyle(conn.a, conn.b, patch);
   return [
     { label: 'No arrows', icon: 'i-connect', check: dir === 'none', action: () => set({ dir: 'none' }) },
@@ -304,6 +306,15 @@ function connectionEntries(conn) {
     { label: 'Dashed line', icon: 'i-line-dashed', check: style === 'dashed', action: () => set({ style: 'dashed' }) },
     { label: 'Dotted line', icon: 'i-line-dotted', check: style === 'dotted', action: () => set({ style: 'dotted' }) },
     { sep: true },
+    // Colour and weight go one fold deeper, where direction and style stay on
+    // the face of the menu. Not a judgement about which matters more: arrows and
+    // dashes are four and three rows, and colour and weight are five and three
+    // more, which would make this the longest menu in the app for a right-click
+    // on a hairline. The two that change what a line *says* are here; the two
+    // that change what it looks like are one press away.
+    { label: 'Colour', icon: 'i-swatch', sub: connectionColorEntries(conn, color) },
+    { label: 'Weight', icon: 'i-line-solid', sub: connectionWeightEntries(conn, weight) },
+    { sep: true },
     { label: meta.label ? 'Change label' : 'Add a label', icon: 'i-edit-text',
       action: () => cmds.editConnectionLabel(conn.a, conn.b) },
     { label: 'Remove label', icon: 'i-edit-text', hidden: !meta.label,
@@ -312,6 +323,33 @@ function connectionEntries(conn) {
     { label: 'Remove connection', icon: 'i-delete', danger: true,
       action: () => cmds.removeConnection(conn.a, conn.b) },
   ];
+}
+
+/**
+ * The colours a line may be given, and the one fold in this file whose rows are
+ * a palette rather than a list of behaviours.
+ *
+ * Names, not values - see connMeta() in board-model.js. What each name looks
+ * like is one rule in canvas.css, which is what keeps a board file from being
+ * able to name a colour the stylesheet did not choose. The board's own grey is
+ * first because it is the default and the way back to it.
+ */
+function connectionColorEntries(conn, color) {
+  const set = patch => cmds.setConnectionStyle(conn.a, conn.b, patch);
+  return [
+    ['line', 'Board grey'], ['accent', 'Accent'], ['warm', 'Warm'],
+    ['leaf', 'Green'], ['danger', 'Red'],
+  ].map(([name, text]) => ({
+    label: text, icon: 'i-swatch', check: color === name, action: () => set({ color: name }),
+  }));
+}
+
+/** How heavy a line is drawn, relative to the board's own weight. */
+function connectionWeightEntries(conn, weight) {
+  const set = patch => cmds.setConnectionStyle(conn.a, conn.b, patch);
+  return [['fine', 'Fine'], ['normal', 'Normal'], ['bold', 'Bold']].map(([name, text]) => ({
+    label: text, icon: 'i-line-solid', check: weight === name, action: () => set({ weight: name }),
+  }));
 }
 
 function canvasEntries(at) {

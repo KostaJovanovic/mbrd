@@ -53,8 +53,8 @@ are pure — no DOM, no `state` import — and are meant to stay that way.
 `mesh.js` sits at the top level rather than under `canvas/` for exactly that
 reason: it is struct reading, and only `canvas/model.js` turns its output into
 pixels. `web-graph.js` and `web-route.js` are there for the same reason — the
-spanning tree and its governor, and the orthogonal router, are arithmetic over
-points and boxes, and only `canvas/web.js` draws what they decide. The router's
+spanning tree and the orthogonal router are arithmetic over points and boxes,
+and only `canvas/web.js` draws what they decide. The router's
 obstacles are handed in, which is what keeps it down here rather than reaching
 up into `canvas/spatial.js` for them.
 
@@ -209,12 +209,29 @@ is the app's only mode. See *Connections* below.
 
 `ui/nowplaying.js` is the bar along the foot that comes up when a clip starts:
 the transport again, pinned to the glass, so the thing making a noise can be
-stopped by whoever is listening rather than by whoever can find its card. Volume
-is a row it took *out* of the sidebar — a volume dial is reached for while
-something is playing, which is exactly when the bar is up. It keeps playing
-off-screen because `sounding()` in `canvas/items.js` exempts the one card making
-a noise from the cull; removing a media element from the document pauses it, so
-before that a pan stopped the music.
+stopped by whoever is listening rather than by whoever can find its card. It
+carries **three buttons and a seek line** — open the playlist, play/pause, close
+— and that is deliberate: shuffle, previous, next, repeat and the volume slider
+all sat here once, which made the bar a second copy of a transport that already
+exists in the playlist window, next to the list those buttons act on. Prev and
+next beside a name with nothing else on screen move you through something you
+cannot see. Close is not a transport control and stays; it is the only way to
+put the bar away. It keeps playing off-screen because `sounding()` in
+`canvas/items.js` exempts the one card making a noise from the cull; removing a
+media element from the document pauses it, so before that a pan stopped the
+music.
+
+**A track that ends hands over to the next only while the playlist is open.**
+`canvas/audio.js` takes the predicate by injection (`setAdvanceGate`) rather than
+importing it, because the answer is "is the playlist on screen" and audio sits
+below `ui/` — the same one-way seam `setAssetNameLookup` and `setPrompt` use.
+`ui/nowplaying.js` supplies it, because the full player is a lens on Mobile and a
+floating window on the Desktop and this is the file that already knows both. The
+gate is read when a track *ends*, so closing the playlist mid-track stops the
+queue at the end of it and opening it lets the queue carry on; there is nothing
+to arm. Only the automatic hand-over is gated — a Next press is somebody asking —
+and repeat-'one' is left alone, since replaying one track is an instruction
+already given about the track you chose rather than moving on to another.
 
 `ui/credits.js` is the sheet the footer's Credits button opens — a plain module
 beside `ui/dialog.js` rather than a fourth mode inside it, because it asks
@@ -303,7 +320,45 @@ space). That sign flip lives in `canvas/viewport.js` and `canvas/items.js`
 
 `#world` is one absolutely-positioned layer moved by a single
 `translate(...) scale(...)`, so pan/zoom composite on the GPU and native
-`<img>`/`<video>`/`<audio>` keep working.
+`<img>`/`<video>`/`<audio>` keep working. It carries `will-change: transform`
+**permanently**. Toggling it around a gesture costs two full re-rasters of the
+whole board per interaction — one when the layer is promoted, one when it is
+thrown away — and each of them lands every hairline on a fresh pixel phase, which
+reads as the borders changing weight every time the board is touched.
+
+**Every line drawn inside `#world` is measured in screen pixels, not world
+pixels.** A line authored in world units is scaled by the layer transform, so at
+half zoom a one-pixel border is asked to paint half a device pixel and each of
+its four edges rounds independently — a card comes out with a left and a top and
+no right or bottom, and changes its mind as you pan. So `#world` derives two
+variables and everything on the board reads those instead: `--board-hairline`
+(`--hairline × --iz`) and `--board-rule-gap` (`--card-rule-gap × --iz`).
+*Derived*, not redeclared — `--hairline` and `--card-rule-gap` are on
+`ui/look.js`'s `TOKENS` list, and a declaration for either **on** `#world` would
+outrank anything a `.mbrd` writes inline on `:root`, silently taking the control
+away from every item.
+
+Width is only half of a one-pixel line, though. The other half is **position**,
+and a card's four edges land at four unrelated positions *between* device pixels
+— so the same one-pixel border reads black on one side of a card and grey and
+twice as thick on the other. At Middle a drop shadow hides it; at Harsh, where
+the ring is the entire tier, it is the only thing on screen. Thickening the line
+only trades an uneven hair for an even beam, and is not the fix.
+
+The fix is `deviceSnap()` in `canvas/items.js`: each item is nudged by under a
+pixel and scaled by under a part in a thousand so its **drawn** box begins and
+ends on whole device pixels, and everything measured from that box — ring, inner
+rule, caption plate — comes along. It rides `transform` (which nothing
+transitions and which costs no layout) and runs on the settling frame, not per
+frame, via the same `vp.onChange` listener as the cull. Two things make it mean
+anything: the width must be a whole number of device pixels, which is why
+`--device-px` rounds against a `--dpr` published by `canvas/viewport.js` (125%
+and 150% display scaling otherwise put a quarter-pixel of grey down one side of
+every line), and the card must not be rotated, since a leaning edge crosses pixel
+rows along its own length and has no crisp case at any position — which is why
+Harsh stands its cards up. **An item's drawn box is therefore up to one device
+pixel off its stored box**; resize arithmetic, the marquee and everything saved
+read `item.x/y/w/h`, the same bargain the resting tilt already strikes.
 
 `canvas/grid.js` paints the grid in *screen* space on `#viewport`, not inside the
 transformed `#world`, which is why it stays hairline-crisp at any zoom — and why
@@ -334,6 +389,80 @@ and both are memory ceilings rather than polish:
   animated GIF's *current* frame is painted into a static twin and the two are
   swapped, because a browser gives no way to pause an `<img>`.
 
+**One detail rung, and four names for it.** `farZoom`, `stillZoom` and
+`thumbZoom` in `canvas/viewport.js` are the same number — 0.4 with a mouse, 0.55
+under a finger, since the same zoom factor is a smaller card on a phone. They
+were separate thresholds four hundredths apart that nobody could perceive as two,
+which made "zoomed out" mean something slightly different depending on which
+module asked. Separate names because separate modules import them for separate
+purposes; `tests/layout.test.js` asserts they agree, and a *missing* name in that
+list is a decision recorded there (`webZoom` was the fourth until connections
+stopped leaving at all). `#world.zoom-far` is the class the rung writes.
+
+**Below the rung a card stops drawing its body and draws what it is instead.**
+Captions, bars, shadows, video controls, model stages and embed frames all switch
+off out there — and for most types what was left was the card's own contents
+rendered at three pixels a line, a smear of grey on every card at once, on the
+one view whose purpose is to show the shape of a board.
+
+There are three rungs, and each is a different *kind* of answer rather than the
+same answer at a different size:
+
+| | zoom | what a card is |
+|---|---|---|
+| detail | ≥ 40% | the card, as built |
+| index | 40 – 10% | what it is, and what it is called |
+| swatch | < 10% | picture, tint or paper. no text at all |
+
+**The index rung splits on one question — is there anything to look at?**
+
+- **Nothing to look at** (text, link, model, embed, generic, audio without cover
+  art) — the card becomes a *specimen label*: the extension in accent caps at the
+  head, a hairline under it, the name set large beneath in up to three lines. That
+  is the card's own anatomy — kicker, rule, name — at the card's scale rather than
+  the stylesheet's.
+- **A picture** (image, video, a sleeve, a swatch) — the picture, edge to edge,
+  and nothing else. A photograph is its own name at any size, and a plate across
+  the bottom of one is a caption on something that did not ask for one.
+- **A note** — its tint and its opening line, set large, centred in the sheet. No
+  kicker and no rule: a sticky is not a specimen. A note's name *is* its first
+  line (`drop.js` takes the first forty characters), so this costs nothing.
+
+The structural idea, and why the two are not unified into one plate: **where the
+name sits tells you whether there is anything to look at.** A label above paper,
+nothing at all over a picture.
+
+The rejected alternatives are worth keeping. A headline *centred* in the card
+turned every card into a tile with a title in the middle of it, and a board of
+those reads as a contact sheet of buttons. A *nameplate band* across every card's
+foot fixed the smear and left the real problem standing: six types all became the
+same blank white rectangle with a small name at the bottom, and the card's own
+type mark was thrown away at exactly the zoom where three letters beat thirty.
+
+Two things about the wiring are worth reading twice.
+
+- **One element draws all of it.** `canvas/items.js` builds one `.far-head` per
+  card carrying two children — `.fh-kind` and `.fh-name` — and `items.css` styles
+  it two ways. Restyling each renderer's own head sounds truer to "the same card,
+  larger" and is not: a text card has no `.card-icon`, a model card is a
+  `.title-card`, and a swatch is neither, so one rule per type would be six rules
+  and an invitation for the seventh renderer to forget. `wantsHead()` is which
+  cards get one; `farKind()` is the word above the rule — the extension in
+  preference to anything else, the type word as fallback, empty for a note.
+- **The size is in screen units, capped against the card.** A type size that is a
+  share of the card shrinks *with* the card as you zoom out, so the further out
+  you go the less readable the one thing you are meant to be reading; that was
+  tried and drew a 180-unit card's name at under seven screen pixels. So it
+  multiplies by `--iz` like every other piece of item chrome, and the cost is one
+  relayout that `IZ_STEP` already paid down. The cap (`--half-h`, written by
+  `placeBox()`) stops a small card wearing type taller than itself, and is also
+  the graceful end into the swatch rung.
+
+Audio without a sleeve is the one card that keeps something under its head: the
+play button is worth hitting from across a board, so the head takes a fixed slice
+off the top — one line of name, not three — and the button centres in what is
+left. `--ix-head` names that slice once for both.
+
 ### Connections, input, and item types
 
 Lines between cards are **drawn, not derived**. `board.connections` is a
@@ -349,27 +478,132 @@ Three modules divide the work:
   **plus a penalty per turn**. That penalty is the difference between a diagram
   and a staircase. Obstacles are handed in; this module never reaches for the
   spatial index or the board.
+
+  **It concedes room before it concedes the route.** A straight line is not a
+  failed route — it is the thing this module exists to stop drawing, since it
+  scores through every card between the two ends. So a search that finds nothing
+  is retried at a third of the clearance, then at none of it (hugging the edges,
+  where only real overlap blocks), and finally with the cards that lie *on top
+  of* an end dropped from the obstacle set — the one case margin cannot answer,
+  because nothing can be routed around a card that is on top of the card being
+  routed to. A lattice too large to search sheds its furthest obstacles until it
+  fits rather than abandoning the route.
+
+  And when all four find nothing, **the answer is still not a diagonal**. It is
+  the plain two-bend elbow, drawn through whatever is left in the way. A line
+  corner to corner scores across every card between the two ends at an angle
+  nothing else on the board is drawn at, and it reads as damage; an elbow that
+  passes *behind* a card reads as a connector, because `#web` is under the items
+  (`z-index: -2`) — the line goes under the card and out the other side, which is
+  what a wire behind a photograph does. So there is no such thing as a route that
+  failed: there are routes that go round, and routes that go behind. The result
+  carries no failure flag, and the dimmed dashed fallback style, its second bulk
+  path in `canvas/web.js` and the `.web-fallback` rule are all gone with it — a
+  state worth marking as a failure has to look like one.
+
+  **The shape of a route answers the whimsy axis**, through `opts.shape` — the
+  router reads nothing, so `canvas/web.js` hands it down. At Harsh the obstacle
+  lines are quantized outward to the board's own `baseStep()`, so a turn round a
+  card lands where the cards are standing (Harsh snaps them there — see
+  `axisMoved()`); at the middle and at Softish the corridor A\* returns is
+  **string-pulled** — drop each turn whose neighbours can see each other through
+  the same blocks — which collapses to a single ruled line when nothing is in the
+  way and otherwise bends by however much the detour needs. Softish is the taut
+  shape with the *clearance raised*, and that is not a shortcut: the curve is
+  drawn by rounding the corners in `pathData()`, a fillet cuts inside the corner
+  it rounds, and a corner is exactly where the path is hugging a card. The room
+  the curve will take is bought before the search rather than out of the card
+  after it. The quantized attempt is a rung above the concession ladder, so the
+  first thing given up is the lattice and not the clearance.
+
+  The open set is a binary heap. It was a linear scan for the smallest `f`,
+  which is quadratic in the open set — affordable for one search over a couple
+  of thousand nodes, not for four, and it was what really bounded
+  `MAX_OBSTACLES`. That cap is 40 rather than 24 now, and sits where the lattice
+  puts it rather than where the queue did.
 - `canvas/web.js` draws them, and owns the performance rule the feature lives or
   dies by: **nothing is routed while anything is moving.** A stored route is kept
   exactly as long as both of its ends are where they were, so a card being
   dragged trails straight lines for the length of the gesture and a pass over the
   routes runs once the hand comes off. Nothing about a path is ever stored — it
   is a function of where the cards are now, so there is nothing to invalidate.
+
+  Except the look. `look()` is where a `data-whimsy` attribute and the board's
+  grid step become the router's three arguments, and because a route is cached on
+  its two end boxes, moving the slider changes no signature and would leave every
+  line carrying the shape it had at the old level. `reshape()` is the answer, on
+  the `settings`/`appearance` event: drop each `routed` flag, keep every line.
+  Not `resetWeb()`, which releases the settled set as well and would make the
+  whole board blink on a slider move.
 - `web-graph.js` is what this used to be. Its minimum spanning tree drew the
   board's web automatically, and it survives as the **generator**
   (`cmds.connectSelection`): run once on demand over a selection, it emits real,
   stored, editable connections that then route like any other. So its
   no-crossing guarantee stops being a law the app imposes and becomes what the
   generator happens to produce — and several hundred lines of proven geometry go
-  on earning their keep. It has no button; it is on `mbrd.cmds` and nowhere
-  else, because it is a thing you do once to a board rather than a tool. It is
-  also how a board that had the old automatic web gets it back as real lines.
+  on earning their keep. What did *not* survive is its adaptive governor, which
+  timed the spanning tree on every call and solved for the largest board this
+  machine could rebuild inside half a frame. Every word of that was about a web
+  rebuilt on every frame of a drag; run once on a button press it never had the
+  calls to converge, and the number it had effectively frozen at is written down
+  as `DENSE_LIMIT` instead. It has no button of its own; `cmds.connectSelection` is
+  the whole-board door on `mbrd.cmds`, and the connector tool is the everyday
+  one — see below. It is also how a board that had the old automatic web gets it
+  back as real lines.
 
 Making one is the app's **only mode**. `ui/toolbar.js` holds the armed state and
 the four-case step (`connectStep`); `canvas/input.js` asks through `cmds` rather
 than importing a `ui/` module, the same seam the title card's pen uses. The tool
 stays armed after a pair — connecting five things is one trip to the toolbar —
 and Escape always puts it down.
+
+**The tool draws while you aim it.** From the moment an end is picked,
+`canvas/web.js` runs a draft path from that card to the pointer — straight while
+the pointer moves, routed once it settles, which is the same bargain a dragged
+card strikes — and the card under the pointer wears a dashed ring
+(`setConnectAim`, the pick's quieter opposite number: a pick survives its card
+being culled and rebuilt because it is a decision, an aim does not because it is
+where the pointer is this moment). `ui/toolbar.js` owns the pick and calls
+`setDraftFrom`, so disarming, completing a pair and Escape all put the line away
+without knowing they have. The draft lives here rather than in the input
+pipeline because `canvas/input.js` holds exactly one active gesture and a draft
+is not one — the same reason the hover highlight is read on `#viewport`.
+
+**The selection is read at the moment the tool arms**, once, and never again
+while it is armed — what a press means must not depend on what happened to be
+picked three presses ago. Two or more cards selected is the generator's question
+rather than the tool's, so pressing the button runs `threads()` over them and
+lands a set of lines in one undoable step; exactly one selected is half a pair,
+so it becomes the picked end (`setArmed(on, from)`) and the next card completes
+it. Either way the tool arms, because what follows a join is more joining.
+Furniture, riders and fences are out of the pool at both doors — one `joinable()`
+predicate in `commands.js`, since a line to a hint, to a note stuck on its host,
+or to a region is a line to no particular card.
+
+**A line can be pointed at, and it is not a selection.** A press on bare board
+that lands on a connection marks it (`cmds.pickConnection`); the mark stays lit
+after the pointer moves on, Delete removes it when no card is selected, a double
+click asks for its label, and the right-click editor is unchanged. It is
+deliberately *not* a member of `selection`, which is a set of item ids that
+band-select, group drag, arrange, align, delete, the trash and the sidebar count
+all assume — widening it would put an "is this an item" clause in every one of
+them to make one line clickable. One key in `canvas/web.js`, beside the hover it
+is the deliberate half of.
+
+**What a line can say** is its third element: `dir`, `style`, `label`, and now
+`color` and `weight`. All five are *names* validated against closed lists in
+`connMeta()`, resolved to tokens by one CSS rule each — this object arrives out
+of somebody else's file, and a value that reached a stroke would reach the
+CSSOM. Defaults are omitted, so a plain connection is still `["a","b"]` on disk
+and no version bump was owed. A line with meta already leaves the bulk path for
+its own element in the decoration layer (one shared `d` can only carry one
+stroke), so colour and weight cost nothing structurally.
+
+**Selecting a card lifts its own threads.** The focused subpaths are drawn a
+second time into `.web-focus` over a bulk path the `is-focused` class dims, which
+is one extra `d` string while a focus exists and nothing stored at all. Selection
+rather than hover on purpose: hover needs no teaching and turns a pan across a
+dense board into a strobe.
 
 **Dangling is tolerated, not prevented.** A connection whose item is gone is
 simply not drawn, which is why delete, undo, trash and restore need no
@@ -384,7 +618,15 @@ every board that had the web switched on with nothing between them. It defaults
 to **on** now, where the automatic web defaulted to off: an effect nobody asked
 for is an imposition, and a line you drew yourself and cannot see is a bug. For
 the same reason the quality dial's `threads` flag is gone rather than left inert
-— a quality setting that silently hides work the user did is not a trade.
+— a quality setting that silently hides work the user did is not a trade, and
+**connections are not on the zoom detail ladder either**. They used to fade out
+across a band above the rung and vanish below it, on the argument that a few
+hundred non-scaling hairlines over a postage-stamp board are a grey scribble.
+That argument belonged to the derived web: the far view is the only one that
+shows the whole graph at once, so it is where a drawn line is worth the most and
+was exactly where it used to disappear. What that costs is named in
+`canvas/web.js` — the furthest-out view is the one with nothing culled, so the
+`d` string is longest precisely where it used to be skipped.
 
 ### Fences
 

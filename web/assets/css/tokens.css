@@ -128,8 +128,18 @@
      which is the one exception on this whole sheet. The threads run *under*
      every item and behind whatever colours those items bring, and a tinted
      thread crossing a photograph reads as an artefact of the photograph. Grey
-     reads as string. Screen px, because the stroke does not scale with zoom. */
-  --web-line:   rgba(128, 128, 128, 0.4);
+     reads as string. Screen px, because the stroke does not scale with zoom.
+
+     The alpha was 0.4, then 0.68: both were the weight for a web the board drew
+     for you, where an effect nobody asked for should sit under what it
+     decorates. These are lines somebody drew on purpose, and a deliberate line
+     reading fainter than the grid it crosses is the drawing apologising for
+     itself. It sits near-opaque now - a thread reads as string laid on the
+     board at a glance, over a photograph and at a distance, and it is still
+     the item stack rather than the alpha that keeps it behind the cards. The
+     fallback dash and the hover accent both derive from this, so they move
+     with it. */
+  --web-line:   rgba(128, 128, 128, 0.95);
   --web-weight: 1.4px;
 
   /* ---- item chrome ---- */

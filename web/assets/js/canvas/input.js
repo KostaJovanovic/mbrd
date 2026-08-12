@@ -1040,6 +1040,10 @@ export function initInput(vp, cmds) {
 
     el.setPointerCapture(e.pointerId);
 
+    // Whatever this press turns out to be, it is not the line that was marked -
+    // the one branch below that disagrees says so itself, by marking one again.
+    cmds.clearActiveConnection?.();
+
     if (spaceDown || e.button === 1) {
       if (e.button === 1) {
         midButtonDown = true;
@@ -1113,6 +1117,12 @@ export function initInput(vp, cmds) {
       startMarquee(e);
     } else {
       if (selection.size) clearSelection();
+      // A press on bare board that happens to land on a connection points at
+      // that connection instead of at nothing - which is what the line lighting
+      // up under the pointer has been promising all along, and what gives Delete
+      // something to remove that is not a card. It still pans: pointing at a
+      // line is a click, and this press may yet become a drag.
+      cmds.pickConnection?.(vp.toWorld(e.clientX, e.clientY));
       startPan(e);
     }
 
@@ -1607,7 +1617,14 @@ export function initInput(vp, cmds) {
   // to fit is still on the F key and in the menu.
   el.addEventListener('dblclick', e => {
     const id = itemIdFromEvent(e.target);
-    if (!id) return;
+    // Not on a card: it may be on a line, and a label is the thing a line is
+    // most often opened to be given. The same gesture a note answers with its
+    // editor, asked of the other thing on the board that carries words.
+    if (!id) {
+      const conn = cmds.connectionUnder?.(vp.toWorld(e.clientX, e.clientY));
+      if (conn) cmds.editConnectionLabel(conn.a, conn.b);
+      return;
+    }
     if (byId(id)?.type === 'note') cmds.editNote(id);
     // A double-click on the title card renames the board inline, the same as its
     // T button - the one gesture besides the note edit that survives here.
@@ -1679,7 +1696,15 @@ export function initInput(vp, cmds) {
     if (mod) return;
 
     switch (e.key) {
-      case 'Delete': case 'Backspace': cmds.deleteSelection(); e.preventDefault(); break;
+      case 'Delete': case 'Backspace':
+        // With a line marked and no cards selected, Delete means the line. The
+        // order is the honest one: a selection is a louder statement of intent
+        // than a mark left by the last press, so cards win whenever there are
+        // any, and the command answers false when there is no line to remove.
+        if (!selection.size && cmds.deleteActiveConnection?.()) { e.preventDefault(); break; }
+        cmds.deleteSelection();
+        e.preventDefault();
+        break;
       // One item only: a rename has to put the caret somewhere, and a group
       // selection has no single name to put it in.
       case 'F2': if (selection.size === 1) {
@@ -1694,7 +1719,11 @@ export function initInput(vp, cmds) {
       case 'f': case 'F': cmds.fit(); break;
       case '+': case '=': vp.zoomBy(1.25, zoomMs()); break;
       case '-': case '_': vp.zoomBy(1 / 1.25, zoomMs()); break;
-      case 'Escape': clearSelection(); cmds.closeSidebar(); break;
+      case 'Escape':
+        clearSelection();
+        cmds.clearActiveConnection?.();
+        cmds.closeSidebar();
+        break;
       case 'ArrowLeft': case 'ArrowRight': case 'ArrowUp': case 'ArrowDown':
         nudge(e);
         break;
