@@ -12,7 +12,7 @@
 // Written out in full rather than composed from PREFIX, because save.bat bumps
 // this line by regex on every commit and would not recognise an expression.
 // tests/sw.test.js holds the two together.
-const VERSION = 'mbrd-v147';
+const VERSION = 'mbrd-v148';
 const PREFIX = 'mbrd-';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) turns the
@@ -123,6 +123,11 @@ const SHELL = [
   // pdf.js library it reaches for is cross-origin and out of the cache by design.
   // See the header of import/pdf.js.
   './assets/js/import/pdf.js',
+  // The other half of that job, and the half that needs no network: the picture
+  // a Word file, a spreadsheet, a Krita painting or a PSD already carries of
+  // itself. Statically imported by drop.js, so it is in the shell as an ordinary
+  // module rather than for a dynamic import to resolve against.
+  './assets/js/import/document.js',
   './assets/js/import/formats.js',
   './assets/js/arrange/arrangements.js',
   './assets/js/storage/assets.js',
