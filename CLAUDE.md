@@ -28,9 +28,10 @@ node tools/gen-formats.mjs [path-to-file-analyser]   # regenerate import/formats
 save.bat                          # bump version stamps, commit, optionally push
 ```
 
-Two optional runs, both needing `npm install` first (two devDependencies —
-`npm test` still needs none). There is no CI, so nothing runs these for you and
-a green `npm test` is not the whole bar:
+Two optional runs, both needing `npm install` first (three devDependencies —
+`npm test` still needs none). CI runs both on every push and pull request, so
+they are no longer only as good as your memory — but a green `npm test` on its
+own is still not the whole bar:
 
 ```bash
 npm run lint        # oxlint, correctness only — no formatter, and adding one is a regression
@@ -43,9 +44,10 @@ a clean boot console are checked by launching the app and looking, not by a
 runner.
 
 Syntax checks worth running on a change: `node --check` on touched `.js`,
-`python -m py_compile` on `tools/serve.py` / `tools/qr.py`. Nothing runs these
-automatically, so a syntax error in a module no test imports reaches a browser
-before it reaches a failure.
+`python -m py_compile` on `tools/serve.py` / `tools/qr.py`. CI now parses every
+committed module and both Python tools, which is the catch for a syntax error in
+a module no test imports — but it catches it after the push, so running them
+here is still faster than finding out from a red run.
 
 There is no bundler, no build step and no runtime dependency. The browser loads
 the ES modules under `web/` directly — an edit is one refresh away.
@@ -122,8 +124,9 @@ the ES modules under `web/` directly — an edit is one refresh away.
   silently and only on a phone.
 - **Import paths are case-sensitive on the deployed host and not on this
   machine.** Windows resolves `'./Foo.js'` for `foo.js` happily; the Pages
-  demo, served off a Linux filesystem, 404s. There is no CI leg to catch it
-  either — match the filename exactly.
+  demo, served off a Linux filesystem, 404s. The CI job runs on `ubuntu-latest`
+  for exactly this reason and is the leg that catches it — but it reports on the
+  push, and the deploy does not wait for it, so match the filename exactly.
 - Call out `.mbrd` schema, generated-catalog or service-worker cache changes
   explicitly when reporting work.
 
