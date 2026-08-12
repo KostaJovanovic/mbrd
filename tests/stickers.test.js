@@ -25,11 +25,11 @@ import {
   serializeBoard, loadBoard, snapshotGeom, applyGeom, commitGeom, unstickItems,
   resettle, ensureTitleCard, TITLE_ID,
   startSettling, settlesIn, SETTLE_MS,
-} from '../web/assets/js/state.js';
+} from '../web/assets/js/state.ts';
 import { WEB } from './helpers.js';
 import {
   STICKERS, stickerShape, stickerTint, STICKER_TINTS, STICKER_TINT_NAMES, STICKER_VIEWBOX,
-} from '../web/assets/js/stickers/catalogue.js';
+} from '../web/assets/js/stickers/catalogue.ts';
 import { fresh, note, photo, fence, sticker } from './state-fixtures.js';
 
 beforeEach(() => {

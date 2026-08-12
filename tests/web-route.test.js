@@ -21,7 +21,7 @@ import assert from 'node:assert/strict';
 import {
   routeConnection, anchorFor, blockOf, trim, pathData,
   CLEARANCE, STUB, TURN_COST, MAX_OBSTACLES,
-} from '../web/assets/js/web-route.js';
+} from '../web/assets/js/web-route.ts';
 
 const card = (x, y, w = 100, h = 80, rot = 0) => ({ id: `${x},${y}`, x, y, w, h, rot });
 

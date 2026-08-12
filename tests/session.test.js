@@ -65,10 +65,10 @@ globalThis.indexedDB = {
 // because it is what binds the change counter - without it autosave() answers
 // every caller from the first run's result and never writes a second time.
 const { initSession, initSessionStorage, autosave, lastSaveFailure, resetSessionLatches } =
-  await import('../web/assets/js/storage/session.js');
+  await import('../web/assets/js/storage/session.ts');
 const { loadBoard, addItems, removeItems, board, setBoardMode } =
-  await import('../web/assets/js/state.js');
-const { putAsset, clearAssets } = await import('../web/assets/js/storage/assets.js');
+  await import('../web/assets/js/state.ts');
+const { putAsset, clearAssets } = await import('../web/assets/js/storage/assets.ts');
 
 initSession({
   fileName: () => null,

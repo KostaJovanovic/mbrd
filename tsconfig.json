@@ -1,0 +1,70 @@
+{
+  // TypeScript, strictly - and still no TypeScript in the browser.
+  //
+  // This replaces jsconfig.json, which checked nine files of a hundred and
+  // said in its own header that widening the list was how it grew. It stopped
+  // growing where it was always going to: at state.js, canvas/input.js and
+  // commands.js, the large stateful modules where a wrong type is a silently
+  // wrong board, and where JSDoc costs more typing than a type annotation
+  // would. That is the whole argument for this file - see
+  // research/build-and-framework-audit-2026-08-12.md, Finding 2.
+  //
+  // ── Nothing here compiles the app ──
+  //
+  // `noEmit` is on and stays on. tsc is the checker; esbuild is the thing that
+  // builds web/assets/app.js, and the two never both write. So a type error is
+  // a red run rather than a broken artifact, and the artifact does not depend
+  // on tsc being right about anything.
+  //
+  // ── Why the source imports name .ts files ──
+  //
+  // `allowImportingTsExtensions` is on, and every import specifier in web/
+  // carries the real extension of the file it names. This is not a style
+  // choice, it is what keeps two promises at once:
+  //
+  //   - `npm test` needs no install. Node strips types natively from 22.18,
+  //     and resolves './foo.ts' as written. Without the real extension the
+  //     suite would need a loader, a loader needs an install, and the claim
+  //     that a stranger can clone this and get a green bar with nothing
+  //     fetched - which CI's first step exists to keep asking - would be gone.
+  //   - esbuild resolves the same specifiers with no plugin.
+  //
+  // ── erasableSyntaxOnly is the load-bearing one ──
+  //
+  // Node's stripper removes types and refuses anything that would need code
+  // generated: enums, namespaces, parameter properties, decorators,
+  // `import =`. Those are all legal TypeScript and any one of them would make
+  // the test suite unrunnable without a build - silently, at the moment
+  // somebody reached for an enum because it seemed tidy. This flag makes tsc
+  // refuse them first, so the constraint is enforced by the typechecker rather
+  // than remembered. Do not turn it off to gain an enum. A union of string
+  // literals is what this codebase already uses and it erases.
+  //
+  // `verbatimModuleSyntax` is its companion: it forces a type-only import to
+  // say `import type`, which is what lets the stripper drop it without having
+  // to work out whether the binding was a value.
+  //
+  // ── allowJs during the migration, and not after ──
+  //
+  // The tree is being converted a layer at a time and the two extensions have
+  // to coexist while that runs. `checkJs` is false so an unconverted module is
+  // carried rather than checked - it was not checked before either, so this
+  // loses nothing. When the last .js under web/assets/js is gone, both flags
+  // come out and this comment goes with them.
+  "compilerOptions": {
+    "strict": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": false,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["web/assets/js/**/*.ts"]
+}

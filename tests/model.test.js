@@ -15,7 +15,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { orbitView } from '../web/assets/js/canvas/model.js';
+import { orbitView } from '../web/assets/js/canvas/model.ts';
 
 /** Column-major 4x4 -> the three basis vectors the matrix's rotation holds. */
 function basis(m) {

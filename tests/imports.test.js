@@ -32,11 +32,11 @@ import { JS, walk } from './helpers.js';
  * Anything else appearing here is a regression, not a new exception.
  */
 const DOM_ENTRY_POINTS = new Set([
-  'main.js', 'ui/appearance.js', 'optimize/media-worker.js',
+  'main.ts', 'ui/appearance.ts', 'optimize/media-worker.js',
 ]);
 
-const modules = walk(JS, ['.js'], JS)
-  .filter(m => m !== 'import/formats.js');       // generated, 358 lines of data
+const modules = walk(JS, ['.js', '.ts'], JS)
+  .filter(m => m !== 'import/formats.ts');       // generated, 358 lines of data
 
 test('every module is listed as testable or as a DOM entry point', () => {
   assert.ok(modules.length > 20, `only found ${modules.length} modules - is the walk right?`);

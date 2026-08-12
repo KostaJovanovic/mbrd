@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 import {
   fileNameFor, titleForOpenedBoard, titleFromFileName,
-} from '../web/assets/js/storage/storage.js';
+} from '../web/assets/js/storage/storage.ts';
 
 test('export filenames replace board-name spaces with underscores', () => {
   assert.equal(fileNameFor('Summer references'), 'Summer_references.mbrd');
@@ -65,6 +65,6 @@ test('the sidebar title field carries the shared thirty-two-character limit', as
   // must stop where cleanBoardTitle() stops, or a name typed to the field's
   // limit comes back cut.
   const schema = await readFile(
-    new URL('../web/assets/js/ui/settings-schema.js', import.meta.url), 'utf8');
+    new URL('../web/assets/js/ui/settings-schema.ts', import.meta.url), 'utf8');
   assert.match(schema, /id: 'board-title'[\s\S]{0,200}?maxlength: 32/);
 });

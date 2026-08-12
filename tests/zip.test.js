@@ -14,7 +14,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { writeZip, readZip, crc32 } from '../web/assets/js/storage/zip.js';
+import { writeZip, readZip, crc32 } from '../web/assets/js/storage/zip.ts';
 import { bytes, zeros } from './helpers.js';
 
 const enc = new TextEncoder();

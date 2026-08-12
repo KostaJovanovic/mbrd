@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 
 import {
   loadBoard, addItems, select, ensureTitleCard, ensureGhostCards, board,
-} from '../web/assets/js/state.js';
+} from '../web/assets/js/state.ts';
 
 class FakeElement {
   constructor() {
@@ -35,7 +35,7 @@ async function countText(build) {
     documentElement: new FakeElement(),
   };
   try {
-    const { paintCount } = await import('../web/assets/js/ui/hud.js');
+    const { paintCount } = await import('../web/assets/js/ui/hud.ts');
     build();
     paintCount();
     return elements['hud-count'].textContent;

@@ -39,17 +39,43 @@ const shellUrls = (() => {
 const shell = shellUrls.filter(p => p !== './');
 
 test('SHELL lists every asset that ships', () => {
-  // Every shipped module, stylesheet and face is precached: there is nothing
-  // fetched on demand any more, so a missing entry is a shell that boots wrong
-  // offline, full stop.
+  // Every shipped stylesheet and face is precached: there is nothing fetched on
+  // demand any more, so a missing entry is a shell that boots wrong offline,
+  // full stop.
+  //
+  // The modules under assets/js are deliberately NOT walked here any more, and
+  // that is the one thing about this test worth reading. They used to be the
+  // shipped JavaScript and each was listed by name; the app is TypeScript now,
+  // a browser cannot fetch a .ts file, and what the page actually loads is the
+  // one bundle esbuild writes. Walking the sources would assert that ninety-odd
+  // files nothing requests are precached - which is not a stricter test, it is
+  // a test of the wrong thing, and it would fail the moment a module was added.
+  // What ships is asserted directly below instead.
   const onDisk = [
-    ...walk(join(WEB, 'assets', 'js'), ['.js']),
     ...walk(join(WEB, 'assets', 'css'), ['.css']),
     ...walk(join(WEB, 'assets', 'fonts'), ['.woff2']),
   ];
   const listed = new Set(shell.map(p => p.replace(/^\.\//, '')));
   const missing = onDisk.filter(f => !listed.has(f));
   assert.deepEqual(missing, [], `not precached, so unavailable offline:\n  ${missing.join('\n  ')}`);
+
+  // The two JavaScript files the browser really asks for. The bundle is the
+  // app; the media worker is fetched by URL at runtime rather than imported, so
+  // it is outside the bundle and has to be cached on its own or an optimise run
+  // offline fails at the moment it is needed.
+  assert.ok(listed.has('assets/app.js'),
+    'the bundle is the app - without it an offline launch has no JavaScript at all');
+  assert.ok(listed.has('assets/js/optimize/media-worker.js'),
+    'the media worker is fetched by URL, so the bundle does not carry it');
+});
+
+test('SHELL carries no TypeScript source', () => {
+  // A .ts path in here would be a cache.add() for a file no browser can execute
+  // and nothing ever requests - the shape of the mistake being made would be
+  // someone re-adding the module list this test used to walk, by hand, after
+  // the bundle replaced it.
+  const sources = shell.filter(p => p.endsWith('.ts'));
+  assert.deepEqual(sources, [], `sources are not shipped assets:\n  ${sources.join('\n  ')}`);
 });
 
 test('SHELL has no entries pointing at files that are gone', () => {
@@ -174,7 +200,7 @@ test('a complete install fills the cache and takes over', async () => {
 });
 
 test('one failed shell entry fails the whole install', async () => {
-  const { store, self, fire } = runWorker({ fails: ['./assets/js/main.js'] });
+  const { store, self, fire } = runWorker({ fails: ['./assets/app.js'] });
   await assert.rejects(fire('install'));
   assert.equal(store.has(CURRENT), false, 'a partial cache must not be left behind');
   assert.equal(self.skipped, false, 'a failed install must not take over');
@@ -253,7 +279,7 @@ test('the dev-host test still matches the one in util.js', () => {
   // sw.js cannot import util.js, so the two carry the same regex by hand and
   // say so in comments. If one is edited the other has to move with it, and
   // the failure mode otherwise is a service worker that caches the dev server.
-  const util = read(join(WEB, 'assets', 'js', 'util.js'));
+  const util = read(join(WEB, 'assets', 'js', 'util.ts'));
   const pattern = /\^\(10\\\.\|192\\\.168\\\.\|172\\\.\(1\[6-9\]\|2\\d\|3\[01\]\)\\\.\)/;
   assert.match(sw, pattern, 'sw.js lost its LAN-host test');
   assert.match(util, pattern, 'util.js lost its LAN-host test');

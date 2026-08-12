@@ -16,7 +16,7 @@ import assert from 'node:assert/strict';
 // The graph module, not the renderer. This was imported from canvas/web.js when
 // the algorithm still lived inside it; the point of the split is that this file
 // never needs the drawing half at all.
-import { threads } from '../web/assets/js/web-graph.js';
+import { threads } from '../web/assets/js/web-graph.ts';
 
 /**
  * Deliberately not the module's own predicate.

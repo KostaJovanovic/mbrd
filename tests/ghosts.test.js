@@ -16,10 +16,10 @@ import {
   setBoardMode, ensureTitleCard, ensureGhostCards, dismissGhosts, hasContent,
   hasGhosts, GHOST_IDS, NOTFOUND_IDS, TITLE_ID, tapeFor, setSetting,
   mobileBoardWidth, mobileBoardTop,
-} from '../web/assets/js/state.js';
-import { latticeBox, CELL_GAP } from '../web/assets/js/geometry.js';
-import { HINTS, hintFor, tapeStyle, STOPS, stopName, DIAL } from '../web/assets/js/canvas/ghosts.js';
-import { exitKindFor } from '../web/assets/js/canvas/exit-anim.js';
+} from '../web/assets/js/state.ts';
+import { latticeBox, CELL_GAP } from '../web/assets/js/geometry.ts';
+import { HINTS, hintFor, tapeStyle, STOPS, stopName, DIAL } from '../web/assets/js/canvas/ghosts.ts';
+import { exitKindFor } from '../web/assets/js/canvas/exit-anim.ts';
 
 const fresh = (items = []) => loadBoard({ title: 'T', items });
 const photo = (props = {}) => ({ type: 'image', w: 200, h: 200, ...props });
@@ -80,7 +80,7 @@ test('serializeBoard carries no hint, in items or in either layout', () => {
   ensureTitleCard();
   ensureGhostCards();
   addItems([photo({ id: 'p1' })]);
-  // addItems does not dismiss on its own - that is canvas/ghosts.js's
+  // addItems does not dismiss on its own - that is canvas/ghosts.ts's
   // subscriber, which needs a DOM. Put them back to serialise the worst case:
   // a board that holds both hints and content at once.
   ensureGhostCards();
@@ -212,7 +212,7 @@ test('the card prints the same stop names the sidebar does', async () => {
   // duplicated rather than shared, because the panel's list lives in ui/ and
   // canvas/ may not reach into it, so this is the thing that holds the two
   // copies together. Including the full stop on "Harsh."
-  const { SECTIONS } = await import('../web/assets/js/ui/settings-schema.js');
+  const { SECTIONS } = await import('../web/assets/js/ui/settings-schema.ts');
   const dial = SECTIONS.flatMap(s => s.controls || []).find(c => c.id === 'opt-whimsy');
   assert.ok(dial, 'the panel still has a whimsy dial');
   assert.deepEqual([...STOPS], dial.stops);

@@ -16,8 +16,8 @@ import {
   applyGeom, commitGeom, setBoardMode, raiseSelection, lowerSelection,
   visualStackOrder, selectionHasStackOverlap, wouldStick, board, ensureTitleCard,
   ensureGhostCards, TITLE_ID, undo, redo,
-} from '../web/assets/js/state.js';
-import { overlapFraction } from '../web/assets/js/geometry.js';
+} from '../web/assets/js/state.ts';
+import { overlapFraction } from '../web/assets/js/geometry.ts';
 import { fresh, note, photo } from './state-fixtures.js';
 
 beforeEach(() => {

@@ -37,7 +37,12 @@ import { JS, walk } from './helpers.js';
 // The graph
 // ---------------------------------------------------------------------------
 
-const modules = walk(JS, ['.js'], JS);
+// Both extensions, for as long as both exist. The tree is being converted to
+// TypeScript a layer at a time (see tsconfig.json), and the layering is a
+// property of the graph rather than of the language it is written in - a module
+// that moved to .ts is the same node with the same edges. When the last .js
+// under web/assets/js is gone this goes back to one extension.
+const modules = walk(JS, ['.js', '.ts'], JS);
 
 /** Static import specifiers in one module, resolved to module-relative paths. */
 function importsOf(mod) {
@@ -61,7 +66,13 @@ function importsOf(mod) {
         else parts.push(seg);
       }
       let target = parts.join('/');
-      if (!target.endsWith('.js')) target += '.js';
+      // Specifiers in this codebase carry the real extension of the file they
+      // name - './foo.ts' for a converted module, './foo.js' for one not yet -
+      // because that is what lets Node run the suite with nothing installed
+      // (tsconfig.json says why). The append below is the extensionless case,
+      // which should not occur and is kept so a stray one resolves rather than
+      // vanishing from the graph unnoticed.
+      if (!/\.(js|ts)$/.test(target)) target += '.js';
       out.push(target);
     }
   }
@@ -124,67 +135,67 @@ test('the import graph has no cycle', () => {
 // ---------------------------------------------------------------------------
 
 const BASE = new Set([
-  'util.js', 'geometry.js', 'measure.js', 'layout-settings.js', 'version.js',
+  'util.ts', 'geometry.ts', 'measure.ts', 'layout-settings.ts', 'version.js',
   // The quality dial's flags. Bottom of the graph on purpose: canvas/* reads
   // them and ui/quality.js writes them, and a setting canvas has to import
   // cannot sit in ui/ without inverting the whole graph.
-  'quality.js',
+  'quality.ts',
   // The arrangement catalogue, which research/docs/architecture.md already names among
   // the pure modules at the bottom: no DOM, no state import, geometry.js and
   // nothing else. state.js reads mobileArrangement() from it to know which of
   // the two catalogues a stored id belongs to, and that read is downward.
-  'arrange/arrangements.js',
+  'arrange/arrangements.ts',
   // The sticker catalogue, beside the arrangement catalogue and for the same
   // reason: it is a hand-written table and nothing else. It imports *nothing* -
   // not even geometry.js - which makes it the lowest module in the graph, and
   // state.js reads stickerTint() from it to hold an arriving tint to the
   // palette that exists. That read is downward.
-  'stickers/catalogue.js',
+  'stickers/catalogue.ts',
   // The floor state.js is being split onto. board-store.js holds the bus, the
   // selection and the dirty flag; board-model.js holds the board's shape, its
   // defaults and the id index; history.js holds the undo/redo engine over them.
   // None may ever import state.js back - that is the whole reason they are
   // separate files, since a concern lifted out of state.js can only stay out if
   // what it stands on is lower than what it left.
-  'board-store.js', 'board-model.js', 'history.js', 'sticky.js', 'layout.js', 'stacking.js',
+  'board-store.ts', 'board-model.ts', 'history.ts', 'sticky.ts', 'layout.ts', 'stacking.ts',
   // The .mbrd format, in both directions. Below state.js for the reason its own
   // header gives: reading a file is a pure raw -> clean transformation over
   // data, and only the assignment that swaps the result in is a mutation. The
   // reader must be reachable without the mutation door, or every change to the
   // format is a change to the door.
-  'board-schema.js',
+  'board-schema.ts',
   // The cards an empty board puts on itself. Content and policy rather than
   // mutation: every function in it is hydration - no commit, no history - which
   // is what made it the wrong tenant for the mutation door. It holds two
   // session latches, so it is a module with state and not a table of data, and
   // loadBoard() resets one of them on every board that arrives.
-  'onboarding.js',
+  'onboarding.ts',
   // The internal clipboard. Nothing in it touches the board - the clipboard is
   // not board state, is never saved and has nothing about it to undo - which is
   // what let it out. The two commands that do touch the board, cut and paste,
   // stayed in state.js and call into this.
-  'clipboard.js',
+  'clipboard.ts',
   // Every write to board.connections. board-model.js already owned the shape of
   // a connection - pairKey, the CONN_* tables, connMeta, normalizeConnections -
   // and board-schema.js owns the pruning at the file boundary; this is the
   // mutation half, which only ever needed to sit beside commit().
-  'connections.js',
+  'connections.ts',
   // The bin. Delete and restore are two directions of one door, and they sat
   // four hundred lines apart in state.js; the limit itself is in board-model.js,
   // because the file reader holds an arriving bin to it too.
-  'trash.js',
+  'trash.ts',
   // Fence membership, beside sticky.js and for the same reason: it is a question
   // about where two things are, and the mutations that act on the answer stay in
   // state.js. It reads board.layouts directly rather than layout.js's helper for
   // it, which is what keeps the two off a cycle - layout.js calls refence().
-  'fences.js',
+  'fences.ts',
   // The web's graph and its governor. Pure arithmetic over points - no DOM, no
   // viewport - which is what let it out of canvas/web.js at all.
-  'web-graph.js',
+  'web-graph.ts',
   // And the router, beside it for the same reason: the obstacles are handed in,
   // so it never reaches for the spatial index or the board. canvas/web.js is
   // the half that knows which cards are near and the half that draws.
-  'web-route.js',
+  'web-route.ts',
 ]);
 
 /**
@@ -193,11 +204,11 @@ const BASE = new Set([
  * anything they leave to judgement is left to the cycle check above.
  */
 function inverted(from, to) {
-  if (to === 'main.js') return true;                       // nothing wires the wiring point
+  if (to === 'main.ts') return true;                       // nothing wires the wiring point
   if (BASE.has(from) && !BASE.has(to)) return true;        // the base layer depends on nothing above it
-  if (from === 'state.js' && !BASE.has(to)) return true;   // state is below the services and the ui
+  if (from === 'state.ts' && !BASE.has(to)) return true;   // state is below the services and the ui
   if (from.startsWith('storage/') && to.startsWith('ui/')) return true;   // storage must not open the interface
-  if (from.startsWith('canvas/') && to.startsWith('import/') && to !== 'import/formats.js') return true; // canvas -> import: catalog only
+  if (from.startsWith('canvas/') && to.startsWith('import/') && to !== 'import/formats.ts') return true; // canvas -> import: catalog only
   return false;
 }
 

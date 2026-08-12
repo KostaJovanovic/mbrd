@@ -1148,6 +1148,18 @@
 
 <input id="file-input" type="file" multiple hidden>
 
-<script type="module" src="assets/js/main.js"></script>
+<!-- The bundle, not the source tree, and this is the line where that changed.
+
+     The app is written in TypeScript now (see tsconfig.json), and a browser
+     cannot fetch a .ts module - so what ships is one built artifact rather than
+     the ninety-odd files under assets/js. `npm run build` writes it; `npm run
+     dev` rebuilds it on every save, which is what replaces "edit a file and
+     refresh" with "save and refresh".
+
+     The sources still ship beside it and app.js.map points at them, so
+     view-source on the deployed app is still this repository - it is now one
+     step behind a devtools panel instead of being the page itself. That is the
+     trade the bundle was costed at; nothing else about it was free either. -->
+<script type="module" src="assets/app.js"></script>
 </body>
 </html>

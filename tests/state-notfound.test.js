@@ -49,8 +49,8 @@ globalThis.indexedDB = {
 const {
   loadBoard, ensureGhostCards, isNotFoundBoard, leaveNotFoundBoard, board,
   setTitle, defaultBoardTitle, addItems,
-} = await import('../web/assets/js/state.js');
-const { newBoard, clearAllData, setPrompt } = await import('../web/assets/js/storage/storage.js');
+} = await import('../web/assets/js/state.ts');
+const { newBoard, clearAllData, setPrompt } = await import('../web/assets/js/storage/storage.ts');
 
 /** Every answer the dialogs could give, recorded so a silent skip is visible. */
 let asked = 0;

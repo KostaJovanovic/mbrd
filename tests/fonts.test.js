@@ -12,11 +12,11 @@ import assert from 'node:assert/strict';
 
 import {
   axesFromFilename, familyFor, fontAxes, fontIsVariable, headerFontSize,
-} from '../web/assets/js/ui/fonts.js';
+} from '../web/assets/js/ui/fonts.ts';
 import {
   axisStep, variationSettings,
-} from '../web/assets/js/ui/mobile-header.js';
-import { isFamily } from '../web/assets/js/util.js';
+} from '../web/assets/js/ui/mobile-header.ts';
+import { isFamily } from '../web/assets/js/util.ts';
 
 test('an ordinary face keeps its name', () => {
   assert.equal(familyFor('Inter.woff2'), 'Inter');

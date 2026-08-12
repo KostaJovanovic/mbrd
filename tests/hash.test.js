@@ -17,7 +17,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, webcrypto } from 'node:crypto';
-import { sha256 } from '../web/assets/js/util.js';
+import { sha256 } from '../web/assets/js/util.ts';
 
 const reference = bytes => createHash('sha256').update(bytes).digest('hex');
 

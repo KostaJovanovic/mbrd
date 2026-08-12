@@ -15,7 +15,7 @@ import {
   byId, select, deselect, clearSelection, selectAll, setItemText, renameItem,
   NOTE_MAX, setItemCover, setItemPoster, setTitle, cleanBoardTitle,
   cleanBoardTitleDraft, BOARD_TITLE_MAX, setBoardMode,
-} from '../web/assets/js/state.js';
+} from '../web/assets/js/state.ts';
 import { hash } from './helpers.js';
 import { fresh, note, photo, clip } from './state-fixtures.js';
 

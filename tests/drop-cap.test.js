@@ -9,7 +9,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { filesFrom, MAX_FILES } from '../web/assets/js/import/drop.js';
+import { filesFrom, MAX_FILES } from '../web/assets/js/import/drop.ts';
 
 /** A FileSystemFileEntry, as much of one as the walk actually asks about. */
 const fileEntry = name => ({

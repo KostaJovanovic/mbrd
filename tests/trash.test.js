@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { board, selection, loadBoard, addItems, select } from '../web/assets/js/state.js';
-import { initTrash } from '../web/assets/js/ui/trash.js';
+import { board, selection, loadBoard, addItems, select } from '../web/assets/js/state.ts';
+import { initTrash } from '../web/assets/js/ui/trash.ts';
 
 class FakeElement {
   constructor() {

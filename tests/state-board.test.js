@@ -17,9 +17,9 @@ import {
   applyGeom, commitGeom, setBoardMode, mobileBoardWidth, mobileBoardTop,
   mobileBoardBottom, baseStep, placeMobileItems, ensureTitleCard,
   restoreTitleCard, isTitleHidden, resetTitlePosition, TITLE_ID,
-} from '../web/assets/js/state.js';
-import { dropIdIndex } from '../web/assets/js/board-model.js';
-import { itemBounds, overlapFraction, CELL_GAP } from '../web/assets/js/geometry.js';
+} from '../web/assets/js/state.ts';
+import { dropIdIndex } from '../web/assets/js/board-model.ts';
+import { itemBounds, overlapFraction, CELL_GAP } from '../web/assets/js/geometry.ts';
 import { hash } from './helpers.js';
 import { fresh, note, photo } from './state-fixtures.js';
 

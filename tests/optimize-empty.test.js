@@ -20,9 +20,9 @@ import assert from 'node:assert/strict';
 
 import {
   board, byId, loadBoard, undo, setBoardMode, swapAssets, removeItems,
-} from '../web/assets/js/state.js';
-import { putAsset, clearAssets } from '../web/assets/js/storage/assets.js';
-import { planOptimize } from '../web/assets/js/optimize/optimize.js';
+} from '../web/assets/js/state.ts';
+import { putAsset, clearAssets } from '../web/assets/js/storage/assets.ts';
+import { planOptimize } from '../web/assets/js/optimize/optimize.ts';
 import { hash } from './helpers.js';
 import { photo } from './state-fixtures.js';
 

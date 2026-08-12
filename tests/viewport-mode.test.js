@@ -6,15 +6,15 @@ import { appCss } from './helpers.js';
 
 import {
   Viewport, mobileZoom, mobileHeaderHeight,
-} from '../web/assets/js/canvas/viewport.js';
-import { axesVisible } from '../web/assets/js/canvas/grid.js';
-import { sheetBox, mastShift } from '../web/assets/js/canvas/mobile-frame.js';
-import { webVisible } from '../web/assets/js/canvas/web.js';
-import { setSetting } from '../web/assets/js/state.js';
+} from '../web/assets/js/canvas/viewport.ts';
+import { axesVisible } from '../web/assets/js/canvas/grid.ts';
+import { sheetBox, mastShift } from '../web/assets/js/canvas/mobile-frame.ts';
+import { webVisible } from '../web/assets/js/canvas/web.ts';
+import { setSetting } from '../web/assets/js/state.ts';
 import {
   createMobileSliderFocus,
   mobileLayoutDetected,
-} from '../web/assets/js/ui/sidebar.js';
+} from '../web/assets/js/ui/sidebar.ts';
 
 const saved = {};
 
@@ -111,8 +111,8 @@ test('sidebar slider focus is disabled above the Mobile breakpoint', () => {
 
 test('Mobile masthead leaves descender room and its finite board follows the style radius', async () => {
   const [grid, frame] = await Promise.all([
-    readFile(new URL('../web/assets/js/canvas/grid.js', import.meta.url), 'utf8'),
-    readFile(new URL('../web/assets/js/canvas/mobile-frame.js', import.meta.url), 'utf8'),
+    readFile(new URL('../web/assets/js/canvas/grid.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../web/assets/js/canvas/mobile-frame.ts', import.meta.url), 'utf8'),
   ]);
   const css = appCss();
   const rule = id => css.match(new RegExp(`#${id}\\s*\\{([^}]+)\\}`))?.[1] || '';
@@ -207,7 +207,7 @@ test('no view frame writes an inherited custom property onto #viewport', async (
   // properties used to be published here with no such guard, on a layout that
   // has no zoom at all. They live on the two elements that read them now.
   const viewport = await readFile(
-    new URL('../web/assets/js/canvas/viewport.js', import.meta.url), 'utf8');
+    new URL('../web/assets/js/canvas/viewport.ts', import.meta.url), 'utf8');
   const paint = viewport.match(/_paint\(\)\s*\{[\s\S]*?\n  \}/)?.[0] || '';
   assert.ok(paint, 'could not find Viewport._paint()');
   assert.doesNotMatch(paint, /this\.el\.style\.setProperty/);
@@ -218,7 +218,7 @@ test('Mobile masthead title preserves a trailing space while it is edited', asyn
   // The shared inline board-name editor, which the masthead and the Desktop
   // title card both use. Lifted out of main.js into ui/board-title.js.
   const mod = await readFile(
-    new URL('../web/assets/js/ui/board-title.js', import.meta.url), 'utf8');
+    new URL('../web/assets/js/ui/board-title.ts', import.meta.url), 'utf8');
   assert.match(mod, /cleanBoardTitleDraft\(field\.textContent\)/);
   assert.doesNotMatch(mod, /cleanBoardTitleDraft\(field\.innerText\)/);
 });
@@ -226,7 +226,7 @@ test('Mobile masthead title preserves a trailing space while it is edited', asyn
 test('the top-stop pen opens persisted header typography controls', async () => {
   const [html, module] = await Promise.all([
     readFile(new URL('../web/index.html', import.meta.url), 'utf8'),
-    readFile(new URL('../web/assets/js/ui/mobile-header.js', import.meta.url), 'utf8'),
+    readFile(new URL('../web/assets/js/ui/mobile-header.ts', import.meta.url), 'utf8'),
   ]);
   const css = appCss();
   assert.match(html, /id="mobile-header-edit-btn"[\s\S]*aria-controls="header-panel"/);

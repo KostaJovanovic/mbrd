@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import {
   board, addItems, removeItems, restoreItems, emptyTrash, undo, redo, byId,
   setBoardMode, setSetting, recheckBoardGeometry, lastCommand, takeBack,
-} from '../web/assets/js/state.js';
+} from '../web/assets/js/state.ts';
 import { fresh, photo } from './state-fixtures.js';
 
 beforeEach(() => {
@@ -187,7 +187,7 @@ test('the last command is the one just committed, and null on a fresh board', ()
 
 test('an unweighted command counts as one, whatever it does', async () => {
   const { commit, clearHistory, historyWeight } =
-    await import('../web/assets/js/history.js');
+    await import('../web/assets/js/history.ts');
   clearHistory();
   for (let i = 0; i < 5; i++) commit('edit', () => {}, () => {});
   assert.equal(historyWeight(), 5);
@@ -196,7 +196,7 @@ test('an unweighted command counts as one, whatever it does', async () => {
 
 test('a weighted command carries its weight, and undo gives it back', async () => {
   const { commit, undo, redo, clearHistory, historyWeight } =
-    await import('../web/assets/js/history.js');
+    await import('../web/assets/js/history.ts');
   clearHistory();
   commit('move the board', () => {}, () => {}, 1000);
   assert.equal(historyWeight(), 1000);
@@ -210,7 +210,7 @@ test('a weighted command carries its weight, and undo gives it back', async () =
 
 test('the weight limit evicts the oldest, and never the last', async () => {
   const { commit, undo, clearHistory, historyWeight, historyState } =
-    await import('../web/assets/js/history.js');
+    await import('../web/assets/js/history.ts');
   clearHistory();
   // Four commands at 20000 apiece is 80000, past the 50000 ceiling.
   for (const label of ['first', 'second', 'third', 'fourth']) {
@@ -229,7 +229,7 @@ test('a single command heavier than the whole budget is still undoable', async (
   // The one thing the user most likely wants back must not be the one thing
   // that cannot be: evicting down to nothing would make the heaviest operation
   // the only un-undoable one.
-  const { commit, clearHistory, historyState } = await import('../web/assets/js/history.js');
+  const { commit, clearHistory, historyState } = await import('../web/assets/js/history.ts');
   clearHistory();
   commit('import everything', () => {}, () => {}, 500000);
   assert.equal(historyState().undo, 'import everything');

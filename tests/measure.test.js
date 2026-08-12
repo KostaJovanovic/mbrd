@@ -14,7 +14,7 @@ import {
   toMm, toUnits, formatMm, formatLength, formatSize, scaleFrom, scaleStep,
   clampScale, DEFAULT_SCALE, MIN_SCALE, MAX_SCALE, MM_PER_INCH,
   PAPERS, paperMm, PX_PER_INCH,
-} from '../web/assets/js/measure.js';
+} from '../web/assets/js/measure.ts';
 
 test('the default scale is life size on screen at 100% zoom', () => {
   // One world unit is one CSS pixel at 1:1, and CSS fixes an inch at 96 of

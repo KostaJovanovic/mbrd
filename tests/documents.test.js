@@ -17,7 +17,7 @@ import assert from 'node:assert/strict';
 
 import {
   canReadDocument, parseDelimited, resolveFrom, colIndex, slideNo,
-} from '../web/assets/js/ui/documents.js';
+} from '../web/assets/js/ui/documents.ts';
 
 test('it claims the formats it has readers for', () => {
   for (const ext of ['docx', 'pptx', 'xlsx', 'odt', 'ods', 'odp', 'csv', 'tsv', 'svg', 'cbz']) {

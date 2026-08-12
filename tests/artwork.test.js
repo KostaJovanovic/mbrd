@@ -13,7 +13,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { coverArt, mayHaveArt } from '../web/assets/js/import/artwork.js';
+import { coverArt, mayHaveArt } from '../web/assets/js/import/artwork.ts';
 
 // ---------------------------------------------------------------------------
 // Builders

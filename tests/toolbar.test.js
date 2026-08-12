@@ -8,8 +8,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { linkTyped } from '../web/assets/js/commands.js';
-import { connectStep } from '../web/assets/js/ui/toolbar.js';
+import { linkTyped } from '../web/assets/js/commands.ts';
+import { connectStep } from '../web/assets/js/ui/toolbar.ts';
 
 // ---------------------------------------------------------------------------
 // Add a link

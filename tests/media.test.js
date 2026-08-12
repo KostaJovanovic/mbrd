@@ -16,7 +16,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { firstFrame, BOOT_TIMEOUT_MS } from '../web/assets/js/optimize/media.js';
+import { firstFrame, BOOT_TIMEOUT_MS } from '../web/assets/js/optimize/media.ts';
 
 /** A file that never gets read: the boot fails long before the bytes matter. */
 const clip = { name: 'clip.mov', async arrayBuffer() { return new ArrayBuffer(0); } };

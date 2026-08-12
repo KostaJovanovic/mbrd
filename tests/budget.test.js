@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 
 import {
   IMPORT_LIMITS, makeByteBudget, imageDimensions, overPixelBudget,
-} from '../web/assets/js/import/budget.js';
+} from '../web/assets/js/import/budget.ts';
 
 function png(w, h) {
   const b = new Uint8Array(24);

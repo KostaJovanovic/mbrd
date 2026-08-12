@@ -14,7 +14,7 @@ import {
   board, addItems, undo, byId, duplicateItems, copyItems,
   cutItems, pasteItems, clipboardSize, clipboardHasOurs, clipboardBounds,
   stuckTo, stuckFollowers, setBoardMode,
-} from '../web/assets/js/state.js';
+} from '../web/assets/js/state.ts';
 import { hash } from './helpers.js';
 import { fresh, note, photo } from './state-fixtures.js';
 

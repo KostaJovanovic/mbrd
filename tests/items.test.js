@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { farKind, itemAccessibleName, wantsHead } from '../web/assets/js/canvas/items.js';
+import { farKind, itemAccessibleName, wantsHead } from '../web/assets/js/canvas/items.ts';
 
 test('a named item announces its own name', () => {
   assert.equal(itemAccessibleName({ name: 'Sunset.jpg', type: 'image' }), 'Sunset.jpg');

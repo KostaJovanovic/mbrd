@@ -18,8 +18,8 @@ import {
   serializeBoard, setBoardMode, toggleConnection, addConnections, areConnected,
   connectedTo, pairKey, MAX_CONNECTIONS, select, clearConnections,
   updateConnection, connectionMeta,
-} from '../web/assets/js/state.js';
-import { createCommands } from '../web/assets/js/commands.js';
+} from '../web/assets/js/state.ts';
+import { createCommands } from '../web/assets/js/commands.ts';
 import { fresh, note, photo } from './state-fixtures.js';
 
 beforeEach(() => {

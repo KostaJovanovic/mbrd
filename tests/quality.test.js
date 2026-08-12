@@ -10,7 +10,7 @@ import {
   quality, initQuality, setQualityLevel, setQualityOverride,
   clearQualityOverrides, qualityLevel, qualityPreset, qualityOverridden,
   onQuality, QUALITY_LEVELS, SHARPNESS_STEPS, BUILD_STEPS,
-} from '../web/assets/js/quality.js';
+} from '../web/assets/js/quality.ts';
 
 /** Back to a known state; every test starts from an unset preference. */
 const fresh = () => initQuality(null);
@@ -171,8 +171,8 @@ test('the pre-paint guard in index.html knows the same three stops', async () =>
 test('the wired sites read the dial rather than a constant', async () => {
   const read = name => readFile(new URL(`../web/assets/js/${name}`, import.meta.url), 'utf8');
   const [items, display, web, stills] = await Promise.all([
-    read('canvas/items.js'), read('canvas/display.js'),
-    read('canvas/web.js'), read('canvas/stills.js'),
+    read('canvas/items.ts'), read('canvas/display.ts'),
+    read('canvas/web.ts'), read('canvas/stills.ts'),
   ]);
   assert.match(items, /built >= buildBudget\(\)/, 'the build budget is the dial’s');
   // The dial first, and the type list second. Which types get no twin is not
@@ -185,7 +185,7 @@ test('the wired sites read the dial rather than a constant', async () => {
   // site that stopped reading the dial: what it draws is a stored list rather
   // than work it has to decide whether to afford. Asserted the other way round
   // instead, so the flag cannot creep back in.
-  assert.doesNotMatch(web, /from '\.\.\/quality\.js'/,
-    'connections are drawn whatever the dial says - see canvas/web.js');
+  assert.doesNotMatch(web, /from '\.\.\/quality\.ts'/,
+    'connections are drawn whatever the dial says - see canvas/web.ts');
   assert.match(stills, /!quality\.motion \|\| vp\.zoom < stillZoom\(\)/, 'motion off freezes at any zoom');
 });

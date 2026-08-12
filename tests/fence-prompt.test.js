@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 
 import {
   fencePromptLabel, outOfReach, REACH,
-} from '../web/assets/js/ui/fence-prompt.js';
+} from '../web/assets/js/ui/fence-prompt.ts';
 
 test('the offer counts what the band caught', () => {
   assert.equal(fencePromptLabel(5), 'Fence these 5');
