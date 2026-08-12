@@ -20,7 +20,8 @@ import { VERSION } from './version.js';
 import {
   board, bus, selection, byId, setAssetNameLookup,
   ensureTitleCard, isTitleHidden, TITLE_ID, setTitle,
-  ensureGhostCards, hasContent, dismissGhosts, leaveNotFoundBoard, isContent,
+  ensureGhostCards, reseedGhostCards, hasContent, dismissGhosts,
+  leaveNotFoundBoard, isContent,
   defaultBoardTitle,
 } from './state.js';
 import { Viewport } from './canvas/viewport.js';
@@ -124,7 +125,19 @@ initAudio();
 // paintGrain too: the two layouts keep their stock on different surfaces - the
 // full-bleed layer on Desktop, the sheet itself on Mobile - so a mode switch
 // hands the grain to an element that has never been placed. See canvas/grain.js.
-bus.on('layout', () => { syncBoardMode(true); paintGrain(vp); });
+// And the hint cards are minted again for the layout that is now live. They are
+// the one thing on an empty board that cannot carry two geometry profiles: every
+// real item is completed into the profile it is missing from, but a hint is
+// seeded straight into whichever layout was live when the board turned out to be
+// empty, and is never in board.layouts at all because it is never saved. So a
+// switch used to drag the column's sizes onto the canvas - four cards at strip
+// width, stacked down the middle of an infinite board.
+//
+// Here rather than inside setBoardMode(), for the reason ensureGhostCards() is
+// called from this file at all: layout.js is a floor under state.js and may not
+// import it back, and seeding a hint is a state write. main.js already owns both
+// of the other seeding sites.
+bus.on('layout', () => { reseedGhostCards(); syncBoardMode(true); paintGrain(vp); });
 syncBoardMode();
 initSidebar(cmds);
 initMobileHeaderEditor(vp);

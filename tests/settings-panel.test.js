@@ -144,8 +144,12 @@ test('a section that is all fold is all fold', () => {
         `${c.id || c.type} in ${s.id} would be drawn above that section's own summary`);
     }
   }
-  // And the pair the rule was written for are still the pair.
-  assert.deepEqual(SECTIONS.filter(s => s.fold).map(s => s.id), ['real-size', 'keys']);
+  // And the set the rule was written for is still the set. Debug joined it: three
+  // development toggles nobody using a board reads, which is the same argument
+  // the keyboard legend makes and a stronger one - the legend is at least read
+  // once.
+  assert.deepEqual(SECTIONS.filter(s => s.fold).map(s => s.id),
+                   ['real-size', 'keys', 'debug']);
 });
 
 test('the four demoted controls are below a fold, not gone', () => {
