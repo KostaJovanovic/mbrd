@@ -772,11 +772,17 @@
       <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-pen"/></svg>
       <span>Note</span>
     </button>
-    <button type="button" data-cmd="add-swatch" aria-label="Add a colour">
+    <!-- data-more marks a tool that steps behind the More button on the phone's
+         tier and stays on the bar everywhere else. Five creation tools across a
+         390-wide screen is five segments of seventy points, which is a row you
+         aim at rather than press - it was already costing four of the five their
+         words below 360. Three segments and a menu is the same five tools with
+         somewhere to put the labels. -->
+    <button type="button" data-cmd="add-swatch" data-more aria-label="Add a colour">
       <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-swatch"/></svg>
       <span>Colour</span>
     </button>
-    <button type="button" data-cmd="add-link" title="Add a link">
+    <button type="button" data-cmd="add-link" data-more title="Add a link">
       <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-link"/></svg>
       <span>Link</span>
     </button>
@@ -787,9 +793,20 @@
          both layouts, unlike Join, Arrange and Find - a phone board is exactly
          where a tap-to-place mark is worth having, and it is the one creation
          tool that works there without a spatial map. -->
-    <button type="button" data-cmd="stickers" title="Stickers">
+    <button type="button" data-cmd="stickers" data-more title="Stickers">
       <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-sticker"/></svg>
       <span>Stickers</span>
+    </button>
+    <!-- The three above, on a phone. data-mobile is data-desktop's mirror: absent
+         at every other width rather than greyed out there, the same rule the
+         settings schema applies to its own layout-specific rows.
+         It presses a command like everything else on this bar, and that command
+         opens an anchored menu through ui/menu.js - the one menu renderer in the
+         app. Not a FLYOUTS entry: those open on hover and this is a tap. -->
+    <button type="button" data-cmd="more-tools" data-mobile
+            aria-haspopup="menu" aria-expanded="false" aria-label="More tools">
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-more"/></svg>
+      <span>More</span>
     </button>
     <!-- The one tool here that is a mode, and the only one in the app. It stays
          pressed while it is armed - aria-pressed, the way #zoom-lock marks a

@@ -1035,39 +1035,33 @@
   /* Every tool takes an equal share of the row, so the tier is one strip of
      even segments rather than a row sized by how long each word happens to be. */
   #toolbar-tools button { flex: 1; padding: 0 6px; height: 100%; }
-  /* The tier keeps its words, now that it has the width of the whole foot to
-     spend. Four segments of a 390-wide screen come out at ninety points each,
-     and the longest of these labels wants about eighty: a 13px word, the
-     seventeen-point glyph, the gap between them and the padding either side.
+  /* The tier keeps its words at every width now, which it could not do while
+     there were four or five of them on it. Four segments of a 390-wide screen
+     came out at ninety points each and the longest label wanted about eighty - a
+     13px word, the seventeen-point glyph, the gap and the padding either side -
+     so below 360 the words came off all but Files, and that was the tier
+     apologising for being too full.
 
-     Below that the words go, all but one. The floor is 360 rather than 344,
-     which is where the arithmetic actually runs out, because the arithmetic
-     assumes a browser that has not been told to draw text larger - and the
-     failure at the bottom is a word spilling out from under its own icon.
-
-     Files is the one that stays, because it is the one the toolbar exists for
-     and the one whose icon says least: a note, a colour and a link are all
-     drawings of themselves, while a plus on its own could mean anything.
-
-     Hidden the accessible way rather than with display:none: these buttons have
-     no aria-label, so the word IS the button's name, and taking it out of the
-     flow while leaving it for a screen reader keeps "Note" and "Colour" spoken.
-     The icon then centres on its own in the flex row. */
+     Three segments of the same screen is a hundred and thirty each, and the
+     three labels left are four letters apiece. The rule that hid them is gone
+     rather than raised: what it was working around was the tool count, and the
+     tool count is what changed. Only the wrap guard stays, because a label that
+     breaks in two is a different failure from a label that does not fit. */
   #toolbar-tools button span { white-space: nowrap; }
-  @media (max-width: 359px) {
-    #toolbar-tools button:not([data-cmd="add-files"]) span {
-      position: absolute;
-      width: 1px; height: 1px;
-      margin: -1px; padding: 0; border: 0;
-      clip-path: inset(50%);
-      overflow: hidden;
-    }
-  }
   /* Rearrange and Find are not here. Both are one tap away in the panel on this
      layout, and a row of six on a 390-wide screen is a row you cannot aim at -
      the same "absent rather than greyed out" the settings schema applies to its
      own layout-specific rows. */
   #toolbar [data-desktop] { display: none; }
+  /* And Colour, Link and Stickers step behind More, which is the same argument
+     carried one further: four creation tools still came out at ninety points
+     each, which is where the words started going. Three segments and a menu
+     leaves every one of them a label, and the menu can afford longer ones than
+     the bar ever could.
+     The pair below are one swap, so they are written together: the three go and
+     the one that holds them arrives. */
+  #toolbar [data-more] { display: none; }
+  #toolbar [data-mobile] { display: flex; }
 
   /* Above the foot strip rather than in it. The bottom edge is spoken for at
      this width - bin, handle and history read as one flush line - and a fourth

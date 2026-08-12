@@ -51,6 +51,13 @@ export function initToolbar(cmds) {
     const fn = cmds[camel(btn.dataset.cmd)];
     if (!fn) return;
     fn();
+    // Except the one command whose whole result is a menu hanging off the bar.
+    // The three tools behind More are still on the tier - they are only hidden
+    // from it - and closing the drawer would take the button the menu is pointing
+    // at out from under it, leaving a panel in mid-air over a bar that is gone.
+    // The rest of the row is unchanged: everything here makes something, and a
+    // drawer left standing over the thing you just made is in the way of it.
+    if (btn.dataset.cmd === 'more-tools') return;
     // A drawer that stays open over the board after you have used it is in the
     // way of the thing you just made. Harmless on a desktop, where the bar is
     // always out and the class means nothing.

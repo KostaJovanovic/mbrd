@@ -177,6 +177,14 @@
    bug looked like a labelling mistake rather than a cascade one. */
 #toolbar #toolbar-toggle { display: none; }
 
+/* data-mobile is data-desktop's mirror (see the foot of mobile.css, where both
+   are answered): a tool that exists only on the phone's tier. There is one, the
+   More button, and it is absent here rather than greyed out - the same rule the
+   settings schema applies to its own layout-specific rows. Written the same way
+   as `#toolbar [data-desktop]` in mobile.css, and it outranks the display:flex
+   on `#toolbar button` above without needing to: an attribute beats a type. */
+#toolbar [data-mobile] { display: none; }
+
 #toolbar button:hover { background: var(--paper-2); color: var(--accent-deep); }
 #toolbar button:active { background: var(--paper-3); color: var(--accent-deep); }
 /* A button whose flyout is down (ui/flyout.js), held at the hover look while
