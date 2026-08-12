@@ -360,12 +360,21 @@ function startTileDrag(e, entry) {
     if (!drag || ev.pointerId !== drag.id) return;
     if (!drag.ghost) {
       if (Math.hypot(ev.clientX - drag.x, ev.clientY - drag.y) < DRAG_SLOP) return;
-      // It has become a drag. Arming would be the other gesture, so put down
-      // anything that was armed rather than leaving two shapes in hand.
-      disarm();
+      // It has become a drag, and the window gets out of the way for good. It
+      // used to fade to 55% instead, which is a window still standing over the
+      // board you are aiming at - and on a phone the board it covers is most of
+      // the board there is.
+      //
+      // Safe to close mid-gesture, in three parts worth naming because none of
+      // them is obvious. The pointer listeners are on `window`, not on the tile,
+      // so the drag survives its own tile being removed. closeStickerWindow()
+      // plays the slide-out and only removes the element on transitionend or a
+      // 500ms backstop, so the tile is still in the document when the drag ends
+      // and releases its capture. And it calls disarm() itself, which is what
+      // the line here used to do.
+      closeStickerWindow();
       drag.ghost = makeGhost(entry);
       document.body.append(drag.ghost);
-      win?.classList.add('is-dragging');
     }
     placeGhost(ev.clientX, ev.clientY);
     showStickTarget(hostUnderPointer(ev.clientX, ev.clientY));
@@ -376,9 +385,12 @@ function startTileDrag(e, entry) {
     const { ghost } = drag;
     const dropped = ev.type === 'pointerup' && ghost && overBoard(ev.clientX, ev.clientY);
     ghost?.remove();
-    drag.el.releasePointerCapture?.(ev.pointerId);
+    // The window may have closed under this tile the moment the drag started, and
+    // a release for a pointer the element no longer captures throws rather than
+    // no-opping. The capture is dropped with the element either way; this is only
+    // about not throwing on the way past the rest of the cleanup.
+    try { drag.el.releasePointerCapture?.(ev.pointerId); } catch { /* already gone */ }
     drag = null;
-    win?.classList.remove('is-dragging');
     showStickTarget(null);
     removeEventListener('pointermove', move);
     removeEventListener('pointerup', end);

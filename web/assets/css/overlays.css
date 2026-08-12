@@ -1832,10 +1832,6 @@
   visibility: visible;
   transition-delay: 0s;
 }
-/* While a shape is being carried out of the window, the window itself gets out
-   of the way rather than sitting opaque over the board you are aiming at. */
-.sticker-window.is-dragging { opacity: 0.55; }
-
 .sticker-window-head {
   flex: none;
   display: flex;
