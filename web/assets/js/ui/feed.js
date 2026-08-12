@@ -27,7 +27,7 @@
 import { board, bus, isDefaultTitle, byId, stuckTo, isRider } from '../state.js';
 import { baseName, clamp } from '../util.js';
 import { mobileOrder } from '../arrange/arrangements.js';
-import { assetURL } from '../storage/assets.js';
+import { assetURL, readText } from '../storage/assets.js';
 import { linkURL } from '../canvas/renderers.js';
 import {
   registerPlayer, releasePlayers, nowPlaying, onNowPlaying, playTrack, PLAY_ICON, clock,
@@ -223,6 +223,13 @@ function kindOf(item) {
   if (item.type === 'note') return 'note';
   if (item.type === 'link') return 'link';
   if (item.type === 'swatch') return 'swatch';
+  // A text file shows its words here, as it does on the canvas. It used to fall
+  // through to the file card below and come out as a filename over the literal
+  // word "text" - which is a tile telling you the name of something you already
+  // know the name of, on the one item type whose whole value is what is inside
+  // it. classify() routes some fifty extensions to this, so it is most of the
+  // notes, code and prose anybody drops on a board.
+  if (item.type === 'text') return 'text';
   return pictureURL(item) ? 'image' : 'file';
 }
 
@@ -233,6 +240,10 @@ function ratioOf(item) {
   if (kind === 'swatch') return 1;
   if (kind === 'audio') return 1;
   if (kind === 'file') return 1.4;
+  // Taller than wide, because a page of words is a page. The canvas card is
+  // 300x360 and this is the same proportion; anything squarer shows four lines
+  // and a lot of paper.
+  if (kind === 'text') return 0.75;
   const r = item.w > 0 && item.h > 0 ? item.w / item.h : 1;
   return clamp(r, 0.5, 2);
 }
@@ -264,6 +275,7 @@ function fillTile(t) {
   if (kind === 'note') return fillNote(t);
   if (kind === 'link') return fillLink(t);
   if (kind === 'swatch') return fillSwatch(t);
+  if (kind === 'text') return fillText(t);
   return fillFile(t);
 }
 
@@ -423,6 +435,50 @@ function fillSwatch(t) {
   const label = div('feed-swatch-label');
   label.textContent = color;
   t.el.append(block, label);
+}
+
+/**
+ * How much of a text file a tile shows.
+ *
+ * Well under the canvas card's 20 000, and the difference is the point: a tile
+ * is a few hundred pixels of a scrolling wall and will draw perhaps forty lines
+ * of it. Reading a hundred kilobytes to lay out forty lines is work the feed
+ * pays on every text file the board holds, at the moment it is trying to draw
+ * everything at once. The rest of the file lives one tap away, in the viewer.
+ */
+const TILE_TEXT = 2000;
+
+/**
+ * A text file, showing its words.
+ *
+ * The read is asynchronous and the tile is built synchronously, so the card goes
+ * up with its name and the body arrives when it arrives - the same bargain
+ * fillImage() makes with a lazily-decoded picture, and the same one the canvas
+ * text renderer makes.
+ *
+ * <pre> and textContent, never innerHTML: half of what classify() routes here is
+ * markup, and a tile that rendered the HTML file it is meant to be showing you
+ * would be executing a file the app did not write.
+ */
+function fillText(t) {
+  const card = div('feed-text');
+  const name = div('feed-text-name');
+  name.textContent = baseName(t.item.name) || t.item.name || 'untitled';
+  const body = document.createElement('pre');
+  body.className = 'feed-text-body';
+  card.append(name, body);
+  t.el.appendChild(card);
+
+  const hash = t.item.asset?.hash;
+  if (!hash) return;
+  readText(hash, TILE_TEXT).then(text => {
+    // The tile may have been dropped or rebuilt while the read was out - a
+    // delete, a layout switch, an undo. Writing into a detached node is
+    // harmless and writing into a *rebuilt* one is not, so check the body is
+    // still the one this call built.
+    if (!body.isConnected) return;
+    body.textContent = text;
+  }).catch(() => { /* an unreadable file keeps its name and nothing else */ });
 }
 
 function fillFile(t) {

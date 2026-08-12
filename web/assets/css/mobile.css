@@ -352,6 +352,53 @@
 }
 
 /* Anything else - a model, a PDF with no thumbnail: its name and its kind. */
+/* A text file, showing its words rather than its name. The canvas card's own
+   look, at the feed's scale: the filename as a head, then the file, monospaced
+   and pre-wrapped, clipped by the tile.
+
+   No scroll of its own, deliberately. A tile is a glance and the wall under it
+   is the thing being scrolled; a second scroller inside one is a trap for a
+   thumb going past. The whole file is one tap away in the viewer, and the fade
+   at the foot is what says there is more of it. */
+.feed-text {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: hidden;
+  background: var(--paper-card);
+}
+.feed-text-name {
+  flex: none;
+  max-width: 100%;
+  color: var(--ink);
+  font-size: var(--t-small);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.feed-text-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  /* The last two lines fade out, so a clipped file reads as continuing rather
+     than as ending mid-word. A mask and not a gradient overlay: the tile has a
+     paper fill and the wall behind it does not, so anything painted on top
+     would have to know which. */
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 2.4em), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 2.4em), transparent);
+}
+
 .feed-file {
   width: 100%;
   height: 100%;
