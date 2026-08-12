@@ -185,6 +185,9 @@ export function initMobileHeaderEditor(vp) {
   // Feed <-> Playlist: the pen shows over the Feed and hides on the Playlist, so it
   // repaints when the lens changes (which does not emit 'layout').
   bus.on('lens', paintButton);
+  // The Feed says when its title page scrolls in and out of view; the pen goes
+  // with it. See paintButton() and the observer in ui/feed.js.
+  bus.on('feed:masthead', on => { mastheadOnScreen = !!on; paintButton(); });
   // The edit bar is one of the exclusive right-side panels: it and the player hide
   // and restore each other through the stack.
   registerPanel('header', openPanel, closePanel);
@@ -767,14 +770,33 @@ function fitOne(title, box, wrap, off) {
 /** What the button was last set to, so a scroll writes nothing - see below. */
 let buttonShown = null;
 
+/**
+ * Whether the Feed's title page is on screen, as the Feed last reported it.
+ *
+ * True to start, and that is the safe default rather than an optimistic one: a
+ * board that has not scrolled yet is at the top, and any path where the observer
+ * never runs - an engine without IntersectionObserver, a lens that was never
+ * built - should leave the pen reachable rather than permanently hidden.
+ */
+let mastheadOnScreen = true;
+
 function paintButton() {
   // In the lens era the world-space canvas is dormant behind the Feed, so its
   // scroll stop (atMobileTop) no longer tracks the masthead - the masthead is the
   // Feed's, at the top of its own sheet. The pen shows over the Feed and comes down
   // on the Playlist (album hero, not the editable title page) and on Desktop (the
   // title card carries its own edit there).
+  //
+  // And on the Feed it comes down again once that title page has scrolled away.
+  // The pen edits the page and only the page: the panel it opens is the board
+  // name, its face, size, stretch and weight, every one of which paints onto the
+  // masthead. Left riding the whole wall it is a control for something that is
+  // not on the screen, sitting over the photographs that are. The Feed announces
+  // the crossing on 'feed:masthead' (see the observer in ui/feed.js), which is
+  // also why this stays a plain boolean here - the module that can see the
+  // scroller is the one that decides, and this one only wears the answer.
   const lens = document.documentElement.dataset.feedLens;
-  const visible = board.layoutMode === 'mobile' && lens !== 'playlist';
+  const visible = board.layoutMode === 'mobile' && lens !== 'playlist' && mastheadOnScreen;
   // This runs on every view change, and the answer changes exactly twice in a
   // scroll - on leaving the top stop and on returning to it. Writing it on
   // every frame in between is two attribute sets a frame to arrive at the state
