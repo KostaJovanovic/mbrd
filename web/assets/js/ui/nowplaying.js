@@ -51,13 +51,12 @@
 import {
   nowPlaying, onNowPlaying, clearNowPlaying,
   getVolume, onVolume, setVolume, volumeLocked,
-  bindScrub, clock, PLAY_ICON, PAUSE_ICON,
-  queueNext, queuePrev, toggleShuffle, cycleRepeat, queueState, onQueue,
+  bindScrub, clock, PLAY_ICON, PAUSE_ICON, setAdvanceGate,
 } from '../canvas/audio.js';
 import { board } from '../state.js';
 import { setLens, currentLens } from './board-view.js';
-import { togglePlayerWindow } from './playlist.js';
-import { baseName, clamp } from '../util.js';
+import { togglePlayerWindow, isPlayerWindowOpen } from './playlist.js';
+import { baseName, clamp, seekInnerHTML, sizeSeekWave } from '../util.js';
 
 let bar = null, caption = null, controls = null, volume = null, closeBtn = null;
 // The seek line, its ends' times, and the play button - the bar's own transport,
@@ -66,48 +65,13 @@ let seekWrap = null, lineEl = null, elapsedEl = null, totalEl = null, playBtn = 
 // The wave's own svg and path, sized to the bar's pixel width so the frequency
 // does not stretch with it - see sizeWave() and the WAVE_HALF note above.
 let waveSvg = null, wavePathEl = null;
-// The playlist controls: prev/next/shuffle/repeat, shown only while the queue is
-// the sound. Play sits among them but is always shown.
-let shuffleBtn = null, repeatBtn = null;
 // The playback follow loop and the current seek handler, per bound element.
 let frame = 0;
 let seekTo = null;
 
-const PREV_ICON = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.5 3.5h1.4v9H4.5z"/><path d="M12 3.9v8.2L6.3 8z"/></svg>';
-const NEXT_ICON = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M10.1 3.5h1.4v9h-1.4z"/><path d="M4 3.9v8.2L9.7 8z"/></svg>';
-const SHUFFLE_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 4.5h2.5L11 11.5h3"/><path d="M2 11.5h2.5l2-2.2"/><path d="M9.5 6.7 11 4.5"/><path d="M12.2 2.8 14 4.5l-1.8 1.7"/><path d="M12.2 9.8 14 11.5l-1.8 1.7"/></svg>';
-const REPEAT_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6V5.2A1.7 1.7 0 0 1 6.2 3.5H12"/><path d="m10.3 1.8 1.9 1.7-1.9 1.7"/><path d="M11.5 10v.8a1.7 1.7 0 0 1-1.7 1.7H4"/><path d="m5.7 14.2-1.9-1.7 1.9-1.7"/></svg>';
-const REPEAT_ONE_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6V5.2A1.7 1.7 0 0 1 6.2 3.5H12"/><path d="m10.3 1.8 1.9 1.7-1.9 1.7"/><path d="M11.5 10v.8a1.7 1.7 0 0 1-1.7 1.7H4"/><path d="m5.7 14.2-1.9-1.7 1.9-1.7"/><text x="8" y="10.2" font-size="6" fill="currentColor" stroke="none" text-anchor="middle">1</text></svg>';
 // A little list with a play triangle: the way in to the full player.
 const LIST_ICON = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="2" y="3.2" width="8" height="1.6" rx="0.8"/><rect x="2" y="7.2" width="8" height="1.6" rx="0.8"/><rect x="2" y="11.2" width="5" height="1.6" rx="0.8"/><path d="M11.4 7v5l3.3-2.5z"/></svg>';
 
-// A sine drawn in the seek line's own pixels, 8 tall (centre line at 4), so its
-// wavelength is the same on a narrow phone bar and a wide desktop one. The bug
-// this replaces was a path in a fixed 0..100 viewBox stretched to the element
-// width, which made the frequency a function of how wide the bar happened to be -
-// wide bars drew slow rolling swells, narrow ones a tight ripple. The wave svg's
-// viewBox is sized to the measured pixel width instead (see sizeWave), so one user
-// unit is one pixel and WAVE_HALF is a real, constant half-period.
-//
-// Drawn with the stroke unscaled so it stays thin however wide the bar is; shown
-// only at the soft end of the whimsy axis, where the seek is a Material-style wave
-// rather than a straight line.
-//
-// WAVE_HALF is a half period in px (smaller = higher frequency); the path runs two
-// whole periods past the width so the slow leftward scroll (the np-wave animation
-// in the CSS) has crest to bring in from the right without a gap - it translates by
-// one period (2 * WAVE_HALF, kept in step with the keyframe there) and loops, which
-// is seamless because the wave repeats.
-const WAVE_HALF = 7;
-function buildWavePath(width) {
-  let d = 'M0 4';
-  let up = true;
-  for (let x = 0; x < width + 4 * WAVE_HALF; x += WAVE_HALF) {
-    d += ` Q${x + WAVE_HALF / 2} ${up ? 2 : 6} ${x + WAVE_HALF} 4`;
-    up = !up;
-  }
-  return d;
-}
 
 /** The transport currently in the bar, and the way to take it back apart. */
 let shown = null;      // the item it was built for
@@ -165,55 +129,59 @@ export function initNowPlaying() {
 
   closeBtn?.addEventListener('click', close);
 
-  // The controls on the right, in order: a Playlist button, then shuffle, prev,
-  // play, next, repeat, then volume and close (already in the markup). Play is
-  // always shown; the four playlist buttons show only while the queue is the sound -
-  // CSS keys that off the .is-queue class paintQueue() sets. All inserted before the
-  // volume.
+  // ---------------------------------------------------------------------------
+  // Four things, and that is the whole bar: the playlist, play/pause, the
+  // volume, close.
+  //
+  // It used to carry seven. Shuffle, previous, next and repeat made it a second
+  // copy of a transport that already exists in the playlist window, next to the
+  // list those four act on - and prev and next beside a name with nothing else on
+  // screen are two buttons that move you through something you cannot see. Those
+  // went; they are one press away, on the surface that has the list.
+  //
+  // The volume did not, and the difference is what it is a property *of*. Prev
+  // and next act on a list, so they belong with the list. A level is a property
+  // of the room, not of the queue - it is what you reach for while something is
+  // playing, which is exactly when this bar is up, and putting it a window away
+  // means opening a window to turn a noise down.
+  //
+  // Close stays for a third reason again. It is not a transport control - it is
+  // how the bar is dismissed, and it is the only way; a player with no way to put
+  // it away is furniture.
+  // ---------------------------------------------------------------------------
+  // Both inserted before the volume, which is already in the markup along with
+  // close - so the built and the written halves interleave in one order.
   const before = controls.querySelector('.np-volume') || closeBtn;
   // The way in to the full player: the Playlist lens on a Mobile board (a second
   // press steps back to the Feed), the floating window on the Desktop.
   const listBtn = ctlBtn('np-list', 'Open the playlist', LIST_ICON, openPlaylist);
-  shuffleBtn = ctlBtn('np-shuffle', 'Shuffle', SHUFFLE_ICON, toggleShuffle);
-  const prevBtn = ctlBtn('np-prev', 'Previous', PREV_ICON, queuePrev);
   playBtn = ctlBtn('np-play', 'Play', PLAY_ICON, togglePlay);
-  const nextBtn = ctlBtn('np-next', 'Next', NEXT_ICON, queueNext);
-  repeatBtn = ctlBtn('np-repeat', 'Repeat', REPEAT_ICON, cycleRepeat);
-  for (const b of [listBtn, shuffleBtn, prevBtn, playBtn, nextBtn, repeatBtn]) {
-    controls.insertBefore(b, before);
-  }
-  onQueue(paintQueue);
+  for (const b of [listBtn, playBtn]) controls.insertBefore(b, before);
+
+  // A track that ends hands over only while the playlist is up - see
+  // playlistOpen(). By injection rather than an import, because canvas/audio.js
+  // sits below ui/ and may not reach back up into it; the same seam
+  // setAssetNameLookup and setPrompt use, and tests/layers.test.js is what keeps
+  // it one-way.
+  setAdvanceGate(playlistOpen);
 
   // The seek line under both rows: a muted base, an accent fill clipped to the
   // played fraction (--np-progress), and the times at its ends. The fill carries
   // both a straight line and a wave; the CSS shows one per whimsy tier.
+  // The line itself is seekInnerHTML's, shared with the playlist window and the
+  // video card so all three scrubbers are one shape - see the note in util.js.
+  // Only the two time labels either side of it are the bar's own.
   seekWrap.innerHTML =
     '<span class="np-time np-elapsed">0:00</span>'
     + '<div class="np-line" role="slider" tabindex="0" aria-label="Seek" aria-valuemin="0">'
-    +   '<svg class="np-line-svg" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true">'
-    +     '<path class="np-line-base" d="M0 4H100" vector-effect="non-scaling-stroke"/></svg>'
-    +   '<div class="np-line-fill">'
-    +     '<svg class="np-line-svg" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true">'
-    +       '<path class="np-fill-line" d="M0 4H100" vector-effect="non-scaling-stroke"/></svg>'
-    // The wave lives in its own svg, whose viewBox is sized to the bar's pixel width
-    // (sizeWave) so its wavelength does not stretch with the bar. It is wrapped in a
-    // group so its two transforms do not fight: the path carries the leftward scroll
-    // (an animation on transform), the group carries the flatten-when-paused (a
-    // transition on transform). One element cannot do both, since a running animation
-    // owns the whole transform. The `d` is filled in by sizeWave once there is a width.
-    +     '<svg class="np-line-svg np-wave-svg" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true">'
-    +       '<g class="np-wave-scale"><path class="np-fill-wave" vector-effect="non-scaling-stroke"/></g></svg>'
-    // Two closes, not one: the first ends .np-line-fill, the second ends .np-line
-    // itself. With only one, .np-line stayed open and the .np-total span below
-    // parsed as a child of the scrubber - landing at its top-left, the length
-    // sitting on top of the seek line instead of after it.
-    +   '</div></div>'
+    +   seekInnerHTML('np-line')
+    + '</div>'
     + '<span class="np-time np-total">0:00</span>';
   lineEl = seekWrap.querySelector('.np-line');
   elapsedEl = seekWrap.querySelector('.np-elapsed');
   totalEl = seekWrap.querySelector('.np-total');
-  waveSvg = seekWrap.querySelector('.np-wave-svg');
-  wavePathEl = seekWrap.querySelector('.np-fill-wave');
+  waveSvg = seekWrap.querySelector('.np-line-wave-svg');
+  wavePathEl = seekWrap.querySelector('.np-line-fill-wave');
   sizeWave();
   // The bar's width follows the window and the two time labels, both of which
   // change without a track change, so the wave is re-laid whenever the line
@@ -253,26 +221,14 @@ function show(current) {
   bind(current.el);
   caption.textContent = name(current.item);
   caption.title = current.item.name || '';
-  paintQueue();
   raise();
   // The bar was display:none until raise(), where the line read zero width and
   // the ResizeObserver had nothing to size against; now it has a box.
   sizeWave();
 }
 
-/**
- * Size the wave's viewBox to the seek line's pixel width and lay the path across
- * it, so one user unit is one pixel and the wavelength (2 * WAVE_HALF) is the same
- * at every bar width. Runs on build, on every resize of the line, and each time a
- * track is shown - the bar is display:none until then, where the width reads zero.
- */
-function sizeWave() {
-  if (!waveSvg || !wavePathEl || !lineEl) return;
-  const w = Math.round(lineEl.clientWidth);
-  if (w < 1) return;
-  waveSvg.setAttribute('viewBox', `0 0 ${w} 8`);
-  wavePathEl.setAttribute('d', buildWavePath(w));
-}
+/** The bar's half of the shared sizer - see sizeSeekWave in util.js. */
+function sizeWave() { sizeSeekWave(lineEl, waveSvg, wavePathEl); }
 
 /**
  * Drive the bar off one element: the play button, the seek line and the times.
@@ -354,6 +310,30 @@ function openPlaylist() {
   else togglePlayerWindow();
 }
 
+/**
+ * Whether that full player is up right now.
+ *
+ * The other half of openPlaylist(), and it has to span the same two answers for
+ * the same reason: the full player is a lens on a Mobile board and a floating
+ * window on the Desktop, and "is it open" is a different question of a different
+ * module in each case. This file is where both are already known.
+ *
+ * What reads it is the queue's hand-over rule - a track that ends only starts
+ * the next one while this is true. The argument is that unattended playback is
+ * a thing you asked for or a thing that happened to you, and the list being on
+ * screen is the difference: with it up, the next track is the one you can see
+ * coming and stop. With it shut, the bar is a remote for one clip, and a board
+ * that quietly moves on to another track twenty minutes after you stopped
+ * looking is a board making noise on its own account.
+ *
+ * Note it is read at the moment a track ends, not when one starts - so closing
+ * the playlist mid-track is enough to stop the queue at the end of it, and
+ * opening it mid-track is enough to let it carry on. There is nothing to arm.
+ */
+const playlistOpen = () => (board.layoutMode === 'mobile'
+  ? currentLens() === 'playlist'
+  : isPlayerWindowOpen());
+
 /** Play or pause whatever the bar is bound to. */
 function togglePlay() {
   const sound = nowPlaying()?.el;
@@ -372,26 +352,6 @@ function ctlBtn(className, label, icon, onClick) {
   b.innerHTML = icon;
   b.addEventListener('click', onClick);
   return b;
-}
-
-/**
- * Show the playlist controls only while the queue is what is playing, and reflect
- * the shuffle and repeat modes on their buttons (repeat has three states, so its
- * glyph carries the "one" case).
- */
-function paintQueue() {
-  if (!bar) return;
-  const { shuffle, repeat, active } = queueState();
-  // The four playlist buttons live in the flow always; CSS hides them off this
-  // class, so play stays put between prev and next rather than shifting when they
-  // come and go.
-  bar.classList.toggle('is-queue', active);
-  shuffleBtn.setAttribute('aria-pressed', String(shuffle));
-  repeatBtn.setAttribute('aria-pressed', String(repeat !== 'off'));
-  repeatBtn.innerHTML = repeat === 'one' ? REPEAT_ONE_ICON : REPEAT_ICON;
-  repeatBtn.setAttribute('aria-label',
-    repeat === 'one' ? 'Repeat one' : repeat === 'all' ? 'Repeat all' : 'Repeat');
-  repeatBtn.title = repeatBtn.getAttribute('aria-label');
 }
 
 /**

@@ -548,3 +548,90 @@ export function isDev() {
   }
   return devHost;
 }
+
+
+// ---------------------------------------------------------------------------
+// The scrubber's wave
+//
+// At the soft end of the whimsy axis a seek line is not a line, it is a
+// Material-style wave that scrolls slowly leftward through the played part. It
+// started on the now-playing bar; it is here because three scrubbers draw it now
+// - that bar, the playlist window's transport, and the plain line a video card
+// carries - and they sit in three different layers (ui/, ui/ and canvas/), so
+// the only place all three can reach is the bottom.
+//
+// Pure, and it has to be: this returns a path string and touches no document, so
+// util.js stays importable outside a browser.
+//
+// A sine drawn in the line's *own pixels*, 8 tall with the centre at 4, so its
+// wavelength is the same on a narrow phone bar and a wide desktop window. The bug
+// this shape replaces was a path in a fixed 0..100 viewBox stretched to the
+// element width, which made the frequency a function of how wide the line
+// happened to be - wide ones drew slow rolling swells, narrow ones a tight
+// ripple. Each caller sizes its svg's viewBox to the measured pixel width, so one
+// user unit is one pixel and WAVE_HALF is a real, constant half-period.
+//
+// Which is also why the fill cannot be a scaled bar. Two of these three used to
+// be a div with `transform: scaleX(progress)`, and a wave scaled horizontally is
+// a wave whose frequency changes as it plays. The played part is revealed with a
+// clip instead, so the wave itself never moves and only how much of it you can
+// see does.
+// ---------------------------------------------------------------------------
+
+/** A half period in px. Smaller is a higher frequency. */
+export const WAVE_HALF = 7;
+
+/**
+ * The path, run two whole periods past `width` so the leftward scroll has crest
+ * to bring in from the right without a gap: it translates by one period
+ * (2 * WAVE_HALF, kept in step with the keyframe in the CSS) and loops, which is
+ * seamless because the wave repeats.
+ */
+export function wavePath(width) {
+  let d = 'M0 4';
+  let up = true;
+  for (let x = 0; x < width + 4 * WAVE_HALF; x += WAVE_HALF) {
+    d += ` Q${x + WAVE_HALF / 2} ${up ? 2 : 6} ${x + WAVE_HALF} 4`;
+    up = !up;
+  }
+  return d;
+}
+
+/**
+ * The markup every wavy scrubber has inside it, as an HTML string.
+ *
+ * `p` is the class prefix, because the three callers keep their own names
+ * (`np-`, `pw-`, `vt-`) and their own stylesheets. What is shared is the
+ * *shape*: a base line clipped to the part past the playhead, and a fill clipped
+ * to the part before it carrying both a straight line and a wave, of which the
+ * CSS shows one per whimsy tier.
+ *
+ * The wave is wrapped in a group so its two transforms do not fight - the path
+ * carries the scroll (an animation) and the group the flatten-when-paused (a
+ * transition), and one element cannot do both, since a running animation owns
+ * the whole transform. Its `d` is empty until the caller measures a width.
+ */
+export function seekInnerHTML(p) {
+  return (
+    `<svg class="${p}-svg" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true">`
+    + `<path class="${p}-base" d="M0 4H100" vector-effect="non-scaling-stroke"/></svg>`
+    + `<div class="${p}-fill">`
+    +   `<svg class="${p}-svg" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true">`
+    +     `<path class="${p}-fill-line" d="M0 4H100" vector-effect="non-scaling-stroke"/></svg>`
+    +   `<svg class="${p}-svg ${p}-wave-svg" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true">`
+    +     `<g class="${p}-wave-scale"><path class="${p}-fill-wave" vector-effect="non-scaling-stroke"/></g></svg>`
+    + `</div>`
+  );
+}
+
+/**
+ * Lay the wave across a line that has just been measured. Safe to call before
+ * there is a box - a zero-width line simply keeps the path it had.
+ */
+export function sizeSeekWave(lineEl, waveSvg, wavePathEl) {
+  if (!lineEl || !waveSvg || !wavePathEl) return;
+  const w = Math.round(lineEl.clientWidth);
+  if (w < 1) return;
+  waveSvg.setAttribute('viewBox', `0 0 ${w} 8`);
+  wavePathEl.setAttribute('d', wavePath(w));
+}

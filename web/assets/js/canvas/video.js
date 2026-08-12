@@ -25,7 +25,7 @@
 // No PAUSE_ICON: the only button here is the big one over the picture, and it
 // is a play button that goes away rather than one that turns into a pause.
 import { registerPlayer, bindScrub, PLAY_ICON, clock } from './audio.js';
-import { clamp, toast } from '../util.js';
+import { clamp, toast, seekInnerHTML, sizeSeekWave } from '../util.js';
 
 /**
  * Where a parked video sits: the `#t=` media fragment canvas/renderers.js mounts
@@ -95,9 +95,19 @@ export function buildVideoPlayer(item, video) {
   track.setAttribute('aria-label', 'Seek');
   track.setAttribute('aria-valuemin', '0');
   track.tabIndex = 0;
-  const fill = document.createElement('div');
-  fill.className = 'vtrack-fill';
-  track.append(fill);
+  // The same three-svg scrubber the now-playing bar, the playlist window and
+  // canvas/audio.js's own line all draw, so every seek on the board waves
+  // together at the soft end of the whimsy axis - see the note in util.js.
+  track.innerHTML = seekInnerHTML('vt');
+  const trackWave = track.querySelector('.vt-wave-svg');
+  const trackWavePath = track.querySelector('.vt-fill-wave');
+  // On a resize rather than on a playback frame: the path is a string built in a
+  // loop over the width, so laying it per frame would rebuild it sixty times a
+  // second to arrive at the same characters. A video card is resizable, which is
+  // why it is laid more than once at all.
+  if (typeof ResizeObserver === 'function') {
+    new ResizeObserver(() => sizeSeekWave(track, trackWave, trackWavePath)).observe(track);
+  }
 
   const time = document.createElement('span');
   time.className = 'transport-time';
@@ -112,9 +122,11 @@ export function buildVideoPlayer(item, video) {
 
   const paint = () => {
     const at = video.duration ? clamp(video.currentTime / video.duration, 0, 1) : 0;
-    // scaleX off a left origin rather than a width: it is a compositor-only
-    // property, and this runs on every frame of playback.
-    fill.style.transform = `scaleX(${at.toFixed(4)})`;
+    // A custom property the clip-path reads, rather than a transform: a wave
+    // scaled on X is a wave whose frequency changes as the clip plays. Still a
+    // compositor-only write, which matters because this runs on every frame of
+    // playback.
+    track.style.setProperty('--vt-progress', at.toFixed(4));
     // A parked clip shows how long it is; once it has started, where you are in
     // it. The old readout was currentTime alone, so every unplayed video on the
     // board said 0:00 and nothing anywhere gave its length.

@@ -10,7 +10,7 @@
 import {
   board, byId, selection, bus, renameItem, visualStackOrder, travelling, isFence,
 } from '../state.js';
-import { shuffle } from '../util.js';
+import { extOf, shuffle } from '../util.js';
 import { quality } from '../quality.js';
 import { itemRadius, rotatedExtents } from '../geometry.js';
 import { buildContent, fitMode } from './renderers.js';
@@ -186,10 +186,16 @@ export function initItems(world, viewport) {
   // does not wrap it, so its cost was invisible. When mbrd.perf is armed
   // (cullProfile.on), each frame records its own time and whether it ran a full
   // sync; off, it is a single boolean read and the plain call, same as ever.
+  //
+  // resnap() rides the same listener rather than one of its own: it has to run
+  // after syncView(), because a card that has only just been mounted has no
+  // snapped transform yet, and it costs a single boolean read on every frame
+  // that is not the settling one. See the note above deviceSnap().
   vp.onChange(() => {
-    if (!cullProfile.on) { syncView(); return; }
+    if (!cullProfile.on) { syncView(); resnap(); return; }
     const t = performance.now();
     syncView();
+    resnap();
     cullProfile.ms += performance.now() - t;
     cullProfile.runs++;
   });
@@ -261,6 +267,25 @@ export function setConnectPick(id) {
   if (pickedId) nodeFor(pickedId)?.removeAttribute('data-pick');
   pickedId = id || null;
   if (pickedId) nodeFor(pickedId)?.setAttribute('data-pick', '');
+}
+
+/**
+ * The card the draft line is currently aimed at, marked so it says so.
+ *
+ * The pick's opposite number, and deliberately *not* kept the way the pick is.
+ * A pick is a decision and has to survive its card being culled and rebuilt; an
+ * aim is where the pointer happens to be this moment, and a card that scrolled
+ * off screen is not where the pointer is. So this writes the live node and
+ * nothing more - build() knows about data-pick and has no business knowing
+ * about this one.
+ */
+let aimedId = null;
+
+export function setConnectAim(id) {
+  if (aimedId === id) return;
+  if (aimedId) nodeFor(aimedId)?.removeAttribute('data-aim');
+  aimedId = id || null;
+  if (aimedId) nodeFor(aimedId)?.setAttribute('data-aim', '');
 }
 
 /** The item id owning a DOM node, or null for canvas chrome. */
@@ -735,6 +760,12 @@ function build(item) {
   // survive until the first redraw and then quietly vanish.
   el.append(bottomBar(item));
 
+  // And the far-zoom headline, on .item beside the bar for the same reason the
+  // bar is there rather than in the body: re-rendering an item calls
+  // replaceChildren() on the body, and anything built in there would survive
+  // until the first redraw and then quietly vanish.
+  if (wantsHead(item)) el.append(farHead(item));
+
   nodes.set(item.id, el);
   // The title card carries its own drop shadow in CSS (box-shadow on
   // .title-card), because the 3:2 card is smaller than its snapped item box and
@@ -922,6 +953,107 @@ function nameplate(item) {
 }
 
 /**
+ * Which cards draw a head at the index rung, and it is one question rather than
+ * a list: **is there anything to look at?**
+ *
+ * A card with a picture keeps the picture and takes no label at all. A
+ * photograph is its own name at any size, and a plate across the bottom of one
+ * is a caption on something that did not ask for one. A card without a picture
+ * has nothing to lose and everything to gain, so it draws what it is and what it
+ * is called - see the index rung block in items.css for the whole design.
+ *
+ * Two earlier versions are worth keeping. The name *centred in the card* fights
+ * whatever is under it, so every visual type had to be argued out one at a time
+ * and audio grew a bespoke layout on top. A *band across the foot* fixed that
+ * and left the real problem standing: with the body switched off, six types all
+ * became the same blank white rectangle with a small name at the bottom, on the
+ * one view whose entire job is telling you what is where.
+ *
+ * The three non-picture exclusions are the cards already carrying a label of
+ * their own out here; the three picture ones are listed beside them below,
+ * because both halves of the split belong in the same place.
+ */
+const NO_HEAD = new Set([
+  // Each of these already says what it is, louder than a label could.
+  'fence',    // its plate and label survive the rung by name (items.css), set at
+              // the region's size rather than a card's - finding your way around
+              // a large board is exactly when its areas' names are what you came
+              // for.
+  'title',    // the board's own name, already set large. It is a title card.
+  'ghost',    // a hint is talking to the person, not to the board, and
+              // serializeBoard() strips them: naming one names nothing.
+  'image',    // a photograph is its own name at any size, and a plate across the
+  'video',    // bottom of one is a caption on something that did not ask for it.
+  'swatch',   // a colour, and the hex under it is the only name it has.
+]);
+
+export const wantsHead = item => !NO_HEAD.has(item.type);
+
+/**
+ * The word printed above the rule at the index rung.
+ *
+ * The extension, in preference to anything else, because that is the card's own
+ * kicker (see cardShell in canvas/renderers.js) and because on a board built out
+ * of somebody's files it is the most informative three characters available -
+ * PDF, OBJ, WAV and MP3 each say something a type word cannot. The type word is
+ * the fallback for the items that were never files: a link has no extension and
+ * a pasted note has no name of its own to take one from.
+ *
+ * Empty for a note, which draws no kind at all - see the note rules in
+ * items.css. Returned rather than special-cased at the call site so there is one
+ * answer to "what does this card call itself" and the stylesheet decides whether
+ * to print it.
+ */
+const KIND_WORD = { link: 'link', audio: 'audio', text: 'text', model: 'model' };
+
+export function farKind(item) {
+  if (item.type === 'note') return '';
+  const ext = (item.meta?.ext || extOf(item.name) || '').replace(/^\./, '');
+  return ext || KIND_WORD[item.type] || 'file';
+}
+
+/**
+ * The line a card shows when it is too small to show anything else.
+ *
+ * `item.name` for every type, and that is worth a sentence because it is not
+ * obvious for one of them: **a note carries a name too** - the first line of its
+ * text, rewritten by noteName() on every edit - and until now nothing on the
+ * board drew it (see canRenameItem, which explains why a note cannot be renamed:
+ * you would be typing into a field with no visible effect). This is that field's
+ * first visible effect. It is still not editable here; editing a note's first
+ * line is how it changes, which is what it always was.
+ *
+ * Built for every eligible card whether or not it has a name yet, and hidden
+ * when it has none - the same bargain nameplate() strikes and for the same
+ * reason: a rename can then fill it without anything being rebuilt around it,
+ * and `:has(> .far-head:not([hidden]))` in the stylesheet is what decides
+ * whether the body underneath is worth drawing. No class to keep in step.
+ */
+function farHead(item) {
+  const head = document.createElement('div');
+  head.className = 'far-head';
+  // Decorative, and deliberately so: this is the *same string* the accessible
+  // name already carries, shown at a different zoom. Announcing it again would
+  // read every card out twice on a board somebody merely zoomed out of.
+  head.setAttribute('aria-hidden', 'true');
+  // Two children, not one: the kind over the rule and the name under it. Both
+  // are blocks of their own - a line clamp has nothing to bite on when the text
+  // is an anonymous child of a flex container, and the rule is a border on the
+  // kind so it can only ever be where the kind ends.
+  const kind = document.createElement('b');
+  kind.className = 'fh-kind';
+  kind.textContent = farKind(item);
+
+  const line = document.createElement('span');
+  line.className = 'fh-name';
+  line.textContent = item.name || '';
+
+  head.append(kind, line);
+  head.hidden = !item.name;
+  return head;
+}
+
+/**
  * A number in [-1, 1] for an item, used as its resting tilt - freshly dealt,
  * so the board is pinned up a little differently every time you open it.
  *
@@ -1006,6 +1138,18 @@ function rebuild(id) {
   if (label) {
     label.textContent = item.name || '';
     label.hidden = !item.name;
+  }
+  // The headline is the same string on the same schedule, and it is a sibling
+  // too. A note is why this cannot be skipped as "renames only": a note's name
+  // is its first line, rewritten on every edit, and an edit arrives here as an
+  // ordinary re-render.
+  const head = el.querySelector(':scope > .far-head');
+  if (head) {
+    head.querySelector('.fh-name').textContent = item.name || '';
+    // The kind follows a rename too: the extension is read off item.name, so
+    // renaming "sketch.png" to "sketch" changes what this card calls itself.
+    head.querySelector('.fh-kind').textContent = farKind(item);
+    head.hidden = !item.name;
   }
   // The accessible name follows the caption, or a renamed card would keep
   // announcing its old name (or "Untitled ..."). See AUD-09.
@@ -1149,7 +1293,124 @@ function placeBox(el, item) {
   // which is itself already capped. See --grip-lap-x / -y in items.css.
   el.style.setProperty('--half-w', (item.w / 2).toFixed(2) + 'px');
   el.style.setProperty('--half-h', (item.h / 2).toFixed(2) + 'px');
-  el.style.transform = item.rot ? `rotate(${-item.rot}deg)` : '';
+  el.style.transform = itemTransform(item);
+}
+
+/* ---------------------------------------------------------------------------
+   The device-pixel snap: why an item is not drawn exactly where it is.
+
+   A card's border is one screen pixel wide and lands wherever the arithmetic
+   puts it, which is nowhere in particular. An item sits at a fractional world
+   coordinate, the layer is scaled by a fractional zoom and translated by a
+   fractional pan, so each of a card's four edges falls at its own position
+   *between* two device pixels and is drawn split across both of them. The width
+   is right; the coverage is not. An edge at 0.9/0.1 reads as a black hairline
+   and the opposite edge of the same card at 0.5/0.5 reads as two rows of grey -
+   which is a card whose border is visibly heavier on two sides than the other
+   two, at every zoom, and different again on the card beside it.
+
+   Nothing in CSS can fix that, because nothing in CSS can move an edge onto the
+   grid. So this does: each item is nudged by under a pixel and scaled by under a
+   part in a thousand, so that the box it is actually drawn in begins and ends on
+   whole device pixels. Everything inside the card - the ring, the inner rule,
+   the caption plate - follows for free, because they are all measured from that
+   box.
+
+   **In `transform`, which nothing transitions.** The individual translate /
+   rotate / scale properties on .item carry the hover lift, the resting lean and
+   the drag tilt, and every one of them is animated (items.css). A sub-pixel
+   correction that eases in over 200ms is a correction that is wrong for 200ms,
+   sixty times a gesture. `transform` is already this module's - it carries
+   item.rot - and has no transition on it, so the snap lands on the frame it is
+   written. It also costs no layout: a translate and a scale are a compositor
+   matrix, not a reflow, which is what makes it affordable to redo for every
+   mounted card at once.
+
+   **Only while the board is still.** The snap is a function of the zoom and the
+   pan, so it would have to be recomputed on every frame of a gesture - and while
+   the board is moving nobody is inspecting a hairline, and the layer is being
+   resampled anyway. resnap() below runs on the settling frame instead, the same
+   140ms hook that exchanges cheap drawing for proper drawing everywhere else.
+   Mid-gesture the last settled offsets are simply left in place: they are stale
+   by at most a pixel, on a board that is moving past at speed.
+
+   **Not for anything rotated.** A leaning edge crosses a pixel row every few
+   dozen pixels of its own length, so it is grey the whole way round at every
+   position - there is no offset that aligns it and nothing here to win. An item
+   with its own item.rot is left alone entirely. The whimsy tiers' resting lean
+   is a CSS `rotate`, applied outside this transform, so a tilted card still gets
+   the nudge and simply gains nothing from it - which is why the tier that
+   depends on the edge, Harsh, stands its cards up (quality.css).
+
+   **The drawn box is not the stored box**, by up to one device pixel. Resize
+   arithmetic, the marquee and everything saved go on reading item.x/y/w/h, the
+   same bargain the resting tilt already strikes and for the same reason: this is
+   presentation. A hit test goes through the browser, which tests what is drawn.
+   --------------------------------------------------------------------------- */
+
+/**
+ * How far this item has to move, and by how much it has to grow, for its drawn
+ * box to land on whole device pixels. Null when there is nothing to do or
+ * nothing to be gained.
+ */
+function deviceSnap(item) {
+  if (!vp || item.rot) return null;
+  const dpr = globalThis.devicePixelRatio || 1;
+  const k = vp.zoom * dpr;                    // world px -> device px
+  const w = item.w * k, h = item.h * k;       // the drawn size, in device px
+  if (!(k > 0) || !(w >= 1) || !(h >= 1)) return null;
+  // The top-left corner, in device pixels from the top-left of the window. The
+  // viewport's own offset is in there because the device grid is the screen's,
+  // not the element's.
+  const p = vp.toScreen(item.x - item.w / 2, item.y + item.h / 2);
+  const ax = (vp.left + p.x) * dpr;
+  const ay = (vp.top + p.y) * dpr;
+  // Round the size first, then place the rounded size so its near edge is whole:
+  // both edges are then whole, which is the point - a snapped left edge over a
+  // fractional width just moves the soft edge to the other side of the card.
+  const W = Math.max(1, Math.round(w));
+  const H = Math.max(1, Math.round(h));
+  // The scale is about the centre, which does not move, so the translate is what
+  // the corner still needs after the growth has been shared between both edges.
+  return {
+    dx: (Math.round(ax) - ax + (W - w) / 2) / k,
+    dy: (Math.round(ay) - ay + (H - h) / 2) / k,
+    sx: W / w,
+    sy: H / h,
+  };
+}
+
+/** The `transform` an item wears: its own rotation, and the snap under it. */
+function itemTransform(item) {
+  const rot = item.rot ? `rotate(${-item.rot}deg)` : '';
+  const s = deviceSnap(item);
+  if (!s) return rot;
+  return `translate(${s.dx.toFixed(3)}px, ${s.dy.toFixed(3)}px)`
+       + ` scale(${s.sx.toFixed(5)}, ${s.sy.toFixed(5)})${rot ? ' ' + rot : ''}`;
+}
+
+/**
+ * Re-snap every mounted card to the device grid, now that the view has stopped.
+ *
+ * Cheap by construction: it walks what is mounted rather than the board, writes
+ * one property per node, and writes nothing at all when the string has not
+ * changed - which is most of the time on a pan that ends where a rung began.
+ * Skipped outright while the view is in motion; the caller runs on every view
+ * frame and this is the guard that makes that free.
+ */
+function resnap() {
+  if (!worldEl || !vp || vp.moving) return;
+  for (const [id, el] of nodes) {
+    if (!el.isConnected) continue;
+    const item = byId(id);
+    if (!item) continue;
+    const t = itemTransform(item);
+    if (el.style.transform !== t) el.style.transform = t;
+    // The twin traces the same silhouette, so it takes the same correction - a
+    // shadow half a pixel out from under its card is a second card.
+    const shadow = shadows.get(id);
+    if (shadow && shadow.style.transform !== t) shadow.style.transform = t;
+  }
 }
 
 /**

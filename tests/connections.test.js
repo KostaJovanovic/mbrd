@@ -17,6 +17,7 @@ import {
   board, byId, addItems, removeItems, restoreItems, undo, redo, loadBoard,
   serializeBoard, setBoardMode, toggleConnection, addConnections, areConnected,
   connectedTo, pairKey, MAX_CONNECTIONS, select, clearConnections,
+  updateConnection, connectionMeta,
 } from '../web/assets/js/state.js';
 import { createCommands } from '../web/assets/js/commands.js';
 import { fresh, note, photo } from './state-fixtures.js';
@@ -364,4 +365,43 @@ test('the pair key is the same whichever way round it is built', () => {
   // The separator cannot occur in an id, so two ids can share one string
   // without `ab` + `c` colliding with `a` + `bc`.
   assert.notEqual(pairKey('ab', 'c'), pairKey('a', 'bc'));
+});
+
+// ---------------------------------------------------------------------------
+// How a line is drawn
+//
+// The optional third element - `[a, b, {dir, style, color, weight, label}]`.
+// Two properties of it are load-bearing rather than cosmetic, and both are here:
+// a value outside the known list is dropped rather than stored, because this
+// object arrives out of somebody else's file and every one of these names ends
+// up in a class or a marker reference; and a setting at its default is *not*
+// written, which is what keeps an ordinary board's connections two-element
+// arrays and is why the whole thing owed no version bump.
+// ---------------------------------------------------------------------------
+
+test('colour and weight ride in the third element and survive a save', () => {
+  const [ca, cb] = pair().map(it => it.id);
+  updateConnection(ca, cb, { color: 'leaf', weight: 'bold' });
+  assert.deepEqual(connectionMeta(ca, cb), { color: 'leaf', weight: 'bold' });
+
+  const file = serializeBoard();
+  loadBoard(file);
+  assert.deepEqual(connectionMeta(ca, cb), { color: 'leaf', weight: 'bold' });
+});
+
+test('a colour or weight nobody has heard of is dropped, not stored', () => {
+  const [ca, cb] = pair().map(it => it.id);
+  updateConnection(ca, cb, { color: 'url(https://example.com/x.png)', weight: '9999' });
+  assert.equal(connectionMeta(ca, cb), null);
+  // And the pair stays a bare pair, which is the shape an older reader wants.
+  assert.equal(board.connections[0].length, 2);
+});
+
+test('a setting put back to its default leaves no third element behind', () => {
+  const [ca, cb] = pair().map(it => it.id);
+  updateConnection(ca, cb, { color: 'danger' });
+  assert.equal(board.connections[0].length, 3);
+  updateConnection(ca, cb, { color: 'line' });
+  assert.equal(connectionMeta(ca, cb), null);
+  assert.equal(board.connections[0].length, 2);
 });

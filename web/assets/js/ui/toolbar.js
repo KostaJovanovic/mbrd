@@ -28,6 +28,10 @@
 import { el } from '../util.js';
 import { bus, toggleConnection } from '../state.js';
 import { setConnectPick } from '../canvas/items.js';
+// The line that follows the pointer out of the picked card. Written from the
+// same place as the ring, because they are one state: a pick with no draft is
+// the tool saying it has an end and not saying what it would do with it.
+import { setDraftFrom } from '../canvas/web.js';
 
 /** data-cmd="add-files" -> cmds.addFiles. The panel's own mapping. */
 const camel = s => s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
@@ -126,10 +130,19 @@ export function connectStep(from, id) {
   return { pick: null, connect: [from, id] };
 }
 
-/** Arm or disarm. Written through here so the button and the mark never drift. */
-export function setArmed(on) {
+/**
+ * Arm or disarm. Written through here so the button and the mark never drift.
+ *
+ * `from` is the end to arm *on*, for the one caller that has an answer already:
+ * a card that was selected when the tool was pressed is a card you have already
+ * pointed at, and making you point at it again is the tool pretending not to
+ * have seen. Ignored when disarming - putting the tool down cannot leave a pick
+ * standing - which is why the two are one write rather than an arm and a
+ * separate seed that a `bus.on('items')` could land between.
+ */
+export function setArmed(on, from = null) {
   armed = !!on;
-  setPick(null);
+  setPick(armed ? from : null);
   bar?.querySelector('[data-cmd="connect"]')?.setAttribute('aria-pressed', String(armed));
   // A board-wide cursor, and the honest half of saying the app is in a mode:
   // the button is at the top of the screen and the hand is on a card at the
@@ -143,6 +156,7 @@ export const connectArmed = () => armed;
 function setPick(id) {
   pick = id || null;
   setConnectPick(pick);
+  setDraftFrom(pick);
 }
 
 /**

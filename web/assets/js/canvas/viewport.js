@@ -109,7 +109,7 @@ export function mobileHeaderHeight(boardWidth) {
  * Fixed zoom that seats a Mobile board in the viewport without enlarging it.
  *
  * Written against a literal 1 rather than against BASE_ZOOM, and so is
- * LOD_ZOOM_TOUCH below. Mobile has no zoom control and prints no percentage, so
+ * LOD_ZOOM_SMALL below. Mobile has no zoom control and prints no percentage, so
  * nothing here is a label: this zoom is fit-derived, and the 1 is the 1:1 the
  * name means - one world unit to one CSS pixel. That the two now agree is a
  * coincidence worth keeping separate, since only one of them is a display
@@ -243,7 +243,7 @@ const GRIP_MIN_ZOOM = 0.1 * BASE_ZOOM;
 const GRAB_ZOOM = 0.25 * BASE_ZOOM;
 
 /**
- * And where it sits under a finger.
+ * And where it sits on a phone.
  *
  * Higher, because the same zoom factor is a smaller card on a phone: the screen
  * is a third the width and the whole board is habitually further out, so chrome
@@ -253,7 +253,7 @@ const GRAB_ZOOM = 0.25 * BASE_ZOOM;
  * where everything is drawn in full and none of it is legible - which is also
  * the band that costs the most to paint on the device least able to.
  */
-const LOD_ZOOM_TOUCH = 0.55;
+const LOD_ZOOM_SMALL = 0.55;
 
 /**
  * Whether this is being looked at through a finger.
@@ -263,6 +263,9 @@ const LOD_ZOOM_TOUCH = 0.55;
  * and made lazily, because nothing in this file may touch the browser at import
  * time (see tests/imports.test.js). Absent matchMedia, a mouse is assumed: node
  * runs these modules, and the desktop rung is the one the tests describe.
+ *
+ * This answers "can this be poked", and that is all it should ever be asked.
+ * What the detail rung wants is a different question - see onSmallScreen().
  */
 let coarse = null;
 export function onTouch() {
@@ -271,8 +274,40 @@ export function onTouch() {
   return coarse.matches;
 }
 
+/**
+ * Whether the board is being looked at on a screen the size of a hand.
+ *
+ * The detail rung used to ask onTouch(), and that was the wrong question asked
+ * for the right reason. Read the note on LOD_ZOOM_SMALL above: every word of it
+ * is about the *screen* - a third the width, the board habitually further out,
+ * chrome in screen pixels crowding a card. None of it is about fingers. Touch
+ * was standing in for "phone", and it stopped being a good stand-in the moment
+ * ordinary laptops shipped with touchscreens: Windows reports `pointer: coarse`
+ * on a 15-inch 2-in-1 whenever it decides the keyboard is folded away or no
+ * mouse is attached, so a desk machine silently ran the phone rung and dropped
+ * every card's detail at 55% instead of 40%.
+ *
+ * So the rung asks about size, and takes touch as a *second* condition rather
+ * than the only one - a small window on a desktop is still a desktop, and the
+ * person who dragged it narrow did not ask for a different level of detail. Both
+ * together are a phone and very little else.
+ *
+ * 640px is the app's existing narrow breakpoint (canvas/notes.js). Width alone,
+ * not height: a laptop with devtools docked along the bottom is short and is not
+ * a phone, and it is a machine this app is developed on every day. A phone held
+ * in landscape falls back to the desk rung, which is the cheap side of the trade
+ * - it is drawn in more detail than it strictly wants, rather than a desk being
+ * stripped of detail it needs.
+ */
+let handheld = null;
+export function onSmallScreen() {
+  if (typeof matchMedia !== 'function') return false;
+  handheld ??= matchMedia('(pointer: coarse) and (max-width: 640px)');
+  return handheld.matches;
+}
+
 /** The rung in force, as a zoom factor. */
-export const lodZoom = () => (onTouch() ? LOD_ZOOM_TOUCH : LOD_ZOOM);
+export const lodZoom = () => (onSmallScreen() ? LOD_ZOOM_SMALL : LOD_ZOOM);
 
 /** Below this, item chrome (labels, grips) is more noise than help. */
 export const farZoom = () => lodZoom();
@@ -284,8 +319,11 @@ export const stillZoom = () => lodZoom();
  * see the image renderer and the is-stilled rules in the CSS.
  */
 export const thumbZoom = () => lodZoom();
-/** Below this the web is a scribble rather than a set of threads - web.js. */
-export const webZoom = () => lodZoom();
+// There is no webZoom. The connections used to leave on this rung with the
+// labels and the grips, and they no longer leave at all - the far view is the
+// one that shows the whole graph at once, which is where a drawn line earns the
+// most rather than least. See the note where the fade band used to be in
+// canvas/web.js.
 
 // How long a commanded view move takes.
 //
@@ -352,6 +390,7 @@ export class Viewport {
     this._anim = null;              // rAF id of a view animation in flight
     this._still = 0;                // timer that ends the cheap mode - see _moving()
     this._iz = 0;                   // what --iz was last written as
+    this._dpr = 0;                  // what --dpr was last written as - see _setDpr()
     this.moving = false;            // is the view mid-gesture? - see _moving()
 
     this.measure();
@@ -367,6 +406,7 @@ export class Viewport {
     this.width = r.width;
     this.height = r.height;
     this._topPad = mobileTopPad();
+    this._setDpr();
     if (this.boardMode === 'mobile') {
       this.zoom = this._mobileZoom();
       this._constrainMobile();
@@ -758,6 +798,28 @@ export class Viewport {
       // would call this method again and restart the timer it is ending.
       this.bus.emit('change', this);
     }, VIEW_SETTLE_MS);
+  }
+
+  /**
+   * Publish devicePixelRatio to the world layer.
+   *
+   * The stylesheet needs it for one thing only: rounding a hairline down to a
+   * whole number of device pixels (--device-px in canvas.css). CSS can express
+   * "one pixel" and cannot ask how many real ones that is, and on the fractional
+   * display scalings Windows hands out - 125%, 150% - the answer is not a whole
+   * number, so every one-pixel line on the board carries a quarter-pixel of grey
+   * down one side of it however carefully the card underneath is positioned.
+   *
+   * Written from measure() rather than per frame: it is a property of the
+   * screen, not of the view, and a display change - a drag to a second monitor,
+   * a scaling change, a browser zoom - fires a resize, which is what calls this.
+   * Guarded like --iz, so the ordinary resize writes nothing.
+   */
+  _setDpr() {
+    const dpr = globalThis.devicePixelRatio || 1;
+    if (dpr === this._dpr) return;
+    this._dpr = dpr;
+    this.world.style.setProperty('--dpr', dpr);
   }
 
   /** Publish 1/zoom to the world layer, if it is not already what is there. */

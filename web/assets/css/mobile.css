@@ -789,25 +789,47 @@
   font-variant-numeric: tabular-nums;
 }
 .pw-time:last-child { text-align: right; }
+/* The window's scrubber, drawn as the same three-svg shape the now-playing bar
+   and the video card use so all three wave together at the soft end of the
+   whimsy axis - see the note in util.js. It was a ::before rail and a div scaled
+   on X, which cannot carry a wave: scaling one horizontally changes its
+   frequency as the track plays. */
 .pw-line { position: relative; flex: 1 1 auto; height: 14px; cursor: pointer; touch-action: none; }
-.pw-line::before {
-  content: "";
+.pw-line-svg {
   position: absolute;
-  left: 0; right: 0; top: 50%;
-  margin-top: -1.5px;
-  height: 3px;
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--ink) 20%, transparent);
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
 }
+/* The unplayed line is clipped to the part *past* the playhead, so the grey does
+   not sit under the played wave and the two meet at --pw-progress. The base svg
+   is the direct child; the fill's are inside .pw-line-fill. */
+.pw-line > .pw-line-svg { clip-path: inset(0 0 0 calc(var(--pw-progress, 0) * 100%)); }
+.pw-line-base { stroke: color-mix(in srgb, var(--ink) 20%, transparent); }
 .pw-line-fill {
   position: absolute;
-  left: 0; right: 0; top: 50%;
-  margin-top: -1.5px;
-  height: 3px;
-  border-radius: 3px;
-  background: var(--accent);
-  transform: scaleX(0);
-  transform-origin: left center;
+  inset: 0;
+  clip-path: inset(0 calc((1 - var(--pw-progress, 0)) * 100%) 0 0);
+}
+.pw-line-fill-line,
+.pw-line-fill-wave { stroke: var(--accent); }
+/* view-box, so the scroll translates in the wave's own user units - which
+   sizeSeekWave has made one-to-one with pixels - rather than in the path's
+   bounding box. */
+.pw-line-fill-wave { display: none; transform-box: view-box; }
+:root[data-whimsy="0"] .pw-line-fill-line { display: none; }
+:root[data-whimsy="0"] .pw-line-fill-wave {
+  display: block;
+  /* One period is 2 * WAVE_HALF = 14 user units, and sizeSeekWave makes a user
+     unit a pixel and lays the path two periods past the edge - so translating by
+     one period and looping is seamless. Keep the 14 in step with WAVE_HALF. */
+  animation: seek-wave 3s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-whimsy="0"] .pw-line-fill-wave { animation: none; }
 }
 .pw-controls { display: flex; align-items: center; justify-content: center; gap: 6px; }
 .pw-btn {

@@ -264,7 +264,39 @@ next time it was saved from one.
 Nothing about the path is stored. Where a line runs is a function of where the
 two cards are now, worked out at draw time, so there is nothing to invalidate
 and nothing to go stale — the same relationship the automatic web this replaced
-had with the board.
+had with the board. The *shape* of that path answers the whimsy axis, which is a
+setting of the app rather than of the board, and is likewise not stored.
+
+**A third element, when there is one, says how the line is drawn.**
+`["a","b",{…}]`, and every key in it is optional:
+
+| key | values | default |
+| --- | --- | --- |
+| `dir` | `"none"`, `"fwd"`, `"back"`, `"both"` | `"none"` |
+| `style` | `"solid"`, `"dashed"`, `"dotted"` | `"solid"` |
+| `color` | `"line"`, `"accent"`, `"warm"`, `"leaf"`, `"danger"` | `"line"` |
+| `weight` | `"fine"`, `"normal"`, `"bold"` | `"normal"` |
+| `label` | a string, whitespace collapsed, 60 characters | absent |
+
+`dir` is read against the pair **in the order the file carries it** — `"fwd"`
+points the arrow at the second id — which is why that order is preserved even
+though the pair is otherwise unordered.
+
+Three properties of this are load-bearing rather than incidental:
+
+- **Defaults are omitted, not written.** A connection at its defaults is a bare
+  `["a","b"]`, so an ordinary board's connections are two-element arrays and
+  nothing about the common case changed when this was added.
+- **Every value is a name, never a value.** A colour is `"leaf"` and not a hex
+  triple; what a name looks like is one rule in `canvas.css`. This object comes
+  out of a file somebody else wrote, and a string that reached a stroke would be
+  a string that reached the CSSOM.
+- **Unknown keys and unknown values are dropped, not carried.** A `color` this
+  build does not know draws the ordinary grey line rather than nothing, which is
+  the right answer to a board written by a newer build.
+
+Additive, so no version bump was owed for it: an older reader ignores the extra
+element and draws a plain line between the same two cards.
 
 What is held to, on the way in and on the way out:
 

@@ -17,7 +17,7 @@ import {
   gridStep, boardGridStep, inkBox, MOBILE_GRID_EDGE_CLEARANCE,
   MIN_PX, MAX_PX, MIN_PX_TOUCH, MAX_PX_TOUCH,
 } from '../web/assets/js/canvas/grid.js';
-import { farZoom, stillZoom, webZoom, thumbZoom, MIN_ZOOM, MAX_ZOOM } from '../web/assets/js/canvas/viewport.js';
+import { farZoom, onSmallScreen, stillZoom, thumbZoom, MIN_ZOOM, MAX_ZOOM } from '../web/assets/js/canvas/viewport.js';
 import { item } from './helpers.js';
 
 const items = n => Array.from({ length: n }, (_, i) => item({ id: `i${i}`, w: 100, h: 80 }));
@@ -467,15 +467,51 @@ test('chrome and motion drop out at the same zoom', () => {
   // means them to differ, that is a decision and this test is where to record
   // it rather than a number to quietly edit.
   //
+  // The web used to be on this ladder and is not any more: connections stopped
+  // leaving at far zoom, on the grounds that the far view is the only one that
+  // shows the whole graph at once. Recorded here because a missing name in this
+  // list should read as a decision rather than as a rung somebody forgot.
+  //
   // Read through the functions rather than off constants, because the rung is
-  // not one number any more: it sits higher under a finger than under a mouse.
-  // Node has no matchMedia, so what these see is the desktop rung - which is
-  // the point, since a fallback that quietly answered "touch" would move the
-  // whole ladder on every machine that runs the suite.
+  // not one number any more: it sits higher on a phone than on a desk. Node has
+  // no matchMedia, so what these see is the desk rung - which is the point,
+  // since a fallback that quietly answered "phone" would move the whole ladder
+  // on every machine that runs the suite.
   assert.equal(farZoom(), stillZoom(), 'the ladder has grown a second rung');
-  assert.equal(farZoom(), webZoom(), 'the ladder has grown a second rung');
   assert.equal(farZoom(), thumbZoom(), 'the ladder has grown a second rung');
   assert.ok(farZoom() > MIN_ZOOM && farZoom() < MAX_ZOOM, 'the rung is outside the zoom range');
+});
+
+test('the high rung is a phone, not a touchscreen', () => {
+  // This asked `(pointer: coarse)` alone and that was the wrong question asked
+  // for the right reason: every word of the argument for the high rung is about
+  // the screen being a third the width, and none of it is about fingers. Windows
+  // reports a coarse pointer on an ordinary touchscreen laptop whenever it
+  // decides the keyboard is folded away, so a desk machine ran the phone rung
+  // and dropped every card's detail at 55% instead of 40%.
+  //
+  // Stubbed rather than reasoned about, because the failure this guards against
+  // is precisely a query that looks right and matches too much. The module reads
+  // its query lazily and caches it on first use, so this has to run before
+  // anything else here asks - which is why it is the only test in this file that
+  // touches matchMedia at all.
+  // The stub answers through a getter rather than a fixed field, so switching it
+  // off in the `finally` reaches the object the module has already cached. A
+  // plain { matches: true } would be held for the life of the process and every
+  // later test in this file would silently be running on a phone.
+  const seen = [];
+  let live = true;
+  globalThis.matchMedia = q => { seen.push(q); return { get matches() { return live; } }; };
+  try {
+    assert.ok(onSmallScreen(), 'the stub says yes, so the rung has to see it');
+    assert.equal(seen.length, 1, 'one query, asked once and cached');
+    assert.match(seen[0], /pointer:\s*coarse/, 'a phone is still a touch device');
+    assert.match(seen[0], /max-width/, 'and a phone is small, which is the half that was missing');
+  } finally {
+    live = false;
+    delete globalThis.matchMedia;
+  }
+  assert.equal(onSmallScreen(), false, 'the stub outlived the test it was written for');
 });
 
 // ---------------------------------------------------------------------------

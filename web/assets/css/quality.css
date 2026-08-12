@@ -77,7 +77,7 @@
   object-fit: cover;
   /* A pale photograph on pale stock has no edge of its own. This is the one
      the print would have. */
-  box-shadow: 0 0 0 var(--hairline) color-mix(in srgb, var(--ink) 10%, transparent);
+  box-shadow: 0 0 0 var(--board-hairline) color-mix(in srgb, var(--ink) 10%, transparent);
 }
 /* ...but Fit in the card, asked for on this one photo, still wins. The board's
    default fit is folded into data-fit, so keying off that would letterbox every
@@ -138,10 +138,36 @@
 
 :root[data-whimsy="2"] .card::after { content: none; }
 
+/* Nothing leans, and this is a rendering decision before it is a look.
+
+   The resting tilt is charm everywhere else on the axis and the note in
+   tokens.css defends it well: a lean is not the interface *doing* something, it
+   is what the board is made of. It costs nothing at Softish or Middle, where a
+   card is carried by a drop shadow and a soft border.
+
+   It costs everything here. Harsh sets --item-shadow to none and --item-border
+   to full-strength ink, so a card is a black one-pixel rectangle and nothing
+   else - and a black one-pixel rectangle turned a degree and a half has no crisp
+   edge anywhere on it. The line crosses a pixel row every forty pixels of its
+   own length, so it is drawn as two rows of grey the whole way round, and no
+   amount of snapping the card onto the device grid (deviceSnap in
+   canvas/items.js) can recover it: there is no position at which a rotated edge
+   is aligned. Standing the cards up is what makes that snap mean something, and
+   between the two it is the edge that has to win at this tier - it is the entire
+   elevation model, and a spec sheet is set square in any case.
+
+   `rotate` outright rather than zeroing --tilt-max, for the reason the
+   [data-snap] rule in items.css gives: the tilt tokens are on the Appearance
+   panel's list and can be written inline on :root, which no selector can
+   outrank. This is on .item, where nothing inline competes, and it inherits the
+   rotate transition so moving the dial to Harsh straightens the board rather
+   than jumping it. */
+:root[data-whimsy="2"] .item { rotate: 0deg; }
+
 /* Stickies go flat: no adhesive band showing through, just a ruled edge. */
 :root[data-whimsy="2"] .item[data-type="note"] .card {
   background: var(--note-paper);
-  box-shadow: inset 0 0 0 var(--hairline) var(--ink);
+  box-shadow: inset 0 0 0 var(--board-hairline) var(--ink);
 }
 
 /* Lozenges become squares. Same target size, no tilt. */
@@ -369,10 +395,45 @@
    so a portrait photograph is a letterboxed picture on a card-coloured field,
    and with the shadow gone that field is the same near-white as the board. An
    inset ring rather than a border, for the reason .card gives - the item clips
-   at its own radius and would shave a real border at the corners. */
-:root[data-quality="light"]:not([data-q-shadows]) .item[data-type="image"],
-:root[data-quality="light"]:not([data-q-shadows]) .item[data-type="video"],
-:root[data-q-shadows="off"] .item[data-type="image"],
-:root[data-q-shadows="off"] .item[data-type="video"] {
-  box-shadow: inset 0 0 0 var(--hairline) var(--item-border);
+   at its own radius and would shave a real border at the corners.
+
+   **Two axes can take that shadow away, and this list has to name both.** The
+   quality dial is one (the four selectors below it); the whimsy axis is the
+   other, and it was missing. At Harsh, tokens.css says "elevation is a hairline,
+   not a shadow" and sets --item-shadow to none along with --item-border to
+   full-strength ink - so every card with a `.card` in it drew a hard black edge
+   while photographs and clips beside them drew nothing at all, having lost the
+   shadow that was their only edge and never having had a ring to fall back on.
+   On a board of mixed types that reads as the borders being broken, because half
+   of them are: an audio card with a black hairline next to a photograph with no
+   edge is not two styles, it is one style and one omission.
+
+   Keyed on the tier rather than on --item-shadow because CSS cannot ask whether
+   a custom property resolved to `none`. If a third thing ever removes the
+   shadow, it belongs in this list, and the symptom to look for is this one. */
+/* On a pseudo-element, and that is the whole of why the first attempt at this
+   did nothing visible. `box-shadow: inset` paints beneath the element's own
+   children, and an image card's child is the picture, filling it at
+   object-fit: cover - so the ring was computed exactly as asked and the
+   photograph was laid straight over it. It only ever showed on a letterboxed
+   `contain` fit, where there was card field left around the picture for it to
+   land on, which is precisely the case the note above was written about.
+
+   ::after is the last child of .item, so it paints after .item-body and the
+   ring lands on top of the picture. Still an inset shadow rather than a border,
+   for the reason .card gives - the item clips at its own radius and a real
+   border would be shaved at the corners. */
+:root[data-whimsy="2"] .item[data-type="image"]::after,
+:root[data-whimsy="2"] .item[data-type="video"]::after,
+:root[data-quality="light"]:not([data-q-shadows]) .item[data-type="image"]::after,
+:root[data-quality="light"]:not([data-q-shadows]) .item[data-type="video"]::after,
+:root[data-q-shadows="off"] .item[data-type="image"]::after,
+:root[data-q-shadows="off"] .item[data-type="video"]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 var(--board-hairline) var(--item-border);
+  pointer-events: none;
+  z-index: 1;
 }

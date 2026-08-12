@@ -266,13 +266,49 @@
   user-select: none;
 }
 #nowplaying[hidden] { display: none; }
+/* And down while a full player that has its own transport is up.
+
+   The bar exists for when you cannot see the thing making the noise. With the
+   Desktop window open in *player* mode you can: its play button and seek line are
+   on screen, and the bar is a second copy of them laid over the bottom of the
+   window showing the first.
+
+   **Not in album mode, and that is the whole of the condition.** The window's
+   album view is a hero and a list with no transport in it at all - it is built to
+   use this bar as its transport (see renderWindowMode in ui/playlist.js). Hiding
+   the bar there left the album view with no way to play, pause or seek anything,
+   which read as the view toggle being broken. So the class ui/playlist.js writes
+   is `.playlist-transport`, not `.playlist-up`: it says "a transport is already on
+   screen", which is the fact this rule actually depends on.
+
+   The Mobile lens is the same test by a different name - the lens carries its own
+   hero and controls, so `data-feed-lens` stands in for it there.
+
+   It leaves and returns by sliding under the edge rather than blinking, using the
+   same four whimsy-tier properties the bar's own entrance uses; `visibility`
+   rather than `display` so there is a box for that to happen in. */
+:root.playlist-transport #nowplaying,
+:root[data-feed-lens="playlist"] #nowplaying {
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(calc(100% + var(--np-gap, 12px)));
+  transition: opacity var(--dur-base) var(--ease),
+              transform var(--dur-base) var(--ease),
+              visibility 0s linear var(--dur-base);
+}
+@media (prefers-reduced-motion: reduce) {
+  :root.playlist-transport #nowplaying,
+  :root[data-feed-lens="playlist"] #nowplaying { transition: none; }
+}
 
 /* The top row: the name on the left, the controls pushed to the right. */
 #nowplaying .np-top { display: flex; align-items: center; gap: 10px; }
 #nowplaying .np-controls { display: flex; align-items: center; gap: 1px; margin-left: auto; }
-/* The four playlist buttons show only when a playlist is the sound (paintQueue
-   sets .is-queue). Play stays between prev and next either way. */
-#nowplaying:not(.is-queue) :is(.np-shuffle, .np-prev, .np-next, .np-repeat) { display: none; }
+/* Four things, all of them always there: open the playlist, play/pause, the
+   volume, close. Shuffle, prev, next and repeat used to live here too and be
+   shown or hidden off an .is-queue class depending on whether a playlist was the
+   sound; they are in the playlist window now, beside the list they act on, and so
+   is that class. */
 
 /* Arriving and leaving.
    It comes up from under the edge of the window and goes back down under it.
@@ -427,24 +463,24 @@
   inset: 0;
   clip-path: inset(0 calc((1 - var(--np-progress, 0)) * 100%) 0 0);
 }
-#nowplaying .np-fill-line,
-#nowplaying .np-fill-wave { stroke: var(--accent); }
+#nowplaying .np-line-fill-line,
+#nowplaying .np-line-fill-wave { stroke: var(--accent); }
 /* Straight at the middle and hard ends of the whimsy axis; a Material-You wave at
    the soft end, the tier that already rounds and softens everything else. */
 /* view-box, so the scroll below translates in the wave's own user units (which
    sizeWave has made one-to-one with pixels) rather than in the path's bounding box. */
-#nowplaying .np-fill-wave { display: none; transform-box: view-box; }
-:root[data-whimsy="0"] #nowplaying .np-fill-line { display: none; }
-:root[data-whimsy="0"] #nowplaying .np-fill-wave {
+#nowplaying .np-line-fill-wave { display: none; transform-box: view-box; }
+:root[data-whimsy="0"] #nowplaying .np-line-fill-line { display: none; }
+:root[data-whimsy="0"] #nowplaying .np-line-fill-wave {
   display: block;
   /* Slowly leftward by exactly one period. WAVE_HALF is 7px and one whole period is
      2 * WAVE_HALF = 14 user units; sizeWave() makes a user unit a pixel and lays the
      path two periods past the edge, so translating by one period and looping is
      seamless - the wave repeats, so the reset is invisible. Keep this 14 in step with
      WAVE_HALF in ui/nowplaying.js. Slow: a period every few seconds. */
-  animation: np-wave 3s linear infinite;
+  animation: seek-wave 3s linear infinite;
 }
-@keyframes np-wave { to { transform: translateX(-14px); } }
+@keyframes seek-wave { to { transform: translateX(-14px); } }
 /* Paused: the scroll stops, and the wave flattens all the way to a straight line -
    scaleY(0) about the centre collapses every crest onto the centre line, and the
    non-scaling stroke draws that line at full width. On a transition so it eases both
@@ -452,23 +488,23 @@
    near-zero scale: a sliver of a scale left a shallow ripple standing, which read as
    a paused wave rather than the still line it should be. The scale lives on the
    wrapping group so it does not fight the path's scroll animation. */
-#nowplaying .np-wave-scale {
+#nowplaying .np-line-wave-scale {
   transform-box: view-box;
   transform-origin: 50% 50%;
   transform: scaleY(1);
   transition: transform var(--dur-base) var(--ease);
 }
-#nowplaying.is-paused .np-fill-wave { animation-play-state: paused; }
+#nowplaying.is-paused .np-line-fill-wave { animation-play-state: paused; }
 /* Paused, at the soft end: the wave becomes a plain straight line. Done by swapping
    the wavy fill for the straight one (which is hidden while playing) rather than by
    scaling the wave to nothing - a scaled-to-zero group left no line at all on some
    engines, so the played part of the scrubber vanished on pause. The straight fill
    is the played portion at full ink; the grey base carries the rest. */
-:root[data-whimsy="0"] #nowplaying.is-paused .np-fill-wave { display: none; }
-:root[data-whimsy="0"] #nowplaying.is-paused .np-fill-line { display: block; }
+:root[data-whimsy="0"] #nowplaying.is-paused .np-line-fill-wave { display: none; }
+:root[data-whimsy="0"] #nowplaying.is-paused .np-line-fill-line { display: block; }
 @media (prefers-reduced-motion: reduce) {
-  :root[data-whimsy="0"] #nowplaying .np-fill-wave { animation: none; }
-  #nowplaying .np-wave-scale { transition: none; }
+  :root[data-whimsy="0"] #nowplaying .np-line-fill-wave { animation: none; }
+  #nowplaying .np-line-wave-scale { transition: none; }
 }
 /* Play reads a touch stronger than its neighbours - it is the one reached for. */
 #nowplaying .np-play { color: var(--ink); }
