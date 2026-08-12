@@ -61,6 +61,7 @@ import { initFonts } from './ui/fonts.js';
 import { initMobileHeaderEditor, isPanelOpen as isHeaderPanelOpen, closePanel as closeHeaderPanel, styleFeedMasthead } from './ui/mobile-header.js';
 import { initAudio } from './canvas/audio.js';
 import { initFeed } from './ui/feed.js';
+import { initViewer } from './ui/viewer.js';
 import { initPlaylist } from './ui/playlist.js';
 
 import { createCommands } from './commands.js';
@@ -170,6 +171,10 @@ initMobileFrame(vp);
 // each the DOM and the shared masthead styler.
 initFeed(vp, cmds, styleFeedMasthead);
 initPlaylist(vp, cmds, styleFeedMasthead);
+// One item, full size, on both layouts. Takes nothing: it reads the board and
+// the asset store directly and is opened by id, so there is no viewport and no
+// command surface in it - see the head of the module.
+initViewer();
 initInput(vp, cmds);
 initMenu(vp, cmds);
 // The offer that follows a rubber band. Takes the viewport and not cmds: the

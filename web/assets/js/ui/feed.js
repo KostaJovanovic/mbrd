@@ -36,6 +36,7 @@ import {
   STICKER_SPRITE, STICKER_VIEWBOX, stickerShape, DEFAULT_SHAPE,
 } from '../stickers/catalogue.js';
 import { armedSticker, disarm } from './sticker-window.js';
+import { openViewer, canView } from './viewer.js';
 
 /**
  * The types the Feed does not draw as tiles: furniture, the leaving hints, and
@@ -263,8 +264,38 @@ function buildTile(item) {
   el.dataset.id = item.id;
   const t = { el, item, ratio: ratioOf(item), kind, video: null };
   fillTile(t);
+  wireOpen(t);
   return t;
 }
+
+/**
+ * A tap opens the item, for the kinds that have nothing else to do with one.
+ *
+ * The Feed had four tap meanings already and every one of them is left alone: a
+ * link goes to its address, an audio tile hands off to the Playlist, a video
+ * mounts and plays, and everything else did nothing at all. That last group is
+ * the one this is for - a picture, a text file, a note, a named file - where the
+ * only thing a tap could reasonably mean is "let me see that properly", and
+ * until the viewer existed there was no properly to see it at.
+ *
+ * Video is deliberately not in here even though it is viewable: on the wall a
+ * tap plays it in place, which is the better answer for a clip somebody is
+ * scrolling past. The viewer is where the right-click menu sends it.
+ */
+function wireOpen(t) {
+  if (!OPENS.has(t.kind) || !canView(t.item.id)) return;
+  t.el.setAttribute('role', 'button');
+  t.el.tabIndex = 0;
+  t.el.addEventListener('click', () => openViewer(t.item.id));
+  t.el.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    openViewer(t.item.id);
+  });
+}
+
+/** The tile kinds whose tap means "open this". See wireOpen(). */
+const OPENS = new Set(['image', 'text', 'note', 'file']);
 
 function fillTile(t) {
   const { el, item, kind } = t;

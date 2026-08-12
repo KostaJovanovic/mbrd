@@ -57,6 +57,7 @@ import { close as closeSidebar } from './ui/sidebar.js';
 import { closeToolbar, setArmed, connectArmed, connectTap } from './ui/toolbar.js';
 import { clearQualityOverrides } from './quality.js';
 import { openContextMenu, openAnchored } from './ui/menu.js';
+import { openViewer, canView } from './ui/viewer.js';
 import { openFencePrompt } from './ui/fence-prompt.js';
 import { open as openSearch } from './ui/search.js';
 import { openCredits } from './ui/credits.js';
@@ -1000,6 +1001,16 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
         { label: 'Stickers', icon: 'i-sticker', action: () => cmds.stickers() },
       ], { label: 'More tools' });
     },
+    /**
+     * One item, full size, on either layout.
+     *
+     * Routed through cmds so canvas/input.js can reach it off a double-click
+     * without importing a ui/ module, which is the arrow this file exists to
+     * turn around. The Feed calls openViewer() directly - it is a ui/ module
+     * itself and a tile tap is not a command anybody would bind.
+     */
+    openViewer: id => { if (canView(id)) openViewer(id); },
+    canViewItem: id => canView(id),
     canEditNote: id => byId(id)?.type === 'note',
     /**
      * Is there anything in the selection that is stuck to a host?
