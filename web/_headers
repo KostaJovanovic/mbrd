@@ -1,0 +1,267 @@
+# The Content-Security-Policy, and why every directive is exactly this wide.
+#
+# This app opens files it did not write. A .mbrd is a renamed ZIP anybody can
+# hand-edit, a dropped .docx or .svg is somebody else's document, and an .md is
+# somebody else's markup. The XSS thinking for all of that is already done and
+# done in the code: ui/markdown.ts and ui/documents.ts build every node through
+# createElement and createTextNode so there is no escaping to get right, and the
+# one path that puts foreign markup on the page - SVG - is parsed detached and
+# walked against an allow-list. This file is that same reasoning written
+# somewhere the *browser* enforces it, so that the day somebody reaches for
+# innerHTML with a string out of a file, they get a console error rather than a
+# shipped bug.
+#
+# It is a second lock on a door that is already locked. That is the point: the
+# first lock is a convention, and a convention is only as good as the next
+# person to read the header comment.
+#
+# ---------------------------------------------------------------------------
+# Why this file, and why it is not in wrangler.jsonc
+# ---------------------------------------------------------------------------
+#
+# The same reasoning wrangler.jsonc gives for expressing the not-found rule as a
+# literal 404 page: _headers is the Netlify, Pages and Workers spelling of one
+# rule, so the deploy does not depend on which host is under it. Cloudflare
+# Workers static assets reads this file out of the assets directory and does not
+# serve it.
+#
+# It is also the reason a violation cannot be seen locally: tools/serve.py sends
+# no headers, so the dev server runs with no policy at all and the deploy is the
+# first place anything is enforced. tests/csp.test.js is the substitute - it
+# holds the hashes and the hosts below in step with the code they came from, so
+# a change that would break the deploy fails in `npm test` instead.
+#
+# ---------------------------------------------------------------------------
+# script-src 'self' + four hashes
+# ---------------------------------------------------------------------------
+#
+# No 'unsafe-inline', which is the whole value of the directive: with hashes
+# present a browser ignores 'unsafe-inline' for scripts anyway, and an injected
+# <script> - inline or not - has nowhere to come from.
+#
+# The four hashes are the four inline scripts this app ships, and none of them
+# can become a file:
+#
+#   - index.html's pre-paint appearance restore. Running before first paint is
+#     its entire purpose: it reads the saved whimsy level, palette and token
+#     overrides out of localStorage and puts them on <html> so an installed PWA
+#     never flashes the default pigment on launch. A module cannot do that - it
+#     is fetched, and a fetch is a frame. tests/appearance.test.js holds its
+#     token grammar in step with ui/look.ts; this file holds its bytes in step
+#     with the deploy.
+#   - index.html's boot-cover rescue. Its second job is to uncover the page when
+#     main.js never parses - a module 404 behind a stale service worker, a
+#     syntax error, a browser below the floor. A failsafe for "the modules did
+#     not load" cannot itself be a module.
+#   - index.html's application/ld+json block. The HTML spec returns out of
+#     "prepare the script element" for a data block before the CSP check ever
+#     runs, so by the letter of it this hash is unnecessary. It is here because
+#     implementations have not always agreed, the cost is one token, and a
+#     search-engine description that silently stops being parsed is exactly the
+#     kind of breakage nobody notices for a year.
+#   - lab.html's inline module. The pigment lab is one page with its script in
+#     it; it ships in web/ so it is covered by /* like everything else.
+#
+# 404.html is a byte copy of index.html (see save.bat), so it needs no hashes of
+# its own - it carries the same two, and if it ever stops doing so
+# tests/notfound.test.js fails first.
+#
+# What tightening further would cost: moving any of the three index.html blocks
+# into a file, which is the only way to drop a hash, breaks the thing each one
+# exists to do. Hashes are the tight answer here, not the loose one.
+#
+# No 'unsafe-eval' and no 'wasm-unsafe-eval': nothing in the app calls eval or
+# new Function, and the one piece of WebAssembly it can run - the vendored
+# ffmpeg core - runs in a worker with its own policy. See the second rule below.
+#
+# ---------------------------------------------------------------------------
+# style-src 'self' 'unsafe-inline' - the honest weak spot
+# ---------------------------------------------------------------------------
+#
+# This is the one directive that is wider than it should be, and it is worth
+# being exact about why rather than quietly writing it.
+#
+# Three things force it:
+#
+#   - the inline <style> inside <noscript> in index.html, and the inline <style>
+#     in lab.html. Both could be hashed instead.
+#   - the inline style="..." attributes in lab.html's generated preview markup.
+#   - ui/feed.ts's waveform, which writes `<i style="height:N%">` per bar into
+#     innerHTML. A hash cannot cover a value computed at runtime;
+#     'unsafe-hashes' plus one hash per possible height would be a joke.
+#
+# So it is 'unsafe-inline' until the third one is a class or a CSSOM write. Note
+# that hashes and 'unsafe-inline' cannot be mixed - a browser ignores the
+# keyword the moment a hash is present - so hashing the two <style> blocks buys
+# nothing while the attributes are there.
+#
+# What this actually costs is smaller than it looks. CSS injection's usual prize
+# is exfiltration through a url() that phones home, and img-src and font-src
+# below have no remote host in them at all, so there is nowhere for it to phone.
+#
+# It does NOT cover ui/look.ts and ui/appearance.ts writing custom properties
+# onto :root, or the pre-paint script doing the same. Those go through
+# style.setProperty(), which is CSSOM and outside CSP by design - they would
+# work under a bare style-src 'self'.
+#
+# ---------------------------------------------------------------------------
+# img-src / media-src / font-src - 'self' plus the two local schemes
+# ---------------------------------------------------------------------------
+#
+# There is no remote host in any of the three, and that is not an accident of
+# this file - it is a property of the app that this file pins down. A board
+# renders the same with the network off: link cards refuse to fetch a favicon or
+# a preview, and nothing anywhere resolves a URL out of a document it opened.
+# These three directives are what make that a guarantee instead of a habit, and
+# they are the ones that would have caught a "renderer follows a URL out of a
+# .mbrd" bug outright, at the browser, whatever the code did.
+#
+#   img-src 'self' blob: data:
+#     'self'  - assets/icons.svg, assets/img/*, the sticker sprite.
+#     blob:   - every picture on the board. Assets live in IndexedDB and reach
+#               an <img> as an object URL (storage/assets.ts, canvas/display.ts,
+#               canvas/renderers.ts, ui/documents.ts).
+#     data:   - two uses, both ours: the board thumbnails in the library, which
+#               ui/snapshot.ts makes with canvas.toDataURL, and the small SVG
+#               glyphs written into custom properties in items.css and
+#               sidebar.css. Dropping data: blanks the library grid and the pin
+#               and chevron marks.
+#
+#   media-src 'self' blob:
+#     Audio and video are the same object URLs. No data: - nothing produces a
+#     data URL for a clip and a 40 MB one would be absurd.
+#
+#   font-src 'self' blob:
+#     'self' is the bundled woff2 set. blob: is load-bearing and easy to miss:
+#     a font dropped on the board is registered with
+#     `new FontFace(family, 'url("blob:...")')` in ui/fonts.ts, and a FontFace
+#     built from a url() IS checked against font-src. Without blob: every
+#     imported font fails to load and the look silently falls back.
+#
+# ---------------------------------------------------------------------------
+# connect-src 'self' blob: https://cdn.jsdelivr.net
+# ---------------------------------------------------------------------------
+#
+# Exactly three things fetch:
+#
+#   'self'    - ui/snapshot.ts reads assets/stickers.svg as text, and sw.js
+#               fetches same-origin requests it is caching. The service worker
+#               steps aside for anything cross-origin, so it needs nothing else.
+#   blob:     - ui/pigments.ts fetches an asset's own object URL to get bytes
+#               for createImageBitmap, deliberately rather than pointing an
+#               <img> at it. A fetch of a blob: URL is a connect, not an image.
+#   jsdelivr  - optimize/media.ts probes the vendored ffmpeg core with a
+#               one-byte ranged GET before offering to download it. This is the
+#               only outbound request the app makes on its own, and it is the
+#               single reason a remote host appears anywhere in this file.
+#
+# Pinned to the host, not the path: CSP has no useful path matching for this and
+# pretending otherwise would read as a promise the directive cannot keep.
+#
+# Dropping jsdelivr does not break anything hard - mediaAvailable() answers
+# false and video optimisation and HEVC posters are quietly not offered, the
+# same graceful skip the module already takes when the CDN is down. It is here
+# because "quietly not offered" is a bad way to find out about a header.
+#
+# ---------------------------------------------------------------------------
+# frame-src - the two embed hosts, and nothing else
+# ---------------------------------------------------------------------------
+#
+# canvas/embed.ts is the only place in mbrd that will ever talk to a third
+# party, and it builds its src from a fixed template with a validated id in the
+# hole - eleven characters of base64url for YouTube, twenty-two of base62 for
+# Spotify. These two hosts are those two templates:
+#
+#   https://www.youtube-nocookie.com  - the embed src, chosen as the most
+#                                       private host YouTube offers.
+#   https://open.spotify.com          - the embed src for every Spotify kind.
+#
+# No wildcard, and deliberately not play.spotify.com or youtu.be even though
+# spotifyRef and youTubeId accept those as *input*: what a user may paste and
+# what a frame may load are different lists, and only the second one belongs
+# here. tests/csp.test.js checks both directions against embed.ts, so adding a
+# provider without adding it here fails in the suite.
+#
+# ---------------------------------------------------------------------------
+# The deliberate 'none's
+# ---------------------------------------------------------------------------
+#
+#   object-src 'none'      There is no <object>, <embed> or <applet> in this
+#                          app and there is never going to be. A plugin
+#                          document is the oldest way to get script onto a page
+#                          out of a file, which is precisely the thing this app
+#                          does all day.
+#
+#   form-action 'none'     There is not a single <form> in the tree - nothing is
+#                          ever posted anywhere, because there is no server.
+#                          'none' says that; 'self' would leave a submission
+#                          target for an injected form to aim at.
+#
+#   frame-ancestors 'none' Nobody may frame the app. There is no read-only or
+#                          embeddable mode, so a page that frames it is either
+#                          a mistake or a clickjack over a canvas where every
+#                          click moves somebody's work. If the marketing site
+#                          ever wants a live demo in an iframe, this is the line
+#                          to widen - to 'self' https://valjdakosta.com, not to
+#                          '*'. This also supersedes X-Frame-Options, which is
+#                          why there is no X-Frame-Options here.
+#
+#   base-uri 'self'        NOT 'none', and this is the one place where the tight
+#                          answer is wrong: index.html carries <base href="/">
+#                          and it is load-bearing, because the same document is
+#                          served as the 404 at arbitrary paths and every
+#                          relative asset URL in it has to keep resolving from
+#                          the root. 'none' would kill that tag and the app
+#                          would fetch its modules from whatever directory the
+#                          bad URL happened to name. 'self' keeps the tag legal
+#                          and stops an injected <base> from pointing the whole
+#                          document's relative URLs at another origin.
+#
+#   default-src 'self'     The backstop for every directive not named above -
+#                          child-src, prefetch-src, and whatever CSP adds next.
+#                          Same-origin, which is what this app is.
+#
+# worker-src and manifest-src are 'self' rather than left to default-src for one
+# reason: they are the two that are easy to break by accident and hard to notice
+# (a worker that will not spawn is a feature that quietly stops being offered; a
+# manifest that will not load is an app that quietly stops installing), and a
+# directive somebody can grep for is worth four characters.
+#
+# Not here on purpose: 'unsafe-eval' and 'wasm-unsafe-eval' (nothing needs
+# either), upgrade-insecure-requests (there is not one http:// subresource in
+# the tree, so it would upgrade nothing), require-trusted-types-for (about
+# twenty innerHTML writes with constant icon markup would have to move first,
+# and that is a refactor, not a header), and report-to (there is no server to
+# report to, which is the whole architecture).
+
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-DkygY3dxoCj3zPATesYHPgON9mIeqlu6UbH2c+3mStw=' 'sha256-eJzJ8523EitoBKAS5A1tCSnraL7SAmf2gesGT63wGSk=' 'sha256-TXFmC+WkJ7pej6GG4eilTgWXAPfRfnxeO2p8iCMvh/k=' 'sha256-0G0B78DEoO53bqqyaMDK9hePabjl4u8UNOS3m+uFnls='; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self' blob:; connect-src 'self' blob: https://cdn.jsdelivr.net; worker-src 'self'; manifest-src 'self'; frame-src https://www.youtube-nocookie.com https://open.spotify.com; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
+
+# The one exemption, and the only interesting thing about the whole file.
+#
+# A dedicated worker does not inherit the document's policy. It gets its own,
+# from the headers on its own script response - and since the rule above is /*,
+# that response would carry the app's policy. The app's policy forbids exactly
+# the two things this worker exists to do: importScripts() a 32 MB Emscripten
+# core from jsdelivr, and compile the wasm inside it (which needs
+# 'wasm-unsafe-eval' in script-src). Under the rule above the encoder never
+# starts, and the way that shows is video optimisation and HEVC posters silently
+# not being offered - see the header of optimize/media.ts, where "the CDN is
+# down" and "the core would not load" are already the same outcome.
+#
+# So the header is removed for that one file and the worker runs as it does
+# today, with no policy. It is 60 lines that speak four messages and hold no
+# state but the core, it touches no DOM because it has none, and it can reach
+# nothing of this page.
+#
+# Removed rather than replaced, and that is not laziness: matching rules in a
+# _headers file are *cumulative*, and two Content-Security-Policy values are
+# joined with a comma - which a browser reads as two policies to satisfy at
+# once, not as one that replaces the other. A looser policy on this path would
+# therefore be intersected with the strict one above and change nothing.
+#
+# If a host ever ignores the removal, the worker keeps the strict policy and the
+# encoder is not offered. That is a degradation the module already handles by
+# design, which is what makes this safe to get wrong.
+/assets/js/optimize/media-worker.js
+  ! Content-Security-Policy
