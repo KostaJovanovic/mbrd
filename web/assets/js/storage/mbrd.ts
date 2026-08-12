@@ -23,7 +23,8 @@
 
 import { writeZip, readZip } from './zip.ts';
 import { getAsset, putAsset } from './assets.ts';
-import { sha256, isHash, itemHashes } from '../util.ts';
+import { sha256 } from '../crypto.ts';
+import { isHash, itemHashes } from '../util.ts';
 import { VERSION } from '../version.js';
 // The note text model, and the only thing this module takes from canvas/. Both
 // are pure functions of a string - the format's own Markdown flavour, which the

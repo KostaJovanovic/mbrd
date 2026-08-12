@@ -64,7 +64,8 @@ import {
 import { board } from '../state.ts';
 import { setLens, currentLens } from './board-view.ts';
 import { togglePlayerWindow, isPlayerWindowOpen } from './playlist.ts';
-import { baseName, clamp, seekInnerHTML, sizeSeekWave } from '../util.ts';
+import { baseName, clamp } from '../util.ts';
+import { seekInnerHTML, sizeSeekWave } from '../media/transport.ts';
 
 let bar = null, caption = null, controls = null, volume = null, closeBtn = null;
 // The seek line, its ends' times, and the play button - the bar's own transport,
@@ -177,7 +178,7 @@ export function initNowPlaying() {
   // played fraction (--np-progress), and the times at its ends. The fill carries
   // both a straight line and a wave; the CSS shows one per whimsy tier.
   // The line itself is seekInnerHTML's, shared with the playlist window and the
-  // video card so all three scrubbers are one shape - see the note in util.js.
+  // video card so all three scrubbers are one shape - see media/transport.js.
   // Only the two time labels either side of it are the bar's own.
   seekWrap.innerHTML =
     '<span class="np-time np-elapsed">0:00</span>'
@@ -235,7 +236,7 @@ function show(current) {
   sizeWave();
 }
 
-/** The bar's half of the shared sizer - see sizeSeekWave in util.js. */
+/** The bar's half of the shared sizer - see sizeSeekWave in media/transport.js. */
 function sizeWave() { sizeSeekWave(lineEl, waveSvg, wavePathEl); }
 
 /**

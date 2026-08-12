@@ -24,7 +24,9 @@
 // This is crash recovery only. The durable artefact is always the .mbrd the
 // user exported.
 
-import { toast, busy, itemHashes, clearPrefs } from '../util.ts';
+import { itemHashes } from '../util.ts';
+import { toast, busy } from '../notify.ts';
+import { clearPrefs } from '../prefs.ts';
 import {
   board, serializeBoard, loadBoard, markDirty, isDirty, bus, isNotFoundBoard,
 } from '../state.ts';

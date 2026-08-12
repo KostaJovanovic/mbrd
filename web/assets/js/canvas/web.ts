@@ -40,9 +40,9 @@
 // the cards are snapped to it (see axisMoved in ui/appearance.js), so a route
 // that turns anywhere else is the axis half-applied. Read here and handed to
 // the router, which may not read anything - see look().
-import { board, bus, isRider, isJoinEnd, baseStep, selection } from '../state.ts';
-import { rafThrottle } from '../util.ts';
-import { segmentMeetsRect } from '../geometry.ts';
+import { board, bus, isRider, isJoinEnd, baseStep, selection, pairKey } from '../state.ts';
+import { rafThrottle, readToken } from '../util.ts';
+import { polyMidpoint, polyMeetsRect, distToSegment } from '../geometry.ts';
 // Where a line runs when there are cards in the way - see web-route.js. Pure,
 // and deliberately not in this file for the same reason web-graph.js is not:
 // the algorithm is the half that can be tested without a browser.
@@ -201,18 +201,6 @@ const settled = new Set();
  * scheduleRoute().
  */
 const lastSeg = new Map();
-
-// A separator that cannot occur in an id, so two ids can share one string key.
-//
-// Escaped, not typed. A literal NUL in the source makes every tool that
-// sniffs for one - ripgrep, git diff, half the editors in existence - decide
-// this file is binary and stop showing it. Same byte, same behaviour, and the
-// file stays readable.
-//
-// uid() cannot produce one. An id read out of somebody else's board.json
-// could, which is why state.js/makeItem holds ids to a string and a length -
-// worth knowing that the guarantee lives there rather than here.
-const keyOf = (a, b) => (a < b ? a + '\0' + b : b + '\0' + a);
 
 /**
  * Both jobs share one frame.
@@ -534,8 +522,7 @@ function centres() {
 let leanDeg = null;
 function drawnTilt() {
   if (leanDeg === null) {
-    const raw = getComputedStyle(document.documentElement).getPropertyValue('--tilt-max');
-    leanDeg = Math.abs(parseFloat(raw)) || 0;
+    leanDeg = Math.abs(parseFloat(readToken('--tilt-max'))) || 0;
   }
   if (document.documentElement.dataset.whimsy === '2' || board.settings.snap) return 0;
   return leanDeg;
@@ -679,7 +666,7 @@ function build() {
     const pa = where.get(a);
     const pb = where.get(b);
     if (!pa || !pb) continue;
-    const key = keyOf(a, b);
+    const key = pairKey(a, b);
     // A stored route is kept exactly as long as both of its ends are where they
     // were. The moment either moves, the route is thrown away and the line
     // falls back to a straight one until the pass scheduled below runs - which
@@ -979,7 +966,7 @@ function paint(forced = false) {
   for (const key of settled) {
     const seg = lastSeg.get(key);
     if (!seg) continue;
-    if (vis && !meetsRect(seg.points, vis)) continue;
+    if (vis && !polyMeetsRect(seg.points, vis)) continue;
     const isLit = !!(lit && seg.ends && (lit.has(seg.ends.a) || lit.has(seg.ends.b)));
     if (isLit) litAny = true;
     // Styled lines are drawn in decoLayer, never the bulk stroke - a dash or an
@@ -1038,7 +1025,7 @@ function drawDecorations(minX, minY, r, vis, lit) {
     if (!settled.has(key) && live.seg?.meta) segs.push(live.seg);
   }
   for (const seg of segs) {
-    if (vis && !meetsRect(seg.points, vis)) continue;
+    if (vis && !polyMeetsRect(seg.points, vis)) continue;
     const line = document.createElementNS(SVG_NS, 'path');
     // Colour and weight are class names, never values written into a style -
     // see connMeta() in board-model.js for why that distinction is the whole
@@ -1075,55 +1062,6 @@ function drawDecorations(minX, minY, r, vis, lit) {
   }
 }
 
-/** The point half way along a polyline by arc length - where a label sits. */
-function polyMidpoint(points) {
-  if (!points || points.length < 2) return points?.[0] || { x: 0, y: 0 };
-  const legs = [];
-  let total = 0;
-  for (let i = 1; i < points.length; i++) {
-    const len = Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
-    legs.push(len);
-    total += len;
-  }
-  let half = total / 2;
-  for (let i = 1; i < points.length; i++) {
-    const len = legs[i - 1];
-    if (half <= len) {
-      const t = len ? half / len : 0;
-      return {
-        x: points[i - 1].x + (points[i].x - points[i - 1].x) * t,
-        y: points[i - 1].y + (points[i].y - points[i - 1].y) * t,
-      };
-    }
-    half -= len;
-  }
-  return points[points.length - 1];
-}
-
-/**
- * Whether any leg of a path meets the visible rect.
- *
- * Leg by leg rather than by the path's bounding box, and the reason is the case
- * a board of connections is full of: the long line. Its bounding box is most of
- * the board, so a box test passes it from almost anywhere and it is emitted
- * into `d` on every frame of every pan having never come near the screen.
- */
-function meetsRect(points, rect) {
-  for (let i = 1; i < points.length; i++) {
-    if (segmentMeetsRect(points[i - 1], points[i], rect)) return true;
-  }
-  return false;
-}
-
-/** Distance from point (px, py) to the segment a-b, in the layer's own space. */
-function distToSeg(px, py, a, b) {
-  const dx = b.x - a.x, dy = b.y - a.y;
-  const len2 = dx * dx + dy * dy;
-  const t = len2 ? Math.max(0, Math.min(1, ((px - a.x) * dx + (py - a.y) * dy) / len2)) : 0;
-  const cx = a.x + t * dx, cy = a.y + t * dy;
-  return Math.hypot(px - cx, py - cy);
-}
-
 /**
  * The connection whose drawn line runs nearest a world point, or null.
  *
@@ -1145,7 +1083,7 @@ function nearestSeg(wx, wy, tolPx) {
     if (!seg.ends) continue;
     const pts = seg.points;
     for (let i = 1; i < pts.length; i++) {
-      const d = distToSeg(wx, py, pts[i - 1], pts[i]);
+      const d = distToSegment(wx, py, pts[i - 1], pts[i]);
       if (d < bestD) { bestD = d; best = seg; bestKey = key; }
     }
   }
@@ -1185,7 +1123,7 @@ export function activeConnection() {
 
 /** Point at a connection, or at none - both ends null puts the mark away. */
 export function setActiveConnection(a, b) {
-  const key = a && b ? keyOf(a, b) : null;
+  const key = a && b ? pairKey(a, b) : null;
   if (key === activeKey) return;
   activeKey = key;
   drawActive();

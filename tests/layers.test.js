@@ -196,6 +196,36 @@ const BASE = new Set([
   // so it never reaches for the spatial index or the board. canvas/web.js is
   // the half that knows which cards are near and the half that draws.
   'web-route.ts',
+  // The four modules util.js was split into, each of which is here for the same
+  // reason util.js always was: they are imported from every tier and they
+  // import nothing at all.
+  //
+  //   crypto.js    the content id. storage/ makes one on the way in and spells
+  //                one into an archive on the way out; nobody else needs it,
+  //                and nobody at all should have to carry FIPS 180-4 to reach
+  //                clamp().
+  //   prefs.js     every localStorage read and write in the app. Wrapped
+  //                because touching storage in a private window throws, and
+  //                below everything because canvas/, ui/ and quality.js all
+  //                remember something.
+  //   notify.js    the announcement channel - toast() and busy() with no idea
+  //                how either is drawn. This one is load-bearing for the rule
+  //                right below: the mutation door, the clipboard, the packer
+  //                and the importer all have something to say, they all sit
+  //                below ui/, and ui/overlays.js is what actually draws it. So
+  //                the message travels down the graph and the rendering is
+  //                injected back in by main.js through setOverlays(), the same
+  //                shape as setAssetNameLookup() and setPrompt(). Without it,
+  //                four modules in this list would import ui/ and this test
+  //                would be a ledger of debt instead of an empty map.
+  //   media/transport.js
+  //                the scrubber's wave. Three players draw it - the now-playing
+  //                bar, the playlist window and a video card - and they sit in
+  //                ui/, ui/ and canvas/, so the only place all three can reach
+  //                is the bottom. It builds SVG for elements it is handed and
+  //                never reaches for `document`, which is what lets it be down
+  //                here rather than in ui/.
+  'crypto.ts', 'prefs.ts', 'notify.ts', 'media/transport.ts',
 ]);
 
 /**

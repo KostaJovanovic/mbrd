@@ -29,7 +29,8 @@ import {
   restoreTitleCard, isTitleHidden,
 } from '../state.ts';
 import { assetURL } from '../storage/assets.ts';
-import { extOf, baseName, el, toast } from '../util.ts';
+import { extOf, baseName, el } from '../util.ts';
+import { toast } from '../notify.ts';
 import {
   STICKER_SPRITE, STICKER_VIEWBOX, DEFAULT_SHAPE, stickerShape, stickerTint,
 } from '../stickers/catalogue.ts';

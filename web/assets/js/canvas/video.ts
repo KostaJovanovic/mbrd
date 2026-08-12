@@ -33,7 +33,9 @@
 // No PAUSE_ICON: the only button here is the big one over the picture, and it
 // is a play button that goes away rather than one that turns into a pause.
 import { registerPlayer, bindScrub, PLAY_ICON, clock } from './audio.ts';
-import { clamp, toast, seekInnerHTML, sizeSeekWave } from '../util.ts';
+import { clamp } from '../util.ts';
+import { toast } from '../notify.ts';
+import { seekInnerHTML, sizeSeekWave } from '../media/transport.ts';
 
 /**
  * Where a parked video sits: the `#t=` media fragment canvas/renderers.js mounts
@@ -105,7 +107,7 @@ export function buildVideoPlayer(item, video) {
   track.tabIndex = 0;
   // The same three-svg scrubber the now-playing bar, the playlist window and
   // canvas/audio.js's own line all draw, so every seek on the board waves
-  // together at the soft end of the whimsy axis - see the note in util.js.
+  // together at the soft end of the whimsy axis - see the note in media/transport.js.
   track.innerHTML = seekInnerHTML('vt');
   const trackWave = track.querySelector('.vt-wave-svg');
   const trackWavePath = track.querySelector('.vt-fill-wave');

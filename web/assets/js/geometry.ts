@@ -259,6 +259,107 @@ export function segmentMeetsRect(a, b, r) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Polylines
+//
+// The four below came out of canvas/web.js and the two web-* modules, where
+// they were private helpers beside the drawing that used them. They are here
+// for the reason segmentMeetsRect above is: each is arithmetic over points
+// with no idea that a board, a viewport or an SVG exists, and the alternative
+// to one home is the disagreement this file was written to end - four takes on
+// "where is it", in modules that cannot see each other.
+//
+// The two squared-distance functions are the pointed case. Both were called
+// `dist2`, in web-graph.js and web-route.js, and they are not the same
+// function: one is the distance between two points and the other is the
+// distance from a point to the *middle* of a pair of them. Put side by side
+// under one name, either caller would silently get the other's answer - a
+// spanning tree over the wrong metric draws a plausible-looking web that is
+// simply not the minimal one, and nothing would ever fail. So they keep two
+// names that say which is which, and the names are longer than `dist2` on
+// purpose.
+// ---------------------------------------------------------------------------
+
+/** The point half way along a polyline by arc length - where a label sits. */
+export function polyMidpoint(points) {
+  if (!points || points.length < 2) return points?.[0] || { x: 0, y: 0 };
+  const legs = [];
+  let total = 0;
+  for (let i = 1; i < points.length; i++) {
+    const len = Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+    legs.push(len);
+    total += len;
+  }
+  let half = total / 2;
+  for (let i = 1; i < points.length; i++) {
+    const len = legs[i - 1];
+    if (half <= len) {
+      const t = len ? half / len : 0;
+      return {
+        x: points[i - 1].x + (points[i].x - points[i - 1].x) * t,
+        y: points[i - 1].y + (points[i].y - points[i - 1].y) * t,
+      };
+    }
+    half -= len;
+  }
+  return points[points.length - 1];
+}
+
+/**
+ * Whether any leg of a polyline meets the rect.
+ *
+ * Leg by leg rather than by the path's bounding box, and the reason is the case
+ * a board of connections is full of: the long line. Its bounding box is most of
+ * the board, so a box test passes it from almost anywhere and it is emitted
+ * into `d` on every frame of every pan having never come near the screen.
+ */
+export function polyMeetsRect(points, rect) {
+  for (let i = 1; i < points.length; i++) {
+    if (segmentMeetsRect(points[i - 1], points[i], rect)) return true;
+  }
+  return false;
+}
+
+/** Distance from point (px, py) to the segment a-b, in whatever space they share. */
+export function distToSegment(px, py, a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 ? Math.max(0, Math.min(1, ((px - a.x) * dx + (py - a.y) * dy) / len2)) : 0;
+  const cx = a.x + t * dx, cy = a.y + t * dy;
+  return Math.hypot(px - cx, py - cy);
+}
+
+/**
+ * Squared distance between two points.
+ *
+ * Squared because every caller only ever compares one of these to another, and
+ * the square root is monotonic - it would cost time without changing a single
+ * choice. Do not "fix" this into a real distance; web-graph.js's spanning tree
+ * runs it O(n^2) times.
+ */
+export function distSq(a, b) {
+  const dx = a.x - b.x, dy = a.y - b.y;
+  return dx * dx + dy * dy;
+}
+
+/**
+ * Squared distance from a point to the midpoint of a pair of them.
+ *
+ * The router's "how far is this card from the corridor between the two ends",
+ * and the word for it is *roughly*: the real answer is the distance to the
+ * segment, which distToSegment() above gives, and this is the distance to its
+ * middle instead. That is deliberate and it is only ever used to sort - the
+ * obstacles nearest the middle of a run are the ones most likely to be in the
+ * way, and when there are more of them than the router will consider, this
+ * decides which get dropped. Swapping in the exact measure would change which
+ * cards a heavily-obstructed route steers around, so it is not a tidy-up.
+ */
+export function distSqToMidpoint(p, from, to) {
+  const mx = (from.x + to.x) / 2;
+  const my = (from.y + to.y) / 2;
+  return (p.x - mx) ** 2 + (p.y - my) ** 2;
+}
+
 /**
  * The radius of a circle centred on the item that contains it whatever its
  * rotation - half its diagonal.

@@ -315,10 +315,17 @@ export const board = {
 /**
  * The unordered key for a pair. `a-b` and `b-a` are one connection.
  *
- * A NUL separator, escaped rather than typed for the reason canvas/web.js gives
- * over its own copy: a literal one makes every tool that sniffs for it decide
- * the file is binary. uid() cannot produce one, and an id out of somebody
- * else's board.json is held to a string and a length by makeItem().
+ * A NUL separator, escaped rather than typed: a literal one makes every tool
+ * that sniffs for it - ripgrep, git diff, half the editors in existence -
+ * decide the file is binary and stop showing it. Same byte, same behaviour, and
+ * the file stays readable. uid() cannot produce one, and an id out of somebody
+ * else's board.json is held to a string and a length by makeItem(), which is
+ * where that guarantee lives rather than here.
+ *
+ * canvas/web.js kept a private `keyOf` that was this line character for
+ * character, with no import, and keyed its whole segment cache on it. Two
+ * spellings of one key is a cache that half-misses the day either changes; it
+ * imports this now, through state.js.
  */
 export const pairKey = (a, b) => (a < b ? a + '\0' + b : b + '\0' + a);
 

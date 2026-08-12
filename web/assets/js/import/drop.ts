@@ -13,7 +13,8 @@
 // each file, and asks the arrangement engine where to put them - so a drop of
 // forty photos lands as a spiral around the cursor rather than a stack.
 
-import { toast, busy, extOf } from '../util.ts';
+import { extOf } from '../util.ts';
+import { toast, busy } from '../notify.ts';
 import {
   board, bus, addItems, select, setItemCover, NOTE_MAX, baseStep, startSettling,
 } from '../state.ts';

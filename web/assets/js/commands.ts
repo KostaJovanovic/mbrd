@@ -23,7 +23,7 @@
 // which is built at boot, and nothing here may touch a browser global at import
 // time (tests/imports.test.js).
 
-import { toast, busy } from './util.ts';
+import { toast, busy } from './notify.ts';
 import { DEFAULT_SCALE } from './measure.ts';
 import {
   board, selection, selectAll, removeItems, setSetting, undo, redo, byId,

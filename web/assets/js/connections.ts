@@ -39,7 +39,7 @@
 //
 // Nothing here imports state.js - see tests/layers.test.js, where this is BASE.
 
-import { toast } from './util.ts';
+import { toast } from './notify.ts';
 import { bus } from './board-store.ts';
 import { commit } from './history.ts';
 import { board, pairKey, connMeta, MAX_CONNECTIONS } from './board-model.ts';

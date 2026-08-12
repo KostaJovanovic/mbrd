@@ -1,0 +1,112 @@
+// Saying something to the person, from a layer that has no screen.
+//
+// Two things every layer of this app needs to be able to say and no layer
+// should have to own: "that happened" (a toast) and "this is taking a moment"
+// (the waiting strip). The importer, the optimiser, the packer, the model
+// loader, the mutation door and the clipboard all say one or the other, and
+// every one of them sits *below* the interface. So they cannot import the
+// implementation, and until this split they did not have to - both functions
+// lived in util.ts, which is to say that forty-four modules depended on a file
+// containing a toast renderer and a progress bar because they wanted clamp().
+//
+// This is the door instead. It knows the two *messages* and nothing about how
+// either is drawn; ui/overlays.ts knows how they are drawn and nothing about
+// who is saying them. main.ts introduces the two with setOverlays(), the same
+// injection shape as setAssetNameLookup() and setPrompt() - and for exactly the
+// same reason those exist, which tests/layers.test.js keeps honest: a base or
+// storage module reaching up into ui/ is a layering inversion, and the DEBT map
+// there is empty and stays empty.
+//
+// ── Silence is not an error ──
+//
+// Unwired - in a test, in a worker, before main.ts has run - every call here is
+// a no-op and busy() hands back a job whose three methods do nothing. That is
+// the same bargain toast() made before this module existed, where it returned
+// early if `document` was undefined: saying something to a user who is not
+// there is not a failure, it is a no-op, so state.ts can leave a receipt
+// without every caller first having to establish that there is a screen to
+// leave it on. It is also why the fallback busy job is a real object rather
+// than null: `job.end()` in a `finally` must be safe to call on the path where
+// nothing was ever shown, or the failure path throws over the reporting of a
+// failure.
+//
+// ── What must not move in here ──
+//
+// Any DOM. Not one id, not one class name, not the fade duration that pairs
+// with a `transition` in overlays.css - all of that is in ui/overlays.ts, and
+// the moment one of it appears here this module stops being importable by the
+// layers it exists to serve, which is the whole point of it.
+//
+// Nor a queue. This does not buffer messages said before the interface is up
+// and replay them afterwards, and that is deliberate: the messages are receipts
+// about things that just happened, and a receipt delivered a second late is
+// noise arriving on a screen that has moved on. If something genuinely must
+// survive boot, it is state and belongs somewhere that keeps state.
+//
+// Nor errors. A thrown error is not a toast; whatever catches it decides
+// whether the person needs to be told, and says so through here if the answer
+// is yes.
+
+/** A toast is either a receipt or a complaint. Nothing else has a spelling. */
+export type ToastKind = '' | 'error';
+
+/** What busy() hands back. Every method is safe on an unwired app. */
+export interface BusyJob {
+  /** The same wait, a different phase. */
+  label(text: string): void;
+  /** Switch the bar from "something is happening" to "this much of it". */
+  step(done: number, total: number): void;
+  /** Idempotent, so a `finally` that runs twice cannot strand the strip open. */
+  end(): void;
+}
+
+export interface BusyOptions {
+  onCancel?: (() => void) | null;
+}
+
+/** The half ui/overlays.ts supplies. */
+export interface Overlays {
+  toast(msg: string, kind?: ToastKind): void;
+  busy(label?: string, opts?: BusyOptions): BusyJob;
+}
+
+/**
+ * The job returned when there is nobody to show one to. A frozen singleton
+ * rather than a fresh object per call: it carries no state, and a caller that
+ * held on to it and called end() twice must be as harmless as one that did not.
+ */
+const NOWHERE: BusyJob = Object.freeze({
+  label(): void {},
+  step(): void {},
+  end(): void {},
+});
+
+let overlays: Overlays | null = null;
+
+/**
+ * Wire the interface in. Called once, from main.ts, before anything can speak.
+ *
+ * Passing null puts it back to silence, which is what a test that wants to
+ * assert on the absence of interface calls needs - and what keeps this from
+ * being a one-way door onto a stale DOM after a teardown.
+ */
+export function setOverlays(impl: Overlays | null): void {
+  overlays = impl;
+}
+
+/** One-line status message at the foot of the screen. Newest at the bottom. */
+export function toast(msg: string, kind: ToastKind = ''): void {
+  overlays?.toast(msg, kind);
+}
+
+/**
+ * Say that something is being waited on. Returns the handle that ends it.
+ *
+ *   const job = busy('Reading 40 files');
+ *   job.step(12, 40);            // a bar that means something
+ *   job.label('Optimising');     // the same wait, a different phase
+ *   job.end();                   // always, including on the failure path
+ */
+export function busy(label = 'Working', opts: BusyOptions = {}): BusyJob {
+  return overlays?.busy(label, opts) ?? NOWHERE;
+}

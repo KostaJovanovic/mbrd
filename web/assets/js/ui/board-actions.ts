@@ -18,8 +18,30 @@
 // Nothing here is wired to an element. These are called by commands.js, and the
 // two paint functions are called by their own state machines. `vp` is handed in
 // by initBoardActions() so nothing touches a browser global at import time.
+//
+// ── This is a second wiring point, and it is not declared as one ──
+//
+// Worth knowing before adding to it. main.ts is the wiring point by design and
+// says so; this file reaches into ten different modules under canvas/ from a
+// module in ui/, which is the widest reach anywhere in that directory and wider
+// than main.ts's own. That is not an accident of growth - it is what these
+// commands are. A Rearrange has to settle the geometry and then repaint the
+// grid, the grain, the paper outline and the Mobile frame, and something has to
+// hold the knowledge of which four; Reset size has to ask the renderers what a
+// default size is; Scale from item has to reach the asset registry. Each import
+// is the shortest honest path from one control to the thing it changes.
+//
+// The cost is that the layering graph reads as narrower than it is. The
+// architecture doc draws main.ts as the place that knows about everything, and
+// on the strength of the import lists that is half true here instead. The shape
+// that would fix it is a repaintBoard() owned by canvas/ - one call standing for
+// the four paints that always run together - and every import added here makes
+// that shape more expensive to reach, because it is one more caller to find.
+// So: before importing an eleventh canvas/ module, check whether what you want
+// is that function.
 
-import { toast, shuffle } from '../util.ts';
+import { shuffle } from '../util.ts';
+import { toast } from '../notify.ts';
 import { formatLength, scaleFrom, MM_PER_INCH } from '../measure.ts';
 import { ask } from './dialog.ts';
 import {

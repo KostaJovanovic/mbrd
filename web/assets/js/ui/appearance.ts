@@ -33,7 +33,9 @@ import {
   board, bus, setAppearance, setSetting, MOBILE_APPEARANCE_VARS,
 } from '../state.ts';
 import { autoPaletteReady, whimsyControlsSnap } from '../layout-settings.ts';
-import { clamp, readPrefJSON, toast, writePref } from '../util.ts';
+import { clamp, readToken } from '../util.ts';
+import { toast } from '../notify.ts';
+import { readPrefJSON, writePref } from '../prefs.ts';
 import { assetURL, getAsset } from '../storage/assets.ts';
 import {
   extractPalette, oklch, paletteFromAccent, samplePixels, MAX_SOURCES, PALETTE_TOKENS,
@@ -453,7 +455,7 @@ function followFade() {
   // duration to a hundredth of a millisecond - but the loop is still entered for
   // one frame, because the settle at the end of it is not decoration. See below.
   const still = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  const raw = getComputedStyle(root).getPropertyValue('--dur-palette').trim();
+  const raw = readToken('--dur-palette');
   const ms = raw.endsWith('ms') ? parseFloat(raw)
     : raw.endsWith('s') ? parseFloat(raw) * 1000 : NaN;
   fadeEnd = performance.now() + (still ? 0 : Number.isFinite(ms) ? ms : FADE_MS);
@@ -513,7 +515,7 @@ function paintPigment() {
   // while its own dialog is open is how a value jumps back under the pointer.
   // A hand-picked colour is not a fade anyway - setVar() writes it straight.
   if (document.activeElement === entry.input) return;
-  const now = toHex(getComputedStyle(root).getPropertyValue('--accent').trim());
+  const now = toHex(readToken('--accent'));
   if (now) entry.input.value = now;
 }
 
@@ -915,8 +917,8 @@ function apply(look) {
  * never exported, and never carried inside somebody else's .mbrd.
  */
 function markDisplayFace() {
-  const stack = getComputedStyle(root).getPropertyValue('--font-display');
-  if (/sans-serif\s*$/i.test(stack.trim())) root.dataset.displaySans = '';
+  const stack = readToken('--font-display');
+  if (/sans-serif\s*$/i.test(stack)) root.dataset.displaySans = '';
   else delete root.dataset.displaySans;
 }
 
@@ -928,7 +930,7 @@ function markDisplayFace() {
  */
 function paintThemeColour() {
   if (!themeColour) return;
-  const paper = getComputedStyle(root).getPropertyValue('--paper').trim();
+  const paper = readToken('--paper');
   if (paper) themeColour.setAttribute('content', paper);
 }
 

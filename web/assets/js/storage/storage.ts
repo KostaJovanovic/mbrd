@@ -39,7 +39,8 @@
 // which is what kept the split from reaching main.js, ui/board-actions.js,
 // commands.js and four tests.
 
-import { toast, busy, uid } from '../util.ts';
+import { uid } from '../util.ts';
+import { toast, busy } from '../notify.ts';
 import { idbGet, idbSet } from './idb.ts';
 import {
   libraryIndex, putLibraryBoard, getLibraryBoard, removeLibraryBoard,

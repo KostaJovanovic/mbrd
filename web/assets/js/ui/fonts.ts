@@ -33,7 +33,8 @@
 
 import { board, bus, setSetting } from '../state.ts';
 import { addFile, assetURL } from '../storage/assets.ts';
-import { isFamily, toast } from '../util.ts';
+import { isFamily } from '../util.ts';
+import { toast } from '../notify.ts';
 
 /**
  * A ceiling per face and a ceiling per board.

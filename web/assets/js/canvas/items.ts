@@ -161,8 +161,18 @@ const CULL_MARGIN_PX = 300;
  */
 const CULL_MARGIN_MAX = 400;
 
-/** That margin in world units at the current zoom. */
-const cullMargin = () => Math.min(CULL_MARGIN_PX / vp.zoom, CULL_MARGIN_MAX);
+/**
+ * That margin in world units at the current zoom.
+ *
+ * The guard is not defensive noise. `vp` arrives in initItems(), and this is
+ * reachable from a repaint that a subsystem can schedule before the wiring in
+ * main.js has got that far - at which point an unguarded read is a TypeError
+ * during boot rather than a margin. canvas/web.js carries the same one-liner
+ * with the same guard for its own `vp` and always did; this copy had drifted
+ * away from it, which is the shape of bug a duplicated line exists to produce.
+ * Change one and change the other.
+ */
+const cullMargin = () => Math.min(CULL_MARGIN_PX / (vp ? vp.zoom : 1), CULL_MARGIN_MAX);
 
 /**
  * An item's entry in the spatial cull index: a circumscribed square, centre and

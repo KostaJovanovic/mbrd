@@ -3,7 +3,7 @@
 // `crypto.subtle` is a secure-context API. Open the board from a phone at
 // http://<lan-ip>:6273 and it is simply not there, and since every import
 // hashes its bytes before it becomes an item, the whole way in used to fail at
-// once - on a page that otherwise looked perfectly well. util.js carries a
+// once - on a page that otherwise looked perfectly well. crypto.ts carries a
 // hand-written SHA-256 for that case.
 //
 // What these check is that it is the *same* hash. A fallback that produced its
@@ -17,7 +17,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, webcrypto } from 'node:crypto';
-import { sha256 } from '../web/assets/js/util.ts';
+import { sha256 } from '../web/assets/js/crypto.ts';
 
 const reference = bytes => createHash('sha256').update(bytes).digest('hex');
 

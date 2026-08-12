@@ -23,7 +23,7 @@ import {
   listLibrary, switchBoard, newLibraryBoard, deleteLibraryBoard,
 } from '../storage/storage.ts';
 import { boardThumb } from './snapshot.ts';
-import { toast } from '../util.ts';
+import { toast } from '../notify.ts';
 
 let root = null;
 

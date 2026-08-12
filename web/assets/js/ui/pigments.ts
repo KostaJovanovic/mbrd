@@ -50,6 +50,7 @@
 // extractPalette() the pixels directly, which is also how a failing board can
 // be reproduced from its colours rather than from its photographs.
 
+import { clamp } from '../util.ts';
 import { PALETTE_TOKENS } from '../layout-settings.ts';
 export { PALETTE_TOKENS };
 
@@ -156,8 +157,6 @@ export function contrast(a, b) {
 
 /** The shorter way round the wheel between two hues, in degrees. 0 to 180. */
 const apart = (a, b) => { const d = Math.abs(a - b) % 360; return Math.min(d, 360 - d); };
-
-const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 
 /** 5-degree bins. Fine enough to tell teal from green, coarse enough to vote. */
 const BINS = 72;

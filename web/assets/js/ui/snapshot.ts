@@ -24,6 +24,7 @@
 // around the canvas's JPEG - a DCTDecode image XObject on one page, which is the
 // one PDF a hand can write correctly without a font stack or an interpreter.
 
+import { readToken } from '../util.ts';
 import { board } from '../state.ts';
 import { itemBounds } from '../geometry.ts';
 import { assetURL } from '../storage/assets.ts';
@@ -42,9 +43,6 @@ const STICKER_GRID = +STICKER_VIEWBOX.split(' ')[2] || 256;
 const MARGIN = 48;
 /** The longest edge the output is allowed to reach, so a huge board still fits. */
 const MAX_EDGE = 8000;
-
-const cssVar = name =>
-  getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 /** Everything on the board that is a thing rather than a hint to the person. */
 const drawable = () => board.items.filter(i => i.type !== 'ghost');
@@ -136,8 +134,8 @@ async function drawSticker(ctx, it, w, h) {
   const parts = (await stickerPaths()).get(it.meta?.shape);
   if (!parts) return;
   const tint = Math.trunc(+it.meta?.tint) || 1;
-  const ink = cssVar(`--sticker-${tint}`) || cssVar('--sticker-1') || '#31261b';
-  const body = cssVar('--sticker-body') || cssVar('--paper-card') || '#fdfdfa';
+  const ink = readToken(`--sticker-${tint}`) || readToken('--sticker-1') || '#31261b';
+  const body = readToken('--sticker-body') || readToken('--paper-card') || '#fdfdfa';
   ctx.save();
   ctx.translate(-w / 2, -h / 2);
   ctx.scale(w / STICKER_GRID, h / STICKER_GRID);
@@ -149,8 +147,8 @@ async function drawSticker(ctx, it, w, h) {
 }
 
 async function drawItem(ctx, it, w, h) {
-  const ink = cssVar('--ink') || '#222';
-  const card = cssVar('--paper-2') || '#e9e5db';
+  const ink = readToken('--ink') || '#222';
+  const card = readToken('--paper-2') || '#e9e5db';
 
   // Before the picture branch and before the card face, because a sticker is
   // neither: it has no asset to draw and no edge to put a name on. A board
@@ -177,7 +175,7 @@ async function drawItem(ctx, it, w, h) {
 
   // No picture: a card face with its name, which covers notes, links, text,
   // audio without art, and any named file card.
-  if (it.type === 'note') ctx.fillStyle = cssVar(`--note-${(it.meta?.tint || 1)}`) || '#fff7d6';
+  if (it.type === 'note') ctx.fillStyle = readToken(`--note-${(it.meta?.tint || 1)}`) || '#fff7d6';
   else ctx.fillStyle = card;
   roundRect(ctx, -w / 2, -h / 2, w, h, Math.min(w, h) * 0.06);
   ctx.fill();
@@ -236,7 +234,7 @@ export async function renderBoardCanvas() {
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
 
-  ctx.fillStyle = cssVar('--paper') || '#f4f1ea';
+  ctx.fillStyle = readToken('--paper') || '#f4f1ea';
   ctx.fillRect(0, 0, W, H);
 
   const ordered = [...items].sort((p, q) => (p.z || 0) - (q.z || 0));

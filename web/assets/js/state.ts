@@ -25,7 +25,8 @@
 //                every subscriber to that one would repaint for a change that
 //                moved nothing and added nothing.
 
-import { isHash, itemHashes, toast } from './util.ts';
+import { isHash, itemHashes } from './util.ts';
+import { toast } from './notify.ts';
 // Pure geometry, shared with the canvas and the input layer so that "where is
 // this item and what does it cover" has exactly one answer in this app. Kept
 // at the top level rather than under canvas/ because it depends on nothing and

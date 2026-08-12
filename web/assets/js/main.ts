@@ -22,7 +22,9 @@
 // (tests/imports.test.js); everything it calls exports an init*() for exactly
 // that reason.
 
-import { toast, el } from './util.ts';
+import { el } from './util.ts';
+import { toast } from './notify.ts';
+import { initOverlays } from './ui/overlays.ts';
 import { ask } from './ui/dialog.ts';
 import { VERSION } from './version.js';
 import {
@@ -78,6 +80,17 @@ import { initBoardView, openingView, syncBoardMode, syncMobileBoardBounds } from
 import { initHud, paintZoom, paintSnap, paintCount } from './ui/hud.ts';
 import { initBoardTitle } from './ui/board-title.ts';
 import { initBoardActions, resetSave } from './ui/board-actions.ts';
+
+// Before anything else in this file, and before anything it imports can run:
+// the toast and the waiting strip are how the app reports that something went
+// wrong, which makes them the worst possible thing to wire late. notify.ts is
+// the door every layer below ui/ says things through - it has to be, since a
+// base or storage module importing ui/overlays.js is a layering inversion
+// (tests/layers.test.js) - and until this call it forwards to nobody and every
+// message is silently dropped. Same injection shape as setAssetNameLookup() and
+// setPrompt() below; this one goes first because a lost toast is not an error,
+// it is worse, it is nothing at all.
+initOverlays();
 
 const vp = new Viewport(el('viewport'), el('world'), el('origin-mark'));
 

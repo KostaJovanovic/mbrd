@@ -25,7 +25,7 @@
 import {
   board, bus, DEFAULT_MOBILE_HEADER, setSetting, mobileBoardWorldWidth,
 } from '../state.ts';
-import { clamp, el } from '../util.ts';
+import { clamp, el, readToken } from '../util.ts';
 import {
   headerFontAxes, headerFontOptions, headerFontSize, headerFontStack,
   headerFontWeights,
@@ -825,9 +825,12 @@ function paintFind() {
 
 /** What "Default" resolves to right now: the display face the look is set in. */
 function displayStack() {
-  return typeof getComputedStyle === 'function'
-    ? getComputedStyle(document.documentElement).getPropertyValue('--font-display')
-    : '';
+  // The guard stays: this is reached from availableAxes(), which the panel calls
+  // while deciding what to draw, and there is no document behind that call in a
+  // test. readToken() would throw rather than answer '' - which is a real
+  // answer here, since "no computed stack" and "the empty stack" mean the same
+  // thing to headerFontAxes().
+  return typeof getComputedStyle === 'function' ? readToken('--font-display') : '';
 }
 
 function availableAxes(font = header().font) {

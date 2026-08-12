@@ -37,10 +37,10 @@
 // Only touches `document` inside a function, so this module is importable
 // without a browser like every other one here.
 
+import { clamp } from '../util.ts';
+
 /** The one open at a time, if any. Two modal dialogs is two focus traps. */
 let current = null;
-
-const clamp = (n, lo, hi) => (n < lo ? lo : n > hi ? hi : n);
 
 // ---------------------------------------------------------------------------
 // The colour, as three numbers and as six digits

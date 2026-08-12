@@ -46,7 +46,10 @@
 
 import { getAsset, assetURL } from '../storage/assets.ts';
 import { bus, markDirty, selection } from '../state.ts';
-import { toast, clamp, readPref, writePref, seekInnerHTML, sizeSeekWave } from '../util.ts';
+import { clamp } from '../util.ts';
+import { toast } from '../notify.ts';
+import { readPref, writePref } from '../prefs.ts';
+import { seekInnerHTML, sizeSeekWave } from '../media/transport.ts';
 
 const VOLUME_KEY = 'mbrd.volume';
 /** Loud enough to hear on laptop speakers, quiet enough not to make you jump. */
@@ -795,7 +798,7 @@ export function buildTransport(item, sound, opts = {}) {
   if (line) {
     // The same shape the now-playing bar and the playlist window draw, so all
     // three scrubbers wave together at the soft end of the whimsy axis - see the
-    // note in util.js. It was a div scaled on X, which is the one thing a wave
+    // note in media/transport.js. It was a div scaled on X, which is the one thing a wave
     // cannot be: scaling one horizontally changes its frequency as it plays, so
     // the played part is revealed with a clip instead.
     wave.innerHTML = seekInnerHTML('vt');

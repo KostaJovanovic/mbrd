@@ -41,7 +41,7 @@
 // Nothing here touches `document` at import time - every reach is inside
 // initStickerWindow() or a handler that runs after it.
 
-import { readPrefJSON, writePref } from '../util.ts';
+import { readPrefJSON, writePref } from '../prefs.ts';
 import { bus, wouldStick, byId } from '../state.ts';
 import { defaultSize } from '../canvas/renderers.ts';
 import { showStickTarget } from '../canvas/items.ts';
