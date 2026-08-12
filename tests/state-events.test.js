@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 
 import {
   bus, loadBoard, addItems, removeItems, restoreItems, undo, redo,
-} from '../web/assets/js/state.js';
+} from '../web/assets/js/state.ts';
 
 const fresh = (items = []) => loadBoard({ title: 'T', items });
 const photo = (props = {}) => ({ type: 'image', w: 200, h: 200, ...props });

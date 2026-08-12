@@ -17,7 +17,7 @@ import assert from 'node:assert/strict';
 import {
   classify, defaultSize, hasRenderer, measureSize,
   parseNoteText, normalizeNoteRich, flattenNoteRich,
-} from '../web/assets/js/canvas/renderers.js';
+} from '../web/assets/js/canvas/renderers.ts';
 
 const file = (name, type = '') => ({ name, type });
 const svgBlob = markup => new Blob([markup], { type: 'image/svg+xml' });

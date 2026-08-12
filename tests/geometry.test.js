@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import {
   rotatedExtents, itemBounds, itemInRect, itemWithinRect, itemRadius, pointInItem, topEdge,
   corners, overlapFraction, segmentMeetsRect, viewShift,
-} from '../web/assets/js/geometry.js';
+} from '../web/assets/js/geometry.ts';
 import { item } from './helpers.js';
 
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;

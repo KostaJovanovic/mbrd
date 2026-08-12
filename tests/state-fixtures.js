@@ -5,7 +5,7 @@
 // card. Kept out of helpers.js because these know about state.js, which the
 // rest of helpers.js deliberately does not.
 
-import { loadBoard } from '../web/assets/js/state.js';
+import { loadBoard } from '../web/assets/js/state.ts';
 
 /** An empty board, through the same door opening a .mbrd goes through. */
 export const fresh = (items = []) => loadBoard({ title: 'T', items });

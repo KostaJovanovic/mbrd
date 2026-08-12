@@ -67,7 +67,7 @@ async function render(src) {
     createTextNode: text => ({ text, isText: true }),
   };
   try {
-    const { renderMarkdown } = await import('../web/assets/js/ui/markdown.js');
+    const { renderMarkdown } = await import('../web/assets/js/ui/markdown.ts');
     const tree = renderMarkdown(src);
     return { tree, html: show(tree) };
   } finally {

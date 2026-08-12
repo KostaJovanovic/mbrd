@@ -15,7 +15,7 @@ import assert from 'node:assert/strict';
 // assets.js' without a query, so a query-busted copy here would be a second,
 // empty registry and every lookup would miss - which looks exactly like the
 // pass this file is trying to prove.
-import { putAsset, clearAssets } from '../web/assets/js/storage/assets.js';
+import { putAsset, clearAssets } from '../web/assets/js/storage/assets.ts';
 
 /** A blob-alike: display.js only reads .type, and putAsset only reads .size. */
 const imageBlob = () => ({ type: 'image/png', size: 1024 });
@@ -62,7 +62,7 @@ function stubImageAPIs() {
 // display.js keeps its cache in module scope, so each test needs its own copy.
 // The asset registry is shared, so it is emptied instead.
 let n = 0;
-const freshDisplay = () => { clearAssets(); return import(`../web/assets/js/canvas/display.js?case=${n++}`); };
+const freshDisplay = () => { clearAssets(); return import(`../web/assets/js/canvas/display.ts?case=${n++}`); };
 
 test('a copy generated across a clear is discarded, not published', async () => {
   const api = stubImageAPIs();

@@ -3,7 +3,7 @@
 //
 // Almost none of this feature is testable: the dwell, the swap along the bar,
 // the grace period and the placement are all pointer behaviour, and the panel
-// itself is ui/menu.js's, tested where it lives. What *is* checkable is the
+// itself is ui/menu.ts's, tested where it lives. What *is* checkable is the
 // wiring - that the table names buttons that exist, that the rows it builds
 // match the catalogues they claim to come from, and that the one behaviour
 // change underneath the feature (a note can now be asked for a colour) left the
@@ -14,9 +14,9 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 
 import { WEB, JS, read } from './helpers.js';
-import { FLYOUTS, arrangeEntries, noteEntries, colourEntries } from '../web/assets/js/ui/flyout.js';
-import { ARRANGEMENTS } from '../web/assets/js/arrange/arrangements.js';
-import { NOTE_TINTS, addNote } from '../web/assets/js/import/drop.js';
+import { FLYOUTS, arrangeEntries, noteEntries, colourEntries } from '../web/assets/js/ui/flyout.ts';
+import { ARRANGEMENTS } from '../web/assets/js/arrange/arrangements.ts';
+import { NOTE_TINTS, addNote } from '../web/assets/js/import/drop.ts';
 import { fresh } from './state-fixtures.js';
 
 const html = read(join(WEB, 'index.html'));
@@ -178,7 +178,7 @@ test('ui/menu.js can draw the two row kinds these lists use', () => {
   // The builders emit `swatch` and `range` entries, and menu.js is what turns
   // them into rows. Nothing else in the app uses either kind yet, so a tidy-up
   // that removed them as dead code would leave the flyouts drawing blank lines.
-  const menu = read(join(JS, 'ui', 'menu.js'));
+  const menu = read(join(JS, 'ui', 'menu.ts'));
   assert.match(menu, /entry\.swatch/, 'the renderer no longer handles a swatch row');
   assert.match(menu, /entry\.range/, 'the renderer no longer handles a range row');
   assert.match(menu, /export function openAnchored/, 'the anchored open has gone');

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { exitKindFor } from '../web/assets/js/canvas/exit-anim.js';
+import { exitKindFor } from '../web/assets/js/canvas/exit-anim.ts';
 
 test('the title card always drops a chip, whatever the whimsy tier', () => {
   for (const w of [0, 1, 2, undefined, '9']) {

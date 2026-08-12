@@ -88,7 +88,7 @@ function fakeIndexedDB({ txOutcome = 'complete', openFailures = 0 } = {}) {
 let n = 0;
 async function freshIdb(fake) {
   globalThis.indexedDB = fake;
-  return import(`../web/assets/js/storage/idb.js?case=${n++}`);
+  return import(`../web/assets/js/storage/idb.ts?case=${n++}`);
 }
 
 test('a write whose transaction aborts after request success still rejects', async () => {

@@ -6,7 +6,7 @@ import {
   releasePointerSafely, resizeHandleAction, shortcutsSuppressed,
   readWheel, resetWheelKind, WHEEL_NOTCH, WHEEL_STREAM_MS,
   carryFloor, drewRectangle, marqueeHit,
-} from '../web/assets/js/canvas/input.js';
+} from '../web/assets/js/canvas/input.ts';
 
 test('double taps match within the touch timing and distance windows', () => {
   const first = { x: 100, y: 200, at: 1_000 };

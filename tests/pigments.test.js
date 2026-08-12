@@ -14,9 +14,9 @@ import assert from 'node:assert/strict';
 import {
   contrast, extractPalette, hex, huesOf, oklch, paletteFor, paletteFromAccent,
   PALETTE_TOKENS,
-} from '../web/assets/js/ui/pigments.js';
-import { TOKENS } from '../web/assets/js/ui/look.js';
-import { safeVars } from '../web/assets/js/ui/look.js';
+} from '../web/assets/js/ui/pigments.ts';
+import { TOKENS } from '../web/assets/js/ui/look.ts';
+import { safeVars } from '../web/assets/js/ui/look.ts';
 
 /** `n` pixels of one colour, as the RGBA a canvas would hand back. */
 function block(hexColour, n = 400) {

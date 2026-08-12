@@ -14,7 +14,7 @@ import { readFile } from 'node:fs/promises';
 import { appCss } from './helpers.js';
 import {
   TABS, SECTIONS, sectionsFor, controlVisible, sectionVisible,
-} from '../web/assets/js/ui/settings-schema.js';
+} from '../web/assets/js/ui/settings-schema.ts';
 
 const DESKTOP = { mobile: false };
 const MOBILE = { mobile: true };
@@ -53,7 +53,7 @@ test('every button names a command that exists', () => {
   // The command surface lives in commands.js, built by createCommands(vp) so it
   // can close over the Viewport without touching a browser global at import
   // time. The object is one indent in, hence the closing brace this matches.
-  return readFile(new URL('../web/assets/js/commands.js', import.meta.url), 'utf8').then(main => {
+  return readFile(new URL('../web/assets/js/commands.ts', import.meta.url), 'utf8').then(main => {
     const block = main.match(/const cmds = \{([\s\S]*?)\n {2}\};/);
     assert.ok(block, 'the cmds object moved - this test cannot find it');
     const camel = s => s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
@@ -158,7 +158,7 @@ test('the four demoted controls are below a fold, not gone', () => {
   for (const id of ['opt-palette-sources']) {
     assert.equal(byId(id).advanced, true, `${id} should be inside the fold`);
   }
-  // The three that live in ui/appearance.js's own CONTROLS list are checked
+  // The three that live in ui/appearance.ts's own CONTROLS list are checked
   // there - here we only hold the host they are built into.
   const host = byId('appearance-advanced-vars');
   assert.equal(host.type, 'slot');
@@ -187,16 +187,16 @@ test('the palette source dial has one stop past its highest count', async () => 
   // shapes the element, ui/appearance.js rewrites `max` from MAX_SOURCES on the
   // way past. They have to agree, or the top stop is either unreachable or a
   // count nothing will honour.
-  const { MAX_SOURCES } = await import('../web/assets/js/ui/pigments.js');
+  const { MAX_SOURCES } = await import('../web/assets/js/ui/pigments.ts');
   assert.equal(byId('opt-palette-sources').max, MAX_SOURCES + 1);
   // The stop is *defined* by the look model and *consumed* by the panel, which
   // are two files since the appearance split - and the panel reaches it through
   // the injected dependency bag rather than by import, which is the seam.
   const model = await readFile(
-    new URL('../web/assets/js/ui/appearance.js', import.meta.url), 'utf8');
+    new URL('../web/assets/js/ui/appearance.ts', import.meta.url), 'utf8');
   assert.match(model, /ALL_SOURCES_STOP = MAX_SOURCES \+ 1/);
   const controls = await readFile(
-    new URL('../web/assets/js/ui/appearance-controls.js', import.meta.url), 'utf8');
+    new URL('../web/assets/js/ui/appearance-controls.ts', import.meta.url), 'utf8');
   assert.match(controls, /n >= d\.ALL_SOURCES_STOP \? 0 : n/, 'the top stop stores zero');
 });
 
@@ -216,7 +216,7 @@ test('the palette menu carries Dynamic, and it is the only way to ask for it', a
   // this table is data with no panel imports, ui/appearance-controls.js owns
   // what the menu does with it. Same bargain as the source dial's top stop.
   const controls = await readFile(
-    new URL('../web/assets/js/ui/appearance-controls.js', import.meta.url), 'utf8');
+    new URL('../web/assets/js/ui/appearance-controls.ts', import.meta.url), 'utf8');
   const owned = controls.match(/DYNAMIC = '([a-z0-9-]+)'/)[1];
   assert.equal(options[0].value, owned, 'the menu offers a value the panel answers to');
   // Never a palette name: it is not written to look.palette and no [data-palette]
@@ -239,7 +239,7 @@ test('the whimsy stops keep the id the stylesheet sets them by', async () => {
 });
 
 test('quality reads the live flags rather than a copy', async () => {
-  const { quality, initQuality, setQualityLevel } = await import('../web/assets/js/quality.js');
+  const { quality, initQuality, setQualityLevel } = await import('../web/assets/js/quality.ts');
   initQuality(null);
   assert.equal(byId('q-shadows').get(), quality.shadows);
   setQualityLevel('light');

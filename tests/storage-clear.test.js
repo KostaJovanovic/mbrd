@@ -48,7 +48,7 @@ globalThis.indexedDB = {
   },
 };
 
-const { clearSession } = await import('../web/assets/js/storage/storage.js');
+const { clearSession } = await import('../web/assets/js/storage/storage.ts');
 
 test('clearSession rejects when the wipe transaction does not commit', async () => {
   outcome = 'abort';

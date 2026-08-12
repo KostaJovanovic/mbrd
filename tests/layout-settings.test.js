@@ -10,7 +10,7 @@ import {
   mergeAppearance,
   splitAppearance,
   whimsyControlsSnap,
-} from '../web/assets/js/layout-settings.js';
+} from '../web/assets/js/layout-settings.ts';
 import {
   board,
   loadBoard,
@@ -19,7 +19,7 @@ import {
   setBoardMode,
   setSetting,
   serializeBoard,
-} from '../web/assets/js/state.js';
+} from '../web/assets/js/state.ts';
 import { hash } from './helpers.js';
 
 const desktopFontHash = hash('desktop-font');

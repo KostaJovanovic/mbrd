@@ -1,5 +1,5 @@
 /**
- * Generate web/assets/js/import/formats.js from the sibling file-analyser repo.
+ * Generate web/assets/js/import/formats.ts from the sibling file-analyser repo.
  *
  *   node tools/gen-formats.mjs [path-to-file-analyser]
  *
@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SIBLING = process.argv[2] || path.resolve(HERE, '..', '..', 'file-analyser');
 const SOURCE = path.join(SIBLING, 'web', 'assets', 'js', 'core', 'formats.js');
-const OUT = path.resolve(HERE, '..', 'web', 'assets', 'js', 'import', 'formats.js');
+const OUT = path.resolve(HERE, '..', 'web', 'assets', 'js', 'import', 'formats.ts');
 
 if (!fs.existsSync(SOURCE)) {
   console.error(`[gen-formats] catalog not found at ${SOURCE}`);

@@ -13,8 +13,8 @@ import assert from 'node:assert/strict';
 import {
   board, addItems, undo, byId, setSetting, snapshotGeom, commitGeom,
   recheckBoardGeometry, setBoardMode,
-} from '../web/assets/js/state.js';
-import { CELL_GAP } from '../web/assets/js/geometry.js';
+} from '../web/assets/js/state.ts';
+import { CELL_GAP } from '../web/assets/js/geometry.ts';
 import { fresh } from './state-fixtures.js';
 
 beforeEach(() => {

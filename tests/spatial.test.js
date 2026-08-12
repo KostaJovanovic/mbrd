@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 
 import {
   rebuild, update, remove, queryRect,
-} from '../web/assets/js/canvas/spatial.js';
+} from '../web/assets/js/canvas/spatial.ts';
 
 const box = (id, x, y, w, h) => ({ id, x, y, w, h });
 

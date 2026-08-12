@@ -18,10 +18,10 @@ import assert from 'node:assert/strict';
 
 import {
   board, byId, addItems, undo, redo, serializeBoard, setSwatchHex, setBoardMode,
-} from '../web/assets/js/state.js';
+} from '../web/assets/js/state.ts';
 import {
   swatchHex, SWATCH_DEFAULT, defaultSize, hasRenderer,
-} from '../web/assets/js/canvas/renderers.js';
+} from '../web/assets/js/canvas/renderers.ts';
 import { fresh } from './state-fixtures.js';
 
 beforeEach(() => {

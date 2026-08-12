@@ -15,7 +15,7 @@ import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { FADE_FULL, FADE_GONE, fadeFor } from '../web/assets/js/canvas/grain.js';
+import { FADE_FULL, FADE_GONE, fadeFor } from '../web/assets/js/canvas/grain.ts';
 import { appCss } from './helpers.js';
 
 test('the band is a fade out, not a fade in', () => {
@@ -72,7 +72,7 @@ test('everything wearing the stock reads one fade, from the root', async () => {
   // two cannot both inherit from, and the write goes to the root instead. Miss
   // this and a zoomed-out board keeps its texture in exactly the regions it has
   // given it up everywhere else.
-  const src = await readFile(new URL('../web/assets/js/canvas/grain.js', import.meta.url), 'utf8');
+  const src = await readFile(new URL('../web/assets/js/canvas/grain.ts', import.meta.url), 'utf8');
   assert.match(src, /document\.documentElement\.style\.setProperty\('--grain-fade', f\)/);
   // The screen-space pair stays on the layer wearing it; only the fade moved.
   assert.match(src, /surface\.style\.setProperty\('--grain-tile', size\)/);

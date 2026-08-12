@@ -22,7 +22,9 @@
   "ignorePatterns": [
     "node_modules",
     "graphify-out",
-    "web/assets/js/import/formats.js"
+    "web/assets/js/import/formats.ts",
+    "web/assets/app.js",
+    "web/assets/app.js.map"
   ],
   "rules": {
     "no-undef": "error",

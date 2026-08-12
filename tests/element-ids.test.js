@@ -138,7 +138,7 @@ const BUILD_FORMS = [
   /\bstopsId:\s*'([\w-]+)'/g,
 ];
 
-const built = walk(JS, ['.js']).flatMap(rel => {
+const built = walk(JS, ['.js', '.ts']).flatMap(rel => {
   const src = read(join(WEB, rel));
   return BUILD_FORMS.flatMap(re => [...src.matchAll(re)].map(m => [m[1], rel]));
 });

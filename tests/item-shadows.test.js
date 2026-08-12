@@ -9,7 +9,7 @@ const root = new URL('../', import.meta.url);
 test('board item shadows are mirrored into one layer below every item', async () => {
   const [html, items] = await Promise.all([
     readFile(new URL('web/index.html', root), 'utf8'),
-    readFile(new URL('web/assets/js/canvas/items.js', root), 'utf8'),
+    readFile(new URL('web/assets/js/canvas/items.ts', root), 'utf8'),
   ]);
   const css = appCss();
 
@@ -29,7 +29,7 @@ test('the fence band is sunk below the underlay its cards cast onto', async () =
   // inside it, and the region read as a page with its cards printed flat on it.
   // Ground goes under the shadows. Both underlays refuse the pointer, which is
   // what makes passing beneath them free.
-  const items = await readFile(new URL('web/assets/js/canvas/items.js', root), 'utf8');
+  const items = await readFile(new URL('web/assets/js/canvas/items.ts', root), 'utf8');
   const css = appCss();
   assert.match(css, /#web\s*\{[^}]*pointer-events:\s*none;/s);
   assert.match(css, /#item-shadows\s*\{[^}]*pointer-events:\s*none;/s);

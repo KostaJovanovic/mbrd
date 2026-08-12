@@ -12,8 +12,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { writeZip } from '../web/assets/js/storage/zip.js';
-import { hasBakedPreview, bakedPreview } from '../web/assets/js/import/document.js';
+import { writeZip } from '../web/assets/js/storage/zip.ts';
+import { hasBakedPreview, bakedPreview } from '../web/assets/js/import/document.ts';
 
 // The two signatures the module will accept, padded past its 512-byte floor so
 // a real preview is not rejected for being small. Neither has to decode - the

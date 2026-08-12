@@ -25,8 +25,8 @@ import { WEB, JS, read, walk } from './helpers.js';
 
 const sprite = read(join(WEB, 'assets', 'icons.svg'));
 const html = read(join(WEB, 'index.html'));
-const menu = read(join(JS, 'ui', 'menu.js'));
-const fencePrompt = read(join(JS, 'ui', 'fence-prompt.js'));
+const menu = read(join(JS, 'ui', 'menu.ts'));
+const fencePrompt = read(join(JS, 'ui', 'fence-prompt.ts'));
 
 /** Every id the sprite defines. */
 const defined = new Set([...sprite.matchAll(/<symbol\s+id="([^"]+)"/g)].map(m => m[1]));
@@ -48,10 +48,10 @@ const defined = new Set([...sprite.matchAll(/<symbol\s+id="([^"]+)"/g)].map(m =>
  */
 const referenced = [
   ...[...html.matchAll(/href="assets\/icons\.svg#([^"]+)"/g)].map(m => [m[1], 'index.html']),
-  ...[...menu.matchAll(/icon: '([^']+)'/g)].map(m => [m[1], 'ui/menu.js']),
-  ...[...menu.matchAll(/icon\('([^']+)'/g)].map(m => [m[1], 'ui/menu.js']),
-  ...[...fencePrompt.matchAll(/icon\('([^']+)'/g)].map(m => [m[1], 'ui/fence-prompt.js']),
-  ...walk(JS, ['.js']).flatMap(rel => [...read(join(WEB, rel))
+  ...[...menu.matchAll(/icon: '([^']+)'/g)].map(m => [m[1], 'ui/menu.ts']),
+  ...[...menu.matchAll(/icon\('([^']+)'/g)].map(m => [m[1], 'ui/menu.ts']),
+  ...[...fencePrompt.matchAll(/icon\('([^']+)'/g)].map(m => [m[1], 'ui/fence-prompt.ts']),
+  ...walk(JS, ['.js', '.ts']).flatMap(rel => [...read(join(WEB, rel))
     .matchAll(/href="assets\/icons\.svg#([^"]+)"/g)].map(m => [m[1], rel])),
 ];
 

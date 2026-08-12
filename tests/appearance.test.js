@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 
-import { TOKENS, safeVars } from '../web/assets/js/ui/look.js';
+import { TOKENS, safeVars } from '../web/assets/js/ui/look.ts';
 import { WEB, read } from './helpers.js';
 
 // ---------------------------------------------------------------------------
@@ -108,7 +108,7 @@ test('the pre-paint anti-flash guard carries look.js\'s grammar and function all
   // list by hand; this holds the two together, like the dev-host regex does for
   // sw.js and util.js.
   const html = read(join(WEB, 'index.html'));
-  const look = read(join(WEB, 'assets', 'js', 'ui', 'look.js'));
+  const look = read(join(WEB, 'assets', 'js', 'ui', 'look.ts'));
 
   const SAFE_VALUE_SRC = "/^[-a-z0-9#%.,()/+*_'\" ]{1,160}$/i";
   assert.ok(look.includes(SAFE_VALUE_SRC), 'look.js SAFE_VALUE moved - update the anti-flash guard');
@@ -126,7 +126,7 @@ test('the pre-paint anti-flash guard carries look.js\'s grammar and function all
 });
 
 test('the appearance panel no longer builds a density slider', () => {
-  const source = read(join(WEB, 'assets', 'js', 'ui', 'appearance.js'));
+  const source = read(join(WEB, 'assets', 'js', 'ui', 'appearance.ts'));
   assert.ok(!source.includes("label: 'Panel density'"));
   assert.ok(source.includes("label: 'Panel width'"));
 });
@@ -143,7 +143,7 @@ test('the palette compares pictures by hash, without minting an object URL', () 
   // them necessarily rendered - which is the laziness storage/assets.js exists
   // to preserve. Hashes are identity enough, and the URLs are resolved for the
   // handful actually read.
-  const source = read(join(WEB, 'assets', 'js', 'ui', 'appearance.js'));
+  const source = read(join(WEB, 'assets', 'js', 'ui', 'appearance.ts'));
   // Comments stripped: this one names assetURL() to explain why it is not called.
   const code = line => line.replace(/\/\/.*$/, '');
   const walk = source.match(/function pictureHashes\(\)[\s\S]*?\n}/)[0]
@@ -168,7 +168,7 @@ test('the palette compares pictures by hash, without minting an object URL', () 
 // time and cannot be loaded in Node.
 
 test('the board only ever colours itself through the three-picture gate', () => {
-  const source = read(join(WEB, 'assets', 'js', 'ui', 'appearance.js'));
+  const source = read(join(WEB, 'assets', 'js', 'ui', 'appearance.ts'));
   const strip = block => block.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
 
   // Every unasked-for run goes through autoRecolour(), which is the only thing
@@ -193,7 +193,7 @@ test('the board only ever colours itself through the three-picture gate', () => 
 });
 
 test('Dynamic is a state the menu reads, not a flag it remembers', () => {
-  const source = read(join(WEB, 'assets', 'js', 'ui', 'appearance.js'));
+  const source = read(join(WEB, 'assets', 'js', 'ui', 'appearance.ts'));
   // `auto` is permission and `derived` is provenance; neither is "the board is
   // wearing its pictures' colours right now", which is what the menu shows.
   // A look carried in from an older version has pigments and no `derived` flag,
@@ -204,7 +204,7 @@ test('Dynamic is a state the menu reads, not a flag it remembers', () => {
   // And the entry never becomes a palette name: nothing writes it to
   // `current.palette`, so no board can save a data-palette no stylesheet answers
   // to and open in a look nobody can name.
-  const controls = read(join(WEB, 'assets', 'js', 'ui', 'appearance-controls.js'));
+  const controls = read(join(WEB, 'assets', 'js', 'ui', 'appearance-controls.ts'));
   const wire = controls.match(/export function wirePalette\(\)[\s\S]*?\n}\n/)[0];
   assert.ok(!wire.includes('.palette ='), 'the menu sets no palette of its own');
   assert.match(wire, /sel\.value === DYNAMIC \? d\.goDynamic\(\) : d\.setPalette\(sel\.value\)|if \(sel\.value === DYNAMIC\) d\.goDynamic\(\);\s*\n\s*else d\.setPalette\(sel\.value\)/);

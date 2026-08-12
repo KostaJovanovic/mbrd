@@ -10,8 +10,8 @@ import assert from 'node:assert/strict';
 
 import {
   youTubeId, spotifyRef, embedFor, iframeURL,
-} from '../web/assets/js/canvas/embed.js';
-import { linkURL } from '../web/assets/js/canvas/renderers.js';
+} from '../web/assets/js/canvas/embed.ts';
+import { linkURL } from '../web/assets/js/canvas/renderers.ts';
 
 const id = s => youTubeId(new URL(s));
 const sp = s => spotifyRef(new URL(s));
@@ -190,7 +190,7 @@ test('the embed module fetches nothing at import time', async () => {
   // had pressed anything - so the source is checked for the ways that could
   // happen rather than trusted to stay clean.
   const { readFileSync } = await import('node:fs');
-  const src = readFileSync(new URL('../web/assets/js/canvas/embed.js', import.meta.url), 'utf8');
+  const src = readFileSync(new URL('../web/assets/js/canvas/embed.ts', import.meta.url), 'utf8');
   for (const bad of ['fetch(', 'XMLHttpRequest', 'new Image', 'importScripts', 'navigator.sendBeacon']) {
     assert.ok(!src.includes(bad), `embed.js should not contain ${bad}`);
   }

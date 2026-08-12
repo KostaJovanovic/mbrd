@@ -10,9 +10,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { packBoard, unpackBoard } from '../web/assets/js/storage/mbrd.js';
-import { putAsset, clearAssets } from '../web/assets/js/storage/assets.js';
-import { readZip } from '../web/assets/js/storage/zip.js';
+import { packBoard, unpackBoard } from '../web/assets/js/storage/mbrd.ts';
+import { putAsset, clearAssets } from '../web/assets/js/storage/assets.ts';
+import { readZip } from '../web/assets/js/storage/zip.ts';
 import { item, hash, realHash } from './helpers.js';
 
 const enc = new TextEncoder();
@@ -179,7 +179,7 @@ test('a hand-edited note file wins over board.json', async () => {
   const files = await readZip(blob);
   const noteName = [...files.keys()].find(n => n.startsWith('notes/'));
 
-  const { writeZip } = await import('../web/assets/js/storage/zip.js');
+  const { writeZip } = await import('../web/assets/js/storage/zip.ts');
   const edited = await writeZip([...files].map(([name, data]) => ({
     name,
     data: name === noteName ? enc.encode('# edited by hand\n\nwith a body\n') : data,
@@ -214,7 +214,7 @@ test('a hand-edited note file wins over meta.rich as well', async () => {
   const files = await readZip(blob);
   const noteName = [...files.keys()].find(n => n.startsWith('notes/'));
 
-  const { writeZip } = await import('../web/assets/js/storage/zip.js');
+  const { writeZip } = await import('../web/assets/js/storage/zip.ts');
   const edited = await writeZip([...files].map(([name, data]) => ({
     name,
     data: name === noteName ? enc.encode('# edited by hand\n\nwith a body\n') : data,
@@ -310,7 +310,7 @@ test('an unreadable waveform file is ignored, not fatal', async () => {
   const board = boardOf([audioCard('i1', id, { peaks: peaks(256) })]);
   const files = await readZip((await packBoard(board)).blob);
 
-  const { writeZip } = await import('../web/assets/js/storage/zip.js');
+  const { writeZip } = await import('../web/assets/js/storage/zip.ts');
   const broken = await writeZip([...files].map(([name, data]) => ({
     name,
     data: name === `waveforms/${id}.json` ? enc.encode('{"res": 256, "peaks": [1, 2,') : data,
@@ -327,7 +327,7 @@ test('an unreadable waveform file is ignored, not fatal', async () => {
 // ---------------------------------------------------------------------------
 
 test('a ZIP with no board.json is refused', async () => {
-  const { writeZip } = await import('../web/assets/js/storage/zip.js');
+  const { writeZip } = await import('../web/assets/js/storage/zip.ts');
   const notABoard = await writeZip([{ name: 'hello.txt', data: enc.encode('hi'), compress: false }]);
   await assert.rejects(() => unpackBoard(notABoard), /board\.json/);
 });
@@ -343,7 +343,7 @@ test('a ZIP with no board.json is refused', async () => {
 
 /** A .mbrd built by hand, so the entry names can be anything. */
 async function archiveOf(entries) {
-  const { writeZip } = await import('../web/assets/js/storage/zip.js');
+  const { writeZip } = await import('../web/assets/js/storage/zip.ts');
   return writeZip(entries.map(e => ({ compress: false, ...e })));
 }
 
@@ -404,7 +404,7 @@ test('a note whose id could not be a filename still keeps its text', async () =>
 });
 
 test('a board written by another format is refused', async () => {
-  const { writeZip } = await import('../web/assets/js/storage/zip.js');
+  const { writeZip } = await import('../web/assets/js/storage/zip.ts');
   const foreign = await writeZip([
     { name: 'manifest.json', data: enc.encode('{"format":"sketch","version":1}'), compress: false },
     { name: 'board.json', data: enc.encode('{"items":[]}'), compress: false },

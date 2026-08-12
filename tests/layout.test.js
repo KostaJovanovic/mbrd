@@ -11,13 +11,13 @@ import assert from 'node:assert/strict';
 import {
   arrange, ARRANGEMENTS,
   mobileOrder, mobileArrangement, MOBILE_ARRANGEMENTS, MOBILE_DEFAULT,
-} from '../web/assets/js/arrange/arrangements.js';
-import { latticeBox } from '../web/assets/js/geometry.js';
+} from '../web/assets/js/arrange/arrangements.ts';
+import { latticeBox } from '../web/assets/js/geometry.ts';
 import {
   gridStep, boardGridStep, inkBox, MOBILE_GRID_EDGE_CLEARANCE,
   MIN_PX, MAX_PX, MIN_PX_TOUCH, MAX_PX_TOUCH,
-} from '../web/assets/js/canvas/grid.js';
-import { farZoom, onSmallScreen, stillZoom, thumbZoom, MIN_ZOOM, MAX_ZOOM } from '../web/assets/js/canvas/viewport.js';
+} from '../web/assets/js/canvas/grid.ts';
+import { farZoom, onSmallScreen, stillZoom, thumbZoom, MIN_ZOOM, MAX_ZOOM } from '../web/assets/js/canvas/viewport.ts';
 import { item } from './helpers.js';
 
 const items = n => Array.from({ length: n }, (_, i) => item({ id: `i${i}`, w: 100, h: 80 }));

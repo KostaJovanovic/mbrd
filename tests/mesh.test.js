@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import {
   parseSTL, parseOBJ, parseGLB, parseMesh, parseMTL, applyMaterials,
   defaultUpAxis, meshKind, MeshError, MAX_TRIANGLES, MAX_ELEMENTS,
-} from '../web/assets/js/mesh.js';
+} from '../web/assets/js/mesh.ts';
 
 // A unit triangle in the z = 0 plane, wound anticlockwise so its normal is +z.
 const TRI = {

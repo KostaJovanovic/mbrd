@@ -18,10 +18,10 @@ import {
   stuckTo, travelling, snapshotGeom, applyGeom, commitGeom, undo,
   setBoardMode, raiseSelection, hasContent, ensureGhostCards, hasGhosts,
   mobileBoardWidth, baseStep, visualStackOrder,
-} from '../web/assets/js/state.js';
-import { mobileRuns, fenceBox, nextFenceName } from '../web/assets/js/fences.js';
-import { sharedFence } from '../web/assets/js/commands.js';
-import { itemBounds } from '../web/assets/js/geometry.js';
+} from '../web/assets/js/state.ts';
+import { mobileRuns, fenceBox, nextFenceName } from '../web/assets/js/fences.ts';
+import { sharedFence } from '../web/assets/js/commands.ts';
+import { itemBounds } from '../web/assets/js/geometry.ts';
 import { fresh, note, photo, fence } from './state-fixtures.js';
 
 beforeEach(() => {
