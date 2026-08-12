@@ -49,9 +49,19 @@ committed module and both Python tools, which is the catch for a syntax error in
 a module no test imports — but it catches it after the push, so running them
 here is still faster than finding out from a red run.
 
-There is no bundler, no build step and no runtime dependency. The browser loads
-the ES modules under `web/` directly — an edit is one refresh away.
-`package.json` exists only to run the tests; nothing in `tests/` is served.
+There is no runtime dependency, and nothing TypeScript reaches the browser. But
+there **is** a build step now: the app is written in TypeScript, a browser
+cannot fetch a `.ts` module, and what `index.html` loads is `assets/app.js` —
+one bundle esbuild writes. So an edit is `npm run dev` (esbuild watch) and a
+refresh, not a refresh alone. The sources still ship beside the bundle; no
+source map does. Nothing in `tests/` is served.
+
+`npm test` still needs no install, and that is load-bearing rather than
+incidental: Node strips types natively from 22.18, which is why `engines` says
+22.18 and not 22, and why `erasableSyntaxOnly` is on in `tsconfig.json`. An
+`enum`, a `namespace` or a parameter property would make the whole suite
+unrunnable without a loader — tsc refuses them first, so that stays a type
+error rather than becoming a broken runner.
 
 ## Things worth saying twice
 
