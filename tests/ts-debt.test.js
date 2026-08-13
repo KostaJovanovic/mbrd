@@ -29,10 +29,17 @@ import { join } from 'node:path';
  * How many modules are still carried unchecked.
  *
  * This number may be lowered and never raised. It started at 103 of 105 on the
- * commit that renamed the tree; the two left are canvas/input.ts and
- * canvas/web.ts, the two largest and most stateful modules in the codebase.
+ * commit that renamed the tree and it is 0: every module in web/assets/js is
+ * checked under strict, so `npm run typecheck` now means what it says about all
+ * of them rather than about everything except a list.
+ *
+ * Zero is the interesting value, because from here this file stops being a
+ * ratchet and becomes a plain guard. The first test below now reads "no module
+ * may carry @ts-nocheck" with no number left to argue about, so a pragma cannot
+ * be added quietly to get a change through - it fails the suite. That is what
+ * the counting was for.
  */
-const CEILING = 2;
+const CEILING = 0;
 
 const unchecked = walk(JS, ['.ts'])
   .filter(rel => read(join(WEB, rel)).startsWith('// @ts-nocheck'));
