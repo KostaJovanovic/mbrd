@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Right-click menu - and, through openAnchored(), the renderer every other menu
 // in the app is drawn by.
 //
@@ -47,18 +39,162 @@
 // shortcut to the same module for the same reason.
 import { canRenameItem, editItemName } from '../canvas/items.ts';
 import { STICKER_TINT_NAMES } from '../stickers/catalogue.ts';
+import type { ConnMeta, ConnColor, ConnWeight } from '../board-model.ts';
+import type { Point } from '../geometry.ts';
+import type { Viewport } from '../canvas/viewport.ts';
 
-let node = null;
-let vp = null;
-let cmds = null;
+/**
+ * A slider row - see rangeRow(). `get` and `set` are the dial's two ends, so the
+ * value lives wherever it already lived rather than in the menu.
+ */
+export type MenuRange = {
+  min: number;
+  max: number;
+  step: number;
+  unit?: string;
+  /**
+   * `unknown` for the reason `check` below is: what a dial reads is a board
+   * setting, and getSetting() knowing that a key can be read is not knowing what
+   * came back. rangeRow() only ever puts it through String(), which is the whole
+   * of what a slider's starting position is.
+   */
+  get: () => unknown;
+  set: (value: number) => void;
+};
+
+/**
+ * One row, as every builder in this file and every flyout in ui/flyout.ts writes
+ * one. Flat rather than a union of the five kinds render() actually draws, and
+ * that is a statement about how the rows are written: `sub` is handed a ternary
+ * on the one row that only has children in one case, and a discriminated union
+ * would refuse the shape the menu is easiest to read as.
+ *
+ * `check` is `unknown` because the ticks come from settings - getSetting() gives
+ * back a board setting and knowing that a key can be read is not knowing what
+ * came back. render() only ever asks whether it is present and whether it is
+ * truthy, which is the whole of what a tick is.
+ */
+export type MenuEntry = {
+  label?: string;
+  /** a <symbol> in assets/icons.svg, by name */
+  icon?: string;
+  accel?: string;
+  check?: unknown;
+  hidden?: boolean;
+  danger?: boolean;
+  sep?: boolean;
+  /** a colour, drawn in the icon column instead of an icon */
+  swatch?: string;
+  /** a child menu, opened in place */
+  sub?: MenuEntry[];
+  /** where the Back row goes - the parent menu it was drilled into from */
+  to?: MenuEntry[];
+  range?: MenuRange;
+  action?: () => void;
+};
+
+/**
+ * What a panel is hung off: the three edges of an anchor's box that render()
+ * actually reads. A DOMRect satisfies it, and so does the box ui/flyout.ts
+ * builds by hand out of the button's left and the bar's bottom - which is the
+ * reason this is the three numbers rather than the rectangle.
+ */
+export type MenuAnchor = { left: number; top: number; bottom: number };
+
+/** What openAnchored() and render() take beyond the point they are drawn at. */
+type MenuOpts = {
+  label?: string;
+  focus?: boolean;
+  /** hung off a button rather than dropped at a cursor - see render() */
+  anchor?: MenuAnchor;
+  flyout?: boolean;
+};
+
+/**
+ * What this menu asks of the command surface, and nothing else.
+ *
+ * Named here rather than borrowed from commands.ts for the reason
+ * FlyoutCommands states in ui/flyout.ts: that module imports this one, so the
+ * arrow may only go one way - which is also why `cmds` is handed in by
+ * initMenu() rather than imported.
+ */
+export interface MenuCommands {
+  // The canvas menu
+  addNoteAt: (at: Point | null) => unknown;
+  addFiles: () => unknown;
+  find: () => unknown;
+  selectAll: () => unknown;
+  rearrange: () => unknown;
+  rearrangeFence: (id: string) => unknown;
+  reload: () => unknown;
+  fit: () => unknown;
+  recenter: () => unknown;
+  fenceUnder: (at: Point) => string | null;
+  getSetting: (key: 'snap' | 'grid') => unknown;
+  toggleSetting: (key: 'snap' | 'grid') => unknown;
+  // One card, or the selection it is part of
+  isTitleCard: (id: string) => boolean;
+  isFenceItem: (id: string) => boolean;
+  canEditNote: (id: string) => boolean;
+  canCoverItem: (id: string) => boolean;
+  canClearCover: (id: string) => boolean;
+  canSetFit: (id: string) => boolean;
+  canFlipUpAxis: (id: string) => boolean;
+  canRotateModel: (id: string) => boolean;
+  canExtractSwatches: (id: string) => boolean;
+  canTintSticker: (id: string) => boolean;
+  canViewItem: (id: string) => boolean;
+  canUnstick: () => boolean;
+  selectionHasStackOverlap: () => boolean;
+  itemFit: (id: string) => string;
+  stickerTintOf: (id: string) => number;
+  openViewer: (id: string) => unknown;
+  editNote: (id: string) => unknown;
+  setCover: (id: string) => unknown;
+  clearCover: (id: string) => unknown;
+  setItemFit: (id: string, fit: string) => unknown;
+  flipUpAxis: (id: string) => unknown;
+  extractSwatches: (id: string) => unknown;
+  rotateModel: (id: string) => unknown;
+  setStickerTint: (id: string, tint: number) => unknown;
+  raise: () => unknown;
+  lower: () => unknown;
+  unstick: () => unknown;
+  resetSize: () => unknown;
+  rearrangeSelection: () => unknown;
+  fenceSelection: () => unknown;
+  alignSelection: (edge: string) => unknown;
+  distributeSelection: (axis: 'x' | 'y') => unknown;
+  duplicate: () => unknown;
+  zoomToSelection: () => unknown;
+  deleteSelection: () => unknown;
+  // The title card
+  editTitle: () => unknown;
+  resetTitlePosition: () => unknown;
+  // A line between two cards
+  connectionUnder: (at: Point) => { a: string, b: string } | null;
+  connectionStyle: (a: string, b: string) => ConnMeta | null;
+  setConnectionStyle: (a: string, b: string, patch?: object | null) => unknown;
+  editConnectionLabel: (a: string, b: string) => unknown;
+  clearConnectionLabel: (a: string, b: string) => unknown;
+  removeConnection: (a: string, b: string) => unknown;
+}
+
+let node: HTMLElement | null = null;
+let vp: Viewport | null = null;
+let cmds: MenuCommands | null = null;
 // Whatever had the keyboard when the menu opened, so it can be given back.
-let opener = null;
+// document.activeElement answers Element; what holds the keyboard on this page
+// is a button, a field or the board, all of them HTMLElements - and focus() is
+// the only thing ever asked of it, which is why the three assignments below say
+// so rather than testing for it.
+let opener: HTMLElement | null = null;
 // The anchor the menu was opened at, kept so a drill-down submenu re-renders in
 // the same place rather than jumping to wherever the pointer has drifted. The
 // options go with it for the same reason: a fold opened inside a flyout must
 // still hang below the bar and must still not grab the keyboard.
 let lastX = 0, lastY = 0;
-let lastOpts = {};
+let lastOpts: MenuOpts = {};
 
 /**
  * Told after every close, whoever caused it.
@@ -69,10 +205,16 @@ let lastOpts = {};
  * right-click somewhere else. A second subscriber would mean this module
  * growing a subscription list for an audience of one.
  */
-let onClose = null;
-export function setMenuCloseHook(fn) { onClose = fn; }
+let onClose: (() => void) | null = null;
+export function setMenuCloseHook(fn: (() => void) | null) { onClose = fn; }
 
-export function initMenu(viewport, commands) {
+// `vp` and `cmds` are read with `!` throughout: initMenu() is called from
+// main.ts before anything can open a menu, so an absent one is a broken build
+// rather than a state to paint around - the reading ui/hud.ts states at length.
+// The `e.target as Node | null` below is the same cast ui/search.ts and
+// ui/fence-prompt.ts make in this exact close-on-outside listener: contains()
+// takes a Node or null and is only being asked whether the press was inside.
+export function initMenu(viewport: Viewport, commands: MenuCommands) {
   vp = viewport;
   cmds = commands;
 
@@ -81,16 +223,16 @@ export function initMenu(viewport, commands) {
   // the window scrolls (see render), and closing on the wheel that scrolls it
   // would make the entries past the fold unreachable with a mouse.
   addEventListener('pointerdown', e => {
-    if (node && !node.contains(e.target)) close();
+    if (node && !node.contains(e.target as Node | null)) close();
   }, true);
   addEventListener('wheel', e => {
-    if (node && !node.contains(e.target)) close();
+    if (node && !node.contains(e.target as Node | null)) close();
   }, { passive: true, capture: true });
   // Capture, because a scroll does not bubble. The board itself does not
   // scroll today, so this is the surrounding page moving under a menu that is
   // pinned to the window - the anchor point would be a lie afterwards.
   addEventListener('scroll', e => {
-    if (node && !node.contains(e.target)) close();
+    if (node && !node.contains(e.target as Node | null)) close();
   }, true);
   addEventListener('resize', close);
   addEventListener('blur', close);
@@ -135,9 +277,10 @@ export function close() {
  * whatever was being typed. The keyboard route (ArrowDown on the button) passes
  * true and gets the ordinary behaviour.
  */
-export function openAnchored(rect, entries, { label = 'Menu', focus = false } = {}) {
+export function openAnchored(rect: MenuAnchor, entries: MenuEntry[],
+  { label = 'Menu', focus = false }: { label?: string, focus?: boolean } = {}) {
   close();
-  opener = document.activeElement;
+  opener = document.activeElement as HTMLElement | null;
   render(entries, rect.left, rect.bottom, { anchor: rect, label, focus, flyout: true });
 }
 
@@ -150,11 +293,12 @@ export function openAnchored(rect, entries, { label = 'Menu', focus = false } = 
  * anything that is not a tile opens nothing at all - the canvas menu below is
  * half zoom and half board-wide placement, and the Feed can honour neither.
  */
-export function openContextMenu(clientX, clientY, itemId, selectionSize, { mobile = false } = {}) {
+export function openContextMenu(clientX: number, clientY: number, itemId: string | null,
+  selectionSize: number, { mobile = false }: { mobile?: boolean } = {}) {
   if (mobile) {
     if (!itemId) return;
     close();
-    opener = document.activeElement;
+    opener = document.activeElement as HTMLElement | null;
     // No `at`: the only row that reads it is "Add a note here", and that is one
     // of the rows the Feed drops. The wall has no *here* to add anything at.
     render(itemEntries(itemId, 1, null, true), clientX, clientY);
@@ -164,19 +308,21 @@ export function openContextMenu(clientX, clientY, itemId, selectionSize, { mobil
   // has the old menu holding focus, and close() has just handed it back to
   // whatever owned it first. That is the element this menu owes it to as well.
   close();
-  opener = document.activeElement;
-  const at = vp.toWorld(clientX, clientY);
+  opener = document.activeElement as HTMLElement | null;
+  // Annotated rather than inferred: canvas/viewport.ts is still on the migration
+  // pragma, so toWorld() answers `any` until it is not.
+  const at: Point = vp!.toWorld(clientX, clientY);
   // A right-click that lands on a connection line, on bare board, is about that
   // line: open its editor directly rather than a fold down the board menu. Only
   // when nothing else is under the cursor - over a card the press is the card's.
-  const conn = !itemId ? cmds.connectionUnder(at) : null;
+  const conn = !itemId ? cmds!.connectionUnder(at) : null;
   const entries = conn ? connectionEntries(conn)
     : !itemId ? canvasEntries(at)
     // The title card is a singleton with its own short menu - never the group
     // menu's copy/duplicate/cover/stack actions. Only when it is the whole
     // selection; right-clicked inside a larger group it takes the group menu,
     // where it is already excluded from copy and duplicate (see itemsIn).
-    : selectionSize <= 1 && cmds.isTitleCard(itemId) ? titleEntries(itemId, at)
+    : selectionSize <= 1 && cmds!.isTitleCard(itemId) ? titleEntries(itemId, at)
     : itemEntries(itemId, selectionSize, at);
   render(entries, clientX, clientY);
 }
@@ -188,15 +334,15 @@ export function openContextMenu(clientX, clientY, itemId, selectionSize, { mobil
  * (it is a movable singleton); Delete hides it, and the bin's restore button
  * brings it back.
  */
-function titleEntries(_id, _at) {
+function titleEntries(_id: string, _at: Point): MenuEntry[] {
   return [
-    { label: 'Edit style', icon: 'i-style', action: () => cmds.editTitle() },
-    { label: 'Reset position', icon: 'i-reset-position', action: () => cmds.resetTitlePosition() },
+    { label: 'Edit style', icon: 'i-style', action: () => cmds!.editTitle() },
+    { label: 'Reset position', icon: 'i-reset-position', action: () => cmds!.resetTitlePosition() },
     { sep: true },
-    { label: 'Zoom to it', icon: 'i-zoom-to', action: () => cmds.zoomToSelection() },
+    { label: 'Zoom to it', icon: 'i-zoom-to', action: () => cmds!.zoomToSelection() },
     { sep: true },
     { label: 'Delete', icon: 'i-delete', accel: 'Del', danger: true,
-      action: () => cmds.deleteSelection() },
+      action: () => cmds!.deleteSelection() },
   ];
 }
 
@@ -219,51 +365,51 @@ function titleEntries(_id, _at) {
  * only one of them is edited, and one ui/menu.js for every menu in the app is
  * the whole arrangement here.
  */
-function itemEntries(id, count, at, mobile = false) {
+function itemEntries(id: string, count: number, at: Point | null, mobile = false): MenuEntry[] {
   const many = count > 1;
   const what = many ? `${count} items` : 'item';
   // Both are single-item edits: they act on the one thing under the cursor, and
   // there is nowhere sensible to put the caret when a whole group is selected.
-  const editable = !many && cmds.canEditNote(id);
+  const editable = !many && cmds!.canEditNote(id);
   const renamable = !many && canRenameItem(id);
   // A track can be given a picture - see canCoverItem, which is where the rule
   // and the reason for it live. Single-item, like the two above: a file dialog
   // answers with one file, and there is no sensible reading of "set the
   // picture" for a group of nine.
-  const coverable = !many && cmds.canCoverItem(id);
+  const coverable = !many && cmds!.canCoverItem(id);
   // Asked separately rather than read off `coverable`, so a picture an older
   // build allowed onto a note or a link is still one click from coming off. A
   // card that cannot be given one can still be wearing one.
-  const covered = !many && cmds.canClearCover(id);
+  const covered = !many && cmds!.canClearCover(id);
   // Photos and videos can fill their card (crop) or fit inside it (letterbox),
   // overriding the board-wide default for this one card. Single-item, like the
   // cover actions above and for the same reason: it is an edit to one picture.
-  const fittable = !many && cmds.canSetFit(id);
-  const fills = fittable && cmds.itemFit(id) === 'cover';
-  const flippable = !many && cmds.canFlipUpAxis(id);
+  const fittable = !many && cmds!.canSetFit(id);
+  const fills = fittable && cmds!.itemFit(id) === 'cover';
+  const flippable = !many && cmds!.canFlipUpAxis(id);
   // A model card is a photograph of a model until somebody asks for the model.
   // Single-item for the same reason as the rest: you turn one thing over.
-  const turnable = !many && cmds.canRotateModel(id);
+  const turnable = !many && cmds!.canRotateModel(id);
   // Z-order only has a visible meaning where this selection's sticky layer
   // crosses another layer. A note covering its own host is intentionally one
   // layer and does not make these actions useful by itself. Never on the Feed,
   // where nothing overlaps anything: the wall is packed, not stacked.
-  const stackable = !mobile && cmds.selectionHasStackOverlap();
+  const stackable = !mobile && cmds!.selectionHasStackOverlap();
   // Anything in the selection fixed to a host. Asked of the selection rather
   // than of the item under the cursor, like the stacking pair above and unlike
   // the edit group before them: taking nine stickies off one photograph means
   // exactly what taking one off means.
-  const unstickable = !mobile && cmds.canUnstick();
+  const unstickable = !mobile && cmds!.canUnstick();
   // A picture can hand over its own colours as swatches. Single-item, like the
   // cover and fit actions above: it reads the one image under the cursor, and
   // "the colours of these nine" is not a thing a person means.
-  const swatchable = !many && cmds.canExtractSwatches(id);
+  const swatchable = !many && cmds!.canExtractSwatches(id);
   // A sticker's colour, as a fold rather than eight rows in the main column.
   // Single-item, like the picture and fit rows: it is an edit to one shape.
-  const tintable = !many && cmds.canTintSticker(id);
+  const tintable = !many && cmds!.canTintSticker(id);
   // Anything with something worth seeing full size. Single-item: the viewer
   // shows one thing, which is the whole of what it is for.
-  const viewable = !many && cmds.canViewItem(id);
+  const viewable = !many && cmds!.canViewItem(id);
   return [
     // First of all, because on a wall of thumbnails it is the thing you most
     // often want and the one row that was not reachable any other way. Above
@@ -271,40 +417,40 @@ function itemEntries(id, count, at, mobile = false) {
     // there the editor is the nearer meaning - which is why this row carries no
     // accelerator on a note, since the double-click belongs to the other one.
     { label: 'Open', icon: 'i-expand', accel: editable ? '' : 'dbl-click',
-      hidden: !viewable, action: () => cmds.openViewer(id) },
+      hidden: !viewable, action: () => cmds!.openViewer(id) },
     // Only on a note: right-clicking the one item type you can actually type
     // into should offer to type into it before anything else on the card.
     { label: 'Edit text', icon: 'i-edit-text', accel: 'dbl-click', hidden: !editable,
-      action: () => cmds.editNote(id) },
+      action: () => cmds!.editNote(id) },
     { label: 'Rename', icon: 'i-rename', accel: 'F2', hidden: !renamable,
       action: () => editItemName(id) },
     { label: covered ? 'Change picture' : 'Set a picture', icon: 'i-picture',
-      hidden: !coverable, action: () => cmds.setCover(id) },
+      hidden: !coverable, action: () => cmds!.setCover(id) },
     { label: 'Remove picture', icon: 'i-picture-off', hidden: !covered,
-      action: () => cmds.clearCover(id) },
+      action: () => cmds!.clearCover(id) },
     // A radio pair drawn as two ticked entries: the current fit reads checked,
     // the other is the one click to switch to it. The icons are a mirrored
     // pair, arrows out and arrows in, so the column says "one or the other"
     // before the tick says which.
     { label: 'Fill the card', icon: 'i-fill', check: fills, hidden: !fittable,
-      action: () => cmds.setItemFit(id, 'cover') },
+      action: () => cmds!.setItemFit(id, 'cover') },
     { label: 'Fit in the card', icon: 'i-fit-card', check: fittable && !fills,
-      hidden: !fittable, action: () => cmds.setItemFit(id, 'contain') },
+      hidden: !fittable, action: () => cmds!.setItemFit(id, 'contain') },
     // OBJ says nothing about which way is up and both readings are common, so
     // the format's default is a guess. This is the way out of a wrong one - and
     // it is on the item rather than in Appearance because a board can hold a
     // Z-up scan and a Y-up export at the same time.
     { label: 'Turn it upright', icon: 'i-upright', hidden: !flippable,
-      action: () => cmds.flipUpAxis(id) },
+      action: () => cmds!.flipUpAxis(id) },
     // A photo's own palette, dropped beside it as swatches. On the image's own
     // group with the picture and fit rows, because it is one more thing you do
     // to a picture rather than to the board.
     { label: 'Extract palette', icon: 'i-swatch', hidden: !swatchable,
-      action: () => cmds.extractSwatches(id) },
+      action: () => cmds!.extractSwatches(id) },
     // Above the upright toggle would put the rare fix in front of the ordinary
     // gesture; below it, this is the last thing on the model's own group.
     { label: 'Rotate model', icon: 'i-rotate', hidden: !turnable,
-      action: () => cmds.rotateModel(id) },
+      action: () => cmds!.rotateModel(id) },
     // Every shape can take every tint, so this is the whole palette on every
     // sticker rather than a set that varies by shape. It is an override: the
     // shape arrived wearing the colour it wore in the pad, and the tick shows
@@ -313,8 +459,8 @@ function itemEntries(id, count, at, mobile = false) {
       sub: tintable ? stickerTintEntries(id) : undefined },
     { sep: true, hidden: !editable && !renamable && !coverable && !covered && !fittable && !flippable && !turnable && !swatchable && !tintable },
     // The other mirrored pair: one card and one arrow, turned over.
-    { label: 'Bring to front', icon: 'i-front', hidden: !stackable, action: () => cmds.raise() },
-    { label: 'Send to back', icon: 'i-back', hidden: !stackable, action: () => cmds.lower() },
+    { label: 'Bring to front', icon: 'i-front', hidden: !stackable, action: () => cmds!.raise() },
+    { label: 'Send to back', icon: 'i-back', hidden: !stackable, action: () => cmds!.lower() },
     // Off its host and left exactly where it is. A stuck note is *pinned* - a
     // drag on it moves the card underneath it instead - so this is the only way
     // out that is not dropping it somewhere else, and the menu is the only place
@@ -324,7 +470,7 @@ function itemEntries(id, count, at, mobile = false) {
     // With the stacking pair for the reason the row below gives: it is about how
     // a card sits on the board rather than about what the card is.
     { label: many ? 'Unstick these' : 'Unstick', icon: 'i-lock-open',
-      hidden: !unstickable, action: () => cmds.unstick() },
+      hidden: !unstickable, action: () => cmds!.unstick() },
     // The way back from a corner dragged too far. With the stacking pair rather
     // than in the group above, because those are all edits to what a card *is*
     // and this is one to how it sits on the board - the same kind of thing as
@@ -335,21 +481,21 @@ function itemEntries(id, count, at, mobile = false) {
     // count and the item's aspect, so putting a card back to "its own size"
     // changes a number that surface never draws.
     { label: many ? `Reset ${count} sizes` : 'Reset size', icon: 'i-reset-size',
-      hidden: mobile, action: () => cmds.resetSize() },
+      hidden: mobile, action: () => cmds!.resetSize() },
     // A region right-clicked by its name plate - which is the only part of one a
     // press can land on - arranges what is inside it. Single-item, because with a
     // group selected "these" is the group and this row is about one region's
     // contents; the row below still covers that case.
     { label: 'Rearrange fence', icon: 'i-rearrange',
-      hidden: mobile || many || !cmds.isFenceItem(id),
-      action: () => cmds.rearrangeFence(id) },
+      hidden: mobile || many || !cmds!.isFenceItem(id),
+      action: () => cmds!.rearrangeFence(id) },
     // The board's arrangement, applied to these and nowhere else. Only offered
     // for a group, because one card has nothing to be arranged against - and it
     // says "these" rather than "everything" because that is the difference:
     // the selection is relaid about its own centre and the rest of the board
     // does not move. The whole-board one is on the canvas menu.
     { label: `Rearrange these ${count}`, icon: 'i-rearrange', hidden: !many,
-      action: () => cmds.rearrangeSelection() },
+      action: () => cmds!.rearrangeSelection() },
     // Straighten or space out, one fold deeper. A group only, like Rearrange -
     // one card has no edge to line up against - and behind one row because eight
     // ways to tidy would swamp the menu the moment two cards were picked. See
@@ -367,15 +513,15 @@ function itemEntries(id, count, at, mobile = false) {
     // by shift-clicking, where there is no band to catch the answer - so it stays
     // even though the band is now the ordinary way in.
     { label: `Fence these ${count}`, icon: 'i-fence', hidden: !many,
-      action: () => cmds.fenceSelection() },
+      action: () => cmds!.fenceSelection() },
     // On both menus, and on this one deliberately: a right-click is the way
     // back to the board's own actions from wherever the pointer happens to be,
     // and having to first find empty ground to ask for a reload would be the
     // menu being precious about which surface it was opened on.
-    { label: 'Reload board', icon: 'i-reload', action: () => cmds.reload() },
+    { label: 'Reload board', icon: 'i-reload', action: () => cmds!.reload() },
     { sep: true },
     { label: `Duplicate ${what}`, icon: 'i-duplicate', accel: 'Ctrl D',
-      action: () => cmds.duplicate() },
+      action: () => cmds!.duplicate() },
     // The zoom pair and "here" are the two most spatial rows on the menu, and
     // the Feed has neither a zoom nor a here: it is a packed wall, so a note
     // placed at the point somebody pressed would be picked up by the packer and
@@ -383,15 +529,15 @@ function itemEntries(id, count, at, mobile = false) {
     // the surface that means "somewhere on this board" rather than "at this
     // spot" - and that is the only promise the Feed can keep.
     { label: 'Zoom to it', icon: 'i-zoom-to', accel: 'dbl-click',
-      action: () => cmds.zoomToSelection(), hidden: mobile || many },
+      action: () => cmds!.zoomToSelection(), hidden: mobile || many },
     { label: 'Zoom to them', icon: 'i-zoom-to',
-      action: () => cmds.zoomToSelection(), hidden: mobile || !many },
+      action: () => cmds!.zoomToSelection(), hidden: mobile || !many },
     { sep: true, hidden: mobile },
     { label: 'Add a note here', icon: 'i-pen', hidden: mobile,
-      action: () => cmds.addNoteAt(at) },
+      action: () => cmds!.addNoteAt(at) },
     { sep: true },
     { label: `Delete ${what}`, icon: 'i-delete', accel: 'Del', danger: true,
-      action: () => cmds.deleteSelection() },
+      action: () => cmds!.deleteSelection() },
   ];
 }
 
@@ -402,18 +548,18 @@ function itemEntries(id, count, at, mobile = false) {
  * two distributions. Each closes the menu and files one undo step through the
  * command, so it reads and undoes as the single tidy-up it is.
  */
-function alignDistributeEntries() {
+function alignDistributeEntries(): MenuEntry[] {
   return [
-    { label: 'Align left', icon: 'i-align-left', action: () => cmds.alignSelection('left') },
-    { label: 'Align centre', icon: 'i-align-center', action: () => cmds.alignSelection('hcenter') },
-    { label: 'Align right', icon: 'i-align-right', action: () => cmds.alignSelection('right') },
+    { label: 'Align left', icon: 'i-align-left', action: () => cmds!.alignSelection('left') },
+    { label: 'Align centre', icon: 'i-align-center', action: () => cmds!.alignSelection('hcenter') },
+    { label: 'Align right', icon: 'i-align-right', action: () => cmds!.alignSelection('right') },
     { sep: true },
-    { label: 'Align top', icon: 'i-align-top', action: () => cmds.alignSelection('top') },
-    { label: 'Align middle', icon: 'i-align-middle', action: () => cmds.alignSelection('vcenter') },
-    { label: 'Align bottom', icon: 'i-align-bottom', action: () => cmds.alignSelection('bottom') },
+    { label: 'Align top', icon: 'i-align-top', action: () => cmds!.alignSelection('top') },
+    { label: 'Align middle', icon: 'i-align-middle', action: () => cmds!.alignSelection('vcenter') },
+    { label: 'Align bottom', icon: 'i-align-bottom', action: () => cmds!.alignSelection('bottom') },
     { sep: true },
-    { label: 'Distribute across', icon: 'i-distribute-h', action: () => cmds.distributeSelection('x') },
-    { label: 'Distribute down', icon: 'i-distribute-v', action: () => cmds.distributeSelection('y') },
+    { label: 'Distribute across', icon: 'i-distribute-h', action: () => cmds!.distributeSelection('x') },
+    { label: 'Distribute down', icon: 'i-distribute-v', action: () => cmds!.distributeSelection('y') },
   ];
 }
 
@@ -421,17 +567,17 @@ function alignDistributeEntries() {
  * The connection editor's fold, for a line the right-click landed on. Direction
  * and style are each a short radio of ticked rows; the label is asked for, since
  * it is the one setting that is not a choice from a list. Every row files one
- * undo step through cmds.setConnectionStyle. "One end" and "other end" rather
+ * undo step through cmds!.setConnectionStyle. "One end" and "other end" rather
  * than a card's name, because the pair is unordered and neither end has a name a
  * person would recognise - the two simply point opposite ways.
  */
-function connectionEntries(conn) {
-  const meta = cmds.connectionStyle(conn.a, conn.b) || {};
+function connectionEntries(conn: { a: string, b: string }): MenuEntry[] {
+  const meta = cmds!.connectionStyle(conn.a, conn.b) || {};
   const dir = meta.dir || 'none';
   const style = meta.style || 'solid';
   const color = meta.color || 'line';
   const weight = meta.weight || 'normal';
-  const set = patch => cmds.setConnectionStyle(conn.a, conn.b, patch);
+  const set = (patch: ConnMeta) => cmds!.setConnectionStyle(conn.a, conn.b, patch);
   return [
     { label: 'No arrows', icon: 'i-connect', check: dir === 'none', action: () => set({ dir: 'none' }) },
     { label: 'Arrow one end', icon: 'i-arrow-fwd', check: dir === 'fwd', action: () => set({ dir: 'fwd' }) },
@@ -452,12 +598,12 @@ function connectionEntries(conn) {
     { label: 'Weight', icon: 'i-line-solid', sub: connectionWeightEntries(conn, weight) },
     { sep: true },
     { label: meta.label ? 'Change label' : 'Add a label', icon: 'i-style',
-      action: () => cmds.editConnectionLabel(conn.a, conn.b) },
+      action: () => cmds!.editConnectionLabel(conn.a, conn.b) },
     { label: 'Remove label', icon: 'i-style', hidden: !meta.label,
-      action: () => cmds.clearConnectionLabel(conn.a, conn.b) },
+      action: () => cmds!.clearConnectionLabel(conn.a, conn.b) },
     { sep: true },
     { label: 'Remove connection', icon: 'i-delete', danger: true,
-      action: () => cmds.removeConnection(conn.a, conn.b) },
+      action: () => cmds!.removeConnection(conn.a, conn.b) },
   ];
 }
 
@@ -470,13 +616,13 @@ function connectionEntries(conn) {
  * numbers are what reaches meta.tint and items.css, and nothing but the index
  * ties them together, which is exactly why the list has one home.
  */
-function stickerTintEntries(id) {
-  const now = cmds.stickerTintOf(id);
+function stickerTintEntries(id: string): MenuEntry[] {
+  const now = cmds!.stickerTintOf(id);
   return STICKER_TINT_NAMES.map((text, i) => ({
     label: text,
     icon: 'i-swatch',
     check: now === i + 1,
-    action: () => cmds.setStickerTint(id, i + 1),
+    action: () => cmds!.setStickerTint(id, i + 1),
   }));
 }
 
@@ -489,25 +635,31 @@ function stickerTintEntries(id) {
  * able to name a colour the stylesheet did not choose. The board's own grey is
  * first because it is the default and the way back to it.
  */
-function connectionColorEntries(conn, color) {
-  const set = patch => cmds.setConnectionStyle(conn.a, conn.b, patch);
-  return [
+function connectionColorEntries(conn: { a: string, b: string }, color: string): MenuEntry[] {
+  const set = (patch: ConnMeta) => cmds!.setConnectionStyle(conn.a, conn.b, patch);
+  // Typed against ConnColor rather than left as string: these five names are
+  // the same closed list board-model.ts holds connMeta() to, and a sixth spelled
+  // wrong here would previously have travelled all the way to a stroke that
+  // silently did nothing.
+  const options: [ConnColor, string][] = [
     ['line', 'Board grey'], ['accent', 'Accent'], ['warm', 'Warm'],
     ['leaf', 'Green'], ['danger', 'Red'],
-  ].map(([name, text]) => ({
+  ];
+  return options.map(([name, text]) => ({
     label: text, icon: 'i-swatch', check: color === name, action: () => set({ color: name }),
   }));
 }
 
 /** How heavy a line is drawn, relative to the board's own weight. */
-function connectionWeightEntries(conn, weight) {
-  const set = patch => cmds.setConnectionStyle(conn.a, conn.b, patch);
-  return [['fine', 'Fine'], ['normal', 'Normal'], ['bold', 'Bold']].map(([name, text]) => ({
+function connectionWeightEntries(conn: { a: string, b: string }, weight: string): MenuEntry[] {
+  const set = (patch: ConnMeta) => cmds!.setConnectionStyle(conn.a, conn.b, patch);
+  const options: [ConnWeight, string][] = [['fine', 'Fine'], ['normal', 'Normal'], ['bold', 'Bold']];
+  return options.map(([name, text]) => ({
     label: text, icon: 'i-line-solid', check: weight === name, action: () => set({ weight: name }),
   }));
 }
 
-function canvasEntries(at) {
+function canvasEntries(at: Point): MenuEntry[] {
   // A press inside a region falls through to the board - the fence's face takes
   // no pointer, which is what keeps panning and banding working inside one - so
   // this menu is what a right-click *in* a region opens, and the board is not
@@ -515,31 +667,31 @@ function canvasEntries(at) {
   // reading of a click aimed at one shelf. It swaps for that shelf instead, and
   // only swaps: there is one row either way, because the two are the same
   // question asked of different scopes.
-  const fence = cmds.fenceUnder(at);
+  const fence = cmds!.fenceUnder(at);
   return [
-    { label: 'Add a note here', icon: 'i-pen', action: () => cmds.addNoteAt(at) },
-    { label: 'Add files', icon: 'i-plus', action: () => cmds.addFiles() },
+    { label: 'Add a note here', icon: 'i-pen', action: () => cmds!.addNoteAt(at) },
+    { label: 'Add files', icon: 'i-plus', action: () => cmds!.addFiles() },
     { sep: true },
-    { label: 'Find', icon: 'i-find', accel: 'Ctrl K', action: () => cmds.find() },
+    { label: 'Find', icon: 'i-find', accel: 'Ctrl K', action: () => cmds!.find() },
     { label: 'Select all', icon: 'i-select-all', accel: 'Ctrl A',
-      action: () => cmds.selectAll() },
+      action: () => cmds!.selectAll() },
     fence
       ? { label: 'Rearrange fence', icon: 'i-rearrange',
-        action: () => cmds.rearrangeFence(fence) }
+        action: () => cmds!.rearrangeFence(fence) }
       : { label: 'Rearrange everything', icon: 'i-rearrange',
-        action: () => cmds.rearrange() },
-    { label: 'Reload board', icon: 'i-reload', action: () => cmds.reload() },
+        action: () => cmds!.rearrange() },
+    { label: 'Reload board', icon: 'i-reload', action: () => cmds!.reload() },
     { sep: true },
-    { label: 'Zoom to fit', icon: 'i-fit', accel: 'F', action: () => cmds.fit() },
-    { label: 'Back to 0,0', icon: 'i-home', accel: '0', action: () => cmds.recenter() },
+    { label: 'Zoom to fit', icon: 'i-fit', accel: 'F', action: () => cmds!.fit() },
+    { label: 'Back to 0,0', icon: 'i-home', accel: '0', action: () => cmds!.recenter() },
     { sep: true },
     // The board's own two marks: the lattice, and the lattice with a card
     // locked onto it. The tick that says which way they are set is a separate
     // mark on the other edge of the row - see render().
-    { label: 'Snap to grid', icon: 'i-snap', check: cmds.getSetting('snap'),
-      action: () => cmds.toggleSetting('snap') },
-    { label: 'Show grid', icon: 'i-grid', check: cmds.getSetting('grid'),
-      action: () => cmds.toggleSetting('grid') },
+    { label: 'Snap to grid', icon: 'i-snap', check: cmds!.getSetting('snap'),
+      action: () => cmds!.toggleSetting('snap') },
+    { label: 'Show grid', icon: 'i-grid', check: cmds!.getSetting('grid'),
+      action: () => cmds!.toggleSetting('grid') },
   ];
 }
 
@@ -553,7 +705,7 @@ function canvasEntries(at) {
  * node, so the old one is dropped first - but without close()'s focus hand-back,
  * because the menu is not closing, it is turning a page.
  */
-function swap(entries) {
+function swap(entries: MenuEntry[]) {
   // A page turn keeps whatever the outgoing page had. It matters for the one
   // caller that opens without the keyboard: a flyout drilled into by hand
   // should not suddenly start swallowing arrow keys, and one drilled into from
@@ -564,11 +716,11 @@ function swap(entries) {
 }
 
 /** A child menu, fronted by the row that walks back to its parent. */
-function subMenu(sub, parent) {
+function subMenu(sub: MenuEntry[], parent: MenuEntry[]): MenuEntry[] {
   return [{ label: 'Back', icon: 'i-chevron-left', to: parent }, { sep: true }, ...sub];
 }
 
-function render(entries, clientX, clientY, opts = {}) {
+function render(entries: MenuEntry[], clientX: number, clientY: number, opts: MenuOpts = {}) {
   lastX = clientX;
   lastY = clientY;
   lastOpts = opts;
@@ -628,7 +780,10 @@ function render(entries, clientX, clientY, opts = {}) {
     else if (entry.icon) btn.append(icon(entry.icon));
 
     const label = document.createElement('span');
-    label.textContent = entry.label;
+    // Asserted: the two rows that carry no label are the separator and the
+    // slider, and both were dealt with above. The type keeps it optional
+    // because those two are entries as well.
+    label.textContent = entry.label!;
     btn.append(label);
 
     if (entry.accel) {
@@ -655,11 +810,15 @@ function render(entries, clientX, clientY, opts = {}) {
     if (entry.sub || entry.to) {
       btn.setAttribute('aria-haspopup', 'menu');
       if (entry.sub) btn.append(icon('i-chevron-right', 'ctx-chevron'));
-      btn.addEventListener('click', () => swap(entry.sub ? subMenu(entry.sub, entries) : entry.to));
+      // Both assertions are the branch this is inside: one of the two is set,
+      // and each arm has just tested which.
+      btn.addEventListener('click', () => swap(entry.sub ? subMenu(entry.sub, entries) : entry.to!));
     } else {
       btn.addEventListener('click', () => {
         close();
-        entry.action();
+        // Everything that is not a separator, a slider, a fold or a Back row is
+        // an action row - which is the whole of what this branch is.
+        entry.action!();
       });
     }
     node.append(btn);
@@ -717,13 +876,15 @@ function render(entries, clientX, clientY, opts = {}) {
  * menu's actions would be a lie to a screen reader and would put it in the
  * arrow-key walk, where Left and Right belong to the slider itself.
  */
-function rangeRow(entry) {
-  const { min, max, step, unit = '', get, set } = entry.range;
+function rangeRow(entry: MenuEntry) {
+  // Asserted: the only caller is render(), on the branch that just tested it.
+  const { min, max, step, unit = '', get, set } = entry.range!;
   const row = document.createElement('label');
   row.className = 'ctx-range';
 
   const name = document.createElement('span');
-  name.textContent = entry.label;
+  // A dial is named or it is a mystery - the same assertion the button rows make.
+  name.textContent = entry.label!;
   row.append(name);
 
   const slider = document.createElement('input');
@@ -752,7 +913,7 @@ function rangeRow(entry) {
  * symbol is a drawing of a paint chip and the drawing is not the point - the
  * colour is. Sized to the icons beside it so the column stays a column.
  */
-function chip(color) {
+function chip(color: string) {
   const dot = document.createElement('span');
   dot.className = 'ctx-chip';
   dot.style.background = color;
@@ -778,7 +939,7 @@ function chip(color) {
 // Annotated ahead of the rest of this module: every other file in ui/ builds
 // its icons through here, and an unannotated `extra` reads to tsc as a
 // parameter they all forgot to pass.
-export function icon(name, extra?: string) {
+export function icon(name: string, extra?: string) {
   const NS = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(NS, 'svg');
   svg.setAttribute('class', extra ? `ico ${extra}` : 'ico');
@@ -791,10 +952,12 @@ export function icon(name, extra?: string) {
   return svg;
 }
 
-function moveFocus(step) {
-  const items = [...node.querySelectorAll('.ctx-item')];
+function moveFocus(step: number) {
+  // `node` is asserted because the one caller tests it first; the rows are
+  // buttons because render() puts .ctx-item on nothing else.
+  const items = [...node!.querySelectorAll<HTMLElement>('.ctx-item')];
   if (!items.length) return;
-  const at = items.indexOf(document.activeElement);
+  const at = items.findIndex(row => row === document.activeElement);
   const next = at < 0 ? (step > 0 ? 0 : items.length - 1) : (at + step + items.length) % items.length;
   items[next].focus();
 }
