@@ -77,6 +77,20 @@ for a change without checking the current source first.
   CSP, a global error handler, and what `old/` should look like to a stranger.
   The annotations under `strict` are the open half of an item counted as done,
   and `tests/ts-debt.test.js` is where that is now measured rather than here.
+- `ui-audit-2026-08-13.md` — **nothing applied.** A driven pass over the running
+  app in a real browser rather than a runner: every toolbar tool, both lenses,
+  the viewer, the player, the trash and the menus. Four findings, of which only
+  the first is visible without hunting — a hover flyout clamped to the window
+  when it should be clamped to the bar, which is why Arrange hangs 28px off the
+  end. Read *What the harness got wrong* even if you skip the findings: more than
+  half of what a driver reports as broken here is the driving, and two of the
+  four causes are properties of this app — the idle fade takes
+  `pointer-events: none` and eats the first click, and `requestBuild()` defers to
+  a rAF that stops entirely when the window is occluded, which made stored
+  connections look permanently undrawn. Its Finding 2 is also a `.mbrd` question
+  and not only a UI one: the tap path into Join never asks `isJoinEnd`, so a
+  sticker can be written into `board.connections` as a pair nothing will ever
+  draw, and saved boards may already carry them.
 
 `old/connections-2026-08-12.md` went down on the commit that carried it out, and
 its status block is the part to read first: three of its own instructions were

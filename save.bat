@@ -162,6 +162,23 @@ if errorlevel 1 (
   goto end
 )
 
+rem The changelog, for the same reason and one more. web/patch.html is built out
+rem of index.html - it IS the app, opening a board that ships with it - so every
+rem change to the shell has to reach it or /patch quietly boots an older app than
+rem the site does. web/assets/patch-notes.mbrd is built from
+rem research/patch-notes.md in the same pass. Both are reproducible: no
+rem timestamps anywhere in either, so re-running with nothing edited writes
+rem identical bytes and stages nothing. tests/patch.test.js runs the generator
+rem and compares, so a skipped run fails the suite rather than shipping.
+echo [gen]  patch notes
+node tools\gen-patch-board.mjs
+if errorlevel 1 (
+  echo.
+  echo [err]  could not rebuild web/patch.html and web/assets/patch-notes.mbrd
+  set SAVE_ERROR=1
+  goto end
+)
+
 echo [git]  stage
 git add .
 git status

@@ -12,7 +12,7 @@
 // Written out in full rather than composed from PREFIX, because save.bat bumps
 // this line by regex on every commit and would not recognise an expression.
 // tests/sw.test.js holds the two together.
-const VERSION = 'mbrd-v187';
+const VERSION = 'mbrd-v194';
 const PREFIX = 'mbrd-';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) turns the
@@ -25,13 +25,18 @@ const DEV = HOST === 'localhost' || HOST === '127.0.0.1' || HOST === '0.0.0.0' |
 const SHELL = [
   './',
   './index.html',
-  // The changelog, which is the second page this site has. Precached for the
-  // same reason index.html is: it ships with the app, and the sheet it is
-  // printed on is already in this list two lines down, so caching the stylesheet
-  // and not the page would leave one of them useless. Listed by filename rather
-  // than as ./patch, which is the address it is served at - cache.add fetches
-  // what it is given and tests/sw.test.js checks every entry against a file on
-  // disk. The navigate handler below maps the address to this entry.
+  // The changelog, which is the second page this site has - and is the app,
+  // opening a board that ships with it. Three files, all needed together:
+  // this page, the board it loads (further down, beside the other assets) and
+  // the stylesheet its no-script fallback wears. Precached for the reason
+  // index.html is, with one of its own: the board is fetched at boot, so an
+  // offline visit with the page cached and the board not would open the
+  // changelog and find it empty.
+  //
+  // Listed by filename rather than as ./patch, which is the address it is
+  // served at - cache.add fetches what it is given, and tests/sw.test.js checks
+  // every entry against a file on disk. The navigate handler below maps the
+  // address to this entry.
   './patch.html',
   './manifest.json',
   './assets/css/tokens.css',
@@ -68,6 +73,11 @@ const SHELL = [
   // which is the right rule: a sheet that ships and cannot be fetched offline is
   // a page that renders naked. See the banner at the top of the file.
   './assets/css/patch.css',
+  // The changelog itself: a real .mbrd, generated from research/patch-notes.md
+  // by tools/gen-patch-board.mjs, which main.ts fetches and unpacks at /patch.
+  // It is an asset the app ships rather than a board anybody made, which is why
+  // it lives here and never in the library or the session.
+  './assets/patch-notes.mbrd',
   // Every icon in the app, in one sprite. Referenced by <use> from index.html
   // and built into the right-click menu by ui/menu.js, so a board opened offline
   // without it is a board of blank buttons - it belongs in the shell as much as

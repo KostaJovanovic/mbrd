@@ -160,17 +160,28 @@ error rather than becoming a broken runner.
   demo, served off a Linux filesystem, 404s. The CI job runs on `ubuntu-latest`
   for exactly this reason and is the leg that catches it — but it reports on the
   push, and the deploy does not wait for it, so match the filename exactly.
-- **`web/patch.html` is the public changelog, and the second page this site
-  has.** Kept entirely by hand — nothing generates it and `save.bat` does not
-  touch it — with the whole authoring contract written in a comment at the top
-  of `<main>`: read that before adding an entry. The rule it turns on is that
-  the newest `.patch-version` must equal `VERSION` in `version.js`, which
-  `tests/patch.test.js` asserts along with the tag set, the ordering and the
-  fact that nothing is folded away. It is dressed by `assets/css/patch.css`,
-  which is *not* one of the twenty in the app's cascade and is not in
-  `index.html`; it is in `SHELL` in `sw.js`, because `tests/sw.test.js` walks
-  the stylesheet directory. The page runs no script at all, which is what keeps
-  it out of the CSP hash list. Reached from the app at System → What changed.
+- **The changelog is a board, and `/patch` is the app.** `web/patch.html` is
+  `index.html`'s own shell with a changelog `<head>`, and what it opens is
+  `web/assets/patch-notes.mbrd` — a real `.mbrd`, one note card per release,
+  loaded through `unpackBoard()` in the Feed lens with the ordinary menu button
+  and the ordinary sidebar. **Both files are generated** by
+  `node tools/gen-patch-board.mjs` from `research/patch-notes.md`, which is the
+  only place the prose is written; `save.bat` re-runs it on every commit and
+  `tests/patch.test.js` runs it again and fails if what is committed differs.
+  Neither output may be hand-edited.
+  - The page also carries the whole changelog inside `<noscript>`, dressed by
+    `assets/css/patch.css` — a sheet fetched only when scripting is off. That
+    is the only crawlable copy, since a board is JavaScript.
+  - The rule the whole thing turns on: the high end of the newest `version:` in
+    the source must equal `VERSION` in `version.js`.
+  - `/patch` freezes the visitor's world: `suspendCache()` so it cannot write
+    their session, and `freezePrefs()` (in `prefs.ts`, the only writer of
+    `localStorage`) so moving the whimsy dial while reading cannot change the
+    look of their own boards.
+  - No `<base>` tag on that page, unlike `index.html` — a base makes a
+    fragment-only `href` resolve against it, which sent every in-page link to
+    the app instead of scrolling.
+  - Reached from the app at System → What changed.
 - Call out `.mbrd` schema, generated-catalog or service-worker cache changes
   explicitly when reporting work.
 
