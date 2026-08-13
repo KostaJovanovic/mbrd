@@ -31,6 +31,7 @@
 import { board, bus, setSetting } from '../state.ts';
 import { paperMm, toUnits, formatSize, clampScale } from '../measure.ts';
 import { deviceRatio } from './viewport.ts';
+import type { Viewport } from './viewport.ts';
 
 /**
  * How far off screen an edge is allowed to be placed, in CSS pixels.
@@ -64,33 +65,17 @@ const GRIPS = [
 /** A world or screen point, which here are the same two numbers. */
 type Point = { x: number; y: number };
 
-/**
- * What this module asks of the viewport, and no more. Structural rather than
- * the `Viewport` class itself, because canvas/viewport.ts is still on the
- * migration ledger and a .ts class publishes no fields it does not declare.
- * `axisOrigin` is optional for the same reason the call site tests it: the
- * render harnesses mount a viewport that does not draw axes.
- */
-type PaperViewport = {
-  el: HTMLElement | null;
-  zoom: number;
-  onChange(fn: () => void): unknown;
-  toScreen(wx: number, wy: number): Point;
-  toWorld(sx: number, sy: number): Point;
-  axisOrigin?: () => Point;
-};
-
 /** A corner drag in flight: the scale and corner it started from - see onDown(). */
 type PaperDrag = { scale: number; cx: number; cy: number; from: Point };
 
-let vp: PaperViewport | null = null;
+let vp: Viewport | null = null;
 let node: HTMLElement | null = null;
 let caption: HTMLElement | null = null;
 let last = '';
 /** The live corner drag, or null. See onDown() for what each field is for. */
 let drag: PaperDrag | null = null;
 
-export function initPaper(viewport: PaperViewport | null): void {
+export function initPaper(viewport: Viewport | null): void {
   vp = viewport;
   if (!vp || !build(vp.el)) return;
   // Straight onto the viewport's change event rather than through a throttle of

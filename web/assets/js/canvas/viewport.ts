@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Coordinate + viewport model.
 //
 // World coordinates are floats with (0,0) at the centre of the board, oriented
@@ -28,7 +20,28 @@
 // (see items.js), which makes the vertical translate +panY*zoom, not -panY*zoom.
 
 import { clamp, rafThrottle, emitter, readToken } from '../util.ts';
+import type { Emitter } from '../util.ts';
 import { itemBounds } from '../geometry.ts';
+import type { Box, Bounds, Point } from '../geometry.ts';
+import type { LayoutMode } from '../board-model.ts';
+
+/**
+ * The board's sheet as the screen sees it - what mobileScreenRect() answers.
+ *
+ * Declared here rather than in canvas/mobile-frame.ts, which is where it used
+ * to live and is still where most of it is read: mobile-frame already imports
+ * this module, so the type has to travel in that direction or the graph gains a
+ * cycle (tests/layers.test.js counts a type-only import as an edge, and it is
+ * right to - the arrow is a fact about the source whatever the runtime does
+ * with it). The method that produces the rectangle is the honest owner of its
+ * shape anyway.
+ */
+export type MobileScreenRect = {
+  left: number;
+  width: number;
+  top: number;
+  bottom: number;
+};
 
 /**
  * What the corner calls 100%, and now also what it is.
@@ -82,7 +95,7 @@ export const MOBILE_BOTTOM_PAD = 32;
  */
 const MOBILE_CHROME_GAP = 14;
 
-function mobileTopPad() {
+function mobileTopPad(): number {
   if (typeof document === 'undefined') return MOBILE_TOP_PAD;
   const btn = document.getElementById('menu-btn');
   const bottom = btn ? btn.getBoundingClientRect().bottom : 0;
@@ -109,7 +122,7 @@ function mobileTopPad() {
 export const MOBILE_HEADER_ASPECT = 3 / 2;
 
 /** Height in screen px of a 3:2 Mobile masthead `boardWidth` px wide. */
-export function mobileHeaderHeight(boardWidth) {
+export function mobileHeaderHeight(boardWidth: number): number {
   return Math.max(0, (+boardWidth || 0) / MOBILE_HEADER_ASPECT);
 }
 
@@ -123,7 +136,7 @@ export function mobileHeaderHeight(boardWidth) {
  * coincidence worth keeping separate, since only one of them is a display
  * decision.
  */
-export function mobileZoom(viewWidth, worldWidth, pad = MOBILE_SIDE_PAD) {
+export function mobileZoom(viewWidth: number, worldWidth: number, pad = MOBILE_SIDE_PAD): number {
   const available = Math.max(1, viewWidth - pad * 2);
   return clamp(Math.min(1, available / Math.max(1, worldWidth)), MIN_ZOOM, MAX_ZOOM);
 }
@@ -182,7 +195,7 @@ const VIEW_SETTLE_MS = 140;
 const IZ_STEP = 0.08;
 
 /** `v` snapped to the nearest rung of a ladder that steps by IZ_STEP. */
-const izRung = v => Math.exp(Math.round(Math.log(v) / IZ_STEP) * IZ_STEP);
+const izRung = (v: number) => Math.exp(Math.round(Math.log(v) / IZ_STEP) * IZ_STEP);
 
 // How a thrown board comes to rest - see glide().
 //
@@ -275,8 +288,8 @@ const LOD_ZOOM_SMALL = 0.55;
  * This answers "can this be poked", and that is all it should ever be asked.
  * What the detail rung wants is a different question - see onSmallScreen().
  */
-let coarse = null;
-export function onTouch() {
+let coarse: MediaQueryList | null = null;
+export function onTouch(): boolean {
   if (typeof matchMedia !== 'function') return false;
   coarse ??= matchMedia('(pointer: coarse)');
   return coarse.matches;
@@ -307,8 +320,8 @@ export function onTouch() {
  * - it is drawn in more detail than it strictly wants, rather than a desk being
  * stripped of detail it needs.
  */
-let handheld = null;
-export function onSmallScreen() {
+let handheld: MediaQueryList | null = null;
+export function onSmallScreen(): boolean {
   if (typeof matchMedia !== 'function') return false;
   handheld ??= matchMedia('(pointer: coarse) and (max-width: 640px)');
   return handheld.matches;
@@ -347,7 +360,7 @@ export const thumbZoom = () => lodZoom();
 export const zoomMs = () => cssMs('--dur-zoom', 190);
 export const travelMs = () => cssMs('--dur-travel', 400);
 
-function cssMs(name, fallback) {
+function cssMs(name: string, fallback: number): number {
   const raw = readToken(name);
   const n = parseFloat(raw);
   if (!Number.isFinite(n)) return fallback;
@@ -355,29 +368,58 @@ function cssMs(name, fallback) {
 }
 
 /** Decelerating: fast off the mark, settling at the end. */
-const ease = t => 1 - Math.pow(1 - t, 3);
+const ease = (t: number) => 1 - Math.pow(1 - t, 3);
 const reducedMotion = () =>
   typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export class Viewport {
-  constructor(viewportEl, worldEl, originMark) {
+  el: HTMLElement;
+  world: HTMLElement;
+  originMark: HTMLElement | null;
+  pan: Point;
+  zoom: number;
+  // The padlock in the corner controls. Not a board setting and not saved
+  // with one. A board does record the view it was left at, but deliberately
+  // does not open at it - openingView() in main.js frames the whole thing
+  // instead, for the reasons written there - so a lock restored from a file
+  // would be holding a magnification the board had already declined to
+  // reopen at. It lasts as long as the sitting does, which is also what it is
+  // for: you lock the zoom because of what you are doing this afternoon.
+  //
+  // What it stops is the *zoom*, never the pan: the board still moves under
+  // the hand, and travelling to an item or fitting the whole board still
+  // works - they arrive at the locked magnification instead of choosing their
+  // own. See the gates in zoomAt/zoomAnimAt/viewTo.
+  zoomLocked: boolean;
+  boardMode: LayoutMode;
+  mobileWorldWidth: number;
+  mobileWorldTop: number;
+  mobileWorldBottom: number;
+  width: number;
+  height: number;
+  left: number;
+  top: number;
+  // Where the Mobile board comes to rest under the chrome buttons. Cached
+  // rather than asked for on every clamp: _mobileTopPan() runs on each frame
+  // of a pan, and reading a rect there would measure layout mid-gesture.
+  // Refreshed where it can actually change - a resize, a rotation, a switch
+  // into Mobile - which is also where the buttons themselves move.
+  _topPad: number;
+  // One event, and its payload is the viewport that moved - see _paint().
+  bus: Emitter<{ change: Viewport }>;
+  _flush: () => void;
+  _anim: number | null;             // rAF id of a view animation in flight
+  _still: number;                   // timer that ends the cheap mode - see _moving()
+  _iz: number;                      // what --iz was last written as
+  _dpr: number;                     // what --dpr was last written as - see _setDpr()
+  moving: boolean;                  // is the view mid-gesture? - see _moving()
+
+  constructor(viewportEl: HTMLElement, worldEl: HTMLElement, originMark?: HTMLElement | null) {
     this.el = viewportEl;
     this.world = worldEl;
     this.originMark = originMark || null;
     this.pan = { x: 0, y: 0 };
     this.zoom = BASE_ZOOM;
-    // The padlock in the corner controls. Not a board setting and not saved
-    // with one. A board does record the view it was left at, but deliberately
-    // does not open at it - openingView() in main.js frames the whole thing
-    // instead, for the reasons written there - so a lock restored from a file
-    // would be holding a magnification the board had already declined to
-    // reopen at. It lasts as long as the sitting does, which is also what it is
-    // for: you lock the zoom because of what you are doing this afternoon.
-    //
-    // What it stops is the *zoom*, never the pan: the board still moves under
-    // the hand, and travelling to an item or fitting the whole board still
-    // works - they arrive at the locked magnification instead of choosing their
-    // own. See the gates in zoomAt/zoomAnimAt/viewTo.
     this.zoomLocked = false;
     this.boardMode = 'desktop';
     this.mobileWorldWidth = 0;
@@ -387,19 +429,14 @@ export class Viewport {
     this.height = 0;
     this.left = 0;
     this.top = 0;
-    // Where the Mobile board comes to rest under the chrome buttons. Cached
-    // rather than asked for on every clamp: _mobileTopPan() runs on each frame
-    // of a pan, and reading a rect there would measure layout mid-gesture.
-    // Refreshed where it can actually change - a resize, a rotation, a switch
-    // into Mobile - which is also where the buttons themselves move.
     this._topPad = MOBILE_TOP_PAD;
     this.bus = emitter();
     this._flush = rafThrottle(() => this._paint());
-    this._anim = null;              // rAF id of a view animation in flight
-    this._still = 0;                // timer that ends the cheap mode - see _moving()
-    this._iz = 0;                   // what --iz was last written as
-    this._dpr = 0;                  // what --dpr was last written as - see _setDpr()
-    this.moving = false;            // is the view mid-gesture? - see _moving()
+    this._anim = null;
+    this._still = 0;
+    this._iz = 0;
+    this._dpr = 0;
+    this.moving = false;
 
     this.measure();
     const ro = new ResizeObserver(() => { this.measure(); this.apply(); });
@@ -468,7 +505,7 @@ export class Viewport {
     this.pan.y = clamp(this.pan.y, bottom, top);
   }
 
-  _setMobileBounds(worldWidth, worldTop, worldBottom) {
+  _setMobileBounds(worldWidth: number, worldTop: number, worldBottom: number) {
     this.mobileWorldWidth = Math.max(1, +worldWidth || 1);
     this.mobileWorldTop = Number.isFinite(+worldTop) ? +worldTop : 0;
     const bottom = Number.isFinite(+worldBottom) ? +worldBottom : this.mobileWorldTop;
@@ -477,7 +514,10 @@ export class Viewport {
 
   /** Constrain the viewport to the content-sized Mobile board. */
   setBoardMode(
-    mode,
+    // A string rather than a LayoutMode: the line below normalises anything
+    // that is not 'mobile' to 'desktop', and the callers hand in a mode read
+    // back out of a board.
+    mode: string,
     worldWidth = this.mobileWorldWidth,
     worldTop = this.mobileWorldTop,
     worldBottom = this.mobileWorldBottom,
@@ -497,7 +537,7 @@ export class Viewport {
   }
 
   /** Refresh a Mobile board whose content has changed its lower edge. */
-  setMobileBounds(worldWidth, worldTop, worldBottom) {
+  setMobileBounds(worldWidth: number, worldTop: number, worldBottom: number) {
     this._setMobileBounds(worldWidth, worldTop, worldBottom);
     if (!this.isMobile) return;
     this.zoom = this._mobileZoom();
@@ -506,19 +546,19 @@ export class Viewport {
   }
 
   /** World point -> position within the viewport element, in CSS px. */
-  toScreen(wx, wy) {
+  toScreen(wx: number, wy: number): Point {
     return { x: (wx - this.pan.x) * this.zoom + this.cx, y: (this.pan.y - wy) * this.zoom + this.cy };
   }
 
   /** Client (event) coords -> world point. */
-  toWorld(clientX, clientY) {
+  toWorld(clientX: number, clientY: number): Point {
     const sx = clientX - this.left - this.cx;
     const sy = clientY - this.top - this.cy;
     return { x: sx / this.zoom + this.pan.x, y: this.pan.y - sy / this.zoom };
   }
 
   /** The world-space rectangle currently visible, grown by `margin` world px. */
-  visibleRect(margin = 0) {
+  visibleRect(margin = 0): Bounds {
     const hw = this.cx / this.zoom + margin;
     const hh = this.cy / this.zoom + margin;
     return { x0: this.pan.x - hw, y0: this.pan.y - hh, x1: this.pan.x + hw, y1: this.pan.y + hh };
@@ -553,14 +593,14 @@ export class Viewport {
    * finger, the wheel, a keyboard nudge - already calls stopAnim() first, so
    * catching a gliding board simply stops it where the hand landed.
    */
-  glide(vx, vy) {
+  glide(vx: number, vy: number) {
     if (this.isMobile) vx = 0;
     const speed = Math.hypot(vx, vy);
     if (speed < GLIDE_MIN || reducedMotion()) return;
     this.stopAnim();
     const x0 = this.pan.x, y0 = this.pan.y, z = this.zoom;
     const t0 = performance.now();
-    const tick = now => {
+    const tick = (now: number) => {
       const t = (now - t0) / 1000;
       const decay = Math.exp(-t / GLIDE_TAU);
       // How far the finger's speed has carried the board by now, in screen px:
@@ -578,7 +618,7 @@ export class Viewport {
   }
 
   /** Move the view by a screen-space delta (drag). */
-  panByScreen(dx, dy) {
+  panByScreen(dx: number, dy: number) {
     this.stopAnim();
     this.pan.x = this.isMobile ? 0 : this.pan.x - dx / this.zoom;
     this.pan.y += dy / this.zoom;   // screen y is down, world y is up
@@ -587,7 +627,7 @@ export class Viewport {
   }
 
   /** Zoom by `factor`, keeping the world point under (clientX, clientY) fixed. */
-  zoomAt(clientX, clientY, factor) {
+  zoomAt(clientX: number, clientY: number, factor: number) {
     if (this.zoomLocked || this.isMobile) return;
     this.stopAnim();
     const z = clamp(this.zoom * factor, MIN_ZOOM, MAX_ZOOM);
@@ -601,11 +641,16 @@ export class Viewport {
     this.apply();
   }
 
-  setView(pan, zoom) {
+  setView(pan: Partial<Point> | null | undefined, zoom?: number) {
     this.stopAnim();
-    this.pan.x = this.isMobile ? 0 : +pan?.x || 0;
-    this.pan.y = +pan?.y || 0;
-    this.zoom = this.isMobile ? this._mobileZoom() : clamp(+zoom || BASE_ZOOM, MIN_ZOOM, MAX_ZOOM);
+    // Number() rather than a unary plus, which is the same conversion written
+    // in a form that admits a missing pan: a view arriving from a board file
+    // may be half a view, and NaN || 0 is the fallback either way.
+    this.pan.x = this.isMobile ? 0 : Number(pan?.x) || 0;
+    this.pan.y = Number(pan?.y) || 0;
+    this.zoom = this.isMobile
+      ? this._mobileZoom()
+      : clamp(Number(zoom) || BASE_ZOOM, MIN_ZOOM, MAX_ZOOM);
     this._constrainMobile();
     this.apply();
   }
@@ -632,11 +677,11 @@ export class Viewport {
   }
 
   /** Drive `step(progress)` from 0 to 1 over `ms`, eased. */
-  _animate(ms, step) {
+  _animate(ms: number, step: (progress: number) => void) {
     this.stopAnim();
     if (!(ms > 0) || reducedMotion()) { step(1); return; }
     const t0 = performance.now();
-    const tick = now => {
+    const tick = (now: number) => {
       const t = Math.min(1, (now - t0) / ms);
       step(t === 1 ? 1 : ease(t));
       this._anim = t < 1 ? requestAnimationFrame(tick) : null;
@@ -649,7 +694,7 @@ export class Viewport {
    * so the thing you aimed at stays put for the whole flight, not just at the
    * ends. `ms = 0` snaps.
    */
-  zoomAnimAt(clientX, clientY, factor, ms = 200) {
+  zoomAnimAt(clientX: number, clientY: number, factor: number, ms = 200) {
     if (this.zoomLocked || this.isMobile) return;
     const z0 = this.zoom;
     const z1 = clamp(z0 * factor, MIN_ZOOM, MAX_ZOOM);
@@ -669,7 +714,7 @@ export class Viewport {
   }
 
   /** Zoom about the screen centre. */
-  zoomBy(factor, ms = 0) {
+  zoomBy(factor: number, ms = 0) {
     this.zoomAnimAt(this.left + this.cx, this.top + this.cy, factor, ms);
   }
 
@@ -684,12 +729,14 @@ export class Viewport {
    * the raw primitive, and the only thing that should be able to seat a view
    * wholesale is a board being opened.
    */
-  viewTo(pan, zoom, ms = 0) {
-    const x1 = this.isMobile ? 0 : +pan?.x || 0;
+  viewTo(pan: Partial<Point> | null | undefined, zoom?: number, ms = 0) {
+    // Number() for the reason setView() gives: the same conversion, written so
+    // that a half a view is a case rather than an error.
+    const x1 = this.isMobile ? 0 : Number(pan?.x) || 0;
     const z1 = this.isMobile
       ? this._mobileZoom()
-      : this.zoomLocked ? this.zoom : clamp(+zoom || BASE_ZOOM, MIN_ZOOM, MAX_ZOOM);
-    const requestedY = +pan?.y || 0;
+      : this.zoomLocked ? this.zoom : clamp(Number(zoom) || BASE_ZOOM, MIN_ZOOM, MAX_ZOOM);
+    const requestedY = Number(pan?.y) || 0;
     let y1 = requestedY;
     if (this.isMobile) {
       const top = this._mobileTopPan();
@@ -717,7 +764,7 @@ export class Viewport {
   * wall-sized posters - while a board larger than the window still zooms out to
   * frame the whole of it, which is the case the cap never touches.
   */
-  fit(items, pad = 80, ms = 0, maxZoom = MAX_ZOOM) {
+  fit(items: readonly Box[] | null | undefined, pad = 80, ms = 0, maxZoom = MAX_ZOOM) {
     if (this.isMobile) {
       return this.viewTo({ x: 0, y: this._mobileTopPan() }, this._mobileZoom(), ms);
     }
@@ -750,7 +797,7 @@ export class Viewport {
    * Returns the centre, not the corner. A 1px rule at `top: N` covers N..N+1,
    * so the point it marks is N + 0.5, and every caller wants the point.
    */
-  axisOrigin() {
+  axisOrigin(): Point {
     const o = this.toScreen(0, 0);
     const d = deviceRatio();
     // Snapped in *device* pixels, then handed back in CSS ones. A CSS pixel is
@@ -827,14 +874,16 @@ export class Viewport {
     const dpr = globalThis.devicePixelRatio || 1;
     if (dpr === this._dpr) return;
     this._dpr = dpr;
-    this.world.style.setProperty('--dpr', dpr);
+    // Stringified here rather than left to the DOM's own coercion, which is
+    // what setProperty does with a number and is the only thing it can do.
+    this.world.style.setProperty('--dpr', String(dpr));
   }
 
   /** Publish 1/zoom to the world layer, if it is not already what is there. */
-  _setIz(iz) {
+  _setIz(iz: number) {
     if (iz === this._iz) return;
     this._iz = iz;
-    this.world.style.setProperty('--iz', iz);
+    this.world.style.setProperty('--iz', String(iz));
   }
 
   /**
@@ -848,7 +897,7 @@ export class Viewport {
    * inside the board and nowhere else (see inkBox() in canvas/grid.js), and it
    * used to arrive at these four numbers by repeating the arithmetic below.
    */
-  mobileScreenRect() {
+  mobileScreenRect(): MobileScreenRect {
     const z = this.zoom;
     const width = this.mobileWorldWidth * z;
     return {
@@ -936,5 +985,5 @@ export class Viewport {
     this.bus.emit('change', this);
   }
 
-  onChange(fn) { return this.bus.on('change', fn); }
+  onChange(fn: (vp: Viewport) => void) { return this.bus.on('change', fn); }
 }

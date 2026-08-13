@@ -36,6 +36,7 @@ import { board, setSetting, setBoardMode as selectBoardMode } from '../state.ts'
 import { DEFAULT_SCALE } from '../measure.ts';
 import { clearQualityOverrides } from '../quality.ts';
 import { travelMs } from '../canvas/viewport.ts';
+import type { Viewport } from '../canvas/viewport.ts';
 import { togglePlayback } from '../canvas/audio.ts';
 import { currentLens, setLens } from '../ui/board-view.ts';
 import { togglePlayerWindow } from '../ui/playlist.ts';
@@ -44,20 +45,17 @@ import { paintZoom, zoomText } from '../ui/hud.ts';
 import { reloadBoard, restartApp, scaleFromItem } from '../ui/board-actions.ts';
 
 /**
- * The half of the Viewport this run asks for.
+ * The Viewport, under the name this run knows it by.
  *
- * Structural and only these five, for the reason the item-facing factories give
- * about board items: canvas/viewport.ts is still carried under @ts-nocheck, so
- * there is no Viewport type to import, and naming the whole of one here would be
- * asserting a shape this file does not use. When the real type lands this
- * becomes an import.
+ * This was a structural half of one - fit, recenter, isMobile, zoomLocked -
+ * written because canvas/viewport.ts was still carried unchecked and there was
+ * no Viewport type to import. The type landed, so the note that said "when the
+ * real type lands this becomes an import" is now this line. The alias stays
+ * because commands.ts extends it to say what *it* adds, and because a parameter
+ * called a CommandViewport reads as the camera this run is given rather than the
+ * class it happens to be.
  */
-export interface CommandViewport {
-  fit(items: unknown[], pad: number, ms: number): void;
-  recenter(ms: number): void;
-  isMobile: boolean;
-  zoomLocked: boolean;
-}
+export type CommandViewport = Viewport;
 
 /** What main.ts hands in through createCommands, of which this run wants one. */
 export interface ViewDeps {

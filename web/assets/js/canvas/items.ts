@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Mounts board items into #world and keeps their DOM in sync with state.
 //
 // Culling keeps the DOM proportional to what is on screen rather than to the
@@ -29,6 +21,9 @@ import {
 } from '../state.ts';
 import { quality } from '../quality.ts';
 import { itemRadius, rotatedExtents } from '../geometry.ts';
+import type { Bounds } from '../geometry.ts';
+import type { Item } from '../board-model.ts';
+import type { Viewport } from './viewport.ts';
 import { buildContent } from './renderers.ts';
 import {
   buildItem, buildShadow, buildTitleControls, farKind, itemAccessibleName,
@@ -56,12 +51,21 @@ export { farKind, itemAccessibleName, wantsHead };
 const EXIT_ANIM_CAP = 12;
 
 /** id -> element, including elements currently detached by culling. */
-const nodes = new Map();
+const nodes = new Map<string, HTMLElement>();
 /** id -> lightweight geometry twin painted below the complete item stack. */
-const shadows = new Map();
-let worldEl = null;
-let shadowLayerEl = null;
-let vp = null;
+const shadows = new Map<string, HTMLElement>();
+// The three things initItems() is handed, and the reason for the `!` on a
+// handful of reads below. They are null for exactly as long as it takes main.js
+// to call it - before that this module has no board to mount into and every
+// entry point either returns early or is unreachable - and non-null together
+// for the rest of the session, since one call sets all three. Where a function
+// has already established one of them (`if (!worldEl) return`), the others are
+// read through `!` rather than re-tested, because a state with one of them set
+// and another not has never existed. cullMargin() is the exception and says so:
+// it is reachable from a repaint scheduled before the wiring.
+let worldEl: HTMLElement | null = null;
+let shadowLayerEl: HTMLElement | null = null;
+let vp: Viewport | null = null;
 
 /**
  * The set of ids currently carrying the hover lift.
@@ -85,9 +89,9 @@ let vp = null;
  * area it names, which is the one gesture that says what a fence holds without
  * moving anything.
  */
-let lastHoverId = null;
-let hoverGroup = new Set();
-function setHoverLift(id, on) {
+let lastHoverId: string | null = null;
+let hoverGroup = new Set<string>();
+function setHoverLift(id: string, on: boolean) {
   nodes.get(id)?.classList.toggle('is-hover', on);
   shadows.get(id)?.classList.toggle('is-hover', on);
 }
@@ -104,10 +108,10 @@ function setHoverLift(id, on) {
  * with it, so a hand on the note is a hand on the photograph, and the
  * photograph is the end a connection is drawn to.
  */
-let hoverWatcher = null;
-export function onHoverItem(fn) { hoverWatcher = fn; }
+let hoverWatcher: ((group: Set<string>) => void) | null = null;
+export function onHoverItem(fn: (group: Set<string>) => void) { hoverWatcher = fn; }
 
-function setHoverGroup(id) {
+function setHoverGroup(id: string | null) {
   if (id === lastHoverId) return;
   // The pin badge, and the reason it is worked out here rather than written
   // onto the node when the item is built: pinning is a fact about two items and
@@ -119,7 +123,7 @@ function setHoverGroup(id) {
   // On the hovered item alone, not on the group. The lift already says "these
   // move together"; this says "and this one is fixed to that one", which is
   // only true of the thing under the pointer.
-  nodes.get(lastHoverId)?.classList.remove('is-pinned');
+  if (lastHoverId) nodes.get(lastHoverId)?.classList.remove('is-pinned');
   clearTimeout(settleWatch);
   lastHoverId = id;
   paintPinBadge(id);
@@ -145,9 +149,13 @@ function setHoverGroup(id) {
  * hovered and the callback finds no node.
  */
 let settleWatch = 0;
-function paintPinBadge(id) {
-  const it = byId(id);
-  nodes.get(id)?.classList.toggle('is-pinned', isPinned(it));
+function paintPinBadge(id: string | null) {
+  // Nothing hovered is a real argument here - setHoverGroup(null) is how a
+  // pointer leaving the board arrives - and it used to fall through byId(null)
+  // and nodes.get(null), both of which answer nothing. Asked rather than
+  // relied on, which is the same two nothings.
+  const it = id ? byId(id) : undefined;
+  if (id) nodes.get(id)?.classList.toggle('is-pinned', isPinned(it));
   const left = settlesIn(it);
   // +50ms, so the callback lands the far side of the comparison rather than on
   // the exact millisecond it turns over.
@@ -200,7 +208,7 @@ const cullMargin = () => Math.min(CULL_MARGIN_PX / (vp ? vp.zoom : 1), CULL_MARG
  * card index by the corner it actually reaches, so the grid never drops an item
  * the precise test would have kept - see canvas/spatial.js.
  */
-const cullBox = item => {
+const cullBox = (item: Item) => {
   const r = itemRadius(item) + 2;
   return { id: item.id, x: item.x, y: item.y, w: 2 * r, h: 2 * r };
 };
@@ -214,7 +222,10 @@ const cullBox = item => {
  * per-frame path: this runs on 'items' and 'layout', never on a pan or zoom,
  * where the whole point of the index is to avoid walking every item.
  */
-function reindex(delta) {
+/** What an 'items' announcement carries, and what reconcile() reads too. */
+type ItemsDelta = { added?: string[]; removed?: string[] };
+
+function reindex(delta?: ItemsDelta) {
   if (delta && (delta.added || delta.removed)) {
     for (const id of delta.removed || []) spatial.remove(id);
     for (const id of delta.added || []) {
@@ -226,7 +237,7 @@ function reindex(delta) {
   }
 }
 
-export function initItems(world, viewport) {
+export function initItems(world: HTMLElement, viewport: Viewport) {
   worldEl = world;
   shadowLayerEl = world.querySelector('#item-shadows');
   vp = viewport;
@@ -296,7 +307,7 @@ export function initItems(world, viewport) {
   sync();
 }
 
-export function nodeFor(id) { return nodes.get(id); }
+export function nodeFor(id: string) { return nodes.get(id); }
 
 /**
  * The item something being dropped would stick to, wearing the selection ring
@@ -309,8 +320,8 @@ export function nodeFor(id) { return nodes.get(id); }
  * the sticker window (ui/sticker-window.js), which cannot see into the other's
  * closure. Two copies of one mark is two chances for one of them to be left on.
  */
-let stickTargetId = null;
-export function showStickTarget(host) {
+let stickTargetId: string | null = null;
+export function showStickTarget(host: { id: string } | null | undefined) {
   const id = host?.id ?? null;
   if (id === stickTargetId) return;
   if (stickTargetId) nodes.get(stickTargetId)?.classList.remove('is-stick-target');
@@ -319,7 +330,7 @@ export function showStickTarget(host) {
 }
 
 /** Subscribe to view changes (pan/zoom); returns the unsubscribe. */
-export function onViewChange(fn) { return vp?.onChange(fn); }
+export function onViewChange(fn: (vp: Viewport) => void) { return vp?.onChange(fn); }
 
 /**
  * The client-space box of an item, computed rather than measured.
@@ -338,7 +349,7 @@ export function onViewChange(fn) { return vp?.onChange(fn); }
  * centre across. The one adjustment is the frame: toScreen() answers in the
  * viewport's own coordinates and a position:fixed consumer wants the client's.
  */
-export function screenBoxOf(item) {
+export function screenBoxOf(item: Item | null | undefined) {
   if (!vp || !item) return null;
   const { hw, hh } = rotatedExtents(item);
   const halfW = hw * vp.zoom, halfH = hh * vp.zoom;
@@ -372,9 +383,9 @@ export function viewportClientRect() {
  * because a mark on a card has to survive the card being culled and rebuilt -
  * see the note in build(). ui/ hands the id down; this layer keeps it true.
  */
-let pickedId = null;
+let pickedId: string | null = null;
 
-export function setConnectPick(id) {
+export function setConnectPick(id: string | null | undefined) {
   if (pickedId === id) return;
   if (pickedId) nodeFor(pickedId)?.removeAttribute('data-pick');
   pickedId = id || null;
@@ -391,9 +402,9 @@ export function setConnectPick(id) {
  * nothing more - build() knows about data-pick and has no business knowing
  * about this one.
  */
-let aimedId = null;
+let aimedId: string | null = null;
 
-export function setConnectAim(id) {
+export function setConnectAim(id: string | null | undefined) {
   if (aimedId === id) return;
   if (aimedId) nodeFor(aimedId)?.removeAttribute('data-aim');
   aimedId = id || null;
@@ -416,16 +427,19 @@ export function setConnectAim(id) {
  * 0 for a card with no node - one that is culled is off screen, and a lean
  * nobody can see does not change where a line should stop.
  */
-export function tiltOf(id) {
+export function tiltOf(id: string) {
   const el = nodeFor(id);
   if (!el) return 0;
   return parseFloat(el.style.getPropertyValue('--item-tilt')) || 0;
 }
 
 /** The item id owning a DOM node, or null for canvas chrome. */
-export function itemIdFromEvent(target) {
-  const el = target instanceof Element ? target.closest('.item') : null;
-  return el ? el.dataset.id : null;
+export function itemIdFromEvent(target: EventTarget | null): string | null {
+  const el = target instanceof Element ? target.closest<HTMLElement>('.item') : null;
+  // `?? null` covers a .item with no data-id, which cannot happen - buildItem()
+  // is the only thing that makes one and it writes the id - and which the type
+  // of dataset has no way of knowing cannot happen.
+  return el ? el.dataset.id ?? null : null;
 }
 
 /**
@@ -439,10 +453,10 @@ export function itemIdFromEvent(target) {
  * media element frees its buffers when its source goes, not when the last
  * reference to it does.
  */
-function discard(el) {
+function discard(el: HTMLElement) {
   el.remove();
   releasePlayers(el);
-  for (const m of el.querySelectorAll('video, audio')) {
+  for (const m of el.querySelectorAll<HTMLMediaElement>('video, audio')) {
     m.pause();
     m.removeAttribute('src');
     // Tells the element to re-read its (now absent) source, which is what
@@ -467,8 +481,8 @@ function discard(el) {
  * the cache exists precisely so that panning away from a playing clip and back
  * does not restart it.
  */
-function disposable(el) {
-  for (const m of el.querySelectorAll('video, audio')) {
+function disposable(el: HTMLElement) {
+  for (const m of el.querySelectorAll<HTMLMediaElement>('video, audio')) {
     // POSTER_TIME, not zero. Every desktop video is mounted at the poster
     // fragment, so `currentTime > 0` was true of a clip nobody had touched -
     // which made every video card on the board undisposable and left the nodes
@@ -504,15 +518,15 @@ function disposable(el) {
  * from the cull - and it is off screen, so it is a card's worth of style and
  * layout with nothing to paint.
  */
-function sounding(el) {
-  for (const m of el.querySelectorAll('video, audio')) {
+function sounding(el: HTMLElement) {
+  for (const m of el.querySelectorAll<HTMLMediaElement>('video, audio')) {
     if (!m.paused) return true;
   }
   return false;
 }
 
 /** Let go of one item's node and shadow, mounted or merely cached. */
-function dropNode(id, el = nodes.get(id)) {
+function dropNode(id: string, el = nodes.get(id)) {
   if (!el) return;
   discard(el);
   nodes.delete(id);
@@ -528,7 +542,7 @@ function dropNode(id, el = nodes.get(id)) {
  * a delta (a load, or an emitter that names no change) it falls back to the diff
  * against the live board, which needs no payload to be correct.
  */
-function reconcile(delta) {
+function reconcile(delta?: ItemsDelta) {
   if (delta && delta.removed) {
     // A user delete (or redo of one) is the only path that names removed ids;
     // a load or clear reconciles by diff and reaches the else branch, so a
@@ -542,7 +556,9 @@ function reconcile(delta) {
     const live = new Set(board.items.map(i => i.id));
     for (const [id, el] of nodes) if (!live.has(id)) dropNode(id, el);
   }
-  worldEl.classList.toggle('is-empty', board.items.length === 0);
+  // Non-null: every caller of this is either initItems(), which set it two lines
+  // earlier, or a path that runs after it. See the note on the declaration.
+  worldEl!.classList.toggle('is-empty', board.items.length === 0);
 }
 
 /**
@@ -621,18 +637,20 @@ let detachOwed = false;
  * Dropped on every path that changes what is mounted or where it is: an item
  * moving, arriving or leaving all come in through sync() itself, which forces.
  */
-let syncedRect = null;
+let syncedRect: Bounds | null = null;
 
 /** The view moved. Re-mount only if the screen has left what we last covered. */
 function syncView() {
   if (!worldEl) return;
+  // `vp!` three times below: worldEl is set, so the viewport is too - see the
+  // note on the declarations.
   // The exception to the containment guard: the view has stopped and the
   // throttle below owes a detach. Nothing has moved, so the guard would send
   // this frame away - and the settling frame is the last one that will be
   // offered until somebody touches the board again.
-  const collecting = detachOwed && !vp.moving;
+  const collecting = detachOwed && !vp!.moving;
   if (syncedRect && !collecting) {
-    const v = vp.visibleRect(0);
+    const v = vp!.visibleRect(0);
     if (v.x0 >= syncedRect.x0 && v.x1 <= syncedRect.x1 &&
         v.y0 >= syncedRect.y0 && v.y1 <= syncedRect.y1) return;
   }
@@ -661,7 +679,9 @@ function syncView() {
  */
 export function sync(restack = true, viewPath = false) {
   if (!worldEl) return;
-  const r = vp.visibleRect(cullMargin());
+  // `vp!` and `shadowLayerEl!` below: worldEl is set, so both of those are - see
+  // the note on the declarations.
+  const r = vp!.visibleRect(cullMargin());
   syncedRect = r;
   let built = 0;
   let owed = false;
@@ -669,7 +689,7 @@ export function sync(restack = true, viewPath = false) {
   // the detach loop; the two used to be one loop over the whole board, and
   // splitting them is the point of the spatial index - the mount loop now visits
   // only what is near the viewport, and the detach loop only what is mounted.
-  const onScreen = new Set();
+  const onScreen = new Set<string>();
   // Mount pass. queryRect() narrows the field from the whole board to the cells
   // the padded viewport touches; the precise test below is the same one the old
   // whole-board scan ran, now paid only for that handful of candidates.
@@ -701,10 +721,12 @@ export function sync(restack = true, viewPath = false) {
     // A node built during a view change carries no restack behind it, so it
     // takes its rank from the last one. Harmless on the restack path too - the
     // paintStack() below overwrites it a moment later with the fresh order.
-    if (!el) node.style.zIndex = stackIndex.get(id) ?? 0;
+    // String() for the reason place() gives: a zIndex is written as one either
+    // way, and this is the way that says so.
+    if (!el) node.style.zIndex = String(stackIndex.get(id) ?? 0);
     if (!node.isConnected) worldEl.append(node);
     const shadow = shadows.get(id);
-    if (shadow && !shadow.isConnected) shadowLayerEl.append(shadow);
+    if (shadow && !shadow.isConnected) shadowLayerEl!.append(shadow);
   }
   // The title card, kept mounted whatever the pan so its style always has a node
   // to land on. Desktop only: on Mobile it is left out of onScreen, so the
@@ -716,7 +738,7 @@ export function sync(restack = true, viewPath = false) {
       const node = nodes.get(title.id) || build(title);
       if (!node.isConnected) worldEl.append(node);
       const shadow = shadows.get(title.id);
-      if (shadow && !shadow.isConnected) shadowLayerEl.append(shadow);
+      if (shadow && !shadow.isConnected) shadowLayerEl!.append(shadow);
     }
   }
   // Detach pass. Walk what is mounted - bounded by the screen, not the board -
@@ -805,13 +827,15 @@ export function viewStats() {
 }
 
 /** Force-mount an item regardless of culling (used while dragging). */
-export function ensureMounted(id) {
+export function ensureMounted(id: string) {
   const item = byId(id);
   if (!item) return null;
   const el = nodes.get(id) || build(item);
-  if (!el.isConnected) worldEl.append(el);
+  // Both non-null: there is an item to mount, so a board is open, so initItems()
+  // has run - see the note on the declarations.
+  if (!el.isConnected) worldEl!.append(el);
   const shadow = shadows.get(id);
-  if (shadow && !shadow.isConnected) shadowLayerEl.append(shadow);
+  if (shadow && !shadow.isConnected) shadowLayerEl!.append(shadow);
   paintStack();
   return el;
 }
@@ -833,9 +857,9 @@ export function ensureMounted(id) {
  * across the top of its box, so a layout packed to the box's top edge puts its
  * first row *under the name*. This is how much room to leave it.
  */
-export function barHeight(id) {
+export function barHeight(id: string) {
   const el = ensureMounted(id);
-  const bar = el?.querySelector(':scope > .item-bar');
+  const bar = el?.querySelector<HTMLElement>(':scope > .item-bar');
   return bar ? bar.offsetHeight : 0;
 }
 
@@ -854,7 +878,7 @@ export function barHeight(id) {
  * when it comes back on screen, so a mark applied only to the live node would
  * quietly disappear the moment somebody panned away from it and back.
  */
-function build(item) {
+function build(item: Item) {
   const tilt = restingTilt(item);
   const el = buildItem(item, tilt, item.id === pickedId);
 
@@ -907,11 +931,14 @@ function build(item) {
 const NO_TWIN = new Set(['title', 'ghost', 'fence', 'sticker']);
 
 /** Rebuild one item's content in place (note edits, renames). */
-function rebuild(id) {
+function rebuild(id: string) {
   const el = nodes.get(id);
   const item = byId(id);
   if (!el || !item) return;
-  const body = el.querySelector('.item-body');
+  // Non-null: buildItem() appends the body to every card it makes, and a node in
+  // this map is a card it made. The two below are the same argument - farHead()
+  // appends both of its lines before it returns the head they are in.
+  const body = el.querySelector('.item-body')!;
   // The old content is being thrown away, not detached, so it has to be let go
   // of properly first - replaceChildren would otherwise leave the card's former
   // <audio> registered under the volume control and holding its stream, once
@@ -926,7 +953,7 @@ function rebuild(id) {
   // it - only the caption inside it needs the new name. Patched rather than
   // rebuilt so the handle beside it keeps its identity, and with it any focus
   // the keyboard had put there.
-  const label = el.querySelector('.item-bar > .item-label');
+  const label = el.querySelector<HTMLElement>('.item-bar > .item-label');
   if (label) {
     label.textContent = item.name || '';
     label.hidden = !item.name;
@@ -935,12 +962,12 @@ function rebuild(id) {
   // too. A note is why this cannot be skipped as "renames only": a note's name
   // is its first line, rewritten on every edit, and an edit arrives here as an
   // ordinary re-render.
-  const head = el.querySelector(':scope > .far-head');
+  const head = el.querySelector<HTMLElement>(':scope > .far-head');
   if (head) {
-    head.querySelector('.fh-name').textContent = item.name || '';
+    head.querySelector('.fh-name')!.textContent = item.name || '';
     // The kind follows a rename too: the extension is read off item.name, so
     // renaming "sketch.png" to "sketch" changes what this card calls itself.
-    head.querySelector('.fh-kind').textContent = farKind(item);
+    head.querySelector('.fh-kind')!.textContent = farKind(item);
     head.hidden = !item.name;
   }
   // The accessible name follows the caption, or a renamed card would keep
@@ -956,7 +983,7 @@ function rebuild(id) {
  * so renaming one would be typing into a field with no visible effect. What a
  * note has instead is Edit text, which changes the line the name came from.
  */
-export const canRenameItem = id => {
+export const canRenameItem = (id: string) => {
   const type = byId(id)?.type;
   return !!type && type !== 'note';
 };
@@ -979,15 +1006,25 @@ export const canRenameItem = id => {
  * a string while someone edits it is how a .jpg goes missing without anyone
  * being told.
  */
-export function editItemName(id) {
-  const item = byId(id);
-  if (!item || !canRenameItem(id)) return;
+export function editItemName(id: string) {
+  // Bound in two steps, here and at `field` below, so that finish() sees the
+  // narrowing: a function *declaration* is hoisted above the checks, so what it
+  // closes over is the unchecked binding however early the check runs. The
+  // second const is checked by construction and is what the closure reads.
+  const named = byId(id);
+  if (!named || !canRenameItem(id)) return;
+  const item = named;
   const el = ensureMounted(id);
   const body = el?.querySelector('.item-body');
   if (!body) return;
 
-  const field = el.querySelector('.card-name') || el.querySelector('.item-label');
-  if (!field) return;
+  // `el!` here and below: ensureMounted() answers null only for an id with no
+  // item, and there is one - it was read two lines up. A body found through
+  // `el?.` is the same fact said again.
+  const shown = el!.querySelector<HTMLElement>('.card-name')
+    || el!.querySelector<HTMLElement>('.item-label');
+  if (!shown) return;
+  const field = shown;
   // A picture that has lost its name still has its caption element - the bar
   // always builds one - but it is hidden, and typing into a hidden element is
   // typing into nothing. Shown for the length of the edit, and hidden again
@@ -995,7 +1032,7 @@ export function editItemName(id) {
   const wasHidden = field.hidden;
   field.hidden = false;
 
-  el.classList.add('is-editing');
+  el!.classList.add('is-editing');
   // plaintext-only keeps pasted markup out of a name; not every engine has it.
   try { field.contentEditable = 'plaintext-only'; }
   catch { field.contentEditable = 'true'; }
@@ -1005,7 +1042,7 @@ export function editItemName(id) {
   let done = false;
   let keep = true;
 
-  const onKey = e => {
+  const onKey = (e: KeyboardEvent) => {
     e.stopPropagation();          // the canvas must not see Delete, space or Escape
     if (e.key === 'Enter') { e.preventDefault(); finish(); }
     else if (e.key === 'Escape') { keep = false; finish(); }
@@ -1024,7 +1061,7 @@ export function editItemName(id) {
     field.removeEventListener('blur', finish);
     field.contentEditable = 'false';
     field.blur();
-    el.classList.remove('is-editing');
+    el!.classList.remove('is-editing');
     // Put the field back the way state has it *before* asking for the rename.
     // A name that comes back unchanged commits nothing and so fires no rebuild,
     // and without this the half-finished text would simply stay on screen.
@@ -1049,7 +1086,9 @@ export function editItemName(id) {
   field.focus();
   const range = document.createRange();
   range.selectNodeContents(field);
-  const sel = getSelection();
+  // Non-null: getSelection() answers null only for a document with no window,
+  // and this one has just been typed into.
+  const sel = getSelection()!;
   sel.removeAllRanges();
   sel.addRange(range);
 }
@@ -1058,13 +1097,15 @@ export function editItemName(id) {
 // two conventions meet on the layout side (viewport.js handles the other half).
 // Rotation is negated for the same reason: a positive angle is anticlockwise in
 // the world, clockwise in CSS.
-function place(el, item) {
+function place(el: HTMLElement, item: Item) {
   placeBox(el, item);
-  el.style.zIndex = Math.round(item.z);
+  // String() rather than the DOM's own coercion of the number, which is the
+  // only thing it can do with one. Same value written.
+  el.style.zIndex = String(Math.round(item.z));
 }
 
 /** Apply the outer geometry shared by an item and its shadow twin. */
-function placeBox(el, item) {
+function placeBox(el: HTMLElement, item: Item) {
   el.style.left = (item.x - item.w / 2).toFixed(2) + 'px';
   el.style.top = (-item.y - item.h / 2).toFixed(2) + 'px';
   el.style.width = item.w.toFixed(2) + 'px';
@@ -1145,7 +1186,7 @@ function placeBox(el, item) {
  * box to land on whole device pixels. Null when there is nothing to do or
  * nothing to be gained.
  */
-function deviceSnap(item) {
+function deviceSnap(item: Item) {
   if (!vp || item.rot) return null;
   const dpr = globalThis.devicePixelRatio || 1;
   const k = vp.zoom * dpr;                    // world px -> device px
@@ -1173,7 +1214,7 @@ function deviceSnap(item) {
 }
 
 /** The `transform` an item wears: its own rotation, and the snap under it. */
-function itemTransform(item) {
+function itemTransform(item: Item) {
   const rot = item.rot ? `rotate(${-item.rot}deg)` : '';
   const s = deviceSnap(item);
   if (!s) return rot;
@@ -1230,7 +1271,7 @@ function resnap() {
  * not change, so it takes the one this remembers rather than forcing the whole
  * board to be recomputed for the sake of one card scrolling into view.
  */
-let stackIndex = new Map();
+let stackIndex = new Map<string, number>();
 
 // The two underlays inside #world, from canvas.css: #item-shadows at -1 and #web
 // at -2. Named here because the fence band has to be sunk past both of them, and
@@ -1259,10 +1300,10 @@ function paintStack() {
   const fences = band < 0 ? order.length : band;
   stackIndex = new Map(order.map((id, index) =>
     [id, index < fences ? index - fences + UNDERLAY_Z : index]));
-  for (const [id, el] of nodes) el.style.zIndex = stackIndex.get(id) ?? 0;
+  for (const [id, el] of nodes) el.style.zIndex = String(stackIndex.get(id) ?? 0);
 }
 
-function placeNode(id) {
+function placeNode(id: string) {
   const el = nodes.get(id);
   const shadow = shadows.get(id);
   const item = byId(id);
@@ -1286,7 +1327,9 @@ export function resetItems() {
   for (const el of nodes.values()) discard(el);
   nodes.clear();
   shadows.clear();
-  shadowLayerEl.replaceChildren();
+  // Non-null: a board can only be replaced once one has been opened, which is
+  // after initItems() - see the note on the declarations.
+  shadowLayerEl!.replaceChildren();
   // The display copies are keyed by content hash and a new board is new content;
   // release the ones this session made so a long-lived PWA does not accumulate
   // them board after board (canvas/display.js).
