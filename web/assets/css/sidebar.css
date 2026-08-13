@@ -31,9 +31,22 @@
               border-color var(--dur-fast) var(--ease),
               opacity var(--dur-base) var(--ease);
 }
+/* Background only, and no border change - which is what every other control on
+   the glass does. The zoom pill, the toolbar, the bin and the history pair all
+   answer a hover with `background: var(--paper-2)` and nothing else structural;
+   this one used to add `border-color: var(--accent)` as well, and it was the
+   only piece of furniture on the board that drew a coloured outline to say the
+   pointer was on it. At rest it wears the same hairline as its neighbours, so
+   lighting that hairline up read as a different kind of object rather than as
+   the same object being pointed at.
+
+   The accent has not gone anywhere - it is still what marks focus, and
+   :focus-visible is untouched. That distinction is the point: an outline is how
+   this interface says "the keyboard is here", and spending it on a hover left
+   the keyboard without a signal of its own. */
 #menu-btn:hover,
 #mobile-header-edit-btn:hover,
-#mobile-find-btn:hover { background: var(--paper-2); border-color: var(--accent); }
+#mobile-find-btn:hover { background: var(--paper-2); }
 /* Find rides the top-left under the menu button - a stable second affordance on
    the Mobile board, on either lens (ui/mobile-header.js paintFind). It is not on
    the [hidden] fade the pen uses: it toggles only on a layout change, not per
@@ -613,6 +626,36 @@
   border: 1.5px solid var(--paper-card);
   border-radius: var(--radius-xs);
   background: var(--accent);
+}
+/* The ring the browser draws around the thumb, taken off - and replaced rather
+   than merely removed, which is the whole of the care needed here.
+
+   The thumb is three layers as drawn: the accent fill, the --paper-card border
+   that lifts it off the track, and then a third coloured ring that is nobody's
+   design. Firefox draws it as ::-moz-focus-outer, a border on the thumb itself;
+   Chromium draws its focus ring the same way. It was there at every tier and
+   simply not legible at most of them: at Middle the thumb is rotated 45deg, so
+   the ring rotates with it and reads as part of the diamond. Harsh sets
+   `transform: none` (see quality.css), the diamond becomes a square, and the
+   ring becomes an obvious second square around it. Hence "only at Harsh" - it
+   was always there, and Harsh is where it stopped hiding.
+
+   What replaces it matters more than what is removed. A slider is one of the
+   few controls here that a keyboard user *must* be able to find, since the
+   arrow keys are how it is operated at all - deleting the indicator outright
+   would be trading a cosmetic complaint for an unusable control. So the ring
+   goes on :focus-visible instead, drawn in the same --select / --sel-line the
+   sidebar tabs use, around the whole track where it belongs. A pointer drag no
+   longer paints anything; a Tab to the control still does. */
+:is(.field, .np-volume, .ctx-range) input[type="range"]::-moz-focus-outer,
+#pick-hue::-moz-focus-outer { border: 0; }
+:is(.field, .np-volume, .ctx-range) input[type="range"]:focus,
+#pick-hue:focus { outline: none; }
+:is(.field, .np-volume, .ctx-range) input[type="range"]:focus-visible,
+#pick-hue:focus-visible {
+  outline: var(--sel-line) solid var(--select);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
 }
 /* Colour wells.
    A native colour input paints its swatch as an inner element that ignores the
