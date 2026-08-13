@@ -46,7 +46,20 @@
    the keyboard without a signal of its own. */
 #menu-btn:hover,
 #mobile-header-edit-btn:hover,
-#mobile-find-btn:hover { background: var(--paper-2); }
+#mobile-find-btn:hover { background: var(--paper-2); color: var(--accent-deep); }
+/* The mark tints with it, which is the half that makes the hover visible at all.
+   --paper-2 over --paper-card is about a twelve-unit shift on a light sheet -
+   real, and not something an eye notices on a 46px button. Every other control
+   on the glass gets away with the same faint fill because it also tints its
+   icon: .ico strokes with currentColor (base.css), so the `color` above reaches
+   the pen and the magnifier for free.
+   The hamburger cannot use that. Its three bars are spans painted with
+   `background: var(--ink)`, not strokes taking currentColor, so `color` on the
+   button does nothing to them and the fill was carrying the whole signal alone.
+   Naming them here is what puts it back - and it is the same accent-deep the
+   toolbar and the bin already move to, rather than a second idea about what a
+   hover looks like. */
+#menu-btn:hover span { background: var(--accent-deep); }
 /* Find rides the top-left under the menu button - a stable second affordance on
    the Mobile board, on either lens (ui/mobile-header.js paintFind). It is not on
    the [hidden] fade the pen uses: it toggles only on a layout change, not per
@@ -131,6 +144,9 @@
   height: 2px;
   border-radius: var(--radius-xs);
   background: var(--ink);
+  /* Matched to the button's own background transition above, so the fill and the
+     bars arrive together rather than the mark snapping ahead of the sheet. */
+  transition: background var(--dur-fast) var(--ease);
 }
 /* The wordmark, set in whatever the display face is - and when that face is a
    sans, set as heavy as it goes.
