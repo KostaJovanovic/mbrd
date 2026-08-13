@@ -378,6 +378,15 @@ export class Viewport {
   originMark: HTMLElement | null;
   pan: Point;
   zoom: number;
+  // Where the pointer last was, in client coordinates - written by
+  // canvas/input.ts on every hover and read by import/drop.ts, which has no
+  // view into that module's own `hover` and has to land a paste under the
+  // cursor too. Null on a device with no cursor, and null until one moves.
+  //
+  // Declared here rather than left as a property input.ts bolts on, because
+  // two modules already share it: one writes it and the other reads it, and
+  // the object they share it through is this one.
+  cursor: Point | null;
   // The padlock in the corner controls. Not a board setting and not saved
   // with one. A board does record the view it was left at, but deliberately
   // does not open at it - openingView() in main.js frames the whole thing
@@ -420,6 +429,7 @@ export class Viewport {
     this.originMark = originMark || null;
     this.pan = { x: 0, y: 0 };
     this.zoom = BASE_ZOOM;
+    this.cursor = null;
     this.zoomLocked = false;
     this.boardMode = 'desktop';
     this.mobileWorldWidth = 0;

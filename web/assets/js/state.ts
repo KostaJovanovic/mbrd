@@ -421,7 +421,7 @@ export function cutItems(ids: Iterable<string>) {
  * across repeated pastes. This half is the undoable one: one command, one
  * label, one Ctrl+Z for the whole group however many items it holds.
  */
-export function pasteItems(at = null) {
+export function pasteItems(at: { x: number, y: number } | null = null) {
   const copies = pasteCopies(at);
   if (!copies.length) return [];
   const added = addItems(copies, copies.length > 1 ? `Paste ${copies.length} items` : 'Paste');
