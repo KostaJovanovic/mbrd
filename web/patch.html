@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- The same pin index.html carries, for a weaker version of the same reason.
+
+     This file is served at /patch, not at /patch.html - Workers and serve.py
+     both resolve an extensionless path to the .html beside it. A document at
+     /patch resolves its relative URLs against /, which is right; a document at
+     /patch/ would resolve them against /patch/, which is not, and one stray
+     trailing slash would be a page with no stylesheet. This costs one line and
+     removes the question. -->
+<base href="/">
+<title>Patch notes - mbrd</title>
+<meta name="description" content="Every version of mbrd, newest first - what was added, what was fixed and what got faster on the infinite freeform moodboard that runs in your browser.">
+<meta name="author" content="valjdakosta">
+<meta name="robots" content="index, follow">
+<!-- Light only, and the same declaration index.html makes: the whole app reads
+     as a sheet of paper, and a dark sheet of papyrus is a contradiction. See
+     the head of tokens.css. -->
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#faf8f3">
+<link rel="canonical" href="https://mbrd.valjdakosta.com/patch">
+<link rel="icon" href="assets/img/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/img/icon-192.png">
+
+<!-- The unfurl. The image is the app's own - there is no second card to make,
+     and a changelog shared into a chat is still somebody linking to mbrd. -->
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="mbrd">
+<meta property="og:title" content="Patch notes - mbrd">
+<meta property="og:description" content="Every version of mbrd, newest first - what was added, what was fixed and what got faster.">
+<meta property="og:url" content="https://mbrd.valjdakosta.com/patch">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="https://mbrd.valjdakosta.com/assets/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The mbrd wordmark on a paper board, with cards and threads laid across it.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Patch notes - mbrd">
+<meta name="twitter:description" content="Every version of mbrd, newest first - what was added, what was fixed and what got faster.">
+<meta name="twitter:image" content="https://mbrd.valjdakosta.com/assets/img/og.png">
+<meta name="twitter:image:alt" content="The mbrd wordmark on a paper board, with cards and threads laid across it.">
+
+<!-- Two blocks, and the pair is the point: the crumb says where this page sits
+     relative to the app, and the article says what it is. Without the first a
+     crawler treats /patch as a second, unrelated root. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    { "@type": "ListItem", "position": 1, "name": "mbrd", "item": "https://mbrd.valjdakosta.com/" },
+    { "@type": "ListItem", "position": 2, "name": "Patch notes", "item": "https://mbrd.valjdakosta.com/patch" }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "mbrd patch notes",
+  "description": "Every version of mbrd, newest first - what was added, what was fixed and what got faster.",
+  "url": "https://mbrd.valjdakosta.com/patch",
+  "mainEntityOfPage": "https://mbrd.valjdakosta.com/patch",
+  "image": "https://mbrd.valjdakosta.com/assets/img/og.png",
+  "author": { "@type": "Person", "name": "valjdakosta" },
+  "about": { "@type": "SoftwareApplication", "name": "mbrd", "url": "https://mbrd.valjdakosta.com/" }
+}
+</script>
+
+<!-- The display face only. index.html preloads two because the board sets its
+     prose in Geist the moment it opens; this page is a document, and what gates
+     the look of a document is the face its title is set in. -->
+<link rel="preload" href="assets/fonts/fraunces-latin.woff2" as="font" type="font/woff2" crossorigin>
+
+<!-- Three sheets, and deliberately not the twenty index.html loads. fonts.css is
+     the @font-face set, tokens.css is the property table the whole look resolves
+     through, and patch.css is this page. The app's cascade makes a board - it
+     starts by refusing to scroll - and the banner at the top of patch.css says
+     why none of it is here. -->
+<link rel="stylesheet" href="assets/css/fonts.css">
+<link rel="stylesheet" href="assets/css/tokens.css">
+<link rel="stylesheet" href="assets/css/patch.css">
+</head>
+<body>
+
+<!-- The tooth of the stock, as a real element for the reason base.css gives:
+     the tile is multiplied over the sheet and has to sit under the text, and a
+     blend needs something to blend. It carries no zoom here, so it takes the
+     512px fallback and never moves. -->
+<div class="patch-grain" aria-hidden="true"></div>
+
+<div class="patch-shell">
+
+<header class="patch-head">
+  <a class="patch-mark" href="/">mbrd</a>
+  <h1 class="patch-title">Patch notes</h1>
+</header>
+
+<main>
+
+<!-- =====================================================================
+     THE PATCH NOTES - READ THIS BEFORE ADDING AN ENTRY
+     =====================================================================
+
+     WHAT THIS PAGE IS
+       The public changelog, and the only record of what changed in this app
+       that is written for the person using it rather than for whoever is
+       editing it next. Nothing generates it: no script writes an entry, and
+       save.bat does not touch this file. It is kept by hand, and the guard
+       against it rotting is tests/patch.test.js, not memory.
+
+     THE ONE RULE THAT MATTERS
+       The newest .patch-version on this page must equal VERSION in
+       web/assets/js/version.js, which is what the app prints in the foot of
+       its sidebar. A changelog whose top entry is behind the running app is
+       a page that quietly stops being believed. tests/patch.test.js asserts
+       the two against each other, so this fails loudly rather than silently.
+
+     VERSIONING
+       Every version is a commit number: 0.01, 0.02 ... 0.09, 0.10 - the part
+       after the dot zero-padded to two digits, bumped by save.bat, which
+       stamps both version.js and the VERSION line in web/sw.js. See
+       versionLabel() in version.js for the whole of it.
+
+       RELEASE_COMMITS in that file is empty: nothing has been crowned yet, so
+       every version so far is 0.NNN. To crown 1.0, append that commit number
+       there and keep RELEASES in save.bat in step - and give the entry the
+       extra class described under MILESTONE below.
+
+     A VERSION RANGE IS FINE, AND IS WHAT MOST ENTRIES ARE
+       An entry may cover several versions - <p class="patch-version">0.145 -
+       0.155</p> - and most of the ones on this page do. save.bat bumps the
+       counter on every commit, and a commit is not a release; grouping a run
+       of them under the thing they were building is more honest than eleven
+       entries that each say "and the other half of the same feature".
+
+       Two things a range must not do: skip a version that has an entry
+       elsewhere, and claim a span that was never published. Where the counter
+       jumped without a commit behind it, the gap is simply inside a range and
+       nobody has to know.
+
+     ADDING AN ENTRY
+       1. Put it at the TOP of <main>, directly under this comment.
+       2. Check the number against version.js before you finish.
+
+       Nothing gets folded away and nothing gets archived to a second page. The
+       whole history is on this page, open, in one column - a changelog that
+       hides its own past behind a disclosure is asking the reader to guess
+       whether there is more, and the answer is always yes. The day this file is
+       long enough for that to be a real cost, the answer is a shorter entry,
+       not a lid.
+
+     ENTRY STRUCTURE - keep this order. No nested HTML comments in here: a
+     stray close-comment ends this one early and dumps the rest of it onto the
+     page as text.
+
+       div.patch-entry                 add "patch-milestone" only for an x.0
+         p.patch-version  = "0.156"    or "0.145 - 0.155". The number only
+         p.patch-name     = "Two Words" the codename, see NAMING
+         p.patch-date     = "13 August 2026"   from git log -1 --format=%ad
+         ul.patch-list
+           li  one concrete change per bullet
+         hr.patch-rule                 optional, for a long entry
+         p.patch-sub      = "On a phone"   a heading over the next list
+         ul.patch-list
+
+     NAMING
+       Every entry carries a codename: one to three words, Title Case, tied to
+       the headline change - "The Viewer", "Both Hands", "First Light". Never
+       reuse one. It is what a person remembers an update by, which is why the
+       CSS sets it larger than the number above it.
+
+     TONE
+       Written for somebody who uses the app and does not read the code. Say
+       what is different for them, not what was refactored. Short, concrete,
+       calm. British spelling, to match the rest of the app: colour, organise,
+       centre.
+
+       Be honest about a release that has nothing in it for them. A run of
+       internal work gets a plain "Maintenance" bullet naming what it was and
+       what it bought, not a sentence dressed up to sound like a feature. There
+       are several of those on this page and they are the entries most worth
+       trusting.
+
+     BULLETS
+       - <strong> around the thing the bullet is about, so a column of prose
+         can be skimmed. Not around whole sentences.
+       - A tag may lead a bullet, as its first child:
+           <span class="patch-tag">New</span>              something new
+           <span class="patch-tag is-fix">Fix</span>       a repair
+           <span class="patch-tag is-faster">Faster</span> a speed or size win
+         Three, and no more - see the note above them in patch.css.
+       - <em> is one accent-coloured word, used sparingly. <code> is for a
+         literal string from the interface.
+       - Separators are " - ", a spaced hyphen. NEVER an em-dash: this whole
+         repository is em-dash-free on purpose. No emoji either.
+       - Entities in use: &rsquo; &ldquo; &rdquo; &amp; &hellip; &middot;
+
+     LINKS
+       Relative, and to the app: "/" is the board. There is no about page to
+       deep-link into. An external link takes target="_blank" rel="noopener",
+       the same as the credits sheet in index.html.
+
+     MILESTONE
+       The x.0 entry - there is not one yet - adds class="patch-entry
+       patch-milestone", which boxes and tints it. The style is already in
+       patch.css, written ahead of use on purpose; its comment says why.
+
+     DO NOT
+       - let the top entry drift from version.js;
+       - introduce an em-dash, an emoji, or a style="..." attribute (the last
+         one is refused by the Content-Security-Policy - see web/_headers);
+       - add an inline <script> or <style>: this page runs no script at all,
+         which is what keeps it out of the policy's hash list entirely.
+     ===================================================================== -->
+
+<div class="patch-entry">
+  <p class="patch-version">0.156</p>
+  <p class="patch-name">Under the Floor</p>
+  <p class="patch-date">13 August 2026</p>
+  <ul class="patch-list">
+    <li><strong>Almost nothing here is visible on a board</strong>, and it would
+      be dishonest to pretend otherwise. This is the release where the app was
+      rewritten in a language that checks itself, taken apart into smaller
+      pieces, and given a policy that limits what a page is allowed to do. What
+      it buys you is fewer of the faults below arriving in the first place.</li>
+    <li><span class="patch-tag is-fix">Fix</span><strong>The app now tells you
+      when something goes wrong.</strong> A failure that used to end in a
+      half-finished board and a message only the browser console ever saw now
+      says what happened, on the board, in words.</li>
+    <li><span class="patch-tag is-fix">Fix</span><strong>Hovering works on a
+      laptop that reports itself as a touchscreen.</strong> Two-in-one machines
+      say they have a finger even when a mouse is on them, and everything that
+      appears when you point at it was staying hidden.</li>
+    <li><span class="patch-tag">New</span><strong>The hint cards show on the
+      Feed.</strong> The three cards a brand-new board opens with had only ever
+      been drawn on the canvas, so opening the app on a phone gave you an empty
+      column and no suggestion of what to do with it.</li>
+    <li><span class="patch-tag is-fix">Fix</span>A card no longer takes the
+      accent outline just for being pointed at - that mark means
+      <em>selected</em>, and spending it on a hover left nothing to say which
+      card you had actually chosen.</li>
+  </ul>
+
+  <hr class="patch-rule">
+  <p class="patch-sub">Maintenance</p>
+  <ul class="patch-list">
+    <li><strong>Written in TypeScript and shipped as one file.</strong> Ninety-odd
+      source modules are compiled and bundled, so a board now downloads one
+      script instead of fetching the whole tree - and a whole class of mistake
+      is caught before it can ship.</li>
+    <li><strong>A Content-Security-Policy, with a test that keeps it honest.</strong>
+      The page now declares exactly what it is allowed to load and where from,
+      which is the difference between a bug being a bug and a bug being a way in.</li>
+    <li><strong>The two largest files were split up</strong> - the one that owned
+      every board operation, and the one that styled every card - and a test now
+      enforces the rule about which piece may reach for which. Continuous
+      integration runs the suite, the types and the linter on every push.</li>
+  </ul>
+</div>
+
+<div class="patch-entry">
+  <p class="patch-version">0.145 - 0.155</p>
+  <p class="patch-name">The Viewer</p>
+  <p class="patch-date">12 August 2026</p>
+  <ul class="patch-list">
+    <li><span class="patch-tag">New</span><strong>Open one thing as big as the
+      window will allow.</strong> Anything on the board can now be lifted off it
+      and shown full size, with the board waiting behind - a photograph at its
+      real resolution, a video with its own controls, a document you can read.</li>
+    <li><span class="patch-tag">New</span><strong>Documents open properly:</strong>
+      Word, OpenDocument, slides, spreadsheets, CSV, SVG and comic archives. Not
+      a download prompt and not a filename - the actual pages, read in the app.</li>
+    <li><span class="patch-tag">New</span><strong>A PDF opens page by page</strong>,
+      so a long one starts reading immediately instead of after the whole file
+      has been parsed.</li>
+    <li><span class="patch-tag">New</span><strong>Markdown is set as prose</strong>,
+      on the card and in the viewer - headings, lists, quotes and links, rather
+      than the asterisks you typed.</li>
+    <li><span class="patch-tag">New</span><strong>A document shows the picture it
+      already has of itself.</strong> Most of these formats carry a preview
+      image inside them, and using it means a card that looks like its contents
+      without anything having to be rendered.</li>
+    <li><span class="patch-tag">New</span>A dropped text file shows <strong>its
+      opening words</strong> on the Feed instead of its name.</li>
+    <li><span class="patch-tag">New</span>The Feed has a <strong>right-click
+      menu</strong>, which it had gone without since it arrived.</li>
+  </ul>
+</div>
+
+<div class="patch-entry">
+  <p class="patch-version">0.135 - 0.144</p>
+  <p class="patch-name">Both Hands</p>
+  <p class="patch-date">12 August 2026</p>
+  <ul class="patch-list">
+    <li><strong>The phone and the desk stopped pretending to be each other.</strong>
+      The two layouts had been one design with things hidden out of the smaller
+      one; each is now placed on its own terms, and what the desk was missing was
+      put there rather than copied across.</li>
+    <li><span class="patch-tag">New</span><strong>Colour, Link and Stickers moved
+      behind a More button on the phone</strong>, so the toolbar holds what you
+      reach for and not everything that exists.</li>
+    <li><span class="patch-tag">New</span><strong>The Board tab was rebuilt</strong>
+      around one primary section and one fold, with a View row at the top that
+      says which of the three faces of a board you are looking at.</li>
+    <li><span class="patch-tag is-fix">Fix</span><strong>The note composer drew
+      its sheet at life size, off to the left</strong> - writing a note meant
+      aiming at a box that was not where it appeared to be.</li>
+    <li><span class="patch-tag is-fix">Fix</span><strong>The sticker drawer shuts
+      the moment a shape is dragged out of it</strong>, instead of staying open
+      over the place you were dragging the shape to.</li>
+    <li><span class="patch-tag is-fix">Fix</span><strong>The Feed is printed on
+      paper again.</strong> It had been on untextured stock since it replaced the
+      old strip, so the phone board was the one surface in the app with no tooth
+      to it.</li>
+    <li><span class="patch-tag is-fix">Fix</span>The phone toolbar handle showed a
+      square corner while pressed, and the Debug section was folded away so the
+      System tab no longer ends on a footnote.</li>
+  </ul>
+</div>
+
+<div class="patch-entry">
+  <p class="patch-version">0.130 - 0.134</p>
+  <p class="patch-name">Threads and Shapes</p>
+  <p class="patch-date">12 August 2026</p>
+  <ul class="patch-list">
+    <li><span class="patch-tag">New</span><strong>Draw a connection between two
+      cards</strong>, and edit it from a small chip that follows the line while
+      it is selected. A board can now say that this relates to that.</li>
+    <li><span class="patch-tag">New</span><strong>Stickers</strong> - a drawer of
+      shapes you can drag onto the board, each tintable from the board&rsquo;s own
+      palette rather than from a stock set of primaries.</li>
+    <li><span class="patch-tag">New</span><strong>Hover flyouts on the toolbar</strong>,
+      so a tool with options shows them where the tool is instead of sending you
+      to a menu to look for them.</li>
+    <li>A full pass over the look of the app, with everything it found written
+      down rather than quietly fixed - including which parts were deliberately
+      left alone.</li>
+  </ul>
+</div>
+
+<div class="patch-entry">
+  <p class="patch-version">0.126 - 0.129</p>
+  <p class="patch-name">Feed and Playlist</p>
+  <p class="patch-date">11 August 2026</p>
+  <ul class="patch-list">
+    <li><span class="patch-tag">New</span><strong>The Feed</strong> - a board read
+      as one scrolling column instead of a cramped canvas. It is a way to browse
+      what is on a board, not a smaller version of the board.</li>
+    <li><span class="patch-tag">New</span><strong>The Playlist</strong>: every
+      piece of audio on a board, as a player.</li>
+    <li><span class="patch-tag">New</span><strong>More than one board.</strong> A
+      switcher that holds them all, each with a picture of itself, so a board is
+      no longer the single thing this browser happens to be holding.</li>
+  </ul>
+</div>
+
+<div class="patch-entry">
+  <p class="patch-version">0.117 - 0.125</p>
+  <p class="patch-name">Regions</p>
+  <p class="patch-date">4 - 6 August 2026</p>
+  <ul class="patch-list">
+    <li><span class="patch-tag">New</span><strong>Fences</strong> - a named region
+      drawn on the board rather than a card lying on it. Things inside one move
+      with it, and its name is readable at any zoom, which is what makes a large
+      board navigable.</li>
+    <li><span class="patch-tag">New</span><strong>A colour picker</strong>, so a
+      pigment can be chosen by eye rather than picked from a list.</li>
+    <li>At the softer end of the look, a region is now drawn as a <strong>cork
+      board</strong>, with the stock to match.</li>
+  </ul>
+</div>
+
+<div class="patch-entry">
+  <p class="patch-version">0.105 - 0.116</p>
+  <p class="patch-name">Grain and Credit</p>
+  <p class="patch-date">1 - 3 August 2026</p>
+  <ul class="patch-list">
+    <li><span class="patch-tag">New</span><strong>The paper got its tooth.</strong>
+      The sheet is a real 300gsm grain now, multiplied over the board and
+      travelling with it as you pan and zoom, rather than a flat wash of colour.</li>
+    <li><span class="patch-tag">New</span><strong>A now-playing bar</strong> for
+      whatever the board is playing, and a <strong>credits sheet</strong> for the
+      two people who made this.</li>
+    <li><span class="patch-tag">New</span><strong>The toolbar</strong>, in the
+      shape it still has.</li>
+    <li>Maintenance: the single stylesheet the whole app had grown into was split
+      into one file per subsystem, and the first full audit of the code was
+      carried out and written down.</li>
+  </ul>
+</div>
+
+<div class="patch-entry">
+  <p class="patch-version">0.87 - 0.92</p>
+  <p class="patch-name">Solid Ground</p>
+  <p class="patch-date">31 July 2026</p>
+  <ul class="patch-list">
+    <li><span class="patch-tag is-fix">Fix</span><strong>A board with an
+      unresolved conflict refuses to save</strong> rather than writing something
+      half-merged over the good copy, and three races behind that were closed
+      with it.</li>
+    <li><span class="patch-tag is-faster">Faster</span><strong>Exporting no longer
+      holds the whole board in memory twice.</strong> The archive is written as
+      it goes, which is the difference between a large board exporting and a
+      large board failing to.</li>
+    <li><span class="patch-tag is-faster">Faster</span>Undo history is now bounded
+      by <strong>how much it is holding</strong> rather than by how many steps it
+      has, so a few very large steps can no longer fill the browser&rsquo;s
+      storage on their own.</li>
+    <li>Maintenance: the file that owned every board operation was given a floor
+      to stand on and had its layouts, geometry and stacking lifted out of it.</li>
+  </ul>
+</div>
+
+<div class="patch-entry">
+  <p class="patch-version">0.59 - 0.75</p>
+  <p class="patch-name">Measured</p>
+  <p class="patch-date">28 - 31 July 2026</p>
+  <ul class="patch-list">
+    <li><span class="patch-tag is-faster">Faster</span><strong>Panning and
+      zooming a large board</strong>, worked on against measurements rather than
+      impressions - the reading taken against the display&rsquo;s own refresh, and
+      the numbers kept.</li>
+    <li><span class="patch-tag is-faster">Faster</span><strong>Photographs are
+      mounted at a sensible size</strong> for how large they are actually being
+      drawn, and a video does not load until it is first played on a touch
+      device. Zoomed out, image decoding and card shadows are shed entirely.</li>
+    <li><span class="patch-tag">New</span>A redrawn app icon: three cards on the
+      grid.</li>
+  </ul>
+</div>
+
+<div class="patch-entry">
+  <p class="patch-version">0.41 - 0.57</p>
+  <p class="patch-name">Hardening</p>
+  <p class="patch-date">26 - 28 July 2026</p>
+  <ul class="patch-list">
+    <li><strong>The boundaries where a file comes in were tightened</strong> -
+      what is stored, what is imported and what is drawn - so that a malformed
+      or hostile file is refused rather than trusted. The readers that parse
+      files this app did not write check their sizes before they allocate.</li>
+    <li><span class="patch-tag is-fix">Fix</span><strong>Gestures snap to the
+      board&rsquo;s real grid</strong>, not to the lattice as it appears at the
+      current zoom - so a card dropped at 40% lands where one dropped at 100%
+      would.</li>
+    <li>Every bundled typeface now carries its provenance and its licence.</li>
+  </ul>
+</div>
+
+<div class="patch-entry">
+  <p class="patch-version">0.00 - 0.21</p>
+  <p class="patch-name">First Light</p>
+  <p class="patch-date">25 July 2026</p>
+  <ul class="patch-list">
+    <li><strong>mbrd arrived.</strong> An infinite freeform board in a browser
+      tab, with no account, no server and nothing uploaded - and it was very
+      nearly all built in a day.</li>
+    <li><span class="patch-tag">New</span><strong>The whimsy axis</strong>: one
+      dial that takes the whole interface from scrapbook to spec sheet - the
+      corners, the type, the ornament and how much anything moves - and the
+      palettes that ride on it.</li>
+    <li><span class="patch-tag">New</span><strong>Notes, links, audio cards,
+      pictures and 3D models</strong>, with album art filling a music card, a
+      YouTube link that becomes a player if you ask it to, and Markdown in a
+      note.</li>
+    <li><span class="patch-tag">New</span><strong>A web of threads between
+      items</strong>, a bin that greys out when it is empty, renaming in place,
+      and Find on the board with <code>Ctrl+K</code>.</li>
+    <li><span class="patch-tag">New</span><strong>A board you can hold in one
+      hand</strong>, and the file format the whole thing saves to, specified and
+      written down.</li>
+  </ul>
+</div>
+
+</main>
+
+<footer class="patch-foot">
+  <span>mbrd by valjdakosta</span>
+  <a href="/">Back to the board</a>
+</footer>
+
+</div>
+</body>
+</html>

@@ -42,6 +42,7 @@
 // is what answers it, and a finger is refused whatever it is attached to.
 
 import { openAnchored, close, setMenuCloseHook } from './menu.ts';
+import type { MenuEntry } from './menu.ts';
 import { el } from '../util.ts';
 import { ARRANGEMENTS } from '../arrange/arrangements.ts';
 import { NOTE_TINTS } from '../import/drop.ts';
@@ -105,7 +106,7 @@ let closeTimer = 0;
  * test can call with a stub. Exported for that, and for tests/flyout.test.js to
  * check the keys against the markup.
  */
-export const FLYOUTS: Record<string, (cmds: FlyoutCommands) => unknown[]> = {
+export const FLYOUTS: Record<string, (cmds: FlyoutCommands) => MenuEntry[]> = {
   rearrange: arrangeEntries,
   'add-note': noteEntries,
   'add-swatch': colourEntries,

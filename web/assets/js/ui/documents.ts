@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Documents, read into a tree the viewer can show.
 //
 // The second half of what import/document.js started. That one finds the picture
@@ -64,8 +56,30 @@ const MAX_CELLS = 40000;       // table cells across one document
 const MAX_PAGES = 400;         // comic pages, slides
 const MAX_IMAGES = 300;        // pictures drawn out of one document
 
+/**
+ * An archive as readZip() answers it: the entry name, and the bytes.
+ *
+ * Named because half the functions below take one and nothing else does.
+ */
+// The buffer is named because storage/zip.ts names it: a Uint8Array over an
+// ArrayBuffer rather than over ArrayBufferLike, which is what lets the bytes go
+// straight into a Blob without being copied first.
+type Entries = Map<string, Uint8Array<ArrayBuffer>>;
+
+/** rId -> target path, as a _rels part gives it - see relationships(). */
+type Rels = Map<string, string>;
+
+/**
+ * What every reader in the table below is.
+ *
+ * The two that draw pictures take the URL list to record what they minted; the
+ * four that cannot are written without it, which is a narrower function and so
+ * still one of these.
+ */
+type DocReader = (blob: Blob, urls: string[]) => Promise<DocumentFragment>;
+
 /** ext -> the reader that opens it. The whole of what this module supports. */
-const READERS = {
+const READERS: Record<string, DocReader> = {
   docx: ooxmlText, docm: ooxmlText, dotx: ooxmlText, dotm: ooxmlText,
   pptx: ooxmlSlides, pptm: ooxmlSlides, ppsx: ooxmlSlides, potx: ooxmlSlides,
   xlsx: ooxmlSheets, xlsm: ooxmlSheets, xltx: ooxmlSheets,
@@ -77,7 +91,10 @@ const READERS = {
 };
 
 /** Whether the viewer has a reader for this file. */
-export const canReadDocument = ext => !!READERS[String(ext || '').toLowerCase()];
+// `unknown` rather than string, and that is the call site's shape: the viewer
+// asks with item.meta?.ext, and ItemMeta is unknown per key on purpose. The
+// String() below is what has always answered for that.
+export const canReadDocument = (ext: unknown) => !!READERS[String(ext || '').toLowerCase()];
 
 /**
  * Read `blob` as `ext`, into `{ node, release }`.
@@ -88,11 +105,11 @@ export const canReadDocument = ext => !!READERS[String(ext || '').toLowerCase()]
  *
  * Throws on anything it cannot read, which the caller shows as one line.
  */
-export async function readDocument(blob, ext) {
+export async function readDocument(blob: Blob, ext: unknown) {
   const read = READERS[String(ext || '').toLowerCase()];
   if (!read) throw new Error('No reader for that file');
   if (blob.size > MAX_CONTAINER) throw new Error('That file is too large to open here');
-  const urls = [];
+  const urls: string[] = [];
   const node = await read(blob, urls);
   return { node, release: () => { for (const u of urls) URL.revokeObjectURL(u); urls.length = 0; } };
 }
@@ -102,7 +119,12 @@ export async function readDocument(blob, ext) {
 // ---------------------------------------------------------------------------
 
 const dec = new TextDecoder();
-const el = (tag, cls) => {
+/**
+ * Generic over the tag, so a caller that asks for an 'img' is handed something
+ * with a `src` on it. The three callers that build a heading name from a number
+ * cast, and say why where they do it.
+ */
+const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string): HTMLElementTagNameMap[K] => {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
   return n;
@@ -118,7 +140,7 @@ const el = (tag, cls) => {
  * is then walked and copied into real elements; the parsed document itself never
  * reaches the page.
  */
-function xmlOf(entries, path) {
+function xmlOf(entries: Entries, path: string) {
   const bytes = entries.get(path);
   if (!bytes) throw new Error(`That file is missing ${path}`);
   const doc = new DOMParser().parseFromString(dec.decode(bytes), 'application/xml');
@@ -127,15 +149,15 @@ function xmlOf(entries, path) {
 }
 
 /** Every element with this local name, whatever namespace prefix it carries. */
-const byLocal = (root, name) =>
+const byLocal = (root: Document | Element, name: string) =>
   [...root.getElementsByTagName('*')].filter(n => n.localName === name);
 
 /** The first child element with this local name, or null. */
-const childOf = (node, name) =>
+const childOf = (node: Element, name: string) =>
   [...node.children].find(n => n.localName === name) || null;
 
 /** A blob URL for an archive entry, remembered so it can be released. */
-function urlFor(entries, path, urls, mime) {
+function urlFor(entries: Entries, path: string, urls: string[], mime?: string) {
   const bytes = entries.get(path);
   if (!bytes) return null;
   const url = URL.createObjectURL(new Blob([bytes], { type: mime || guessMime(path) }));
@@ -143,7 +165,7 @@ function urlFor(entries, path, urls, mime) {
   return url;
 }
 
-function guessMime(path) {
+function guessMime(path: string) {
   const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
   return ({
     png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
@@ -151,8 +173,14 @@ function guessMime(path) {
   })[ext] || 'application/octet-stream';
 }
 
-/** A table from rows of strings, with the first row as the head if asked. */
-function tableOf(rows, { head = true } = {}) {
+/**
+ * A table from rows of strings, with the first row as the head if asked.
+ *
+ * The cells are `string | null` because that is what a DOM textContent answers
+ * and what the readers hand over untouched - and because textContent is also
+ * what they are written back into, which takes null as the empty cell it is.
+ */
+function tableOf(rows: (string | null)[][], { head = true } = {}) {
   const t = el('table', 'doc-table');
   let cells = 0;
   const wrap = el('div', 'doc-table-wrap');
@@ -180,7 +208,7 @@ function tableOf(rows, { head = true } = {}) {
 }
 
 /** A heading for a section of a multi-part document (a slide, a sheet, a page). */
-function partHead(text) {
+function partHead(text: string) {
   const h = el('h2', 'doc-part');
   h.textContent = text;
   return h;
@@ -207,7 +235,7 @@ function partHead(text) {
  * unordered list, which is right for the shape and wrong for the marker on a
  * numbered list. Stated rather than hidden.
  */
-async function ooxmlText(blob, urls) {
+async function ooxmlText(blob: Blob, urls: string[]) {
   const entries = await readZip(blob);
   const doc = xmlOf(entries, 'word/document.xml');
   const rels = relationships(entries, 'word/_rels/document.xml.rels');
@@ -234,7 +262,9 @@ async function ooxmlText(blob, urls) {
     // A run of list paragraphs becomes one list. Nesting is by the level Word
     // recorded, one <ul> deep per level, which is the shape without the markers.
     if (!list) { list = el('ul', 'doc-list'); out.append(list); }
-    let host = list;
+    // Element rather than the <ul> it starts as: the walk down the levels below
+    // steps onto whatever nested list it finds, which the DOM answers as one.
+    let host: Element = list;
     for (let d = 0; d < Math.min(level, 6); d++) {
       const last = host.lastElementChild;
       const nested = last && childOf(last, 'ul');
@@ -252,8 +282,8 @@ async function ooxmlText(blob, urls) {
 }
 
 /** rId -> target path, from a _rels part. Missing is an empty map, not an error. */
-function relationships(entries, path) {
-  const map = new Map();
+function relationships(entries: Entries, path: string): Rels {
+  const map: Rels = new Map();
   const bytes = entries.get(path);
   if (!bytes) return map;
   try {
@@ -268,25 +298,28 @@ function relationships(entries, path) {
 }
 
 /** The list level of a paragraph, or null if it is not a list item. */
-function listLevel(p) {
+function listLevel(p: Element) {
   const props = childOf(p, 'pPr');
   const num = props && childOf(props, 'numPr');
   if (!num) return null;
   const ilvl = childOf(num, 'ilvl');
   const v = ilvl && Number(ilvl.getAttribute('w:val') ?? ilvl.getAttribute('val'));
-  return Number.isFinite(v) ? Math.max(0, v) : 0;
+  return v !== null && Number.isFinite(v) ? Math.max(0, v) : 0;
 }
 
-function wordParagraph(p, entries, rels, urls, mayDrawImage) {
+function wordParagraph(p: Element, entries: Entries, rels: Rels, urls: string[],
+  mayDrawImage: () => boolean) {
   const props = childOf(p, 'pPr');
   const style = props && childOf(props, 'pStyle');
   const name = (style?.getAttribute('w:val') || style?.getAttribute('val') || '').toLowerCase();
   // Heading1..Heading9, and the aliases Word itself writes for a title page.
   const heading = /^heading([1-9])$/.exec(name);
-  const tag = heading ? 'h' + Math.min(6, Number(heading[1]))
+  // The cast is the clamp above read as a type: h1 through h6 are all tag names,
+  // and Math.min(6, …) on a digit matched by the pattern cannot leave that set.
+  const tag = (heading ? 'h' + Math.min(6, Number(heading[1]))
     : name === 'title' ? 'h1'
     : name === 'subtitle' ? 'h2'
-    : 'p';
+    : 'p') as keyof HTMLElementTagNameMap;
   const block = el(tag, name === 'quote' || name === 'intensequote' ? 'doc-quote' : '');
 
   for (const child of p.children) {
@@ -308,15 +341,20 @@ function wordParagraph(p, entries, rels, urls, mayDrawImage) {
 }
 
 /** One run: its text, its emphasis, and any picture drawn inside it. */
-function wordRun(r, entries, rels, urls, mayDrawImage) {
-  const out = [];
+function wordRun(r: Element, entries: Entries, rels: Rels, urls: string[],
+  mayDrawImage: () => boolean) {
+  const out: Node[] = [];
   const props = childOf(r, 'rPr');
-  const on = what => !!(props && childOf(props, what)
-    && (childOf(props, what).getAttribute('w:val') ?? '') !== '0');
+  // The second childOf is asserted because the first conjunct just called it and
+  // got an element: the lookup is a scan of the same children for the same name.
+  const on = (what: string) => !!(props && childOf(props, what)
+    && (childOf(props, what)!.getAttribute('w:val') ?? '') !== '0');
 
   for (const child of r.children) {
     if (child.localName === 't') {
-      let node = document.createTextNode(child.textContent);
+      // An element's textContent is a string; only a document or a doctype
+      // answers null, and neither can be a child of a run.
+      let node: Node = document.createTextNode(child.textContent!);
       // Innermost first, so bold-and-italic nests rather than fighting.
       if (on('i')) node = nest('em', node);
       if (on('b')) node = nest('strong', node);
@@ -335,7 +373,7 @@ function wordRun(r, entries, rels, urls, mayDrawImage) {
   return out;
 }
 
-const nest = (tag, child) => {
+const nest = (tag: keyof HTMLElementTagNameMap, child: Node) => {
   const n = document.createElement(tag);
   n.append(child);
   return n;
@@ -350,7 +388,8 @@ const nest = (tag, child) => {
  * supplied, so a target of `../../etc/passwd` resolves to no entry and draws
  * nothing rather than reaching anywhere.
  */
-function wordImage(node, entries, rels, urls, mayDrawImage) {
+function wordImage(node: Element, entries: Entries, rels: Rels, urls: string[],
+  mayDrawImage: () => boolean) {
   if (!mayDrawImage()) return null;
   const blip = byLocal(node, 'blip')[0];
   const id = blip?.getAttribute('r:embed') || blip?.getAttribute('embed');
@@ -365,8 +404,8 @@ function wordImage(node, entries, rels, urls, mayDrawImage) {
   return img;
 }
 
-function wordTable(tbl) {
-  const rows = [];
+function wordTable(tbl: Element) {
+  const rows: string[][] = [];
   for (const tr of [...tbl.children].filter(n => n.localName === 'tr')) {
     rows.push([...tr.children]
       .filter(n => n.localName === 'tc')
@@ -387,7 +426,7 @@ function wordTable(tbl) {
  * which is the whole of it - a real reading of the presentation part's slide id
  * list would also handle a hidden slide, and this does not.
  */
-async function ooxmlSlides(blob, urls) {
+async function ooxmlSlides(blob: Blob, urls: string[]) {
   const entries = await readZip(blob);
   const slides = [...entries.keys()]
     .filter(k => /^ppt\/slides\/slide\d+\.xml$/.test(k))
@@ -438,7 +477,7 @@ async function ooxmlSlides(blob, urls) {
   return frag;
 }
 
-export const slideNo = path => Number(/(\d+)\.xml$/.exec(path)?.[1] || 0);
+export const slideNo = (path: string) => Number(/(\d+)\.xml$/.exec(path)?.[1] || 0);
 
 /**
  * A relationship target resolved against the part that referenced it.
@@ -447,7 +486,7 @@ export const slideNo = path => Number(/(\d+)\.xml$/.exec(path)?.[1] || 0);
  * the archive's own key set, so a target that climbs out of the package simply
  * finds nothing.
  */
-export function resolveFrom(base, target) {
+export function resolveFrom(base: string, target: string) {
   const parts = base.replace(/\/$/, '').split('/');
   for (const seg of target.replace(/^\/+/, '').split('/')) {
     if (seg === '.' || seg === '') continue;
@@ -470,7 +509,7 @@ export function resolveFrom(base, target) {
  * Formulas are not evaluated: the cached value Excel stored is what is shown,
  * which is what the file says the answer was.
  */
-async function ooxmlSheets(blob) {
+async function ooxmlSheets(blob: Blob) {
   const entries = await readZip(blob);
   const shared = sharedStrings(entries);
   const sheets = [...entries.keys()]
@@ -485,10 +524,10 @@ async function ooxmlSheets(blob) {
     section.append(partHead(names[n] || `Sheet ${n + 1}`));
     try {
       const doc = xmlOf(entries, path);
-      const rows = [];
+      const rows: (string | null)[][] = [];
       for (const row of byLocal(doc, 'row')) {
         if (rows.length > MAX_BLOCKS) break;
-        const cells = [];
+        const cells: (string | null)[] = [];
         for (const c of [...row.children].filter(x => x.localName === 'c')) {
           // The column letter in r="B7" is the position; without it a row of
           // three values with a gap in the middle would close up.
@@ -514,8 +553,8 @@ async function ooxmlSheets(blob) {
   return frag;
 }
 
-function sharedStrings(entries) {
-  const out = [];
+function sharedStrings(entries: Entries) {
+  const out: string[] = [];
   if (!entries.has('xl/sharedStrings.xml')) return out;
   try {
     const doc = xmlOf(entries, 'xl/sharedStrings.xml');
@@ -526,7 +565,7 @@ function sharedStrings(entries) {
   return out;
 }
 
-function sheetNames(entries) {
+function sheetNames(entries: Entries) {
   try {
     const doc = xmlOf(entries, 'xl/workbook.xml');
     return byLocal(doc, 'sheet').map(s => s.getAttribute('name') || '');
@@ -535,7 +574,7 @@ function sheetNames(entries) {
   }
 }
 
-function cellValue(c, shared) {
+function cellValue(c: Element, shared: string[]) {
   const type = c.getAttribute('t');
   if (type === 'inlineStr') return byLocal(c, 't').map(t => t.textContent).join('');
   const v = childOf(c, 'v');
@@ -548,7 +587,7 @@ function cellValue(c, shared) {
 }
 
 /** "B7" -> 1. Letters only, so a malformed reference answers -1. */
-export function colIndex(ref) {
+export function colIndex(ref: string) {
   const m = /^([A-Z]+)/.exec(ref);
   if (!m) return -1;
   let n = 0;
@@ -569,7 +608,7 @@ export function colIndex(ref) {
  * reader for both, because the difference between them is which container the
  * blocks are inside and nothing else.
  */
-async function odfText(blob, urls) {
+async function odfText(blob: Blob, urls: string[]) {
   const entries = await readZip(blob);
   const doc = xmlOf(entries, 'content.xml');
   const pages = byLocal(doc, 'page');
@@ -596,16 +635,18 @@ async function odfText(blob, urls) {
   return frag;
 }
 
-function odfBlocks(root, host, entries, urls) {
+function odfBlocks(root: Element, host: HTMLElement, entries: Entries, urls: string[]) {
   let n = 0;
   let images = 0;
-  const walk = (node, into) => {
+  const walk = (node: Element, into: Element) => {
     for (const child of node.children) {
       if (n++ > MAX_BLOCKS) return;
       switch (child.localName) {
         case 'h': {
           const level = Number(child.getAttribute('text:outline-level') || 1);
-          const h = el('h' + Math.min(6, Math.max(1, level)));
+          // Cast for the reason wordParagraph()'s does: the clamp on either side
+          // of it is what makes the name one of h1..h6.
+          const h = el(('h' + Math.min(6, Math.max(1, level))) as keyof HTMLElementTagNameMap);
           h.textContent = child.textContent;
           into.append(h);
           break;
@@ -640,7 +681,7 @@ function odfBlocks(root, host, entries, urls) {
           break;
         }
         case 'table': {
-          const rows = [];
+          const rows: (string | null)[][] = [];
           for (const tr of byLocal(child, 'table-row')) {
             rows.push([...tr.children]
               .filter(c => c.localName === 'table-cell')
@@ -659,7 +700,7 @@ function odfBlocks(root, host, entries, urls) {
 }
 
 /** A spreadsheet is the same content.xml, and its tables are the whole of it. */
-async function odfSheets(blob) {
+async function odfSheets(blob: Blob) {
   const entries = await readZip(blob);
   const doc = xmlOf(entries, 'content.xml');
   const tables = byLocal(doc, 'table').filter(t => t.localName === 'table');
@@ -668,10 +709,10 @@ async function odfSheets(blob) {
   tables.forEach((table, n) => {
     const section = el('section', 'doc-sheet');
     section.append(partHead(table.getAttribute('table:name') || `Sheet ${n + 1}`));
-    const rows = [];
+    const rows: (string | null)[][] = [];
     for (const tr of byLocal(table, 'table-row')) {
       if (rows.length > MAX_BLOCKS) break;
-      const cells = [];
+      const cells: (string | null)[] = [];
       for (const c of [...tr.children].filter(x => x.localName === 'table-cell')) {
         // ODF runs of identical cells are collapsed into one with a repeat
         // count, and a trailing run of empties can claim to repeat a thousand
@@ -701,11 +742,14 @@ async function odfSheets(blob) {
  * tab-separated - a .csv written by a spreadsheet in a locale where the comma is
  * the decimal point is a semicolon file.
  */
-async function delimited(blob) {
+async function delimited(blob: Blob) {
   const text = await blob.text();
   const head = text.slice(0, 4096).split('\n')[0] || '';
   const sep = [',', ';', '\t', '|']
-    .map(c => [c, head.split(c).length])
+    // `as const` so the pair reads as a delimiter and a count rather than as two
+    // of either - the sort below subtracts one half and the pick returns the
+    // other.
+    .map(c => [c, head.split(c).length] as const)
     .sort((a, b) => b[1] - a[1])[0][0];
   const rows = parseDelimited(text, sep).slice(0, MAX_BLOCKS);
   if (!rows.length) throw new Error('That file has no rows');
@@ -721,9 +765,9 @@ async function delimited(blob) {
  * of this module that is a decision rather than a walk, and the only four that
  * can be checked without a DOM.
  */
-export function parseDelimited(text, sep) {
-  const rows = [];
-  let row = [];
+export function parseDelimited(text: string, sep: string) {
+  const rows: string[][] = [];
+  let row: string[] = [];
   let field = '';
   let quoted = false;
   for (let i = 0; i < text.length; i++) {
@@ -769,7 +813,7 @@ export function parseDelimited(text, sep) {
  * that the author thought of everything, and the history of SVG sanitisers is
  * the history of that promise being wrong.
  */
-async function svgDoc(blob) {
+async function svgDoc(blob: Blob) {
   const doc = new DOMParser().parseFromString(await blob.text(), 'image/svg+xml');
   const root = doc.documentElement;
   if (!root || root.localName !== 'svg' || doc.querySelector('parsererror')) {
@@ -793,7 +837,7 @@ const SVG_OK = new Set([
   'marker', 'switch', 'style',
 ]);
 
-function scrub(node) {
+function scrub(node: Element) {
   for (const child of [...node.children]) {
     if (!SVG_OK.has(child.localName)) { child.remove(); continue; }
     for (const attr of [...child.attributes]) {
@@ -817,7 +861,7 @@ function scrub(node) {
 // ---------------------------------------------------------------------------
 
 /** A CBZ: every picture in it, in the order its names sort. */
-async function comic(blob, urls) {
+async function comic(blob: Blob, urls: string[]) {
   const entries = await readZip(blob);
   const pages = [...entries.keys()]
     .filter(k => /\.(png|jpe?g|gif|webp|bmp)$/i.test(k) && !k.startsWith('__MACOSX'))

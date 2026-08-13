@@ -1,0 +1,456 @@
+/* =========================================================
+   mbrd - the patch notes page
+
+   NOT ONE OF THE TWENTY. Every other sheet in this directory is loaded by
+   index.html and is part of one cascade, in the order the banner at the top of
+   base.css sets out. This one is loaded by patch.html and by nothing else, so it
+   is not in that order, not in APP_CSS_ORDER in tests/helpers.js, and not in
+   index.html - a page sheet in the app's cascade would be twenty kilobytes of
+   rules matching nothing on every board that ever opens.
+
+   It IS in SHELL in web/sw.js, and that is not optional: tests/sw.test.js walks
+   this directory and asserts every .css in it is precached, on the argument that
+   a stylesheet the app ships and cannot fetch offline is a page that renders
+   naked. The changelog is part of what this app ships.
+
+   ── Why it does not simply load base.css ──
+
+   Because base.css exists to make a *board*, and the first thing it does is
+   `html, body { height: 100%; overflow: hidden }` - the page cannot scroll,
+   which is correct for a canvas that owns every gesture and fatal for a
+   document. Under that sit the boot cover, #viewport, #world and the transform
+   layer, none of which is on this page. So the two things this page genuinely
+   wants from base.css - the sheet, and the tooth on it - are restated below
+   against the same tokens, and the rest is left where it belongs. They are a
+   deliberate copy and not an import: if the paper changes, it changes in
+   tokens.css, which is the file both of them read.
+
+   ── What it takes from the app, and what it does not ──
+
+   Everything visual resolves through tokens.css, exactly as the twenty do:
+   no hue, no corner, no duration and no typeface is written here. That is the
+   whole of "this page looks like mbrd" - the warm sheet, the iron-gall ink, the
+   terracotta, Fraunces announcing and Geist reading, corners eased by --radius.
+
+   What it does not take is the look the *reader* is wearing. A board's palette
+   and its whimsy tier travel in the .mbrd file and are written onto :root by
+   ui/appearance.ts at runtime; this page has no board and runs no script at all,
+   so it renders at the base look - Papyrus, whimsy 1 - forever. That is the
+   honest answer rather than a missing feature: the palette is a property of a
+   board, the changelog is not a board, and the alternative is a page that reads
+   the last board's pigments and so dresses the release notes in colours
+   extracted from somebody's holiday photographs.
+
+   Running no script is also what keeps the page out of the Content-Security-
+   Policy in web/_headers. There is no inline <style> and no inline <script> to
+   hash, and no style="..." attribute anywhere - see the style-src section there
+   and tests/csp.test.js, which walks every .html in web/ and would say so.
+
+   ── Classes only, no ids ──
+
+   tests/element-ids.test.js walks this directory and asserts that every id a
+   selector names is an element that exists in index.html. This page's elements
+   are not in index.html, so an id selector here would fail that test as an
+   orphan - correctly, since the test cannot see patch.html. Everything below is
+   therefore a class, which costs nothing: there is one of each of these on the
+   page and no JavaScript looking any of them up.
+   ========================================================= */
+
+* { box-sizing: border-box; }
+
+/* The one place this page differs from the app on purpose. base.css pins the
+   board to the window and refuses to scroll; a document does the opposite. */
+html {
+  /* So an anchored jump does not land with the heading against the top edge. */
+  scroll-padding-top: 24px;
+}
+
+html, body {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--t-body);
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Selected text in this board's pigment rather than the browser's blue, the
+   same rule and the same reasoning as base.css: a highlight belongs to the
+   palette, not to a surface. */
+::selection {
+  background: var(--highlight);
+  color: var(--highlight-ink);
+}
+
+/* The sheet - the same stock the board is printed on, restated. Two colour
+   blooms scaled by --wash and an ink vignette scaled by --vignette, so this
+   page flattens and decorates with the look exactly as the board does. The
+   percentages are base.css's own and the note about why the first is 3% rather
+   than 5% lives there. */
+body {
+  background-color: var(--paper);
+  background-image:
+    radial-gradient(58% 44% at 18% 12%, color-mix(in srgb, var(--accent) calc(3% * var(--wash)), transparent), transparent 70%),
+    radial-gradient(52% 40% at 84% 78%, color-mix(in srgb, var(--leafy) calc(4% * var(--wash)), transparent), transparent 72%),
+    radial-gradient(120% 100% at 50% 50%, transparent 55%, color-mix(in srgb, var(--ink) calc(5% * var(--vignette)), transparent));
+}
+
+/* The tooth of the stock: the same 512px tile, multiplied over the finished
+   sheet. Fixed rather than scrolling with the text, because the grain is the
+   paper and paper does not slide under its own ink.
+
+   No --grain-pos and no --grain-tile: those are written by canvas/grain.ts as
+   the board zooms, and there is no zoom here. The fallbacks in base.css exist
+   for exactly this case - the Feed writes neither either - so the tile sits at
+   its 100% size at the origin, which is all a page that never moves needs.
+
+   Multiply, so it darkens the sheet without touching its hue. It sits under the
+   text rather than over it: .patch-shell below carries the content on z-index 1.
+   Blending over the prose would put a texture through the letterforms. */
+.patch-grain {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-image: url("../img/paper-grain.webp");
+  background-repeat: repeat;
+  background-position: 0 0;
+  background-size: 512px 512px;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+  opacity: calc(0.8 * var(--grain));
+}
+
+/* ---------------------------------------------------------
+   The column
+
+   One measure, centred, and narrow on purpose: this is prose and prose is read
+   at somewhere near 70 characters a line, not at the width of a desktop window.
+   Set in ch rather than px so it tracks the body face - if a look sets a wider
+   Geist the measure follows it instead of quietly growing to ninety characters.
+   --------------------------------------------------------- */
+
+.patch-shell {
+  position: relative;
+  z-index: 1;
+  max-width: 74ch;
+  margin: 0 auto;
+  padding: clamp(28px, 7vw, 72px) clamp(18px, 5vw, 32px) 96px;
+}
+
+/* ---------------------------------------------------------
+   The masthead
+
+   Built as the sidebar wordmark is built - a mark, a title, and a tracked
+   uppercase line under it - because that is this app's one existing way of
+   announcing itself and a second one would be a second answer. See .wordmark
+   in sidebar.css.
+   --------------------------------------------------------- */
+
+.patch-head {
+  margin: 0 0 clamp(32px, 6vw, 54px);
+  padding-bottom: clamp(20px, 4vw, 30px);
+  border-bottom: 1px solid var(--rule);
+}
+
+/* The four letters, at the size and tracking the sidebar sets them, and a link
+   because the board is where somebody reading this came from. */
+.patch-mark {
+  display: inline-block;
+  margin: 0 0 14px;
+  font-family: var(--font-display);
+  font-size: var(--t-display);
+  font-weight: var(--display-weight);
+  letter-spacing: calc(0.14em * var(--ls-scale));
+  line-height: 1;
+  color: var(--ink);
+  text-decoration: none;
+  transition: color var(--dur-fast) var(--ease);
+}
+
+.patch-mark:hover { color: var(--accent); }
+
+/* Bigger than anything a token names, because until this page there was nowhere
+   in the app that a page title had to go: --t-display is the wordmark and a
+   note's heading, both of which sit on a board beside other things. Struck from
+   that token rather than written as a number, so the whole masthead still moves
+   when a look changes the display scale, and clamped so it does not run off a
+   phone. */
+.patch-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(var(--t-display), 7.5vw, calc(var(--t-display) * 1.9));
+  font-weight: var(--display-weight);
+  letter-spacing: calc(0.01em * var(--ls-scale));
+  line-height: 1.06;
+  color: var(--ink);
+}
+
+/* ---------------------------------------------------------
+   One entry
+
+   Separated by a hairline rather than boxed, which is the arrangement the
+   sidebar uses for its sections (.side-sec) and the right one here for the same
+   reason: eleven cards in a column read as eleven objects to be dealt with, and
+   a changelog is one document with divisions in it. The exception is the
+   milestone at the bottom of this file, which is boxed precisely because it is
+   meant to stop the eye.
+   --------------------------------------------------------- */
+
+.patch-entry {
+  padding: clamp(26px, 5vw, 40px) 0 0;
+  border-top: 1px solid var(--rule);
+}
+
+/* The newest entry leads the page and has the masthead's rule above it already,
+   so it does not carry a second one. */
+.patch-entry:first-of-type {
+  padding-top: 0;
+  border-top: 0;
+}
+
+/* Version, then name, then date - quiet, loud, quiet. The number is what the
+   app agrees with and the name is what a person remembers, so the name is the
+   one set large; the sidebar wordmark makes the same trade between its mark and
+   its .sub. */
+.patch-version {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--t-tiny);
+  font-style: var(--display-italic);
+  letter-spacing: calc(0.22em * var(--ls-scale));
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.patch-name {
+  margin: 7px 0 0;
+  font-family: var(--font-display);
+  font-size: var(--t-display);
+  font-weight: var(--display-weight);
+  letter-spacing: calc(0.01em * var(--ls-scale));
+  line-height: 1.15;
+  color: var(--ink);
+}
+
+.patch-date {
+  margin: 5px 0 0;
+  font-family: var(--font-display);
+  font-size: var(--t-small);
+  font-style: var(--display-italic);
+  color: var(--ink-3);
+}
+
+/* A heading inside an entry, for a release long enough to have parts. Exactly
+   the section head from sidebar.css - tracked, uppercase, faint, in the display
+   face - because that is what a heading below the top rank looks like here. */
+.patch-sub {
+  margin: 26px 0 10px;
+  font-family: var(--font-display);
+  font-size: var(--t-tiny);
+  font-weight: 400;
+  font-style: var(--display-italic);
+  letter-spacing: calc(0.24em * var(--ls-scale));
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* The divider between an entry's parts. Not a border on .patch-sub, because a
+   long entry wants the rule above the first sub-heading too. */
+.patch-rule {
+  height: 0;
+  margin: 26px 0 0;
+  border: 0;
+  border-top: 1px solid var(--rule);
+}
+
+/* ---------------------------------------------------------
+   The bullets
+   --------------------------------------------------------- */
+
+.patch-list {
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ink-2);
+}
+
+.patch-list li {
+  position: relative;
+  margin: 0 0 13px;
+  padding-left: 20px;
+}
+
+.patch-list li:last-child { margin-bottom: 0; }
+
+/* A drawn marker rather than a disc, and squared rather than round: the whole
+   interface eases its corners by --radius and draws a circle only where the
+   shape carries the meaning (see the note by --radius-pill in tokens.css). A
+   list marker is not a circle, it is a small mark, so it takes the small-fry
+   corner and follows the axis with everything else.
+
+   0.62em down from the top of the line box lands it on the x-height of the
+   first line at every one of the three type scales; centring it on the line
+   would sit it under the ascenders. */
+.patch-list li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 0.62em;
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-xs);
+  background: var(--rule-2);
+}
+
+/* The feature or format a bullet is about, so it can be found by eye in a
+   column of grey prose. Full ink against the secondary the list is set in,
+   which is the whole of the emphasis - the size and the face do not change. */
+.patch-list strong {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* Sparingly, for one word that is the point of a sentence. Same bargain as
+   .hint em in sidebar.css: not italic, just the pigment. */
+.patch-list em {
+  font-style: normal;
+  color: var(--accent);
+}
+
+.patch-list code {
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+  background: var(--paper-2);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  color: var(--ink);
+}
+
+/* ---------------------------------------------------------
+   The three tags
+
+   New, Fix and Faster, and deliberately only three: a tag set that grows past
+   what can be told apart at a glance is a legend, and nobody reads a legend on
+   a changelog. Each is an outline rather than a fill, because a filled chip at
+   the head of every bullet would out-shout the sentence it is labelling.
+
+   The pigments are the app's own three registers - accent for something that
+   was not there before, faint rule for a repair, full ink for a speed or size
+   win - so the column can be skimmed for any one of them by colour alone.
+   --------------------------------------------------------- */
+
+.patch-tag {
+  display: inline-block;
+  margin-right: 9px;
+  padding: 0 6px;
+  border: var(--hairline) solid var(--accent);
+  border-radius: var(--radius-xs);
+  font-family: var(--font-display);
+  font-size: var(--t-tiny);
+  font-style: var(--display-italic);
+  letter-spacing: calc(0.12em * var(--ls-scale));
+  text-transform: uppercase;
+  /* Held off the baseline of the sentence it heads: the tag is a label on the
+     bullet, not the first word of it. */
+  vertical-align: 0.09em;
+  white-space: nowrap;
+  color: var(--accent);
+}
+
+.patch-tag.is-fix {
+  border-color: var(--rule-2);
+  color: var(--ink-3);
+}
+
+.patch-tag.is-faster {
+  border-color: var(--ink-2);
+  color: var(--ink-2);
+}
+
+/* ---------------------------------------------------------
+   A milestone
+
+   Written before there is one, which is worth saying out loud rather than
+   leaving to be found. RELEASE_COMMITS in web/assets/js/version.js is empty:
+   nothing has been crowned, every version so far is 0.NNN, and this class is
+   used by no entry on the page today.
+
+   It is here anyway because the guide in patch.html tells whoever crowns 1.0 to
+   add `patch-milestone` to that entry, and an instruction naming a class that
+   does not exist is an instruction that silently does nothing. The day the
+   first release is cut should not also be the day somebody has to invent what a
+   release looks like.
+
+   Boxed, where every other entry is separated by a hairline, and tinted with
+   the accent at a few percent - the card treatment from items.css, on the one
+   entry that is an object in the column rather than a division of it.
+   --------------------------------------------------------- */
+
+.patch-entry.patch-milestone {
+  margin: clamp(26px, 5vw, 40px) 0 0;
+  padding: clamp(24px, 4vw, 34px);
+  border: var(--hairline) solid color-mix(in srgb, var(--accent) 42%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 4%, var(--paper-card));
+  box-shadow: var(--item-shadow);
+}
+
+.patch-milestone .patch-name { color: var(--accent); }
+
+/* ---------------------------------------------------------
+   Links, focus, and the foot
+   --------------------------------------------------------- */
+
+.patch-shell a {
+  color: var(--accent);
+  text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  text-underline-offset: 2px;
+  transition: color var(--dur-fast) var(--ease),
+              text-decoration-color var(--dur-fast) var(--ease);
+}
+
+.patch-shell a:hover {
+  color: var(--accent-deep);
+  text-decoration-color: currentColor;
+}
+
+/* Tabbed to rather than clicked, the same bargain the sidebar's controls make:
+   a ring for the keyboard and nothing at all for a mouse. */
+.patch-shell a:focus { outline: none; }
+
+.patch-shell a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: var(--radius-xs);
+}
+
+.patch-foot {
+  margin-top: clamp(40px, 7vw, 66px);
+  padding-top: 20px;
+  border-top: 1px solid var(--rule);
+  font-family: var(--font-display);
+  font-size: var(--t-tiny);
+  font-style: var(--display-italic);
+  letter-spacing: calc(0.1em * var(--ls-scale));
+  color: var(--ink-3);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/* ---------------------------------------------------------
+   Motion
+
+   There is almost none - two colour fades - but the app respects this
+   preference everywhere else through the quality dial, and a page with no
+   script cannot read that dial. So it answers the media query directly.
+   --------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .patch-mark,
+  .patch-shell a {
+    transition: none;
+  }
+}

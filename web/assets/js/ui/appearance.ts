@@ -740,7 +740,11 @@ async function recolourFromBoard({ silent = false } = {}) {
   // Sliced before the URLs are resolved, not after: a picture past the count is
   // never read, and minting a blob URL for it would hold the whole board's
   // pictures open for the session to sample twelve of them.
-  const urls = hashes.slice(0, sourceCount()).map(assetURL).filter(Boolean);
+  // The predicate is spelled out because the list is what samplePixels() takes:
+  // assetURL() answers null for a hash the store has lost, and those are what
+  // this drops - the same filter as before, saying which type comes out of it.
+  const urls = hashes.slice(0, sourceCount()).map(assetURL)
+    .filter((u): u is string => !!u);
   // Recorded before the pixels are read, not after: the answer to "which
   // pictures is the palette standing on" is these, whatever they turn out to
   // say. Recording it afterwards would leave a board whose pictures have no

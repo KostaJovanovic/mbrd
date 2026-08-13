@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Boot: build the viewport, wire every subsystem to it, restore the last
 // session, and hand out the command set the sidebar and keyboard both drive.
 //
@@ -108,7 +100,11 @@ initOverlays();
 initErrors();
 setBoardProbe(boardSafety);
 
-const vp = new Viewport(el('viewport'), el('world'), el('origin-mark'));
+// Every `el(...)!` in this file is one of the ids index.html declares. They are
+// part of the page's own markup rather than anything the app puts there, so an
+// absent one is a broken build and not a state to recover from - the same call
+// the rest of the app makes, and the same non-null it makes it with.
+const vp = new Viewport(el('viewport')!, el('world')!, el('origin-mark')!);
 
 // The three modules that only need the viewport handed to them, before anything
 // that calls into them. None of these touches the DOM.
@@ -129,7 +125,7 @@ initAssets();
 // Hand state the asset registry's filename lookup, which it cannot import
 // (storage sits above state - AUD-12). This is the original-filename fallback
 // renameItem() uses when a name is cleared.
-setAssetNameLookup(hash => getAsset(hash)?.name);
+setAssetNameLookup((hash: string) => getAsset(hash)?.name);
 // The saved quality level onto <html>, before anything reads a flag off it.
 // The inline guard in index.html has already done this for the stylesheet; this
 // is the module half, and it is also what fills `quality` for canvas/*.
@@ -179,14 +175,14 @@ bus.on('layout', () => { reseedGhostCards(); syncBoardMode(true); paintGrain(vp)
 syncBoardMode();
 initSidebar(cmds);
 initMobileHeaderEditor(vp);
-initItems(el('world'), vp);
-initWeb(el('world'), vp);
+initItems(el('world')!, vp);
+initWeb(el('world')!, vp);
 // One 'items' subscriber that sweeps the hint cards the first time the board
 // holds anything of the user's. After initItems, so the nodes it animates out
 // are mounted by the time it can fire. `cmds` is handed down because the fourth
 // hint carries the whimsy dial, and canvas/ may not reach into ui/ to set it.
 initGhosts(cmds);
-initStills(el('world'), vp);
+initStills(el('world')!, vp);
 // After both of those: moving the dial remounts every card (the shadow twin and
 // the display copy's size are decided at build time) and asks the freeze
 // question again, so it needs the two modules that answer.
@@ -314,7 +310,7 @@ bus.on('settings', key => {
   if (key === 'appearance') resetGridInk();
   if (key === 'gridStep' || key === 'mobileColumns') syncBoardMode();
   paintGrid(vp);
-  if (key === 'hud') el('hud').hidden = !board.settings.hud;
+  if (key === 'hud') el('hud')!.hidden = !board.settings.hud;
   if (key === 'snap') paintSnap();
 });
 
@@ -364,7 +360,7 @@ bus.on('board:load', () => {
   // whose else-branch above already re-grows every note in one rAF pass. Doing it
   // in both places sized every note on the board twice on each load.
   openingView();
-  el('hud').hidden = !board.settings.hud;
+  el('hud')!.hidden = !board.settings.hud;
   paintSnap();
   paintCount();
   // A different board has never been saved, whatever the last one's button
@@ -373,14 +369,36 @@ bus.on('board:load', () => {
   resetSave();
 });
 
+/**
+ * The two globals this file is the only writer or reader of.
+ *
+ * `mbrd` is the console handle below - declared here rather than in a .d.ts
+ * because this is the line that creates it, and a global whose only assignment
+ * and only declaration are three lines apart cannot drift. Its type is read off
+ * the object itself, so adding a key to the handle needs nothing here.
+ *
+ * `launchQueue` is the PWA file-handling entry point (see the block at the foot
+ * of this file). It is not in lib.dom yet; only the two members used are named,
+ * because a wider guess would be a claim about an API this app only ever asks
+ * one thing of.
+ */
+declare global {
+  // eslint-disable-next-line no-var
+  var launchQueue: {
+    setConsumer(consumer: (params: { files?: FileSystemFileHandle[] }) => void): void;
+  } | undefined;
+  interface Window { mbrd: typeof handle }
+}
+
 // A console handle, deliberately public: `mbrd.board` to inspect state,
 // `mbrd.cmds.fit()` to drive the app, `mbrd.vp` for the coordinate model,
 // `mbrd.perf.on()` to profile the pan/zoom frame, `mbrd.debugGrips()` to see the
 // resize hitboxes, `mbrd.debugWheel()` to print what a touchpad swipe delivered.
-window.mbrd = {
+const handle = {
   board, bus, vp, cmds, selection, perf: viewPerf,
   debugGrips: cmds.debugGrips, debugWheel: cmds.debugWheel,
 };
+window.mbrd = handle;
 
 // The profiler can be armed from the URL as well as from the console, which is
 // the only way in on a phone - see initPerfHash. The grip overlay and the swipe
@@ -554,7 +572,7 @@ const started = (async function start() {
   }
   openingView();
   if (restored) toast('Restored your last board');
-  el('hud').hidden = !board.settings.hud;
+  el('hud')!.hidden = !board.settings.hud;
   paintSnap();
   paintGrid(vp);
   paintGrain(vp);
@@ -653,7 +671,10 @@ started.then(dismissSplash, dismissSplash);
 // over the top is the same result the user would get by opening the file
 // themselves, which is what they asked for.
 if ('launchQueue' in window) {
-  launchQueue.setConsumer(async ({ files }) => {
+  // Non-null because the line above is the feature test: the global is declared
+  // optional since a browser without it has no such name at all, which is also
+  // why the test is `in window` rather than a read of the binding.
+  launchQueue!.setConsumer(async ({ files }) => {
     if (!files?.length) return;
     try {
       await started;

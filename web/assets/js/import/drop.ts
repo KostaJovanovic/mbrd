@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Getting things onto the board: drag-and-drop, clipboard paste, the "Add
 // files" picker, and dropping a .mbrd to open it.
 //
@@ -36,6 +28,47 @@ import { makeThumb } from '../optimize/picture.ts';
 import { looksLikeMbrd } from '../storage/mbrd.ts';
 import { openFile } from '../storage/storage.ts';
 import { stickerShape, stickerTint, DEFAULT_SHAPE } from '../stickers/catalogue.ts';
+import type { Point } from '../arrange/arrangements.ts';
+import type { Size } from '../canvas/renderers.ts';
+import type { Item, ItemMeta } from '../board-model.ts';
+
+/**
+ * A card on its way onto the board: everything makeItem() needs and nothing it
+ * does not. `x` and `y` are a placeholder until the arrangement answers - see
+ * importFiles(), which fills both before addItems() is ever called, and coord()
+ * in board-model.ts, which reads an absent one as the same zero.
+ */
+type Draft = {
+  type: string;
+  name: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  asset: { hash: string, embedded: boolean };
+  meta: ItemMeta;
+};
+
+/**
+ * What prepareFile() settles on for a card's box.
+ *
+ * Wider than renderers.ts's MeasuredSize because two of the branches answer
+ * with a bare defaultSize(), which says nothing about decodability or about
+ * where the numbers came from - and the reads below are written for exactly
+ * that: an absent `decodable` is the falsy answer they already took.
+ */
+type DraftSize = Size & { decodable?: boolean, measured?: boolean };
+
+/**
+ * What a dropped entry is, said as a narrowing.
+ *
+ * `isFile` and `isDirectory` are plain booleans on FileSystemEntry, so neither
+ * tells the checker which of the two subtypes it is holding - and the two
+ * subtypes are where `file()` and `createReader()` live. The pair is exhaustive
+ * by spec: every entry is one or the other.
+ */
+const isFileEntry = (e: FileSystemEntry): e is FileSystemFileEntry => e.isFile;
+const isDirEntry = (e: FileSystemEntry): e is FileSystemDirectoryEntry => e.isDirectory;
 
 /**
  * Extensions a browser can turn into a FontFace.
@@ -62,17 +95,39 @@ export const MAX_FILES = 500;
  */
 const IMPORT_WORKERS = 6;
 
-export function initDrop(vp) {
-  const overlay = document.getElementById('drop-overlay');
+/**
+ * The half of the Viewport this module asks for: a screen point turned into a
+ * world one, and where the middle of the view is for a paste with no cursor.
+ * Structural for the reason commands/view.ts gives: naming a whole Viewport
+ * would be asserting a shape this file never touches, and this module is held
+ * to loading without a browser at all (tests/imports.test.js).
+ */
+export interface DropViewport {
+  toWorld(x: number, y: number): Point;
+  cursor?: Point | null;
+  left: number;
+  top: number;
+  cx: number;
+  cy: number;
+}
+
+export function initDrop(vp: DropViewport) {
+  // Both ids below are declared in index.html; an absent one is a broken build
+  // rather than a state to recover from, which is what the rest of the app says
+  // about its own markup too.
+  const overlay = document.getElementById('drop-overlay')!;
   let depth = 0;                       // dragenter/dragleave fire per element
-  let lastPoint = null;
+  let lastPoint: Point | null = null;
 
   const show = () => { overlay.hidden = false; };
   const hide = () => { depth = 0; overlay.hidden = true; };
 
   // Files or a link. Both are "something from outside landing on the board",
   // and the overlay says the same thing for either.
-  const takes = dt => hasFiles(dt) || hasLink(dt);
+  // A predicate rather than a boolean, so the handlers below can read the
+  // payload they have just agreed to take without asking again whether it is
+  // there. "Carries something" and "is not null" are the same sentence here.
+  const takes = (dt: DataTransfer | null): dt is DataTransfer => hasFiles(dt) || hasLink(dt);
 
   addEventListener('dragenter', e => {
     if (!takes(e.dataTransfer)) return;
@@ -166,14 +221,14 @@ export function initDrop(vp) {
   });
 
   // The "Add files" button and the picker fallback share one hidden input.
-  const input = document.getElementById('file-input');
+  const input = document.getElementById('file-input') as HTMLInputElement;
   input.addEventListener('change', async () => {
     const mode = input.dataset.mode;
     // Not ours. Either nobody set one, or storage.js has it open for a .mbrd and
     // said so - both are the same answer here, and asking positively means a
     // future third owner is refused rather than mistaken for content.
     if (mode !== 'content' && mode !== 'cover') return;
-    const files = [...input.files];
+    const files = [...(input.files || [])];
     input.value = '';
     delete input.dataset.mode;
     // Back to the defaults the content picker wants, so the next opening of it
@@ -183,7 +238,9 @@ export function initDrop(vp) {
     if (mode === 'cover') {
       const id = coverFor;
       coverFor = null;
-      if (files[0]) await applyCover(id, files[0]);
+      // `id` is set by pickCover() at the same moment the mode is, so a change
+      // in cover mode has one; the check is what says so rather than a claim.
+      if (id && files[0]) await applyCover(id, files[0]);
       return;
     }
     if (files.length) await importFiles(files, vp.toWorld(vp.left + vp.cx, vp.top + vp.cy));
@@ -201,7 +258,7 @@ export function initDrop(vp) {
  * button for the rest of the session.
  */
 export function pickFiles() {
-  const input = document.getElementById('file-input');
+  const input = document.getElementById('file-input') as HTMLInputElement;
   input.accept = '';
   input.multiple = true;
   input.dataset.mode = 'content';
@@ -227,11 +284,11 @@ export function pickFiles() {
  * no `change`, so the card stayed armed until something opened the picker again
  * - and the next Add files gave that card its first file as a cover.
  */
-let coverFor = null;
+let coverFor: string | null = null;
 
 /** Choose a picture for one card. See setItemCover() in state.js. */
-export function pickCover(id) {
-  const input = document.getElementById('file-input');
+export function pickCover(id: string) {
+  const input = document.getElementById('file-input') as HTMLInputElement;
   input.accept = 'image/*';
   input.multiple = false;
   input.dataset.mode = 'cover';
@@ -250,7 +307,7 @@ export function pickCover(id) {
  * result than the one being fixed, and undoable only if the user works out
  * what happened.
  */
-async function applyCover(id, file) {
+async function applyCover(id: string, file: File) {
   if (classify(file) !== 'image') {
     toast(`${file.name} is not a picture`, 'error');
     return;
@@ -268,7 +325,11 @@ async function applyCover(id, file) {
  * Turn a list of Files into board items around `centre`.
  * A lone .mbrd opens as a board instead of being embedded.
  */
-export async function importFiles(files, centre, { avoidOverlap = false, truncated = false } = {}) {
+export async function importFiles(
+  files: File[],
+  centre: Point,
+  { avoidOverlap = false, truncated = false }: { avoidOverlap?: boolean, truncated?: boolean } = {},
+) {
   files = [...files].filter(f => f && (f.size > 0 || f.type));
   if (!files.length) return [];
 
@@ -334,13 +395,13 @@ export async function importFiles(files, centre, { avoidOverlap = false, truncat
   //
   // Results land by index, so the order the arrangement sees is the order the
   // files arrived in rather than the order they happened to finish.
-  const prepared = new Array(files.length).fill(null);
-  const failed = [];
+  const prepared: (Draft | null)[] = new Array(files.length).fill(null);
+  const failed: string[] = [];
   // Photos this browser cannot decode that had no embedded preview to fall back on,
   // so they came in as named cards rather than pictures - counted to say so once at
   // the end rather than per file (prepareFile fills it).
   const stats = { undecodable: 0 };
-  let firstError = null;
+  let firstError: unknown = null;
   let next = 0;
   // Counted rather than indexed: six of these run at once and finish out of
   // order, so `next` is how many have been *started* and says nothing about how
@@ -379,7 +440,7 @@ export async function importFiles(files, centre, { avoidOverlap = false, truncat
     // of the session, with no way to take it down.
     job.end();
   }
-  const drafts = prepared.filter(Boolean);
+  const drafts = prepared.filter((d): d is Draft => !!d);
 
   if (cancelled && !drafts.length) {
     toast('Import stopped');
@@ -391,7 +452,7 @@ export async function importFiles(files, centre, { avoidOverlap = false, truncat
     // the console: one of these was `crypto.subtle` missing on a page served
     // over plain http, which broke every import on a phone and said nothing at
     // all about why. Truncated because a toast is a line, not a stack.
-    const why = String(firstError?.message || '').slice(0, 80);
+    const why = String((firstError instanceof Error && firstError.message) || '').slice(0, 80);
     toast(why ? `Nothing could be imported - ${why}` : 'Nothing could be imported', 'error');
     return [];
   }
@@ -404,7 +465,10 @@ export async function importFiles(files, centre, { avoidOverlap = false, truncat
     // out - and, once the two catalogues split, work done under a name that no
     // longer names a shape. No seed: a drop is reproducible, and Shuffle
     // unseeded is the order the files arrived in.
-    const ordered = mobileOrder(drafts, { name: board.arrangement });
+    // The cast is safe because mobileOrder() mints nothing: it returns the very
+    // objects it was handed, in another order (see ORDERS in arrangements.ts),
+    // so every element here is one of the drafts that went in.
+    const ordered = mobileOrder(drafts, { name: board.arrangement }) as Draft[];
     drafts.length = 0;
     drafts.push(...ordered);
   }
@@ -437,7 +501,7 @@ export async function importFiles(files, centre, { avoidOverlap = false, truncat
     drafts.length > 1 ? `Add ${drafts.length} items` : 'Add item',
     { avoidOverlap: avoidOverlap || board.layoutMode === 'mobile' }
   );
-  select(added.map(i => i.id));
+  select(added.map((i: Item) => i.id));
 
   let msg = `${cancelled ? 'Stopped — kept' : 'Added'} ${added.length} item${added.length === 1 ? '' : 's'}`;
   if (trimmed) msg += ` (capped at ${MAX_FILES})`;
@@ -474,7 +538,7 @@ export async function importFiles(files, centre, { avoidOverlap = false, truncat
  * so inside the call rather than at module scope. Same bargain the rest of this
  * file makes with `document`.
  */
-export async function thumbFor(blob) {
+export async function thumbFor(blob: Blob) {
   const small = await makeThumb(blob);
   if (!small) return null;
   return addFile(new File([small.blob], 'thumb.webp', { type: 'image/webp' }));
@@ -502,7 +566,7 @@ export async function thumbFor(blob) {
  * encoder will not write - all of them come back null, and null means the clip
  * is exactly what it was before: a video card with nothing to show yet.
  */
-async function posterFor(file, decodable) {
+async function posterFor(file: File, decodable: boolean | undefined) {
   if (decodable) {
     try {
       const frame = await videoFrame(file);
@@ -552,21 +616,21 @@ async function posterFor(file, decodable) {
  * The pre-2000 EPS-based .ai is not a PDF and pdf.js declines it; that comes back
  * null and the card is what it always was.
  */
-const isPdf = file => file.type === 'application/pdf'
+const isPdf = (file: File) => file.type === 'application/pdf'
   || PDF_EXTS.has(extOf(file.name));
 
 const PDF_EXTS = new Set(['pdf', 'ai']);
 
 /** One file, classified, measured, hashed and turned into a draft item. `stats`
  *  collects soft outcomes worth reporting once for the whole drop (see importFiles). */
-async function prepareFile(file, stats = { undecodable: 0 }) {
+async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draft> {
   let type = classify(file);
-  let size;
+  let size: DraftSize | undefined;
   // A decodable stand-in pulled out of a picture the browser cannot draw (HEIC,
   // RAW), and the file it came from. Both stay null for everything else. See the
   // undecodable branch below and import/preview.js.
-  let previewHash = null;
-  let previewFile = null;
+  let previewHash: string | null = null;
+  let previewFile: File | null = null;
   // A PDF is the same shape of problem as an undecodable photo: the app cannot
   // draw it, but it can produce a picture of its first page (import/pdf.js, which
   // fetches pdf.js on demand). Handled exactly like the embedded-preview path -
@@ -598,7 +662,9 @@ async function prepareFile(file, stats = { undecodable: 0 }) {
   if (!size && hasBakedPreview(file)) {
     const baked = await bakedPreview(file).catch(() => null);
     const shot = baked && await measureSize('image', baked);
-    if (shot?.decodable) {
+    // `baked` again rather than only `shot`: without a preview there is no
+    // measurement either, so the two are one condition said twice.
+    if (baked && shot?.decodable) {
       previewFile = baked;
       previewHash = await addFile(baked);
       type = 'image';
@@ -629,7 +695,7 @@ async function prepareFile(file, stats = { undecodable: 0 }) {
     if (type === 'image' && !size.decodable) {
       const preview = await embeddedPreview(file).catch(() => null);
       const shot = preview && await measureSize('image', preview);
-      if (shot?.decodable) {
+      if (preview && shot?.decodable) {
         previewFile = preview;
         previewHash = await addFile(preview);
         size = shot;
@@ -693,6 +759,10 @@ async function prepareFile(file, stats = { undecodable: 0 }) {
   return {
     type,
     name: file.name,
+    // Placeholders: the arrangement fills both before this draft is handed to
+    // addItems(), and an absent coordinate reads as the same zero anyway.
+    x: 0,
+    y: 0,
     w: size.w,
     h: size.h,
     asset: { hash, embedded: true },
@@ -742,7 +812,7 @@ export const NOTE_TINTS = 4;
  * of the button - passes nothing and gets the cycle, which is the behaviour
  * this had before there was any way to choose.
  */
-export function addNote(centre, text = '', want = 0) {
+export function addNote(centre: Point, text = '', want = 0) {
   text = text.slice(0, NOTE_MAX);
   const size = defaultSize('note');
   // Cycled rather than random, so a run of notes comes off the pad in order
@@ -803,8 +873,10 @@ const STICKER_TILT = 8;
  * looked *in* the window - the heart red, the star gold - so the tint belongs
  * to the shape and the palette is an override rather than a lottery.
  */
-export function addSticker(shape, centre, tint) {
-  const entry = stickerShape(shape) || stickerShape(DEFAULT_SHAPE);
+export function addSticker(shape: string, centre: Point, tint?: string) {
+  // Non-null on the fallback: DEFAULT_SHAPE is the first catalogue entry's own
+  // id, which is what makes it the default - it always resolves.
+  const entry = stickerShape(shape) || stickerShape(DEFAULT_SHAPE)!;
   const size = defaultSize('sticker');
   const [item] = addItems([{
     type: 'sticker',
@@ -839,7 +911,7 @@ export function addSticker(shape, centre, tint) {
  * Falls through to the URL itself for everything else, including a provider URL
  * that is already a page - so callers can hand it anything.
  */
-function embedPage(url) {
+function embedPage(url: URL) {
   const spec = embedFor(url);
   if (!spec) return url;
   try { return new URL(spec.page); } catch { return url; }
@@ -856,7 +928,7 @@ function embedPage(url) {
  * gives: a swatch has no other name it could have, and this is what makes one
  * findable and what a copy of one says on the system clipboard.
  */
-export function addSwatch(centre, hex = SWATCH_DEFAULT) {
+export function addSwatch(centre: Point, hex: string = SWATCH_DEFAULT) {
   const value = swatchHex(hex);
   const size = defaultSize('swatch');
   const [item] = addItems([{
@@ -869,7 +941,7 @@ export function addSwatch(centre, hex = SWATCH_DEFAULT) {
   return item;
 }
 
-export function addLink(centre, url) {
+export function addLink(centre: Point, url: URL) {
   const [item] = addItems([{ ...linkDraft(url), x: centre.x, y: centre.y }], 'Add link');
   select([item.id]);
   return item;
@@ -884,9 +956,9 @@ export function addLink(centre, url) {
  * links dropped at a spot you chose: a cascade keeps the first one exactly
  * where the pointer was, and a dropped link should land under the pointer.
  */
-export function addLinks(at, urls) {
+export function addLinks(at: Point, urls: URL[]) {
   if (!urls.length) return [];
-  const drafts = urls.map((url, i) => ({
+  const drafts = urls.map((url: URL, i: number) => ({
     ...linkDraft(url),
     x: at.x + i * LINK_STEP.x,
     y: at.y + i * LINK_STEP.y,
@@ -896,7 +968,7 @@ export function addLinks(at, urls) {
     drafts.length > 1 ? `Add ${drafts.length} links` : 'Add link',
     { avoidOverlap: board.layoutMode === 'mobile' },
   );
-  select(made.map(i => i.id));
+  select(made.map((i: Item) => i.id));
   return made;
 }
 
@@ -905,7 +977,7 @@ const LINK_STEP = { x: 26, y: -26 };
 
 // --- drag payload helpers --------------------------------------------------
 
-function hasFiles(dt) {
+function hasFiles(dt: DataTransfer | null): dt is DataTransfer {
   return !!dt && [...(dt.types || [])].includes('Files');
 }
 
@@ -922,7 +994,7 @@ function hasFiles(dt) {
  * drop most of them. `text/uri-list` is set only when the source says the thing
  * being dragged *is* a link.
  */
-function hasLink(dt) {
+function hasLink(dt: DataTransfer | null): dt is DataTransfer {
   return !!dt && [...(dt.types || [])].includes('text/uri-list');
 }
 
@@ -935,12 +1007,12 @@ function hasLink(dt) {
  * only in the plain text. Everything goes through linkURL(), so whatever is in
  * there is held to exactly the same standard as a pasted address.
  */
-function urlsFrom(dt) {
+function urlsFrom(dt: DataTransfer) {
   const raw = (dt.getData('text/uri-list') || dt.getData('text/plain') || '');
   return raw.split(/[\r\n]+/)
     .filter(line => line && !line.startsWith('#'))
     .map(linkURL)
-    .filter(Boolean);
+    .filter((url): url is URL => !!url);
 }
 
 /**
@@ -951,7 +1023,7 @@ function urlsFrom(dt) {
  * of those: the cap is applied here and reported here, and a test that had to go
  * through the whole import to see it would be testing the toast.
  */
-export async function filesFrom(dt) {
+export async function filesFrom(dt: DataTransfer) {
   const items = [...(dt.items || [])];
   // Captured up front: DataTransfer.files is only reliably populated during the
   // synchronous part of the drop event, and the entries walk below awaits. A
@@ -963,9 +1035,10 @@ export async function filesFrom(dt) {
     return { files: flat, fromFolder: flat.some(file => !!file.webkitRelativePath), truncated: false };
   }
 
-  const entries = items.map(i => i.webkitGetAsEntry()).filter(Boolean);
+  const entries = items.map(i => i.webkitGetAsEntry())
+    .filter((entry): entry is FileSystemEntry => !!entry);
   const fromFolder = entries.some(entry => entry.isDirectory);
-  const out = [];
+  const out: File[] = [];
   for (const entry of entries) {
     await walkEntry(entry, out);
     if (out.length >= MAX_FILES) break;
@@ -979,18 +1052,18 @@ export async function filesFrom(dt) {
   return { files: out.length ? out : flat, fromFolder, truncated: out.length >= MAX_FILES };
 }
 
-async function walkEntry(entry, out) {
+async function walkEntry(entry: FileSystemEntry, out: File[]) {
   if (out.length >= MAX_FILES) return;
-  if (entry.isFile) {
-    const file = await new Promise(res => entry.file(res, () => res(null)));
+  if (isFileEntry(entry)) {
+    const file = await new Promise<File | null>(res => entry.file(res, () => res(null)));
     if (file) out.push(file);
     return;
   }
-  if (!entry.isDirectory) return;
+  if (!isDirEntry(entry)) return;
   const reader = entry.createReader();
   // readEntries returns at most ~100 per call and must be drained in a loop.
   for (;;) {
-    const batch = await new Promise(res => reader.readEntries(res, () => res([])));
+    const batch = await new Promise<FileSystemEntry[]>(res => reader.readEntries(res, () => res([])));
     if (!batch.length) break;
     for (const child of batch) await walkEntry(child, out);
     if (out.length >= MAX_FILES) break;

@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  One URL, because there is one page. A sitemap this small buys little on its
-  own; it is here so the site has the file a crawler and Search Console both
-  look for, and so there is somewhere obvious to add the second page the day
-  there is one.
+  Two URLs. This file was written with one, saying it was here so that there was
+  somewhere obvious to add the second page the day there was one - and /patch is
+  that page.
+
+  lab.html is deliberately still not in here. It is a bench for looking at what
+  the pigment extractor produced, it carries a meta robots tag saying so, and a
+  sitemap entry would be this file arguing with that tag. See robots.txt, which
+  explains why the tag rather than a Disallow is what removes it.
 
   No <lastmod>: a date that is not maintained is worse than no date, and this
   one would go stale the first time the app changed without anyone editing this
@@ -17,5 +21,8 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://mbrd.valjdakosta.com/</loc>
+  </url>
+  <url>
+    <loc>https://mbrd.valjdakosta.com/patch</loc>
   </url>
 </urlset>

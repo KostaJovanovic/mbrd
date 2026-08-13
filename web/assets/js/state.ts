@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Central board state + selection + command-based undo/redo.
 //
 // Everything that mutates the board goes through here and emits an event, so
@@ -25,7 +17,7 @@
 //                every subscriber to that one would repaint for a change that
 //                moved nothing and added nothing.
 
-import { isHash, itemHashes } from './util.ts';
+import { isHash, isRecord, itemHashes } from './util.ts';
 import { toast } from './notify.ts';
 // Pure geometry, shared with the canvas and the input layer so that "where is
 // this item and what does it cover" has exactly one answer in this app. Kept
@@ -113,6 +105,7 @@ import {
   cloneSettings, layoutSettingsOf, dropIdIndex,
   MAX_CONNECTIONS, pairKey, normalizeAudioOrder, CONN_DIRECTIONS, CONN_STYLES,
 } from './board-model.ts';
+import type { Item } from './board-model.ts';
 
 export { MAX_CONNECTIONS, pairKey, CONN_DIRECTIONS, CONN_STYLES };
 
@@ -206,8 +199,11 @@ export {
 // or before wiring - the fallback just skips to the item's current name, which
 // is the same answer the registry gives for an asset it has never seen. See
 // AUD-12.
-let assetName = () => undefined;
-export function setAssetNameLookup(fn) {
+/** The filename an asset arrived under, from whoever holds the registry. */
+type AssetNameLookup = (hash: string) => string | undefined;
+
+let assetName: AssetNameLookup = () => undefined;
+export function setAssetNameLookup(fn: AssetNameLookup | null | undefined) {
   assetName = typeof fn === 'function' ? fn : () => undefined;
 }
 
@@ -216,7 +212,11 @@ export function setAssetNameLookup(fn) {
 // Item mutations (all undoable)
 // ---------------------------------------------------------------------------
 
-export function addItems(items, label = 'Add', options = {}) {
+export function addItems(
+  items: Record<string, unknown>[],
+  label = 'Add',
+  options: { avoidOverlap?: boolean } = {},
+) {
   // The stack is dealt here rather than left to makeItem().
   //
   // makeItem() defaults `z` to topZ() + 1, which reads the *live* board - and
@@ -278,7 +278,7 @@ export function addItems(items, label = 'Add', options = {}) {
  * - a duplicated or pasted item brings its own, and it is a memo of life before
  * the *first* snap, not of the copy's.
  */
-function onLattice(it) {
+function onLattice(it: Item): Item {
   if (!board.settings.snap) return it;
   const box = latticeBox(it, baseStep());
   if (box.x === it.x && box.y === it.y && box.w === it.w && box.h === it.h) return it;
@@ -306,7 +306,7 @@ const TITLE_SIZE = Object.freeze({ w: 256, h: 171 });
 // One grid space (64) higher than it first sat, to clear the content below it.
 const TITLE_DEFAULT_POS = Object.freeze({ x: 0, y: 244 });
 
-function makeTitleItem(at = null) {
+function makeTitleItem(at: { x?: number, y?: number } | null = null) {
   return makeItem({
     id: TITLE_ID,
     type: 'title',
@@ -370,7 +370,7 @@ export function restoreTitleCard(at = null) {
 }
 
 /** Copy items, offset a little so the copy is visibly on top of the original. */
-export function duplicateItems(ids, offset = { x: 28, y: -28 }) {
+export function duplicateItems(ids: Iterable<string>, offset = { x: 28, y: -28 }) {
   const src = itemsIn(ids);
   if (!src.length) return [];
   const copies = src.map(i => cloneItem(i, offset.x, offset.y));
@@ -398,7 +398,7 @@ export function duplicateItems(ids, offset = { x: 28, y: -28 }) {
  * the useful half of the message - it is the difference between "gone" and
  * "over there".
  */
-export function cutItems(ids) {
+export function cutItems(ids: Iterable<string>) {
   // Resolved once and reused for both the copy and the delete, rather than
   // letting copyItems() resolve them again - two full board filters + sorts.
   // That is also why this calls takeItems() rather than copyItems(): the latter
@@ -439,9 +439,9 @@ export function pasteItems(at = null) {
  * It is taken at creation (import/drop.js) and has to be re-taken on every edit,
  * or Find keeps matching and showing the title the note had when it was made.
  */
-const noteName = text => text.split('\n')[0].slice(0, 40) || 'Note';
+const noteName = (text: string) => text.split('\n')[0].slice(0, 40) || 'Note';
 
-export function setItemText(id, text) {
+export function setItemText(id: string, text: string) {
   const it = byId(id);
   if (it?.type === 'note') text = text.slice(0, NOTE_MAX);
   if (!it || it.meta.text === text) return;
@@ -474,7 +474,7 @@ export function setItemText(id, text) {
  * happens. A bad value is dropped, not stored and quietly corrected on the way
  * out - the board should not hold a colour it will not show.
  */
-export function setSwatchHex(id, hex) {
+export function setSwatchHex(id: string, hex: unknown) {
   const it = byId(id);
   if (!it || it.type !== 'swatch') return;
   const next = String(hex ?? '').trim().toLowerCase();
@@ -482,7 +482,7 @@ export function setSwatchHex(id, hex) {
   const prevHex = it.meta?.hex;
   const prevName = it.name;
   if (prevHex === next) return;
-  const write = (value, name) => {
+  const write = (value: unknown, name: string) => {
     const item = byId(id);
     if (!item) return;
     // Undefined is a real previous value - a swatch out of a hand-written file
@@ -507,15 +507,17 @@ export function setSwatchHex(id, hex) {
  * from spending a history slot. `rich` is trusted to be normalised by the caller
  * (canvas/notes.js), and `text` is capped here the way setItemText caps its own.
  */
-export function setNoteContent(id, rich, text) {
+export function setNoteContent(id: string, rich: unknown, text: unknown) {
   const it = byId(id);
   if (!it || it.type !== 'note') return;
-  text = String(text ?? '').slice(0, NOTE_MAX);
+  // Into its own binding rather than back over the parameter, so what the pair
+  // below writes is the capped string rather than whatever arrived.
+  const next = String(text ?? '').slice(0, NOTE_MAX);
   const prevRich = it.meta.rich;
   const prevText = it.meta.text;
   const prevName = it.name;
-  if (prevText === text && JSON.stringify(prevRich) === JSON.stringify(rich)) return;
-  const write = (t, r, nm) => {
+  if (prevText === next && JSON.stringify(prevRich) === JSON.stringify(rich)) return;
+  const write = (t: string, r: unknown, nm: string) => {
     const x = byId(id);
     if (!x) return;
     const m = x.meta;
@@ -525,9 +527,13 @@ export function setNoteContent(id, rich, text) {
     x.name = nm;
     bus.emit('item', id);
   };
+  // `text` has been through String() above, so it is one; the two previous
+  // values came off the item's meta, which is unknown per key by design.
+  const wasText = typeof prevText === 'string' ? prevText : '';
+  const wasName = typeof prevName === 'string' ? prevName : '';
   commit('Edit note',
-    () => write(text, rich, noteName(text)),
-    () => write(prevText, prevRich, prevName));
+    () => write(next, rich, noteName(next)),
+    () => write(wasText, prevRich, wasName));
 }
 
 /**
@@ -551,11 +557,13 @@ export function setNoteContent(id, rich, text) {
  * index captured while it is being built. Undo may be pressed three edits
  * later, by which time a position recorded now is pointing at somebody else.
  */
-export function retypeItem(id, next, label = 'Change item') {
+export function retypeItem(
+  id: string, next: Record<string, unknown>, label = 'Change item',
+) {
   const old = byId(id);
   if (!old) return null;
   const item = makeItem({ x: old.x, y: old.y, rot: old.rot, z: old.z, ...next });
-  const swap = (out, into) => {
+  const swap = (out: Item, into: Item) => {
     const at = board.items.indexOf(out);
     if (at < 0) return;
     board.items.splice(at, 1, into);
@@ -591,17 +599,24 @@ export function retypeItem(id, next, label = 'Change item') {
  * renamed item handed back the *renamed* value - the original had nowhere to
  * have been kept.
  */
-export function renameItem(id, name) {
+export function renameItem(id: string, name: unknown) {
   const it = byId(id);
   if (!it) return;
+  // The two fallbacks are strings or nothing: `origName` is `unknown` per key
+  // like every meta field (see board-model.ts), and the registry answers
+  // undefined for an asset it has never seen.
+  const orig = typeof it.meta?.origName === 'string' ? it.meta.origName : '';
   const next = String(name ?? '').trim() ||
-               it.meta?.origName ||
+               orig ||
                (it.asset && assetName(it.asset.hash)) || it.name;
   if (it.name === next) return;
   const prev = it.name;
+  // byId() again inside the pair, and non-null: the item was on the board when
+  // this was built, and a command whose item has gone is not replayed - the
+  // removal that took it away is the entry above this one in the history.
   commit('Rename',
-    () => { byId(id).name = next; bus.emit('item', id); },
-    () => { byId(id).name = prev; bus.emit('item', id); });
+    () => { byId(id)!.name = next; bus.emit('item', id); },
+    () => { byId(id)!.name = prev; bus.emit('item', id); });
 }
 
 /**
@@ -638,13 +653,19 @@ export function renameItem(id, name) {
  * non-undoable on purpose and their headers say why; folding them in would make
  * the shared shape decide something it has no business deciding.
  */
-function patchMeta(id, key, raw, label, validate) {
+function patchMeta(
+  id: string,
+  key: string,
+  raw: unknown,
+  label: string | ((next: unknown) => string),
+  validate: (value: unknown) => unknown,
+) {
   const it = byId(id);
   if (!it) return;
   const next = validate(raw);
   const prev = validate(it.meta?.[key]);
   if (next === prev) return;
-  const write = value => {
+  const write = (value: unknown) => {
     const item = byId(id);
     if (!item) return;
     if (value == null) { const { [key]: _drop, ...rest } = item.meta || {}; item.meta = rest; }
@@ -656,7 +677,8 @@ function patchMeta(id, key, raw, label, validate) {
 }
 
 /** A validator over a closed set: the value, or null for anything else. */
-const oneOf = (...allowed) => value => (allowed.includes(value) ? value : null);
+const oneOf = (...allowed: unknown[]) =>
+  (value: unknown) => (allowed.includes(value) ? value : null);
 
 /**
  * Give an item a picture of its own, or take it away with a null.
@@ -678,7 +700,7 @@ const oneOf = (...allowed) => value => (allowed.includes(value) ? value : null);
  * because undo has to be able to put the picture back and the autosave sweep
  * is what eventually collects anything no item points at.
  */
-export function setItemCover(id, hash) {
+export function setItemCover(id: string, hash: unknown) {
   patchMeta(id, 'cover', hash,
     next => (next ? 'Set picture' : 'Remove picture'),
     value => (isHash(value) ? value : null));
@@ -698,7 +720,7 @@ export function setItemCover(id, hash) {
  * by itemHashes() and would otherwise be swept the next time the autosave
  * collected whatever nothing points at.
  */
-export function setItemThumb(id, hash) {
+export function setItemThumb(id: string, hash: unknown) {
   const it = byId(id);
   if (!it || !isHash(hash) || it.meta?.thumb === hash) return;
   it.meta = { ...it.meta, thumb: hash };
@@ -721,7 +743,7 @@ export function setItemThumb(id, hash) {
  * by hand. This can add a picture to a card that has none; it can never replace
  * one, which is what keeps a non-undoable write safe to make.
  */
-export function setItemPoster(id, hash) {
+export function setItemPoster(id: string, hash: unknown) {
   const it = byId(id);
   if (!it || !isHash(hash) || isHash(it.meta?.cover)) return;
   it.meta = { ...it.meta, cover: hash };
@@ -749,6 +771,11 @@ export function setItemPoster(id, hash) {
  * draw - and it goes through here rather than through its own command so that a
  * run is still one undoable step, which is the promise below.
  *
+ * One item's exchange, as the optimiser hands it over: the card, the bytes it
+ * should point at now, and the picture it should wear. A hash swaps it, null
+ * takes it away, and anything else - the field left out entirely - leaves that
+ * half of the item alone.
+ *
  * The id that was there goes into `meta.was` / `meta.wasCover`, and that is not
  * bookkeeping for undo's sake: undo closes over the old ids already. It is for
  * the *autosave sweep*, which deletes any bytes no item claims and would
@@ -767,12 +794,16 @@ export function setItemPoster(id, hash) {
  * offered again. Hashes rather than a flag, so replacing an item's picture by
  * hand also un-marks it, without anything having to remember to.
  */
-export function swapAssets(swaps, label = 'Optimize board') {
+export type AssetSwap = { id: string, asset?: string | null, cover?: string | null };
+
+export function swapAssets(swaps: AssetSwap[] | null | undefined, label = 'Optimize board') {
   const list = (swaps || []).filter(s => s && byId(s.id));
   if (!list.length) return 0;
 
+  // Non-null throughout this function: the filter above kept only swaps whose
+  // item is on the board, and nothing between here and the commit removes one.
   const before = list.map(({ id }) => {
-    const it = byId(id);
+    const it = byId(id)!;
     return { id, asset: it.asset ? { ...it.asset } : null, meta: { ...it.meta } };
   });
 
@@ -782,7 +813,7 @@ export function swapAssets(swaps, label = 'Optimize board') {
   // them would put an entry on the history that looks like nothing happened,
   // because nothing did, and spend one of the steps the user has left.
   const swapping = list.some(({ id, asset, cover }) => {
-    const it = byId(id);
+    const it = byId(id)!;
     return (isHash(asset) && it.asset?.hash && asset !== it.asset.hash) ||
            (isHash(cover) && isHash(it.meta?.cover) && cover !== it.meta.cover) ||
            (asset === null && !!it.asset) ||
@@ -887,7 +918,7 @@ export const originalsHeld = () =>
  * Undoable, because it is a visible change to an item and every other visible
  * change to an item is.
  */
-export function setItemUpAxis(id, axis) {
+export function setItemUpAxis(id: string, axis: unknown) {
   patchMeta(id, 'upAxis', axis, 'Turn model upright', oneOf('z', 'y'));
 }
 
@@ -898,7 +929,7 @@ export function setItemUpAxis(id, axis) {
  * Undoable and emits 'item', which rebuilds the node so canvas/renderers.js's
  * fitMode() reads the new value - the same shape setItemUpAxis uses.
  */
-export function setItemFit(id, fit) {
+export function setItemFit(id: string, fit: unknown) {
   const it = byId(id);
   if (!it || (it.type !== 'image' && it.type !== 'video')) return;
   patchMeta(id, 'fit', fit, 'Fit media', oneOf('cover', 'contain'));
@@ -915,7 +946,7 @@ export function setItemFit(id, fit) {
  * node - the same shape setItemFit uses, and the tint is read on the way out of
  * canvas/items.js rather than by the renderer.
  */
-export function setStickerTint(id, tint) {
+export function setStickerTint(id: string, tint: unknown) {
   const it = byId(id);
   if (!it || it.type !== 'sticker') return;
   // The one validator that always answers, so the removal branch of patchMeta()
@@ -947,14 +978,17 @@ export function setStickerTint(id, tint) {
  * again. It cannot get a different answer than it had: nothing moved, so
  * whatever the item was lying on it is still lying on.
  */
-export function unstickItems(ids) {
+export function unstickItems(ids: Iterable<string>) {
   // isRider, not isPinned: an item dropped three seconds ago is stuck and has
   // not set yet, and unsticking it then is the whole point of being able to -
   // it is how you keep it from ever pinning. See cmds.canUnstick, which asks
   // the same question, and the settling block in sticky.js.
-  const affected = [...new Set(ids)].filter(id => isRider(byId(id)));
+  const affected = [...new Set(ids)].filter(id => {
+    const it = byId(id);
+    return !!it && isRider(it);
+  });
   if (!affected.length) return;
-  const write = loose => {
+  const write = (loose: boolean) => {
     for (const id of affected) {
       const it = byId(id);
       if (!it) continue;
@@ -997,8 +1031,8 @@ export function unstickItems(ids) {
  * No commit of its own, and no 'geom' either: the caller commits a moment later
  * and announces the whole gesture at once.
  */
-export function resettle(ids) {
-  const cleared = [];
+export function resettle(ids: Iterable<string>) {
+  const cleared: string[] = [];
   for (const id of ids) {
     const it = byId(id);
     // hostUnder(), not stuckTo(): the flag being decided here is exactly what
@@ -1026,7 +1060,10 @@ export function resettle(ids) {
  * It still marks the board dirty, because the bytes it points at have to be
  * saved or the next open has a card pointing at nothing.
  */
-export function setModelShot(id, { hash, ink, view } = {}) {
+export function setModelShot(
+  id: string,
+  { hash, ink, view }: { hash?: unknown, ink?: unknown, view?: unknown } = {},
+) {
   const it = byId(id);
   if (!it || it.type !== 'model') return;
   const meta = { ...it.meta };
@@ -1036,8 +1073,12 @@ export function setModelShot(id, { hash, ink, view } = {}) {
   // leaves every still a shade out of date - and this is what lets the card
   // notice. Absent means the model brought its own colours and never goes stale.
   if (typeof ink === 'string' && ink) meta.shotInk = ink; else delete meta.shotInk;
-  if (view && typeof view === 'object') {
-    meta.view = { yaw: +view.yaw || 0, pitch: +view.pitch || 0, zoom: +view.zoom || 1 };
+  if (isRecord(view)) {
+    meta.view = {
+      yaw: Number(view.yaw) || 0,
+      pitch: Number(view.pitch) || 0,
+      zoom: Number(view.zoom) || 1,
+    };
   }
   it.meta = meta;
   markDirty();
@@ -1060,7 +1101,7 @@ export function selectAll() {
 // Settings + whole-board replacement
 // ---------------------------------------------------------------------------
 
-export function setSetting(key, value) {
+export function setSetting(key: string, value: unknown) {
   // Paper is Desktop-only, and this is where that is actually enforced: the
   // fixup in activateLayoutSettings() runs once, at the moment of the switch,
   // so without this a later write would put a sheet on the Mobile board.
@@ -1073,9 +1114,12 @@ export function setSetting(key, value) {
   if (key === 'mobileHeader') {
     // Board-level and editable from either layout: the Mobile masthead and the
     // Desktop title card share this one style.
-    value = normalizeMobileHeader(value);
-    if (JSON.stringify(board.mobileHeader) === JSON.stringify(value)) return;
-    board.mobileHeader = value;
+    // Into its own binding rather than back over the parameter: what the board
+    // takes is the normalised header, and normalizeMobileHeader() is what says
+    // so - the value that arrived is still whatever a panel or a file handed in.
+    const header = normalizeMobileHeader(value);
+    if (JSON.stringify(board.mobileHeader) === JSON.stringify(header)) return;
+    board.mobileHeader = header;
     markDirty();
     bus.emit('settings', key);
     return;
@@ -1102,8 +1146,11 @@ export function setSetting(key, value) {
   if (key === 'fonts') {
     const fonts = normalizeFonts(value);
     board.settings.fonts = fonts;
-    board.layoutSettings.desktop.fonts = cloneSettings({ fonts }).fonts;
-    board.layoutSettings.mobile.fonts = cloneSettings({ fonts }).fonts;
+    // Through the live settings rather than a bare `{ fonts }`: cloneSettings
+    // takes a whole settings record and only the deep copy of the list is read
+    // back out, which is all this line ever wanted from it.
+    board.layoutSettings.desktop.fonts = cloneSettings({ ...board.settings, fonts }).fonts;
+    board.layoutSettings.mobile.fonts = cloneSettings({ ...board.settings, fonts }).fonts;
     markDirty();
     bus.emit('settings', key);
     return;
@@ -1112,7 +1159,12 @@ export function setSetting(key, value) {
     setAppearance(value);
     return;
   }
-  if (board.settings[key] === value) return;
+  // The key arrives as a bare string - from a `data-cmd`, from the panel's
+  // schema, from the console - and setting a name BoardSettings does not have
+  // is a write nobody can read back. The bag is the same object either way; see
+  // the note over cmds.getSetting in commands.ts.
+  const settings: Record<string, unknown> = board.settings;
+  if (settings[key] === value) return;
   // Snapping is not only a rule for the next drag - it moves the board. Done
   // here rather than at the checkbox because the whimsy axis flips this setting
   // too (Harsh means snapped), and both routes have to behave the same.
@@ -1122,10 +1174,13 @@ export function setSetting(key, value) {
   // what one click did. writeSnapSetting() does everything this function's tail
   // would have done, which is why this returns rather than falling through.
   if (key === 'snap') {
-    value ? snapAll(value) : unsnapAll(value);
+    // The flag the two sweeps write back is the boolean the checkbox meant,
+    // which is what `value ?` was already asking of whatever arrived.
+    const on = !!value;
+    on ? snapAll(on) : unsnapAll(on);
     return;
   }
-  board.settings[key] = value;
+  settings[key] = value;
   // The gap is baked into where the packer put things, so on Mobile it is not a
   // rule for the next import - it moves the column that is already there. On
   // Desktop it is exactly a rule for the next import, and nothing moves until
@@ -1138,16 +1193,19 @@ export function setSetting(key, value) {
 }
 
 /** Replace the shared color/whimsy half and the active layout's local look. */
-export function setAppearance(appearance) {
-  const { shared, local } = splitAppearance(appearance);
-  board.sharedAppearance = cloneSettings({ appearance: shared }).appearance;
+export function setAppearance(appearance: unknown) {
+  // The same test splitAppearance() makes of its own argument, said at the
+  // door: a look that is not an object is no look, and both ends agree on it.
+  const { shared, local } = splitAppearance(isRecord(appearance) ? appearance : {});
+  // Through the live settings, as in setSetting's fonts branch above.
+  board.sharedAppearance = cloneSettings({ ...board.settings, appearance: shared }).appearance;
   board.settings.appearance = mergeAppearance(board.sharedAppearance, local);
   board.layoutSettings[board.layoutMode] = layoutSettingsOf(board.settings);
   markDirty();
   bus.emit('settings', 'appearance');
 }
 
-export function setArrangement(name) {
+export function setArrangement(name: string) {
   if (board.arrangement === name) return;
   board.arrangement = name;
   board.arrangements[board.layoutMode] = name;
@@ -1165,14 +1223,14 @@ export function setArrangement(name) {
  * Its own 'audioOrder' event so the Playlist repaints without every 'items'
  * listener waking for something only it cares about.
  */
-export function setAudioOrder(ids) {
+export function setAudioOrder(ids: unknown) {
   const live = new Set(board.items.map(i => i.id));
   board.audioOrder = normalizeAudioOrder(ids, live);
   markDirty();
   bus.emit('audioOrder', board.audioOrder);
 }
 
-export function setTitle(title) {
+export function setTitle(title: unknown) {
   board.title = cleanBoardTitle(title) || 'Untitled board';
   bus.emit('board');
 }
@@ -1194,7 +1252,7 @@ export function setTitle(title) {
  * back: there is no undo across a load, by design. Half a board is the one
  * outcome an open must not have.
  */
-export function loadBoard(data) {
+export function loadBoard(data: unknown) {
   const layoutMode = board.layoutMode;
   const next = normalizeBoard(data);
   board.title = next.title;

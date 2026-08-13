@@ -19,7 +19,12 @@ import { join } from 'node:path';
 
 import { WEB, APP_CSS_ORDER, appCss } from './helpers.js';
 
-const SHEETS = [...APP_CSS_ORDER, 'tokens.css', 'fonts.css'];
+// patch.css is not in APP_CSS_ORDER and never will be - it dresses patch.html
+// and is loaded by nothing else, so it is not part of the app's cascade and
+// appCss() must not carry it. It is named here anyway, because the failure this
+// file exists to catch is a property of any sheet that carries long prose, and
+// that one carries as much as any of them.
+const SHEETS = [...APP_CSS_ORDER, 'tokens.css', 'fonts.css', 'patch.css'];
 
 test('no stylesheet closes a comment it did not open', () => {
   // Walked rather than regexed, because the question is about *nesting* and a

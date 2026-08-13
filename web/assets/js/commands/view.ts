@@ -181,5 +181,16 @@ export function viewCommands(vp: CommandViewport, { resetAppearance }: ViewDeps)
     // the reason every other action here is one: the sidebar knows about data-cmd
     // and about nothing else, so this is the only wiring the panel needs.
     credits: () => openCredits(),
+    // What changed, which is web/patch.html - the one page this site has that is
+    // not the app. A command for the same reason the credit above is one, and it
+    // sits beside it because the two are the same kind of thing: the only rows in
+    // the panel that are about the app rather than about a board.
+    //
+    // A new tab, not this one. Everything you have is on the board behind this
+    // panel, and leaving the page to read release notes would be asking somebody
+    // to trust the autosave in order to find out what changed. `noopener` is not
+    // ceremony either - without it the opened page gets a live handle on this
+    // window through window.opener and can navigate it.
+    patchNotes: () => { window.open('patch', '_blank', 'noopener'); },
   };
 }

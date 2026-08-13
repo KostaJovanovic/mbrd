@@ -268,7 +268,7 @@ var ANALOGOUS = 60;
 var LEAFY_DROP = 0.07;
 var FACING_BONUS = 1;
 function rolesFor(hues) {
-  const [sheet, ...rest] = hues.map((p) => typeof p === "number" ? { h: p, standing: 0 } : p);
+  const [sheet, ...rest] = hues.map((p) => typeof p === "number" ? { h: p, standing: 0, tone: null } : p);
   const score = (p) => p.standing * (1 + FACING_BONUS * apart(p.h, sheet.h) / 180);
   const order = [...rest].sort((a, b) => score(b) - score(a) || apart(b.h, sheet.h) - apart(a.h, sheet.h));
   const ranked = order.map((p) => p.h);
@@ -428,7 +428,7 @@ async function samplePixels(urls, limit = MAX_SOURCES) {
       ctx.clearRect(0, 0, SAMPLE, SAMPLE);
       ctx.drawImage(src, 0, 0, SAMPLE, SAMPLE);
       out.push(ctx.getImageData(0, 0, SAMPLE, SAMPLE).data);
-      src.close?.();
+      if ("close" in src) src.close();
     } catch {
     }
   }
