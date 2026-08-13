@@ -29,9 +29,10 @@ import { join } from 'node:path';
  * How many modules are still carried unchecked.
  *
  * This number may be lowered and never raised. It started at 103 of 105 on the
- * commit that renamed the tree.
+ * commit that renamed the tree; the two left are canvas/input.ts and
+ * canvas/web.ts, the two largest and most stateful modules in the codebase.
  */
-const CEILING = 21;
+const CEILING = 2;
 
 const unchecked = walk(JS, ['.ts'])
   .filter(rel => read(join(WEB, rel)).startsWith('// @ts-nocheck'));
