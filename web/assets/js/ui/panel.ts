@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The sidebar, built from ui/settings-schema.js.
 //
 // index.html used to carry every control as markup and ui/sidebar.js wired each
@@ -40,19 +32,32 @@ import { field, fieldStops } from './controls.ts';
 import {
   TABS, SECTIONS, controlVisible, sectionVisible,
 } from './settings-schema.ts';
+import type {
+  ButtonsControl, CheckControl, Control, Ctx, HintControl, KeysControl,
+  RangeControl, SelectControl, Section, SlotControl, TextControl,
+} from './settings-schema.ts';
 
-/** Every built control, in build order: { c, wrap, input, out, section }. */
-const built = [];
+/** One built control: its spec, what to hide, and what to write into. */
+type Built = {
+  c: Control,
+  wrap: HTMLElement,
+  input: HTMLInputElement | HTMLSelectElement | null,
+  out: HTMLOutputElement | null,
+  nodes: HTMLElement[] | null,
+};
+
+/** Every built control, in build order. */
+const built: Built[] = [];
 /** section id -> its <section> element. */
-const sections = new Map();
+const sections = new Map<string, HTMLElement>();
 /** tab id -> { tab, panel }. */
-const tabs = new Map();
+const tabs = new Map<string, { tab: HTMLButtonElement, panel: HTMLElement }>();
 
 let currentTab = TABS[0].id;
 
-const ctx = () => ({ mobile: board.layoutMode === 'mobile' });
+const ctx = (): Ctx => ({ mobile: board.layoutMode === 'mobile' });
 
-const make = (tag, className) => {
+const make = <K extends keyof HTMLElementTagNameMap>(tag: K, className = '') => {
   const el = document.createElement(tag);
   if (className) el.className = className;
   return el;
@@ -67,8 +72,8 @@ const make = (tag, className) => {
  * listener in ui/sidebar.js, so nothing here needs `cmds`.
  */
 export function buildPanel(root = document.getElementById('sidebar')) {
-  const strip = root?.querySelector('.side-tabs');
-  const body = root?.querySelector('.side-body');
+  const strip = root?.querySelector<HTMLElement>('.side-tabs');
+  const body = root?.querySelector<HTMLElement>('.side-body');
   if (!strip || !body) return;
   built.length = 0;
   sections.clear();
@@ -113,10 +118,10 @@ export function buildPanel(root = document.getElementById('sidebar')) {
  * and no expensive panel to build, a separate Enter to commit would be a step
  * that buys nothing.
  */
-function onTabKey(e) {
+function onTabKey(e: KeyboardEvent) {
   const order = TABS.map(t => t.id);
   const i = order.indexOf(currentTab);
-  let next = null;
+  let next: string | undefined;
   if (e.key === 'ArrowRight') next = order[(i + 1) % order.length];
   else if (e.key === 'ArrowLeft') next = order[(i - 1 + order.length) % order.length];
   else if (e.key === 'Home') next = order[0];
@@ -128,7 +133,7 @@ function onTabKey(e) {
 }
 
 /** Show one tab. Roving tabindex, so the strip is one stop in the tab order. */
-export function showTab(id) {
+export function showTab(id: string) {
   if (!tabs.has(id)) return;
   currentTab = id;
   for (const [key, { tab, panel }] of tabs) {
@@ -146,7 +151,7 @@ export const openTab = () => currentTab;
 // Sections and controls
 // ---------------------------------------------------------------------------
 
-function buildSection(spec) {
+function buildSection(spec: Section) {
   const el = make('section', 'side-sec');
   el.id = `sec-${spec.id}`;
   if (spec.title) {
@@ -158,7 +163,7 @@ function buildSection(spec) {
   // The fold is assembled first and appended last, so a section reads in the
   // schema in the order it reads on screen without `advanced` having to be a
   // nesting level in the data.
-  let fold = null;
+  let fold: HTMLDetailsElement | null = null;
   for (const c of spec.controls) {
     const node = buildControl(c, spec);
     if (!node) continue;
@@ -167,11 +172,11 @@ function buildSection(spec) {
     fold.append(node);
   }
   if (fold) el.append(fold);
-  sections.set(spec.id, el);
+  if (spec.id) sections.set(spec.id, el);
   return el;
 }
 
-function buildFold(spec) {
+function buildFold(spec: Section) {
   const details = make('details', 'advanced');
   // A section with no heading is one whose every control is advanced, so the
   // summary is the only thing standing where an h2 would - and it has to be
@@ -186,13 +191,18 @@ function buildFold(spec) {
   return details;
 }
 
-function buildControl(c, _spec) {
-  const node = BUILDERS[c.type]?.(c);
+function buildControl(c: Control, _spec: Section) {
+  // The table is keyed by the same discriminant that narrows `c`, and each
+  // builder below takes the member carrying its own key - but TypeScript cannot
+  // carry that correlation through an index, so the pair is asserted here once
+  // rather than at each of the eight.
+  const build = BUILDERS[c.type] as ((spec: Control) => HTMLElement) | undefined;
+  const node = build?.(c);
   if (!node) return null;
   return node;
 }
 
-const BUILDERS = {
+const BUILDERS: { [K in Control['type']]: (c: Extract<Control, { type: K }>) => HTMLElement } = {
   text: buildText,
   check: buildCheck,
   range: buildRange,
@@ -204,10 +214,10 @@ const BUILDERS = {
 };
 
 /** The board's name. ui/sidebar.js owns what typing in it does. */
-function buildText(c) {
+function buildText(c: TextControl) {
   const input = make('input', c.className);
   input.type = 'text';
-  input.id = c.id;
+  if (c.id) input.id = c.id;
   if (c.maxlength) input.maxLength = c.maxlength;
   if (c.placeholder) input.placeholder = c.placeholder;
   if (c.ariaLabel) input.setAttribute('aria-label', c.ariaLabel);
@@ -217,20 +227,21 @@ function buildText(c) {
   return input;
 }
 
-function buildCheck(c) {
+function buildCheck(c: CheckControl) {
   const label = make('label', 'check');
   const input = make('input');
   input.type = 'checkbox';
-  input.id = c.id;
+  if (c.id) input.id = c.id;
   label.append(input, document.createTextNode(' ' + c.label));
-  if (!c.external && c.set) {
-    input.addEventListener('change', () => c.set(input.checked));
+  const set = c.set;
+  if (!c.external && set) {
+    input.addEventListener('change', () => set(input.checked));
   }
   register(c, label, input, null);
   return label;
 }
 
-function buildRange(c) {
+function buildRange(c: RangeControl) {
   // `silent` is a dial whose stops are named underneath rather than a value
   // worth printing: whimsy and quality both read as words, not numbers. Those
   // get the plain label and no readout - .field > span is the head, and a span
@@ -244,11 +255,13 @@ function buildRange(c) {
 
   const input = make('input');
   input.type = 'range';
-  input.id = c.id;
-  input.min = c.min;
-  input.max = c.max;
-  input.step = c.step;
-  if (c.value != null) input.value = c.value;
+  if (c.id) input.id = c.id;
+  // Numbers in the table, strings on the element - the conversion was the
+  // assignment's own before it was written down.
+  if (c.min != null) input.min = String(c.min);
+  if (c.max != null) input.max = String(c.max);
+  if (c.step != null) input.step = String(c.step);
+  if (c.value != null) input.value = String(c.value);
   label.append(input);
 
   if (c.stops?.length) {
@@ -260,25 +273,27 @@ function buildRange(c) {
     label.append(stops);
   }
 
-  if (!c.external && c.set) {
+  const set = c.set;
+  if (!c.external && set) {
     input.addEventListener('input', () => {
       writeOut(c, input, out);
-      c.set(+input.value);
+      set(+input.value);
     });
   }
   register(c, label, input, out);
   return label;
 }
 
-function buildSelect(c) {
+function buildSelect(c: SelectControl) {
   const { label } = field(c.label);
   if (c.fieldId) label.id = c.fieldId;
   const select = make('select');
-  select.id = c.id;
+  if (c.id) select.id = c.id;
   fillSelect(c, select, ctx());
   label.append(select);
-  if (!c.external && c.set) {
-    select.addEventListener('change', () => c.set(select.value));
+  const set = c.set;
+  if (!c.external && set) {
+    select.addEventListener('change', () => set(select.value));
   }
   register(c, label, select, null);
   return label;
@@ -294,7 +309,7 @@ function buildSelect(c) {
  * that never move) costs one join and no DOM at all, and so that a select the
  * user has open is not emptied under the pointer for no reason.
  */
-function fillSelect(c, select, ctxValue) {
+function fillSelect(c: SelectControl, select: HTMLSelectElement, ctxValue: Ctx) {
   const want = c.options?.(ctxValue) || [];
   const key = JSON.stringify(want.map(o => [o.value, o.label]));
   if (select.dataset.opts === key) return false;
@@ -317,12 +332,12 @@ function fillSelect(c, select, ctxValue) {
  * directly, because choosing an orientation with no sheet up also puts a sheet
  * up, which is a rule about paper and not a command.
  */
-function buildButtons(c) {
+function buildButtons(c: ButtonsControl) {
   const row = make('div', 'btn-row');
   if (c.id) row.id = c.id;
   if (c.group) row.setAttribute('role', 'group');
   if (c.ariaLabel) row.setAttribute('aria-label', c.ariaLabel);
-  const nodes = [];
+  const nodes: HTMLElement[] = [];
   for (const b of c.buttons) {
     const btn = make('button', b.className);
     btn.type = 'button';
@@ -339,14 +354,14 @@ function buildButtons(c) {
 }
 
 /** An empty host another module fills - the face menus, the token sliders. */
-function buildSlot(c) {
+function buildSlot(c: SlotControl) {
   const el = make('div', c.className);
-  el.id = c.id;
+  if (c.id) el.id = c.id;
   register(c, el, null, null);
   return el;
 }
 
-function buildHint(c) {
+function buildHint(c: HintControl) {
   const p = make('p', 'hint');
   if (c.id) p.id = c.id;
   // `html` is a literal in settings-schema.js and never anything a board or a
@@ -356,7 +371,7 @@ function buildHint(c) {
   return p;
 }
 
-function buildKeys(c) {
+function buildKeys(c: KeysControl) {
   const ul = make('ul', 'keys');
   for (const [keys, text] of c.keys) {
     const li = make('li');
@@ -379,11 +394,16 @@ function buildKeys(c) {
   return ul;
 }
 
-function register(c, wrap, input, out, nodes = null) {
+function register(
+  c: Control, wrap: HTMLElement,
+  input: HTMLInputElement | HTMLSelectElement | null,
+  out: HTMLOutputElement | null,
+  nodes: HTMLElement[] | null = null,
+) {
   built.push({ c, wrap, input, out, nodes });
 }
 
-function writeOut(c, input, out) {
+function writeOut(c: RangeControl, input: HTMLInputElement | HTMLSelectElement, out: HTMLOutputElement | null) {
   if (!out) return;
   out.textContent = typeof c.format === 'function'
     ? c.format(+input.value)
@@ -408,18 +428,20 @@ export function paintPanel() {
   const c = ctx();
   for (const entry of built) paintControl(entry, c);
   for (const spec of SECTIONS) {
-    const el = sections.get(spec.id);
+    const el = spec.id ? sections.get(spec.id) : null;
     if (el) el.hidden = !sectionVisible(spec, c);
   }
   paintRules();
 }
 
-function paintControl({ c: spec, wrap, input, out, nodes }, c) {
+function paintControl({ c: spec, wrap, input, out, nodes }: Built, c: Ctx) {
   // `ownVisibility` is a control whose owner decides when it is on screen for a
   // reason this table does not know - see the palette source count, which comes
   // down with the switch above it.
   if (!spec.ownVisibility) wrap.hidden = !controlVisible(spec, c);
-  if (nodes) {
+  // `nodes` is only ever filled for a buttons row - see register() - so the two
+  // tests are one question asked from both ends.
+  if (spec.type === 'buttons' && nodes) {
     for (let i = 0; i < nodes.length; i++) {
       const b = spec.buttons[i];
       if (typeof b.pressed === 'function') nodes[i].setAttribute('aria-pressed', String(b.pressed(c)));
@@ -431,6 +453,10 @@ function paintControl({ c: spec, wrap, input, out, nodes }, c) {
     if (typeof spec.text === 'function') wrap.textContent = spec.text(c);
     return;
   }
+  // The three kinds that carry a value to write back. The others were already
+  // returned above or have no `get` at all, which is what this test says now
+  // that the table declares which keys each kind may have.
+  if (spec.type !== 'check' && spec.type !== 'range' && spec.type !== 'select') return;
   if (spec.external || typeof spec.get !== 'function' || !input) return;
   // Never into a control that is being used: a select being reassigned while
   // its list is open, or a range mid-drag, both fight the hand on them.
@@ -438,11 +464,15 @@ function paintControl({ c: spec, wrap, input, out, nodes }, c) {
   // The list before the value, so that a select whose options depend on the
   // layout has somewhere to put the value it is about to be given. Refilling
   // clears the selection, which is why this cannot happen the other way round.
-  if (spec.type === 'select') fillSelect(spec, input, c);
+  // The element is the one buildSelect() made for this same spec, which is what
+  // the two assertions here and below say.
+  if (spec.type === 'select') fillSelect(spec, input as HTMLSelectElement, c);
   const value = spec.get();
-  if (spec.type === 'check') input.checked = !!value;
-  else if (spec.type === 'range') { input.value = value; writeOut(spec, input, out); }
-  else input.value = value ?? '';
+  if (spec.type === 'check') (input as HTMLInputElement).checked = !!value;
+  else if (spec.type === 'range') { input.value = String(value); writeOut(spec, input, out); }
+  // The String() is the coercion the assignment did on its own; what reaches
+  // here is a select's value, which is text already.
+  else input.value = String(value ?? '');
 }
 
 /**
@@ -455,7 +485,8 @@ function paintControl({ c: spec, wrap, input, out, nodes }, c) {
 function paintRules() {
   for (const { panel } of tabs.values()) {
     let first = true;
-    for (const el of panel.children) {
+    // Every child of a tab panel is a <section> this file built.
+    for (const el of panel.children as HTMLCollectionOf<HTMLElement>) {
       if (el.hidden) continue;
       el.classList.toggle('is-first', first);
       first = false;

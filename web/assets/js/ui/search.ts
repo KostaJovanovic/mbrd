@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Finding something on a board you cannot see all of.
 //
 // An infinite canvas has one failure mode that a list does not: a thing can be
@@ -31,20 +23,38 @@ import { board, byId, select } from '../state.ts';
 import { travelMs } from '../canvas/viewport.ts';
 import { extOf } from '../util.ts';
 import { describeExt } from '../import/formats.ts';
+import type { Viewport } from '../canvas/viewport.ts';
+import type { Item } from '../board-model.ts';
 
 /** Rows drawn at once. Past this the answer is "narrow it", not "scroll". */
 const MAX_HITS = 12;
 /** How much of a note's text a row shows around the match. */
 const SNIPPET = 90;
 
-let vp = null;
-let node = null;      // the palette, or null when closed
-let field = null;
-let list = null;
-let hits = [];
+/** What one item offers a query, flattened - see fields() below. */
+type Fields = {
+  name: string,
+  text: string,
+  url: string,
+  kind: string,
+  kindLabel: string,
+};
+
+/** One answer: the item, what was matched against, and how well. */
+type Hit = { item: Item, f: Fields, s: number };
+
+// The palette's three nodes exist exactly while it is open, and close() drops
+// all three together. Everything below run() is only ever reached from an event
+// on one of them or from open() itself, which is why they are read with `!`
+// there rather than guarded a second time.
+let vp: Viewport | null = null;
+let node: HTMLElement | null = null;      // the palette, or null when closed
+let field: HTMLInputElement | null = null;
+let list: HTMLElement | null = null;
+let hits: Hit[] = [];
 let at = 0;           // index of the highlighted row
 
-export function initSearch(viewport) {
+export function initSearch(viewport: Viewport) {
   vp = viewport;
 
   // Capture, so this beats the canvas's own key handling rather than racing
@@ -79,14 +89,14 @@ export function initSearch(viewport) {
 
   // Anything that makes the board move out from under the answers.
   addEventListener('pointerdown', e => {
-    if (node && !node.contains(e.target)) close();
+    if (node && !node.contains(e.target as Node | null)) close();
   }, true);
   addEventListener('wheel', () => close(), { passive: true });
   addEventListener('blur', () => close());
 }
 
 export function open() {
-  if (node) { field.select(); return; }
+  if (node) { field!.select(); return; }
 
   node = document.createElement('div');
   node.id = 'search';
@@ -111,7 +121,7 @@ export function open() {
   list.id = 'search-hits';
   list.setAttribute('role', 'listbox');
 
-  field.addEventListener('input', () => run(field.value));
+  field.addEventListener('input', () => run(field!.value));
   node.append(field, list);
   document.body.append(node);
   field.focus();
@@ -140,12 +150,14 @@ export function close() {
  * covers are set, and every one of those would have to remember to invalidate.
  * Rebuilding is a few hundred string reads against a keystroke's worth of time.
  */
-function fields(item) {
+function fields(item: Item): Fields {
   const name = item.name || '';
   const meta = item.meta || {};
   // A note's name *is* its first line, so searching both would score it twice
   // for one match. The body is what the name does not already cover.
-  const text = item.type === 'note' ? afterFirstLine(meta.text || '') : '';
+  // `meta` is open, so a note's body is narrowed here rather than trusted.
+  const body = typeof meta.text === 'string' ? meta.text : '';
+  const text = item.type === 'note' ? afterFirstLine(body) : '';
   const url = typeof meta.url === 'string' ? meta.url : '';
   const kind = describeExt(extOf(name));
   return {
@@ -163,7 +175,7 @@ function fields(item) {
   };
 }
 
-const afterFirstLine = s => {
+const afterFirstLine = (s: string) => {
   const i = s.indexOf('\n');
   return i < 0 ? '' : s.slice(i + 1);
 };
@@ -177,7 +189,7 @@ const afterFirstLine = s => {
  * kind is last, because "image" matches half the board and is a filter rather
  * than an identification.
  */
-function score(f, q) {
+function score(f: Fields, q: string) {
   const name = f.name.toLowerCase();
   if (name.startsWith(q)) return 1000 - name.length;   // shortest exact-ish first
   if (name.includes(q)) return 600 - name.length;
@@ -187,7 +199,7 @@ function score(f, q) {
   return 0;
 }
 
-function run(query) {
+function run(query: string) {
   const q = query.trim().toLowerCase();
   at = 0;
 
@@ -213,16 +225,16 @@ function run(query) {
 // Drawing
 // ---------------------------------------------------------------------------
 
-function draw(q) {
-  list.replaceChildren();
-  field.setAttribute('aria-expanded', String(hits.length > 0));
+function draw(q: string) {
+  list!.replaceChildren();
+  field!.setAttribute('aria-expanded', String(hits.length > 0));
 
   if (!q) {
-    list.append(note('Type to find anything on the board — a name, a note, an address, a kind of file.'));
+    list!.append(note('Type to find anything on the board — a name, a note, an address, a kind of file.'));
     return;
   }
   if (!hits.length) {
-    list.append(note('Nothing on this board matches that.'));
+    list!.append(note('Nothing on this board matches that.'));
     return;
   }
 
@@ -252,14 +264,14 @@ function draw(q) {
     // highlight, the pointer happens to be resting over row four, and the
     // highlight jumps back the moment anything reflows.
     row.addEventListener('click', () => commit(h));
-    list.append(row);
+    list!.append(row);
   });
 
-  field.setAttribute('aria-activedescendant', 'search-hit-' + at);
+  field!.setAttribute('aria-activedescendant', 'search-hit-' + at);
 }
 
 /** The line under a name: where the match actually was. */
-function context(f, q) {
+function context(f: Fields, q: string) {
   if (f.name.toLowerCase().includes(q)) return '';
   if (f.url.toLowerCase().includes(q)) return f.url;
   const i = f.text.toLowerCase().indexOf(q);
@@ -275,23 +287,23 @@ function context(f, q) {
   return f.kindLabel;
 }
 
-function note(text) {
+function note(text: string) {
   const p = document.createElement('p');
   p.className = 'search-note';
   p.textContent = text;
   return p;
 }
 
-function move(step) {
+function move(step: number) {
   if (!hits.length) return;
   at = (at + step + hits.length) % hits.length;
-  const rows = [...list.querySelectorAll('.search-hit')];
+  const rows = [...list!.querySelectorAll('.search-hit')];
   rows.forEach((r, i) => {
     r.classList.toggle('is-at', i === at);
     r.setAttribute('aria-selected', String(i === at));
   });
   rows[at]?.scrollIntoView({ block: 'nearest' });
-  field.setAttribute('aria-activedescendant', 'search-hit-' + at);
+  field!.setAttribute('aria-activedescendant', 'search-hit-' + at);
 }
 
 /**
@@ -306,12 +318,12 @@ function move(step) {
  * undo, a delete from the other end of a rename. A result that no longer names
  * anything simply does nothing.
  */
-function commit(hit) {
+function commit(hit: Hit | undefined) {
   if (!hit) return;
   const id = hit.item.id;
   close();
   const item = byId(id);
   if (!item) return;
   select([id]);
-  vp.fit([item], 120, travelMs());
+  vp!.fit([item], 120, travelMs());
 }

@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Every control in the sidebar, written down once.
 //
 // The panel used to be markup in index.html and wiring in ui/sidebar.js, which
@@ -53,6 +45,108 @@ import {
   clearQualityOverrides, SHARPNESS_STEPS, BUILD_STEPS,
 } from '../quality.ts';
 
+// ---------------------------------------------------------------------------
+// What a control is
+// ---------------------------------------------------------------------------
+
+/**
+ * What the panel knows about the board while it paints: the one fact every
+ * `when`, `options`, `pressed` and `text` closure below is asked against.
+ */
+export type Ctx = { mobile: boolean };
+
+/** One entry of a <select>. */
+export type Option = { value: string, label: string };
+
+/** One button in a `buttons` row. See buildButtons() in ui/panel.js. */
+export type ButtonSpec = {
+  label: string,
+  /** Answered by the delegated listener in ui/sidebar.js. */
+  cmd?: string,
+  id?: string,
+  className?: string,
+  /** The paper pair, which ui/sidebar.js wires itself - see buildButtons(). */
+  orient?: string,
+  /** A starting value for a button whose own command writes the attribute after. */
+  ariaPressed?: string,
+  pressed?: (ctx: Ctx) => boolean,
+  title?: (ctx: Ctx) => string,
+};
+
+/** The keys every control may carry, whatever kind it is. */
+type Common = {
+  id?: string,
+  className?: string,
+  /** False and the control is not on screen at all - absence, not disabling. */
+  when?: (ctx: Ctx) => boolean,
+  /** Sinks the control into its section's one fold. */
+  advanced?: boolean,
+  /** Another module owns the behaviour; this file only asks for the element. */
+  external?: boolean,
+  /** Its owner decides when it shows, for a reason this table does not know. */
+  ownVisibility?: boolean,
+};
+
+/**
+ * A control, as one of the eight kinds the builder knows.
+ *
+ * A discriminated union on `type` rather than one shape with everything
+ * optional, because the kinds genuinely differ: only a range has a step, only a
+ * select has a list, and only a buttons row has buttons. It is also what makes
+ * the table below check itself - a `min` on a checkbox is now a mistake the
+ * typechecker catches rather than a key nothing ever reads.
+ */
+export type TextControl = Common & {
+  type: 'text', maxlength?: number, placeholder?: string, ariaLabel?: string,
+};
+export type CheckControl = Common & {
+  type: 'check', label: string, get?: () => boolean, set?: (value: boolean) => unknown,
+};
+export type RangeControl = Common & {
+  type: 'range', label: string,
+  min?: number, max?: number, step?: number, unit?: string, value?: number,
+  /** A dial whose stops are named underneath rather than printed as a number. */
+  silent?: boolean,
+  stops?: readonly string[],
+  stopsId?: string,
+  fieldId?: string,
+  outText?: string,
+  format?: (value: number) => string,
+  get?: () => number,
+  set?: (value: number) => unknown,
+};
+export type SelectControl = Common & {
+  type: 'select', label: string, fieldId?: string,
+  options?: (ctx: Ctx) => Option[],
+  get?: () => string,
+  set?: (value: string) => unknown,
+};
+export type ButtonsControl = Common & {
+  type: 'buttons', group?: boolean, ariaLabel?: string, buttons: ButtonSpec[],
+};
+export type SlotControl = Common & { type: 'slot' };
+export type HintControl = Common & {
+  type: 'hint', html?: string, text?: (ctx: Ctx) => string,
+};
+export type KeysControl = Common & {
+  type: 'keys', keys: readonly (readonly [readonly string[], string])[],
+};
+export type Control =
+  | TextControl | CheckControl | RangeControl | SelectControl
+  | ButtonsControl | SlotControl | HintControl | KeysControl;
+
+/** One heading's worth of controls, and which tab it lives in. */
+export type Section = {
+  id?: string,
+  tab: string,
+  title?: string,
+  /** The label on the section's one fold, and the id a stylesheet reaches it by. */
+  fold?: string,
+  foldId?: string,
+  when?: (ctx: Ctx) => boolean,
+  controls: Control[],
+};
+
 /** The three tabs, in order. The first is the one the panel always opens on. */
 export const TABS = [
   { id: 'board',  label: 'Board' },
@@ -67,7 +161,7 @@ export const TABS = [
  * two more letters that take the same modifier, and spacing them all alike
  * would read as five keys pressed in a row.
  */
-const KEYS = [
+const KEYS: (readonly [readonly string[], string])[] = [
   [['drag'], 'pan the board'],
   [['shift', '+', 'drag'], 'select a region'],
   [['space', '+', 'drag'], 'pan from anywhere'],
@@ -93,8 +187,8 @@ const KEYS = [
   [['ctrl', '+', 'shift', '+', 'S'], 'export a .mbrd'],
 ];
 
-const mobile = ctx => ctx.mobile;
-const desktop = ctx => !ctx.mobile;
+const mobile = (ctx: Ctx) => ctx.mobile;
+const desktop = (ctx: Ctx) => !ctx.mobile;
 
 /** The long side of the box round every item - the board's own extent. */
 function spread() {
@@ -138,7 +232,7 @@ const QUALITY_HINT = {
  * one fold at the foot of the section, so a section reads here in the order it
  * reads on screen and the fold is not a nesting level in the data.
  */
-export const SECTIONS = [
+export const SECTIONS: Section[] = [
   // --- Board -------------------------------------------------------------
   {
     id: 'name', tab: 'board', title: 'Board',
@@ -575,7 +669,8 @@ export const SECTIONS = [
 ];
 
 /** Whether a control belongs on screen in this layout mode. */
-export const controlVisible = (c, ctx) => (typeof c.when === 'function' ? !!c.when(ctx) : true);
+export const controlVisible = (c: Control, ctx: Ctx) =>
+  (typeof c.when === 'function' ? !!c.when(ctx) : true);
 
 /**
  * Whether a section has anything left to show.
@@ -584,13 +679,13 @@ export const controlVisible = (c, ctx) => (typeof c.when === 'function' ? !!c.wh
  * a decision in it: a section whose every control is hidden must come down with
  * them, or the panel grows an empty heading over a rule.
  */
-export function sectionVisible(section, ctx) {
+export function sectionVisible(section: Section, ctx: Ctx) {
   if (typeof section.when === 'function' && !section.when(ctx)) return false;
   return section.controls.some(c => controlVisible(c, ctx));
 }
 
 /** The sections of one tab that have something to show. */
-export const sectionsFor = (tab, ctx) =>
+export const sectionsFor = (tab: string, ctx: Ctx) =>
   SECTIONS.filter(s => s.tab === tab && sectionVisible(s, ctx));
 
 /** Reset every quality override, leaving the dial where it is. */

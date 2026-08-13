@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Minimal ZIP reader/writer.
 //
 // A .mbrd *is* a ZIP (same trick as .3mf / .docx), so this is the whole storage
@@ -19,6 +11,26 @@
 // Not supported (and not needed here): ZIP64, encryption, multi-disk, data
 // descriptors. Archives at or above 4 GB are rejected with a clear error rather
 // than silently written as corrupt.
+
+/**
+ * Bytes over a plain ArrayBuffer, which is what everything here holds.
+ *
+ * The parameter is not decoration: a Uint8Array may sit over a SharedArrayBuffer
+ * as well, and one of those cannot be put in a Blob. Naming the buffer keeps the
+ * archive's own pieces assignable to a BlobPart all the way to the writer, and
+ * refuses a shared view at the door instead of at the last line.
+ */
+type Bytes = Uint8Array<ArrayBuffer>;
+
+/** One file going into an archive. `data` may be bytes or, better, a Blob. */
+export type ZipEntry = { name: string, data: Bytes | ArrayBuffer | Blob, compress?: boolean };
+
+/**
+ * Blob, in an environment that has one at all. The typeof is what the writer
+ * has always done inline; as a predicate it also narrows what it is asked
+ * about, which is what lets `size` and `length` be read off the same value.
+ */
+const isBlob = (v: unknown): v is Blob => typeof Blob !== 'undefined' && v instanceof Blob;
 
 const LOCAL_SIG = 0x04034b50;
 const CD_SIG = 0x02014b50;
@@ -38,13 +50,13 @@ const CRC_TABLE = (() => {
 })();
 
 const CRC_INIT = 0xffffffff;
-const crcChunk = (c, bytes) => {
+const crcChunk = (c: number, bytes: Uint8Array) => {
   for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
   return c >>> 0;
 };
-const crcEnd = c => (c ^ 0xffffffff) >>> 0;
+const crcEnd = (c: number) => (c ^ 0xffffffff) >>> 0;
 
-export function crc32(bytes) {
+export function crc32(bytes: Uint8Array) {
   return crcEnd(crcChunk(CRC_INIT, bytes));
 }
 
@@ -56,7 +68,7 @@ export function crc32(bytes) {
  * rather than as bytes. Streaming it is the difference between a peak of every
  * asset resident at once and a peak of one chunk.
  */
-async function crc32Blob(blob) {
+async function crc32Blob(blob: Blob) {
   const reader = blob.stream().getReader();
   let c = CRC_INIT;
   try {
@@ -73,7 +85,7 @@ async function crc32Blob(blob) {
 
 // --- DEFLATE via the platform ----------------------------------------------
 
-let rawSupport = null;
+let rawSupport: boolean | null = null;
 function supportsRaw() {
   if (rawSupport === null) {
     try { new CompressionStream('deflate-raw'); rawSupport = true; }
@@ -82,7 +94,7 @@ function supportsRaw() {
   return rawSupport;
 }
 
-async function deflateRaw(bytes) {
+async function deflateRaw(bytes: Bytes): Promise<Bytes> {
   const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate-raw'));
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
@@ -94,7 +106,7 @@ async function deflateRaw(bytes) {
  * reason the input is one: the browser keeps a Blob wherever it likes,
  * including on disk, where a Uint8Array is unavoidably heap.
  */
-async function deflateRawBlob(blob) {
+async function deflateRawBlob(blob: Blob) {
   const stream = blob.stream().pipeThrough(new CompressionStream('deflate-raw'));
   return new Response(stream).blob();
 }
@@ -117,10 +129,10 @@ async function deflateRawBlob(blob) {
  * mid-stream, at which point the browser stops pulling and the partial output
  * is dropped.
  */
-async function inflateRaw(bytes, cap, name) {
+async function inflateRaw(bytes: Bytes, cap: number, name: string): Promise<Bytes> {
   const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
   const reader = stream.getReader();
-  const chunks = [];
+  const chunks: Uint8Array[] = [];
   let total = 0;
   try {
     for (;;) {
@@ -148,7 +160,7 @@ async function inflateRaw(bytes, cap, name) {
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
-function dosDateTime(date) {
+function dosDateTime(date: Date) {
   const d = date instanceof Date ? date : new Date();
   const y = Math.max(1980, d.getFullYear());
   return {
@@ -176,10 +188,13 @@ function dosDateTime(date) {
  * rather than copying them. Peak memory becomes a chunk and a header instead of
  * the archive.
  */
-export async function writeZip(entries, { date = new Date(), mime = 'application/zip' } = {}) {
+export async function writeZip(
+  entries: ZipEntry[],
+  { date = new Date(), mime = 'application/zip' }: { date?: Date, mime?: string } = {},
+) {
   const { time, date: dosDate } = dosDateTime(date);
-  const parts = [];        // body chunks, in file order
-  const central = [];      // central-directory records
+  const parts: (Bytes | Blob)[] = [];   // body chunks, in file order
+  const central: Bytes[] = [];          // central-directory records
   let offset = 0;
 
   // Every field below is written at a fixed width, so a value that does not fit
@@ -197,18 +212,17 @@ export async function writeZip(entries, { date = new Date(), mime = 'application
     // A Blob stays a Blob all the way to the output; anything else is bytes.
     // `size` and `length` are the same fact under two names, so they are read
     // once here and the headers below use the numbers rather than the objects.
-    const blobbed = typeof Blob !== 'undefined' && entry.data instanceof Blob;
-    const raw = blobbed || entry.data instanceof Uint8Array
+    const raw = isBlob(entry.data) || entry.data instanceof Uint8Array
       ? entry.data : new Uint8Array(entry.data);
-    const rawLen = blobbed ? raw.size : raw.length;
-    const crc = blobbed ? await crc32Blob(raw) : crc32(raw);
+    const rawLen = isBlob(raw) ? raw.size : raw.length;
+    const crc = isBlob(raw) ? await crc32Blob(raw) : crc32(raw);
 
     let method = 0;
-    let payload = raw;
+    let payload: Bytes | Blob = raw;
     let payloadLen = rawLen;
     if (entry.compress && supportsRaw() && rawLen > 256) {
-      const deflated = blobbed ? await deflateRawBlob(raw) : await deflateRaw(raw);
-      const deflatedLen = blobbed ? deflated.size : deflated.length;
+      const deflated = isBlob(raw) ? await deflateRawBlob(raw) : await deflateRaw(raw);
+      const deflatedLen = isBlob(deflated) ? deflated.size : deflated.length;
       // Only take the compressed form when it actually helps.
       if (deflatedLen < rawLen) { method = 8; payload = deflated; payloadLen = deflatedLen; }
     }
@@ -333,7 +347,7 @@ const LIMITS = {
 };
 
 /** Bounds-check before a read, with a message that names the file's fault. */
-function within(end, size, what) {
+function within(end: number, size: number, what: string) {
   if (!Number.isFinite(end) || end < 0 || end > size) {
     throw new Error(`Corrupt archive: ${what} points past the end of the file`);
   }
@@ -344,13 +358,13 @@ function within(end, size, what) {
  * Reads the central directory (not a linear scan), so entries written by any
  * conforming zipper - including Explorer's "Send to > Compressed folder" - work.
  */
-export async function readZip(source) {
+export async function readZip(source: Blob | ArrayBuffer | ArrayBufferView<ArrayBuffer>) {
   // Blob is what the app passes (a File, or one built by the packer). The
   // typed-array and ArrayBuffer forms are for anything already in memory -
   // notably the tests, which have no reason to wrap bytes in a Blob first.
   // A view is honoured at its own offset rather than through its whole
   // buffer, so a subarray of a larger allocation reads as itself.
-  let bytes;
+  let bytes: Bytes;
   if (ArrayBuffer.isView(source)) {
     bytes = new Uint8Array(source.buffer, source.byteOffset, source.byteLength);
   } else if (source instanceof ArrayBuffer) {
@@ -390,7 +404,7 @@ export async function readZip(source) {
   within(p + cdSize, size, 'the central directory');
   if (p + cdSize > eocd) throw new Error('Corrupt archive: the central directory overruns its own record');
 
-  const out = new Map();
+  const out = new Map<string, Bytes>();
   let totalOut = 0;
 
   for (let n = 0; n < count; n++) {
@@ -492,7 +506,7 @@ export async function readZip(source) {
  * what it points at - four bytes inside compressed data can spell EOCD by
  * chance, and only the offsets it claims can tell the difference.
  */
-function findEOCD(view, size) {
+function findEOCD(view: DataView, size: number) {
   const min = Math.max(0, size - 0xffff - 22);
   for (let i = size - 22; i >= min; i--) {
     if (view.getUint32(i, true) === EOCD_SIG) return i;

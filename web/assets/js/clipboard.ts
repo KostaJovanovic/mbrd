@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The internal clipboard: what a copy of an item is, what is currently held,
 // and the receipt that tells our own paste from somebody else's.
 //
@@ -44,6 +36,7 @@
 import { toast } from './notify.ts';
 import { itemBounds } from './geometry.ts';
 import { board } from './board-model.ts';
+import type { Item } from './board-model.ts';
 
 /**
  * The items a copy-shaped operation is actually about, z-sorted.
@@ -54,12 +47,18 @@ import { board } from './board-model.ts';
  * that happens to include it simply leaves it behind rather than the whole
  * operation refusing.
  */
-export function itemsIn(ids) {
+export function itemsIn(ids: Iterable<string>) {
   const set = ids instanceof Set ? ids : new Set(ids);
   return board.items
     .filter(i => set.has(i.id) && i.type !== 'title')
     .sort((a, b) => (a.z || 0) - (b.z || 0));
 }
+
+/**
+ * An item on its way onto a board and not yet on one: everything except the two
+ * fields the board itself decides. makeItem() fills both in.
+ */
+export type ItemDraft = Omit<Item, 'id' | 'z'>;
 
 /**
  * The copy that Duplicate and Paste both make: everything about an item except
@@ -71,7 +70,7 @@ export function itemsIn(ids) {
  * video costs nothing on disk. meta is shallow-copied because every field in it
  * is a scalar - text, tint, mime, size and the rest.
  */
-export function cloneItem(i, dx = 0, dy = 0) {
+export function cloneItem(i: ItemDraft, dx = 0, dy = 0): ItemDraft {
   return {
     type: i.type,
     x: i.x + dx,
@@ -83,7 +82,8 @@ export function cloneItem(i, dx = 0, dy = 0) {
   };
 }
 
-const clipboard = { items: [], text: '', pastes: 0 };
+const clipboard: { items: ItemDraft[], text: string, pastes: number } =
+  { items: [], text: '', pastes: 0 };
 
 export const clipboardSize = () => clipboard.items.length;
 
@@ -122,7 +122,7 @@ export function clearClipboard() {
  * new note of the same words, and is not a bad answer to a question nobody can
  * answer correctly.
  */
-export function clipboardHasOurs(systemText) {
+export function clipboardHasOurs(systemText: string) {
   return !!clipboard.items.length && !!clipboard.text && systemText === clipboard.text;
 }
 
@@ -133,7 +133,7 @@ export function clipboardHasOurs(systemText) {
  * there was nothing to copy. That half is the caller's, because only a real
  * `copy`/`cut` event may write to the system clipboard synchronously.
  */
-export function copyItems(ids) {
+export function copyItems(ids: Iterable<string>) {
   const text = takeItems(itemsIn(ids));
   if (text) toast(`Copied ${itemCount(clipboard.items.length)}`);
   return text;
@@ -149,7 +149,7 @@ export function copyItems(ids) {
  * did was reset the fade. So cut resolves its own items (it needs them for the
  * delete as well), calls this, and toasts once itself.
  */
-export function takeItems(src) {
+export function takeItems(src: Item[]) {
   if (!src.length) return '';
   clipboard.items = src.map(i => cloneItem(i));
   clipboard.pastes = 0;
@@ -158,7 +158,7 @@ export function takeItems(src) {
 }
 
 /** "1 item" / "3 items", for the three clipboard receipts. */
-export const itemCount = n => `${n} item${n === 1 ? '' : 's'}`;
+export const itemCount = (n: number) => `${n} item${n === 1 ? '' : 's'}`;
 
 /**
  * What a copied selection says on the system clipboard. A note gives up its
@@ -170,7 +170,7 @@ export const itemCount = n => `${n} item${n === 1 ? '' : 's'}`;
  * selection with nothing to say - an unnamed photo - because the receipt above
  * only works while the string is never empty.
  */
-function summarise(src) {
+function summarise(src: Item[]) {
   const lines = src.map(i => (i.type === 'note' ? i.meta.text
                             : i.type === 'link' ? i.meta.url
                             : i.name) || '').filter(Boolean);
@@ -204,14 +204,16 @@ const PASTE_STEP = { x: 28, y: -28 };
  * clipboard returns [] and does not advance the counter, so a dead Ctrl+V does
  * not silently push the next real one further away.
  */
-export function pasteCopies(at = null) {
+export function pasteCopies(at: { x: number, y: number } | null = null) {
   if (!clipboard.items.length) return [];
   const n = clipboard.pastes++;
   let dx, dy;
   if (at) {
     // n rather than n + 1, so the first paste at a given point lands *on* it
     // and only the ones after it fan out.
-    const b = itemBounds(clipboard.items);
+    // Non-null: itemBounds() answers null only for an empty list, and the line
+    // at the top of this function returned on exactly that.
+    const b = itemBounds(clipboard.items)!;
     dx = at.x - (b.x0 + b.x1) / 2 + n * PASTE_STEP.x;
     dy = at.y - (b.y0 + b.y1) / 2 + n * PASTE_STEP.y;
   } else {

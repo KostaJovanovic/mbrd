@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Display-resolution pictures: mount a bounded copy, keep the original for export.
 //
 // The board stores every photograph at the resolution it arrived - a phone
@@ -63,11 +55,11 @@ const displayMax = () => quality.sharpness;
 const QUALITY = 0.82;
 
 /** hash -> { url, own }. own=false when the entry points at the original's URL. */
-const cache = new Map();
+const cache = new Map<string, { url: string; own: boolean }>();
 /** hash -> in-flight Promise<url|null>, so two mounts of one photo share a job. */
-const pending = new Map();
+const pending = new Map<string, Promise<string | null>>();
 /** The serialization chain: one full decode live at a time. */
-let queue = Promise.resolve();
+let queue: Promise<unknown> = Promise.resolve();
 /**
  * Bumped by clearDisplay(). A job carries the epoch it started under and
  * publishes nothing if that has moved on - see generate(). Generation is
@@ -81,7 +73,7 @@ let epoch = 0;
  * re-mount of a picture whose copy exists (panned back into view, say) sets its
  * src at once with no flicker.
  */
-export function displayURLReady(hash) {
+export function displayURLReady(hash: string): string | null {
   return cache.get(hash)?.url || null;
 }
 
@@ -90,7 +82,7 @@ export function displayURLReady(hash) {
  * URL. Idempotent and shared: repeated calls for the same hash return the one
  * in-flight or finished job. Resolves to null only if the asset is gone.
  */
-export function ensureDisplay(hash) {
+export function ensureDisplay(hash: string): Promise<string | null> {
   const done = cache.get(hash);
   if (done) return Promise.resolve(done.url);
   const inFlight = pending.get(hash);
@@ -105,7 +97,7 @@ export function ensureDisplay(hash) {
   return tracked;
 }
 
-async function generate(hash, mine) {
+async function generate(hash: string, mine: number): Promise<string | null> {
   const existing = cache.get(hash);
   if (existing) return existing.url;
   const a = getAsset(hash);
@@ -125,9 +117,11 @@ async function generate(hash, mine) {
   if (won) return won.url;
   // A copy that came out is ours to revoke; a picture already small enough rides
   // the asset store's own URL, which assets.js revokes - do not double-manage it.
+  // assetURL() is null only for a hash the store does not hold, and getAsset()
+  // above already proved it holds this one - so the assertion cannot fire.
   const entry = small
     ? { url: URL.createObjectURL(small), own: true }
-    : { url: assetURL(hash), own: false };
+    : { url: assetURL(hash)!, own: false };
   cache.set(hash, entry);
   return entry.url;
 }
@@ -139,7 +133,7 @@ async function generate(hash, mine) {
  * the browser cannot decode it - because those are not failures: the original is
  * already a fine thing to mount. Same four-call shape as optimize/picture.js.
  */
-async function shrink(blob) {
+async function shrink(blob: Blob | null | undefined): Promise<Blob | null> {
   if (!blob || !/^image\//i.test(blob.type)) return null;
   let bmp;
   try {
@@ -154,6 +148,10 @@ async function shrink(blob) {
     const h = Math.max(1, Math.round(bmp.height * scale));
     const canvas = new OffscreenCanvas(w, h);
     const ctx = canvas.getContext('2d', { alpha: true });
+    // No 2d context is one more "leave the original alone" case, and it already
+    // was one: reaching for a property of null threw straight into the catch
+    // below, which returns null. Said out loud now that the type says it can be.
+    if (!ctx) return null;
     // Default is 'low' on some engines, which aliases every hard edge on a big
     // downscale.
     ctx.imageSmoothingEnabled = true;

@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The board switcher: the shelf of boards this browser is keeping, drawn.
 //
 // The storage half is in storage/storage.js and storage/library.js; this is only
@@ -24,11 +16,15 @@ import {
 } from '../storage/storage.ts';
 import { boardThumb } from './snapshot.ts';
 import { toast } from '../notify.ts';
+import type { LibraryEntry } from '../storage/library.ts';
 
-let root = null;
+/** A shelf row as the switcher sees it - the index entry, plus "is this the one on screen". */
+type ShelfEntry = LibraryEntry & { current: boolean };
+
+let root: HTMLDivElement | null = null;
 
 /** Human "when", for a board's card. */
-function ago(at) {
+function ago(at: number) {
   if (!at) return '';
   const s = (Date.now() - at) / 1000;
   if (s < 60) return 'just now';
@@ -46,7 +42,7 @@ export function closeLibrary() {
   removeEventListener('keydown', onKey, true);
 }
 
-function onKey(e) {
+function onKey(e: KeyboardEvent) {
   if (e.key === 'Escape') { e.stopPropagation(); closeLibrary(); }
 }
 
@@ -56,7 +52,7 @@ function onKey(e) {
  * ones that change the board on screen, and re-rendered on delete.
  */
 let busy = false;
-async function guard(fn) {
+async function guard(fn: () => Promise<void>) {
   if (busy) return;
   busy = true;
   try { await fn(); }
@@ -128,7 +124,7 @@ async function render() {
   root.append(panel);
 }
 
-function card(b) {
+function card(b: ShelfEntry) {
   const el = document.createElement('div');
   el.className = 'library-card' + (b.current ? ' is-current' : '');
 

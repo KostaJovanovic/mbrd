@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Drawing a 3D model on a card.
 //
 // mesh.js turns the bytes into triangles; this puts them on screen and
@@ -30,7 +22,12 @@
 import { clamp } from '../util.ts';
 import { addFile, allAssets, assetURL, getAsset, readText } from '../storage/assets.ts';
 import { applyMaterials, meshKind, parseMesh, parseMTL, MeshError } from '../mesh.ts';
+import type { Mesh } from '../mesh.ts';
 import { board, bus, byId, selection, setModelShot } from '../state.ts';
+import type { Item } from '../board-model.ts';
+
+/** Where a model is being looked at from: two angles and a distance. */
+type View = { yaw: number; pitch: number; zoom: number };
 
 /**
  * A model card is a photograph until you ask it to be a model.
@@ -45,7 +42,7 @@ import { board, bus, byId, selection, setModelShot } from '../state.ts';
  * card you happen to be turning right now is not a property of the board, and
  * saving it would mean a .mbrd could arrive with a card already spinning.
  */
-const turning = new Set();
+const turning = new Set<string>();
 
 /** The still's long edge, in device pixels. */
 const SHOT_MAX = 450;
@@ -58,16 +55,27 @@ const SHOT_MAX = 450;
 const SHOT_SLACK = 1.35;
 
 /** The shared context, built on first use and never torn down. */
-let gl = null;
-let glCanvas = null;
-let program = null;
-let buffers = null;
-let attribs = null;
-let uniforms = null;
+let gl: WebGLRenderingContext | null = null;
+let glCanvas: HTMLCanvasElement | null = null;
+let program: WebGLProgram | null = null;
+/** `of` is the mesh the three buffers currently hold - see renderShared(). */
+let buffers: {
+  pos: WebGLBuffer | null;
+  normal: WebGLBuffer | null;
+  color: WebGLBuffer | null;
+  of: Mesh | null;
+} | null = null;
+let attribs: { pos: number; normal: number; color: number } | null = null;
+let uniforms: {
+  proj: WebGLUniformLocation | null;
+  view: WebGLUniformLocation | null;
+  color: WebGLUniformLocation | null;
+  ownColor: WebGLUniformLocation | null;
+} | null = null;
 let contextDead = false;
 
 /** Parsed meshes, by asset hash: a board of nine views of one part parses once. */
-const meshes = new Map();
+const meshes = new Map<string, Mesh>();
 
 // A board can hold more geometry than a page should keep resident. Least
 // recently drawn goes first, and it is re-parsed from the asset bytes if it is
@@ -144,7 +152,7 @@ void main() {
   gl_FragColor = vec4(mix(uColor, vColor, uOwnColor) * light, 1.0);
 }`;
 
-function ensureGL() {
+function ensureGL(): WebGLRenderingContext | null {
   if (gl || contextDead) return gl;
   glCanvas = document.createElement('canvas');
   glCanvas.width = glCanvas.height = 300;
@@ -173,12 +181,22 @@ function ensureGL() {
   return gl;
 }
 
-function ensureProgram() {
+/**
+ * The context is a parameter rather than the module's own `gl`, and that is the
+ * whole of what makes this function's types honest: it may only be called once
+ * ensureGL() has answered one, which is a fact about the call and not about the
+ * variable. Its one caller asks in that order.
+ */
+function ensureProgram(gl: WebGLRenderingContext): WebGLProgram | null {
   if (program) return program;
-  const vs = compile(gl.VERTEX_SHADER, VERT);
-  const fs = compile(gl.FRAGMENT_SHADER, FRAG);
+  const vs = compile(gl, gl.VERTEX_SHADER, VERT);
+  const fs = compile(gl, gl.FRAGMENT_SHADER, FRAG);
   if (!vs || !fs) { contextDead = true; return null; }
   const p = gl.createProgram();
+  // A context that will not mint a program is a dead one, which is the same
+  // conclusion the link check below reaches for it - the shape a null `p` used
+  // to take the long way round to.
+  if (!p) { contextDead = true; return null; }
   gl.attachShader(p, vs);
   gl.attachShader(p, fs);
   gl.linkProgram(p);
@@ -199,8 +217,10 @@ function ensureProgram() {
   return program;
 }
 
-function compile(kind, src) {
+function compile(gl: WebGLRenderingContext, kind: number, src: string): WebGLShader | null {
   const s = gl.createShader(kind);
+  // Same reading as the program above: no shader object, no shader.
+  if (!s) return null;
   gl.shaderSource(s, src);
   gl.compileShader(s);
   return gl.getShaderParameter(s, gl.COMPILE_STATUS) ? s : null;
@@ -219,7 +239,7 @@ function compile(kind, src) {
  * arrives the card says what it is holding, which is also what it says for good
  * if the file turns out to be unreadable.
  */
-export function buildModelCard(item) {
+export function buildModelCard(item: Item) {
   const card = document.createElement('div');
   card.className = 'card card-model';
 
@@ -264,7 +284,7 @@ export function buildModelCard(item) {
   // so the picture is taken from the angle that is actually on screen rather
   // than from whatever was last written to the item.
   const view = liveView(item);
-  let mesh = null;
+  let mesh: Mesh | null = null;
 
   const paint = () => {
     if (!mesh) return;
@@ -297,7 +317,7 @@ export function buildModelCard(item) {
   return card;
 }
 
-async function load(item) {
+async function load(item: Item): Promise<Mesh> {
   const hash = item.asset?.hash;
   if (!hash) throw new MeshError('This model has no file behind it');
   // Keyed by the up-axis as well as the bytes. Standing a mesh up rewrites its
@@ -322,7 +342,9 @@ async function load(item) {
   const mesh = parseMesh(kind, await asset.blob.arrayBuffer(), item.meta?.upAxis);
   await paint(mesh);
   meshes.set(key, mesh);
-  while (meshes.size > MESH_CACHE_MAX) meshes.delete(meshes.keys().next().value);
+  // The loop condition is what makes the first key present: a Map with more
+  // entries than the cap has at least one.
+  while (meshes.size > MESH_CACHE_MAX) meshes.delete(meshes.keys().next().value!);
   return mesh;
 }
 
@@ -345,9 +367,10 @@ async function load(item) {
  * model with no colours is drawn in the board's ink, which is what every model
  * did before this existed.
  */
-async function paint(mesh) {
+async function paint(mesh: Mesh) {
   if (!mesh.mtllib || mesh.colors) return;
-  const want = mesh.mtllib.replace(/\\/g, '/').split('/').pop().toLowerCase();
+  // split() always yields at least one part, so pop() has one to give.
+  const want = mesh.mtllib.replace(/\\/g, '/').split('/').pop()!.toLowerCase();
   if (!want) return;
   for (const [hash, a] of allAssets()) {
     if ((a.name || '').toLowerCase() !== want) continue;
@@ -383,9 +406,9 @@ export function resetModels() {
 // ---------------------------------------------------------------------------
 
 /** id -> the live view object, shared between the card and the snapshot. */
-const views = new Map();
+const views = new Map<string, View>();
 
-const DEFAULT_VIEW = { yaw: 0.6, pitch: 0.5, zoom: 1 };
+const DEFAULT_VIEW: View = { yaw: 0.6, pitch: 0.5, zoom: 1 };
 
 /**
  * The angle this model is being looked at, as one object per item.
@@ -394,12 +417,17 @@ const DEFAULT_VIEW = { yaw: 0.6, pitch: 0.5, zoom: 1 };
  * which is what lets takeShot() photograph the angle actually on screen rather
  * than the one last written down.
  */
-function liveView(item) {
+function liveView(item: Item): View {
   const held = views.get(item.id);
   if (held) return held;
+  // meta is unknown per key on purpose - see board-model.ts - so a stored view
+  // is narrowed to an object here and each field converted rather than trusted.
+  // Number() is the unary + this line was written with, said in a form that
+  // takes an unknown; the coercion and the `|| default` are unchanged.
   const m = item.meta?.view;
-  const view = m && typeof m === 'object'
-    ? { yaw: +m.yaw || 0, pitch: +m.pitch || 0, zoom: +m.zoom || 1 }
+  const raw = m && typeof m === 'object' ? m as Record<string, unknown> : null;
+  const view = raw
+    ? { yaw: Number(raw.yaw) || 0, pitch: Number(raw.pitch) || 0, zoom: Number(raw.zoom) || 1 }
     : { ...DEFAULT_VIEW };
   views.set(item.id, view);
   return view;
@@ -412,11 +440,14 @@ function liveView(item) {
  * show somebody the wrong picture: the card is being turned, there is no still
  * yet, the bytes have gone, or the palette has moved since it was taken.
  */
-function stillFor(item) {
+function stillFor(item: Item): string | null {
   if (turning.has(item.id)) return null;
   if (outgrewStill(item)) return null;
+  // The string test is the same refusal the truthiness test was making: an item
+  // arrives through makeItem(), which drops a `shot` that is not a digest, so
+  // anything else here is a value no asset could ever be found under.
   const hash = item.meta?.shot;
-  if (!hash) return null;
+  if (typeof hash !== 'string' || !hash) return null;
   // A model with no colours of its own is drawn in the board's ink, so a change
   // of palette leaves its photograph a shade out of date. Models that brought
   // their own colours carry no shotInk and never go stale this way.
@@ -438,7 +469,7 @@ function stillFor(item) {
  * from arguing: a card this size is never given a still it would refuse, and a
  * shot is never taken that nothing would show.
  */
-const outgrewStill = item =>
+const outgrewStill = (item: Item) =>
   Math.max(+item.w || 0, +item.h || 0) > SHOT_MAX * SHOT_SLACK;
 
 /**
@@ -458,9 +489,9 @@ const outgrewStill = item =>
  * resetModelInk() below is for; canvas/grid.js's gridInk() is the same shape
  * for the same reason.
  */
-let ink = null;
+let ink: string | null = null;
 
-function boardInk() {
+function boardInk(): string {
   if (ink) return ink;
   const probe = document.createElement('div');
   probe.style.cssText = 'position:absolute;visibility:hidden;color:var(--ink-2)';
@@ -479,14 +510,14 @@ export function resetModelInk() {
  * Turn this model over by hand. The card swaps to live geometry until it is
  * deselected, and then photographs itself again.
  */
-export function rotateModel(id) {
+export function rotateModel(id: string) {
   const it = byId(id);
   if (!it || it.type !== 'model') return;
   turning.add(id);
   bus.emit('item', id);
 }
 
-export const isTurning = id => turning.has(id);
+export const isTurning = (id: string) => turning.has(id);
 
 /**
  * Photograph a model as it currently sits.
@@ -500,7 +531,7 @@ export const isTurning = id => turning.has(id);
  * that will not parse, a browser without WebP - simply keeps drawing itself
  * live, which is what it did before any of this existed.
  */
-async function takeShot(id) {
+async function takeShot(id: string): Promise<boolean> {
   const item = byId(id);
   if (!item || item.type !== 'model') return false;
   // Nothing would show it - see outgrewStill(). Encoding a WebP for a card that
@@ -523,7 +554,10 @@ async function takeShot(id) {
   // WebGL drawing buffer and the next card to draw will overwrite it, so the
   // bytes have to be taken now.
   const flat = new OffscreenCanvas(w, h);
-  flat.getContext('2d').drawImage(glCanvas, 0, 0, w, h, 0, 0, w, h);
+  // Two assertions and one fact behind both: renderShared() has just answered
+  // true, which it only does once ensureGL() has built the shared canvas - and a
+  // canvas this line made a moment ago has a 2d context to give.
+  flat.getContext('2d')!.drawImage(glCanvas!, 0, 0, w, h, 0, 0, w, h);
   const blob = await flat.convertToBlob({ type: 'image/webp', quality: 0.9 });
   if (!blob || !/webp/.test(blob.type)) return false;
 
@@ -586,11 +620,11 @@ bus.on('settings', key => {
  * needed to. One WebP is the right price for not putting a second size field in
  * the file format.
  */
-const shotSize = new Map();
-const sizeOf = item => `${Math.round(+item.w || 0)}x${Math.round(+item.h || 0)}`;
+const shotSize = new Map<string, string>();
+const sizeOf = (item: Item) => `${Math.round(+item.w || 0)}x${Math.round(+item.h || 0)}`;
 
 /** Retakes in flight, so a drag does not queue one per frame. */
-const pending = new Map();
+const pending = new Map<string, ReturnType<typeof setTimeout>>();
 const RESIZE_QUIET_MS = 260;
 
 /**
@@ -637,9 +671,9 @@ bus.on('items', delta => {
 // Turning it over
 // ---------------------------------------------------------------------------
 
-function orbit(stage, view, paint) {
+function orbit(stage: HTMLCanvasElement, view: View, paint: () => void) {
   let dragging = 0;
-  let last = null;
+  let last: { x: number; y: number } | null = null;
 
   stage.addEventListener('pointerdown', e => {
     // The canvas is one of the widgets canvas/input.js hands the whole gesture
@@ -661,7 +695,7 @@ function orbit(stage, view, paint) {
     paint();
   });
 
-  const stop = e => {
+  const stop = (e: PointerEvent) => {
     if (dragging !== e.pointerId) return;
     dragging = 0; last = null;
     stage.classList.remove('is-turning');
@@ -684,7 +718,7 @@ function orbit(stage, view, paint) {
 // The draw
 // ---------------------------------------------------------------------------
 
-function drawInto(stage, mesh, view) {
+function drawInto(stage: HTMLCanvasElement, mesh: Mesh, view: View) {
   const box = stage.getBoundingClientRect();
   if (!box.width || !box.height) return;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -693,22 +727,35 @@ function drawInto(stage, mesh, view) {
 
   if (stage.width !== w || stage.height !== h) { stage.width = w; stage.height = h; }
 
-  const ctx = stage.getContext('2d');
+  // The stage is a plain <canvas> this module made and has only ever drawn 2d
+  // into, so it is never the already-bound-to-something-else case.
+  const ctx = stage.getContext('2d')!;
   ctx.clearRect(0, 0, w, h);
   // boardInk() rather than a per-frame getComputedStyle(stage).color: the stage's
   // colour is always var(--ink-2) (see buildModelCard), which is exactly what
   // boardInk() resolves and caches, so a turn no longer forces a style recalc per
   // frame. Same value the still path (renderStill) already uses.
   if (!renderShared(mesh, view, w, h, boardInk())) return;
-  ctx.drawImage(glCanvas, 0, 0, w, h, 0, 0, w, h);
+  // As in takeShot(): a true from renderShared() is the shared canvas existing.
+  ctx.drawImage(glCanvas!, 0, 0, w, h, 0, 0, w, h);
 }
 
 /** Draw the mesh into the shared canvas at w x h. False if WebGL is unavailable. */
-function renderShared(mesh, view, w, h, cssColor) {
-  if (!ensureGL() || !ensureProgram()) return false;
-  if (glCanvas.width !== w || glCanvas.height !== h) {
-    glCanvas.width = w;
-    glCanvas.height = h;
+function renderShared(mesh: Mesh, view: View, w: number, h: number, cssColor: string): boolean {
+  // Asked in this order and one at a time, as before: ensureProgram() builds on
+  // the context ensureGL() returns and must not run without one.
+  const gl = ensureGL();
+  if (!gl) return false;
+  const prog = ensureProgram(gl);
+  if (!prog) return false;
+  // ensureGL() makes the canvas before it hands back a context and ensureProgram()
+  // fills all three tables before it answers, so a pair of successful calls is
+  // exactly the guarantee these four assertions rest on. Bound to locals so that
+  // is said once here rather than at each of the thirty uses below.
+  const canvas = glCanvas!, bufs = buffers!, attr = attribs!, uni = uniforms!;
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
   }
   gl.viewport(0, 0, w, h);
   gl.clearColor(0, 0, 0, 0);
@@ -718,37 +765,37 @@ function renderShared(mesh, view, w, h, cssColor) {
   // handles the wrong-facing ones instead.
   gl.disable(gl.CULL_FACE);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-  gl.useProgram(program);
+  gl.useProgram(prog);
 
-  if (buffers.of !== mesh) {
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.pos);
+  if (bufs.of !== mesh) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufs.pos);
     gl.bufferData(gl.ARRAY_BUFFER, mesh.positions, gl.STATIC_DRAW);
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.normal);
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufs.normal);
     gl.bufferData(gl.ARRAY_BUFFER, mesh.normals, gl.STATIC_DRAW);
     if (mesh.colors) {
-      gl.bindBuffer(gl.ARRAY_BUFFER, buffers.color);
+      gl.bindBuffer(gl.ARRAY_BUFFER, bufs.color);
       gl.bufferData(gl.ARRAY_BUFFER, mesh.colors, gl.STATIC_DRAW);
     }
-    buffers.of = mesh;
+    bufs.of = mesh;
   }
-  gl.bindBuffer(gl.ARRAY_BUFFER, buffers.pos);
-  gl.enableVertexAttribArray(attribs.pos);
-  gl.vertexAttribPointer(attribs.pos, 3, gl.FLOAT, false, 0, 0);
-  gl.bindBuffer(gl.ARRAY_BUFFER, buffers.normal);
-  gl.enableVertexAttribArray(attribs.normal);
-  gl.vertexAttribPointer(attribs.normal, 3, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufs.pos);
+  gl.enableVertexAttribArray(attr.pos);
+  gl.vertexAttribPointer(attr.pos, 3, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufs.normal);
+  gl.enableVertexAttribArray(attr.normal);
+  gl.vertexAttribPointer(attr.normal, 3, gl.FLOAT, false, 0, 0);
   // An uncoloured mesh gets a constant attribute rather than a buffer full of
   // the same three numbers: one call instead of a megabyte of white, and it
   // means an STL costs nothing for a feature only OBJ has. The array has to be
   // *disabled* for the constant to be read at all - a stale enabled pointer
   // from the last mesh would otherwise still be feeding this one.
   if (mesh.colors) {
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.color);
-    gl.enableVertexAttribArray(attribs.color);
-    gl.vertexAttribPointer(attribs.color, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufs.color);
+    gl.enableVertexAttribArray(attr.color);
+    gl.vertexAttribPointer(attr.color, 3, gl.FLOAT, false, 0, 0);
   } else {
-    gl.disableVertexAttribArray(attribs.color);
-    gl.vertexAttrib3f(attribs.color, 1, 1, 1);
+    gl.disableVertexAttribArray(attr.color);
+    gl.vertexAttrib3f(attr.color, 1, 1, 1);
   }
 
   const { min, max } = mesh.bounds;
@@ -768,18 +815,18 @@ function renderShared(mesh, view, w, h, cssColor) {
   const fit = Math.min(1, w / h);
   const dist = (radius * FIT_MARGIN) / (Math.tan(FOV / 2) * fit * view.zoom);
 
-  gl.uniformMatrix4fv(uniforms.proj, false,
+  gl.uniformMatrix4fv(uni.proj, false,
     perspective(FOV, w / h, radius * 0.02, dist + radius * 4));
-  gl.uniformMatrix4fv(uniforms.view, false, orbitView(centre, dist, view.yaw, view.pitch));
-  gl.uniform3fv(uniforms.color, rgbOf(cssColor));
-  gl.uniform1f(uniforms.ownColor, mesh.colors ? 1 : 0);
+  gl.uniformMatrix4fv(uni.view, false, orbitView(centre, dist, view.yaw, view.pitch));
+  gl.uniform3fv(uni.color, rgbOf(cssColor));
+  gl.uniform1f(uni.ownColor, mesh.colors ? 1 : 0);
 
   gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
   return true;
 }
 
 /** `rgb(r, g, b)` from getComputedStyle, as three floats. */
-function rgbOf(css) {
+function rgbOf(css: string): number[] {
   const n = css.match(/[\d.]+/g);
   if (!n || n.length < 3) return [0.42, 0.36, 0.31];
   // Nudged towards mid grey: a token meant for text on paper is nearly black,
@@ -787,7 +834,7 @@ function rgbOf(css) {
   return [0, 1, 2].map(i => Math.min(1, (+n[i] / 255) * 0.5 + 0.42));
 }
 
-function perspective(fovy, aspect, near, far) {
+function perspective(fovy: number, aspect: number, near: number, far: number): Float32Array {
   const f = 1 / Math.tan(fovy / 2);
   const d = near - far;
   return new Float32Array([
@@ -810,7 +857,7 @@ function perspective(fovy, aspect, near, far) {
  * matrix is the one part of a renderer that can be checked by arithmetic rather
  * than by looking at a picture and deciding it seems about right.
  */
-export function orbitView(centre, dist, yaw, pitch) {
+export function orbitView(centre: number[], dist: number, yaw: number, pitch: number): Float32Array {
   const cp = Math.cos(pitch), sp = Math.sin(pitch);
   const cy = Math.cos(yaw), sy = Math.sin(yaw);
   // Forward: from the eye towards the centre.

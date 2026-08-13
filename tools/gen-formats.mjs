@@ -12,6 +12,16 @@
  *
  * Re-run this whenever file-analyser learns a new format. The output is
  * committed, so mbrd never needs the sibling repo present to build or run.
+ *
+ * The output is TypeScript, and the three annotations in the template below are
+ * the whole of what that costs: the two lookup tables are declared as Records
+ * so they can be indexed by a runtime string, and describeExt() names its
+ * parameter. They are in the template rather than applied to the output by hand
+ * because output edited by hand is output the next run silently reverts - which
+ * is exactly what nearly happened here: the .js -> .ts rename annotated the
+ * generated file with a `@ts-nocheck` block this template never emitted, so
+ * re-running it would have turned `npm run typecheck` red for reasons no one
+ * would have connected to a catalog refresh.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -103,7 +113,7 @@ const body = `// GENERATED FILE - do not edit by hand.
 // is decided in canvas/renderers.js, not here.
 
 /** Category key -> human label. */
-export const CATEGORIES = ${JSON.stringify(categories, null, 2)};
+export const CATEGORIES: Record<string, string> = ${JSON.stringify(categories, null, 2)};
 
 /** Every format family, index-addressed by the EXT_FAMILY table below. */
 export const FAMILIES = [
@@ -112,7 +122,7 @@ ${families.map(f => `  { label: ${JSON.stringify(f.label)}, category: ${JSON.str
 
 /** Lowercase extension (no dot) -> index into FAMILIES. Keys stay quoted:
     plenty of extensions start with a digit ("3dm", "7z") or are pure digits. */
-export const EXT_FAMILY = {
+export const EXT_FAMILY: Record<string, number> = {
 ${wrapRaw(extEntries.map(([ext, i]) => `${JSON.stringify(ext)}:${i}`))}
 };
 
@@ -120,7 +130,7 @@ ${wrapRaw(extEntries.map(([ext, i]) => `${JSON.stringify(ext)}:${i}`))}
  * What is this extension? Returns { label, category, categoryLabel } or null
  * for anything the catalog has never heard of.
  */
-export function describeExt(ext) {
+export function describeExt(ext: unknown) {
   const key = String(ext || '').toLowerCase().replace(/^\\./, '');
   const family = FAMILIES[EXT_FAMILY[key]];
   if (!family) return null;

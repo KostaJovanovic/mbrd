@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The cards a board with nothing on it puts there itself: the four onboarding
 // hints, and the two a board opened at an address that does not exist carries
 // instead.
@@ -113,7 +105,19 @@ const DIAL_HINT = 'whimsy';
 // width" survives that change and "four cells" does not - at six columns it
 // would be two thirds of the board and two cards would no longer sit side by
 // side. Rows are cells outright, since the row height is the step either way.
-const HINT_GHOSTS = Object.freeze([
+/**
+ * One card in either set. `tape` is optional and only ever false: it is the
+ * dial's refusal of the strips (see the note on that entry), and absent means
+ * the ordinary taped card.
+ */
+type GhostSpec = {
+  id: string, hint: string,
+  x: number, y: number, w: number, h: number,
+  mspan: number, mrows: number,
+  tape?: boolean,
+};
+
+const HINT_GHOSTS: readonly GhostSpec[] = Object.freeze([
   { id: GHOST_IDS[0], hint: 'drop', x: -320, y:   96, w: 256, h: 192, mspan: 0.5, mrows: 2 },
   { id: GHOST_IDS[1], hint: 'move', x:  -64, y: -160, w: 256, h: 192, mspan: 0.5, mrows: 2 },
   { id: GHOST_IDS[2], hint: 'note', x:  320, y:  -32, w: 256, h: 192, mspan: 0.5, mrows: 2 },
@@ -179,7 +183,7 @@ export const NOTFOUND_IDS = Object.freeze([
   '__ghost_gone__', '__ghost_back__',
 ]);
 
-const NOTFOUND = Object.freeze([
+const NOTFOUND: readonly GhostSpec[] = Object.freeze([
   // The big one. Seven cells by four rather than the hint's four by three,
   // because it carries a number set at sixty-odd pixels (see the data-hint rule
   // in items.css) over a paragraph, and a hint's box fits neither.

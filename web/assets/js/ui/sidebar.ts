@@ -132,7 +132,9 @@ export function initSidebar(cmds: SidebarCommands): void {
   cmds.setBoardMode(readPref(MODE_PREF, detected));
 
   wirePaperOrientation();
-  wireTitleField(el('board-title'));
+  // #board-title is the Board tab's `type: 'text'` control, so the schema
+  // renders it as an <input> - which is the element the two calls here want.
+  wireTitleField(el('board-title') as HTMLInputElement | null);
 
   el('version')!.textContent = 'v' + VERSION;
 
@@ -176,7 +178,7 @@ function paint(): void {
   // The name field's behaviour lives in ui/board-title.js now - the masthead's
   // panel grew a second one, and one rename showing up in both is only true
   // while there is one implementation of it.
-  paintTitleField(el('board-title'));
+  paintTitleField(el('board-title') as HTMLInputElement | null);
   paintPanel();
 }
 

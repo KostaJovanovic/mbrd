@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Tying the board to the world, in one file that knows nothing about either.
 //
 // A board's coordinates are floats with no unit - they always were, and that is
@@ -83,12 +75,18 @@ export const DEFAULT_SCALE = PX_PER_MM;
 export const MIN_SCALE = 0.001;   // 1 unit = 1 metre
 export const MAX_SCALE = 1000;    // 1000 units = 1 millimetre
 
-export const clampScale = n =>
-  Number.isFinite(+n) && +n > 0 ? Math.min(Math.max(+n, MIN_SCALE), MAX_SCALE) : DEFAULT_SCALE;
+// `unknown` in, a scale out. This is the door a hand-edited file comes through
+// - board-schema.ts hands it whatever `settings.scale` held - so the coercion
+// is the function's job rather than the caller's, and every non-number lands on
+// the default the same way a wild number does.
+export const clampScale = (n: unknown) => {
+  const v = Number(n);
+  return Number.isFinite(v) && v > 0 ? Math.min(Math.max(v, MIN_SCALE), MAX_SCALE) : DEFAULT_SCALE;
+};
 
 /** World units -> millimetres, and back. The only two conversions that exist. */
-export const toMm = (units, scale) => units / clampScale(scale);
-export const toUnits = (mm, scale) => mm * clampScale(scale);
+export const toMm = (units: number, scale: unknown) => units / clampScale(scale);
+export const toUnits = (mm: number, scale: unknown) => mm * clampScale(scale);
 
 /**
  * A length in millimetres, written the way somebody would say it.
@@ -103,14 +101,14 @@ export const toUnits = (mm, scale) => mm * clampScale(scale);
  * Three significant figures at most, and trailing zeros dropped, so a readout
  * that updates as you drag changes width as little as possible.
  */
-export function formatMm(mm, system = 'metric') {
+export function formatMm(mm: number, system = 'metric') {
   const neg = mm < 0;
   const v = Math.abs(mm);
   const out = system === 'imperial' ? imperial(v) : metric(v);
   return neg ? '-' + out : out;
 }
 
-function metric(mm) {
+function metric(mm: number) {
   if (mm < 10) return trim(mm, mm < 1 ? 2 : 1) + ' mm';
   if (mm < 1000) return trim(mm / 10, mm < 100 ? 2 : 1) + ' cm';
   return trim(mm / 1000, mm < 10000 ? 2 : 1) + ' m';
@@ -123,7 +121,7 @@ function metric(mm) {
  * is how it is stored. Under a foot the feet are dropped rather than shown as a
  * zero, and a whole number of feet drops the inches for the same reason.
  */
-function imperial(mm) {
+function imperial(mm: number) {
   // Rounded to what will be printed *before* the shape is chosen from it, and
   // that ordering is the whole of this function's difficulty. Twelve inches is
   // 304.8 mm, which in binary floating point divides back to 11.999999999999998
@@ -141,16 +139,16 @@ function imperial(mm) {
 }
 
 /** Fixed to `places`, then stripped of the zeros that adds. */
-function trim(n, places) {
+function trim(n: number, places: number) {
   return String(Number(n.toFixed(places)));
 }
 
 /** A length in world units, written for a person. The everyday entry point. */
-export const formatLength = (units, scale, system) =>
+export const formatLength = (units: number, scale: unknown, system?: string) =>
   formatMm(toMm(units, scale), system);
 
 /** "32 x 24 cm" - an item's real size, the pair sharing one unit name. */
-export function formatSize(w, h, scale, system) {
+export function formatSize(w: number, h: number, scale: unknown, system?: string) {
   const a = formatLength(w, scale, system);
   const b = formatLength(h, scale, system);
   const unit = a.slice(a.indexOf(' '));
@@ -171,7 +169,7 @@ export function formatSize(w, h, scale, system) {
  * units-per-millimetre figure is the same thing said in a language nobody
  * thinks in.
  */
-export const scaleFrom = (units, mm) =>
+export const scaleFrom = (units: number, mm: number) =>
   clampScale(mm > 0 && units > 0 ? units / mm : DEFAULT_SCALE);
 
 // ---------------------------------------------------------------------------
@@ -196,7 +194,7 @@ export const scaleFrom = (units, mm) =>
  * everybody has ever held, and their millimetres are exact conversions of the
  * inch figures that define them, not roundings.
  */
-export const PAPERS = [
+export const PAPERS: { id: string, label: string, mm: [number, number] }[] = [
   { id: 'a0', label: 'A0', mm: [841, 1189] },
   { id: 'a1', label: 'A1', mm: [594, 841] },
   { id: 'a2', label: 'A2', mm: [420, 594] },
@@ -217,7 +215,7 @@ export const PAPERS = [
  * arrive out of somebody else's file naming a size this version has never heard
  * of. Both are the same answer: draw nothing.
  */
-export function paperMm(id, landscape = false) {
+export function paperMm(id: string, landscape = false) {
   const sheet = PAPERS.find(p => p.id === id);
   if (!sheet) return null;
   const [w, h] = sheet.mm;
@@ -254,12 +252,12 @@ const IMPERIAL_MM = [
  * far in that a quarter-inch spans the window - there is no honest bar to draw
  * there, and the caller hides it rather than drawing a dishonest one.
  */
-export function scaleStep(pxPerMm, maxPx, system = 'metric') {
+export function scaleStep(pxPerMm: number, maxPx: number, system = 'metric') {
   if (!(pxPerMm > 0) || !(maxPx > 0)) return null;
   const ladder = system === 'imperial'
     ? IMPERIAL_MM
     : decades(maxPx / pxPerMm);
-  let best = null;
+  let best: { mm: number, px: number } | null = null;
   for (const mm of ladder) {
     const px = mm * pxPerMm;
     if (px > maxPx) break;
@@ -274,8 +272,8 @@ export function scaleStep(pxPerMm, maxPx, system = 'metric') {
  * both want the same 1-2-5 rungs. Built up to the largest length that could fit,
  * so scaleStep() above walks it in order and stops at the first overflow.
  */
-function decades(maxMm) {
-  const out = [];
+function decades(maxMm: number) {
+  const out: number[] = [];
   const top = Math.max(1, Math.ceil(Math.log10(Math.max(maxMm, 1))));
   for (let e = -2; e <= top; e++) {
     const unit = Math.pow(10, e);

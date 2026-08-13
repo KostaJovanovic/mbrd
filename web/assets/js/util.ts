@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Small shared helpers. Deliberately dependency-free - and now actually small.
 //
 // This file said the same sentence for a year while holding seven unrelated
@@ -50,10 +42,10 @@
 
 import { reportCaught } from './errors.ts';
 
-export const clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
+export const clamp = (v: number, lo: number, hi: number) => v < lo ? lo : v > hi ? hi : v;
 
 /** The element with this id, or null. Every module wants this and no other. */
-export const el = id => document.getElementById(id);
+export const el = (id: string) => document.getElementById(id);
 
 /**
  * The value of a CSS custom property on :root, trimmed.
@@ -80,7 +72,7 @@ export const el = id => document.getElementById(id);
  * the whimsy dial, the palette and the theme, and a stale value would be an
  * interface that is one look behind.
  */
-export const readToken = name =>
+export const readToken = (name: string) =>
   getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 /**
@@ -91,7 +83,7 @@ export const readToken = name =>
  * tilt bag in canvas/items.js, and re-dealing the layout order in
  * main.js/rearrange.
  */
-export function shuffle(arr) {
+export function shuffle<T>(arr: T[]): T[] {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [arr[i], arr[j]] = [arr[j], arr[i]];
@@ -121,30 +113,56 @@ export function uid(prefix = 'i') {
  * would not have seen a single one of them. So the catch also says so, once:
  * errors.ts holds it to one toast per distinct fault however many times it
  * arrives, which is what makes this safe to call from the hot path at all.
+ *
+ * The type parameter is the bus's own event table - a plain object type mapping
+ * each event name to what is handed to a handler of it (see BusEvents in
+ * board-store.ts). It is the emitter that is generic and the caller that names
+ * its events, because the two emitters in the app carry unrelated traffic and
+ * neither should have to know about the other's.
  */
-export function emitter() {
-  const map = new Map();
+export type Emitter<E = Record<string, unknown>> = {
+  on<K extends keyof E & string>(evt: K, fn: (payload: E[K]) => void): () => void,
+  off<K extends keyof E & string>(evt: K, fn: (payload: E[K]) => void): void,
+  emit<K extends keyof E & string>(evt: K, payload?: E[K]): void,
+};
+
+export function emitter<E = Record<string, unknown>>(): Emitter<E> {
+  // Handlers of different events have different payload types, and a Map has
+  // one value type for all of them. `never` in the parameter is what every
+  // handler signature has in common - a function that accepts a string is a
+  // function that accepts nothing narrower - so this stores all of them without
+  // widening any to any.
+  const map = new Map<string, Set<(payload: never) => void>>();
   return {
     on(evt, fn) {
-      (map.get(evt) || map.set(evt, new Set()).get(evt)).add(fn);
-      return () => map.get(evt).delete(fn);
+      // Non-null twice: set() returns the Map, so get() straight after it finds
+      // the Set that line just put there; and the unsubscriber can only run
+      // after the same on() call registered the event.
+      (map.get(evt) || map.set(evt, new Set()).get(evt)!).add(fn);
+      return () => map.get(evt)!.delete(fn);
     },
     off(evt, fn) { map.get(evt)?.delete(fn); },
     emit(evt, payload) {
       for (const fn of map.get(evt) || []) {
-        try { fn(payload); } catch (e) { reportCaught(e, 'handler for "' + evt + '"'); }
+        // Safe by construction: on() checked this handler against the payload
+        // type of this same event name, which is what the Map cannot remember.
+        try { (fn as (payload?: E[typeof evt]) => void)(payload); }
+        catch (e) { reportCaught(e, 'handler for "' + evt + '"'); }
       }
     },
   };
 }
 
 /** Collapse repeated calls into one per animation frame. */
-export function rafThrottle(fn) {
-  let id = 0, lastArgs = null;
-  return function (...args) {
+export function rafThrottle<A extends unknown[]>(fn: (...args: A) => void) {
+  let id = 0;
+  let lastArgs: A | null = null;
+  return function (...args: A) {
     lastArgs = args;
     if (id) return;
-    id = requestAnimationFrame(() => { id = 0; fn(...lastArgs); });
+    // Non-null: nothing clears lastArgs, and the line above set it before this
+    // frame was ever asked for.
+    id = requestAnimationFrame(() => { id = 0; fn(...lastArgs!); });
   };
 }
 
@@ -158,7 +176,7 @@ export function baseName(name = '') {
   return i > 0 ? name.slice(0, i) : name;
 }
 
-export function formatBytes(n) {
+export function formatBytes(n: number) {
   if (!Number.isFinite(n)) return '';
   const u = ['B', 'KB', 'MB', 'GB', 'TB'];
   let i = 0;
@@ -177,7 +195,24 @@ export function formatBytes(n) {
  * FIPS 180-4 to ask a question about a string. Written twice, the two would
  * drift, which is why it is written once - just not in there.
  */
-export const isHash = v => typeof v === 'string' && /^[0-9a-f]{64}$/.test(v);
+/**
+ * Whether something is an object that may be looked into, key by key.
+ *
+ * Here for the same reason as everything else in this file: most of the graph
+ * wants it and it is two lines long. Every module that reads a document it did
+ * not write starts by asking this - the schema, the item reader, the quality
+ * dial's saved override - and each had written `v && typeof v === 'object'` out
+ * by hand, which says the same thing without narrowing anything. `null` is the
+ * whole reason the second half exists.
+ *
+ * The values are `unknown`, not any: knowing that a key can be read is not the
+ * same as knowing what came back, and the caller narrows what it takes.
+ */
+export const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null;
+
+export const isHash = (v: unknown): v is string =>
+  typeof v === 'string' && /^[0-9a-f]{64}$/.test(v);
 
 /**
  * A CSS family name a board is allowed to carry, for a face dropped into it.
@@ -193,7 +228,7 @@ export const isHash = v => typeof v === 'string' && /^[0-9a-f]{64}$/.test(v);
  * the declaration, no backslash to escape its way past either. Length-capped
  * because a family name is a name.
  */
-export const isFamily = v =>
+export const isFamily = (v: unknown): v is string =>
   typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9 _-]{0,39}$/.test(v);
 
 /**
@@ -213,10 +248,22 @@ export const isFamily = v =>
  * packer - it spells the id into an archive path and refuses the whole export
  * over a bad one. Filtering here would take that refusal away and write the
  * hole instead.
+ *
+ * Structurally typed rather than taking board-model.ts's Item, because
+ * board-model.ts imports this file and the edge only goes one way. Anything
+ * with the two fields answers, which is also what lets a half-built item from a
+ * reader be asked.
+ *
+ * The predicate is filter(Boolean) with the answer written down: meta is
+ * `unknown` per key on purpose (see board-model.ts), so the truthy ones have to
+ * be called strings by hand. The one caller that would care if a key held
+ * something else is the packer, which refuses a bad id rather than trusting it.
  */
-export const itemHashes = item =>
+export const itemHashes = (
+  item: { asset?: { hash?: string } | null, meta?: Record<string, unknown> | null } | null | undefined,
+): string[] =>
   [item?.asset?.hash, item?.meta?.cover, item?.meta?.shot, item?.meta?.thumb, item?.meta?.preview]
-    .filter(Boolean);
+    .filter((h): h is string => Boolean(h));
 
 /**
  * Running against the local dev server - server.bat on localhost, or a LAN IP
@@ -232,7 +279,7 @@ export const itemHashes = item =>
  * still happens exactly once; it just happens on the first ask instead of on
  * import.
  */
-let devHost = null;
+let devHost: boolean | null = null;
 
 export function isDev() {
   if (devHost === null) {

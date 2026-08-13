@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The `.mbrd` schema, in both directions: what a board looks like on the way in
 // from a file, and what it looks like on the way out to one.
 //
@@ -52,7 +44,7 @@
 //
 // Nothing here imports state.js - see tests/layers.test.js, where this is BASE.
 
-import { clamp, isFamily, isHash } from './util.ts';
+import { clamp, isFamily, isHash, isRecord } from './util.ts';
 // The board's link to real-world sizes, and the sheet catalogue. A scale and a
 // paper id arriving from a file both have to be held to what the app can draw.
 import { clampScale, PAPERS } from './measure.ts';
@@ -63,6 +55,10 @@ import {
   DEFAULT_SETTINGS, DEFAULT_MOBILE_HEADER, mobileColumnCount,
   normalizeConnections, normalizeAudioOrder,
 } from './board-model.ts';
+import type {
+  Board, BoardSettings, FontAxis, FontSpec, Geometry, Item, LayoutMode, MobileHeader,
+} from './board-model.ts';
+import type { Look } from './layout-settings.ts';
 // Geometry profiles. The reader has to fill in the layout a file does not carry
 // and the writer has to record both of them, so the whole of the profile
 // machinery is on this side of the door.
@@ -87,9 +83,9 @@ import { fenceOf } from './fences.ts';
  * than assumed, so a hand-written or truncated board.json degrades to defaults
  * one field at a time instead of throwing half-way through a load.
  */
-export function normalizeBoard(data) {
-  const src = data && typeof data === 'object' ? data : {};
-  const rawSettings = src.settings && typeof src.settings === 'object' ? src.settings : {};
+export function normalizeBoard(data: unknown): Omit<Board, 'settings' | 'arrangement' | 'layoutMode'> {
+  const src: Record<string, unknown> = isRecord(data) ? data : {};
+  const rawSettings: Record<string, unknown> = isRecord(src.settings) ? src.settings : {};
   const desktopSettings = normalizeSettings(rawSettings, 'desktop');
   // The Mobile profile, as far as it can be read out of a Desktop-shaped file.
   //
@@ -103,14 +99,14 @@ export function normalizeBoard(data) {
   const mobileSettings = { ...normalizeSettings(rawSettings, 'mobile'), spacing: 0 };
   const { shared: sharedAppearance } = splitAppearance(desktopSettings.appearance);
   const items = (Array.isArray(src.items) ? src.items : [])
-    .filter(it => it && typeof it === 'object')
+    .filter(isRecord)
     .slice(0, MAX_ITEMS);
-  const trash = (Array.isArray(src.trash) ? src.trash : [])
-    .filter(t => t && t.item && typeof t.item === 'object')
+  const trash: Record<string, unknown>[] = (Array.isArray(src.trash) ? src.trash : [])
+    .filter((t: unknown) => isRecord(t) && isRecord(t.item))
     .slice(0, TRASH_LIMIT);
   // One id space across the live board and the bin: a restored item must not
   // collide with a live one.
-  const ids = new Set();
+  const ids = new Set<string>();
   // makeItem() defaults a missing `z` to topZ() + 1, which reads the *live*
   // board - and the live board here is still the previous one, about to be
   // thrown away. Harmless, and worth recording why rather than fixing: every
@@ -118,7 +114,7 @@ export function normalizeBoard(data) {
   // normalizeLayout()/completeLayout() below overwrite the geometry anyway. What
   // it must never become is load-bearing.
   const normalizedItems = dedupeIds(items.map(makeItem), ids);
-  const rawLayouts = src.layouts && typeof src.layouts === 'object' ? src.layouts : {};
+  const rawLayouts: Record<string, unknown> = isRecord(src.layouts) ? src.layouts : {};
   const desktopRecord = layoutRecord(rawLayouts.desktop);
   const mobileRecord = layoutRecord(rawLayouts.mobile);
   const desktop = normalizeLayout(desktopRecord.items, normalizedItems);
@@ -126,12 +122,17 @@ export function normalizeBoard(data) {
   const desktopById = layoutMap(desktop);
   const legacyArrangement = typeof src.arrangement === 'string' && src.arrangement
     ? src.arrangement : 'spiral';
+  // The view, read once. It may be missing, and so may its pan; the reads below
+  // then say exactly what the optional chains said when this was untyped.
+  const rawView: { pan?: Record<string, unknown>, zoom?: unknown } = isRecord(src.view)
+    ? { pan: isRecord(src.view.pan) ? src.view.pan : undefined, zoom: src.view.zoom }
+    : {};
 
   return {
     title: cleanBoardTitle(src.title) || 'Untitled board',
     view: {
-      pan: { x: +src.view?.pan?.x || 0, y: +src.view?.pan?.y || 0 },
-      zoom: +src.view?.zoom || 1,
+      pan: { x: Number(rawView.pan?.x) || 0, y: Number(rawView.pan?.y) || 0 },
+      zoom: Number(rawView.zoom) || 1,
     },
     // Board-level now; a file written before it moved here carries the style
     // under settings.mobileHeader, so that is the fallback source.
@@ -160,8 +161,10 @@ export function normalizeBoard(data) {
       mobile,
     },
     items: normalizedItems,
-    trash: dedupeIds(trash.map(t => makeItem(t.item)), ids)
-      .map((item, i) => ({ item, at: +trash[i].at || 0 })),
+    // The cast is the filter above written down: every entry kept has an object
+    // under `item`, which is what makeItem() takes.
+    trash: dedupeIds(trash.map(t => makeItem(t.item as Record<string, unknown>)), ids)
+      .map((item, i) => ({ item, at: Number(trash[i].at) || 0 })),
     // Against `ids`, which dedupeIds() has by now filled with every id on the
     // board *and* every id in the bin - and filled with the ids as they ended
     // up, so a pair naming a duplicate that was renamed on the way in is pruned
@@ -175,22 +178,22 @@ export function normalizeBoard(data) {
   };
 }
 
-function layoutRecord(raw) {
+function layoutRecord(raw: unknown): { items: unknown[], settings: unknown, arrangement: string } {
   if (Array.isArray(raw)) return { items: raw, settings: null, arrangement: '' };
-  if (!raw || typeof raw !== 'object') return { items: [], settings: null, arrangement: '' };
+  if (!isRecord(raw)) return { items: [], settings: null, arrangement: '' };
   return {
     items: Array.isArray(raw.items) ? raw.items : [],
-    settings: raw.settings && typeof raw.settings === 'object' ? raw.settings : null,
+    settings: isRecord(raw.settings) ? raw.settings : null,
     arrangement: typeof raw.arrangement === 'string' && raw.arrangement
       ? raw.arrangement : '',
   };
 }
 
-function normalizeLayoutSettings(raw, mode, fallback) {
-  const source = raw && typeof raw === 'object' ? raw : {};
+function normalizeLayoutSettings(raw: unknown, mode: LayoutMode, fallback: BoardSettings): BoardSettings {
+  const source: Record<string, unknown> = isRecord(raw) ? raw : {};
   const base = settingsFor(layoutSettingsOf(fallback), {});
   const baseLook = base.appearance || {};
-  const sourceLook = source.appearance && typeof source.appearance === 'object'
+  const sourceLook: Record<string, unknown> = isRecord(source.appearance)
     ? source.appearance : {};
   return layoutSettingsOf(normalizeSettings({
     ...base,
@@ -203,14 +206,19 @@ function normalizeLayoutSettings(raw, mode, fallback) {
   }, mode));
 }
 
-function normalizeSettings(raw, mode) {
-  const settings = raw && typeof raw === 'object' ? raw : {};
-  const appearance = settings.appearance && typeof settings.appearance === 'object'
+function normalizeSettings(raw: unknown, mode: LayoutMode): BoardSettings {
+  const settings: Record<string, unknown> = isRecord(raw) ? raw : {};
+  const appearance: Record<string, unknown> = isRecord(settings.appearance)
     ? settings.appearance : {};
   const vars = {
     ...(mode === 'mobile' ? MOBILE_APPEARANCE_VARS : {}),
-    ...(appearance.vars && typeof appearance.vars === 'object' ? appearance.vars : {}),
+    ...(isRecord(appearance.vars) ? appearance.vars : {}),
   };
+  // A sheet id has to be a string before it can be one of PAPERS - and anything
+  // that is not one fails the same lookup it always failed, arriving at the
+  // same empty string.
+  const paper = typeof settings.paper === 'string' ? settings.paper : '';
+  const paperId = PAPERS.some(p => p.id === paper) ? paper : '';
   return {
     ...DEFAULT_SETTINGS,
     snap: mode === 'mobile',
@@ -218,18 +226,26 @@ function normalizeSettings(raw, mode) {
     mobileColumns: mode === 'mobile'
       ? mobileColumnCount(settings.mobileColumns ?? MOBILE_COLUMNS)
       : DEFAULT_SETTINGS.mobileColumns,
+    // The cast marks a gap rather than papering over one. `palette` is held to
+    // a string here and `auto`/`derived` to one value each, but `whimsy` and
+    // every value inside `vars` are carried from the file exactly as they
+    // arrived, where Look declares them a number and strings. What actually
+    // holds them is downstream - ui/look.ts admits a token value only if it
+    // matches its alphabet, which is where a value out of somebody's file meets
+    // the CSSOM. This line is the one place that difference is visible, so it
+    // says so instead of being spelled `any`.
     appearance: {
       ...(appearance.whimsy != null ? { whimsy: appearance.whimsy } : {}),
       palette: typeof appearance.palette === 'string' ? appearance.palette : '',
       vars,
       ...(appearance.auto === false ? { auto: false } : {}),
       ...(appearance.derived === true && Object.keys(vars).length ? { derived: true } : {}),
-    },
+    } as Look,
     // Both names and hashes become declarations or asset paths downstream.
     fonts: normalizeFonts(settings.fonts),
     scale: clampScale(settings.scale),
     units: settings.units === 'imperial' ? 'imperial' : 'metric',
-    paper: PAPERS.some(p => p.id === settings.paper) ? settings.paper : '',
+    paper: paperId,
     paperLandscape: !!settings.paperLandscape,
     paperResize: !!settings.paperResize,
   };
@@ -247,15 +263,15 @@ function normalizeSettings(raw, mode) {
  * Capped, because this list is walked by the packer and registered against the
  * document, and neither wants a thousand entries out of a hand-written file.
  */
-export function normalizeFonts(raw) {
+export function normalizeFonts(raw: unknown): FontSpec[] {
   if (!Array.isArray(raw)) return [];
-  const out = [];
-  const seen = new Set();
+  const out: FontSpec[] = [];
+  const seen = new Set<string>();
   for (const f of raw) {
-    if (!f || typeof f !== 'object') continue;
+    if (!isRecord(f)) continue;
     if (!isHash(f.hash) || seen.has(f.hash) || !isFamily(f.family)) continue;
     seen.add(f.hash);
-    const font = { hash: f.hash, family: f.family };
+    const font: FontSpec = { hash: f.hash, family: f.family };
     const axes = normalizeFontAxes(f.axes);
     // One or the other, never both. `variable` says only "this file has an
     // fvar", which is all a bracketless .woff2 can be asked - its axes are
@@ -272,13 +288,14 @@ export function normalizeFonts(raw) {
 }
 
 /** Variable axes a font record may carry from its OpenType `fvar` table. */
-function normalizeFontAxes(raw) {
+function normalizeFontAxes(raw: unknown): FontAxis[] {
   if (!Array.isArray(raw)) return [];
-  const out = [];
-  const seen = new Set();
+  const out: FontAxis[] = [];
+  const seen = new Set<string>();
   for (const axis of raw) {
-    const tag = typeof axis?.tag === 'string' ? axis.tag : '';
-    const min = +axis?.min, max = +axis?.max, fallback = +axis?.default;
+    const spec: Record<string, unknown> = isRecord(axis) ? axis : {};
+    const tag = typeof spec.tag === 'string' ? spec.tag : '';
+    const min = Number(spec.min), max = Number(spec.max), fallback = Number(spec.default);
     if (!/^[A-Za-z0-9 ]{4}$/.test(tag) || seen.has(tag)) continue;
     if (![min, max, fallback].every(Number.isFinite) || !(max > min)) continue;
     seen.add(tag);
@@ -290,7 +307,7 @@ function normalizeFontAxes(raw) {
 
 /** The Mobile title style, held to values its controls and CSS can represent. */
 /** The board-wide media fit, defaulting to fit (contain) - fill is opt-in. */
-export function normalizeMediaFit(value) {
+export function normalizeMediaFit(value: unknown) {
   return value === 'cover' ? 'cover' : 'contain';
 }
 
@@ -303,38 +320,40 @@ export function normalizeMediaFit(value) {
  * highest *count* the sampler defaults to (MAX_SOURCES); asking for all of them
  * lifts that, which is the whole of what this option does.
  */
-export function normalizePaletteSources(value) {
-  const n = Math.round(+value);
+export function normalizePaletteSources(value: unknown) {
+  const n = Math.round(Number(value));
   if (!Number.isFinite(n)) return 12;
   return n === 0 ? 0 : Math.max(1, Math.min(24, n));
 }
 
-export function normalizeMobileHeader(raw) {
-  const header = raw && typeof raw === 'object' ? raw : {};
-  const axes = {};
-  if (header.axes && typeof header.axes === 'object') {
+export function normalizeMobileHeader(raw: unknown): MobileHeader {
+  const header: Record<string, unknown> = isRecord(raw) ? raw : {};
+  const axes: Record<string, number> = {};
+  if (isRecord(header.axes)) {
     for (const [tag, value] of Object.entries(header.axes)) {
-      if (!/^[A-Za-z0-9 ]{4}$/.test(tag) || !Number.isFinite(+value)) continue;
-      axes[tag] = +value;
+      if (!/^[A-Za-z0-9 ]{4}$/.test(tag) || !Number.isFinite(Number(value))) continue;
+      axes[tag] = Number(value);
       if (Object.keys(axes).length >= MAX_FONT_AXES) break;
     }
   }
   return {
-    font: header.font === '' || isFamily(header.font) ? header.font : '',
-    size: clamp(+header.size || DEFAULT_MOBILE_HEADER.size, 7, 24),
+    // isFamily alone, where this read `header.font === '' || isFamily(...)`:
+    // the empty string fails isFamily and falls to the same empty string.
+    font: isFamily(header.font) ? header.font : '',
+    size: clamp(Number(header.size) || DEFAULT_MOBILE_HEADER.size, 7, 24),
     // Half height to five times it. The top of that range already fills the
     // band and spills past what its overflow will show, which is a thing
     // somebody may well want on a title page; the floor is a floor because a
     // scaleY heading for 0 erases the name rather than styling it.
-    stretch: clamp(+header.stretch || DEFAULT_MOBILE_HEADER.stretch, 50, 500),
+    stretch: clamp(Number(header.stretch) || DEFAULT_MOBILE_HEADER.stretch, 50, 500),
     // 100 is `normal` - the face's own line height. See the default above.
-    leading: clamp(+header.leading || DEFAULT_MOBILE_HEADER.leading, 60, 250),
-    weight: clamp(Math.round(+header.weight || DEFAULT_MOBILE_HEADER.weight), 1, 1000),
+    leading: clamp(Number(header.leading) || DEFAULT_MOBILE_HEADER.leading, 60, 250),
+    weight: clamp(Math.round(Number(header.weight) || DEFAULT_MOBILE_HEADER.weight), 1, 1000),
     // Signed, so `|| 0` cannot swallow a real value - only 0 itself falls back
     // to 0, which is where it belongs. Half the band either way is enough to sit
     // the name against the top or bottom edge; further only pushes it out under
     // the band's own overflow clip.
-    offset: clamp(Number.isFinite(+header.offset) ? +header.offset : 0, -50, 50),
+    offset: clamp(Number.isFinite(Number(header.offset)) ? Number(header.offset) : 0, -50, 50),
     italic: !!header.italic,
     // Absent means on. Every board written before this setting existed wrapped
     // its name, and !!undefined would quietly turn that off for all of them.
@@ -370,7 +389,7 @@ export function serializeBoard() {
   // to know the type exists at all.
   const ghost = new Set(board.items.filter(i => i.type === 'ghost').map(i => i.id));
   const real = ghost.size ? board.items.filter(i => !ghost.has(i.id)) : board.items;
-  const shed = list => (ghost.size ? list.filter(g => !ghost.has(g.id)) : list);
+  const shed = (list: Geometry[]) => (ghost.size ? list.filter(g => !ghost.has(g.id)) : list);
   const desktop = shed(completeLayout('desktop'));
   const mobile = shed(completeLayout('mobile'));
   // Every id this file will carry: the real items and the bin's. What
@@ -378,7 +397,7 @@ export function serializeBoard() {
   const filed = new Set([...real.map(i => i.id), ...board.trash.map(t => t.item.id)]);
   const desktopSettings = settingsFor(board.layoutSettings.desktop, board.sharedAppearance);
   const desktopById = layoutMap(desktop);
-  const itemIn = (item, geometry) => {
+  const itemIn = (item: Item, geometry: Geometry | undefined) => {
     const meta = { ...item.meta };
     if (geometry?.presnap) meta.presnap = { ...geometry.presnap };
     else delete meta.presnap;
@@ -456,14 +475,14 @@ export function serializeBoard() {
   };
 }
 
-const serializeItem = i => ({
+const serializeItem = (i: Item) => ({
   id: i.id, type: i.type,
   x: round(i.x), y: round(i.y), w: round(i.w), h: round(i.h),
   rot: round(i.rot), z: i.z,
   name: i.name, asset: i.asset, meta: i.meta,
 });
 
-const serializeGeometry = geometry => ({
+const serializeGeometry = (geometry: Geometry) => ({
   id: geometry.id,
   x: round(geometry.x), y: round(geometry.y),
   w: round(geometry.w), h: round(geometry.h),
@@ -476,4 +495,4 @@ const serializeGeometry = geometry => ({
   } : {}),
 });
 
-const round = n => Math.round(n * 100) / 100;
+const round = (n: number) => Math.round(n * 100) / 100;

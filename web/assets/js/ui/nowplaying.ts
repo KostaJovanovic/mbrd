@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The bar along the foot: what is playing, and the controls for it.
 //
 // A board is a wall of clips you can only operate by looking at them. The
@@ -68,25 +60,40 @@ import { setLens, currentLens } from './board-view.ts';
 import { togglePlayerWindow, isPlayerWindowOpen } from './playlist.ts';
 import { baseName, clamp } from '../util.ts';
 import { seekInnerHTML, sizeSeekWave } from '../media/transport.ts';
+import type { NowPlaying } from '../canvas/audio.ts';
+import type { Item } from '../board-model.ts';
 
-let bar = null, caption = null, controls = null, volume = null, closeBtn = null;
+// The bar and everything in it, taken once in initNowPlaying(). It returns
+// early without #nowplaying, and every path below that reads one of these is
+// reached either from that function or from an event bound inside it - which is
+// why they are read with `!` rather than guarded a second time.
+let bar: HTMLElement | null = null;
+let caption: HTMLElement | null = null;
+let controls: HTMLElement | null = null;
+let volume: HTMLInputElement | null = null;
+let closeBtn: HTMLElement | null = null;
 // The seek line, its ends' times, and the play button - the bar's own transport,
 // bound to whatever element is playing (a card's <audio>, or the shared queue).
-let seekWrap = null, lineEl = null, elapsedEl = null, totalEl = null, playBtn = null;
+let seekWrap: HTMLElement | null = null;
+let lineEl: HTMLElement | null = null;
+let elapsedEl: HTMLElement | null = null;
+let totalEl: HTMLElement | null = null;
+let playBtn: HTMLElement | null = null;
 // The wave's own svg and path, sized to the bar's pixel width so the frequency
 // does not stretch with it - see sizeWave() and the WAVE_HALF note above.
-let waveSvg = null, wavePathEl = null;
+let waveSvg: SVGSVGElement | null = null;
+let wavePathEl: SVGPathElement | null = null;
 // The playback follow loop and the current seek handler, per bound element.
 let frame = 0;
-let seekTo = null;
+let seekTo: ((clientX: number) => void) | null = null;
 
 // A little list with a play triangle: the way in to the full player.
 const LIST_ICON = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="2" y="3.2" width="8" height="1.6" rx="0.8"/><rect x="2" y="7.2" width="8" height="1.6" rx="0.8"/><rect x="2" y="11.2" width="5" height="1.6" rx="0.8"/><path d="M11.4 7v5l3.3-2.5z"/></svg>';
 
 
 /** The transport currently in the bar, and the way to take it back apart. */
-let shown = null;      // the item it was built for
-let abort = null;      // its listeners on the <audio>
+let shown: Item | null = null;      // the item it was built for
+let abort: AbortController | null = null;      // its listeners on the <audio>
 
 /**
  * The exit, in flight: the function that calls it off, or 0.
@@ -98,7 +105,7 @@ let abort = null;      // its listeners on the <audio>
  * call the whole thing off, rather than let it finish and hide the bar it has
  * just filled.
  */
-let leaving = 0;
+let leaving: (() => void) | 0 = 0;
 
 /**
  * Long enough for any tier's exit, which is --dur-fast even at the slow end.
@@ -117,7 +124,8 @@ export function initNowPlaying() {
   caption = bar.querySelector('.np-name');
   controls = bar.querySelector('.np-controls');
   seekWrap = bar.querySelector('.np-seek');
-  volume = bar.querySelector('#np-volume');
+  // #np-volume is the range input in the bar's markup.
+  volume = bar.querySelector<HTMLInputElement>('#np-volume');
   closeBtn = bar.querySelector('.np-close');
 
   // The same iPhone Safari case the sidebar's slider makes: writes to media
@@ -128,14 +136,18 @@ export function initNowPlaying() {
     volume?.closest('.np-volume')?.remove();
     volume = null;
   } else if (volume) {
+    // Held as a const so the `else if (volume)` above still counts inside the
+    // two closures: the module binding is reassigned on the branch beside this
+    // one, so the narrowing would not follow it in.
+    const slider = volume;
     const paint = () => {
       const pct = Math.round(getVolume() * 100);
-      if (volume.value !== String(pct)) volume.value = String(pct);
-      volume.setAttribute('aria-valuetext', pct + '%');
+      if (slider.value !== String(pct)) slider.value = String(pct);
+      slider.setAttribute('aria-valuetext', pct + '%');
     };
     paint();
     onVolume(paint);
-    volume.addEventListener('input', () => setVolume(+volume.value / 100));
+    slider.addEventListener('input', () => setVolume(+slider.value / 100));
   }
 
   closeBtn?.addEventListener('click', close);
@@ -162,12 +174,12 @@ export function initNowPlaying() {
   // ---------------------------------------------------------------------------
   // Both inserted before the volume, which is already in the markup along with
   // close - so the built and the written halves interleave in one order.
-  const before = controls.querySelector('.np-volume') || closeBtn;
+  const before = controls!.querySelector('.np-volume') || closeBtn;
   // The way in to the full player: the Playlist lens on a Mobile board (a second
   // press steps back to the Feed), the floating window on the Desktop.
   const listBtn = ctlBtn('np-list', 'Open the playlist', LIST_ICON, openPlaylist);
   playBtn = ctlBtn('np-play', 'Play', PLAY_ICON, togglePlay);
-  for (const b of [listBtn, playBtn]) controls.insertBefore(b, before);
+  for (const b of [listBtn, playBtn]) controls!.insertBefore(b, before);
 
   // A track that ends hands over only while the playlist is up - see
   // playlistOpen(). By injection rather than an import, because canvas/audio.js
@@ -182,30 +194,30 @@ export function initNowPlaying() {
   // The line itself is seekInnerHTML's, shared with the playlist window and the
   // video card so all three scrubbers are one shape - see media/transport.js.
   // Only the two time labels either side of it are the bar's own.
-  seekWrap.innerHTML =
+  seekWrap!.innerHTML =
     '<span class="np-time np-elapsed">0:00</span>'
     + '<div class="np-line" role="slider" tabindex="0" aria-label="Seek" aria-valuemin="0">'
     +   seekInnerHTML('np-line')
     + '</div>'
     + '<span class="np-time np-total">0:00</span>';
-  lineEl = seekWrap.querySelector('.np-line');
-  elapsedEl = seekWrap.querySelector('.np-elapsed');
-  totalEl = seekWrap.querySelector('.np-total');
-  waveSvg = seekWrap.querySelector('.np-line-wave-svg');
-  wavePathEl = seekWrap.querySelector('.np-line-fill-wave');
+  lineEl = seekWrap!.querySelector('.np-line');
+  elapsedEl = seekWrap!.querySelector('.np-elapsed');
+  totalEl = seekWrap!.querySelector('.np-total');
+  waveSvg = seekWrap!.querySelector('.np-line-wave-svg');
+  wavePathEl = seekWrap!.querySelector('.np-line-fill-wave');
   sizeWave();
   // The bar's width follows the window and the two time labels, both of which
   // change without a track change, so the wave is re-laid whenever the line
   // resizes rather than only when a track is bound.
-  if (typeof ResizeObserver === 'function') new ResizeObserver(sizeWave).observe(lineEl);
-  bindScrub(lineEl, clientX => seekTo?.(clientX));
+  if (typeof ResizeObserver === 'function') new ResizeObserver(sizeWave).observe(lineEl!);
+  bindScrub(lineEl!, (clientX: number) => seekTo?.(clientX));
 
   // The keys the canvas also wants. A bar you can reach with Tab must not also
   // nudge the selection behind it; the seek line answers the arrows itself.
   bar.addEventListener('keydown', e => {
     if (e.key === 'Escape') { close(); e.stopPropagation(); }
   });
-  lineEl.addEventListener('keydown', onSeekKey);
+  lineEl!.addEventListener('keydown', onSeekKey);
 
   onNowPlaying(show);
   show(nowPlaying());
@@ -218,7 +230,7 @@ export function initNowPlaying() {
  * are driven off the element that is playing, and swapping the element underneath
  * a live follow loop would leave the last track's listeners on the new one.
  */
-function show(current) {
+function show(current: NowPlaying | null) {
   if (!bar) return;
   if (!current) { hide(); return; }
   if (current.item === shown) return;
@@ -230,8 +242,8 @@ function show(current) {
   shown = current.item;
 
   bind(current.el);
-  caption.textContent = name(current.item);
-  caption.title = current.item.name || '';
+  caption!.textContent = name(current.item);
+  caption!.title = current.item.name || '';
   raise();
   // The bar was display:none until raise(), where the line read zero width and
   // the ResizeObserver had nothing to size against; now it has a box.
@@ -239,7 +251,7 @@ function show(current) {
 }
 
 /** The bar's half of the shared sizer - see sizeSeekWave in media/transport.js. */
-function sizeWave() { sizeSeekWave(lineEl, waveSvg, wavePathEl); }
+function sizeWave() { sizeSeekWave(lineEl!, waveSvg, wavePathEl); }
 
 /**
  * Drive the bar off one element: the play button, the seek line and the times.
@@ -249,40 +261,40 @@ function sizeWave() { sizeSeekWave(lineEl, waveSvg, wavePathEl); }
  * seek, a stall or a currentTime written from elsewhere. Its listeners are on an
  * AbortController so teardown() drops them in one call.
  */
-function bind(sound) {
+function bind(sound: HTMLMediaElement) {
   abort = new AbortController();
   const signal = abort.signal;
 
   const paint = () => {
     const dur = sound.duration || 0;
     const cur = sound.currentTime || 0;
-    lineEl.style.setProperty('--np-progress', (dur ? clamp(cur / dur, 0, 1) : 0).toFixed(4));
-    elapsedEl.textContent = clock(cur);
-    totalEl.textContent = clock(dur);
-    lineEl.setAttribute('aria-valuemax', Math.round(dur));
-    lineEl.setAttribute('aria-valuenow', Math.round(cur));
-    lineEl.setAttribute('aria-valuetext', `${clock(cur)} of ${clock(dur)}`);
+    lineEl!.style.setProperty('--np-progress', (dur ? clamp(cur / dur, 0, 1) : 0).toFixed(4));
+    elapsedEl!.textContent = clock(cur);
+    totalEl!.textContent = clock(dur);
+    lineEl!.setAttribute('aria-valuemax', String(Math.round(dur)));
+    lineEl!.setAttribute('aria-valuenow', String(Math.round(cur)));
+    lineEl!.setAttribute('aria-valuetext', `${clock(cur)} of ${clock(dur)}`);
   };
   const follow = () => { paint(); frame = sound.paused ? 0 : requestAnimationFrame(follow); };
   const setIcon = () => {
     const playing = !sound.paused;
     // .is-paused stops the wave scrolling and flattens it to a straight line; the
     // CSS animates both back when it comes off.
-    bar.classList.toggle('is-paused', !playing);
-    playBtn.innerHTML = playing ? PAUSE_ICON : PLAY_ICON;
-    playBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+    bar!.classList.toggle('is-paused', !playing);
+    playBtn!.innerHTML = playing ? PAUSE_ICON : PLAY_ICON;
+    playBtn!.setAttribute('aria-label', playing ? 'Pause' : 'Play');
   };
 
-  const on = (type, fn) => sound.addEventListener(type, fn, { signal });
+  const on = (type: string, fn: () => void) => sound.addEventListener(type, fn, { signal });
   on('play', () => { setIcon(); if (!frame) frame = requestAnimationFrame(follow); });
   on('pause', () => { setIcon(); paint(); });
   on('loadedmetadata', paint);
   on('timeupdate', paint);
   on('seeked', paint);
 
-  seekTo = clientX => {
+  seekTo = (clientX: number) => {
     if (!sound.duration) return;
-    const box = lineEl.getBoundingClientRect();
+    const box = lineEl!.getBoundingClientRect();
     if (!box.width) return;
     sound.currentTime = clamp((clientX - box.left) / box.width, 0, 1) * sound.duration;
     paint();
@@ -294,11 +306,11 @@ function bind(sound) {
 }
 
 /** The seek line's keyboard: arrows nudge, Home/End jump, space plays. */
-function onSeekKey(e) {
+function onSeekKey(e: KeyboardEvent) {
   const sound = nowPlaying()?.el;
   if (!sound) return;
   const step = e.shiftKey ? 1 : 5;
-  const set = to => { if (sound.duration) sound.currentTime = clamp(to, 0, sound.duration); };
+  const set = (to: number) => { if (sound.duration) sound.currentTime = clamp(to, 0, sound.duration); };
   switch (e.key) {
     case 'ArrowRight': case 'ArrowUp': set(sound.currentTime + step); break;
     case 'ArrowLeft': case 'ArrowDown': set(sound.currentTime - step); break;
@@ -354,7 +366,7 @@ function togglePlay() {
 }
 
 /** Build one round icon button for the controls cluster. */
-function ctlBtn(className, label, icon, onClick) {
+function ctlBtn(className: string, label: string, icon: string, onClick: () => void) {
   const b = document.createElement('button');
   b.type = 'button';
   b.className = 'np-qbtn ' + className;
@@ -376,9 +388,9 @@ function ctlBtn(className, label, icon, onClick) {
  * is the point rather than the cost.
  */
 function raise() {
-  bar.hidden = false;
-  void bar.offsetWidth;
-  bar.classList.add('is-up');
+  bar!.hidden = false;
+  void bar!.offsetWidth;
+  bar!.classList.add('is-up');
 }
 
 /**
@@ -411,14 +423,14 @@ function hide() {
 
   // One property, or this fires once per transitioned property and finishes on
   // whichever of opacity and transform the engine happens to end first.
-  const onEnd = e => { if (e.target === bar && e.propertyName === 'opacity') done(); };
-  const done = () => { cancelExit(); bar.hidden = true; teardown(); };
+  const onEnd = (e: TransitionEvent) => { if (e.target === bar && e.propertyName === 'opacity') done(); };
+  const done = () => { cancelExit(); bar!.hidden = true; teardown(); };
 
-  bar.addEventListener('transitionend', onEnd);
+  bar!.addEventListener('transitionend', onEnd);
   const timer = setTimeout(done, EXIT_CAP);
   leaving = () => {
     clearTimeout(timer);
-    bar.removeEventListener('transitionend', onEnd);
+    bar!.removeEventListener('transitionend', onEnd);
     leaving = 0;
   };
 }
@@ -452,8 +464,12 @@ function teardown() {
  * list takes - "Interview 3" and not "Interview 3.m4a", because the card beside
  * it does not say the extension either.
  */
-function name(item) {
-  const title = item.meta?.trackTitle
+function name(item: Item): string {
+  // The two tags come out of a file's own metadata, so they are held to being
+  // text here - `meta` promises nothing about what is under a key.
+  const str = (v: unknown) => (typeof v === 'string' ? v : '');
+  const title = str(item.meta?.trackTitle)
     || (item.name ? baseName(item.name) || item.name : (item.type === 'video' ? 'Video' : 'Audio'));
-  return item.meta?.artist ? `${title} — ${item.meta.artist}` : title;
+  const artist = str(item.meta?.artist);
+  return artist ? `${title} — ${artist}` : title;
 }

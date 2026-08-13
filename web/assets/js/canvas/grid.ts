@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Background grid. Purely visual: it never participates in hit-testing and no
 // item is ever snapped to it unless the snap setting is on.
 //
@@ -27,6 +19,53 @@ import { board } from '../state.ts';
 import { deviceRatio, onTouch, mobilePerfFlags } from './viewport.ts';
 import { MM_PER_INCH, PX_PER_INCH } from '../measure.ts';
 import { viewShift } from '../geometry.ts';
+import type { MobileScreenRect } from './mobile-frame.ts';
+
+/**
+ * What this module asks of the viewport. Structural rather than the `Viewport`
+ * class itself, for the reason GrainViewport gives at length in canvas/grain.ts:
+ * canvas/viewport.ts is still on the migration ledger and a .ts class publishes
+ * no fields it does not declare. The two optional members are optional because
+ * the call sites test them - the render harnesses mount a viewport that never
+ * went into the strip layout.
+ */
+type GridViewport = {
+  el: HTMLElement;
+  width: number;
+  height: number;
+  zoom: number;
+  pan: { x: number; y: number };
+  cx: number;
+  cy: number;
+  left: number;
+  top: number;
+  moving: boolean;
+  isMobile: boolean;
+  toScreen(wx: number, wy: number): { x: number; y: number };
+  visibleRect(margin?: number): { x0: number; y0: number; x1: number; y1: number };
+  axisOrigin?: () => { x: number; y: number };
+  mobileScreenRect?: () => MobileScreenRect;
+};
+
+/** The screen-space box the lattice is drawn in - see inkBox(). */
+type InkBox = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  topRadius: string;
+  bottomRadius: string;
+};
+
+/**
+ * A layer canvas, carrying the device ratio its backing store was sized at.
+ *
+ * `_dpr` is written by sizeCanvas() and read by every painter below, and it is
+ * on the element rather than in a module variable on purpose: there are two
+ * canvases (lattice and axes), they are re-made when the viewport is, and the
+ * ratio belongs to the bitmap rather than to this file.
+ */
+type InkCanvas = HTMLCanvasElement & { _dpr: number };
 
 // The on-screen window a minor step is allowed to live in. Outside it the
 // world-space step doubles or halves and the lattice re-tiers.
@@ -93,7 +132,7 @@ export const axesVisible = (settings = board.settings, mode = board.layoutMode) 
  * a tablet with a keyboard folded onto it re-tiers when the pointer changes -
  * and so the band can be named outright by a test, which cannot ask a browser.
  */
-export function gridStep(base, zoom, touch = onTouch()) {
+export function gridStep(base: number, zoom: number, touch = onTouch()): number {
   const min = touch ? MIN_PX_TOUCH : MIN_PX;
   const max = touch ? MAX_PX_TOUCH : MAX_PX;
   let step = base > 0 ? base : 64;
@@ -110,11 +149,12 @@ export function gridStep(base, zoom, touch = onTouch()) {
  * selected width is explicitly measured in six or eight spaces, so doubling
  * the step at the fitted 8-wide zoom silently turns that choice into four.
  */
-export function boardGridStep(base, viewport, touch = onTouch()) {
+export function boardGridStep(base: number, viewport: GridViewport | null | undefined, touch = onTouch()): number {
   const step = base > 0 ? base : 64;
+  const zoom = viewport?.zoom;
   return viewport?.isMobile
     ? step
-    : gridStep(step, viewport?.zoom > 0 ? viewport.zoom : 1, touch);
+    : gridStep(step, zoom != null && zoom > 0 ? zoom : 1, touch);
 }
 
 /**
@@ -139,7 +179,7 @@ export function boardGridStep(base, viewport, touch = onTouch()) {
  * intersection - the board entirely above or below the window - comes back with
  * a zero side, and paintGrid() draws nothing at all.
  */
-export function inkBox(vp) {
+export function inkBox(vp: GridViewport): InkBox {
   const full = {
     x: 0, y: 0, w: vp.width, h: vp.height,
     topRadius: '0px', bottomRadius: '0px',
@@ -170,7 +210,7 @@ export function inkBox(vp) {
 let lastBox = '';
 
 /** Stand the lattice layer on the box it is allowed to draw in. */
-function placeInk(canvas, box) {
+function placeInk(canvas: HTMLCanvasElement, box: InkBox) {
   const next = `${box.x},${box.y},${box.w},${box.h},${box.topRadius},${box.bottomRadius}`;
   if (next === lastBox) return;
   lastBox = next;
@@ -188,7 +228,15 @@ function placeInk(canvas, box) {
 }
 
 /** The view the grid was last painted for - see paintGridOnView(). */
-let lastView = null;
+let lastView: {
+  pan: { x: number; y: number };
+  zoom: number;
+  cx: number;
+  cy: number;
+  left: number;
+  top: number;
+  moving: boolean;
+} | null = null;
 
 /**
  * Paint the grid for a view change, unless the view did not move far enough to
@@ -212,12 +260,12 @@ let lastView = null;
  * of an inertial pan as it settles below a pixel per frame, and a trackpad or
  * precision wheel delivering a zoom in fractions too small to show.
  */
-export function paintGridOnView(vp) {
+export function paintGridOnView(vp: GridViewport) {
   if (viewSettledForGrid(vp)) return;
   paintGrid(vp);
 }
 
-function viewSettledForGrid(vp) {
+function viewSettledForGrid(vp: GridViewport): boolean {
   const p = lastView;
   if (!p) return false;
   // The viewport itself moved or resized: the box the grid is drawn in has
@@ -234,7 +282,7 @@ function viewSettledForGrid(vp) {
   return viewShift(p, vp, vp.visibleRect(0)) < 1 / deviceRatio();
 }
 
-export function paintGrid(vp) {
+export function paintGrid(vp: GridViewport) {
   const el = vp.el;
   const s = board.settings;
   // Recorded at the top rather than at the foot: this function has three exits,
@@ -293,11 +341,11 @@ export function paintGrid(vp) {
 
   clearCanvas(canvas);
 
-  const images = [], sizes = [], positions = [];
+  const images: string[] = [], sizes: string[] = [], positions: string[] = [];
   // A mark is a list of image layers rather than one, because the dot's major
   // and minor lattices each want their own. Every layer of a mark shares its
   // lattice's tile and origin, so they are pushed together.
-  const push = (layers, size, px, py) => {
+  const push = (layers: string[], size: number, px: number, py: number) => {
     for (const img of layers) {
       images.push(img);
       sizes.push(`${size}px ${size}px`);
@@ -314,7 +362,7 @@ export function paintGrid(vp) {
    * twice is twice as dark. Every marked point has to be drawn exactly once,
    * so the ones that already exist are stepped over by construction.
    */
-  const between = (layers, size, ox, oy) => {
+  const between = (layers: string[], size: number, ox: number, oy: number) => {
     const h = size / 2;
     for (const [dx, dy] of [[h, 0], [0, h], [h, h]]) push(layers, size, ox + dx, oy + dy);
   };
@@ -382,7 +430,7 @@ export function paintGrid(vp) {
 let lastImage = '', lastSize = '', lastMask = '';
 
 /** Take the tiled marks - and any hole in them - back off. */
-function clearTiles(canvas) {
+function clearTiles(canvas: HTMLCanvasElement) {
   canvas.style.backgroundImage = 'none';
   canvas.style.maskImage = '';
   canvas.style.webkitMaskImage = '';
@@ -403,7 +451,7 @@ function clearTiles(canvas) {
  * on a board anybody has panned. A full-screen mask is real compositor work and
  * this one is doing nothing at all out there.
  */
-function punchHole(canvas, o, vp, box) {
+function punchHole(canvas: HTMLCanvasElement, o: { x: number; y: number }, vp: GridViewport, box: InkBox) {
   // ...and dropped while the board is moving, wherever the origin is.
   //
   // The comment below is right that this is usually the same string twice, and
@@ -471,7 +519,8 @@ const AXIS_PX = 1.2;
  * height come along so that a canvas which has just been resized - and therefore
  * blanked - is not asked to clear rows out of a bitmap that no longer has them.
  */
-let axisWas = { x: null, y: null, t: 0, w: 0, h: 0 };
+let axisWas: { x: number | null; y: number | null; t?: number; w: number; h: number } =
+  { x: null, y: null, t: 0, w: 0, h: 0 };
 
 /**
  * The two world axes, in whole device pixels.
@@ -497,7 +546,7 @@ let axisWas = { x: null, y: null, t: 0, w: 0, h: 0 };
  * a CSS mask - which applies to the whole element. Drawn on that canvas, both
  * rules would have a notch taken out of them exactly where they cross.
  */
-function paintAxes(vp) {
+function paintAxes(vp: GridViewport) {
   const canvas = ensureAxisCanvas(vp.el);
   const ctx = sizeCanvas(canvas, { w: vp.width, h: vp.height });
   if (!ctx) return;
@@ -514,8 +563,12 @@ function paintAxes(vp) {
   // leaves the rest, so a fractional wipe would build up a faint stripe along
   // every path the axis had ever taken. Erasing a hair more than was drawn costs
   // nothing, since the rule is about to be redrawn anyway.
-  if (axisWas.y !== null) ctx.clearRect(0, Math.floor(axisWas.y), W, Math.ceil(axisWas.t) + 1);
-  if (axisWas.x !== null) ctx.clearRect(Math.floor(axisWas.x), 0, Math.ceil(axisWas.t) + 1, H);
+  // Number() rather than leaving the coercion to Math.ceil: `t` is absent in one
+  // of the two shapes assigned to axisWas (see ensureAxisCanvas), and NaN is what
+  // Math.ceil already made of it there - a clearRect the browser draws nothing
+  // for, on a canvas that was made a moment ago and has nothing on it.
+  if (axisWas.y !== null) ctx.clearRect(0, Math.floor(axisWas.y), W, Math.ceil(Number(axisWas.t)) + 1);
+  if (axisWas.x !== null) ctx.clearRect(Math.floor(axisWas.x), 0, Math.ceil(Number(axisWas.t)) + 1, H);
   axisWas.x = axisWas.y = null;
 
   if (!axesVisible()) return;
@@ -556,10 +609,12 @@ function paintAxes(vp) {
 }
 
 /** The axis layer, made if it is not there - see ensureCanvas() for why. */
-function ensureAxisCanvas(el) {
-  let canvas = el.querySelector(':scope > #axis-ink');
+function ensureAxisCanvas(el: HTMLElement): InkCanvas {
+  let canvas = el.querySelector<InkCanvas>(':scope > #axis-ink');
   if (!canvas) {
-    canvas = document.createElement('canvas');
+    // The cast is `_dpr`, and sizeCanvas() is where it lands. Every painter
+    // sizes the backing store before it draws, so nothing reads it before then.
+    canvas = document.createElement('canvas') as InkCanvas;
     canvas.id = 'axis-ink';
     canvas.setAttribute('aria-hidden', 'true');
     // Over the lattice and under the board, which is where index.html puts it.
@@ -572,7 +627,7 @@ function ensureAxisCanvas(el) {
 }
 
 /** A grid colour at a fraction of itself. Takes a var() as happily as a hex. */
-const faded = (color, a) =>
+const faded = (color: string, a: number) =>
   `color-mix(in srgb, ${color} ${(a * 100).toFixed(1)}%, transparent)`;
 
 // ---------------------------------------------------------------------------
@@ -625,7 +680,7 @@ let tierRaf = 0;
  * fade is kept for the slow, settled crossing it was written for. `vp.moving` is
  * already true by the time paintGrid runs inside a gesture (see _moving()).
  */
-function tierFade(step, vp) {
+function tierFade(step: number, vp: GridViewport) {
   const now = performance.now();
   if (step !== tier.step) {
     const adjacent = tier.step > 0 && (step === tier.step * 2 || step === tier.step / 2);
@@ -667,9 +722,9 @@ const still = () => !!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)'
 const HARSH = '2';
 
 /** Both marks are sized from --grid-dot, the user's grid-weight slider. */
-const scaled = scale => `calc(var(--grid-dot) * ${scale})`;
+const scaled = (scale: number) => `calc(var(--grid-dot) * ${scale})`;
 
-const dot = (color, scale) => {
+const dot = (color: string, scale: number) => {
   const r = scaled(scale);
   return [`radial-gradient(circle at center, ${color} 0, ${color} ${r}, transparent calc(${r} + 0.7px))`];
 };
@@ -737,7 +792,8 @@ const ARM_THICK = 0.5;
  * One Path2D and one fill() per lattice, measured at well under a frame - and
  * only this tier pays it. The other two never enter this function.
  */
-function drawCrosses(canvas, box, o, minor, major, alpha) {
+function drawCrosses(canvas: InkCanvas, box: InkBox, o: { x: number; y: number },
+                     minor: number, major: number, alpha: number) {
   const ctx = sizeCanvas(canvas, box);
   if (!ctx) return;
   const dpr = canvas._dpr;
@@ -786,7 +842,9 @@ const originHole = () => axesVisible();
  * what stops every crossing point reading as a bright dot with whiskers, which
  * is exactly how the two-gradient version failed.
  */
-function lattice(ctx, tileCss, o, dpr, canvas, color, dotPx, scale, between = false) {
+function lattice(ctx: CanvasRenderingContext2D, tileCss: number, o: { x: number; y: number },
+                 dpr: number, canvas: HTMLCanvasElement, color: string, dotPx: number,
+                 scale: number, between = false) {
   // `between` halves the tile and skips every mark the full-strength pass has
   // already drawn, which is the pair of even indices. Same reason the gradient
   // painter lists three offset layers instead of one denser lattice: these
@@ -860,10 +918,11 @@ function lattice(ctx, tileCss, o, dpr, canvas, color, dotPx, scale, between = fa
  * fallback is for the tests and the render harnesses, which mount a #viewport
  * without the rest of the page around it.
  */
-function ensureCanvas(el) {
-  let canvas = el.querySelector(':scope > #grid-ink');
+function ensureCanvas(el: HTMLElement): InkCanvas {
+  let canvas = el.querySelector<InkCanvas>(':scope > #grid-ink');
   if (!canvas) {
-    canvas = document.createElement('canvas');
+    // As in ensureAxisCanvas(): the cast is `_dpr`, written by sizeCanvas().
+    canvas = document.createElement('canvas') as InkCanvas;
     canvas.id = 'grid-ink';
     canvas.setAttribute('aria-hidden', 'true');
     el.prepend(canvas);
@@ -889,7 +948,7 @@ function ensureCanvas(el) {
  * every frame and draw it again - which looks exactly like the flicker this is
  * replacing.
  */
-function sizeCanvas(canvas, { w, h }) {
+function sizeCanvas(canvas: InkCanvas, { w, h }: { w: number; h: number }): CanvasRenderingContext2D | null {
   // The same ratio the axis rules snap to, from the same place - see
   // deviceRatio(). Two roundings of two different numbers is how the lattice
   // and the axes came to disagree in the first place.
@@ -905,9 +964,10 @@ function sizeCanvas(canvas, { w, h }) {
   return canvas.getContext('2d');
 }
 
-function clearCanvas(canvas) {
+function clearCanvas(canvas: HTMLCanvasElement) {
   if (!canvas.width || !canvas.height) return;
-  canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+  // A canvas this module made and has only ever drawn 2d into - see sizeCanvas().
+  canvas.getContext('2d')!.clearRect(0, 0, canvas.width, canvas.height);
 }
 
 /**
@@ -919,7 +979,7 @@ function clearCanvas(canvas) {
  * drag of the strength and weight sliders, since a canvas cannot follow those
  * on its own the way a gradient carrying var() can.
  */
-let ink = null;
+let ink: { major: string; minor: string; axis: string; dot: number } | null = null;
 
 function gridInk() {
   if (ink) return ink;

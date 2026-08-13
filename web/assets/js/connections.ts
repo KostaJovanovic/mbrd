@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Lines between two cards, drawn by hand - the half that changes them.
 //
 // The list is `board.connections` - unordered pairs of item ids, top-level
@@ -43,6 +35,7 @@ import { toast } from './notify.ts';
 import { bus } from './board-store.ts';
 import { commit } from './history.ts';
 import { board, pairKey, connMeta, MAX_CONNECTIONS } from './board-model.ts';
+import type { Connection, ConnMeta } from './board-model.ts';
 
 /**
  * key -> true for every pair on the board, rebuilt lazily.
@@ -52,7 +45,7 @@ import { board, pairKey, connMeta, MAX_CONNECTIONS } from './board-model.ts';
  * from lying. `connections` is the only event that can change membership, so it
  * is the only one that drops this.
  */
-let connIndex = null;
+let connIndex: Set<string> | null = null;
 
 function connKeys() {
   if (!connIndex) {
@@ -65,17 +58,18 @@ bus.on('connections', () => { connIndex = null; });
 bus.on('board:load', () => { connIndex = null; });
 
 /** The one way the list is replaced: assign, then announce. */
-const write = list => {
+const write = (list: Connection[]) => {
   board.connections = list;
   bus.emit('connections');
 };
 
 /** Whether these two cards are joined. Order does not matter. */
-export const areConnected = (a, b) => !!a && !!b && connKeys().has(pairKey(a, b));
+export const areConnected = (a: string, b: string) =>
+  !!a && !!b && connKeys().has(pairKey(a, b));
 
 /** The ids joined to this one. Linear, and called once per reroute. */
-export function connectedTo(id) {
-  const out = [];
+export function connectedTo(id: string) {
+  const out: string[] = [];
   for (const [a, b] of board.connections) {
     if (a === id) out.push(b);
     else if (b === id) out.push(a);
@@ -96,7 +90,7 @@ export function connectedTo(id) {
  * Returns whether the pair is connected now, so the caller can say which of the
  * two things just happened.
  */
-export function toggleConnection(a, b) {
+export function toggleConnection(a: string, b: string) {
   if (!a || !b || a === b) return false;
   const key = pairKey(a, b);
   const had = connKeys().has(key);
@@ -105,7 +99,7 @@ export function toggleConnection(a, b) {
     return false;
   }
   const before = board.connections;
-  const after = had
+  const after: Connection[] = had
     ? board.connections.filter(p => pairKey(p[0], p[1]) !== key)
     : [...board.connections, [a, b]];
   commit(had ? 'Remove connection' : 'Connect',
@@ -123,9 +117,9 @@ export function toggleConnection(a, b) {
  *
  * Returns how many were actually new, which is what the toast reports.
  */
-export function addConnections(pairs, label = 'Connect') {
+export function addConnections(pairs: Iterable<[string, string]> | null | undefined, label = 'Connect') {
   const keys = connKeys();
-  const fresh = [];
+  const fresh: Connection[] = [];
   const taken = new Set();
   for (const [a, b] of pairs || []) {
     if (!a || !b || a === b) continue;
@@ -175,14 +169,14 @@ export function clearConnections(label = 'Remove all connections') {
  *
  * Returns whether a matching connection was found to edit.
  */
-export function updateConnection(a, b, patch) {
+export function updateConnection(a: string, b: string, patch: ConnMeta) {
   if (!a || !b) return false;
   const key = pairKey(a, b);
   const idx = board.connections.findIndex(p => pairKey(p[0], p[1]) === key);
   if (idx < 0) return false;
   const cur = board.connections[idx];
   const meta = connMeta({ ...(cur[2] || {}), ...patch });
-  const nextPair = meta ? [cur[0], cur[1], meta] : [cur[0], cur[1]];
+  const nextPair: Connection = meta ? [cur[0], cur[1], meta] : [cur[0], cur[1]];
   const before = board.connections;
   const after = board.connections.map((p, i) => (i === idx ? nextPair : p));
   commit('Edit connection', () => write(after), () => write(before));
@@ -190,7 +184,7 @@ export function updateConnection(a, b, patch) {
 }
 
 /** The display settings of one connection, or null if it is a plain line. */
-export function connectionMeta(a, b) {
+export function connectionMeta(a: string, b: string): ConnMeta | null {
   if (!a || !b) return null;
   const key = pairKey(a, b);
   const found = board.connections.find(p => pairKey(p[0], p[1]) === key);

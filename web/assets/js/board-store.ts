@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The three primitives everything else in the board layer is built on: the
 // event bus, the selection set, and whether there is anything unsaved.
 //
@@ -31,30 +23,81 @@
 import { emitter } from './util.ts';
 
 /**
+ * Every event the one bus carries, and what a handler of it is handed.
+ *
+ * The list used to be the prose comment that is still half of it below, and the
+ * prose had drifted: it named eleven events and the app emits twenty-one. As a
+ * type it cannot drift, because an emit of something not on it does not compile
+ * - which is the whole reason to write it down twice over.
+ *
+ * `void` means the event carries nothing and the handler takes no argument.
+ * `items` is the one payload that is genuinely optional: the fine-grained
+ * announcement says which ids arrived and which left, and the wholesale one -
+ * a board load, a reload - says only that the list is not what it was.
+ *
+ * Ids, not items, everywhere it can be. This module is the bottom of the graph
+ * and may not import board-model.ts (which imports *this*, for the bus), so
+ * `imported` is stated structurally: anything with an id answers it, which is
+ * what an Item is for this purpose.
+ *
+ *   items         - the item list itself changed
+ *   geom          - existing items moved or resized
+ *   item          - one item's content or name changed
+ *   selection     - the selection set changed
+ *   settings      - a setting changed (payload: which)
+ *   layout        - desktop/mobile geometry profile changed (payload: mode)
+ *   lens          - the mobile lens changed: the Feed or the Playlist
+ *   board         - a whole new board was loaded, or the title/dirty flag changed
+ *   board:load    - a board finished loading
+ *   board:new     - the board was started over
+ *   view          - the viewport settled after a pan or a zoom
+ *   trash         - something was thrown away, restored, or purged
+ *   trash:evicted - the bin overflowed and dropped its oldest (payload: how many)
+ *   history       - the undo or redo stack changed
+ *   connections   - board.connections changed
+ *   autosaved     - the session was written to IndexedDB
+ *   audioOrder    - the playlist order changed
+ *   fonts         - the board's face list changed
+ *   fonts:add     - fonts were dropped in and want loading (payload: the files)
+ *   imported      - an import finished (payload: what it brought)
+ *   feed:masthead - the Feed's masthead scrolled in or out of view
+ */
+export type BusEvents = {
+  items: { added: string[], removed: string[] } | undefined,
+  geom: string[],
+  item: string,
+  selection: void,
+  settings: string,
+  layout: string,
+  lens: string,
+  board: void,
+  'board:load': void,
+  'board:new': void,
+  view: void,
+  trash: void,
+  'trash:evicted': number,
+  history: void,
+  connections: void,
+  autosaved: void,
+  audioOrder: string[],
+  fonts: void,
+  'fonts:add': File[],
+  imported: { id: string }[],
+  'feed:masthead': boolean,
+};
+
+/**
  * The one bus. Every board mutation announces on it and no subsystem calls
  * another directly.
- *
- * Events:
- *   items      - the item list itself changed (payload: { added, removed } ids)
- *   geom       - existing items moved/resized (payload: array of ids)
- *   item       - one item's content/name changed (payload: id)
- *   selection  - the selection set changed
- *   settings   - a setting changed (payload: key)
- *   layout     - desktop/mobile geometry profile changed (payload: mode)
- *   board      - a whole new board was loaded, or the title/dirty flag changed
- *   board:load - a board finished loading
- *   board:new  - the board was started over
- *   trash      - something was thrown away, restored, or purged
- *   history    - the undo or redo stack changed
  */
-export const bus = emitter();
+export const bus = emitter<BusEvents>();
 
 /**
  * What is selected, by id. A live Set rather than a snapshot: the selection is
  * read on hot paths (every drag frame asks what it is moving) and copying it
  * per read would be the wrong trade.
  */
-export const selection = new Set();
+export const selection = new Set<string>();
 
 /**
  * The three writes to that Set that announce themselves.
@@ -76,7 +119,7 @@ export const selection = new Set();
  * in board-model.js, which imports this module. It stays in state.js as a
  * one-liner over this.
  */
-export function select(ids, additive = false) {
+export function select(ids: Iterable<string>, additive = false) {
   if (!additive) selection.clear();
   for (const id of ids) selection.add(id);
   bus.emit('selection');
@@ -89,7 +132,7 @@ export function clearSelection() {
 }
 
 /** Remove one item from the current selection, leaving the rest intact. */
-export function deselect(id) {
+export function deselect(id: string) {
   if (!selection.delete(id)) return false;
   bus.emit('selection');
   return true;

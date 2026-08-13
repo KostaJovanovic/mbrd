@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // How hard this device should work to draw a board.
 //
 // Everything else in mbrd that can be set is a property of the *board* and
@@ -34,11 +26,26 @@
 // state, and a subscriber list of three is not worth pretending otherwise.
 
 import { readPrefJSON, writePref } from './prefs.ts';
+import { isRecord } from './util.ts';
 
 const PREF = 'mbrd.quality';
 
+/** The three stops, and the six flags they resolve to. */
+export type QualityLevel = 'light' | 'balanced' | 'full';
+
+export type QualityFlags = {
+  motion: boolean,
+  shadows: boolean,
+  blur: boolean,
+  anim: boolean,
+  sharpness: number,
+  build: number,
+};
+
+export type QualityKey = keyof QualityFlags;
+
 /** The stops, low to high. The index is what the slider in the panel moves. */
-export const QUALITY_LEVELS = [
+export const QUALITY_LEVELS: { id: QualityLevel, label: string }[] = [
   { id: 'light', label: 'Light' },
   { id: 'balanced', label: 'Balanced' },
   { id: 'full', label: 'Full' },
@@ -107,17 +114,31 @@ export const BUILD_STEPS = [
  * the user had done - which is not a quality trade, it is a missing feature. The
  * board's own "Show connections" is the honest control, and it is in View.
  */
-const PRESETS = {
+const PRESETS: Record<QualityLevel, QualityFlags> = {
   full: { motion: true, shadows: true, blur: true, anim: true, sharpness: 1280, build: 12 },
   balanced: { motion: true, shadows: true, blur: false, anim: true, sharpness: 1152, build: 8 },
   light: { motion: false, shadows: false, blur: false, anim: false, sharpness: 1024, build: 4 },
 };
 
-const DEFAULT_LEVEL = 'full';
-const KEYS = Object.keys(PRESETS.full);
+const DEFAULT_LEVEL: QualityLevel = 'full';
+// Cast: PRESETS.full is the object literal above and its own keys are exactly
+// the six of QualityFlags, which is what Object.keys cannot say for itself.
+const KEYS = Object.keys(PRESETS.full) as QualityKey[];
 
-let level = DEFAULT_LEVEL;
-let overrides = {};
+/**
+ * Whether something out of localStorage names one of the three stops. Written
+ * as a guard rather than inline, because the same question is asked at four
+ * doors and every one of them is a door somebody with a console can knock on -
+ * see the note in initQuality about "__proto__".
+ */
+const isLevel = (v: unknown): v is QualityLevel =>
+  typeof v === 'string' && Object.hasOwn(PRESETS, v);
+
+/** Whether a string names one of the six flags. */
+const isKey = (v: unknown): v is QualityKey => KEYS.some(k => k === v);
+
+let level: QualityLevel = DEFAULT_LEVEL;
+let overrides: Partial<QualityFlags> = {};
 
 /**
  * The resolved flags, as one object that is mutated in place rather than
@@ -128,23 +149,38 @@ let overrides = {};
  * all of them holding the object from boot. The same reason canvas/viewport.js
  * exports `mobilePerfFlags` this way.
  */
-export const quality = { ...PRESETS[DEFAULT_LEVEL] };
+export const quality: QualityFlags = { ...PRESETS[DEFAULT_LEVEL] };
 
-const listeners = new Set();
+const listeners = new Set<(flags: QualityFlags) => void>();
 
 /** Which stop the dial is on. */
 export const qualityLevel = () => level;
 
 /** The flags the current stop asks for, before any override. */
-export const qualityPreset = (id = level) => ({ ...(Object.hasOwn(PRESETS, id) ? PRESETS[id] : PRESETS[DEFAULT_LEVEL]) });
+export const qualityPreset = (id: unknown = level): QualityFlags => ({ ...(isLevel(id) ? PRESETS[id] : PRESETS[DEFAULT_LEVEL]) });
 
 /** Whether a flag has been pinned by hand rather than left to the dial. */
-export const qualityOverridden = key => key in overrides;
+export const qualityOverridden = (key: string) => key in overrides;
+
+/**
+ * Write one flag, through the one key the caller has.
+ *
+ * Generic in the key rather than taking the union of the six, and that is the
+ * whole point of it: with a union key tsc has to assume the worst of every flag
+ * at once - a value that is a number and a boolean together - and the
+ * assignment stops being expressible at all. Held here so the three writers
+ * below say what they mean in one line each.
+ */
+function writeFlag<K extends QualityKey>(into: Partial<QualityFlags>, key: K, value: QualityFlags[K]) {
+  into[key] = value;
+}
 
 function resolve() {
-  const preset = Object.hasOwn(PRESETS, level) ? PRESETS[level] : PRESETS[DEFAULT_LEVEL];
+  const preset = isLevel(level) ? PRESETS[level] : PRESETS[DEFAULT_LEVEL];
   for (const key of KEYS) {
-    quality[key] = key in overrides ? overrides[key] : preset[key];
+    // Non-null: cleanOverrides is the only writer of `overrides` and it assigns
+    // a value it has just checked the type of, so a key in it has one.
+    writeFlag(quality, key, key in overrides ? overrides[key]! : preset[key]);
   }
 }
 
@@ -162,12 +198,12 @@ function persist() {
 }
 
 /** Read the saved setting. Called once, by ui/quality.js, after boot. */
-export function initQuality(stored = readPrefJSON(PREF)) {
-  const saved = stored && typeof stored === 'object' ? stored : {};
-  // Object.hasOwn, not a truthy PRESETS[saved.level]: localStorage is anyone's
-  // to edit, and "__proto__"/"constructor" would resolve to a truthy prototype
-  // member, pass the guard, and make every resolved flag undefined.
-  level = Object.hasOwn(PRESETS, saved.level) ? saved.level : DEFAULT_LEVEL;
+export function initQuality(stored: unknown = readPrefJSON(PREF)) {
+  const saved: Record<string, unknown> = isRecord(stored) ? stored : {};
+  // isLevel is Object.hasOwn and not a truthy PRESETS[saved.level]: localStorage
+  // is anyone's to edit, and "__proto__"/"constructor" would resolve to a truthy
+  // prototype member, pass the guard, and make every resolved flag undefined.
+  level = isLevel(saved.level) ? saved.level : DEFAULT_LEVEL;
   overrides = cleanOverrides(saved.over);
   resolve();
   announce();
@@ -182,9 +218,9 @@ export function initQuality(stored = readPrefJSON(PREF)) {
  * would not throw - it would quietly make `built >= BUILD_BUDGET` compare a
  * number against text and build every card on the board in one frame.
  */
-function cleanOverrides(from) {
-  const out = {};
-  if (!from || typeof from !== 'object') return out;
+function cleanOverrides(from: unknown): Partial<QualityFlags> {
+  const out: Partial<QualityFlags> = {};
+  if (!isRecord(from)) return out;
   for (const key of KEYS) {
     if (!(key in from)) continue;
     const value = from[key];
@@ -193,7 +229,11 @@ function cleanOverrides(from) {
     if (want === 'number' && !Number.isFinite(value)) continue;
     if (key === 'sharpness' && !SHARPNESS_STEPS.some(s => s.px === value)) continue;
     if (key === 'build' && !BUILD_STEPS.some(s => s.n === value)) continue;
-    out[key] = value;
+    // Cast: `want` is this flag's own typeof taken from PRESETS.full, and the
+    // line above dropped anything that does not match it. That is the check;
+    // tsc cannot follow it because the type name is computed rather than
+    // written, so the answer is restated here.
+    writeFlag(out, key, value as QualityFlags[typeof key]);
   }
   return out;
 }
@@ -203,8 +243,8 @@ function cleanOverrides(from) {
  * that appears to do nothing: pinning "no shadows" and then reaching for Full
  * has to give you shadows back or the stop is a lie.
  */
-export function setQualityLevel(id) {
-  if (!Object.hasOwn(PRESETS, id) || id === level) return quality;
+export function setQualityLevel(id: unknown) {
+  if (!isLevel(id) || id === level) return quality;
   level = id;
   overrides = {};
   resolve();
@@ -214,12 +254,14 @@ export function setQualityLevel(id) {
 }
 
 /** Pin one flag by hand. It outranks the dial until the dial moves again. */
-export function setQualityOverride(key, value) {
-  if (!KEYS.includes(key)) return quality;
+export function setQualityOverride(key: string, value: unknown) {
+  if (!isKey(key)) return quality;
   const clean = cleanOverrides({ [key]: value });
   if (!(key in clean)) return quality;
   if (quality[key] === clean[key] && key in overrides) return quality;
-  overrides[key] = clean[key];
+  // Non-null: `key in clean` on the line above, and cleanOverrides only ever
+  // puts a value it has checked under a key.
+  writeFlag(overrides, key, clean[key]!);
   resolve();
   persist();
   announce();
@@ -237,7 +279,7 @@ export function clearQualityOverrides() {
 }
 
 /** Called on every change, with the resolved flags. Returns an unsubscribe. */
-export function onQuality(fn) {
+export function onQuality(fn: (flags: QualityFlags) => void) {
   listeners.add(fn);
   return () => listeners.delete(fn);
 }

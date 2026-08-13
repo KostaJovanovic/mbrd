@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The toolbar's hover flyouts: what is behind a button, shown by hovering it.
 //
 // Every button on the bar is a single verb, and behind three of them there was
@@ -77,10 +69,30 @@ const DWELL = 180;
  */
 const LINGER = 250;
 
-let cmds = null;
-let bar = null;
+/**
+ * What the three builders below ask of the command surface, and nothing else.
+ *
+ * Named rather than borrowed from commands.js on purpose: that module imports
+ * this one, and the arrow may only go one way - the same reason `cmds` is handed
+ * in rather than imported. It is also what lets a test call a builder with a
+ * stub, which tests/flyout.test.js does.
+ */
+export interface FlyoutCommands {
+  arrangement: () => string;
+  arrangeAs: (id: string) => unknown;
+  hasSelection: () => boolean;
+  rearrangeSelection: () => unknown;
+  getSetting: (key: string) => unknown;
+  setSetting: (key: string, value: unknown) => unknown;
+  addNote: (tint: number) => unknown;
+  addSwatch: () => unknown;
+  addSwatchOf: (hex: string) => unknown;
+}
+
+let cmds: FlyoutCommands | null = null;
+let bar: HTMLElement | null = null;
 /** The button whose flyout is up, or null. */
-let openFor = null;
+let openFor: HTMLElement | null = null;
 let openTimer = 0;
 let closeTimer = 0;
 
@@ -93,13 +105,13 @@ let closeTimer = 0;
  * test can call with a stub. Exported for that, and for tests/flyout.test.js to
  * check the keys against the markup.
  */
-export const FLYOUTS = {
+export const FLYOUTS: Record<string, (cmds: FlyoutCommands) => unknown[]> = {
   rearrange: arrangeEntries,
   'add-note': noteEntries,
   'add-swatch': colourEntries,
 };
 
-export function initFlyouts(commands) {
+export function initFlyouts(commands: FlyoutCommands) {
   cmds = commands;
   bar = el('toolbar');
   if (!bar) return;
@@ -127,8 +139,10 @@ export function initFlyouts(commands) {
   // that got you there keep working.
   bar.addEventListener('keydown', e => {
     if (e.key !== 'ArrowDown') return;
-    const btn = e.target.closest?.('[data-cmd]');
-    if (!btn || !FLYOUTS[btn.dataset.cmd]) return;
+    // The listener is on the bar, so a key inside it comes from an element.
+    // Every match carries a data-cmd, which is what the selector asked for.
+    const btn = (e.target as Element).closest?.<HTMLElement>('[data-cmd]');
+    if (!btn || !FLYOUTS[btn.dataset.cmd!]) return;
     e.preventDefault();
     open(btn, true);
   });
@@ -148,17 +162,20 @@ export function initFlyouts(commands) {
   addEventListener('pointerleave', () => { if (openFor) later(); });
 }
 
-function onOver(e) {
+function onOver(e: PointerEvent) {
   // A touch that reports itself as one, on a machine whose primary pointer
   // hovers - a laptop with a touchscreen. The gate above was about the device;
   // this is about the gesture, and a finger is a press either way.
   if (e.pointerType === 'touch') return;
 
   // Inside the open panel. Nothing to do but stay.
-  if (e.target.closest?.('#ctx-menu')) { hold(); return; }
+  // The two reads below are on the window, so the target can be any node - the
+  // optional call is the guard it always was, and the cast only says that
+  // closest() is the thing being asked for.
+  if ((e.target as Element).closest?.('#ctx-menu')) { hold(); return; }
 
-  const btn = e.target.closest?.('#toolbar [data-cmd]');
-  if (btn && FLYOUTS[btn.dataset.cmd]) {
+  const btn = (e.target as Element).closest?.<HTMLElement>('#toolbar [data-cmd]');
+  if (btn && FLYOUTS[btn.dataset.cmd!]) {
     hold();
     if (btn === openFor) return;
     // Sliding along an open bar swaps at once. This is what a menu bar has
@@ -196,7 +213,7 @@ function later() {
  * above and clears openFor - so this writes the button in *after* the call, not
  * before it.
  */
-function open(btn, focus, delay = 0) {
+function open(btn: HTMLElement, focus: boolean, delay = 0) {
   clearTimeout(openTimer);
   if (delay) {
     openTimer = setTimeout(() => open(btn, focus), delay);
@@ -214,9 +231,11 @@ function open(btn, focus, delay = 0) {
   // Left off, that arithmetic is NaN, the test is quietly false, and the flip
   // never fires - which looks like nothing at all on a bar pinned to the top of
   // the window, right up until a flyout is taller than the space under it.
-  const rect = { left: box.left, top: box.top, bottom: bar.getBoundingClientRect().bottom };
+  const rect = { left: box.left, top: box.top, bottom: bar!.getBoundingClientRect().bottom };
   const label = btn.querySelector('span')?.textContent?.trim() || 'Menu';
-  openAnchored(rect, FLYOUTS[btn.dataset.cmd](cmds), { label, focus });
+  // `cmds` is set by initFlyouts(), which is also what binds the listener that
+  // is the only way to get here.
+  openAnchored(rect, FLYOUTS[btn.dataset.cmd!](cmds!), { label, focus });
   openFor = btn;
   btn.setAttribute('aria-expanded', 'true');
 }
@@ -238,7 +257,7 @@ function open(btn, focus, delay = 0) {
  * data-desktop, so the button this hangs off does not exist on the tier where
  * MOBILE_ARRANGEMENTS applies.
  */
-export function arrangeEntries(cmds) {
+export function arrangeEntries(cmds: FlyoutCommands) {
   const now = cmds.arrangement();
   return [
     ...ARRANGEMENTS.map(a => ({
@@ -262,7 +281,7 @@ export function arrangeEntries(cmds) {
       range: {
         min: 0, max: 200, step: 4, unit: 'px',
         get: () => cmds.getSetting('spacing') ?? 0,
-        set: v => cmds.setSetting('spacing', v),
+        set: (v: number) => cmds.setSetting('spacing', v),
       } },
   ];
 }
@@ -278,7 +297,7 @@ export function arrangeEntries(cmds) {
  * chip beside each row is the actual colour, drawn from the same token, so the
  * naming carries none of the weight.
  */
-export function noteEntries(cmds) {
+export function noteEntries(cmds: FlyoutCommands) {
   const NAMES = ['Warm', 'Accent', 'Green', 'Pale'];
   return Array.from({ length: NOTE_TINTS }, (_, i) => ({
     label: NAMES[i] || `Sheet ${i + 1}`,
@@ -306,7 +325,7 @@ const PIGMENTS = [
   ['--ink', 'Ink'],
 ];
 
-export function colourEntries(cmds) {
+export function colourEntries(cmds: FlyoutCommands) {
   return [
     ...PIGMENTS.map(([token, label]) => ({
       label,
@@ -331,7 +350,7 @@ export function colourEntries(cmds) {
  * swatchHex() has the last word, so anything that still fails to resolve lands
  * on SWATCH_DEFAULT rather than writing nonsense into a board file.
  */
-function tokenHex(token) {
+function tokenHex(token: string) {
   const probe = document.createElement('span');
   probe.style.cssText = 'position:fixed;left:-9999px;width:0;height:0';
   probe.style.color = `var(${token})`;

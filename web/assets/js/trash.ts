@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The bin: deleting, restoring, and emptying it.
 //
 // One concern that sat in two non-contiguous blocks of state.js, which is
@@ -45,6 +37,7 @@
 import { bus, selection } from './board-store.ts';
 import { commit } from './history.ts';
 import { board, byId, topZ, TRASH_LIMIT } from './board-model.ts';
+import type { TrashEntry } from './board-model.ts';
 import { stuckTo } from './sticky.ts';
 import { refenceArrivals } from './fences.ts';
 import { fitBoardMode } from './layout.ts';
@@ -67,9 +60,9 @@ import { fitBoardMode } from './layout.ts';
  * and then a filter - takes that sticker too, because the note is a follower
  * even though it is not being deleted.
  */
-function stickerCascade(ids) {
+function stickerCascade(ids: Iterable<string>) {
   const going = new Set(ids);
-  const out = [];
+  const out: string[] = [];
   // Passes, like stuckFollowers(): a sticker on a sticker can only join once
   // the one underneath it has, and board.items is in no particular order.
   for (let grew = true; grew;) {
@@ -86,7 +79,7 @@ function stickerCascade(ids) {
   return out;
 }
 
-export function removeItems(ids, label = 'Delete') {
+export function removeItems(ids: Iterable<string>, label = 'Delete') {
   // One undo entry for the cascade and the delete that caused it, which is the
   // whole reason it is folded in here rather than run by the caller: Ctrl+Z
   // brings the photograph and its stickers back together, and nobody has to
@@ -121,7 +114,7 @@ export function removeItems(ids, label = 'Delete') {
   // one entry short for good, and the entry that vanished was the oldest thing
   // in there: the one furthest past the point of being able to get it back any
   // other way.
-  let evicted = [];
+  let evicted: TrashEntry[] = [];
   commit(label,
     () => { board.items = board.items.filter(i => !set.has(i.id));
             set.forEach(id => selection.delete(id));
@@ -167,7 +160,7 @@ export function removeItems(ids, label = 'Delete') {
  * were absent while everything else moved on, and coming back underneath a
  * pile is the same as not coming back.
  */
-export function restoreItems(ids, at = null, label = 'Restore') {
+export function restoreItems(ids: Iterable<string>, at: { x: number, y: number } | null = null, label = 'Restore') {
   const set = new Set(ids);
   const entries = board.trash.filter(t => set.has(t.item.id));
   if (!entries.length) return [];

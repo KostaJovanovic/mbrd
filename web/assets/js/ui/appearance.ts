@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Live theming. Every control here writes a CSS custom property straight onto
 // :root, so the change is immediate and nothing needs re-rendering.
 //
@@ -49,6 +41,7 @@ import {
   syncPaletteMode, syncPaletteSources, wirePaletteSources,
   wireWhimsy, wirePalette, inputs, toHex,
 } from './appearance-controls.ts';
+import type { ControlSpec, Look } from './appearance-controls.ts';
 
 const STORE_KEY = 'mbrd.appearance';
 
@@ -177,7 +170,7 @@ const BODY_FACES = [
  * a sheet that does not belong to its accent is the one mistake this panel
  * made easiest to make.
  */
-const CONTROLS = [
+const CONTROLS: ControlSpec[] = [
   { var: '--font-display', label: 'Display', type: 'font', options: DISPLAY_FACES, host: 'type' },
   { var: '--font-body',    label: 'Body',    type: 'font', options: BODY_FACES,    host: 'type' },
   { var: '--accent',      label: 'Pigment',       type: 'color', host: 'main' },
@@ -191,18 +184,18 @@ const CONTROLS = [
 ];
 
 /** Where each `host` renders. Missing element = that group is simply not built. */
-const HOSTS = {
+const HOSTS: Record<string, string> = {
   type: 'appearance-type',
   main: 'appearance-vars',
   advanced: 'appearance-advanced-vars',
 };
 
 const root = document.documentElement;
-const themeColour = document.querySelector('meta[name="theme-color"]');
-let current = { whimsy: DEFAULT_WHIMSY, palette: '', vars: {} };
-let onChange = () => {};
+const themeColour = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+let current: Look = { whimsy: DEFAULT_WHIMSY, palette: '', vars: {} };
+let onChange: () => void = () => {};
 
-export function initAppearance(handlers = {}) {
+export function initAppearance(handlers: { onChange?: () => void } = {}) {
   onChange = handlers.onChange || (() => {});
 
   // Hand the panel what it borrows from this module. First, before anything
@@ -315,7 +308,7 @@ export function initAppearance(handlers = {}) {
  * import this module (the layering test), so it goes through the command
  * surface like every other user-facing action.
  */
-export function setWhimsy(level) {
+export function setWhimsy(level: number | string) {
   const n = clampWhimsy(level);
   if (n === current.whimsy) return;
   // Hand-set values for tokens this axis owns would outrank the new level
@@ -356,7 +349,10 @@ function reshade() {
     ? paletteFromAccent(current.vars['--accent'], { plain: current.whimsy === HARSH })
     : null;
   if (!sheet) return;
-  for (const [key, value] of Object.entries(sheet)) {
+  // ui/pigments.js still carries its migration pragma, so the token map it
+  // builds types as an empty object. Every pair in it is a token name and
+  // the colour to write; the assertion comes out when that file is annotated.
+  for (const [key, value] of Object.entries(sheet) as [string, string][]) {
     current.vars[key] = value;
     root.style.setProperty(key, value);
     applied.add(key);
@@ -390,7 +386,7 @@ function reshade() {
  * setting that arrived with that board exactly as saved, and must not mark a
  * board dirty before it has been touched.
  */
-function axisMoved(level) {
+function axisMoved(level: number) {
   if (whimsyControlsSnap(board.layoutMode)) setSetting('snap', level === HARSH);
   // setSetting is silent when the value already matches, and it often will:
   // whenever the checkbox was hand-toggled to where the new level wants it, or
@@ -403,7 +399,7 @@ function axisMoved(level) {
  * Replace the pigments wholesale - the hook for palettes derived from the
  * pictures on the board. Pass any subset of the pigment tokens.
  */
-export function setPigments(vars) {
+export function setPigments(vars: Record<string, string>) {
   // The named palette is deliberately left alone, field and attribute both.
   //
   // PALETTE_TOKENS covers every token the [data-palette] blocks in tokens.css
@@ -563,7 +559,7 @@ function goDynamic() {
  *
  * Type, radius and the rest of the look are untouched. This is a colour control.
  */
-function setPalette(name) {
+function setPalette(name: string) {
   dropPigments();
   // Choosing a colour by name is a decision about the same thing the extraction
   // decides, so it takes the extraction with it - the same way picking a pigment
@@ -625,8 +621,10 @@ function pictureHashes() {
     const hash = it.type === 'image' ? it.asset?.hash : null;
     for (const h of [hash, it.meta?.cover]) {
       // Registered, but not resolved: getAsset() is the same "are the bytes
-      // here?" test assetURL() returning null used to stand in for.
-      if (h && getAsset(h)) hashes.push(h);
+      // here?" test assetURL() returning null used to stand in for. A cover out
+      // of the open `meta` is held to being a string on the way past, which is
+      // the same thing getAsset() answering nothing already did for it.
+      if (typeof h === 'string' && getAsset(h)) hashes.push(h);
     }
   }
   return hashes;
@@ -676,10 +674,10 @@ function sourceKey(hashes = pictureHashes()) {
 }
 
 /** The pictures the palette standing on screen was taken from - see sourceKey(). */
-let lastSources = null;
+let lastSources: string | null = null;
 
 /** The last reason an automatic run gave up, so it is said once and not on loop. */
-let lastFailure = null;
+let lastFailure: string | null = null;
 
 /**
  * Whether the board is wearing colours taken from its own pictures right now.
@@ -748,7 +746,7 @@ async function recolourFromBoard({ silent = false } = {}) {
   // say. Recording it afterwards would leave a board whose pictures have no
   // colour in them re-running the whole extraction on every subsequent edit.
   lastSources = sourceKey(hashes);
-  const failed = why => {
+  const failed = (why: string) => {
     if (!silent || lastFailure !== why) toast(why);
     lastFailure = why;
     return false;
@@ -801,7 +799,7 @@ async function recolourFromBoard({ silent = false } = {}) {
   // the question this feature is actually judged on, and two hex codes do not
   // answer it. Read back off the palette rather than passed out of the
   // extractor, so it costs nothing and cannot disagree with what was applied.
-  const hueOf = c => Math.round(oklch(...parseHex(c)).h);
+  const hueOf = (c: string) => Math.round(oklch(...parseHex(c)).h);
   console.info(`[mbrd] palette: sheet ${vars['--paper']} (hue ${hueOf(vars['--paper'])}), `
     + `accent ${vars['--accent']} (hue ${hueOf(vars['--accent'])}), `
     + `wash ${vars['--leafy']} (hue ${hueOf(vars['--leafy'])})`);
@@ -869,14 +867,14 @@ export function resetAppearance() {
  * and the controls would show the palette's value while the stale inline
  * property was what you could actually see.
  */
-let applied = new Set();
+let applied = new Set<string>();
 
-function apply(look) {
+function apply(look: Look) {
   // Always written, including the default: the stylesheet's base *is* the
   // middle, so an absent attribute already means 1 - but 0 is a real level
   // with its own rules, and leaving the attribute off for it would silently
   // land on the middle instead.
-  root.dataset.whimsy = look.whimsy;
+  root.dataset.whimsy = String(look.whimsy);
   if (look.palette) root.dataset.palette = look.palette;
   else delete root.dataset.palette;   // no attribute = the default, Papyrus
 
@@ -962,7 +960,7 @@ let prefTimer = 0;
  * never pauses still saves as it goes - a tab closed mid-gesture keeps the
  * colour it was showing a moment ago rather than the one it started from.
  */
-function storeLook(soon) {
+function storeLook(soon: boolean) {
   if (!soon) {
     if (prefTimer) { clearTimeout(prefTimer); prefTimer = 0; }
     writePref(STORE_KEY, JSON.stringify(current));
@@ -986,7 +984,7 @@ function persist({ soon = false } = {}) {
   onChange();
 }
 
-function setVar(name, value) {
+function setVar(name: string, value: string) {
   // An empty value is "stop overriding this", not "override it with nothing".
   // Setting a token to '' would leave an inline declaration that resolves to
   // the initial value and still beats the stylesheet, so the whimsy level
@@ -1023,7 +1021,10 @@ function setVar(name, value) {
   // the most deliberate colour decision the panel offers.
   const sheet = name === '--accent'
     ? paletteFromAccent(value, { plain: current.whimsy === HARSH }) : null;
-  for (const [key, hue] of Object.entries(sheet || {})) {
+  // ui/pigments.js still carries its migration pragma, so the token map it
+  // builds types as an empty object. Every pair in it is a token name and
+  // the colour to write; the assertion comes out when that file is annotated.
+  for (const [key, hue] of Object.entries(sheet || {}) as [string, string][]) {
     current.vars[key] = hue;
     root.style.setProperty(key, hue);
     applied.add(key);
@@ -1047,7 +1048,7 @@ function readStored() {
 // Compared against the default rather than tested for truthiness: whimsy 0 is
 // Softish, a deliberate choice, and `!0` would file a board saved at that end of
 // the axis as having brought no look at all.
-const hasLook = look =>
+const hasLook = (look: Partial<Look> | null | undefined) =>
   !!look && ((look.whimsy != null && +look.whimsy !== DEFAULT_WHIMSY) ||
              look.palette || Object.keys(look.vars || {}).length);
 /**
@@ -1059,13 +1060,13 @@ const hasLook = look =>
  * is while the slider claims otherwise. `|| 0` catches the non-number, since
  * clamping NaN only gives NaN back.
  */
-const clampWhimsy = v => clamp(Math.round(+v) || 0, 0, WHIMSY.length - 1);
+const clampWhimsy = (v: unknown) => clamp(Math.round(Number(v)) || 0, 0, WHIMSY.length - 1);
 
 // Every look in this module - the user's stored one, the one a board brought,
 // the one a control just edited - is built here, which is what makes this the
 // one place the rules have to hold. `vars` is filtered rather than rejected
 // wholesale: a board with one bad token should lose that token, not its look.
-const clone = look => withProvenance(look, {
+const clone = (look: Partial<Look> | null | undefined): Look => withProvenance(look, {
   whimsy: look?.whimsy == null ? DEFAULT_WHIMSY : clampWhimsy(look.whimsy),
   // Becomes an attribute value that stylesheet rules match on, so it is held to
   // the shape a palette name has rather than trusted to be one.
@@ -1110,14 +1111,14 @@ const clone = look => withProvenance(look, {
  * something for it to be true *of* - so a .mbrd claiming a derived look with no
  * pigments in it cannot make the palette menu throw away tokens it never wrote.
  */
-function withProvenance(from, look) {
+function withProvenance(from: Partial<Look> | null | undefined, look: Look): Look {
   if (from?.derived === true && Object.keys(look.vars).length) look.derived = true;
   if (from?.auto === false) look.auto = false;
   return look;
 }
 
 /** Whether the extraction is on. Absent means on - see withProvenance(). */
-const autoOn = look => look?.auto !== false;
+const autoOn = (look: Partial<Look> | null | undefined) => look?.auto !== false;
 
 // Both sides put through clone() first, which is what makes a string compare
 // safe here: it fixes the key order. `current` is mutated in place all over this
@@ -1125,4 +1126,5 @@ const autoOn = look => look?.auto !== false;
 // so two looks that are equal can serialise differently depending on which flag
 // happened to be set second, and this would then re-apply a look identical to
 // the one already on screen every time the board emitted an event.
-const sameLook = (a, b) => JSON.stringify(clone(a)) === JSON.stringify(clone(b));
+const sameLook = (a: Partial<Look> | null | undefined, b: Partial<Look> | null | undefined) =>
+  JSON.stringify(clone(a)) === JSON.stringify(clone(b));

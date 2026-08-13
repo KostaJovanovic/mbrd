@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The viewer: one item off the board, as big as the window will allow.
 //
 // A board is a wall of things at a glance, and that is what it is for - but
@@ -41,6 +33,17 @@ import { renderMarkdown } from './markdown.ts';
 // There is no dependency to defer, so deferring it would only buy a second
 // module fetch at the moment somebody asked to see something.
 import { canReadDocument, readDocument } from './documents.ts';
+import type { Item } from '../board-model.ts';
+
+/**
+ * `meta` is open by design (see board-model.ts), so the three things this file
+ * reads out of it are narrowed here rather than trusted. A key that is not a
+ * string is treated exactly as a missing one, which is what every one of these
+ * reads already did by falling through a `||`.
+ */
+const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+/** The object URL for a hash out of `meta`, or null for anything that is not one. */
+const urlOf = (hash: unknown): string | null => (typeof hash === 'string' ? assetURL(hash) : null);
 
 /**
  * How much of a text file the viewer reads.
@@ -56,18 +59,24 @@ const TEXT_MAX = 200000;
 /** The extensions that get read as prose rather than shown as source. */
 export const MARKDOWN = new Set(['md', 'markdown', 'mdown', 'mkd']);
 
-let dlg = null;
-let titleEl = null;
-let metaEl = null;
-let bodyEl = null;
+// The dialog and its three slots, taken once in initViewer(). Everything past
+// that guard reads them with `!`: initViewer() returns early without the
+// dialog, and openViewer() refuses before it touches any of them.
+let dlg: HTMLDialogElement | null = null;
+let titleEl: HTMLElement | null = null;
+let metaEl: HTMLElement | null = null;
+let bodyEl: HTMLElement | null = null;
 
 /** The blob URLs the open document minted, if this viewing is showing one. */
-let releaseDoc = null;
+let releaseDoc: (() => void) | null = null;
 /** The open PDF, if this viewing is one. Parsed documents are not small. */
-let pdfDoc = null;
+let pdfDoc: { destroy: () => void } | null = null;
 
 export function initViewer() {
-  dlg = document.getElementById('viewer');
+  // #viewer is the <dialog> in index.html; the showModal test in openViewer()
+  // is the real guard, and it covers an engine with no dialog support too -
+  // which is why this is a cast rather than an instanceof.
+  dlg = document.getElementById('viewer') as HTMLDialogElement | null;
   if (!dlg) return;
   titleEl = document.getElementById('viewer-title');
   metaEl = document.getElementById('viewer-meta');
@@ -78,7 +87,7 @@ export function initViewer() {
   // itself and the only way to tell backdrop from sheet is where it landed.
   dlg.addEventListener('click', e => {
     if (e.target !== dlg) return;
-    const r = dlg.getBoundingClientRect();
+    const r = dlg!.getBoundingClientRect();
     const inside = e.clientX >= r.left && e.clientX <= r.right
                 && e.clientY >= r.top && e.clientY <= r.bottom;
     if (!inside) closeViewer();
@@ -96,7 +105,7 @@ export function initViewer() {
  * opens a sheet saying "nothing to show" is worse than a tap that does nothing,
  * because it costs a second press to get back to where you were.
  */
-export function canView(id) {
+export function canView(id: string) {
   const item = byId(id);
   if (!item) return false;
   return !!viewFor(item);
@@ -112,9 +121,9 @@ export function canView(id) {
  * and both should open as one. The type table below is the fallback and covers
  * everything the board draws natively.
  */
-function viewFor(item) {
+function viewFor(item: Item): View | null {
   if (!item.asset?.hash) return VIEWS[item.type] || null;
-  if (PDF_EXTS.has(item.meta?.ext)) return pdfView;
+  if (PDF_EXTS.has(str(item.meta?.ext))) return pdfView;
   if (canReadDocument(item.meta?.ext)) return documentView;
   return VIEWS[item.type] || null;
 }
@@ -122,21 +131,21 @@ function viewFor(item) {
 /** The two extensions the PDF renderer opens. See isPdf() in import/drop.js. */
 const PDF_EXTS = new Set(['pdf', 'ai']);
 
-export function openViewer(id) {
+export function openViewer(id: string) {
   const item = byId(id);
   if (!dlg || typeof dlg.showModal !== 'function' || !item) return;
   const view = viewFor(item);
   if (!view) return;
 
-  titleEl.textContent = baseName(item.name) || item.name || item.type;
-  metaEl.textContent = describe(item);
-  bodyEl.replaceChildren();
+  titleEl!.textContent = baseName(item.name) || item.name || item.type;
+  metaEl!.textContent = describe(item);
+  bodyEl!.replaceChildren();
   dlg.dataset.type = item.type;
-  view(item, bodyEl);
+  view(item, bodyEl!);
   dlg.showModal();
   // The body, not the close button. Scrolling a long file with the keyboard is
   // the first thing anybody does in here, and a focused button swallows Space.
-  bodyEl.focus?.();
+  bodyEl!.focus?.();
 }
 
 export function closeViewer() {
@@ -154,7 +163,7 @@ export function closeViewer() {
  * the card that is still showing it.
  */
 function teardown() {
-  for (const el of bodyEl?.querySelectorAll?.('video, audio') || []) {
+  for (const el of bodyEl?.querySelectorAll?.<HTMLMediaElement>('video, audio') || []) {
     try { el.pause(); } catch { /* already gone */ }
     el.removeAttribute('src');
     el.load?.();
@@ -171,13 +180,14 @@ function teardown() {
   pdfDoc?.destroy();
   pdfDoc = null;
   bodyEl?.replaceChildren();
-  delete dlg.dataset.type;
+  // Only bound as a listener on the dialog, so there is one here to clear.
+  delete dlg!.dataset.type;
 }
 
 /** The line under the name: what the file is and how big. */
-function describe(item) {
+function describe(item: Item) {
   const asset = item.asset?.hash ? getAsset(item.asset.hash) : null;
-  const ext = (item.meta?.ext || '').toUpperCase();
+  const ext = str(item.meta?.ext).toUpperCase();
   return [ext, asset && formatBytes(asset.size)].filter(Boolean).join(' · ');
 }
 
@@ -185,7 +195,10 @@ function describe(item) {
 // The views
 // ---------------------------------------------------------------------------
 
-const VIEWS = {
+/** One entry of the table below: an item, and the body it fills. */
+type View = (item: Item, host: HTMLElement) => void;
+
+const VIEWS: Record<string, View> = {
   /**
    * A picture, at its own size or the window's, whichever is smaller.
    *
@@ -196,7 +209,7 @@ const VIEWS = {
    * is tried second rather than not at all.
    */
   image(item, host) {
-    const url = assetURL(item.asset?.hash) || assetURL(item.meta?.preview);
+    const url = urlOf(item.asset?.hash) || urlOf(item.meta?.preview);
     if (!url) return void host.append(nothing('That picture is not in this board'));
     const img = document.createElement('img');
     img.className = 'viewer-media';
@@ -215,14 +228,14 @@ const VIEWS = {
    * look at it is not the same as asking it to start.
    */
   video(item, host) {
-    const url = assetURL(item.asset?.hash);
+    const url = urlOf(item.asset?.hash);
     if (!url) return void host.append(nothing('That clip is not in this board'));
     const el = document.createElement('video');
     el.className = 'viewer-media';
     el.controls = true;
     el.playsInline = true;
     el.preload = 'metadata';
-    const poster = assetURL(item.meta?.cover || item.meta?.poster);
+    const poster = urlOf(item.meta?.cover || item.meta?.poster);
     if (poster) el.poster = poster;
     el.src = url;
     host.append(el);
@@ -230,7 +243,7 @@ const VIEWS = {
 
   /** A sound file, with its cover above it when it carries one. */
   audio(item, host) {
-    const cover = assetURL(item.meta?.cover);
+    const cover = urlOf(item.meta?.cover);
     if (cover) {
       const art = document.createElement('img');
       art.className = 'viewer-cover';
@@ -238,7 +251,7 @@ const VIEWS = {
       art.src = cover;
       host.append(art);
     }
-    const url = assetURL(item.asset?.hash);
+    const url = urlOf(item.asset?.hash);
     if (!url) return void host.append(nothing('That track is not in this board'));
     const el = document.createElement('audio');
     el.className = 'viewer-audio';
@@ -265,7 +278,7 @@ const VIEWS = {
    * That is not a nicety here: these are files the app did not write.
    */
   text(item, host) {
-    const md = MARKDOWN.has(item.meta?.ext || '');
+    const md = MARKDOWN.has(str(item.meta?.ext));
     const holder = document.createElement(md ? 'div' : 'pre');
     holder.className = md ? 'viewer-md' : 'viewer-text';
     host.append(holder);
@@ -288,11 +301,16 @@ const VIEWS = {
   note(item, host) {
     const sheet = document.createElement('div');
     sheet.className = 'viewer-note-sheet';
+    // The rich body is a note's own structure and arrives out of a file, so it
+    // is walked as unknown: a blocks array of anything, each entry keeping its
+    // `text` only if that is what it is.
     const rich = item.meta?.rich;
-    sheet.textContent = Array.isArray(rich?.blocks) && rich.blocks.length
-      ? rich.blocks.map(b => b?.text || '').join('\n').trim()
-      : (item.meta?.text || item.name || '').trim();
-    const tint = item.meta?.color;
+    const blocks = rich && typeof rich === 'object' && 'blocks' in rich
+      && Array.isArray(rich.blocks) ? rich.blocks : null;
+    sheet.textContent = blocks?.length
+      ? blocks.map(b => (b && typeof b === 'object' && 'text' in b ? str(b.text) : '')).join('\n').trim()
+      : (str(item.meta?.text) || item.name || '').trim();
+    const tint = str(item.meta?.color);
     if (tint) sheet.style.background = tint;
     host.append(sheet);
   },
@@ -319,7 +337,7 @@ const VIEWS = {
  * line of text while that happens is the honest thing to show - the alternative
  * is a blank sheet that looks like the file was empty.
  */
-function documentView(item, host) {
+function documentView(item: Item, host: HTMLElement) {
   const asset = getAsset(item.asset?.hash);
   if (!asset) return void host.append(nothing('That file is not in this board'));
   const waiting = nothing('Reading it…');
@@ -355,7 +373,7 @@ const PDF_BATCH = 5;
  * canvases and a tab that stops answering. Five is about a screenful and a half
  * on a desktop; the button below asks for the next five.
  */
-function pdfView(item, host) {
+function pdfView(item: Item, host: HTMLElement) {
   const asset = getAsset(item.asset?.hash);
   if (!asset) return void host.append(nothing('That file is not in this board'));
   const waiting = nothing('Opening it…');
@@ -370,7 +388,7 @@ function pdfView(item, host) {
     waiting.replaceWith(pages);
     // The width the page is drawn at, taken from the box it is going into, at
     // device resolution so it is sharp on a phone and on a retina display.
-    const width = Math.max(320, pages.clientWidth || bodyEl.clientWidth || 800)
+    const width = Math.max(320, pages.clientWidth || bodyEl!.clientWidth || 800)
       * Math.min(2, globalThis.devicePixelRatio || 1);
     let shown = 0;
     const more = document.createElement('button');
@@ -415,7 +433,7 @@ function pdfView(item, host) {
 }
 
 /** A card is not always openable, and saying so beats an empty sheet. */
-function nothing(words) {
+function nothing(words: string) {
   const p = document.createElement('p');
   p.className = 'viewer-note';
   p.textContent = words;

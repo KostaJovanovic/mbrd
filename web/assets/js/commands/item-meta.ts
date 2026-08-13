@@ -73,8 +73,7 @@ export function itemMetaCommands() {
      * on the selection - "these nine are all stuck to that photograph and I
      * want them off it" is the same sentence for one as for nine.
      */
-    canUnstick: () => board.items.some((i: { id: string }) =>
-      selection.has(i.id) && isRider(i)),
+    canUnstick: () => board.items.some(i => selection.has(i.id) && isRider(i)),
     /**
      * The sticker colour row: is this one item a sticker, what colour is it,
      * and set it.

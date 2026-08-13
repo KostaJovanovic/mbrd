@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // One renderer per item type: classification, a default size, and the DOM that
 // goes inside a card. Adding a new type means adding an entry to RENDERERS and
 // a branch in classify() - nothing else in the app needs to know about it.
@@ -18,6 +10,7 @@
 // caller had to learn they moved.
 
 import { extOf, baseName, formatBytes } from '../util.ts';
+import type { Item, ItemType } from '../board-model.ts';
 import { assetURL, getAsset, readText } from '../storage/assets.ts';
 import { byId, bus, markDirty, board, isDefaultTitle, setSwatchHex } from '../state.ts';
 import { latticeBox } from '../geometry.ts';
@@ -32,6 +25,7 @@ import { hintFor, hintKey, tapeStyle, bindDial, STOPS, DIAL } from './ghosts.ts'
 import { ensureDisplay, displayURLReady } from './display.ts';
 import { meshKind } from '../mesh.ts';
 import { normalizeNoteRich, applyNoteStyle, buildNoteLine } from './note-model.ts';
+import type { NoteRichInput } from './note-model.ts';
 import {
   STICKER_SPRITE, STICKER_VIEWBOX, DEFAULT_SHAPE, stickerShape, stickerTint,
 } from '../stickers/catalogue.ts';
@@ -59,6 +53,28 @@ export { videoFrame } from './poster.ts';
  */
 const TEXT_PREVIEW = 20000;
 
+/**
+ * A meta value read as the string it is meant to be, or ''.
+ *
+ * `meta` is unknown per key on purpose - see the paragraph over ItemMeta in
+ * board-model.ts - and this file reads a dozen keys out of it that are hashes,
+ * mime types and extensions. Narrowed once here rather than at each of them,
+ * and to '' rather than to null so the `||` chains below read as they did.
+ */
+const metaStr = (v: unknown): string => (typeof v === 'string' ? v : '');
+
+/** A card's box in world units - what defaultSize() and fitToBox() answer. */
+export type Size = { w: number; h: number };
+
+/**
+ * What measureSize() answers: a box, whether the browser could decode the file
+ * at all, and whether the box came from the file's own dimensions or from the
+ * type's placeholder. `measured` is optional and that is the honest shape - the
+ * two fallback paths return the placeholder and say nothing about it, which is
+ * exactly what import/drop.js reads it for.
+ */
+export type MeasuredSize = Size & { decodable: boolean; measured?: boolean };
+
 const TEXT_EXT = new Set([
   'txt', 'md', 'markdown', 'rst', 'log', 'csv', 'tsv', 'json', 'xml', 'yml', 'yaml',
   'ini', 'cfg', 'conf', 'toml', 'js', 'mjs', 'ts', 'jsx', 'tsx', 'css', 'scss',
@@ -75,7 +91,7 @@ const TEXT_EXT = new Set([
  * a .sldprt says "SolidWorks" rather than "file". Real viewers for the rest
  * can slot in later without this routing changing.
  */
-export function classify(file) {
+export function classify(file: File): ItemType {
   const mime = (file.type || '').toLowerCase();
   const ext = extOf(file.name);
   if (mime.startsWith('image/') || SVG_EXTS.has(ext)) return 'image';
@@ -107,7 +123,7 @@ export function classify(file) {
  * (badge, name, size) now costs proportionally more of it, which is why the
  * two types whose whole value is the body they show are left alone.
  */
-export function defaultSize(type) {
+export function defaultSize(type: string): Size {
   switch (type) {
     case 'image':   return { w: 256, h: 192 };
     case 'video':   return { w: 288, h: 162 };
@@ -180,7 +196,7 @@ export const SWATCH_DEFAULT = '#8a8a8a';
  * the picker, but somebody may well have typed it into a file by hand, and
  * `#f00` is not a broken colour - it is the same colour written shorter.
  */
-export function swatchHex(raw) {
+export function swatchHex(raw: unknown): string {
   const s = String(raw ?? '').trim().toLowerCase();
   if (/^#[0-9a-f]{6}$/.test(s)) return s;
   if (/^#[0-9a-f]{3}$/.test(s)) return '#' + s.slice(1).replace(/./g, c => c + c);
@@ -196,7 +212,7 @@ export function swatchHex(raw) {
  * every layout exact. Falls back to the placeholder size if the media can't be
  * decoded - adoptAspect() then picks it up later, capped so it can't overflow.
  */
-export async function measureSize(type, file) {
+export async function measureSize(type: string, file: File): Promise<MeasuredSize> {
   const box = defaultSize(type);
   if (type !== 'image' && type !== 'video') return { ...box, decodable: true };
   // SVG is vector, so it is measured from its own markup rather than by decoding
@@ -224,7 +240,7 @@ export async function measureSize(type, file) {
 }
 
 /** An SVG, by MIME or by extension - the same either/or classify() uses. */
-function isSvgImage(file) {
+function isSvgImage(file: File): boolean {
   return (file.type || '').toLowerCase() === 'image/svg+xml'
     || SVG_EXTS.has(extOf(file.name));
 }
@@ -236,11 +252,13 @@ function isSvgImage(file) {
  * keeps the placeholder box. Text and regex only, so it runs anywhere a File
  * does and cannot be refused the way a decode can.
  */
-async function svgSize(file) {
+async function svgSize(file: File): Promise<Size | null> {
   const text = (await file.text()).slice(0, 4096);
   const tag = text.match(/<svg\b[^>]*>/i)?.[0] || '';
-  const w = parseFloat(tag.match(/\bwidth\s*=\s*["']?\s*([\d.]+)\s*(?:px)?["'\s>]/i)?.[1]);
-  const h = parseFloat(tag.match(/\bheight\s*=\s*["']?\s*([\d.]+)\s*(?:px)?["'\s>]/i)?.[1]);
+  // parseFloat('') is NaN, which is exactly what an absent capture already gave
+  // it - the `?? ''` is that same non-answer in a form parseFloat's type takes.
+  const w = parseFloat(tag.match(/\bwidth\s*=\s*["']?\s*([\d.]+)\s*(?:px)?["'\s>]/i)?.[1] ?? '');
+  const h = parseFloat(tag.match(/\bheight\s*=\s*["']?\s*([\d.]+)\s*(?:px)?["'\s>]/i)?.[1] ?? '');
   if (w > 0 && h > 0) return { w, h };
   const vb = tag.match(/\bviewBox\s*=\s*["']\s*[-\d.eE]+[\s,]+[-\d.eE]+[\s,]+([\d.eE]+)[\s,]+([\d.eE]+)/i);
   if (vb) {
@@ -266,7 +284,7 @@ async function svgSize(file) {
  * arithmetic or the same clip would be a different size depending on which route
  * discovered its shape.
  */
-export function fitToBox(type, w, h) {
+export function fitToBox(type: string, w: number, h: number): Size {
   const box = defaultSize(type);
   if (!(w > 0 && h > 0)) return box;
   const area = box.w * box.h;
@@ -274,7 +292,7 @@ export function fitToBox(type, w, h) {
   return { w: Math.round(Math.sqrt(area * ratio)), h: Math.round(Math.sqrt(area / ratio)) };
 }
 
-async function imageSize(file) {
+async function imageSize(file: File): Promise<Size | null> {
   // createImageBitmap avoids putting anything in the DOM, and reports the
   // orientation-corrected dimensions.
   if (typeof createImageBitmap === 'function') {
@@ -296,12 +314,12 @@ async function imageSize(file) {
   }
 }
 
-function videoSize(file) {
+function videoSize(file: File): Promise<Size | null> {
   const url = URL.createObjectURL(file);
   return new Promise(resolve => {
     const v = document.createElement('video');
     // Never let one unreadable file stall a whole drop.
-    const done = size => { clearTimeout(timer); v.removeAttribute('src'); URL.revokeObjectURL(url); resolve(size); };
+    const done = (size: Size | null) => { clearTimeout(timer); v.removeAttribute('src'); URL.revokeObjectURL(url); resolve(size); };
     const timer = setTimeout(() => done(null), 2000);
     v.preload = 'metadata';
     v.muted = true;
@@ -312,7 +330,7 @@ function videoSize(file) {
 }
 
 /** Build the inner DOM for an item. Async content fills itself in afterwards. */
-export function buildContent(item) {
+export function buildContent(item: Item) {
   const fn = RENDERERS[item.type] || RENDERERS.generic;
   const content = fn(item);
   // Any card may carry a chosen picture, and it is attached here rather than in
@@ -324,7 +342,10 @@ export function buildContent(item) {
   // fragment because they *are* the picture. Giving those a cover as well would
   // be a picture in front of a picture.
   const cover = coverEl(item);
-  if (cover && content.classList?.contains('card')) {
+  // `in` rather than `classList?.`: the two renderers that hand back a fragment
+  // have no classList at all, which is the same falsy answer optional chaining
+  // was reaching for.
+  if (cover && 'classList' in content && content.classList.contains('card')) {
     content.classList.add('has-cover');
     content.prepend(cover);
   }
@@ -339,8 +360,9 @@ export function buildContent(item) {
  * a card with no cover is what it looked like before anyway. The alternative -
  * an <img> with no src - is a broken-image icon on a card that was fine.
  */
-function coverEl(item) {
-  const url = item.meta?.cover ? assetURL(item.meta.cover) : null;
+function coverEl(item: Item) {
+  const cover = metaStr(item.meta?.cover);
+  const url = cover ? assetURL(cover) : null;
   if (!url) return null;
   const img = document.createElement('img');
   img.className = 'card-cover';
@@ -355,7 +377,7 @@ function coverEl(item) {
 
 
 const RENDERERS = {
-  image(item) {
+  image(item: Item) {
     const img = document.createElement('img');
     img.alt = item.name || '';
     img.decoding = 'async';
@@ -377,14 +399,15 @@ const RENDERERS = {
     // (HEIC, RAW): asset.hash still names the untouched original for export and
     // for the day a decoder lands, but the pixels drawn here are the camera's
     // own embedded JPEG - see import/preview.js and meta.preview in drop.js.
-    const hash = item.meta?.preview || item.asset?.hash;
+    const hash = metaStr(item.meta?.preview) || item.asset?.hash;
     const vector = (getAsset(hash)?.mime || '').toLowerCase().includes('svg');
     if (hash && !isAnimated(item) && !vector) {
       const ready = displayURLReady(hash);
       if (ready) {
         img.src = ready;
       } else {
-        const thumb = item.meta?.thumb && assetURL(item.meta.thumb);
+        const thumbHash = metaStr(item.meta?.thumb);
+        const thumb = thumbHash && assetURL(thumbHash);
         if (thumb) img.src = thumb;   // crisp-enough stand-in while the copy renders
         ensureDisplay(hash).then(u => { if (u && img.isConnected) img.src = u; });
       }
@@ -412,7 +435,8 @@ const RENDERERS = {
     // overwrite the thumbnail's src on the first pass, so the thumbnail is
     // simply not made for one - makeThumb() refuses animated input.
     const animated = isAnimated(item);
-    const thumb = !animated && item.meta?.thumb && assetURL(item.meta.thumb);
+    const thumbHash = metaStr(item.meta?.thumb);
+    const thumb = !animated && thumbHash && assetURL(thumbHash);
     if (!animated && !thumb) return img;
 
     if (animated) img.dataset.gif = '';
@@ -445,7 +469,7 @@ const RENDERERS = {
    * which is also where this is registered for the global volume and for the
    * one-clip-at-a-time rule the audio cards already follow.
    */
-  video(item) {
+  video(item: Item) {
     const v = document.createElement('video');
     v.preload = 'metadata';
     v.playsInline = true;
@@ -458,7 +482,8 @@ const RENDERERS = {
     // instead of the black rectangle a refused codec leaves behind. It costs
     // nothing on a clip the browser can play, since the first frame it decodes
     // paints straight over the poster.
-    const poster = item.meta?.cover ? assetURL(item.meta.cover) : null;
+    const posterHash = metaStr(item.meta?.cover);
+    const poster = posterHash ? assetURL(posterHash) : null;
     if (poster) v.poster = poster;
     const url = item.asset && assetURL(item.asset.hash);
     if (onTouch()) {
@@ -495,7 +520,7 @@ const RENDERERS = {
    * that - but it is kept out of the layout entirely and driven by the button
    * and the bars. See canvas/audio.js for the waveform and the global volume.
    */
-  audio(item) {
+  audio(item: Item) {
     const card = cardShell(item, 'audio');
     card.classList.add('card-audio');
 
@@ -517,10 +542,14 @@ const RENDERERS = {
    * meta.text parsed back when it is not, so a legacy note still reads titled.
    * canvas/notes.js edits the same blocks and writes both halves back.
    */
-  note(item) {
+  note(item: Item) {
     const card = document.createElement('div');
     card.className = 'card';
-    const rich = normalizeNoteRich(item.meta.rich, item.meta.text);
+    // meta is unknown per key: a `rich` that is not an object is no rich model,
+    // and normalizeNoteRich() reads null and a malformed value the same way.
+    const rawRich = item.meta.rich;
+    const rich = normalizeNoteRich(
+      rawRich && typeof rawRich === 'object' ? rawRich as NoteRichInput : null, item.meta.text);
     const wrap = document.createElement('div');
     wrap.className = 'note-rich';
     applyNoteStyle(wrap, rich);
@@ -551,7 +580,7 @@ const RENDERERS = {
    * link arrives as text, from a paste (import/drop.js) or from a sticky note
    * that turned out to hold nothing else (canvas/notes.js).
    */
-  link(item) {
+  link(item: Item) {
     const card = document.createElement('div');
     card.className = 'card card-link';
 
@@ -565,38 +594,41 @@ const RENDERERS = {
     // browser navigates to. A URL that fails the check renders as inert text:
     // the card still shows what it is holding, and none of it is clickable.
     const u = linkURL(item.meta.url);
-    const label = item.name || (u ? linkName(u) : '') || item.meta.url || 'link';
+    const label = item.name || (u ? linkName(u) : '') || metaStr(item.meta.url) || 'link';
 
     const name = document.createElement(u ? 'a' : 'div');
     name.className = 'card-name';
     name.textContent = label;
     if (u) {
+      // The element above is an <a> exactly when there is a URL for it to carry,
+      // which is what this narrowing says and the ternary that built it enforces.
+      const a = name as HTMLAnchorElement;
       // Assigned as properties on a real element and only after the scheme
       // check above - never assembled into markup, which is what keeps this
       // app free of anything that would need a sanitiser.
-      name.href = u.href;
-      name.target = '_blank';
+      a.href = u.href;
+      a.target = '_blank';
       // noreferrer keeps this board's address off the other end's logs, and
       // noopener is the load-bearing half: without it the page that opens gets
       // a live handle on this one through window.opener and can navigate the
       // board out from under you. Current engines imply it for target=_blank
       // and it is written out anyway, because "implied" is not a guarantee to
       // rest a cross-origin boundary on.
-      name.rel = 'noopener noreferrer';
+      a.rel = 'noopener noreferrer';
       // Anchors drag themselves. On a board that means a link ghost trailing
       // off the card where the gesture should simply do nothing - the same
       // reason the picture and video renderers turn it off.
       name.draggable = false;
       // The whole address, for the one that was too long to print.
       name.title = u.href;
-      name.addEventListener('click', e => {
+      a.addEventListener('click', (e: MouseEvent) => {
         // Two reasons to swallow a click, both of them about this element
         // being more than an anchor. F2 turns it into a field (see
         // editItemName in canvas/items.js) and a click meant to place the
         // caret must not also open the page; and a double click is a zoom-to-
         // fit on the canvas, which arriving through an anchor would be two
         // clicks and so two tabs.
-        if (e.detail > 1 || name.closest('.is-editing')) e.preventDefault();
+        if (e.detail > 1 || a.closest('.is-editing')) e.preventDefault();
       });
     }
 
@@ -639,7 +671,7 @@ const RENDERERS = {
    * board is a preview, and a 40 MB log has no business being turned into DOM
    * to be looked at from across an infinite canvas.
    */
-  text(item) {
+  text(item: Item) {
     const card = document.createElement('div');
     card.className = 'card';
 
@@ -684,7 +716,7 @@ const RENDERERS = {
    * A model, turned over on the card. See canvas/model.js - the geometry is
    * read there, the drawing happens there, and this is only the routing.
    */
-  model(item) {
+  model(item: Item) {
     return buildModelCard(item);
   },
 
@@ -699,7 +731,7 @@ const RENDERERS = {
    * board's own font faces. A singleton kept out of classify() - it is never a
    * dropped file - and desktop-only, gated at mount in canvas/items.js.
    */
-  title(_item) {
+  title(_item: Item) {
     const card = document.createElement('div');
     card.className = 'title-card';
     const name = document.createElement('div');
@@ -729,7 +761,7 @@ const RENDERERS = {
    * *files*, and no file is ever a hint; these are minted by state.js on an
    * empty board and by nothing else.
    */
-  ghost(item) {
+  ghost(item: Item) {
     // A fragment, not a card, and that is load-bearing. At Softish the card is
     // perforated by a CSS mask, and a mask applies to an element's descendants
     // as well as to itself - tape drawn inside the card would be punched full
@@ -744,9 +776,9 @@ const RENDERERS = {
     // apart. It cannot do that by position: these are children of #world
     // alongside the web, the shadow layer and the title card, so :nth-child
     // counts things that are not cards and hands two hints the same outline.
-    const key = hintKey(item.meta?.hint);
+    const key = hintKey(metaStr(item.meta?.hint));
     card.dataset.hint = key;
-    const { title, line, href, go: goes } = hintFor(item.meta?.hint);
+    const { title, line, href, go: goes } = hintFor(metaStr(item.meta?.hint));
     // Every hint but the dial prints its title here, at the head of the card and
     // ranged left. The dial prints its own, inside the row and centred over the
     // track - see below.
@@ -871,7 +903,7 @@ const RENDERERS = {
    * dragging across a colour wheel would push a hundred entries onto the undo
    * stack for one decision.
    */
-  swatch(item) {
+  swatch(item: Item) {
     const card = document.createElement('div');
     card.className = 'card swatch-card';
     const hex = swatchHex(item.meta?.hex);
@@ -885,7 +917,7 @@ const RENDERERS = {
     const code = document.createElement('div');
     code.className = 'swatch-hex';
 
-    const show = value => {
+    const show = (value: string) => {
       // The colour reaches the stylesheet as a property rather than as an
       // inline background, so items.css decides what is done with it - the well
       // is a colour field at one whimsy tier and a chip on a card at another,
@@ -927,11 +959,13 @@ const RENDERERS = {
    * bin. A colour is not written into a style attribute; the stylesheet keeps
    * the say in what a sticker looks like.
    */
-  sticker(item) {
+  sticker(item: Item) {
     const shape = stickerShape(item.meta?.shape) ? item.meta.shape : DEFAULT_SHAPE;
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('class', 'sticker-art');
-    svg.dataset.tint = stickerTint(item.meta?.tint, shape);
+    // stickerTint() answers a tint number; a dataset value is a string, and
+    // String() is the conversion the assignment was making unsaid.
+    svg.dataset.tint = String(stickerTint(item.meta?.tint, shape));
     // The box the paths in the sprite are drawn to. Set here rather than left
     // to the <symbol>, so the shape scales to whatever the item has been
     // resized to instead of arriving at its authored size.
@@ -961,13 +995,13 @@ const RENDERERS = {
    * select, drag it to move the region and everything in it, and the resize
    * grips appear on selection like they do for anything else.
    */
-  fence(_item) {
+  fence(_item: Item) {
     const card = document.createElement('div');
     card.className = 'card fence-card';
     return card;
   },
 
-  generic(item) {
+  generic(item: Item) {
     return cardShell(item, extOf(item.name) || 'file');
   },
 };
@@ -983,7 +1017,7 @@ const RENDERERS = {
  * nothing anywhere noticed that RENDERERS had no such key. Nothing failed -
  * the files just quietly came out as generic cards.
  */
-export const hasRenderer = type => Object.hasOwn(RENDERERS, type);
+export const hasRenderer = (type: string) => Object.hasOwn(RENDERERS, type);
 
 /**
  * The URL behind a link item, or null for anything that is not one.
@@ -1008,7 +1042,7 @@ export const hasRenderer = type => Object.hasOwn(RENDERERS, type);
  * an href rests on should be stated where it is relied on rather than inferred
  * from what a parser happens to do.
  */
-export function linkURL(text) {
+export function linkURL(text: unknown): URL | null {
   const s = String(text ?? '').trim();
   if (!s || /\s/.test(s)) return null;
   let u;
@@ -1027,13 +1061,13 @@ export function linkURL(text) {
  * so the string the card later hands to an href has already been through a URL
  * parser once before it gets there.
  */
-export function linkDraft(u) {
+export function linkDraft(u: URL) {
   const size = defaultSize('link');
   return { type: 'link', name: linkName(u), w: size.w, h: size.h, meta: { url: u.href } };
 }
 
 /** What a link is called before anybody renames it: the site it points at. */
-function linkName(u) {
+function linkName(u: URL): string {
   // `www.` is the one part of a hostname that identifies nothing - it is a
   // convention about a server, not about whose site this is - and the address
   // line below keeps it anyway, so nothing is being hidden by dropping it here.
@@ -1049,7 +1083,7 @@ function linkName(u) {
  * hostname, then the path - the identity first and the detail after it. A lone
  * `/` is dropped: it is punctuation the parser adds, not something anyone typed.
  */
-function linkDest(u) {
+function linkDest(u: URL): string {
   const tail = (u.pathname === '/' ? '' : u.pathname) + u.search + u.hash;
   return (u.protocol === 'https:' ? '' : u.protocol + '//') + u.host + tail;
 }
@@ -1059,9 +1093,9 @@ function linkDest(u) {
  * extension; an animated WebP does not, and telling one from a still WebP means
  * parsing the container - so it is left out rather than guessed at.
  */
-function isAnimated(item) {
-  const mime = (item.meta?.mime || '').toLowerCase();
-  const ext = (item.meta?.ext || extOf(item.name) || '').toLowerCase();
+function isAnimated(item: Item) {
+  const mime = metaStr(item.meta?.mime).toLowerCase();
+  const ext = (metaStr(item.meta?.ext) || extOf(item.name) || '').toLowerCase();
   return mime === 'image/gif' || mime === 'image/apng' || ext === 'gif' || ext === 'apng';
 }
 
@@ -1079,12 +1113,12 @@ function isAnimated(item) {
  * Only the edges. Separators *inside* the name are how the person who saved it
  * wrote it down, and are none of this function's business.
  */
-function titleOf(item) {
+function titleOf(item: Item) {
   const stem = baseName(item.name) || item.name || '';
   return stem.replace(/^[\s._-]+|[\s._-]+$/g, '') || stem || 'untitled';
 }
 
-function cardShell(item, kind) {
+function cardShell(item: Item, kind: string) {
   const card = document.createElement('div');
   card.className = 'card';
 
@@ -1108,7 +1142,7 @@ function cardShell(item, kind) {
   // The family label is the fallback rather than the first choice, for the
   // extensions the catalog knows by name but that mean nothing read aloud, and
   // the MIME type is the last resort it always was.
-  const ext = (item.meta.ext || extOf(item.name) || '').replace(/^\./, '');
+  const ext = (metaStr(item.meta.ext) || extOf(item.name) || '').replace(/^\./, '');
   const known = describeExt(ext);
   const what = ext ? ext.toUpperCase() : (known ? known.label : item.meta.mime);
   meta.textContent = [asset && formatBytes(asset.size), what].filter(Boolean).join(' · ');
@@ -1127,7 +1161,7 @@ function cardShell(item, kind) {
  * the layout ran, and land on its neighbours. Capping also keeps a wall of
  * mixed-aspect photos at a consistent visual weight.
  */
-function adoptAspect(item, nw, nh) {
+function adoptAspect(item: Item, nw: number, nh: number) {
   if (!nw || !nh) return;
   const live = byId(item.id);
   if (!live || live.meta.sized) return;
@@ -1161,7 +1195,7 @@ function adoptAspect(item, nw, nh) {
  * own meta.fit if it is set, otherwise the board-wide default (board.mediaFit),
  * otherwise fill. Everything else is always contained, as it has always been.
  */
-export function fitMode(item) {
+export function fitMode(item: Item) {
   if (item.type !== 'image' && item.type !== 'video') return 'contain';
   const own = item.meta?.fit;
   if (own === 'cover' || own === 'contain') return own;

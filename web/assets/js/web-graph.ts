@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The web's graph: which cards would get a thread, and the governor that
 // decides how many is affordable.
 //
@@ -53,6 +45,18 @@
 // first thing that ever looked; tests/web.test.js now covers the path.
 
 import { corners, pointInItem, distSq } from './geometry.ts';
+
+/**
+ * What this file works over: a card's centre, and its box where it has one.
+ *
+ * Sizeless points are a real case rather than a test convenience - the tests
+ * hand in bare centres and CardGrid then contributes nothing, which is exactly
+ * how the pass behaved before card avoidance existed.
+ */
+type WebPoint = { x: number, y: number, w?: number, h?: number, rot?: number };
+
+/** A thread, as a pair of indices into the point list it was worked out over. */
+type Edge = [number, number];
 
 /**
  * Every thread that fits: the spanning tree, then everything else that can be
@@ -103,14 +107,14 @@ const DENSE_LIMIT = 5600;
  * There was a `generous` option, which relaxed the governor for a call that was
  * not inside a frame. Every call is that call now - see DENSE_LIMIT.
  */
-export function threads(pts) {
+export function threads(pts: WebPoint[]): Edge[] {
   const n = pts.length;
   const edges = spanningTree(pts);
   if (n > DENSE_LIMIT) return edges;
 
   const taken = new Set(edges.map(([a, b]) => pair(a, b, n)));
   const k = Math.min(NEIGHBOURS, n - 1);
-  const candidates = [];
+  const candidates: [number, number, number][] = [];
   const seen = new Set();
 
   // The k nearest, kept by insertion into a fixed pair of buffers rather than
@@ -175,7 +179,7 @@ export function threads(pts) {
   return edges;
 }
 
-export const pair = (a, b, n) => (a < b ? a * n + b : b * n + a);
+export const pair = (a: number, b: number, n: number) => (a < b ? a * n + b : b * n + a);
 
 /**
  * Accepted threads, bucketed by the cells their bounding box covers.
@@ -193,7 +197,24 @@ export const pair = (a, b, n) => (a < b ? a * n + b : b * n + a);
 const MAX_CELLS_PER_EDGE = 32;
 
 class EdgeGrid {
-  constructor(pts) {
+  // Declared rather than initialised here: every one is assigned in the
+  // constructor below, and `declare` is the spelling that erases to nothing -
+  // see tsconfig.json on erasableSyntaxOnly. A field with an initialiser would
+  // be a second write on every construction of a class built once per pass.
+  declare pts: WebPoint[];
+  declare ea: number[];
+  declare eb: number[];
+  declare marks: number[];
+  declare cells: Map<number, number[]>;
+  declare wide: number[];
+  declare minX: number;
+  declare minY: number;
+  declare gw: number;
+  declare gh: number;
+  declare cw: number;
+  declare ch: number;
+
+  constructor(pts: WebPoint[]) {
     this.pts = pts;
     // Edges live here as two flat arrays; the buckets hold indices into them.
     // An index is what makes the visited stamp below cheap - marking the edge
@@ -224,10 +245,10 @@ class EdgeGrid {
     this.ch = Math.max((maxY - minY) / side, 1e-6);
   }
 
-  _col(x) { return clampi(Math.floor((x - this.minX) / this.cw), 0, this.gw - 1); }
-  _row(y) { return clampi(Math.floor((y - this.minY) / this.ch), 0, this.gh - 1); }
+  _col(x: number) { return clampi(Math.floor((x - this.minX) / this.cw), 0, this.gw - 1); }
+  _row(y: number) { return clampi(Math.floor((y - this.minY) / this.ch), 0, this.gh - 1); }
 
-  add(ai, bi) {
+  add(ai: number, bi: number) {
     const i = this.ea.length;
     this.ea.push(ai);
     this.eb.push(bi);
@@ -246,7 +267,7 @@ class EdgeGrid {
   }
 
   /** Does any accepted thread cross AB? */
-  blocks(a, b) {
+  blocks(a: WebPoint, b: WebPoint) {
     const { pts, ea, eb, marks } = this;
     for (const i of this.wide) {
       if (crosses(a, b, pts[ea[i]], pts[eb[i]])) return true;
@@ -288,7 +309,27 @@ class EdgeGrid {
  * behaves exactly as it did before card avoidance existed.
  */
 class CardGrid {
-  constructor(pts) {
+  // Declared for the reason EdgeGrid's are; the comments stay on the
+  // assignments, where they describe what goes in rather than what it is.
+  declare idx: number[];
+  declare quads: { x: number, y: number }[][];
+  declare items: { x: number, y: number, w: number, h: number, rot: number }[];
+  declare bx0: number[];
+  declare by0: number[];
+  declare bx1: number[];
+  declare by1: number[];
+  declare marks: number[];
+  declare cells: Map<number, number[]>;
+  declare wide: number[];
+  declare n: number;
+  declare minX: number;
+  declare minY: number;
+  declare gw: number;
+  declare gh: number;
+  declare cw: number;
+  declare ch: number;
+
+  constructor(pts: WebPoint[]) {
     this.idx = [];       // pts index of each card, to skip a thread's own two
     this.quads = [];     // four corners each, in web space
     this.items = [];     // {x,y,w,h,rot} for the point-inside test
@@ -300,8 +341,12 @@ class CardGrid {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (let i = 0; i < pts.length; i++) {
       const p = pts[i];
-      if (!(p.w > 0) || !(p.h > 0)) continue;
-      const item = { x: p.x, y: p.y, w: p.w, h: p.h, rot: p.rot || 0 };
+      // The `?? 0` changes no answer - `undefined > 0` and `0 > 0` are both
+      // false - and is what lets a sizeless point be compared at all.
+      if (!((p.w ?? 0) > 0) || !((p.h ?? 0) > 0)) continue;
+      // Non-null twice: the line above skipped every point without a positive
+      // width and height, which is a test tsc cannot read as a narrowing.
+      const item = { x: p.x, y: p.y, w: p.w!, h: p.h!, rot: p.rot || 0 };
       const cs = corners(item);
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
       for (const c of cs) {
@@ -323,10 +368,10 @@ class CardGrid {
     for (let c = 0; c < this.n; c++) this._register(c);
   }
 
-  _col(x) { return clampi(Math.floor((x - this.minX) / this.cw), 0, this.gw - 1); }
-  _row(y) { return clampi(Math.floor((y - this.minY) / this.ch), 0, this.gh - 1); }
+  _col(x: number) { return clampi(Math.floor((x - this.minX) / this.cw), 0, this.gw - 1); }
+  _row(y: number) { return clampi(Math.floor((y - this.minY) / this.ch), 0, this.gh - 1); }
 
-  _register(c) {
+  _register(c: number) {
     const c0 = this._col(this.bx0[c]), c1 = this._col(this.bx1[c]);
     const r0 = this._row(this.by0[c]), r1 = this._row(this.by1[c]);
     if ((c1 - c0 + 1) * (r1 - r0 + 1) > MAX_CELLS_PER_EDGE) { this.wide.push(c); return; }
@@ -340,7 +385,7 @@ class CardGrid {
   }
 
   /** Does any card but the two at ea/eb lie across the thread a-b? */
-  blocks(a, b, ea, eb) {
+  blocks(a: WebPoint, b: WebPoint, ea: number, eb: number) {
     if (!this.n) return false;
     for (const c of this.wide) if (this._cross1(a, b, ea, eb, c)) return true;
     const c0 = this._col(Math.min(a.x, b.x)), c1 = this._col(Math.max(a.x, b.x));
@@ -360,7 +405,7 @@ class CardGrid {
     return false;
   }
 
-  _cross1(a, b, ea, eb, c) {
+  _cross1(a: WebPoint, b: WebPoint, ea: number, eb: number, c: number) {
     const i = this.idx[c];
     if (i === ea || i === eb) return false;
     if (Math.max(a.x, b.x) < this.bx0[c] || Math.min(a.x, b.x) > this.bx1[c] ||
@@ -374,7 +419,7 @@ class CardGrid {
 }
 
 let mark = 0;
-const clampi = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+const clampi = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
 
 /**
  * Do segments AB and CD cross?
@@ -387,7 +432,7 @@ const clampi = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
  * Bounding boxes are checked first. It rejects most pairs in four comparisons,
  * and this runs tens of thousands of times per redraw.
  */
-function crosses(a, b, c, d) {
+function crosses(a: WebPoint, b: WebPoint, c: WebPoint, d: WebPoint) {
   if (a === c || a === d || b === c || b === d) return false;
   if (Math.max(a.x, b.x) < Math.min(c.x, d.x) || Math.max(c.x, d.x) < Math.min(a.x, b.x) ||
       Math.max(a.y, b.y) < Math.min(c.y, d.y) || Math.max(c.y, d.y) < Math.min(a.y, b.y)) return false;
@@ -400,7 +445,7 @@ function crosses(a, b, c, d) {
 }
 
 /** Which way you turn going p -> q -> r: 1 left, -1 right, 0 straight on. */
-function side(p, q, r) {
+function side(p: WebPoint, q: WebPoint, r: WebPoint) {
   const v = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
   // A tolerance, not an exact zero: these are floats off a drag, and two
   // threads that are collinear to within a thousandth of a pixel draw as one.
@@ -420,7 +465,7 @@ function side(p, q, r) {
  * Distances are compared squared; the square root is monotonic, so it would
  * only cost time without changing a single choice.
  */
-function spanningTree(pts) {
+function spanningTree(pts: WebPoint[]): Edge[] {
   const n = pts.length;
   const inTree = new Array(n).fill(false);
   // For each loose point: its distance to the tree, and which tree point that
@@ -428,7 +473,7 @@ function spanningTree(pts) {
   // one pass per point instead of a full rescan each time.
   const best = new Array(n).fill(Infinity);
   const from = new Array(n).fill(0);
-  const edges = [];
+  const edges: Edge[] = [];
 
   inTree[0] = true;
   for (let i = 1; i < n; i++) {

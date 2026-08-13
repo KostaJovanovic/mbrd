@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The links that can become players, if you ask them to.
 //
 // This is the only place in mbrd that will ever talk to a third party, and the
@@ -37,6 +29,23 @@
 // nothing else can reach the hole.
 
 import { byId, snapshotGeom, applyGeom, commitGeom } from '../state.ts';
+import type { Item } from '../board-model.ts';
+
+/**
+ * Everything the offer and the frame need about one provider's player. One
+ * shape for both, so the renderer asks one question - see embedFor().
+ */
+export type EmbedSpec = {
+  provider: 'youtube' | 'spotify';
+  src: string;
+  page: string;
+  title: string;
+  label: string;
+  hint: string;
+  allow: string;
+  /** The card height this player wants, given the width the card already has. */
+  heightFor: (w: number) => number;
+};
 
 /**
  * The height the card's own furniture needs above the frame: the name row and
@@ -61,7 +70,7 @@ const YT_ID = /^[\w-]{11}$/;
  * Takes a URL object, not a string, so the caller has already been through
  * `linkURL` and the scheme is known to be http(s).
  */
-export function youTubeId(u) {
+export function youTubeId(u: URL | null | undefined): string | null {
   if (!u) return null;
   const host = u.hostname.replace(/^www\./, '').toLowerCase();
   let id = null;
@@ -107,6 +116,10 @@ const SPOTIFY = {
   show: 352,
 };
 
+/** The kinds above, and the predicate that lets a path segment become one. */
+type SpotifyKind = keyof typeof SPOTIFY;
+const isSpotifyKind = (k: string): k is SpotifyKind => Object.hasOwn(SPOTIFY, k);
+
 /**
  * The { kind, id } a Spotify URL carries, or null.
  *
@@ -116,7 +129,7 @@ const SPOTIFY = {
  * What is left is /kind/id, and both halves are checked against the tables
  * above rather than passed through.
  */
-export function spotifyRef(u) {
+export function spotifyRef(u: URL | null | undefined): { kind: SpotifyKind; id: string } | null {
   if (!u) return null;
   const host = u.hostname.replace(/^www\./, '').toLowerCase();
   if (host !== 'open.spotify.com' && host !== 'play.spotify.com') return null;
@@ -125,7 +138,7 @@ export function spotifyRef(u) {
     parts.shift();
   }
   const [kind, id] = parts;
-  if (!kind || !Object.hasOwn(SPOTIFY, kind) || !id || !SP_ID.test(id)) return null;
+  if (!kind || !isSpotifyKind(kind) || !id || !SP_ID.test(id)) return null;
   return { kind, id };
 }
 
@@ -142,7 +155,7 @@ export function spotifyRef(u) {
  * should leave a card that says open.spotify.com/track/… rather than
  * open.spotify.com/embed/track/….
  */
-export function embedFor(u) {
+export function embedFor(u: URL | null | undefined): EmbedSpec | null {
   const yt = youTubeId(u);
   if (yt) {
     return {
@@ -194,7 +207,7 @@ export function embedFor(u) {
  * quoted value is pulled out as text and then has to survive `linkURL` - and,
  * if it is going to become a frame, a provider's id pattern as well.
  */
-export function iframeURL(text, parse) {
+export function iframeURL<T>(text: unknown, parse: (raw: string) => T): T | null {
   const s = String(text ?? '').trim();
   if (!/^<iframe[\s>]/i.test(s)) return null;
   const m = /\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(s);
@@ -216,7 +229,7 @@ export function iframeURL(text, parse) {
  * Returned rather than appended so the renderer decides where it sits, and so
  * this file never has to know what a link card looks like.
  */
-export function embedOffer(item, spec, card) {
+export function embedOffer(item: Item, spec: EmbedSpec, card: HTMLElement): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'embed-go';
@@ -255,7 +268,7 @@ export function embedOffer(item, spec, card) {
  * large stays large; only the height is derived, by the provider, from the
  * layout its player is going to choose.
  */
-function fitToPlayer(itemId, spec) {
+function fitToPlayer(itemId: string, spec: EmbedSpec) {
   const it = byId(itemId);
   if (!it) return;
   const want = spec.heightFor(it.w);
@@ -276,7 +289,7 @@ function fitToPlayer(itemId, spec) {
  * No `autoplay` in the allow list: the click that got here asked for a player,
  * not for sound. The one inside the player is the second, deliberate one.
  */
-function frameFor(spec) {
+function frameFor(spec: EmbedSpec): HTMLIFrameElement {
   const frame = document.createElement('iframe');
   frame.className = 'embed-frame';
   frame.dataset.provider = spec.provider;
@@ -295,7 +308,7 @@ function frameFor(spec) {
   return frame;
 }
 
-function text(s) {
+function text(s: string) {
   const el = document.createElement('span');
   el.textContent = s;
   return el;
@@ -311,7 +324,7 @@ const NS = 'http://www.w3.org/2000/svg';
  * be the only such thing on a board of hairline strokes. A triangle means play
  * and three bars mean sound in any drawing style, including this one.
  */
-function glyph(provider) {
+function glyph(provider: EmbedSpec['provider']) {
   const svg = document.createElementNS(NS, 'svg');
   svg.setAttribute('viewBox', '0 0 16 16');
   svg.setAttribute('aria-hidden', 'true');
@@ -324,10 +337,12 @@ function glyph(provider) {
     svg.setAttribute('stroke-linecap', 'round');
     for (const [x, h] of [[3, 4], [6.5, 9], [10, 6], [13, 2.5]]) {
       const line = document.createElementNS(NS, 'line');
-      line.setAttribute('x1', x);
-      line.setAttribute('x2', x);
-      line.setAttribute('y1', 8 - h / 2);
-      line.setAttribute('y2', 8 + h / 2);
+      // String() rather than letting setAttribute coerce: same characters, and
+      // the coercion is now said where it happens.
+      line.setAttribute('x1', String(x));
+      line.setAttribute('x2', String(x));
+      line.setAttribute('y1', String(8 - h / 2));
+      line.setAttribute('y2', String(8 + h / 2));
       svg.append(line);
     }
     return svg;

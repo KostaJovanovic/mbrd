@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Which card is inside which fence, and what travels when a fence moves.
 //
 // A fence is a labelled rectangle drawn on the board, and the cards inside it
@@ -51,10 +43,32 @@
 // again. If a third relation ever turns up, revisit it then.
 
 import { pointInItem } from './geometry.ts';
+import { isRecord } from './util.ts';
 import { board, byId, isFurniture, TITLE_ID } from './board-model.ts';
+import type { Geometry, Item } from './board-model.ts';
+
+/** A rectangle in world space, centred on x,y - an item's box or a fence's. */
+type Box = { x: number, y: number, w: number, h: number, rot?: number };
+/** The other spelling of a rectangle: two corners, as itemBounds() returns. */
+type Bounds = { x0: number, y0: number, x1: number, y1: number };
+
+/**
+ * What a membership question needs of an item: an id and a box. Structural for
+ * the reason sticky.ts's Stickable is - the fences it *answers* with are real
+ * items off the board.
+ */
+type Boxed = Box & { id: string };
 
 /** A fence is an item like any other; this is the one thing that says so. */
-export const isFence = it => it?.type === 'fence';
+// Generic in what it is handed, and narrowing to the *type* rather than to the
+// argument, which is what makes it usable at both kinds of call site: `byId(id)`
+// loses its undefined in the true branch, while a plain `isFence(x) || x.type
+// === 'sticker'` keeps its item in the false branch - where a bare `it is T`
+// would have left `never`. isRecord() inside for the reason isFurniture() gives:
+// this is asked of items, of drafts on their way onto a board, and of the
+// box-shaped types the command modules still declare privately.
+export const isFence = <T>(it: T | null | undefined): it is T & { type: 'fence' } =>
+  isRecord(it) && it.type === 'fence';
 
 /**
  * itemId -> fenceId or null. Null is a real answer, "measured, and it is in no
@@ -62,7 +76,7 @@ export const isFence = it => it?.type === 'fence';
  * every time would make a loose card the one case that *does* get swallowed by
  * a fence sliding underneath it.
  */
-const fences = new Map();
+const fences = new Map<string, unknown>();
 
 /**
  * The box a membership question is asked about: the item's Desktop geometry.
@@ -86,7 +100,7 @@ const fences = new Map();
  * straight into Mobile has meta.fence and nothing else, and it must not be
  * talked out of it.
  */
-function desktopBox(it) {
+function desktopBox(it: Boxed | null | undefined): Box | null {
   if (!it) return null;
   if (board.layoutMode !== 'mobile') return it;
   const record = desktopIndex().get(it.id);
@@ -105,7 +119,8 @@ function desktopBox(it) {
  * completeLayout, captureLayout all assign), which makes identity an exact
  * test for "this is stale" and costs one comparison.
  */
-let desktopCache = { from: null, map: new Map() };
+let desktopCache: { from: Geometry[] | null, map: Map<string, Geometry> } =
+  { from: null, map: new Map() };
 function desktopIndex() {
   const list = board.layouts?.desktop || [];
   if (desktopCache.from !== list) {
@@ -114,7 +129,7 @@ function desktopIndex() {
   return desktopCache.map;
 }
 
-const areaOf = box => Math.abs((box?.w || 0) * (box?.h || 0));
+const areaOf = (box: Box | null | undefined) => Math.abs((box?.w || 0) * (box?.h || 0));
 
 /**
  * The fence an item is inside, or null.
@@ -131,12 +146,14 @@ const areaOf = box => Math.abs((box?.w || 0) * (box?.h || 0));
  * card would tow a singleton that is not on the Mobile board at all. Same
  * exclusion sticky.js makes, for the same two reasons.
  */
-export function fenceOf(it) {
+export function fenceOf(it: Boxed | null | undefined): Item | null {
   if (!it || isFurniture(it)) return null;
   if (fences.has(it.id)) {
     const id = fences.get(it.id);
     if (id === null) return null;
-    const fence = byId(id);
+    // The typeof is what byId() used to do for nothing - see the same line in
+    // sticky.ts. A record seeded out of a file need not be a string.
+    const fence = typeof id === 'string' ? byId(id) : undefined;
     // A remembered fence that is no longer on the board - deleted, or undone
     // back out of existence. Measuring again is the lesser evil, exactly as it
     // is for a note whose host has gone.
@@ -160,7 +177,7 @@ export function fenceOf(it) {
  * containment chain a strict order and the walks below terminate as a property
  * rather than an assumption.
  */
-function measure(it) {
+function measure(it: Boxed): Item | null | undefined {
   // The common board has no fences on it at all - every board saved before this
   // existed is that board - and stackRoot() asks this of every item. One scan
   // for a type is cheaper than the work below, and skipping it keeps the cost of
@@ -169,7 +186,7 @@ function measure(it) {
   const box = desktopBox(it);
   if (!box) return undefined;
   const nested = isFence(it);
-  let best = null;
+  let best: Item | null = null;
   let bestArea = Infinity;
   for (const other of board.items) {
     if (!isFence(other) || other.id === it.id) continue;
@@ -197,8 +214,8 @@ function measure(it) {
  * cards packed underneath, so "inside it" names a strip of the column rather
  * than the region, and nothing that reads this offers its action there.
  */
-export function fenceAt(x, y) {
-  let best = null;
+export function fenceAt(x: number, y: number): Item | null {
+  let best: Item | null = null;
   let bestArea = Infinity;
   for (const it of board.items) {
     if (!isFence(it)) continue;
@@ -224,7 +241,7 @@ export function fenceAt(x, y) {
  * The other caller is a fence being resized, which passes the fence's *members*
  * rather than the fence: it is their answer that changed, not its.
  */
-export function refence(ids) {
+export function refence(ids: Iterable<string>) {
   for (const id of ids) fences.delete(id);
 }
 
@@ -248,7 +265,7 @@ export const forgetFences = () => fences.clear();
  * Desktop only, since membership is measured there and nowhere else. A restore
  * that happens on a phone leaves the memo exactly as meta.fence seeded it.
  */
-export function refenceArrivals(items) {
+export function refenceArrivals(items: Item[] | null | undefined) {
   if (board.layoutMode === 'mobile') return;
   refenceAround((items || []).filter(isFence)
     .map(f => ({ x: f.x, y: f.y, w: f.w, h: f.h, rot: f.rot || 0 })));
@@ -268,8 +285,8 @@ export function refenceArrivals(items) {
  * is the live layout, because a fence on Mobile is a band the packer owns and
  * dragging its edge is not a statement about what belongs to it.
  */
-export function refenceAround(boxes) {
-  const rects = boxes.filter(Boolean);
+export function refenceAround(boxes: (Box | null | undefined)[]) {
+  const rects = boxes.filter((b): b is Box => !!b);
   if (!rects.length) return;
   for (const it of board.items) {
     if (isFurniture(it)) continue;
@@ -294,7 +311,10 @@ export function refenceAround(boxes) {
  */
 export function seedFences() {
   fences.clear();
-  const furniture = new Set([TITLE_ID]);
+  // Unknown rather than string, as in seedSticks(): `meta.fence` out of a file
+  // is whatever the file said, and this asks whether it names furniture without
+  // first insisting it is the kind of thing that could.
+  const furniture = new Set<unknown>([TITLE_ID]);
   for (const it of board.items) if (isFurniture(it)) furniture.add(it.id);
   for (const it of board.items) {
     if (isFurniture(it) || !it.meta || !('fence' in it.meta)) continue;
@@ -304,7 +324,7 @@ export function seedFences() {
 }
 
 /** The items directly inside a fence, in board order. Not its nested contents. */
-export function fenceMembers(fenceId) {
+export function fenceMembers(fenceId: string) {
   return board.items.filter(it => fenceOf(it)?.id === fenceId);
 }
 
@@ -339,29 +359,31 @@ export function fenceMembers(fenceId) {
  * those would ask where a card sits on the layout being built rather than on the
  * Desktop board, which is the one place membership means anything.
  */
-export function mobileRuns(items) {
+export function mobileRuns(items: Item[]): { band: Item | null, items: Item[] }[] {
   const rank = new Map(items.map((it, index) => [it.id, index]));
-  const kids = new Map(items.filter(isFence).map(f => [f.id, []]));
-  const roots = [];
+  const kids = new Map<string, Item[]>(items.filter(isFence).map(f => [f.id, []]));
+  const roots: Item[] = [];
   for (const it of items) {
     const parent = fenceOf(byId(it.id) || it);
-    (parent && kids.has(parent.id) ? kids.get(parent.id) : roots).push(it);
+    // Non-null: guarded by has() on the same line, and nothing deletes from it.
+    (parent && kids.has(parent.id) ? kids.get(parent.id)! : roots).push(it);
   }
   // A fence sorts where its earliest content does, so an empty one keeps its own
   // place rather than sinking to the end. Memoised because the walk is called
   // once per comparison and a deep nest would otherwise re-walk its whole
   // subtree every time.
-  const ranks = new Map();
-  const rankOf = it => {
-    if (ranks.has(it.id)) return ranks.get(it.id);
+  const ranks = new Map<string, number>();
+  const rankOf = (it: Item): number => {
+    // Non-null: has() on the line above, and nothing deletes from this map.
+    if (ranks.has(it.id)) return ranks.get(it.id)!;
     let best = rank.get(it.id) ?? 0;
     ranks.set(it.id, best);                       // breaks any cycle before it runs
     for (const kid of kids.get(it.id) || []) best = Math.min(best, rankOf(kid));
     ranks.set(it.id, best);
     return best;
   };
-  const runs = [];
-  const emit = list => {
+  const runs: { band: Item | null, items: Item[] }[] = [];
+  const emit = (list: Item[]) => {
     for (const it of [...list].sort((a, b) => rankOf(a) - rankOf(b))) {
       if (!isFence(it)) continue;
       const members = kids.get(it.id) || [];
@@ -419,8 +441,8 @@ export function nextFenceName() {
  * card can perfectly well poke out of the rectangle that selected it, and a
  * fence cut to the rectangle would open not containing its own contents.
  */
-export function fenceBox(rect, bounds, pad) {
-  const boxes = [];
+export function fenceBox(rect: Bounds | null | undefined, bounds: Bounds | null | undefined, pad: number) {
+  const boxes: Bounds[] = [];
   if (rect) boxes.push(rect);
   if (bounds) {
     boxes.push({
@@ -448,10 +470,10 @@ export function fenceBox(rect, bounds, pad) {
  * marquee: a card caught by the same rubber band as its fence is moved once, by
  * the selection, instead of once by the selection and again as a follower.
  */
-export function fenceFollowers(ids) {
+export function fenceFollowers(ids: Iterable<string>) {
   const moving = new Set(ids);
   const pool = board.items.filter(it => !moving.has(it.id) && !isFurniture(it));
-  const out = [];
+  const out: string[] = [];
   // Passes rather than one sweep: a card can only join once whatever contains it
   // has joined, and the pool is in no particular order.
   for (let grew = true; grew;) {

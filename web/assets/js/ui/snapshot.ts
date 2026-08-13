@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // A picture of the whole board - the thing a moodboard is for and could not do.
 //
 // Until now the only thing that left mbrd was a .mbrd, a file only mbrd opens.
@@ -29,6 +21,7 @@ import { board } from '../state.ts';
 import { itemBounds } from '../geometry.ts';
 import { assetURL } from '../storage/assets.ts';
 import { STICKER_SPRITE, STICKER_VIEWBOX } from '../stickers/catalogue.ts';
+import type { Item } from '../board-model.ts';
 
 /**
  * The side of the box the sticker paths are drawn in, as a number.
@@ -47,7 +40,7 @@ const MAX_EDGE = 8000;
 /** Everything on the board that is a thing rather than a hint to the person. */
 const drawable = () => board.items.filter(i => i.type !== 'ghost');
 
-function loadImage(url) {
+function loadImage(url: string | null): Promise<HTMLImageElement | null> {
   return new Promise(resolve => {
     if (!url) { resolve(null); return; }
     const img = new Image();
@@ -58,7 +51,7 @@ function loadImage(url) {
 }
 
 /** Draw `img` covering the w x h box centred on the current origin, cropped. */
-function drawCover(ctx, img, w, h) {
+function drawCover(ctx: CanvasRenderingContext2D, img: HTMLImageElement, w: number, h: number) {
   const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
   if (!iw || !ih) return;
   const scale = Math.max(w / iw, h / ih);
@@ -67,7 +60,9 @@ function drawCover(ctx, img, w, h) {
   ctx.drawImage(img, sx, sy, sw, sh, -w / 2, -h / 2, w, h);
 }
 
-function roundRect(ctx, x, y, w, h, r) {
+function roundRect(
+  ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number,
+) {
   const rad = Math.min(r, w / 2, h / 2);
   ctx.beginPath();
   ctx.moveTo(x + rad, y);
@@ -78,10 +73,18 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-/** The pixel source an item draws from, or null - the same one the card uses. */
-const pixelHash = it =>
-  it.type === 'image' ? (it.meta?.preview || it.asset?.hash)
-  : (it.meta?.cover || it.meta?.shot || null);
+/**
+ * The pixel source an item draws from, or null - the same one the card uses.
+ *
+ * The three meta keys are content hashes, held to that shape by makeItem() in
+ * board-model.ts before they ever land on an item; the narrowing here is what
+ * the open `meta` costs at the reading end.
+ */
+const hashAt = (meta: Item['meta'], key: string): string | null =>
+  typeof meta?.[key] === 'string' ? meta[key] : null;
+const pixelHash = (it: Item): string | null =>
+  it.type === 'image' ? (hashAt(it.meta, 'preview') || it.asset?.hash || null)
+  : (hashAt(it.meta, 'cover') || hashAt(it.meta, 'shot') || null);
 
 /**
  * The sprite's paths, by shape id, read once and kept.
@@ -98,7 +101,10 @@ const pixelHash = it =>
  * convenience; a sticker missing from one is worth less than a snapshot that
  * refuses to be taken because the sprite was not in the cache.
  */
-let shapePaths = null;
+/** One filled path out of the sprite: its data, and how the sprite paints it. */
+type ShapePart = { d: string, ink: boolean, evenodd: boolean };
+
+let shapePaths: Map<string, ShapePart[]> | null = null;
 async function stickerPaths() {
   if (shapePaths) return shapePaths;
   shapePaths = new Map();
@@ -130,10 +136,14 @@ async function stickerPaths() {
  * tracing the outline of a stroke. So this is two `fill()` calls in the order
  * the sprite lists them, which is the whole of the drawing.
  */
-async function drawSticker(ctx, it, w, h) {
-  const parts = (await stickerPaths()).get(it.meta?.shape);
+async function drawSticker(ctx: CanvasRenderingContext2D, it: Item, w: number, h: number) {
+  const shape = it.meta?.shape;
+  // A shape that is not a string is not in the sprite either, so it takes the
+  // same silent way out as one the sprite does not carry.
+  if (typeof shape !== 'string') return;
+  const parts = (await stickerPaths()).get(shape);
   if (!parts) return;
-  const tint = Math.trunc(+it.meta?.tint) || 1;
+  const tint = Math.trunc(Number(it.meta?.tint)) || 1;
   const ink = readToken(`--sticker-${tint}`) || readToken('--sticker-1') || '#31261b';
   const body = readToken('--sticker-body') || readToken('--paper-card') || '#fdfdfa';
   ctx.save();
@@ -146,7 +156,7 @@ async function drawSticker(ctx, it, w, h) {
   ctx.restore();
 }
 
-async function drawItem(ctx, it, w, h) {
+async function drawItem(ctx: CanvasRenderingContext2D, it: Item, w: number, h: number) {
   const ink = readToken('--ink') || '#222';
   const card = readToken('--paper-2') || '#e9e5db';
 
@@ -157,7 +167,8 @@ async function drawItem(ctx, it, w, h) {
   if (it.type === 'sticker') return drawSticker(ctx, it, w, h);
 
   if (it.type === 'swatch') {
-    ctx.fillStyle = it.meta?.hex || '#888';
+    const hex = it.meta?.hex;
+    ctx.fillStyle = (typeof hex === 'string' && hex) || '#888';
     ctx.fillRect(-w / 2, -h / 2, w, h);
     return;
   }
@@ -175,7 +186,7 @@ async function drawItem(ctx, it, w, h) {
 
   // No picture: a card face with its name, which covers notes, links, text,
   // audio without art, and any named file card.
-  if (it.type === 'note') ctx.fillStyle = readToken(`--note-${(it.meta?.tint || 1)}`) || '#fff7d6';
+  if (it.type === 'note') ctx.fillStyle = readToken(`--note-${(Number(it.meta?.tint) || 1)}`) || '#fff7d6';
   else ctx.fillStyle = card;
   roundRect(ctx, -w / 2, -h / 2, w, h, Math.min(w, h) * 0.06);
   ctx.fill();
@@ -195,9 +206,11 @@ async function drawItem(ctx, it, w, h) {
 }
 
 /** Centre a few wrapped lines of text on the origin. */
-function wrapText(ctx, text, maxWidth, lineHeight) {
+function wrapText(
+  ctx: CanvasRenderingContext2D, text: string, maxWidth: number, lineHeight: number,
+) {
   const words = text.split(/\s+/);
-  const lines = [];
+  const lines: string[] = [];
   let line = '';
   for (const word of words) {
     const trial = line ? line + ' ' + word : word;
@@ -250,7 +263,7 @@ export async function renderBoardCanvas() {
   return { canvas, w: W, h: H };
 }
 
-const toBlob = (canvas, type, quality) =>
+const toBlob = (canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob | null> =>
   new Promise(resolve => canvas.toBlob(resolve, type, quality));
 
 /** The board as a PNG blob, or null. */
@@ -300,17 +313,20 @@ export async function boardPdf() {
  * the image's own pixel size in points, so it prints at 72dpi and scales on the
  * page like any other picture.
  */
-function buildPdf(jpeg, w, h) {
+// The buffer is named in the array types below because a Blob part has to be
+// one that is not shared: a Uint8Array over a SharedArrayBuffer is not a
+// BlobPart, and `Uint8Array` alone leaves which one it is open.
+function buildPdf(jpeg: Uint8Array<ArrayBuffer>, w: number, h: number) {
   const enc = new TextEncoder();
-  const parts = [];
+  const parts: Uint8Array<ArrayBuffer>[] = [];
   let len = 0;
-  const offsets = [];
-  const push = data => {
+  const offsets: number[] = [];
+  const push = (data: string | Uint8Array<ArrayBuffer>) => {
     const bytes = typeof data === 'string' ? enc.encode(data) : data;
     parts.push(bytes);
     len += bytes.length;
   };
-  const obj = (n, body) => {
+  const obj = (n: number, body: string) => {
     offsets[n] = len;
     push(`${n} 0 obj\n`);
     push(body);
