@@ -142,10 +142,10 @@ export type MobileHeader = {
 
 /** How one connection is drawn, when it is drawn as anything but a plain line. */
 export type ConnMeta = {
-  dir?: string;
-  style?: string;
-  color?: string;
-  weight?: string;
+  dir?: ConnDir;
+  style?: ConnStyle;
+  color?: ConnColor;
+  weight?: ConnWeight;
   label?: string;
 };
 
@@ -528,24 +528,51 @@ export const MAX_CONNECTIONS = 2000;
  * is a value that reaches the CSSOM - the same reason ui/look.js holds its
  * tokens to an alphabet. A closed list cannot carry a url() into a stylesheet.
  */
-export const CONN_DIRECTIONS = ['none', 'fwd', 'back', 'both'];
-export const CONN_STYLES = ['solid', 'dashed', 'dotted'];
+/*
+ * `as const` on all four, and the types below are struck from them rather than
+ * written beside them.
+ *
+ * These lists are already closed at runtime - connMeta() refuses anything not
+ * in them, which is the paragraph above's whole argument. Saying so in the type
+ * as well costs one word per table and makes the two impossible to disagree:
+ * add a direction here and every exhaustive switch and Record over ConnDir
+ * fails until it is handled, which is the failure you want.
+ *
+ * It also ends a duplication. ui/conn-chip.ts had grown its own ConnDir,
+ * ConnStyle and ConnMeta plus its own copies of the first two arrays, because
+ * board-model said `string` and a chip cannot build a Record<string, icon>.
+ * Two spellings of a closed list is how the list stops being closed.
+ */
+export const CONN_DIRECTIONS = ['none', 'fwd', 'back', 'both'] as const;
+export const CONN_STYLES = ['solid', 'dashed', 'dotted'] as const;
 /** 'line' is the board's own grey - the default, and what a plain pair draws. */
-export const CONN_COLORS = ['line', 'accent', 'warm', 'leaf', 'danger'];
-export const CONN_WEIGHTS = ['fine', 'normal', 'bold'];
+export const CONN_COLORS = ['line', 'accent', 'warm', 'leaf', 'danger'] as const;
+export const CONN_WEIGHTS = ['fine', 'normal', 'bold'] as const;
+
+export type ConnDir = typeof CONN_DIRECTIONS[number];
+export type ConnStyle = typeof CONN_STYLES[number];
+export type ConnColor = typeof CONN_COLORS[number];
+export type ConnWeight = typeof CONN_WEIGHTS[number];
+
 export const CONN_LABEL_MAX = 60;
-const DIR_SET = new Set(CONN_DIRECTIONS);
-const STYLE_SET = new Set(CONN_STYLES);
-const COLOR_SET = new Set(CONN_COLORS);
-const WEIGHT_SET = new Set(CONN_WEIGHTS);
+const DIR_SET: ReadonlySet<ConnDir> = new Set(CONN_DIRECTIONS);
+const STYLE_SET: ReadonlySet<ConnStyle> = new Set(CONN_STYLES);
+const COLOR_SET: ReadonlySet<ConnColor> = new Set(CONN_COLORS);
+const WEIGHT_SET: ReadonlySet<ConnWeight> = new Set(CONN_WEIGHTS);
 
 /**
  * Whether one of the closed lists above holds this value. The typeof is what
  * a Set of strings cannot say about something out of a file, and it changes no
  * answer: a Set of strings never held a number.
+ *
+ * Generic, so the answer carries *which* list said yes: a value that passes
+ * DIR_SET narrows to ConnDir rather than to string, which is what lets the
+ * assignments in connMeta() below typecheck without a cast. The widening inside
+ * is safe and is the point - `has` only needs to compare, and a ReadonlySet of
+ * a union cannot be asked about a value that is not one yet.
  */
-const inSet = (set: Set<string>, v: unknown): v is string =>
-  typeof v === 'string' && set.has(v);
+const inSet = <T extends string>(set: ReadonlySet<T>, v: unknown): v is T =>
+  typeof v === 'string' && (set as ReadonlySet<string>).has(v);
 
 /** A connection's display settings, kept to the known values, or null if plain. */
 export function connMeta(raw: unknown): ConnMeta | null {
