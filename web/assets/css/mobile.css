@@ -989,37 +989,39 @@
      finger. It stays for the drag, which is the part you can see. */
   .grip:not(.grip-edge):hover { --grip-swell: 1; }
 
-  /* Every hover reaction in the chrome fires on the *first* tap on a touch
-     screen and then sticks until something else is tapped, so a bin button
-     stays lit long after you have finished with it. The reactions are
-     decoration; the pressed state below is the one that carries information.
+  /* The chrome's hover reactions used to be cancelled here, and the
+     cancellation is gone rather than guarded a third time.
 
-     Nested inside `any-hover: none` rather than left on the `pointer: coarse`
-     this block opens with, and the difference is a machine with both. A laptop
-     with a touchscreen reports its *primary* pointer as coarse - and in tablet
-     mode, or with a touch display attached, that is what Windows says even
-     while a mouse is sitting there. On `pointer: coarse` alone this cancelled
-     the hover reaction on every piece of chrome for that machine: the menu
-     button, the bin, the zoom pill and the sidebar's own close all went inert
-     under a real cursor, which reads as the app being dead rather than as a
-     deliberate touch accommodation.
+     What it was for is real. Every hover reaction fires on the *first* tap on a
+     touch screen and then sticks until something else is tapped, so a bin
+     button stays lit long after you have finished with it. What the rule could
+     never do is find out whether it was talking to a finger, and it asked twice
+     and got the wrong answer twice. First `pointer: coarse`, which describes
+     the machine's primary pointer: a laptop with a touchscreen reports coarse
+     in tablet mode with a mouse sitting right there, so the menu button, the
+     bin, the zoom pill and the sidebar's own close all went inert under a real
+     cursor. Then a nested `any-hover: none`, which is supposed to be true only
+     where nothing at all can hover - and Chromium answers it on an ordinary
+     Windows desktop. Measured, not guessed: that browser reports `pointer:
+     coarse`, `any-pointer: fine` false and `any-hover: none` in every tab and
+     on every document, while navigator.maxTouchPoints says 0 and no touch
+     screen exists. The whole `pointer: coarse` block applies there, which is
+     visible without devtools - the chrome buttons come out at their 46px touch
+     size on a full-width window - and every reaction in the list was dead.
 
-     `any-hover: none` asks the question the comment above was always asking -
-     is there anything here that can hover at all - and answers it no only on a
-     device where nothing can. The sizing and the :active state outside this
-     nest stay on `pointer: coarse`, because a finger is still a finger on a
-     machine that also has a mouse. */
-  @media (any-hover: none) {
-    #menu-btn:hover, #mobile-header-edit-btn:hover, #bin-btn:hover, #zoom-ctl button:hover,
-    .btn-row button:hover, #side-close:hover, #header-close:hover {
-      background: var(--paper-card);
-      border-color: var(--rule-2);
-      color: inherit;
-      transform: none;
-    }
-    #zoom-ctl button:hover:not(:disabled) svg,
-    #bin-btn:hover svg { transform: none; }
-  }
+     ui/flyout.ts made the same call for the same reason and its header is worth
+     reading: the hardware query is the wrong shape. What matters is the pointer
+     in your hand right now, which is a question about the event rather than
+     about the machine, and CSS cannot ask it - so it stops asking. What is left
+     is the `:active` rule below, which this block always agreed was the half
+     that carries information rather than decoration. The cost of leaving is
+     that on a real touch device the decorative fill lingers until the next tap.
+
+     The tell was the hamburger. This list restored the button's fill and its
+     `color`, but the three bars are spans painted with `background`
+     (sidebar.css), which the list never named - so on Chromium the bars tinted
+     to the accent and the sheet under them did not move. Half a hover is how a
+     rule that was quietly wrong on every control got noticed on one. */
   #menu-btn:active, #mobile-header-edit-btn:active, #bin-btn:active, #zoom-ctl button:active,
   .btn-row button:active { background: var(--paper-3); }
 
