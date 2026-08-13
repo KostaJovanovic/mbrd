@@ -25,6 +25,15 @@ node_modules/
 # Tool output: code-graph dumps, including session transcripts.
 graphify-out/
 
+# Editor and tooling scratch. Here because one did get committed: a 30KB
+# ui/fonts.ts.bak rode into a commit on a `git add -A` during the TypeScript
+# conversion, and nothing would have caught it - a stray copy of a real module
+# is not a syntax error, no test walks for it, and it reads as a file somebody
+# meant to keep. The rule is cheaper than the vigilance.
+*.bak
+*.orig
+*.rej
+
 # The dev bundle's source map. `npm run dev` writes it and devtools reads it;
 # `npm run build` does not emit one at all, so nothing that ships refers to it.
 # Ignored rather than committed because it is 2.9MB that changes on every build,
