@@ -612,6 +612,25 @@
   border-radius: var(--radius-pill);
   background: linear-gradient(90deg, var(--rule-2), var(--rule));
 }
+/* background-clip on both thumbs below, and it is the whole of the fix for a
+   third ring nobody drew.
+
+   The thumb is a fill inside a border: accent, then 1.5px of --paper-card to
+   lift it off the track. A background paints to the *border* box by default, so
+   the accent is laid under the white ring as well as inside it, and the ring is
+   painted on top. Wherever the two edges do not land on the same device pixel,
+   the fill shows past the border as a hairline of accent - which reads as a
+   deliberate third ring, and is nothing of the kind.
+
+   Where it shows is the tell, and it is different per engine because the seam
+   is an antialiasing one: Chromium leaks along the flat top and bottom at Harsh
+   (radius 0, and the thumb is unrotated there - see quality.css), Firefox leaks
+   around the corners at Softish and Middle, where the radius is largest and the
+   curve is where the rounding error lives. Same cause, two shapes.
+
+   padding-box stops the fill at the inner edge of the border, so there is
+   nothing underneath it left to show. Nothing else changes: the border is
+   opaque, so the pixels it covered were already white. */
 :is(.field, .np-volume, .ctx-range) input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 15px; height: 15px;
@@ -619,6 +638,7 @@
   border: 1.5px solid var(--paper-card);
   border-radius: var(--radius-xs);
   background: var(--accent);
+  background-clip: padding-box;
   transform: rotate(45deg);
 }
 :is(.field, .np-volume, .ctx-range) input[type="range"]::-moz-range-thumb {
@@ -626,6 +646,7 @@
   border: 1.5px solid var(--paper-card);
   border-radius: var(--radius-xs);
   background: var(--accent);
+  background-clip: padding-box;
 }
 /* The ring the browser draws around the thumb, taken off - and replaced rather
    than merely removed, which is the whole of the care needed here.
