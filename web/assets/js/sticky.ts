@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Which note is stuck to what, and what travels when something moves.
 //
 // A note is stuck to whatever it is lying on, and a stuck note travels with its
@@ -42,8 +34,21 @@
 // the answers stay in state.js.
 
 import { overlapFraction } from './geometry.ts';
+import { isRecord } from './util.ts';
 import { board, byId, isFurniture, TITLE_ID } from './board-model.ts';
+import type { Item } from './board-model.ts';
 import { isFence } from './fences.ts';
+
+/** Anything with a place and a size: an item, or one layout's record of one. */
+type Box = { x: number, y: number, w: number, h: number };
+
+/**
+ * What the questions below actually need of an item: an id, a box, and - where
+ * it has them - a place in the stack and a meta. Structural rather than Item,
+ * so the box-shaped types two command modules still declare privately answer it
+ * too; the *hosts* it returns are real items off the board.
+ */
+type Stickable = Box & { id: string, rot?: number, z?: number, meta?: Record<string, unknown> };
 
 /**
  * What a note may not be stuck to: the app's own furniture, and a fence.
@@ -56,7 +61,7 @@ import { isFence } from './fences.ts';
  * a fence is a full-width band, it would ride that band instead of taking its
  * place in the run. The note is in the fence already. It does not also stick.
  */
-const cannotHost = (it, rider) => {
+const cannotHost = (it: Item, rider: unknown) => {
   // A sticker is the exemption, and it is a *sticker* exemption rather than a
   // general loosening - the two reasons above are still the right answer for a
   // note and are simply not answers about a sticker.
@@ -76,7 +81,10 @@ const cannotHost = (it, rider) => {
   // arrives, so a sticker stuck to one is a sticker stuck to something about to
   // stop existing - and unlike a note, whose delete leaves it behind, a sticker
   // would go with it (see the delete cascade in state.js).
-  if (rider?.type === 'sticker') return it?.type === 'ghost';
+  // `unknown` in, read through isRecord, for the reason isFurniture() gives:
+  // the rider is an item, or a bare `{ type }` stub for a shape being dragged
+  // out of the sticker window, and no one shape names both.
+  if (isRecord(rider) && rider.type === 'sticker') return it?.type === 'ghost';
   return isFurniture(it) || isFence(it);
 };
 
@@ -95,7 +103,8 @@ const cannotHost = (it, rider) => {
  * on top of a bigger thing, travelling with it, ordered above it. What it is
  * *not* is a card you can type into, and nothing here asks about that.
  */
-export const isSticky = it => it?.type === 'note' || it?.type === 'sticker';
+export const isSticky = <T>(it: T | null | undefined): it is T & { type: 'note' | 'sticker' } =>
+  isRecord(it) && (it.type === 'note' || it.type === 'sticker');
 
 // ---------------------------------------------------------------------------
 // Sticky notes that stick
@@ -136,7 +145,7 @@ export const STICK_MIN = 0.05;
  * measurement every time would make a loose note the one case that *does* get
  * re-parented by things moving underneath it.
  */
-const sticks = new Map();
+const sticks = new Map<string, unknown>();
 
 /**
  * The item a sticky note is stuck to, or null.
@@ -164,7 +173,7 @@ const sticks = new Map();
  * a note on a note on a photo - the nearest one underneath wins, so a pile
  * hangs together in the order it was laid down.
  */
-export function stuckTo(note) {
+export function stuckTo(note: Stickable | null | undefined): Item | null {
   if (!isSticky(note)) return null;
   // Unstuck on purpose. Everything downstream - riders, travel, the Mobile
   // placement, the stack order, the meta.stuckTo stamp - then treats this note
@@ -176,7 +185,10 @@ export function stuckTo(note) {
   if (sticks.has(note.id)) {
     const id = sticks.get(note.id);
     if (id === null) return null;
-    const host = byId(id);
+    // The typeof is what byId() used to do for nothing: a seeded record out of
+    // a file need not be a string, and a Map keyed by ids never had one under
+    // anything else. Same answer, asked before the lookup rather than after.
+    const host = typeof id === 'string' ? byId(id) : undefined;
     // A remembered host that is no longer on the board - deleted, or undone
     // back out of existence. Measuring again is the lesser evil: the note did
     // not move, so the rule says leave it, but leaving it means a note that can
@@ -189,8 +201,8 @@ export function stuckTo(note) {
   return host;
 }
 
-function measureStick(note) {
-  let best = null;
+function measureStick(note: Stickable): Item | null {
+  let best: Item | null = null;
   for (const it of board.items) {
     if (cannotHost(it, note) || it.id === note.id || (it.z || 0) >= (note.z || 0)) continue;
     if (best && (it.z || 0) < (best.z || 0)) continue;
@@ -222,8 +234,12 @@ function measureStick(note) {
  * its type is the only thing about it this needs to know. Omitted, the rule is
  * the note's, which is what every caller predating stickers wanted.
  */
-export function wouldStick(box, excludeId, rider) {
-  let best = null;
+export function wouldStick(
+  box: { x: number, y: number, w: number, h: number, rot?: number },
+  excludeId?: string,
+  rider?: { type?: string } | null,
+): Item | null {
+  let best: Item | null = null;
   for (const it of board.items) {
     if (cannotHost(it, rider) || it.id === excludeId) continue;
     if (best && (it.z || 0) < (best.z || 0)) continue;
@@ -242,7 +258,7 @@ export function wouldStick(box, excludeId, rider) {
  * look past. The memo is left alone - this reads live geometry and nothing else,
  * so the caller is free to clear the flag and restick() afterwards.
  */
-export function hostUnder(it) {
+export function hostUnder(it: Stickable | null | undefined) {
   return isSticky(it) ? measureStick(it) : null;
 }
 
@@ -300,24 +316,31 @@ const settling = new Map();
  * the photograph underneath it was not put down, so its ten seconds are not
  * its to have again.
  */
-export function startSettling(ids) {
+export function startSettling(ids: Iterable<string>) {
   const now = Date.now();
   for (const id of ids) settling.set(id, now);
 }
 
 /** Is this item still lying where it was dropped rather than set to it? */
-export function isSettling(it) {
+export function isSettling(it: { id: string } | null | undefined) {
   const at = it && settling.get(it.id);
   if (at === undefined) return false;
   if (Date.now() - at < SETTLE_MS) return true;
   // Swept on the way past rather than on a timer. Every id in here is asked
   // about within a frame or two of mattering, so the map cannot grow.
-  settling.delete(it.id);
+  //
+  // Non-null, and it is worth saying what the assertion is standing on: a stamp
+  // was found, which takes an `it` with an id. An `it` of undefined returns at
+  // the line above; an `it` of *null* does not - `null && …` is null, which is
+  // not undefined - and reaches this line to throw, exactly as it did before
+  // this file was typed. Nothing calls it that way, so the behaviour is left
+  // alone rather than quietly changed.
+  settling.delete(it!.id);
   return false;
 }
 
 /** How long until this item sets, in ms. Zero once it has. */
-export function settlesIn(it) {
+export function settlesIn(it: { id: string } | null | undefined) {
   const at = it && settling.get(it.id);
   return at === undefined ? 0 : Math.max(0, SETTLE_MS - (Date.now() - at));
 }
@@ -329,7 +352,7 @@ export function settlesIn(it) {
  * everywhere else this is stuckTo() with a different name, which is the point
  * of Part 1: stuck comes to mean fixed, it just takes a moment about it.
  */
-const pinnedTo = it => (isSettling(it) ? null : stuckTo(it));
+const pinnedTo = (it: Stickable | null | undefined) => (isSettling(it) ? null : stuckTo(it));
 
 /**
  * Is this item pinned - fixed in place on a host rather than lying loose or
@@ -341,7 +364,7 @@ const pinnedTo = it => (isSettling(it) ? null : stuckTo(it));
  * the snap sweep) skip it. Three behaviours, one rule about what is true; the
  * rule wants one home even where the responses do not.
  */
-export const isPinned = it => !!pinnedTo(it);
+export const isPinned = (it: Stickable | null | undefined) => !!pinnedTo(it);
 
 /**
  * The thing a press on `it` should actually take hold of: the top of its pile.
@@ -355,7 +378,7 @@ export const isPinned = it => !!pinnedTo(it);
  * It terminates for the same reason stuckFollowers() does: being stuck requires
  * a lower z, so the relation is a strict order and cannot close on itself.
  */
-export function dragRoot(it) {
+export function dragRoot(it: Item): Item {
   for (let host = pinnedTo(it); host; host = pinnedTo(it)) it = host;
   return it;
 }
@@ -369,7 +392,7 @@ export function dragRoot(it) {
  * underneath it has not been moved relative to anything and must not be
  * re-parented, while a note you picked up and put down has been, and must.
  */
-export function restick(ids) {
+export function restick(ids: Iterable<string>) {
   for (const id of ids) sticks.delete(id);
 }
 
@@ -417,7 +440,10 @@ export function seedSticks() {
   // Here rather than only in forgetSticks(), because this is the function a
   // load actually calls; that one is the whole-teardown door.
   settling.clear();
-  const furniture = new Set([TITLE_ID]);
+  // Unknown rather than string: `stuckTo` out of a file is whatever the file
+  // said, and this asks whether it names furniture without first insisting it
+  // is the kind of thing that could.
+  const furniture = new Set<unknown>([TITLE_ID]);
   for (const it of board.items) if (isFurniture(it)) furniture.add(it.id);
   for (const it of board.items) {
     if (isSticky(it) && it.meta && 'stuckTo' in it.meta) {
@@ -436,7 +462,7 @@ export function seedSticks() {
  * the moment a layout is generated, never stored - the current geometry is the
  * truth, and freezing an offset would fight a note dragged around its host.
  */
-function stuckOffset(note, host) {
+function stuckOffset(note: Box, host: Box) {
   return { fx: (note.x - host.x) / (host.w || 1), fy: (note.y - host.y) / (host.h || 1) };
 }
 
@@ -445,13 +471,13 @@ function stuckOffset(note, host) {
  * the offset it holds in the source layout. `hostSrc`/`hostDst` are the same host
  * measured in the two layouts.
  */
-export function stuckPlacement(note, hostSrc, hostDst) {
+export function stuckPlacement(note: Box, hostSrc: Box, hostDst: Box) {
   const off = stuckOffset(note, hostSrc);
   return { x: hostDst.x + off.fx * hostDst.w, y: hostDst.y + off.fy * hostDst.h };
 }
 
 /** A note stuck to something still on the board - one that rides, not packs. */
-export function isRider(it) {
+export function isRider(it: Stickable) {
   return isSticky(it) && !!stuckTo(it);
 }
 
@@ -463,7 +489,11 @@ export function isRider(it) {
  * the caller to fall back on. hostSrc is read live (the source layout); hostDst
  * is the host's entry in `place`.
  */
-export function attachRiders(riders, place, build) {
+export function attachRiders<T>(
+  riders: Item[],
+  place: Map<string, T>,
+  build: (note: Item, hostSrc: Item, hostDst: T) => T,
+) {
   const pending = new Set(riders.map(r => r.id));
   for (let grew = true; grew && pending.size;) {
     grew = false;
@@ -500,10 +530,10 @@ export function attachRiders(riders, place, build) {
  * multi-select drag: a note selected alongside its host is moved once, by the
  * selection, instead of once by the selection and again as a follower.
  */
-export function stuckFollowers(ids) {
+export function stuckFollowers(ids: Iterable<string>) {
   const moving = new Set(ids);
   const pool = board.items.filter(i => isSticky(i) && !moving.has(i.id));
-  const out = [];
+  const out: string[] = [];
   // Passes rather than one sweep: a note can only join once whatever it is
   // stuck to has joined, and the pool is in no particular order.
   for (let grew = true; grew;) {

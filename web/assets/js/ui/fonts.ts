@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Faces a board brought with it.
 //
 // Drop a .woff2 on the board and it does not become a card - it becomes an
@@ -35,6 +27,7 @@ import { board, bus, setSetting } from '../state.ts';
 import { addFile, assetURL } from '../storage/assets.ts';
 import { isFamily } from '../util.ts';
 import { toast } from '../notify.ts';
+import type { FontAxis, FontSpec } from '../board-model.ts';
 
 /**
  * A ceiling per face and a ceiling per board.
@@ -60,9 +53,22 @@ const MAX_AXES = 32;
  * it builds a declaration with two sets of quotes that no browser will parse.
  * The string this module chose is the string this module keeps.
  */
-const live = new Map();
+const live = new Map<string, { face: FontFace, family: string }>();
 
-const BUILTIN_HEADER_FACES = [
+/**
+ * One face the masthead menu offers: what to call it, what to store, the stack
+ * to set it in - and, for the bundled ones that state them, an opening size and
+ * the axes its own file declares.
+ */
+type HeaderFace = {
+  label: string,
+  value: string,
+  stack: string,
+  size?: number,
+  axes?: FontAxis[],
+};
+
+const BUILTIN_HEADER_FACES: HeaderFace[] = [
   { label: 'Default', value: '', stack: '' },
   {
     label: 'Playfair',
@@ -195,7 +201,7 @@ const AXIS_FALLBACKS = {
 };
 
 /** The panel's list of dropped faces, each with a remove control. */
-let fontListHost = null;
+let fontListHost: HTMLElement | null = null;
 
 export function initFonts() {
   fontListHost = document.getElementById('appearance-fonts');
@@ -246,7 +252,7 @@ function renderFontList() {
  * unregisters the FontFace; a look still pointing at it falls back the same way it
  * would after opening a board whose face never arrived.
  */
-function removeFont(hash) {
+function removeFont(hash: string) {
   const list = fontList();
   if (!list.some(f => f.hash === hash)) return;
   setSetting('fonts', list.filter(f => f.hash !== hash));
@@ -272,7 +278,7 @@ export function customFaces() {
 
 /** Faces offered by the Mobile masthead, including the board's own files. */
 export function headerFontOptions() {
-  const own = [...live.values()]
+  const own: HeaderFace[] = [...live.values()]
     .sort((a, b) => a.family.localeCompare(b.family))
     .map(({ family }) => ({
       label: family,
@@ -287,7 +293,7 @@ export function headerFontOptions() {
 }
 
 /** A safe CSS stack for one value stored in `board.mobileHeader.font`. */
-export function headerFontStack(value) {
+export function headerFontStack(value: string) {
   if (!value) return '';
   const builtin = BUILTIN_HEADER_FACES.find(face => face.value === value);
   if (builtin) return builtin.stack;
@@ -303,7 +309,7 @@ export function headerFontStack(value) {
  * bundled face that named a number. See the Playfair entry above, which is the
  * only one that does.
  */
-export function headerFontSize(value) {
+export function headerFontSize(value: string) {
   if (!value) return null;
   return BUILTIN_HEADER_FACES.find(face => face.value === value)?.size ?? null;
 }
@@ -314,7 +320,7 @@ export function headerFontSize(value) {
  * An empty value follows the current display face, so the computed stack is
  * used only to decide which bundled descriptor applies.
  */
-export function headerFontAxes(value, computedStack = '') {
+export function headerFontAxes(value: string, computedStack = ''): FontAxis[] {
   const chosen = value || computedStack;
   const builtin = BUILTIN_HEADER_FACES.find(face =>
     face.value && chosen.toLowerCase().includes(face.value.toLowerCase()));
@@ -354,7 +360,7 @@ export const STATIC_WEIGHTS = Object.freeze([
  *   every other value would be the browser drawing a fake bold over it, and a
  *   slider that fakes its own effect is worse than no slider.
  */
-export function headerFontWeights(value, computedStack = '') {
+export function headerFontWeights(value: string, computedStack = '') {
   if (headerFontAxes(value, computedStack).some(axis => axis.tag === 'wght')) return [];
   const own = (board.settings.fonts || []).find(font =>
     font.family === value ||
@@ -364,15 +370,15 @@ export function headerFontWeights(value, computedStack = '') {
 }
 
 /** Axis tags carried in the conventional `Family[opsz,wght].woff2` filename. */
-export function axesFromFilename(filename) {
+export function axesFromFilename(filename: unknown): FontAxis[] {
   const tags = String(filename || '').match(/\[([^\]]+)\]/)?.[1]?.split(',') || [];
-  const seen = new Set();
-  const axes = [];
+  const seen = new Set<string>();
+  const axes: FontAxis[] = [];
   for (const raw of tags) {
     const tag = raw.trim();
     if (!/^[A-Za-z0-9 ]{4}$/.test(tag) || seen.has(tag)) continue;
     seen.add(tag);
-    axes.push({ tag, ...(AXIS_FALLBACKS[tag] || { min: 0, default: 0, max: 100 }) });
+    axes.push({ tag, ...(AXIS_FALLBACKS[tag as keyof typeof AXIS_FALLBACKS] || { min: 0, default: 0, max: 100 }) });
   }
   return axes;
 }
@@ -384,7 +390,7 @@ export function axesFromFilename(filename) {
  * WOFF2 transforms the entire stream and has no browser decoder API, so its
  * normal bracketed filename is the honest fallback.
  */
-export async function fontAxes(file) {
+export async function fontAxes(file: File | null | undefined): Promise<FontAxis[]> {
   const fallback = axesFromFilename(file?.name);
   if (!file?.arrayBuffer) return fallback;
   try {
@@ -415,7 +421,7 @@ export async function fontAxes(file) {
  * descriptor before anything renders, and the two wrong answers are not
  * symmetrical: see the note there.
  */
-export async function fontIsVariable(file) {
+export async function fontIsVariable(file: File | null | undefined) {
   if (!file?.arrayBuffer) return false;
   try {
     const buffer = await file.arrayBuffer();
@@ -444,7 +450,7 @@ const WOFF2_HEADER = 48;
  */
 const WOFF2_TAGS = { glyf: 10, loca: 11, fvar: 47, escape: 63 };
 
-function woff2HasFvar(bytes, view) {
+function woff2HasFvar(bytes: Uint8Array, view: DataView) {
   if (bytes.length < WOFF2_HEADER) return false;
   const numTables = view.getUint16(12);
   if (!numTables) return false;
@@ -475,7 +481,7 @@ function woff2HasFvar(bytes, view) {
 }
 
 /** Step over one UIntBase128, or -1 if what is there is not a valid one. */
-function skipBase128(bytes, at) {
+function skipBase128(bytes: Uint8Array, at: number) {
   if (at < 0 || at >= bytes.length) return -1;
   // A leading 0x80 encodes a leading zero, which the format forbids outright -
   // it is the shape a padded length would take, and refusing it is what keeps
@@ -488,7 +494,7 @@ function skipBase128(bytes, at) {
   return -1;
 }
 
-function findFvar(buffer) {
+function findFvar(buffer: ArrayBuffer) {
   const bytes = new Uint8Array(buffer);
   const view = new DataView(buffer);
   if (bytes.length < 12) return null;
@@ -526,14 +532,14 @@ function findFvar(buffer) {
   return null;
 }
 
-function parseFvar(bytes) {
+function parseFvar(bytes: Uint8Array) {
   if (bytes.length < 16) return null;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const offset = view.getUint16(4);
   const count = view.getUint16(8);
   const size = view.getUint16(10);
   if (!count || size < 20 || offset + count * size > bytes.length) return null;
-  const axes = [];
+  const axes: FontAxis[] = [];
   // Read up to the cap rather than refusing a font that exceeds it. `count > 16`
   // used to be part of the guard above, which meant a face with seventeen axes
   // returned null and fell through to the filename - so the most variable fonts
@@ -554,11 +560,11 @@ function parseFvar(bytes) {
   return axes.length ? axes : null;
 }
 
-const tableFits = (bytes, offset, length) =>
+const tableFits = (bytes: Uint8Array, offset: number, length: number) =>
   Number.isSafeInteger(offset) && Number.isSafeInteger(length) &&
   offset >= 0 && length >= 0 && offset + length <= bytes.length;
-const tagAt = (bytes, at) => String.fromCharCode(...bytes.subarray(at, at + 4));
-const fixed = value => value / 65536;
+const tagAt = (bytes: Uint8Array, at: number) => String.fromCharCode(...bytes.subarray(at, at + 4));
+const fixed = (value: number) => value / 65536;
 
 /**
  * A filename, reduced to something that can be a CSS family name.
@@ -573,7 +579,7 @@ const fixed = value => value / 65536;
  * rest of the alphabet dropped - so "Inter-Regular (1).woff2" comes back as
  * "Inter Regular 1" rather than being refused for having a bracket in it.
  */
-export function familyFor(filename) {
+export function familyFor(filename: unknown) {
   const stem = String(filename || '').replace(/\.[^.]*$/, '');
   const cleaned = stem
     .replace(/\[[^\]]*\]/g, ' ')
@@ -591,12 +597,12 @@ export function familyFor(filename) {
 // could both read the pre-write list, and the second setSetting would clobber the
 // first face. Chaining makes each call read what the previous one wrote.
 let fontAddQueue = Promise.resolve();
-function addFontFiles(files) {
+function addFontFiles(files: Iterable<File>) {
   fontAddQueue = fontAddQueue.then(() => runAddFontFiles(files), () => runAddFontFiles(files));
   return fontAddQueue;
 }
 
-async function runAddFontFiles(files) {
+async function runAddFontFiles(files: Iterable<File>) {
   let added = 0;
   for (const file of files) {
     const list = fontList();
@@ -649,7 +655,8 @@ async function syncFonts() {
   const keep = new Set(want.map(f => f.hash));
   for (const hash of [...live.keys()]) {
     if (keep.has(hash)) continue;
-    document.fonts.delete(live.get(hash).face);
+    // The key came out of this same map a line above.
+    document.fonts.delete(live.get(hash)!.face);
     live.delete(hash);
   }
   for (const { hash, family, axes, variable } of want) {
@@ -679,7 +686,7 @@ const fontList = () =>
  * would let the second silently replace the first in every menu that named it.
  * uniqueFamily() below is what stops that; this only has to be idempotent.
  */
-async function register(hash, family, axes = [], variable = false) {
+async function register(hash: string, family: string, axes: FontAxis[] = [], variable = false) {
   if (live.has(hash)) return true;
   const url = assetURL(hash);
   if (!url) return false;
@@ -717,7 +724,7 @@ async function register(hash, family, axes = [], variable = false) {
 }
 
 /** "Inter", "Inter 2", "Inter 3" - so two files never share a family. */
-function uniqueFamily(want, list) {
+function uniqueFamily(want: string, list: FontSpec[]) {
   const taken = new Set(list.map(f => f.family));
   if (!taken.has(want)) return want;
   for (let n = 2; n <= MAX_FONTS + 1; n++) {

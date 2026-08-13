@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Choosing a colour, without leaving the app to do it.
 //
 // The dialog this replaces was one `<input type="color">` in ask(), and it had
@@ -42,8 +34,19 @@ import { clamp } from '../util.ts';
 // module works in is still HSV, for the reason the header gives.
 import { parseHex } from '../color.ts';
 
+/** A colour as this module holds it: hue in degrees, the other two in 0..1. */
+type Hsv = { h: number, s: number, v: number };
+
+/** What a caller may say about the question. Everything has a default. */
+export type PickOptions = {
+  title?: string,
+  go?: string,
+  cancel?: string,
+  value?: string,
+};
+
 /** The one open at a time, if any. Two modal dialogs is two focus traps. */
-let current = null;
+let current: Promise<string | null> | null = null;
 
 // ---------------------------------------------------------------------------
 // The colour, as three numbers and as six digits
@@ -56,7 +59,7 @@ let current = null;
  * demands of a swatch and the one `<input type="color">` will accept, so it is
  * produced here rather than anywhere the value passes through afterwards.
  */
-export function hsvToHex(h, s, v) {
+export function hsvToHex(h: number, s: number, v: number): string {
   const c = v * s;
   const hp = (((h % 360) + 360) % 360) / 60;
   const x = c * (1 - Math.abs((hp % 2) - 1));
@@ -81,7 +84,7 @@ export function hsvToHex(h, s, v) {
  * using it, and moving the handle to grey on the way past `#f` would fight the
  * typing.
  */
-export function hexToHsv(raw) {
+export function hexToHsv(raw: unknown): Hsv | null {
   const s = String(raw ?? '').trim().toLowerCase();
   const full = /^#[0-9a-f]{6}$/.test(s) ? s
     : /^#[0-9a-f]{3}$/.test(s) ? '#' + s.slice(1).replace(/./g, c => c + c)
@@ -114,9 +117,13 @@ export function hexToHsv(raw) {
  * throwing. A caller in a test asking for a colour and getting "none" is a
  * caller that adds nothing, which is the harmless half of every branch here.
  */
-export async function pickColor(opts = {}) {
+export async function pickColor(opts: PickOptions = {}): Promise<string | null> {
   if (typeof document === 'undefined') return null;
-  const el = document.getElementById('pick');
+  // #pick is the <dialog> in index.html. A cast rather than an instanceof
+  // because the showModal test on the next line is the real guard and covers
+  // one more case than an instanceof could: an engine with no HTMLDialogElement
+  // at all, where the instanceof would be the thing that threw.
+  const el = document.getElementById('pick') as HTMLDialogElement | null;
   if (!el || typeof el.showModal !== 'function') return null;
 
   while (current) await current;
@@ -131,14 +138,17 @@ export async function pickColor(opts = {}) {
   }
 }
 
-function openWith(el, o) {
-  const title = document.getElementById('pick-title');
-  const area = document.getElementById('pick-area');
-  const dot = document.getElementById('pick-dot');
-  const hue = /** @type {HTMLInputElement} */ (document.getElementById('pick-hue'));
-  const hex = /** @type {HTMLInputElement} */ (document.getElementById('pick-hex'));
-  const go = document.getElementById('pick-go');
-  const cancel = document.getElementById('pick-cancel');
+function openWith(el: HTMLDialogElement, o: Required<PickOptions>) {
+  // Every id here is inside the #pick dialog in index.html, and the two ranges
+  // are <input>s there - the markup is what makes the assertions below true,
+  // and a missing one is a broken build rather than a state to draw around.
+  const title = document.getElementById('pick-title')!;
+  const area = document.getElementById('pick-area')!;
+  const dot = document.getElementById('pick-dot')!;
+  const hue = document.getElementById('pick-hue') as HTMLInputElement;
+  const hex = document.getElementById('pick-hex') as HTMLInputElement;
+  const go = document.getElementById('pick-go')!;
+  const cancel = document.getElementById('pick-cancel')!;
 
   title.textContent = o.title;
   go.textContent = o.go;
@@ -173,17 +183,17 @@ function openWith(el, o) {
   };
   paintAll();
 
-  return new Promise(resolve => {
-    let answer = null;
+  return new Promise<string | null>(resolve => {
+    let answer: string | null = null;
     // A drag that leaves the square still ends somewhere, and where it ends is
     // usually the dialog itself - which is the backdrop test below. Without
     // this, choosing a colour near the edge of the square and releasing past it
     // closes the dialog and throws the colour away.
     let dragged = false;
 
-    const close = choice => { answer = choice; el.close(); };
+    const close = (choice: string | null) => { answer = choice; el.close(); };
 
-    const atPointer = e => {
+    const atPointer = (e: PointerEvent) => {
       const r = area.getBoundingClientRect();
       if (!r.width || !r.height) return;
       s = clamp((e.clientX - r.left) / r.width, 0, 1);
@@ -191,7 +201,7 @@ function openWith(el, o) {
       hex.value = paint().toUpperCase();
     };
 
-    const onDown = e => {
+    const onDown = (e: PointerEvent) => {
       // The primary button only: a right-click inside the square is a context
       // menu, not a colour.
       if (e.button !== 0) return;
@@ -201,8 +211,8 @@ function openWith(el, o) {
       atPointer(e);
       e.preventDefault();
     };
-    const onMove = e => { if (area.hasPointerCapture(e.pointerId)) atPointer(e); };
-    const onUp = e => {
+    const onMove = (e: PointerEvent) => { if (area.hasPointerCapture(e.pointerId)) atPointer(e); };
+    const onUp = (e: PointerEvent) => {
       if (area.hasPointerCapture(e.pointerId)) area.releasePointerCapture(e.pointerId);
       // Cleared after the click this release will generate, not before it.
       setTimeout(() => { dragged = false; }, 0);
@@ -212,9 +222,12 @@ function openWith(el, o) {
     // two axes it looks like: across for saturation, up for brightness. A
     // percent a press, ten with shift held - the same coarse/fine pair the
     // arrow keys move an item on the board by.
-    const onAreaKey = e => {
+    const onAreaKey = (e: KeyboardEvent) => {
       const step = (e.shiftKey ? 0.1 : 0.01);
-      const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] }[e.key];
+      const moves: Record<string, [number, number] | undefined> = {
+        ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, step], ArrowDown: [0, -step],
+      };
+      const d = moves[e.key];
       if (!d) return;
       s = clamp(s + d[0], 0, 1);
       v = clamp(v + d[1], 0, 1);
@@ -240,12 +253,12 @@ function openWith(el, o) {
 
     const onGo = () => close(hsvToHex(h, s, v));
     const onCancel = () => close(null);
-    const onClick = e => { if (e.target === el && !dragged) close(null); };
+    const onClick = (e: MouseEvent) => { if (e.target === el && !dragged) close(null); };
     const onCancelEvent = () => { answer = null; };
 
     // Enter is the go button from anywhere in the panel except a button, which
     // already answers Enter by being pressed.
-    const onKey = e => {
+    const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Enter' || e.target instanceof HTMLButtonElement) return;
       e.preventDefault();
       close(hsvToHex(h, s, v));

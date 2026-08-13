@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // GENERATED FILE - do not edit by hand.
 //
 // Source: file-analyser's core/formats.js, lifted by tools/gen-formats.mjs.
@@ -17,7 +9,7 @@
 // is decided in canvas/renderers.js, not here.
 
 /** Category key -> human label. */
-export const CATEGORIES = {
+export const CATEGORIES: Record<string, string> = {
   "images": "Images",
   "audio": "Audio",
   "video": "Video",
@@ -140,7 +132,7 @@ export const FAMILIES = [
 
 /** Lowercase extension (no dot) -> index into FAMILIES. Keys stay quoted:
     plenty of extensions start with a digit ("3dm", "7z") or are pure digits. */
-export const EXT_FAMILY = {
+export const EXT_FAMILY: Record<string, number> = {
   "1":50, "1pux":91, "264":11, "265":11, "3dm":61, "3ds":61, "3dsx":81, "3dxml":67, "3fr":1,
   "3g2":11, "3ga":10, "3gp":11, "3mf":53, "669":10, "7z":69, "a":70, "a26":81, "a78":81, "aac":5,
   "aae":3, "ab":100, "ab1":68, "abbu":90, "abc":98, "abf":68, "abr":26, "abw":32, "ac":50,
@@ -308,7 +300,7 @@ export const EXT_FAMILY = {
  * What is this extension? Returns { label, category, categoryLabel } or null
  * for anything the catalog has never heard of.
  */
-export function describeExt(ext) {
+export function describeExt(ext: unknown) {
   const key = String(ext || '').toLowerCase().replace(/^\./, '');
   const family = FAMILIES[EXT_FAMILY[key]];
   if (!family) return null;

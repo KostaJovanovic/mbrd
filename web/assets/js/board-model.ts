@@ -1,19 +1,23 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The board's shape: what a board is, what an item is, and what the defaults
 // are when a file does not say.
 //
-// ── The Item type, and why it is here while the file is still unchecked ──
+// The second floor under state.ts (see board-store.ts for the first). state.ts
+// is the app's one mutation door and it grew to hold about ten concerns; the
+// obstacle to lifting any of them out was that they all reach for the same two
+// things - the bus, and the board itself. The bus went down first. This is the
+// board, and with it the index every one of those concerns looks items up
+// through.
 //
-// This module still carries the pragma above, but the types below are exported
-// and usable regardless: a `@ts-nocheck` suppresses errors *in* a file, it does
-// not hide its declarations. That distinction is load-bearing right now.
+// Data and validation only. Nothing here mutates the board or announces
+// anything: no commit(), no bus.emit() beyond the index invalidator, no undo.
+// That is the line that keeps this a floor rather than a second god-module -
+// the moment a rule about *how* the board may change lands here, the split has
+// gone backwards.
+//
+// Everything is re-exported by state.ts under its old name, so no caller knows
+// this file exists.
+//
+// ── The Item type ──
 //
 // Before these existed, `board.items` inferred as `never[]` from the empty
 // literal in the default board, so every property access on an item anywhere in
@@ -23,7 +27,7 @@
 // to be deleted once this existed. Two or three of those and "what an item is"
 // would have had no single answer, which is the thing this module exists to be.
 //
-// So the shape is stated here first, ahead of the rest of the annotation. The
+// So the shape is stated here first, ahead of the rest of the file. The
 // eleven fields are exactly what board-schema.ts's serializeItem writes, which
 // is the authoritative list: a field not written to a .mbrd is not part of an
 // item, it is something a subsystem hangs off one.
@@ -66,27 +70,123 @@ export type Item = {
   asset: ItemAsset;
   meta: ItemMeta;
 };
-//
-// The second floor under state.js (see board-store.js for the first). state.js
-// is the app's one mutation door and it grew to hold about ten concerns; the
-// obstacle to lifting any of them out was that they all reach for the same two
-// things - the bus, and the board itself. The bus went down first. This is the
-// board, and with it the index every one of those concerns looks items up
-// through.
-//
-// Data and validation only. Nothing here mutates the board or announces
-// anything: no commit(), no bus.emit() beyond the index invalidator, no undo.
-// That is the line that keeps this a floor rather than a second god-module -
-// the moment a rule about *how* the board may change lands here, the split has
-// gone backwards.
-//
-// Everything is re-exported by state.js under its old name, so no caller knows
-// this file exists.
 
-import { uid, isHash } from './util.ts';
+/** Which of the two geometry profiles is being talked about. */
+export type LayoutMode = 'desktop' | 'mobile';
+
+/**
+ * One item's place in one layout - see layout.ts, which owns every rule about
+ * these. `presnap` is where the item was before the grid took it, kept so
+ * turning snapping off puts it back rather than leaving it on the lattice.
+ */
+export type Geometry = {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  rot: number;
+  z: number;
+  presnap?: { x: number, y: number, w: number, h: number };
+};
+
+/** A face this board carries, and the axes its `fvar` declares. */
+export type FontAxis = { tag: string, min: number, default: number, max: number };
+export type FontSpec = { hash: string, family: string, axes?: FontAxis[], variable?: true };
+
+/**
+ * The board's own settings, per layout profile.
+ *
+ * Every field is stated, and the type is closed on purpose - but note what the
+ * reader actually enforces: normalizeSettings() in board-schema.ts spreads a
+ * file's `settings` over the defaults and then re-validates only the fields
+ * that reach a stylesheet, a filename or the geometry (scale, units, paper,
+ * fonts, appearance, mobileColumns). The flags are carried as they arrived. So
+ * this type describes what the app writes rather than everything a hand-edited
+ * file can put there, and a reader of one of the flags should treat it the way
+ * the code already does - as a truthiness test rather than as a boolean.
+ */
+export type BoardSettings = {
+  grid: boolean;
+  axes: boolean;
+  snap: boolean;
+  web: boolean;
+  hud: boolean;
+  gridStyle: string;
+  gridStep: number;
+  mobileColumns: number;
+  spacing: number;
+  scale: number;
+  units: string;
+  paper: string;
+  paperLandscape: boolean;
+  paperResize: boolean;
+  appearance: Look;
+  fonts: FontSpec[];
+  /** Where a file written before the masthead moved board-level carries it. */
+  mobileHeader?: MobileHeader;
+};
+
+/** The Mobile masthead's typography. See DEFAULT_MOBILE_HEADER below. */
+export type MobileHeader = {
+  font: string;
+  size: number;
+  stretch: number;
+  leading: number;
+  weight: number;
+  offset: number;
+  italic: boolean;
+  wrap: boolean;
+  axes: Record<string, number>;
+};
+
+/** How one connection is drawn, when it is drawn as anything but a plain line. */
+export type ConnMeta = {
+  dir?: string;
+  style?: string;
+  color?: string;
+  weight?: string;
+  label?: string;
+};
+
+/** A line between two cards: the pair, and optionally how it looks. */
+export type Connection = [string, string] | [string, string, ConnMeta];
+
+export type Board = {
+  title: string;
+  view: { pan: { x: number, y: number }, zoom: number };
+  sharedAppearance: Look;
+  layoutSettings: Record<LayoutMode, BoardSettings>;
+  settings: BoardSettings;
+  arrangement: string;
+  arrangements: Record<LayoutMode, string>;
+  layoutMode: LayoutMode;
+  layouts: Record<LayoutMode, Geometry[]>;
+  items: Item[];
+  mobileHeader: MobileHeader;
+  titleHidden: boolean;
+  mediaFit: string;
+  paletteSources: number;
+  connections: Connection[];
+  audioOrder: string[];
+  trash: TrashEntry[];
+};
+
+/**
+ * One thing in the bin: the item as it was, and when it went in.
+ *
+ * Here rather than in ui/trash.ts because the bin is part of the board's shape -
+ * it is serialised, it is held to TRASH_LIMIT below, and both the runtime bin
+ * and the file reader build these. Two modules were about to spell it out
+ * privately, which is the drift the Item note above exists to stop.
+ */
+export type TrashEntry = { item: Item; at: number };
+
+import { uid, isHash, isRecord } from './util.ts';
 import { MIN_SIZE, MAX_SIZE } from './geometry.ts';
 import { DEFAULT_SCALE } from './measure.ts';
 import { splitAppearance, mergeAppearance } from './layout-settings.ts';
+import type { Look } from './layout-settings.ts';
 import { bus } from './board-store.ts';
 
 /** The longest a sticky note may be. Enforced at every door onto the board. */
@@ -120,7 +220,7 @@ export const DEFAULT_MOBILE_HEADER = Object.freeze({
   axes: Object.freeze({}),
 });
 
-export const DEFAULT_SETTINGS = {
+export const DEFAULT_SETTINGS: BoardSettings = {
   grid: true,
   axes: true,
   snap: false,
@@ -174,7 +274,7 @@ export const DEFAULT_SETTINGS = {
   fonts: [],           // faces dropped onto this board - see ui/fonts.js
 };
 
-export const BOARD_MODES = ['desktop', 'mobile'];
+export const BOARD_MODES: LayoutMode[] = ['desktop', 'mobile'];
 export const BOARD_TITLE_MAX = 32;
 export const MOBILE_COLUMNS = 8;
 export const MOBILE_COLUMN_OPTIONS = [6, 8];
@@ -192,7 +292,7 @@ export const MOBILE_APPEARANCE_VARS = Object.freeze({
  * Keep one trailing space: removing it on every input event makes entering a
  * second word impossible. Final-only filename rules live in cleanBoardTitle().
  */
-export function cleanBoardTitleDraft(value) {
+export function cleanBoardTitleDraft(value: unknown) {
   const title = typeof value === 'string' ? value : '';
   return title
     .replace(/\s+/g, ' ')
@@ -209,7 +309,7 @@ export function cleanBoardTitleDraft(value) {
  * punctuation and device names define the shared rule. Spaces remain readable
  * on the board; storage.js changes them to underscores only in exported files.
  */
-export function cleanBoardTitle(value) {
+export function cleanBoardTitle(value: unknown) {
   let title = cleanBoardTitleDraft(value)
     .trim()
     .replace(/[. ]+$/g, '');
@@ -246,11 +346,11 @@ export function defaultBoardTitle(now = new Date()) {
  * to anything else and it reads as a real name.
  */
 const AUTO_TITLE = new RegExp(`^New board (?:${MONTHS.join('|')}) \\d{1,2}$`);
-export function isDefaultTitle(title) {
+export function isDefaultTitle(title: string) {
   return title === 'Untitled board' || AUTO_TITLE.test(title);
 }
 
-export function cloneSettings(settings) {
+export function cloneSettings(settings: BoardSettings): BoardSettings {
   return {
     ...settings,
     appearance: {
@@ -271,20 +371,20 @@ export function cloneSettings(settings) {
   };
 }
 
-export function layoutSettingsOf(settings) {
+export function layoutSettingsOf(settings: BoardSettings): BoardSettings {
   const cloned = cloneSettings(settings);
   const { local } = splitAppearance(cloned.appearance);
   cloned.appearance = local;
   return cloned;
 }
 
-export function settingsFor(layoutSettings, sharedAppearance) {
+export function settingsFor(layoutSettings: BoardSettings, sharedAppearance: Look): BoardSettings {
   const cloned = cloneSettings(layoutSettings);
   cloned.appearance = mergeAppearance(sharedAppearance, cloned.appearance);
   return cloned;
 }
 
-export function defaultLayoutSettings(mode) {
+export function defaultLayoutSettings(mode: LayoutMode): BoardSettings {
   return layoutSettingsOf({
     ...DEFAULT_SETTINGS,
     snap: mode === 'mobile',
@@ -299,8 +399,9 @@ export function defaultLayoutSettings(mode) {
 }
 
 /** The only supported Mobile strip widths, with eight as the safe fallback. */
-export function mobileColumnCount(value = board.settings.mobileColumns) {
-  return MOBILE_COLUMN_OPTIONS.includes(+value) ? +value : MOBILE_COLUMNS;
+export function mobileColumnCount(value: unknown = board.settings.mobileColumns) {
+  const n = Number(value);
+  return MOBILE_COLUMN_OPTIONS.includes(n) ? n : MOBILE_COLUMNS;
 }
 
 const initialSharedAppearance = splitAppearance(DEFAULT_SETTINGS.appearance).shared;
@@ -309,7 +410,7 @@ const initialLayoutSettings = {
   mobile: defaultLayoutSettings('mobile'),
 };
 
-export const board = {
+export const board: Board = {
   title: defaultBoardTitle(),
   view: { pan: { x: 0, y: 0 }, zoom: 1 },
   // Both containers rebuilt rather than spread through: DEFAULT_SETTINGS holds
@@ -326,7 +427,12 @@ export const board = {
   // that travels - two sets of geometry over one shared set of items.
   layoutMode: 'desktop',
   layouts: { desktop: [], mobile: [] },
-  items: [],
+  // Named rather than left to infer. The default board is empty, so an
+  // unannotated literal makes `board.items` a never[] - which is not "we do not
+  // know yet", it is a positive claim that nothing can be in it, and it lands as
+  // an error at every module that walks the board rather than here. The two
+  // annotations are erased; see the Item note at the top of this file.
+  items: [] as Item[],
   // The board name's typography, styled by ui/mobile-header.js. Board-level
   // rather than per-layout on purpose: the Mobile masthead and the Desktop
   // title card (type 'title') are one identity set in one place, so a change
@@ -367,7 +473,7 @@ export const board = {
   // sorts by the board's arrangement, and an older reader drops the key on save.
   audioOrder: [],
   // Thrown away but not gone. Entries are { item, at }, newest first.
-  trash: [],
+  trash: [] as TrashEntry[],
 };
 
 /**
@@ -385,7 +491,7 @@ export const board = {
  * spellings of one key is a cache that half-misses the day either changes; it
  * imports this now, through state.js.
  */
-export const pairKey = (a, b) => (a < b ? a + '\0' + b : b + '\0' + a);
+export const pairKey = (a: string, b: string) => (a < b ? a + '\0' + b : b + '\0' + a);
 
 /**
  * The most connections a board may carry.
@@ -433,16 +539,24 @@ const STYLE_SET = new Set(CONN_STYLES);
 const COLOR_SET = new Set(CONN_COLORS);
 const WEIGHT_SET = new Set(CONN_WEIGHTS);
 
+/**
+ * Whether one of the closed lists above holds this value. The typeof is what
+ * a Set of strings cannot say about something out of a file, and it changes no
+ * answer: a Set of strings never held a number.
+ */
+const inSet = (set: Set<string>, v: unknown): v is string =>
+  typeof v === 'string' && set.has(v);
+
 /** A connection's display settings, kept to the known values, or null if plain. */
-export function connMeta(raw) {
-  if (!raw || typeof raw !== 'object') return null;
-  const out = {};
+export function connMeta(raw: unknown): ConnMeta | null {
+  if (!isRecord(raw)) return null;
+  const out: ConnMeta = {};
   // Defaults are omitted, not stored: a connection at 'none'/'solid'/no-label is
   // a bare pair, which is what keeps an ordinary board's connections `[a, b]`.
-  if (DIR_SET.has(raw.dir) && raw.dir !== 'none') out.dir = raw.dir;
-  if (STYLE_SET.has(raw.style) && raw.style !== 'solid') out.style = raw.style;
-  if (COLOR_SET.has(raw.color) && raw.color !== 'line') out.color = raw.color;
-  if (WEIGHT_SET.has(raw.weight) && raw.weight !== 'normal') out.weight = raw.weight;
+  if (inSet(DIR_SET, raw.dir) && raw.dir !== 'none') out.dir = raw.dir;
+  if (inSet(STYLE_SET, raw.style) && raw.style !== 'solid') out.style = raw.style;
+  if (inSet(COLOR_SET, raw.color) && raw.color !== 'line') out.color = raw.color;
+  if (inSet(WEIGHT_SET, raw.weight) && raw.weight !== 'normal') out.weight = raw.weight;
   if (typeof raw.label === 'string') {
     const label = raw.label.replace(/\s+/g, ' ').trim().slice(0, CONN_LABEL_MAX);
     if (label) out.label = label;
@@ -463,9 +577,9 @@ export function connMeta(raw) {
  * quietly missing. Anything naming neither is pruned, because nothing in the
  * app could ever make it mean something again.
  */
-export function normalizeConnections(raw, live) {
+export function normalizeConnections(raw: unknown, live?: Set<string> | null): Connection[] {
   if (!Array.isArray(raw)) return [];
-  const out = [];
+  const out: Connection[] = [];
   const seen = new Set();
   for (const pair of raw) {
     if (!Array.isArray(pair) || pair.length < 2) continue;
@@ -498,9 +612,9 @@ export function normalizeConnections(raw, live) {
  * wrong. Not filtered to audio here: this layer does not know an item's type,
  * and applyAudioOrder() does that filtering where it does.
  */
-export function normalizeAudioOrder(raw, live) {
+export function normalizeAudioOrder(raw: unknown, live?: Set<string> | null): string[] {
   if (!Array.isArray(raw)) return [];
-  const out = [];
+  const out: string[] = [];
   const seen = new Set();
   for (const id of raw) {
     if (typeof id !== 'string' || !id || seen.has(id)) continue;
@@ -534,7 +648,14 @@ export const TITLE_ID = '__title__';
  * which refuses the title card alone; serializeBoard(), which strips hints alone
  * - are asking a different question and keep their own test.
  */
-export const isFurniture = it => it?.type === 'title' || it?.type === 'ghost';
+// `unknown` in rather than a shape, and the same for the two predicates below.
+// These three are asked of items, of half-built items on their way in from a
+// file, and of the private box-shaped types two command modules still declare
+// for themselves - and a parameter naming any one of those shapes refuses the
+// others. The isRecord() guard is what `it?.type` was already doing for every
+// argument any caller passes; it differs only for a non-object, which none does.
+export const isFurniture = (it: unknown) =>
+  isRecord(it) && (it.type === 'title' || it.type === 'ghost');
 
 /**
  * Something the user put on this board *as content*, which is a narrower
@@ -552,7 +673,8 @@ export const isFurniture = it => it?.type === 'title' || it?.type === 'ghost';
  * hasContent() did not. This is the second half of that question, so it gets the
  * same treatment before it has a chance to drift too.
  */
-export const isContent = it => !!it && !isFurniture(it) && it.type !== 'fence';
+export const isContent = (it: unknown) =>
+  isRecord(it) && !isFurniture(it) && it.type !== 'fence';
 
 /**
  * May a connection have this item as an end - and, the same list for the same
@@ -573,7 +695,8 @@ export const isContent = it => !!it && !isFurniture(it) && it.type !== 'fence';
  * a loose sticker is a member of the fence it is standing in, so a shared test
  * would have taken it out of the fence to keep it out of the web.
  */
-export const isJoinEnd = it => !!it && it.type !== 'ghost' && it.type !== 'sticker';
+export const isJoinEnd = (it: unknown) =>
+  isRecord(it) && it.type !== 'ghost' && it.type !== 'sticker';
 
 
 /**
@@ -596,9 +719,9 @@ export const isJoinEnd = it => !!it && it.type !== 'ghost' && it.type !== 'stick
  * for. Order-independent by construction - a stale read cannot happen because a
  * listener ran before this invalidator, since the map simply rebuilds on demand.
  */
-let itemIndex = null;
+let itemIndex: Map<string, Item> | null = null;
 
-export function byId(id) {
+export function byId(id: string): Item | undefined {
   if (!itemIndex) {
     itemIndex = new Map();
     for (const item of board.items) itemIndex.set(item.id, item);
@@ -655,14 +778,14 @@ export function topZ() {
 const COORD_MAX = 1e7;
 
 /** A finite coordinate in range, or 0. Rejects Infinity, NaN and out-of-range. */
-function coord(v) {
-  const n = +v;
+function coord(v: unknown) {
+  const n = Number(v);
   return Number.isFinite(n) ? Math.min(Math.max(n, -COORD_MAX), COORD_MAX) : 0;
 }
 
 /** A positive size within the item bounds, or `fallback`. Rejects <=0 and Infinity. */
-function size(v, fallback) {
-  const n = +v;
+function size(v: unknown, fallback: number) {
+  const n = Number(v);
   return Number.isFinite(n) && n > 0 ? Math.min(Math.max(n, MIN_SIZE), MAX_SIZE) : fallback;
 }
 
@@ -697,7 +820,7 @@ export const TRASH_LIMIT = 60;
  * always loads the same way. `seen` is shared across the live items and the bin
  * so a restored item can never land on a live id.
  */
-export function dedupeIds(list, seen) {
+export function dedupeIds(list: Item[], seen: Set<string>): Item[] {
   for (const it of list) {
     if (!seen.has(it.id)) { seen.add(it.id); continue; }
     // Room reserved for the suffix, rather than truncating after it is added.
@@ -720,8 +843,8 @@ export function dedupeIds(list, seen) {
   return list;
 }
 
-export function makeItem(partial) {
-  let meta = partial.meta && typeof partial.meta === 'object' ? partial.meta : {};
+export function makeItem(partial: Record<string, unknown>): Item {
+  let meta: ItemMeta = isRecord(partial.meta) ? partial.meta : {};
   // The one funnel every item passes through on its way onto the board, which
   // makes it the place to hold a note to its ceiling. The editor enforces the
   // same limit while you type; this catches the other doors - an older .mbrd,
@@ -731,13 +854,19 @@ export function makeItem(partial) {
   }
   return {
     id: typeof partial.id === 'string' && partial.id ? partial.id.slice(0, 64) : uid(),
-    type: typeof partial.type === 'string' && partial.type ? partial.type : 'generic',
+    // Cast, and the one place in this file where the type is wider than what is
+    // checked: a file may name a type this build has never heard of, and the
+    // name is carried rather than rewritten - classify() and RENDERERS fall back
+    // to the generic card at the draw, so the board opens and a save gives the
+    // file its own word back. ItemType is therefore what the *app* produces, not
+    // an assertion about every string a document can hold.
+    type: (typeof partial.type === 'string' && partial.type ? partial.type : 'generic') as ItemType,
     x: coord(partial.x),
     y: coord(partial.y),
     w: size(partial.w, 240),
     h: size(partial.h, 180),
-    rot: Number.isFinite(+partial.rot) ? +partial.rot : 0,
-    z: partial.z != null && Number.isFinite(+partial.z) ? +partial.z : topZ() + 1,
+    rot: Number.isFinite(Number(partial.rot)) ? Number(partial.rot) : 0,
+    z: partial.z != null && Number.isFinite(Number(partial.z)) ? Number(partial.z) : topZ() + 1,
     name: typeof partial.name === 'string' ? partial.name.slice(0, 260) : '',
     asset: normalizeAsset(partial.asset),
     meta: normalizeMeta(meta),
@@ -757,7 +886,7 @@ export function makeItem(partial) {
  */
 const META_HASHES = ['cover', 'shot', 'thumb', 'preview'];
 
-function normalizeMeta(meta) {
+function normalizeMeta(meta: ItemMeta): ItemMeta {
   let out = meta;
   for (const key of META_HASHES) {
     if (!(key in out) || isHash(out[key])) continue;
@@ -777,9 +906,20 @@ function normalizeMeta(meta) {
  * plain one, which is honest, where keeping it leaves a board that also cannot
  * be exported. `external` is the reserved link-instead-of-embed form and has no
  * hash to check; it is carried through untouched.
+ *
+ * Two casts, and they say the same thing twice: ItemAsset above describes the
+ * embedded form - `{ hash, family }` - and the reserved external form is not in
+ * it. Widening the type would put `hash` in doubt at every one of the several
+ * dozen `item.asset?.hash` reads in the app, over a form nothing in it reads
+ * yet, so the narrower type stays and the two returns below say what they are.
+ * tests/state-clipboard.test.js pins the carry-through; when something starts
+ * *reading* the external form, that is the moment ItemAsset should grow a
+ * second member and these should go.
  */
-function normalizeAsset(asset) {
-  if (!asset || typeof asset !== 'object') return null;
-  if (isHash(asset.hash)) return asset;
-  return asset.external ? { external: asset.external } : null;
+function normalizeAsset(asset: unknown): ItemAsset {
+  if (!isRecord(asset)) return null;
+  // The whole object, not a rebuilt one: `family` and anything else a newer
+  // build wrote alongside the hash travels with it.
+  if (isHash(asset.hash)) return asset as ItemAsset;
+  return asset.external ? { external: asset.external } as unknown as ItemAsset : null;
 }

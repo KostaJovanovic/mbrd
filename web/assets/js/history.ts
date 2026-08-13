@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Undo and redo, as commands rather than as diffs.
 //
 // A mutating operation hands over a pair - do it, and put it back - and this
@@ -24,8 +16,20 @@
 
 import { bus, markDirty } from './board-store.ts';
 
-const undoStack = [];
-const redoStack = [];
+/**
+ * One entry: what to call it, the two halves, and what the pair retains. The
+ * type is the contract the header describes - a caller that knows how to
+ * reverse itself - and `weight` is the only field the engine itself reads.
+ */
+export type Command = {
+  label: string,
+  redo: () => void,
+  undo: () => void,
+  weight: number,
+};
+
+const undoStack: Command[] = [];
+const redoStack: Command[] = [];
 
 /**
  * How many operations are remembered, and how much they may retain between
@@ -62,7 +66,8 @@ function trim() {
     // Never down to nothing: a single command heavier than the whole budget is
     // still the one thing the user most likely wants back, and dropping it
     // would make the heaviest operation the only un-undoable one.
-    heldWeight -= undoStack.shift().weight;
+    // Non-null: the loop condition it took to get here read undoStack.length.
+    heldWeight -= undoStack.shift()!.weight;
   }
 }
 
@@ -96,7 +101,7 @@ const historyChanged = () => bus.emit('history');
  * that closes over a whole-board snapshot, leave it alone for the rest. It only
  * decides eviction; nothing else reads it.
  */
-export function commit(label, redo, undo, weight = 1) {
+export function commit(label: string, redo: () => void, undo: () => void, weight = 1) {
   redo();
   const held = Number.isFinite(weight) && weight > 1 ? Math.floor(weight) : 1;
   const cmd = { label, redo, undo, weight: held };
@@ -138,7 +143,7 @@ export const lastCommand = () => undoStack.at(-1) || null;
  * answer, and returns false when something has happened since so the caller can
  * clean up by ordinary means.
  */
-export function takeBack(cmd) {
+export function takeBack(cmd: Command | null) {
   if (!cmd || undoStack.at(-1) !== cmd) return false;
   undoStack.pop();
   cmd.undo();

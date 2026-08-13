@@ -31,6 +31,28 @@
 // tested against real bytes under node.
 
 /**
+ * The block above, said in types.
+ *
+ * Exported ahead of the rest of this module's annotation for the same reason
+ * Item is exported out of board-model.ts while that one is still unchecked: a
+ * `@ts-nocheck` hides errors in a file, not its declarations, and canvas/model.ts
+ * needs to name what parseMesh() hands it rather than grow a private copy of
+ * this shape. The first four fields are what every parser returns; the last
+ * three are OBJ's alone - a colour per vertex, the .mtl it asked for, and the
+ * material name per triangle that applyMaterials() resolves against it.
+ */
+export type MeshBounds = { min: number[]; max: number[] };
+export type Mesh = {
+  positions: Float32Array;
+  normals: Float32Array;
+  count: number;
+  bounds: MeshBounds;
+  colors?: Float32Array | null;
+  mtllib?: string | null;
+  triMat?: (string | null)[] | null;
+};
+
+/**
  * The ceiling, in triangles.
  *
  * A 3D file has no natural size limit and a dropped folder is not vetted, so

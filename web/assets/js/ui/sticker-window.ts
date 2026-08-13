@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The sticker pad: a little floating window of shapes you drag or tap onto the
 // board.
 //
@@ -50,6 +42,18 @@ import { registerPanel, panelShown, panelHidden } from './panel-stack.ts';
 import {
   STICKERS, STICKER_CATEGORIES, STICKER_SPRITE, STICKER_VIEWBOX, stickerShape,
 } from '../stickers/catalogue.ts';
+import type { Sticker } from '../stickers/catalogue.ts';
+import type { Viewport } from '../canvas/viewport.ts';
+
+/**
+ * What this window asks of the command surface: one verb. Handed in by
+ * initStickerWindow() rather than imported, the same seam ui/toolbar.js and
+ * ui/hud.js state - commands.js imports this module, and the arrow only goes
+ * one way.
+ */
+export interface StickerCommands {
+  addStickerAt: (shape: string, at: { x: number, y: number }) => unknown;
+}
 
 const CLOSE_ICON =
   '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>';
@@ -62,21 +66,29 @@ const FAV_KEY = 'mbrd.stickerFavourites';
 /** How far a press has to travel before it is a drag rather than a tap. */
 const DRAG_SLOP = 5;
 
-let vp = null;
-let cmds = null;
-let win = null;        // the window element, or null when closed
-let body = null;       // the scrolling region inside it
+let vp: Viewport | null = null;
+let cmds: StickerCommands | null = null;
+let win: HTMLElement | null = null;        // the window element, or null when closed
+let body: HTMLElement | null = null;       // the scrolling region inside it
 
 /** The category last placed from, so the next open lands where you left off. */
 let lastCategory = STICKER_CATEGORIES[0][0];
 
 /** `{ shape, tint }` while a tile is armed and waiting for a tap on the board. */
-let armed = null;
+let armed: { shape: string, tint: number } | null = null;
 
 /** The tile drag in flight: the ghost element and what it is carrying. */
-let drag = null;
+type TileDrag = {
+  entry: Sticker,
+  el: HTMLElement,
+  id: number,
+  x: number,
+  y: number,
+  ghost: HTMLElement | null,
+};
+let drag: TileDrag | null = null;
 
-export function initStickerWindow(viewport, commands) {
+export function initStickerWindow(viewport: Viewport, commands: StickerCommands) {
   vp = viewport;
   cmds = commands;
   registerPanel('stickers', openStickerWindow, closeStickerWindow);
@@ -98,7 +110,7 @@ export function initStickerWindow(viewport, commands) {
     e.stopPropagation();
     const shape = armed.shape;
     disarm();
-    cmds.addStickerAt(shape, vp.toWorld(e.clientX, e.clientY));
+    cmds!.addStickerAt(shape, vp!.toWorld(e.clientX, e.clientY));
   }, true);
 
   // Escape gets out, always. Capture, and before anything else can read the
@@ -191,7 +203,14 @@ function renderBody() {
     // No heading text of its own beyond the word - the row is at the top, which
     // is most of what "favourites" has to say, and a shelf of six shapes under
     // a paragraph would be more explanation than shelf.
-    body.append(heading('Favourites'), gridOf(favs.map(stickerShape).filter(Boolean), true));
+    // stickerShape() answers null for an id the catalogue no longer carries;
+    // favourites() has already dropped those, and this keeps the type honest.
+    const pinned: Sticker[] = [];
+    for (const id of favs) {
+      const shape = stickerShape(id);
+      if (shape) pinned.push(shape);
+    }
+    body.append(heading('Favourites'), gridOf(pinned, true));
   }
   for (const [key, label] of STICKER_CATEGORIES) {
     const shapes = STICKERS.filter(s => s.cat === key);
@@ -205,18 +224,18 @@ function renderBody() {
   // the window has only just appeared, and a body that scrolls itself while you
   // are looking at it reads as the app doing something rather than as it
   // remembering something.
-  const at = body.querySelector(`[data-cat="${lastCategory}"]`);
+  const at = body.querySelector<HTMLElement>(`[data-cat="${lastCategory}"]`);
   if (at) body.scrollTop = at.offsetTop - body.offsetTop;
 }
 
-function heading(text) {
+function heading(text: string) {
   const h = document.createElement('h3');
   h.className = 'sticker-cat';
   h.textContent = text;
   return h;
 }
 
-function gridOf(shapes, inFavourites) {
+function gridOf(shapes: Sticker[], inFavourites: boolean) {
   const grid = div('sticker-grid');
   for (const s of shapes) grid.append(tile(s, inFavourites));
   return grid;
@@ -230,7 +249,7 @@ function gridOf(shapes, inFavourites) {
  * button is not markup any browser agrees about. The keyboard is wired by hand
  * below to make up for it.
  */
-function tile(entry, inFavourites) {
+function tile(entry: Sticker, inFavourites: boolean) {
   const el = div('sticker-tile');
   el.dataset.shape = entry.id;
   el.setAttribute('role', 'button');
@@ -272,12 +291,12 @@ function tile(entry, inFavourites) {
  * places a sticker is drawn. A tile shows the shape's own default, which is
  * the whole promise of the pad: the sticker you place is the one you saw.
  */
-function shapeArt(id, tint) {
+function shapeArt(id: string, tint: number) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('class', 'sticker-art');
   svg.setAttribute('viewBox', STICKER_VIEWBOX);
   svg.setAttribute('aria-hidden', 'true');
-  if (tint) svg.dataset.tint = tint;
+  if (tint) svg.dataset.tint = String(tint);
   const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
   use.setAttribute('href', `${STICKER_SPRITE}#${id}`);
   svg.append(use);
@@ -296,13 +315,13 @@ function shapeArt(id, tint) {
  * written into a `<use href>`. An entry naming nothing is dropped, which also
  * quietly tidies up after a shape being renamed or retired.
  */
-function favourites() {
-  const raw = readPrefJSON(FAV_KEY, []);
+function favourites(): string[] {
+  const raw = readPrefJSON<unknown>(FAV_KEY, []);
   if (!Array.isArray(raw)) return [];
-  return raw.filter(id => typeof id === 'string' && stickerShape(id));
+  return raw.filter((id): id is string => typeof id === 'string' && !!stickerShape(id));
 }
 
-function toggleFavourite(id) {
+function toggleFavourite(id: string) {
   const list = favourites();
   const i = list.indexOf(id);
   if (i >= 0) list.splice(i, 1); else list.push(id);
@@ -317,7 +336,7 @@ function toggleFavourite(id) {
 /** The armed shape, or null. Read by the Mobile feed's own tap-to-place path. */
 export const armedSticker = () => armed;
 
-function arm(entry) {
+function arm(entry: Sticker) {
   const same = armed?.shape === entry.id;
   disarm();
   if (same) return;                       // tapping the armed tile puts it down
@@ -340,7 +359,7 @@ export function disarm() {
 
 function markArmed() {
   if (!win) return;
-  for (const el of win.querySelectorAll('.sticker-tile')) {
+  for (const el of win.querySelectorAll<HTMLElement>('.sticker-tile')) {
     el.classList.toggle('is-armed', !!armed && el.dataset.shape === armed.shape);
   }
 }
@@ -357,14 +376,15 @@ function markArmed() {
  * the shape on a phone and carries it on a desktop, without the window having
  * to guess which one it is looking at.
  */
-function startTileDrag(e, entry) {
+function startTileDrag(e: PointerEvent, entry: Sticker) {
   if (e.button !== 0) return;
   e.preventDefault();
-  const el = e.currentTarget;
+  // currentTarget is the tile this listener was bound to.
+  const el = e.currentTarget as HTMLElement;
   el.setPointerCapture?.(e.pointerId);
   drag = { entry, el, id: e.pointerId, x: e.clientX, y: e.clientY, ghost: null };
 
-  const move = ev => {
+  const move = (ev: PointerEvent) => {
     if (!drag || ev.pointerId !== drag.id) return;
     if (!drag.ghost) {
       if (Math.hypot(ev.clientX - drag.x, ev.clientY - drag.y) < DRAG_SLOP) return;
@@ -388,7 +408,7 @@ function startTileDrag(e, entry) {
     showStickTarget(hostUnderPointer(ev.clientX, ev.clientY));
   };
 
-  const end = ev => {
+  const end = (ev: PointerEvent) => {
     if (!drag || ev.pointerId !== drag.id) return;
     const { ghost } = drag;
     const dropped = ev.type === 'pointerup' && ghost && overBoard(ev.clientX, ev.clientY);
@@ -405,7 +425,7 @@ function startTileDrag(e, entry) {
     removeEventListener('pointercancel', end);
     if (dropped) {
       lastCategory = entry.cat;
-      cmds.addStickerAt(entry.id, vp.toWorld(ev.clientX, ev.clientY));
+      cmds!.addStickerAt(entry.id, vp!.toWorld(ev.clientX, ev.clientY));
     }
     // Never moved: this was a tap, and a tap arms.
     else if (!ghost && ev.type === 'pointerup') arm(entry);
@@ -420,20 +440,20 @@ function startTileDrag(e, entry) {
   addEventListener('pointercancel', end);
 }
 
-function makeGhost(entry) {
+function makeGhost(entry: Sticker) {
   const el = div('sticker-ghost');
   el.append(shapeArt(entry.id, entry.tint));
   return el;
 }
 
-function placeGhost(clientX, clientY) {
+function placeGhost(clientX: number, clientY: number) {
   if (!drag?.ghost) return;
   drag.ghost.style.left = `${clientX}px`;
   drag.ghost.style.top = `${clientY}px`;
 }
 
 /** Is this screen point over the board rather than over the app's chrome? */
-function overBoard(clientX, clientY) {
+function overBoard(clientX: number, clientY: number) {
   const under = document.elementFromPoint(clientX, clientY);
   return !!under?.closest('#viewport');
 }
@@ -447,22 +467,23 @@ function overBoard(clientX, clientY) {
  * the answer turns on: a sticker may land on a fence and on the title card,
  * where a note may not.
  */
-function hostUnderPointer(clientX, clientY) {
+function hostUnderPointer(clientX: number, clientY: number) {
   if (!overBoard(clientX, clientY)) return null;
-  const at = vp.toWorld(clientX, clientY);
+  const at = vp!.toWorld(clientX, clientY);
   // Every sticker is the same fixed 96 square (see defaultSize), so the box the
   // measurement gets is the box the drop will make. The day a shape carries a
   // size of its own, this is where that stops being true.
   const size = defaultSize('sticker');
+  // No id to exclude: there is no item yet, which is the whole point of asking.
   const host = wouldStick(
-    { x: at.x, y: at.y, w: size.w, h: size.h }, null, { type: 'sticker' });
+    { x: at.x, y: at.y, w: size.w, h: size.h }, undefined, { type: 'sticker' });
   // byId, because wouldStick hands back the live item and a host deleted
   // between two pointer moves would otherwise put the ring on a node that is on
   // its way off the board.
   return host && byId(host.id) ? host : null;
 }
 
-function div(cls) {
+function div(cls: string) {
   const el = document.createElement('div');
   el.className = cls;
   return el;

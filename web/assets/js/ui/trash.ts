@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The bin: what you deleted, and the way back.
 //
 // Deleting on this board used to be recoverable only through undo, which is a
@@ -34,19 +26,31 @@ import { toast } from '../notify.ts';
 import {
   STICKER_SPRITE, STICKER_VIEWBOX, DEFAULT_SHAPE, stickerShape, stickerTint,
 } from '../stickers/catalogue.ts';
+import type { Viewport } from '../canvas/viewport.ts';
+import type { Item, TrashEntry } from '../board-model.ts';
 
-let vp = null;
-let panel, button, list, none, hint, emptyBtn, titleRestore;
-let ghost = null;
+// The panel's nodes, taken once in initTrash(). Everything below reads them
+// with `!`: they are static markup in index.html, initTrash() returns early
+// when the two that matter are missing, and nothing else here runs before it.
+let vp: Viewport | null = null;
+let panel: HTMLElement | null = null;
+let button: HTMLElement | null = null;
+let list: HTMLElement | null = null;
+let none: HTMLElement | null = null;
+let hint: HTMLElement | null = null;
+// A <button> in index.html, which is what makes `disabled` mean anything.
+let emptyBtn: HTMLButtonElement | null = null;
+let titleRestore: HTMLElement | null = null;
+let ghost: HTMLElement | null = null;
 
-export function initTrash(viewport) {
+export function initTrash(viewport: Viewport) {
   vp = viewport;
   panel = el('bin-panel');
   button = el('bin-btn');
   list = el('bin-list');
   none = el('bin-none');
   hint = el('bin-hint');
-  emptyBtn = el('bin-empty');
+  emptyBtn = el('bin-empty') as HTMLButtonElement | null;
   titleRestore = el('title-restore');
   if (!panel || !button) return;
 
@@ -56,19 +60,19 @@ export function initTrash(viewport) {
       removeItems([...selection]);
       return;
     }
-    setOpen(panel.hidden);
+    setOpen(panel!.hidden);
   });
-  emptyBtn.addEventListener('click', emptyTrash);
+  emptyBtn!.addEventListener('click', emptyTrash);
   // Bring the deleted title card back. restoreTitleCard() emits 'trash', so the
   // paint below hides this button again on its own.
   titleRestore?.addEventListener('click', () => restoreTitleCard());
-  list.addEventListener('pointerdown', startDrag);
-  list.addEventListener('keydown', restoreByKey);
+  list!.addEventListener('pointerdown', startDrag);
+  list!.addEventListener('keydown', restoreByKey);
 
   // Clicking the board puts the panel away. Not a scrim and not focus-based:
   // the board stays fully live while the bin is open, and dismissing has to
   // cost exactly one click wherever that click lands.
-  document.getElementById('viewport').addEventListener('pointerdown', () => setOpen(false));
+  document.getElementById('viewport')!.addEventListener('pointerdown', () => setOpen(false));
 
   bus.on('trash', paint);
   bus.on('board:load', paint);
@@ -80,9 +84,9 @@ export function initTrash(viewport) {
   paint();
 }
 
-function setOpen(want) {
-  panel.hidden = !want;
-  button.setAttribute('aria-expanded', String(!!want));
+function setOpen(want: boolean) {
+  panel!.hidden = !want;
+  button!.setAttribute('aria-expanded', String(!!want));
   paintTitleRestore();
 }
 
@@ -93,19 +97,19 @@ function setOpen(want) {
  */
 function paintTitleRestore() {
   if (!titleRestore) return;
-  titleRestore.hidden = panel.hidden || !isTitleHidden();
+  titleRestore.hidden = panel!.hidden || !isTitleHidden();
 }
 
 function paint() {
   const entries = board.trash;
-  button.classList.toggle('has-things', entries.length > 0);
+  button!.classList.toggle('has-things', entries.length > 0);
   paintButton();
-  emptyBtn.disabled = !entries.length;
-  none.hidden = entries.length > 0;
-  hint.hidden = entries.length === 0;
+  emptyBtn!.disabled = !entries.length;
+  none!.hidden = entries.length > 0;
+  hint!.hidden = entries.length === 0;
 
-  list.replaceChildren();
-  for (const entry of entries) list.append(binRow(entry));
+  list!.replaceChildren();
+  for (const entry of entries) list!.append(binRow(entry));
   paintTitleRestore();
 }
 
@@ -120,11 +124,11 @@ function paintButton() {
     : entries.length
     ? `Trash, ${entries.length} ${entries.length === 1 ? 'item' : 'items'}`
     : 'Trash, empty';
-  button.setAttribute('aria-label', name);
-  button.title = name;
+  button!.setAttribute('aria-label', name);
+  button!.title = name;
 }
 
-function binRow(entry) {
+function binRow(entry: TrashEntry) {
   const item = entry.item;
   const node = document.createElement('div');
   node.className = 'bin-item';
@@ -149,13 +153,16 @@ function binRow(entry) {
   } else if (item.type === 'note') {
     // The note's own first line, so a wall of notes is still tellable apart.
     thumb.classList.add('is-note');
-    thumb.textContent = (item.meta?.text || '').split('\n')[0].slice(0, 12) || 'note';
+    thumb.textContent = noteText(item).split('\n')[0].slice(0, 12) || 'note';
   } else if (item.type === 'sticker') {
     // The shape itself, which is the only thing that tells one binned sticker
     // from another - the name is "Star" and so is the next one's. Its own tint,
     // too: a red heart and a gold one are the same shape and not the same
     // sticker. items.css owns both, off the same data-tint the board uses.
-    const shape = stickerShape(item.meta?.shape) ? item.meta.shape : DEFAULT_SHAPE;
+    // `meta` is open, so the shape it carries is narrowed here rather than
+    // trusted - stickerShape() answers null for anything not in the catalogue,
+    // including a value that is not a string at all.
+    const shape = stickerShape(item.meta?.shape)?.id ?? DEFAULT_SHAPE;
     thumb.classList.add('is-sticker');
     thumb.innerHTML =
       `<svg class="sticker-art" viewBox="${STICKER_VIEWBOX}" aria-hidden="true"
@@ -182,17 +189,29 @@ function binRow(entry) {
   return node;
 }
 
-function label(item) {
+/** A note's text out of the open `meta`, or '' for anything that is not text. */
+function noteText(item: Item): string {
+  const text = item.meta?.text;
+  return typeof text === 'string' ? text : '';
+}
+
+function label(item: Item): string {
   // Before the filename branch, for the same reason: baseName() would cut
   // "example.com" back to "example".
-  if (item.type === 'link') return item.name || item.meta?.url || 'link';
+  if (item.type === 'link') {
+    // `meta` is open, so the url is whatever the file carried. The String() is
+    // the coercion textContent would have done to it a line later anyway; the
+    // truthiness chain is the one this line always had.
+    const url = item.meta?.url;
+    return item.name || (url ? String(url) : '') || 'link';
+  }
   if (item.name) return baseName(item.name) || item.name;
-  if (item.type === 'note') return (item.meta?.text || '').split('\n')[0] || 'Empty note';
+  if (item.type === 'note') return noteText(item).split('\n')[0] || 'Empty note';
   return item.type;
 }
 
 /** Coarse and relative - the exact minute a thing was binned is never the question. */
-function ago(at) {
+function ago(at: number) {
   if (!at) return '';
   const secs = Math.max(0, (Date.now() - at) / 1000);
   if (secs < 60) return 'now';
@@ -213,22 +232,26 @@ function ago(at) {
  * reason it was thrown away, and the board has grown into the gap since. The
  * middle of what you are looking at is the keyboard's answer to "say where".
  */
-function restoreByKey(e) {
+function restoreByKey(e: KeyboardEvent) {
   if (e.key !== 'Enter' && e.key !== ' ' && e.code !== 'Space') return;
-  const line = e.target.closest?.('.bin-item');
+  // The listener is on #bin-list, so the target of a key inside it is an
+  // element - the optional call is the guard it always was for anything else.
+  const line = (e.target as Element).closest?.<HTMLElement>('.bin-item');
   if (!line) return;
   e.preventDefault();
-  const back = restoreItems([line.dataset.id], vp.toWorld(innerWidth / 2, innerHeight / 2));
+  // Every .bin-item is built by binRow() below, which writes the id onto it.
+  const back = restoreItems([line.dataset.id!], vp!.toWorld(innerWidth / 2, innerHeight / 2));
   if (!back.length) return;
-  select(back.map(i => i.id));
+  select(back.map((i: Item) => i.id));
   setOpen(board.trash.length > 0);
 }
 
-function startDrag(e) {
+function startDrag(e: PointerEvent) {
   if (e.button !== 0) return;
-  const line = e.target.closest('.bin-item');
+  const line = (e.target as Element).closest<HTMLElement>('.bin-item');
   if (!line) return;
-  const id = line.dataset.id;
+  // As above: binRow() writes the id onto every row it makes.
+  const id = line.dataset.id!;
   const entry = board.trash.find(t => t.item.id === id);
   if (!entry) return;
 
@@ -238,9 +261,9 @@ function startDrag(e) {
   ghost = makeGhost(entry.item);
   moveGhost(e.clientX, e.clientY);
 
-  const onMove = ev => moveGhost(ev.clientX, ev.clientY);
+  const onMove = (ev: PointerEvent) => moveGhost(ev.clientX, ev.clientY);
 
-  const onUp = ev => {
+  const onUp = (ev: PointerEvent) => {
     line.removeEventListener('pointermove', onMove);
     line.removeEventListener('pointerup', onUp);
     line.removeEventListener('pointercancel', onCancel);
@@ -249,12 +272,12 @@ function startDrag(e) {
 
     // Let go over the panel itself and nothing happens - that is a cancel, and
     // the item stays in the bin rather than being flung somewhere arbitrary.
-    if (panel.contains(document.elementFromPoint(ev.clientX, ev.clientY))) return;
+    if (panel!.contains(document.elementFromPoint(ev.clientX, ev.clientY))) return;
 
-    const at = vp.toWorld(ev.clientX, ev.clientY);
+    const at = vp!.toWorld(ev.clientX, ev.clientY);
     const back = restoreItems([id], at);
     if (!back.length) return;
-    select(back.map(i => i.id));
+    select(back.map((i: Item) => i.id));
     setOpen(board.trash.length > 0);
   };
 
@@ -271,7 +294,7 @@ function startDrag(e) {
   line.addEventListener('pointercancel', onCancel);
 }
 
-function makeGhost(item) {
+function makeGhost(item: Item) {
   const node = document.createElement('div');
   node.id = 'bin-ghost';
   const url = item.asset && assetURL(item.asset.hash);
@@ -287,7 +310,7 @@ function makeGhost(item) {
   return node;
 }
 
-function moveGhost(x, y) {
+function moveGhost(x: number, y: number) {
   if (!ghost) return;
   ghost.style.left = x + 'px';
   ghost.style.top = y + 'px';

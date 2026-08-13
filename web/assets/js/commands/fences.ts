@@ -244,8 +244,8 @@ export function fenceCommands() {
       const fence = byId(id);
       if (!isFence(fence)) return;
       if (!fenceable()) return;
-      const inside = fenceFollowers([id]).map(byId).filter(Boolean);
-      if (inside.filter((i: Boxed) => !isRider(i)).length < 2) {
+      const inside = fenceFollowers([id]).map(byId).filter(it => !!it);
+      if (inside.filter(i => !isRider(i)).length < 2) {
         toast('Put two or more cards in it first');
         return;
       }

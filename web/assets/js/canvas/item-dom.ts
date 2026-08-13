@@ -47,19 +47,23 @@
 import { extOf, shuffle } from '../util.ts';
 import { isFence } from '../state.ts';
 import { buildContent, fitMode } from './renderers.ts';
+import type { Item } from '../board-model.ts';
 
-/** Enough of a board item to draw one. */
-export interface ItemLike {
-  id: string;
-  type: string;
-  name?: string;
-  meta: { tint?: string; fit?: string; ext?: string };
-}
+/**
+ * Enough of a board item to draw one, which is the whole of one.
+ *
+ * This was a private re-declaration - id, type, name and a three-key meta - made
+ * while board.items still inferred as never[] and there was nothing else to name.
+ * board-model.ts states the shape now, so the alias is kept only so the eight
+ * signatures below still read as "an item you can draw", and it points at the
+ * one answer rather than holding a second.
+ */
+export type ItemLike = Item;
 
 /**
  * Anything an item might be, for the three pure questions below.
  *
- * Wider than ItemLike on purpose: these three are called with fragments - by
+ * Wider than an Item on purpose: these three are called with fragments - by
  * tests/items.test.js with a bare `{}`, and by rebuild() with a live item - and
  * every one of them is written to answer for a card that has no name, no meta
  * and no type at all.
@@ -294,8 +298,11 @@ export function buildItem(item: ItemLike, tilt: string, picked: boolean): HTMLDi
   el.setAttribute('role', 'group');
   el.setAttribute('aria-roledescription', 'board item');
   el.setAttribute('aria-label', itemAccessibleName(item));
-  // Which colour off the sticky pad. CSS picks the tint from this.
-  if (item.meta.tint) el.dataset.tint = item.meta.tint;
+  // Which colour off the sticky pad. CSS picks the tint from this. `meta` is
+  // unknown per key by design - see board-model.ts - so the tint is read as the
+  // string it is meant to be rather than trusted to be one.
+  const tint = item.meta.tint;
+  if (typeof tint === 'string' && tint) el.dataset.tint = tint;
   if (picked) el.dataset.pick = '';
   el.style.setProperty('--item-tilt', tilt);
 

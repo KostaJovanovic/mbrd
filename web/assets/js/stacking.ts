@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Z-order: what is in front of what, and what moves as one when it changes.
 //
 // Two rules, and the second is the interesting one.
@@ -32,6 +24,7 @@
 import { overlapFraction } from './geometry.ts';
 import { bus, selection } from './board-store.ts';
 import { board, byId, topZ } from './board-model.ts';
+import type { Item } from './board-model.ts';
 import { stuckTo, isSticky } from './sticky.ts';
 import { fenceOf, isFence } from './fences.ts';
 import { snapshotGeom, commitGeom } from './layout.ts';
@@ -48,7 +41,9 @@ export function raiseSelection() {
   // Walk in current stacking order so a multi-selection and every sticky layer
   // keep their internal arrangement instead of being reshuffled by Set
   // iteration order.
-  for (const id of stackOrder(layer)) byId(id).z = ++z;
+  // Non-null: every id in the layer came out of stackLayerIds(), which built it
+  // from items it had already looked up on this board.
+  for (const id of stackOrder(layer)) byId(id)!.z = ++z;
   bus.emit('geom', layer);
   commitGeom('Bring to front', before);
 }
@@ -58,13 +53,14 @@ export function lowerSelection() {
   const before = snapshotGeom(layer);
   if (!before.length) return;
   let z = bottomZ();
-  for (const id of stackOrder(layer).reverse()) byId(id).z = --z;
+  // Non-null for the reason given in raiseSelection().
+  for (const id of stackOrder(layer).reverse()) byId(id)!.z = --z;
   bus.emit('geom', layer);
   commitGeom('Send to back', before);
 }
 
 /** The given ids, sorted bottom-to-top by their current z. */
-export function stackOrder(ids) {
+export function stackOrder(ids: Iterable<string>) {
   return [...ids].sort((a, b) => (byId(a)?.z || 0) - (byId(b)?.z || 0));
 }
 
@@ -102,7 +98,7 @@ export function stackOrder(ids) {
  */
 export function visualStackOrder() {
   const order = stackGroups().flatMap(group => group.items);
-  const fences = [], notes = [], rest = [];
+  const fences: string[] = [], notes: string[] = [], rest: string[] = [];
   for (const item of order) {
     (isFence(item) ? fences : isSticky(item) ? notes : rest).push(item.id);
   }
@@ -129,8 +125,8 @@ export function visualStackOrder() {
  * cannot contain one another - keep the raw z order they came in with, and Bring
  * to front still separates them.
  */
-function sortFences(ids) {
-  const area = id => {
+function sortFences(ids: Iterable<string>) {
+  const area = (id: string) => {
     const it = byId(id);
     return Math.abs((it?.w || 0) * (it?.h || 0));
   };
@@ -144,8 +140,8 @@ function sortFences(ids) {
  * one of those notes also includes the host and its sibling notes for a z-order
  * change, even though an ordinary spatial move may still peel that note away.
  */
-export function stackLayerIds(ids) {
-  const wanted = new Set([...ids].map(id => byId(id)).filter(Boolean).map(stackRoot).map(item => item.id));
+export function stackLayerIds(ids: Iterable<string>) {
+  const wanted = new Set([...ids].map(id => byId(id)).filter((it): it is Item => !!it).map(stackRoot).map(item => item.id));
   if (!wanted.size) return [];
   return stackGroups()
     .filter(group => wanted.has(group.root.id))
@@ -158,7 +154,7 @@ export function stackLayerIds(ids) {
  * Overlap within a sticky layer does not count: the note and host deliberately
  * cover one another and already move through the external stack as one object.
  */
-export function selectionHasStackOverlap(ids = selection) {
+export function selectionHasStackOverlap(ids: Iterable<string> = selection) {
   const selected = new Set(stackLayerIds(ids));
   if (!selected.size) return false;
   const inside = board.items.filter(item => selected.has(item.id));
@@ -188,9 +184,9 @@ export function selectionHasStackOverlap(ids = selection) {
  * containment requires a strictly larger area, so neither relation can cycle and
  * the pair cannot either. It costs one Set on a walk that is two steps deep.
  */
-export function stackRoot(item) {
+export function stackRoot(item: Item): Item {
   let root = item;
-  const seen = new Set();
+  const seen = new Set<string>();
   while (root && !seen.has(root.id)) {
     seen.add(root.id);
     const up = stuckTo(root) || fenceOf(root);
@@ -203,7 +199,7 @@ export function stackRoot(item) {
 /** Sticky layers ordered externally by their root, internally by raw z. */
 export function stackGroups() {
   const boardOrder = new Map(board.items.map((item, index) => [item.id, index]));
-  const groups = new Map();
+  const groups = new Map<string, { root: Item, items: Item[] }>();
   for (const item of board.items) {
     const root = stackRoot(item);
     let group = groups.get(root.id);
@@ -213,8 +209,10 @@ export function stackGroups() {
     }
     group.items.push(item);
   }
-  const compare = (a, b) =>
-    (a.z || 0) - (b.z || 0) || boardOrder.get(a.id) - boardOrder.get(b.id);
+  // Non-null: boardOrder was built from board.items and every item compared
+  // here came out of the same list.
+  const compare = (a: Item, b: Item) =>
+    (a.z || 0) - (b.z || 0) || boardOrder.get(a.id)! - boardOrder.get(b.id)!;
   for (const group of groups.values()) group.items.sort(compare);
   return [...groups.values()].sort((a, b) => compare(a.root, b.root));
 }

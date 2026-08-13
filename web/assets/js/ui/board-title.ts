@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The board's name, in the places it is shown and edited.
 //
 // One editor, two hosts: the Mobile masthead and the Desktop title card. They
@@ -51,15 +43,20 @@ import {
  * happens to stop where it started.
  */
 const TITLE_TAP_SLOP = 6;
-let titleTap = null;
+/** The press half of a tap in flight: which pointer, and where it went down. */
+let titleTap: { id: number, x: number, y: number } | null = null;
 
 /** Wire the masthead tap and subscribe the repaint. Called once, from main.js. */
 export function initBoardTitle() {
-  el('mobile-board-title').addEventListener('pointerdown', e => {
+  // #mobile-board-title and #mobile-board-header are static markup in
+  // index.html - this module has always read them straight through, and an
+  // absent one is a broken build rather than a state to paint around.
+  el('mobile-board-title')!.addEventListener('pointerdown', e => {
     // Already editing: the caret owns the pointer, and re-entering the edit
     // would reselect the whole name out from under somebody aiming at one word
-    // of it.
-    titleTap = e.currentTarget.isContentEditable
+    // of it. currentTarget is the element this listener is on, which is why it
+    // can be read as one.
+    titleTap = (e.currentTarget as HTMLElement).isContentEditable
       ? null
       : { id: e.pointerId, x: e.clientX, y: e.clientY };
   });
@@ -92,7 +89,7 @@ export function initBoardTitle() {
 export function paintMobileTitle() {
   const header = el('mobile-board-header');
   if (!header) return;
-  const field = el('mobile-board-title');
+  const field = el('mobile-board-title')!;
   // Never over a rename in progress. 'board' fires on every dirty-flag flip as
   // well as on a real rename, and rewriting the field mid-word would take the
   // caret with it - the same guard the sidebar's name field keeps.
@@ -101,7 +98,7 @@ export function paintMobileTitle() {
   // The Desktop title card carries the same name. It is not inline-editable, so
   // no caret guard is needed - just keep it current and dim it while untitled,
   // the way the masthead's [data-untitled] rule does.
-  const card = document.querySelector('.item[data-type="title"] .title-name');
+  const card = document.querySelector<HTMLElement>('.item[data-type="title"] .title-name');
   if (card) {
     // Not over an inline rename in progress on the card, the same caret guard the
     // masthead gets above: rewriting the text mid-word would take the caret with it.
@@ -132,7 +129,7 @@ export function paintMobileTitle() {
  * markup: the sidebar's field is built from the settings schema, the masthead
  * panel's is written out in index.html.
  */
-export function wireTitleField(input) {
+export function wireTitleField(input: HTMLInputElement | null) {
   if (!input) return;
   input.addEventListener('input', () => {
     const clean = cleanBoardTitleDraft(input.value);
@@ -162,7 +159,7 @@ const titleValue = () => (isDefaultTitle(board.title) ? '' : board.title);
  * undo, or a rename made anywhere else, which is the case that matters now that
  * there is more than one field: typing in one must show up in the other.
  */
-export function paintTitleField(input) {
+export function paintTitleField(input: HTMLInputElement | null) {
   if (!input) return;
   // Never while it is being typed into: 'board' fires on every dirty-flag flip,
   // and rewriting the field mid-word would move the caret to the end.
@@ -199,7 +196,7 @@ export function editMobileTitle() {
  * T button, a double-click on the card, or F2 while it is selected.
  */
 export function editTitleCard() {
-  editBoardName(document.querySelector('.item[data-type="title"] .title-name'));
+  editBoardName(document.querySelector<HTMLElement>('.item[data-type="title"] .title-name'));
 }
 
 /**
@@ -207,8 +204,11 @@ export function editTitleCard() {
  * name - the Mobile masthead or the Desktop card - and both edit board.title and
  * repaint through paintMobileTitle, which keeps the two in step.
  */
-function editBoardName(field) {
-  if (!field || field.isContentEditable) return;
+function editBoardName(node: HTMLElement | null) {
+  if (!node || node.isContentEditable) return;
+  // Held as a const so the guard above still counts inside the handlers below:
+  // a parameter is a mutable binding and the narrowing would not follow it in.
+  const field = node;
 
   // plaintext-only keeps pasted markup out of a name; not every engine has it.
   try { field.contentEditable = 'plaintext-only'; }
@@ -221,7 +221,7 @@ function editBoardName(field) {
   let done = false;
   let keep = true;
 
-  const onKey = e => {
+  const onKey = (e: KeyboardEvent) => {
     e.stopPropagation();          // the canvas must not see Delete, space or Escape
     if (e.key === 'Enter') { e.preventDefault(); finish(); }
     else if (e.key === 'Escape') { keep = false; finish(); }
@@ -237,7 +237,9 @@ function editBoardName(field) {
     const caret = document.createRange();
     caret.selectNodeContents(field);
     caret.collapse(false);
-    const selection = getSelection();
+    // getSelection() is null only for a document with no browsing context; this
+    // runs from an input event on a focused field, so there is one.
+    const selection = getSelection()!;
     selection.removeAllRanges();
     selection.addRange(caret);
   };
@@ -282,7 +284,9 @@ function editBoardName(field) {
     field.focus();
     const range = document.createRange();
     range.selectNodeContents(field);
-    const sel = getSelection();
+    // Null only without a browsing context, as above - the field has just been
+    // focused in this document.
+    const sel = getSelection()!;
     sel.removeAllRanges();
     sel.addRange(range);
   });

@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Where an item is, and what it covers.
 //
 // Every one of these answers had been written more than once, in modules that
@@ -25,6 +17,31 @@
 // rotation `rot` in degrees, anticlockwise-positive, matching world axes where
 // +y is up. Every function here is pure and takes items rather than ids, so
 // none of it needs to know that a board exists.
+//
+// Which is also the whole of the vocabulary below. `Box` is that convention
+// written down; `Point` is one without a size, since half this file works over
+// polylines and corners; `Bounds` is the other spelling of a rectangle, the
+// two-corner one itemBounds() returns and the culler passes about. They are
+// structural on purpose - an Item satisfies Box without this file importing
+// board-model.ts, which is what keeps geometry at the bottom of the graph.
+
+/** A point in whatever space the caller is working in. */
+export type Point = { x: number, y: number };
+
+/** A size, and the rotation it is drawn at. Absent `rot` is none. */
+export type Size = { w: number, h: number, rot?: number };
+
+/** A box about its centre: the convention above, entire. */
+export type Box = Point & Size;
+
+/** A rectangle as two corners, low and high on each axis. */
+export type Bounds = { x0: number, y0: number, x1: number, y1: number };
+
+/** Where one item is being asked to move to - what applyGeom() merges. */
+export type Target = { id: string, x: number, y: number };
+
+/** A viewport transform, in the sense viewport.ts's toScreen() uses it. */
+export type View = { pan: Point, zoom: number };
 
 const RAD = Math.PI / 180;
 
@@ -80,7 +97,7 @@ export const MAX_SIZE = 20000;
 export const CELL_GAP = 0.04;
 
 /** The seam itself, in world units, for a given cell size. */
-export const cellInset = step => step * CELL_GAP;
+export const cellInset = (step: number) => step * CELL_GAP;
 
 /**
  * A low edge laid on the lattice: a grid line, plus the seam.
@@ -90,7 +107,7 @@ export const cellInset = step => step * CELL_GAP;
  * as well as the two callers of latticeBox() below - or an item dragged across a
  * snapped board would come to rest half a seam off the one that was laid there.
  */
-export const latticeLow = (v, step) => {
+export const latticeLow = (v: number, step: number) => {
   const inset = cellInset(step);
   return Math.round((v - inset) / step) * step + inset;
 };
@@ -103,7 +120,7 @@ export const latticeLow = (v, step) => {
  * a preference, and an item at either limit is far outside the range where
  * sitting flush in a cell is what anybody is looking at.
  */
-export const latticeSide = (v, step) => {
+export const latticeSide = (v: number, step: number) => {
   const gap = 2 * cellInset(step);
   const cells = Math.max(Math.round((v + gap) / step), 1);
   return Math.min(Math.max(cells * step - gap, MIN_SIZE), MAX_SIZE);
@@ -118,7 +135,7 @@ export const latticeSide = (v, step) => {
  * differ only in the step they pass: the base step for geometry that is being
  * stored, the on-screen step for something being dragged against the dots.
  */
-export function latticeBox(box, step) {
+export function latticeBox(box: Box, step: number) {
   const w = latticeSide(box.w, step), h = latticeSide(box.h, step);
   return {
     x: latticeLow(box.x - box.w / 2, step) + w / 2,
@@ -135,7 +152,7 @@ export function latticeBox(box, step) {
  * (w/2, h/2), which is why callers can use it unconditionally without paying
  * for trig on a board where nothing is turned.
  */
-export function rotatedExtents(it) {
+export function rotatedExtents(it: Size) {
   const rot = it.rot || 0;
   if (!rot) return { hw: it.w / 2, hh: it.h / 2 };
   const rad = rot * RAD;
@@ -154,7 +171,7 @@ export function rotatedExtents(it) {
  * the unturned rectangles would occupy. Used to frame a Fit, to centre a
  * paste, and to decide whether what the clipboard holds is on screen.
  */
-export function itemBounds(items) {
+export function itemBounds(items: Iterable<Box>): Bounds | null {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   let any = false;
   for (const it of items) {
@@ -177,7 +194,7 @@ export function itemBounds(items) {
  * *nearly* reaches the band you dragged is the friendlier of the two mistakes.
  * What matters is that it is now the same approximation everything else makes.
  */
-export function itemInRect(it, x0, y0, x1, y1) {
+export function itemInRect(it: Box, x0: number, y0: number, x1: number, y1: number) {
   const { hw, hh } = rotatedExtents(it);
   return it.x + hw >= x0 && it.x - hw <= x1 &&
          it.y + hh >= y0 && it.y - hh <= y1;
@@ -201,7 +218,7 @@ export function itemInRect(it, x0, y0, x1, y1) {
  * Rotation-aware through the same extents, so it is the box you can see that has
  * to fit, and the same forgiving approximation everything else here makes.
  */
-export function itemWithinRect(it, x0, y0, x1, y1) {
+export function itemWithinRect(it: Box, x0: number, y0: number, x1: number, y1: number) {
   const { hw, hh } = rotatedExtents(it);
   return it.x - hw >= x0 && it.x + hw <= x1 &&
          it.y - hh >= y0 && it.y + hh <= y1;
@@ -218,7 +235,7 @@ export function itemWithinRect(it, x0, y0, x1, y1) {
  */
 const OUT_LEFT = 1, OUT_RIGHT = 2, OUT_BELOW = 4, OUT_ABOVE = 8;
 
-const outcode = (x, y, r) =>
+const outcode = (x: number, y: number, r: Bounds) =>
   (x < r.x0 ? OUT_LEFT : x > r.x1 ? OUT_RIGHT : 0) |
   (y < r.y0 ? OUT_BELOW : y > r.y1 ? OUT_ABOVE : 0);
 
@@ -242,7 +259,7 @@ const outcode = (x, y, r) =>
  * endpoint is above or below, which cannot happen with both ends at the same y
  * - that case has already left through the shared-edge rejection.
  */
-export function segmentMeetsRect(a, b, r) {
+export function segmentMeetsRect(a: Point, b: Point, r: Bounds) {
   let x0 = a.x, y0 = a.y, x1 = b.x, y1 = b.y;
   let c0 = outcode(x0, y0, r), c1 = outcode(x1, y1, r);
   for (;;) {
@@ -281,9 +298,9 @@ export function segmentMeetsRect(a, b, r) {
 // ---------------------------------------------------------------------------
 
 /** The point half way along a polyline by arc length - where a label sits. */
-export function polyMidpoint(points) {
+export function polyMidpoint(points: Point[] | null | undefined): Point {
   if (!points || points.length < 2) return points?.[0] || { x: 0, y: 0 };
-  const legs = [];
+  const legs: number[] = [];
   let total = 0;
   for (let i = 1; i < points.length; i++) {
     const len = Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
@@ -313,7 +330,7 @@ export function polyMidpoint(points) {
  * the board, so a box test passes it from almost anywhere and it is emitted
  * into `d` on every frame of every pan having never come near the screen.
  */
-export function polyMeetsRect(points, rect) {
+export function polyMeetsRect(points: Point[], rect: Bounds) {
   for (let i = 1; i < points.length; i++) {
     if (segmentMeetsRect(points[i - 1], points[i], rect)) return true;
   }
@@ -321,7 +338,7 @@ export function polyMeetsRect(points, rect) {
 }
 
 /** Distance from point (px, py) to the segment a-b, in whatever space they share. */
-export function distToSegment(px, py, a, b) {
+export function distToSegment(px: number, py: number, a: Point, b: Point) {
   const dx = b.x - a.x, dy = b.y - a.y;
   const len2 = dx * dx + dy * dy;
   const t = len2 ? Math.max(0, Math.min(1, ((px - a.x) * dx + (py - a.y) * dy) / len2)) : 0;
@@ -337,7 +354,7 @@ export function distToSegment(px, py, a, b) {
  * choice. Do not "fix" this into a real distance; web-graph.js's spanning tree
  * runs it O(n^2) times.
  */
-export function distSq(a, b) {
+export function distSq(a: Point, b: Point) {
   const dx = a.x - b.x, dy = a.y - b.y;
   return dx * dx + dy * dy;
 }
@@ -354,7 +371,7 @@ export function distSq(a, b) {
  * decides which get dropped. Swapping in the exact measure would change which
  * cards a heavily-obstructed route steers around, so it is not a tidy-up.
  */
-export function distSqToMidpoint(p, from, to) {
+export function distSqToMidpoint(p: Point, from: Point, to: Point) {
   const mx = (from.x + to.x) / 2;
   const my = (from.y + to.y) / 2;
   return (p.x - mx) ** 2 + (p.y - my) ** 2;
@@ -368,7 +385,7 @@ export function distSqToMidpoint(p, from, to) {
  * every pan and wants an answer that costs no trig and never says "no" to
  * something that is really on screen.
  */
-export function itemRadius(it) {
+export function itemRadius(it: Size) {
   return Math.sqrt(it.w * it.w + it.h * it.h) / 2;
 }
 
@@ -389,7 +406,7 @@ export function itemRadius(it) {
  * can only disagree with the eye a hair's breadth from an edge, which is
  * exactly where "is it over it or not" had no obvious answer anyway.
  */
-export function pointInItem(px, py, it) {
+export function pointInItem(px: number, py: number, it: Box) {
   const dx = px - it.x, dy = py - it.y;
   // Cheap reject first, and it takes almost every pair: no rotation of the box
   // reaches outside the circle that circumscribes it, and this costs no trig.
@@ -404,16 +421,16 @@ export function pointInItem(px, py, it) {
 }
 
 /** An item's four corners, in world coordinates, anticlockwise. */
-export function corners(it) {
+export function corners(it: Box): Point[] {
   const rad = (it.rot || 0) * RAD;
   const c = Math.cos(rad), s = Math.sin(rad);
   const hw = it.w / 2, hh = it.h / 2;
-  const at = (u, v) => ({ x: it.x + c * u - s * v, y: it.y + s * u + c * v });
+  const at = (u: number, v: number) => ({ x: it.x + c * u - s * v, y: it.y + s * u + c * v });
   return [at(-hw, -hh), at(hw, -hh), at(hw, hh), at(-hw, hh)];
 }
 
 /** Twice the signed area of a polygon. Positive when it winds anticlockwise. */
-function shoelace2(poly) {
+function shoelace2(poly: Point[]) {
   let sum = 0;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
     sum += poly[j].x * poly[i].y - poly[i].x * poly[j].y;
@@ -434,7 +451,7 @@ function shoelace2(poly) {
  * Returns a number in [0, 1]. Zero for a degenerate `a`, since "what fraction
  * of nothing" has no answer worth having and the callers want a boolean.
  */
-export function overlapFraction(a, b) {
+export function overlapFraction(a: Box, b: Box) {
   const areaA = a.w * a.h;
   if (!(areaA > 0) || !(b.w * b.h > 0)) return 0;
   // Cheap reject, and on a real board it takes almost every pair: two boxes
@@ -450,8 +467,8 @@ export function overlapFraction(a, b) {
     // Inside is to the left of the directed edge j -> i, which holds because
     // corners() winds anticlockwise for both.
     const ex = bs[i].x - bs[j].x, ey = bs[i].y - bs[j].y;
-    const side = p => ex * (p.y - bs[j].y) - ey * (p.x - bs[j].x);
-    const next = [];
+    const side = (p: Point) => ex * (p.y - bs[j].y) - ey * (p.x - bs[j].x);
+    const next: Point[] = [];
     for (let k = 0, m = poly.length - 1; k < poly.length; m = k++) {
       const cur = poly[k], prev = poly[m];
       const dCur = side(cur), dPrev = side(prev);
@@ -503,7 +520,7 @@ export function overlapFraction(a, b) {
  * device pixel to learn that every mark landed in the row and column it was
  * already in.
  */
-export function viewShift(prev, next, rect) {
+export function viewShift(prev: View, next: View, rect: Bounds) {
   let worst = 0;
   for (const wx of [rect.x0, rect.x1]) {
     for (const wy of [rect.y0, rect.y1]) {
@@ -516,7 +533,7 @@ export function viewShift(prev, next, rect) {
 }
 
 /** The two ends of an item's top edge, in world coordinates (+y is up). */
-export function topEdge(it) {
+export function topEdge(it: Box): Point[] {
   const rad = (it.rot || 0) * RAD;
   const c = Math.cos(rad), s = Math.sin(rad);
   const hw = it.w / 2, hh = it.h / 2;
@@ -541,7 +558,7 @@ export function topEdge(it) {
  * path is what makes it one undo step and what re-snaps it if snapping is on, so
  * nothing here snaps or clamps.
  */
-export function alignTargets(items, edge) {
+export function alignTargets(items: (Box & { id: string })[], edge: string): Target[] {
   const b = itemBounds(items);
   if (!b) return [];
   return items.map(it => {
@@ -574,10 +591,10 @@ export function alignTargets(items, edge) {
  * width of the box it actually occupies. Returns [{id, x, y}] only for the
  * interior items that move.
  */
-export function distributeTargets(items, axis) {
+export function distributeTargets(items: (Box & { id: string })[], axis: string): Target[] {
   if (items.length < 3) return [];
-  const half = it => (axis === 'x' ? rotatedExtents(it).hw : rotatedExtents(it).hh);
-  const pos = it => (axis === 'x' ? it.x : it.y);
+  const half = (it: Box) => (axis === 'x' ? rotatedExtents(it).hw : rotatedExtents(it).hh);
+  const pos = (it: Box) => (axis === 'x' ? it.x : it.y);
   const sorted = [...items].sort((a, b) => pos(a) - pos(b));
   const first = sorted[0], last = sorted[sorted.length - 1];
   const lead = pos(first) + half(first);          // trailing edge of the first
@@ -585,7 +602,7 @@ export function distributeTargets(items, axis) {
   let span = tail - lead;
   for (let i = 1; i < sorted.length - 1; i++) span -= 2 * half(sorted[i]);
   const gap = span / (sorted.length - 1);
-  const out = [];
+  const out: Target[] = [];
   let cursor = lead;
   for (let i = 1; i < sorted.length - 1; i++) {
     const it = sorted[i];
@@ -617,7 +634,7 @@ export function distributeTargets(items, axis) {
  * it off to one side. `targets` is [{id, x, y}] and `items` supplies the extents;
  * the returned targets change only the swept axis, leaving the aligned one exact.
  */
-export function separateOverlaps(targets, items, axis, gap = 0) {
+export function separateOverlaps(targets: Target[], items: (Box & { id: string })[], axis: string, gap = 0): Target[] {
   if (targets.length < 2) return targets;
   const byId = new Map(items.map(it => [it.id, it]));
   const rows = targets.map(t => {

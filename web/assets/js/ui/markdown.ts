@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Markdown, rendered.
 //
 // A `.md` classifies as 'text' and until now showed its source - hashes, pipes,
@@ -48,7 +40,7 @@ import { linkURL } from '../canvas/renderers.ts';
  * The whole document at once - there is no streaming and no incremental parse,
  * because the caller already has the text in hand and a README is kilobytes.
  */
-export function renderMarkdown(src) {
+export function renderMarkdown(src: unknown): DocumentFragment {
   const frag = document.createDocumentFragment();
   for (const node of blocks(String(src ?? '').replace(/\r\n?/g, '\n').split('\n'))) {
     frag.append(node);
@@ -78,8 +70,8 @@ const TABLE_RULE = /^ *\|?[ :|-]+\|[ :|-]*$/;
  * one or by a marker. `i` moves forward only, which is what keeps a malformed
  * document - an unclosed fence, a table with no body - from looping.
  */
-function blocks(lines) {
-  const out = [];
+function blocks(lines: string[]): HTMLElement[] {
+  const out: HTMLElement[] = [];
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
@@ -91,7 +83,7 @@ function blocks(lines) {
     const fence = line.match(FENCE);
     if (fence) {
       const close = fence[1][0].repeat(3);
-      const body = [];
+      const body: string[] = [];
       i++;
       // An unclosed fence runs to the end of the document, which is what every
       // Markdown implementation does and is the only non-destructive reading.
@@ -111,7 +103,7 @@ function blocks(lines) {
     }
 
     if (QUOTE.test(line)) {
-      const inner = [];
+      const inner: string[] = [];
       while (i < lines.length && (QUOTE.test(lines[i]) || (inner.length && lines[i].trim()))) {
         inner.push(lines[i].match(QUOTE)?.[1] ?? lines[i]);
         i++;
@@ -133,7 +125,7 @@ function blocks(lines) {
           : c.startsWith(':') ? 'left' : ''));
       const head = cells(line);
       i += 2;
-      const body = [];
+      const body: string[][] = [];
       while (i < lines.length && lines[i].trim() && lines[i].includes('|')) body.push(cells(lines[i++]));
       out.push(table(head, body, align));
       continue;
@@ -149,7 +141,7 @@ function blocks(lines) {
     // Four spaces of indent is a code block, as long as it is not continuing a
     // list - which is why this is tested last of the block openers.
     if (/^ {4}/.test(line)) {
-      const body = [];
+      const body: string[] = [];
       while (i < lines.length && (/^ {4}/.test(lines[i]) || !lines[i].trim())) body.push(lines[i++].slice(4));
       out.push(codeBlock(body.join('\n').replace(/\n+$/, ''), ''));
       continue;
@@ -157,7 +149,7 @@ function blocks(lines) {
 
     // A paragraph runs to the next blank line or to the next thing that opens a
     // block of its own. A setext underline turns the whole of it into a heading.
-    const para = [];
+    const para: string[] = [];
     // Stops at a setext underline as well as at anything that opens a block: the
     // underline belongs to the paragraph above it and turns it into a heading,
     // so swallowing it as another line of prose loses both. `---` is caught by
@@ -180,7 +172,7 @@ function blocks(lines) {
 }
 
 /** Does this line start a block, so a paragraph above it has to stop? */
-function opensBlock(line) {
+function opensBlock(line: string) {
   return RULE.test(line) || ATX.test(line) || FENCE.test(line) || QUOTE.test(line)
       || BULLET.test(line) || ORDERED.test(line);
 }
@@ -193,14 +185,17 @@ function opensBlock(line) {
  * is the rule people actually write to, whatever CommonMark says about content
  * columns and lazy continuation.
  */
-function listAt(lines, start) {
-  const first = lines[start].match(BULLET) || lines[start].match(ORDERED);
+function listAt(lines: string[], start: number): [HTMLElement, number] {
+  // Only called on a line that matched one of the two - see blocks().
+  const first = (lines[start].match(BULLET) || lines[start].match(ORDERED))!;
   const indent = first[1].length;
   const ordered = !lines[start].match(BULLET);
   const list = document.createElement(ordered ? 'ol' : 'ul');
-  if (ordered && first[2] !== '1') list.start = Number(first[2]);
+  // `ordered` is the flag that chose <ol> on the line above, so inside this
+  // branch the element is that one.
+  if (ordered && first[2] !== '1') (list as HTMLOListElement).start = Number(first[2]);
   let i = start;
-  let li = null;
+  let li: HTMLElement | null = null;
   while (i < lines.length) {
     const line = lines[i];
     if (!line.trim()) {
@@ -254,7 +249,7 @@ function listAt(lines, start) {
   return [list, i];
 }
 
-function codeBlock(text, lang) {
+function codeBlock(text: string, lang: string) {
   const pre = document.createElement('pre');
   const code = document.createElement('code');
   if (lang) code.dataset.lang = lang;
@@ -264,12 +259,12 @@ function codeBlock(text, lang) {
 }
 
 /** A table row split on unescaped pipes, with the outer pair dropped. */
-function cells(line) {
+function cells(line: string) {
   const trimmed = line.trim().replace(/^\|/, '').replace(/\|$/, '');
   return trimmed.split(/(?<!\\)\|/).map(c => c.trim().replace(/\\\|/g, '|'));
 }
 
-function table(head, body, align) {
+function table(head: string[], body: string[][], align: string[]) {
   const t = document.createElement('table');
   const thead = document.createElement('thead');
   const hr = document.createElement('tr');
@@ -333,12 +328,12 @@ const INLINE_SRC = [
  * content is recursed through this same function - so emphasis inside a link
  * inside a table cell works without any of them knowing about each other.
  */
-function inline(src) {
+function inline(src: unknown) {
   const frag = document.createDocumentFragment();
   const text = String(src ?? '');
   const re = new RegExp(INLINE_SRC, 'g');
   let last = 0;
-  let m;
+  let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
     if (m.index > last) frag.append(plain(text.slice(last, m.index)));
     last = m.index + m[0].length;
@@ -352,7 +347,7 @@ function inline(src) {
   return frag;
 }
 
-function inlineNode(m) {
+function inlineNode(m: RegExpExecArray) {
   if (m[1]) {
     const code = document.createElement('code');
     code.textContent = m[2].trim();
@@ -377,7 +372,7 @@ function inlineNode(m) {
   return plain(m[0]);
 }
 
-function wrap(tag, content) {
+function wrap(tag: string, content: string) {
   const el = document.createElement(tag);
   el.append(inline(content));
   return el;
@@ -391,7 +386,7 @@ function wrap(tag, content) {
  * app did not write comes out as the characters somebody typed, which is exactly
  * what it should look like.
  */
-function anchor(href, label) {
+function anchor(href: string, label: string) {
   const u = linkURL(href);
   if (!u) {
     const span = document.createElement('span');
@@ -407,4 +402,4 @@ function anchor(href, label) {
 }
 
 /** A text node, and the reason this file never needs to escape anything. */
-const plain = s => document.createTextNode(s);
+const plain = (s: string) => document.createTextNode(s);

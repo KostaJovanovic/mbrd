@@ -576,7 +576,7 @@ export async function listLibrary() {
  * The thumbnail is rendered by the caller - a ui/ concern this layer sits below -
  * and handed in.
  */
-export async function stashCurrent(thumb = null) {
+export async function stashCurrent(thumb: string | null = null) {
   const id = await ensureBoardId();
   const data = serializeBoard();
   const { blob, manifest } = await packBoard(data, { created });
@@ -593,7 +593,7 @@ export async function stashCurrent(thumb = null) {
  * arrives. The asset swap is the same atomic withFreshAssets() Open uses, so a
  * corrupt shelf blob leaves the current board intact.
  */
-export async function switchBoard(id, thumb = null) {
+export async function switchBoard(id: string, thumb: string | null = null) {
   if (!id || id === boardId) return false;
   const job = busy('Switching boards');
   try {
@@ -626,7 +626,7 @@ export async function switchBoard(id, thumb = null) {
  * protect and so asks to export first, this one has the shelf to set the old
  * board on and simply does.
  */
-export async function newLibraryBoard(thumb = null) {
+export async function newLibraryBoard(thumb: string | null = null) {
   const job = busy('Making a new board');
   try {
     suspendCache();

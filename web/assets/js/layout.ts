@@ -44,6 +44,12 @@ import {
   MOBILE_MIN_ROWS, MOBILE_BOTTOM_ROWS, mobileColumnCount,
   cloneSettings, layoutSettingsOf, settingsFor, defaultLayoutSettings,
 } from './board-model.ts';
+// Types only, and they are usable while this module is still unchecked: a
+// @ts-nocheck suppresses errors *in* a file, it does not hide its declarations.
+// The four signatures below are annotated ahead of the rest of the file for the
+// same reason Item was in board-model.ts - board-schema.ts is typed and reads
+// its geometry through them.
+import type { Geometry, Item, LayoutMode } from './board-model.ts';
 import {
   isRider, attachRiders, stuckPlacement, restick, stuckFollowers, startSettling,
   isPinned,
@@ -389,7 +395,7 @@ export function mobileBoardBottom(items = board.items) {
   return bounds ? Math.min(minimum, bounds.y0 - MOBILE_BOTTOM_ROWS * step) : minimum;
 }
 
-export const geometryOf = it => {
+export const geometryOf = (it: Item): Geometry => {
   const out = { id: it.id };
   for (const key of GEOM_KEYS) out[key] = it[key];
   const presnap = usableMemo(it.meta?.presnap);
@@ -397,7 +403,7 @@ export const geometryOf = it => {
   return out;
 };
 
-export function normalizeLayout(raw, items) {
+export function normalizeLayout(raw: unknown, items: Item[]): Geometry[] {
   if (!Array.isArray(raw)) return [];
   const ids = new Set(items.map(it => it.id));
   const seen = new Set();
@@ -418,7 +424,7 @@ export function normalizeLayout(raw, items) {
   return out;
 }
 
-export function layoutMap(layout) {
+export function layoutMap(layout: Geometry[] | null | undefined): Map<string, Geometry> {
   return new Map((layout || []).map(geometry => [geometry.id, geometry]));
 }
 
@@ -470,7 +476,7 @@ export const fitBoardMode = (it, scaleHeight = false) =>
  * place where the item was added; Mobile appends it below the existing feed so
  * switching modes never drops a new card on top of an old one.
  */
-export function completeLayout(mode) {
+export function completeLayout(mode: LayoutMode): Geometry[] {
   const map = layoutMap(board.layouts[mode]);
   if (mode === 'mobile') {
     const profile = board.layoutSettings.mobile || defaultLayoutSettings('mobile');
@@ -830,7 +836,7 @@ export function applyGeom(snap) {
  * Close a live drag/resize into one undo entry. `before` is the snapshot taken
  * when the gesture started; the current geometry becomes the redo state.
  */
-export function commitGeom(label, before, driven, options = {}) {
+export function commitGeom(label, before, driven?, options = {}) {
   let after = snapshotGeom(before.map(b => b.id));
   // The loose flag counts as a change even where nothing moved. A drag that
   // ends a pixel from where it began has still dropped a loose note onto a

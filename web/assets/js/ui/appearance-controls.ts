@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The Look tab's controls: the rows, their wiring, and keeping them in step
 // with the look.
 //
@@ -40,31 +32,84 @@ import { pickColor } from './color-picker.ts';
 // three modules exempt from that. A fourth would be a regression, so the root
 // element is taken when the panel is initialised instead - which is after the
 // document exists by definition.
-let ROOT = null;
+let ROOT: HTMLElement | null = null;
+
+/** One face on the two font menus: the stack to write, and what to call it. */
+export type FaceOption = { value: string, label: string };
+
+/**
+ * A row of the Look tab, in the three shapes it comes in.
+ *
+ * A union rather than one object with everything optional, because the three
+ * are genuinely different controls: only a range has a step to round its
+ * readout to, and only a font row has a list to choose from. The table itself
+ * lives in ui/appearance.js - this is the shape it hands over.
+ */
+export type FontControl = { var: string, label: string, host: string, type: 'font', options: readonly FaceOption[] };
+export type ColorControl = { var: string, label: string, host: string, type: 'color' };
+export type RangeControl = {
+  var: string, label: string, host: string, type: 'range',
+  min: number, max: number, step: number, unit?: string,
+};
+export type ControlSpec = FontControl | ColorControl | RangeControl;
+
+/**
+ * The look, as the panel reads it back. See ui/appearance.js, which owns it -
+ * the type lives here because the arrow between the two modules only points
+ * that way.
+ *
+ * `auto` and `derived` are provenance rather than appearance: whether the
+ * extraction is switched on, and whether what is in `vars` was the machine's
+ * work. Both are absent on a look that has never said either - see
+ * withProvenance() there - which is why they are optional rather than false.
+ */
+export type Look = {
+  whimsy: number,
+  palette: string,
+  vars: Record<string, string>,
+  auto?: boolean,
+  derived?: boolean,
+};
 
 /**
  * What this module borrows from the look model. Filled by
  * initAppearanceControls(); every reference below goes through it.
- *
- * @type {{
- *   CONTROLS: Array<object>, HOSTS: Record<string, string>,
- *   WHIMSY: string[], ALL_SOURCES_STOP: number,
- *   current: () => object,
- *   setVar: (name: string, value: string) => void,
- *   setWhimsy: (level: number|string) => void,
- *   setPalette: (name: string) => void, goDynamic: () => void,
- *   sourceCount: () => number, dynamicOn: () => boolean,
- * }}
  */
-let d = /** @type {any} */ (null);
+export type LookDeps = {
+  CONTROLS: readonly ControlSpec[],
+  HOSTS: Record<string, string>,
+  WHIMSY: readonly string[],
+  ALL_SOURCES_STOP: number,
+  current: () => Look,
+  setVar: (name: string, value: string) => void,
+  setWhimsy: (level: number | string) => void,
+  setPalette: (name: string) => void,
+  goDynamic: () => void,
+  sourceCount: () => number,
+  dynamicOn: () => boolean,
+};
+
+// Declared rather than initialised: initAppearanceControls() fills it before
+// anything here can run, and the assertion says so once so that every use below
+// reads `d.x` plainly. Two tests match those reads as source text - the seam is
+// the thing they are checking - and a `!` at each of them would be noise in the
+// file as well as a break in the assertion.
+let d!: LookDeps;
 
 /** Hand the controls what they need from the look model. Called once, first. */
-export function initAppearanceControls(deps) {
+export function initAppearanceControls(deps: LookDeps) {
   d = deps;
   ROOT = document.documentElement;
 }
 
-export const inputs = new Map();
+/** Every row this module built, by the token it writes. */
+type Row = {
+  input: HTMLSelectElement | HTMLButtonElement | HTMLInputElement,
+  out: HTMLOutputElement,
+  label: HTMLLabelElement,
+  spec: ControlSpec,
+};
+export const inputs = new Map<string, Row>();
 
 /**
  * The palette menu's entry for "take the colours from the pictures".
@@ -82,7 +127,7 @@ export const inputs = new Map();
 export const DYNAMIC = 'dynamic';
 
 export function buildControls() {
-  const hosts = {};
+  const hosts: Record<string, HTMLElement> = {};
   for (const [name, id] of Object.entries(d.HOSTS)) {
     const node = document.getElementById(id);
     if (node) { node.replaceChildren(); hosts[name] = node; }
@@ -92,11 +137,12 @@ export function buildControls() {
   for (const c of d.CONTROLS) {
     const host = hosts[c.host];
     if (!host) continue;
+    // `out: true` is what makes the output element there to write into.
     const { label, out } = field(c.label, { out: true });
 
     // A <select> for a face (a choice from a list), a swatch button for a colour
     // (the app's own picker, not the OS one), a range for everything else.
-    let input;
+    let input: HTMLSelectElement | HTMLButtonElement | HTMLInputElement;
     if (c.type === 'font') {
       input = document.createElement('select');
       // The board's own faces first, above the shipped list: a face somebody
@@ -124,23 +170,25 @@ export function buildControls() {
       input.type = 'button';
       input.className = 'pigment-swatch';
       input.addEventListener('click', async () => {
-        const raw = (d.current().vars[c.var] ?? getComputedStyle(ROOT).getPropertyValue(c.var)).trim();
+        const raw = (d.current().vars[c.var] ?? getComputedStyle(ROOT!).getPropertyValue(c.var)).trim();
         const picked = await pickColor({ title: 'Pigment', value: toHex(raw) || '#000000' });
         if (picked) d.setVar(c.var, picked);
       });
     } else {
       input = document.createElement('input');
       input.type = 'range';
-      input.min = c.min; input.max = c.max; input.step = c.step;
+      // The three are numbers in the table and strings on the element; the
+      // conversion was the assignment's own before it was written down.
+      input.min = String(c.min); input.max = String(c.max); input.step = String(c.step);
       input.addEventListener('input', () => {
-        out.textContent = format(input.value, c);
+        out!.textContent = format(input.value, c);
         d.setVar(c.var, input.value + (c.unit || ''));
       });
     }
 
     label.append(input);
     host.append(label);
-    inputs.set(c.var, { input, out, label, spec: c });
+    inputs.set(c.var, { input, out: out!, label, spec: c });
   }
   syncControls();
 }
@@ -153,7 +201,7 @@ export function syncControlVisibility() {
 
 export function syncControls() {
   syncControlVisibility();
-  const computed = getComputedStyle(ROOT);
+  const computed = getComputedStyle(ROOT!);
   for (const [name, { input, out, spec }] of inputs) {
     const raw = (d.current().vars[name] ?? computed.getPropertyValue(name)).trim();
     if (spec.type === 'font') {
@@ -170,12 +218,15 @@ export function syncControls() {
       out.textContent = '';
     } else {
       const n = parseFloat(raw);
-      input.value = Number.isFinite(n) ? n : spec.min;
+      input.value = String(Number.isFinite(n) ? n : spec.min);
       out.textContent = format(input.value, spec);
     }
   }
-  const whimsy = document.getElementById('opt-whimsy');
-  if (whimsy) whimsy.value = d.current().whimsy;
+  // #opt-whimsy is the Look tab's `type: 'range'` control in
+  // ui/settings-schema.js, so the schema renders it as an <input> - the same
+  // element wireWhimsy() below writes a max onto.
+  const whimsy = document.getElementById('opt-whimsy') as HTMLInputElement | null;
+  if (whimsy) whimsy.value = String(d.current().whimsy);
 
   syncPaletteMode();
 }
@@ -192,7 +243,9 @@ export function syncControls() {
  */
 export function syncPaletteMode() {
   const dynamic = d.dynamicOn();
-  const sel = document.getElementById('opt-palette');
+  // #opt-palette is the schema's `type: 'select'` control - a <select>, which is
+  // what wirePalette() below listens to a 'change' on.
+  const sel = document.getElementById('opt-palette') as HTMLSelectElement | null;
   if (sel) sel.value = dynamic ? DYNAMIC : (d.current().palette || '');
   // The source-count dial only means anything while the pictures are what the
   // board is painted from - anywhere else it is a dial over a palette that reads
@@ -205,7 +258,8 @@ export function syncPaletteMode() {
 
 /** The slider showing its own value, and the count it reflects. */
 export function syncPaletteSources() {
-  const input = document.getElementById('opt-palette-sources');
+  // Another `type: 'range'` from the schema, and its readout beside it.
+  const input = document.getElementById('opt-palette-sources') as HTMLInputElement | null;
   const out = document.getElementById('opt-palette-sources-out');
   const n = d.sourceCount();
   const all = n === Infinity;
@@ -220,7 +274,7 @@ export function syncPaletteSources() {
 }
 
 export function wirePaletteSources() {
-  const input = document.getElementById('opt-palette-sources');
+  const input = document.getElementById('opt-palette-sources') as HTMLInputElement | null;
   if (!input) return;
   input.max = String(d.ALL_SOURCES_STOP);
   input.value = String(d.sourceCount() === Infinity ? d.ALL_SOURCES_STOP : d.sourceCount());
@@ -232,14 +286,14 @@ export function wirePaletteSources() {
 }
 
 export function wireWhimsy() {
-  const input = document.getElementById('opt-whimsy');
+  const input = document.getElementById('opt-whimsy') as HTMLInputElement | null;
   if (!input) return;
-  input.max = d.WHIMSY.length - 1;
-  input.value = d.current().whimsy;
+  input.max = String(d.WHIMSY.length - 1);
+  input.value = String(d.current().whimsy);
   input.addEventListener('input', () => d.setWhimsy(input.value));
 }
 
-function format(value, spec) {
+function format(value: string, spec: RangeControl) {
   const n = parseFloat(value);
   // Match the readout's precision to the slider's step, so a 0.1px grid weight
   // doesn't display as a flat "2px" through its whole range.
@@ -261,7 +315,7 @@ function format(value, spec) {
  * ui/appearance.js, and each runs its own sync on the way out.
  */
 export function wirePalette() {
-  const sel = document.getElementById('opt-palette');
+  const sel = document.getElementById('opt-palette') as HTMLSelectElement | null;
   if (!sel) return;
   sel.value = d.dynamicOn() ? DYNAMIC : (d.current().palette || '');
   sel.addEventListener('change', () => {
@@ -274,7 +328,7 @@ export function wirePalette() {
  * Normalise whatever the browser reports for a colour token into #rrggbb, which
  * is the only thing <input type="color"> accepts.
  */
-export function toHex(value) {
+export function toHex(value: string): string | null {
   const v = value.trim();
   if (/^#[0-9a-f]{6}$/i.test(v)) return v.toLowerCase();
   if (/^#[0-9a-f]{3}$/i.test(v)) return '#' + [...v.slice(1)].map(c => c + c).join('').toLowerCase();
@@ -286,13 +340,19 @@ export function toHex(value) {
   // color(), oklch(), a named colour: round-trip it through a canvas.
   try {
     const ctx = document.createElement('canvas').getContext('2d');
+    // No 2d context is the same answer as an unparseable colour, and it was
+    // already reached the same way: the throw on the next line landed in the
+    // catch below and returned null.
+    if (!ctx) return null;
     ctx.fillStyle = '#000';
     ctx.fillStyle = v;
+    // A gradient or a pattern can come back out of fillStyle, but only if one
+    // went in; what went in is the string above.
     const out = ctx.fillStyle;
-    return /^#[0-9a-f]{6}$/i.test(out) ? out.toLowerCase() : null;
+    return typeof out === 'string' && /^#[0-9a-f]{6}$/i.test(out) ? out.toLowerCase() : null;
   } catch {
     return null;
   }
 }
 
-const clamp255 = n => clamp(Math.round(n || 0), 0, 255);
+const clamp255 = (n: number) => clamp(Math.round(n || 0), 0, 255);

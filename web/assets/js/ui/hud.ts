@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The corner readouts and the three control clusters on the glass.
 //
 // Everything the board says about itself without being asked: the zoom
@@ -28,12 +20,44 @@ import { el } from '../util.ts';
 import { formatLength, formatSize } from '../measure.ts';
 import { board, bus, selection, byId, historyState, isContent } from '../state.ts';
 import { MIN_ZOOM, MAX_ZOOM, BASE_ZOOM, zoomMs, travelMs } from '../canvas/viewport.ts';
+import type { Viewport } from '../canvas/viewport.ts';
+
+/**
+ * canvas/viewport.ts still carries its migration pragma, so the class type it
+ * exports has the methods but not the fields the constructor assigns. The
+ * intersection names the three this module reads; it becomes redundant, and
+ * comes out, the day that module is annotated.
+ */
+type HudViewport = Viewport & {
+  pan: { x: number, y: number },
+  zoom: number,
+  zoomLocked: boolean,
+};
+
+/**
+ * The command surface, as this module sees it: three names it presses and
+ * nothing else. The same bargain ui/toolbar.js states - the glass knows what a
+ * button is called and not what it does.
+ */
+export interface HudCommands {
+  fit: () => unknown;
+  recenter: () => unknown;
+  lockZoom: () => unknown;
+  undo: () => unknown;
+  redo: () => unknown;
+}
 
 const ZOOM_STEP = 1.3;
 /** The autosave mark's dwell. Restarted rather than stacked - see below. */
 const SAVED_MS = 1500;
 
-let vp = null;
+// Every el() below is read with `!`: all of these ids are static markup in
+// index.html, this module has always read them straight through, and an absent
+// one is a broken build rather than a state to paint around. The `e.target as
+// Element` in the two delegated handlers is safe for the same reason - the
+// listener is on an element, so the target of a click inside it is one too, and
+// closest() is only asked whether an ancestor matches.
+let vp: HudViewport | null = null;
 /** The readout last written, so a pan does not rewrite it sixty times a second. */
 let zoomShown = '';
 let savedTimer = 0;
@@ -44,17 +68,17 @@ let savedTimer = 0;
  * Called once, from main.js, after the viewport exists and the panel has been
  * built. Everything it touches is static markup in index.html.
  */
-export function initHud(viewport, cmds) {
+export function initHud(viewport: HudViewport, cmds: HudCommands) {
   vp = viewport;
 
-  el('zoom-ctl').addEventListener('click', e => {
-    const btn = e.target.closest('[data-zoom]');
+  el('zoom-ctl')!.addEventListener('click', e => {
+    const btn = (e.target as Element).closest<HTMLElement>('[data-zoom]');
     if (!btn) return;
     switch (btn.dataset.zoom) {
-      case 'in':    vp.zoomBy(ZOOM_STEP, zoomMs()); break;
-      case 'out':   vp.zoomBy(1 / ZOOM_STEP, zoomMs()); break;
+      case 'in':    vp!.zoomBy(ZOOM_STEP, zoomMs()); break;
+      case 'out':   vp!.zoomBy(1 / ZOOM_STEP, zoomMs()); break;
       // Back to 100%, without moving the view.
-      case 'reset': vp.viewTo(vp.pan, BASE_ZOOM, travelMs()); break;
+      case 'reset': vp!.viewTo(vp!.pan, BASE_ZOOM, travelMs()); break;
       case 'fit':   cmds.fit(); break;
       case 'home':  cmds.recenter(); break;
       case 'lock':  cmds.lockZoom(); break;
@@ -73,8 +97,8 @@ export function initHud(viewport, cmds) {
   //
   // Through cmds, not through state's undo() directly - the keyboard, the
   // context menu and these three now all press the same button.
-  el('history-ctl').addEventListener('click', e => {
-    const btn = e.target.closest('[data-history]');
+  el('history-ctl')!.addEventListener('click', e => {
+    const btn = (e.target as Element).closest<HTMLElement>('[data-history]');
     if (!btn) return;
     if (btn.dataset.history === 'undo') cmds.undo(); else cmds.redo();
   });
@@ -92,7 +116,7 @@ export function initHud(viewport, cmds) {
    * mark up throughout instead of flickering once per save.
    */
   bus.on('autosaved', () => {
-    const mark = el('saved');
+    const mark = el('saved')!;
     mark.classList.add('is-on');
     clearTimeout(savedTimer);
     savedTimer = setTimeout(() => mark.classList.remove('is-on'), SAVED_MS);
@@ -112,10 +136,10 @@ export function initHud(viewport, cmds) {
   bus.on('geom', paintCount);
   bus.on('settings', paintCount);
 
-  el('viewport').addEventListener('pointermove', e => {
-    const p = vp.toWorld(e.clientX, e.clientY);
+  el('viewport')!.addEventListener('pointermove', e => {
+    const p = vp!.toWorld(e.clientX, e.clientY);
     const { scale, units } = board.settings;
-    el('hud-xy').textContent =
+    el('hud-xy')!.textContent =
       `${px(p.x)}, ${px(p.y)} px · ${formatLength(p.x, scale, units)}, ${formatLength(p.y, scale, units)}`;
   }, { passive: true });
 }
@@ -130,8 +154,10 @@ export function initHud(viewport, cmds) {
  */
 export function paintHistory() {
   const state = historyState();
-  for (const btn of el('history-ctl').querySelectorAll('[data-history]')) {
-    const kind = btn.dataset.history;
+  for (const btn of el('history-ctl')!.querySelectorAll<HTMLButtonElement>('[data-history]')) {
+    // The markup carries exactly two values here, and the pair below reads the
+    // one it is not as the other - which is what the click handler does too.
+    const kind = btn.dataset.history === 'undo' ? 'undo' : 'redo';
     const label = state[kind];
     btn.disabled = !label;
     const verb = kind === 'undo' ? 'Undo' : 'Redo';
@@ -145,7 +171,7 @@ export function paintHistory() {
 export function zoomText() {
   // The one place the scale becomes a percentage. vp.zoom is the true
   // world-to-screen scale; BASE_ZOOM is the scale the corner calls 100%.
-  const pct = (vp.zoom / BASE_ZOOM) * 100;
+  const pct = (vp!.zoom / BASE_ZOOM) * 100;
   // Below 10% a rounded percentage flickers between 6 and 7 as you pinch, so
   // give the small end a decimal instead.
   return (pct < 10 ? pct.toFixed(1) : Math.round(pct)) + '%';
@@ -153,11 +179,11 @@ export function zoomText() {
 
 export function paintZoom(force = false) {
   const text = zoomText();
-  const fixed = vp.isMobile;
-  const locked = vp.zoomLocked || fixed;
+  const fixed = vp!.isMobile;
+  const locked = vp!.zoomLocked || fixed;
   // Locked, the two ends stop being the reason a button is dead - the lock is.
-  const maxed = locked || vp.zoom >= MAX_ZOOM - 1e-6;
-  const mined = locked || vp.zoom <= MIN_ZOOM + 1e-9;
+  const maxed = locked || vp!.zoom >= MAX_ZOOM - 1e-6;
+  const mined = locked || vp!.zoom <= MIN_ZOOM + 1e-9;
   // This runs on every view change, and a pan is a view change that cannot
   // possibly have moved the zoom - so on the whole of a drag the answer is the
   // corner already on screen, and writing it again is a layout per frame for
@@ -168,11 +194,11 @@ export function paintZoom(force = false) {
   // floor reads as 2.0% for a while before it arrives, and hanging their state
   // off the text alone would leave the button enabled at the end of its travel.
   const key = text + (maxed ? '+' : '') + (mined ? '-' : '') +
-    (vp.zoomLocked ? 'L' : '') + (fixed ? 'M' : '');
+    (vp!.zoomLocked ? 'L' : '') + (fixed ? 'M' : '');
   if (key === zoomShown && !force) return;
   zoomShown = key;
-  el('zoom-level').textContent = text;
-  for (const btn of el('zoom-ctl').querySelectorAll('[data-zoom]')) {
+  el('zoom-level')!.textContent = text;
+  for (const btn of el('zoom-ctl')!.querySelectorAll<HTMLButtonElement>('[data-zoom]')) {
     if (btn.dataset.zoom === 'in') btn.disabled = maxed;
     if (btn.dataset.zoom === 'out') btn.disabled = mined;
     // The readout is a button too - it goes back to 100% - so under the lock it
@@ -182,18 +208,21 @@ export function paintZoom(force = false) {
     // you have lost the board at a magnification you have chosen to keep.
     if (btn.dataset.zoom === 'reset') btn.disabled = locked;
   }
-  const fit = el('zoom-ctl').querySelector('[data-zoom="fit"]');
+  // Both are <button>s in index.html - see the zoom cluster there - which is
+  // what the element types below assert; a `disabled` written onto anything
+  // else would be a silent no-op rather than a type error.
+  const fit = el('zoom-ctl')!.querySelector<HTMLButtonElement>('[data-zoom="fit"]')!;
   fit.title = fixed ? 'Back to the top  F'
     : locked ? 'Bring everything into view  F' : 'Zoom to fit  F';
   fit.setAttribute('aria-label', fixed ? 'Back to the top'
     : locked ? 'Bring everything into view' : 'Zoom to fit');
-  const lock = el('zoom-lock');
+  const lock = el('zoom-lock') as HTMLButtonElement;
   lock.disabled = fixed;
-  lock.setAttribute('aria-pressed', String(vp.zoomLocked));
+  lock.setAttribute('aria-pressed', String(vp!.zoomLocked));
   lock.setAttribute('aria-label', fixed ? 'Zoom fixed to Mobile board width'
-    : vp.zoomLocked ? 'Unlock zoom' : 'Lock zoom');
+    : vp!.zoomLocked ? 'Unlock zoom' : 'Lock zoom');
   lock.title = fixed ? `Mobile board always fits its ${board.settings.mobileColumns}-column width`
-    : vp.zoomLocked ? `Zoom held at ${text}` : 'Lock the zoom';
+    : vp!.zoomLocked ? `Zoom held at ${text}` : 'Lock the zoom';
 }
 
 /**
@@ -225,7 +254,7 @@ export function paintSnap() {
  * the raw pair is the board's own coordinate system, and hiding it made the app
  * lie about what it is - a canvas of unitless floats with a lens over it.
  */
-const px = n => Math.round(n);
+const px = (n: number) => Math.round(n);
 
 /**
  * The right-hand half of the readout: how many things, or - when exactly one is
@@ -249,10 +278,10 @@ export function paintCount() {
     const it = byId([...selection][0]);
     if (it) {
       const { scale, units } = board.settings;
-      el('hud-count').textContent =
+      el('hud-count')!.textContent =
         `${px(it.w)} × ${px(it.h)} px · ${formatSize(it.w, it.h, scale, units)}`;
       return;
     }
   }
-  el('hud-count').textContent = n === 0 ? 'nothing yet' : n + (n === 1 ? ' thing' : ' things');
+  el('hud-count')!.textContent = n === 0 ? 'nothing yet' : n + (n === 1 ? ' thing' : ' things');
 }
