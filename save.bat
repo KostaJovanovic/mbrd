@@ -117,6 +117,35 @@ rem Bump the service-worker cache epoch, so every commit ships fresh JS/CSS
 rem instead of leaving already-installed clients on a stale shell.
 powershell -NoProfile -Command "(Get-Content 'web/sw.js' -Encoding UTF8) -replace 'const VERSION = ''mbrd-v\d*'';', 'const VERSION = ''mbrd-v%NEXT_COUNT%'';' | Set-Content 'web/sw.js' -Encoding utf8"
 
+rem Rebuild the bundle, and do it HERE - after the two stamps above and before
+rem the staging below.
+rem
+rem index.html loads assets/app.js, wrangler serves ./web as static files, and
+rem nothing builds on deploy. So what reaches a visitor is whatever bundle is
+rem committed, and until now nothing in this script made one: the artifact was
+rem only ever as fresh as the last time somebody happened to run `npm run build`
+rem or leave `npm run dev` watching. That failed exactly the way an unenforced
+rem step does - v0.187 committed four modules (commands, layout, state,
+rem import/drop) written after the bundle beside them was built, so the sources
+rem said one thing and the file the browser actually loads said another.
+rem
+rem After the stamps, because version.js is bundled INTO app.js. Built before
+rem them, every release ships a bundle announcing the previous version - which
+rem is how v0.187 came to log "v0.156 ready" in the console.
+rem
+rem A failed build stops the commit rather than warning. A bundle that did not
+rem build is not a stale bundle, it is the previous one, and committing it would
+rem ship sources that have never once been compiled together.
+echo [bld]  bundle
+call npm run build
+if errorlevel 1 (
+  echo.
+  echo [err]  the bundle did not build - nothing has been committed.
+  echo        run "npm install" if esbuild is missing, then fix the error above.
+  set SAVE_ERROR=1
+  goto end
+)
+
 rem The app is its own 404 page, and a static host wants that spelled as a file:
 rem web/404.html is index.html byte for byte, served with a 404 status at every
 rem address the app does not have (see wrangler.jsonc). Copied here rather than
