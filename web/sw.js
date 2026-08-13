@@ -12,7 +12,7 @@
 // Written out in full rather than composed from PREFIX, because save.bat bumps
 // this line by regex on every commit and would not recognise an expression.
 // tests/sw.test.js holds the two together.
-const VERSION = 'mbrd-v156';
+const VERSION = 'mbrd-v187';
 const PREFIX = 'mbrd-';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) turns the
@@ -25,6 +25,14 @@ const DEV = HOST === 'localhost' || HOST === '127.0.0.1' || HOST === '0.0.0.0' |
 const SHELL = [
   './',
   './index.html',
+  // The changelog, which is the second page this site has. Precached for the
+  // same reason index.html is: it ships with the app, and the sheet it is
+  // printed on is already in this list two lines down, so caching the stylesheet
+  // and not the page would leave one of them useless. Listed by filename rather
+  // than as ./patch, which is the address it is served at - cache.add fetches
+  // what it is given and tests/sw.test.js checks every entry against a file on
+  // disk. The navigate handler below maps the address to this entry.
+  './patch.html',
   './manifest.json',
   './assets/css/tokens.css',
   // The subsystem stylesheets, in the order index.html loads them, which is the
@@ -54,6 +62,12 @@ const SHELL = [
   './assets/css/sticker-pad.css',
   './assets/css/mobile.css',
   './assets/css/quality.css',
+  // Not one of the twenty above and not in the cascade with them - this one
+  // dresses patch.html and is loaded by nothing else. It is here because
+  // tests/sw.test.js walks the stylesheet directory and precaches what it finds,
+  // which is the right rule: a sheet that ships and cannot be fetched offline is
+  // a page that renders naked. See the banner at the top of the file.
+  './assets/css/patch.css',
   // Every icon in the app, in one sprite. Referenced by <use> from index.html
   // and built into the right-click menu by ui/menu.js, so a board opened offline
   // without it is a board of blank buttons - it belongs in the shell as much as
@@ -194,13 +208,31 @@ self.addEventListener('fetch', event => {
   // app - or an older shell of this one - left behind. See AUD-14.
 
   // Navigations fall back to the cached shell so an offline launch still boots.
+  //
+  // Which shell depends on where the navigation was going, and that is the whole
+  // of this branch. Every path this app does not have is answered with the app
+  // itself - see the base tag in index.html and notFound in main.ts - so before
+  // there was a second page, index.html was the only honest answer to any
+  // address. /patch is now a path the app DOES have, and handing back the board
+  // for it offline would be the one case where the not-found design tells a lie:
+  // the page exists, it is in the cache two dozen lines up, and the visitor
+  // asked for it by name.
+  //
+  // Matched on the tail rather than against the registration scope, which would
+  // mean reading self.location.href at load time. A nested /somewhere/patch
+  // therefore also matches, and that is a path this app does not have either -
+  // so the cost of the loose match is showing the changelog instead of the
+  // board on an address that is a 404 in both readings. The trailing slash is in
+  // the pattern because the host redirects /patch/ to /patch and there is no
+  // host to do that when this branch is the one answering.
   if (req.mode === 'navigate') {
+    const page = /\/patch(\.html)?\/?$/.test(url.pathname) ? './patch.html' : './index.html';
     event.respondWith((async () => {
       try {
         return await fetch(req);
       } catch {
         const cache = await caches.open(VERSION);
-        return (await cache.match('./index.html', { ignoreSearch: true })) || fetch(req);
+        return (await cache.match(page, { ignoreSearch: true })) || fetch(req);
       }
     })());
     return;

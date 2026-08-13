@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The commands that needed more than a one-liner.
 //
 // Everything `cmds` delegates to rather than inlines: the save button's
@@ -40,7 +32,7 @@
 // So: before importing an eleventh canvas/ module, check whether what you want
 // is that function.
 
-import { shuffle } from '../util.ts';
+import { shuffle, isRecord } from '../util.ts';
 import { toast } from '../notify.ts';
 import { formatLength, scaleFrom, MM_PER_INCH } from '../measure.ts';
 import { ask } from './dialog.ts';
@@ -65,10 +57,61 @@ import { saveBoard, exportBoard, autosave, clearAllData } from '../storage/stora
 import { defaultSize, measureSize } from '../canvas/renderers.ts';
 import { arrange, mobileOrder } from '../arrange/arrangements.ts';
 import { syncBoardMode } from './board-view.ts';
+import type { Item, Geometry } from '../board-model.ts';
+import type { Point } from '../geometry.ts';
+import type { Viewport } from '../canvas/viewport.ts';
 
-let vp = null;
+/**
+ * canvas/viewport.ts still carries its migration pragma, so the class type it
+ * exports has the methods but not the fields the constructor assigns - the same
+ * intersection ui/hud.ts and ui/fence-prompt.ts make, for the same reason. These
+ * are the fields paintGrid() and paintGrain() read off the viewport this module
+ * hands them; the intersection comes out the day that module is annotated.
+ */
+type ActionsViewport = Viewport & {
+  el: HTMLElement;
+  width: number;
+  height: number;
+  zoom: number;
+  pan: { x: number; y: number };
+  left: number;
+  top: number;
+  moving: boolean;
+};
 
-export function initBoardActions(viewport) {
+/**
+ * One row of a geometry snapshot, as snapshotGeom() actually answers.
+ *
+ * layout.ts still carries its migration pragma too, and there the loss is not
+ * fields a constructor assigned but fields a *loop* did: the six geometry keys
+ * are copied in by iterating GEOM_KEYS, which publishes none of them, so tsc
+ * infers the row as `{ id }` alone and the array as possibly holding nulls -
+ * which the function's own trailing .filter(Boolean) has already removed. This
+ * names what is really there. It comes out the day layout.ts is annotated.
+ */
+type GeomRow = Omit<Geometry, 'presnap'> & {
+  presnap: { x: number, y: number, w: number, h: number } | null;
+  loose: boolean;
+};
+
+/** The three options rearrange() takes - see the note above it. */
+type RearrangeOptions = {
+  /** the layout, overriding the board's own */
+  name?: string;
+  /** where to lay out about, overriding the two rules rearrange() states */
+  center?: Point;
+  /** a fence id to close around the result, inside the same commit */
+  enclose?: string;
+  /** the undo entry's label, overriding the one rearrange() picks */
+  label?: string;
+};
+
+// Non-null asserted at every use below rather than guarded: main.ts calls
+// initBoardActions() before any command can run, so a null here would be a
+// wiring bug and not a state to write a fallback for.
+let vp: ActionsViewport | null = null;
+
+export function initBoardActions(viewport: ActionsViewport) {
   vp = viewport;
 }
 
@@ -133,7 +176,10 @@ export function resetSave() {
 }
 
 function paintSave() {
-  const btn = document.querySelector('[data-cmd="save"]');
+  // A `data-cmd` is always on a button: the toolbar's are `<button data-cmd>` in
+  // index.html and the panel's are made by buildButtons() in ui/panel.ts, which
+  // sets the attribute on a <button> it just created. Same for paintClear().
+  const btn = document.querySelector<HTMLButtonElement>('[data-cmd="save"]');
   if (!btn) return;
   if (saving) {
     btn.disabled = true;
@@ -209,7 +255,7 @@ function resetClear() {
 }
 
 function paintClear() {
-  const btn = document.querySelector('[data-cmd="clear-data"]');
+  const btn = document.querySelector<HTMLButtonElement>('[data-cmd="clear-data"]');
   if (!btn) return;
   if (clearLeft <= 0) {
     btn.textContent = 'Clear everything';
@@ -263,8 +309,15 @@ export async function resetSize() {
     // measureSize only reads the file for the two types with an aspect of their
     // own; everything else answers from the type alone, so a card whose bytes
     // have gone still resets.
+    // The asset store keeps a Blob and measureSize() asks for a File. Safe
+    // because the two members it reads that a Blob does not carry are read
+    // defensively: `file.name` only ever reaches extOf(), whose parameter
+    // defaults to '' for exactly this, and only after `file.type` - which every
+    // Blob has, and which putAsset() fills from the file it was made of - has
+    // already answered for an SVG. Nothing is constructed here to make the types
+    // agree, because that would be a different measurement.
     const size = blob
-      ? await measureSize(it.type, blob).catch(() => defaultSize(it.type))
+      ? await measureSize(it.type, blob as File).catch(() => defaultSize(it.type))
       : defaultSize(it.type);
     const { w } = size;
     let { h } = size;
@@ -278,7 +331,8 @@ export async function resetSize() {
     return board.settings.snap ? latticeBox({ ...it, w, h }, step) : { w, h };
   }));
 
-  const before = snapshotGeom(items.map(i => i.id));
+  // The cast is what GeomRow is for - see its note.
+  const before = snapshotGeom(items.map(i => i.id)) as GeomRow[];
   // Tested before anything is applied, so a run that changes nothing leaves no
   // history entry behind - an undo step that restores the state it was already
   // in is a step somebody has to press twice to get anywhere. Said out loud for
@@ -357,11 +411,11 @@ export function reloadBoard() {
   bus.emit('items');
   bus.emit('selection');
   bus.emit('settings', 'reload');
-  paintGrid(vp);
-  paintGrain(vp);
+  paintGrid(vp!);
+  paintGrain(vp!);
   paintPaper();
   paintMobileFrame();
-  vp.apply();
+  vp!.apply();
   toast('Board reloaded');
 }
 
@@ -387,7 +441,7 @@ export function reloadBoard() {
  * A save that fails asks before going anywhere - the answer to "your last edits
  * are not stored" is not to reload on top of them.
  */
-export async function restartApp() {
+export async function restartApp(): Promise<boolean> {
   flushNoteEdit();
   if (!(await autosave())) {
     const answer = await ask({
@@ -438,7 +492,7 @@ export async function restartApp() {
  *            it. So the rectangle follows the cards, which is also the shape a
  *            fence is made with in the first place - see fenceBox().
  */
-export function rearrange(items, options = {}) {
+export function rearrange(items: Item[], options: RearrangeOptions = {}) {
   if (!items.length) return;
   const whole = items.length === board.items.length;
   const mobile = board.layoutMode === 'mobile';
@@ -474,14 +528,16 @@ export function rearrange(items, options = {}) {
   // Mobile has its own answer and it is a better one: packRuns() lays the whole
   // column out in runs, a band and then the cards under it, so every fenced card
   // has to be in the list it is handed. See placeMobileItems().
-  const carried = mobile ? [] : items.filter(it =>
-    !isRider(it) && inSet.has(parentOf.get(it.id)));
+  const carried = mobile ? [] : items.filter(it => {
+    const parent = parentOf.get(it.id);
+    return !isRider(it) && parent != null && inSet.has(parent);
+  });
   const carriedIds = new Set(carried.map(it => it.id));
   const free = items.filter(it => !isRider(it) && !carriedIds.has(it.id));
   // The region joins the snapshot when there is one, so closing it around the
   // result is inside the same undo entry as the layout that made it necessary.
   const beforeAll = snapshotGeom(
-    enclosing ? [...items.map(i => i.id), enclosing.id] : items.map(i => i.id));
+    enclosing ? [...items.map(i => i.id), enclosing.id] : items.map(i => i.id)) as GeomRow[];
   // Nothing to lay out - the whole set was followers. There is no arrangement of
   // riders alone; they stay on their hosts. A fence's contents cannot empty this
   // on their own: containment is a strict order, so the outermost fence in any
@@ -489,7 +545,7 @@ export function rearrange(items, options = {}) {
   if (!free.length) return;
 
   const at = options.center ?? (whole ? { x: 0, y: 0 } : middleOf(free));
-  const before = snapshotGeom(free.map(i => i.id));
+  const before = snapshotGeom(free.map(i => i.id)) as GeomRow[];
   // Two things vary here, and neither is enough on its own.
   //
   // The shuffle changes which item lands in which slot. Without it a layout is
@@ -536,7 +592,7 @@ export function rearrange(items, options = {}) {
   const laid = order.map(i => (sized ? { ...free[i], ...sized[i] } : free[i]));
   const seed = (Math.random() * 0xffffffff) >>> 0;
 
-  let placed;
+  let placed: Item[];
   if (mobile) {
     // A column has no slots to deal, so none of the above applies: the packer
     // decides where every card goes and the arrangement decides only what order
@@ -544,7 +600,10 @@ export function rearrange(items, options = {}) {
     // fork - the shuffle above exists to re-deal a set of 2D slots, and dealt
     // into a Mobile order it would scramble the very sequence the order just
     // chose. See MOBILE_ARRANGEMENTS in arrange/arrangements.js.
-    placed = mobileOrder(free, { name: board.arrangement, seed });
+    // The cast holds because mobileOrder() hands back the very items it was
+    // given, in a new order - ArrangeItem is only the narrower shape it reads
+    // them through, and every ORDERS entry is a permutation of its input.
+    placed = mobileOrder(free, { name: board.arrangement, seed }) as Item[];
     const moving = new Set(free.map(item => item.id));
     // Riders are not obstacles - they overlap their host and would wall it off.
     const obstacles = whole ? [] : board.items.filter(item =>
@@ -572,14 +631,23 @@ export function rearrange(items, options = {}) {
   }
   // spots came back in shuffled order, so each one goes to the item that was
   // in that slot, not to the item at the same index in board.items.
-  const target = new Array(free.length);
+  const target: Item[] = new Array(free.length);
   if (mobile) {
     const byItem = new Map(placed.map(item => [item.id, item]));
-    free.forEach((item, i) => { target[i] = byItem.get(item.id); });
+    // Asserted rather than guarded: placeMobileItems() answers for every item it
+    // was handed, and a miss would be read a few lines below as target[i].x on
+    // nothing - so a fallback here would only move the same bug further off.
+    free.forEach((item, i) => { target[i] = byItem.get(item.id)!; });
   } else {
     order.forEach((itemIndex, slot) => { target[itemIndex] = placed[slot]; });
   }
   applyGeom(before.map((g, i) => {
+    // ItemMeta is unknown per key, so the memo is read out and asked whether it
+    // is an object before it is copied. The truthy test this replaces let a memo
+    // that was not one through to be spread into a shape with no x on it;
+    // applyGeom() runs the same value past usableMemo() either way, so what
+    // reaches the board is unchanged.
+    const memo = target[i].meta?.presnap;
     const at = {
       ...g,
       x: target[i].x,
@@ -588,9 +656,7 @@ export function rearrange(items, options = {}) {
         w: target[i].w,
         h: target[i].h,
         rot: target[i].rot,
-        presnap: target[i].meta?.presnap
-          ? { ...target[i].meta.presnap }
-          : null,
+        presnap: isRecord(memo) ? { ...memo } : null,
       } : {}),
     };
     if (!sized) return at;
@@ -623,7 +689,9 @@ export function rearrange(items, options = {}) {
       grew = false;
       for (const it of carried) {
         if (!pending.has(it.id)) continue;
-        const fenceId = parentOf.get(it.id);
+        // Non-null: `carried` is exactly the items whose parentOf entry is an id
+        // that is itself in this set - see the filter that built it.
+        const fenceId = parentOf.get(it.id)!;
         if (pending.has(fenceId)) continue;        // its fence has not moved yet
         const src = beforeById.get(fenceId);
         const now = byId(fenceId);
@@ -651,8 +719,10 @@ export function rearrange(items, options = {}) {
         const host = stuckTo(note);
         if (!host) { pending.delete(note.id); continue; }
         if (pending.has(host.id)) continue;         // host is a rider, not moved yet
-        const hostSrc = beforeById.get(host.id) || byId(host.id);
-        const pos = stuckPlacement(note, hostSrc, byId(host.id));
+        // Non-null: `host` came back from stuckTo(), which only ever names an
+        // item that is on the board this instant.
+        const hostSrc = beforeById.get(host.id) || byId(host.id)!;
+        const pos = stuckPlacement(note, hostSrc, byId(host.id)!);
         applyGeom([{ id: note.id, x: pos.x, y: pos.y }]);
         pending.delete(note.id);
         grew = true;
@@ -669,9 +739,9 @@ export function rearrange(items, options = {}) {
   // Driven, unlike the carried contents: its edges are what membership means, so
   // a region that changed size is the one thing that has to ask again - the rule
   // commitGeom() already states for a resize.
-  const closing = [];
+  const closing: string[] = [];
   if (enclosing) {
-    const box = fenceBox(null, itemBounds(items.map(i => byId(i.id)).filter(Boolean)), step);
+    const box = fenceBox(null, itemBounds(items.map(i => byId(i.id)).filter(it => !!it)), step);
     if (box) {
       applyGeom([{ id: enclosing.id, ...box, rot: enclosing.rot, z: enclosing.z }]);
       // Then again, with room at the top for the name. A fence's plate lies
@@ -717,11 +787,13 @@ export function rearrange(items, options = {}) {
   // it shakes each item where it stands, and flying to fit the whole board
   // afterwards would move things on screen far more than the shake did -
   // hiding the change inside a much larger one.
-  if (whole && (mobile || board.arrangement !== 'free')) vp.fit(board.items, 80, travelMs());
+  if (whole && (mobile || board.arrangement !== 'free')) vp!.fit(board.items, 80, travelMs());
 }
 
 /** The centre of what a set of items covers. */
-function middleOf(items) {
-  const b = itemBounds(items);
+function middleOf(items: Item[]) {
+  // itemBounds() answers null for an empty list and only for that; the one
+  // caller has already returned when its list is empty.
+  const b = itemBounds(items)!;
   return { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 };
 }

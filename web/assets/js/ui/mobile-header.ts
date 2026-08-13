@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The Mobile masthead's own appearance controls, and its own panel.
 //
 // A sheet of its own rather than a section of the sidebar, because it is opened
@@ -35,6 +27,39 @@ import { field, fieldStops } from './controls.ts';
 import { paintTitleField, wireTitleField } from './board-title.ts';
 import { registerPanel, panelShown, panelHidden } from './panel-stack.ts';
 import { open as openSearch } from './search.ts';
+import type { FontAxis, MobileHeader } from '../board-model.ts';
+import type { Viewport } from '../canvas/viewport.ts';
+import type { SliderFocus } from './sidebar.ts';
+
+/** One weight stop, as headerFontWeights() lists them. */
+type WeightStop = { value: number; label: string };
+
+/**
+ * One axis slider: the row, the track, the readout and the axis it is set from.
+ *
+ * `out` is not optional here although field() answers with a nullable one - see
+ * rangeControl(), which is the only thing that builds these and always asks for
+ * a readout.
+ */
+type AxisControl = {
+  label: HTMLLabelElement;
+  input: HTMLInputElement;
+  out: HTMLOutputElement;
+  axis: FontAxis;
+};
+
+/**
+ * The weight control in either of its two shapes - see buildWeight().
+ *
+ * `set` is what the two have in common and the reason this is one type: a
+ * variable face's control takes a weight, and a static face's takes the same
+ * weight and finds the stop it lands on. Neither caller has to know which.
+ */
+type WeightControl = {
+  input: HTMLInputElement;
+  out: HTMLOutputElement | null;
+  set: (weight: number) => void;
+};
 
 /**
  * A four-letter tag, in words.
@@ -73,52 +98,58 @@ const AXIS_LABELS = {
   YTUC: 'Uppercase height',
 };
 
-let viewport;
-let button;
-let findBtn;
-let panel;
-let sliderFocus;
-let section;
-let titleInput;
-let fontSelect;
-let sizeInput;
-let sizeOut;
-let stretchInput;
-let stretchOut;
-let leadingInput;
-let leadingOut;
-let offsetInput;
-let offsetOut;
-let italicInput;
-let wrapInput;
-let weightHost;
-let axesHost;
-let weightControl = null;
-const axisControls = new Map();
+// Every element below is read out of the markup by id and cast to what
+// index.html declares it as - the panel's fields are static markup, the ids are
+// checked against that file by tests/element-ids.test.js, and an absent or
+// differently-shaped one is a broken build rather than a state to paint around.
+// It is the reading ui/hud.ts states at length, and the `as` ui/sidebar.ts and
+// ui/color-picker.ts make on the same kind of lookup.
+let viewport: Viewport | null;
+let button: HTMLElement;
+let findBtn: HTMLElement;
+let panel: HTMLElement;
+let sliderFocus: SliderFocus;
+let section: HTMLElement;
+let titleInput: HTMLInputElement;
+let fontSelect: HTMLSelectElement;
+let sizeInput: HTMLInputElement;
+let sizeOut: HTMLElement;
+let stretchInput: HTMLInputElement;
+let stretchOut: HTMLElement;
+let leadingInput: HTMLInputElement;
+let leadingOut: HTMLElement;
+let offsetInput: HTMLInputElement;
+let offsetOut: HTMLElement;
+let italicInput: HTMLInputElement;
+let wrapInput: HTMLInputElement;
+let weightHost: HTMLElement;
+let axesHost: HTMLElement;
+let weightControl: WeightControl | null = null;
+const axisControls = new Map<string, AxisControl>();
 
-export function initMobileHeaderEditor(vp) {
+export function initMobileHeaderEditor(vp: Viewport | null) {
   viewport = vp;
-  button = el('mobile-header-edit-btn');
-  panel = el('header-panel');
-  section = el('mobile-header-settings');
-  titleInput = el('header-title');
-  fontSelect = el('mobile-header-font');
-  sizeInput = el('mobile-header-size');
-  sizeOut = el('mobile-header-size-out');
-  stretchInput = el('mobile-header-stretch');
-  stretchOut = el('mobile-header-stretch-out');
-  leadingInput = el('mobile-header-leading');
-  leadingOut = el('mobile-header-leading-out');
-  offsetInput = el('mobile-header-offset');
-  offsetOut = el('mobile-header-offset-out');
-  italicInput = el('mobile-header-italic');
-  wrapInput = el('mobile-header-wrap');
-  weightHost = el('mobile-header-weight');
-  axesHost = el('mobile-header-axes');
+  button = el('mobile-header-edit-btn')!;
+  panel = el('header-panel')!;
+  section = el('mobile-header-settings')!;
+  titleInput = el('header-title') as HTMLInputElement;
+  fontSelect = el('mobile-header-font') as HTMLSelectElement;
+  sizeInput = el('mobile-header-size') as HTMLInputElement;
+  sizeOut = el('mobile-header-size-out')!;
+  stretchInput = el('mobile-header-stretch') as HTMLInputElement;
+  stretchOut = el('mobile-header-stretch-out')!;
+  leadingInput = el('mobile-header-leading') as HTMLInputElement;
+  leadingOut = el('mobile-header-leading-out')!;
+  offsetInput = el('mobile-header-offset') as HTMLInputElement;
+  offsetOut = el('mobile-header-offset-out')!;
+  italicInput = el('mobile-header-italic') as HTMLInputElement;
+  wrapInput = el('mobile-header-wrap') as HTMLInputElement;
+  weightHost = el('mobile-header-weight')!;
+  axesHost = el('mobile-header-axes')!;
 
   sliderFocus = createMobileSliderFocus(panel);
-  panel.addEventListener('pointerdown', e => sliderFocus.begin(e.target, e.pointerId));
-  const endSliderFocus = e => sliderFocus.end(e.pointerId);
+  panel.addEventListener('pointerdown', e => sliderFocus.begin(e.target as Element | null, e.pointerId));
+  const endSliderFocus = (e: PointerEvent) => sliderFocus.end(e.pointerId);
   globalThis.addEventListener('pointerup', endSliderFocus);
   globalThis.addEventListener('pointercancel', endSliderFocus);
   panel.addEventListener('lostpointercapture', endSliderFocus, true);
@@ -129,11 +160,11 @@ export function initMobileHeaderEditor(vp) {
   // button *means*, and because a fade that is interrupted mid-way leaves a
   // pressable pen in front of an open panel for a fraction of a second.
   button.addEventListener('click', () => (isPanelOpen() ? closePanel() : openPanel()));
-  el('header-close').addEventListener('click', closePanel);
+  el('header-close')!.addEventListener('click', closePanel);
   // Find, the phone's only way into the palette (the desktop toolbar button is
   // data-desktop and there is no Ctrl+K or right-click on touch). It rides the
   // Mobile board whichever lens is up, so unlike the pen it is not lens-gated.
-  findBtn = el('mobile-find-btn');
+  findBtn = el('mobile-find-btn')!;
   findBtn.addEventListener('click', () => openSearch());
   // The name at the top of the panel, on ui/board-title.js's wiring rather than
   // on its own. It is the same field the sidebar's Board section has, and a
@@ -163,7 +194,7 @@ export function initMobileHeaderEditor(vp) {
   });
   italicInput.addEventListener('change', () => update({ italic: italicInput.checked }));
   wrapInput.addEventListener('change', () => update({ wrap: wrapInput.checked }));
-  el('mobile-header-reset').addEventListener('click', resetHeader);
+  el('mobile-header-reset')!.addEventListener('click', resetHeader);
 
   // The three ways the fit can go stale that are not a change to these
   // controls: the name itself, letter by letter while it is being renamed and
@@ -171,7 +202,7 @@ export function initMobileHeaderEditor(vp) {
   // across. A ResizeObserver rather than the viewport's own onChange, which
   // fires on every frame of a pan and would put a layout read in each of them -
   // the band only ever changes width when the window does.
-  const title = el('mobile-board-title');
+  const title = el('mobile-board-title')!;
   title.addEventListener('input', scheduleFit);
   // 'board' is also how a rename made anywhere else - the sidebar's copy of this
   // field, the tap on the masthead, the title card - reaches the field above.
@@ -180,7 +211,7 @@ export function initMobileHeaderEditor(vp) {
     scheduleFit();
   });
   if (typeof ResizeObserver === 'function') {
-    new ResizeObserver(scheduleFit).observe(el('mobile-board-header'));
+    new ResizeObserver(scheduleFit).observe(el('mobile-board-header')!);
   }
 
   viewport?.onChange?.(paintButton);
@@ -228,8 +259,8 @@ export function initMobileHeaderEditor(vp) {
 }
 
 /** CSS low-level settings for every available axis except weight. */
-export function variationSettings(style, axes) {
-  const values = [];
+export function variationSettings(style: MobileHeader, axes: FontAxis[] | null | undefined) {
+  const values: string[] = [];
   for (const axis of axes || []) {
     if (axis.tag === 'wght') continue;
     const raw = axis.tag === 'ital'
@@ -251,18 +282,18 @@ export function variationSettings(style, axes) {
  * that nothing else on the track is unreachable.
  */
 const STRETCH_DETENT = 4;
-const snapStretch = value =>
+const snapStretch = (value: number) =>
   (Math.abs(value - 100) <= STRETCH_DETENT ? 100 : value);
 
 /** 100 is the face's own line height, and says so rather than showing "100%". */
-const leadingText = value => (+value === 100 ? 'Auto' : `${formatAxis(value)}%`);
+const leadingText = (value: number) => (+value === 100 ? 'Auto' : `${formatAxis(value)}%`);
 
 /** 0 sits the name in the middle of the band; either way of it reads as a way. */
-const offsetText = value =>
+const offsetText = (value: number) =>
   (+value === 0 ? 'Center' : `${+value < 0 ? 'Up' : 'Down'} ${Math.abs(+value)}%`);
 
 /** A useful slider step across small fractions and very broad design spaces. */
-export function axisStep(axis) {
+export function axisStep(axis: FontAxis) {
   if (axis.tag === 'ital' || axis.tag === 'WONK') return 1;
   const span = axis.max - axis.min;
   if (span >= 100) return 1;
@@ -302,7 +333,7 @@ export function closePanel() {
   panelHidden('header');
 }
 
-function setPanelOpen(want) {
+function setPanelOpen(want: boolean) {
   panel.classList.toggle('is-open', want);
   panel.setAttribute('aria-hidden', String(!want));
   button.setAttribute('aria-expanded', String(want));
@@ -329,7 +360,7 @@ function resetHeader() {
 function changeFont() {
   const font = fontSelect.value;
   const axes = availableAxes(font);
-  const values = {};
+  const values: Record<string, number> = {};
   for (const axis of axes) {
     if (axis.tag !== 'wght' && axis.tag !== 'ital') values[axis.tag] = axis.default;
   }
@@ -398,7 +429,7 @@ function buildAxisControls() {
  * of a family, and every stop but its own would be the browser inventing a
  * bold. The host comes down rather than showing a dial with one stop on it.
  */
-function buildWeight(axis) {
+function buildWeight(axis: FontAxis | undefined) {
   weightHost.replaceChildren();
   weightHost.hidden = false;
   weightControl = null;
@@ -413,7 +444,7 @@ function buildWeight(axis) {
     weightHost.append(control.label);
     weightControl = {
       ...control,
-      set: weight => {
+      set: (weight: number) => {
         control.input.value = String(weight);
         control.out.textContent = formatAxis(weight);
       },
@@ -443,7 +474,7 @@ function buildWeight(axis) {
   const names = fieldStops(stops, { specimen: s => ({ fontWeight: String(s.value) }) });
   // The printed stops are what a sighted user reads; a screen reader gets the
   // same names off the thumb rather than "3 of 5".
-  const describe = index => {
+  const describe = (index: number) => {
     input.setAttribute('aria-valuetext', stops[index]?.label || '');
   };
   input.addEventListener('input', () => {
@@ -456,7 +487,7 @@ function buildWeight(axis) {
   weightControl = {
     input,
     out: null,
-    set: weight => {
+    set: (weight: number) => {
       const index = nearestStop(stops, weight);
       input.value = String(index);
       describe(index);
@@ -465,7 +496,7 @@ function buildWeight(axis) {
 }
 
 /** The stop a stored weight lands on - the nearest, never nothing. */
-function nearestStop(stops, weight) {
+function nearestStop(stops: readonly WeightStop[], weight: number) {
   let best = 0;
   for (let i = 1; i < stops.length; i++) {
     if (Math.abs(stops[i].value - weight) < Math.abs(stops[best].value - weight)) best = i;
@@ -473,7 +504,7 @@ function nearestStop(stops, weight) {
   return best;
 }
 
-function rangeControl(labelText, axis) {
+function rangeControl(labelText: string, axis: FontAxis): AxisControl {
   const { label, out } = field(labelText, { out: true });
   const input = document.createElement('input');
   input.type = 'range';
@@ -481,7 +512,9 @@ function rangeControl(labelText, axis) {
   input.max = String(axis.max);
   input.step = String(axisStep(axis));
   label.append(input);
-  return { label, input, out, axis };
+  // `out` is asserted because it was asked for on the line above, which is the
+  // only thing that makes field() build one.
+  return { label, input, out: out!, axis };
 }
 
 function paint() {
@@ -529,7 +562,7 @@ function paint() {
 
 /** The Desktop title card's text node, or null when it is not on the board. */
 function titleCardEl() {
-  return document.querySelector('.item[data-type="title"] .title-name');
+  return document.querySelector<HTMLElement>('.item[data-type="title"] .title-name');
 }
 
 /**
@@ -540,7 +573,7 @@ function titleCardEl() {
  * is the only part that differs. The name-fit shrink (fitTitle) applies to both
  * now, and is scheduled by the caller, not written here.
  */
-function applyTitleStyle(title, style, axes) {
+function applyTitleStyle(title: HTMLElement, style: MobileHeader, axes: FontAxis[]) {
   const stack = headerFontStack(style.font);
   if (stack) title.style.fontFamily = stack;
   else title.style.removeProperty('font-family');
@@ -591,14 +624,14 @@ function applyTitleStyle(title, style, axes) {
  * layout it needs. The caller sets --mobile-board-width (the strip the size is a
  * fraction of) on the title before calling.
  */
-export function styleFeedMasthead(title, box) {
+export function styleFeedMasthead(title: HTMLElement | null, box: Element | null) {
   if (!title) return;
   applyTitleStyle(title, header(), availableAxes());
   if (box) fitOne(title, box, header().wrap, false);
 }
 
 /** Style the Desktop title card if it is on the board right now. */
-function styleTitleCard(style = header(), axes = availableAxes()) {
+function styleTitleCard(style: MobileHeader = header(), axes: FontAxis[] = availableAxes()) {
   const card = titleCardEl();
   if (!card) return;
   applyTitleStyle(card, style, axes);
@@ -687,7 +720,7 @@ const TITLE_CAP = 0.1875;
  * which no number here knows. Rects are grouped by their top edge because a line
  * holding more than one inline box reports one rect each.
  */
-function lineCount(title) {
+function lineCount(title: Element) {
   if (typeof document === 'undefined' || typeof document.createRange !== 'function') return 1;
   const range = document.createRange();
   range.selectNodeContents(title);
@@ -710,7 +743,7 @@ function lineCount(title) {
  * callback. It runs only when something that could change the answer has
  * happened - see scheduleFit.
  */
-function fitLines(title, max = TITLE_LINES) {
+function fitLines(title: HTMLElement, max = TITLE_LINES) {
   title.style.setProperty('--mobile-title-fit', '1');
   if (lineCount(title) <= max) {
     title.style.removeProperty('--mobile-title-fit');
@@ -760,7 +793,7 @@ function fitTitle() {
  * shrunk line and the room, and floored rather than rounded so a line a fraction
  * of a pixel too wide is not called a fit.
  */
-function fitOne(title, box, wrap, off) {
+function fitOne(title: HTMLElement | null, box: Element | null, wrap: boolean, off: boolean) {
   if (!title || !box) return;
   if (off) { title.style.removeProperty('--mobile-title-fit'); return; }
   if (wrap) { fitLines(title); return; }
@@ -776,7 +809,7 @@ function fitOne(title, box, wrap, off) {
 }
 
 /** What the button was last set to, so a scroll writes nothing - see below. */
-let buttonShown = null;
+let buttonShown: boolean | null = null;
 
 /**
  * Whether the Feed's title page is on screen, as the Feed last reported it.
@@ -833,11 +866,11 @@ function displayStack() {
   return typeof getComputedStyle === 'function' ? readToken('--font-display') : '';
 }
 
-function availableAxes(font = header().font) {
+function availableAxes(font: string = header().font) {
   return headerFontAxes(font, displayStack());
 }
 
-function update(patch) {
+function update(patch: Partial<MobileHeader>) {
   const current = header();
   setSetting('mobileHeader', {
     ...current,
@@ -846,17 +879,20 @@ function update(patch) {
   });
 }
 
-function header() {
+function header(): MobileHeader {
   // Board-level now, not per-layout: the Mobile masthead and the Desktop title
   // card are one style set in one place. See state.js.
   return board.mobileHeader || DEFAULT_MOBILE_HEADER;
 }
 
-function axisLabel(tag) {
-  if (AXIS_LABELS[tag]) return AXIS_LABELS[tag];
+function axisLabel(tag: string) {
+  // The table is keyed by the tags it happens to know; a tag it does not is the
+  // fallback below, which is what the note over AXIS_LABELS says it is for.
+  const known = (AXIS_LABELS as Record<string, string>)[tag];
+  if (known) return known;
   return tag.trim() || 'Axis';
 }
 
-function formatAxis(value) {
+function formatAxis(value: number) {
   return String(Math.round(+value * 100) / 100);
 }

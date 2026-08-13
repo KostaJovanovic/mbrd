@@ -160,6 +160,17 @@ error rather than becoming a broken runner.
   demo, served off a Linux filesystem, 404s. The CI job runs on `ubuntu-latest`
   for exactly this reason and is the leg that catches it — but it reports on the
   push, and the deploy does not wait for it, so match the filename exactly.
+- **`web/patch.html` is the public changelog, and the second page this site
+  has.** Kept entirely by hand — nothing generates it and `save.bat` does not
+  touch it — with the whole authoring contract written in a comment at the top
+  of `<main>`: read that before adding an entry. The rule it turns on is that
+  the newest `.patch-version` must equal `VERSION` in `version.js`, which
+  `tests/patch.test.js` asserts along with the tag set, the ordering and the
+  fact that nothing is folded away. It is dressed by `assets/css/patch.css`,
+  which is *not* one of the twenty in the app's cascade and is not in
+  `index.html`; it is in `SHELL` in `sw.js`, because `tests/sw.test.js` walks
+  the stylesheet directory. The page runs no script at all, which is what keeps
+  it out of the CSP hash list. Reached from the app at System → What changed.
 - Call out `.mbrd` schema, generated-catalog or service-worker cache changes
   explicitly when reporting work.
 

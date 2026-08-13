@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The browser's own copy of the board: the IndexedDB working cache, the
 // background autosave, and the restore that runs at boot.
 //
@@ -24,7 +16,7 @@
 // This is crash recovery only. The durable artefact is always the .mbrd the
 // user exported.
 
-import { itemHashes } from '../util.ts';
+import { itemHashes, isRecord } from '../util.ts';
 import { toast, busy } from '../notify.ts';
 import { clearPrefs } from '../prefs.ts';
 import {
@@ -34,24 +26,55 @@ import { allAssets, putAsset } from './assets.ts';
 import {
   idbGet, idbSet, idbClear, idbKeys, idbGetMany, idbSetMany, idbDelMany,
 } from './idb.ts';
+// The shape errors.ts will read this module's one answer through. A type only,
+// and errors.ts sits in the base layer beside notify.ts - see setBoardProbe().
+import type { BoardSafety } from '../errors.ts';
+
+/** What this engine borrows from the file half. Filled by initSession(). */
+export interface SessionDeps {
+  fileName: () => string | null;
+  /** The board's first-created stamp, as packBoard writes it: an ISO string. */
+  created: () => string | null;
+  setCreated: (at: string | null) => void;
+  exportBoard: () => Promise<boolean>;
+  prompt: (opts: PromptOptions) => Promise<string | null>;
+}
+
+/** The one dialog this module asks for - see ask() in ui/dialog.ts. */
+export interface PromptOptions {
+  title: string;
+  body?: string;
+  keep?: string;
+  cancel?: string;
+  go?: string;
+}
 
 /**
- * What this engine borrows from the file half. Filled by initSession().
- *
- * @type {{
- *   fileName: () => (string|null),
- *   created: () => (number|null),
- *   setCreated: (at: number|null) => void,
- *   exportBoard: () => Promise<boolean>,
- *   prompt: (opts: object) => Promise<string|null>,
- * }}
+ * Null until initSession(), which storage.ts calls as it is imported - so every
+ * `d!` below is reached only from a command, a bus event or the autosave
+ * interval, all of which are downstream of that. The alternative is a stand-in
+ * object that would answer wrong once rather than throw once.
  */
-let d = /** @type {any} */ (null);
+let d: SessionDeps | null = null;
 
 /** Hand the session engine what it needs from the file half. Called once. */
-export function initSession(deps) {
+export function initSession(deps: SessionDeps) {
   d = deps;
 }
+
+/**
+ * A board as this module reads one: the two item lists and the settings, at the
+ * one depth referencedHashes() goes to. Loose on purpose, because it is asked of
+ * two different things - the board serializeBoard() just produced, and the one
+ * that came back out of IndexedDB, which is `unknown` until it is looked at.
+ */
+type BoardLike = { items?: unknown, trash?: unknown, settings?: unknown };
+
+/** The list at a key, or none. What `data.items || []` said before it had a type. */
+const listOf = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+
+/** A string, or nothing. The narrowing the records below need at each key. */
+const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
 
 // ---------------------------------------------------------------------------
 // IndexedDB working cache
@@ -151,11 +174,14 @@ function requestAutosave() {
  * through undo - and undo does not survive a reload (loadBoard clears the
  * history), so keeping those on disk buys nothing at all.
  */
-function referencedHashes(data) {
-  const out = new Set();
-  const add = it => { for (const h of itemHashes(it)) out.add(h); };
-  for (const it of data.items || []) add(it);
-  for (const t of data.trash || []) add(t?.item);
+function referencedHashes(data: BoardLike) {
+  const out = new Set<string>();
+  const add = (it: unknown) => {
+    if (!isRecord(it)) return;
+    for (const h of itemHashes(it)) out.add(h);
+  };
+  for (const it of listOf(data.items)) add(it);
+  for (const t of listOf(data.trash)) add(isRecord(t) ? t.item : null);
   // The files the optimiser replaced. Not in itemHashes() on purpose - that one
   // drives the *packer*, and an export is the artifact the optimising was for,
   // so it carries the small copies alone. Here they are held, because this drives
@@ -169,15 +195,22 @@ function referencedHashes(data) {
   // again. Preferred over stripping was/wasCover when an item is binned, because
   // undo across a delete closes over the old ids and stripping them would break
   // the undo the memo exists for.
-  for (const it of [...(data.items || []), ...(data.trash || []).map(t => t?.item)]) {
-    if (it?.meta?.was) out.add(it.meta.was);
-    if (it?.meta?.wasCover) out.add(it.meta.wasCover);
+  for (const it of [...listOf(data.items), ...listOf(data.trash).map(t => (isRecord(t) ? t.item : null))]) {
+    const meta = isRecord(it) && isRecord(it.meta) ? it.meta : null;
+    const was = str(meta?.was);
+    const wasCover = str(meta?.wasCover);
+    if (was) out.add(was);
+    if (wasCover) out.add(wasCover);
   }
   // The faces the board is set in. Not on any item and so not in itemHashes(),
   // which makes them exactly the thing the sweep below would throw away: a face
   // dropped in would be gone by the next autosave, and the board would come
   // back after a reload set in a family that no longer resolves.
-  for (const f of data.settings?.fonts || []) if (f?.hash) out.add(f.hash);
+  const settings = isRecord(data.settings) ? data.settings : null;
+  for (const f of listOf(settings?.fonts)) {
+    const hash = isRecord(f) ? str(f.hash) : undefined;
+    if (hash) out.add(hash);
+  }
   return out;
 }
 
@@ -199,7 +232,7 @@ function referencedHashes(data) {
 // so no stale snapshot and no stale sweep.
 let saveGen = 0;         // bumped by every change worth a snapshot
 let committedGen = -1;   // saveGen of the last durable write (-1: nothing yet)
-let saving = null;       // in-flight run, a Promise<boolean>, or null
+let saving: Promise<boolean> | null = null;   // in-flight run, or null
 let lastResult = false;  // result of the most recent completed run
 
 /**
@@ -294,8 +327,8 @@ async function writeSnapshot() {
     // photographs used to be five hundred sequential transactions, each opened
     // and committed before the next was even issued, and the whole of that wait
     // stood between the user and a board they were told was safe.
-    const missing = [];
-    const arriving = [];
+    const missing: string[] = [];
+    const arriving: [IDBValidKey, unknown][] = [];
     for (const hash of referenced) {
       if (known.has(hash)) continue;
       const asset = store.get(hash);
@@ -314,14 +347,18 @@ async function writeSnapshot() {
     // claim, not the backup.
     await idbSet('kv', SESSION_KEY, {
       board: data,
-      created: d.created(),
-      fileName: d.fileName() || null,
+      created: d!.created(),
+      fileName: d!.fileName() || null,
       dirty: isDirty() || missing.length > 0,
       at: Date.now(),
       incomplete: missing.length > 0,
     });
 
-    await idbDelMany('assets', [...known].filter(hash => !referenced.has(hash)));
+    // A stored key that is not a string cannot be a content hash and so can
+    // never be one of the referenced ones - which is the answer it already got,
+    // now that the two sets no longer hold the same type of thing.
+    await idbDelMany('assets',
+      [...known].filter(key => typeof key !== 'string' || !referenced.has(key)));
 
     if (missing.length) {
       lastFailure = `${describeMissing(data, missing)} - the board cannot be saved complete`;
@@ -349,14 +386,15 @@ async function writeSnapshot() {
 }
 
 /** "2 items (photo.jpg, note) have no stored data", for a message. */
-function describeMissing(data, hashes) {
+function describeMissing(data: BoardLike, hashes: string[]) {
   const wanted = new Set(hashes);
-  const names = [];
-  for (const item of [...(data.items || []), ...(data.trash || []).map(t => t?.item)]) {
-    const hash = item?.asset?.hash;
+  const names: string[] = [];
+  for (const it of [...listOf(data.items), ...listOf(data.trash).map(t => (isRecord(t) ? t.item : null))]) {
+    const item = isRecord(it) ? it : null;
+    const hash = isRecord(item?.asset) ? str(item.asset.hash) : undefined;
     if (!hash || !wanted.has(hash)) continue;
     wanted.delete(hash);
-    names.push(item.name || item.type || 'item');
+    names.push(str(item?.name) || str(item?.type) || 'item');
   }
   // Nothing resolved to a name. Only item.asset.hash is matched above, and a
   // missing hash can be a cover, an optimiser original or a font - so the count
@@ -375,8 +413,14 @@ function describeMissing(data, hashes) {
 /** Restore the last working state. Returns true when a board was recovered. */
 export async function restoreSession() {
   try {
+    // Read one key at a time. This is the app's own snapshot rather than a file
+    // somebody handed over, but it comes back out of the store as `unknown` and
+    // the two questions asked of it here - is there a board, does it hold items
+    // - are exactly the ones `session?.board?.items` was asking.
     const session = await idbGet('kv', SESSION_KEY);
-    if (!session?.board?.items) return false;
+    if (!isRecord(session)) return false;
+    const stored = session.board;
+    if (!isRecord(stored) || !stored.items) return false;
     // Exactly what the autosave sweep decided was worth keeping, asked the same
     // way - the bin's items included, or restoring one would put an empty frame
     // on the board.
@@ -387,7 +431,7 @@ export async function restoreSession() {
     // on a music card - or the still on a model, or the face a board is set in -
     // was there until the first reload and gone after it. The bytes were never
     // lost; nothing asked for them.
-    const needed = referencedHashes(session.board);
+    const needed = referencedHashes(stored);
     let lost = 0;
     // On a heavy board this is the whole of the wait between opening the tab and
     // seeing anything. Counted, because it is the one wait a person meets before
@@ -408,15 +452,20 @@ export async function restoreSession() {
         const slice = list.slice(i, i + CHUNK);
         const recs = await idbGetMany('assets', slice);
         recs.forEach((rec, k) => {
-          if (rec?.blob) putAsset(slice[k], rec.blob, { ext: rec.ext, mime: rec.mime, name: rec.name });
-          else lost++;
+          // The record this module wrote, read back the way it was written: a
+          // Blob and three strings about it. Anything else is a row that cannot
+          // rebuild a card, which is what `rec?.blob` was already testing for.
+          const blob = isRecord(rec) && rec.blob instanceof Blob ? rec.blob : null;
+          if (blob && isRecord(rec)) {
+            putAsset(slice[k], blob, { ext: str(rec.ext), mime: str(rec.mime), name: str(rec.name) });
+          } else lost++;
         });
       }
     } finally {
       job.end();
     }
-    d.setCreated(session.created || null);
-    loadBoard(session.board);
+    d!.setCreated(str(session.created) || null);
+    loadBoard(stored);
     // A board that came back without all its bytes is not the board that was
     // put away, and the one thing it must not do is look settled: left clean,
     // the next export would refuse and the user would have had no warning
@@ -499,7 +548,7 @@ async function clearAppCaches() {
  * first-run app from inside a running one is a list nobody keeps correct.
  * Starting the page again *is* the first run, so it cannot drift.
  */
-export async function clearAllData() {
+export async function clearAllData(): Promise<boolean> {
   // The same gate New carries, for the same reason. This dialog asks about "the
   // board kept in this browser" - but on a not-found board that is not the board
   // on screen, it is one the visitor was deliberately never shown. Answering
@@ -510,7 +559,7 @@ export async function clearAllData() {
     toast('This address has no board to clear - go to your board first');
     return false;
   }
-  const answer = await d.prompt({
+  const answer = await d!.prompt({
     title: 'Clear everything?',
     body: 'The board kept in this browser, everything in it and the look you '
       + 'set are all deleted, and mbrd starts over. Boards you exported to a '
@@ -522,7 +571,7 @@ export async function clearAllData() {
   if (answer === 'cancel') return false;
   // Exporting can fail or be cancelled at the picker, and somebody who asked to
   // keep the board and did not keep it has not answered the question yet.
-  if (answer === 'keep') return (await d.exportBoard()) ? clearAllData() : false;
+  if (answer === 'keep') return (await d!.exportBoard()) ? clearAllData() : false;
 
   // Before the wipe, not after: a snapshot landing between the clear and the
   // reload would put the board straight back. Dropping the latch stops a *new*
@@ -538,7 +587,8 @@ export async function clearAllData() {
     await clearSession();
   } catch (err) {
     console.error('[mbrd] clear everything failed:', err);
-    toast('Could not clear this browser’s storage: ' + (err?.message || err), 'error');
+    toast('Could not clear this browser’s storage: '
+      + ((err instanceof Error && err.message) || String(err)), 'error');
     cacheOk = true;
     return false;
   }
@@ -564,7 +614,10 @@ export function initSessionStorage() {
   // mark the board dirty - looking around is not editing - but it does have to
   // be snapshotted, or closing the tab after moving about restores the view the
   // board had before, which is not where it was left.
-  for (const evt of ['items', 'geom', 'item', 'settings', 'board', 'trash', 'view']) {
+  // `as const` so each name stays the literal the bus knows rather than widening
+  // to string: the event list is closed (see board-store.ts) and a typo in this
+  // array should be a red run rather than a subscription to nothing.
+  for (const evt of ['items', 'geom', 'item', 'settings', 'board', 'trash', 'view'] as const) {
     bus.on(evt, noteChange);
   }
   setInterval(requestAutosave, AUTOSAVE_MS);
@@ -615,7 +668,7 @@ export const lastSaveFailure = () => lastFailure;
  * waiting to be written, only where they were looking, and calling that
  * "unsaved changes" would send somebody to export a file over a scroll.
  */
-export function boardSafety() {
+export function boardSafety(): BoardSafety {
   // Not a broken browser: a not-found address, which the app is deliberately
   // not writing. There is no work of theirs here to be at risk, and saying
   // "unsaved" would send them looking for a board they never had.

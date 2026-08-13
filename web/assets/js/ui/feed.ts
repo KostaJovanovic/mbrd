@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The Feed: the Mobile board as a Pinterest-style masonry of everything on it.
 //
 // This is the Mobile board now. Where Mobile used to be the world-space canvas
@@ -33,7 +25,7 @@
 // now-playing one is kept mounted wherever it has scrolled to.
 
 import { board, bus, isDefaultTitle, byId, stuckTo, isRider } from '../state.ts';
-import { baseName, clamp } from '../util.ts';
+import { baseName, clamp, isRecord } from '../util.ts';
 import { mobileOrder } from '../arrange/arrangements.ts';
 import { assetURL, readText } from '../storage/assets.ts';
 import { linkURL, buildContent } from '../canvas/renderers.ts';
@@ -49,6 +41,55 @@ import {
 import { armedSticker, disarm } from './sticker-window.ts';
 import { openViewer, canView, MARKDOWN } from './viewer.ts';
 import { renderMarkdown } from './markdown.ts';
+import type { Item } from '../board-model.ts';
+import type { Point } from '../geometry.ts';
+import type { Viewport } from '../canvas/viewport.ts';
+
+/**
+ * `meta` is open by design (see board-model.ts), so everything this file reads
+ * out of it is narrowed here rather than trusted - the same pair ui/viewer.ts
+ * and ui/nowplaying.ts keep. A key that is not the type it should be is treated
+ * exactly as a missing one, which is what every one of these reads already did
+ * by falling through a `||`.
+ */
+const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+/** The object URL for a hash out of `meta`, or null for anything that is not one. */
+const urlOf = (hash: unknown): string | null => (typeof hash === 'string' ? assetURL(hash) : null);
+
+/** Which shape a tile is drawn as, and which filler builds it - see kindOf(). */
+type TileKind =
+  | 'image' | 'video' | 'audio' | 'note' | 'link' | 'swatch' | 'text' | 'hint' | 'file';
+
+/**
+ * One tile on the wall.
+ *
+ * `video` is the whole of this module's release discipline: it is the mounted
+ * <video> for a clip that is playing, and null for a tile showing a poster. See
+ * mountVideo() and releaseOffscreen().
+ */
+type Tile = {
+  el: HTMLElement;
+  item: Item;
+  ratio: number;
+  kind: TileKind;
+  video: HTMLVideoElement | null;
+};
+
+/** One tile's box, as feedMasonry() packs it. */
+type TileBox = { t: Tile; x: number; y: number; w: number; h: number };
+
+/**
+ * What the Feed asks of the command surface, and nothing else.
+ *
+ * Named here rather than borrowed from commands.ts for the reason
+ * FlyoutCommands states in ui/flyout.ts - and it is why `cmds` is handed in by
+ * initFeed() rather than imported.
+ */
+export interface FeedCommands {
+  addStickerAt: (shape: string, at: Point) => unknown;
+  contextMenu: (x: number, y: number, id: string | null, count: number,
+    opts?: { mobile?: boolean }) => unknown;
+}
 
 /**
  * The types the Feed does not draw as tiles: furniture and stickers.
@@ -75,29 +116,33 @@ import { renderMarkdown } from './markdown.ts';
  */
 const HIDDEN = new Set(['title', 'fence', 'sticker']);
 
-let root = null;        // #mobile-feed, the scroller
-let sheet = null;       // the centred column the wall sits in
-let mastheadEl = null;  // the board's title page across the top
-let titleEl = null;
-let gridEl = null;      // the positioning context for the absolute tiles
-let empty = null;       // the "nothing to show" plate
-let styleHeader = null; // styleFeedMasthead, injected from main.js
-let cmds = null;        // the command surface, for the armed-sticker tap
+// All seven are null until initFeed() has run and stay null on a page with no
+// #mobile-feed in it, which is why every reader below tests one rather than
+// asserting it - this module is built to be absent.
+let root: HTMLElement | null = null;        // #mobile-feed, the scroller
+let sheet: HTMLElement | null = null;       // the centred column the wall sits in
+let mastheadEl: HTMLElement | null = null;  // the board's title page across the top
+let titleEl: HTMLElement | null = null;
+let gridEl: HTMLElement | null = null;      // the positioning context for the absolute tiles
+let empty: HTMLElement | null = null;       // the "nothing to show" plate
+/** styleFeedMasthead, injected from main.js. */
+let styleHeader: ((title: HTMLElement | null, box: Element | null) => void) | null = null;
+let cmds: FeedCommands | null = null;       // the command surface, for the armed-sticker tap
 
 /** id -> { el, item, ratio, kind, video } for every tile currently rendered. */
-const tiles = new Map();
+const tiles = new Map<string, Tile>();
 
 let cols = 2;
 let mastheadRaf = 0;
 let layoutRaf = 0;
-let resizeObs = null;
-let mastheadObs = null;
+let resizeObs: ResizeObserver | null = null;
+let mastheadObs: IntersectionObserver | null = null;
 
 // The hold that opens a tile's menu on touch. See the listeners in initFeed().
 const HOLD_MS = 500;
 const HOLD_SLOP = 10;
 let holdTimer = 0;
-let holdFrom = null;
+let holdFrom: { x: number; y: number; id: string } | null = null;
 let heldOpen = false;
 
 function cancelHold() {
@@ -107,15 +152,20 @@ function cancelHold() {
 }
 
 /** The item a press landed on, or null for the sheet between the tiles. */
-function tileIdAt(target) {
-  return target?.closest?.('.feed-tile')?.dataset.id || null;
+function tileIdAt(target: EventTarget | null) {
+  // The `as` is the reading ui/hud.ts states for its delegated handlers: the
+  // listener is on an element, so a press inside it lands on one too, and
+  // closest() is only being asked whether an ancestor matches. The optional
+  // calls are the ones that were already here.
+  return (target as HTMLElement | null)?.closest?.<HTMLElement>('.feed-tile')?.dataset.id || null;
 }
 
 const TILE_TARGET = 210;   // the width a column aims for; more screen, more columns
 const MAX_COLS = 5;
 const GAP = 10;
 
-export function initFeed(_viewport, _commands, headerStyle) {
+export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | null,
+  headerStyle: ((title: HTMLElement | null, box: Element | null) => void) | null) {
   styleHeader = typeof headerStyle === 'function' ? headerStyle : null;
   cmds = _commands;
   root = document.getElementById('mobile-feed');
@@ -151,7 +201,9 @@ export function initFeed(_viewport, _commands, headerStyle) {
     if (!armedSticker() || e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
-    const shape = armedSticker().shape;
+    // Asserted: the line above returned unless there was one, and nothing
+    // between the two can disarm it.
+    const shape = armedSticker()!.shape;
     const at = feedPointToWorld(e.clientX, e.clientY);
     disarm();
     // A tap that missed every tile puts the shape down instead of placing it.
@@ -189,8 +241,10 @@ export function initFeed(_viewport, _commands, headerStyle) {
     // Touch only. A mouse has the button above, and a pen reports its own
     // contextmenu on a barrel press; arming a timer for either would open the
     // menu twice or open it on a drag that was going to scroll.
-    if (e.pointerType !== 'touch' || !tileIdAt(e.target)) return;
-    holdFrom = { x: e.clientX, y: e.clientY, id: tileIdAt(e.target) };
+    if (e.pointerType !== 'touch') return;
+    const id = tileIdAt(e.target);
+    if (!id) return;
+    holdFrom = { x: e.clientX, y: e.clientY, id };
     holdTimer = setTimeout(() => {
       holdTimer = 0;
       if (!holdFrom) return;
@@ -272,10 +326,13 @@ export function initFeed(_viewport, _commands, headerStyle) {
 // ---------------------------------------------------------------------------
 
 /** Everything the Feed shows, in the board's arrangement order. */
-function feedItems() {
+function feedItems(): Item[] {
+  // The cast holds for the reason board-actions.ts states at its own call:
+  // mobileOrder() hands back the very items it was given, in a new order, and
+  // ArrangeItem is only the narrower shape it reads them through.
   return mobileOrder(
     board.items.filter(it => !HIDDEN.has(it.type)),
-    { name: board.arrangement });
+    { name: board.arrangement }) as Item[];
 }
 
 /**
@@ -284,11 +341,14 @@ function feedItems() {
  * in order, and drops any whose item has gone.
  */
 function render() {
+  // The `!` on the two nodes below is the `root` test on this line: initFeed()
+  // returns before it builds anything when there is no #mobile-feed, and builds
+  // all six in one run when there is - so a live root means a live wall.
   if (!root || board.layoutMode !== 'mobile') { teardown(); return; }
   paintMasthead();
 
   const items = feedItems();
-  const present = new Set();
+  const present = new Set<string>();
   for (const item of items) {
     present.add(item.id);
     let t = tiles.get(item.id);
@@ -300,18 +360,18 @@ function render() {
       t.item = item;
       t.ratio = ratioOf(item);
     }
-    gridEl.appendChild(t.el);   // (re)append keeps DOM order matching feed order
+    gridEl!.appendChild(t.el);   // (re)append keeps DOM order matching feed order
   }
   for (const [id, t] of tiles) {
     if (!present.has(id)) { dropTile(t); tiles.delete(id); }
   }
-  empty.classList.toggle('is-shown', items.length === 0);
+  empty!.classList.toggle('is-shown', items.length === 0);
   scheduleLayout();
   markPlaying();
 }
 
 /** Kind buckets, which decide the tile shape and how it is filled. */
-function kindOf(item) {
+function kindOf(item: Item): TileKind {
   if (item.type === 'image') return 'image';
   if (item.type === 'video') return 'video';
   if (item.type === 'audio') return 'audio';
@@ -330,7 +390,7 @@ function kindOf(item) {
 }
 
 /** The aspect (w/h) a tile is drawn at, clamped so nothing dominates a column. */
-function ratioOf(item) {
+function ratioOf(item: Item) {
   const kind = kindOf(item);
   if (kind === 'link') return 2.6;
   if (kind === 'swatch') return 1;
@@ -350,19 +410,19 @@ function ratioOf(item) {
 }
 
 /** A raster URL for anything that has one - a thumb, a poster, a cover, a shot. */
-function pictureURL(item) {
+function pictureURL(item: Item) {
   const m = item.meta || {};
-  const hash = m.thumb || m.cover || m.poster || m.shot
+  const hash = str(m.thumb) || str(m.cover) || str(m.poster) || str(m.shot)
     || (item.type === 'image' || item.type === 'video' ? item.asset?.hash : null);
   return hash ? assetURL(hash) : null;
 }
 
-function buildTile(item) {
+function buildTile(item: Item): Tile {
   const kind = kindOf(item);
   const el = div('feed-tile');
   el.dataset.kind = kind;
   el.dataset.id = item.id;
-  const t = { el, item, ratio: ratioOf(item), kind, video: null };
+  const t: Tile = { el, item, ratio: ratioOf(item), kind, video: null };
   fillTile(t);
   wireOpen(t);
   return t;
@@ -382,7 +442,7 @@ function buildTile(item) {
  * tap plays it in place, which is the better answer for a clip somebody is
  * scrolling past. The viewer is where the right-click menu sends it.
  */
-function wireOpen(t) {
+function wireOpen(t: Tile) {
   if (!OPENS.has(t.kind) || !canView(t.item.id)) return;
   t.el.setAttribute('role', 'button');
   t.el.tabIndex = 0;
@@ -397,7 +457,7 @@ function wireOpen(t) {
 /** The tile kinds whose tap means "open this". See wireOpen(). */
 const OPENS = new Set(['image', 'text', 'note', 'file']);
 
-function fillTile(t) {
+function fillTile(t: Tile) {
   const { el, kind } = t;
   el.replaceChildren();
   if (kind === 'image') return fillImage(t);
@@ -427,18 +487,18 @@ function fillTile(t) {
  * items.js binds it after mounting, and a slider nobody bound is a slider that
  * moves and changes nothing.
  */
-function fillHint(t) {
+function fillHint(t: Tile) {
   const host = div('feed-hint');
   // The value the border width is computed from. Not inherited from anywhere on
   // this surface - #world is where the canvas writes it.
   host.style.setProperty('--iz', '1');
   host.append(buildContent(t.item));
   t.el.appendChild(host);
-  const dial = host.querySelector('input[type="range"]');
+  const dial = host.querySelector<HTMLInputElement>('input[type="range"]');
   if (dial) bindDial(dial);
 }
 
-function fillImage(t) {
+function fillImage(t: Tile) {
   const img = document.createElement('img');
   img.loading = 'lazy';
   img.decoding = 'async';
@@ -453,7 +513,7 @@ function fillImage(t) {
   t.el.appendChild(img);
 }
 
-function fillVideo(t) {
+function fillVideo(t: Tile) {
   const url = pictureURL(t.item);
   if (url) {
     const img = document.createElement('img');
@@ -474,7 +534,7 @@ function fillVideo(t) {
 }
 
 /** Swap a video tile's poster for a live, registered <video>. */
-function mountVideo(t) {
+function mountVideo(t: Tile) {
   if (t.video) return;
   const url = t.item.asset && assetURL(t.item.asset.hash);
   if (!url) return;
@@ -491,10 +551,10 @@ function mountVideo(t) {
   v.play().catch(() => {});
 }
 
-function fillAudio(t) {
+function fillAudio(t: Tile) {
   const item = t.item;
   const art = div('feed-tile-art');
-  const cover = item.meta?.cover && assetURL(item.meta.cover);
+  const cover = urlOf(item.meta?.cover);
   if (cover) {
     const img = document.createElement('img');
     img.loading = 'lazy'; img.decoding = 'async'; img.draggable = false; img.alt = '';
@@ -515,11 +575,13 @@ function fillAudio(t) {
 
   const cap = div('feed-tile-cap');
   const title = div('feed-cap-title');
-  title.textContent = item.meta?.trackTitle || baseName(item.name) || item.name || 'Audio';
+  title.textContent = str(item.meta?.trackTitle) || baseName(item.name) || item.name || 'Audio';
   cap.appendChild(title);
-  const bits = [];
-  if (item.meta?.artist) bits.push(item.meta.artist);
-  if (item.meta?.duration != null) bits.push(clock(item.meta.duration));
+  const bits: string[] = [];
+  if (str(item.meta?.artist)) bits.push(str(item.meta?.artist));
+  // A duration is written as a number by the importer; anything else is read as
+  // no duration at all, which is what the `!= null` test was standing in for.
+  if (typeof item.meta?.duration === 'number') bits.push(clock(item.meta.duration));
   if (bits.length) {
     const sub = div('feed-cap-sub');
     sub.textContent = bits.join(' · ');
@@ -557,25 +619,28 @@ function waveBars() {
   return w;
 }
 
-function fillNote(t) {
+function fillNote(t: Tile) {
   const body = div('feed-note');
   const text = noteText(t.item);
   body.textContent = text;
-  const tint = t.item.meta?.color;
+  const tint = str(t.item.meta?.color);
   if (tint) body.style.background = tint;
   t.el.appendChild(body);
 }
 
 /** The note's words, from the rich model if it has one, else the flat text. */
-function noteText(item) {
+function noteText(item: Item) {
+  // The same read canvas/renderers.ts makes of a `rich` off disk: meta is
+  // unknown per key, and a value that is not an object is no rich model.
   const rich = item.meta?.rich;
-  if (Array.isArray(rich?.blocks) && rich.blocks.length) {
-    return rich.blocks.map(b => b?.text || '').join('\n').trim();
+  const blocks = isRecord(rich) ? rich.blocks : null;
+  if (Array.isArray(blocks) && blocks.length) {
+    return blocks.map((b: unknown) => (isRecord(b) ? str(b.text) : '')).join('\n').trim();
   }
-  return (item.meta?.text || item.name || '').trim();
+  return (str(item.meta?.text) || item.name || '').trim();
 }
 
-function fillLink(t) {
+function fillLink(t: Tile) {
   // A link stores its URL in meta.url (like the canvas card, renderers.js); validate
   // it through the same scheme check so a non-http(s) string makes an inert card
   // rather than a live window.open.
@@ -583,7 +648,7 @@ function fillLink(t) {
   const host = u ? u.hostname.replace(/^www\./, '') : '';
   const card = div('feed-link');
   const name = div('feed-link-name');
-  name.textContent = t.item.name || host || t.item.meta?.url || 'Link';
+  name.textContent = t.item.name || host || str(t.item.meta?.url) || 'Link';
   const hostEl = div('feed-link-host');
   hostEl.textContent = host;
   card.append(name, hostEl);
@@ -599,9 +664,9 @@ function fillLink(t) {
   }
 }
 
-function fillSwatch(t) {
+function fillSwatch(t: Tile) {
   const block = div('feed-swatch');
-  const color = t.item.meta?.color || t.item.name || '#888';
+  const color = str(t.item.meta?.color) || t.item.name || '#888';
   block.style.background = color;
   const label = div('feed-swatch-label');
   label.textContent = color;
@@ -631,8 +696,8 @@ const TILE_TEXT = 2000;
  * markup, and a tile that rendered the HTML file it is meant to be showing you
  * would be executing a file the app did not write.
  */
-function fillText(t) {
-  const md = MARKDOWN.has(t.item.meta?.ext || '');
+function fillText(t: Tile) {
+  const md = MARKDOWN.has(str(t.item.meta?.ext));
   const card = div('feed-text');
   const name = div('feed-text-name');
   name.textContent = baseName(t.item.name) || t.item.name || 'untitled';
@@ -657,7 +722,7 @@ function fillText(t) {
   }).catch(() => { /* an unreadable file keeps its name and nothing else */ });
 }
 
-function fillFile(t) {
+function fillFile(t: Tile) {
   const card = div('feed-file');
   const name = div('feed-file-name');
   name.textContent = baseName(t.item.name) || t.item.name || t.item.type;
@@ -677,10 +742,11 @@ function fillFile(t) {
  * arrange/arrangements.js's masonry() uses. Returns the boxes and the height of
  * the tallest column, which is the wall's height. Pure but for reading `cols`.
  */
-function feedMasonry(list, width) {
+function feedMasonry(list: Tile[], width: number):
+{ boxes: TileBox[], colW: number, height: number } {
   const colW = (width - (cols - 1) * GAP) / cols;
-  const heights = new Array(cols).fill(0);
-  const boxes = [];
+  const heights: number[] = new Array(cols).fill(0);
+  const boxes: TileBox[] = [];
   for (const t of list) {
     let c = 0;
     for (let i = 1; i < cols; i++) if (heights[i] < heights[c] - 0.5) c = i;
@@ -720,9 +786,9 @@ function feedMasonry(list, width) {
  * photograph than the thumb did. The alternative is refusing to place on the
  * clamped tiles at all, which is a worse answer to a smaller problem.
  */
-export function feedPointToWorld(clientX, clientY) {
-  const el = document.elementFromPoint(clientX, clientY)?.closest('.feed-tile');
-  const item = el && byId(el.dataset.id);
+export function feedPointToWorld(clientX: number, clientY: number): Point | null {
+  const el = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>('.feed-tile');
+  const item = el && byId(str(el.dataset.id));
   if (!item) return null;
   const r = el.getBoundingClientRect();
   if (!r.width || !r.height) return null;
@@ -755,8 +821,8 @@ function paintStickers() {
   }
 }
 
-function stickerOverlay(it, host) {
-  const shape = stickerShape(it.meta?.shape) ? it.meta.shape : DEFAULT_SHAPE;
+function stickerOverlay(it: Item, host: Item) {
+  const shape = stickerShape(it.meta?.shape) ? str(it.meta.shape) : DEFAULT_SHAPE;
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('class', 'sticker-art feed-sticker');
   svg.setAttribute('viewBox', STICKER_VIEWBOX);
@@ -764,7 +830,10 @@ function stickerOverlay(it, host) {
   const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
   use.setAttribute('href', `${STICKER_SPRITE}#${shape}`);
   svg.append(use);
-  if (it.meta?.tint) svg.dataset.tint = it.meta.tint;
+  // A tint is a number (see stickerTint), and dataset takes strings - the
+  // String() is the coercion the assignment was already making on its own.
+  const tint = it.meta?.tint;
+  if (tint) svg.dataset.tint = String(tint);
   // Centre-relative fractions turned into the top-left percentages CSS wants,
   // with the shape's own centre pulled back over the point by a translate.
   svg.style.left = `${((it.x - host.x) / host.w + 0.5) * 100}%`;
@@ -787,7 +856,7 @@ function layout() {
   const width = gridEl.clientWidth;
   if (width < 1) return;
   cols = clamp(Math.round(width / TILE_TARGET), 2, MAX_COLS);
-  const list = feedItems().map(it => tiles.get(it.id)).filter(Boolean);
+  const list = feedItems().map(it => tiles.get(it.id)).filter(t => !!t);
   const { boxes, height } = feedMasonry(list, width);
   for (const b of boxes) {
     b.t.el.style.width = `${b.w}px`;
@@ -856,10 +925,13 @@ function scheduleMasthead() {
   mastheadRaf = requestAnimationFrame(() => {
     mastheadRaf = 0;
     const w = mastheadEl ? mastheadEl.clientWidth : 0;
+    // Both `!` are the two tests this frame was scheduled behind: the line above
+    // returns unless there is a title, and a width over zero is a masthead. The
+    // pair is built together in initFeed() and neither is ever cleared.
     if (w > 0) {
-      titleEl.style.setProperty('--mobile-board-width', w + 'px');
-      titleEl.style.setProperty('--mobile-header-height',
-        (mastheadEl.clientHeight || w / 1.5) + 'px');
+      titleEl!.style.setProperty('--mobile-board-width', w + 'px');
+      titleEl!.style.setProperty('--mobile-header-height',
+        (mastheadEl!.clientHeight || w / 1.5) + 'px');
     }
     if (styleHeader) styleHeader(titleEl, mastheadEl);
   });
@@ -867,7 +939,7 @@ function scheduleMasthead() {
 
 // ---------------------------------------------------------------------------
 
-function dropTile(t) {
+function dropTile(t: Tile) {
   if (t.video) { releasePlayers(t.el); t.video = null; }
   t.el.remove();
 }
@@ -878,7 +950,7 @@ function teardown() {
   tiles.clear();
 }
 
-function div(className) {
+function div(className: string) {
   const el = document.createElement('div');
   el.className = className;
   return el;

@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Reading a 3D model, by hand.
 //
 // Three formats, chosen because between them they cover what actually lands on
@@ -85,8 +77,63 @@ const MAX_NODE_VISITS = 1_000_000;
 
 export class MeshError extends Error {}
 
+// ---------------------------------------------------------------------------
+// The glTF document, as this reader reads one
+//
+// A description of the fields walked below, not a promise about a file: a .glb
+// is dropped in from outside and its JSON chunk can say anything at all. Every
+// field is optional because a file may leave any of them out, and the checks
+// that actually hold the reader together are in the code rather than here -
+// readAccessor() refuses a count that is not a plausible integer, addPrimitive()
+// refuses an index past the positions it has, and both bounds-check every read
+// against the buffer's own length. What this type buys is that the *walk* is
+// spelled out: which keys are read, at what depth, and as what.
+// ---------------------------------------------------------------------------
+
+type GLTFNode = {
+  matrix?: number[];
+  translation?: number[];
+  rotation?: number[];
+  scale?: number[];
+  mesh?: number;
+  children?: number[];
+};
+
+type GLTFPrimitive = {
+  mode?: number;
+  indices?: number;
+  attributes?: { POSITION?: number, NORMAL?: number };
+};
+
+type GLTFAccessor = {
+  type?: string;
+  componentType?: number;
+  count?: number;
+  bufferView?: number;
+  byteOffset?: number;
+};
+
+type GLTFBufferView = {
+  buffer?: number;
+  byteOffset?: number;
+  byteStride?: number;
+};
+
+type GLTF = {
+  buffers?: { uri?: string }[];
+  bufferViews?: GLTFBufferView[];
+  accessors?: GLTFAccessor[];
+  meshes?: { primitives?: GLTFPrimitive[] }[];
+  nodes?: GLTFNode[];
+  scenes?: { nodes?: number[] }[];
+  scene?: number;
+};
+
+/** A 4x4 or 3x3 matrix, column-major, as the helpers at the foot pass them. */
+type Matrix = number[];
+
 /** Which parser a file wants, or null if it is not a model at all. */
-export function meshKind(name = '') {
+export function meshKind(name = ''): 'stl' | 'obj' | 'glb' | null {
   const i = name.lastIndexOf('.');
   const ext = i > 0 ? name.slice(i + 1).toLowerCase() : '';
   if (ext === 'stl') return 'stl';
@@ -110,7 +157,9 @@ export function meshKind(name = '') {
  * turns up it will look exactly as wrong as STLs did, and the fix is one line
  * here plus a way to say so per item.
  */
-const Z_UP = new Set(['stl', 'obj']);
+// `unknown` rather than string, so a kind that came back null from meshKind()
+// can be asked without a cast. A Set of strings never held anything else.
+const Z_UP: Set<unknown> = new Set(['stl', 'obj']);
 
 /**
  * Which way a format's files usually point.
@@ -122,7 +171,7 @@ const Z_UP = new Set(['stl', 'obj']);
  * takes STL, and because a guess that can be corrected in two clicks is a
  * better deal than one that cannot: see `meta.upAxis`.
  */
-export const defaultUpAxis = kind => (Z_UP.has(kind) ? 'z' : 'y');
+export const defaultUpAxis = (kind: string | null) => (Z_UP.has(kind) ? 'z' : 'y');
 
 /**
  * Parse by kind. `bytes` is an ArrayBuffer.
@@ -137,8 +186,8 @@ export const defaultUpAxis = kind => (Z_UP.has(kind) ? 'z' : 'y');
  * by hand. This function's job is to hand the viewer geometry in the app's own
  * space, which is a different question with a different answer.
  */
-export function parseMesh(kind, bytes, upAxis) {
-  let mesh;
+export function parseMesh(kind: string | null, bytes: ArrayBuffer, upAxis?: unknown): Mesh {
+  let mesh: Mesh;
   if (kind === 'stl') mesh = parseSTL(bytes);
   else if (kind === 'obj') mesh = parseOBJ(bytes);
   else if (kind === 'glb') mesh = parseGLB(bytes);
@@ -161,7 +210,7 @@ export function parseMesh(kind, bytes, upAxis) {
  * other owner, and a 2-million-triangle STL is 72MB of positions that nobody
  * needs a second copy of.
  */
-function standUp(mesh) {
+function standUp(mesh: Mesh) {
   for (const a of [mesh.positions, mesh.normals]) {
     for (let i = 0; i < a.length; i += 3) {
       const y = a[i + 1];
@@ -193,7 +242,7 @@ function standUp(mesh) {
  * out empty. A binary STL's length is exactly 84 + 50n for its own declared n,
  * and that is a coincidence no ASCII file survives.
  */
-export function parseSTL(bytes) {
+export function parseSTL(bytes: ArrayBuffer): Mesh {
   const view = new DataView(bytes);
   if (bytes.byteLength >= 84) {
     const n = view.getUint32(80, true);
@@ -202,7 +251,7 @@ export function parseSTL(bytes) {
   return asciiSTL(new TextDecoder().decode(bytes));
 }
 
-function binarySTL(view, n) {
+function binarySTL(view: DataView, n: number) {
   if (n > MAX_TRIANGLES) throw new MeshError(tooBig(n));
   const positions = new Float32Array(n * 9);
   const normals = new Float32Array(n * 9);
@@ -231,7 +280,7 @@ function binarySTL(view, n) {
   return finish(positions, normals, box);
 }
 
-function asciiSTL(text) {
+function asciiSTL(text: string) {
   // One pass with a number-hungry regex rather than a line reader: an ASCII STL
   // has no structure worth respecting beyond the order its numbers arrive in,
   // and the line breaks are not reliable across exporters.
@@ -291,12 +340,12 @@ function asciiSTL(text) {
  * change a pixel of it without a .mtl beside the file, which a drop does not
  * carry.
  */
-export function parseOBJ(bytes) {
+export function parseOBJ(bytes: string | ArrayBuffer): Mesh {
   const text = typeof bytes === 'string' ? bytes : new TextDecoder().decode(bytes);
-  const vx = [], vn = [], vc = [];
-  const outP = [], outN = [], outC = [];
-  const triMat = [];
-  let hasVC = false, mtllib = null, material = null;
+  const vx: number[] = [], vn: number[] = [], vc: number[] = [];
+  const outP: number[] = [], outN: number[] = [], outC: number[] = [];
+  const triMat: (string | null)[] = [];
+  let hasVC = false, mtllib: string | null = null, material: string | null = null;
   const box = newBox();
 
   for (const raw of text.split('\n')) {
@@ -366,10 +415,13 @@ export function parseOBJ(bytes) {
   return mesh;
 }
 
-const clamp01 = v => (Number.isFinite(v) ? (v < 0 ? 0 : v > 1 ? 1 : v) : 1);
+const clamp01 = (v: number) => (Number.isFinite(v) ? (v < 0 ? 0 : v > 1 ? 1 : v) : 1);
 
 /** One `v/vt/vn` corner, resolved against what has been read so far. */
-function emitCorner(spec, vx, vn, vc, outP, outN, outC, box) {
+function emitCorner(
+  spec: string, vx: number[], vn: number[], vc: number[],
+  outP: number[], outN: number[], outC: number[] | null, box: MeshBounds,
+) {
   const parts = spec.split('/');
   const pi = resolve(+parts[0], vx.length / 3);
   const ni = parts[2] ? resolve(+parts[2], vn.length / 3) : -1;
@@ -398,10 +450,10 @@ function emitCorner(spec, vx, vn, vc, outP, outN, outC, box) {
  * another file again, and a moodboard card is a silhouette and some shading -
  * the point of colour here is that a part which was authored red is red.
  */
-export function parseMTL(bytes) {
+export function parseMTL(bytes: string | ArrayBuffer) {
   const text = typeof bytes === 'string' ? bytes : new TextDecoder().decode(bytes);
-  const mats = new Map();
-  let cur = null;
+  const mats = new Map<string, number[] | null>();
+  let cur: string | null = null;
   for (const raw of text.split('\n')) {
     const line = raw.trim();
     if (!line || line[0] === '#') continue;
@@ -437,7 +489,10 @@ export function parseMTL(bytes) {
  * exactly as it was, so the card falls back to the palette's own ink rather than
  * to the grey a "default material" would give it.
  */
-export function applyMaterials(mesh, materials) {
+export function applyMaterials(
+  mesh: Mesh | null | undefined,
+  materials: Map<string, number[] | null> | null | undefined,
+) {
   if (!mesh?.triMat || !materials?.size) return false;
   const colors = new Float32Array(mesh.count * 3);
   let any = false;
@@ -445,7 +500,10 @@ export function applyMaterials(mesh, materials) {
   // claimed it (zero would draw black; white is the neutral this file uses for an
   // uncoloured vertex). If nothing matched at all the mesh is left untouched.
   for (let t = 0; t < mesh.triMat.length; t++) {
-    const kd = materials.get(mesh.triMat[t]);
+    // A triangle with no material in force asks nothing: get(null) answered
+    // undefined, and parseMTL never files a nameless material.
+    const name = mesh.triMat[t];
+    const kd = name ? materials.get(name) : null;
     if (kd) any = true;
     const r = kd ? kd[0] : 1, g = kd ? kd[1] : 1, b = kd ? kd[2] : 1;
     for (let k = 0; k < 9; k += 3) {
@@ -460,7 +518,7 @@ export function applyMaterials(mesh, materials) {
 }
 
 /** One-based, or negative and counting back from the end. */
-function resolve(i, have) {
+function resolve(i: number, have: number) {
   if (!Number.isFinite(i) || i === 0) return 0;
   return i > 0 ? i - 1 : have + i;
 }
@@ -489,8 +547,9 @@ const CHUNK_BIN = 0x004e4942;   // 'BIN\0'
  * self-contained GLB works, a .gltf with embedded base64 buffers works, and a
  * .gltf with external buffers says so.
  */
-export function parseGLB(bytes) {
-  let json = null, bin = null;
+export function parseGLB(bytes: ArrayBuffer): Mesh {
+  let json: GLTF | null = null;
+  let bin: Uint8Array | null = null;
 
   const view = new DataView(bytes);
   if (bytes.byteLength >= 12 && view.getUint32(0, true) === GLB_MAGIC) {
@@ -512,6 +571,11 @@ export function parseGLB(bytes) {
     } catch {
       throw new MeshError('This is not a glTF file');
     }
+    // A document that parsed to nothing is not a glTF either. `null` is valid
+    // JSON, so a file holding exactly that came through the catch above and
+    // read its first field off null one line later - a TypeError where every
+    // other malformed file here earns a sentence.
+    if (!json) throw new MeshError('This is not a glTF file');
   }
 
   const buffers = (json.buffers || []).map(b => {
@@ -520,7 +584,7 @@ export function parseGLB(bytes) {
     throw new MeshError('This glTF keeps its data in a separate file, which a drop cannot reach');
   });
 
-  const outP = [], outN = [];
+  const outP: number[] = [], outN: number[] = [];
   const box = newBox();
   // Every root of every scene, or - for a document with no scene at all, which
   // is legal - every node, so a single-mesh export still draws.
@@ -535,6 +599,16 @@ export function parseGLB(bytes) {
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
+/** One node on the walk below: where it is, and how far through it the loop is. */
+type Frame = {
+  index: number;
+  parent: Matrix;
+  phase: 0 | 1;
+  world: Matrix;
+  children: number[];
+  ci: number;
+};
+
 // Iterative with an explicit stack, not recursion. A deep acyclic chain used to
 // spend one JavaScript frame per node and could overflow the call stack; a
 // hostile file is exactly where that happens. `seen` holds the current path -
@@ -542,10 +616,17 @@ const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 // recursion had (a shared node reached down two branches is fine; a node that is
 // its own ancestor is not). The depth ceiling bounds a long chain and the visit
 // ceiling a dense DAG. See AUD-06.
-function walkNode(json, buffers, root, outP, outN, box) {
-  const seen = new Set();
+function walkNode(
+  json: GLTF, buffers: (Uint8Array | null)[], root: number,
+  outP: number[], outN: number[], box: MeshBounds,
+) {
+  const seen = new Set<number>();
   let visits = 0;
-  const stack = [{ index: root, parent: IDENTITY, phase: 0 }];
+  // Every field is on the frame from the moment it is made, rather than being
+  // grown onto it in phase 0. The three that phase 0 fills are read only after
+  // it has run - it is the same pass, and every early exit pops the frame - so
+  // the values below are placeholders in the same sense the loop always had.
+  const stack: Frame[] = [{ index: root, parent: IDENTITY, phase: 0, world: IDENTITY, children: [], ci: 0 }];
   while (stack.length) {
     if (stack.length > MAX_NODE_DEPTH) throw new MeshError('This model is nested too deeply');
     const frame = stack[stack.length - 1];
@@ -571,7 +652,10 @@ function walkNode(json, buffers, root, outP, outN, box) {
       frame.phase = 1;
     }
     if (frame.ci < frame.children.length) {
-      stack.push({ index: frame.children[frame.ci++], parent: frame.world, phase: 0 });
+      stack.push({
+        index: frame.children[frame.ci++], parent: frame.world, phase: 0,
+        world: IDENTITY, children: [], ci: 0,
+      });
     } else {
       seen.delete(frame.index);
       stack.pop();
@@ -579,7 +663,10 @@ function walkNode(json, buffers, root, outP, outN, box) {
   }
 }
 
-function addPrimitive(json, buffers, prim, m, outP, outN, box) {
+function addPrimitive(
+  json: GLTF, buffers: (Uint8Array | null)[], prim: GLTFPrimitive, m: Matrix,
+  outP: number[], outN: number[], box: MeshBounds,
+) {
   const pos = readAccessor(json, buffers, prim.attributes?.POSITION);
   if (!pos) return;
   const nrm = readAccessor(json, buffers, prim.attributes?.NORMAL);
@@ -616,10 +703,24 @@ function addPrimitive(json, buffers, prim, m, outP, outN, box) {
   }
 }
 
-const COMPONENTS = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 };
-const READERS = {
-  5120: [Int8Array, 1], 5121: [Uint8Array, 1], 5122: [Int16Array, 2],
-  5123: [Uint16Array, 2], 5125: [Uint32Array, 4], 5126: [Float32Array, 4],
+const COMPONENTS: Record<string, number | undefined> =
+  { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 };
+
+/**
+ * Per glTF component type: how wide one component is, and how to read one.
+ *
+ * The reader is a function rather than the name of a DataView method looked up
+ * per element. Same six reads, and the 8-bit pair take no endianness argument
+ * because there is nothing to order in one byte - which is exactly what passing
+ * `true` to them meant before.
+ */
+const READERS: Record<number, { size: number, read: (view: DataView, at: number) => number } | undefined> = {
+  5120: { size: 1, read: (v, at) => v.getInt8(at) },
+  5121: { size: 1, read: (v, at) => v.getUint8(at) },
+  5122: { size: 2, read: (v, at) => v.getInt16(at, true) },
+  5123: { size: 2, read: (v, at) => v.getUint16(at, true) },
+  5125: { size: 4, read: (v, at) => v.getUint32(at, true) },
+  5126: { size: 4, read: (v, at) => v.getFloat32(at, true) },
 };
 
 /**
@@ -630,47 +731,51 @@ const READERS = {
  * attributes - and because its byteOffset need not be aligned to its own
  * component size, which a typed array view requires and would throw on.
  */
-function readAccessor(json, buffers, index) {
+function readAccessor(json: GLTF, buffers: (Uint8Array | null)[], index: number | undefined) {
   if (index === undefined) return null;
   const acc = json.accessors?.[index];
   if (!acc) return null;
-  const comps = COMPONENTS[acc.type];
-  const reader = READERS[acc.componentType];
+  const comps = acc.type ? COMPONENTS[acc.type] : undefined;
+  const reader = acc.componentType ? READERS[acc.componentType] : undefined;
   if (!comps || !reader) return null;
-  const [, size] = reader;
+  const size = reader.size;
   // Validate the count before allocating from it. It is attacker-controlled and
   // the multiplication below feeds a typed-array length; an implausible or
   // non-integer count is refused rather than turned into a giant allocation.
   // See AUD-06.
-  if (!Number.isInteger(acc.count) || acc.count < 0 || acc.count > MAX_ELEMENTS) {
+  // The typeof leads, and rejects exactly what Number.isInteger() already
+  // rejected: an absent count, or one that is not a number at all.
+  const count = acc.count;
+  if (typeof count !== 'number' || !Number.isInteger(count) || count < 0 || count > MAX_ELEMENTS) {
     throw new MeshError('This model declares an implausible amount of geometry');
   }
-  const out = new (acc.componentType === 5126 ? Float32Array : Uint32Array)(acc.count * comps);
+  const out = new (acc.componentType === 5126 ? Float32Array : Uint32Array)(count * comps);
 
   const bv = json.bufferViews?.[acc.bufferView ?? -1];
   // An accessor with no bufferView is defined as all zeroes, and is how a
   // sparse one starts. Sparse substitution itself is not read.
   if (!bv) return out;
-  const buf = buffers[bv.buffer];
+  // A bufferView with no `buffer` names none: `buffers[undefined]` was already
+  // undefined, and the line below is what turns that into the refusal.
+  const buf = bv.buffer === undefined ? null : buffers[bv.buffer];
   if (!buf) throw new MeshError('This model refers to data that is not in the file');
 
   const start = (bv.byteOffset || 0) + (acc.byteOffset || 0);
   const stride = bv.byteStride || comps * size;
   const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-  const get = { 5120: 'getInt8', 5121: 'getUint8', 5122: 'getInt16',
-                5123: 'getUint16', 5125: 'getUint32', 5126: 'getFloat32' }[acc.componentType];
+  const get = reader.read;
 
-  for (let e = 0; e < acc.count; e++) {
+  for (let e = 0; e < count; e++) {
     for (let c = 0; c < comps; c++) {
       const at = start + e * stride + c * size;
       if (at + size > view.byteLength) throw new MeshError('This model is truncated');
-      out[e * comps + c] = view[get](at, true);
+      out[e * comps + c] = get(view, at);
     }
   }
   return out;
 }
 
-function dataURIBytes(uri) {
+function dataURIBytes(uri: string) {
   const comma = uri.indexOf(',');
   if (comma < 0) throw new MeshError('This model has a malformed data URI in it');
   const head = uri.slice(0, comma);
@@ -690,7 +795,7 @@ function dataURIBytes(uri) {
 }
 
 /** Translation, rotation (a quaternion) and scale, in that order, as a matrix. */
-function trs(node) {
+function trs(node: GLTFNode): Matrix {
   const [tx, ty, tz] = node.translation || [0, 0, 0];
   const [qx, qy, qz, qw] = node.rotation || [0, 0, 0, 1];
   const [sx, sy, sz] = node.scale || [1, 1, 1];
@@ -707,8 +812,8 @@ function trs(node) {
   ];
 }
 
-function mul(a, b) {
-  const out = new Array(16);
+function mul(a: Matrix, b: Matrix): Matrix {
+  const out = new Array<number>(16);
   for (let c = 0; c < 4; c++) {
     for (let r = 0; r < 4; r++) {
       out[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] +
@@ -718,19 +823,19 @@ function mul(a, b) {
   return out;
 }
 
-const xform = (m, x, y, z) => [
+const xform = (m: Matrix, x: number, y: number, z: number) => [
   m[0] * x + m[4] * y + m[8] * z + m[12],
   m[1] * x + m[5] * y + m[9] * z + m[13],
   m[2] * x + m[6] * y + m[10] * z + m[14],
 ];
-const xform3 = (m, x, y, z) => [
+const xform3 = (m: Matrix, x: number, y: number, z: number) => [
   m[0] * x + m[3] * y + m[6] * z,
   m[1] * x + m[4] * y + m[7] * z,
   m[2] * x + m[5] * y + m[8] * z,
 ];
 
 /** The upper 3x3, inverted and transposed - the correct transform for a normal. */
-function normalMatrix(m) {
+function normalMatrix(m: Matrix): Matrix {
   const a = [m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10]];
   const det = a[0] * (a[4] * a[8] - a[5] * a[7])
             - a[3] * (a[1] * a[8] - a[2] * a[7])
@@ -751,9 +856,10 @@ function normalMatrix(m) {
 // Shared
 // ---------------------------------------------------------------------------
 
-const newBox = () => ({ min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] });
+const newBox = (): MeshBounds =>
+  ({ min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] });
 
-function grow(box, x, y, z) {
+function grow(box: MeshBounds, x: number, y: number, z: number) {
   if (x < box.min[0]) box.min[0] = x;
   if (y < box.min[1]) box.min[1] = y;
   if (z < box.min[2]) box.min[2] = z;
@@ -763,7 +869,7 @@ function grow(box, x, y, z) {
 }
 
 /** Replace a facet's normals with the one its winding implies, if it has none. */
-function fixFacet(positions, normals, base) {
+function fixFacet(positions: Float32Array, normals: Float32Array, base: number) {
   if (normals[base] || normals[base + 1] || normals[base + 2]) return;
   const n = faceNormal(
     positions[base], positions[base + 1], positions[base + 2],
@@ -777,7 +883,7 @@ function fixFacet(positions, normals, base) {
 }
 
 /** The same, for the plain arrays the OBJ and glTF paths build into. */
-function fixFacetArrays(p, nrm, base) {
+function fixFacetArrays(p: number[], nrm: number[], base: number) {
   const n = faceNormal(p[base], p[base + 1], p[base + 2],
                        p[base + 3], p[base + 4], p[base + 5],
                        p[base + 6], p[base + 7], p[base + 8]);
@@ -793,8 +899,8 @@ function fixFacetArrays(p, nrm, base) {
  * the facet's own, leaving supplied per-corner normals intact. The face normal
  * is computed lazily, so a triangle that already has all three costs nothing.
  */
-function fillFacetGaps(p, nrm, base) {
-  let n = null;
+function fillFacetGaps(p: number[], nrm: number[], base: number) {
+  let n: number[] | null = null;
   for (let v = 0; v < 3; v++) {
     const o = base + v * 3;
     if (nrm[o] || nrm[o + 1] || nrm[o + 2]) continue;
@@ -805,7 +911,11 @@ function fillFacetGaps(p, nrm, base) {
   }
 }
 
-function faceNormal(ax, ay, az, bx, by, bz, cx, cy, cz) {
+function faceNormal(
+  ax: number, ay: number, az: number,
+  bx: number, by: number, bz: number,
+  cx: number, cy: number, cz: number,
+) {
   const ux = bx - ax, uy = by - ay, uz = bz - az;
   const vx = cx - ax, vy = cy - ay, vz = cz - az;
   const x = uy * vz - uz * vy;
@@ -817,7 +927,7 @@ function faceNormal(ax, ay, az, bx, by, bz, cx, cy, cz) {
   return len ? [x / len, y / len, z / len] : [0, 0, 1];
 }
 
-function finish(positions, normals, box) {
+function finish(positions: Float32Array, normals: Float32Array, box: MeshBounds): Mesh {
   if (!Number.isFinite(box.min[0])) throw new MeshError('This model has no geometry in it');
   // Unit length, once, here - so the shader never has to normalise and a file
   // whose own normals were not unit does not come out shaded differently from
@@ -833,5 +943,5 @@ function finish(positions, normals, box) {
   return { positions, normals, count: positions.length / 3, bounds: box };
 }
 
-const tooBig = n =>
+const tooBig = (n: number) =>
   `This model has ${n.toLocaleString()} triangles, past the ${MAX_TRIANGLES.toLocaleString()} a card can show`;

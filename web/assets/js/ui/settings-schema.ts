@@ -587,6 +587,34 @@ export const SECTIONS: Section[] = [
     ],
   },
   {
+    // What changed, which is web/patch.html - the public changelog, and the only
+    // page this site has that is not the app.
+    //
+    // In System because the tab is already where everything about this copy of
+    // the app rather than about a board lives, and the version number the notes
+    // are keyed to is printed at the foot of this same panel. There is no About
+    // page to file it under, and inventing one to hold a single link would be a
+    // second front door to the same page.
+    //
+    // Second in the tab rather than last. The section below this one ends on
+    // Clear everything, which is deliberately at the far end where it cannot be
+    // hit on the way to something else - so anything filed after it is filed
+    // past the way out, where nobody goes looking. The order the tab reads in is
+    // a setting, then a thing to read, then the housekeeping and the door.
+    //
+    // A button and a command, not an anchor. The whole panel reaches the app
+    // through one delegated data-cmd listener - see the credit in the footer of
+    // index.html, which is a link dressed as a button for exactly this reason -
+    // and a lone <a> in here would be the first row in the panel that works a
+    // different way from every other row.
+    id: 'notes', tab: 'system', title: 'What changed',
+    controls: [
+      { type: 'buttons', buttons: [{ cmd: 'patch-notes', label: 'Patch notes' }] },
+      { id: 'notes-hint', type: 'hint',
+        text: () => 'Every version since the first, newest first. Opens in a new tab.' },
+    ],
+  },
+  {
     // Housekeeping on the copy kept in this browser, done once in a while and
     // not while you are working - and the way out, which belongs at the far end
     // of the panel where it cannot be hit on the way to Save.

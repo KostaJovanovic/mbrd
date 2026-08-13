@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Board persistence, in two halves that answer two different questions.
 //
 //   Save   - "keep this". Writes the board into this browser, where it already
@@ -39,7 +31,7 @@
 // which is what kept the split from reaching main.js, ui/board-actions.js,
 // commands.js and four tests.
 
-import { uid } from '../util.ts';
+import { uid, isRecord } from '../util.ts';
 import { toast, busy } from '../notify.ts';
 import { idbGet, idbSet } from './idb.ts';
 import {
@@ -60,15 +52,55 @@ import {
   initSessionStorage, lastSaveFailure, suspendCache,
   resetSessionLatches,
 } from './session.ts';
+import type { PromptOptions } from './session.ts';
+
+/**
+ * The question this module has to be able to ask, in the shape ui/dialog.ts's
+ * ask() answers it: one of the three button names, or null where a field was
+ * involved (never here - none of these questions has a box).
+ */
+export type Prompt = (opts: PromptOptions) => Promise<string | null>;
+
+/**
+ * Why a thrown thing failed, for a toast. `err.message` is what these messages
+ * have always interpolated, and a throw that is not an object has none - which
+ * reads as "undefined" here exactly as it did before there were types.
+ */
+const detailOf = (err: unknown) => String(isRecord(err) ? err.message : undefined);
+
+/** The one throw every picker and share sheet makes when it is dismissed. */
+const isAbort = (err: unknown) => isRecord(err) && err.name === 'AbortError';
 // The confirmation dialogs below - discard-unsaved and clear-everything - are
 // the one thing this module needs from the interface, and ui/ sits *above*
 // storage in the layering (AUD-12). So the prompt is injected rather than
 // imported: main.js wires setPrompt() to ui/dialog's ask() at startup. Left
 // unset - in a test, or before wiring - it answers 'cancel', which is the safe
 // default here: nothing is discarded and nothing is wiped without a real answer.
-let prompt = async () => 'cancel';
-export function setPrompt(fn) {
+let prompt: Prompt = async () => 'cancel';
+export function setPrompt(fn: Prompt | null | undefined) {
   prompt = typeof fn === 'function' ? fn : async () => 'cancel';
+}
+
+/**
+ * The File System Access API, which lib.dom does not declare.
+ *
+ * Only the two entry points this module calls and only the fields it passes -
+ * a wider guess would be this file asserting a shape for an API it asks two
+ * things of. Both are optional because the whole of canPickFiles() is whether
+ * they are there: Safari and Firefox have neither, and the download path below
+ * exists for exactly that.
+ */
+interface FilePickerOptions {
+  suggestedName?: string;
+  types?: { description?: string, accept: Record<string, string[]> }[];
+  multiple?: boolean;
+}
+
+declare global {
+  interface Window {
+    showSaveFilePicker?: (opts?: FilePickerOptions) => Promise<FileSystemFileHandle>;
+    showOpenFilePicker?: (opts?: FilePickerOptions) => Promise<FileSystemFileHandle[]>;
+  }
 }
 
 const PICKER_TYPES = [{
@@ -77,9 +109,9 @@ const PICKER_TYPES = [{
 }];
 
 /** Handle of the file Export writes back to, when the browser supports it. */
-let fileHandle = null;
+let fileHandle: FileSystemFileHandle | null = null;
 /** First-created timestamp, carried across saves of the same board. */
-let created = null;
+let created: string | null = null;
 
 export const canPickFiles = () => typeof window.showSaveFilePicker === 'function';
 export const currentFileName = () => fileHandle?.name || null;
@@ -103,7 +135,7 @@ export const currentFileName = () => fileHandle?.name || null;
  * receipt claims - never whether the save counts as a success - because the
  * durable copy is, and remains, the exported .mbrd file.
  */
-let persistent = null;   // null: not asked yet; true/false: the engine's answer
+let persistent: boolean | null = null;   // null: not asked yet; else the engine's answer
 
 async function ensurePersistence() {
   if (persistent !== null) return persistent;
@@ -172,12 +204,16 @@ export async function exportBoard({ pickNew = false } = {}) {
     // cancelling still leaves the board exactly as it was: the AbortError
     // below is thrown from here, ahead of everything.
     if (picking && (pickNew || !fileHandle)) {
-      fileHandle = await window.showSaveFilePicker({
+      // Non-null: canPickFiles() *is* the test for this function, and `picking`
+      // is its answer, taken one line above and not re-read since.
+      fileHandle = await window.showSaveFilePicker!({
         suggestedName: fileNameFor(board.title),
         types: PICKER_TYPES,
       });
     }
-    if (picking) setTitle(titleFromFileName(fileHandle.name));
+    // Non-null for the reason the branch above is: with a picker there was
+    // either a handle already or that branch has just put one here.
+    if (picking) setTitle(titleFromFileName(fileHandle!.name));
 
     // Everything past the picker is the slow half - deflating every asset on
     // the board into one archive - and on a board of video it is a long slow
@@ -192,7 +228,7 @@ export async function exportBoard({ pickNew = false } = {}) {
 
       if (picking) {
         job.label('Writing the file');
-        const writable = await fileHandle.createWritable();
+        const writable = await fileHandle!.createWritable();
         // Piped rather than handed over whole. The archive packBoard returns is
         // a composition of the assets' own Blobs (see writeZip), so it is a
         // description of a file rather than a file in memory - and pipeTo pulls
@@ -213,14 +249,14 @@ export async function exportBoard({ pickNew = false } = {}) {
     toast('Exported ' + fileNameFor(board.title));
     return true;
   } catch (err) {
-    if (err?.name === 'AbortError') return false;   // user closed the picker
+    if (isAbort(err)) return false;   // user closed the picker
     console.error(err);
-    toast('Export failed: ' + err.message, 'error');
+    toast('Export failed: ' + detailOf(err), 'error');
     return false;
   }
 }
 
-function download(blob, name) {
+function download(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -236,7 +272,7 @@ function download(blob, name) {
  * .mbrd files and so never touch the file handle or the picker types, but do
  * want the one Safari-safe download in this module rather than a second copy.
  */
-export function saveBlob(blob, name) {
+export function saveBlob(blob: Blob, name: string) {
   download(blob, name);
 }
 
@@ -275,9 +311,9 @@ export async function shareBoard() {
     }
     return exportBoard();
   } catch (err) {
-    if (err?.name === 'AbortError') return false;   // user dismissed the sheet
+    if (isAbort(err)) return false;   // user dismissed the sheet
     console.error(err);
-    toast('Share failed: ' + err.message, 'error');
+    toast('Share failed: ' + detailOf(err), 'error');
     return false;
   }
 }
@@ -298,8 +334,8 @@ export async function shareBoard() {
  */
 export async function openBoard() {
   try {
-    let file = null;
-    let handle = null;
+    let file: File | null = null;
+    let handle: FileSystemFileHandle | null = null;
     if (typeof window.showOpenFilePicker === 'function') {
       [handle] = await window.showOpenFilePicker({ types: PICKER_TYPES, multiple: false });
       file = await handle.getFile();
@@ -308,9 +344,9 @@ export async function openBoard() {
     }
     return file ? await openFile(file, handle) : false;
   } catch (err) {
-    if (err?.name === 'AbortError') return false;
+    if (isAbort(err)) return false;
     console.error(err);
-    toast('Open failed: ' + err.message, 'error');
+    toast('Open failed: ' + detailOf(err), 'error');
     return false;
   }
 }
@@ -335,7 +371,7 @@ export async function openBoard() {
  * work" after that had run would leave the old board on screen with the new
  * board's bytes behind it.
  */
-export async function openFile(file, handle = null) {
+export async function openFile(file: File, handle: FileSystemFileHandle | null = null) {
   if (!(await confirmDiscard('Opening another board'))) return false;
   try {
     // Unpack *and* load inside the transaction. Loading used to sit outside
@@ -355,7 +391,10 @@ export async function openFile(file, handle = null) {
         // informational; this is the one thing that reads it.
         loadBoard({ ...data, title: titleForOpenedBoard(data.title, file.name, manifest.app) });
         fileHandle = handle;
-        created = manifest.created || null;
+        // The manifest is a file's, so its stamp is only a stamp if it is text.
+        // Anything else starts the board's created date afresh at the next save,
+        // which is what an absent one has always done.
+        created = (typeof manifest.created === 'string' && manifest.created) || null;
         toast('Opened ' + file.name);
         return true;
       });
@@ -364,7 +403,7 @@ export async function openFile(file, handle = null) {
     }
   } catch (err) {
     console.error(err);
-    toast('Could not open that file: ' + err.message, 'error');
+    toast('Could not open that file: ' + detailOf(err), 'error');
     return false;
   }
 }
@@ -379,7 +418,7 @@ export async function openFile(file, handle = null) {
  * released once the new board is definitely in - which is why the whole of
  * "open" runs in here rather than just the unpacking.
  */
-async function withFreshAssets(commit) {
+async function withFreshAssets<T>(commit: () => Promise<T>): Promise<T> {
   const store = allAssets();
   const stash = new Map(store);
   store.clear();
@@ -405,8 +444,12 @@ async function withFreshAssets(commit) {
  * every exit restores the input and resolves.
  */
 function pickViaInput() {
-  return new Promise(resolve => {
-    const input = document.getElementById('file-input');
+  return new Promise<File | null>(resolve => {
+    // #file-input is the one hidden <input type="file"> in index.html, shared
+    // with Add files - see the dataset.mode note below. Absent, this whole
+    // fallback has nothing to click, which is a broken build rather than a
+    // state to recover from.
+    const input = document.getElementById('file-input') as HTMLInputElement;
     const prevAccept = input.accept;
     input.accept = '.mbrd,application/zip';
     input.multiple = false;
@@ -418,7 +461,7 @@ function pickViaInput() {
     input.dataset.mode = 'mbrd';
 
     let settled = false;
-    const finish = file => {
+    const finish = (file: File | null) => {
       if (settled) return;
       settled = true;
       input.removeEventListener('change', onChange);
@@ -430,12 +473,12 @@ function pickViaInput() {
       delete input.dataset.mode;
       resolve(file);
     };
-    const onChange = () => finish(input.files[0] || null);
+    const onChange = () => finish(input.files?.[0] || null);
     const onCancel = () => finish(null);
     // Focus returns to the window the moment the dialog closes either way, so
     // this has to give `change` a turn to land before deciding it was a
     // cancellation. Harmless where `cancel` already fired: finish() is once.
-    const onFocus = () => setTimeout(() => finish(input.files[0] || null), 300);
+    const onFocus = () => setTimeout(() => finish(input.files?.[0] || null), 300);
 
     input.addEventListener('change', onChange);
     input.addEventListener('cancel', onCancel);
@@ -516,7 +559,7 @@ export async function newBoard() {
  * to the question is right: somebody who asked to keep the board and did not
  * keep it has not answered yet.
  */
-async function confirmDiscard(what) {
+async function confirmDiscard(what: string) {
   if (!isDirty()) return true;
   for (;;) {
     const answer = await prompt({
@@ -547,7 +590,7 @@ async function confirmDiscard(what) {
 // rather than the disk.
 
 /** The active board's library id, restored on boot and minted on first need. */
-let boardId = null;
+let boardId: string | null = null;
 
 export function currentBoardId() { return boardId; }
 
@@ -559,7 +602,7 @@ async function ensureBoardId() {
   return boardId;
 }
 
-async function setCurrentBoardId(id) {
+async function setCurrentBoardId(id: string) {
   boardId = id;
   await idbSet('kv', 'current-board', id).catch(() => {});
 }
@@ -605,14 +648,16 @@ export async function switchBoard(id: string, thumb: string | null = null) {
     await withFreshAssets(async () => {
       const { manifest, board: data } = await unpackBoard(new File([blob], 'board.mbrd', { type: MIME }));
       loadBoard(data);
-      created = manifest.created || null;
+      // A string or nothing, as in openFile() above and for the same reason:
+      // this manifest came out of a packed blob rather than out of this run.
+      created = (typeof manifest.created === 'string' && manifest.created) || null;
     });
     fileHandle = null;
     await setCurrentBoardId(id);
     return true;
   } catch (err) {
     console.error(err);
-    toast('Could not open that board: ' + err.message, 'error');
+    toast('Could not open that board: ' + detailOf(err), 'error');
     return false;
   } finally {
     resetSessionLatches();
@@ -641,7 +686,7 @@ export async function newLibraryBoard(thumb: string | null = null) {
     return true;
   } catch (err) {
     console.error(err);
-    toast('Could not make a new board: ' + err.message, 'error');
+    toast('Could not make a new board: ' + detailOf(err), 'error');
     return false;
   } finally {
     resetSessionLatches();
@@ -650,7 +695,7 @@ export async function newLibraryBoard(thumb: string | null = null) {
 }
 
 /** Take a board off the shelf. The board on screen cannot be deleted from under itself. */
-export async function deleteLibraryBoard(id) {
+export async function deleteLibraryBoard(id: string) {
   if (id === boardId) {
     toast('That is the board you are on - switch away from it first');
     return false;

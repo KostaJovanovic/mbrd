@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Where everything is: the two layout profiles, the Mobile pack, and every
 // write to an item's geometry.
 //
@@ -35,6 +27,7 @@
 import {
   itemBounds, latticeBox, cellInset, MIN_SIZE, MAX_SIZE,
 } from './geometry.ts';
+import { isRecord } from './util.ts';
 import { splitAppearance } from './layout-settings.ts';
 import { arrange, mobileArrangement, mobileOrder } from './arrange/arrangements.ts';
 import { bus, markDirty } from './board-store.ts';
@@ -49,7 +42,43 @@ import {
 // The four signatures below are annotated ahead of the rest of the file for the
 // same reason Item was in board-model.ts - board-schema.ts is typed and reads
 // its geometry through them.
-import type { Geometry, Item, LayoutMode } from './board-model.ts';
+import type { Geometry, Item, LayoutMode, ItemMeta } from './board-model.ts';
+import type { Box } from './geometry.ts';
+
+/**
+ * The four numbers a presnap memo holds - where an item was before the lattice
+ * took it. Its own name because three things pass one around: the memo on
+ * `meta.presnap`, the copy on a Geometry, and usableMemo(), which is the only
+ * thing that decides whether what came out of a file is one.
+ */
+export type Presnap = { x: number, y: number, w: number, h: number };
+
+/**
+ * One item's geometry as a snapshot carries it: the six fields GEOM_KEYS names,
+ * the presnap memo, and the one flag that rides with a movement rather than
+ * beside it - see snapshotGeom(), which explains why `loose` is in here.
+ */
+export type GeomSnap = {
+  id: string,
+  x: number, y: number, w: number, h: number, rot: number, z: number,
+  presnap: Presnap | null,
+  loose: boolean,
+};
+
+/**
+ * What applyGeom() will write: an id, and any part of the above.
+ *
+ * Partial because that is what its callers hand it - geometry.ts's align and
+ * distribute answer `{ id, x, y }` and nothing else, and applyGeom() merges
+ * whatever it is given onto the live item rather than replacing it.
+ *
+ * `presnap` is `unknown` here rather than a memo, and deliberately: applyGeom()
+ * puts every one it is given through usableMemo(), which is the only thing in
+ * this file that decides whether four numbers are a memo. A caller carrying one
+ * straight off an item's meta is holding whatever a file put there.
+ */
+export type GeomPatch =
+  { id: string } & Partial<Omit<GeomSnap, 'id' | 'presnap'>> & { presnap?: unknown };
 import {
   isRider, attachRiders, stuckPlacement, restick, stuckFollowers, startSettling,
   isPinned,
@@ -57,10 +86,11 @@ import {
 import { isFence, refence, refenceAround, mobileRuns, fenceFollowers } from './fences.ts';
 
 /** A geometry snapshot entry as a plain rectangle, for the containment tests. */
-const boxOf = g => ({ x: g.x, y: g.y, w: g.w, h: g.h, rot: g.rot || 0 });
+const boxOf = (g: { x: number, y: number, w: number, h: number, rot?: number }): Box =>
+  ({ x: g.x, y: g.y, w: g.w, h: g.h, rot: g.rot || 0 });
 
 /** The four fields snapping moves, and the four a presnap memo remembers. */
-export const SNAP_KEYS = ['x', 'y', 'w', 'h'];
+export const SNAP_KEYS = ['x', 'y', 'w', 'h'] as const;
 
 const MOBILE_PACK_EPSILON = 1e-9;
 
@@ -80,12 +110,12 @@ const MOBILE_PACK_EPSILON = 1e-9;
  * same reason - an item at the edge of the column then has the same margin as
  * one in the middle of it.
  */
-function mobileSeam(step, spacing = 0) {
+function mobileSeam(step: number, spacing = 0) {
   return cellInset(step) + Math.max(0, spacing || 0) / 2;
 }
 
 /** Number of Mobile grid cells needed to contain one unrotated side. */
-function mobileCellSpan(side, step, maximum = Number.POSITIVE_INFINITY, spacing = 0) {
+function mobileCellSpan(side: number, step: number, maximum = Number.POSITIVE_INFINITY, spacing = 0) {
   const seam = 2 * mobileSeam(step, spacing);
   return Math.min(
     Math.max(Math.ceil((side + seam) / step - MOBILE_PACK_EPSILON), 1),
@@ -94,7 +124,7 @@ function mobileCellSpan(side, step, maximum = Number.POSITIVE_INFINITY, spacing 
 }
 
 /** First full grid row below every item that is staying where it is. */
-function mobilePackStartRow(obstacles, step) {
+function mobilePackStartRow(obstacles: Item[], step: number) {
   const bounds = itemBounds(obstacles);
   if (!bounds) return 0;
   return Math.max(
@@ -104,11 +134,13 @@ function mobilePackStartRow(obstacles, step) {
 }
 
 /** Compact row-major packing into the selected Mobile occupancy grid. */
-export function packMobileGrid(items, obstacles, step, columns, spacing = 0) {
-  const occupied = new Set();
+export function packMobileGrid(
+  items: Item[], obstacles: Item[], step: number, columns: number, spacing = 0,
+): Item[] {
+  const occupied = new Set<string>();
   const startRow = mobilePackStartRow(obstacles, step);
   const inset = mobileSeam(step, spacing);
-  const open = (col, row, cols, rows) => {
+  const open = (col: number, row: number, cols: number, rows: number) => {
     for (let y = row; y < row + rows; y++) {
       for (let x = col; x < col + cols; x++) {
         if (occupied.has(`${x}:${y}`)) return false;
@@ -116,7 +148,7 @@ export function packMobileGrid(items, obstacles, step, columns, spacing = 0) {
     }
     return true;
   };
-  const claim = (col, row, cols, rows) => {
+  const claim = (col: number, row: number, cols: number, rows: number) => {
     for (let y = row; y < row + rows; y++) {
       for (let x = col; x < col + cols; x++) occupied.add(`${x}:${y}`);
     }
@@ -165,7 +197,7 @@ export function packMobileGrid(items, obstacles, step, columns, spacing = 0) {
  * keeps that function free of a special case: with w already at the maximum, its
  * clamp is a no-op and its scale ratio is 1.
  */
-function bandBox(fence, step, columns, spacing) {
+function bandBox(fence: Item, step: number, columns: number, spacing: number): Item {
   const inset = mobileSeam(step, spacing);
   return {
     ...fence,
@@ -193,17 +225,19 @@ function bandBox(fence, step, columns, spacing) {
  * The result is put back into the caller's order because placeMobileItems()
  * pairs its two packs by index.
  */
-function packRuns(items, obstacles, step, columns, spacing) {
+function packRuns(
+  items: Item[], obstacles: Item[], step: number, columns: number, spacing: number,
+): Item[] {
   const runs = mobileRuns(items);
   if (runs.length === 1 && !runs[0].band) {
     return packMobileGrid(items, obstacles, step, columns, spacing);
   }
-  const placed = [];
+  const placed: Item[] = [];
   const behind = [...obstacles];
   for (const run of runs) {
     if (run.band) {
       const [band] = packMobileGrid(
-        [bandBox(run.band, step, columns, spacing)], behind, step, columns, spacing);
+        [bandBox(run.band!, step, columns, spacing)], behind, step, columns, spacing);
       if (band) { placed.push(band); behind.push(band); }
     }
     const got = packMobileGrid(run.items, behind, step, columns, spacing);
@@ -211,7 +245,7 @@ function packRuns(items, obstacles, step, columns, spacing) {
     behind.push(...got);
   }
   const found = new Map(placed.map(item => [item.id, item]));
-  return items.map(item => found.get(item.id)).filter(Boolean);
+  return items.map(item => found.get(item.id)).filter((item): item is Item => !!item);
 }
 
 /**
@@ -232,8 +266,15 @@ function packRuns(items, obstacles, step, columns, spacing) {
  * added to the seam on all four sides of every card and to the room each one
  * claims in the lattice; see mobileSeam().
  */
-export function placeMobileItems(items, obstacles = board.items, options = {}) {
-  const step = options.step > 0 ? options.step : baseStep();
+export function placeMobileItems(
+  items: Item[],
+  obstacles: Item[] = board.items,
+  options: {
+    step?: number, snap?: boolean, preserveSize?: boolean,
+    columns?: number, spacing?: number,
+  } = {},
+): Item[] {
+  const step = options.step && options.step > 0 ? options.step : baseStep();
   const snap = options.snap ?? board.settings.snap;
   const preserveSize = options.preserveSize === true;
   const columns = mobileColumnCount(options.columns ?? board.settings.mobileColumns);
@@ -257,14 +298,14 @@ export function placeMobileItems(items, obstacles = board.items, options = {}) {
   // column is rebuilt (repackMobileBoard passes no obstacles at all), so this
   // does not strand them.
   obstacles = obstacles.filter(it => it.type !== 'title' && it.type !== 'ghost');
-  const clean = item => {
+  const clean = (item: Item) => {
     const presnap = usableMemo(item.meta?.presnap);
     const { presnap: _oldPresnap, ...meta } = item.meta || {};
     const source = presnap ? { ...item, ...presnap } : item;
     return fitMobile({ ...source, meta, rot: 0 }, true, step, columns, spacing);
   };
   const rawItems = items.map(clean);
-  const rawObstacles = obstacles.map(item => {
+  const rawObstacles = obstacles.map((item: Item) => {
     const pre = usableMemo(item.meta?.presnap);
     return fitMobile(pre ? { ...item, ...pre } : item, false, step, columns, spacing);
   });
@@ -272,15 +313,15 @@ export function placeMobileItems(items, obstacles = board.items, options = {}) {
   if (!snap) return raw;
 
   const liveItems = preserveSize
-    ? items.map(item => {
+    ? items.map((item: Item) => {
         const { presnap: _oldPresnap, ...meta } = item.meta || {};
         return fitMobile({ ...item, meta, rot: 0 }, true, step, columns, spacing);
       })
-    : rawItems.map(item => {
+    : rawItems.map((item: Item) => {
         const box = latticeBox(item, step);
         return fitMobile({ ...item, w: box.w, h: box.h }, false, step, columns, spacing);
       });
-  const liveObstacles = obstacles.map(item => fitMobile(item, false, step, columns, spacing));
+  const liveObstacles = obstacles.map((item: Item) => fitMobile(item, false, step, columns, spacing));
   return packRuns(liveItems, liveObstacles, step, columns, spacing).map((item, index) => ({
     ...item,
     meta: {
@@ -324,7 +365,9 @@ export function repackMobileBoard() {
       w: item.w,
       h: item.h,
       rot: item.rot,
-      presnap: item.meta?.presnap ? { ...item.meta.presnap } : null,
+      // Through usableMemo() rather than spread raw: placeMobileItems() writes
+      // exactly these four, and the memo is the only thing read back out.
+      presnap: usableMemo(item.meta?.presnap),
     };
   }));
   commitGeom('Change Mobile grid width', before, ordered.map(item => item.id), {
@@ -348,7 +391,7 @@ export function baseStep() {
   return board.settings.gridStep > 0 ? board.settings.gridStep : 64;
 }
 
-const GEOM_KEYS = ['x', 'y', 'w', 'h', 'rot', 'z'];
+const GEOM_KEYS = ['x', 'y', 'w', 'h', 'rot', 'z'] as const;
 
 /** The fixed width of the Mobile board in world units. */
 export function mobileBoardWidth(
@@ -395,8 +438,17 @@ export function mobileBoardBottom(items = board.items) {
   return bounds ? Math.min(minimum, bounds.y0 - MOBILE_BOTTOM_ROWS * step) : minimum;
 }
 
-export const geometryOf = (it: Item): Geometry => {
-  const out = { id: it.id };
+/**
+ * What geometryOf() will read: an Item, or one of the Geometry records this
+ * file passes back through it (see completeLayout, which fits a saved record
+ * and then re-reads it). `meta` is optional because a Geometry carries none.
+ */
+type GeomSource = Geometry & { meta?: ItemMeta };
+
+export const geometryOf = (it: GeomSource): Geometry => {
+  // The cast is the loop below it: GEOM_KEYS names exactly the fields a
+  // Geometry has beyond its id, so the object is complete by the next line.
+  const out = { id: it.id } as Geometry;
   for (const key of GEOM_KEYS) out[key] = it[key];
   const presnap = usableMemo(it.meta?.presnap);
   if (presnap) out.presnap = { ...presnap };
@@ -406,18 +458,26 @@ export const geometryOf = (it: Item): Geometry => {
 export function normalizeLayout(raw: unknown, items: Item[]): Geometry[] {
   if (!Array.isArray(raw)) return [];
   const ids = new Set(items.map(it => it.id));
-  const seen = new Set();
-  const out = [];
-  for (const value of raw) {
-    if (!value || typeof value !== 'object' || !ids.has(value.id) || seen.has(value.id)) continue;
-    if (!GEOM_KEYS.every(key => Number.isFinite(+value[key]))) continue;
-    const w = Math.min(Math.max(+value.w, MIN_SIZE), MAX_SIZE);
-    const h = Math.min(Math.max(+value.h, MIN_SIZE), MAX_SIZE);
+  const seen = new Set<unknown>();
+  const out: Geometry[] = [];
+  for (const entry of raw) {
+    // One key at a time, out of a file: `raw` is whatever board.json carried.
+    if (!isRecord(entry)) continue;
+    const value = entry;
+    if (typeof value.id !== 'string' || !ids.has(value.id) || seen.has(value.id)) continue;
+    // Number() rather than the unary +, which is the same conversion said in a
+    // way that takes an `unknown` - and every one of these came out of a file.
+    if (!GEOM_KEYS.every(key => Number.isFinite(Number(value[key])))) continue;
+    const w = Math.min(Math.max(Number(value.w), MIN_SIZE), MAX_SIZE);
+    const h = Math.min(Math.max(Number(value.h), MIN_SIZE), MAX_SIZE);
+    // The memo as usableMemo() reads it: the same four numbers the spread used
+    // to copy, minus anything else a hand-written file put beside them.
+    const presnap = usableMemo(value.presnap);
     out.push({
       id: value.id,
-      x: +value.x, y: +value.y, w, h,
-      rot: +value.rot, z: +value.z,
-      ...(usableMemo(value.presnap) ? { presnap: { ...value.presnap } } : {}),
+      x: Number(value.x), y: Number(value.y), w, h,
+      rot: Number(value.rot), z: Number(value.z),
+      ...(presnap ? { presnap } : {}),
     });
     seen.add(value.id);
   }
@@ -428,9 +488,17 @@ export function layoutMap(layout: Geometry[] | null | undefined): Map<string, Ge
   return new Map((layout || []).map(geometry => [geometry.id, geometry]));
 }
 
+/**
+ * What the column will fit: an item, or the Geometry record that stands for
+ * one. completeLayout() fits a saved record rather than the live card, which is
+ * why this is not simply Item - and the return is the same type as the argument,
+ * because every branch of it hands back a copy of what it was given.
+ */
+type Fittable = { type?: string, x: number, y: number, w: number, h: number };
+
 /** Keep an item inside the selected-width Mobile strip. */
-export function fitMobile(
-  it,
+export function fitMobile<T extends Fittable>(
+  it: T,
   scaleHeight = false,
   step = baseStep(),
   columns = mobileColumnCount(),
@@ -464,7 +532,7 @@ export function fitMobile(
   return { ...it, x, y, w, h };
 }
 
-export const fitBoardMode = (it, scaleHeight = false) =>
+export const fitBoardMode = <T extends Fittable>(it: T, scaleHeight = false) =>
   board.layoutMode === 'mobile'
     ? fitMobile(it, scaleHeight, baseStep(), mobileColumnCount(), board.settings.spacing)
     : it;
@@ -576,7 +644,10 @@ export function completeLayout(mode: LayoutMode): Geometry[] {
       });
       for (const item of extra) map.set(item.id, geometryOf(item));
     }
-    const out = board.items.map(item => map.get(item.id));
+    // Non-null: the loop above gives every item a record - the title card, each
+    // rider, every saved card and every packed one - and the stranded pass just
+    // above covers the riders it could not place against a host.
+    const out = board.items.map(item => map.get(item.id)!);
     board.layouts.mobile = out;
     return out;
   }
@@ -622,7 +693,10 @@ export function completeLayout(mode: LayoutMode): Geometry[] {
     // different the moment the Mobile arrangement is anything but 'placed', and
     // the sequence somebody scrolled through on the phone is the sequence they
     // expect to read across on the desktop.
-    const ordered = mobileOrder(missing, { name: board.arrangements.mobile });
+    // The cast is safe for the reason import/drop.ts gives at its own call:
+    // mobileOrder() mints nothing, it returns the items it was handed in
+    // another order, so every element here is one of `missing`.
+    const ordered = mobileOrder(missing, { name: board.arrangements.mobile }) as Item[];
     // Masonry, and it is the same rule the Feed itself packs by: shortest column
     // first, leftmost on a tie (LAYOUTS.masonry in arrange/arrangements.js, and
     // feedMasonry() in ui/feed.js, which were written from each other). Fed the
@@ -682,13 +756,16 @@ export function captureLayout(mode = board.layoutMode) {
 /** Save the active layout's private settings and refresh the shared look. */
 export function captureLayoutSettings(mode = board.layoutMode) {
   const { shared } = splitAppearance(board.settings.appearance);
-  board.sharedAppearance = cloneSettings({ appearance: shared }).appearance;
+  // Through the live settings rather than a bare `{ appearance }`: cloneSettings
+  // takes a whole settings record and only the deep copy of the look is read
+  // back out, which is what this line always wanted from it.
+  board.sharedAppearance = cloneSettings({ ...board.settings, appearance: shared }).appearance;
   board.layoutSettings[mode] = layoutSettingsOf(board.settings);
   board.arrangements[mode] = board.arrangement;
 }
 
 /** Make one layout's settings and arrangement the live compatibility surface. */
-export function activateLayoutSettings(mode) {
+export function activateLayoutSettings(mode: LayoutMode) {
   if (mode === 'mobile') {
     // '' rather than 'none': that is what DEFAULT_SETTINGS holds, what the
     // select's None option carries, and what PAPERS has no entry for. A second
@@ -722,9 +799,9 @@ export function activateLayoutSettings(mode) {
     : (stored || 'spiral');
 }
 
-export function writeLayout(layout) {
+export function writeLayout(layout: Geometry[]) {
   const map = layoutMap(layout);
-  const ids = [];
+  const ids: string[] = [];
   for (const it of board.items) {
     const saved = map.get(it.id);
     if (!saved) continue;
@@ -737,6 +814,10 @@ export function writeLayout(layout) {
   if (ids.length) bus.emit('geom', ids);
 }
 
+/** Whether a string names one of the two profiles. See setBoardMode() below. */
+const isLayoutMode = (v: unknown): v is LayoutMode =>
+  BOARD_MODES.some(mode => mode === v);
+
 /**
  * Switch which geometry profile is live.
  *
@@ -744,8 +825,12 @@ export function writeLayout(layout) {
  * and every other setting are exchanged as one profile. History is cleared
  * because neither geometry nor setting undo may replay into the other layout.
  */
-export function setBoardMode(mode) {
-  if (!BOARD_MODES.includes(mode) || mode === board.layoutMode) return false;
+export function setBoardMode(mode: string | null) {
+  // The membership test is what makes the argument a LayoutMode, and it is
+  // written as a predicate so the assignments below need no second opinion:
+  // this is the door a stored preference and a `data-cmd` come through, and
+  // neither has been held to anything before it arrives.
+  if (!isLayoutMode(mode) || mode === board.layoutMode) return false;
   captureLayout();
   captureLayoutSettings();
   const generated = mode === 'mobile' && !(board.layouts.mobile || []).length && board.items.length;
@@ -780,7 +865,7 @@ export function setBoardMode(mode) {
  * hover. A copy in the renderer would have been the two relations meeting in a
  * third place, and one of the two was already stale by then.
  */
-export function travelling(ids) {
+export function travelling(ids: Iterable<string>) {
   const out = [...ids];
   for (let grew = true; grew;) {
     grew = false;
@@ -794,11 +879,13 @@ export function travelling(ids) {
 }
 
 /** Geometry snapshot for a set of ids - the before/after pair of a drag. */
-export function snapshotGeom(ids) {
+export function snapshotGeom(ids: Iterable<string>): GeomSnap[] {
   return [...ids].map(id => {
     const it = byId(id);
     if (!it) return null;
-    const g = { id };
+    // The cast is the loop below it, as in geometryOf(): GEOM_KEYS names every
+    // number a snapshot holds, and the two fields after it fill the rest.
+    const g = { id } as GeomSnap;
     for (const k of GEOM_KEYS) g[k] = it[k];
     const presnap = usableMemo(it.meta?.presnap);
     g.presnap = presnap ? { ...presnap } : null;
@@ -810,12 +897,12 @@ export function snapshotGeom(ids) {
     // history entry sitting beside every nudge.
     g.loose = !!it.meta?.loose;
     return g;
-  }).filter(Boolean);
+  }).filter((g): g is GeomSnap => !!g);
 }
 
 /** Write a geometry snapshot back onto the items (live, not undoable). */
-export function applyGeom(snap) {
-  const ids = [];
+export function applyGeom(snap: GeomPatch[]) {
+  const ids: string[] = [];
   for (const g of snap) {
     const it = byId(g.id);
     if (!it) continue;
@@ -836,7 +923,12 @@ export function applyGeom(snap) {
  * Close a live drag/resize into one undo entry. `before` is the snapshot taken
  * when the gesture started; the current geometry becomes the redo state.
  */
-export function commitGeom(label, before, driven?, options = {}) {
+export function commitGeom(
+  label: string,
+  before: GeomSnap[],
+  driven?: string[],
+  options: { preservePresnap?: boolean } = {},
+) {
   let after = snapshotGeom(before.map(b => b.id));
   // The loose flag counts as a change even where nothing moved. A drag that
   // ends a pixel from where it began has still dropped a loose note onto a
@@ -886,7 +978,7 @@ export function commitGeom(label, before, driven?, options = {}) {
   //
   // Desktop only, because membership is measured there and nowhere else, and a
   // fence on Mobile is a band the packer owns rather than a region anybody drew.
-  const resized = [];
+  const resized: Box[] = [];
   if (driven && board.layoutMode !== 'mobile') {
     for (let i = 0; i < after.length; i++) {
       if (!driven.includes(before[i].id) || !isFence(byId(before[i].id))) continue;
@@ -894,7 +986,7 @@ export function commitGeom(label, before, driven?, options = {}) {
       resized.push(boxOf(before[i]), boxOf(after[i]));
     }
   }
-  const move = snap => {
+  const move = (snap: GeomSnap[]) => {
     applyGeom(snap);
     if (!driven) return;
     restick(driven);
@@ -925,25 +1017,35 @@ export function commitGeom(label, before, driven?, options = {}) {
  * unstuck, and the flag is read *in front of* the memo rather than instead of
  * it, so clearing the flag has to send the question back to the measurement.
  */
-function writeLoose(it, loose) {
+function writeLoose(it: Item, loose: boolean) {
   if (loose === !!it.meta?.loose) return;
   if (loose) it.meta = { ...it.meta, loose: true };
   else { const { loose: _drop, ...rest } = it.meta || {}; it.meta = rest; }
   restick([it.id]);
 }
 
-export function forgetPresnap(it) {
+export function forgetPresnap(it: Item | null | undefined) {
   if (!it?.meta || !('presnap' in it.meta)) return;
   const { presnap, ...rest } = it.meta;
   it.meta = rest;
 }
 
 /** A memo is four finite numbers with a size that is actually a size. */
-export function usableMemo(pre) {
-  if (!pre || typeof pre !== 'object') return null;
-  const ok = SNAP_KEYS.every(k => Number.isFinite(pre[k]));
-  if (!ok || pre.w < MIN_SIZE || pre.h < MIN_SIZE || pre.w > MAX_SIZE || pre.h > MAX_SIZE) return null;
-  return { x: pre.x, y: pre.y, w: pre.w, h: pre.h };
+export function usableMemo(pre: unknown): Presnap | null {
+  // One key at a time and each one checked, because a memo arrives from a
+  // .mbrd like everything else - see the note over unsnapAll().
+  if (!isRecord(pre)) return null;
+  // SNAP_KEYS' four, read one at a time rather than through the list: the
+  // typeof is what Number.isFinite() was already saying about a value out of a
+  // file - it answers false for anything that is not a number - and saying it
+  // this way is what lets the four come back out as the numbers they are.
+  const { x, y, w, h } = pre;
+  if (typeof x !== 'number' || typeof y !== 'number'
+    || typeof w !== 'number' || typeof h !== 'number') return null;
+  const ok = Number.isFinite(x) && Number.isFinite(y)
+    && Number.isFinite(w) && Number.isFinite(h);
+  if (!ok || w < MIN_SIZE || h < MIN_SIZE || w > MAX_SIZE || h > MAX_SIZE) return null;
+  return { x, y, w, h };
 }
 
 // ---------------------------------------------------------------------------
@@ -988,9 +1090,9 @@ export function usableMemo(pre) {
  *   item whose size is an odd number of cells therefore ends up with its centre
  *   on a half-step, which is correct and is not a rounding error.
  */
-export function snapAll(snapTo) {
+export function snapAll(snapTo?: boolean) {
   const step = baseStep();
-  const before = [], after = [];
+  const before: SnapState[] = [], after: SnapState[] = [];
   for (const it of board.items) {
     // A pinned item is not on the board, it is on its host - see isPinned() in
     // sticky.js. Its place is a fraction of the card underneath it, and putting
@@ -1030,8 +1132,8 @@ export function recheckBoardGeometry() {
 }
 
 /** Put back what snapAll() remembered, for everything still carrying a memo. */
-export function unsnapAll(snapTo) {
-  const before = [], after = [];
+export function unsnapAll(snapTo?: boolean) {
+  const before: SnapState[] = [], after: SnapState[] = [];
   for (const it of board.items) {
     // Checked rather than trusted: a memo arrives from a .mbrd like everything
     // else, and a hand-edited one holding a string would write it straight onto
@@ -1056,7 +1158,17 @@ export function unsnapAll(snapTo) {
  * flag while leaving the mirror behind would put the lie back at the next
  * layout switch instead of at the next drag.
  */
-function writeSnapSetting(v) {
+/**
+ * One item as the two board-wide snap sweeps carry it: the box, and the memo
+ * that goes with it. `pre` is whatever was on the item - the sweep moves it
+ * from one place to another rather than reading it, and usableMemo() is what
+ * decides whether it means anything.
+ */
+type SnapState = {
+  id: string, x: number, y: number, w: number, h: number, pre: unknown,
+};
+
+function writeSnapSetting(v: boolean) {
   board.settings.snap = v;
   board.layoutSettings[board.layoutMode] = layoutSettingsOf(board.settings);
   markDirty();
@@ -1079,14 +1191,16 @@ function writeSnapSetting(v) {
  * every other setting does - there is no geometry to take back, so there is
  * nothing for an undo entry to be about.
  */
-function applySnapState(before, after, label, snapTo) {
+function applySnapState(
+  before: SnapState[], after: SnapState[], label: string, snapTo: boolean | undefined,
+) {
   const moved = after.some((a, i) =>
     SNAP_KEYS.some(k => a[k] !== before[i][k]) || !!a.pre !== !!before[i].pre);
   if (!moved) {
     if (snapTo !== undefined) writeSnapSetting(snapTo);
     return;
   }
-  const apply = (list, flag) => {
+  const apply = (list: SnapState[], flag: boolean | undefined) => {
     if (flag !== undefined) writeSnapSetting(flag);
     writeSnapState(list);
   };
@@ -1096,8 +1210,8 @@ function applySnapState(before, after, label, snapTo) {
     () => apply(before, snapTo === undefined ? undefined : !snapTo));
 }
 
-function writeSnapState(list) {
-  const ids = [];
+function writeSnapState(list: SnapState[]) {
+  const ids: string[] = [];
   for (const g of list) {
     const it = byId(g.id);
     if (!it) continue;

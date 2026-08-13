@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // A palette read off the pictures on the board.
 //
 // The rule this follows is not 60-30-10. That was tried on the four presets,
@@ -69,12 +61,66 @@ export { PALETTE_TOKENS };
 // quietly at a call site.
 export { contrast, hex, oklch };
 
+/**
+ * One picture's pixels: an ImageData buffer, RGBA, as samplePixels() yields
+ * them and as the tests hand them in directly.
+ */
+export type Chunk = Uint8ClampedArray;
+
+/** A colour without its hue: what a pigment is worn at. */
+export type Tone = { L: number, C: number };
+
+/**
+ * The three per-bin tallies census() keeps beside the vote, which are only ever
+ * read as ratios - see toneAt().
+ */
+type ToneTally = { litSum: Float64Array, chrSum: Float64Array, toneWeight: Float64Array };
+
+/** One pass over the pixels - see census(), which is the only thing that builds one. */
+type Census = {
+  votes: Float64Array,
+  mass: Float64Array,
+  tone: ToneTally,
+  voters: number,
+  vivid: number,
+  key: number,
+};
+
+/** A bin that stood taller than its neighbours, before any of it is ranked. */
+type BinPeak = { i: number, h: number, w: number };
+
+/** A hue the board actually holds: the angle, its share of the board, its colour. */
+export type Peak = { h: number, standing: number, tone: Tone | null };
+
+/**
+ * What the photographs were, as temper() bends the tables by them - and the
+ * axis, which is not about the photographs at all. Every field is optional and
+ * independently so; null is "leave the tables as measured".
+ */
+export type Traits = { vivid?: number, key?: number, plain?: boolean } | null;
+
+/**
+ * Which hue does which job - see rolesFor(). `tone` is the colour each of the
+ * three photographed roles was measured at, or null where there is nothing to
+ * measure and the tables stand.
+ */
+type Roles = {
+  sheet: number,
+  accent: number,
+  leafy: number,
+  warm: number,
+  tone?: { sheet: Tone | null, accent: Tone | null, leafy: Tone | null },
+};
+
+/** A palette, as the tokens it is written to the document as: token -> #rrggbb. */
+export type Vars = Record<string, string>;
+
 // ---------------------------------------------------------------------------
 // Which hues the pictures are made of
 // ---------------------------------------------------------------------------
 
 /** The shorter way round the wheel between two hues, in degrees. 0 to 180. */
-const apart = (a, b) => { const d = Math.abs(a - b) % 360; return Math.min(d, 360 - d); };
+const apart = (a: number, b: number) => { const d = Math.abs(a - b) % 360; return Math.min(d, 360 - d); };
 
 /** 5-degree bins. Fine enough to tell teal from green, coarse enough to vote. */
 const BINS = 72;
@@ -187,7 +233,7 @@ const MAX_HUES = 3;
  * away, which happens to give the right answer for the wrong reason and stops
  * doing so the moment the split is uneven.
  */
-export function huesOf(chunks) {
+export function huesOf(chunks: Chunk[]) {
   return peaksOf(readBoard(chunks)).map(p => p.h);
 }
 
@@ -215,7 +261,7 @@ export function huesOf(chunks) {
  * colours gets the loudest job is a question about magnitude, and this is what
  * answers it. See rolesFor().
  */
-function standings(mass, peaks) {
+function standings(mass: Float64Array, peaks: BinPeak[]) {
   let total = 0;
   for (const v of mass) total += v;
   if (!total) return peaks.map(() => 0);
@@ -236,7 +282,7 @@ function standings(mass, peaks) {
  * board has colour in it. Those want different numbers, and one number for both
  * meant a pastel board was read as a black-and-white one.
  */
-function readBoard(chunks) {
+function readBoard(chunks: Chunk[]): Census {
   const strict = census(chunks, NEUTRAL_C);
   return strict.voters ? strict : census(chunks, NEUTRAL_FAINT);
 }
@@ -255,7 +301,7 @@ function readBoard(chunks) {
  * vote is normalised per picture - one enormous photograph is still one
  * photograph.
  */
-function census(chunks, floor) {
+function census(chunks: Chunk[], floor: number): Census {
   const votes = new Float64Array(BINS);
   const mass = new Float64Array(BINS);
   // The third tally: what each hue actually *looks* like on this board, as
@@ -324,7 +370,7 @@ function census(chunks, floor) {
  * Null when nothing voted there, which is what a bare angle from a test or from
  * the picker produces, and the tables stand.
  */
-function toneAt({ litSum, chrSum, toneWeight }, i) {
+function toneAt({ litSum, chrSum, toneWeight }: ToneTally, i: number): Tone | null {
   let l = 0, c = 0, w = 0;
   for (let k = -2; k <= 2; k++) {
     const j = (i + k + BINS) % BINS;
@@ -341,7 +387,7 @@ function toneAt({ litSum, chrSum, toneWeight }, i) {
  * rest from tables - which is how a hue that is 1.7% of a board came to be
  * rendered at the same chroma as one that is 24% of it.
  */
-function peaksOf({ votes, mass, tone, voters }) {
+function peaksOf({ votes, mass, tone, voters }: Census): Peak[] {
   if (!voters) return [];
 
   const smooth = new Float64Array(BINS);
@@ -395,7 +441,7 @@ function peaksOf({ votes, mass, tone, voters }) {
   // colour almost no picture holds is not a candidate at all, however much of it
   // the one picture that does hold it holds. See the sky in rolesFor().
   const floor = sheet.w * MIN_SHARE;
-  const facing = p => 1 + FACING_BONUS * apart(p.h, sheet.h) / 180;
+  const facing = (p: { h: number }) => 1 + FACING_BONUS * apart(p.h, sheet.h) / 180;
   const rest = peaks
     .map((p, n) => ({ ...p, standing: standing[n] }))
     .slice(1)
@@ -499,7 +545,7 @@ const WEARABLE_L = { min: 0.36, max: 0.78 };
 const WEARABLE_C_MIN = 0.055;
 
 /** A measured colour, held to what a pigment has to be. Null passes through. */
-function wearable(tone) {
+function wearable(tone: Tone | null | undefined): Tone | null {
   if (!tone) return null;
   return {
     L: clamp(tone.L, WEARABLE_L.min, WEARABLE_L.max),
@@ -519,7 +565,7 @@ function wearable(tone) {
 const DEEP_DROP = PIGMENT['--accent'].L - PIGMENT['--accent-deep'].L;
 const DEEP_TEMPER = PIGMENT['--accent-deep'].C / PIGMENT['--accent'].C;
 
-const deepen = ink => ({ L: Math.max(0, ink.L - DEEP_DROP), C: ink.C * DEEP_TEMPER });
+const deepen = (ink: Tone): Tone => ({ L: Math.max(0, ink.L - DEEP_DROP), C: ink.C * DEEP_TEMPER });
 
 /**
  * Where "warm" is, in OKLCh degrees, and how far a hue may be turned towards it.
@@ -610,9 +656,12 @@ const LEAFY_DROP = 0.07;
  */
 const FACING_BONUS = 1;
 
-function rolesFor(hues) {
-  const [sheet, ...rest] = hues.map(p => (typeof p === 'number' ? { h: p, standing: 0 } : p));
-  const score = p => p.standing * (1 + FACING_BONUS * apart(p.h, sheet.h) / 180);
+function rolesFor(hues: (number | Peak)[]): Roles {
+  // A bare angle arrives as a peak with nothing measured about it, which is what
+  // the tables are for - so the two forms are one shape from here down.
+  const [sheet, ...rest]: Peak[] =
+    hues.map(p => (typeof p === 'number' ? { h: p, standing: 0, tone: null } : p));
+  const score = (p: Peak) => p.standing * (1 + FACING_BONUS * apart(p.h, sheet.h) / 180);
   const order = [...rest]
     .sort((a, b) => (score(b) - score(a)) || (apart(b.h, sheet.h) - apart(a.h, sheet.h)));
   const ranked = order.map(p => p.h);
@@ -754,7 +803,7 @@ const PLAIN_TINT = 0.55;
  * Every field of `traits` is optional and independently so - a hand-picked
  * colour brings no photographs with it but is still subject to the axis.
  */
-function temper(traits) {
+function temper(traits: Traits) {
   const scale = traits?.vivid != null
     ? clamp(Math.sqrt(traits.vivid / REF_VIVID), VIVID_FLOOR, VIVID_CEIL) : 1;
   const key = traits?.key != null
@@ -764,7 +813,7 @@ function temper(traits) {
   // of the axis *is*, not because the pictures were bright.
   const shift = traits?.plain ? PLAIN_PAPER - SHEET['--paper'].L : key;
   const sheetScale = traits?.plain ? scale * PLAIN_TINT : scale;
-  const sheet = {}, pigment = {};
+  const sheet: Record<string, Tone> = {}, pigment: Record<string, Tone> = {};
   for (const [key, { L, C }] of Object.entries(SHEET)) {
     sheet[key] = {
       L: PAPERS.includes(key) ? clamp(L + shift, 0, 1) : L,
@@ -823,14 +872,14 @@ const ACCENT_FLOOR = 4.5;
  * chosen to break it - a yellow that cannot be made dark enough, two hues a
  * degree apart - without going through a histogram first.
  */
-export function paletteFor(hues, traits = null) {
+export function paletteFor(hues: (number | Peak)[], traits: Traits = null) {
   if (!hues.length) return null;
   return build(rolesFor(hues), traits);
 }
 
-function build(roles, traits) {
+function build(roles: Roles, traits: Traits): Vars {
   const { sheet, pigment, leafy } = temper(traits);
-  const vars = {};
+  const vars: Vars = {};
 
   for (const [key, { L, C }] of Object.entries(sheet)) vars[key] = hex(L, C, roles.sheet);
 
@@ -877,7 +926,7 @@ function build(roles, traits) {
  * `accentInk` is the same thing one step further - the accent as the pictures
  * measured it, which is what the fallback below has to restore it to.
  */
-function repair(vars, roles, sheet, accentInk) {
+function repair(vars: Vars, roles: Roles, sheet: Record<string, Tone>, accentInk: Tone): Vars {
   const paper = vars['--paper'];
   for (const [key, floor] of Object.entries(FLOOR)) {
     const { C } = sheet[key];
@@ -944,7 +993,7 @@ function repair(vars, roles, sheet, accentInk) {
  * does would answer a question nobody asked - somebody reaching for the picker
  * is choosing the board's colour, not commissioning a scheme around it.
  */
-export function paletteFromAccent(picked, { plain = false } = {}) {
+export function paletteFromAccent(picked: string, { plain = false }: { plain?: boolean } = {}) {
   if (!/^#[0-9a-f]{6}$/i.test(picked)) return null;
   const chosen = picked.toLowerCase();
   const { C, h } = oklch(...parseHex(chosen));
@@ -966,13 +1015,13 @@ export function paletteFromAccent(picked, { plain = false } = {}) {
 }
 
 /** Halfway between two hues, the short way round the wheel. */
-function midHue(a, b) {
+function midHue(a: number, b: number) {
   const d = ((b - a + 540) % 360) - 180;
   return (a + d / 2 + 360) % 360;
 }
 
 /** A hue turned towards the ambers, by WARM_TURN at most. */
-function warmer(h) {
+function warmer(h: number) {
   // Signed shortest way round, so a hue at 350 turns forwards past 0 rather
   // than the long way down through the greens.
   const d = ((WARM_ANCHOR - h + 540) % 360) - 180;
@@ -987,7 +1036,7 @@ function warmer(h) {
  * all. The caller's right move then is to leave the look alone, and null says
  * that in a way an all-neutral palette does not.
  */
-export function extractPalette(chunks, { plain = false } = {}) {
+export function extractPalette(chunks: Chunk[], { plain = false }: { plain?: boolean } = {}) {
   const board = readBoard(chunks);
   // The rich peaks, not huesOf()'s bare angles: rolesFor() ranks on standing,
   // and standing is what huesOf() drops on its way out.
@@ -1011,7 +1060,7 @@ export function extractPalette(chunks, { plain = false } = {}) {
  * one else's. Returns fewer than `n` when the picture has fewer distinct hues in
  * it, and nothing at all for a picture with no colour worth taking.
  */
-export function dominantColors(chunk, n = 5) {
+export function dominantColors(chunk: Chunk, n = 5) {
   const peaks = peaksOf(readBoard([chunk]));
   const out = [];
   for (const p of peaks) {
@@ -1053,7 +1102,7 @@ const SAMPLE = 48;
  * Failures are skipped rather than thrown. One picture the browser cannot
  * decode should cost its own vote and nothing else.
  */
-export async function samplePixels(urls, limit = MAX_SOURCES) {
+export async function samplePixels(urls: string[], limit = MAX_SOURCES) {
   const ctx = sampler();
   if (!ctx) return [];
   // `limit` may be Infinity, which is what "every picture" arrives as. A falsy
@@ -1072,7 +1121,9 @@ export async function samplePixels(urls, limit = MAX_SOURCES) {
       ctx.clearRect(0, 0, SAMPLE, SAMPLE);
       ctx.drawImage(src, 0, 0, SAMPLE, SAMPLE);
       out.push(ctx.getImageData(0, 0, SAMPLE, SAMPLE).data);
-      src.close?.();
+      // Only the bitmap half of what frameFor() answers has one - the <img>
+      // fallback does not, which is what the optional call was already saying.
+      if ('close' in src) src.close();
     } catch { /* one picture, one lost vote */ }
   }
   return out;
@@ -1113,7 +1164,7 @@ function sampler() {
  *
  * The <img> path stays as the fallback for anything without createImageBitmap.
  */
-async function frameFor(url) {
+async function frameFor(url: string): Promise<ImageBitmap | HTMLImageElement> {
   if (typeof createImageBitmap === 'function' && typeof fetch === 'function') {
     try {
       return await createImageBitmap(await (await fetch(url)).blob());

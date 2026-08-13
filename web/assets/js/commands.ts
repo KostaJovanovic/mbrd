@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The command surface - the single set of user-facing actions.
 //
 // Sidebar buttons (`data-cmd="reset-appearance"` resolves to
@@ -84,6 +76,9 @@ import { connectionCommands } from './commands/connections.ts';
 import { fenceCommands, sharedFence } from './commands/fences.ts';
 import { viewCommands } from './commands/view.ts';
 import { itemMetaCommands } from './commands/item-meta.ts';
+import type { CommandViewport } from './commands/view.ts';
+import type { Item, ItemMeta } from './board-model.ts';
+import type { Point } from './arrange/arrangements.ts';
 
 // The one piece of the fence run that is a decision rather than a wire, and the
 // only one testable without a board on screen. Re-exported by name from where it
@@ -113,7 +108,7 @@ export { sharedFence };
  * file that is a decision rather than a wire, and the only piece that can be
  * checked without a viewport.
  */
-export function linkTyped(text) {
+export function linkTyped(text: string) {
   const direct = linkURL(text);
   if (direct) return direct;
   // A scheme is what the URL grammar says it is, not the presence of `://`.
@@ -122,6 +117,30 @@ export function linkTyped(text) {
   // card claiming to be a link to it. Anything already carrying a scheme has
   // had its answer from linkURL() and keeps it.
   return /^[a-z][a-z0-9+.-]*:/i.test(text.trim()) ? null : linkURL('https://' + text.trim());
+}
+
+/**
+ * The half of the Viewport this file asks for, on top of the half
+ * commands/view.ts asks for.
+ *
+ * Structural for the reason CommandViewport gives: naming a whole Viewport here
+ * would be asserting a shape this file does not use, and the seam is what lets
+ * a test drive these commands with five fields rather than a canvas. What is
+ * added is the centre of the view in world coordinates - the point every "add
+ * a thing" command drops onto - and the fit() a selection is zoomed with.
+ */
+export interface CommandsViewport extends CommandViewport {
+  toWorld(x: number, y: number): Point;
+  left: number;
+  top: number;
+  cx: number;
+  cy: number;
+}
+
+/** What main.ts injects, of which commands/view.ts takes the first. */
+export interface CommandDeps {
+  resetAppearance: () => void;
+  setWhimsy: (level: number | string) => void;
 }
 
 /**
@@ -138,7 +157,22 @@ export function linkTyped(text) {
  *              state changes, and those are the ones that need it.
  * @param deps  { resetAppearance, setWhimsy } from ui/appearance.js.
  */
-export function createCommands(vp, { resetAppearance, setWhimsy }) {
+export function createCommands(vp: CommandsViewport, { resetAppearance, setWhimsy }: CommandDeps) {
+  /**
+   * The board's settings as a plain bag of keys, which is what the three
+   * settings doors below need.
+   *
+   * BoardSettings is a closed type and these three take the key as a bare
+   * string: it arrives from a `data-cmd` button, from the flyout's slider, or
+   * from `mbrd.cmds.setSetting()` in the console, and setSetting() in state.ts
+   * is what decides whether it names anything. A key that names nothing reads
+   * as undefined, which is what `unknown` already says.
+   *
+   * A function rather than a binding: `board.settings` is *replaced* on a layout
+   * switch (activateLayoutSettings), so a copy taken once would go stale.
+   */
+  const settingsBag = (): Record<string, unknown> => board.settings;
+
   const cmds = {
     ...fileCommands(),
 
@@ -165,7 +199,7 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
     // import/drop.js cycles NOTE_TINTS when it is given nothing, and the
     // toolbar's click handler calls every command with no arguments, so a plain
     // press of the Note button is unchanged by construction.
-    addNote: tint => composeNote(
+    addNote: (tint?: number) => composeNote(
       () => addNote(vp.toWorld(vp.left + vp.cx, vp.top + vp.cy), '', tint)),
     // A colour of your own, chosen before the card exists. The well on the card
     // is a real colour input and still is, so this is not the only way to set
@@ -185,7 +219,7 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
     // hover flyout offers the board's own pigments, and picking one of those is
     // not a question to open a dialog about. The dialog is still the row at the
     // foot of that flyout, and still the plain click on the button.
-    addSwatchOf: hex => addSwatch(vp.toWorld(vp.left + vp.cx, vp.top + vp.cy), hex),
+    addSwatchOf: (hex: string) => addSwatch(vp.toWorld(vp.left + vp.cx, vp.top + vp.cy), hex),
     // A card for somewhere else, typed rather than dropped. Nothing is fetched:
     // a link card is a name and an address until somebody clicks it, and that
     // stays true however the address arrived.
@@ -210,11 +244,11 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
     // undo step; each remembers the image it came from in meta.from, which is a
     // plain id and so survives the meta normaliser (only cover/shot/thumb hashes
     // are stripped). A picture with no colour worth taking says so and adds none.
-    canExtractSwatches: id => {
+    canExtractSwatches: (id: string) => {
       const it = byId(id);
       return !!(it && it.type === 'image' && it.asset?.hash && getAsset(it.asset.hash));
     },
-    extractSwatches: async id => {
+    extractSwatches: async (id: string) => {
       const it = byId(id);
       const hash = it?.asset?.hash;
       if (!hash) return;
@@ -225,10 +259,15 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
       const hexes = dominantColors(chunk, 5);
       if (!hexes.length) { toast('That picture has no colour worth taking'); return; }
       const size = defaultSize('swatch');
-      const partials = hexes.map(h => ({
-        type: 'swatch', name: h.toUpperCase(),
-        w: size.w, h: size.h, meta: { hex: h, from: id },
-      }));
+      // x and y are placeholders: arrange() returns one point per item and the
+      // sweep below writes both of them before addItems() ever sees the array.
+      const partials = hexes.map((h: string) => {
+        const meta: ItemMeta = { hex: h, from: id };
+        return {
+          type: 'swatch', name: h.toUpperCase(), x: 0, y: 0,
+          w: size.w, h: size.h, meta,
+        };
+      });
       const spots = arrange(partials, {
         name: 'masonry',
         center: { x: it.x, y: it.y + it.h / 2 + size.h },
@@ -236,7 +275,7 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
       });
       spots.forEach((p, i) => { partials[i].x = p.x; partials[i].y = p.y; });
       const made = addItems(partials, 'Extract palette');
-      select(made.map(m => m.id));
+      select(made.map((m: Item) => m.id));
     },
     // --- connections ---
     ...connectionCommands(),
@@ -267,13 +306,13 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
     // asked for - which is the right half to keep, since the setting is a
     // statement of intent and the positions are the thing you might regret.
     arrangement: () => board.arrangement,
-    arrangeAs: name => {
+    arrangeAs: (name: string) => {
       setArrangement(name);
       rearrange(board.items.filter(i => i.type !== 'ghost'));
     },
     // The whimsy axis, as a command so the dial on the fourth hint card can drive
     // it - that card is built under canvas/, which cannot import ui/appearance.js.
-    setWhimsy: level => setWhimsy(level),
+    setWhimsy: (level: number | string) => setWhimsy(level),
     rearrangeSelection: () => rearrange(board.items.filter(i => selection.has(i.id))),
     /** Whether Rearrange selection would do anything - the flyout greys it out. */
     hasSelection: () => selection.size > 0,
@@ -290,7 +329,7 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
     // edges mean membership - neither is a card in a row being straightened. The
     // pure arithmetic is in geometry.js; this only reads the selection and files
     // the result. Mobile has no free positions to line up, so it declines.
-    alignSelection: edge => {
+    alignSelection: (edge: string) => {
       if (board.layoutMode === 'mobile') { toast('Aligning is a canvas thing'); return; }
       // Pinned items are out for the same reason furniture and fences are: this
       // straightens a row of cards, and a sticky fixed to one of them is not a
@@ -301,8 +340,10 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
         selection.has(i.id) && !isFurniture(i) && !isFence(i) && !isRider(i));
       if (items.length < 2) { toast('Pick two or more cards to line up'); return; }
       const ids = items.map(i => i.id);
-      const label = { left: 'Align left', right: 'Align right', hcenter: 'Align centre',
-        top: 'Align top', bottom: 'Align bottom', vcenter: 'Align middle' }[edge] || 'Align';
+      const labels: Record<string, string> = {
+        left: 'Align left', right: 'Align right', hcenter: 'Align centre',
+        top: 'Align top', bottom: 'Align bottom', vcenter: 'Align middle' };
+      const label = labels[edge] || 'Align';
       // Lining up on a shared edge stacks everything into one band across the
       // other axis, so cards that were apart there now sit on top of each other.
       // Spread them back out along that axis - the horizontal edges share an x,
@@ -314,7 +355,7 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
       applyGeom(targets);
       commitGeom(label, before, ids);
     },
-    distributeSelection: axis => {
+    distributeSelection: (axis: 'x' | 'y') => {
       if (board.layoutMode === 'mobile') { toast('Spacing out is a canvas thing'); return; }
       // Riders out, as in alignSelection above and for the same reason.
       const items = board.items.filter(i =>
@@ -336,9 +377,15 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
     restoreTitle: () => restoreTitleCard(),
     // The title card's own right-click menu keys off this - it is a singleton with
     // a different set of actions (no copy, no duplicate; edit its style, reset it).
-    isTitleCard: id => byId(id)?.type === 'title',
+    isTitleCard: (id: string) => byId(id)?.type === 'title',
     resetTitlePosition: () => resetTitlePosition(),
-    setBoardMode: mode => selectBoardMode(mode),
+    // A string rather than a LayoutMode, because of where it comes from: the
+    // sidebar calls this with what readPref() gave back on the way up, which is
+    // whatever was in localStorage and may be nothing at all. setBoardMode() in
+    // layout.ts is what decides whether it names a profile - it answers false
+    // for anything that does not - so the check lives there rather than being
+    // asserted here about a value this file has not seen.
+    setBoardMode: (mode: string | null) => selectBoardMode(mode),
     toggleBoardMode: () => {
       const next = board.layoutMode === 'mobile' ? 'desktop' : 'mobile';
       if (!selectBoardMode(next)) return;
@@ -365,19 +412,27 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
     editNote,
 
     // --- right-click menu ---
-    contextMenu: (x, y, id, count, opts) => openContextMenu(x, y, id, count, opts),
+    contextMenu: (x: number, y: number, id: string | null, count: number,
+      opts?: { mobile?: boolean }) => openContextMenu(x, y, id, count, opts),
     selectionHasStackOverlap,
     raise: raiseSelection,
     lower: lowerSelection,
     duplicate: () => {
       const copies = duplicateItems(selection);
-      if (copies.length) select(copies.map(i => i.id));
+      if (copies.length) select(copies.map((i: Item) => i.id));
     },
     zoomToSelection: () => {
       const items = board.items.filter(i => selection.has(i.id));
       if (items.length) vp.fit(items, 120, travelMs());
     },
-    addNoteAt: at => {
+    // The point is nullable because ui/menu.ts's MenuCommands says it is: the
+    // menu builds "Add a note here" from the point it was opened at, and the one
+    // surface with no point of its own - the Feed, where a note would be packed
+    // into a column rather than placed - drops the row instead of passing none.
+    // So this is the unreachable half of that contract, written down rather than
+    // left to throw inside addNote() if it ever stops being unreachable.
+    addNoteAt: (at: Point | null) => {
+      if (!at) return;
       const item = addNote(at);
       requestAnimationFrame(() => cmds.editNote(item.id));
     },
@@ -391,7 +446,7 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
      * immediately, which is not special-cased anywhere: addItems() puts the
      * sticker on top, and the ordinary measurement does the rest.
      */
-    addStickerAt: (shape, at, tint) => addSticker(shape, at, tint),
+    addStickerAt: (shape: string, at: Point, tint?: string) => addSticker(shape, at, tint),
     /**
      * The toolbar's Stickers button. A tool that opens a drawer rather than one
      * that makes something: which shape it is *is* the whole of the decision,
@@ -428,12 +483,12 @@ export function createCommands(vp, { resetAppearance, setWhimsy }) {
     // On the command surface as well as on Ctrl+K, because a keyboard shortcut
     // nothing mentions is a feature only the person who wrote it has.
     find: () => openSearch(),
-    getSetting: key => board.settings[key],
-    toggleSetting: key => setSetting(key, !board.settings[key]),
+    getSetting: (key: string) => settingsBag()[key],
+    toggleSetting: (key: string) => setSetting(key, !settingsBag()[key]),
     // The dial's half of the pair. The panel writes settings through
     // ui/settings-schema.js, which imports setSetting straight; the flyout's
     // Spacing slider is outside that schema and goes through here.
-    setSetting: (key, value) => setSetting(key, value),
+    setSetting: (key: string, value: unknown) => setSetting(key, value),
   };
 
   return cmds;

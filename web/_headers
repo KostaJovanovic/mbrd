@@ -59,6 +59,18 @@
 #     implementations have not always agreed, the cost is one token, and a
 #     search-engine description that silently stops being parsed is exactly the
 #     kind of breakage nobody notices for a year.
+#   - patch.html's two application/ld+json blocks, the breadcrumb and the
+#     article. Exactly the reasoning one bullet up, at exactly the same cost of
+#     one token each. The changelog is a page whose whole job is to be found and
+#     read rather than used, so its structured data going quietly unparsed is
+#     the failure it can least afford - and unlike index.html, that data is the
+#     only thing telling a crawler this page belongs to the app rather than
+#     being a second, unrelated root.
+#
+#     They are also the only thing on that page a policy has to know about. It
+#     loads three stylesheets and runs no script whatsoever - no inline <style>,
+#     no style="..." attribute, nothing to execute - which is deliberate and is
+#     stated at the top of assets/css/patch.css.
 #   - lab.html's inline module. The pigment lab is one page with its script in
 #     it; it ships in web/ so it is covered by /* like everything else.
 #
@@ -234,7 +246,7 @@
 # report to, which is the whole architecture).
 
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-TXFmC+WkJ7pej6GG4eilTgWXAPfRfnxeO2p8iCMvh/k=' 'sha256-DkygY3dxoCj3zPATesYHPgON9mIeqlu6UbH2c+3mStw=' 'sha256-eJzJ8523EitoBKAS5A1tCSnraL7SAmf2gesGT63wGSk=' 'sha256-7MOXuzYEVnwtGN5LaHmnA8It5SPyIoYzkvOEItbnkGg='; style-src 'self' 'sha256-wkVFcbpQLLLncGzQDSypPX4g+PgpgKuYUfkJ3D7xrA8=' 'sha256-9MwbduHoYcvGbMyIKsXKkXLfI0H0ks+ah6sfj4TrmeA='; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self' blob:; connect-src 'self' blob: https://cdn.jsdelivr.net; worker-src 'self'; manifest-src 'self'; frame-src https://www.youtube-nocookie.com https://open.spotify.com; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-TXFmC+WkJ7pej6GG4eilTgWXAPfRfnxeO2p8iCMvh/k=' 'sha256-DkygY3dxoCj3zPATesYHPgON9mIeqlu6UbH2c+3mStw=' 'sha256-eJzJ8523EitoBKAS5A1tCSnraL7SAmf2gesGT63wGSk=' 'sha256-7MOXuzYEVnwtGN5LaHmnA8It5SPyIoYzkvOEItbnkGg=' 'sha256-Q8ZzrQgcVPkApKR0qNf6mroKHffRQsjhyVVZIRu0QtU=' 'sha256-8ZGO4EWxaESz6+qYFa7Px/8iyW9D2UaZh/+P4/mg99Q='; style-src 'self' 'sha256-wkVFcbpQLLLncGzQDSypPX4g+PgpgKuYUfkJ3D7xrA8=' 'sha256-9MwbduHoYcvGbMyIKsXKkXLfI0H0ks+ah6sfj4TrmeA='; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self' blob:; connect-src 'self' blob: https://cdn.jsdelivr.net; worker-src 'self'; manifest-src 'self'; frame-src https://www.youtube-nocookie.com https://open.spotify.com; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
 
 # The one exemption, and the only interesting thing about the whole file.
 #

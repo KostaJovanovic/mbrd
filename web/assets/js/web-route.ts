@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // Where a connection actually runs: an orthogonal path from one card to
 // another that goes around the cards in between rather than through them.
 //
@@ -102,6 +94,20 @@
 // grid step into the three lines above.
 
 import { rotatedExtents, segmentMeetsRect, distSqToMidpoint } from './geometry.ts';
+// Point, Box and Bounds are geometry.ts's own and are what this file has always
+// meant by a point, a card and a block - `Bounds` is the {x0,y0,x1,y1} every
+// obstacle here is reduced to. Named from there rather than restated, so the two
+// halves of the connector cannot drift apart over what a rectangle is.
+import type { Point, Box, Bounds } from './geometry.ts';
+
+/**
+ * Which side of a card a route leaves by: the point on the face, and the point
+ * one stub out from it. See anchorFor().
+ */
+export type Anchor = { edge: Point, stub: Point };
+
+/** How the look reaches the algorithm - see the header, and routeConnection(). */
+export type RouteOpts = { shape?: string, step?: number, clearance?: number };
 
 /** Degrees to radians, for the one place here that needs the card's own frame. */
 const RAD = Math.PI / 180;
@@ -192,7 +198,7 @@ const MAX_NODES = 4000;
 const EPS = 1e-3;
 
 /** The axis-aligned box around an item, rotation included, grown by `pad`. */
-export function blockOf(it, pad = 0) {
+export function blockOf(it: Box, pad = 0): Bounds {
   const { hw, hh } = rotatedExtents(it);
   return {
     x0: it.x - hw - pad, y0: it.y - hh - pad,
@@ -209,7 +215,7 @@ export function blockOf(it, pad = 0) {
  * to be allowed - the lattice is built out of those edges, so if touching
  * counted then every line in it would be blocked by the card that produced it.
  */
-function segmentBlocked(ax, ay, bx, by, b) {
+function segmentBlocked(ax: number, ay: number, bx: number, by: number, b: Bounds) {
   if (ay === by) {
     if (ay <= b.y0 + EPS || ay >= b.y1 - EPS) return false;
     return Math.min(ax, bx) < b.x1 - EPS && Math.max(ax, bx) > b.x0 + EPS;
@@ -219,9 +225,9 @@ function segmentBlocked(ax, ay, bx, by, b) {
 }
 
 /** Sorted, with values closer together than EPS collapsed into one line. */
-function lattice(values) {
+function lattice(values: number[]) {
   const sorted = [...values].sort((p, q) => p - q);
-  const out = [];
+  const out: number[] = [];
   for (const v of sorted) {
     if (!out.length || v - out[out.length - 1] > EPS) out.push(v);
   }
@@ -240,7 +246,7 @@ function lattice(values) {
  * or down goes out of the top or the bottom. Ties go sideways, because cards
  * are wider than they are tall more often than not.
  */
-export function anchorFor(from, to) {
+export function anchorFor(from: Box, to: Point): Anchor {
   const box = blockOf(from);
   const dx = to.x - from.x;
   const dy = to.y - from.y;
@@ -282,7 +288,7 @@ export function anchorFor(from, to) {
  * included and signed - see centres() in canvas/web.js, which is where that is
  * put together.
  */
-export function exitTowards(it, target) {
+export function exitTowards(it: Box, target: Point): Point {
   const dx = target.x - it.x;
   const dy = target.y - it.y;
   if (!dx && !dy) return { x: it.x, y: it.y };
@@ -322,13 +328,18 @@ export function exitTowards(it, target) {
  * it looks like a connector passing under a photograph, because that is what it
  * is. A state worth marking as a failure has to look like one.
  */
-export function routeConnection(from, to, obstacles = [], opts = {}) {
-  const shape = SHAPES.has(opts.shape) ? opts.shape : 'square';
+export function routeConnection(
+  from: Box, to: Box, obstacles: Box[] = [], opts: RouteOpts = {},
+): { points: Point[] } {
+  // The three reads below each lead with the field's own presence, which is what
+  // `SHAPES.has(undefined)` and `undefined > 0` already answered: absent means
+  // the default, at every one of them.
+  const shape = opts.shape && SHAPES.has(opts.shape) ? opts.shape : 'square';
   const taut = shape === 'taut';
-  const clearance = opts.clearance > 0 ? opts.clearance : CLEARANCE;
+  const clearance = opts.clearance && opts.clearance > 0 ? opts.clearance : CLEARANCE;
   // Only 'grid' quantizes, and only when it was given a lattice to quantize to.
   // A board with no grid step is not a board whose connectors can answer one.
-  const step = shape === 'grid' && opts.step > 0 ? opts.step : 0;
+  const step = shape === 'grid' && opts.step && opts.step > 0 ? opts.step : 0;
 
   const a = anchorFor(from, to);
   const b = anchorFor(to, from);
@@ -351,7 +362,7 @@ export function routeConnection(from, to, obstacles = [], opts = {}) {
   const ordered = [...near].sort((p, q) => distSqToMidpoint(p, from, to) - distSqToMidpoint(q, from, to));
 
   /** The obstacle blocks at a given margin, on the lattice or off it. */
-  const blocksAt = (pad, snap) => ordered.map(it => {
+  const blocksAt = (pad: number, snap: boolean) => ordered.map(it => {
     const k = blockOf(it, pad);
     return snap && step ? snapOut(k, step) : k;
   });
@@ -365,7 +376,7 @@ export function routeConnection(from, to, obstacles = [], opts = {}) {
    * have been dropped, and aiming a leg that is about to be removed is work
    * thrown away.
    */
-  const done = (points, obstacles) => {
+  const done = (points: Point[], obstacles: Bounds[]) => {
     if (!taut) return { points };
     return { points: aim(pull(points, [...obstacles, ...ends]), obstacles) };
   };
@@ -381,7 +392,7 @@ export function routeConnection(from, to, obstacles = [], opts = {}) {
    * leaves squarely is worse-looking than one that aims at the middle, and
    * better than one that cuts a corner off a photograph.
    */
-  const aim = (points, obstacles) => {
+  const aim = (points: Point[], obstacles: Bounds[]) => {
     if (points.length < 2) return points;
     const last = points.length - 1;
     const head = exitTowards(from, points[1]);
@@ -448,10 +459,10 @@ export function routeConnection(from, to, obstacles = [], opts = {}) {
   // elbow() for why that is a real answer rather than a shrug, and why the flag
   // that used to mark these as failures is gone with it.
   // -------------------------------------------------------------------------
-  const overlapsEnd = k => ends.some(e =>
+  const overlapsEnd = (k: Bounds) => ends.some(e =>
     k.x0 < e.x1 - EPS && k.x1 > e.x0 + EPS && k.y0 < e.y1 - EPS && k.y1 > e.y0 + EPS);
 
-  const attempt = pool => {
+  const attempt = (pool: Bounds[]) => {
     // The end cards' own edges are lines in the lattice as well as the
     // obstacles', which is what lets a route get out from under a card it
     // overlaps. Skipping that was a bug: with no other cards in the way and the
@@ -491,7 +502,7 @@ export function routeConnection(from, to, obstacles = [], opts = {}) {
   // up is the lattice rather than the clearance. Below that the shape has
   // already lost its argument, and what is left is the concession ladder this
   // file has always had.
-  const rungs = step
+  const rungs: [number, boolean][] = step
     ? [[clearance, true], [clearance, false], [clearance / 3, false], [0, false]]
     : [[clearance, false], [clearance / 3, false], [0, false]];
 
@@ -526,7 +537,7 @@ export function routeConnection(from, to, obstacles = [], opts = {}) {
  * the card it starts from, and a stub eighteen units out of a face would be
  * swallowed by a block grown sixty-four.
  */
-function snapOut(k, step) {
+function snapOut(k: Bounds, step: number): Bounds {
   return {
     x0: Math.floor(k.x0 / step) * step,
     y0: Math.floor(k.y0 / step) * step,
@@ -549,7 +560,7 @@ function snapOut(k, step) {
  * sits on the boundary of some padded block by construction, so a test that
  * counted touching would refuse every segment it was ever handed.
  */
-function crosses(p, q, blocks) {
+function crosses(p: Point, q: Point, blocks: Bounds[]) {
   for (const k of blocks) {
     if (k.x1 - k.x0 <= EPS * 2 || k.y1 - k.y0 <= EPS * 2) continue;
     if (segmentMeetsRect(p, q, {
@@ -584,7 +595,7 @@ function crosses(p, q, blocks) {
  * frame budget on boards with hundreds of cards. The corridor is already paid
  * for. Pull it and stop.
  */
-function pull(points, blocks) {
+function pull(points: Point[], blocks: Bounds[]) {
   if (points.length < 3) return points;
   const out = [...points];
   for (let changed = true; changed && out.length > 2;) {
@@ -599,7 +610,7 @@ function pull(points, blocks) {
   return trim(out);
 }
 
-const nearestIn = (values, v) =>
+const nearestIn = (values: number[], v: number) =>
   values.reduce((best, x) => (Math.abs(x - v) < Math.abs(best - v) ? x : best), values[0]);
 
 /**
@@ -615,7 +626,7 @@ const nearestIn = (values, v) =>
  * two overlapping cards joined by a line is a real board, and the L between
  * them routinely runs back through the card it started from.
  */
-function simple(a, b, blocks) {
+function simple(a: Anchor, b: Anchor, blocks: Bounds[]) {
   const points = elbow(a, b);
   for (let i = 1; i < points.length; i++) {
     for (const k of blocks) {
@@ -643,7 +654,7 @@ function simple(a, b, blocks) {
  * So there is no such thing as a route that failed any more. There are routes
  * that go round, and routes that go behind.
  */
-function elbow(a, b) {
+function elbow(a: Anchor, b: Anchor) {
   const mid = a.stub.x === a.edge.x
     ? [{ x: a.stub.x, y: b.stub.y }]           // left vertically
     : [{ x: b.stub.x, y: a.stub.y }];          // left sideways
@@ -651,8 +662,8 @@ function elbow(a, b) {
 }
 
 /** Drop repeated points and points that sit in the middle of a straight run. */
-export function trim(points) {
-  const out = [];
+export function trim(points: Point[]) {
+  const out: Point[] = [];
   for (const p of points) {
     const last = out[out.length - 1];
     if (last && Math.abs(last.x - p.x) < EPS && Math.abs(last.y - p.y) < EPS) continue;
@@ -687,7 +698,10 @@ export function trim(points) {
  * That argument died when routeConnection() began running up to four of these
  * before it would draw a straight line.
  */
-function search(xs, ys, blocks, xi, yi, xj, yj) {
+function search(
+  xs: number[], ys: number[], blocks: Bounds[],
+  xi: number, yi: number, xj: number, yj: number,
+) {
   const W = xs.length, H = ys.length;
   const N = W * H;
   if (xi < 0 || yi < 0 || xj < 0 || yj < 0) return null;
@@ -697,8 +711,8 @@ function search(xs, ys, blocks, xi, yi, xj, yj) {
   // over, and the blocked test is a loop over every obstacle.
   const okRight = new Uint8Array(N);   // node -> the edge to (x+1, y) is clear
   const okDown = new Uint8Array(N);    // node -> the edge to (x, y+1) is clear
-  const at = (x, y) => y * W + x;
-  const clear = (ax, ay, bx, by) => {
+  const at = (x: number, y: number) => y * W + x;
+  const clear = (ax: number, ay: number, bx: number, by: number) => {
     for (const k of blocks) if (segmentBlocked(ax, ay, bx, by, k)) return false;
     return true;
   };
@@ -716,9 +730,9 @@ function search(xs, ys, blocks, xi, yi, xj, yj) {
   const g = new Float64Array(STATES).fill(Infinity);
   const from = new Int32Array(STATES).fill(-1);
   const done = new Uint8Array(STATES);
-  const open = [];
+  const open: number[] = [];
 
-  const h = (x, y) => Math.abs(xs[x] - xs[xj]) + Math.abs(ys[y] - ys[yj]);
+  const h = (x: number, y: number) => Math.abs(xs[x] - xs[xj]) + Math.abs(ys[y] - ys[yj]);
 
   // A binary heap, where this was a linear scan for the smallest f on every
   // pop. That was affordable while a route was one search over a lattice bounded
@@ -729,8 +743,8 @@ function search(xs, ys, blocks, xi, yi, xj, yj) {
   //
   // f is carried beside the state rather than recomputed, because with a heap it
   // is read on every sift comparison rather than once per pop.
-  const fs = [];
-  const push = (s, f) => {
+  const fs: number[] = [];
+  const push = (s: number, f: number) => {
     let i = open.length;
     open.push(s); fs.push(f);
     while (i > 0) {
@@ -743,7 +757,10 @@ function search(xs, ys, blocks, xi, yi, xj, yj) {
   };
   const pop = () => {
     const top = open[0];
-    const lastS = open.pop(), lastF = fs.pop();
+    // Non-null on both: this is only ever called with the heap non-empty - the
+    // search loop below pops only while `open.length` - and the two arrays are
+    // pushed and popped together, so neither can run out before the other.
+    const lastS = open.pop()!, lastF = fs.pop()!;
     if (open.length) {
       open[0] = lastS; fs[0] = lastF;
       let i = 0;
@@ -779,7 +796,7 @@ function search(xs, ys, blocks, xi, yi, xj, yj) {
 
     const x = node % W;
     const y = (node / W) | 0;
-    const step = (nx, ny, nd, passable) => {
+    const step = (nx: number, ny: number, nd: number, passable: boolean | number) => {
       if (!passable) return;
       const next = at(nx, ny) * 4 + nd;
       if (done[next]) return;
@@ -798,8 +815,8 @@ function search(xs, ys, blocks, xi, yi, xj, yj) {
   return null;
 }
 
-function walkBack(xs, ys, W, from, end) {
-  const points = [];
+function walkBack(xs: number[], ys: number[], W: number, from: Int32Array, end: number) {
+  const points: Point[] = [];
   for (let s = end; s >= 0; s = from[s]) {
     const node = s >> 2;
     points.push({ x: xs[node % W], y: ys[(node / W) | 0] });
@@ -820,9 +837,9 @@ function walkBack(xs, ys, W, from, end) {
  * never more - an arc longer than the segment it is cutting would overshoot the
  * next corner and draw a knot.
  */
-export function pathData(points, radius = 0, dx = 0, dy = 0) {
+export function pathData(points: Point[], radius = 0, dx = 0, dy = 0) {
   if (!points.length) return '';
-  const at = p => `${(p.x - dx).toFixed(2)} ${(p.y - dy).toFixed(2)}`;
+  const at = (p: Point) => `${(p.x - dx).toFixed(2)} ${(p.y - dy).toFixed(2)}`;
   if (points.length < 3 || radius <= 0) {
     return 'M' + points.map(at).join('L');
   }
@@ -841,7 +858,7 @@ export function pathData(points, radius = 0, dx = 0, dy = 0) {
 }
 
 /** `r` world units from `p` towards `q`. */
-function along(p, q, r) {
+function along(p: Point, q: Point, r: number): Point {
   const len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
   return { x: p.x + (q.x - p.x) * r / len, y: p.y + (q.y - p.y) * r / len };
 }

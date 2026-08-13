@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The Playlist: the board's audio as a proper player, in two homes.
 //
 // One is the Mobile board's second lens - Feed | Playlist - where it fills the
@@ -57,6 +49,74 @@ import { makeWindowDrag, makeWindowResize } from './float-window.ts';
 // mode switch, the same order cmds.feed / cmds.playlist use, so entering the
 // Mobile view lands on the lens that was asked for rather than on the last one.
 import { setLens } from './board-view.ts';
+import type { Item } from '../board-model.ts';
+import type { Viewport } from '../canvas/viewport.ts';
+
+/**
+ * `meta` is open by design (see board-model.ts), so the tags this file reads out
+ * of it are narrowed here rather than trusted - the same pair ui/viewer.ts and
+ * ui/feed.ts keep. A key that is not the type it should be is treated exactly as
+ * a missing one, which is what every one of these reads already did by falling
+ * through a `||`.
+ */
+const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+/** The object URL for a hash out of `meta`, or null for anything that is not one. */
+const urlOf = (hash: unknown): string | null => (typeof hash === 'string' ? assetURL(hash) : null);
+/** A duration out of `meta`, which the probe writes as seconds, or 0. */
+const secs = (v: unknown): number => (typeof v === 'number' ? v : 0);
+
+/** One track's row: the element, and the item it is currently standing for. */
+type Row = { el: HTMLElement; item: Item };
+
+/** A Play + Shuffle pair, registered so its icons stay true - see makeActions(). */
+type ActionGroup = {
+  play: HTMLButtonElement;
+  shuffle: HTMLButtonElement;
+  playIco: HTMLElement;
+  playLabel: HTMLElement;
+};
+
+/** One track list, in either home - see createView(), which is the only builder. */
+type View = {
+  listEl: HTMLElement;
+  reorderable: boolean;
+  group: ActionGroup | null;
+  fill: (audio: Item[]) => void;
+  clear: () => void;
+  markPlaying: () => void;
+  updateMeta: (audio: Item[]) => void;
+  destroy: () => void;
+};
+
+/** The Desktop window's transport - see makeWindowPlayer(). */
+type WindowPlayer = {
+  el: HTMLElement;
+  bind: () => void;
+  refresh: () => void;
+  destroy: () => void;
+};
+
+/**
+ * The reorder drag in flight. `ref` is the row the dragged one currently sits
+ * before, or null for the end of the list - and `undefined` before the first
+ * move, which is why the three states are spelled out.
+ */
+type Drag = {
+  view: View;
+  rowEl: HTMLElement;
+  pointerId: number;
+  mids: { row: Element; mid: number }[] | null;
+  ref: Element | null | undefined;
+};
+
+/**
+ * What this module asks of the command surface: one thing, and it is not about
+ * the window. Named here rather than borrowed from commands.ts for the reason
+ * FlyoutCommands states in ui/flyout.ts.
+ */
+export interface PlaylistCommands {
+  setBoardMode: (mode: string) => unknown;
+}
 
 const NOTE_ICON =
   '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.5 2.5v7.1a2.2 2.2 0 11-1-1.84V4.3l-4.5.98v5.06a2.2 2.2 0 11-1-1.84V3.2z"/></svg>';
@@ -88,29 +148,30 @@ const GRID_ICON =
 const PW_PLAY_ICON =
   '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5.25 3.5L12.75 8L5.25 12.5Z"/></svg>';
 
-let mobileView = null;    // the Mobile lens
-let windowEl = null;      // the Desktop floating window, or null when closed
-let windowContent = null; // the swappable region under the window's title bar
-let windowView = null;    // the list inside it
-let windowPlayer = null;  // the Desktop window's transport, or null when closed
+let mobileView: View | null = null;    // the Mobile lens
+let windowEl: HTMLElement | null = null;      // the Desktop floating window, or null when closed
+let windowContent: HTMLElement | null = null; // the swappable region under the window's title bar
+let windowView: View | null = null;    // the list inside it
+let windowPlayer: WindowPlayer | null = null;  // the Desktop window's transport, or null when closed
 // The command set, for the one thing the window's title-bar button does that is
 // not about the window: hand the board over to the Mobile view.
-let cmds = null;
+let cmds: PlaylistCommands | null = null;
 
 /** Every visible header's Play / Shuffle pair, so play state paints in both. */
-const actionGroups = new Set();
+const actionGroups = new Set<ActionGroup>();
 /** The shared queue element, once we have wired play/pause listeners to it. */
-let wiredEl = null;
+let wiredEl: HTMLMediaElement | null = null;
 /** Aborts the previous wirePlayback() listeners so board loads do not stack them. */
-let playbackAbort = null;
+let playbackAbort: AbortController | null = null;
 
 /** Tracks whose tags/duration have been read this session, so it happens once. */
-const tagged = new Set();
+const tagged = new Set<string>();
 
 /** The reorder drag in flight, or null. */
-let drag = null;
+let drag: Drag | null = null;
 
-export function initPlaylist(_viewport, _commands, _headerStyle) {
+export function initPlaylist(_viewport: Viewport | null, _commands: PlaylistCommands | null,
+  _headerStyle: unknown) {
   cmds = _commands;
   const host = document.getElementById('mobile-playlist');
   if (host) mobileView = createView(host, { reorderable: true, variant: 'lens' });
@@ -142,9 +203,13 @@ export function initPlaylist(_viewport, _commands, _headerStyle) {
 // ---------------------------------------------------------------------------
 
 /** The board's audio, in the hand-arranged order over the board arrangement. */
-function orderedAudio() {
+function orderedAudio(): Item[] {
   const audio = board.items.filter(it => it.type === 'audio');
-  return applyAudioOrder(mobileOrder(audio, { name: board.arrangement }), board.audioOrder);
+  // The cast holds for the reason board-actions.ts states at its own call:
+  // mobileOrder() hands back the very items it was given, in a new order, and
+  // ArrangeItem is only the narrower shape it reads them through.
+  return applyAudioOrder(
+    mobileOrder(audio, { name: board.arrangement }) as Item[], board.audioOrder);
 }
 
 /**
@@ -259,10 +324,12 @@ function makeActions() {
   shuffle.setAttribute('aria-label', 'Shuffle');
   shuffle.addEventListener('click', shufflePlay);
   row.append(play, shuffle);
-  const group = {
+  // Both spans are asserted because the markup they are found in was written
+  // three lines up - they are this function's own, not the document's.
+  const group: ActionGroup = {
     play, shuffle,
-    playIco: play.querySelector('.pl-ico'),
-    playLabel: play.querySelector('.pl-label'),
+    playIco: play.querySelector<HTMLElement>('.pl-ico')!,
+    playLabel: play.querySelector<HTMLElement>('.pl-label')!,
   };
   actionGroups.add(group);
   return { row, group };
@@ -276,16 +343,23 @@ function makeActions() {
  * 'window') gets no hero here: it carries a real transport instead, built by
  * makeWindowPlayer() and placed above this list. So this only builds the list.
  */
-function createView(container, { reorderable, variant }) {
+function createView(container: HTMLElement,
+  { reorderable, variant }: { reorderable: boolean, variant: 'lens' | 'window' }): View {
   container.replaceChildren();
-  const rows = new Map();   // id -> { el, item }
+  const rows = new Map<string, Row>();   // id -> { el, item }
   const lens = variant === 'lens';
 
   // The lens sits on the same paper sheet the Feed does; the window drops the
   // list straight into its body, under the player.
   const surface = lens ? div('feed-sheet') : container;
 
-  let hero = null, cover = null, titleEl = null, metaEl = null, group = null;
+  // The five the hero is made of, and they arrive together or not at all: the
+  // window has no hero, so `hero` being there is what says the other four are.
+  let hero: HTMLElement | null = null;
+  let cover: HTMLElement | null = null;
+  let titleEl: HTMLElement | null = null;
+  let metaEl: HTMLElement | null = null;
+  let group: ActionGroup | null = null;
   if (lens) {
     hero = div('pl-hero');
     cover = div('pl-cover');
@@ -313,10 +387,10 @@ function createView(container, { reorderable, variant }) {
 
   if (lens) container.appendChild(surface);
 
-  const view = {
+  const view: View = {
     listEl, reorderable, group,
     fill(audio) {
-      const present = new Set();
+      const present = new Set<string>();
       audio.forEach(item => {
         present.add(item.id);
         let r = rows.get(item.id);
@@ -339,11 +413,13 @@ function createView(container, { reorderable, variant }) {
     },
     /** The lens header: the board's name, the cover mosaic and the "N songs" line. */
     updateMeta(audio) {
+      // The three `!` are the test on the line above: the hero and its parts are
+      // built in one run, and only the lens variant builds any of them.
       if (!hero) return;
-      titleEl.textContent = board.title;
-      titleEl.classList.toggle('is-default', isDefaultTitle(board.title));
-      metaEl.textContent = metaText(audio);
-      paintCover(cover, audio);
+      titleEl!.textContent = board.title;
+      titleEl!.classList.toggle('is-default', isDefaultTitle(board.title));
+      metaEl!.textContent = metaText(audio);
+      paintCover(cover!, audio);
     },
     destroy() {
       view.clear();
@@ -355,10 +431,10 @@ function createView(container, { reorderable, variant }) {
 }
 
 /** "9 songs" or "9 songs, 33 min" once the durations are known. */
-function metaText(audio) {
+function metaText(audio: Item[]) {
   const n = audio.length;
   const songs = `${n} ${n === 1 ? 'song' : 'songs'}`;
-  const total = audio.reduce((s, it) => s + (it.meta?.duration || 0), 0);
+  const total = audio.reduce((s, it) => s + secs(it.meta?.duration), 0);
   if (!total) return songs;
   const mins = Math.round(total / 60);
   return mins < 1 ? songs : `${songs}, ${mins} min`;
@@ -373,12 +449,12 @@ function metaText(audio) {
  * pictures stand in: a music board's photo is its sleeve. Only a board with
  * neither art nor a picture shows the disc.
  */
-function paintCover(el, audio) {
-  const covers = [];
-  const seen = new Set();
-  const add = c => { if (c && !seen.has(c)) { seen.add(c); covers.push(c); } };
+function paintCover(el: HTMLElement, audio: Item[]) {
+  const covers: string[] = [];
+  const seen = new Set<string>();
+  const add = (c: string | null) => { if (c && !seen.has(c)) { seen.add(c); covers.push(c); } };
   for (const it of audio) {
-    add(it.meta?.cover && assetURL(it.meta.cover));
+    add(urlOf(it.meta?.cover));
     if (covers.length === 4) break;
   }
   if (!covers.length) {
@@ -400,7 +476,7 @@ function paintCover(el, audio) {
   }
 }
 
-function coverImg(src) {
+function coverImg(src: string) {
   const img = document.createElement('img');
   img.loading = 'lazy'; img.decoding = 'async'; img.draggable = false; img.alt = '';
   img.src = src;
@@ -413,12 +489,12 @@ function coverImg(src) {
  * control; the grip, which sits over it, starts a drag instead and swallows its
  * own click so a nudge of the handle does not also start the track.
  */
-function createRow(item, view) {
+function createRow(item: Item, view: View): Row {
   const el = div('pl-row');
   el.dataset.id = item.id;
   el.setAttribute('role', 'button');
   el.tabIndex = 0;
-  const r = { el, item };
+  const r: Row = { el, item };
   fillRow(r, view);
   el.addEventListener('click', () => playTrack(r.item));
   el.addEventListener('keydown', e => {
@@ -427,12 +503,12 @@ function createRow(item, view) {
   return r;
 }
 
-function fillRow(r, view) {
+function fillRow(r: Row, view: View) {
   const item = r.item;
   r.el.replaceChildren();
 
   const art = div('pl-art');
-  const cover = item.meta?.cover && assetURL(item.meta.cover);
+  const cover = urlOf(item.meta?.cover);
   if (cover) {
     art.appendChild(coverImg(cover));
   } else {
@@ -448,7 +524,7 @@ function fillRow(r, view) {
   const title = div('pl-title');
   title.textContent = trackTitle(item);
   main.appendChild(title);
-  const sub = item.meta?.artist || item.meta?.album || '';
+  const sub = str(item.meta?.artist) || str(item.meta?.album) || '';
   if (sub) {
     const artist = div('pl-artist');
     artist.textContent = sub;
@@ -458,7 +534,9 @@ function fillRow(r, view) {
   }
 
   const time = div('pl-time');
-  time.textContent = item.meta?.duration != null ? clock(item.meta.duration) : '';
+  // A duration is written as seconds by probeDuration(); anything else is read
+  // as no duration at all, which is what the `!= null` test stood in for.
+  time.textContent = typeof item.meta?.duration === 'number' ? clock(item.meta.duration) : '';
 
   r.el.append(art, main, time);
 
@@ -477,8 +555,8 @@ function fillRow(r, view) {
 }
 
 /** A track's display title: the tag, or the filename without its extension. */
-function trackTitle(item) {
-  return item.meta?.trackTitle || baseName(item.name) || item.name || 'Untitled';
+function trackTitle(item: Item) {
+  return str(item.meta?.trackTitle) || baseName(item.name) || item.name || 'Untitled';
 }
 
 // ---------------------------------------------------------------------------
@@ -493,12 +571,14 @@ function trackTitle(item) {
  * persists it and re-renders. Capture is on the grip so the pointer stream stays
  * with it wherever the finger goes.
  */
-function beginDrag(e, view, r) {
+function beginDrag(e: PointerEvent, view: View, r: Row) {
   if (drag) return;
   e.preventDefault();
   drag = { view, rowEl: r.el, pointerId: e.pointerId, mids: null, ref: undefined };
   r.el.classList.add('is-dragging');
-  const grip = e.currentTarget;
+  // currentTarget is the grip this listener was put on - the same reading
+  // ui/hud.ts states about a target inside the element a listener is bound to.
+  const grip = e.currentTarget as HTMLElement;
   grip.setPointerCapture?.(e.pointerId);
   grip.addEventListener('pointermove', onDragMove);
   grip.addEventListener('pointerup', endDrag);
@@ -512,17 +592,19 @@ function beginDrag(e, view, r) {
  * a new gap, so that is the only thing that invalidates it.
  */
 function rowMids() {
-  if (drag.mids) return drag.mids;
-  const mids = [];
-  for (const row of drag.view.listEl.querySelectorAll('.pl-row')) {
-    if (row === drag.rowEl) continue;
+  // Asserted throughout: this is only ever reached from onDragMove(), which has
+  // just tested that a drag is in flight, and nothing here can end one.
+  if (drag!.mids) return drag!.mids;
+  const mids: { row: Element; mid: number }[] = [];
+  for (const row of drag!.view.listEl.querySelectorAll('.pl-row')) {
+    if (row === drag!.rowEl) continue;
     const box = row.getBoundingClientRect();
     mids.push({ row, mid: box.top + box.height / 2 });
   }
-  return (drag.mids = mids);
+  return (drag!.mids = mids);
 }
 
-function onDragMove(e) {
+function onDragMove(e: PointerEvent) {
   if (!drag) return;
   const list = drag.view.listEl;
   const y = e.clientY;
@@ -538,15 +620,17 @@ function onDragMove(e) {
   drag.mids = null;
 }
 
-function endDrag(e) {
+function endDrag(e: PointerEvent) {
   if (!drag) return;
-  const grip = e.currentTarget;
+  // The grip, for the reason beginDrag() gives about the same read.
+  const grip = e.currentTarget as HTMLElement;
   drag.rowEl.classList.remove('is-dragging');
   grip.releasePointerCapture?.(e.pointerId);
   grip.removeEventListener('pointermove', onDragMove);
   grip.removeEventListener('pointerup', endDrag);
   grip.removeEventListener('pointercancel', endDrag);
-  const ids = [...drag.view.listEl.querySelectorAll('.pl-row')].map(row => row.dataset.id);
+  const ids = [...drag.view.listEl.querySelectorAll<HTMLElement>('.pl-row')]
+    .map(row => row.dataset.id);
   drag = null;
   setAudioOrder(ids);
 }
@@ -555,7 +639,7 @@ function endDrag(e) {
 // Lazy metadata - tags, cover and duration read off the file on demand
 // ---------------------------------------------------------------------------
 
-async function ensureTrackMeta(item) {
+async function ensureTrackMeta(item: Item) {
   const hash = item.asset?.hash;
   if (!hash || tagged.has(item.id)) return;
   tagged.add(item.id);
@@ -581,7 +665,7 @@ async function ensureTrackMeta(item) {
   if (changed) { markDirty(); rebuildRow(item.id); }
 }
 
-function probeDuration(item) {
+function probeDuration(item: Item) {
   const url = item.asset?.hash && assetURL(item.asset.hash);
   if (!url) return;
   const probe = new Audio();
@@ -599,20 +683,28 @@ function probeDuration(item) {
 }
 
 /** Redraw one track's row in every home it appears in, after metadata arrived. */
-function rebuildRow(id) {
+function rebuildRow(id: string) {
   for (const view of [mobileView, windowView]) {
     if (!view) continue;
     const list = view.listEl;
-    const el = list.querySelector(`.pl-row[data-id="${cssEscape(id)}"]`);
+    const el = list.querySelector<HTMLElement>(`.pl-row[data-id="${cssEscape(id)}"]`);
     if (!el) continue;
-    fillRow({ el, item: board.items.find(i => i.id === id) }, view);
+    // Asserted: the row is on screen because the item is in the list this pass
+    // was built from, and fillRow() would read off nothing a line later if it
+    // were not - so a fallback here would only move the same failure along.
+    fillRow({ el, item: board.items.find(i => i.id === id)! }, view);
   }
   // A cover or a duration just arrived: the header's mosaic and "N min" want it too.
   updateMetaAll();
   markPlaying();
 }
 
-const cssEscape = s => (window.CSS?.escape ? CSS.escape(s) : String(s).replace(/["\\]/g, '\\$&'));
+// `typeof` rather than the bare read this had: the DOM types say CSS.escape is
+// always there, so testing it as a value is an error tsc will not let past -
+// and asking whether it is a function is what the guard meant all along. Same
+// spelling as the `typeof getComputedStyle === 'function'` guards elsewhere.
+const cssEscape = (s: string) =>
+  (typeof window.CSS?.escape === 'function' ? CSS.escape(s) : String(s).replace(/["\\]/g, '\\$&'));
 
 // ---------------------------------------------------------------------------
 // The Desktop floating window
@@ -678,16 +770,18 @@ export function openPlayerWindow() {
  * leave a dead transport bound to the shared queue.
  */
 function renderWindowBody() {
+  // The two `!` are the test on this line: openPlayerWindow() builds the window
+  // and its content in one run, and closePlayerWindow() drops both together.
   if (!windowEl) return;
   windowPlayer?.destroy();
   windowPlayer = null;
   windowView?.destroy();
   windowView = null;
-  windowContent.replaceChildren();
+  windowContent!.replaceChildren();
 
   windowPlayer = makeWindowPlayer();
   const body = div('player-window-body');
-  windowContent.append(windowPlayer.el, body);
+  windowContent!.append(windowPlayer.el, body);
   windowView = createView(body, { reorderable: false, variant: 'window' });
 
   markTransport();
@@ -778,7 +872,7 @@ function markTransport() {
  * loop and element listeners to whatever the queue is currently playing, rebinding
  * on a track change and tearing down when the window closes.
  */
-function makeWindowPlayer() {
+function makeWindowPlayer(): WindowPlayer {
   const el = div('pw-player');
 
   const top = div('pw-top');
@@ -838,7 +932,9 @@ function makeWindowPlayer() {
     paint();
   });
 
-  let boundEl = null, abort = null, frame = 0;
+  let boundEl: HTMLMediaElement | null = null;
+  let abort: AbortController | null = null;
+  let frame = 0;
 
   function paint() {
     const s = queueEl();
@@ -856,12 +952,14 @@ function makeWindowPlayer() {
   function refresh() {
     const s = queueEl();
     const playing = !!s && !s.paused;
-    playBtn.querySelector('.pw-ico').innerHTML = playing ? PAUSE_ICON : PW_PLAY_ICON;
+    // Both `.pw-ico` spans are asserted: pwBtn() is what built the button, and
+    // the glyph span is the whole of what it put inside one.
+    playBtn.querySelector('.pw-ico')!.innerHTML = playing ? PAUSE_ICON : PW_PLAY_ICON;
     playBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
     const { shuffle, repeat } = queueState();
     shuffleBtn.classList.toggle('is-on', shuffle);
     repeatBtn.classList.toggle('is-on', repeat !== 'off');
-    repeatBtn.querySelector('.pw-ico').innerHTML = repeat === 'one' ? REPEAT_ONE_ICON : REPEAT_ICON;
+    repeatBtn.querySelector('.pw-ico')!.innerHTML = repeat === 'one' ? REPEAT_ONE_ICON : REPEAT_ICON;
     repeatBtn.setAttribute('aria-label',
       repeat === 'one' ? 'Repeat one' : repeat === 'all' ? 'Repeat all' : 'Repeat');
   }
@@ -870,13 +968,15 @@ function makeWindowPlayer() {
     const item = np && isQueuePlayer(np.el) ? np.item : null;
     cover.replaceChildren();
     if (item) {
-      const c = item.meta?.cover && assetURL(item.meta.cover);
+      const c = urlOf(item.meta?.cover);
       let src = c;
-      if (!src) { const img = board.items.find(it => it.type === 'image' && it.asset?.hash); if (img) src = assetURL(img.asset.hash); }
+      // `img.asset` is asserted because the find() that answered it tested the
+      // hash - a picture with no asset is not one of the items it looked for.
+      if (!src) { const img = board.items.find(it => it.type === 'image' && it.asset?.hash); if (img) src = assetURL(img.asset!.hash); }
       if (src) { cover.className = 'pw-cover'; cover.appendChild(coverImg(src)); }
       else { cover.className = 'pw-cover is-placeholder'; cover.innerHTML = DISC_ICON; }
       title.textContent = trackTitle(item);
-      artist.textContent = item.meta?.artist || item.meta?.album || '';
+      artist.textContent = str(item.meta?.artist) || str(item.meta?.album) || '';
       artist.hidden = !artist.textContent;
     } else {
       cover.className = 'pw-cover is-placeholder'; cover.innerHTML = DISC_ICON;
@@ -911,7 +1011,7 @@ function makeWindowPlayer() {
 }
 
 /** One round transport button for the window player, its glyph in a swappable span. */
-function pwBtn(cls, icon, label, onClick) {
+function pwBtn(cls: string, icon: string, label: string, onClick: () => void) {
   const b = document.createElement('button');
   b.type = 'button';
   b.className = 'pw-btn ' + cls;
@@ -924,7 +1024,7 @@ function pwBtn(cls, icon, label, onClick) {
 
 export const isPlayerWindowOpen = () => !!windowEl;
 
-function div(className) {
+function div(className: string) {
   const el = document.createElement('div');
   el.className = className;
   return el;

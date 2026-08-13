@@ -1,11 +1,3 @@
-// @ts-nocheck - TypeScript migration debt, not a judgement about this file.
-//
-// The tree was renamed from .js to .ts mechanically, which moved 104 modules in
-// one step and annotated none of them. This module is carried unchecked so that
-// npm run typecheck stays green and keeps meaning something, rather than going
-// red and being ignored. Converting this module IS deleting this block and
-// fixing what tsc then says - tests/ts-debt.test.js holds the count and lets it
-// only fall.
 // The .mbrd container: a ZIP holding a manifest, the board, and every asset's
 // bytes, so a board is one self-contained file you can email or drop back in.
 //
@@ -22,9 +14,10 @@
 // setting - unpack tolerates it, pack simply has no bytes to write for it.
 
 import { writeZip, readZip } from './zip.ts';
+import type { ZipEntry } from './zip.ts';
 import { getAsset, putAsset } from './assets.ts';
 import { sha256 } from '../crypto.ts';
-import { isHash, itemHashes } from '../util.ts';
+import { isHash, isRecord, itemHashes } from '../util.ts';
 import { VERSION } from '../version.js';
 // The note text model, and the only thing this module takes from canvas/. Both
 // are pure functions of a string - the format's own Markdown flavour, which the
@@ -33,6 +26,7 @@ import { VERSION } from '../version.js';
 // splitting in here to avoid the import would give the format a second answer to
 // what `# ` means, which is the one thing worth avoiding more than the edge.
 import { parseNoteText, flattenNoteRich } from '../canvas/note-model.ts';
+import type { Item, TrashEntry, FontSpec } from '../board-model.ts';
 
 export const FORMAT = 'mbrd';
 export const FORMAT_VERSION = 1;
@@ -69,16 +63,52 @@ const ASSET_EXT = /^[a-z0-9]{1,12}$/;
  */
 const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
+// ---------------------------------------------------------------------------
+// The two directions, as two types
+//
+// They are deliberately not the same type. On the way *out* the board has just
+// come through board-schema.ts/serializeBoard(), so every item is a real Item
+// and this module may read `meta.text` and `asset.hash` as the app spells them.
+// On the way *in* nothing has validated anything yet - a .mbrd is a renamed ZIP
+// anybody can hand-edit, and normalizeBoard() is the thing that holds it to a
+// shape, several steps later. So the reader's view of a board is `unknown` per
+// field, narrowed at each use; what this module *does* check strictly is the
+// part it turns into an identity - hashes, extensions and the bytes under them.
+// ---------------------------------------------------------------------------
+
+/** The board as serializeBoard() hands it over, of which the packer reads four. */
+export type PackedBoard = {
+  title?: string;
+  items: Item[];
+  trash?: TrashEntry[];
+  settings?: { fonts?: FontSpec[] };
+};
+
+/** One item out of a file, before anything has held it to a shape. */
+type FileItem = Record<string, unknown>;
+
+/**
+ * A board out of a file, ditto. `items` and `trash` are declared as arrays
+ * because the loops below iterate them exactly as this module always has: a
+ * file whose `items` is not a list throws here rather than being quietly read
+ * as an empty board, which is the difference between "this file is broken" and
+ * "here is your board, with nothing on it".
+ */
+type FileBoard = { title?: unknown, items?: unknown[], trash?: unknown[] };
+
 const enc = new TextEncoder();
 const dec = new TextDecoder();
-const json = obj => enc.encode(JSON.stringify(obj, null, 2));
+const json = (obj: unknown) => enc.encode(JSON.stringify(obj, null, 2));
 
 /**
  * Pack a serialised board plus the assets it references into a .mbrd Blob.
  * Only hashes still referenced by an item are written, so deleting an item and
  * saving actually shrinks the file.
  */
-export async function packBoard(boardData, { created = null } = {}) {
+export async function packBoard(
+  boardData: PackedBoard,
+  { created = null }: { created?: string | null } = {},
+) {
   const now = new Date();
   const manifest = {
     format: FORMAT,
@@ -99,7 +129,7 @@ export async function packBoard(boardData, { created = null } = {}) {
   // whose readings come out of the board. See the waveform block below.
   const waveforms = collectWaveforms(referenced);
 
-  const entries = [
+  const entries: ZipEntry[] = [
     { name: 'manifest.json', data: json(manifest), compress: true },
     { name: 'board.json', data: json(withoutPeaks(boardData, waveforms)), compress: true },
   ];
@@ -201,10 +231,19 @@ export async function packBoard(boardData, { created = null } = {}) {
  * last resort - "3 items have no stored data (photo.jpg, ...)" is something
  * you can go and look for on the board; a list of SHA-256 digests is not.
  */
-function nameOf(item, hash) {
+/**
+ * A note's own words, as this file may spell them into a filename, a heading or
+ * an error. `meta` is `unknown` per key by design (see board-model.ts) and the
+ * three readers below all want the same string, so the narrowing is done once
+ * here: anything that is not text reads as none, which is what every one of
+ * them already falls back to for a note that has not been written in yet.
+ */
+const noteTextOf = (item: Item) => (typeof item.meta?.text === 'string' ? item.meta.text : '');
+
+function nameOf(item: Item, hash: string) {
   if (item.name) return item.name;
   if (item.type === 'note') {
-    const first = (item.meta?.text || '').split('\n')[0].trim();
+    const first = noteTextOf(item).split('\n')[0].trim();
     if (first) return `note "${first.slice(0, 24)}"`;
   }
   return `${item.type || 'item'} ${hash.slice(0, 8)}`;
@@ -227,8 +266,8 @@ function nameOf(item, hash) {
 
 const NOTES_DIR = 'notes/';
 
-function noteFile(item) {
-  const first = (item.meta?.text || '').split('\n')[0];
+function noteFile(item: Item) {
+  const first = noteTextOf(item).split('\n')[0];
   const slug = first.toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
@@ -247,8 +286,8 @@ function noteFile(item) {
  * `# # buy the smaller one`. Harmless coming back, since parseNote() eats a run
  * of hashes, and wrong in the file, which is the half a person reads.
  */
-function noteMarkdown(item) {
-  const [title, ...rest] = (item.meta?.text || '').split('\n');
+function noteMarkdown(item: Item) {
+  const [title, ...rest] = noteTextOf(item).split('\n');
   const head = title.trim();
   const marker = /^#+\s/.test(head) ? '' : '# ';
   const body = rest.join('\n').trim();
@@ -260,7 +299,7 @@ function noteMarkdown(item) {
  * person may have typed into: the heading marker is optional, so is the blank
  * line under it, and trailing whitespace is nobody's content.
  */
-function parseNote(text) {
+function parseNote(text: string) {
   const lines = text.replace(/\r\n/g, '\n').split('\n');
   const title = (lines.shift() || '').replace(/^#+\s*/, '').trim();
   while (lines.length && !lines[0].trim()) lines.shift();
@@ -269,7 +308,7 @@ function parseNote(text) {
 }
 
 /** The id a note file was written for, or null if this is not one of ours. */
-function noteId(name) {
+function noteId(name: string) {
   if (!name.startsWith(NOTES_DIR) || !name.endsWith('.md')) return null;
   const stem = name.slice(NOTES_DIR.length, -'.md'.length);
   const cut = stem.lastIndexOf('--');
@@ -327,12 +366,13 @@ const WAVES_DIR = 'waveforms/';
  * do not, one file per hash is the answer that keeps being true afterwards:
  * on the way back in both cards are given the file's.
  */
-function collectWaveforms(items) {
-  const out = new Map();
+function collectWaveforms(items: Item[]) {
+  const out = new Map<string, number[]>();
   for (const item of items) {
     const hash = item?.asset?.hash;
     if (!hash || out.has(hash)) continue;
-    if (isReadings(item.meta?.peaks)) out.set(hash, item.meta.peaks);
+    const peaks = item.meta?.peaks;
+    if (isReadings(peaks)) out.set(hash, peaks);
   }
   return out;
 }
@@ -346,9 +386,14 @@ function collectWaveforms(items) {
  * Copies rather than edits - `meta` here is the live object off the item, and
  * packing a board is not allowed to change it.
  */
-function withoutPeaks(boardData, waveforms) {
-  const strip = item => {
+function withoutPeaks(boardData: PackedBoard, waveforms: Map<string, number[]>) {
+  const strip = (item: Item) => {
     if (!item?.meta) return item;
+    // The same question twice below, asked once: whether this item's bytes are
+    // getting a sidecar. An item with no hash at all is not, which is what
+    // has(undefined) always answered.
+    const hash = item.asset?.hash;
+    const sidecar = !!hash && waveforms.has(hash);
     // The optimiser's originals. They are kept in the browser so that undoing an
     // optimisation has something to put back (see swapAssets in state.js), but
     // an export is the thing the optimising was *for* - the archive carries the
@@ -356,11 +401,11 @@ function withoutPeaks(boardData, waveforms) {
     // packer never wrote. Dropped here rather than at the item, so a board that
     // has been exported still has its undo.
     const drop = 'was' in item.meta || 'wasCover' in item.meta;
-    if (!drop && !waveforms.has(item.asset?.hash)) return item;
+    if (!drop && !sidecar) return item;
     const { peaks, was, wasCover, ...meta } = item.meta;
     // Only the readings that were actually written to a sidecar come out; a
     // board whose audio has no waveform file keeps them inline as before.
-    if (!waveforms.has(item.asset?.hash) && item.meta.peaks) meta.peaks = item.meta.peaks;
+    if (!sidecar && item.meta.peaks) meta.peaks = item.meta.peaks;
     return { ...item, meta };
   };
   const out = { ...boardData, items: boardData.items.map(strip) };
@@ -368,10 +413,10 @@ function withoutPeaks(boardData, waveforms) {
   return out;
 }
 
-const waveformFile = hash => `${WAVES_DIR}${hash}.json`;
+const waveformFile = (hash: string) => `${WAVES_DIR}${hash}.json`;
 
 /** The hash a waveform file was written for, or null if this is not one. */
-function waveformHash(name) {
+function waveformHash(name: string) {
   if (!name.startsWith(WAVES_DIR) || !name.endsWith('.json')) return null;
   const hash = name.slice(WAVES_DIR.length, -'.json'.length);
   // Same rule as assets/: this half of the name is a content id, and one that
@@ -390,18 +435,22 @@ function waveformHash(name) {
  * catches the edit that deletes a row: a file whose header and body disagree
  * is a file that has lost something, and is dropped on the way in.
  */
-function waveformJSON(peaks) {
+function waveformJSON(peaks: number[]) {
   const rows = [];
   for (let i = 0; i < peaks.length; i += 16) rows.push('    ' + peaks.slice(i, i + 16).join(', '));
   return `{\n  "res": ${peaks.length},\n  "peaks": [\n${rows.join(',\n')}\n  ]\n}\n`;
 }
 
 /** ...and back, or null for anything that is not a set of readings. */
-function parseWaveform(text) {
+function parseWaveform(text: string): number[] | null {
   try {
-    const data = JSON.parse(text);
-    if (!isReadings(data?.peaks) || data.res !== data.peaks.length) return null;
-    return data.peaks;
+    const data: unknown = JSON.parse(text);
+    // Anything that is not an object answers no readings, which is what
+    // `data?.peaks` said before there was a type to say it in.
+    if (!isRecord(data)) return null;
+    const peaks = data.peaks;
+    if (!isReadings(peaks) || data.res !== peaks.length) return null;
+    return peaks;
   } catch {
     return null;
   }
@@ -416,7 +465,7 @@ function parseWaveform(text) {
  * away here. The ceiling is only so that a hand-written file cannot ask this
  * to carry a million numbers around.
  */
-function isReadings(v) {
+function isReadings(v: unknown): v is number[] {
   return Array.isArray(v) && v.length >= 2 && v.length <= 4096
     && v.every(n => typeof n === 'number' && n >= 0 && n <= 1);
 }
@@ -426,46 +475,63 @@ function isReadings(v) {
  * sidecar readers all want both: a note or a waveform belonging to something
  * you threw away is still yours until the bin is emptied.
  */
-function* allItems(board) {
-  for (const item of board.items || []) if (item) yield item;
-  for (const t of board.trash || []) if (t?.item) yield t.item;
+function* allItems(board: FileBoard): Generator<FileItem> {
+  // isRecord where this used to be a bare truthiness test. Every reader below
+  // asks an object question of what comes out - a type, a hash, a meta - and a
+  // string or a number in the items array answers none of them either way.
+  for (const item of board.items || []) if (isRecord(item)) yield item;
+  for (const t of board.trash || []) if (isRecord(t) && isRecord(t.item)) yield t.item;
 }
 
 /**
  * Read a .mbrd Blob. Registers every embedded asset in the asset store and
  * returns `{ manifest, board }` ready for state.loadBoard().
  */
-export async function unpackBoard(blob) {
+export async function unpackBoard(blob: Blob) {
   const files = await readZip(blob);
 
   const boardBytes = files.get('board.json');
   if (!boardBytes) throw new Error('Not an .mbrd file (no board.json inside)');
 
-  let manifest = {};
+  // Whatever the file says, read one key at a time. A manifest that is not an
+  // object at all is the same as no manifest, which is what reading `.format`
+  // off a number always came to.
+  let manifest: Record<string, unknown> = {};
   const manifestBytes = files.get('manifest.json');
   if (manifestBytes) {
-    try { manifest = JSON.parse(dec.decode(manifestBytes)); } catch { /* keep going */ }
+    try {
+      const parsed: unknown = JSON.parse(dec.decode(manifestBytes));
+      if (isRecord(parsed)) manifest = parsed;
+    } catch { /* keep going */ }
   }
   if (manifest.format && manifest.format !== FORMAT) {
-    throw new Error(`Unknown board format "${manifest.format}"`);
+    throw new Error(`Unknown board format "${String(manifest.format)}"`);
   }
-  if (manifest.version > FORMAT_VERSION) {
+  // Number() rather than a typeof guard, to keep the loose comparison this has
+  // always made: a hand-written `"version": "2"` still warns, and every value
+  // that is not a number at all is NaN, which is false against anything.
+  if (Number(manifest.version) > FORMAT_VERSION) {
     console.warn('[mbrd] file was written by a newer version; loading anyway');
   }
 
-  const board = JSON.parse(dec.decode(boardBytes));
+  const board: FileBoard = JSON.parse(dec.decode(boardBytes));
   if (manifest.title && !board.title) board.title = manifest.title;
 
   // Notes come back from their own files, which outrank the copy in
   // board.json - see the block above packBoard's note writer.
-  const notes = new Map();
+  //
+  // Keyed by whatever the file called the item, which is not necessarily a
+  // string: the lookup is by the id spelled in a sidecar's filename, so an item
+  // whose id is not one simply never matches.
+  const notes = new Map<unknown, FileItem>();
   for (const item of allItems(board)) if (item.type === 'note') notes.set(item.id, item);
   for (const [name, bytes] of files) {
     const id = noteId(name);
     const item = id && notes.get(id);
     if (!item) continue;
     const text = parseNote(dec.decode(bytes));
-    item.meta = { ...item.meta, text };
+    const meta: Record<string, unknown> = { ...(isRecord(item.meta) ? item.meta : null), text };
+    item.meta = meta;
     // The .md outranks board.json, and meta.rich is *part of* board.json. Left
     // alone it kept winning on screen while meta.text took the edit, so a
     // hand-edited note came back showing the old words while Find matched the
@@ -476,19 +542,22 @@ export async function unpackBoard(blob) {
     // the note keeps its face, its size and its vertical placement and only the
     // blocks are rebuilt. Nothing happens when the two already agree, which is
     // every file this app wrote.
-    if (item.meta.rich && flattenNoteRich(item.meta.rich) !== text) {
-      item.meta.rich = { ...item.meta.rich, blocks: parseNoteText(text) };
+    const rich = meta.rich;
+    if (isRecord(rich) && flattenNoteRich(rich) !== text) {
+      meta.rich = { ...rich, blocks: parseNoteText(text) };
     }
   }
 
   // Waveforms the same, but one file can answer for several cards: the sidecar
   // is named after the audio, and every card holding that audio wants it.
-  const waves = new Map();
+  const waves = new Map<unknown, FileItem[]>();
   for (const item of allItems(board)) {
-    const hash = item.asset?.hash;
+    const asset = item.asset;
+    const hash = isRecord(asset) ? asset.hash : undefined;
     if (!hash) continue;
-    if (!waves.has(hash)) waves.set(hash, []);
-    waves.get(hash).push(item);
+    let holders = waves.get(hash);
+    if (!holders) waves.set(hash, holders = []);
+    holders.push(item);
   }
   for (const [name, bytes] of files) {
     const hash = waveformHash(name);
@@ -502,7 +571,7 @@ export async function unpackBoard(blob) {
       console.warn('[mbrd] unreadable waveform', name, '- will re-measure');
       continue;
     }
-    for (const item of holders) item.meta = { ...item.meta, peaks };
+    for (const item of holders) item.meta = { ...(isRecord(item.meta) ? item.meta : null), peaks };
   }
 
   // Assets last, and strictly. Everything above reads content out of the
@@ -510,7 +579,7 @@ export async function unpackBoard(blob) {
   // become an identity the rest of the app trusts - so the name has to be
   // exactly the one this format defines, and the bytes have to be the ones the
   // name claims. See the HASH comment above for what the loose version cost.
-  const registered = new Set();
+  const registered = new Set<string>();
   for (const [name, bytes] of files) {
     if (!name.startsWith(ASSETS_DIR)) continue;
     const file = name.slice(ASSETS_DIR.length);
@@ -542,14 +611,14 @@ export async function unpackBoard(blob) {
 }
 
 /** Cheap sniff so a wrong-extension drop fails with a useful message. */
-export function looksLikeMbrd(file) {
+export function looksLikeMbrd(file: File) {
   return /\.mbrd$/i.test(file.name) || file.type === MIME;
 }
 
 const ALREADY_COMPRESSED = /^(image\/(?!svg|bmp|x-)|video\/|audio\/)|zip|gzip|compressed/i;
 const RAW_EXT = new Set(['bmp', 'svg', 'txt', 'md', 'json', 'csv', 'xml', 'html', 'wav', 'tif', 'tiff']);
 
-function shouldCompress(mime, ext) {
+function shouldCompress(mime: string, ext: string) {
   if (RAW_EXT.has((ext || '').toLowerCase())) return true;
   if (mime && ALREADY_COMPRESSED.test(mime)) return false;
   return true;
@@ -557,7 +626,7 @@ function shouldCompress(mime, ext) {
 
 // Blob type is what drives <img>/<video>/<audio> playback, and the ZIP does not
 // carry MIME types - so it is rebuilt from the extension on the way back in.
-const MIME_BY_EXT = {
+const MIME_BY_EXT: Record<string, string> = {
   png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
   webp: 'image/webp', avif: 'image/avif', bmp: 'image/bmp', ico: 'image/x-icon',
   svg: 'image/svg+xml', tif: 'image/tiff', tiff: 'image/tiff', heic: 'image/heic',
@@ -570,6 +639,6 @@ const MIME_BY_EXT = {
   pdf: 'application/pdf', zip: 'application/zip',
 };
 
-function mimeFor(ext) {
+function mimeFor(ext: string) {
   return MIME_BY_EXT[(ext || '').toLowerCase()] || '';
 }
