@@ -25,9 +25,16 @@ const html = read(join(WEB, 'patch.html'));
 /** The prose, with the authoring guide and every other comment taken out. */
 const prose = html.replace(/<!--[\s\S]*?-->/g, '');
 
-/** Every entry on the page, in document order, outermost markup only. */
-const entries = [...prose.matchAll(/<div class="patch-entry([^"]*)">([\s\S]*?)<\/div>/g)]
-  .map(m => ({ extra: m[1].trim(), body: m[2] }));
+/**
+ * Every entry on the page, in document order, outermost markup only.
+ *
+ * `extra` is everything on the opening tag that is not the class name itself -
+ * the rest of the class list, and the id the panel index links to. Kept as one
+ * string because the two tests that read it ask different questions of it
+ * (is this the milestone, and what is it called), and neither wants a parser.
+ */
+const entries = [...prose.matchAll(/<div class="patch-entry([^"]*)"([^>]*)>([\s\S]*?)<\/div>/g)]
+  .map(m => ({ extra: `${m[1]} ${m[2]}`.trim(), body: m[3] }));
 
 /** The text of one <p class="patch-x"> inside an entry. */
 const field = (body, name) => {
@@ -91,6 +98,36 @@ test('every entry carries a version, a name and a date', () => {
   }
 });
 
+test('the panel index and the column say the same thing', () => {
+  // The page's one hand-kept correspondence, and the step of adding a release
+  // that is easiest to forget: the card goes in the column, and a row has to go
+  // in the panel beside it. Checked in both directions and in order, because
+  // each failure is different and silent in its own way - a missing row is a
+  // release you cannot jump to, a stale row is a link that scrolls nowhere, and
+  // a row out of order is an index that disagrees with the page under it.
+  const rows = [...prose.matchAll(
+    /<li><a href="#([^"]+)">([^<]+)<span>([^<]*)<\/span><\/a><\/li>/g)]
+    .map(m => ({ href: m[1], name: m[2].trim(), version: m[3].trim() }));
+
+  assert.ok(rows.length > 3, `only ${rows.length} index rows found - has the panel moved?`);
+
+  const cards = entries.map(e => ({
+    id: (e.extra.match(/id="([^"]+)"/) ?? [])[1],
+    name: field(e.body, 'name'),
+    version: field(e.body, 'version'),
+  }));
+
+  for (const c of cards) {
+    assert.ok(c.id, `the ${c.name} card has no id, so nothing can link to it`);
+  }
+  assert.deepEqual(
+    rows.map(r => [r.href, r.name, r.version]),
+    cards.map(c => [c.id, c.name, c.version]),
+    'the Releases list in the panel does not match the cards in the column, in ' +
+    'order. Every card needs a row, every row needs a card, and the codename ' +
+    'and version on each have to agree.');
+});
+
 test('no codename is used twice', () => {
   // The one rule in the guide with nothing else holding it up. A repeated
   // codename is not a broken page, it is a page where two different updates
@@ -152,6 +189,29 @@ test('the page runs no script and writes no style attribute', () => {
     'patch.html has a script - the page is deliberately script-free');
   assert.doesNotMatch(prose, /<style/, 'patch.html has an inline style block');
   assert.doesNotMatch(prose, /style\s*=\s*["']/, 'patch.html writes a style attribute');
+});
+
+test('no base tag, so the index links stay on the page', () => {
+  // The bug this is here for shipped and was caught by hand: with
+  // <base href="/"> in the head - which index.html carries, for a reason that
+  // does not apply here - a fragment-only href resolves against the base rather
+  // than the document. Every row in the panel index pointed at /#r-whatever,
+  // so clicking one left the changelog and loaded a board.
+  //
+  // Both halves are asserted, because either alone would let it back: the tag
+  // must stay out, and the anchors must stay fragment-only. An anchor written
+  // as /patch#r-x would survive a base tag and is therefore the tempting wrong
+  // fix - it also hardcodes the page's own address into every row.
+  // Read from the comment-stripped copy, because the head carries a comment
+  // that names the tag and says why it is absent - which is the note most
+  // likely to stop somebody putting it back, so it must not be what fails here.
+  assert.doesNotMatch(prose, /<base\b/,
+    'patch.html has a <base> tag, which would send every #fragment link to the app');
+  const offenders = [...prose.matchAll(/href="([^"]*#[^"]*)"/g)]
+    .map(m => m[1])
+    .filter(href => !href.startsWith('#'));
+  assert.deepEqual(offenders, [],
+    `these in-page links carry a path as well as a fragment: ${offenders.join(', ')}`);
 });
 
 test('the stylesheet it needs is the one it loads', () => {

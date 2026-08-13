@@ -1,5 +1,5 @@
 /* =========================================================
-   mbrd - the patch notes page
+   mbrd - the patch notes page, dressed as the Feed
 
    NOT ONE OF THE TWENTY. Every other sheet in this directory is loaded by
    index.html and is part of one cascade, in the order the banner at the top of
@@ -13,27 +13,57 @@
    a stylesheet the app ships and cannot fetch offline is a page that renders
    naked. The changelog is part of what this app ships.
 
-   ── Why it does not simply load base.css ──
+   ── The page IS a board ──
 
-   Because base.css exists to make a *board*, and the first thing it does is
-   `html, body { height: 100%; overflow: hidden }` - the page cannot scroll,
-   which is correct for a canvas that owns every gesture and fatal for a
-   document. Under that sit the boot cover, #viewport, #world and the transform
-   layer, none of which is on this page. So the two things this page genuinely
-   wants from base.css - the sheet, and the tooth on it - are restated below
-   against the same tokens, and the rest is left where it belongs. They are a
-   deliberate copy and not an import: if the paper changes, it changes in
-   tokens.css, which is the file both of them read.
+   It is drawn as the Feed: the ink-washed surround, the rounded near-white sheet
+   standing in the middle of it with the paper grain on it, the title page across
+   the top, and a column of cards down the rest. Each release is a text card -
+   the same leaf corner, the same card stock, the same lift - because that is
+   what a changelog is on this app: a board somebody laid out in order, and the
+   Feed is already this app's answer to reading a board as a column.
+
+   ── Why the class names are not the Feed's ──
+
+   Every rule below is a restatement of one in mobile.css, and none of them
+   shares its name. That is deliberate. mobile.css owns .feed-sheet, .feed-tile
+   and .feed-text; it is not loaded here and cannot be, because it opens by
+   hiding both lenses behind [data-board-mode="mobile"] and is written against a
+   scroller the module positions tiles inside. A second .feed-tile in a second
+   file, styled by hand, is the drift this codebase splits files to avoid.
+
+   So the names are the page's own and the lineage is written down instead:
+
+     .patch-board      .feed-sheet - width, radius, fill, shadow, overflow
+     .patch-board::before  .feed-sheet::before - the grain, and why it is ::before
+     .patch-masthead   .feed-masthead - the 3:2 title page, capped and centred
+     .patch-title      .feed-title - the board name, in the display face
+     .patch-column     .feed-grid - the inset run of cards, at the module's GAP
+     .patch-entry      .feed-tile + .feed-text - a card, and its head and body
+
+   The panel is the same arrangement against sidebar.css, which owns #sidebar
+   and every .side-* class in the app:
+
+     .patch-side       #sidebar - the fixed panel, its edge, corner and lift
+     .patch-side-head  .side-head - the mark, over a rule
+     .patch-wordmark   .wordmark - and .patch-mark / .patch-sub-mark its two lines
+     .patch-side-body  .side-body - the one scrolling middle
+     .patch-side-sec   .side-sec - a headed section, ruled off from the last
+     .patch-side-foot  .side-foot - the credit row at the bottom edge
+     .patch-index      .keys - a list of paired rows, label left, value right
+
+   Three things a tile does that a patch card must not, all for the same reason:
+   a tile is a glance at something whose full version is one tap away, and a
+   patch note has no full version anywhere else. So no fixed height, no
+   -webkit-line-clamp, and no fade mask at the foot. The look is the Feed's; the
+   clipping is not.
 
    ── What it takes from the app, and what it does not ──
 
-   Everything visual resolves through tokens.css, exactly as the twenty do:
-   no hue, no corner, no duration and no typeface is written here. That is the
-   whole of "this page looks like mbrd" - the warm sheet, the iron-gall ink, the
-   terracotta, Fraunces announcing and Geist reading, corners eased by --radius.
+   Everything visual resolves through tokens.css, exactly as the twenty do: no
+   hue, no corner, no duration and no typeface is written here.
 
-   What it does not take is the look the *reader* is wearing. A board's palette
-   and its whimsy tier travel in the .mbrd file and are written onto :root by
+   What it does not take is the look the reader is wearing. A board's palette and
+   its whimsy tier travel in the .mbrd file and are written onto :root by
    ui/appearance.ts at runtime; this page has no board and runs no script at all,
    so it renders at the base look - Papyrus, whimsy 1 - forever. That is the
    honest answer rather than a missing feature: the palette is a property of a
@@ -58,15 +88,36 @@
 
 * { box-sizing: border-box; }
 
-/* The one place this page differs from the app on purpose. base.css pins the
-   board to the window and refuses to scroll; a document does the opposite. */
 html {
-  /* So an anchored jump does not land with the heading against the top edge. */
+  /* So a card jumped to from the index does not land against the top edge. */
   scroll-padding-top: 24px;
+
+  /* The Feed sets 940px because it holds two to five columns of tiles; the
+     Playlist sets 520px because a track list reads as a strip. So the width is
+     already a property of what the lens holds rather than a constant, and this
+     lens holds prose: 940px of running text is a hundred-character line, which
+     is the one thing a page of paragraphs cannot afford. 760px puts the measure
+     inside a card at somewhere near seventy.
+
+     On :root rather than on .patch-board because the panel reads it too - in
+     the narrow layout the two stack, and a panel that did not agree with the
+     board about how wide the page is would sit visibly off it. */
+  --board-w: 760px;
 }
 
+/* The surround, and the one place this page differs from the app on purpose:
+   base.css pins the board to the window and refuses to scroll, and a document
+   does the opposite.
+
+   The fill is #mobile-feed's - a wash of ink over the paper, the same 6% the
+   world-space board lays outside its strip, so the sheet below reads as a
+   sheet. Flat, with none of the blooms body wears in base.css: on the Feed the
+   canvas and its ornament are hidden underneath, and what is left around the
+   board is ground rather than paper. */
 html, body {
   margin: 0;
+  min-height: 100%;
+  background: color-mix(in srgb, var(--ink) 6%, var(--paper));
   color: var(--ink);
   font-family: var(--font-body);
   font-size: var(--t-body);
@@ -82,81 +133,47 @@ html, body {
   color: var(--highlight-ink);
 }
 
-/* The sheet - the same stock the board is printed on, restated. Two colour
-   blooms scaled by --wash and an ink vignette scaled by --vignette, so this
-   page flattens and decorates with the look exactly as the board does. The
-   percentages are base.css's own and the note about why the first is 3% rather
-   than 5% lives there. */
-body {
-  background-color: var(--paper);
-  background-image:
-    radial-gradient(58% 44% at 18% 12%, color-mix(in srgb, var(--accent) calc(3% * var(--wash)), transparent), transparent 70%),
-    radial-gradient(52% 40% at 84% 78%, color-mix(in srgb, var(--leafy) calc(4% * var(--wash)), transparent), transparent 72%),
-    radial-gradient(120% 100% at 50% 50%, transparent 55%, color-mix(in srgb, var(--ink) calc(5% * var(--vignette)), transparent));
-}
-
-/* The tooth of the stock: the same 512px tile, multiplied over the finished
-   sheet. Fixed rather than scrolling with the text, because the grain is the
-   paper and paper does not slide under its own ink.
-
-   No --grain-pos and no --grain-tile: those are written by canvas/grain.ts as
-   the board zooms, and there is no zoom here. The fallbacks in base.css exist
-   for exactly this case - the Feed writes neither either - so the tile sits at
-   its 100% size at the origin, which is all a page that never moves needs.
-
-   Multiply, so it darkens the sheet without touching its hue. It sits under the
-   text rather than over it: .patch-shell below carries the content on z-index 1.
-   Blending over the prose would put a texture through the letterforms. */
-.patch-grain {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  background-image: url("../img/paper-grain.webp");
-  background-repeat: repeat;
-  background-position: 0 0;
-  background-size: 512px 512px;
-  mix-blend-mode: multiply;
-  pointer-events: none;
-  opacity: calc(0.8 * var(--grain));
-}
-
 /* ---------------------------------------------------------
-   The column
+   The panel
 
-   One measure, centred, and narrow on purpose: this is prose and prose is read
-   at somewhere near 70 characters a line, not at the width of a desktop window.
-   Set in ch rather than px so it tracks the body face - if a look sets a wider
-   Geist the measure follows it instead of quietly growing to ninety characters.
+   #sidebar, restated - the paper-card fill, the hairline edge in --rule-2, the
+   --ogee corner and the --shadow-2 lift. What is not restated is the whole of
+   its behaviour: the app's panel is transformed off-screen at rest, faded,
+   visibility:hidden, and slid back by a class the menu button toggles. There is
+   no button here and no script to answer one, so this panel has no closed state
+   to be in.
+
+   Static by default and fixed only above the breakpoint at the foot of this
+   block. That order is deliberate: the narrow layout is the one that has to
+   work with no query matching at all, and a 322px panel fixed over a phone
+   would cover the column it is an index to.
    --------------------------------------------------------- */
 
-.patch-shell {
-  position: relative;
-  z-index: 1;
-  max-width: 74ch;
-  margin: 0 auto;
-  padding: clamp(28px, 7vw, 72px) clamp(18px, 5vw, 32px) 96px;
+.patch-side {
+  width: min(100% - 24px, var(--board-w));
+  margin: clamp(16px, 4vw, 40px) auto 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper-card);
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--ogee);
+  box-shadow: var(--shadow-2);
 }
 
-/* ---------------------------------------------------------
-   The masthead
-
-   Built as the sidebar wordmark is built - a mark, a title, and a tracked
-   uppercase line under it - because that is this app's one existing way of
-   announcing itself and a second one would be a second answer. See .wordmark
-   in sidebar.css.
-   --------------------------------------------------------- */
-
-.patch-head {
-  margin: 0 0 clamp(32px, 6vw, 54px);
-  padding-bottom: clamp(20px, 4vw, 30px);
+.patch-side-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 16px 18px 14px;
   border-bottom: 1px solid var(--rule);
 }
 
-/* The four letters, at the size and tracking the sidebar sets them, and a link
-   because the board is where somebody reading this came from. */
+/* The mark and its line under it, at the sizes and the tracking .wordmark sets
+   them. A link rather than a heading - see the note in the markup - and so it
+   carries the underline suppression an anchor needs and the heading does not. */
 .patch-mark {
-  display: inline-block;
-  margin: 0 0 14px;
+  display: block;
   font-family: var(--font-display);
   font-size: var(--t-display);
   font-weight: var(--display-weight);
@@ -169,49 +186,304 @@ body {
 
 .patch-mark:hover { color: var(--accent); }
 
-/* Bigger than anything a token names, because until this page there was nowhere
-   in the app that a page title had to go: --t-display is the wordmark and a
-   note's heading, both of which sit on a board beside other things. Struck from
-   that token rather than written as a number, so the whole masthead still moves
-   when a look changes the display scale, and clamped so it does not run off a
-   phone. */
+.patch-sub-mark {
+  display: block;
+  margin-top: 3px;
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-style: var(--display-italic);
+  letter-spacing: calc(0.22em * var(--ls-scale));
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* The one scrolling middle, which only ever scrolls in the fixed layout - laid
+   out in the flow the panel is as tall as its list and the page scrolls
+   instead. min-height:0 is what lets it shrink inside the flex column rather
+   than pushing the foot past the bottom edge; the thin scrollbar in the
+   palette's own ink is .side-body's. */
+.patch-side-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 18px 16px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule-2) transparent;
+}
+
+.patch-side-sec {
+  padding: calc(15px * var(--density)) 0;
+  border-top: 1px solid var(--rule);
+}
+
+/* The first section sits directly under the head, which has a rule of its own.
+   .side-sec.is-first does this in the app; there is only ever one section here,
+   so it is the type selector rather than a class somebody has to remember. */
+.patch-side-sec:first-child { border-top: 0; }
+
+.patch-side-sec h2 {
+  margin: 0 0 11px;
+  font-family: var(--font-display);
+  font-size: var(--t-tiny);
+  font-weight: 400;
+  font-style: var(--display-italic);
+  letter-spacing: calc(0.24em * var(--ls-scale));
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* The index. .keys, which is the app's one existing list of paired rows: a
+   label on the left and its value pushed to the right, meeting on the baseline
+   so the two type sizes sit on one line rather than centring against each
+   other. Here the pair is a codename and the versions it covers.
+
+   The whole row is the link, not the codename inside it, so the number and the
+   space between them are clickable too - a row that is a link everywhere except
+   the part your eye lands on is a row that feels broken. */
+.patch-index {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--t-small);
+}
+
+.patch-index a {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 4px 0;
+  font-style: var(--display-italic);
+  color: var(--ink-2);
+  text-decoration: none;
+  transition: color var(--dur-fast) var(--ease);
+}
+
+.patch-index a:hover { color: var(--accent); }
+.patch-index a:hover span { color: var(--accent); }
+
+.patch-index span {
+  flex: none;
+  font-size: var(--t-tiny);
+  letter-spacing: calc(0.08em * var(--ls-scale));
+  color: var(--ink-3);
+  transition: color var(--dur-fast) var(--ease);
+}
+
+/* Quiet by construction, the same as .side-foot: the row is a credit and a way
+   out, and both are the size and the colour of the small print around them
+   rather than of the links on the board. */
+.patch-side-foot {
+  padding: 10px 18px 12px;
+  border-top: 1px solid var(--rule);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-family: var(--font-display);
+  font-size: var(--t-tiny);
+  font-style: var(--display-italic);
+  letter-spacing: calc(0.1em * var(--ls-scale));
+  color: var(--ink-3);
+}
+
+.patch-side-foot a {
+  color: inherit;
+  text-decoration: none;
+  transition: color var(--dur-fast) var(--ease);
+}
+
+.patch-side-foot a:hover { color: var(--accent); text-decoration: underline; }
+
+/* Wide enough for the panel to stand beside the board rather than over it.
+
+   322 for the panel, 14 either side of it, 760 for the board and its own
+   margins: below about this the two cannot both be on screen, and the app's own
+   answer - overlay the board - is the wrong one for a document, because what
+   the panel would cover is the text it exists to point at. So the panel goes
+   fixed, and the page is padded by exactly the width it now occupies, which is
+   what keeps the board centred in what is left rather than centred under the
+   panel. */
+@media (min-width: 1180px) {
+  body { padding-left: calc(var(--sidebar-w) + 28px); }
+
+  .patch-side {
+    position: fixed;
+    z-index: 40;
+    top: max(14px, env(safe-area-inset-top));
+    bottom: max(14px, env(safe-area-inset-bottom));
+    left: max(14px, env(safe-area-inset-left));
+    width: var(--sidebar-w);
+    margin: 0;
+  }
+
+  .patch-side-foot {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+}
+
+/* ---------------------------------------------------------
+   The board
+
+   .feed-sheet, restated: a fixed width, centred, standing clear of the edges by
+   its margins, with the near-white fill carrying a little of the palette accent
+   exactly as #mobile-board-frame does. On a phone it is the window less a
+   gutter; wider than that it settles at its set width and the surround shows
+   either side of it.
+   --------------------------------------------------------- */
+
+.patch-board {
+  position: relative;   /* the containing block for the grain below */
+  width: min(100% - 24px, var(--board-w));
+  margin-inline: auto;
+  margin-block: clamp(16px, 4vw, 40px);
+  min-height: calc(100dvh - 2 * clamp(16px, 4vw, 40px));
+  /* No side padding: the masthead is full-bleed to the board edge, and the
+     column below insets itself. overflow:hidden clips the square title page to
+     the rounded sheet. */
+  padding: 0 0 clamp(16px, 3vw, 24px);
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 6%, #fff);
+  box-shadow: var(--shadow-1);
+}
+
+/* The tooth of the stock, on the board this page is. Every value here is the
+   shared block in base.css that #grain, the world-space strip and .feed-sheet
+   all read; it is restated rather than imported for the reason at the top of
+   this file.
+
+   ::before and not ::after, which is the one decision in it: the blend mode is
+   multiply, and a pseudo-element blends against whatever has been painted under
+   it inside its stacking context. Painted first, that is the sheet's own fill,
+   which is what paper on paper should darken. Painted last it would multiply
+   over every card on the page and the whole column would go muddy.
+
+   inset:0 covers the sheet's full scrolled height rather than the window, so the
+   grain is a property of the board and travels with it. border-radius inherits,
+   so the corners are the sheet's.
+
+   No --grain-pos and no --grain-tile: those are written by canvas/grain.ts as a
+   board zooms, and there is no zoom here. The fallbacks in base.css exist for
+   exactly this case - the Feed writes neither either - so the tile sits at its
+   100% size at the origin, which is all a board that never moves needs. */
+.patch-board::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-image: url("../img/paper-grain.webp");
+  background-repeat: repeat;
+  background-position: 0 0;
+  background-size: 512px 512px;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+  opacity: calc(0.8 * var(--grain));
+}
+
+/* ---------------------------------------------------------
+   The title page
+
+   .feed-masthead: a 3:2 band across the top of the sheet, capped in width and
+   centred. The cap is what stops it becoming a poster on a wide board - on a
+   phone the cap is wider than the sheet, so it stays full-bleed; wider than that
+   it settles at the same size instead of scaling.
+   --------------------------------------------------------- */
+
+.patch-masthead {
+  position: relative;   /* over the grain, not under it */
+  width: 100%;
+  max-width: 440px;
+  margin-inline: auto;
+  aspect-ratio: 3 / 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 0;
+  overflow: hidden;
+}
+
+/* The board's name. The Feed resolves this size against the sheet width through
+   --mobile-title-scale and the fit the module measures; there is no module here,
+   so it is a clamp against the viewport that lands in the same place - large
+   enough to be the page, capped before it fills the band. */
 .patch-title {
   margin: 0;
+  max-width: 100%;
   font-family: var(--font-display);
-  font-size: clamp(var(--t-display), 7.5vw, calc(var(--t-display) * 1.9));
+  font-size: clamp(var(--t-display), 9vw, calc(var(--t-display) * 1.85));
   font-weight: var(--display-weight);
   letter-spacing: calc(0.01em * var(--ls-scale));
   line-height: 1.06;
+  text-align: center;
+  text-wrap: balance;
   color: var(--ink);
 }
 
 /* ---------------------------------------------------------
-   One entry
+   The column
 
-   Separated by a hairline rather than boxed, which is the arrangement the
-   sidebar uses for its sections (.side-sec) and the right one here for the same
-   reason: eleven cards in a column read as eleven objects to be dealt with, and
-   a changelog is one document with divisions in it. The exception is the
-   milestone at the bottom of this file, which is boxed precisely because it is
-   meant to stop the eye.
+   .feed-grid: inset from the board edge, which the sheet itself is not - the
+   title page reaches the edge and the cards do not. The gap is GAP in
+   ui/feed.ts, the number the masonry packs its tiles at, so a column of these
+   sits at the same rhythm as a wall of those.
+   --------------------------------------------------------- */
+
+.patch-column {
+  position: relative;   /* over the grain */
+  width: calc(100% - 24px);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ---------------------------------------------------------
+   One release, as a text card
+
+   .feed-tile with .feed-text inside it, which on the Feed are two elements: the
+   tile carries the corner, the fill and the lift, and the text pane paints card
+   stock over it and holds the head and the body. One element here, because the
+   split exists so that a tile can hold a photograph or a video instead - and
+   nothing on this page is anything but words.
+
+   What is deliberately dropped: the tile's fixed height, its line clamp and the
+   fade mask at its foot. Those are right for a wall of glances at things whose
+   full version is one tap away, and wrong here - a patch note clipped at nine
+   lines is a patch note with no full version anywhere.
    --------------------------------------------------------- */
 
 .patch-entry {
-  padding: clamp(26px, 5vw, 40px) 0 0;
-  border-top: 1px solid var(--rule);
+  padding: clamp(18px, 3.5vw, 26px) clamp(18px, 3.5vw, 28px);
+  /* Clear of the top edge when the index jumps to it. html carries a
+     scroll-padding for the same job; this is the card's own half of it, so a
+     jump lands the card below the edge rather than against it. */
+  scroll-margin-top: 16px;
+  overflow: hidden;
+  border-radius: var(--leaf);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-1);
 }
 
-/* The newest entry leads the page and has the masthead's rule above it already,
-   so it does not carry a second one. */
-.patch-entry:first-of-type {
-  padding-top: 0;
-  border-top: 0;
+/* The card the index just jumped to, wearing what a selected card on the board
+   wears: the accent outline and its wash, from the same two tokens canvas
+   selection uses. Not a colour invented for this page - "you asked for this
+   one" is a thing the app already has a way of saying.
+
+   It stays until another row is clicked, and that is the honest behaviour
+   rather than a flaw: a highlight that faded after two seconds would need a
+   script to time it, and this page has none. */
+.patch-entry:target {
+  outline: var(--sel-line) solid var(--select);
+  outline-offset: calc(var(--sel-gap) * -1);
+  background: color-mix(in srgb, var(--select-fill), var(--paper-card));
 }
 
-/* Version, then name, then date - quiet, loud, quiet. The number is what the
-   app agrees with and the name is what a person remembers, so the name is the
-   one set large; the sidebar wordmark makes the same trade between its mark and
-   its .sub. */
+/* The head: version, then name, then date - quiet, loud, quiet. The number is
+   what the app agrees with and the name is what a person remembers, so the name
+   is the one set large, exactly the trade the sidebar wordmark makes between its
+   mark and its .sub. */
 .patch-version {
   margin: 0;
   font-family: var(--font-display);
@@ -222,29 +494,31 @@ body {
   color: var(--accent);
 }
 
+/* A card name, at the weight items.css gives one: the tier's display weight plus
+   200, so the relationship survives a look that sets its serif lighter. */
 .patch-name {
-  margin: 7px 0 0;
+  margin: 6px 0 0;
   font-family: var(--font-display);
-  font-size: var(--t-display);
-  font-weight: var(--display-weight);
+  font-size: var(--t-title);
+  font-weight: calc(var(--display-weight) + 200);
   letter-spacing: calc(0.01em * var(--ls-scale));
-  line-height: 1.15;
+  line-height: 1.2;
   color: var(--ink);
 }
 
 .patch-date {
-  margin: 5px 0 0;
+  margin: 3px 0 0;
   font-family: var(--font-display);
   font-size: var(--t-small);
   font-style: var(--display-italic);
   color: var(--ink-3);
 }
 
-/* A heading inside an entry, for a release long enough to have parts. Exactly
-   the section head from sidebar.css - tracked, uppercase, faint, in the display
-   face - because that is what a heading below the top rank looks like here. */
+/* A heading inside a card, for a release long enough to have parts. Exactly the
+   section head from sidebar.css - tracked, uppercase, faint, in the display face
+   - because that is what a heading below the top rank looks like here. */
 .patch-sub {
-  margin: 26px 0 10px;
+  margin: 22px 0 10px;
   font-family: var(--font-display);
   font-size: var(--t-tiny);
   font-weight: 400;
@@ -254,13 +528,15 @@ body {
   color: var(--ink-3);
 }
 
-/* The divider between an entry's parts. Not a border on .patch-sub, because a
-   long entry wants the rule above the first sub-heading too. */
+/* The divider between a card's parts. Not a border on .patch-sub, because a
+   long card wants the rule above the first sub-heading too. The gap is the
+   card's own inner rule, so it takes the card's rule colour rather than the
+   sheet's. */
 .patch-rule {
   height: 0;
-  margin: 26px 0 0;
+  margin: 22px 0 0;
   border: 0;
-  border-top: 1px solid var(--rule);
+  border-top: var(--hairline) solid var(--rule);
 }
 
 /* ---------------------------------------------------------
@@ -268,7 +544,7 @@ body {
    --------------------------------------------------------- */
 
 .patch-list {
-  margin: 16px 0 0;
+  margin: 15px 0 0;
   padding: 0;
   list-style: none;
   color: var(--ink-2);
@@ -276,8 +552,8 @@ body {
 
 .patch-list li {
   position: relative;
-  margin: 0 0 13px;
-  padding-left: 20px;
+  margin: 0 0 12px;
+  padding-left: 19px;
 }
 
 .patch-list li:last-child { margin-bottom: 0; }
@@ -288,9 +564,9 @@ body {
    list marker is not a circle, it is a small mark, so it takes the small-fry
    corner and follows the axis with everything else.
 
-   0.62em down from the top of the line box lands it on the x-height of the
-   first line at every one of the three type scales; centring it on the line
-   would sit it under the ascenders. */
+   0.62em down from the top of the line box lands it on the x-height of the first
+   line at every one of the three type scales; centring it on the line would sit
+   it under the ascenders. */
 .patch-list li::before {
   content: "";
   position: absolute;
@@ -302,9 +578,9 @@ body {
   background: var(--rule-2);
 }
 
-/* The feature or format a bullet is about, so it can be found by eye in a
-   column of grey prose. Full ink against the secondary the list is set in,
-   which is the whole of the emphasis - the size and the face do not change. */
+/* The feature or format a bullet is about, so it can be found by eye in a column
+   of grey prose. Full ink against the secondary the list is set in, which is the
+   whole of the emphasis - the size and the face do not change. */
 .patch-list strong {
   font-weight: 600;
   color: var(--ink);
@@ -330,13 +606,13 @@ body {
    The three tags
 
    New, Fix and Faster, and deliberately only three: a tag set that grows past
-   what can be told apart at a glance is a legend, and nobody reads a legend on
-   a changelog. Each is an outline rather than a fill, because a filled chip at
-   the head of every bullet would out-shout the sentence it is labelling.
+   what can be told apart at a glance is a legend, and nobody reads a legend on a
+   changelog. Each is an outline rather than a fill, because a filled chip at the
+   head of every bullet would out-shout the sentence it is labelling.
 
-   The pigments are the app's own three registers - accent for something that
-   was not there before, faint rule for a repair, full ink for a speed or size
-   win - so the column can be skimmed for any one of them by colour alone.
+   The pigments are the app's own three registers - accent for something that was
+   not there before, faint rule for a repair, full ink for a speed or size win -
+   so the column can be skimmed for any one of them by colour alone.
    --------------------------------------------------------- */
 
 .patch-tag {
@@ -373,25 +649,24 @@ body {
    Written before there is one, which is worth saying out loud rather than
    leaving to be found. RELEASE_COMMITS in web/assets/js/version.js is empty:
    nothing has been crowned, every version so far is 0.NNN, and this class is
-   used by no entry on the page today.
+   used by no card on the page today.
 
    It is here anyway because the guide in patch.html tells whoever crowns 1.0 to
-   add `patch-milestone` to that entry, and an instruction naming a class that
-   does not exist is an instruction that silently does nothing. The day the
-   first release is cut should not also be the day somebody has to invent what a
+   add patch-milestone to that entry, and an instruction naming a class that does
+   not exist is an instruction that silently does nothing. The day the first
+   release is cut should not also be the day somebody has to invent what a
    release looks like.
 
-   Boxed, where every other entry is separated by a hairline, and tinted with
-   the accent at a few percent - the card treatment from items.css, on the one
-   entry that is an object in the column rather than a division of it.
+   A card still, because everything in this column is one - but tinted with the
+   palette's own accent and given the edge and the deeper lift of a card that has
+   been picked up off the board. --item-shadow rather than --shadow-1 is the
+   whole of that: it is the shadow a card on the canvas wears, and it is heavier
+   than the one a tile lying flat on the Feed does.
    --------------------------------------------------------- */
 
 .patch-entry.patch-milestone {
-  margin: clamp(26px, 5vw, 40px) 0 0;
-  padding: clamp(24px, 4vw, 34px);
   border: var(--hairline) solid color-mix(in srgb, var(--accent) 42%, transparent);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--accent) 4%, var(--paper-card));
+  background: color-mix(in srgb, var(--accent) 5%, var(--paper-card));
   box-shadow: var(--item-shadow);
 }
 
@@ -401,7 +676,7 @@ body {
    Links, focus, and the foot
    --------------------------------------------------------- */
 
-.patch-shell a {
+.patch-board a {
   color: var(--accent);
   text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
   text-underline-offset: 2px;
@@ -409,48 +684,32 @@ body {
               text-decoration-color var(--dur-fast) var(--ease);
 }
 
-.patch-shell a:hover {
+.patch-board a:hover {
   color: var(--accent-deep);
   text-decoration-color: currentColor;
 }
 
-/* Tabbed to rather than clicked, the same bargain the sidebar's controls make:
-   a ring for the keyboard and nothing at all for a mouse. */
-.patch-shell a:focus { outline: none; }
+/* Tabbed to rather than clicked, the same bargain the sidebar's controls make: a
+   ring for the keyboard and nothing at all for a mouse. */
+.patch-board a:focus { outline: none; }
 
-.patch-shell a:focus-visible {
+.patch-board a:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
   border-radius: var(--radius-xs);
 }
 
-.patch-foot {
-  margin-top: clamp(40px, 7vw, 66px);
-  padding-top: 20px;
-  border-top: 1px solid var(--rule);
-  font-family: var(--font-display);
-  font-size: var(--t-tiny);
-  font-style: var(--display-italic);
-  letter-spacing: calc(0.1em * var(--ls-scale));
-  color: var(--ink-3);
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-}
-
 /* ---------------------------------------------------------
    Motion
 
-   There is almost none - two colour fades - but the app respects this
-   preference everywhere else through the quality dial, and a page with no
-   script cannot read that dial. So it answers the media query directly.
+   There is almost none - two colour fades - but the app respects this preference
+   everywhere else through the quality dial, and a page with no script cannot
+   read that dial. So it answers the media query directly.
    --------------------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {
   .patch-mark,
-  .patch-shell a {
+  .patch-board a {
     transition: none;
   }
 }

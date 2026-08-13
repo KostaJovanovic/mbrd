@@ -3,15 +3,25 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- The same pin index.html carries, for a weaker version of the same reason.
+<!-- NO <base href="/"> HERE, and that is a decision rather than an omission.
 
-     This file is served at /patch, not at /patch.html - Workers and serve.py
-     both resolve an extensionless path to the .html beside it. A document at
-     /patch resolves its relative URLs against /, which is right; a document at
-     /patch/ would resolve them against /patch/, which is not, and one stray
-     trailing slash would be a page with no stylesheet. This costs one line and
-     removes the question. -->
-<base href="/">
+     index.html carries one because the app is served at every address it does
+     not have, so a relative URL on it would be looked for under whatever path
+     the visitor mistyped. This page is served at exactly one address, so it has
+     no such problem to solve - and a <base> would create a worse one.
+
+     A fragment-only href resolves against the BASE, not against the document.
+     With <base href="/"> in this head, every href="#r-first-light" in the panel
+     resolves to /#r-first-light, which is the app: clicking a row in the index
+     left the changelog and loaded a board. It did exactly that, once.
+
+     Without it, relative URLs resolve against the document's own address -
+     /patch, so assets/css/patch.css is /assets/css/patch.css - and the
+     fragments stay on the page. The only address that would break is /patch/
+     with a trailing slash, and nothing serves this file there: Workers resolves
+     the extensionless path and redirects the slashed form, and tools/serve.py
+     maps /patch to patch.html and answers /patch/ with the app and a 404.
+     tests/patch.test.js keeps the base tag out and the anchors relative. -->
 <title>Patch notes - mbrd</title>
 <meta name="description" content="Every version of mbrd, newest first - what was added, what was fixed and what got faster on the infinite freeform moodboard that runs in your browser.">
 <meta name="author" content="valjdakosta">
@@ -87,20 +97,85 @@
 </head>
 <body>
 
-<!-- The tooth of the stock, as a real element for the reason base.css gives:
-     the tile is multiplied over the sheet and has to sit under the text, and a
-     blend needs something to blend. It carries no zoom here, so it takes the
-     512px fallback and never moves. -->
-<div class="patch-grain" aria-hidden="true"></div>
+<!-- The panel, which on this page is always open.
 
-<div class="patch-shell">
+     The app's sidebar is a panel you summon with the menu button and dismiss
+     when you are done, because the thing behind it is a board you are working
+     on and the panel is in the way. Nothing is behind it here - the thing
+     behind it is a document you are reading - so there is no gesture to
+     summon it with, no button that would have to do the summoning, and no
+     script to run either. It simply stands where it stands.
 
-<header class="patch-head">
-  <a class="patch-mark" href="/">mbrd</a>
+     What it holds is the one thing a changelog needs and a board does not: an
+     index. Every release on this page is a row, newest first, and the row is a
+     link to the card. Keeping that list in step with the column is the one
+     hand-kept correspondence this page has, so tests/patch.test.js checks it
+     in both directions.
+
+     Below the breakpoint in patch.css it stops being fixed and becomes a card
+     above the board, which is the only honest thing a 322px panel can do on a
+     phone: overlaying the text it is an index to would put it in the way of
+     the one thing somebody came here to read. -->
+<aside class="patch-side">
+  <header class="patch-side-head">
+    <div class="patch-wordmark">
+      <!-- Not an h1. In index.html this mark IS the document's one heading,
+           because a board has no other; here the board is named across its own
+           title page and that name is the heading. A second h1 would be the
+           page claiming two subjects. -->
+      <a class="patch-mark" href="/">mbrd.</a>
+      <span class="patch-sub-mark">Plan it, see it. Sorted.</span>
+    </div>
+  </header>
+
+  <nav class="patch-side-body" aria-label="Releases">
+    <section class="patch-side-sec">
+      <h2>Releases</h2>
+      <ul class="patch-index">
+        <li><a href="#r-under-the-floor">Under the Floor<span>0.156 - 0.187</span></a></li>
+        <li><a href="#r-the-viewer">The Viewer<span>0.145 - 0.155</span></a></li>
+        <li><a href="#r-both-hands">Both Hands<span>0.135 - 0.144</span></a></li>
+        <li><a href="#r-threads-and-shapes">Threads and Shapes<span>0.130 - 0.134</span></a></li>
+        <li><a href="#r-feed-and-playlist">Feed and Playlist<span>0.126 - 0.129</span></a></li>
+        <li><a href="#r-regions">Regions<span>0.117 - 0.125</span></a></li>
+        <li><a href="#r-grain-and-credit">Grain and Credit<span>0.105 - 0.116</span></a></li>
+        <li><a href="#r-solid-ground">Solid Ground<span>0.87 - 0.92</span></a></li>
+        <li><a href="#r-measured">Measured<span>0.59 - 0.75</span></a></li>
+        <li><a href="#r-hardening">Hardening<span>0.41 - 0.57</span></a></li>
+        <li><a href="#r-first-light">First Light<span>0.00 - 0.21</span></a></li>
+      </ul>
+    </section>
+  </nav>
+
+  <footer class="patch-side-foot">
+    <span>by valjdakosta</span>
+    <a href="/">Back to the board</a>
+  </footer>
+</aside>
+
+<!-- The board.
+
+     This page is drawn as the Feed - the ink-washed surround, this rounded
+     near-white sheet standing in the middle of it with the paper grain on it,
+     the title page across the top, and a column of cards down the rest. The
+     tooth is a ::before on the sheet rather than an element, exactly as
+     .feed-sheet carries it, so the grain is a property of the board and not of
+     the window. Every class here restates one in mobile.css without borrowing
+     its name; the table at the top of patch.css says which is which. -->
+<div class="patch-board">
+
+<!-- The title page: the 3:2 band the Feed and the Playlist both open with,
+     capped in width and centred so it stays a title page rather than becoming a
+     poster on a wide board. The board is named Patch notes.
+
+     The mark that used to sit above this name has moved into the panel, where
+     the app keeps its wordmark. On the Feed a masthead is the board's name and
+     nothing else. -->
+<header class="patch-masthead">
   <h1 class="patch-title">Patch notes</h1>
 </header>
 
-<main>
+<main class="patch-column">
 
 <!-- =====================================================================
      THE PATCH NOTES - READ THIS BEFORE ADDING AN ENTRY
@@ -143,8 +218,24 @@
        jumped without a commit behind it, the gap is simply inside a range and
        nobody has to know.
 
+     THE PAGE IS A BOARD
+       It is drawn as the Feed, and each entry is a text card on it: the same
+       ink-washed surround, the same rounded sheet with the paper grain on it,
+       the same 3:2 title page, and the same leaf corner, card stock and lift
+       the Feed gives a tile. That is not decoration - a changelog is a board
+       somebody laid out in order, and the Feed is already this app's answer to
+       reading a board as a column.
+
+       The classes are this page's own and every one restates a rule in
+       mobile.css; the table at the top of patch.css maps them. Do not reach for
+       the .feed-* names, and do not load mobile.css to get them - it opens by
+       hiding both lenses behind an attribute on <html> and is written against a
+       scroller a module positions tiles inside.
+
      ADDING AN ENTRY
-       1. Put it at the TOP of <main>, directly under this comment.
+       1. Put it at the TOP of <main class="patch-column">, directly under this
+          comment. The column is a flex stack, so the card needs no margin of
+          its own - the gap between cards is the Feed masonry's own GAP.
        2. Check the number against version.js before you finish.
 
        Nothing gets folded away and nothing gets archived to a second page. The
@@ -158,8 +249,8 @@
      stray close-comment ends this one early and dumps the rest of it onto the
      page as text.
 
-       div.patch-entry                 add "patch-milestone" only for an x.0
-         p.patch-version  = "0.156"    or "0.145 - 0.155". The number only
+       div.patch-entry                 the card. Add "patch-milestone" for an x.0
+         p.patch-version  = "0.188"    or "0.145 - 0.155". The number only
          p.patch-name     = "Two Words" the codename, see NAMING
          p.patch-date     = "13 August 2026"   from git log -1 --format=%ad
          ul.patch-list
@@ -218,7 +309,7 @@
          which is what keeps it out of the policy's hash list entirely.
      ===================================================================== -->
 
-<div class="patch-entry">
+<div class="patch-entry" id="r-under-the-floor">
   <p class="patch-version">0.156 - 0.187</p>
   <p class="patch-name">Under the Floor</p>
   <p class="patch-date">13 August 2026</p>
@@ -273,7 +364,7 @@
   </ul>
 </div>
 
-<div class="patch-entry">
+<div class="patch-entry" id="r-the-viewer">
   <p class="patch-version">0.145 - 0.155</p>
   <p class="patch-name">The Viewer</p>
   <p class="patch-date">12 August 2026</p>
@@ -302,7 +393,7 @@
   </ul>
 </div>
 
-<div class="patch-entry">
+<div class="patch-entry" id="r-both-hands">
   <p class="patch-version">0.135 - 0.144</p>
   <p class="patch-name">Both Hands</p>
   <p class="patch-date">12 August 2026</p>
@@ -333,7 +424,7 @@
   </ul>
 </div>
 
-<div class="patch-entry">
+<div class="patch-entry" id="r-threads-and-shapes">
   <p class="patch-version">0.130 - 0.134</p>
   <p class="patch-name">Threads and Shapes</p>
   <p class="patch-date">12 August 2026</p>
@@ -353,7 +444,7 @@
   </ul>
 </div>
 
-<div class="patch-entry">
+<div class="patch-entry" id="r-feed-and-playlist">
   <p class="patch-version">0.126 - 0.129</p>
   <p class="patch-name">Feed and Playlist</p>
   <p class="patch-date">11 August 2026</p>
@@ -369,7 +460,7 @@
   </ul>
 </div>
 
-<div class="patch-entry">
+<div class="patch-entry" id="r-regions">
   <p class="patch-version">0.117 - 0.125</p>
   <p class="patch-name">Regions</p>
   <p class="patch-date">4 - 6 August 2026</p>
@@ -385,7 +476,7 @@
   </ul>
 </div>
 
-<div class="patch-entry">
+<div class="patch-entry" id="r-grain-and-credit">
   <p class="patch-version">0.105 - 0.116</p>
   <p class="patch-name">Grain and Credit</p>
   <p class="patch-date">1 - 3 August 2026</p>
@@ -404,7 +495,7 @@
   </ul>
 </div>
 
-<div class="patch-entry">
+<div class="patch-entry" id="r-solid-ground">
   <p class="patch-version">0.87 - 0.92</p>
   <p class="patch-name">Solid Ground</p>
   <p class="patch-date">31 July 2026</p>
@@ -426,7 +517,7 @@
   </ul>
 </div>
 
-<div class="patch-entry">
+<div class="patch-entry" id="r-measured">
   <p class="patch-version">0.59 - 0.75</p>
   <p class="patch-name">Measured</p>
   <p class="patch-date">28 - 31 July 2026</p>
@@ -444,7 +535,7 @@
   </ul>
 </div>
 
-<div class="patch-entry">
+<div class="patch-entry" id="r-hardening">
   <p class="patch-version">0.41 - 0.57</p>
   <p class="patch-name">Hardening</p>
   <p class="patch-date">26 - 28 July 2026</p>
@@ -461,7 +552,7 @@
   </ul>
 </div>
 
-<div class="patch-entry">
+<div class="patch-entry" id="r-first-light">
   <p class="patch-version">0.00 - 0.21</p>
   <p class="patch-name">First Light</p>
   <p class="patch-date">25 July 2026</p>
@@ -487,11 +578,6 @@
 </div>
 
 </main>
-
-<footer class="patch-foot">
-  <span>mbrd by valjdakosta</span>
-  <a href="/">Back to the board</a>
-</footer>
 
 </div>
 </body>
