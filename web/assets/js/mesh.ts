@@ -25,11 +25,13 @@
 /**
  * The block above, said in types.
  *
- * Exported ahead of the rest of this module's annotation for the same reason
- * Item is exported out of board-model.ts while that one is still unchecked: a
- * `@ts-nocheck` hides errors in a file, not its declarations, and canvas/model.ts
- * needs to name what parseMesh() hands it rather than grow a private copy of
- * this shape. The first four fields are what every parser returns; the last
+ * These were exported ahead of the rest of this module's annotation, back when
+ * both this file and board-model.ts were unchecked, on the rule that a
+ * `@ts-nocheck` hides the errors in a file and not its declarations. Both are
+ * annotated now and the exports simply stand: canvas/model.ts names what
+ * parseMesh() hands it rather than growing a private copy of this shape, which
+ * is the point either way. The first four fields are what every parser returns;
+ * the last
  * three are OBJ's alone - a colour per vertex, the .mtl it asked for, and the
  * material name per triangle that applyMaterials() resolves against it.
  */

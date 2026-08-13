@@ -37,11 +37,11 @@ import {
   MOBILE_MIN_ROWS, MOBILE_BOTTOM_ROWS, mobileColumnCount,
   cloneSettings, layoutSettingsOf, settingsFor, defaultLayoutSettings,
 } from './board-model.ts';
-// Types only, and they are usable while this module is still unchecked: a
-// @ts-nocheck suppresses errors *in* a file, it does not hide its declarations.
-// The four signatures below are annotated ahead of the rest of the file for the
-// same reason Item was in board-model.ts - board-schema.ts is typed and reads
-// its geometry through them.
+// Types only. These were imported while this module was still unchecked, on the
+// rule that a @ts-nocheck suppresses the errors *in* a file without hiding its
+// declarations, so the four signatures below could be annotated ahead of the
+// rest of the file for board-schema.ts to read its geometry through. The file is
+// annotated now; the import stands unchanged, which is what that bet was for.
 import type { Geometry, Item, LayoutMode, ItemMeta } from './board-model.ts';
 import type { Box } from './geometry.ts';
 
