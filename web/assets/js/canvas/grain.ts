@@ -36,24 +36,8 @@
 // So: both position and size from the board. The size write is the new one.
 
 import { deviceRatio } from './viewport.ts';
+import type { Viewport } from './viewport.ts';
 import { sheetBox } from './mobile-frame.ts';
-import type { MobileScreenRect } from './mobile-frame.ts';
-
-/**
- * What this module asks of the viewport. Structural rather than the `Viewport`
- * class itself, because canvas/viewport.ts is still on the migration ledger and
- * a .ts class publishes no fields it does not declare. `mobileScreenRect` is
- * optional for the same reason the call site tests it - the render harnesses
- * mount a viewport that never went into the strip layout.
- */
-type GrainViewport = {
-  zoom: number;
-  width: number;
-  height: number;
-  isMobile: boolean;
-  toScreen(wx: number, wy: number): { x: number; y: number };
-  mobileScreenRect?: () => MobileScreenRect;
-};
 
 /**
  * The tile's side in *world* units - its on-screen size at 100%.
@@ -170,7 +154,7 @@ export function resetGrain(): void {
  * already there. This is what makes the settling tail of an inertial pan, and a
  * trackpad zoom arriving in fractions, cost nothing here.
  */
-export function paintGrain(vp: GrainViewport): void {
+export function paintGrain(vp: Viewport): void {
   const tile = TILE * vp.zoom;
   if (!(tile > 0)) return;
 
@@ -256,7 +240,7 @@ export function paintGrain(vp: GrainViewport): void {
  * re-tier, reads no setting and has no hole in it, and the only thing the two
  * share is an origin.
  */
-export function initGrain(vp: GrainViewport): void {
+export function initGrain(vp: Viewport): void {
   el = document.getElementById('grain');
   sheetEl = document.getElementById('mobile-board-frame');
   if (!el && !sheetEl) return;

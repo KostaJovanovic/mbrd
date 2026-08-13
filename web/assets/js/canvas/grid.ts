@@ -17,35 +17,9 @@
 
 import { board } from '../state.ts';
 import { deviceRatio, onTouch, mobilePerfFlags } from './viewport.ts';
+import type { Viewport } from './viewport.ts';
 import { MM_PER_INCH, PX_PER_INCH } from '../measure.ts';
 import { viewShift } from '../geometry.ts';
-import type { MobileScreenRect } from './mobile-frame.ts';
-
-/**
- * What this module asks of the viewport. Structural rather than the `Viewport`
- * class itself, for the reason GrainViewport gives at length in canvas/grain.ts:
- * canvas/viewport.ts is still on the migration ledger and a .ts class publishes
- * no fields it does not declare. The two optional members are optional because
- * the call sites test them - the render harnesses mount a viewport that never
- * went into the strip layout.
- */
-type GridViewport = {
-  el: HTMLElement;
-  width: number;
-  height: number;
-  zoom: number;
-  pan: { x: number; y: number };
-  cx: number;
-  cy: number;
-  left: number;
-  top: number;
-  moving: boolean;
-  isMobile: boolean;
-  toScreen(wx: number, wy: number): { x: number; y: number };
-  visibleRect(margin?: number): { x0: number; y0: number; x1: number; y1: number };
-  axisOrigin?: () => { x: number; y: number };
-  mobileScreenRect?: () => MobileScreenRect;
-};
 
 /** The screen-space box the lattice is drawn in - see inkBox(). */
 type InkBox = {
@@ -149,7 +123,14 @@ export function gridStep(base: number, zoom: number, touch = onTouch()): number 
  * selected width is explicitly measured in six or eight spaces, so doubling
  * the step at the fitted 8-wide zoom silently turns that choice into four.
  */
-export function boardGridStep(base: number, viewport: GridViewport | null | undefined, touch = onTouch()): number {
+// The two fields of a Viewport this asks for, named off the class rather than
+// re-stated: it is a pure function of a zoom and a mode, and tests/layout.test.js
+// exercises it with exactly those two and nothing else.
+export function boardGridStep(
+  base: number,
+  viewport: Pick<Viewport, 'zoom' | 'isMobile'> | null | undefined,
+  touch = onTouch(),
+): number {
   const step = base > 0 ? base : 64;
   const zoom = viewport?.zoom;
   return viewport?.isMobile
@@ -179,7 +160,12 @@ export function boardGridStep(base: number, viewport: GridViewport | null | unde
  * intersection - the board entirely above or below the window - comes back with
  * a zero side, and paintGrid() draws nothing at all.
  */
-export function inkBox(vp: GridViewport): InkBox {
+// Three fields and a method of a Viewport, named off the class for the reason
+// boardGridStep() gives: this one is pure too, and the test that guards the
+// clearance hands it a rectangle rather than a board.
+export function inkBox(
+  vp: Pick<Viewport, 'width' | 'height' | 'isMobile' | 'mobileScreenRect'>,
+): InkBox {
   const full = {
     x: 0, y: 0, w: vp.width, h: vp.height,
     topRadius: '0px', bottomRadius: '0px',
@@ -227,16 +213,17 @@ function placeInk(canvas: HTMLCanvasElement, box: InkBox) {
   canvas.style.bottom = 'auto';
 }
 
-/** The view the grid was last painted for - see paintGridOnView(). */
-let lastView: {
-  pan: { x: number; y: number };
-  zoom: number;
-  cx: number;
-  cy: number;
-  left: number;
-  top: number;
-  moving: boolean;
-} | null = null;
+/**
+ * The view the grid was last painted for - see paintGridOnView().
+ *
+ * A copy of seven of the viewport's fields rather than a reference to it: the
+ * live object is mutated in place on every frame, so holding one would be
+ * holding the present and comparing it against itself. Named off the class so
+ * the copy cannot describe a shape the original does not have.
+ */
+let lastView:
+  | Pick<Viewport, 'pan' | 'zoom' | 'cx' | 'cy' | 'left' | 'top' | 'moving'>
+  | null = null;
 
 /**
  * Paint the grid for a view change, unless the view did not move far enough to
@@ -260,12 +247,12 @@ let lastView: {
  * of an inertial pan as it settles below a pixel per frame, and a trackpad or
  * precision wheel delivering a zoom in fractions too small to show.
  */
-export function paintGridOnView(vp: GridViewport) {
+export function paintGridOnView(vp: Viewport) {
   if (viewSettledForGrid(vp)) return;
   paintGrid(vp);
 }
 
-function viewSettledForGrid(vp: GridViewport): boolean {
+function viewSettledForGrid(vp: Viewport): boolean {
   const p = lastView;
   if (!p) return false;
   // The viewport itself moved or resized: the box the grid is drawn in has
@@ -282,7 +269,7 @@ function viewSettledForGrid(vp: GridViewport): boolean {
   return viewShift(p, vp, vp.visibleRect(0)) < 1 / deviceRatio();
 }
 
-export function paintGrid(vp: GridViewport) {
+export function paintGrid(vp: Viewport) {
   const el = vp.el;
   const s = board.settings;
   // Recorded at the top rather than at the foot: this function has three exits,
@@ -451,7 +438,7 @@ function clearTiles(canvas: HTMLCanvasElement) {
  * on a board anybody has panned. A full-screen mask is real compositor work and
  * this one is doing nothing at all out there.
  */
-function punchHole(canvas: HTMLCanvasElement, o: { x: number; y: number }, vp: GridViewport, box: InkBox) {
+function punchHole(canvas: HTMLCanvasElement, o: { x: number; y: number }, vp: Viewport, box: InkBox) {
   // ...and dropped while the board is moving, wherever the origin is.
   //
   // The comment below is right that this is usually the same string twice, and
@@ -546,7 +533,7 @@ let axisWas: { x: number | null; y: number | null; t?: number; w: number; h: num
  * a CSS mask - which applies to the whole element. Drawn on that canvas, both
  * rules would have a notch taken out of them exactly where they cross.
  */
-function paintAxes(vp: GridViewport) {
+function paintAxes(vp: Viewport) {
   const canvas = ensureAxisCanvas(vp.el);
   const ctx = sizeCanvas(canvas, { w: vp.width, h: vp.height });
   if (!ctx) return;
@@ -680,7 +667,7 @@ let tierRaf = 0;
  * fade is kept for the slow, settled crossing it was written for. `vp.moving` is
  * already true by the time paintGrid runs inside a gesture (see _moving()).
  */
-function tierFade(step: number, vp: GridViewport) {
+function tierFade(step: number, vp: Viewport) {
   const now = performance.now();
   if (step !== tier.step) {
     const adjacent = tier.step > 0 && (step === tier.step * 2 || step === tier.step / 2);

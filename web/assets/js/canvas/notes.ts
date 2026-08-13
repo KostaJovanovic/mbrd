@@ -72,9 +72,11 @@ const textOf = (el: Element): string => el.textContent!;
  */
 export function noteHeight(id: string, width?: number | null): number {
   const el = nodeFor(id);
-  const card = el?.querySelector('.card');
-  const wrap = card?.querySelector('.note-rich');
-  if (!card || !wrap) return 0;
+  const card = el?.querySelector<HTMLElement>('.card');
+  const wrap = card?.querySelector<HTMLElement>('.note-rich');
+  // `!el` is the same test as `!card` said in the form the type understands:
+  // the card was reached through it, so one is missing only if the other is.
+  if (!el || !card || !wrap) return 0;
 
   const prevWidth = el.style.width;
   if (width != null) el.style.width = width.toFixed(2) + 'px';
@@ -366,7 +368,7 @@ export function editNote(
   // Spelled out rather than left to nodeFor(): this module is the note editor
   // and what it needs of the card is an element it can measure and make
   // editable, which is a statement about this file rather than about that one.
-  const found: HTMLElement | null = nodeFor(id);
+  const found: HTMLElement | undefined = nodeFor(id);
   const rich = found?.querySelector('.card')?.querySelector<HTMLElement>('.note-rich');
   if (!item || item.type !== 'note' || !found || !rich) return { finish: () => {} };
   // Bound again now they are known present. finish() below is a hoisted
@@ -762,7 +764,7 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>) {
   // runtime half of that claim: a page stripped of it takes the other branch.
   const dlg = document.getElementById('compose') as HTMLDialogElement | null;
   const mount = document.getElementById('compose-mount');
-  const node: HTMLElement | null = nodeFor(id);
+  const node: HTMLElement | undefined = nodeFor(id);
   if (!node || !mount || typeof dlg?.showModal !== 'function') { editNote(id); return; }
 
   // Shown at twice the size, which is a zoom and not a different note: the card

@@ -21,18 +21,19 @@
 import { bus } from '../state.ts';
 import { quality } from '../quality.ts';
 import { stillZoom } from './viewport.ts';
+import type { Viewport } from './viewport.ts';
 
 /** Long edge of a captured frame. It is only ever shown at a third size. */
 const MAX_STILL = 640;
 
 /**
  * All this module wants of the viewport: the magnification, and somewhere to
- * hear that it moved. Structural rather than `Viewport` itself, because that is
- * the whole of the dependency - and because canvas/viewport.ts is still on the
- * migration ledger, where a .ts class does not get its fields from the
- * `this.x =` assignments in its constructor the way a .js one did.
+ * hear that it moved. Named off `Viewport` rather than restated, because that
+ * really is the whole of the dependency and the two facts should not be able to
+ * disagree - the class declares its fields now, so a subset of it can be taken
+ * instead of described.
  */
-type ZoomSource = { zoom: number; onChange(fn: () => void): unknown };
+type ZoomSource = Pick<Viewport, 'zoom' | 'onChange'>;
 
 /**
  * The twin <img>, with the object URL it is currently showing hung off it. The

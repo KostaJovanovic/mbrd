@@ -36,14 +36,13 @@
 // clipped to exactly the same place - and this one never moves.
 
 import { mobilePerfFlags } from './viewport.ts';
+import type { Viewport, MobileScreenRect } from './viewport.ts';
 
-/** The board's sheet as the screen sees it - what mobileScreenRect() answers. */
-export type MobileScreenRect = {
-  left: number;
-  width: number;
-  top: number;
-  bottom: number;
-};
+// The sheet rectangle is declared by the module that answers it - see
+// MobileScreenRect in canvas/viewport.ts - and passed straight through here,
+// because this file's exported functions take one and callers of theirs need to
+// be able to name it.
+export type { MobileScreenRect };
 
 /** The sheet's clipped box, with a radius per end - see sheetBox(). */
 export type SheetBox = {
@@ -55,22 +54,7 @@ export type SheetBox = {
   bottomRadius: string;
 };
 
-/**
- * What this module asks of the viewport. Structural rather than the `Viewport`
- * class itself, because canvas/viewport.ts is still on the migration ledger and
- * a .ts class publishes no fields it does not declare.
- */
-type FrameViewport = {
-  el: HTMLElement;
-  width: number;
-  height: number;
-  isMobile: boolean;
-  onChange(fn: () => void): unknown;
-  mobileScreenRect(): MobileScreenRect;
-  mobileHeaderPx(): number;
-};
-
-let vp: FrameViewport | null = null;
+let vp: Viewport | null = null;
 let frameEl: HTMLElement | null = null;
 let mastEl: HTMLElement | null = null;
 
@@ -88,7 +72,7 @@ let lastShift: string | null = null;
 /** Whether the last pass was a Mobile one, so leaving the mode drops the cache. */
 let wasMobile: boolean | null = null;
 
-export function initMobileFrame(viewport: FrameViewport | null | undefined): void {
+export function initMobileFrame(viewport: Viewport | null | undefined): void {
   vp = viewport || null;
   if (!vp || !vp.el) return;
   // Queried off the viewport rather than the document, and tolerant of their
