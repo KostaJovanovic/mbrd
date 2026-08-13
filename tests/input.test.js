@@ -6,6 +6,7 @@ import {
   releasePointerSafely, resizeHandleAction, shortcutsSuppressed,
   readWheel, resetWheelKind, WHEEL_NOTCH, WHEEL_STREAM_MS,
   carryFloor, drewRectangle, marqueeHit,
+  GESTURE_MOVES, gestureTransition,
 } from '../web/assets/js/canvas/input.ts';
 
 test('double taps match within the touch timing and distance windows', () => {
@@ -152,6 +153,113 @@ test('a band round the whole fence takes it', () => {
 test('a card is still caught by the corner it pokes into a band', () => {
   // The overlap rule the union in fenceBox() exists to cover: unchanged.
   assert.equal(marqueeHit(card({ x: 140, y: 0 }), 0, -50, 100, 50), true);
+});
+
+// ---------------------------------------------------------------------------
+// The gesture machine
+// ---------------------------------------------------------------------------
+//
+// "Exactly one gesture is active at a time" is the property the whole input
+// module exists to protect, and until the modes were written down it was
+// asserted nowhere - it was kept by every branch of a 230-line pointerdown and a
+// 270-line pointermove remembering to. A runner cannot press a pointer, so what
+// it can check is the rule those branches follow: which mode may become which.
+//
+// The illegal cases below matter more than the legal ones. Every one of them was
+// reachable in the old shape, because a bag of booleans has no opinion about
+// which combinations exist.
+
+const MODES = ['idle', 'press', 'pan', 'pinch', 'marquee', 'move', 'resize'];
+
+test('the table covers every mode and names no others', () => {
+  assert.deepEqual(Object.keys(GESTURE_MOVES).sort(), [...MODES].sort());
+  for (const [from, tos] of Object.entries(GESTURE_MOVES)) {
+    for (const to of tos) {
+      assert.ok(MODES.includes(to), `${from} -> ${to} names a mode that does not exist`);
+      assert.notEqual(from, to, `${from} -> ${from} is a gesture re-entering itself`);
+    }
+  }
+});
+
+test('a press decides between the five things a press can be', () => {
+  // The five branches of onDown(), and nothing else may follow an idle pointer.
+  assert.equal(gestureTransition('idle', 'pan'), 'pan');
+  assert.equal(gestureTransition('idle', 'marquee'), 'marquee');
+  assert.equal(gestureTransition('idle', 'move'), 'move');
+  assert.equal(gestureTransition('idle', 'press'), 'press');
+  assert.equal(gestureTransition('idle', 'pinch'), 'pinch');
+});
+
+test('a resize only ever begins from a press that crossed the slop', () => {
+  // A grip press waits: it is a candidate until the pointer travels, which is
+  // what keeps a plain tap on a corner from touching snapped geometry. So there
+  // is no way into `resize` that does not go through `press`.
+  assert.equal(gestureTransition('press', 'resize'), 'resize');
+  assert.equal(gestureTransition('idle', 'resize'), null);
+  assert.equal(gestureTransition('move', 'resize'), null);
+  assert.equal(gestureTransition('pan', 'resize'), null);
+});
+
+test('a waiting press becomes the band or the resize, and nothing else', () => {
+  // The two intents `press` carries - a grip, and the second tap of a touch
+  // double-tap. It cannot turn into a pan or a move on the way.
+  assert.equal(gestureTransition('press', 'marquee'), 'marquee');
+  assert.equal(gestureTransition('press', 'pan'), null);
+  assert.equal(gestureTransition('press', 'move'), null);
+  assert.equal(gestureTransition('press', 'pinch'), null);
+});
+
+test('a second finger drops the gesture rather than converting it', () => {
+  // This is what "a second finger always wins" means mechanically: the drag is
+  // aborted - uncommitted, since nothing was finished - and the pinch is entered
+  // from idle. A pan that turned straight into a pinch would be a move whose
+  // geometry was never committed and never put back.
+  assert.equal(gestureTransition('pan', 'pinch'), null);
+  assert.equal(gestureTransition('move', 'pinch'), null);
+  assert.equal(gestureTransition('marquee', 'pinch'), null);
+  assert.equal(gestureTransition('resize', 'pinch'), null);
+});
+
+test('lifting one finger of a pinch leaves the survivor panning', () => {
+  assert.equal(gestureTransition('pinch', 'pan'), 'pan');
+  // And it is the only standing gesture that may become another one directly:
+  // every other way into a pan is a fresh press.
+  for (const from of MODES.filter(m => m !== 'idle' && m !== 'pinch')) {
+    assert.equal(gestureTransition(from, 'pan'), null,
+      `${from} -> pan is not a move this pipeline makes`);
+  }
+});
+
+test('every gesture can end, and only by ending', () => {
+  for (const from of MODES.filter(m => m !== 'idle')) {
+    assert.equal(gestureTransition(from, 'idle'), 'idle', `${from} must be releasable`);
+  }
+  // A press on the middle button in the middle of a left-drag used to replace
+  // the standing gesture where it lay - no commit, no cleanup. It is still the
+  // pipeline's own bug to fix; what changed is that the machine now says so.
+  assert.equal(gestureTransition('move', 'pan'), null);
+  assert.equal(gestureTransition('move', 'marquee'), null);
+  assert.equal(gestureTransition('marquee', 'move'), null);
+  assert.equal(gestureTransition('resize', 'move'), null);
+});
+
+test('a gesture cannot be released twice', () => {
+  // finishGesture() and abortGesture() both return early when nothing is
+  // standing, so the machine is never asked to do this. If it ever is, the pair
+  // have drifted apart and something committed a gesture that was already gone.
+  assert.equal(gestureTransition('idle', 'idle'), null);
+});
+
+test('the machine answers rubbish without throwing', () => {
+  // The only caller is a pointer handler. A wedged pointer is a worse failure
+  // than a wrong answer, so nothing here may throw - inherited property names
+  // included, which is what a bare lookup would have turned into a call on
+  // undefined.
+  assert.equal(gestureTransition('nonsense', 'pan'), null);
+  assert.equal(gestureTransition('idle', 'nonsense'), null);
+  assert.equal(gestureTransition('toString', 'pan'), null);
+  assert.equal(gestureTransition('idle', 'toString'), null);
+  assert.equal(gestureTransition(undefined, undefined), null);
 });
 
 test('a tap on a resize handle waits until it crosses the drag slop', () => {

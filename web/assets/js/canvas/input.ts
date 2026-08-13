@@ -9,9 +9,19 @@
 // Pointer + keyboard gestures for the canvas.
 //
 // One Pointer Events pipeline handles mouse, pen and touch. Exactly one gesture
-// is active at a time (`g`), and a second finger always wins - it cancels an
+// is active at a time, and a second finger always wins - it cancels an
 // in-progress drag and takes over as a pinch, which is what makes two-finger
 // pan/zoom feel right on a phone.
+//
+// That "exactly one" used to be a promise every branch had to keep on its own:
+// a nullable `g` plus a bag of booleans beside it, whose legal combinations
+// existed only in the author's head. It is structural now. There is a single
+// `gesture` object with a `mode` field - idle, press, pan, pinch, marquee, move,
+// resize - the data each gesture needs hangs off that object, and enter() is the
+// only thing in the file that writes `mode`. Entering a mode replaces the whole
+// object, so no field of the gesture just ended can be read by the next one, and
+// there is no second gesture for a branch to forget about. The legal moves are
+// GESTURE_MOVES, one table, below; enter() checks itself against it.
 //
 // Gesture map:
 //   left-drag empty space ....... pan            (an infinite board pans more than it marquees)
@@ -25,6 +35,36 @@
 //   two fingers on a touchpad ... pan in both axes;  pinch zooms to the cursor
 //   shift + wheel or scroll ..... pan sideways, out of the platform's axis rail
 //   two fingers on a screen ..... pan + pinch zoom
+//
+// What is a mode and what is not. A mode is a thing the pointer is *doing*, and
+// the test is whether two of them could be true at once: if they could, one of
+// them was never a mode. So the seven kinds the pipeline already had became the
+// seven modes (`resize-pending` and `touch-marquee` are the one `press` mode,
+// told apart by `intent` - both are a press waiting out the slop to find out
+// what it is), and everything that outlives or straddles a gesture stayed
+// outside it:
+//
+//   spaceDown ....... a modifier key. It is held *across* gestures and decides
+//                     what the next press means; folding it into the mode would
+//                     make "space is down while panning" unsayable.
+//   hover ........... where the cursor is. True of a pointer that is doing
+//                     nothing at all, which is the opposite of a mode.
+//   pointers ........ which pointers are down. The machine is driven by this,
+//                     not the same fact as what the machine is in.
+//   taps ............ the presses that may still turn out to be taps (`arm`,
+//                     `card`, `empty`) and the taps just past (`lastEmpty`,
+//                     `lastTitle`). Every one of these coexists with a live
+//                     gesture - the whole point of the pan-then-select gate is
+//                     that a pan is running while a selection is still pending -
+//                     and the last two outlive it by design, since a double tap
+//                     is two gestures. Five closure variables, one record.
+//   hold ............ the long-press timer, its origin, and the menu it opened.
+//                     Deliberately outside the gesture: it has to survive the
+//                     gesture being replaced by a second finger and cancel it.
+//                     Three closure variables, one record.
+//   midPaste ........ the X11 primary-selection guard. Outlives the gesture on
+//                     purpose - the paste it swallows arrives a task *after* the
+//                     pan that armed it. Three closure variables, one record.
 
 import { clamp } from '../util.ts';
 import {
@@ -473,6 +513,72 @@ const NUDGE_LEAP = 10;
  */
 const ON_LINE = 1e-6;
 
+// ---------------------------------------------------------------------------
+// The gesture machine
+// ---------------------------------------------------------------------------
+//
+// Every mode the one gesture can be in, and every move between them the pipeline
+// below actually makes. Written down as a table for two reasons: it is the only
+// place the legal set exists (it used to exist in the reader's head, spread over
+// a 230-line pointerdown and a 270-line pointermove), and it is pure, so the
+// rule can be tested by a runner that cannot press a pointer - which is the
+// whole of what tests/input.test.js can reach of this module.
+//
+//   idle ..... nothing is happening. Not "no gesture object": the object is
+//              always there, and this is what it says when the pointer is up.
+//   press .... a press has landed on something that needs the drag slop before
+//              it can say what it is - a resize grip, or the second tap of a
+//              touch double-tap. `intent` says which it will become.
+//   pan ...... the board is following the pointer.
+//   pinch .... two fingers, panning and zooming together.
+//   marquee .. a band is being dragged over the board.
+//   move ..... the selection is following the pointer.
+//   resize ... one card's geometry is following one grip.
+//
+// pinch is a mode the pipeline genuinely has and the plan's list did not name:
+// two fingers are not one of the six, and the code has carried a `pinch` kind
+// since the gesture existed.
+//
+// Note what is *not* in the table: there is no pan -> pinch, no move -> pinch,
+// no marquee -> pinch. A second finger arriving does not convert a live gesture;
+// it aborts it first (abortGesture, which lands in idle) and then enters pinch
+// from there. That is what "a second finger always wins" means mechanically -
+// the drag is dropped rather than committed - and leaving those edges out is
+// what makes the guard in enter() able to catch an abort somebody forgot.
+//
+// Nor is there idle -> idle. finishGesture() and abortGesture() both return
+// early when there is nothing standing, so the machine is never asked; an
+// attempt would mean a gesture was released twice.
+export const GESTURE_MOVES = {
+  // A press decides between five things - see onDown().
+  idle: ['pan', 'marquee', 'move', 'press', 'pinch'],
+  // The slop is crossed and the press becomes what it was waiting to be, or the
+  // finger lifts and it was nothing.
+  press: ['resize', 'marquee', 'idle'],
+  pan: ['idle'],
+  // One finger of a pinch lifts: the survivor carries on as a pan.
+  pinch: ['pan', 'idle'],
+  marquee: ['idle'],
+  move: ['idle'],
+  resize: ['idle'],
+};
+
+/**
+ * The mode a gesture in `from` reaches by being asked for `to`, or null when
+ * that is not a move this pipeline makes.
+ *
+ * Total, and total on rubbish too: an unknown mode name on either side is not a
+ * legal move rather than a throw, because the one caller is a pointer handler
+ * and a wedged pointer is a worse failure than a wrong one. hasOwn rather than a
+ * bare lookup for exactly that reason - `GESTURE_MOVES['toString']` is a
+ * function off the prototype, and calling .includes on it would be the throw
+ * this promises not to do.
+ */
+export function gestureTransition(from, to) {
+  const legal = Object.hasOwn(GESTURE_MOVES, from) ? GESTURE_MOVES[from] : null;
+  return legal?.includes(to) ? to : null;
+}
+
 // MIN_SIZE and MAX_SIZE are the resize limits, in world units, and they live in
 // geometry.js - a resize handle stopped being the only thing that sets a size
 // when snapping learned to lay the whole board onto the lattice. The reasoning
@@ -488,18 +594,61 @@ export function initInput(vp, cmds) {
 
   /** pointerId -> latest client position, for multi-touch bookkeeping. */
   const pointers = new Map();
-  let g = null;            // the active gesture
+
+  /**
+   * The one gesture. `mode` is which of GESTURE_MOVES' modes it is in, and every
+   * other field on the object is that mode's own working state - the marquee's
+   * corners, the move's snapshot, the resize's start box.
+   *
+   * Never null: `{ mode: 'idle' }` is what "nothing is happening" looks like, so
+   * every read is a question about the mode rather than a null check that a new
+   * branch can forget. Only enter() assigns it, and entering replaces the object
+   * whole, which is the mechanism behind "exactly one gesture at a time": the
+   * fields of the gesture just ended cannot be read by the one that follows,
+   * because they are not there any more. Mutating the *current* mode's own
+   * fields is ordinary and happens all over the pipeline (`moved` on a drag, the
+   * band's corners); it is `mode` that has exactly one writer.
+   */
+  let gesture = { mode: 'idle' };
+
+  /**
+   * Move into `mode`, carrying `data` as its state.
+   *
+   * The guard reports rather than refuses. A transition this file does not
+   * expect is a bug in this file, and the console is where a bug belongs - but
+   * the alternative, refusing the move, would leave a real hand mid-drag in a
+   * mode the rest of the pipeline has already stopped believing in, and a wedged
+   * pointer is a far worse failure than a wrong mode. So it warns and proceeds:
+   * the table is a description that checks itself, not a lock.
+   *
+   * One path can reach the warning with a real hand on it, and it is a bug this
+   * change deliberately did not fix: pressing the middle button in the middle of
+   * a left-drag is not an aux button (so onDown does not stand down) and does not
+   * add a pointer (a mouse is one pointer), so it lands in the pan branch on top
+   * of a standing move. That replaced the gesture where it lay before this table
+   * existed - no commit, no cleanup - and it still does. What is new is that it
+   * now says so out loud instead of leaving a card mid-drag with no undo entry.
+   */
+  function enter(mode, data = {}) {
+    if (!gestureTransition(gesture.mode, mode)) {
+      console.warn(`[mbrd] input: ${gesture.mode} -> ${mode} is not a gesture this pipeline makes`);
+    }
+    gesture = { mode, ...data };
+    return gesture;
+  }
+
   let spaceDown = false;
   // Linux/X11 pastes the primary selection on a middle click. A middle *click*
   // here should still paste - that is the platform's paste gesture - but a middle
   // *drag* means "pan", and the paste it fires on release would dump the
   // selection into the note being edited or the board's paste-to-import. So the
   // press is tracked, and only a drag (moved past the slop) arms the guard that
-  // swallows the release paste (below). midDownAt is the press origin; midDragged
-  // is set once it travels far enough to be a pan and not a click.
-  let midButtonDown = false;
-  let midDownAt = null;
-  let midDragged = false;
+  // swallows the release paste (below). `at` is the press origin; `dragged` is
+  // set once it travels far enough to be a pan and not a click.
+  //
+  // Not part of the gesture, and it could not be: the paste it exists to swallow
+  // arrives a task *after* the pan that armed it has been released.
+  const midPaste = { down: false, at: null, dragged: false };
   // Where the cursor is - a paste lands under it. Null on a touch device, where
   // pasteAt falls back to placing beside the original rather than guessing.
   let hover = null;
@@ -508,32 +657,42 @@ export function initInput(vp, cmds) {
   // delete, send to back and rename live. Held here rather than inside the
   // gesture, because it has to survive the gesture being replaced (a second
   // finger arriving) and be cancelled by it.
-  let pressTimer = 0;
-  let pressAt = null;
-  let longPressMenu = null;
-  let lastEmptyTap = null;
-  let emptyTapCandidate = null;
-  // The previous tap on the title card, so a second one within the double-tap
-  // window opens its inline rename. Read here in the pointer pipeline rather than
-  // through a dblclick listener because #viewport takes pointer capture on press
-  // and that retargets the compatibility mouse events to the viewport - the same
-  // reason the masthead reads its taps directly (see editBoardName in main.js).
-  let lastTitleTap = null;
-  // A pointer resting on an unpicked item - see needsTapFirst(). The gesture is
-  // a pan; this is what lets the lift still count as a tap if it never moved.
-  let armSelect = null;
-  // A press on a card's own surface, still eligible to count as a tap.
   //
-  // Separate from armSelect because the two cover different halves of the same
-  // gesture: armSelect only exists on the pan-then-select path (touch, or an
-  // unpicked card), where a mouse press on a card starts a move outright. A tap
-  // is a tap either way, so this is set on both and cleared by the same slop.
+  // `menu` is the menu a hold opened, kept so the native contextmenu some touch
+  // engines fire afterwards can be told from a fresh right-click.
+  const hold = { timer: 0, at: null, menu: null };
+  // The presses that may still turn out to be taps, and the taps just past.
   //
-  // Only a playing video does anything with it - see pauseOnTap(). Kept general
-  // in name rather than called videoTap, because what it records is a fact
-  // about the gesture and not about what happens to be under it.
-  let cardTap = null;
-  const cancelPress = () => { clearTimeout(pressTimer); pressTimer = 0; pressAt = null; };
+  // None of these is a mode: every one of them coexists with a live gesture -
+  // that is the whole point of the pan-then-select gate, which runs a pan while a
+  // selection is still pending - and the last two outlive it, since a double tap
+  // is two gestures with a gap in the middle.
+  //
+  //   arm ......... a pointer resting on an unpicked item - see needsTapFirst().
+  //                 The gesture is a pan; this is what lets the lift still count
+  //                 as a tap if it never moved.
+  //   card ........ a press on a card's own surface, still eligible to count as
+  //                 a tap. Separate from `arm` because the two cover different
+  //                 halves of the same gesture: `arm` only exists on the
+  //                 pan-then-select path (touch, or an unpicked card), where a
+  //                 mouse press on a card starts a move outright. A tap is a tap
+  //                 either way, so this is set on both and cleared by the same
+  //                 slop. Only a playing video does anything with it - see
+  //                 pauseOnTap(). Kept general in name rather than called
+  //                 videoTap, because what it records is a fact about the
+  //                 gesture and not about what happens to be under it.
+  //   empty ....... a touch on bare board that has not yet wandered, and so may
+  //                 still become the first half of a double tap.
+  //   lastEmpty ... the tap that did, waiting for its second.
+  //   lastTitle ... the previous tap on the title card, so a second one within
+  //                 the double-tap window opens its inline rename. Read here in
+  //                 the pointer pipeline rather than through a dblclick listener
+  //                 because #viewport takes pointer capture on press and that
+  //                 retargets the compatibility mouse events to the viewport -
+  //                 the same reason the masthead reads its taps directly (see
+  //                 editBoardName in main.js).
+  const taps = { arm: null, card: null, empty: null, lastEmpty: null, lastTitle: null };
+  const cancelPress = () => { clearTimeout(hold.timer); hold.timer = 0; hold.at = null; };
 
   /**
    * A tap on a playing video stops it.
@@ -652,15 +811,15 @@ export function initInput(vp, cmds) {
   }
 
   function setPanCursor() {
-    el.classList.toggle('can-pan', spaceDown && !g);
+    el.classList.toggle('can-pan', spaceDown && gesture.mode === 'idle');
   }
 
   function startPan(e) {
-    g = { kind: 'pan', lastX: e.clientX, lastY: e.clientY };
+    const pan = enter('pan', { lastX: e.clientX, lastY: e.clientY });
     // Only a finger throws the board - see flingFrom(). A mouse drag stops
     // where the button came up, which is what every desk-bound tool does and
     // what a pointer that can be held perfectly still makes possible.
-    if (e.pointerType === 'touch') g.track = [];
+    if (e.pointerType === 'touch') pan.track = [];
     el.classList.add('is-panning');
   }
 
@@ -679,11 +838,11 @@ export function initInput(vp, cmds) {
   /** A finger that has been still this long before lifting is not throwing. */
   const FLING_IDLE_MS = 70;
 
-  function trackPan(g, e) {
-    g.track.push({ x: e.clientX, y: e.clientY, t: e.timeStamp });
+  function trackPan(pan, e) {
+    pan.track.push({ x: e.clientX, y: e.clientY, t: e.timeStamp });
     // Anything older than the window can no longer be the start of the throw.
     // One at a time from the front: the array only ever holds a few events.
-    while (g.track.length > 2 && e.timeStamp - g.track[0].t > FLING_WINDOW_MS) g.track.shift();
+    while (pan.track.length > 2 && e.timeStamp - pan.track[0].t > FLING_WINDOW_MS) pan.track.shift();
   }
 
   /**
@@ -696,11 +855,11 @@ export function initInput(vp, cmds) {
    * last movement and the lift is what disqualifies that one. A finger that was
    * moving slowly the whole way is caught by glide()'s own floor instead.
    */
-  function flingFrom(g, at) {
-    if (!g.track || g.track.length < 2) return null;
-    const last = g.track[g.track.length - 1];
+  function flingFrom(pan, at) {
+    if (!pan.track || pan.track.length < 2) return null;
+    const last = pan.track[pan.track.length - 1];
     if (at - last.t > FLING_IDLE_MS) return null;
-    const first = g.track[0];
+    const first = pan.track[0];
     const dt = (last.t - first.t) / 1000;
     if (!(dt > 0)) return null;
     return { vx: (last.x - first.x) / dt, vy: (last.y - first.y) / dt };
@@ -713,28 +872,30 @@ export function initInput(vp, cmds) {
     // items every frame, so a card the band grew over and then left is released
     // again. Without the frozen base, select(ids, true) only ever adds, and the
     // live selection becomes the union of every position the band ever held.
-    g = {
-      kind: 'marquee', x0: p.x, y0: p.y, x1: p.x, y1: p.y,
+    const band = enter('marquee', {
+      x0: p.x, y0: p.y, x1: p.x, y1: p.y,
       additive: e.shiftKey, base: e.shiftKey ? [...selection] : null,
-    };
+    });
     marquee.hidden = false;
-    drawMarquee();
+    drawMarquee(band);
   }
 
-  function drawMarquee() {
+  // The band, passed in rather than read off `gesture`, so that these two say in
+  // their signature what the pipeline has to be in for them to mean anything.
+  function drawMarquee(band) {
     // The screen's top-left corner is the world's (min x, *max* y) - world y
     // points up.
-    const a = vp.toScreen(Math.min(g.x0, g.x1), Math.max(g.y0, g.y1));
-    const b = vp.toScreen(Math.max(g.x0, g.x1), Math.min(g.y0, g.y1));
+    const a = vp.toScreen(Math.min(band.x0, band.x1), Math.max(band.y0, band.y1));
+    const b = vp.toScreen(Math.max(band.x0, band.x1), Math.min(band.y0, band.y1));
     marquee.style.left = a.x + 'px';
     marquee.style.top = a.y + 'px';
     marquee.style.width = (b.x - a.x) + 'px';
     marquee.style.height = (b.y - a.y) + 'px';
   }
 
-  function applyMarquee() {
-    const x0 = Math.min(g.x0, g.x1), x1 = Math.max(g.x0, g.x1);
-    const y0 = Math.min(g.y0, g.y1), y1 = Math.max(g.y0, g.y1);
+  function applyMarquee(band) {
+    const x0 = Math.min(band.x0, band.x1), x1 = Math.max(band.x0, band.x1);
+    const y0 = Math.min(band.y0, band.y1), y1 = Math.max(band.y0, band.y1);
     // The band is a world rectangle, so the spatial index narrows the field to
     // the cells it overlaps instead of hit-testing the whole board every move.
     // queryRect is a superset (a cell is wider than the band's edge), so the
@@ -746,7 +907,7 @@ export function initInput(vp, cmds) {
     }
     // Additive: replace the live selection with base + enclosed each frame, so
     // the enclosed set tracks the band in both directions (see startMarquee).
-    if (g.additive) select([...new Set([...g.base, ...hit])]);
+    if (band.additive) select([...new Set([...band.base, ...hit])]);
     else select(hit);
   }
 
@@ -780,12 +941,12 @@ export function initInput(vp, cmds) {
     // along in the same undo entry as the move it belongs to.
     const before = snapshotGeom(moving);
     const start = vp.toWorld(e.clientX, e.clientY);
-    g = {
+    enter('move', {
       // `id` is what the pointer landed on and `lead` is what it has hold of -
       // the same thing except on a pinned item. The lift keeps `id`, because a
       // modified click peels the card you clicked; the drag arithmetic and the
       // stick preview read `lead`, because those are about the thing moving.
-      kind: 'move', id, lead: dragRoot(byId(id))?.id ?? id, moving, before, start,
+      id, lead: dragRoot(byId(id))?.id ?? id, moving, before, start,
       // The sides come along as well as the corner: snapping puts the lead's low
       // edges on lines, and an edge is its centre less half its size.
       origin: before.map(b => ({ id: b.id, x: b.x, y: b.y, w: b.w, h: b.h })),
@@ -801,7 +962,7 @@ export function initInput(vp, cmds) {
       // re-measured on release. It is a towed follower now, whatever the
       // selection says.
       driven: roots,
-    };
+    });
     for (const sid of moving) ensureMounted(sid);
   }
 
@@ -903,8 +1064,8 @@ export function initInput(vp, cmds) {
       return { id: rid, box: { x: r.x, y: r.y, w: r.w, h: r.h, rot: r.rot, z: r.z } };
     });
     for (const rid of riders) ensureMounted(rid);
-    g = {
-      kind: 'resize', id, corner, node,
+    enter('resize', {
+      id, corner, node,
       before: followers.length ? before.concat(snapshotGeom(riders)) : before,
       followers,
       // Resizing a note changes how much of it is over what it is lying on, so
@@ -951,7 +1112,7 @@ export function initInput(vp, cmds) {
       // Kept as a field rather than folded into the XOR below because it is the
       // *default* for this grip, and a future one may well want its own.
       lockAspect: false,
-    };
+    });
   }
 
   // ---- pointer pipeline -------------------------------------------------
@@ -966,20 +1127,22 @@ export function initInput(vp, cmds) {
     vp.stopAnim();
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
-    // A second finger always converts the gesture into a pinch.
+    // A second finger always converts the gesture into a pinch - by dropping
+    // whatever was standing (abortGesture, which lands in idle) and entering the
+    // pinch from there, never by converting one live gesture into another. That
+    // is why GESTURE_MOVES has no pan -> pinch edge to travel along.
     if (pointers.size === 2) {
       cancelPress();
-      emptyTapCandidate = null;
-      lastEmptyTap = null;
-      armSelect = null;
-      cardTap = null;
+      taps.empty = null;
+      taps.lastEmpty = null;
+      taps.arm = null;
+      taps.card = null;
       abortGesture();
       const [a, b] = [...pointers.values()];
-      g = {
-        kind: 'pinch',
+      enter('pinch', {
         dist: Math.hypot(a.x - b.x, a.y - b.y) || 1,
         mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
-      };
+      });
       return;
     }
     if (pointers.size > 2) return;
@@ -1040,14 +1203,15 @@ export function initInput(vp, cmds) {
     // and selects as usual, recording itself for the second to match against.
     if (id && byId(id)?.type === 'title') {
       const now = e.timeStamp;
-      if (lastTitleTap && now - lastTitleTap.at <= DOUBLE_TAP_MS
-          && Math.hypot(e.clientX - lastTitleTap.x, e.clientY - lastTitleTap.y) <= DOUBLE_TAP_SLOP) {
-        lastTitleTap = null;
+      const last = taps.lastTitle;
+      if (last && now - last.at <= DOUBLE_TAP_MS
+          && Math.hypot(e.clientX - last.x, e.clientY - last.y) <= DOUBLE_TAP_SLOP) {
+        taps.lastTitle = null;
         cmds.editTitleText?.();
         pointers.delete(e.pointerId);
         return;
       }
-      lastTitleTap = { x: e.clientX, y: e.clientY, at: now };
+      taps.lastTitle = { x: e.clientX, y: e.clientY, at: now };
     }
     // A real control inside a card (the audio scrubber, a note being edited)
     // owns the whole gesture: no capture, no drag. Capturing here would redirect
@@ -1061,10 +1225,10 @@ export function initInput(vp, cmds) {
     const widget = target?.closest('audio, video[controls], input, button, a, .wave, .vtrack, .model-stage, [contenteditable="true"], [contenteditable="plaintext-only"]');
     const tap = { x: e.clientX, y: e.clientY, at: e.timeStamp };
     const doubleTapDrag = e.pointerType === 'touch' && !id && !widget
-      && isDoubleTap(lastEmptyTap, tap);
+      && isDoubleTap(taps.lastEmpty, tap);
     if (e.pointerType === 'touch') {
-      if (doubleTapDrag || id || widget) lastEmptyTap = null;
-      emptyTapCandidate = !doubleTapDrag && !id && !widget
+      if (doubleTapDrag || id || widget) taps.lastEmpty = null;
+      taps.empty = !doubleTapDrag && !id && !widget
         ? { pointerId: e.pointerId, x: e.clientX, y: e.clientY }
         : null;
     }
@@ -1083,9 +1247,9 @@ export function initInput(vp, cmds) {
 
     if (spaceDown || e.button === 1) {
       if (e.button === 1) {
-        midButtonDown = true;
-        midDragged = false;
-        midDownAt = { x: e.clientX, y: e.clientY };
+        midPaste.down = true;
+        midPaste.dragged = false;
+        midPaste.at = { x: e.clientX, y: e.clientY };
       }
       e.preventDefault();
       startPan(e);
@@ -1099,20 +1263,27 @@ export function initInput(vp, cmds) {
       // a whole selection. So with more than one card selected a grip press is
       // not a resize at all - it falls through to the move branch below and picks
       // the selection up, the same as a press anywhere else on the card.
-      g = {
-        kind: 'resize-pending',
+      //
+      // `press` with an intent, rather than a mode of its own: this and the
+      // double-tap band below are the same shape of thing - a press that has
+      // landed and is waiting out the slop to find out what it is - and `intent`
+      // is which of the two it will become.
+      enter('press', {
+        intent: 'resize',
         id,
         corner: grip.dataset.g,
         x: e.clientX,
         y: e.clientY,
         node: target.closest('.item'),
-      };
+      });
     } else if (doubleTapDrag) {
       // Wait for movement before showing or applying the marquee. A plain double
       // tap does nothing now (it used to fit the board); holding and dragging the
       // second tap turns into select.
       const p = vp.toWorld(e.clientX, e.clientY);
-      g = { kind: 'touch-marquee', clientX: e.clientX, clientY: e.clientY, x0: p.x, y0: p.y };
+      enter('press', {
+        intent: 'marquee', clientX: e.clientX, clientY: e.clientY, x0: p.x, y0: p.y,
+      });
     } else if (id && needsTapFirst(id) && (e.pointerType === 'touch' || vp.isMobile)) {
       // Touch, or the mobile layout whatever the pointer. A finger - and the
       // mobile board, which is a vertical feed you scroll far more than you
@@ -1128,28 +1299,31 @@ export function initInput(vp, cmds) {
       // Pan now, decide on the lift. Nothing is selected here: a press that
       // turns into a drag has to leave the board exactly as a press on empty
       // space would, or the gate would still be moving the selection about.
-      armSelect = {
+      taps.arm = {
         pointerId: e.pointerId,
         id,
         x: e.clientX,
         y: e.clientY,
         additive: e.shiftKey || e.ctrlKey || e.metaKey,
       };
-      cardTap = { pointerId: e.pointerId, id, x: e.clientX, y: e.clientY, slop: TAP_MOVE_SLOP };
+      taps.card = { pointerId: e.pointerId, id, x: e.clientX, y: e.clientY, slop: TAP_MOVE_SLOP };
       startPan(e);
     } else if (id) {
       const additive = e.shiftKey || e.ctrlKey || e.metaKey;
       const held = selection.has(id);
       if (additive) select([id], true);
       else if (!held) select([id]);
-      cardTap = { pointerId: e.pointerId, id, x: e.clientX, y: e.clientY, slop: DRAG_SLOP };
+      taps.card = { pointerId: e.pointerId, id, x: e.clientX, y: e.clientY, slop: DRAG_SLOP };
       startMove(e, id);
       // Carried on the gesture so the lift can tell a selection edit from a
       // pick - see `unpick` in endPointer(). A modified press means "toggle
       // this card", and whether the lift should drop it again depends on what
       // the press found, not on how big the selection ended up.
-      g.additive = additive;
-      g.wasSelected = held;
+      //
+      // Written straight onto the standing gesture: it is the `move` mode's own
+      // state, and only `mode` itself has to go through enter().
+      gesture.additive = additive;
+      gesture.wasSelected = held;
     } else if (e.shiftKey || e.ctrlKey || e.metaKey) {
       startMarquee(e);
     } else {
@@ -1168,19 +1342,19 @@ export function initInput(vp, cmds) {
     // duration and then checks that the press is still a press: a drag cancels
     // it from pointermove, and lifting cancels it from endPointer.
     if (e.pointerType === 'touch' && pointers.size === 1) {
-      pressAt = { x: e.clientX, y: e.clientY, id };
-      pressTimer = setTimeout(() => {
-        const p = pressAt;
+      hold.at = { x: e.clientX, y: e.clientY, id };
+      hold.timer = setTimeout(() => {
+        const p = hold.at;
         cancelPress();
         if (!p) return;
-        emptyTapCandidate = null;
-        lastEmptyTap = null;
-        armSelect = null;
-        cardTap = null;
+        taps.empty = null;
+        taps.lastEmpty = null;
+        taps.arm = null;
+        taps.card = null;
         // Whatever the finger had started - a move, a pan, a marquee - it was
         // not that. Dropped rather than committed, since nothing moved.
         abortGesture();
-        longPressMenu = { x: p.x, y: p.y, at: performance.now() };
+        hold.menu = { x: p.x, y: p.y, at: performance.now() };
         openMenuAt(p.x, p.y, p.id);
       }, LONG_PRESS_MS);
     }
@@ -1196,16 +1370,16 @@ export function initInput(vp, cmds) {
     if (e.pointerType !== 'touch') hover = vp.cursor = { x: e.clientX, y: e.clientY };
     if (!pointers.has(e.pointerId)) return;
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (emptyTapCandidate?.pointerId === e.pointerId
-        && Math.hypot(e.clientX - emptyTapCandidate.x, e.clientY - emptyTapCandidate.y) > TAP_MOVE_SLOP) {
-      emptyTapCandidate = null;
-      lastEmptyTap = null;
+    if (taps.empty?.pointerId === e.pointerId
+        && Math.hypot(e.clientX - taps.empty.x, e.clientY - taps.empty.y) > TAP_MOVE_SLOP) {
+      taps.empty = null;
+      taps.lastEmpty = null;
     }
     // The same slop, for the same reason: a finger that has travelled this far
     // was panning, and a pan must not leave a selection behind it.
-    if (armSelect?.pointerId === e.pointerId
-        && Math.hypot(e.clientX - armSelect.x, e.clientY - armSelect.y) > TAP_MOVE_SLOP) {
-      armSelect = null;
+    if (taps.arm?.pointerId === e.pointerId
+        && Math.hypot(e.clientX - taps.arm.x, e.clientY - taps.arm.y) > TAP_MOVE_SLOP) {
+      taps.arm = null;
     }
     // And a card that has been dragged was not tapped. Its own slop, carried on
     // the record, because the two paths that set it disagree about how far a
@@ -1215,87 +1389,96 @@ export function initInput(vp, cmds) {
     // reason. On the move path the card is already following the pointer at
     // DRAG_SLOP, and a gesture that visibly moved a card should not also have
     // paused it.
-    if (cardTap?.pointerId === e.pointerId
-        && Math.hypot(e.clientX - cardTap.x, e.clientY - cardTap.y) > cardTap.slop) {
-      cardTap = null;
+    if (taps.card?.pointerId === e.pointerId
+        && Math.hypot(e.clientX - taps.card.x, e.clientY - taps.card.y) > taps.card.slop) {
+      taps.card = null;
     }
     // A finger that has travelled is dragging, not pressing. The same slop the
     // move gesture uses, so the two agree about when a press has become a drag.
-    if (pressAt && Math.hypot(e.clientX - pressAt.x, e.clientY - pressAt.y) > DRAG_SLOP) {
+    if (hold.at && Math.hypot(e.clientX - hold.at.x, e.clientY - hold.at.y) > DRAG_SLOP) {
       cancelPress();
-      if (e.pointerType === 'touch') lastEmptyTap = null;
+      if (e.pointerType === 'touch') taps.lastEmpty = null;
     }
-    if (!g) return;
+    if (gesture.mode === 'idle') return;
 
-    if (g.kind === 'resize-pending') {
-      const pending = g;
+    // The branches are the modes, in the order they were always tested in. The
+    // one that does not end in a return is deliberate: a grip press that crosses
+    // the slop starts the resize and then falls through to the resize branch
+    // below, so the event that decided it also applies its first step.
+    if (gesture.mode === 'press' && gesture.intent === 'resize') {
+      const pending = gesture;
       const action = resizeHandleAction(
         { x: pending.x, y: pending.y },
         { x: e.clientX, y: e.clientY },
       );
       if (action !== 'resize') return;
       cancelPress();
+      // Leaves the machine in `resize` - unless the card has gone, in which case
+      // startResize() returns without entering and the press stands until the
+      // finger lifts, which is what it did before.
       startResize(e, pending.id, pending.corner, pending);
     }
 
-    if (g.kind === 'pinch') {
+    if (gesture.mode === 'pinch') {
       const [a, b] = [...pointers.values()];
       if (!a || !b) return;
       const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
       const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-      vp.panByScreen(mid.x - g.mid.x, mid.y - g.mid.y);
-      vp.zoomAt(mid.x, mid.y, dist / g.dist);
-      g.dist = dist;
-      g.mid = mid;
+      vp.panByScreen(mid.x - gesture.mid.x, mid.y - gesture.mid.y);
+      vp.zoomAt(mid.x, mid.y, dist / gesture.dist);
+      gesture.dist = dist;
+      gesture.mid = mid;
       return;
     }
 
-    if (g.kind === 'pan') {
-      vp.panByScreen(e.clientX - g.lastX, e.clientY - g.lastY);
-      g.lastX = e.clientX;
-      g.lastY = e.clientY;
-      if (g.track) trackPan(g, e);
+    if (gesture.mode === 'pan') {
+      vp.panByScreen(e.clientX - gesture.lastX, e.clientY - gesture.lastY);
+      gesture.lastX = e.clientX;
+      gesture.lastY = e.clientY;
+      if (gesture.track) trackPan(gesture, e);
       // Once a middle-button pan clears the slop it is a drag, not a click, so
       // the release paste is the pan's and gets swallowed rather than pasted.
-      if (midButtonDown && !midDragged && midDownAt
-          && Math.hypot(e.clientX - midDownAt.x, e.clientY - midDownAt.y) > DRAG_SLOP) {
-        midDragged = true;
+      if (midPaste.down && !midPaste.dragged && midPaste.at
+          && Math.hypot(e.clientX - midPaste.at.x, e.clientY - midPaste.at.y) > DRAG_SLOP) {
+        midPaste.dragged = true;
       }
       return;
     }
 
-    if (g.kind === 'touch-marquee') {
-      if (Math.hypot(e.clientX - g.clientX, e.clientY - g.clientY) <= DRAG_SLOP) return;
+    if (gesture.mode === 'press' && gesture.intent === 'marquee') {
+      if (Math.hypot(e.clientX - gesture.clientX, e.clientY - gesture.clientY) <= DRAG_SLOP) return;
       const p = vp.toWorld(e.clientX, e.clientY);
-      g = { kind: 'marquee', x0: g.x0, y0: g.y0, x1: p.x, y1: p.y, additive: false };
+      const band = enter('marquee', {
+        x0: gesture.x0, y0: gesture.y0, x1: p.x, y1: p.y, additive: false,
+      });
       marquee.hidden = false;
-      drawMarquee();
-      applyMarquee();
+      drawMarquee(band);
+      applyMarquee(band);
       return;
     }
 
-    if (g.kind === 'marquee') {
+    if (gesture.mode === 'marquee') {
       const p = vp.toWorld(e.clientX, e.clientY);
-      g.x1 = p.x; g.y1 = p.y;
-      drawMarquee();
-      applyMarquee();
+      gesture.x1 = p.x; gesture.y1 = p.y;
+      drawMarquee(gesture);
+      applyMarquee(gesture);
       return;
     }
 
-    if (g.kind === 'move') {
+    if (gesture.mode === 'move') {
       const p = vp.toWorld(e.clientX, e.clientY);
-      const dx = p.x - g.start.x, dy = p.y - g.start.y;
-      if (!g.moved && Math.hypot(dx * vp.zoom, dy * vp.zoom) < DRAG_SLOP) return;
+      const dx = p.x - gesture.start.x, dy = p.y - gesture.start.y;
+      if (!gesture.moved && Math.hypot(dx * vp.zoom, dy * vp.zoom) < DRAG_SLOP) return;
       // The press has become a drag. Raise now, so the stack change belongs to
       // the move that is about to be committed - see raiseToFront.
-      if (!g.moved) {
-        raiseToFront(g.moving);
+      if (!gesture.moved) {
+        raiseToFront(gesture.moving);
         // The pointer is captured by #viewport, so the cursor is #viewport's
         // however far the card under it wants a grabbing hand. Mark the viewport
         // for the length of the drag - see #viewport.is-moving in the CSS.
         el.classList.add('is-moving');
       }
-      g.moved = true;
+      gesture.moved = true;
       // Snap the dragged item; everything else keeps its offset from it, so a
       // multi-selection moves rigidly instead of collapsing onto the grid.
       //
@@ -1306,7 +1489,7 @@ export function initInput(vp, cmds) {
       // pushed both its sides half a cell off instead. Edges are also what
       // snapAll() lines up when snapping is switched on, so this is the same
       // arrangement being kept rather than a second one being imposed.
-      const lead = g.origin.find(o => o.id === g.lead) || g.origin[0];
+      const lead = gesture.origin.find(o => o.id === gesture.lead) || gesture.origin[0];
       const low = { x: lead.x + dx - lead.w / 2, y: lead.y + dy - lead.h / 2 };
       let sx = snapLow(low.x) - low.x;
       let sy = snapLow(low.y) - low.y;
@@ -1317,25 +1500,26 @@ export function initInput(vp, cmds) {
       // sticky that jumps a few pixels off the picture reads as a refusal. Only
       // the note being dragged is measured; everything else keeps snapping.
       //
-      // g.lead, not g.id: a press on a pinned star is dragging the photograph,
-      // and the photograph is not looking for a host. Asking about the star
-      // would light up whatever it is about to be carried over.
-      const leadItem = byId(g.lead);
+      // The gesture's `lead`, not its `id`: a press on a pinned star is dragging
+      // the photograph, and the photograph is not looking for a host. Asking
+      // about the star would light up whatever it is about to be carried over.
+      const leadItem = byId(gesture.lead);
       const host = isSticky(leadItem)
         ? wouldStick(
-          { x: lead.x + dx, y: lead.y + dy, w: leadItem.w, h: leadItem.h }, g.lead, leadItem)
+          { x: lead.x + dx, y: lead.y + dy, w: leadItem.w, h: leadItem.h },
+          gesture.lead, leadItem)
         : null;
       showStickTarget(host);
       if (board.settings.snap && host) {
         sx = 0;
         sy = 0;
       }
-      // flatMap rather than map: g.origin was taken when the gesture began, and
+      // flatMap rather than map: `origin` was taken when the gesture began, and
       // an item can leave the board mid-drag - deleted from the bin, undone, or
       // swapped out wholesale by a load. Dropping it here rather than reading w
       // off undefined is the same call applyGeom() and snapshotGeom() already
       // make; the gesture then simply carries what is left.
-      applyGeom(g.origin.flatMap(o => {
+      applyGeom(gesture.origin.flatMap(o => {
         const it = byId(o.id);
         return it
           ? [{ id: o.id, x: o.x + dx + sx, y: o.y + dy + sy, w: it.w, h: it.h, rot: it.rot, z: it.z }]
@@ -1344,43 +1528,45 @@ export function initInput(vp, cmds) {
       return;
     }
 
-    if (g.kind === 'resize') {
+    if (gesture.mode === 'resize') {
       // The card being resized can leave the board mid-gesture - deleted from
       // the bin, undone, or swapped out wholesale by a load. Checked at the head
       // of the branch rather than at the note-floor read below, which was the
       // first line to touch it and threw; abortGesture() commits whatever the
       // gesture had already done and lets go, which is what a release would have
       // done a moment later anyway.
-      const it = byId(g.id);
+      const grip = gesture;
+      const it = byId(grip.id);
       if (!it) { abortGesture(); return; }
       const p = vp.toWorld(e.clientX, e.clientY);
-      const dx = p.x - g.start.x, dy = p.y - g.start.y;
+      const dx = p.x - grip.start.x, dy = p.y - grip.start.y;
       // Zero on an axis the handle does not touch: dragging the east edge must
       // leave the height alone, where a corner moves both.
-      const c = g.corner;
+      const c = grip.corner;
       const signX = c.includes('e') ? 1 : c.includes('w') ? -1 : 0;
       // 'n' is the +y side of the item, because world y points up.
       const signY = c.includes('n') ? 1 : c.includes('s') ? -1 : 0;
-      let w = resizeAxis(signX, g.box.x, g.box.w, dx);
-      let h = resizeAxis(signY, g.box.y, g.box.h, dy);
+      let w = resizeAxis(signX, grip.box.x, grip.box.w, dx);
+      let h = resizeAxis(signY, grip.box.y, grip.box.h, dy);
       // Apply the card and carry its stuck notes with it. Each note is placed at
-      // the fraction of the card it held when the drag began (g.box is that start
-      // box), so a note near a moving edge is dragged along by that edge and none
-      // is left hanging off the shrunk card. No followers -> a plain one-item write.
+      // the fraction of the card it held when the drag began (grip.box is that
+      // start box), so a note near a moving edge is dragged along by that edge and
+      // none is left hanging off the shrunk card. No followers -> a plain
+      // one-item write.
       const applyResize = host => {
-        if (!g.followers.length) return applyGeom([host]);
-        const riders = g.followers.map(f => {
-          const at = stuckPlacement(f.box, g.box, host);
+        if (!grip.followers.length) return applyGeom([host]);
+        const riders = grip.followers.map(f => {
+          const at = stuckPlacement(f.box, grip.box, host);
           return { id: f.id, x: at.x, y: at.y, w: f.box.w, h: f.box.h, rot: f.box.rot, z: f.box.z };
         });
         applyGeom([host, ...riders]);
       };
-      if (g.lockAspect !== e.shiftKey) {          // XOR: shift inverts the default
+      if (grip.lockAspect !== e.shiftKey) {       // XOR: shift inverts the default
         // The dragged side leads and the other follows it at the picture's own
         // proportion. The side you are watching move is the right one to lead:
         // it is the one being aimed.
-        const ratio = g.box.w / g.box.h;
-        if (Math.abs(w - g.box.w) > Math.abs(h - g.box.h)) h = w / ratio;
+        const ratio = grip.box.w / grip.box.h;
+        if (Math.abs(w - grip.box.w) > Math.abs(h - grip.box.h)) h = w / ratio;
         else w = h * ratio;
         // The follower can land outside a limit the dragged side never reached,
         // and clamping only the offender would change the ratio - the single
@@ -1411,8 +1597,8 @@ export function initInput(vp, cmds) {
       // one - it is about a region drawn too small to hold what is standing in
       // it, whose cards would hang over the border while the memo still called
       // them members. See carryFloor(), which is the whole of the arithmetic.
-      if (g.holds) {
-        const floor = carryFloor(g.box, g.holds);
+      if (grip.holds) {
+        const floor = carryFloor(grip.box, grip.holds);
         w = Math.max(w, floor.w);
         h = Math.max(h, floor.h);
       }
@@ -1426,7 +1612,7 @@ export function initInput(vp, cmds) {
       // whereas a note with its last paragraph cut off is wrong. It can only
       // ever raise the height, so it never threatens the floor.
       if (it.type === 'note') {
-        let floor = noteFloor(g.id, w);
+        let floor = noteFloor(grip.id, w);
         // Up to the next whole cell rather than to the bare floor, so the one
         // height this file sets from something other than the pointer still
         // leaves the note sitting in the grid. Up and never down: rounding to
@@ -1443,7 +1629,12 @@ export function initInput(vp, cmds) {
           h = floor;
           // The height was forced, so the aspect lock no longer holds and the
           // centre has to be recomputed from the height we actually got.
-          if (!signY) return applyResize({ id: g.id, x: g.box.x + signX * (w - g.box.w) / 2, y: g.box.y, w, h, rot: it.rot, z: it.z });
+          if (!signY) {
+            return applyResize({
+              id: grip.id, x: grip.box.x + signX * (w - grip.box.w) / 2, y: grip.box.y,
+              w, h, rot: it.rot, z: it.z,
+            });
+          }
         }
       }
       // The opposite edge stays put, so the centre shifts by half the growth -
@@ -1451,9 +1642,9 @@ export function initInput(vp, cmds) {
       // grows symmetrically about its centre, which is what an aspect-locked
       // side drag should do.
       applyResize({
-        id: g.id,
-        x: g.box.x + signX * (w - g.box.w) / 2,
-        y: g.box.y + signY * (h - g.box.h) / 2,
+        id: grip.id,
+        x: grip.box.x + signX * (w - grip.box.w) / 2,
+        y: grip.box.y + signY * (h - grip.box.h) / 2,
         w, h, rot: it.rot, z: it.z,
       });
     }
@@ -1464,30 +1655,32 @@ export function initInput(vp, cmds) {
     // lands in the same task as this pointerup - so clearing the guard now would
     // uncover the very paste it exists to catch. Defer the clear to the next task
     // instead, past the click that carries the paste.
-    if (e.button === 1) setTimeout(() => { midButtonDown = false; }, 0);
-    const tap = e.type === 'pointerup' && emptyTapCandidate?.pointerId === e.pointerId
-      ? { x: emptyTapCandidate.x, y: emptyTapCandidate.y, at: e.timeStamp }
+    if (e.button === 1) setTimeout(() => { midPaste.down = false; }, 0);
+    const tap = e.type === 'pointerup' && taps.empty?.pointerId === e.pointerId
+      ? { x: taps.empty.x, y: taps.empty.y, at: e.timeStamp }
       : null;
-    if (emptyTapCandidate?.pointerId === e.pointerId) emptyTapCandidate = null;
+    if (taps.empty?.pointerId === e.pointerId) taps.empty = null;
     // The lift that turns a held-still press into a pick. pointerup only: a
     // pointercancel is the system taking the gesture away - a notification
     // shade, a call - and nothing a person did.
-    if (armSelect?.pointerId === e.pointerId) {
-      if (e.type === 'pointerup') select([armSelect.id], armSelect.additive);
-      armSelect = null;
+    if (taps.arm?.pointerId === e.pointerId) {
+      if (e.type === 'pointerup') select([taps.arm.id], taps.arm.additive);
+      taps.arm = null;
     }
     // pointerup only, like the pick above and for the same reason: a
     // pointercancel is the system taking the gesture away, not a person
     // finishing one.
-    if (cardTap?.pointerId === e.pointerId) {
-      if (e.type === 'pointerup') pauseOnTap(cardTap.id);
-      cardTap = null;
+    if (taps.card?.pointerId === e.pointerId) {
+      if (e.type === 'pointerup') pauseOnTap(taps.card.id);
+      taps.card = null;
     }
     cancelPress();
     pointers.delete(e.pointerId);
     releasePointerSafely(el, e.pointerId);
-    if (!g) return;
-    if (g.kind === 'pinch' && pointers.size >= 1) {
+    // Every clause above is about the *pointer* and holds whatever the gesture
+    // is - including when there is none, which is why they run before this.
+    if (gesture.mode === 'idle') return;
+    if (gesture.mode === 'pinch' && pointers.size >= 1) {
       // One finger lifted mid-pinch: fall back to a pan with the survivor.
       //
       // No `track`, so this pan cannot throw the board. Lifting one finger of a
@@ -1497,15 +1690,15 @@ export function initInput(vp, cmds) {
       // that was about the zoom. A finger that then deliberately drags is a
       // finger that can lift and start again.
       const [p] = [...pointers.values()];
-      g = { kind: 'pan', lastX: p.x, lastY: p.y };
+      enter('pan', { lastX: p.x, lastY: p.y });
       return;
     }
     // Read while the gesture is still standing, spent once it is not.
     // pointerup only: a pointercancel is the system taking the gesture away, and
     // a board that carried on gliding after a notification pulled the finger off
     // it would be moving on nobody's instruction.
-    const thrown = e.type === 'pointerup' && g.kind === 'pan'
-      ? flingFrom(g, e.timeStamp)
+    const thrown = e.type === 'pointerup' && gesture.mode === 'pan'
+      ? flingFrom(gesture, e.timeStamp)
       : null;
     // A selected item is armed for movement on press. If the pointer never
     // crossed the drag slop, the second click was a toggle instead: remove only
@@ -1522,9 +1715,9 @@ export function initInput(vp, cmds) {
     // nothing at all unless you dragged, which is what made it stick. What the
     // press found is the whole story: a card that was already in the selection
     // is peeled, a card that was not stays added.
-    const unpick = e.type === 'pointerup' && g.kind === 'move' && !g.moved
-        && (g.additive ? g.wasSelected : selection.size > 1)
-      ? g.id
+    const unpick = e.type === 'pointerup' && gesture.mode === 'move' && !gesture.moved
+        && (gesture.additive ? gesture.wasSelected : selection.size > 1)
+      ? gesture.id
       : null;
     // A rectangle dragged round some cards is "these belong together" said in the
     // one gesture on the board that already means it, so the offer to make it a
@@ -1536,28 +1729,30 @@ export function initInput(vp, cmds) {
     // system taking the gesture away, and answering a question nobody finished
     // asking is worse than not offering. cmds owns whether there is anything
     // worth offering; all this knows is that a rectangle was drawn.
-    const banded = e.type === 'pointerup' && g.kind === 'marquee'
-        && drewRectangle(g, vp.zoom)
+    const banded = e.type === 'pointerup' && gesture.mode === 'marquee'
+        && drewRectangle(gesture, vp.zoom)
       ? {
-        x0: Math.min(g.x0, g.x1), y0: Math.min(g.y0, g.y1),
-        x1: Math.max(g.x0, g.x1), y1: Math.max(g.y0, g.y1),
+        x0: Math.min(gesture.x0, gesture.x1), y0: Math.min(gesture.y0, gesture.y1),
+        x1: Math.max(gesture.x0, gesture.x1), y1: Math.max(gesture.y0, gesture.y1),
       }
       : null;
     finishGesture();
     if (unpick) deselect(unpick);
     if (banded) cmds.fencePrompt(e.clientX, e.clientY, banded);
     if (thrown) vp.glide(thrown.vx, thrown.vy);
-    if (tap) lastEmptyTap = tap;
+    if (tap) taps.lastEmpty = tap;
     setPanCursor();
   };
   el.addEventListener('pointerup', endPointer);
   el.addEventListener('pointercancel', endPointer);
 
   /**
-   * Commit whatever the gesture earned and release its DOM marks. The one place
-   * the commit rules (a moved move, any resize) and the cleanup (marquee, the
-   * resizing/panning/moving classes, the stick target) live, so finishGesture
-   * and abortGesture cannot drift apart.
+   * Commit whatever the gesture earned, release its DOM marks and go back to
+   * idle. The one place the commit rules (a moved move, any resize) and the
+   * cleanup (marquee, the resizing/panning/moving classes, the stick target)
+   * live, so finishGesture and abortGesture cannot drift apart - and the one
+   * door back to `idle`, which is what makes "released exactly once" checkable:
+   * a second release would be idle -> idle, which the table refuses.
    */
   function releaseGesture() {
     // A drop that found a host is the way back from Unstick, and it is the only
@@ -1566,27 +1761,30 @@ export function initInput(vp, cmds) {
     // inside it, so undo restores the flag instead of re-deriving it; resettle()
     // in state.js argues the whole of it. Only on a gesture that moved, so a
     // plain click on a loose note cannot quietly re-pin it.
-    if (g.kind === 'move' && g.moved) {
-      resettle(g.driven);
-      commitGeom('Move', g.before, g.driven);
+    if (gesture.mode === 'move' && gesture.moved) {
+      resettle(gesture.driven);
+      commitGeom('Move', gesture.before, gesture.driven);
     }
-    if (g.kind === 'resize') commitGeom('Resize', g.before, g.driven);
-    if (g.kind === 'marquee') marquee.hidden = true;
-    g.node?.classList.remove('is-resizing');
+    if (gesture.mode === 'resize') commitGeom('Resize', gesture.before, gesture.driven);
+    if (gesture.mode === 'marquee') marquee.hidden = true;
+    // Both modes that carry a node: `resize`, and the `press` that was on its way
+    // to one. Neither of the others has the field, which is the shape of the
+    // gesture object doing the discriminating for us.
+    gesture.node?.classList.remove('is-resizing');
     el.classList.remove('is-panning', 'is-moving');
     showStickTarget(null);
-    g = null;
+    enter('idle');
   }
 
   function finishGesture() {
-    if (!g) return;
+    if (gesture.mode === 'idle') return;
     releaseGesture();
     syncItems();
   }
 
   /** Drop the gesture without committing (used when a pinch takes over). */
   function abortGesture() {
-    if (!g) return;
+    if (gesture.mode === 'idle') return;
     releaseGesture();
   }
 
@@ -1787,7 +1985,7 @@ export function initInput(vp, cmds) {
   // A blur (alt-tab) never delivers the keyup, which would leave pan mode stuck.
   // A pointercancel likewise reports no button, so the middle-button guard is
   // cleared here too rather than trusting the lift to carry it.
-  addEventListener('blur', () => { spaceDown = false; midButtonDown = false; setPanCursor(); });
+  addEventListener('blur', () => { spaceDown = false; midPaste.down = false; setPanCursor(); });
 
   // Swallow the primary-selection paste a middle *drag* fires on release. Capture
   // phase and window-wide, so it runs before the note editor's own paste and the
@@ -1795,7 +1993,7 @@ export function initInput(vp, cmds) {
   // became a pan: a plain middle click still pastes, and an ordinary Ctrl+V is
   // untouched.
   addEventListener('paste', e => {
-    if (!(midButtonDown && midDragged)) return;
+    if (!(midPaste.down && midPaste.dragged)) return;
     e.preventDefault();
     e.stopImmediatePropagation();
   }, true);
@@ -1968,18 +2166,18 @@ export function initInput(vp, cmds) {
     // Whichever arrives first owns the gesture; cancelling here prevents the
     // other path from closing and rebuilding the same menu a moment later.
     cancelPress();
-    armSelect = null;
-    cardTap = null;
+    taps.arm = null;
+    taps.card = null;
     abortGesture();
-    if (repeatsLongPressContextMenu(longPressMenu, {
+    if (repeatsLongPressContextMenu(hold.menu, {
       x: e.clientX,
       y: e.clientY,
       at: performance.now(),
     })) {
-      longPressMenu = null;
+      hold.menu = null;
       return;
     }
-    longPressMenu = null;
+    hold.menu = null;
     openMenuAt(e.clientX, e.clientY, itemIdFromEvent(e.target));
   });
 
