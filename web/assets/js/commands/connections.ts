@@ -40,23 +40,21 @@ import { ask } from '../ui/dialog.ts';
 // The editor that follows the marked line. Kept true from here for the two
 // moves that change the mark without redrawing it - see pickConnection.
 import { syncConnChip } from '../ui/conn-chip.ts';
-import { connectArmed, connectTap, setArmed as armConnector } from '../ui/toolbar.ts';
+import { connectArmed, connectTap, setArmed } from '../ui/toolbar.ts';
 
-/**
- * setArmed, with the signature it actually has.
- *
- * ui/toolbar.ts is still carried under @ts-nocheck, so its `from = null` default
- * infers the parameter as `null` rather than as "an item id or nothing" - which
- * is what every caller has always passed it. Named here rather than worked
- * around at the call site, so the day toolbar.ts is annotated this line goes and
- * nothing else does.
- */
-const setArmed = armConnector as unknown as (on: boolean, from?: string | null) => void;
+/* The line this file used to carry here was a cast of setArmed, because
+   ui/toolbar.ts was unchecked and its `from = null` default inferred the
+   parameter as `null` rather than as "an item id or nothing". Its own comment
+   said the day toolbar.ts was annotated the line goes and nothing else does.
+   toolbar.ts is annotated - setArmed(on: boolean, from: string | null = null) -
+   so the line has gone, and nothing else did. */
 
-/** connectionMeta's payload, of which this file reads one field. */
-interface ConnMeta {
-  label?: string;
-}
+/* ConnMeta comes from board-model.ts, which is where the four closed lists and
+   the type struck from them live. This file declared its own `{ label?: string }`
+   under the same pressure conn-chip.ts did, and a second spelling of a closed
+   list is how a list stops being closed. Reading one field of it is not a reason
+   to describe it again. */
+import type { ConnMeta } from '../board-model.ts';
 
 /** A world point, which is all the two hit-testing commands take. */
 interface At {

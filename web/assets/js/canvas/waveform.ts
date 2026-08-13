@@ -42,13 +42,22 @@
 //
 // ── The item type is structural, and deliberately narrow ──
 //
-// There is no shared `Item` type to import: state.ts and board-model.ts are
-// still carried under @ts-nocheck, and inventing the canonical one here - in a
-// leaf module that reads three fields of it - would be the wrong file to have
-// that argument in. So this names the three fields it actually touches and
-// nothing else, which is also the honest description of what it needs. When the
-// board's own type lands, this becomes an import and the shape below should be
-// assignable to it unchanged.
+// This was written while state.ts and board-model.ts were both still carried
+// under @ts-nocheck, and it said that when the board's own type landed this
+// would become an import. The type has landed - board-model.ts exports `Item` -
+// and this deliberately did not become an import.
+//
+// Because the two say different things. `Item` is what a card IS, and this is
+// what a measurement NEEDS: an id, maybe an asset hash, maybe a place to put
+// the readings. Naming the three fields keeps the requirement the narrower of
+// the two, so this module stays callable with anything of that shape and its
+// tests stay a struct literal rather than a whole board item. An `Item` is
+// assignable to it, which is the direction that matters and the only one this
+// module ever relies on.
+//
+// What would be a re-declaration, and is forbidden, is a second definition of
+// `Item` itself. This is not one - it is a smaller requirement that `Item`
+// happens to satisfy.
 
 import { getAsset } from '../storage/assets.ts';
 import { markDirty } from '../state.ts';
