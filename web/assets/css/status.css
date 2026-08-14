@@ -206,7 +206,7 @@
   transform: rotate(-0.5deg);
   pointer-events: auto;
   animation: rise var(--dur-base) var(--ease-back);
-  /* Paired with TOAST_FADE_MS in util.js, which is what decides when the line is
+  /* Paired with TOAST_FADE_MS in ui/overlays.ts, which is what decides when the line is
      actually removed. Kept as a literal on both sides rather than a token: a
      duration the axis could flatten to zero would leave the JS timer holding an
      invisible line on screen for its own 300ms, and the two disagreeing is worse

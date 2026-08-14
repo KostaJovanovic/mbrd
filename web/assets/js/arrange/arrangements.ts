@@ -65,7 +65,7 @@ export type ArrangeItem = {
   id?: string,
   type?: string,
   name?: string,
-  meta?: { mtime?: number } | null,
+  meta?: { mtime?: number, tags?: unknown } | null,
 };
 
 /** The room an item wants, as half-extents: its rectangle plus half a gap. */
@@ -76,6 +76,40 @@ type Placed = Box & Point;
 
 /** The extent of a laid block, low and high on each axis. */
 type Extent = { x0: number, x1: number, y0: number, y1: number };
+
+/**
+ * The block a card with no tags goes in.
+ *
+ * A leading space, which cleanTag() in board-model.ts trims off every real tag -
+ * so this cannot collide with anything somebody typed, and it sorts before all
+ * of them, which puts the untagged block at the left-hand end. A sentinel that
+ * has to be a printable character somewhere is better than one that has to be a
+ * control byte: this file stays a text file.
+ */
+const UNTAGGED = ' untagged';
+
+/**
+ * Which block a card belongs in under the `tag` layout: its alphabetically
+ * first tag, or UNTAGGED.
+ *
+ * Read straight off `meta` and sorted here rather than trusted to arrive
+ * sorted, which is the same defensiveness `date` applies to `meta.mtime`. The
+ * app's own writer does sort (itemTags() in board-model.ts), so for every board
+ * this app made the sort is a no-op - but this module is pure, takes anything
+ * shaped like an item, and a .mbrd written by hand is a perfectly ordinary
+ * thing to open.
+ *
+ * Deliberately not importing board-model.ts to reuse itemTags(). Every layout in
+ * this file is a pure function of rectangles and the two `meta` fields it reads;
+ * reaching up to the board model for a validator would put an arrangement above
+ * `state` in the layering to save four lines.
+ */
+function firstTag(it: ArrangeItem): string {
+  const raw = it.meta?.tags;
+  if (!Array.isArray(raw)) return UNTAGGED;
+  const tags = raw.filter((t): t is string => typeof t === 'string' && !!t).sort();
+  return tags[0] ?? UNTAGGED;
+}
 
 export const ARRANGEMENTS = [
   // First because it is the default a new board carries, and a menu whose top
@@ -89,6 +123,10 @@ export const ARRANGEMENTS = [
   { id: 'grid',    label: 'Grid rings' },
   { id: 'masonry', label: 'Masonry' },
   { id: 'type',    label: 'Cluster by type' },
+  // Beside `type` because it is the same shape of answer - one block per key,
+  // blocks side by side - and after it because a board only has tags once
+  // somebody has put them there, where it always has types.
+  { id: 'tag',     label: 'Cluster by tag' },
   { id: 'date',    label: 'By date' },
   { id: 'scatter', label: 'Random scatter' },
 ];
@@ -392,51 +430,28 @@ const LAYOUTS: Record<string, Layout> = {
 
   /** One block per type, blocks laid side by side in a stable order. */
   type(items, o) {
-    const groups = new Map<string, number[]>();
-    items.forEach((it, i) => {
-      const k = it.type || 'generic';
-      // Set on the way past, so the get that follows it always has one.
-      (groups.get(k) || groups.set(k, []).get(k)!).push(i);
-    });
-    // Alphabetical, so an unseeded run of the same board deals the blocks the
-    // same way twice. Seeded, the blocks change places: the clustering is what
-    // this layout is for and survives untouched, while which cluster you meet
-    // first from the left never meant anything and is free to move.
-    const rnd = variation(o);
-    const order = [...groups.keys()].sort();
-    if (rnd) shuffleWith(order, rnd);
+    return clustered(items, o, it => it.type || 'generic');
+  },
 
-    // Lay every block first, so they can be spaced by the width each one
-    // actually came out at rather than by a cell count times a shared cell.
-    const laid = order.map(key => {
-      const idx = groups.get(key)!;      // the keys came out of the map itself
-      const sub = idx.map(i => items[i]);
-      // Each block reshapes as well as moving. Needed on its own account: a
-      // board of one type is a single block, and shuffling a list of one
-      // leaves it exactly where it was - so without this, the commonest board
-      // there is would be the one board Rearrange could not rearrange.
-      let cols = Math.max(1, Math.ceil(Math.sqrt(sub.length)));
-      if (rnd) cols = reflow(cols, sub.length, rnd);
-      const cells = sub.map((_, n): [number, number] => [n % cols, Math.floor(n / cols)]);
-      return { idx, ...lattice(cells, sub, o.spacing) };
-    });
-    const seam = o.spacing * BLOCK_GAP;
-    const width = (b: { box: Extent }) => b.box.x1 - b.box.x0;
-    const total = laid.reduce((s, b) => s + width(b), 0) + seam * (laid.length - 1);
-
-    const out = new Array<Point>(items.length);
-    let cursor = o.center.x - total / 2;
-    for (const b of laid) {
-      const mid = (b.box.y0 + b.box.y1) / 2;
-      b.idx.forEach((itemIndex, n) => {
-        out[itemIndex] = {
-          x: cursor + b.pos[n].x - b.box.x0,
-          y: o.center.y + b.pos[n].y - mid,
-        };
-      });
-      cursor += width(b) + seam;
-    }
-    return out;
+  /**
+   * One block per tag, and the whole of what makes it different from `type` is
+   * that an item can be in two of them.
+   *
+   * It is put in the block of its *first* tag alphabetically, because a card can
+   * only be in one place: a layout is a function to one position per item, and
+   * a photograph tagged both "kitchen" and "blue" has to be in one of those two
+   * piles or the arrangement is not a layout at all. First-alphabetically is the
+   * rule because it is the one that is stable - it does not depend on the order
+   * the tags were added, so the same board lays out the same way twice.
+   *
+   * Untagged cards are one more block, keyed to a string no tag can be:
+   * cleanTag() strips control characters, so a leading one cannot collide with
+   * anything a person can type. They land together at the end rather than being
+   * left where they were, because a layout that moved two thirds of the board
+   * and silently skipped the rest reads as a bug.
+   */
+  tag(items, o) {
+    return clustered(items, o, firstTag);
   },
 
   /** Oldest first, reading order. */
@@ -506,6 +521,71 @@ const LAYOUTS: Record<string, Layout> = {
  * different rows and each sits inside its own row's height, and the other way
  * about. That is why the four layouts built on this need no separation pass.
  */
+/**
+ * One block per key, blocks laid side by side in a stable order, each block
+ * centred on the target line.
+ *
+ * The body of `type` and `tag`, which differ only in what they key on - one
+ * asks an item what it is, the other what it was called. It was `type`'s body
+ * verbatim until the second caller arrived; the two are forty lines of block
+ * arithmetic, and two copies of that would have drifted the first time either
+ * layout's spacing was touched.
+ *
+ * `keyOf` is total by construction: both callers fall back to a sentinel rather
+ * than returning nothing, because an item with no key still has to be somewhere.
+ */
+function clustered(
+  items: ArrangeItem[],
+  o: Laying,
+  keyOf: (it: ArrangeItem) => string,
+): Point[] {
+  const groups = new Map<string, number[]>();
+  items.forEach((it, i) => {
+    const k = keyOf(it);
+    // Set on the way past, so the get that follows it always has one.
+    (groups.get(k) || groups.set(k, []).get(k)!).push(i);
+  });
+  // Alphabetical, so an unseeded run of the same board deals the blocks the
+  // same way twice. Seeded, the blocks change places: the clustering is what
+  // these layouts are for and survives untouched, while which cluster you meet
+  // first from the left never meant anything and is free to move.
+  const rnd = variation(o);
+  const order = [...groups.keys()].sort();
+  if (rnd) shuffleWith(order, rnd);
+
+  // Lay every block first, so they can be spaced by the width each one
+  // actually came out at rather than by a cell count times a shared cell.
+  const laid = order.map(key => {
+    const idx = groups.get(key)!;      // the keys came out of the map itself
+    const sub = idx.map(i => items[i]);
+    // Each block reshapes as well as moving. Needed on its own account: a
+    // board of one type is a single block, and shuffling a list of one
+    // leaves it exactly where it was - so without this, the commonest board
+    // there is would be the one board Rearrange could not rearrange.
+    let cols = Math.max(1, Math.ceil(Math.sqrt(sub.length)));
+    if (rnd) cols = reflow(cols, sub.length, rnd);
+    const cells = sub.map((_, n): [number, number] => [n % cols, Math.floor(n / cols)]);
+    return { idx, ...lattice(cells, sub, o.spacing) };
+  });
+  const seam = o.spacing * BLOCK_GAP;
+  const width = (b: { box: Extent }) => b.box.x1 - b.box.x0;
+  const total = laid.reduce((s, b) => s + width(b), 0) + seam * (laid.length - 1);
+
+  const out = new Array<Point>(items.length);
+  let cursor = o.center.x - total / 2;
+  for (const b of laid) {
+    const mid = (b.box.y0 + b.box.y1) / 2;
+    b.idx.forEach((itemIndex, n) => {
+      out[itemIndex] = {
+        x: cursor + b.pos[n].x - b.box.x0,
+        y: o.center.y + b.pos[n].y - mid,
+      };
+    });
+    cursor += width(b) + seam;
+  }
+  return out;
+}
+
 function lattice(
   cells: [number, number][],
   items: ArrangeItem[],
@@ -697,6 +777,10 @@ export const MOBILE_ARRANGEMENTS = [
   { id: 'free', label: 'As placed' },
   { id: 'date', label: 'By date' },
   { id: 'type', label: 'By kind' },
+  // Desktop's `tag` with the page taken away, the way `date` and `type` are.
+  // A column has no blocks to put side by side, so what carries over is the
+  // grouping: everything with one tag together, then the next, untagged last.
+  { id: 'tag', label: 'By tag' },
   { id: 'name', label: 'By name' },
   // Not "Random scatter": nothing is scattered, the column is as tight as it
   // ever was and only the order in it is dealt again.
@@ -750,6 +834,19 @@ const ORDERS: Record<string, Order> = {
   // twice - and inside a kind, the order the column already had.
   type: items => readingOrder(items)
     .sort((a, b) => (a.type || 'generic').localeCompare(b.type || 'generic')),
+  // Grouped by first tag, and inside a group the order the column already had.
+  // The untagged sentinel sorts before every real tag, which on Desktop puts
+  // that block at the left-hand end and would put it at the *top* here - so it
+  // is compared last on purpose: a column of things nobody has tagged, followed
+  // by the tagged ones, is the wrong way round for a feature whose whole point
+  // is finding what you labelled.
+  tag: items => readingOrder(items).sort((a, b) => {
+    const ka = firstTag(a), kb = firstTag(b);
+    if (ka === kb) return 0;
+    if (ka === UNTAGGED) return 1;
+    if (kb === UNTAGGED) return -1;
+    return ka.localeCompare(kb);
+  }),
   name: items => readingOrder(items)
     .sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true })),
   // Seedless, this is the order it was handed: a drop is reproducible, and

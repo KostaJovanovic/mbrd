@@ -243,10 +243,19 @@ export function syncControls() {
  */
 export function syncPaletteMode() {
   const dynamic = d.dynamicOn();
-  // #opt-palette is the schema's `type: 'select'` control - a <select>, which is
-  // what wirePalette() below listens to a 'change' on.
-  const sel = document.getElementById('opt-palette') as HTMLSelectElement | null;
-  if (sel) sel.value = dynamic ? DYNAMIC : (d.current().palette || '');
+  // #opt-palette is the schema's `type: 'picker'` control - a button that opens
+  // ui/menu.ts, not a <select>. Its value is an attribute rather than a property
+  // and ui/panel.ts's paintPicker() is what reads it back onto the face.
+  const el = document.getElementById('opt-palette');
+  // The value is an attribute rather than a property, and the face is repainted
+  // by dispatching to the builder that owns it. A direct paintPicker() call from
+  // here would be this module importing ui/panel.ts, which imports
+  // ui/settings-schema.ts, which imports the palette chips - a ring. The event
+  // keeps the arrow pointing one way; ui/panel.ts listens for it.
+  if (el) {
+    el.dataset.value = dynamic ? DYNAMIC : (d.current().palette || '');
+    el.dispatchEvent(new CustomEvent('repaint'));
+  }
   // The source-count dial only means anything while the pictures are what the
   // board is painted from - anywhere else it is a dial over a palette that reads
   // no picture at all - so it comes down with the mode rather than sitting there
@@ -315,12 +324,15 @@ function format(value: string, spec: RangeControl) {
  * ui/appearance.js, and each runs its own sync on the way out.
  */
 export function wirePalette() {
-  const sel = document.getElementById('opt-palette') as HTMLSelectElement | null;
-  if (!sel) return;
-  sel.value = d.dynamicOn() ? DYNAMIC : (d.current().palette || '');
-  sel.addEventListener('change', () => {
-    if (sel.value === DYNAMIC) d.goDynamic();
-    else d.setPalette(sel.value);
+  // The picker is a button, not a <select>: an <option> cannot paint a swatch
+  // in any browser, and this row's whole job is to show what each palette looks
+  // like. ui/panel.ts's buildPicker draws it and gives it this listener's event.
+  const el = document.getElementById('opt-palette');
+  if (!el) return;
+  el.addEventListener('pick', e => {
+    const value = (e as CustomEvent<string>).detail;
+    if (value === DYNAMIC) d.goDynamic();
+    else d.setPalette(value);
   });
 }
 

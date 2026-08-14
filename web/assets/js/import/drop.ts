@@ -26,7 +26,7 @@ import { embeddedPreview } from './preview.ts';
 import { hasBakedPreview, bakedPreview } from './document.ts';
 import { makeThumb } from '../optimize/picture.ts';
 import { looksLikeMbrd } from '../storage/mbrd.ts';
-import { openFile } from '../storage/storage.ts';
+import { openOrMergeFile } from '../storage/storage.ts';
 import { stickerShape, stickerTint, DEFAULT_SHAPE } from '../stickers/catalogue.ts';
 import type { Point } from '../arrange/arrangements.ts';
 import type { Size } from '../canvas/renderers.ts';
@@ -333,8 +333,21 @@ export async function importFiles(
   files = [...files].filter(f => f && (f.size > 0 || f.type));
   if (!files.length) return [];
 
+  // A board file is not a thing to put on a board, it is a board. Two things can
+  // be meant by dropping one, and which is meant depends entirely on what is
+  // already here - so it is asked rather than guessed.
+  //
+  // On an empty board there is no question: merging into nothing and opening are
+  // the same result, and a dialog offering two words for one outcome is a dialog
+  // that teaches people to stop reading them. So the question is only asked when
+  // there is something to lose the sense of.
+  //
+  // Asked here rather than offered as a button in the panel, and that is the
+  // whole placement of the feature: "open or merge" only ever comes up when a
+  // file arrives, and a Merge button would have to open a picker to ask again
+  // what the drop already knows.
   if (files.length === 1 && looksLikeMbrd(files[0])) {
-    await openFile(files[0]);
+    await openOrMergeFile(files[0]);
     return [];
   }
 

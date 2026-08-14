@@ -53,7 +53,7 @@ import {
   board, makeItem, dedupeIds, cleanBoardTitle, cloneSettings, layoutSettingsOf,
   settingsFor, MAX_ITEMS, TRASH_LIMIT, MOBILE_COLUMNS, MOBILE_APPEARANCE_VARS,
   DEFAULT_SETTINGS, DEFAULT_MOBILE_HEADER, mobileColumnCount,
-  normalizeConnections, normalizeAudioOrder,
+  normalizeConnections, normalizeAudioOrder, normalizeTour,
 } from './board-model.ts';
 import type {
   Board, BoardSettings, FontAxis, FontSpec, Geometry, Item, LayoutMode, MobileHeader,
@@ -175,6 +175,10 @@ export function normalizeBoard(data: unknown): Omit<Board, 'settings' | 'arrange
     // so a saved order that names a since-thrown-away track survives to be restored
     // with it. The Playlist filters this to the audio it actually has.
     audioOrder: normalizeAudioOrder(src.audioOrder, ids),
+    // The same union again, and for the same reason one step further along: a
+    // stop whose card is in the bin has to come back when the card does, or
+    // deleting one card would silently renumber somebody's tour.
+    tour: normalizeTour(src.tour, ids),
   };
 }
 
@@ -472,6 +476,10 @@ export function serializeBoard() {
     // empty one is written as [] rather than dropped, so a board that had its
     // playlist arranged and then cleared does not silently re-sort on reload.
     audioOrder: normalizeAudioOrder(board.audioOrder, filed),
+    // And the tour, on the same terms. Written even when empty for the reason
+    // above it: a board whose tour was built and then cleared must not come
+    // back carrying the old one from a file that simply omitted the key.
+    tour: normalizeTour(board.tour, filed),
   };
 }
 

@@ -488,4 +488,20 @@
   <path d="M4.6 6.4V4.6H6.4M9.6 4.6H11.4V6.4M11.4 9.6V11.4H9.6M6.4 11.4H4.6V9.6"/>
 </symbol>
 
+<!-- The crop mark: two right angles overlapping, each running off its own edge
+     of the box. Not a rectangle with a rectangle inside it, which is what
+     i-reset-position already is and which reads as "a thing within a thing"
+     rather than as "the corners you drag". -->
+<symbol id="i-crop" viewBox="0 0 16 16">
+  <path d="M4.4 1.6v10h10M1.6 4.4h10v10"/>
+</symbol>
+
+<!-- A luggage label, hole and all. The hole is a filled dot rather than a ring:
+     at 16px a ring of stroke-width 1.5 closes up into a dot anyway, and drawing
+     the dot means it closes up on purpose. -->
+<symbol id="i-tag" viewBox="0 0 16 16">
+  <path d="M7.6 2.2H13.8V8.4L8 14.2 1.8 8 7.6 2.2Z"/>
+  <circle cx="10.9" cy="5.1" r="0.9" fill="currentColor" stroke="none"/>
+</symbol>
+
 </svg>

@@ -358,6 +358,15 @@ to itself and spans the whole foot, which is what pays for the words under the
 icons — all four above 360px, Files alone below it. **`#toolbar` must stay before `#nowplaying` in `index.html`:**
 the rules that move the player are general sibling combinators.
 
+That constraint now has a twin pointing the other way, and the pair is worth
+reading together because neither is reorderable. **`#tour` must stay *after*
+`#nowplaying`**, for the identical reason at the identical cost: the rule that
+lifts the tour bar clear of the player is also a general sibling combinator, and
+those only look forward. So the player has to be able to see the toolbar from
+where it stands, and the tour bar has to be able to see the player from where it
+stands, which fixes all three in one order. Getting either wrong breaks a layout
+silently — the first only on a phone, the second only while something is playing.
+
 The one thing it owns beyond wiring is the connector tool's armed state, which
 is the app's only mode. See *Connections* below.
 
@@ -386,6 +395,46 @@ queue at the end of it and opening it lets the queue carry on; there is nothing
 to arm. Only the automatic hand-over is gated — a Next press is somebody asking —
 and repeat-'one' is left alone, since replaying one track is an instruction
 already given about the track you chose rather than moving on to another.
+
+The volume is the one of those five that came back, and only on one surface.
+`#nowplaying` is hidden outright on the Mobile Playlist lens — the lens carries
+its own transport, so the bar would be a second copy laid over the surface
+showing the first — which leaves the lens as the only place a level can be
+reached for at all while it is up. So the lens transport has a volume row and
+the Desktop window still does not, and the reasoning is the same either way: a
+level is a property of the room rather than of a list, and it belongs where the
+sound is stopped. `volumeLocked()` is copied to both, because a slider iOS
+ignores is a control that lies, and the row is not built at all rather than built
+and disabled.
+
+`ui/tour.ts` is the board read as a sequence of stops rather than as a surface.
+`board.tour` — the itinerary, top-level in the `.mbrd` beside `connections` and
+`audioOrder` for the same reason both of those are — existed end to end with
+nothing consuming it; this is the runner, a camera move per stop and a bar saying
+where you are. It is in `ui/` rather than `canvas/` on the one test that decides
+that: it builds chrome, and `canvas/` never does. The commands that open and step
+it are in `commands/view.ts` with the other journeys, and the one that puts a
+card *on* the tour is in `commands/item-meta.ts` with the tag writes, which is
+the same line those two files already draw between what you are looking at and
+what the board says.
+
+**Which stop you are on is not board state and there is no event for it.** The
+file carries the itinerary, because that is a thing somebody made; the position
+in it is a fact about a reading session — the same status as the Feed's scroll
+offset — and writing it would make opening a board a change to it. The stop list
+is also resolved live through `byId()` on every read rather than held, because a
+tour running while cards are deleted is exactly the window in which `board.tour`
+and the board disagree.
+
+**Desktop canvas only, and it says so rather than failing quietly.** `vp.fit()`
+opens with an `isMobile` branch that ignores its items entirely — the Mobile
+camera is not free, the zoom follows the column count and the pan is a scroll —
+so a tour there would light the bar, step the counter and never move. It declines
+with a toast the way `lockZoom` does. The fit is capped near `BASE_ZOOM * 1.5`:
+the default cap is 500%, at which a stop on a sticker fills the screen with one
+object and the board vanishes. It is also deliberately absent from `ui/idle.ts`'s
+fade list, because looking at one stop for fifteen still seconds is the normal
+case and a faded control takes `pointer-events: none` with it.
 
 `ui/credits.ts` is the sheet the footer's Credits button opens — a plain module
 beside `ui/dialog.ts` rather than a fourth mode inside it, because it asks
@@ -1053,8 +1102,10 @@ separates them exactly, because zeroing events is what the rail does. Both
 measures start at "delivered whole", so nothing is lifted on the strength of the
 first event or two, and `UNRAIL_CAP` bounds the invention on top so a delta the
 driver held back and released in one lump cannot be multiplied into a jerk.
-`cmds.debugWheel()` (also `#wheel`, also System → Debug) prints one line per
-swipe, which is how all of those numbers were got.
+Those numbers were got from a per-swipe console log behind a `cmds.debugWheel()`
+toggle, which is gone: it had answered its question, and a development aid whose
+finding is written down above is a row in the Debug fold that nobody will ever
+press again. The measurements stand; the tool that took them does not.
 
 `canvas/renderers.ts` is one entry per item type — `RENDERERS` plus a branch in
 `classify()`. Adding a type touches nothing else, and those two stayed in one

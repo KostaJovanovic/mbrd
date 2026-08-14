@@ -1,0 +1,90 @@
+/* =========================================================
+   mbrd - the privacy page
+
+   An external sheet rather than a <style> block in privacy.html, and that is a
+   policy decision rather than a preference: style-src is 'self' plus two
+   hashes and carries no 'unsafe-inline', so an inline block would need a third
+   hash in web/_headers and an entry in tests/csp.test.js, and would then break
+   the deploy silently on any edit that changed one character of it. A file
+   costs one request and none of that. See the style-src section of _headers.
+
+   It loads tokens.css and nothing else of the app's. The page is a document,
+   not the app: base.css pins the app to the window with everything fixed
+   inside it, which is exactly wrong for something you scroll and read - the
+   same reason patch.css exists. But the colours, the faces and the corners are
+   the app's, so the page belongs to the site rather than looking like a legal
+   annexe someone bolted on.
+
+   No whimsy dial here and no pre-paint restore script, which means :root
+   carries no data-whimsy - and tokens.css is written so that an unset
+   data-whimsy and data-whimsy="1" are the same thing, so the page renders in
+   the middle of the axis for everyone. That is the right choice for a document
+   that is mostly read once: the scrapbook tier tilts and tapes things, which is
+   charming on a board and wrong on a page about what happens to your files.
+   ========================================================= */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 8vh 24px 14vh;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+  /* A measure, not a width: prose reads at about this and the page is nothing
+     but prose. */
+  max-width: 34rem;
+  margin-inline: auto;
+  text-wrap: pretty;
+}
+
+h1 {
+  margin: 0 0 4px;
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-style: var(--display-italic);
+  font-weight: var(--display-weight);
+  line-height: 1.1;
+}
+
+h2 {
+  margin: 2.2em 0 0.4em;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: var(--display-weight);
+  line-height: 1.25;
+}
+
+p { margin: 0 0 1em; }
+
+/* The one line under the title: what this page is, and when it last changed. */
+.sub {
+  margin: 0 0 2.5em;
+  color: var(--ink-3);
+  font-size: 0.9rem;
+}
+
+ul { margin: 0 0 1em; padding-left: 1.2em; }
+li { margin: 0 0 0.35em; }
+
+a { color: var(--accent-deep); }
+a:hover { text-decoration: none; }
+
+/* The way back into the app, at the foot where somebody who has finished
+   reading is looking. A link and not a button: it goes somewhere. */
+.back {
+  display: inline-block;
+  margin-top: 2.5em;
+  padding-top: 1.5em;
+  border-top: 1px solid var(--rule-2);
+  width: 100%;
+  color: var(--ink-2);
+  font-size: 0.9rem;
+}
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}

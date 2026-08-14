@@ -193,3 +193,14 @@ export function clearHistory() {
  * limit evicts. Not part of the app's surface.
  */
 export const historyWeight = () => heldWeight;
+
+/**
+ * How many steps deep each half is.
+ *
+ * Beside historyWeight() and for the same kind of caller: the Debug fold's
+ * history readout, which wants "18 back, 3 forward, holding 412 items". Kept
+ * out of historyState() deliberately - that one answers "what would undo do
+ * next", which is what every control in the app binds to, and adding two
+ * numbers nothing else wants would make the hot answer carry them.
+ */
+export const historyDepth = () => ({ undo: undoStack.length, redo: redoStack.length });

@@ -319,7 +319,7 @@
      that happens to be square, it wants --radius-pill instead.
 
      (Left correct-by-accident until now: nobody had chosen it, which is the
-     only reason it was worth a paragraph. See research/visual-audit-2026-08-12.md,
+     only reason it was worth a paragraph. See research/old/visual-audit-2026-08-12.md,
      item 1 of its remaining plan.) */
   --radius-pill: 999px;
   /* Gap between a card's edge and its inner rule. The rule's own radius is

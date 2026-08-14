@@ -321,7 +321,7 @@ publish so the front page is not empty:
 - **A palette tweak**, with `web/lab.html` as the ready-made bench.
 
 Label the medium/low findings still listed in
-`research/scalability-readability-audit-2026-07-27.md`, and the two items in
+`research/old/scalability-readability-audit-2026-07-27.md`, and the two items in
 `research/future/`, as the roadmap.
 
 ---

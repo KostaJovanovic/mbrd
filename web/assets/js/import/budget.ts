@@ -5,7 +5,7 @@
 // nothing about bytes: five files can be five 4K videos, and one 50 KB PNG can
 // claim 30000x30000 and cost gigabytes the moment createImageBitmap() touches
 // it. This module is the boundary the count was mistaken for. See AUD-05 in
-// research/full-code-audit-2026-07-26.md.
+// research/old/full-code-audit-2026-07-26.md.
 //
 // Pure by design - no DOM, no state - so it sits beside util/geometry and both
 // the importer and any future caller share one set of limits. The only browser

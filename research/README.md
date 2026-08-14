@@ -17,12 +17,20 @@ Four directories, and which one a file is in is the whole meaning:
 | --- | --- | --- |
 | `research/docs/` | the **specifications** — what the app is | yes — authoritative |
 | `research/` (top level) | work that is **still open** | yes — read this |
-| `research/old/` | work that was **carried out**, or abandoned | no — history only |
-| `research/future/` | **not started**, and may never be | speculative |
+| `research/old/` | work **carried out or abandoned**, and the arguments behind what is open | no — history only |
+| `research/future/` | **not started, and on nobody's list** | speculative |
 
 `docs/` sits in here rather than at the repo root because everything written
 about this app belongs in one place; it is the only directory under `research/`
 that is not an argument, and the table above is what says so.
+
+**One thing that used to be in here and is not.** The changelog source is
+`patch-notes.md` at the repository root, not `research/patch-notes.md`. It is
+neither an argument nor a specification — it is the record of what shipped, so
+it fits none of the four rows above, and a file that fits none of the rows was
+being filed here by habit rather than by the rule. `tools/gen-patch-page.mjs`
+reads it from the root, `/patch` is generated from it, and it is still the only
+place the changelog prose is written.
 
 The top level is deliberately short. Anything carried out moves down to `old/`
 on the same commit that finishes it; if a document at the top level describes
@@ -44,53 +52,123 @@ for a change without checking the current source first.
 
 ## Current
 
-- `scalability-readability-audit-2026-07-27.md` — all eight leverage items are
-  closed; the medium and low findings it lists are the remaining work, and are
-  the natural source of issues.
-- `visual-audit-2026-08-12.md` — partly carried out. An element-by-element pass
-  at all three whimsy stops, graded worst to best. Its spine is applied: the five
-  corner tokens are now struck from `--radius`, so the Corner radius slider moves
-  the whole interface rather than a third of it. **Five** items remain, listed
-  under *The plan for what is left* — the sixth, the z-index table, is written
-  and lives in `docs/architecture.md` under *The stack* — and two of the five are
-  taste calls rather than patches. One thing to know before reading it at all:
-  `overlays.css` was split into eight sheets after it was written, so every
-  `overlays.css:NNN` in it points into a file that is gone, and its own opening
-  note says so. Read the closing rule before auditing anything else here — the
-  whole document is an argument for checking work at the ends of the axis rather
-  than at the default board, which is where every fault in it hid.
-- `build-and-framework-audit-2026-08-12.md` — **half carried out**, and it opens
-  with a status block saying which half. An outside pass over the whole
-  repository, written to answer whether this should be on a framework or in
-  another language. It agrees with `old/open-source-readiness-2026-08-02.md`
-  Part 1 and is not a reopening of it: the layer byte counts reproduce that
-  document's finding, and the module-by-module argument for why `canvas/` resists
-  a reconciler is still better made there. What is new is its Finding 1 — that
-  document costed a bundler only ever as a rider on a framework rewrite, and
-  priced apart from one it is the cheapest large win in the repository: 664 KB of
-  JavaScript over 96 requests becomes about 174 KB over one, because 61.5% of the
-  shipped bytes are comments. Read Findings 1 and 3 together, and read them as
-  history: four of its eight items are done — CI, the bundle, the move to
-  TypeScript, and the continuation of the `state.js` split — so most of what it
-  measured describes the repository as it was on the morning it was written. What
-  is still live is the other four: `initInput` as an explicit state machine, the
-  CSP, a global error handler, and what `old/` should look like to a stranger.
-  The annotations under `strict` are the open half of an item counted as done,
-  and `tests/ts-debt.test.js` is where that is now measured rather than here.
-- `ui-audit-2026-08-13.md` — **nothing applied.** A driven pass over the running
-  app in a real browser rather than a runner: every toolbar tool, both lenses,
-  the viewer, the player, the trash and the menus. Four findings, of which only
-  the first is visible without hunting — a hover flyout clamped to the window
-  when it should be clamped to the bar, which is why Arrange hangs 28px off the
-  end. Read *What the harness got wrong* even if you skip the findings: more than
-  half of what a driver reports as broken here is the driving, and two of the
-  four causes are properties of this app — the idle fade takes
-  `pointer-events: none` and eats the first click, and `requestBuild()` defers to
-  a rAF that stops entirely when the window is occluded, which made stored
-  connections look permanently undrawn. Its Finding 2 is also a `.mbrd` question
-  and not only a UI one: the tap path into Join never asks `isJoinEnd`, so a
-  sticker can be written into `board.connections` as a pair nothing will ever
-  draw, and saved boards may already carry them.
+**One file, and this is the change worth understanding.** This level used to
+hold five documents at once, each with its own status block claiming which of its
+own items were done. On 2026-08-14 all five were read against the source, and
+three of those blocks were wrong — every one of them in the same direction, and
+none of them through carelessness. Work carried out under one document closes
+items belonging to another, and nothing tells the other document. Five status
+blocks is five things that can be wrong about the same tree.
+
+So the open items are now in one register, and the documents that argued them are
+all five in `old/` with the reasoning intact:
+
+- `open-work-2026-08-14.md` — **the whole of what is open, in plain language.**
+  Twenty items with an id each: five things somebody using the app would hit
+  (**U1–U5**), four features that are not started (**L1–L4**), nine developer-only
+  items (**S1–S9**), the design system's last unfinished axis (**V1**), and one
+  decision about this directory (**B1**). Each says what it is, why it matters and
+  where to look, and most name the document in `old/` that argued it — **four do
+  not, and the register says so about itself.** U5 and L1's three new neighbours
+  were added on 2026-08-14 out of a discussion rather than out of a document, so
+  for those four the entry is the whole of the thinking rather than a summary of
+  it, and the decisions that looked open are left open in the text instead of
+  being settled by whoever was typing. Two other parts of it earn their place
+  beyond the list. The first is **U1**, which
+  is the only item on it writing bad data into files people keep: the tap path
+  into Join never asks whether a thing may be joined, so a sticker can be written
+  into `board.connections` as a pair nothing will ever draw, and **saved boards
+  may already carry them** — so fixing it is a load-time cleanup as well as a
+  guard. The second is its closing list of **things already done**, which exists
+  because the failure this file was made to stop is somebody re-finding closed
+  work in `old/`. The sharpest entry there is the search box: it rescans on every
+  keystroke, that looks exactly like a defect, and it is a decision with the
+  reasoning written next to it. Do not "fix" it.
+
+- `plan-2026-08-14.md` — **the order the register is being worked in**, for the
+  eighteen items picked out of it on 2026-08-14 (everything except **L1** and
+  **B1**, both of which stay open and unscheduled). Ten batches, the decisions
+  each one needs before it can start, and what to look at afterwards. Three
+  orderings in it are load-bearing rather than preference and are argued at the
+  top: **S8 before U5**, because the cut-out guess should borrow the decode the
+  import path already does rather than add one to a path about to be rebuilt;
+  **L4 before L3, report-only**, because both turn on the word *unreferenced* and
+  an inventory that offers to delete orphans becomes a data-loss bug the moment
+  stored versions can hold the only reference to one; and **S1 alone**, because
+  it is the only item on the list that can change what every board looks like for
+  everybody.
+
+That is the whole of this level, and the second file is the exception this rule
+asks for rather than a hole in it. **A second open document here is the thing to
+argue about, not to add quietly** — the point of one register is that it cannot
+disagree with itself, and that property is lost the moment there are two. The
+argument for the plan is that it *cannot* disagree with the register, because it
+carries no description of any item: only ids, order, and what to check. If a
+sentence in it starts explaining what an item is, it has become a second register
+and belongs back in the first. It also has an end — it goes to `old/` on the last
+commit of the work it schedules, and the register outlives it.
+
+The five that were here went down on the same commit, and the four in `old/` are
+the unusual case the filing rule at the top does not cover: `ui-audit` went down
+with **all four** of its findings still open. It is in `old/` because its
+findings are carried above and what is left in it is the reasoning — which for
+that document is the better half anyway. Its section on **what a driven browser
+gets wrong about this app** is the thing to read before automating anything
+here: more than half of what a driver reports as broken is the driving, the idle
+fade takes `pointer-events: none` and eats the first click, and
+`requestAnimationFrame` stops dead when the window is occluded, which made stored
+connections look permanently undrawn for minutes and produced the most convincing
+false finding of the pass.
+
+`old/visual-audit-2026-08-12.md` and `old/build-and-framework-audit-2026-08-12.md`
+went down nearly finished — one item each. Two things in them outlive their
+lists. The visual audit's closing rule is the reusable one: **audit at the ends
+of the whimsy axis, never at the middle**, because a literal is indistinguishable
+from a token at the value it was copied from and obvious at every other, which is
+where every fault it found had been hiding. And the build audit is still the
+answer to *should this be on a framework* — it reaches that verdict independently
+of `old/open-source-readiness-2026-08-02.md` Part 1 and agrees with it, which is
+worth knowing when the question is asked again.
+
+`old/share-link-2026-08-14.md` went down with **nothing in it built at all**, and
+it is worth saying why it is not in `future/`, because that is where it was filed
+first and it was wrong. Read literally, `future/` fits it — nothing started, and
+it may never be. But `ui-audit` went to `old/` the same day with all four of its
+findings open, on the rule that the register carries the items and the document
+keeps the argument, and two documents of the same shape cannot take opposite
+rules. The deeper reason is what `future/` is *for*: the two documents in there
+are on nobody's list, and that is the property that makes the shelf mean
+something. **A document the register lists is not speculative, whatever state the
+work is in.** So the line is not "is it built" — it is *is anything at this level
+pointing at it*.
+
+Read it before proposing any way of sharing a board. Most of its value is the
+two approaches it rules out and why, and both get proposed again by anyone who
+has not read it: peer-to-peer cannot work for a link, because both people would
+have to have the tab open at the same moment; and a link carrying the board
+inside it cannot hold a single photograph, which in this app is the whole
+payload.
+
+*The paragraph this replaced argued the opposite, on the grounds that `old/` is
+read as history and an unbuilt feature is not history. That is true and it is not
+the point: what makes `old/` safe to read is the banner at the top of each
+document saying what is still live in it, and this one carries one.*
+
+`old/feature-run-2026-08-14.md` went down on the commit that finished the last
+three of its ten, and it is worth reading for the departures rather than for the
+list. It was written as a handover between sessions and briefed three features
+file by file; the work followed it and disagreed with it in six places, each
+recorded with the reason. The three that matter to anyone working near this code:
+`state.ts` has no `tour:at` event and never needed one — which stop you are on is
+not board data; the tour's *membership* commands belong with the tag writes in
+`commands/item-meta.ts` rather than with the camera commands the brief put them
+with; and the Playlist's prev/next may only be greyed with shuffle off and repeat
+off, because `queuePrev`/`queueNext` wrap when they are pressed. It also carries
+the one thing the run left open on purpose — a durable `meta.tilt`, which is the
+only way an export can lean a card that has been culled, and is a `.mbrd`
+addition to decide deliberately rather than as a side effect of a PDF. Its
+verification section ends in three by-eye checks that were not run, the sharpest
+of which is the exported file size with grain on.
 
 `old/connections-2026-08-12.md` went down on the commit that carried it out, and
 its status block is the part to read first: three of its own instructions were

@@ -1,5 +1,11 @@
 # Build, language and framework audit — 2026-08-12
 
+> **Moved to `old/` on 2026-08-14.** Seven of its eight items are done; the
+> eighth is B1 in `research/open-work-2026-08-14.md`, and it is a question about
+> this very directory. Read this for the framework answer and for Finding 1's
+> arithmetic, neither of which is anywhere else. Paths written `old/…` below were
+> written from `research/` and mean this directory.
+
 An outside pass over the whole repository, asked for in these terms: *is there a
 better way of doing this than JavaScript, maybe a framework* — with the
 instruction to ignore what the project says about itself and answer from the
@@ -10,17 +16,46 @@ So the code is what was read. This document reaches the same verdict as
 disagrees with it on something that document never separated out, which is the
 half worth reading.
 
-**Half of its list has since been carried out — see *Status*, immediately
-below.** It stays at the top level because the other half has not; read the
-status block before acting on anything here, because four of the eight items now
-describe the repository you are already standing in.
+**Seven of its eight items have since been carried out — see *Status*,
+immediately below.** It stays at the top level for the eighth, which is item 8,
+the cosmetic one; read the status block before acting on anything here, because
+almost all of what this document measures describes a repository that no longer
+exists.
 
 ---
 
 ## Status — what has since been carried out
 
-Written the day this document was, in the ten commits that followed it. The
+Written the day this document was, in the ten commits that followed it, and
+**re-checked against the tree on 2026-08-14**, which moved four more items. The
 ordered list at the foot is annotated the same way; this is the summary.
+
+*The 2026-08-14 pass, in one line each, before the original entries below:*
+
+- **Item 3's open half — done.** `CEILING` in `tests/ts-debt.test.js` is `0`.
+  No module carries `@ts-nocheck`, so `npm run typecheck` now means what it says
+  about the whole tree rather than about everything except a list, and the
+  ratchet has become a plain guard.
+- **Item 4, `initInput` — done.** `canvas/input.ts` holds one `gesture` object
+  with a discriminated `mode` (`idle | press | pan | pinch | marquee | move |
+  resize`), a single writer, and the legal transitions in one table. The
+  correction to this document's own brief is in the file's header: `pinch` is a
+  mode the list below never named, and `resize-pending`/`touch-marquee` folded
+  into `press` rather than becoming modes of their own.
+- **Item 5, the CSP — done.** `web/_headers` exists, and `tests/csp.test.js` is
+  the substitute for the feedback a local server cannot give, checking the
+  inline-script hashes, the embed hosts, the one remote `connect-src` host and
+  the worker exemption in both directions.
+- **Item 6, the global error handler — done.** `web/assets/js/errors.ts`,
+  installed with `addEventListener` rather than by assigning `window.onerror`
+  for the reason its own header gives — assignment is a single slot.
+
+**Still open: item 8 alone**, and Finding 7 has got worse rather than better
+since it was measured: `research/` is **80 tracked files, 1.6 MB**, up from the
+74 files and 1.17 MB in the finding. One thing has moved in the direction it
+asks for — the changelog source is now `patch-notes.md` at the repository root,
+because it was never an argument and never a specification, and `research/` is
+for the two of those.
 
 **Item 1, CI — done** (`fea074a`). `.github/workflows/ci.yml`, on
 `ubuntu-latest`, which is the point rather than a default: it is the
@@ -58,10 +93,12 @@ the ones still carried unchecked.
 `BASE` in `tests/layers.test.js` and `DEBT` is still empty. The four undoable
 meta writes Finding 4 did not mention are one `patchMeta()`.
 
-**Still open: 4, 5, 6, 8.** `initInput` is untouched and remains the largest
-single risk named here. The CSP was in hand at the time of writing and is not
-this document's to record. The global error handler and the question of what
-`old/` should look like to a stranger have not been started.
+*As written on the day, and now superseded by the block above:* "**Still open:
+4, 5, 6, 8.** `initInput` is untouched and remains the largest single risk named
+here. The CSP was in hand at the time of writing and is not this document's to
+record. The global error handler and the question of what `old/` should look
+like to a stranger have not been started." Three of those four have since gone
+in; only 8 is left.
 
 **Finding 7 is unaffected and Finding 4's other two rows have moved:**
 `createCommands` is where it was, `state.js` is at 1,260 rather than 2,607.
@@ -432,22 +469,25 @@ that port cheap. If there is one budget, it should go there.
 2. ~~**Add a bundler for the release artifact.**~~ **Done** — `c85cf85`, wired
    in `317d4e0`. `sw.js`'s `SHELL` moved in step, and the sources ship beside
    the bundle rather than being replaced by it.
-3. **`.ts` and `strict`** — **the move is done** (`317d4e0`), the annotations
-   are not. `jsconfig.json` is gone; the second half of this item is now
-   measured by `tests/ts-debt.test.js` rather than by this list.
-4. **Turn `initInput` into an explicit state machine.** *Open.* The pure helpers
-   at the top of the file are already the right shape.
-5. **Write a CSP.** *Open here* — hash the two inline scripts; pin `frame-src`
-   to the embed hosts.
-6. **A global error handler that raises a toast and confirms the autosave.**
-   *Open.*
+3. ~~**`.ts` and `strict`.**~~ **Done, both halves.** The move went in at
+   `317d4e0` and the annotations followed; `CEILING` in `tests/ts-debt.test.js`
+   is `0` and no module carries `@ts-nocheck`. `jsconfig.json` is gone.
+4. ~~**Turn `initInput` into an explicit state machine.**~~ **Done.** One
+   `gesture` object with a discriminated `mode`, one writer, the transitions in
+   a table — and, as predicted, the pure helpers at the top of the file were
+   what made it safe. They did not change.
+5. ~~**Write a CSP.**~~ **Done** — `web/_headers`, with `tests/csp.test.js`
+   standing in for the feedback nothing local can give.
+6. ~~**A global error handler that raises a toast and confirms the
+   autosave.**~~ **Done** — `web/assets/js/errors.ts`.
 7. ~~**Continue the `state.js` split.**~~ **Done** — `6e28f0e`. 2,607 lines to
    1,260, onto five new base modules.
 8. **Decide what `old/` should look like to a stranger.** *Open.* Cosmetic, and
    last.
 
 Items 1, 5 and 6 are each an afternoon and none of them touch application code.
-Two of those three are still true.
+All three were, and all three are done. **Item 8 is the whole of what is left
+here**, and it is the one this document itself filed last on purpose.
 
 ## What this document does not claim
 

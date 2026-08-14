@@ -595,13 +595,19 @@ test('a stored Desktop arrangement reads as the nearest Mobile order', () => {
 });
 
 test('the two catalogues share only the ids that mean the same thing', () => {
-  // `free`, `date` and `type` are deliberately the same string in both, so a
-  // board switched to Mobile and back keeps the setting it had. Anything else
-  // appearing in both would be an id that reads as carried over and is not.
+  // `free`, `date`, `tag` and `type` are deliberately the same string in both,
+  // so a board switched to Mobile and back keeps the setting it had. Anything
+  // else appearing in both would be an id that reads as carried over and is not.
+  //
+  // The list grows only when an arrangement genuinely means the same thing on
+  // both surfaces - which for these four is "the same grouping, with the page
+  // taken away": Desktop lays the groups out as blocks side by side and Mobile
+  // reads them down a column, and the board's setting survives the trip either
+  // way. `tag` joined them when tags did.
   const shared = MOBILE_ARRANGEMENTS
     .map(a => a.id)
     .filter(id => named.includes(id));
-  assert.deepEqual(shared.sort(), ['date', 'free', 'type']);
+  assert.deepEqual(shared.sort(), ['date', 'free', 'tag', 'type']);
 });
 
 // ---------------------------------------------------------------------------

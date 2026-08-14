@@ -36,7 +36,9 @@ import { baseName, clamp } from '../util.ts';
 import { seekInnerHTML, sizeSeekWave } from '../media/transport.ts';
 import { mobileOrder, applyAudioOrder } from '../arrange/arrangements.ts';
 import { assetURL, getAsset, addFile } from '../storage/assets.ts';
-import { nowPlaying, onNowPlaying, togglePlayback } from '../canvas/audio.ts';
+import {
+  getVolume, nowPlaying, onNowPlaying, onVolume, setVolume, togglePlayback, volumeLocked,
+} from '../canvas/audio.ts';
 import {
   clearQueue, cycleRepeat, isQueuePlayer, onQueue, playTrack, queueNext,
   queuePrev, queueState, setQueue, toggleShuffle,
@@ -48,7 +50,14 @@ import { makeWindowDrag, makeWindowResize } from './float-window.ts';
 // Which Mobile lens comes up, for the title-bar button's one job. Set before the
 // mode switch, the same order cmds.feed / cmds.playlist use, so entering the
 // Mobile view lands on the lens that was asked for rather than on the last one.
-import { setLens } from './board-view.ts';
+import { currentLens, setLens } from './board-view.ts';
+// The one icon in this file that comes from the sprite rather than from a string
+// constant above. Everything the transport draws is a glyph this module owns and
+// no other surface has; the speaker is already a <symbol> the now-playing bar
+// uses, and a second hand-inlined copy of it would be the one icon in the app
+// that can drift from its own sprite. icon() is how every module in ui/ reaches
+// one - never innerHTML, which is the rule the whole of ui/ is held to.
+import { icon } from './menu.ts';
 import type { Item } from '../board-model.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 
@@ -81,6 +90,8 @@ type View = {
   listEl: HTMLElement;
   reorderable: boolean;
   group: ActionGroup | null;
+  /** The transport above this list. Both homes have one now; see makePlayer(). */
+  player: Player | null;
   fill: (audio: Item[]) => void;
   clear: () => void;
   markPlaying: () => void;
@@ -88,12 +99,34 @@ type View = {
   destroy: () => void;
 };
 
-/** The Desktop window's transport - see makeWindowPlayer(). */
-type WindowPlayer = {
+/**
+ * A transport - see makePlayer(), which is the only builder and builds one for
+ * each home.
+ *
+ * It was called a WindowPlayer, and the rename is the whole of what let the
+ * Mobile lens have a real transport: the lens hero used to carry Play and
+ * Shuffle and nothing else - no seek, no prev/next, no repeat, no volume - while
+ * a complete player sat forty lines down this file being built for the Desktop
+ * window only. There was never anything about it that was the window's. Every
+ * class it writes is still `pw-`, because renaming those would have been a
+ * rewrite of the stylesheet to no purpose, and the two homes size the same
+ * classes differently through their own scopes (see mobile.css).
+ */
+type Player = {
   el: HTMLElement;
   bind: () => void;
   refresh: () => void;
   destroy: () => void;
+  /**
+   * Whether this transport is on screen and should be following the sound.
+   *
+   * The window's is built when the window opens and dropped when it closes, so
+   * it is awake for its whole life. The lens's is built once with the lens and
+   * never taken down - the lens is a permanent surface that is merely hidden -
+   * so without this it would run a rAF a frame against an element behind the
+   * Feed, or behind the whole Desktop board, for as long as a track played.
+   */
+  setAwake: (on: boolean) => void;
 };
 
 /**
@@ -152,7 +185,24 @@ let mobileView: View | null = null;    // the Mobile lens
 let windowEl: HTMLElement | null = null;      // the Desktop floating window, or null when closed
 let windowContent: HTMLElement | null = null; // the swappable region under the window's title bar
 let windowView: View | null = null;    // the list inside it
-let windowPlayer: WindowPlayer | null = null;  // the Desktop window's transport, or null when closed
+/**
+ * Every transport currently built, so the events that move one move all of them.
+ *
+ * A set rather than the single `windowPlayer` handle it replaces, because there
+ * are two homes now and both carry a real player: the Desktop window's, which
+ * comes and goes with the window, and the Mobile lens's, which is built once
+ * with the lens. makePlayer() adds itself and destroy() takes itself out, so
+ * nothing has to remember to keep this in step - which is exactly the bookkeeping
+ * that would have gone wrong first.
+ *
+ * onNowPlaying and onQueue already fan out to whoever is listening; this is the
+ * same fan-out one level down, for the two calls those handlers make.
+ */
+const players = new Set<Player>();
+/** Rebind every transport to whatever the queue is playing now. */
+const bindPlayers = () => { for (const p of players) p.bind(); };
+/** Repaint every transport's buttons, which is cheaper than a rebind. */
+const refreshPlayers = () => { for (const p of players) p.refresh(); };
 // The command set, for the one thing the window's title-bar button does that is
 // not about the window: hand the board over to the Mobile view.
 let cmds: PlaylistCommands | null = null;
@@ -189,11 +239,17 @@ export function initPlaylist(_viewport: Viewport | null, _commands: PlaylistComm
   });
   bus.on('board', updateMetaAll);
   bus.on('fonts', updateMetaAll);
-  onNowPlaying(() => { wirePlayback(); markPlaying(); refreshActions(); windowPlayer?.bind(); });
-  // Both transports, not just the hero pair: the window player's shuffle and repeat
-  // buttons are the only readout of a mode that lives in canvas/audio.js, and a
-  // press that changes nothing on screen reads as a dead button.
-  onQueue(() => { refreshActions(); windowPlayer?.refresh(); });
+  onNowPlaying(() => { wirePlayback(); markPlaying(); refreshActions(); bindPlayers(); });
+  // Every transport, not just the hero pair: a player's shuffle and repeat
+  // buttons are the only readout of a mode that lives in canvas/playlist-queue.js,
+  // and a press that changes nothing on screen reads as a dead button.
+  onQueue(() => { refreshActions(); refreshPlayers(); });
+  // The lens transport sleeps while the other lens is up. It is built once with
+  // the lens and never taken down, so without this its follow loop would run a
+  // frame at a time against an element nobody can see for as long as a track
+  // plays. destroy() is what a player calls that - it drops the rAF and the
+  // media listeners, and bind() puts both back.
+  bus.on('lens', () => syncLensPlayer());
 
   renderAll();
 }
@@ -234,7 +290,21 @@ function renderAll() {
   }
   markPlaying();
   refreshActions();
-  windowPlayer?.bind();
+  bindPlayers();
+  syncLensPlayer();
+}
+
+/**
+ * Wake the lens transport when the lens is what is on screen, and put it to
+ * sleep otherwise.
+ *
+ * Two conditions, not one: the Desktop board has no lens at all, and the Mobile
+ * board has two of which this is one. The Feed is the other, and a player
+ * following a track behind it is a rAF a frame doing arithmetic nobody can read.
+ */
+function syncLensPlayer() {
+  mobileView?.player?.setAwake(
+    board.layoutMode === 'mobile' && currentLens() === 'playlist');
 }
 
 function updateMetaAll() {
@@ -287,7 +357,7 @@ function wirePlayback() {
   playbackAbort?.abort();
   playbackAbort = new AbortController();
   wiredEl = el;
-  const onState = () => { refreshActions(); windowPlayer?.refresh(); };
+  const onState = () => { refreshActions(); refreshPlayers(); };
   const opts = { signal: playbackAbort.signal };
   el.addEventListener('play', onState, opts);
   el.addEventListener('pause', onState, opts);
@@ -336,12 +406,26 @@ function makeActions() {
 }
 
 /**
- * Build one track list, with the album header the Mobile lens carries above it.
+ * Build one track list, the transport over it, and - on the lens - the album
+ * header above both.
  *
- * The lens (variant 'lens') gets the full album hero - cover mosaic, name, "N
- * songs", Play / Shuffle - on the paper sheet. The Desktop window (variant
- * 'window') gets no hero here: it carries a real transport instead, built by
- * makeWindowPlayer() and placed above this list. So this only builds the list.
+ * The lens (variant 'lens') gets the full album hero: cover mosaic, name, "N
+ * songs", and the big Play / Shuffle pair. The Desktop window (variant 'window')
+ * gets no hero - its title bar and the transport are its head.
+ *
+ * **Both get the transport now.** It used to be the window's alone, and the lens
+ * carried Play and Shuffle and nothing else - no seek, no prev/next, no repeat,
+ * no volume - which meant the surface with the most room for a player was the
+ * one with the least player on it. The window's is mounted by the caller,
+ * because it sits above the window's body rather than inside it; the lens's is
+ * mounted here, under the hero and over the list.
+ *
+ * The hero's Play / Shuffle pair stays exactly as it was, and deliberately did
+ * not widen into a third copy of the five transport buttons. Those two are the
+ * album's call to action - the thing you press when you arrive and have not
+ * chosen a track - and the transport underneath is what you use once something
+ * is playing. They are different sentences, which is why they can sit inches
+ * apart without either being redundant.
  */
 function createView(container: HTMLElement,
   { reorderable, variant }: { reorderable: boolean, variant: 'lens' | 'window' }): View {
@@ -375,6 +459,15 @@ function createView(container: HTMLElement,
     surface.appendChild(hero);
   }
 
+  // The lens's transport, and the volume is on it rather than in the window's.
+  // On Desktop the volume lives on the now-playing bar, which is up whenever
+  // there is anything to turn down; on the lens that bar is deliberately hidden
+  // (chrome.css keys it off data-feed-lens), so this is the only place a level
+  // can be reached for at all. The argument that kept it off the window is the
+  // one that puts it here: it belongs where the sound is stopped.
+  const player = makePlayer({ volume: lens });
+  if (lens) surface.appendChild(player.el);
+
   const listEl = div('pl-list');
   surface.appendChild(listEl);
 
@@ -388,7 +481,7 @@ function createView(container: HTMLElement,
   if (lens) container.appendChild(surface);
 
   const view: View = {
-    listEl, reorderable, group,
+    listEl, reorderable, group, player,
     fill(audio) {
       const present = new Set<string>();
       audio.forEach(item => {
@@ -403,6 +496,10 @@ function createView(container: HTMLElement,
       }
       empty.classList.toggle('is-shown', audio.length === 0);
       hero?.classList.toggle('is-empty', audio.length === 0);
+      // A transport over an empty list is five buttons that cannot do anything
+      // and a scrubber for nothing. The "No music here yet" panel is the whole
+      // of what either home should be saying at that point.
+      player.el.hidden = audio.length === 0;
       view.updateMeta(audio);
     },
     clear() { for (const r of rows.values()) r.el.remove(); rows.clear(); },
@@ -424,6 +521,11 @@ function createView(container: HTMLElement,
     destroy() {
       view.clear();
       if (group) actionGroups.delete(group);
+      // Before the container is emptied, and it is the load-bearing half of this:
+      // a transport holds a rAF and a set of listeners on a media element that
+      // outlives it, so dropping its node is not the same as taking it down.
+      player.destroy();
+      players.delete(player);
       container.replaceChildren();
     },
   };
@@ -773,20 +875,20 @@ function renderWindowBody() {
   // The two `!` are the test on this line: openPlayerWindow() builds the window
   // and its content in one run, and closePlayerWindow() drops both together.
   if (!windowEl) return;
-  windowPlayer?.destroy();
-  windowPlayer = null;
   windowView?.destroy();
   windowView = null;
   windowContent!.replaceChildren();
 
-  windowPlayer = makeWindowPlayer();
   const body = div('player-window-body');
-  windowContent!.append(windowPlayer.el, body);
+  // The window's own player, held only long enough to mount it: it takes itself
+  // out of `players` when the view that owns it is destroyed, so there is no
+  // second handle to keep in step. That handle is what used to leak a dead
+  // transport bound to the shared queue across a rebuild.
   windowView = createView(body, { reorderable: false, variant: 'window' });
+  windowContent!.append(windowView.player!.el, body);
 
   markTransport();
   renderAll();
-  windowPlayer?.bind();
 }
 
 /**
@@ -812,13 +914,12 @@ export function closePlayerWindow() {
   if (!windowEl) { markTransport(); return; }
   const el = windowEl;
   // The queue is deliberately left running - closing the player is not stopping
-  // the music, any more than leaving the Mobile playlist is.
-  windowPlayer?.destroy();
+  // the music, any more than leaving the Mobile playlist is. The view's destroy
+  // takes its transport with it, which is what puts it out of `players`.
   windowView?.destroy();
   windowEl = null;
   windowContent = null;
   windowView = null;
-  windowPlayer = null;
   // Scale it back down, then take it away once the transform has run.
   el.classList.remove('is-open');
   clearTimeout(windowExit);
@@ -866,13 +967,20 @@ function markTransport() {
 // title bar and pulling it bigger by its corner is not a fact about music.
 
 /**
- * The Desktop window's transport: the now-playing track (cover, title, artist), a
- * seek line with times, and the five controls (shuffle, prev, play/pause, next,
- * repeat). It drives the same shared queue the list does, and binds its follow
- * loop and element listeners to whatever the queue is currently playing, rebinding
- * on a track change and tearing down when the window closes.
+ * A transport: the now-playing track (cover, title, artist, where it is in the
+ * list), a seek line with times, and the five controls - shuffle, prev,
+ * play/pause, next, repeat. On the lens, a volume row under them.
+ *
+ * It drives the same shared queue the list does, and binds its follow loop and
+ * element listeners to whatever the queue is currently playing, rebinding on a
+ * track change and letting go when the surface holding it goes away.
+ *
+ * One builder for both homes. This was makeWindowPlayer() and everything in it
+ * was already general - nothing here knows about a floating window - so the
+ * rename is most of what the Mobile lens needed to stop being a play button with
+ * an album cover over it.
  */
-function makeWindowPlayer(): WindowPlayer {
+function makePlayer({ volume: wantVolume }: { volume: boolean }): Player {
   const el = div('pw-player');
 
   const top = div('pw-top');
@@ -882,7 +990,13 @@ function makeWindowPlayer(): WindowPlayer {
   const title = div('pw-title');
   title.textContent = 'Nothing playing';
   const artist = div('pw-artist');
-  info.append(title, artist);
+  // "4 of 12", counted down the list you can see rather than along the play
+  // order - see QueueSnapshot.index, which does the mapping. Deliberately not an
+  // "up next": under shuffle the next track is not the row below, and printing
+  // it only raises the question of why.
+  const pos = div('pw-pos');
+  pos.hidden = true;
+  info.append(title, artist, pos);
   top.append(cover, info);
 
   const seek = div('pw-seek');
@@ -916,12 +1030,48 @@ function makeWindowPlayer(): WindowPlayer {
   const repeatBtn = pwBtn('pw-repeat', REPEAT_ICON, 'Repeat', cycleRepeat);
   controls.append(shuffleBtn, prevBtn, playBtn, nextBtn, repeatBtn);
 
-  // No volume row here. It belongs on the now-playing bar, which is up whenever
-  // there is anything to turn down - a level is a property of the room rather
-  // than of this list, so putting it here would mean opening a window to quiet a
-  // noise. What this window has that the bar does not is the four controls that
-  // act on the list itself.
   el.append(top, seek, controls);
+
+  /**
+   * The volume, on the lens only.
+   *
+   * The Desktop window has none, and that has not changed: the now-playing bar
+   * is up there whenever there is anything to turn down, and a level is a
+   * property of the room rather than of this list - so putting one in the window
+   * would mean opening a window to quiet a noise.
+   *
+   * The lens is the case that argument does not cover. chrome.css hides
+   * #nowplaying entirely under data-feed-lens="playlist", on the grounds that
+   * the lens carries its own transport, which leaves the lens as the only
+   * surface a level can be reached for from at all. So it goes here, and the
+   * reasoning is the same one either way: it belongs where the sound is stopped.
+   *
+   * volumeLocked() first, copied from initNowPlaying(): writes to media volume
+   * are ignored on iOS Safari, and the phone is where this lens lives. A slider
+   * that appeared to set it there would be a control that lies, so the row is
+   * not built at all rather than built and disabled - the schema's own "absence,
+   * not disabling" rule, on the one surface where the platform decides.
+   */
+  if (wantVolume && !volumeLocked()) {
+    const row = div('pw-volume');
+    row.appendChild(icon('i-volume'));
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = '0';
+    slider.max = '100';
+    slider.step = '1';
+    slider.setAttribute('aria-label', 'Volume');
+    row.appendChild(slider);
+    el.appendChild(row);
+    const paintVolume = () => {
+      const pct = Math.round(getVolume() * 100);
+      if (slider.value !== String(pct)) slider.value = String(pct);
+      slider.setAttribute('aria-valuetext', pct + '%');
+    };
+    paintVolume();
+    onVolume(paintVolume);
+    slider.addEventListener('input', () => setVolume(+slider.value / 100));
+  }
 
   bindScrub(line, clientX => {
     const s = queueEl();
@@ -935,6 +1085,7 @@ function makeWindowPlayer(): WindowPlayer {
   let boundEl: HTMLMediaElement | null = null;
   let abort: AbortController | null = null;
   let frame = 0;
+  let awake = true;
 
   function paint() {
     const s = queueEl();
@@ -956,14 +1107,35 @@ function makeWindowPlayer(): WindowPlayer {
     // the glyph span is the whole of what it put inside one.
     playBtn.querySelector('.pw-ico')!.innerHTML = playing ? PAUSE_ICON : PW_PLAY_ICON;
     playBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
-    const { shuffle, repeat } = queueState();
+    const { shuffle, repeat, index, length } = queueState();
     shuffleBtn.classList.toggle('is-on', shuffle);
     repeatBtn.classList.toggle('is-on', repeat !== 'off');
     repeatBtn.querySelector('.pw-ico')!.innerHTML = repeat === 'one' ? REPEAT_ONE_ICON : REPEAT_ICON;
     repeatBtn.setAttribute('aria-label',
       repeat === 'one' ? 'Repeat one' : repeat === 'all' ? 'Repeat all' : 'Repeat');
+    // Where in the list, and the two ends.
+    //
+    // The ends are only ends when the list is being read straight through:
+    // shuffling has no last track to speak of, and repeat 'all' means the list
+    // has no end at all. So the greying is gated on both, and in either of those
+    // modes both buttons stay live and wrap - which is what queuePrev/queueNext
+    // do when they are pressed rather than reached by a track finishing.
+    //
+    // With repeat off and no shuffle, disabling is not a lie about the button,
+    // it *is* the behaviour: pressing Next at the end of a list you asked not to
+    // repeat should do nothing, rather than quietly starting it again.
+    const straight = !shuffle && repeat === 'off';
+    const loaded = index >= 0 && length > 0;
+    pos.hidden = !loaded;
+    if (loaded) pos.textContent = `${index + 1} of ${length}`;
+    prevBtn.disabled = !length || (straight && loaded && index <= 0);
+    nextBtn.disabled = !length || (straight && loaded && index >= length - 1);
   }
   function bind() {
+    // A sleeping transport is one nobody can see - see setAwake(). Skipping the
+    // whole of bind() rather than only the rAF is the point: the media listeners
+    // it hangs are what would wake the follow loop again on the next 'play'.
+    if (!awake) return;
     const np = nowPlaying();
     const item = np && isQueuePlayer(np.el) ? np.item : null;
     cover.replaceChildren();
@@ -1006,8 +1178,24 @@ function makeWindowPlayer(): WindowPlayer {
     if (frame) cancelAnimationFrame(frame);
     frame = 0;
   }
+  /**
+   * Off screen, or back on it.
+   *
+   * destroy() is exactly the right teardown for going to sleep - it drops the
+   * rAF and the media listeners and nothing else - so this is destroy() plus a
+   * flag that stops bind() putting them straight back on the next 'nowplaying'.
+   * Waking is a bind(), which rebuilds all of it from the queue as it stands
+   * now rather than from whatever it was when the surface went away.
+   */
+  function setAwake(on: boolean) {
+    if (awake === on) return;
+    awake = on;
+    if (on) bind(); else destroy();
+  }
 
-  return { el, bind, refresh, destroy };
+  const player: Player = { el, bind, refresh, destroy, setAwake };
+  players.add(player);
+  return player;
 }
 
 /** One round transport button for the window player, its glyph in a swappable span. */

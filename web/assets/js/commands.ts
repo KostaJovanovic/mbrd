@@ -44,7 +44,7 @@ import {
   duplicateItems, select,
   setBoardMode as selectBoardMode,
   restoreTitleCard, resetTitlePosition,
-  isFurniture, isRider, isFence, setArrangement,
+  isFurniture, isRider, isFence, isLocked, setArrangement,
   addItems,
   snapshotGeom, applyGeom, commitGeom,
 } from './state.ts';
@@ -77,6 +77,7 @@ import { fenceCommands, sharedFence } from './commands/fences.ts';
 import { viewCommands } from './commands/view.ts';
 import { itemMetaCommands } from './commands/item-meta.ts';
 import type { CommandViewport } from './commands/view.ts';
+import type { ViewPerf } from './perf/view-perf.ts';
 import type { Item, ItemMeta } from './board-model.ts';
 import type { Point } from './arrange/arrangements.ts';
 
@@ -141,6 +142,12 @@ export interface CommandsViewport extends CommandViewport {
 export interface CommandDeps {
   resetAppearance: () => void;
   setWhimsy: (level: number | string) => void;
+  /**
+   * The frame profiler, made in main.ts against the live Viewport. Injected
+   * rather than imported for the plain reason that it is an *instance* - there
+   * is one per session and it closes over the viewport it times.
+   */
+  perf: ViewPerf;
 }
 
 /**
@@ -157,7 +164,7 @@ export interface CommandDeps {
  *              state changes, and those are the ones that need it.
  * @param deps  { resetAppearance, setWhimsy } from ui/appearance.js.
  */
-export function createCommands(vp: CommandsViewport, { resetAppearance, setWhimsy }: CommandDeps) {
+export function createCommands(vp: CommandsViewport, { resetAppearance, setWhimsy, perf }: CommandDeps) {
   /**
    * The board's settings as a plain bag of keys, which is what the three
    * settings doors below need.
@@ -336,8 +343,16 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
       // card in that row. Lining it up would peel it off the photograph it was
       // pressed onto - and it comes along anyway, at its own fraction of a host
       // the sweep did move.
+      //
+      // And locked cards, which is the one exclusion here that is a promise
+      // rather than a judgement: a lock means the geometry does not change, and
+      // an Align that quietly moved a locked card would be the exception that
+      // makes the whole feature untrustworthy. They drop out of the overlap
+      // sweep below with everything else that is excluded, so a straightened
+      // row can be laid across a locked card - which is the honest outcome of
+      // "this one does not move" and the same thing furniture already does.
       const items = board.items.filter(i =>
-        selection.has(i.id) && !isFurniture(i) && !isFence(i) && !isRider(i));
+        selection.has(i.id) && !isFurniture(i) && !isFence(i) && !isRider(i) && !isLocked(i));
       if (items.length < 2) { toast('Pick two or more cards to line up'); return; }
       const ids = items.map(i => i.id);
       const labels: Record<string, string> = {
@@ -359,7 +374,7 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
       if (board.layoutMode === 'mobile') { toast('Spacing out is a canvas thing'); return; }
       // Riders out, as in alignSelection above and for the same reason.
       const items = board.items.filter(i =>
-        selection.has(i.id) && !isFurniture(i) && !isFence(i) && !isRider(i));
+        selection.has(i.id) && !isFurniture(i) && !isFence(i) && !isRider(i) && !isLocked(i));
       if (items.length < 3) { toast('Pick three or more cards to space out'); return; }
       const ids = items.map(i => i.id);
       const before = snapshotGeom(ids);
@@ -395,7 +410,7 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     },
 
     // --- the lenses, the camera, the chrome resets ---
-    ...viewCommands(vp, { resetAppearance }),
+    ...viewCommands(vp, { resetAppearance, perf }),
 
     selectAll,
     undo, redo,

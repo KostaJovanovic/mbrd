@@ -56,7 +56,10 @@ import { emitter } from './util.ts';
  *   history       - the undo or redo stack changed
  *   connections   - board.connections changed
  *   autosaved     - the session was written to IndexedDB
+ *   filter        - the tag filter changed
  *   audioOrder    - the playlist order changed
+ *   tour          - the tour's stops changed
+ *   tour:at       - the tour moved to a stop, or ended (payload: the index, or -1)
  *   fonts         - the board's face list changed
  *   fonts:add     - fonts were dropped in and want loading (payload: the files)
  *   imported      - an import finished (payload: what it brought)
@@ -79,7 +82,10 @@ export type BusEvents = {
   history: void,
   connections: void,
   autosaved: void,
+  filter: void,
   audioOrder: string[],
+  tour: string[],
+  'tour:at': number,
   fonts: void,
   'fonts:add': File[],
   imported: { id: string }[],
@@ -136,6 +142,42 @@ export function deselect(id: string) {
   if (!selection.delete(id)) return false;
   bus.emit('selection');
   return true;
+}
+
+/**
+ * Which tags the board is being filtered to, or an empty set for "everything".
+ *
+ * Here beside the selection because it is the same kind of thing and wants the
+ * same two neighbours: a live Set of strings, read on the paint path, changed
+ * by a menu, announced on the bus. It is **not board state** - nothing about
+ * the board changes, nothing is dirtied, there is nothing to undo - which is
+ * exactly the argument the selection's three writers make a few lines up.
+ *
+ * **Deliberately not saved.** A filter that survived into the .mbrd would mean
+ * opening a board and finding two thirds of it faded out, with the reason
+ * recorded in a file you cannot see and a control you have not found yet. The
+ * cost of not saving it is that a filter has to be set again after a reload,
+ * which is a second of work and is never a surprise.
+ *
+ * It **dims rather than hides**, and that is the whole design: every card stays
+ * where it is, stays selectable, stays draggable and stays in every count the
+ * app reports. So there is no state in which the board is lying to you about
+ * what is on it - which is what a filter that removed cards would be, on a
+ * surface whose entire promise is that it shows you your things.
+ *
+ * A card matches when it carries *any* of the filtered tags rather than all of
+ * them. Any is what a person building up a filter means - each tag added shows
+ * more, which is legible while clicking - where all narrows to nothing by the
+ * third click and looks broken.
+ */
+export const tagFilter = new Set<string>();
+
+export function setTagFilter(tags: Iterable<string>) {
+  const next = [...new Set(tags)].filter(Boolean).sort();
+  if (next.length === tagFilter.size && next.every(t => tagFilter.has(t))) return;
+  tagFilter.clear();
+  for (const t of next) tagFilter.add(t);
+  bus.emit('filter');
 }
 
 /**

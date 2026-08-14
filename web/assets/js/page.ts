@@ -91,7 +91,7 @@ export type BoardFace = 'canvas' | 'feed' | 'playlist';
  * Both did exactly that, which is what this exists to stop.
  *
  * The face travels as a fragment because a fragment is the one part of a URL
- * this app already reads on the way in (#grips, #wheel, #perf, #load), so it
+ * this app already reads on the way in (#grips, #perf, #load), so it
  * costs main.ts one line rather than a router. Canvas carries none: it is what
  * a board opens as, and a #canvas left in somebody's history would be a URL
  * saying something the plain address already said.

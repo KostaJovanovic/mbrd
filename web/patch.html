@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <!-- GENERATED - do not edit. Run: node tools/gen-patch-page.mjs
-     The prose lives in research/patch-notes.md, which is the only place the
+     The prose lives in patch-notes.md at the repository root, the only place the
      changelog is written. The load block below is index.html's own, copied at
      build time so this page wears the app's cascade rather than a second
      account of it. See the head of the generator. -->
@@ -843,6 +843,40 @@
   <div class="np-seek"></div>
 </div>
 
+<!-- The tour bar: where you are in the board's stop list, and the two steps.
+
+     Literal markup rather than a node ui/tour.js builds, for the reason every
+     other piece of chrome here is literal: a runtime-built id costs an entry in
+     tests/element-ids.test.js's JS_BUILT table, and that table is for the nodes
+     that genuinely cannot exist before the module runs. This one can.
+
+     *After* #nowplaying, and that is as load-bearing as #toolbar being before
+     it. The rule that lifts this bar clear of the player is a general sibling
+     combinator, and those only look forward: this one has to see the player from
+     the tour, where the player's own has to see the toolbar from the player. The
+     two constraints point opposite ways and neither is reorderable.
+
+     Desktop only - vp.fit() ignores its items on Mobile, so a tour there would
+     step the counter and never move the camera. ui/tour.js declines with a toast
+     rather than letting the bar come up over a board it cannot drive.
+
+     hidden to start: a board is not on a tour when it opens. -->
+<div id="tour" hidden>
+  <button type="button" class="tour-prev" aria-label="The stop before" title="The stop before  Left">
+    <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-chevron-left"/></svg>
+  </button>
+  <div class="tour-where">
+    <div class="tour-name"></div>
+    <div class="tour-count"></div>
+  </div>
+  <button type="button" class="tour-next" aria-label="The next stop" title="The next stop  Right">
+    <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-chevron-right"/></svg>
+  </button>
+  <button type="button" class="tour-close" aria-label="End the tour" title="End the tour  Esc">
+    <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>
+  </button>
+</div>
+
 <div id="drop-overlay" hidden><div>let it fall</div></div>
 
 <!-- The waiting strip. Driven by busy() in util.js; see the note there for why
@@ -988,6 +1022,74 @@
   <div id="viewer-body" tabindex="-1"></div>
 </dialog>
 
+<!-- The darkroom: one picture, cropped and graded.
+
+     A separate dialog from the viewer above rather than a mode inside it, and
+     the split is the same one the app makes everywhere else: the viewer's whole
+     design is a table of ways to *show* an item, and none of its entries edit
+     anything. Folding a crop rectangle, eight handles and three dials into the
+     image entry would have made one of the seven views the size of the other
+     six put together.
+
+     Nothing here is destructive. The crop is four fractions and the grade is
+     three multipliers, both stored on the item; the bytes in the board are
+     never touched, so Reset is always a way back and so is Ctrl+Z. See
+     itemCrop() in board-model.js.
+
+     The stage is sized by CSS and the frame inside it is positioned by
+     ui/darkroom.js in percentages of the picture, so the whole surface survives
+     a window resize without measuring anything. -->
+<dialog id="darkroom" aria-labelledby="darkroom-title">
+  <header id="darkroom-head">
+    <h2 id="darkroom-title">Crop &amp; adjust</h2>
+    <button type="button" id="darkroom-close" aria-label="Close">
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>
+    </button>
+  </header>
+  <!-- The picture, and the frame over it. The eight handles are built by the
+       module rather than written out here, because they are the same eight the
+       board's cards carry and their names are already a table there. -->
+  <!-- The plate shrink-wraps the picture, and that is load-bearing rather than
+       tidy: the frame is positioned in percentages, so its parent has to be
+       exactly the drawn picture and not the box the picture is centred in. An
+       object-fit letterbox would have made every percentage wrong by however
+       much grey was on each side. -->
+  <div id="darkroom-stage">
+    <div id="darkroom-plate">
+      <img id="darkroom-image" alt="">
+      <div id="darkroom-frame" hidden>
+        <div class="dk-grid" aria-hidden="true"></div>
+      </div>
+    </div>
+  </div>
+  <div id="darkroom-dials">
+    <label class="dk-dial">
+      <span>Brightness</span>
+      <input type="range" id="dk-brightness" min="0.4" max="1.6" step="0.01" value="1">
+      <output for="dk-brightness">100%</output>
+    </label>
+    <label class="dk-dial">
+      <span>Contrast</span>
+      <input type="range" id="dk-contrast" min="0.4" max="1.6" step="0.01" value="1">
+      <output for="dk-contrast">100%</output>
+    </label>
+    <label class="dk-dial">
+      <span>Saturation</span>
+      <input type="range" id="dk-saturation" min="0" max="2" step="0.01" value="1">
+      <output for="dk-saturation">100%</output>
+    </label>
+  </div>
+  <!-- .ask-row, which is #ask's own button row: the same three states, the same
+       ring, the same press. A second set of dialog buttons styled separately is
+       two button designs by the end of the quarter. -->
+  <footer id="darkroom-foot" class="ask-row">
+    <button type="button" id="darkroom-reset">Reset</button>
+    <span class="ask-gap"></span>
+    <button type="button" id="darkroom-cancel">Cancel</button>
+    <button type="button" id="darkroom-apply">Apply</button>
+  </footer>
+</dialog>
+
 <!-- The credits sheet the footer opens. A real <dialog> for the same four
      reasons #ask is one, and written out here rather than built by ui/credits.js
      because two names are not data: nothing about this list is decided at run
@@ -1127,7 +1229,7 @@
          when it started. All counted from the source. -->
     <p class="pn-tally">
       <span>13 releases</span>
-      <span>195 commits</span>
+      <span>196 commits</span>
       <span>since 25 July 2026</span>
     </p>
   </header>

@@ -12,9 +12,8 @@
 // without a browser.
 
 import {
-  listLibrary, switchBoard, newLibraryBoard, deleteLibraryBoard,
+  listLibrary, switchBoard, newBoard, deleteLibraryBoard, ensureCurrentOnShelf,
 } from '../storage/storage.ts';
-import { boardThumb } from './snapshot.ts';
 import { toast } from '../notify.ts';
 import type { LibraryEntry } from '../storage/library.ts';
 
@@ -80,6 +79,13 @@ export async function openLibrary() {
 
 async function render() {
   if (!root) return;
+  // The board on screen has a row before the list is drawn, even if it has never
+  // been switched away from. Without this the shelf held only boards you had
+  // *left*, so a browser that had never switched showed "No other boards yet"
+  // while looking straight at one. See ensureCurrentOnShelf() in
+  // storage/storage.ts, which is a no-op on every visit after the first.
+  await ensureCurrentOnShelf().catch(() => {});
+  if (!root) return;   // closed while we were writing
   const boards = await listLibrary().catch(() => []);
   if (!root) return;   // closed while we were reading
   root.replaceChildren();
@@ -97,9 +103,12 @@ async function render() {
   fresh.type = 'button';
   fresh.className = 'library-new';
   fresh.textContent = 'New board';
+  // newBoard(), which is now the only New: the top-level one and the library's
+  // collapsed into it when Open and New started filing the outgoing board on
+  // the shelf. No thumbnail is passed any anywhere here any more - stashCurrent()
+  // takes its own through the injection main.ts wires. See setBoardThumb().
   fresh.addEventListener('click', () => guard(async () => {
-    const thumb = await boardThumb().catch(() => null);
-    await newLibraryBoard(thumb);
+    await newBoard();
     closeLibrary();
   }));
   const shut = document.createElement('button');
@@ -149,8 +158,7 @@ function card(b: ShelfEntry) {
   when.textContent = b.current ? 'On screen now' : ago(b.at);
   open.append(thumb, name, when);
   open.addEventListener('click', () => guard(async () => {
-    const shot = await boardThumb().catch(() => null);
-    if (await switchBoard(b.id, shot)) closeLibrary();
+    if (await switchBoard(b.id)) closeLibrary();
   }));
   el.append(open);
 

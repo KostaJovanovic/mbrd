@@ -34,12 +34,25 @@ export interface AskOptions {
   cancel?: string;
   keep?: string;
   field?: AskField | null;
+  /**
+   * Whether the `go` button wears the danger dressing.
+   *
+   * Defaults to "yes, unless there is a field", which is what this dialog did
+   * for as long as every question it asked was destructive - clear everything,
+   * discard unsaved work. It is a parameter now because there is a question
+   * that is neither: a .mbrd has been dropped on a board and the two answers
+   * are Open and Merge. Neither is destructive, both are ordinary, and a red
+   * button would be the dialog telling somebody to be careful about a choice
+   * they can undo.
+   */
+  danger?: boolean;
 }
 
 /** The same, once the defaults have been folded in - nothing is missing here. */
-type AskSettled = Required<Omit<AskOptions, 'field'>> & { field: AskField | null };
+type AskSettled = Required<Omit<AskOptions, 'field' | 'danger'>>
+  & { field: AskField | null, danger?: boolean };
 
-const DEFAULTS: AskSettled = { title: 'Are you sure?', body: '', go: 'Yes', cancel: 'Cancel', keep: '', field: null };
+const DEFAULTS: Omit<AskSettled, 'danger'> = { title: 'Are you sure?', body: '', go: 'Yes', cancel: 'Cancel', keep: '', field: null };
 
 /** Nothing is open twice: a second ask() while one is up waits for it. */
 let current: Promise<Answer | string | null> | null = null;
@@ -138,7 +151,9 @@ function openWith(el: HTMLDialogElement, o: AskSettled): Promise<Answer | string
   // has been decided by the time it opens - so the "go" button loses the danger
   // dressing it wears for the delete-everything cases this dialog was built
   // for. Leaving it red would make "what size is this?" look like a threat.
-  go.classList.toggle('danger', !o.field);
+  // Destructive unless the caller says otherwise, and never on a question with
+  // a box in it - "what size is this?" was never a threat. See AskOptions.danger.
+  go.classList.toggle('danger', o.danger ?? !o.field);
 
   return new Promise<Answer | string | null>(resolve => {
     let answer: Answer = 'cancel';

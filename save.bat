@@ -163,11 +163,12 @@ if errorlevel 1 (
 )
 
 rem The changelog, for the same reason and one more. web/patch.html carries the
-rem prose from research/patch-notes.md and, around it, index.html's own load
-rem block - every stylesheet and the pre-paint look restore - so a change to the
-rem shell has to reach it or /patch is dressed by an older cascade than the site
-rem is. Reproducible: no timestamps anywhere in it, so re-running with nothing
-rem edited writes identical bytes and stages nothing. tests/patch.test.js runs
+rem prose from patch-notes.md at the repository root and, around it, index.html's
+rem own load block - every stylesheet and the pre-paint look restore - so a
+rem change to the shell has to reach it or /patch is dressed by an older cascade
+rem than the site is. Reproducible: no timestamps anywhere in it, so re-running
+rem with nothing edited writes identical bytes and stages nothing.
+rem tests/patch.test.js runs
 rem the generator and compares, so a skipped run fails the suite rather than
 rem shipping.
 echo [gen]  patch notes

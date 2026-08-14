@@ -15,7 +15,7 @@
 // ever stops being offered, this test fails and says the token may go - which
 // is the other half, and the half a comment could never do.
 //
-// The audit that asked for this is research/visual-audit-2026-08-12.md, item 5
+// The audit that asked for this is research/old/visual-audit-2026-08-12.md, item 5
 // of its remaining plan: "it wants a test asserting it rather than a comment
 // defending it, so the next reader does not delete it."
 

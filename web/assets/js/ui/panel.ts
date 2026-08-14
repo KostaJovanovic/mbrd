@@ -37,9 +37,10 @@ import { field, fieldStops } from './controls.ts';
 import {
   TABS, SECTIONS, controlVisible, controlEnabled, sectionVisible,
 } from './settings-schema.ts';
+import { openAnchored } from './menu.ts';
 import type {
   ButtonsControl, CheckControl, Control, Ctx, HintControl, KeysControl,
-  RangeControl, SelectControl, Section, SlotControl, TextControl,
+  PickerControl, RangeControl, SelectControl, Section, SlotControl, TextControl,
 } from './settings-schema.ts';
 
 /**
@@ -236,6 +237,7 @@ const BUILDERS: { [K in Control['type']]: (c: Extract<Control, { type: K }>) => 
   check: buildCheck,
   range: buildRange,
   select: buildSelect,
+  picker: buildPicker,
   buttons: buildButtons,
   slot: buildSlot,
   hint: buildHint,
@@ -326,6 +328,110 @@ function buildSelect(c: SelectControl) {
   }
   register(c, label, select, null);
   return label;
+}
+
+/**
+ * A select that shows what it is choosing between.
+ *
+ * A button and ui/menu.ts's anchored panel, not a <select>, and the reason is
+ * flat: no browser will paint anything inside a native dropdown list, so the
+ * one row in this panel whose options *are* colours could not show them. The
+ * schema entry is otherwise identical to a select's - same `options`, same
+ * `get`/`set`, same `external` - which is what made this a second builder
+ * rather than a second control model.
+ *
+ * ui/menu.ts renders it because CLAUDE.md says every menu in this app is drawn
+ * by that module and a second implementation is the thing that rule forbids.
+ * `openAnchored()` is its non-cursor door, and `swatch` rows and the tick on the
+ * current value both come free with it.
+ *
+ * The value lives in `data-value` rather than in a property, so that a sync
+ * (syncPaletteMode) and a paint read the same place, and a `pick` CustomEvent
+ * carries the choice out - which keeps this builder ignorant of what a palette
+ * is, exactly as buildSelect is.
+ */
+function buildPicker(c: PickerControl) {
+  const { label } = field(c.label);
+  if (c.fieldId) label.id = c.fieldId;
+  const btn = make('button', 'field-picker');
+  btn.type = 'button';
+  if (c.id) btn.id = c.id;
+  btn.dataset.value = c.get?.() ?? '';
+  // Rebuilt on every press rather than once: options() takes the live context,
+  // and the tick has to follow a value that anything else may have changed.
+  btn.addEventListener('click', () => {
+    const now = btn.dataset.value ?? '';
+    const entries = (c.options?.(ctx()) || []).map(o => ({
+      label: o.label,
+      swatch: c.swatches?.(o.value) ?? [],
+      check: o.value === now,
+      action: () => {
+        btn.dataset.value = o.value;
+        paintPicker(btn);
+        // The event rather than a direct call, so this builder never learns what
+        // it is picking. `external` controls have no `set` at all - the palette
+        // is one, because choosing Dynamic is a different act from choosing a
+        // palette and only ui/appearance-controls.ts knows that.
+        btn.dispatchEvent(new CustomEvent('pick', { detail: o.value }));
+        c.set?.(o.value);
+      },
+    }));
+    openAnchored(btn.getBoundingClientRect(), entries);
+  });
+  // The other direction: ui/appearance-controls.ts writes `data-value` when the
+  // look changes underneath and asks for the face to follow. An event rather
+  // than a call, because a call would be that module importing this one, which
+  // imports the schema, which imports the chips - a ring tests/imports.test.js
+  // refuses. See syncPaletteMode() there.
+  btn.addEventListener('repaint', () => paintPicker(btn));
+  paintPicker(btn);
+  label.append(btn);
+  // `null` for the input slot: that field is typed as the <input>/<select> the
+  // painting writes values into, and a picker's value is an attribute this
+  // module writes itself. pickerOf() below is how the face finds its spec again.
+  register(c, label, null, null);
+  return label;
+}
+
+/**
+ * The schema entry behind a built picker, by id.
+ *
+ * By id rather than by identity, because paintPicker() is called from outside
+ * this module with nothing but the element - syncPaletteMode() writes
+ * `data-value` and asks for the face to follow. Every picker has an id; a
+ * control without one cannot be reached from outside in the first place.
+ */
+function pickerOf(el: HTMLElement): PickerControl | null {
+  const hit = built.find(b => b.c.type === 'picker' && b.c.id && b.c.id === el.id);
+  return (hit?.c as PickerControl) ?? null;
+}
+
+/**
+ * Write a picker's face from its stored value: the option's own label, and its
+ * chips.
+ *
+ * Module-private, and reached from outside through the `repaint` event the
+ * builder listens for. It re-reads the schema entry through the registry rather
+ * than being handed one, so the listener only needs the element.
+ */
+function paintPicker(el: HTMLElement) {
+  const c = pickerOf(el);
+  if (!c) return;
+  const value = el.dataset.value ?? '';
+  const chosen = (c.options?.(ctx()) || []).find(o => o.value === value);
+  el.replaceChildren();
+  const name = make('span', 'field-picker-name');
+  name.textContent = chosen?.label ?? '';
+  el.append(name);
+  const chips = c.swatches?.(value) ?? [];
+  if (!chips.length) return;
+  const strip = make('span', 'field-picker-chips');
+  for (const colour of chips) {
+    const chip = make('i');
+    chip.style.background = colour;
+    strip.append(chip);
+  }
+  el.append(strip);
 }
 
 /**

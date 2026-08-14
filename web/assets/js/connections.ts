@@ -85,7 +85,7 @@ export function connectedTo(id: string) {
  * how a line is removed. The alternative was making connections selectable,
  * which means hit-testing a path in canvas/input.js and a selection model
  * holding things that are not items - a great deal of machinery for a delete
- * key. See research/toolbar-2026-08-03.md.
+ * key. See research/old/toolbar-2026-08-03.md.
  *
  * Returns whether the pair is connected now, so the caller can say which of the
  * two things just happened.

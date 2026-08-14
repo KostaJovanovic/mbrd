@@ -2,7 +2,7 @@
 // once its transaction commits, never when the request is merely accepted. A
 // tiny controllable fake proves both the abort case (request succeeds, then the
 // transaction aborts -> the public promise must reject) and reconnect after a
-// failed open. See AUD-01 and AUD-16 in research/full-code-audit-2026-07-26.md.
+// failed open. See AUD-01 and AUD-16 in research/old/full-code-audit-2026-07-26.md.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

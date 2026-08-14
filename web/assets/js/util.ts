@@ -109,7 +109,7 @@ export function uid(prefix = 'i') {
  * to a console nobody has open and reached window.onerror never, because the
  * throw was caught right here. It was the audit's own example of a board that
  * stops responding with nothing to read (Finding 6,
- * research/build-and-framework-audit-2026-08-12.md), and a global handler alone
+ * research/old/build-and-framework-audit-2026-08-12.md), and a global handler alone
  * would not have seen a single one of them. So the catch also says so, once:
  * errors.ts holds it to one toast per distinct fault however many times it
  * arrives, which is what makes this safe to call from the hot path at all.

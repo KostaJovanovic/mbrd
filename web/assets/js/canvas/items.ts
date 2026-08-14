@@ -17,7 +17,7 @@
 
 import {
   board, byId, selection, bus, renameItem, visualStackOrder, travelling, isFence,
-  isPinned, settlesIn,
+  isFiltered, isPinned, settlesIn,
 } from '../state.ts';
 import { quality } from '../quality.ts';
 import { itemRadius, rotatedExtents } from '../geometry.ts';
@@ -27,7 +27,7 @@ import type { Viewport } from './viewport.ts';
 import { buildContent } from './renderers.ts';
 import {
   buildItem, buildShadow, buildTitleControls, farKind, itemAccessibleName,
-  resetTilt, restingTilt, setGrips, wantsHead, writeFit,
+  resetTilt, restingTilt, setGrips, wantsHead, writeFit, writeAdjust,
 } from './item-dom.ts';
 import { POSTER_TIME } from './video.ts';
 import { clearDisplay } from './display.ts';
@@ -273,6 +273,12 @@ export function initItems(world: HTMLElement, viewport: Viewport) {
   // sure the index that sync reads is the one the new layout put things in.
   bus.on('layout', () => { reindex(); sync(); });
   bus.on('selection', paintSelection);
+  bus.on('filter', paintFilter);
+  // A tag written onto a card while a filter is up changes whether that card
+  // matches, and the write arrives as 'item'. Repainting the whole set is a
+  // class toggle per mounted node and the filter is a menu-speed event, so
+  // there is nothing here worth the bookkeeping of a narrower answer.
+  bus.on('item', paintFilter);
   // The shadow twin lives in its own layer, so no CSS :hover on the card can
   // reach it. Mirror the hover onto it here: one delegated pair on the world,
   // tracking which item the pointer is over, so the twin lifts with the card
@@ -916,6 +922,14 @@ function build(item: Item) {
   if (item.type === 'title') buildTitleControls(el);
   place(el, item);
   if (selection.has(item.id)) { el.classList.add('is-selected'); setGrips(el, true); }
+  // Written at build for the reason the connector's pick is: a card culled while
+  // a filter is up is thrown away and rebuilt from nothing when it comes back on
+  // screen, so a class applied only by the repaint pass would come off every
+  // card somebody panned away from and back.
+  if (isFiltered(item)) {
+    el.classList.add('is-filtered');
+    shadows.get(item.id)?.classList.add('is-filtered');
+  }
   return el;
 }
 
@@ -949,6 +963,10 @@ function rebuild(id: string) {
   // so a per-item fit change (which arrives as 'item' → rebuild) would rebuild
   // the picture but leave the old object-fit. Re-read it here.
   writeFit(el, item);
+  // And the lock and the adjustments, on the same outer element and for exactly
+  // the same reason: locking a card, or moving a brightness dial, arrives as an
+  // 'item' event and lands here.
+  writeAdjust(el, item);
   // The bar is a sibling of the body, so replaceChildren above does not touch
   // it - only the caption inside it needs the new name. Patched rather than
   // rebuilt so the handle beside it keeps its identity, and with it any focus
@@ -1319,6 +1337,27 @@ function paintSelection() {
     // The twin tracks selection too, so a selected card's shadow holds still
     // under the pointer exactly as the card does (see .item-shadow in canvas.css).
     shadows.get(id)?.classList.toggle('is-selected', on);
+  }
+}
+
+/**
+ * Fade whatever the tag filter is not showing.
+ *
+ * A class and nothing else: the card stays mounted, stays where it is, stays
+ * selectable and stays draggable, because the filter dims rather than hides -
+ * see tagFilter in board-store.ts for why that is the design and not a
+ * half-finished version of hiding.
+ *
+ * Its own pass rather than a line inside paintSelection(), even though the two
+ * are the same shape, because they answer different events at very different
+ * rates: selection repaints on every click and every drag, and this repaints
+ * when somebody opens a menu and ticks a tag.
+ */
+function paintFilter() {
+  for (const [id, el] of nodes) {
+    const dim = isFiltered(byId(id));
+    el.classList.toggle('is-filtered', dim);
+    shadows.get(id)?.classList.toggle('is-filtered', dim);
   }
 }
 

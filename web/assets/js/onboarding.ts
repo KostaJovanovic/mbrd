@@ -326,7 +326,7 @@ export function ensureGhostCards({ notFound = false } = {}) {
       Number(b.hint === DIAL_HINT) - Number(a.hint === DIAL_HINT));
     const fresh = order.map(g => makeItem({
       id: g.id, type: 'ghost', x: 0, y: 0, w: width * g.mspan, h: g.mrows * step,
-      meta: { hint: g.hint, tape: g.tape === false ? [] : tapeFor() },
+      meta: { hint: g.hint, span: g.mspan, tape: g.tape === false ? [] : tapeFor() },
     }));
     board.items.push(...placeMobileItems(fresh));
     return seeded;
@@ -347,7 +347,11 @@ export function ensureGhostCards({ notFound = false } = {}) {
     const box = board.settings.snap ? latticeBox(g, step) : g;
     board.items.push(makeItem({
       id: g.id, type: 'ghost', x: box.x, y: box.y, w: box.w, h: box.h,
-      meta: { hint: g.hint, tape: g.tape === false ? [] : tapeFor() },
+      // `span` travels even on the Desktop path, where nothing reads it. A board
+      // seeded on a laptop is opened on a phone, and the Feed is what needs the
+      // number - deriving it back out of a Desktop box would mean guessing at
+      // the column width the hint was never sized against. See fillHint().
+      meta: { hint: g.hint, span: g.mspan, tape: g.tape === false ? [] : tapeFor() },
     }));
   }
   return seeded;

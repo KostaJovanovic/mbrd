@@ -207,5 +207,11 @@ test('Dynamic is a state the menu reads, not a flag it remembers', () => {
   const controls = read(join(WEB, 'assets', 'js', 'ui', 'appearance-controls.ts'));
   const wire = controls.match(/export function wirePalette\(\)[\s\S]*?\n}\n/)[0];
   assert.ok(!wire.includes('.palette ='), 'the menu sets no palette of its own');
-  assert.match(wire, /sel\.value === DYNAMIC \? d\.goDynamic\(\) : d\.setPalette\(sel\.value\)|if \(sel\.value === DYNAMIC\) d\.goDynamic\(\);\s*\n\s*else d\.setPalette\(sel\.value\)/);
+  // The branch, whatever the control is made of. It used to read `sel.value`
+  // off a <select>; the row is a picker now - a button that opens ui/menu.ts,
+  // because an <option> cannot paint the palette's own colours - so the value
+  // arrives on the event that button dispatches. What is pinned is unchanged
+  // and is the whole point of the test: Dynamic goes to goDynamic(), and only a
+  // real palette name is ever handed to setPalette().
+  assert.match(wire, /if \(value === DYNAMIC\) d\.goDynamic\(\);\s*\n\s*else d\.setPalette\(value\)/);
 });

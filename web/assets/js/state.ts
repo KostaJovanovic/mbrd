@@ -81,14 +81,16 @@ export { removeItems, restoreItems, emptyTrash };
 // which file a symbol happens to be declared in. See board-store.js.
 import {
   bus, selection, isDirty, markDirty, resetDirty,
-  select, clearSelection, deselect,
+  select, clearSelection, deselect, tagFilter, setTagFilter,
 } from './board-store.ts';
 import {
-  commit, undo, redo, historyState, clearHistory, lastCommand, takeBack,
+  commit, undo, redo, historyState, historyDepth, historyWeight,
+  clearHistory, lastCommand, takeBack,
 } from './history.ts';
 
 export { bus, selection, isDirty, markDirty, select, clearSelection, deselect };
-export { commit, undo, redo, historyState, lastCommand, takeBack };
+export { tagFilter, setTagFilter };
+export { commit, undo, redo, historyState, historyDepth, historyWeight, lastCommand, takeBack };
 
 // The board's shape and its index, one level down - see board-model.js. The
 // first group is re-exported because callers have always imported these from
@@ -105,9 +107,20 @@ import {
   cloneSettings, layoutSettingsOf, dropIdIndex,
   MAX_CONNECTIONS, pairKey, normalizeAudioOrder, CONN_DIRECTIONS, CONN_STYLES,
 } from './board-model.ts';
+// The five readers the per-item settings below are written in terms of. Each is
+// the *same* function the file reader and every consumer uses, which is what
+// keeps "what this app will store" and "what a reader will get back" one answer
+// rather than two that agree today - see setItemCrop().
+import {
+  isLocked, isFiltered, itemCrop, itemAdjust, adjustFilter, itemTags, boardTags, cleanTag,
+  normalizeTour, TAGS_PER_ITEM, TAG_MAX, MIN_CROP,
+} from './board-model.ts';
 import type { Item } from './board-model.ts';
+import type { MergePlan } from './merge.ts';
 
 export { MAX_CONNECTIONS, pairKey, CONN_DIRECTIONS, CONN_STYLES };
+export { isLocked, isFiltered, itemCrop, itemAdjust, adjustFilter, itemTags, boardTags, cleanTag };
+export { TAGS_PER_ITEM, TAG_MAX, MIN_CROP };
 
 // Every write to board.connections, one level down - see connections.js. The
 // shape of a connection stayed in board-model.js and the pruning stayed in
@@ -640,6 +653,13 @@ export function renameItem(id: string, name: unknown) {
  * `label` may be a function of the validated value, for the one setter whose
  * two directions are different acts - setting a picture and removing one.
  *
+ * `same` is how "no change" is decided, and it defaults to Object.is because
+ * every value this started with was a scalar. Two of the later ones - a crop
+ * rectangle and the three picture adjustments - are validated into fresh
+ * objects, which are never identical however equal they are, so those hand in a
+ * comparator of their own. Passing the comparator rather than canonicalising to
+ * a string keeps the stored value the shape the rest of the app reads.
+ *
  * The **type** guard stays at each call site rather than folding in here. It is
  * a different question: a validator says whether a value is legal, and the
  * guard says whether this item is the kind of thing the setting is about, and
@@ -659,12 +679,13 @@ function patchMeta(
   raw: unknown,
   label: string | ((next: unknown) => string),
   validate: (value: unknown) => unknown,
+  same: (a: unknown, b: unknown) => boolean = Object.is,
 ) {
   const it = byId(id);
   if (!it) return;
   const next = validate(raw);
   const prev = validate(it.meta?.[key]);
-  if (next === prev) return;
+  if (same(next, prev)) return;
   const write = (value: unknown) => {
     const item = byId(id);
     if (!item) return;
@@ -956,6 +977,164 @@ export function setStickerTint(id: string, tint: unknown) {
     value => stickerTint(value, it.meta?.shape));
 }
 
+/**
+ * Fix a selection's geometry in place, or let it go again.
+ *
+ * One history entry for the whole set, the shape unstickItems() uses and for
+ * the same reason: locking nine cards is one thing somebody did, and nine
+ * entries would make Ctrl+Z walk back through them one at a time.
+ *
+ * Written on any type. There is no `can*` narrowing here because there is no
+ * type a lock is meaningless on - a fence, a note, a sticker and a photograph
+ * are all things somebody may want to stop moving - and the only exclusion is
+ * furniture, which has no menu to ask from and whose geometry the app owns.
+ *
+ * What a lock actually stops is in isLocked()'s note in board-model.ts: the
+ * geometry, and nothing else. This function is the only writer.
+ */
+export function setItemsLocked(ids: Iterable<string>, locked: boolean) {
+  const affected = [...new Set(ids)].filter(id => {
+    const it = byId(id);
+    return !!it && !isFurniture(it) && !!it.meta.locked !== locked;
+  });
+  if (!affected.length) return;
+  const write = (on: boolean) => {
+    for (const id of affected) {
+      const it = byId(id);
+      if (!it) continue;
+      if (on) it.meta = { ...it.meta, locked: true };
+      else { const { locked: _drop, ...rest } = it.meta || {}; it.meta = rest; }
+      bus.emit('item', id);
+    }
+  };
+  const many = affected.length > 1 ? ` ${affected.length} items` : '';
+  commit((locked ? 'Lock' : 'Unlock') + many,
+    () => write(locked), () => write(!locked));
+}
+
+/**
+ * One picture's crop rectangle, or null to show the whole of it again.
+ *
+ * Four fractions of the source - see itemCrop() in board-model.ts for why
+ * fractions and not pixels, and for why this never touches the bytes. The
+ * validator is itemCrop() itself rather than a private copy, so the value that
+ * reaches the file is exactly the value every reader will get back out of it;
+ * it takes an item-shaped thing, so the raw rectangle is wrapped in one.
+ *
+ * Emits 'item', which rebuilds the card - the same route setItemFit() takes,
+ * and the crop is applied one layer further down when the display copy is made
+ * rather than by any renderer.
+ */
+export function setItemCrop(id: string, crop: unknown) {
+  const it = byId(id);
+  // Pictures only, where the three adjustments below take video too. The
+  // asymmetry is not a policy, it is what the two are made of: an adjustment is
+  // a CSS filter and the compositor will grade a video frame as happily as a
+  // still, while a crop is a rectangle drawn out of a decoded bitmap and there
+  // is no decoded bitmap for a clip until it is playing. Cropping video wants a
+  // second mechanism, not a wider guard here.
+  if (!it || it.type !== 'image') return;
+  patchMeta(id, 'crop', crop, next => (next ? 'Crop' : 'Undo crop'),
+    value => itemCrop({ meta: { crop: value } }), sameRect);
+}
+
+/** Two crop rectangles, or two absences, are the same crop. */
+const sameRect = (a: unknown, b: unknown) => {
+  if (!isRecord(a) || !isRecord(b)) return a === b;
+  return a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;
+};
+
+/**
+ * One picture's brightness, contrast and saturation, or null to put it back.
+ *
+ * Partial: what arrives is spread over what the item already carries, so the
+ * three dials in the panel can each write their own without reading the other
+ * two. itemAdjust() then decides whether what came out is an adjustment at all,
+ * and a set that is neutral on all three removes the key rather than storing
+ * three ones.
+ */
+export function setItemAdjust(id: string, adjust: unknown) {
+  const it = byId(id);
+  if (!it || (it.type !== 'image' && it.type !== 'video')) return;
+  const merged = adjust == null ? null : {
+    ...(itemAdjust(it) || { brightness: 1, contrast: 1, saturation: 1 }),
+    ...(isRecord(adjust) ? adjust : {}),
+  };
+  patchMeta(id, 'adjust', merged, next => (next ? 'Adjust picture' : 'Reset picture'),
+    value => itemAdjust({ meta: { adjust: value } }), sameAdjust);
+}
+
+/** Two adjustment sets, or two absences, are the same adjustment. */
+const sameAdjust = (a: unknown, b: unknown) => {
+  if (!isRecord(a) || !isRecord(b)) return a === b;
+  return a.brightness === b.brightness && a.contrast === b.contrast
+    && a.saturation === b.saturation;
+};
+
+/**
+ * The tags on a set of items, added or removed across the whole selection.
+ *
+ * One entry for the set, like setItemsLocked() above: "tag these nine kitchen"
+ * is one act. Adding is a union and removing is a difference, so tagging a
+ * selection where three items already carry the tag adds it to the other six
+ * and leaves those three alone rather than toggling them off - a toggle over a
+ * mixed selection has no answer anybody means.
+ *
+ * The undo direction restores each item's own previous list rather than
+ * reversing the operation, because the two are not the same where an item
+ * already had the tag.
+ */
+export function setItemsTagged(ids: Iterable<string>, tag: unknown, on: boolean) {
+  const clean = cleanTag(tag);
+  if (!clean) return;
+  const before = new Map<string, string[]>();
+  for (const id of new Set(ids)) {
+    const it = byId(id);
+    if (!it || !isContent(it)) continue;
+    const tags = itemTags(it);
+    if (tags.includes(clean) === on) continue;
+    if (on && tags.length >= TAGS_PER_ITEM) continue;
+    before.set(id, tags);
+  }
+  if (!before.size) return;
+  const write = (next: boolean) => {
+    for (const [id, was] of before) {
+      const it = byId(id);
+      if (!it) continue;
+      const tags = next
+        ? [...was, clean].sort()
+        : was.filter(t => t !== clean);
+      if (tags.length) it.meta = { ...it.meta, tags };
+      else { const { tags: _drop, ...rest } = it.meta || {}; it.meta = rest; }
+      bus.emit('item', id);
+    }
+  };
+  const many = before.size > 1 ? ` ${before.size} items` : '';
+  commit((on ? 'Tag' : 'Untag') + many, () => write(on), () => write(!on));
+}
+
+/**
+ * Replace one item's whole tag list. What the tag editor writes.
+ *
+ * Beside the add/remove pair above rather than instead of it, because they are
+ * different acts: that one is "put this word on these nine", this one is "these
+ * are the words on this card now". Folding the second into a loop of the first
+ * would make one edit of a card's tags into up to twelve history entries.
+ */
+export function setItemTags(id: string, tags: unknown) {
+  const it = byId(id);
+  if (!it || !isContent(it)) return;
+  patchMeta(id, 'tags', tags, 'Tags',
+    value => {
+      const list = itemTags({ meta: { tags: value } });
+      return list.length ? list : null;
+    },
+    // Joined on a comma, which cleanTag() guarantees no tag contains, and
+    // against the knowledge that the validator answers null or a *non-empty*
+    // list - so no list can ever join to the empty string an absence maps to.
+    (a, b) => (Array.isArray(a) ? a.join(',') : '') === (Array.isArray(b) ? b.join(',') : ''));
+}
+
 // ---------------------------------------------------------------------------
 // Unsticking
 //
@@ -1230,6 +1409,114 @@ export function setAudioOrder(ids: unknown) {
   bus.emit('audioOrder', board.audioOrder);
 }
 
+/**
+ * The board's tour: which cards it stops at, in order.
+ *
+ * Off the undo stack, exactly like setAudioOrder() above and for the argument
+ * that one makes - a tour is a way of *reading* the board rather than a change
+ * to what is on it, and a Ctrl+Z that walked back through stop-list edits would
+ * step over the real work done between them. The stops are cards that already
+ * exist; nothing here creates, moves or deletes anything.
+ *
+ * Held to the live board rather than to the board-plus-bin union the file
+ * reader uses. That asymmetry is deliberate and it is the same one the Playlist
+ * has: a *file* must keep a stop whose card is in the bin, because restoring the
+ * card has to bring its place in the tour back with it, while a tour being
+ * played right now must not stop at a card that is not on the board.
+ */
+export function setTour(ids: unknown) {
+  const live = new Set(board.items.map(i => i.id));
+  board.tour = normalizeTour(ids, live);
+  markDirty();
+  bus.emit('tour', board.tour);
+}
+
+/**
+ * Put a set of items on the end of the tour, or take them off it.
+ *
+ * The everyday door - the menu's "Add to tour" over a selection - where
+ * setTour() is the wholesale one the tour panel's reordering uses. Adding keeps
+ * the board's own stacking order for the items being added, so "select six
+ * cards and add them" produces a tour in the order they sit rather than in
+ * whatever order the selection happens to iterate.
+ */
+export function setTourMembers(ids: Iterable<string>, on: boolean) {
+  const wanted = new Set(ids);
+  if (!wanted.size) return;
+  const current = board.tour;
+  if (!on) {
+    setTour(current.filter(id => !wanted.has(id)));
+    return;
+  }
+  const adding = board.items
+    .filter(i => wanted.has(i.id) && !current.includes(i.id) && !isFurniture(i))
+    .map(i => i.id);
+  if (!adding.length) return;
+  setTour([...current, ...adding]);
+}
+
+/**
+ * Fold a planned merge onto the board, in one undoable step.
+ *
+ * `addItems()` would have covered the items and nothing else: the three
+ * relation lists are written by setters that are deliberately *off* the undo
+ * stack (see setAudioOrder and setTour above), so a merge built out of the
+ * existing doors would undo the arrival and leave its connections, its playlist
+ * order and its tour stops behind, pointing at cards that are no longer there.
+ * They would then be pruned on the next save, quietly, and a redo would bring
+ * the items back without them.
+ *
+ * So it is one commit whose two halves are symmetrical: push the items and
+ * append the relations, or drop exactly those again. Appended rather than
+ * merged, in the arriving file's own order - a merge is one board arriving
+ * beside another, not two orders being interleaved, and there is no reading of
+ * "these nine tracks belong between your fourth and fifth" that anybody means.
+ *
+ * `weight` is the item count, which is what the history evicts on - see
+ * commit()'s fourth argument. A merge can be the largest single entry the stack
+ * ever holds, so it has to declare what it is holding.
+ *
+ * Nothing here validates: planMerge() in merge.ts has already remapped every id
+ * and dropped every relation that named something it is not bringing.
+ */
+export function mergeBoard(plan: MergePlan, label = 'Merge board') {
+  const { items, connections, audioOrder, tour } = plan;
+  if (!items.length) return 0;
+  const ids = new Set(items.map(i => i.id));
+  const keys = new Set(connections.map(c => pairKey(c[0], c[1])));
+  const write = () => {
+    // Filtered on the way in for the reason addItems() filters: commit() runs
+    // the redo half immediately and again on every redo, and an item already on
+    // the board must not be pushed twice.
+    const fresh = items.filter(i => !byId(i.id));
+    board.items.push(...fresh);
+    board.connections = board.connections
+      .filter(c => !keys.has(pairKey(c[0], c[1])))
+      .concat(connections);
+    board.audioOrder = [...board.audioOrder.filter(id => !ids.has(id)), ...audioOrder];
+    board.tour = [...board.tour.filter(id => !ids.has(id)), ...tour];
+    refenceArrivals(items);
+    bus.emit('items', { added: fresh.map(i => i.id), removed: [] });
+    bus.emit('connections');
+    bus.emit('audioOrder', board.audioOrder);
+    bus.emit('tour', board.tour);
+  };
+  const undo = () => {
+    board.items = board.items.filter(i => !ids.has(i.id));
+    board.connections = board.connections.filter(c => !keys.has(pairKey(c[0], c[1])));
+    board.audioOrder = board.audioOrder.filter(id => !ids.has(id));
+    board.tour = board.tour.filter(id => !ids.has(id));
+    ids.forEach(id => selection.delete(id));
+    bus.emit('items', { added: [], removed: [...ids] });
+    bus.emit('selection');
+    bus.emit('connections');
+    bus.emit('audioOrder', board.audioOrder);
+    bus.emit('tour', board.tour);
+  };
+  commit(label, write, undo, items.length);
+  return items.length;
+}
+
 export function setTitle(title: unknown) {
   board.title = cleanBoardTitle(title) || 'Untitled board';
   bus.emit('board');
@@ -1268,6 +1555,12 @@ export function loadBoard(data: unknown) {
   board.trash = next.trash;
   board.connections = next.connections;
   board.audioOrder = next.audioOrder;
+  board.tour = next.tour;
+  // A filter is about the tags of the board that set it, and the board leaving
+  // took those with it. Left standing, opening a second board would fade most
+  // of it out for a reason that is no longer on screen anywhere. Not saved
+  // either - see tagFilter in board-store.ts.
+  setTagFilter([]);
   board.layoutMode = layoutMode;
   // Nothing that arrives from outside is allowed to be a ghost. serializeBoard()
   // never writes one, so a file carrying the type was hand-made or came from a

@@ -12,7 +12,7 @@
 // Written out in full rather than composed from PREFIX, because save.bat bumps
 // this line by regex on every commit and would not recognise an expression.
 // tests/sw.test.js holds the two together.
-const VERSION = 'mbrd-v195';
+const VERSION = 'mbrd-v196';
 const PREFIX = 'mbrd-';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) turns the
@@ -38,6 +38,16 @@ const SHELL = [
   // every entry against a file on disk. The navigate handler below maps the
   // address to this entry.
   './patch.html',
+  // The privacy page, and its one stylesheet further down with the others. Two
+  // files, both tiny, and precached for the reason the changelog is: it is a
+  // page of this site rather than a page of the app, and a page about what
+  // happens to your files that cannot be read offline is a poor advertisement
+  // for an app whose whole claim is that it needs no network.
+  //
+  // Listed by filename rather than as ./privacy, which is the address it is
+  // served at - the navigate handler below maps one to the other, exactly as it
+  // does for the changelog.
+  './privacy.html',
   './manifest.json',
   './assets/css/tokens.css',
   // The subsystem stylesheets, in the order index.html loads them, which is the
@@ -73,6 +83,10 @@ const SHELL = [
   // which is the right rule: a sheet that ships and cannot be fetched offline is
   // a page that renders naked. See the banner at the top of the file.
   './assets/css/patch.css',
+  // And the same again for the privacy page, which like the changelog is a
+  // document rather than the app: it loads tokens.css for the palette and this
+  // for the rest, and nothing else in the tree loads either of them together.
+  './assets/css/privacy.css',
   // Every icon in the app, in one sprite. Referenced by <use> from index.html
   // and built into the right-click menu by ui/menu.js, so a board opened offline
   // without it is a board of blank buttons - it belongs in the shell as much as
@@ -230,8 +244,14 @@ self.addEventListener('fetch', event => {
   // board on an address that is a 404 in both readings. The trailing slash is in
   // the pattern because the host redirects /patch/ to /patch and there is no
   // host to do that when this branch is the one answering.
+  //
+  // The privacy page is the third address and answers on exactly the same
+  // terms: it exists, it is in the cache, and a visitor who typed it should not
+  // be handed a board.
   if (req.mode === 'navigate') {
-    const page = /\/patch(\.html)?\/?$/.test(url.pathname) ? './patch.html' : './index.html';
+    const page = /\/patch(\.html)?\/?$/.test(url.pathname) ? './patch.html'
+      : /\/privacy(\.html)?\/?$/.test(url.pathname) ? './privacy.html'
+        : './index.html';
     event.respondWith((async () => {
       try {
         return await fetch(req);
