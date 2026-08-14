@@ -15,6 +15,9 @@
 // flag, both of which now sit below it in board-store.js. See the header there.
 
 import { bus, markDirty } from './board-store.ts';
+import {
+  snapshot, recordStep, markerBack, markerForward, dropLastStep, resetTimeline,
+} from './timeline.ts';
 
 /**
  * One entry: what to call it, the two halves, and what the pair retains. The
@@ -102,7 +105,16 @@ const historyChanged = () => bus.emit('history');
  * decides eviction; nothing else reads it.
  */
 export function commit(label: string, redo: () => void, undo: () => void, weight = 1) {
+  // The snapshot has to be taken here rather than by the caller, and this is
+  // the whole of what makes the timeline cost one change instead of thirty:
+  // this function runs the redo half itself, so it is the one place in the app
+  // that sees the board on both sides of every mutation. Every commit site
+  // records a step without knowing timeline.js exists - including the ones
+  // written next year, which is what takes coverage off the list of things
+  // somebody has to remember. See the header there for why the diff is cheap.
+  const before = snapshot();
   redo();
+  recordStep(label, before);
   const held = Number.isFinite(weight) && weight > 1 ? Math.floor(weight) : 1;
   const cmd = { label, redo, undo, weight: held };
   undoStack.push(cmd);
@@ -147,6 +159,9 @@ export function takeBack(cmd: Command | null) {
   if (!cmd || undoStack.at(-1) !== cmd) return false;
   undoStack.pop();
   cmd.undo();
+  // As if it never ran, on the timeline too. A step left behind here would put
+  // a dot on the strip for a note the user cancelled before typing into it.
+  dropLastStep();
   heldWeight -= cmd.weight;
   markDirty();
   historyChanged();
@@ -162,6 +177,11 @@ export function undo() {
   const cmd = undoStack.pop();
   if (!cmd) return false;
   cmd.undo();
+  // The marker follows rather than drives, for now. Running the closure is
+  // faster than replaying, and during phase 1 it is also the thing the replay
+  // engine is being checked against - a marker that drove the board would be
+  // marking its own homework. Phase 2 turns this round.
+  markerBack();
   heldWeight -= cmd.weight;
   redoStack.push(cmd);
   markDirty();

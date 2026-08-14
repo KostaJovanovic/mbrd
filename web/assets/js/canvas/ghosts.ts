@@ -48,16 +48,16 @@ export type HintKey = 'drop' | 'move' | 'note' | 'whimsy' | 'gone' | 'back';
  */
 export const HINTS: Readonly<Record<HintKey, Hint>> = Object.freeze({
   drop: {
-    title: 'Drop anything',
-    line: 'Pictures, video, sound, text, 3D models. Straight onto the board, from anywhere.',
+    title: 'A surface for thinking',
+    line: 'It extends as far as you need. Pan across it, zoom in and out. There is no edge, only the room your ideas take up.',
   },
   move: {
-    title: 'Move around',
-    line: 'Drag the board to travel. Zoom to see more of it. It does not end.',
+    title: 'Whatever you\'re gathering',
+    line: 'Images, video, music, documents, 3D files, notes. Drop them on or paste them in. It all lands here.',
   },
   note: {
-    title: 'Write a note',
-    line: 'Add one from the sidebar, then type. It grows to fit what it says.',
+    title: 'Move things until they make sense',
+    line: 'Drag them around. Put things next to each other, spread them out, stack them up. Where they end up is the point.',
   },
   // The fourth card is a control, not a sentence: it carries the whimsy dial
   // itself, and it prints neither of these. The three stop names under the dial
