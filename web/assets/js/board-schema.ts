@@ -44,7 +44,12 @@
 //
 // Nothing here imports state.js - see tests/layers.test.js, where this is BASE.
 
-import { clamp, isFamily, isHash, isRecord, itemHashes } from './util.ts';
+import { clamp, isFamily, isHash, isRecord } from './util.ts';
+// The step ledger, for the one line of serializeBoard() that writes it out.
+// Downward: timeline.js stands on board-model.js and knows nothing about the
+// file format, which is why the format is what imports *it* rather than the
+// other way round.
+import { serializeTimeline, docFingerprint } from './timeline.ts';
 // The board's link to real-world sizes, and the sheet catalogue. A scale and a
 // paper id arriving from a file both have to be held to what the app can draw.
 import { clampScale, PAPERS } from './measure.ts';
@@ -54,10 +59,9 @@ import {
   settingsFor, MAX_ITEMS, TRASH_LIMIT, MOBILE_COLUMNS, MOBILE_APPEARANCE_VARS,
   DEFAULT_SETTINGS, DEFAULT_MOBILE_HEADER, mobileColumnCount,
   normalizeConnections, normalizeAudioOrder, normalizeTour,
-  VERSION_RING, VERSION_KEPT_MAX, VERSION_LABEL_MAX,
 } from './board-model.ts';
 import type {
-  Board, BoardSettings, BoardVersion, FontAxis, FontSpec, Geometry, Item,
+  Board, BoardSettings, FontAxis, FontSpec, Geometry, Item,
   LayoutMode, MobileHeader,
 } from './board-model.ts';
 import type { Look } from './layout-settings.ts';
@@ -205,55 +209,13 @@ export function normalizeBoard(data: unknown): Omit<Board, 'settings' | 'arrange
     // stop whose card is in the bin has to come back when the card does, or
     // deleting one card would silently renumber somebody's tour.
     tour: normalizeTour(src.tour, ids),
-    // Not held to `ids` at all, and that is the difference from every line
-    // above it. A version is a document, not a relation between cards on *this*
-    // board - the whole point of one is that it names cards this board no
-    // longer has. Pruning it against the live id set would empty every version
-    // the moment it became useful.
-    versions: normalizeVersions(src.versions),
+    // `versions` is read past in silence. Files written by v0.197 carry one -
+    // a ring of copies of board.json - and this reader drops it on the floor
+    // rather than carrying it forward, which is deliberate and is the whole
+    // decision: preserving it would keep alive every reader that has to ask
+    // whether a version claims an asset, in exchange for data nothing in the
+    // app can reach. See the note in board-model.ts.
   };
-}
-
-/**
- * The stored versions, out of whatever arrived.
- *
- * Total like the rest of this file, and stricter than it looks: `data` is kept
- * as it came, because it is a document that will be read back through
- * normalizeBoard() when somebody restores it - validating it twice would mean
- * this function had to know the whole schema of a board, which is the function
- * it is inside.
- *
- * The two caps are separate on purpose. Automatic versions ride a shallow ring
- * and evict; named ones do not, so a file cannot arrive claiming ten thousand
- * of either. Ordering is newest first and is imposed here rather than trusted,
- * so a hand-edited file cannot make the ring evict the wrong end.
- */
-function normalizeVersions(raw: unknown): BoardVersion[] {
-  if (!Array.isArray(raw)) return [];
-  const out: BoardVersion[] = [];
-  const seen = new Set<string>();
-  for (const entry of raw) {
-    if (!isRecord(entry)) continue;
-    // No data, no version. An entry that lost its document in some earlier
-    // round-trip is a row in the list that cannot be restored, which is worse
-    // than not offering it.
-    if (entry.data == null) continue;
-    const id = typeof entry.id === 'string' && entry.id ? entry.id : '';
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    out.push({
-      id,
-      at: Number.isFinite(Number(entry.at)) ? Number(entry.at) : 0,
-      label: typeof entry.label === 'string'
-        ? entry.label.replace(/\s+/g, ' ').trim().slice(0, VERSION_LABEL_MAX) : '',
-      kept: entry.kept === true,
-      data: entry.data,
-    });
-  }
-  out.sort((a, b) => b.at - a.at);
-  const kept = out.filter(v => v.kept).slice(0, VERSION_KEPT_MAX);
-  const auto = out.filter(v => !v.kept).slice(0, VERSION_RING);
-  return [...kept, ...auto].sort((a, b) => b.at - a.at);
 }
 
 function layoutRecord(raw: unknown): { items: unknown[], settings: unknown, arrangement: string } {
@@ -513,6 +475,20 @@ export function serializeBoard() {
     else delete meta.fence;
     return { ...item, ...(geometry || null), meta };
   };
+  // The two lists a step describes, hoisted out of the literal below because
+  // the timeline's fingerprint is taken over exactly these bytes - see
+  // docFingerprint(). Taken over what the *file* carries rather than over the
+  // live board, because a board written out and read back is not the same
+  // object: coordinates round, absent keys take defaults, both layouts are
+  // recomputed. Hashing the live board would make every reopened board declare
+  // itself stale.
+  //
+  // Note that the ghosts are already shed from `real` at this point, and that
+  // is right: what the fingerprint has to describe is the board a reader will
+  // actually get, since that is the board the steps will be replayed against.
+  const filedItems = real.map(item => serializeItem(itemIn(item, desktopById.get(item.id))));
+  const filedTrash = board.trash.map(t => ({ at: t.at, item: serializeItem(t.item) }));
+  const timeline = serializeTimeline(docFingerprint({ items: filedItems, trash: filedTrash }));
   return {
     title: board.title,
     view: { pan: { ...board.view.pan }, zoom: board.view.zoom },
@@ -529,7 +505,7 @@ export function serializeBoard() {
     arrangement: board.arrangements.desktop,
     // Desktop stays in the traditional item fields for readers predating
     // profiles. New readers take the active geometry from `layouts`.
-    items: real.map(item => serializeItem(itemIn(item, desktopById.get(item.id)))),
+    items: filedItems,
     layouts: {
       desktop: {
         items: desktop.map(serializeGeometry),
@@ -545,7 +521,7 @@ export function serializeBoard() {
     // The bin travels with the board. Saving is the moment a board becomes a
     // file you might not open again for a month, and a bin that emptied itself
     // at exactly that moment would be a trapdoor rather than a safety net.
-    trash: board.trash.map(t => ({ at: t.at, item: serializeItem(t.item) })),
+    trash: filedTrash,
     // Pruned against what this file actually holds, which is the *shed* item
     // list plus the bin. Two things fall out of that and both are meant to:
     // a connection to a hint card cannot reach a file, because ghosts are
@@ -564,51 +540,17 @@ export function serializeBoard() {
     // above it: a board whose tour was built and then cleared must not come
     // back carrying the old one from a file that simply omitted the key.
     tour: normalizeTour(board.tour, filed),
-    // Written through as they are, and *not* pruned against `filed`. Every
-    // other relation above names cards on this board; a version names cards
-    // this board may no longer have, which is the whole of what it is for.
+    // The step ledger, when there is one. Omitted rather than written as null
+    // on a board nobody has changed yet, so a freshly opened and immediately
+    // saved file looks exactly as it did before this feature existed - which is
+    // the difference between a format that grew a key and one that grew a key
+    // that is usually empty.
     //
-    // Held to the caps here as well as on the way in, because a board can grow
-    // versions while it is open and this is the last door before a file.
-    versions: [
-      ...board.versions.filter(v => v.kept).slice(0, VERSION_KEPT_MAX),
-      ...board.versions.filter(v => !v.kept).slice(0, VERSION_RING),
-    ].sort((a, b) => b.at - a.at),
+    // Not pruned against `filed`: a step names cards this board no longer has,
+    // and that is the whole of what it is for. What it *does* need is the asset
+    // walk in packBoard() to know about it - see timelineHashes().
+    ...(timeline ? { timeline } : {}),
   };
-}
-
-/**
- * Every asset id the stored versions point at.
- *
- * **The single most important function in this feature, and the one that makes
- * it a correctness problem rather than a size one.** packBoard() writes only
- * hashes something references and the autosave sweep deletes whatever nothing
- * claims; both had exactly two classes of reference - the live board and the
- * bin - and a version is a third. Miss it and restoring a version shows holes
- * where the photographs were, having been told the save succeeded.
- *
- * Read out of the stored *document* rather than out of a live board, which is
- * why this is here and not in board-model.ts: a version's `data` is
- * board.json's shape, so the items are wherever that file puts them, and the
- * bin inside a version counts too - a version restored has to bring its own
- * bin back with its own lines.
- */
-export function versionHashes(versions: BoardVersion[]): Set<string> {
-  const out = new Set<string>();
-  for (const version of versions) {
-    const data = version.data;
-    if (!isRecord(data)) continue;
-    const lists = [data.items, ...(Array.isArray(data.trash) ? [data.trash.map(
-      (t: unknown) => (isRecord(t) ? t.item : null))] : [])];
-    for (const list of lists) {
-      if (!Array.isArray(list)) continue;
-      for (const item of list) {
-        if (!isRecord(item)) continue;
-        for (const hash of itemHashes(item)) out.add(hash);
-      }
-    }
-  }
-  return out;
 }
 
 const serializeItem = (i: Item) => ({

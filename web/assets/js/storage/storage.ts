@@ -235,7 +235,22 @@ export async function saveBoard() {
  * second time overwrites the file you chose instead of asking again - pass
  * `pickNew` for a Save-as. Without one, every export is a download.
  */
-export async function exportBoard({ pickNew = false } = {}) {
+/**
+ * Write the board out as a `.mbrd`.
+ *
+ * `history` decides whether the step ledger travels with it, and it defaults to
+ * **false**: the history records everything that was tried and thrown away -
+ * the rejected pictures, the layout that was abandoned, the note that was
+ * deleted - and a recipient can scrub back through all of it. The failure is
+ * asymmetric, which is what settles the default: forgetting to include the
+ * history costs a resend, and forgetting to exclude it cannot be taken back.
+ *
+ * The *asking* is not here. This module sits below ui/ and may not open a
+ * dialog; commands/file.ts asks, and only when there is a history to ask about.
+ * What lives here is the honest default, so that a caller which never asks
+ * still cannot leak.
+ */
+export async function exportBoard({ pickNew = false, history = false } = {}) {
   const picking = canPickFiles();
   try {
     // The picker runs *before* anything is serialised, and that ordering is the
@@ -272,6 +287,11 @@ export async function exportBoard({ pickNew = false } = {}) {
     const job = busy('Packing the board');
     try {
       const data = serializeBoard();
+      // Dropping the key rather than serialising differently, and that is the
+      // point: a file without a timeline is exactly what an older build writes
+      // when it does not understand the key, so this is a shape the format
+      // already has to survive rather than a second way of writing a board.
+      if (!history) delete data.timeline;
       const { blob, manifest } = await packBoard(data, { created });
       created = manifest.created;
 
@@ -345,9 +365,12 @@ export const canShareBoard = () =>
  * A dismissed sheet is an AbortError, swallowed like the picker's - the board is
  * untouched either way, because nothing here changes state.
  */
-export async function shareBoard() {
+export async function shareBoard({ history = false } = {}) {
   try {
     const data = serializeBoard();
+    // The same default and for the stronger reason: sharing is the case where
+    // the file is going to somebody else by definition. See exportBoard().
+    if (!history) delete data.timeline;
     const { blob, manifest } = await packBoard(data, { created });
     created = manifest.created;
     const file = new File([blob], fileNameFor(board.title), { type: MIME });
@@ -358,7 +381,7 @@ export async function shareBoard() {
       await navigator.share({ files: [file], title: board.title });
       return true;
     }
-    return exportBoard();
+    return exportBoard({ history });
   } catch (err) {
     if (isAbort(err)) return false;   // user dismissed the sheet
     console.error(err);

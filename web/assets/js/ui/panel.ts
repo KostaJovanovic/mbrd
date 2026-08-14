@@ -37,7 +37,7 @@ import { field, fieldStops } from './controls.ts';
 import {
   TABS, SECTIONS, controlVisible, controlEnabled, sectionVisible,
 } from './settings-schema.ts';
-import { openAnchored } from './menu.ts';
+import { openAnchored, justDismissed } from './menu.ts';
 import type {
   ButtonsControl, CheckControl, Control, Ctx, HintControl, KeysControl,
   PickerControl, RangeControl, SelectControl, Section, SlotControl, TextControl,
@@ -360,10 +360,17 @@ function buildPicker(c: PickerControl) {
   // Rebuilt on every press rather than once: options() takes the live context,
   // and the tick has to follow a value that anything else may have changed.
   btn.addEventListener('click', () => {
+    // A second press closes rather than reopening. The same asking-rather-than-
+    // testing that the More button needs, and for the same reason: the menu's
+    // outside-press listener has already shut it by the time this click runs.
+    if (justDismissed(btn)) return;
     const now = btn.dataset.value ?? '';
     const entries = (c.options?.(ctx()) || []).map(o => ({
       label: o.label,
-      swatch: c.swatches?.(o.value) ?? [],
+      // On the trailing edge, because these are specimens of whole palettes
+      // rather than icons for them, and the act this menu exists for is
+      // comparing them down a column. See MenuEntry.swatchEnd.
+      swatchEnd: c.swatches?.(o.value) ?? [],
       check: o.value === now,
       action: () => {
         btn.dataset.value = o.value;

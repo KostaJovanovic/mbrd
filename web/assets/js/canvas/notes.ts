@@ -43,6 +43,32 @@ import type { NoteTag, NoteAlign, NoteValign, NoteFont } from './note-model.ts';
 import type { Item } from '../board-model.ts';
 
 /**
+ * How the toolbar opens a menu, handed in rather than imported.
+ *
+ * The face control is a button that opens the app's own menu, and ui/menu.ts is
+ * a tier above this one - a `canvas/` module importing `ui/` is a layering
+ * inversion tests/layers.test.js fails on, and its DEBT map is empty and may
+ * only shrink. So this is the same injection shape the codebase already uses in
+ * three places: setAssetNameLookup(), setPrompt() and setOverlays(). main.ts
+ * hands the implementation down; unwired, the control is simply inert, which is
+ * what keeps this module loadable in a test with no browser.
+ *
+ * Deliberately not the whole of ui/menu.ts's surface. It is one verb - *offer
+ * these, tick that one, tell me which* - so nothing here can grow a dependency
+ * on how a menu is drawn.
+ */
+export type NoteMenu = (
+  /** The control the menu hangs off. Its box, and its identity for the toggle. */
+  anchor: HTMLElement,
+  rows: { value: string, label: string }[],
+  current: string,
+  pick: (value: string) => void,
+) => void;
+
+let openMenu: NoteMenu | null = null;
+export function setNoteMenu(fn: NoteMenu | null) { openMenu = fn; }
+
+/**
  * The document's selection, which the editor has always dereferenced directly.
  *
  * `getSelection()` is typed nullable and answers null only for a document with
@@ -218,11 +244,15 @@ function readRich(wrap: HTMLElement) {
 // ---------------------------------------------------------------------------
 
 /**
- * The little formatting bar over a note being edited. Its buttons must not steal
- * focus from the editor - a blur would commit the note out from under the click
- * - so every control cancels the mousedown that would move focus; the one
- * exception is the <select>, which the focusout guard lets through because it is
- * inside the item.
+ * The little formatting bar over a note being edited. Its controls must not
+ * steal focus from the editor - a blur would commit the note out from under the
+ * click - so every one of them cancels the mousedown that would move focus.
+ *
+ * **There is no exception to that any more.** There used to be one, for the
+ * font <select>: a native dropdown has to take focus to open, so the rule was
+ * written with a hole in it and the focusout guard had to let one tag name
+ * through. The face is a button opening the app's own menu now, so the rule is
+ * whole - see the note over it.
  */
 type NoteToolbarApi = {
   setTag(tag: NoteTag): void;
@@ -236,17 +266,18 @@ function buildToolbar(api: NoteToolbarApi) {
   const bar = document.createElement('div');
   bar.className = 'note-toolbar';
   // The bar lives inside the .item, so a press on it would otherwise reach the
-  // canvas and start dragging the note - most visibly after using the <select>,
-  // whose native dropdown swallows the pointerup that would have ended the drag.
-  // Stop the press at the bar; the buttons still get their click.
+  // canvas and start dragging the note. Stop the press at the bar; the buttons
+  // still get their click.
+  //
+  // This used to have a second job, and it is worth recording that it is done:
+  // the font <select>'s native dropdown swallowed the pointerup that would have
+  // ended the drag, so a note stayed stuck to the pointer after choosing a face.
+  // That was never fixable from here - the window that ate the event was not
+  // this page's - and it went with the control.
   bar.addEventListener('pointerdown', e => e.stopPropagation());
-  bar.addEventListener('mousedown', e => {
-    e.stopPropagation();
-    // Keep focus in the editor for the buttons; the <select> needs it, so let
-    // that one through. The target of a press inside the bar is one of the
-    // elements this function built, which is what the cast says.
-    if ((e.target as Element).tagName !== 'SELECT') e.preventDefault();
-  });
+  // Keep focus in the editor. Every control in this bar, without exception -
+  // see the note over this function for the one there used to be.
+  bar.addEventListener('mousedown', e => { e.stopPropagation(); e.preventDefault(); });
 
   const groups: Record<string, HTMLDivElement> = {};
   const group = (name: string) => {
@@ -300,19 +331,39 @@ function buildToolbar(api: NoteToolbarApi) {
   btn(gV, { icon: 'va-middle', title: 'Middle', fn: () => api.setValign('middle'), key: 'valign:middle' });
   btn(gV, { icon: 'va-bottom', title: 'Bottom', fn: () => api.setValign('bottom'), key: 'valign:bottom' });
 
+  // The face, as a button that opens the app's own menu.
+  //
+  // **This was a <select>, and replacing it deleted three workarounds rather
+  // than adding one.** A native dropdown is a piece of the operating system: it
+  // takes focus, which the paragraph over this function says nothing in this bar
+  // may do; it opens a window of its own, which swallowed the pointerup that
+  // would have ended a drag and left the note being dragged by a click that had
+  // already finished; and it had to be let through the focusout guard by tag
+  // name, in a bar whose whole rule is that focus never leaves the editor. Each
+  // of those was a special case written *around* the control. The button has
+  // none of them: it cancels its mousedown like every other button here, the
+  // menu is an element in this page, and the caret never moves.
+  //
+  // It is also the one dropdown in the app where the list is four short words.
+  // The settings panel's are not - see the note in ui/settings-schema.ts for why
+  // those stay native.
   const gFont = group('font');
-  const sel = document.createElement('select');
-  sel.className = 'ntb-select';
+  const LABEL: Record<string, string> = { sheet: 'Sheet', sans: 'Sans', serif: 'Serif', mono: 'Mono' };
+  let font = NOTE_FONT_KEYS[0];
+  const sel = document.createElement('button');
+  sel.type = 'button';
+  sel.className = 'ntb-btn ntb-select';
   sel.title = 'Font';
   sel.setAttribute('aria-label', 'Font');
-  const LABEL: Record<string, string> = { sheet: 'Sheet', sans: 'Sans', serif: 'Serif', mono: 'Mono' };
-  for (const key of NOTE_FONT_KEYS) {
-    const opt = document.createElement('option');
-    opt.value = key;
-    opt.textContent = LABEL[key] || key;
-    sel.append(opt);
-  }
-  sel.addEventListener('change', () => api.setFont(sel.value));
+  sel.setAttribute('aria-haspopup', 'menu');
+  sel.addEventListener('click', () => {
+    openMenu?.(
+      sel,
+      NOTE_FONT_KEYS.map(key => ({ value: key, label: LABEL[key] || key })),
+      font,
+      key => api.setFont(key),
+    );
+  });
   gFont.append(sel);
 
   const gSize = group('size');
@@ -320,7 +371,7 @@ function buildToolbar(api: NoteToolbarApi) {
   btn(gSize, { text: 'A+', title: 'Larger', fn: () => api.bumpSize(NOTE_SIZE_STEP), key: 'size:up' });
 
   /** Light up the controls that match the line the caret is in. */
-  const reflect = (tag: NoteTag, align: NoteAlign, valign: string, font: string) => {
+  const reflect = (tag: NoteTag, align: NoteAlign, valign: string, fontKey: string) => {
     for (const b of bar.querySelectorAll<HTMLElement>('.ntb-btn[data-key]')) {
       // The selector is what makes the attribute present.
       const [k, v] = b.dataset.key!.split(':');
@@ -328,7 +379,11 @@ function buildToolbar(api: NoteToolbarApi) {
         (k === 'tag' && v === tag) || (k === 'align' && v === align) ||
         (k === 'valign' && v === valign));
     }
-    sel.value = font;
+    // Held in a closure rather than read off the control, which is what a
+    // <select> gave for free and a button does not: the menu is built fresh on
+    // every press and needs to know which row to tick.
+    font = fontKey;
+    sel.textContent = LABEL[fontKey] || fontKey;
   };
 
   return { el: bar, reflect };
@@ -641,17 +696,32 @@ export function editNote(
     afterEdit();
   };
 
+  /**
+   * The toolbar's own menu, which is not inside the toolbar.
+   *
+   * ui/menu.ts mounts its panel on <body> - it has to, because a menu pinned to
+   * the window cannot live inside a card that pans and zooms. So the face menu,
+   * which the bar opens and which is as much a part of the bar as any button on
+   * it, lands *outside* both tests below. Without this, choosing a face is a
+   * press outside the note: the note commits, the editor tears down, and the
+   * menu is left standing over a card that is no longer being edited.
+   *
+   * Looked up on each press rather than captured, because the panel is built
+   * fresh every time it opens and there is none between times.
+   */
+  const inMenu = (n: Node | null) => !!n && !!document.getElementById('ctx-menu')?.contains(n);
+
   // focusout fires before the new element takes focus, so relatedTarget is where
   // focus is *going* - the one moment we can tell "moved within the note" from
   // "left it entirely". The toolbar counts as inside, wherever it is mounted: on
-  // Mobile it lives in the viewport rather than the item, so its <select> would
-  // otherwise read as leaving and commit the note out from under the tap.
+  // Mobile it lives in the viewport rather than the item, so a control on it
+  // would otherwise read as leaving and commit the note out from under the tap.
   // The casts on both handlers say the same thing: where focus is going, and
   // what a press landed on, are nodes in this document or nothing at all.
   const onFocusOut = (e: FocusEvent) => {
     const to = e.relatedTarget as Node | null;
     if (node.contains(to) || toolbar.el.contains(to)) return;
-    if (surface?.contains(to)) return;
+    if (surface?.contains(to) || inMenu(to)) return;
     finish();
   };
 
@@ -661,7 +731,7 @@ export function editNote(
   // the note editable. Capture phase, so it runs before the canvas eats the press.
   const onDocPointerDown = (e: PointerEvent) => {
     const on = e.target as Node | null;
-    if (node.contains(on) || toolbar.el.contains(on)) return;
+    if (node.contains(on) || toolbar.el.contains(on) || inMenu(on)) return;
     // A press on the surface is a press on the thing the note is being written
     // in, which includes its Cancel button - and a Cancel that had already
     // committed the note by the time it was released would not be one.

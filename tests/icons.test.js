@@ -26,7 +26,6 @@ import { WEB, JS, read, walk } from './helpers.js';
 const sprite = read(join(WEB, 'assets', 'icons.svg'));
 const html = read(join(WEB, 'index.html'));
 const menu = read(join(JS, 'ui', 'menu.ts'));
-const fencePrompt = read(join(JS, 'ui', 'fence-prompt.ts'));
 
 /** Every id the sprite defines. */
 const defined = new Set([...sprite.matchAll(/<symbol\s+id="([^"]+)"/g)].map(m => m[1]));
@@ -35,24 +34,32 @@ const defined = new Set([...sprite.matchAll(/<symbol\s+id="([^"]+)"/g)].map(m =>
  * Every icon the app asks for, with where it asked.
  *
  * Three shapes, because there are three ways in: markup written by hand in
- * index.html, the name handed to icon() in the modules that build a row, and the
- * same <use href> written into a string by a module that builds its own markup.
+ * index.html, the name handed to icon() or put in an `icon:` field by a module
+ * that builds a row, and the same <use href> written into a string by a module
+ * that builds its own markup.
  *
- * That third one is swept over every module rather than listed, and it is worth
- * saying why: it was a list of two files, and the day the volume slider moved
- * from index.html into ui/playlist.js the sprite grew an orphan that this file
- * reported as a symbol nobody asks for - the reference was real and simply not
- * being looked at. A pattern this exact is cheap to grep for everywhere, and the
- * alternative is a list that is only correct until the next module writes an
- * icon into a template string.
+ * **All three are swept over every module rather than listed**, and it is worth
+ * saying why. The href sweep was a list of two files, and the day the volume
+ * slider moved from index.html into ui/playlist.js the sprite grew an orphan
+ * that this file reported as a symbol nobody asks for - the reference was real
+ * and simply not being looked at. The other two were still lists of two files
+ * afterwards, and cost exactly the same thing again the day the timeline strip
+ * grew a table of icons: two symbols the app uses every time it draws a step,
+ * reported here as symbols nobody wants.
+ *
+ * Held to names beginning `i-`, which is the sprite's own convention and is what
+ * separates these from the note toolbar's `al-center` and the rest, which are
+ * class names for a different mechanism and are not in the sprite at all.
  */
+const iconNames = (text, where) => [
+  ...[...text.matchAll(/href="assets\/icons\.svg#([^"]+)"/g)],
+  ...[...text.matchAll(/icon: '(i-[a-z0-9-]+)'/g)],
+  ...[...text.matchAll(/icon\('(i-[a-z0-9-]+)'/g)],
+].map(m => [m[1], where]);
+
 const referenced = [
-  ...[...html.matchAll(/href="assets\/icons\.svg#([^"]+)"/g)].map(m => [m[1], 'index.html']),
-  ...[...menu.matchAll(/icon: '([^']+)'/g)].map(m => [m[1], 'ui/menu.ts']),
-  ...[...menu.matchAll(/icon\('([^']+)'/g)].map(m => [m[1], 'ui/menu.ts']),
-  ...[...fencePrompt.matchAll(/icon\('([^']+)'/g)].map(m => [m[1], 'ui/fence-prompt.ts']),
-  ...walk(JS, ['.js', '.ts']).flatMap(rel => [...read(join(WEB, rel))
-    .matchAll(/href="assets\/icons\.svg#([^"]+)"/g)].map(m => [m[1], rel])),
+  ...iconNames(html, 'index.html'),
+  ...walk(JS, ['.js', '.ts']).flatMap(rel => iconNames(read(join(WEB, rel)), rel)),
 ];
 
 test('the sprite defines something for every icon the app asks for', () => {

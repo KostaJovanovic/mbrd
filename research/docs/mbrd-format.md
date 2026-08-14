@@ -1,7 +1,7 @@
 # The `.mbrd` format
 
-Version 1. Written 2026-07-25, from the code in `web/assets/js/storage/mbrd.js`
-and `web/assets/js/storage/zip.js`, which are the only two files that read or
+Version 1. Written 2026-07-25, from the code in `web/assets/js/storage/mbrd.ts`
+and `web/assets/js/storage/zip.ts`, which are the only two files that read or
 write it.
 
 > **The format is free to implement.** This specification is published so that
@@ -58,16 +58,24 @@ optimisation.** That is the whole reason this file exists.
 
 ```
 myboard.mbrd                    ZIP, renamed
+├── mimetype                    the media type, first and uncompressed
 ├── manifest.json               what this file is
 ├── board.json                  the board itself
 ├── assets/<hash>.<ext>         embedded bytes, deduped by content hash
 ├── notes/<slug>--<id>.md       one sticky note, as Markdown
-├── waveforms/<hash>.json       one audio file's measured readings
-└── thumbnails/<hash>.webp      reserved; nothing writes these yet
+└── waveforms/<hash>.json       one audio file's measured readings
 ```
 
 Only `manifest.json` and `board.json` are required. A reader that finds neither
-of the last three directories is looking at a perfectly valid older board.
+of the last two directories is looking at a perfectly valid board — a board with
+no sticky notes and no audio on it has neither.
+
+**There is no `thumbnails/`.** A `thumbnails/<hash>.webp` was reserved in the
+first draft of this format and nothing ever wrote one, so it is gone rather than
+still being promised. Nothing was lost by removing it: a reader cannot depend on
+a directory nothing writes, and the reservation was never what would have made
+adding it legal — the rule at the foot of this document already says a new
+top-level directory is free.
 
 ### ZIP details
 
@@ -76,8 +84,29 @@ of the last three directories is looking at a perfectly valid older board.
 - No encryption, no multi-part archives.
 - Entry names are `/`-separated, and the reader validates every one of them
   before it is used (see **Safety** below).
-- The MIME type is `application/vnd.mbrd+zip`, written into the archive's
-  header. A file is recognised by its `.mbrd` extension *or* that type.
+- The MIME type is `application/vnd.mbrd+zip`. A file is recognised by its
+  `.mbrd` extension, by that type, or by the `mimetype` entry below.
+
+### `mimetype`
+
+The media type, as bytes, with no trailing newline. **First entry in the
+archive, stored rather than deflated, and written with no extra field** — which
+puts the string `application/vnd.mbrd+zip` at a fixed offset 30 bytes into the
+file, where a tool that has never heard of this format can find it. It is the
+ODF and EPUB convention, and it is there so `file(1)` can name a `.mbrd` instead
+of shrugging and saying "Zip archive data".
+
+It is written for other software rather than for this app, and mbrd's own reader
+deliberately **does not check it**. `manifest.json`'s `format` is the answer to
+"what is this", it is stricter, and a second source for the same fact would
+disagree the first time somebody unzipped a board, edited a note and rezipped it
+with a tool that put the entries back in a different order. So a `.mbrd` whose
+`mimetype` is missing, last, or deflated is still a `.mbrd` — it has only lost
+the courtesy to everything else.
+
+Absent from every file written before it was added, which is why no reader may
+require it — and why it is a courtesy rather than the fourth thing in the list
+of what a `.mbrd` is.
 
 ---
 
@@ -90,7 +119,8 @@ of the last three directories is looking at a perfectly valid older board.
   "app": "mbrd v0.21",
   "created": "2026-07-25T10:04:11.882Z",
   "modified": "2026-07-25T18:22:03.117Z",
-  "title": "Kitchen"
+  "title": "Kitchen",
+  "requires": []
 }
 ```
 
@@ -98,10 +128,46 @@ of the last three directories is looking at a perfectly valid older board.
 | ---------- | ------- |
 | `format`   | Always `"mbrd"`. A file whose manifest says otherwise is refused. |
 | `version`  | Format version, currently `1`. A **higher** number loads anyway with a console warning — a board from a newer mbrd is more likely to be readable than not, and refusing it outright would lose work that a slightly lossy open would have kept. |
+| `requires` | Features a reader **must** understand to open this file at all. Empty today, and see below. |
 | `app`      | Which build wrote it, as `mbrd <version>`. Mostly informational — the one thing that reads it back is the title repair below, which needs to know whether the writer predates v0.51. |
 | `created`  | Preserved across re-saves, so a board keeps its birthday. |
 | `modified` | Set on every pack. |
 | `title`    | The board's name. Also the filename it was exported under, in practice. |
+
+### `requires`, and why it is empty
+
+A list of feature names. **A reader that does not understand every name in it
+must refuse the file** rather than open it — and this is the one rule in this
+document that asks a reader to fail rather than degrade.
+
+It exists because `version` cannot do this job, and the reason is worth reading
+once: no reader anywhere refuses a higher `version`. The check is a console
+warning and the load continues, here and in every implementation modelled on it.
+So a build meeting a field it has never heard of drops that field, writes it back
+out missing, and reports the save as a success. `version` can say *this is newer
+than you*. Only `requires` can say *this is newer than you **and you will lose
+something***, which is the only version of that sentence anybody can act on.
+
+**It is empty, and it is meant to stay empty for a long time.** Everything in the
+format today degrades honestly: an unknown item `type` draws as a plain named
+card, an unknown `meta` key rides along untouched, an unread history is a history
+that simply is not shown. None of that is worth refusing somebody's board over,
+and a `requires` that cried wolf would be the first thing an implementer
+hard-coded past.
+
+What it is *for* is the field that comes later and cannot degrade — the one where
+a person would rather be told to update than be handed a board that opens, looks
+right, and has quietly lost something. That field puts its name in here in the
+same commit that writes it.
+
+The reason it ships empty rather than being added when first needed: **a gate
+added the day it is first needed is a gate no existing reader checks.** That is
+exactly the trap `version` fell into, one level up, and it is not recoverable
+afterwards. So it is here now, doing nothing, being checked by everything.
+
+If you are implementing a reader: check this list, and fail loudly on a name you
+do not know. It will cost you nothing for years and then save somebody's work
+once.
 
 **The title repair.** A board's name and its filename are not the same string:
 `fileNameFor()` turns spaces into underscores so the name is safe in a file
@@ -150,7 +216,7 @@ the board was configured — and they travel with it, so opening a board puts yo
 back where you left it.
 
 `view.zoom` is the raw world-to-screen scale, not the percentage the corner
-prints. The two differ by `BASE_ZOOM` in `canvas/viewport.js`: the interface
+prints. The two differ by `BASE_ZOOM` in `canvas/viewport.ts`: the interface
 calls scale 0.8 "100%", so a board left at 100% records `0.8` here. Readers
 should treat the number as a scale and not multiply it by a hundred.
 
@@ -390,71 +456,126 @@ an older reader drops the unknown key rather than carrying it through — the sa
 caveat `connections` carries about round-tripping through a build that predates
 the field.
 
-### `versions`
+### `versions` — withdrawn
 
-What this board looked like before. A list of stored copies, newest first:
+**Not written, and ignored on read.** For one release — v0.197 — a board carried
+a list of stored copies of itself, newest first, each entry a whole `board.json`
+under a `data` key, written out beside the board as `versions/<id>.json`. It is
+gone as of v0.198. A file that still has the key opens; the key is dropped, the
+directory is walked past, and what comes back is the board without its snapshots.
 
-```json
-"versions": [
-  { "id": "v7k2m", "at": 1755180000000, "label": "Before the redesign",
-    "kept": true, "data": { "…": "a whole board.json" } }
-]
-```
+**Why it went, one release after it arrived.** The `timeline` field below answers
+the same question better. Undo now survives the refresh, every step is a point
+the board can be taken back to, and any step can be named — so a stored version
+was a second, coarser, far more expensive answer to *take me back*.
 
-Undo lives in memory and dies at the refresh, so until this existed the only
-recovery from an hour of making a board worse was to have thought to save a copy
-first. `data` is a complete `board.json` document — the same shape as the file
-that contains it, one level in.
-
-**This costs no photographs, and that is the whole reason it is affordable.**
-Assets are stored once under `assets/<hash>` and referenced by id, and
-`board.json` is small. Twenty versions of a 40 MB board are twenty copies of a
-text file, not twenty copies of the pictures.
-
-**What it costs instead is the meaning of the word "unreferenced", and that is a
-correctness problem rather than a size one.** The packer writes only hashes
-something still points at, and the browser's own housekeeping sweep deletes
-whatever nothing claims. There are now **three** classes of reference, not two:
+**What went with it is a class of reference, and that is the part worth
+recording.** The packer writes only hashes something still points at, and the
+browser's housekeeping sweep deletes whatever nothing claims. A version named
+cards the board no longer had — that was the entire point of one — so an asset
+only a version wanted was *live*, and three separate places had to know it:
+`packBoard`, the autosave sweep, and the inventory sheet. Each of those is a
+place that can silently delete somebody's photograph, and each now asks three
+questions instead of four:
 
 1. an item on the live board,
 2. an item in the bin,
-3. **an item inside a stored version.**
+3. **an item named by a step of the timeline.**
 
-A version names cards the board no longer has — that is the entire point of one
-— so an asset only a version wants is *live*. Miss the third class and nothing
-loses a version: it leaves the version standing with holes where its photographs
-were, discovered on the day somebody restores it and having reported every save
-as a success. Anything added later that computes "what is still used" has to
-count versions, and there are three such places today: `packBoard`, the autosave
-sweep, and the inventory sheet.
+**A reader that wants the old data can still have it**, which is why nothing here
+is destructive to a file on disk: `versions/<id>.json` inside a v0.197 `.mbrd` is
+a complete `board.json`, openable on its own, and unzipping the archive is the
+whole of the recovery. What the app will not do is carry it forward.
 
-`data` never contains a `versions` key of its own. A version of a board that
-already had versions would nest — the second carrying a copy of the first, the
-third a copy of both — and a board left open would grow its own history
-exponentially inside itself.
+### `timeline`
 
-What is held to, on the way in and out:
+How the board got here. Absent on a board nobody has changed, and absent from
+every export where the person saving it said to leave it out — which is the
+default, and the reason it is described here as something you may or may not
+find rather than as part of a board.
 
-- **`id`** is required and unique; an entry without one, or without `data`, is
-  dropped rather than kept as a row that cannot be restored.
-- **`at`** is epoch milliseconds. Non-numeric becomes `0`, and the list is
-  sorted newest first on the way in rather than trusted — a hand-edited file
-  cannot make the ring evict the wrong end.
-- **`label`** is whitespace-collapsed and capped at 60 characters. Its presence
-  is not what makes a version kept; `kept` is.
-- **`kept: true`** marks a version somebody named. Kept versions never evict and
-  are capped at 32. Unnamed ones ride a ring of 8 and the oldest falls off.
-  The two are trimmed **separately**, which is the point of having two kinds: a
-  ring that dropped a named version to make room for an automatic one would be
-  answering neither of the questions the pair exists to answer — *what did I
-  just break*, and *the version I showed the client*.
-- **`data` is not validated on the way in**, deliberately. It is a document that
-  will be read back through the ordinary board reader when somebody restores it,
-  and validating it here would mean the reader had to know the whole schema of a
-  board from inside the function that *is* that reader.
+```json
+"timeline": {
+  "base": { "items": { "…": "id -> JSON" }, "itemOrder": ["…"], "rest": { "…": "…" } },
+  "at": 42,
+  "fingerprint": "3f9a21c4",
+  "steps": [
+    { "id": "s8k2m", "at": 1755180000000, "label": "Move", "run": "items:k3f|x,y",
+      "delta": { "items": { "changed": { "k3f": ["{…before}", "{…after}"] } } } }
+  ]
+}
+```
 
-Additive with an empty default (`[]`), so it needs no version bump — see the
-compatibility note below, which this field is the reason for.
+`base` is the board before step 0, as text. `steps` are in order, oldest first.
+`at` is how many of them are on the board — the marker — so a file can be saved
+with the history rolled back and comes back that way.
+
+**Most steps are a difference; some also carry a rule.** Each `delta` holds the
+state on both sides of what one action touched, keyed by item id, which is what
+makes it reversible in either direction without knowing what the action meant. A
+step with only that is **sealed**: it replays exactly and cannot be edited,
+because there is nothing in *this card was at 40 and is now at 80* to change.
+
+A step may also carry an `op` — a rule and its arguments:
+
+```json
+"op": { "name": "align", "params": { "edge": "left", "ids": ["k3f", "p81"] } }
+```
+
+Change an argument and the step can be run again to a different answer, with
+every step after it replayed on top of it. Three commands carry one so far —
+`align`, `distribute`, `arrange` — chosen because they are the ones where
+editing the past visibly ripples. The `delta` is still recorded alongside and is
+what ordinary scrubbing uses; it is rewritten whenever the rule is re-run. A
+reader that does not understand `op` treats every step as sealed, which is
+correct rather than merely safe.
+
+**A delta applies only the fields it changed**, not the whole recorded object.
+This is not an optimisation. Writing the object whole would make every step
+assert everything about that card, so editing a step in the past would take
+effect and then be silently undone by the next step that happened to mention the
+same card.
+
+**A run of changes to one card is one step.** Twelve taps of an arrow key are
+one entry holding the first position and the last. Undo in the session that made
+them is still finer than that, and *that* fineness is not written down: reopen
+the file and one undo takes the whole move back. This is intended — it is what
+keeps a file the size of somebody's intentions rather than the size of their
+keystrokes — and it is the one place the format deliberately remembers less than
+the app did.
+
+**`fingerprint` is taken over `items` and `trash` as this file carries them**,
+not over the live board, because a board written out and read back is not the
+same object — coordinates round, absent keys take defaults, layouts are
+recomputed. On load, a timeline whose fingerprint does not match the document it
+arrived in is marked stale and shown as unusable rather than believed. The
+failure this guards is specific: an older build opens the file, drops the key it
+does not understand, writes the board back edited, and it comes here again. A
+history that quietly describes the wrong board is worse than no history. A
+timeline with no fingerprint at all is taken at its word, since that is what a
+file written before the check looks like.
+
+**Checkpoints are not in here and never will be.** Scrubbing needs a full copy
+of the board every fifty-odd steps, and a full board is on the order of a
+hundred kilobytes against a step's eighty bytes — so storing them would make
+them roughly thirty times the size of the history. They are rebuilt in memory
+when a board is first scrubbed. Nothing is lost by a reader that ignores this:
+`items` is the end state, exactly as it always was.
+
+**It is the fourth class of reference, and this is the part with teeth.** A step
+that deleted a photograph carries that photograph on its *before* side, and that
+is what stepping back puts on the board again. So an asset a step points at is
+live even when no card, no bin entry and no version wants it. Four readers now
+compute "what is still used" — `packBoard()`, the autosave sweep in
+`storage/session.ts`, `ui/inventory.ts`, and the timeline itself supplying the
+fourth set. Miss one and the history comes back with holes in it. Unlike the
+other three classes, a missing asset here is **not** fatal to an export: a step
+can name bytes the optimiser legitimately discarded, and refusing to write
+somebody's board because of an entry in its history would be the wrong way
+round.
+
+Additive and absent by default, so it needs no version bump — see the
+compatibility note below, which this field is now the reason for.
 
 ### Fences
 
@@ -511,7 +632,7 @@ item type and not a new top-level key like `connections`.
 | `id`   | Unique within the board. `[A-Za-z0-9_-]{1,64}`. |
 | `type` | `image`, `video`, `audio`, `text`, `note`, `link`, `swatch`, `sticker`, `model`, `fence`, `generic`. |
 | `x`, `y` | The item's **centre**, in world units. **`y` points up** — this is the one convention that surprises people, and it is why the renderer lays items out at `-y`. |
-| `w`, `h` | Size in world units. Bounded to 48…20000 (`geometry.js`). |
+| `w`, `h` | Size in world units. Bounded to 48…20000 (`geometry.ts`). |
 | `rot`  | Degrees, anticlockwise-positive. Only stickers set it so far — ±8° rolled fresh every time one is pressed down — but every geometry helper has always respected it, and a hand-rotated card of any type round-trips. |
 | `z`    | Stacking order. Higher is nearer. |
 | `name` | The label on the card. Editable, and independent of the filename. |
@@ -655,7 +776,7 @@ that way.
   `javascript:` payload.
 - **`look.vars` is the only part of a board that reaches the browser as code**,
   and it is gated by a token allowlist plus a value pattern and a function
-  allowlist (`ui/look.js`).
+  allowlist (`ui/look.ts`).
 - **`meta.presnap` is checked before it is written onto an item's geometry** —
   four finite numbers with a size inside the legal range, or the memo is
   dropped.
@@ -668,7 +789,7 @@ For anyone changing this format later:
 
 - **Adding a `meta` key is free.** Older readers carry it through.
 - **Adding a top-level directory is free.** Older readers ignore what they do
-  not recognise. `thumbnails/` is already reserved this way.
+  not recognise, which is why nothing needs reserving in advance.
 - **Adding a `board.json` field is free**, as long as its absence has a sane
   default.
 - **Renaming or repurposing anything is a version bump.** `version` exists for
@@ -679,8 +800,8 @@ For anyone changing this format later:
 
 ### An older build opening a newer file loses what it does not know
 
-Stated on its own because `versions` is the first field where it costs something
-a person would miss, and because the obvious protection turns out not to exist.
+Stated on its own because `timeline` is the field where it costs something a
+person would miss, and because the obvious protection turns out not to exist.
 
 The reader builds an explicit board object field by field, so a key it has never
 heard of is **dropped on load** — and then absent from the next file that build

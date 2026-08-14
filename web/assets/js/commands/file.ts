@@ -33,7 +33,10 @@
 
 import { busy, toast } from '../notify.ts';
 import { formatBytes } from '../util.ts';
-import { board, historyDepth, historyState, historyWeight, selection } from '../state.ts';
+import {
+  board, historyDepth, historyState, historyWeight, selection, timelineSteps,
+} from '../state.ts';
+import { ask } from '../ui/dialog.ts';
 import {
   boardSafety, exportBoard, lastSaveFailure, newBoard, openBoard,
   saveBlob, shareBoard, storageReport,
@@ -67,6 +70,48 @@ function boardArtefactName(ext: string, suffix = ''): string {
  * supposed to change nothing at all.
  */
 const why = (err: unknown): string => (err as Error).message;
+
+/**
+ * Whether this export should carry the step history, asked.
+ *
+ * The history records everything that was tried and thrown away, so a file
+ * carrying it hands the recipient every rejected picture and every deleted note.
+ * That is worth having between two machines of your own and is not worth
+ * leaking, and nobody can be expected to remember which case they are in - so
+ * this asks, and the safe answer is the primary button.
+ *
+ * **It only asks when there is something to ask about.** A board whose history
+ * is empty - a file just opened, a board never edited this session - exports
+ * without a word, which is what keeps this from becoming a dialog people learn
+ * to dismiss without reading. The one that then appears on the board they have
+ * been working on all afternoon is a question they will actually read.
+ *
+ * The answer is deliberately **not remembered**. A preference that quietly
+ * turns leaking back on six months later is precisely the failure this exists to
+ * prevent, and the cost of not remembering is one keystroke on the exports where
+ * it matters.
+ *
+ * Cancelling the dialog answers "leave it out" rather than abandoning the
+ * export, on the same reasoning ask() gives for every accidental way out
+ * resolving to the harmless answer: this question is not "do you want to
+ * export", and a stray Escape must not turn into a file with somebody's
+ * discarded work in it.
+ */
+async function askHistory(): Promise<boolean> {
+  if (!timelineSteps().length) return false;
+  const answer = await ask({
+    title: 'Include the history?',
+    body: 'This board has a step history. Including it lets whoever opens the '
+      + 'file walk back through every change - which also means everything you '
+      + 'tried and threw away. Leave it out and they get the board as it '
+      + 'stands.',
+    go: 'Leave it out',
+    keep: 'Include it',
+    cancel: 'Cancel',
+    danger: false,
+  });
+  return answer === 'keep';
+}
 
 export function fileCommands() {
   return {
@@ -148,12 +193,12 @@ export function fileCommands() {
         weight: historyWeight() });
     },
     save: () => saveWithCooldown(),
-    export: () => exportBoard(),
-    exportAs: () => exportBoard({ pickNew: true }),
+    export: async () => exportBoard({ history: await askHistory() }),
+    exportAs: async () => exportBoard({ pickNew: true, history: await askHistory() }),
     // The mobile face of Export: the same packed .mbrd, handed to the OS share
     // sheet instead of a download folder a phone has no good way to reach. Falls
     // back to Export where files cannot be shared - see shareBoard().
-    share: () => shareBoard(),
+    share: async () => shareBoard({ history: await askHistory() }),
     // A picture of the board, for showing rather than reopening. A moodboard
     // exists to be presented, and until these two the only thing that left mbrd
     // was a .mbrd only mbrd can read. The board is composited onto a canvas

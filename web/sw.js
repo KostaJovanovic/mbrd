@@ -12,7 +12,7 @@
 // Written out in full rather than composed from PREFIX, because save.bat bumps
 // this line by regex on every commit and would not recognise an expression.
 // tests/sw.test.js holds the two together.
-const VERSION = 'mbrd-v198';
+const VERSION = 'mbrd-v199';
 const PREFIX = 'mbrd-';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) turns the
@@ -76,6 +76,7 @@ const SHELL = [
   './assets/css/color-picker.css',
   './assets/css/sticker-pad.css',
   './assets/css/mobile.css',
+  './assets/css/timeline.css',
   './assets/css/quality.css',
   // Not one of the twenty above and not in the cascade with them - this one
   // dresses patch.html and is loaded by nothing else. It is here because

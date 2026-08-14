@@ -24,7 +24,7 @@
    The two share every rule below that is about being a sheet, and part company
    only at their width - which is the point of writing them together rather than
    twice. */
-#ask, #credits, #inventory, #versions {
+#ask, #credits, #inventory, #timeline-sheet {
   max-width: min(420px, calc(100vw - 32px));
   padding: 22px 24px 18px;
   border: var(--hairline) solid var(--rule-2);
@@ -37,14 +37,18 @@
   margin: auto;
   animation: ask-in var(--dur-base) var(--ease-back);
 }
-#ask::backdrop, #credits::backdrop, #inventory::backdrop, #versions::backdrop {
+#ask::backdrop, #credits::backdrop, #inventory::backdrop, #timeline-sheet::backdrop {
   /* Tinted with the board's own ink rather than plain black, so the sheet
      behind it dims into the palette instead of going grey. */
   background: color-mix(in srgb, var(--ink) 42%, transparent);
   -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
 }
-#ask h2, #credits h2, #inventory h2, #versions h2 {
+/* #timeline-sheet is dressed by the three blocks above and styled in
+   timeline.css, which is where the rest of the Timeline is and which loads
+   after this file. Named here rather than given a copy of the dressing, the way
+   #inventory is: what a sheet looks like is one decision in one place. */
+#ask h2, #credits h2, #inventory h2, #timeline-sheet h2 {
   margin: 0 0 8px;
   font-family: var(--font-display);
   font-size: var(--t-title);
@@ -634,10 +638,12 @@
    report needs and a question does not: a list of rows, and a width that fits
    a file name against a size without either wrapping.
 
-   Deliberately without pictures. The whole rule of ui/inventory.ts is that
-   nothing in it may decode an image - a board with two thousand cards is
-   exactly the board this gets opened on - so this is a table of type, and it
-   is styled to be read down the right-hand column rather than admired. */
+   The list itself is deliberately without pictures. The rule of ui/inventory.ts
+   is that building the report may not decode an image - a board with two
+   thousand cards is exactly the board this gets opened on - so it is a table of
+   type, styled to be read down the right-hand column rather than admired. The
+   one picture in here is .inv-peek at the foot of this block, which is one row's
+   worth, drawn on hover, after the reading is already on screen. */
 #inventory {
   max-width: min(460px, calc(100vw - 32px));
 }
@@ -669,15 +675,46 @@
   padding: 0;
   list-style: none;
 }
-.inv-row {
+/* The rule between rows belongs to the row; everything else about a row - the
+   flexing, the padding, the hit area - belongs to the line inside it, because
+   that line is a <button> when the file is under a card and a <div> when it is
+   not, and the two have to measure identically. A list where the rows that go
+   somewhere are a pixel taller than the rows that do not would be the report
+   flinching. */
+.inv-row { border-bottom: var(--hairline) solid var(--rule); }
+.inv-row:last-child { border-bottom: 0; }
+.inv-line {
   display: flex;
   align-items: baseline;
   gap: 12px;
-  padding: 4px 0;
-  border-bottom: var(--hairline) solid var(--rule);
+  width: 100%;
+  margin: 0;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--leaf);
+  background: none;
+  color: inherit;
+  font: inherit;
   font-size: var(--t-small);
+  text-align: left;
 }
-.inv-row:last-child { border-bottom: 0; }
+button.inv-line { cursor: pointer; transition: background var(--dur-fast) var(--ease); }
+button.inv-line:hover { background: var(--paper-2); }
+button.inv-line:focus { outline: none; }
+button.inv-line:focus-visible {
+  outline: var(--sel-line) solid var(--select);
+  outline-offset: calc(var(--sel-gap) * -1);
+}
+/* Only ever drawn when the number is news - see assetRow(). One file under
+   several cards is the case this report exists to make visible, since it is
+   also the case where deleting a card frees nothing. */
+.inv-used {
+  flex: none;
+  font-family: var(--font-display);
+  font-size: var(--t-tiny);
+  font-style: var(--display-italic);
+  color: var(--ink-3);
+}
 /* The name gives way and the size never does: the size is the column somebody
    is scanning, and a long file name that pushed it off the edge would break the
    one thing this list is for. */
@@ -700,63 +737,37 @@
    question "what is making this big" is asked in. */
 .inv-row[data-orphan] .inv-name { color: var(--ink-3); font-style: italic; }
 
-/* ── The versions sheet ────────────────────────────────────────────────────
+/* The peek: one row's picture, beside the sheet.
 
-   Dressed as the others and shaped like the bin, which is the right family: a
-   list of things that are not on the board and can be brought back. What it
-   does differently is put a verb on every row rather than one at the foot,
-   because the rows are not a selection - each is a separate destination. */
-#versions-body { margin-bottom: 18px; }
-.ver-head {
-  margin: 14px 0 6px;
-  font-family: var(--font-display);
-  font-size: var(--t-small);
-  font-weight: 400;
-  font-style: var(--display-italic);
-  color: var(--ink-3);
-}
-.ver-head:first-child { margin-top: 0; }
-.ver-note {
-  margin: 8px 0 0;
-  font-size: var(--t-tiny);
-  color: var(--ink-3);
-}
-.ver-list { margin: 0; padding: 0; list-style: none; }
-.ver-row {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 5px 0;
-  border-bottom: var(--hairline) solid var(--rule);
-  font-size: var(--t-small);
-}
-.ver-row:last-child { border-bottom: 0; }
-.ver-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--ink);
-}
-/* The time under a name, which a named version still needs: two versions called
-   the same thing are indistinguishable at exactly the moment you are choosing
-   between them. */
-.ver-when { color: var(--ink-3); }
-.ver-restore, .ver-forget {
-  flex: none;
-  padding: 2px 8px;
+   Square, with the picture contained inside it, and that is load-bearing rather
+   than a look - ui/inventory.ts places this box by arithmetic on one number
+   (PEEK, which must equal the width and the height here), and a box that sized
+   itself to the image could only be placed correctly after the image had
+   loaded, which is one frame after the pointer arrived.
+
+   It sits inside the <dialog>, so it is in the top layer with the sheet and
+   paints over the backdrop rather than under it. `position: fixed` is against
+   the window for the same reason, which is what the placement arithmetic
+   assumes. */
+.inv-peek {
+  position: fixed;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 168px;
+  height: 168px;
+  padding: 6px;
   border: var(--hairline) solid var(--rule-2);
-  border-radius: var(--radius-xs);
-  background: none;
-  color: var(--ink-2);
-  font: inherit;
-  font-size: var(--t-tiny);
-  cursor: pointer;
+  border-radius: var(--leaf);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
+  pointer-events: none;
 }
-.ver-restore { color: var(--ink); }
-.ver-restore:hover, .ver-forget:hover { background: var(--paper-2); }
-/* Forget is quieter than Restore on purpose. Both are one press, but one of
-   them is why the sheet exists and the other is tidying, and a row where the
-   two look equally weighted invites the wrong one. */
-.ver-forget { border-color: transparent; color: var(--ink-3); }
+.inv-peek[hidden] { display: none; }
+.inv-peek img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: calc(var(--leaf) - 4px);
+  object-fit: contain;
+}
+

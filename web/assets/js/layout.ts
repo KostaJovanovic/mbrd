@@ -1047,7 +1047,18 @@ export function commitGeom(
   };
   // Weighted: this pair retains two snapshots of everything it moved, and a
   // whole-board drag or arrange is where the history's memory actually goes.
-  commit(label, () => move(after), () => move(before), before.length * 2);
+  //
+  // The fifth argument is the one place in the app that needs it. By the time a
+  // gesture is closed the cards are already where they end up - they have been
+  // moving under the pointer - so `move(after)` re-applies values the board
+  // already holds, and the step ledger, which measures a change by looking at
+  // the board on either side of the redo call, would see nothing at all and
+  // record an empty step. This puts the geometry back for the instant it takes
+  // to look. applyGeom() rather than move(): the pre-image is wanted for
+  // measuring, not for living in, so restick() and the settling window stay out
+  // of it and run once, forward, where they belong.
+  commit(label, () => move(after), () => move(before), before.length * 2,
+         () => applyGeom(before));
 }
 
 /**

@@ -131,6 +131,17 @@ error rather than becoming a broken runner.
   A new file type is a branch in `classify()` plus an entry in `RENDERERS`,
   both in `canvas/renderers.ts`. A new arrangement is a pure
   `(items, opts) => [{x, y}]` in `arrange/arrangements.ts`.
+  - **A button that opens a menu must call `justDismissed()` first.** The
+    menu's own outside-press listener closes on `pointerdown` in the capture
+    phase, and a button that opens a menu is *outside* it — so a second press
+    already closed it, and the `click` that follows reopens it. The menu never
+    appears to close. No toggle written in the opener can see this, because by
+    the time the opener runs there is nothing left open; the fact has to be
+    asked for rather than tested.
+  - **A native `<select>` stops being one only when there is something it
+    cannot do**, not when it looks unlike its neighbours. Two have cleared that
+    bar and the reasoning for both, and for the ones that stay native, is in the
+    `PickerControl` block in `ui/settings-schema.ts`.
 - **Icons are `<symbol>`s in `web/assets/icons.svg`, reached by name** —
   `<use href="assets/icons.svg#i-note">`. A misspelled id fails silently: no
   console warning, no failed request, just a hole where the icon was.
@@ -202,13 +213,22 @@ error rather than becoming a broken runner.
   teardown is load-bearing: a `<video>` left mounted keeps its decoder, a
   document's blob URLs are this module's to revoke, and a parsed PDF holds the
   whole file.
-- **`#toolbar` must stay before `#nowplaying` in `index.html`, and `#tour` must
-  stay after it.** The rules that step the player up a tier when the phone's
-  toolbar opens are general sibling combinators, and so is the one that lifts the
-  tour bar clear of the player; those only look forward. The two constraints
-  point opposite ways and fix all three elements in one order. Reordering breaks
-  a layout silently — the first only on a phone, the second only while something
-  is playing.
+- **`#toolbar`, then `#timeline-strip`, then `#nowplaying`, then `#tour` in
+  `index.html`.** Every rule that steps the player up a tier — the phone's
+  toolbar opening, the history strip coming up — is a general sibling
+  combinator, and so is the one that lifts the tour bar clear of the player;
+  those only look forward. So three things must be able to be seen *from* the
+  player and one must see the player from itself. Four elements, three
+  constraints pointing two ways, one legal order. Reordering breaks a layout
+  silently — the first only on a phone, the second only while the strip is open,
+  the third only while something is playing.
+  - **And `#sidebar` and `#header-panel` must precede all four**, which is the
+    same rule from further up the file. The strip and the player share one gap
+    along the foot — `--foot-left` / `--foot-right` in `chrome.css`, defined once
+    at `:root` rather than computed twice — and a panel opening at either end
+    widens that gutter for *both* through `#sidebar.is-open ~ :is(#nowplaying,
+    #timeline-strip)`. A sibling combinator again, so a panel moved below either
+    bar stops moving it, and the bar slides under the panel.
 - **Import paths are case-sensitive on the deployed host and not on this
   machine.** Windows resolves `'./Foo.js'` for `foo.js` happily; the Pages
   demo, served off a Linux filesystem, 404s. The CI job runs on `ubuntu-latest`

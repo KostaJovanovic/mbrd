@@ -47,6 +47,7 @@ import {
   isFurniture, isRider, isFence, isLocked, setArrangement,
   addItems,
   snapshotGeom, applyGeom, commitGeom,
+  declareOp, registerOp,
 } from './state.ts';
 import { alignTargets, distributeTargets, separateOverlaps } from './geometry.ts';
 // Still needed here for zoomToSelection, which is a selection-wide action and
@@ -61,7 +62,7 @@ import { pickColor } from './ui/color-picker.ts';
 import { getAsset, assetURL } from './storage/assets.ts';
 import { close as closeSidebar } from './ui/sidebar.ts';
 import { closeToolbar } from './ui/toolbar.ts';
-import { openContextMenu, openAnchored } from './ui/menu.ts';
+import { openContextMenu, openAnchored, justDismissed } from './ui/menu.ts';
 import { open as openSearch } from './ui/search.ts';
 import { toggleStickerWindow } from './ui/sticker-window.ts';
 import {
@@ -164,7 +165,80 @@ export interface CommandDeps {
  *              state changes, and those are the ones that need it.
  * @param deps  { resetAppearance, setWhimsy } from ui/appearance.js.
  */
+/**
+ * The three computed layouts, by id rather than by selection.
+ *
+ * Split out of the commands above them so the *rule* can be run again on the
+ * cards it was run on, which is what makes a step on the history strip editable
+ * rather than sealed. A command reads the selection and decides what the job
+ * is; these do the job. See registerLayoutOps() below, and
+ * research/timeline-2026-08-14.md, which says why these three came first: they
+ * are the steps where changing something in the past actually changes what
+ * comes after it. Most steps in this app are absolute - *put this card here* -
+ * and editing one of those ripples nowhere.
+ *
+ * declareOp() before the mutation, always, and it is the only thing a command
+ * has to remember: it says what the step about to be recorded is a case of.
+ * Forget it and the step is still recorded, still replays exactly, and simply
+ * cannot be edited - which is a smaller failure than most, and visible on the
+ * strip as a lock.
+ */
+function layoutItems(ids: string[]) {
+  const wanted = new Set(ids);
+  return board.items.filter(i => wanted.has(i.id));
+}
+
+function alignIds(ids: string[], edge: string, label = 'Align') {
+  const items = layoutItems(ids);
+  if (items.length < 2) return;
+  const spread = edge === 'top' || edge === 'bottom' || edge === 'vcenter' ? 'x' : 'y';
+  const targets = separateOverlaps(
+    alignTargets(items, edge), items, spread, board.settings.spacing || 0);
+  const before = snapshotGeom(ids);
+  declareOp('align', { ids, edge });
+  applyGeom(targets);
+  commitGeom(label, before, ids);
+}
+
+function distributeIds(ids: string[], axis: 'x' | 'y') {
+  const items = layoutItems(ids);
+  if (items.length < 3) return;
+  const before = snapshotGeom(ids);
+  declareOp('distribute', { ids, axis });
+  applyGeom(distributeTargets(items, axis));
+  commitGeom(axis === 'x' ? 'Distribute across' : 'Distribute down', before, ids);
+}
+
+/**
+ * Teach the ledger how to run these three again.
+ *
+ * Registered here rather than in timeline.js because this is where they are
+ * defined and where they will change; the ledger sits at the bottom of the
+ * graph and may not import upwards, so the arrow has to point this way. Called
+ * once, from createCommands().
+ *
+ * A runner writes to the board and does not commit - commit() is a pass-through
+ * while a rebuild is running, so these reach the board and leave both engines
+ * alone. See isReplaying().
+ */
+function registerLayoutOps() {
+  const asIds = (value: unknown): string[] =>
+    (Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []);
+  registerOp('align', params => alignIds(asIds(params.ids), String(params.edge || 'left')));
+  registerOp('distribute', params =>
+    distributeIds(asIds(params.ids), params.axis === 'y' ? 'y' : 'x'));
+  // The flagship. An arrangement is a pure (items, opts) -> positions function
+  // with no randomness in it (see arrange/arrangements.js), so re-running one is
+  // reproducible to the pixel - which is the property that makes editing a
+  // layout step in the past mean something rather than merely look like it does.
+  registerOp('arrange', params => {
+    const items = layoutItems(asIds(params.ids));
+    if (items.length) rearrange(items, { name: params.name ? String(params.name) : undefined });
+  });
+}
+
 export function createCommands(vp: CommandsViewport, { resetAppearance, setWhimsy, perf }: CommandDeps) {
+  registerLayoutOps();
   /**
    * The board's settings as a plain bag of keys, which is what the three
    * settings doors below need.
@@ -364,11 +438,7 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
       // Spread them back out along that axis - the horizontal edges share an x,
       // so they separate on y, and the vertical edges the other way round. A
       // sweep, not a repack: only a run that would collide is opened up.
-      const spread = edge === 'top' || edge === 'bottom' || edge === 'vcenter' ? 'x' : 'y';
-      const targets = separateOverlaps(alignTargets(items, edge), items, spread, board.settings.spacing || 0);
-      const before = snapshotGeom(ids);
-      applyGeom(targets);
-      commitGeom(label, before, ids);
+      alignIds(ids, edge, label);
     },
     distributeSelection: (axis: 'x' | 'y') => {
       if (board.layoutMode === 'mobile') { toast('Spacing out is a canvas thing'); return; }
@@ -376,10 +446,7 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
       const items = board.items.filter(i =>
         selection.has(i.id) && !isFurniture(i) && !isFence(i) && !isRider(i) && !isLocked(i));
       if (items.length < 3) { toast('Pick three or more cards to space out'); return; }
-      const ids = items.map(i => i.id);
-      const before = snapshotGeom(ids);
-      applyGeom(distributeTargets(items, axis));
-      commitGeom(axis === 'x' ? 'Distribute across' : 'Distribute down', before, ids);
+      distributeIds(items.map(i => i.id), axis);
     },
 
     // The Desktop title card's pen: opens the same style panel the Mobile masthead
@@ -486,6 +553,11 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     moreTools: () => {
       const btn = document.querySelector('#toolbar [data-cmd="more-tools"]');
       if (!btn) return;
+      // A second tap on More closes it, which needed asking rather than
+      // testing: the menu's own outside-press listener has already shut it by
+      // the time this runs, so there is nothing left here to find open. See
+      // justDismissed() in ui/menu.ts.
+      if (justDismissed(btn)) return;
       openAnchored(btn.getBoundingClientRect(), [
         { label: 'Add a colour', icon: 'i-swatch', action: () => cmds.addSwatch() },
         { label: 'Add a link', icon: 'i-link', action: () => cmds.addLink() },

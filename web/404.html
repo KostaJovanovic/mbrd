@@ -168,6 +168,7 @@
 <link rel="stylesheet" href="assets/css/color-picker.css">
 <link rel="stylesheet" href="assets/css/sticker-pad.css">
 <link rel="stylesheet" href="assets/css/mobile.css">
+<link rel="stylesheet" href="assets/css/timeline.css">
 <link rel="stylesheet" href="assets/css/quality.css">
 <script>
   /* Before first paint: apply the saved look - whimsy level, palette, and any
@@ -854,6 +855,49 @@
   </div>
 </div>
 
+<!-- The Timeline, on a wide window: every change to this board as a step, and
+     where you are in them. Filled by ui/timeline-view.js; the shell is literal
+     here for the reason the tour bar's is. The same module builds
+     #timeline-sheet below, which is the face a narrow window gets.
+
+     **Between #toolbar and #nowplaying, and that is now a three-way constraint
+     rather than the two-way one the tour bar's comment describes.** The rules
+     that step the player up a tier when this strip is open are general sibling
+     combinators and those only look forward, so the strip has to be able to be
+     seen *from* the player - which puts it before. #toolbar is before the strip
+     for its own version of the same rule, and #tour is after the player for the
+     opposite one. Four elements, three constraints, one legal order.
+
+     The strip is the wide face and only the wide face: a horizontal list of
+     three thousand steps on a 430px screen is not a feature. That was once the
+     whole of what a phone got - the strip was hidden below 720px and nothing
+     took its place - and the sheet is what took its place. Same steps, same
+     sentences, a column instead of a scale.
+
+     hidden to start, and stays hidden until asked for. The bottom edge already
+     carries the bin, the zoom cluster and the player, and a fourth permanent
+     tenant there would be the app talking about itself while somebody is
+     working. -->
+<div id="timeline-strip" hidden aria-label="Timeline">
+  <div class="tl-head">
+    <span class="tl-title">Timeline</span>
+    <span class="tl-where"></span>
+    <!-- Naming the point the board is standing on, which is what a saved board
+         version became - the ring of copies went in v0.198 and the ledger holds
+         the way back, so a landmark is a string on a step. Hidden by
+         ui/timeline-view.js at the start of the board, where there is no step to
+         name; hidden here to start because the strip is drawn before it is
+         known. -->
+    <button type="button" class="tl-name" hidden aria-label="Name this point" title="Name this point">
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-rename"/></svg>
+    </button>
+    <button type="button" class="tl-close" aria-label="Close the timeline" title="Close the timeline  Esc">
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>
+    </button>
+  </div>
+  <div class="tl-track" role="listbox" aria-label="Steps"></div>
+</div>
+
 <!-- What is playing, and the controls for it. Built by ui/nowplaying.js.
 
      Two rows: the name on the left and the controls on the right - open the
@@ -1278,20 +1322,37 @@
   </div>
 </dialog>
 
-<!-- What this board looked like before. A shell, like #inventory above: the
-     list is the board's own history and is built by ui/versions.js on each
-     open, and again while it is open when one is taken or restored.
-     Reached from System - Earlier versions. Restoring is one undoable command
-     (state.js/restoreVersion), which is why the sheet has no confirmation of
-     its own: the answer to landing on the wrong one is Ctrl+Z, and a dialog
-     asking "are you sure" before an undoable action teaches that it is not. -->
-<dialog id="versions" aria-labelledby="versions-title">
-  <h2 id="versions-title">Earlier versions</h2>
-  <div id="versions-body"></div>
+<!-- The Timeline, on a narrow window. A shell only, like #inventory above: every
+     row inside #tl-sheet-list is built by ui/timeline-view.js on each open, from
+     the same step ledger and with the same past-tense sentence the strip puts in
+     a mark's hover.
+
+     A sheet rather than a strip because the strip is a scale, and a scale needs
+     a width a phone has not got. It is the same feature reached from the same
+     place - System, Timeline - and which one opens is decided by the window,
+     inside that module.
+
+     The buttons are #ask's row, which is where every sheet in this app gets its
+     buttons. Ids rather than data-cmd, and that is not a style choice: the
+     panel's delegated data-cmd listener is bound to the sidebar, and a <dialog>
+     is in the top layer and is not inside it.
+
+     data-words on the naming button is how that module knows this one wears its
+     label as text - the strip's is the same control drawn as an icon, and the
+     word it would say is on its title instead. -->
+<dialog id="timeline-sheet" aria-labelledby="tl-sheet-title">
+  <h2 id="tl-sheet-title">Timeline</h2>
+  <p id="tl-sheet-where"></p>
+  <!-- A list of buttons, and no role="listbox" on it - unlike the strip's
+       track, where the marks are options in a scale. Here every row is a
+       control with a sentence in it, which is a list of buttons and is already
+       navigable; the row the board is standing on says so with aria-current. -->
+  <ol id="tl-sheet-list" aria-label="Steps"></ol>
+  <div id="tl-sheet-trim"></div>
   <div class="ask-row">
-    <button type="button" id="versions-save">Keep this one</button>
+    <button type="button" id="tl-sheet-name" data-words hidden>Name this point</button>
     <span class="ask-gap"></span>
-    <button type="button" id="versions-close">Close</button>
+    <button type="button" id="tl-sheet-close">Close</button>
   </div>
 </dialog>
 

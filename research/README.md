@@ -109,16 +109,32 @@ all five in `old/` with the reasoning intact:
   deterministic, and assets are content-addressed so imports replay without
   touching a disk), and the **reference union grows a fourth member**, which is
   the part most likely to cause real data loss if a later change forgets it.
+  **Built, all five phases, on the day it was written** — the same file carries
+  what was built and where it diverged from the plan, because a design nobody
+  updated after building it is worse than no design.
+
+`feedback-plan-2026-08-14.md` was here and is not any more. It was a work queue
+of twelve things seen on screen, it said in its own text that it went to `old/`
+the day the twelfth was finished, and that day was the day it was written — all
+twelve were built. It is `old/feedback-plan-2026-08-14.md` now, and it is worth
+reading for one thing rather than for the queue: the section added at its head
+records that **four of its twelve diagnoses were wrong**, including two it stated
+confidently. The general lesson is in the plan's own rule and is the reason it
+holds: *do not fix this by reading the CSS* — every one of the four was found by
+opening the app, and every one of them had a plausible wrong answer available to
+anybody who did not.
 
 That is the whole of this level, and the second and third files are the exception
 this rule asks for rather than a hole in it. **A second open document here is the thing to
 argue about, not to add quietly** — the point of one register is that it cannot
 disagree with itself, and that property is lost the moment there are two. The
-argument for the plan is that it *cannot* disagree with the register, because it
-carries no description of any item: only ids, order, and what to check. If a
-sentence in it starts explaining what an item is, it has become a second register
-and belongs back in the first. It also has an end — it goes to `old/` on the last
-commit of the work it schedules, and the register outlives it.
+argument for a plan at this level is that it *cannot* disagree with the register,
+because it carries no description of any item: only ids, order, and what to
+check. If a sentence in it starts explaining what an item is, it has become a
+second register and belongs back in the first. It also has an end — it goes to
+`old/` on the last commit of the work it schedules, and the register outlives it.
+The feedback plan is the proof that the end is real rather than a promise: it was
+written and retired inside one day.
 
 The five that were here went down on the same commit, and the four in `old/` are
 the unusual case the filing rule at the top does not cover: `ui-audit` went down
