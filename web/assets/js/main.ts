@@ -25,10 +25,10 @@ import {
   ensureTitleCard, isTitleHidden, TITLE_ID, setTitle,
   ensureGhostCards, reseedGhostCards, hasContent, dismissGhosts,
   leaveNotFoundBoard, isContent,
-  defaultBoardTitle, loadBoard, setBoardMode,
+  defaultBoardTitle,
 } from './state.ts';
-import { unpackBoard } from './storage/mbrd.ts';
 import { freezePrefs } from './prefs.ts';
+import { homePath, isPatchPage, isNotFoundPage, openingFace } from './page.ts';
 import { Viewport } from './canvas/viewport.ts';
 import { paintGrid, paintGridOnView, resetGridInk } from './canvas/grid.ts';
 import { initGrain, paintGrain, resetGrain } from './canvas/grain.ts';
@@ -71,7 +71,7 @@ import { initPlaylist } from './ui/playlist.ts';
 
 import { createCommands } from './commands.ts';
 import { createViewPerf, initPerfHash } from './perf/view-perf.ts';
-import { initBoardView, openingView, syncBoardMode, syncMobileBoardBounds, setLens } from './ui/board-view.ts';
+import { initBoardView, openingView, syncBoardMode, syncMobileBoardBounds } from './ui/board-view.ts';
 import { initHud, paintZoom, paintSnap, paintCount } from './ui/hud.ts';
 import { initBoardTitle } from './ui/board-title.ts';
 import { initBoardActions, resetSave } from './ui/board-actions.ts';
@@ -85,65 +85,33 @@ import { initBoardActions, resetSave } from './ui/board-actions.ts';
 // message is silently dropped. Same injection shape as setAssetNameLookup() and
 // setPrompt() below; this one goes first because a lost toast is not an error,
 // it is worse, it is nothing at all.
-// ---------------------------------------------------------------------------
-// Which page this is, decided before anything is built
-//
-// initSidebar() below reads the stored layout mode and puts it back through the
-// bus, which is a preference write - so on the changelog the freeze has to be
-// in place before that line runs, not later when the board is loaded. Hence the
-// whole route sits above the init run rather than beside the boot it feeds.
-// ---------------------------------------------------------------------------
-
-/**
- * Whether this page was served at an address the app does not have.
- *
- * The app is its own 404 page: a host that cannot find a path serves index.html
- * at that path with a 404 status (serve.py does it; a static host is handed
- * 404.html, a byte copy of index.html, to do the same), and this is how the app
- * finds out. Nothing in the response says so
- * - a document cannot read its own status code - so the URL is the signal.
- *
- * Compared against document.baseURI rather than against the string '/', because
- * index.html carries a <base> and the app is wherever that says it is. The two
- * agree at the root today; they would not if this were ever hosted in a
- * subdirectory, and then this check would still be right.
- *
- * `/index.html` is the same page by another name and is not a miss.
- */
-const HOME = new URL('.', document.baseURI).pathname;
-
-/**
- * The changelog, which is a board and not a page.
- *
- * /patch serves web/patch.html - the app's own shell, generated from index.html
- * by tools/gen-patch-board.mjs - and the board it opens is
- * assets/patch-notes.mbrd, a real .mbrd built from research/patch-notes.md by
- * the same tool. It goes in through unpackBoard() and loadBoard(), which is the
- * path a dropped file takes, so the changelog is not a mode this app has: it is
- * a board, in the Feed, with the ordinary menu button and the ordinary sidebar.
- *
- * `.html` counts as well, the way index.html does two lines down: the host
- * resolves the extensionless form, and both spellings are this page.
- */
-const isPatch = (() => {
-  return location.pathname === HOME + 'patch' || location.pathname === HOME + 'patch.html';
-})();
-
-/**
- * A dead address, which /patch emphatically is not - hence the first clause.
- * Without it the changelog would boot the not-found board and then be replaced
- * by it, since both branches want the same slot in start().
- */
-const notFound = (() => {
-  if (isPatch) return false;
-  return location.pathname !== HOME && location.pathname !== HOME + 'index.html';
-})();
-
-// Nothing a visitor does while reading the changelog may change what they own.
-// See freezePrefs(); suspendCache() in start() is the other half.
-if (isPatch) freezePrefs();
 
 initOverlays();
+
+/**
+ * Which of the three pages this is, worked out once at the top and then only
+ * read.
+ *
+ * The two questions - is this the changelog, is this an address the app does
+ * not have - used to be derived here, in two IIFEs over document.baseURI. They
+ * moved to page.ts when the changelog grew the app's real sidebar: the panel
+ * has to know (it greys what needs a board) and so do the three View commands
+ * (on the changelog they are the way back), and neither may import main.ts.
+ * What that costs a reader is stated in the branch at the foot of this file and
+ * in freezePrefs(): their session is never loaded, never written, and no
+ * preference they nudge while reading is kept.
+ *
+ * Constants rather than calls, because a navigation would take the whole
+ * document with it: within one run these are facts, not readings.
+ */
+const isPatch = isPatchPage();
+const notFound = isNotFoundPage();
+
+// Before initSidebar() below, which reads the stored layout mode and puts it
+// back through the bus - a preference write. Nothing a visitor does while
+// reading the changelog may change what they own; suspendCache() in start() is
+// the other half of the same promise.
+if (isPatch) freezePrefs();
 
 // And immediately after it, for the same reason one step further on: an
 // exception that reaches the top of the stack, or a promise nobody was waiting
@@ -275,7 +243,15 @@ initMenu(vp, cmds);
 // surface - see the head of the module.
 initFencePrompt(vp);
 initSearch(vp);
-initIdle(vp);
+// Not on the changelog. The idle fade exists to get the board's furniture out
+// of the way of the board - fifteen still seconds and the chrome steps back so
+// what you are looking at is what you made. /patch has nothing behind the
+// chrome to look at: it is a page of prose, and reading a page of prose is
+// fifteen still seconds by definition. What it faded there was the one control
+// the page has, and a faded control takes pointer-events: none with it - so the
+// menu button went and the sidebar could not be opened at all. See the same
+// trap, from the other side, in research/ui-audit-2026-08-13.md.
+if (!isPatch) initIdle(vp);
 initTrash(vp);
 // After initAudio(), which is what reads the stored volume - the bar's slider
 // paints itself from that value on the way up.
@@ -489,37 +465,6 @@ addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') flushEdits();
 });
 
-
-/**
- * Open the changelog board.
- *
- * Everything here is a read. The session was never loaded (start() skips it),
- * the writer is off, and freezePrefs() has stopped the sidebar recording any of
- * this as a preference - so a visitor can move the whimsy dial or switch to
- * Canvas while reading, and come back to their own board wearing exactly what
- * they left it wearing.
- *
- * The lens is forced rather than left to the stored one for the same reason it
- * is a board at all: this is eleven cards of prose in order, which is what the
- * Feed is for, and a changelog that opened as a scatter on an infinite canvas
- * would be a worse way to read a changelog than a web page.
- *
- * A failure here is not fatal and must not be. The board is one fetch away from
- * a visitor with no network and a cold cache, and the page under it still has
- * the whole changelog inside <noscript> - so a throw leaves an empty board and
- * a line in the console rather than taking the app down with it.
- */
-async function openPatchBoard() {
-  const res = await fetch('assets/patch-notes.mbrd');
-  if (!res.ok) throw new Error(`patch-notes.mbrd: ${res.status}`);
-  const { board: data } = await unpackBoard(await res.blob());
-  loadBoard(data);
-  // The two calls cmds.feed makes, in its order: the lens first so that
-  // entering Mobile lands on the Feed rather than on whatever was last up.
-  setLens('feed');
-  setBoardMode('mobile');
-}
-
 /**
  * The moment a not-found board stops being one.
  *
@@ -558,7 +503,7 @@ async function leaveNotFound() {
   // step, and the throw takes the rest of the handover with it. This is the same
   // synchronous close the way out of the page uses.
   flushNoteEdit();
-  history.replaceState(null, '', HOME + location.search + location.hash);
+  history.replaceState(null, '', homePath() + location.search + location.hash);
   // Everything the visitor has put here, collected *after* the await and not
   // before. On this board that is all there is: the title card is furniture and
   // the two cards are ghosts, so isContent() names exactly the new items and
@@ -614,27 +559,25 @@ const started = (async function start() {
   // the visitor already had with nothing - the one outcome a wrong URL must not
   // have. So the writer is stopped first and the session is never read: their
   // board is not loaded here, not shown here, and cannot be lost here.
+  //
   // The changelog is as much a stranger to the session as a dead address is:
-  // its board comes out of a file that ships with the app, and the visitor's own
-  // board is neither loaded nor shown nor - above all - written over.
+  // the page shows a document, the board behind it is hidden by patch.css and
+  // stays empty, and the visitor's own board is neither loaded nor shown nor -
+  // above all - written over. It seeds no title card and no hints either: those
+  // are furniture for an empty board somebody is about to use, and this is a
+  // board nobody is looking at.
   if (notFound || isPatch) suspendCache();
   const restored = (notFound || isPatch) ? false : await restoreSession();
   // A restored or freshly-opened board runs ensureTitleCard() inside loadBoard();
   // the very first blank session never calls loadBoard, so seed the title card
   // here and mount it. initItems() has already run (module top), so its 'items'
   // listener is live and this renders the card without a reload.
-  // The changelog board, in place of the blank one the branch below seeds. A
-  // failure is survivable by design - the page still carries the whole
-  // changelog inside <noscript> - so this catches rather than throwing the rest
-  // of the boot away with it.
   if (isPatch) {
-    try {
-      await openPatchBoard();
-    } catch (err) {
-      console.error('[mbrd] could not open the changelog board', err);
-      setTitle('Patch notes');
-      ensureTitleCard();
-    }
+    // The board behind the changelog stays empty - it is hidden, and nothing is
+    // going to be dropped on it - but it is still named, because the panel's
+    // Board tab shows that name in its field and an unnamed board would put the
+    // date there instead.
+    setTitle('Patch notes');
   } else if (!restored) {
     // The board's own name says it too, on the title card and in the Mobile
     // masthead - the two places the board names itself. Through setTitle() so
@@ -654,6 +597,19 @@ const started = (async function start() {
     // the version that stays harmless when the seeding changes.
     if (notFound) bus.on('items', onFirstContent);
   }
+  // Which of the board's three faces the URL asked for, which is the far end of
+  // goHome() in page.ts: the changelog's View row cannot switch a lens, because
+  // on that page there is no board to switch, so it navigates and leaves the
+  // face behind as a fragment for this line to pick up.
+  //
+  // After the session, because a lens belongs to a board and until the line
+  // above there was none. Before openingView(), because entering the mobile
+  // layout reframes the view itself and a frame taken first would be thrown
+  // away. Not on the two boards nobody owns - a dead address and the changelog
+  // both open a board that is not the visitor's, and neither has a face worth
+  // asking for.
+  const face = (notFound || isPatch) ? null : openingFace();
+  if (face) cmds[face]();
   openingView();
   if (restored) toast('Restored your last board');
   el('hud')!.hidden = !board.settings.hud;

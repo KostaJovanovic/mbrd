@@ -15,7 +15,11 @@
 //
 //   Absence, not disabling. A control that does not apply to the current layout
 //   is hidden, and a section with nothing left to show goes with it - otherwise
-//   Mobile grows an empty "Board & grid" heading over a rule.
+//   Mobile grows an empty "Board & grid" heading over a rule. The one exception
+//   is the changelog, where the panel is over a document with no board under
+//   it: there the rows that would act on a board are shown and greyed, because
+//   the whole point of that sidebar is that it is this one and not a likeness
+//   of it. `needsBoard` in ui/settings-schema.js says which, and why.
 //
 //   The ids are the contract. Every id here is the id that was in index.html,
 //   because three other modules and a handful of tests reach for them.
@@ -28,18 +32,27 @@
 // decides what is on screen. ui/sidebar.js owns the subscriptions and calls
 // paintPanel() - there is one paint, not two racing.
 import { board } from '../state.ts';
+import { isPatchPage } from '../page.ts';
 import { field, fieldStops } from './controls.ts';
 import {
-  TABS, SECTIONS, controlVisible, sectionVisible,
+  TABS, SECTIONS, controlVisible, controlEnabled, sectionVisible,
 } from './settings-schema.ts';
 import type {
   ButtonsControl, CheckControl, Control, Ctx, HintControl, KeysControl,
   RangeControl, SelectControl, Section, SlotControl, TextControl,
 } from './settings-schema.ts';
 
-/** One built control: its spec, what to hide, and what to write into. */
+/**
+ * One built control: its spec, the heading it came from, what to hide, and what
+ * to write into.
+ *
+ * `owner` is here for one question and one only - whether the control needs a
+ * board, which a section may answer on behalf of everything under it. Nothing
+ * else in the painting reads it.
+ */
 type Built = {
   c: Control,
+  owner: Section,
   wrap: HTMLElement,
   input: HTMLInputElement | HTMLSelectElement | null,
   out: HTMLOutputElement | null,
@@ -55,7 +68,21 @@ const tabs = new Map<string, { tab: HTMLButtonElement, panel: HTMLElement }>();
 
 let currentTab = TABS[0].id;
 
-const ctx = (): Ctx => ({ mobile: board.layoutMode === 'mobile' });
+/**
+ * Which heading is being built, for the length of buildSection() and no longer.
+ *
+ * The eight builders each call register() at the end and none of them is handed
+ * the section - they take the control and nothing else, which is what keeps the
+ * table of them honest. Threading a second argument through all eight to answer
+ * one question about the *heading* would be paying in every builder for a fact
+ * that belongs to the loop above them, so the loop leaves it here instead.
+ */
+let building: Section | null = null;
+
+const ctx = (): Ctx => ({
+  mobile: board.layoutMode === 'mobile',
+  patch: isPatchPage(),
+});
 
 const make = <K extends keyof HTMLElementTagNameMap>(tag: K, className = '') => {
   const el = document.createElement(tag);
@@ -164,6 +191,7 @@ function buildSection(spec: Section) {
   // schema in the order it reads on screen without `advanced` having to be a
   // nesting level in the data.
   let fold: HTMLDetailsElement | null = null;
+  building = spec;
   for (const c of spec.controls) {
     const node = buildControl(c, spec);
     if (!node) continue;
@@ -171,6 +199,7 @@ function buildSection(spec: Section) {
     if (!fold) fold = buildFold(spec);
     fold.append(node);
   }
+  building = null;
   if (fold) el.append(fold);
   if (spec.id) sections.set(spec.id, el);
   return el;
@@ -400,7 +429,10 @@ function register(
   out: HTMLOutputElement | null,
   nodes: HTMLElement[] | null = null,
 ) {
-  built.push({ c, wrap, input, out, nodes });
+  // `building` is set for the whole of buildSection() and nothing registers
+  // outside one, so the fallback is a shape for the typechecker rather than a
+  // case that happens.
+  built.push({ c, owner: building ?? { tab: '', controls: [] }, wrap, input, out, nodes });
 }
 
 function writeOut(c: RangeControl, input: HTMLInputElement | HTMLSelectElement, out: HTMLOutputElement | null) {
@@ -429,21 +461,33 @@ export function paintPanel() {
   for (const entry of built) paintControl(entry, c);
   for (const spec of SECTIONS) {
     const el = spec.id ? sections.get(spec.id) : null;
-    if (el) el.hidden = !sectionVisible(spec, c);
+    if (!el) continue;
+    el.hidden = !sectionVisible(spec, c);
+    // The heading greys with its rows, so a whole inert section reads as one
+    // thing switched off rather than as a live title over dead controls.
+    el.classList.toggle('is-inert', !!(c.patch && spec.needsBoard));
   }
   paintRules();
 }
 
-function paintControl({ c: spec, wrap, input, out, nodes }: Built, c: Ctx) {
+function paintControl({ c: spec, owner, wrap, input, out, nodes }: Built, c: Ctx) {
   // `ownVisibility` is a control whose owner decides when it is on screen for a
   // reason this table does not know - see the palette source count, which comes
   // down with the switch above it.
   if (!spec.ownVisibility) wrap.hidden = !controlVisible(spec, c);
+  // Whether it may be touched, which off the changelog is always yes and writes
+  // nothing. `disabled` is what actually stops the click - the class only makes
+  // it look stopped - and it goes on the control rather than `pointer-events`
+  // on the row, so the reason travels to a screen reader with it.
+  const live = controlEnabled(spec, owner, c);
+  wrap.classList.toggle('is-inert', !live);
+  if (input) input.disabled = !live;
   // `nodes` is only ever filled for a buttons row - see register() - so the two
   // tests are one question asked from both ends.
   if (spec.type === 'buttons' && nodes) {
     for (let i = 0; i < nodes.length; i++) {
       const b = spec.buttons[i];
+      if (nodes[i] instanceof HTMLButtonElement) (nodes[i] as HTMLButtonElement).disabled = !live;
       if (typeof b.pressed === 'function') nodes[i].setAttribute('aria-pressed', String(b.pressed(c)));
       if (typeof b.title === 'function') nodes[i].title = b.title(c);
     }

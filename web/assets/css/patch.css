@@ -1,162 +1,282 @@
 /* =========================================================
-   mbrd - the changelog, for a reader with no JavaScript
+   mbrd - the changelog
 
-   NOT ONE OF THE TWENTY, and not loaded the way any of them is. index.html
-   loads the app's cascade unconditionally; this sheet is behind a <noscript>
-   in web/patch.html, which a parser opens only when scripting is off. A
-   visitor with JavaScript on never fetches it and never applies a rule from
-   it.
+   NOT ONE OF THE TWENTY, and last after all of them. web/patch.html loads
+   index.html's whole cascade - copied at build time by
+   tools/gen-patch-page.mjs, so this page wears the app's paper, the app's ink
+   and the app's sidebar rather than a second account of them - and then loads
+   this. Everything below is either the one correction a document has to make
+   to a stylesheet written for a board, or the page itself.
 
    It IS in SHELL in web/sw.js. tests/sw.test.js walks this directory and
-   precaches every .css it finds, which is the right rule even here: the
-   fallback is no use offline if the fallback's stylesheet is not.
+   precaches every .css it finds, which is the right rule here too.
 
-   ── What /patch actually is ──
+   ── The whimsy axis is the design ──
 
-   A board. web/patch.html is the app's own shell, generated from index.html by
-   tools/gen-patch-board.mjs, and what it opens is assets/patch-notes.mbrd - a
-   real .mbrd, built from research/patch-notes.md by the same tool, loaded
-   through unpackBoard() like any dropped file and shown in the Feed. The menu
-   button is the menu button and the sidebar is the sidebar, because they are
-   the app's.
+   tokens.css carries three personalities keyed off one attribute on <html>,
+   and the app writes that attribute before first paint from the look the
+   visitor set on their own board. So this page arrives already dressed, and
+   what it is dressed in is not a theme somebody picked for a changelog - it is
+   the reader's own board, printed.
 
-   None of that can happen without script. So the page also carries the whole
-   changelog as markup inside <noscript> - for a crawler, a text browser, a
-   locked-down phone - and this sheet is what dresses it.
+     0  Softish  a scrapbook. Deep corners, serif throughout, warm ornament,
+                 the plates pinned up a degree off square with tape on them.
+     1  Middle   the same room with the furniture straightened. Cards on paper.
+     2  Harsh    a spec sheet. Square, hairline, sans, no shadow, no tilt, the
+                 tags set as a fixed column so the bullets read as a table.
 
-   ── Why it does not imitate the board ──
+   Almost none of that is declared here twice. --radius, --radius-pill,
+   --font-body, --font-display, --shadow-1, --lift-hover, --tilt-max, --grain,
+   --wash and --highlight all move on their own, so a rule written once in the
+   base reads three ways. What the two blocks at the foot of this file add is
+   only what a token cannot say: the tape, the marker swipe, the tilt, and the
+   tag column.
 
-   Because it would be theatre. An earlier version of this page drew the Feed
-   in CSS: the ink surround, the rounded sheet, the paper grain, cards at the
-   masonry's own gap. That was the right answer while the page *was* a static
-   document pretending to be a board. It is the wrong answer for a fallback,
-   which exists precisely because the board cannot run - and a hand-drawn
-   picture of a board, shown only to readers who cannot have the board, is a
-   second implementation of the Feed to keep in step with the first for the
-   benefit of nobody who will ever see both.
-
-   So this is a document: the app's paper, the app's ink, the app's two faces,
-   set as a page of prose. Everything resolves through tokens.css, which is
-   what keeps it recognisably mbrd without it pretending to be the app.
-
-   ── Classes only, no ids ──
+   ── Classes, with three exceptions ──
 
    tests/element-ids.test.js walks this directory and asserts that every id a
-   selector names exists in index.html. The fallback's elements do not, so an
-   id selector here would fail that test as an orphan - correctly, since the
-   test cannot see patch.html. Everything below is a class.
+   selector names exists in index.html. The page's own elements do not, so
+   everything of this page's is a class. The exceptions are #sidebar,
+   #menu-btn and #side-close, which are the app's own ids on the app's own
+   markup - and which this file does not restyle anyway.
    ========================================================= */
 
 /* ---------------------------------------------------------
-   Getting the app out of the way
+   Putting the board away
 
-   The twenty app stylesheets are in this page's head unconditionally, because
-   with script the page IS the app. With script off they are dressing a shell
-   that will never be filled: a fixed viewport that cannot scroll, a toolbar
-   whose buttons answer nothing, a splash cover that nothing dismisses. All of
-   it has to come down before the fallback under it can be read.
+   The app is running on this page - that is what makes the sidebar the app's
+   own - and everything it draws a board with is in the document. None of it
+   belongs on a changelog, so it goes here rather than being left out of the
+   markup: leaving it out would mean patch.html stopped being index.html's body
+   and started being a second copy of it, which is the whole thing this design
+   is trying not to be. main.ts loads no session and seeds no cards, so what is
+   hidden below is an empty board nobody is looking at.
 
-   !important, and it is earned. What is being overridden is twenty files of
-   id-keyed rules - #viewport, #toolbar, #splash - and an id beats any class
-   selector this file could write, whatever the source order. The alternative
-   is matching their specificity one selector at a time against a list that
-   changes, which is a promise this sheet cannot keep. One blunt rule that
-   hides everything except the fallback is both shorter and harder to get
-   wrong.
+   The panel and the button that opens it stay, obviously. So does everything
+   the panel opens - the dialogs are all `hidden` or <dialog> and show
+   themselves when asked.
    --------------------------------------------------------- */
 
-body > :not(noscript) { display: none !important; }
-
-/* base.css pins the app to the window: height 100%, overflow hidden, because
-   every gesture on a board belongs to the board. A document is the opposite,
-   and with the board gone there is nothing left to hold still. */
-html, body {
-  height: auto !important;
-  overflow: visible !important;
-  margin: 0;
-  color: var(--ink);
-  font-family: var(--font-body);
-  font-size: var(--t-body);
-  line-height: 1.62;
+body.is-patch :is(#viewport, #toolbar, #hud, #corner, #bin, #scale-bar,
+  #nowplaying, #splash, #mobile-feed, #mobile-playlist, #mobile-header-edit-btn,
+  #mobile-find-btn, #drop-overlay) {
+  display: none !important;
 }
 
 /* ---------------------------------------------------------
-   The page
+   The page scrolls; the app stays pinned
+
+   base.css pins the app to the window - height 100%, overflow hidden - because
+   every gesture on a board belongs to the board. The obvious way to get a
+   document out of that is to undo the pin and let the body grow, which is what
+   this file did first and is the wrong shape: it leaves the app's own fixed
+   furniture measuring itself against a window while the thing it is pinned
+   inside is fifteen thousand pixels tall, and every rule in base.css that says
+   "the app is the window" quietly stops being true.
+
+   So the pin stays and the changelog scrolls inside a surface of its own -
+   which is exactly what the Feed already does on the Mobile board, one fixed
+   scroller with the wall inside it. Nothing about the app's layout is touched
+   and both claims hold: the app is pinned to the window, and the page scrolls.
    --------------------------------------------------------- */
 
-* { box-sizing: border-box; }
+.pn {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule-2) transparent;
+}
 
-.patch-fallback {
-  /* Prose is read near seventy characters a line, not at the width of a
-     window. In ch rather than px so it tracks the body face. */
-  max-width: 74ch;
+/* Fixed, so the blooms stay in the corners of the window rather than sliding
+   off the top of a long page. On a board this layer never scrolls because the
+   board never does. */
+body { background-attachment: fixed; }
+
+/* The stock, and what makes this paper rather than a background colour. Same
+   tile, same blend and the same dial as #grain in base.css - --grain is 1.25 at
+   Softish and 0 at Harsh, so the tooth arrives and leaves with the rest of the
+   personality and this rule needs no level of its own.
+   Fixed to the window rather than laid over the column, so it is one screen of
+   blended texture however long the changelog runs. */
+body.is-patch::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: url("../img/paper-grain.webp");
+  background-repeat: repeat;
+  background-size: 512px 512px;
+  mix-blend-mode: multiply;
+  opacity: calc(0.8 * var(--grain));
+}
+
+/* The column inside that scroller. The scroller is the window; this is the
+   measure of prose in the middle of it.
+
+   Note what is *not* here: #sidebar and #menu-btn. An earlier version of this
+   file gave them `position: relative` "to lift them above the grain", which
+   took both out of the app's own `position: fixed` - the panel became a
+   full-height block in normal flow and pushed the whole changelog below it.
+   They are already above everything: sidebar.css gives them z-index 40, and
+   this file has no business restating either. */
+.pn-inner {
+  max-width: 880px;
   margin: 0 auto;
-  padding: clamp(28px, 7vw, 72px) clamp(18px, 5vw, 32px) 96px;
+  padding: clamp(76px, 11vw, 132px) clamp(18px, 5vw, 40px) 96px;
 }
 
-.patch-head {
-  margin: 0 0 clamp(32px, 6vw, 54px);
-  padding-bottom: clamp(20px, 4vw, 30px);
-  border-bottom: 1px solid var(--rule);
-}
+/* Nothing is taken out of the panel. Not the Board tab, not Arrange, not one
+   row: the whole sidebar is the whole sidebar, and a changelog that quietly
+   dropped the sections it judged pointless would be the fourth different
+   sidebar this page has had. */
 
-/* The mark, at the size and tracking the sidebar wordmark sets it. */
-.patch-mark {
-  display: inline-block;
-  margin: 0 0 14px;
-  font-family: var(--font-display);
-  font-size: var(--t-display);
-  font-weight: var(--display-weight);
-  letter-spacing: calc(0.14em * var(--ls-scale));
-  line-height: 1;
-  color: var(--ink);
-  text-decoration: none;
+/* ---------------------------------------------------------
+   The column
+
+   One measure of prose with a margin down its left, and the margin is not
+   decoration: it carries the size of each release in the only unit this
+   project has. A version here is a commit count, so "0.156 - 0.187" is
+   thirty-two commits and the page can say so without anybody writing it down.
+   --------------------------------------------------------- */
+
+.pn-head {
+  margin-bottom: clamp(38px, 7vw, 70px);
 }
 
 /* Bigger than any token names, because until this page nothing in the app was
    a page title. Struck from --t-display rather than written as a number, so it
-   still moves with a look that changes the display scale, and clamped so it
-   does not run off a phone. */
-.patch-title {
+   moves with a look that changes the display scale - Harsh sets it five points
+   smaller than Softish does, and the title follows. */
+.pn-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(var(--t-display), 7.5vw, calc(var(--t-display) * 1.9));
+  font-size: clamp(var(--t-display), 8vw, calc(var(--t-display) * 2.1));
   font-weight: var(--display-weight);
   letter-spacing: calc(0.01em * var(--ls-scale));
-  line-height: 1.06;
+  line-height: 1.04;
   color: var(--ink);
 }
 
-.patch-lede {
+.pn-lede {
   margin: 14px 0 0;
-  max-width: 58ch;
+  max-width: 48ch;
+  font-size: calc(var(--t-body) * 1.06);
   color: var(--ink-2);
+}
+
+/* The three numbers the page can state without anybody keeping them in step:
+   counted from the source every time it is built. Divided by hairlines rather
+   than by punctuation, which is the same join the sidebar makes between its
+   own sections. */
+.pn-tally {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 14px;
+  margin: 22px 0 0;
+  font-family: var(--font-display);
+  font-size: var(--t-tiny);
+  font-style: var(--display-italic);
+  letter-spacing: calc(0.2em * var(--ls-scale));
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.pn-tally span + span {
+  padding-left: 14px;
+  border-left: var(--hairline) solid var(--rule);
+}
+
+/* ---------------------------------------------------------
+   The spine
+
+   The margin cells of consecutive releases touch, so one border down their
+   right-hand side draws a single line the length of the changelog with no
+   element of its own. Each release marks it once, at its own head.
+   --------------------------------------------------------- */
+
+.pn-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pn-rel {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  column-gap: clamp(18px, 3vw, 34px);
+}
+
+.pn-margin {
+  position: relative;
+  padding: 0 14px 0 0;
+  border-right: var(--hairline) solid var(--rule);
+  text-align: right;
+}
+
+/* The mark sits *on* the line, which is what the negative offset is for. A
+   pill at both other levels and a square at Harsh, because --radius-pill is
+   what the axis flattens - so the one shape this page draws follows the axis
+   like everything else. */
+.pn-mark {
+  position: absolute;
+  top: 0.72em;
+  right: -4px;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+
+/* How many commits the release covers. Quiet, in the display face, and set
+   against the line rather than under the mark - it is a measurement of the
+   thing beside it, so it reads as a scale and not as a caption. */
+.pn-count {
+  display: block;
+  padding-top: 0.34em;
+  font-family: var(--font-display);
+  font-size: var(--t-tiny);
+  font-style: var(--display-italic);
+  letter-spacing: calc(0.08em * var(--ls-scale));
+  color: var(--ink-3);
 }
 
 /* ---------------------------------------------------------
    One release
-
-   Separated by a hairline rather than boxed, which is the arrangement the
-   sidebar uses for its own sections: this is one document with divisions in
-   it, not a stack of objects to be dealt with one at a time.
    --------------------------------------------------------- */
 
-.patch-entry {
-  display: block;
-  padding: clamp(26px, 5vw, 40px) 0 0;
-  border-top: 1px solid var(--rule);
+.pn-plate {
+  margin: 0 0 clamp(20px, 3.4vw, 34px);
+  padding: clamp(22px, 3.6vw, 34px) clamp(22px, 3.6vw, 36px);
+  border: var(--hairline) solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-1);
+  transition: box-shadow var(--dur-base) var(--ease),
+              translate var(--dur-base) var(--ease-back),
+              rotate var(--dur-base) var(--ease-back);
 }
 
-/* The newest release leads the page and has the masthead's rule above it. */
-.patch-entry:first-of-type {
-  padding-top: 0;
-  border-top: 0;
+/* The lift every control on the board answers a pointer with, through the same
+   token - so it is a real hover at Softish, a small one in the middle, and
+   nothing at all at Harsh, where --lift-hover is 0 and this rule quietly stops
+   meaning anything. */
+@media (hover: hover) {
+  .pn-plate:hover {
+    translate: 0 calc(-1 * var(--lift-hover));
+    box-shadow: var(--shadow-2);
+  }
 }
+
+.pn-plate-head { margin-bottom: 18px; }
 
 /* Version, then name, then date - quiet, loud, quiet. The number is what the
    app agrees with and the name is what a person remembers, so the name is the
    one set large; the sidebar wordmark makes the same trade with its .sub. */
-.patch-version {
+.pn-ver {
   margin: 0;
   font-family: var(--font-display);
   font-size: var(--t-tiny);
@@ -166,18 +286,18 @@ html, body {
   color: var(--accent);
 }
 
-.patch-name {
-  margin: 7px 0 0;
+.pn-name {
+  margin: 8px 0 0;
   font-family: var(--font-display);
-  font-size: var(--t-display);
+  font-size: calc(var(--t-display) * 1.15);
   font-weight: var(--display-weight);
   letter-spacing: calc(0.01em * var(--ls-scale));
-  line-height: 1.15;
+  line-height: 1.12;
   color: var(--ink);
 }
 
-.patch-date {
-  margin: 5px 0 0;
+.pn-date {
+  margin: 6px 0 0;
   font-family: var(--font-display);
   font-size: var(--t-small);
   font-style: var(--display-italic);
@@ -186,9 +306,12 @@ html, body {
 
 /* A heading inside a release. The section head from sidebar.css - tracked,
    uppercase, faint, in the display face - because that is what a heading below
-   the top rank looks like in this app. */
-.patch-sub {
-  margin: 26px 0 10px;
+   the top rank looks like in this app, and it arrives over a rule for the same
+   reason the panel's sections do. */
+.pn-part {
+  margin: 28px 0 12px;
+  padding-top: 20px;
+  border-top: var(--hairline) solid var(--rule);
   font-family: var(--font-display);
   font-size: var(--t-tiny);
   font-weight: 400;
@@ -198,41 +321,32 @@ html, body {
   color: var(--ink-3);
 }
 
-.patch-rule {
-  height: 0;
-  margin: 26px 0 0;
-  border: 0;
-  border-top: 1px solid var(--rule);
-}
-
 /* ---------------------------------------------------------
    The bullets
    --------------------------------------------------------- */
 
-.patch-list {
-  margin: 16px 0 0;
+.pn-notes {
+  margin: 0;
   padding: 0;
   list-style: none;
   color: var(--ink-2);
 }
 
-.patch-list li {
+.pn-notes li {
+  margin: 0 0 14px;
+  line-height: 1.62;
+}
+.pn-notes li:last-child { margin-bottom: 0; }
+
+/* A bullet with no tag is prose about the release as a whole, so it gets the
+   drawn marker the tagged ones do not need - they have a word in front of
+   them already. Squared rather than round, like every small mark in this
+   interface: --radius-xs follows the axis and a circle would not. */
+.pn-notes li.is-plain {
   position: relative;
-  margin: 0 0 13px;
   padding-left: 20px;
 }
-
-.patch-list li:last-child { margin-bottom: 0; }
-
-/* A drawn marker, and squared rather than round: this interface eases its
-   corners by --radius and draws a circle only where the shape carries the
-   meaning (see --radius-pill in tokens.css). A list marker is a small mark,
-   so it takes the small-fry corner and follows the axis with everything else.
-
-   0.62em down lands it on the x-height of the first line at every one of the
-   three type scales; centring it on the line would sit it under the
-   ascenders. */
-.patch-list li::before {
+.pn-notes li.is-plain::before {
   content: "";
   position: absolute;
   left: 2px;
@@ -246,19 +360,19 @@ html, body {
 /* The thing a bullet is about, so a column of grey prose can be skimmed. Full
    ink against the secondary the list is set in - the size and the face do not
    change. */
-.patch-list strong {
+.pn-notes strong {
   font-weight: 600;
   color: var(--ink);
 }
 
 /* One accent-coloured word, used sparingly. The same bargain .hint em makes in
    sidebar.css: not italic, just the pigment. */
-.patch-list em {
+.pn-notes em {
   font-style: normal;
   color: var(--accent);
 }
 
-.patch-list code {
+.pn-notes code {
   padding: 1px 5px;
   border-radius: var(--radius-xs);
   background: var(--paper-2);
@@ -272,15 +386,12 @@ html, body {
 
    New, Fix and Faster, and only three on purpose: a set that grows past what
    can be told apart at a glance is a legend, and nobody reads a legend on a
-   changelog. Outlines rather than fills, because a filled chip at the head of
-   every bullet would out-shout the sentence it labels.
-
-   The board draws these as bold words instead - a note renders Markdown, and
-   Markdown has no chips - which is the one place the two renderings of
-   research/patch-notes.md deliberately differ.
+   changelog. Outlines rather than fills at the two rounded levels, because a
+   filled chip at the head of every bullet would out-shout the sentence it
+   labels - Harsh takes them out of their boxes entirely, see below.
    --------------------------------------------------------- */
 
-.patch-tag {
+.pn-tag {
   display: inline-block;
   margin-right: 9px;
   padding: 0 6px;
@@ -297,41 +408,262 @@ html, body {
   white-space: nowrap;
   color: var(--accent);
 }
-
-.patch-tag.is-fix {
+.pn-tag.is-fix {
   border-color: var(--rule-2);
   color: var(--ink-3);
 }
-
-.patch-tag.is-faster {
+.pn-tag.is-faster {
   border-color: var(--ink-2);
   color: var(--ink-2);
 }
 
 /* ---------------------------------------------------------
-   Links and the foot
+   Links, the foot, and the index in the sidebar
    --------------------------------------------------------- */
 
-.patch-fallback a {
+.pn a, .side-foot .by {
   color: var(--accent);
   text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
   text-underline-offset: 2px;
 }
+.pn a:hover, .side-foot .by:hover { color: var(--accent-deep); }
+.pn a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: var(--radius-xs);
+}
 
-.patch-fallback a:hover { color: var(--accent-deep); }
-
-.patch-foot {
-  margin-top: clamp(40px, 7vw, 66px);
-  padding-top: 20px;
-  border-top: 1px solid var(--rule);
+.pn-foot {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
+  margin-top: clamp(34px, 6vw, 60px);
+  padding-top: 20px;
+  border-top: var(--hairline) solid var(--rule);
   font-family: var(--font-display);
   font-size: var(--t-tiny);
   font-style: var(--display-italic);
   letter-spacing: calc(0.1em * var(--ls-scale));
   color: var(--ink-3);
+}
+
+/* An anchored release lands clear of the top of the window rather than flush
+   against it, which on a page whose first line is a version number reads as
+   the release above having been cut off. */
+.pn-rel { scroll-margin-top: 28px; }
+
+/* The spine is drawn by the margin cells, which are as tall as their rows - so
+   the gap under the last plate would hang thirty pixels of line below the end
+   of the changelog, pointing at nothing. */
+.pn-rel:last-child .pn-plate { margin-bottom: 0; }
+
+/* =========================================================
+   0: Softish - the scrapbook
+
+   What a token cannot say. The plates are pinned up rather than laid out: a
+   fraction of --tilt-max off square, alternating, with a strip of tape at the
+   corner and the codename marked up in the palette's own highlighter. The
+   angle is small on purpose - this is a changelog somebody has to read, and a
+   page of prose set at three degrees is a joke that stops being funny on the
+   second release.
+   ========================================================= */
+
+/* The sheet itself, and this is the app's own recipe rather than an idea of
+   what notepaper looks like: the same two gradients and the same mask that
+   .ghost-card wears at this tier in ghosts.css - blue rules every 22px, the red
+   margin at 26px, and a punched edge cut out of the left side. The numbers are
+   that file's; the release plate is the same stock as the hint cards on an
+   empty board, which is the point.
+
+   Square where it was torn off the pad and rounded where it was not, so the
+   left edge reads as the perforation rather than as a corner somebody eased. */
+:root[data-whimsy="0"] .pn-plate {
+  position: relative;
+  border: 0;
+  box-shadow: var(--shadow-2);
+  background:
+    repeating-linear-gradient(180deg,
+      transparent 0 21px,
+      color-mix(in srgb, #6f86a8 17%, transparent) 21px 22px),
+    linear-gradient(90deg,
+      transparent 0 26px,
+      color-mix(in srgb, #b4544a 42%, transparent) 26px 27px,
+      transparent 27px),
+    var(--paper-card);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  /* Clear of the red margin, so the version number does not sit on the rule. */
+  padding-left: 44px;
+  rotate: calc(var(--tilt-max) * 0.18);
+}
+:root[data-whimsy="0"] .pn-rel:nth-child(even) .pn-plate {
+  rotate: calc(var(--tilt-max) * -0.18);
+}
+/* Straight under the pointer, which is what every card on the board does when
+   you pick it up. */
+@media (hover: hover) {
+  :root[data-whimsy="0"] .pn-plate:hover { rotate: 0deg; }
+}
+
+/* The punch holes. A mask applies to an element *and its descendants* - which
+   is the trap ghosts.css names outright - so it goes on the sheet and the tape
+   has to be somewhere else. Hence the tape below hangs off .pn-rel, the grid
+   row, rather than off the plate it is holding down. */
+:root[data-whimsy="0"] .pn-plate {
+  -webkit-mask-image: radial-gradient(circle 6px at 0 11px, transparent 6px, #000 6.5px);
+  mask-image: radial-gradient(circle 6px at 0 11px, transparent 6px, #000 6.5px);
+  -webkit-mask-size: 100% 22px;
+  mask-size: 100% 22px;
+  -webkit-mask-repeat: repeat-y;
+  mask-repeat: repeat-y;
+}
+
+/* The tape, built the way .ghost-tape is: kraft over a woven stripe, torn
+   across and straight along, because tape tears against the roll and not with
+   it. One strip, straddling the top edge at an angle - and it is a child of the
+   row so the plate's mask cannot perforate it. */
+:root[data-whimsy="0"] .pn-rel { position: relative; }
+:root[data-whimsy="0"] .pn-rel::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  top: -10px;
+  right: 46px;
+  width: 92px;
+  height: 26px;
+  rotate: -3.5deg;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(90deg,
+      color-mix(in srgb, #a8814a 7%, transparent) 0 2px, transparent 2px 6px),
+    linear-gradient(180deg,
+      color-mix(in srgb, #e8cf9c 78%, transparent),
+      color-mix(in srgb, #dcc08a 72%, transparent));
+  clip-path: polygon(
+    3% 0, 97% 4%, 100% 22%, 96% 41%, 100% 62%, 97% 82%, 99% 100%,
+    2% 96%, 0 78%, 4% 58%, 0 38%, 3% 19%
+  );
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 18%, transparent);
+}
+/* Pressed down at the other end on alternate rows, since the plate under it
+   leans the other way. */
+:root[data-whimsy="0"] .pn-rel:nth-child(even)::after {
+  right: auto;
+  left: 118px;
+  rotate: 3deg;
+}
+
+/* The codename, marked up in amber - which is what --highlight is at this end
+   of the axis, and what tokens.css says a scrapbook is marked up in. The
+   gradient is a swipe rather than a fill: a highlighter lands under the words
+   and not around them. */
+:root[data-whimsy="0"] .pn-name {
+  display: inline;
+  background-image: linear-gradient(to bottom,
+    transparent 58%, var(--highlight) 58%, var(--highlight) 94%, transparent 94%);
+  box-decoration-break: clone;
+}
+
+/* The mark on the spine is a pin at this end: bigger, and with the ink ring a
+   real one would cast. */
+:root[data-whimsy="0"] .pn-mark {
+  width: 9px;
+  height: 9px;
+  right: -5px;
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--ink) 34%, transparent);
+}
+
+/* =========================================================
+   2: Harsh - the spec sheet
+
+   The plates stop being objects. No sheet, no border but the rule above, no
+   shadow, no corner - all four of those arrive from the tokens - and the tags
+   come out of their boxes into a fixed column, so every bullet on the page
+   starts at the same x and the whole changelog reads as one table. That column
+   is the only thing here a token could not have done, and it is the one move
+   this level is really made of.
+   ========================================================= */
+
+:root[data-whimsy="2"] .pn-plate {
+  padding: 22px 0 0;
+  border: 0;
+  border-top: var(--hairline) solid var(--rule-2);
+  background: none;
+}
+
+/* Data, so it is set as data. The one place on the page the mono face is used,
+   and Harsh is the level that ships one worth using. */
+:root[data-whimsy="2"] .pn-ver,
+:root[data-whimsy="2"] .pn-count {
+  font-family: var(--font-mono);
+  font-style: normal;
+  letter-spacing: 0;
+}
+
+:root[data-whimsy="2"] .pn-tag {
+  width: 4.6em;
+  margin-right: 12px;
+  padding: 0;
+  border: 0;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: calc(0.16em * var(--ls-scale));
+  color: var(--ink-3);
+}
+:root[data-whimsy="2"] .pn-tag.is-new { color: var(--accent); }
+:root[data-whimsy="2"] .pn-tag.is-faster { color: var(--ink); }
+
+/* The bullets hang, so the second line of a note lines up with the first word
+   of it rather than with the label. This is what makes the column read as a
+   column and not as an indent that gives up after one line. */
+:root[data-whimsy="2"] .pn-notes li {
+  padding-left: 5.8em;
+  text-indent: -5.8em;
+}
+:root[data-whimsy="2"] .pn-notes li.is-plain {
+  padding-left: 5.8em;
+  text-indent: 0;
+}
+:root[data-whimsy="2"] .pn-notes li.is-plain::before { content: none; }
+
+/* The spine is a scale here rather than a thread: full ink, and the mark is
+   a tick sitting across it instead of a bead on it. */
+:root[data-whimsy="2"] .pn-margin { border-right-color: var(--ink); }
+:root[data-whimsy="2"] .pn-mark {
+  top: 0.85em;
+  right: -5px;
+  width: 11px;
+  height: 2px;
+}
+
+/* =========================================================
+   Narrow
+
+   The margin goes rather than shrinks. Seventy-four pixels of gutter on a
+   phone is a quarter of the measure spent on a number, and the number is the
+   least of what is on this page.
+   ========================================================= */
+
+@media (max-width: 640px) {
+  .pn-rel { grid-template-columns: minmax(0, 1fr); }
+  .pn-margin { display: none; }
+  .pn-plate { padding: 20px; }
+  :root[data-whimsy="0"] .pn-plate { rotate: 0deg; }
+  :root[data-whimsy="0"] .pn-plate::before { display: none; }
+  /* The hanging column needs room the phone does not have. */
+  :root[data-whimsy="2"] .pn-notes li,
+  :root[data-whimsy="2"] .pn-notes li.is-plain {
+    padding-left: 0;
+    text-indent: 0;
+  }
+  :root[data-whimsy="2"] .pn-tag { display: block; width: auto; margin-bottom: 2px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pn-plate { transition: none; }
+  @media (hover: hover) {
+    .pn-plate:hover { translate: none; }
+    :root[data-whimsy="0"] .pn-plate:hover { rotate: calc(var(--tilt-max) * 0.18); }
+  }
 }
