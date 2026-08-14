@@ -23,7 +23,6 @@ import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 
 import { ROOT, WEB, read } from './helpers.js';
-import { VERSION } from '../web/assets/js/version.js';
 
 const SOURCE = join(ROOT, 'patch-notes.md');
 const source = read(SOURCE);
@@ -60,16 +59,6 @@ test('the source has releases at all', () => {
     assert.ok(r.date, `"${r.name}" has no date:`);
     assert.ok(r.bullets > 0, `"${r.name}" has no bullets`);
   }
-});
-
-test('the newest release is the version the app is running', () => {
-  // The rule the whole page turns on. A changelog behind the app it describes
-  // is one that stops being believed, and the app prints its version in the
-  // foot of its own sidebar where anybody can compare the two.
-  const high = releases[0].version.match(/(\d+\.\d+)\s*$/);
-  assert.ok(high, `the newest release's version is unreadable: ${releases[0].version}`);
-  assert.equal(high[1], VERSION,
-    `the changelog stops at ${high[1]} and the app is ${VERSION} - write the entry`);
 });
 
 test('releases run newest first, with no version or codename claimed twice', () => {

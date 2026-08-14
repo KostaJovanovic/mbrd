@@ -90,10 +90,18 @@
   --lift: 0px;
   --tilt: 0deg;
   --grow: 1;
+  /* opacity rides in this list rather than in a rule of its own beside the tag
+     filter that needs it. `transition` is a shorthand: a second declaration on
+     .item does not add a property, it replaces every one of them - so a
+     `transition: opacity` written later in this file silently took the ring,
+     the lift, the tilt and the grow with it, and hovering a card started
+     snapping into place instead of springing. It cost the twin as well, since
+     .item-shadow sets its own list in canvas.css, which loads first. */
   transition: box-shadow var(--dur-base) var(--ease),
               translate var(--dur-base) var(--ease-back),
               rotate var(--dur-base) var(--ease-back),
-              scale var(--dur-base) var(--ease-back);
+              scale var(--dur-base) var(--ease-back),
+              opacity var(--dur-base) var(--ease);
 }
 /* Snapped to the grid: nothing leans, at any whimsy tier.
 
@@ -508,11 +516,13 @@
    no display, no visibility: a card you can see but cannot touch is a worse
    answer than either showing it or not.
 
-   The transition is what makes ticking a tag read as an answer rather than as a
-   redraw, and it is the only thing here that is not strictly necessary. */
+   The fade is what makes ticking a tag read as an answer rather than as a
+   redraw, and it is the only thing here that is not strictly necessary. It is
+   *not* declared here: `opacity` is one entry in the transition lists on .item
+   above and on .item-shadow in canvas.css, because a `transition` written at
+   this point in the file would replace those lists rather than extend them. */
 .item.is-filtered,
 .item-shadow.is-filtered { opacity: 0.16; }
-.item, .item-shadow { transition: opacity var(--dur-base) var(--ease); }
 /* A dimmed card that is selected comes most of the way back, because the
    selection is a stronger statement about what you are looking at than the
    filter is: you reached past the fade and picked this one up, and it has to be

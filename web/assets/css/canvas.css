@@ -193,9 +193,13 @@
      are toggled onto the twin from items.js alongside the card. */
   translate: 0 calc(var(--sh-lift, 0px) * var(--iz));
   scale: var(--sh-grow, 1);
+  /* opacity is here for the tag filter, which fades the twin with its card. It
+     belongs in this list rather than in a `transition: opacity` of its own,
+     which is a shorthand and would replace the three springs above it. */
   transition: translate var(--dur-base) var(--ease-back),
               scale var(--dur-base) var(--ease-back),
-              rotate var(--dur-base) var(--ease-back);
+              rotate var(--dur-base) var(--ease-back),
+              opacity var(--dur-base) var(--ease);
 }
 .item-shadow.is-hover { --sh-lift: var(--lift-hover); --sh-grow: var(--grow-hover); }
 /* A selected card holds still under the pointer (its grips must not move), so
