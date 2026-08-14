@@ -227,12 +227,26 @@ function open(btn: HTMLElement, focus: boolean, delay = 0) {
   // the button nor the panel - which is exactly the kind of gap a pointer
   // crossing between them lands in.
   const box = btn.getBoundingClientRect();
+  const barBox = bar!.getBoundingClientRect();
   // `top` is the button's own, and it is here because render() flips the panel
   // above the anchor when below will not fit and reads `anchor.top` to do it.
   // Left off, that arithmetic is NaN, the test is quietly false, and the flip
   // never fires - which looks like nothing at all on a bar pinned to the top of
   // the window, right up until a flyout is taller than the space under it.
-  const rect = { left: box.left, top: box.top, bottom: bar!.getBoundingClientRect().bottom };
+  //
+  // `bounds` is the bar's own left and right, and this call site is why the
+  // option exists at all: the bar was already being measured here for its
+  // bottom edge and the other two numbers were being thrown away. render()
+  // clamped to the window, the window is nowhere near, and Arrange - the
+  // rightmost of the three - hung 28px past the end of the bar it is drawn as
+  // part of. Note and Colour sit mid-bar and never showed it, which is why this
+  // belongs in render() rather than in a special case for one button.
+  const rect = {
+    left: box.left,
+    top: box.top,
+    bottom: barBox.bottom,
+    bounds: { left: barBox.left, right: barBox.right },
+  };
   const label = btn.querySelector('span')?.textContent?.trim() || 'Menu';
   // `cmds` is set by initFlyouts(), which is also what binds the listener that
   // is the only way to get here.

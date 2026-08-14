@@ -53,6 +53,8 @@ import { currentLens, setLens } from '../ui/board-view.ts';
 import { goToStop, startTour, stepTour, stopTour, tourActive, tourLength } from '../ui/tour.ts';
 import { togglePlayerWindow } from '../ui/playlist.ts';
 import { openCredits } from '../ui/credits.ts';
+import { openInventory } from '../ui/inventory.ts';
+import { openVersions } from '../ui/versions.ts';
 import { paintZoom, zoomText } from '../ui/hud.ts';
 import { reloadBoard, restartApp, scaleFromItem } from '../ui/board-actions.ts';
 
@@ -280,6 +282,11 @@ export function viewCommands(vp: CommandViewport, { resetAppearance, perf }: Vie
     // the reason every other action here is one: the sidebar knows about data-cmd
     // and about nothing else, so this is the only wiring the panel needs.
     credits: () => openCredits(),
+    // A report, so it is a sheet rather than a panel section - see the head of
+    // ui/inventory.ts. It sits beside credits here because both are "open the
+    // one screen that says something", which is the whole of what they share.
+    inventory: () => openInventory(),
+    versions: () => openVersions(),
     // What changed, which is web/patch.html - the one page this site has that is
     // not the app. A command for the same reason the credit above is one, and it
     // sits beside it because the two are the same kind of thing: the only rows in

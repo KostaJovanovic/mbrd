@@ -1196,6 +1196,48 @@
   </div>
 </dialog>
 
+<!-- What is in this board and what it weighs. A shell only, unlike #credits
+     above: that one is two names decided at build time, and this one is the
+     board described back to you, so everything inside #inventory-body is built
+     by ui/inventory.js on each open. It is a sheet rather than a panel section
+     because it is a report and not a setting - nothing in it has a value.
+     Opened from System - What is in this board, immediately above Optimize,
+     which is the point of it: the optimizer is a button nobody has a reason to
+     press until something here says a photograph is 12 MB. -->
+<dialog id="inventory" aria-labelledby="inventory-title">
+  <h2 id="inventory-title">What is in this board</h2>
+  <div id="inventory-body"></div>
+  <!-- #ask's row, the same one #credits borrows. Optimize sits at the left and
+       Close at the right, with the gap between them, because they are not two
+       ways out: one of them is the thing this sheet exists to lead to.
+       An id rather than a data-cmd, and that is not a style choice: the panel's
+       delegated data-cmd listener is bound to the sidebar, and a <dialog> is in
+       the top layer and is not inside it. A data-cmd here would look like every
+       other button in the app and do nothing. ui/inventory.js wires it. -->
+  <div class="ask-row">
+    <button type="button" id="inventory-optimize">Optimize</button>
+    <span class="ask-gap"></span>
+    <button type="button" id="inventory-close">Close</button>
+  </div>
+</dialog>
+
+<!-- What this board looked like before. A shell, like #inventory above: the
+     list is the board's own history and is built by ui/versions.js on each
+     open, and again while it is open when one is taken or restored.
+     Reached from System - Earlier versions. Restoring is one undoable command
+     (state.js/restoreVersion), which is why the sheet has no confirmation of
+     its own: the answer to landing on the wrong one is Ctrl+Z, and a dialog
+     asking "are you sure" before an undoable action teaches that it is not. -->
+<dialog id="versions" aria-labelledby="versions-title">
+  <h2 id="versions-title">Earlier versions</h2>
+  <div id="versions-body"></div>
+  <div class="ask-row">
+    <button type="button" id="versions-save">Keep this one</button>
+    <span class="ask-gap"></span>
+    <button type="button" id="versions-close">Close</button>
+  </div>
+</dialog>
+
 <input id="file-input" type="file" multiple hidden>
 
 <!-- The bundle, not the source tree, and this is the line where that changed.
@@ -1228,21 +1270,46 @@
          down: how many releases there are, how many commits they cover, and
          when it started. All counted from the source. -->
     <p class="pn-tally">
-      <span>13 releases</span>
-      <span>196 commits</span>
+      <span>14 releases</span>
+      <span>197 commits</span>
       <span>since 25 July 2026</span>
     </p>
   </header>
 
   <ol class="pn-list">
-<li class="pn-rel" id="r-on-the-record">
+<li class="pn-rel" id="r-second-thoughts">
   <div class="pn-margin" aria-hidden="true">
     <span class="pn-mark"></span>
-    <span class="pn-count">8</span>
+    <span class="pn-count">1</span>
   </div>
   <article class="pn-plate">
     <header class="pn-plate-head">
-      <p class="pn-ver">0.188 - 0.195</p>
+      <p class="pn-ver">0.197 - 0.197</p>
+      <h2 class="pn-name">Second Thoughts</h2>
+      <p class="pn-date">14 August 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>The board remembers what it used to look like.</strong> It keeps a copy of itself as you work, and you can keep one by name at any time - System, then <code>Earlier versions</code>. Going back to one is a single step you can undo, so landing on the wrong one costs nothing. The copies travel inside the board file and cost no space worth the name: your pictures are stored once however many versions point at them.</li>
+      <li><span class="pn-tag is-new">New</span><strong><code>What is in this board</code> says where the weight went.</strong> Counts by kind, the total, the ten heaviest files and anything still stored that no card uses any more. It reads the board rather than opening anything, so it is instant on the large boards where you would actually ask. <code>Optimize</code> is one press away from it, which is the point - it used to be a button with no reason attached.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A style tile, next to the two ways of saving a picture.</strong> The palette with its values, the faces the board is set in, a few of the pictures, the name and the date. It is the thing that goes into a deck or to a printer, where a photograph of a whole moodboard is only readable by somebody who was in the room. Select a few cards first and it uses those.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A cut-out picture can drop its card.</strong> Drop in a logo, a leaf or an arrow saved with a transparent background and it lands on the board as the shape rather than in a box - the app guesses by looking at the picture, and <code>No card</code> on the right-click menu is there either way. It leans like any other card and it exports without the frame.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The Join tool no longer makes lines that never appear.</strong> Joining a sticker to a card was accepted, saved, and then drawn by nothing at all. It now says so, and keeps the card you had already picked. Boards that already carry one of these have it cleaned out when they open.</li>
+      <li><span class="pn-tag is-fix">Fix</span>The <code>Arrange</code> panel no longer hangs off the end of the toolbar.</li>
+      <li><span class="pn-tag is-fix">Fix</span>The sticker pad opens at the top instead of a few pixels down, so the first heading is not sliced along the letters.</li>
+      <li><span class="pn-tag is-fix">Fix</span>Two rows of an image's right-click menu no longer claim the same double-click.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>Importing pictures is lighter on memory.</strong> A large photograph used to be decoded at full size purely to make its small copy; the small copy is now asked for directly, and files are no longer duplicated in memory on the way in.</li>
+      <li><span class="pn-tag is-faster">Faster</span>The right-click menu on a large selection opens without comparing every card to every other card first.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-on-the-record">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">9</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.188 - 0.196</p>
       <h2 class="pn-name">On the Record</h2>
       <p class="pn-date">13 - 14 August 2026</p>
     </header>

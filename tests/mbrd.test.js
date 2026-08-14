@@ -411,3 +411,60 @@ test('a board written by another format is refused', async () => {
   ]);
   await assert.rejects(() => unpackBoard(foreign), /sketch/);
 });
+
+// ---------------------------------------------------------------------------
+// Stored versions, and the third class of reference
+// ---------------------------------------------------------------------------
+//
+// A version names cards the board no longer has - that is the whole of what one
+// is for - so the archive has to carry their bytes too. This is the failure the
+// missing-asset check above exists to stop, one level further in, and it is the
+// worse shape of it: the file would pack *successfully*, with a version in it
+// that cannot be restored, and every signal the person had would say the work
+// was safe.
+
+/** A board carrying one stored version, in the shape serializeBoard() writes. */
+const withVersion = (items, versionItems, extra = {}) => boardOf(items, {
+  versions: [{ id: 'v1', at: 1000, label: 'earlier', kept: true,
+               data: { items: versionItems, trash: [] } }],
+  ...extra,
+});
+
+test('a picture only a stored version uses is written into the archive', async () => {
+  clearAssets();
+  const live = await stubAsset('live', { body: 'live-bytes' });
+  const gone = await stubAsset('gone', { body: 'gone-bytes' });
+  const board = withVersion(
+    [withAsset(live, { id: 'i1', name: 'live.png' })],
+    [withAsset(gone, { id: 'i0', name: 'gone.png' })],
+  );
+  const { blob } = await packBoard(board);
+  const files = await readZip(blob);
+  const names = [...files.keys()];
+  assert.ok(names.some(n => n.includes(gone)),
+    'the version\'s picture is in the archive - without it the version restores '
+    + 'to holes where the photographs were, having reported a clean save');
+  assert.ok(names.some(n => n.includes(live)));
+});
+
+test('packing still fails when a version names bytes that are gone', async () => {
+  // The check has to reach inside versions as well, or the refusal that keeps
+  // an incomplete archive off disk simply stops applying to half the file.
+  clearAssets();
+  const live = await stubAsset('live');
+  const board = withVersion(
+    [withAsset(live, { id: 'i1', name: 'live.png' })],
+    [withAsset(hash('missing'), { id: 'i0', name: 'lost.png' })],
+  );
+  await assert.rejects(() => packBoard(board), /lost\.png/);
+});
+
+test('a version survives the round trip', async () => {
+  clearAssets();
+  const live = await stubAsset('live');
+  const board = withVersion([withAsset(live, { id: 'i1', name: 'live.png' })], []);
+  const { blob } = await packBoard(board);
+  const back = await unpackBoard(blob);
+  assert.equal(back.board.versions.length, 1);
+  assert.equal(back.board.versions[0].label, 'earlier');
+});

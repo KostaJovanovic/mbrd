@@ -82,10 +82,44 @@ export type PackedBoard = {
   items: Item[];
   trash?: TrashEntry[];
   settings?: { fonts?: FontSpec[] };
+  /**
+   * The stored versions, as board-schema.ts writes them. Loosely typed here on
+   * purpose: this module only ever asks them for the asset ids inside, and each
+   * one's `data` is a whole board.json that this file has no business knowing
+   * the shape of.
+   */
+  versions?: { data?: unknown }[];
 };
 
 /** One item out of a file, before anything has held it to a shape. */
 type FileItem = Record<string, unknown>;
+
+/**
+ * Every item inside every stored version, flattened, so the asset walk can
+ * treat them exactly like items on the board.
+ *
+ * Returned as `Item[]` by assertion rather than by validation, and that is safe
+ * because of what the caller does with them: it asks itemHashes() for their
+ * asset ids and nameOf() for a label to put in an error. Neither reads geometry
+ * and neither writes anything. A version's `data` came out of serializeBoard()
+ * or out of a file, so it is board.json's shape - and the one thing this must
+ * not do is trust it enough to look further in.
+ */
+function versionItems(versions: { data?: unknown }[] | undefined): Item[] {
+  if (!Array.isArray(versions)) return [];
+  const out: Item[] = [];
+  for (const version of versions) {
+    const data = version?.data;
+    if (!isRecord(data)) continue;
+    if (Array.isArray(data.items)) out.push(...(data.items as Item[]));
+    if (Array.isArray(data.trash)) {
+      for (const entry of data.trash) {
+        if (isRecord(entry) && isRecord(entry.item)) out.push(entry.item as unknown as Item);
+      }
+    }
+  }
+  return out;
+}
 
 /**
  * A board out of a file, ditto. `items` and `trash` are declared as arrays
@@ -122,7 +156,20 @@ export async function packBoard(
   // Binned items count as referenced. Their bytes are the whole reason the bin
   // is worth anything after a save - dropping them would leave the panel
   // listing things that can no longer come back.
-  const referenced = [...boardData.items, ...(boardData.trash || []).map(t => t.item)];
+  //
+  // And so do the items inside every stored version, which is the third class
+  // of reference and the one with teeth. A version names cards the board no
+  // longer has; if its photographs are not written into the archive, the file
+  // packs *successfully* with a version in it that cannot be restored - the
+  // exact failure mode the missing-asset check below was written to stop, one
+  // level further in. Written as one flat list so both the asset walk and
+  // collectWaveforms() see them, since a version of a board with sound in it
+  // needs its readings back too.
+  const referenced = [
+    ...boardData.items,
+    ...(boardData.trash || []).map(t => t.item),
+    ...versionItems(boardData.versions),
+  ];
 
   // Gathered before board.json is serialised, because those are not two
   // decisions but one: a hash whose readings get a file of their own is a hash

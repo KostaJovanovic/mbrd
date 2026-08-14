@@ -25,7 +25,7 @@ import {
   ensureTitleCard, isTitleHidden, TITLE_ID, setTitle,
   ensureGhostCards, reseedGhostCards, hasContent, dismissGhosts,
   leaveNotFoundBoard, isContent,
-  defaultBoardTitle,
+  defaultBoardTitle, saveVersion,
 } from './state.ts';
 import { freezePrefs } from './prefs.ts';
 import { homePath, isPatchPage, isNotFoundPage, openingFace } from './page.ts';
@@ -383,6 +383,39 @@ bus.on('selection', () => {
 });
 bus.on('items', syncMobileBoardBounds);
 bus.on('geom', syncMobileBoardBounds);
+
+/**
+ * The automatic half of the version history.
+ *
+ * Hung off 'autosaved' rather than given a timer of its own, and that is worth
+ * a line. The autosave already answers "has anything actually changed?" - it
+ * only announces when a write happened that a person caused - so this gets the
+ * same gate for free and cannot fill the ring on a board somebody is only
+ * looking at. A second timer would have had to re-derive that, badly.
+ *
+ * The interval is deliberately far longer than the autosave's twenty seconds.
+ * A version answers *what did I just break*, and the useful granularity for
+ * that is an hour of work in a handful of steps, not one per save - a ring of
+ * eight that turns over every three minutes is eight copies of the last three
+ * minutes, which is the one span undo already covers.
+ *
+ * saveVersion() is itself a no-op when nothing changed since the last automatic
+ * one, so this is bounded twice.
+ */
+const AUTO_VERSION_MS = 10 * 60 * 1000;
+let lastAutoVersion = 0;
+bus.on('autosaved', () => {
+  const now = Date.now();
+  // The first autosave of a session does not take one: the board has just
+  // arrived, so the version would be a copy of the file that is already on
+  // disk, and it would push a real one off the end of the ring to say so.
+  if (!lastAutoVersion) { lastAutoVersion = now; return; }
+  if (now - lastAutoVersion < AUTO_VERSION_MS) return;
+  lastAutoVersion = now;
+  saveVersion();
+});
+// A new board has its own history, and the clock starts again with it.
+bus.on('board:load', () => { lastAutoVersion = 0; });
 // A note can arrive with text already in it - pasted, duplicated, or loaded
 // from a file saved before it grew - so it is sized for what it says as soon
 // as it has a node to measure.

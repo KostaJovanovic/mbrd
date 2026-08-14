@@ -175,11 +175,15 @@ test('the wired sites read the dial rather than a constant', async () => {
     read('canvas/web.ts'), read('canvas/stills.ts'),
   ]);
   assert.match(items, /built >= buildBudget\(\)/, 'the build budget is the dial’s');
-  // The dial first, and the type list second. Which types get no twin is not
-  // this test's business - it has grown from one to four and will grow again -
-  // so it is matched loosely, and what is pinned is that `quality.shadows` is
-  // still the thing standing in front of buildShadow().
-  assert.match(items, /quality\.shadows && [^)]*NO_TWIN/, 'no twin is built when shadows are off');
+  // The dial first, and the exclusion list second. *Which* items get no twin is
+  // not this test's business - it has grown from one type to four, and then past
+  // types altogether when a cut-out image joined it - so it is matched loosely,
+  // and what is pinned is that `quality.shadows` is still the thing standing in
+  // front of buildShadow(). The list itself moved behind noTwin(), which is why
+  // this no longer names NO_TWIN: it is now a predicate over an item rather than
+  // a set of type names, because whether an item has a card is a property of the
+  // item.
+  assert.match(items, /quality\.shadows && !noTwin\(/, 'no twin is built when shadows are off');
   assert.match(display, /displayMax\(\) \/ Math\.max/, 'the display copy takes the dial’s long edge');
   // canvas/web.js is deliberately *not* in this list any more. It is the one
   // site that stopped reading the dial: what it draws is a stored list rather

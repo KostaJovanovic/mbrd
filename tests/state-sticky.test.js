@@ -83,6 +83,42 @@ test('stack actions are useful only across another overlapping layer', () => {
   assert.equal(selectionHasStackOverlap(), false);
 });
 
+test('a leaning card is still found overlapping', () => {
+  // The one way the x-sweep in selectionHasStackOverlap() could report *less*
+  // overlap than the pairwise walk it replaced, which would be a wrong answer
+  // rather than a slower one. A card turned 45 degrees reaches further along x
+  // than its own width, so a sweep keyed on `w` would drop the pair before the
+  // polygon clipper ever saw it. The extents are the rotated ones for exactly
+  // this case.
+  const [a] = addItems([photo({ x: 0, y: 0, w: 200, h: 200, rot: 45 })]);
+  // Placed outside a's axis-aligned half-width (100) and inside its rotated one
+  // (about 141), so only the rotated extent brings the pair together at all.
+  const [b] = addItems([photo({ x: 120, y: 0, w: 20, h: 400 })]);
+  assert.ok(overlapFraction(byId(a.id), byId(b.id)) > 0,
+    'the two really do overlap - if this fails the fixture moved, not the sweep');
+  select([a.id]);
+  assert.equal(selectionHasStackOverlap(), true);
+  // And the far side of it: pushed clear along x, the sweep never forms the pair.
+  applyGeom([{ ...snapshotGeom([b.id])[0], x: 4000 }]);
+  assert.equal(selectionHasStackOverlap(), false);
+});
+
+test('overlap is found whichever order the boards items arrive in', () => {
+  // The sweep sorts by left edge, so the answer must not depend on the order
+  // items were added - the pairwise version could not have this bug and the
+  // sweep can.
+  for (const first of [true, false]) {
+    fresh();
+    const left = { x: 0, y: 0, w: 200, h: 200 };
+    const right = { x: 80, y: 0, w: 200, h: 200 };
+    const [a, b] = addItems(first ? [photo(left), photo(right)] : [photo(right), photo(left)]);
+    select([a.id]);
+    assert.equal(selectionHasStackOverlap(), true, `selected first, order ${first}`);
+    select([b.id]);
+    assert.equal(selectionHasStackOverlap(), true, `selected second, order ${first}`);
+  }
+});
+
 test('a note nowhere near anything is stuck to nothing', () => {
   addItems([photo({ x: 0, y: 0, w: 100, h: 100 })]);
   const [n] = addItems([note({ x: 5000, y: 5000 })]);

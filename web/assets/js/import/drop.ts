@@ -57,7 +57,7 @@ type Draft = {
  * where the numbers came from - and the reads below are written for exactly
  * that: an absent `decodable` is the falsy answer they already took.
  */
-type DraftSize = Size & { decodable?: boolean, measured?: boolean };
+type DraftSize = Size & { decodable?: boolean, measured?: boolean, natural?: Size };
 
 /**
  * What a dropped entry is, said as a narrowing.
@@ -551,10 +551,15 @@ export async function importFiles(
  * so inside the call rather than at module scope. Same bargain the rest of this
  * file makes with `document`.
  */
-export async function thumbFor(blob: Blob) {
-  const small = await makeThumb(blob);
+export async function thumbFor(blob: Blob, naturalWidth = 0) {
+  const small = await makeThumb(blob, naturalWidth);
   if (!small) return null;
-  return addFile(new File([small.blob], 'thumb.webp', { type: 'image/webp' }));
+  const hash = await addFile(new File([small.blob], 'thumb.webp', { type: 'image/webp' }));
+  // `cutout` rides back with the hash because it was measured on the way past.
+  // It is the thumbnail pass that has a decoded picture in hand, so asking the
+  // question anywhere else would mean decoding the file a second time to learn
+  // something this one already knows.
+  return { hash, cutout: small.cutout };
 }
 
 /**
@@ -768,7 +773,12 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
   const thumbSource = type === 'image' ? (previewFile || file)
     : type === 'video' ? poster?.file || null
     : null;
-  const thumb = thumbSource ? await thumbFor(thumbSource).catch(() => null) : null;
+  // The width is handed over so the decoder can be asked for a hundred-wide
+  // bitmap rather than the whole picture - see makeThumb(). It is only ever a
+  // hint: measurement can fail, and a preview or a poster is a different file
+  // from the one `size` describes, so those pass nothing and take the old path.
+  const thumbWidth = type === 'image' && !previewFile ? size.natural?.w || 0 : 0;
+  const thumb = thumbSource ? await thumbFor(thumbSource, thumbWidth).catch(() => null) : null;
   return {
     type,
     name: file.name,
@@ -786,7 +796,15 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
       // to do with one - a card draws it in the corner, a video makes it the
       // poster.
       ...(cover ? { cover } : poster?.hash ? { cover: poster.hash } : {}),
-      ...(thumb ? { thumb } : {}),
+      ...(thumb ? { thumb: thumb.hash } : {}),
+      // A guess, and only a guess: a picture whose outer ring is mostly
+      // transparent is a shape rather than a photograph, so it lands with no
+      // card round it. The menu row ("No card") is what makes it a default
+      // rather than a verdict - whatever is chosen there wins and is what gets
+      // saved. Only for an image that is its own thumbnail source: a preview
+      // pulled out of a HEIC or a frame grabbed from a clip is a different
+      // picture from the one being imported, and neither is ever a cut-out.
+      ...(type === 'image' && !previewFile && thumb?.cutout ? { bare: true } : {}),
       // The decodable stand-in for a picture the browser won't draw. asset.hash
       // above is still the untouched original; the image renderer draws this
       // when it is present. Preserved and packed like any other content id - see

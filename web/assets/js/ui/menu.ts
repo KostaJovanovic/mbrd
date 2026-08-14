@@ -114,8 +114,24 @@ export type MenuEntry = {
  * actually reads. A DOMRect satisfies it, and so does the box ui/flyout.ts
  * builds by hand out of the button's left and the bar's bottom - which is the
  * reason this is the three numbers rather than the rectangle.
+ *
+ * `bounds` is the fourth thing and the optional one: the container the panel
+ * must stay inside, when there is one it should. A flyout is drawn as the
+ * *underside of the bar* - menu.css drops its top border and both top corner
+ * radii so it reads as part of the bar rather than as a second object landed on
+ * it - and that illusion holds only while the panel is over the bar. Past the
+ * end, the squared top corner is a cut edge hanging against the board, which is
+ * precisely the shape of a rendering mistake. The window is the wrong container
+ * for that and was the only one render() had.
+ *
+ * Left off, the behaviour is exactly what it was: the window is the bound.
  */
-export type MenuAnchor = { left: number; top: number; bottom: number };
+export type MenuAnchor = {
+  left: number;
+  top: number;
+  bottom: number;
+  bounds?: { left: number; right: number };
+};
 
 /** What openAnchored() and render() take beyond the point they are drawn at. */
 type MenuOpts = {
@@ -191,6 +207,9 @@ export interface MenuCommands {
   setCover: (id: string) => unknown;
   clearCover: (id: string) => unknown;
   setItemFit: (id: string, fit: string) => unknown;
+  canSetBare: (id: string) => boolean;
+  itemBare: (id: string) => boolean;
+  setItemBare: (id: string, bare: boolean) => unknown;
   editPicture: (id: string) => unknown;
   flipUpAxis: (id: string) => unknown;
   extractSwatches: (id: string) => unknown;
@@ -426,6 +445,8 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
   // cover actions above and for the same reason: it is an edit to one picture.
   const fittable = !many && cmds!.canSetFit(id);
   const fills = fittable && cmds!.itemFit(id) === 'cover';
+  const bareable = !many && cmds!.canSetBare(id);
+  const bare = bareable && cmds!.itemBare(id);
   // A photograph can be cropped and graded. Single-item like the fit pair above
   // it, and offered on the Feed too: neither edit is spatial - the crop is a
   // rectangle over the picture's own pixels, not over the board - so both mean
@@ -490,6 +511,13 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
       action: () => cmds!.setItemFit(id, 'cover') },
     { label: 'Fit in the card', icon: 'i-fit-card', check: fittable && !fills,
       hidden: !fittable, action: () => cmds!.setItemFit(id, 'contain') },
+    // Under the two fit rows because it is the same question one step further
+    // out: those decide how the picture sits in its card, this decides whether
+    // there is a card at all. A tick rather than a pair of rows - "no card" has
+    // no opposite worth naming, and Fill/Fit are two positions of one dial while
+    // this is on or off.
+    { label: 'No card', icon: 'i-cut-out', check: bare, hidden: !bareable,
+      action: () => cmds!.setItemBare(id, !bare) },
     // Below the fit pair and above the palette, which is where it belongs in the
     // sentence: Fill and Fit are about the card, this is about the picture, and
     // Extract palette is about what the picture is made of. The ellipsis is the
@@ -622,7 +650,13 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // put wherever the column had room. Add is on the toolbar there, which is
     // the surface that means "somewhere on this board" rather than "at this
     // spot" - and that is the only promise the Feed can keep.
-    { label: 'Zoom to it', icon: 'i-zoom-to', accel: 'dbl-click',
+    // The accel is conditional for the same reason Open's is, and the two
+    // conditions are the two halves of one rule: `input.ts` sends a double-click
+    // on anything that is not a note and not the title card to openViewer, so on
+    // a photograph the gesture opens the viewer and belongs to Open. Printed on
+    // both rows it was a menu advertising one key twice, which teaches the wrong
+    // thing about both of them. Zoom keeps it only where nothing else claims it.
+    { label: 'Zoom to it', icon: 'i-zoom-to', accel: viewable || editable ? '' : 'dbl-click',
       action: () => cmds!.zoomToSelection(), hidden: mobile || many },
     { label: 'Zoom to them', icon: 'i-zoom-to',
       action: () => cmds!.zoomToSelection(), hidden: mobile || !many },
@@ -1013,8 +1047,23 @@ function render(entries: MenuEntry[], clientX: number, clientY: number, opts: Me
     // Hung off a button, so the horizontal rule the cursor case uses is wrong:
     // it *clamps* rather than flips, because a flyout that jumped to the far
     // side of its button would leave the pointer outside itself and close again
-    // on the way in.
-    x = Math.min(Math.max(pad, clientX), Math.max(pad, innerWidth - width - pad));
+    // on the way in. Clamping to the bar keeps that argument whole rather than
+    // trading it - 208px of panel against 694px of bar still lands under the
+    // button it belongs to.
+    //
+    // Two containers, intersected, and neither is optional. The bar is what the
+    // panel has to look attached to (see MenuAnchor.bounds); the window is what
+    // it has to remain visible in, and a bar wider than the viewport would push
+    // the panel off-screen if the bar were trusted alone.
+    //
+    // The Math.max(lo, hi) is not decoration. A container narrower than the
+    // panel gives hi < lo, and clamping between an inverted pair snaps to the
+    // wrong edge; this degrades it to "align to the container's left edge",
+    // which is the only sensible answer when the panel does not fit.
+    const bounds = opts.anchor.bounds;
+    const lo = Math.max(pad, Math.min(bounds ? bounds.left : pad, innerWidth - width - pad));
+    const hi = Math.min(bounds ? bounds.right - width : Infinity, innerWidth - width - pad);
+    x = Math.min(Math.max(lo, clientX), Math.max(lo, hi));
     // Vertically it hangs below and flips above when below will not fit.
     //
     // It used to hang below unconditionally, on the argument that the toolbar is

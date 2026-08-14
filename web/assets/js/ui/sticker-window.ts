@@ -224,8 +224,26 @@ function renderBody() {
   // the window has only just appeared, and a body that scrolls itself while you
   // are looking at it reads as the app doing something rather than as it
   // remembering something.
+  //
+  // Measured against the first child rather than against `body`, and guarded on
+  // being the first child at all. Two things were wrong with the difference of
+  // the two offsetTops. The smaller one is that neither offset is relative to
+  // the other - both are measured from .sticker-window, the only positioned
+  // ancestor - so the subtraction carried the body's own padding and the
+  // heading's margin into a number that is supposed to be a scroll distance.
+  //
+  // The larger one is that it ran at all on a fresh window. `lastCategory`
+  // starts at STICKER_CATEGORIES[0][0], so with no favourites the target *is*
+  // the first heading, already at the top, and the pad opened a few pixels down
+  // with the tops of the letters of "Marks" sliced off - which reads as a font
+  // problem rather than a scroll one, and is why it survived so long.
+  //
+  // Not a blanket scrollTop = 0: that would delete the feature to hide the
+  // symptom, and would be wrong the moment somebody has a favourite, because the
+  // Favourites shelf then sits above Marks and scrolling to it is correct.
   const at = body.querySelector<HTMLElement>(`[data-cat="${lastCategory}"]`);
-  if (at) body.scrollTop = at.offsetTop - body.offsetTop;
+  const first = body.firstElementChild as HTMLElement | null;
+  if (at && first && at !== first) body.scrollTop = at.offsetTop - first.offsetTop;
 }
 
 function heading(text: string) {

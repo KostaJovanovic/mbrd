@@ -18,10 +18,13 @@
 // The known cost, recorded rather than fixed: stackOrder() calls byId twice per
 // comparison, so it is O(n log n) comparisons over an O(1) lookup - fine now
 // that byId is indexed, and it was the audit's worst case when byId was a scan.
-// selectionHasStackOverlap() is still an O(n^2) pairwise polygon test exposed as
-// a live context-menu command; see the audit's 1.6.
+//
+// selectionHasStackOverlap() used to be the other half of that note, as an
+// O(n^2) pairwise polygon test on the path that opens a context menu. It is a
+// sweep along x now - see the comment on it - so the pairs that cannot touch are
+// never formed rather than formed and rejected.
 
-import { overlapFraction } from './geometry.ts';
+import { overlapFraction, rotatedExtents } from './geometry.ts';
 import { bus, selection } from './board-store.ts';
 import { board, byId, topZ } from './board-model.ts';
 import type { Item } from './board-model.ts';
@@ -157,9 +160,59 @@ export function stackLayerIds(ids: Iterable<string>) {
 export function selectionHasStackOverlap(ids: Iterable<string> = selection) {
   const selected = new Set(stackLayerIds(ids));
   if (!selected.size) return false;
-  const inside = board.items.filter(item => selected.has(item.id));
-  const outside = board.items.filter(item => !selected.has(item.id));
-  return inside.some(a => outside.some(b => overlapFraction(a, b) > 0));
+
+  // A sweep along x, rather than every selected item against every other one.
+  //
+  // This runs while somebody is waiting for a context menu to appear, and it
+  // used to be a pairwise walk: 200 selected against 1,800 others is 360,000
+  // calls into a polygon clipper, to answer a question whose only use is
+  // deciding whether to show two rows. overlapFraction() rejects most pairs on a
+  // circle test before it clips anything, so the per-pair cost was never the
+  // problem - the number of pairs was.
+  //
+  // Sorting by left edge and keeping an active list makes the enumeration
+  // O(n log n) plus one visit per pair that genuinely overlaps *on the x axis*,
+  // which on a real board is a small multiple of n. Two boxes that do not share
+  // an x span cannot intersect, so those pairs are never formed rather than
+  // formed and rejected.
+  //
+  // Extents are the rotated ones. A leaning card's bounding box is wider than
+  // its own width, and a sweep that used `w` would drop the pair before the
+  // clipper ever saw it - the one way this could report *less* overlap than the
+  // pairwise version did, which would be a wrong answer rather than a slower one.
+  type Span = { item: Item; inside: boolean; lo: number; hi: number };
+  const spans: Span[] = [];
+  let anyIn = false;
+  let anyOut = false;
+  for (const item of board.items) {
+    const { hw } = rotatedExtents(item);
+    const inside = selected.has(item.id);
+    if (inside) anyIn = true; else anyOut = true;
+    spans.push({ item, inside, lo: item.x - hw, hi: item.x + hw });
+  }
+  // Nothing to compare against: an empty board on one side of the line.
+  if (!anyIn || !anyOut) return false;
+  spans.sort((a, b) => a.lo - b.lo);
+
+  let active: Span[] = [];
+  for (const s of spans) {
+    // Everything whose right edge is behind this left edge can never meet
+    // anything further along the sweep, so it leaves the active list for good.
+    if (active.length) active = active.filter(a => a.hi >= s.lo);
+    for (const a of active) {
+      // Same side of the selection: the pair was never a question. Overlap
+      // *within* a sticky layer does not count either, and stackLayerIds() has
+      // already folded a note in with its host, so both land here as `inside`.
+      if (a.inside === s.inside) continue;
+      // Argument order preserved from the pairwise version: the fraction is of
+      // the first box's own area, and the selected item is the one that was
+      // always asked about.
+      const [in_, out] = a.inside ? [a.item, s.item] : [s.item, a.item];
+      if (overlapFraction(in_, out) > 0) return true;
+    }
+    active.push(s);
+  }
+  return false;
 }
 
 /**

@@ -53,6 +53,7 @@ import { board, adjustFilter, itemCrop } from '../state.ts';
 import { itemBounds } from '../geometry.ts';
 import { assetURL, getAsset } from '../storage/assets.ts';
 import { paperMm, toUnits } from '../measure.ts';
+import { PALETTE_TOKENS } from '../layout-settings.ts';
 import { connMeta, pairKey } from '../board-model.ts';
 import { CLEARANCE, routeConnection, pathData } from '../web-route.ts';
 import type { RouteOpts } from '../web-route.ts';
@@ -454,13 +455,22 @@ async function paintMedia({ ctx, it, w, h, look, scale }: Paint) {
   const hash = pixelHash(it);
   const img = hash ? await loadImage(assetURL(hash)) : null;
   if (img) {
+    // A cut-out is drawn without its rounded clip as well as without its card.
+    // The clip is a corner radius on the *box*, and the box is the thing a
+    // cut-out has been told not to have: rounding it would shave the corners off
+    // a shape that does not reach them anyway, and would slice one that does.
+    const bare = it.meta?.bare === true;
     const radius = Math.min(w, h) * 0.03;
     ctx.save();
-    roundRect(ctx, -w / 2, -h / 2, w, h, radius);
-    ctx.clip();
+    if (!bare) {
+      roundRect(ctx, -w / 2, -h / 2, w, h, radius);
+      ctx.clip();
+    }
     // The card behind a contained picture, so the letterboxed bands are the
-    // card and not a hole in the board.
-    if (fitMode(it) === 'contain') {
+    // card and not a hole in the board. Never behind a cut-out - those bands
+    // are exactly the empty rectangle it exists to get rid of, and painting
+    // them here would put the card back in the file the screen does not have.
+    if (fitMode(it) === 'contain' && !bare) {
       ctx.fillStyle = look.card;
       ctx.fillRect(-w / 2, -h / 2, w, h);
     }
@@ -981,7 +991,15 @@ export async function renderBoardCanvas(detail: Detail = 'full') {
     // No shadow under a sticker or a fence: one is a mark pressed onto the
     // board and the other is a line drawn round part of it, and neither is a
     // thing lying on top of anything.
-    const lifted = it.type !== 'sticker' && it.type !== 'fence';
+    //
+    // Nor under a cut-out, which is the third of exactly that kind of thing and
+    // the reason this list had to be checked at all. This renderer paints its
+    // own card and hangs its own shadow - it is not the stylesheet - so an image
+    // whose card the board has taken away would have grown a border and a shadow
+    // back on the way into a PDF. That discrepancy is the worst shape a bug can
+    // take here: it exists only in the export, so the only person who ever sees
+    // it is whoever prints one, by which time they are looking at paper.
+    const lifted = it.type !== 'sticker' && it.type !== 'fence' && it.meta?.bare !== true;
     withShadow(ctx, look, lifted, scale);
     await painterFor(it)({ ctx, it, w: it.w * scale, h: it.h * scale, look, scale });
     withShadow(ctx, look, false, scale);
@@ -1097,3 +1115,246 @@ function buildPdf(jpeg: Uint8Array<ArrayBuffer>, w: number, h: number) {
 
   return new Blob(parts, { type: 'application/pdf' });
 }
+
+// ---------------------------------------------------------------------------
+// The style tile
+// ---------------------------------------------------------------------------
+//
+// The board exports two ways already and both answer the same question: *show
+// me the board*. A PNG and a PDF are photographs of the surface, and a
+// photograph of a moodboard is only really readable by somebody who was in the
+// room when it was made. What gets pasted into a deck, sent to a printer or
+// pinned beside a mock-up is the other document - the summary. The palette as
+// swatches with their values, the faces actually in use, a few of the pictures,
+// the board's name and the date.
+//
+// ── Not a second renderer ──
+//
+// Everything below draws through the same context, the same roundRect() and the
+// same buildPdf() the board export uses. The tile is a different *layout* fed to
+// the painter that already exists.
+//
+// ── Why it is painted box by box, which is not a style choice ──
+//
+// It cannot be laid out in DOM and rasterised. Putting an <img> inside a
+// <foreignObject> taints the canvas, which is the entire reason this module
+// composites in Canvas 2D rather than serialising the page - see the head of
+// this file. So a tile has to be expressible as rectangles and text runs, and a
+// design handed over as HTML would have to be re-drawn rather than reused.
+//
+// ── The three open questions, and the answers taken ──
+//
+// The register left all three open on purpose. They are taste calls, they are
+// answered here, and each is answered *in the file* so the next person argues
+// with a decision rather than rediscovering a gap.
+//
+// **Whose colours?** The board's own current palette, read off the live tokens -
+// not re-derived from the pictures. A style tile documents the look the board
+// *has*. Where that look was extracted from the photographs these are those
+// colours anyway; where it was chosen by hand, re-deriving would print a palette
+// the board is not wearing.
+//
+// **Which pictures?** The selection when there is one, else the largest few by
+// area. Selection first because it is the only curation that is unambiguous and
+// instantaneous - point at four cards, export. Largest-by-area is the fallback
+// rather than the tour, and that is the one place this departs from the obvious:
+// a tour is genuinely curated, but keying the export to it makes the same
+// command produce a different kind of document on a board that happens not to
+// have one, and silently.
+//
+// **Does it follow the whimsy dial?** Yes. The counter-argument is real - a
+// deliverable sent to a client arguably should not restyle itself next week -
+// but the subject of this document *is* the look, so a tile that held still
+// while the board it describes moved would be documenting one thing and looking
+// like another. It also keeps it consistent with the board export beside it,
+// which has always read the live tokens.
+
+/** How many pictures a tile shows, at most. */
+const TILE_IMAGES = 4;
+
+/** The tile's pixel size. 3:2, and large enough to print at a sensible size. */
+const TILE_W = 1500;
+const TILE_H = 1000;
+
+/**
+ * The pictures a tile shows: the selection if there is one, else the largest.
+ *
+ * `selected` is passed in rather than read here, because this is drawn from two
+ * places - a command that knows what is selected, and a test that has no
+ * selection at all - and reaching for the live set would make the second
+ * impossible to write.
+ */
+function tilePictures(selected: Set<string> | null): Item[] {
+  const pictures = board.items.filter(it => it.type === 'image' && pixelHash(it));
+  const picked = selected && selected.size
+    ? pictures.filter(it => selected.has(it.id))
+    : [];
+  const pool = picked.length ? picked : pictures;
+  // Largest first, then by id, so a board of identically sized cards produces
+  // the same tile twice rather than shuffling.
+  return [...pool]
+    .sort((a, b) => (b.w * b.h) - (a.w * a.h) || (a.id < b.id ? -1 : 1))
+    .slice(0, TILE_IMAGES);
+}
+
+/**
+ * The board's pigments, in the order tokens.css declares them.
+ *
+ * Empty without a document, because reading a token is a getComputedStyle and
+ * there is nothing to compute a style against. That is not defensive padding:
+ * it is what lets styleTileContents() below be asked *which pictures* in a
+ * runner, which is the half of this feature that has real rules in it.
+ */
+function tilePalette(): { token: string, value: string }[] {
+  const out: { token: string, value: string }[] = [];
+  if (typeof document === 'undefined') return out;
+  for (const token of PALETTE_TOKENS) {
+    const value = readToken(token);
+    if (value) out.push({ token, value });
+  }
+  return out;
+}
+
+/**
+ * The face a token resolves to, as a person would name it.
+ *
+ * A font stack is a list of fallbacks, and printing the whole of it would fill
+ * the tile with commas. The first entry is the one that was chosen; the quotes
+ * come off because they are CSS syntax rather than part of the name.
+ */
+function faceName(token: string): string {
+  const first = (readToken(token) || '').split(',')[0] || '';
+  return first.replace(/["']/g, '').trim();
+}
+
+/** Draw the tile. Exported for the test, which has no way to open a canvas. */
+export function renderStyleTile(
+  selected: Set<string> | null,
+  images: (HTMLImageElement | null)[],
+) {
+  const canvas = document.createElement('canvas');
+  canvas.width = TILE_W;
+  canvas.height = TILE_H;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  const ink = readToken('--ink') || '#222';
+  const ink3 = readToken('--ink-3') || '#8a8578';
+  const paper = readToken('--paper') || '#f4f1ea';
+  const rule = readToken('--rule-2') || '#d8d3c6';
+  const display = readToken('--font-display') || 'Georgia, serif';
+  const body = readToken('--font-body') || 'system-ui, sans-serif';
+  // The board's own corner, doubled because a swatch is a much smaller box than
+  // a card and the same radius on it reads as barely rounded. This one number is
+  // the whimsy answer above, made concrete: a tile off a Harsh board has square
+  // swatches and one off a Softish board does not.
+  const radius = Math.max(0, parseFloat(readToken('--radius')) || 0) * 2;
+
+  const pad = 72;
+  ctx.fillStyle = paper;
+  ctx.fillRect(0, 0, TILE_W, TILE_H);
+
+  ctx.fillStyle = ink;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.font = `400 64px ${display}`;
+  ctx.fillText((board.title || 'Untitled board').slice(0, 48), pad, pad + 56, TILE_W - pad * 2);
+  ctx.fillStyle = ink3;
+  ctx.font = `400 22px ${body}`;
+  ctx.fillText(new Date().toLocaleDateString(undefined,
+    { day: 'numeric', month: 'long', year: 'numeric' }), pad, pad + 96);
+
+  // The pictures, in one row. Cover-cropped into equal boxes on purpose: a
+  // style tile is about the palette and the register, and four photographs at
+  // their own aspect ratios would be a contact sheet.
+  const shown = images.filter((img): img is HTMLImageElement => !!img);
+  const stripTop = pad + 140;
+  const stripH = 330;
+  if (shown.length) {
+    const gap = 20;
+    const boxW = (TILE_W - pad * 2 - gap * (shown.length - 1)) / shown.length;
+    shown.forEach((img, i) => {
+      const x = pad + i * (boxW + gap);
+      ctx.save();
+      roundRect(ctx, x, stripTop, boxW, stripH, radius);
+      ctx.clip();
+      const scale = Math.max(boxW / img.naturalWidth, stripH / img.naturalHeight);
+      const w = img.naturalWidth * scale;
+      const h = img.naturalHeight * scale;
+      ctx.drawImage(img, x + (boxW - w) / 2, stripTop + (stripH - h) / 2, w, h);
+      ctx.restore();
+    });
+  }
+
+  const swatchTop = stripTop + stripH + 74;
+  const palette = tilePalette();
+  if (palette.length) {
+    const gap = 14;
+    const across = Math.min(palette.length, 14);
+    const size = Math.min(78, (TILE_W - pad * 2 - gap * (across - 1)) / across);
+    palette.slice(0, across).forEach((entry, i) => {
+      const x = pad + i * (size + gap);
+      ctx.fillStyle = entry.value;
+      roundRect(ctx, x, swatchTop, size, size, Math.min(radius, size / 2));
+      ctx.fill();
+      // A hairline round every swatch. A pale colour on pale paper otherwise has
+      // no edge at all and reads as a hole rather than as one of the pigments.
+      ctx.strokeStyle = rule;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = ink3;
+      ctx.font = `400 13px ${body}`;
+      ctx.textAlign = 'center';
+      // The resolved value, not the token name: a printer or a developer wants
+      // the colour, and `--accent-warm` is this app's private word for it.
+      ctx.fillText(entry.value.slice(0, 12), x + size / 2, swatchTop + size + 20);
+    });
+  }
+
+  // The faces, named and set in themselves - which is the whole reason for
+  // printing them rather than listing them.
+  const typeTop = swatchTop + 150;
+  ctx.textAlign = 'left';
+  ctx.fillStyle = ink3;
+  ctx.font = `400 13px ${body}`;
+  ctx.fillText('DISPLAY', pad, typeTop);
+  ctx.fillText('TEXT', TILE_W / 2, typeTop);
+  ctx.fillStyle = ink;
+  ctx.font = `400 34px ${display}`;
+  ctx.fillText(faceName('--font-display') || 'Default', pad, typeTop + 44);
+  ctx.font = `400 26px ${body}`;
+  ctx.fillText(faceName('--font-body') || 'Default', TILE_W / 2, typeTop + 44);
+
+  return { canvas, w: TILE_W, h: TILE_H };
+}
+
+/** Load the pictures a tile wants, in parallel, tolerating any that fail. */
+async function tileImages(selected: Set<string> | null) {
+  return Promise.all(tilePictures(selected).map(it => {
+    const hash = pixelHash(it);
+    return hash ? loadImage(assetURL(hash)) : Promise.resolve(null);
+  }));
+}
+
+/** The board's style tile as a PNG blob, or null. */
+export async function styleTilePng(selected: Set<string> | null = null) {
+  if (typeof document === 'undefined') return null;
+  const shot = renderStyleTile(selected, await tileImages(selected));
+  return shot ? toBlob(shot.canvas, 'image/png') : null;
+}
+
+/** The same tile as a one-page PDF, through the writer the board export uses. */
+export async function styleTilePdf(selected: Set<string> | null = null) {
+  if (typeof document === 'undefined') return null;
+  const shot = renderStyleTile(selected, await tileImages(selected));
+  if (!shot) return null;
+  const jpeg = await toBlob(shot.canvas, 'image/jpeg', 0.92);
+  if (!jpeg) return null;
+  return buildPdf(new Uint8Array(await jpeg.arrayBuffer()), shot.w, shot.h);
+}
+
+/** What a tile would show, without drawing one. Exported for the tests. */
+export const styleTileContents = (selected: Set<string> | null = null) => ({
+  pictures: tilePictures(selected),
+  palette: tilePalette(),
+});

@@ -224,6 +224,15 @@
   background: none;
   padding: 0;
   color: var(--ink-3);
+  /* One step below --t-tiny, and off the scale on purpose. An accelerator is a
+     legend rather than text: it is read once while learning a menu and skipped
+     for ever afterwards, so it sits in a register below the smallest step the
+     scale offers. The other members of that register are the other kbd rule
+     (sidebar.css), the menu's own hint column below, .wordmark .sub and
+     .bin-when - all 10px, all captions on something else rather than content.
+     A sixth --t- step for them would be a scale step nothing composes with.
+     (Sorted deliberately-off-scale by research/old/visual-audit-2026-08-12.md
+     item 2.) */
   font-size: 10px;
   /* The third column, whether it is reached in two children or three. */
   grid-column: 3;
@@ -314,6 +323,9 @@
   grid-column: 2;
   justify-self: end;
   color: var(--ink-3);
+  /* The sub-tiny caption register - see .ctx-item kbd above for the whole of
+     the argument. A slider's current reading is a caption on the control, not
+     content. */
   font-size: 10px;
   /* A number that changes as the thumb moves must not shove the label about as
      it goes from 8px to 108px. Wide enough for the widest reading. */

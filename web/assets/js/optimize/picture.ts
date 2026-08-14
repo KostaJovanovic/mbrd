@@ -145,7 +145,7 @@ export const THUMB_SIDE = 100;
 const THUMB_QUALITY = 0.5;
 
 /** A thumbnail: the small bytes and the size they were written at. */
-export type Thumbnail = { blob: Blob, width: number, height: number };
+export type Thumbnail = { blob: Blob, width: number, height: number, cutout: boolean };
 
 /**
  * A hundred-pixel-wide copy of a picture, or null if it does not want one.
@@ -165,20 +165,46 @@ export type Thumbnail = { blob: Blob, width: number, height: number };
  * Height is whatever the aspect ratio says, uncapped. A hundred wide is the
  * instruction, and a tall picture that obeys it is still only a few thousand
  * pixels of WebP.
+ *
+ * `naturalWidth` is the file's own width when the caller already knows it, and
+ * it is worth a paragraph because of what it saves rather than what it does.
+ * Without it this decodes the whole picture and then throws away 99.97% of the
+ * pixels: a 6000-wide photograph allocates about 96 MB of bitmap to produce a
+ * hundred-wide thumbnail, and the import path runs six of these at once. Given
+ * the width, the decoder is asked for the small bitmap directly - resizeWidth
+ * alone, because the specification computes the other side from the aspect
+ * ratio, which is exactly the arithmetic below.
+ *
+ * Every part of it degrades rather than breaks. A browser that ignores
+ * resizeWidth hands back the full bitmap and the scaling below is unchanged,
+ * because `scale` is computed from what actually arrived. A caller that does not
+ * know the width passes nothing and gets the old behaviour. And the
+ * already-small refusal is measured against `naturalWidth` when there is one,
+ * since after a resize the bitmap is a hundred wide whatever the file was, and
+ * asking it would refuse every picture.
  */
-export async function makeThumb(blob: Blob | null | undefined): Promise<Thumbnail | null> {
+export async function makeThumb(
+  blob: Blob | null | undefined,
+  naturalWidth = 0,
+): Promise<Thumbnail | null> {
   if (!blob || !/^image\//i.test(blob.type)) return null;
   if (/^image\/svg\+xml$/i.test(blob.type)) return null;
   if (await isAnimated(blob)) return null;
+  // Refused before the decode when the width is known, which is the other half
+  // of the saving: a picture already this small used to be decoded in full and
+  // then turned down.
+  if (naturalWidth && naturalWidth <= THUMB_SIDE) return null;
 
   let bmp;
   try {
-    bmp = await createImageBitmap(blob);
+    bmp = naturalWidth > THUMB_SIDE
+      ? await createImageBitmap(blob, { resizeWidth: THUMB_SIDE, resizeQuality: 'high' })
+      : await createImageBitmap(blob);
   } catch {
     return null;
   }
   try {
-    if (!bmp.width || bmp.width <= THUMB_SIDE) return null;
+    if (!bmp.width || (naturalWidth || bmp.width) <= THUMB_SIDE) return null;
     const scale = THUMB_SIDE / bmp.width;
     const w = THUMB_SIDE;
     const h = Math.max(1, Math.round(bmp.height * scale));
@@ -188,6 +214,11 @@ export async function makeThumb(blob: Blob | null | undefined): Promise<Thumbnai
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(bmp, 0, 0, w, h);
+    // Read before the encode, off the bitmap that is already here. This is the
+    // whole cost of the cut-out guess: a hundred-pixel canvas that had to be
+    // drawn anyway, sampled once. Doing it from the full-size picture would mean
+    // a second decode of the very thing the resize above exists to avoid.
+    const cutout = looksCutOut(ctx, w, h);
     const out = await canvas.convertToBlob({ type: 'image/webp', quality: THUMB_QUALITY });
     // The same trap shrinkPicture() guards: a browser that cannot write WebP
     // hands back a PNG without saying so, and a PNG at this quality setting is
@@ -196,10 +227,64 @@ export async function makeThumb(blob: Blob | null | undefined): Promise<Thumbnai
     // A thumbnail bigger than its original is not a thumbnail. Rare, and real:
     // a hundred-pixel crop of pure noise can out-weigh a tiny flat-colour PNG.
     if (out.size >= blob.size) return null;
-    return { blob: out, width: w, height: h };
+    return { blob: out, width: w, height: h, cutout };
   } finally {
     bmp.close?.();
   }
+}
+
+/**
+ * Does this picture look cut out - a shape on a transparent ground rather than
+ * a photograph?
+ *
+ * **Read the pixels, not the header, and that is the whole decision here.** A
+ * PNG declares its colour type and a WebP declares alpha in its VP8X flags, and
+ * both are cheap and both are wrong in the direction that hurts: an enormous
+ * share of ordinary rectangular screenshots are saved as PNG-32 with a fully
+ * opaque alpha channel, and no header can tell one of those from a logo.
+ * Guessing from it would strip the card off a large share of the photographs on
+ * a board, which is a worse result than the fault being fixed and one that
+ * arrives silently in bulk.
+ *
+ * The test is the outer ring, because that is what the question actually is: a
+ * cut-out is a shape that does not reach its own corners. A photograph's ring is
+ * opaque everywhere, whatever its alpha channel says it could be.
+ *
+ * Two-thirds rather than everything: a logo on a transparent ground often has
+ * one edge bled to it, and a wordmark can run the full width. The ring is not
+ * asked to be empty, only to be mostly nothing.
+ *
+ * A wholly transparent image is refused. It is not a cut-out, it is an accident,
+ * and taking the card off it would leave a card-sized hole nothing can be
+ * grabbed by except its grips.
+ */
+function looksCutOut(ctx: OffscreenCanvasRenderingContext2D, w: number, h: number): boolean {
+  if (w < 3 || h < 3) return false;
+  let clear = 0;
+  let ring = 0;
+  let opaque = 0;
+  // getImageData once over the whole small canvas rather than four strips: it is
+  // a hundred pixels wide and four calls would each pay the same readback.
+  let data;
+  try {
+    data = ctx.getImageData(0, 0, w, h).data;
+  } catch {
+    return false;   // a tainted or zero-sized canvas: no guess rather than a wrong one
+  }
+  for (let y = 0; y < h; y++) {
+    const edgeRow = y === 0 || y === h - 1;
+    for (let x = 0; x < w; x++) {
+      if (!edgeRow && x !== 0 && x !== w - 1) continue;
+      const a = data[(y * w + x) * 4 + 3];
+      ring++;
+      if (a < 16) clear++;
+    }
+  }
+  // Cheap second pass over the middle row and column only, to find out whether
+  // there is anything solid in here at all.
+  for (let x = 0; x < w; x++) if (data[((h >> 1) * w + x) * 4 + 3] > 240) opaque++;
+  for (let y = 0; y < h; y++) if (data[(y * w + (w >> 1)) * 4 + 3] > 240) opaque++;
+  return ring > 0 && clear / ring >= 0.66 && opaque > 0;
 }
 
 /**

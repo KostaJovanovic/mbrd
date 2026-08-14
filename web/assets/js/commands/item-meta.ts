@@ -37,7 +37,7 @@
 import { toast } from '../notify.ts';
 import {
   board, boardTags, byId, cleanTag, isContent, isFurniture, isLocked, isRider,
-  itemTags, selection, setItemCover, setItemFit, setItemUpAxis, setItemsLocked,
+  itemTags, selection, setItemBare, setItemCover, setItemFit, setItemUpAxis, setItemsLocked,
   setItemsTagged, setStickerTint, setTourMembers, unstickItems, TAG_MAX, TAGS_PER_ITEM,
 } from '../state.ts';
 import { ask } from '../ui/dialog.ts';
@@ -288,6 +288,14 @@ export function itemMetaCommands() {
       return board.mediaFit === 'contain' ? 'contain' : 'cover';
     },
     setItemFit: (id: string, fit: string) => setItemFit(id, fit),
+
+    // The card, on or off - only pictures, and only one at a time, like every
+    // other picture row here. A cut-out is a judgement about *this* image, and
+    // the import guess is a default rather than a verdict: whatever is chosen
+    // here wins and is what gets saved.
+    canSetBare: (id: string) => byId(id)?.type === 'image',
+    itemBare: (id: string) => byId(id)?.meta?.bare === true,
+    setItemBare: (id: string, bare: boolean) => setItemBare(id, bare),
 
     /**
      * Crop a photograph, and grade it.

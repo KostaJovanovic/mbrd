@@ -31,6 +31,11 @@ body {
   background: var(--paper);
   color: var(--ink);
   font-family: var(--font-body);
+  /* The reading size for a page of prose, and off the interface scale on
+     purpose: --t-body is 15px because it is *interface* text sitting beside
+     controls, and a privacy notice is a document somebody actually reads
+     top to bottom. Same reasoning as the changelog page. (Sorted
+     deliberately-off-scale by research/old/visual-audit-2026-08-12.md item 2.) */
   font-size: 16px;
   line-height: 1.6;
   /* A measure, not a width: prose reads at about this and the page is nothing

@@ -97,7 +97,13 @@ export async function addFile(file: File): Promise<string> {
     // no File.type, so it is inferred from the extension here - narrowly, for the
     // one format where the type is load-bearing rather than a hint.
     const mime = file.type || (ext === 'svg' ? 'image/svg+xml' : '');
-    putAsset(hash, new Blob([buf], { type: mime }), {
+    // `file.slice()` rather than `new Blob([buf])`, and the difference is a whole
+    // second copy of the file in memory. What arrived is already a Blob; the only
+    // reason a new one was ever built is the `mime` above, which sometimes has to
+    // differ from the File's own - and slice() with a content type is exactly
+    // "the same bytes, relabelled", with no copy. It matters here rather than
+    // anywhere: six imports run at once and each one is holding `buf` already.
+    putAsset(hash, mime === file.type ? file : file.slice(0, file.size, mime), {
       mime,
       ext,
       name: file.name,

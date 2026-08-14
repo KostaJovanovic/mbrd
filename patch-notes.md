@@ -76,8 +76,49 @@ string from the interface.
 
 ## Releases
 
+## Second Thoughts
+version: 0.197 - 0.197
+date: 14 August 2026
+
+- [new] **The board remembers what it used to look like.** It keeps a copy of
+  itself as you work, and you can keep one by name at any time - System, then
+  `Earlier versions`. Going back to one is a single step you can undo, so
+  landing on the wrong one costs nothing. The copies travel inside the board
+  file and cost no space worth the name: your pictures are stored once however
+  many versions point at them.
+- [new] **`What is in this board` says where the weight went.** Counts by kind,
+  the total, the ten heaviest files and anything still stored that no card uses
+  any more. It reads the board rather than opening anything, so it is instant on
+  the large boards where you would actually ask. `Optimize` is one press away
+  from it, which is the point - it used to be a button with no reason attached.
+- [new] **A style tile, next to the two ways of saving a picture.** The palette
+  with its values, the faces the board is set in, a few of the pictures, the
+  name and the date. It is the thing that goes into a deck or to a printer,
+  where a photograph of a whole moodboard is only readable by somebody who was
+  in the room. Select a few cards first and it uses those.
+- [new] **A cut-out picture can drop its card.** Drop in a logo, a leaf or an
+  arrow saved with a transparent background and it lands on the board as the
+  shape rather than in a box - the app guesses by looking at the picture, and
+  `No card` on the right-click menu is there either way. It leans like any other
+  card and it exports without the frame.
+- [fix] **The Join tool no longer makes lines that never appear.** Joining a
+  sticker to a card was accepted, saved, and then drawn by nothing at all. It
+  now says so, and keeps the card you had already picked. Boards that already
+  carry one of these have it cleaned out when they open.
+- [fix] The `Arrange` panel no longer hangs off the end of the toolbar.
+- [fix] The sticker pad opens at the top instead of a few pixels down, so the
+  first heading is not sliced along the letters.
+- [fix] Two rows of an image's right-click menu no longer claim the same
+  double-click.
+- [faster] **Importing pictures is lighter on memory.** A large photograph used
+  to be decoded at full size purely to make its small copy; the small copy is
+  now asked for directly, and files are no longer duplicated in memory on the
+  way in.
+- [faster] The right-click menu on a large selection opens without comparing
+  every card to every other card first.
+
 ## On the Record
-version: 0.188 - 0.195
+version: 0.188 - 0.196
 date: 13 - 14 August 2026
 
 - [new] **The changelog is a page of the app now, and this is it.** It used to be

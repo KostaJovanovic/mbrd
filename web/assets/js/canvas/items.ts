@@ -909,7 +909,7 @@ function build(item: Item) {
   // halo around a shape that is not a card - the one thing the whole type is
   // trying not to be. Its shadow is a drop-shadow() on .sticker-art, which
   // follows the glyph.
-  if (quality.shadows && !NO_TWIN.has(item.type)) {
+  if (quality.shadows && !noTwin(item)) {
     // Built there, placed here: placeBox() is arithmetic against the viewport,
     // which is what kept it on this side of the split.
     const twin = buildShadow(item, tilt);
@@ -943,6 +943,20 @@ function build(item: Item) {
  * the call site, which is where the shadow is decided; this is only the list.
  */
 const NO_TWIN = new Set(['title', 'ghost', 'fence', 'sticker']);
+
+/**
+ * The same question, asked of an item rather than of a type.
+ *
+ * A cut-out is the fifth case and the first that is not a type: an image with
+ * `meta.bare` has had its card taken away precisely because its silhouette is
+ * not the box, which is word for word the reason the four above are on the list.
+ * Leaving it out would hang a rectangular shadow under a picture with no
+ * rectangle, which is the same fault the flag exists to fix and more obvious,
+ * because a shadow reads as a surface.
+ */
+function noTwin(item: Item): boolean {
+  return NO_TWIN.has(item.type) || item.meta?.bare === true;
+}
 
 /** Rebuild one item's content in place (note edits, renames). */
 function rebuild(id: string) {

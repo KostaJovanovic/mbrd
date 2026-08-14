@@ -671,9 +671,23 @@ const roomFor = (it: ArrangeItem, gap: number): Box =>
  *
  * Exact, so there is no residue to clean up afterwards and no cap to hit. The
  * cost is a pass over what is already down, per direction tried, per item: a
- * board of 500 - which is also the most a single drop may bring - lays out in
- * about 40ms, a board of 2000 in half a second. Both are paid once, by a
- * gesture that already animates every card on the board to somewhere new.
+ * board of 500 lays out in about 40ms, a board of 2000 in half a second. Both
+ * are paid once, by a gesture that already animates every card on the board to
+ * somewhere new.
+ *
+ * **The ceiling, stated honestly, because this note used to state it wrongly.**
+ * It said 500 was "also the most a single drop may bring", which is true of
+ * MAX_FILES and was doing the work of a bound on the board. It is not one: a
+ * board grows by repeated drops up to MAX_ITEMS, which is 20,000, and this is
+ * quadratic. Nobody has reported it and nobody is likely to - twenty thousand
+ * cards is the hard cap rather than a working size, and the gesture is
+ * deliberate and rare - so it is recorded rather than fixed, which is the same
+ * verdict the audit reached and the reason it never rose above Medium.
+ *
+ * If it ever does bite, the fix is not a cap. It is that `placed` is scanned in
+ * full for every direction of every item while almost all of it is nowhere near
+ * the ray: bucket it by grid cell and walk only the cells the ray crosses. The
+ * arithmetic below does not change, only which boxes it is handed.
  */
 function slideOut(dir: Point, box: Box, placed: Placed[], from = 0): Point {
   const bans: [number, number][] = [];

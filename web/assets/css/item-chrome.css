@@ -84,6 +84,10 @@
   flex: 1;
   min-width: 0;
   padding: 6px 11px 7px;
+  /* World-space type on the caption plate of a card, off the chrome scale on
+     purpose - the plate zooms with the board and --t-* does not. The rule for
+     the whole world-space set is stated at the head of ghosts.css. (Sorted
+     deliberately-off-scale by research/old/visual-audit-2026-08-12.md item 2.) */
   font-size: 12px;
   font-style: var(--display-italic);
   line-height: 1.25;

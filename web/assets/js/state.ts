@@ -17,7 +17,7 @@
 //                every subscriber to that one would repaint for a change that
 //                moved nothing and added nothing.
 
-import { isHash, isRecord, itemHashes } from './util.ts';
+import { isHash, isRecord, itemHashes, uid } from './util.ts';
 import { toast } from './notify.ts';
 // Pure geometry, shared with the canvas and the input layer so that "where is
 // this item and what does it cover" has exactly one answer in this app. Kept
@@ -33,10 +33,10 @@ import { splitAppearance, mergeAppearance } from './layout-settings.ts';
 // two must agree on what a legal value is.
 import {
   normalizeBoard, normalizeFonts, normalizeMediaFit, normalizeMobileHeader,
-  normalizePaletteSources, serializeBoard,
+  normalizePaletteSources, serializeBoard, versionHashes,
 } from './board-schema.ts';
 
-export { serializeBoard };
+export { serializeBoard, versionHashes };
 
 // The cards an empty board puts on itself, one level down - see onboarding.js.
 // Hydration rather than mutation: no commit, no history, and two session
@@ -102,7 +102,9 @@ import {
   MOBILE_BOTTOM_ROWS, MOBILE_APPEARANCE_VARS, cleanBoardTitleDraft, cleanBoardTitle,
   defaultBoardTitle, isDefaultTitle, mobileColumnCount, board, TITLE_ID, byId,
   topZ, makeItem, isFurniture, isContent, isJoinEnd,
+  VERSION_RING, VERSION_KEPT_MAX, VERSION_LABEL_MAX,
 } from './board-model.ts';
+import type { BoardVersion } from './board-model.ts';
 import {
   cloneSettings, layoutSettingsOf, dropIdIndex,
   MAX_CONNECTIONS, pairKey, normalizeAudioOrder, CONN_DIRECTIONS, CONN_STYLES,
@@ -957,6 +959,41 @@ export function setItemFit(id: string, fit: unknown) {
 }
 
 /**
+ * One image's card, on or off. True means *draw no card*: no paper, no
+ * hairline, no shadow - just the picture.
+ *
+ * For a cut-out. A logo, a leaf, an arrow saved with a transparent background
+ * was cut out precisely so it would sit *on* the board rather than in a box, and
+ * the box was being drawn round its bounding rectangle, which for a cut-out is
+ * mostly empty. The result is a frame round nothing with a picture somewhere
+ * inside it.
+ *
+ * Nothing new is being drawn here: a sticker has had no card since stickers
+ * existed. This is the flag that says which of the two an image is, and it is a
+ * flag rather than a guess because the guess belongs at import (see drop.js) and
+ * has to be overridable. Whatever the person chooses wins and is what gets
+ * saved.
+ *
+ * **Images only, and that is the type guard rather than an accident.** A note
+ * without its paper is text lying on the board with nothing holding it, and a
+ * video without its card loses the surface its controls sit on.
+ *
+ * The card that is removed is the *paint*. The box stays exactly where it was:
+ * hit-testing, the marquee, the selection ring and the resize grips all measure
+ * that rectangle, and an item you cannot select or resize would be a worse bug
+ * than the one this fixes.
+ */
+export function setItemBare(id: string, bare: unknown) {
+  const it = byId(id);
+  if (!it || it.type !== 'image') return;
+  // Stored only when true, which is what the null branch of patchMeta's write()
+  // is for: `bare: false` on every ordinary photograph would be a byte per card
+  // in every file to say that nothing is unusual.
+  patchMeta(id, 'bare', bare ? true : null,
+    (next: unknown) => (next ? 'Remove card' : 'Restore card'), v => (v === true ? true : null));
+}
+
+/**
  * One sticker's colour. The palette is an override of the shape's own default,
  * not a lottery - see the head of stickers/catalogue.js on why a heart is born
  * red rather than taking whatever came next off a cycle.
@@ -1522,6 +1559,129 @@ export function setTitle(title: unknown) {
   bus.emit('board');
 }
 
+// ---------------------------------------------------------------------------
+// Versions: what this board looked like before
+// ---------------------------------------------------------------------------
+//
+// Undo dies at the refresh. These do not - they are part of the board, they go
+// into the .mbrd, and they cost no photographs (see BoardVersion). What they do
+// cost is the meaning of "unreferenced", which is why versionHashes() exists
+// and why packBoard() and the autosave sweep both ask it.
+
+/**
+ * Store what the board looks like right now.
+ *
+ * `label` names it and makes it a *kept* version, which never evicts. Without
+ * one it joins the automatic ring and falls off the end in time. The two are
+ * one function because they are one act - taking a copy - differing only in
+ * whether you said why.
+ *
+ * **Not undoable, and that is deliberate.** Undo is for changes to the board,
+ * and this does not change the board: it takes a photograph of it. Putting a
+ * "remember this" on the undo stack would mean pressing Ctrl+Z after saving a
+ * version silently threw the version away, which is the opposite of the promise
+ * the feature makes.
+ *
+ * Silently a no-op when nothing has changed since the last automatic version.
+ * The alternative is a ring of eight identical documents on a board somebody
+ * left open, which would evict the one useful version to make room for copies
+ * of the state it is being compared against.
+ */
+export function saveVersion(label: unknown = '', at = Date.now()): BoardVersion | null {
+  const name = typeof label === 'string'
+    ? label.replace(/\s+/g, ' ').trim().slice(0, VERSION_LABEL_MAX) : '';
+  const data = serializeBoard();
+  // A version of a board that already contains versions would nest: the second
+  // would carry a copy of the first, the third a copy of both, and a board left
+  // open would grow its own history exponentially inside itself. So the copy is
+  // taken without them - restoring a version restores the board, and the
+  // history it is being restored *from* is the one that goes on standing.
+  const flat = { ...(data as Record<string, unknown>), versions: [] };
+  const json = JSON.stringify(flat);
+  if (!name) {
+    const last = board.versions.find(v => !v.kept);
+    if (last && JSON.stringify(last.data) === json) return null;
+  }
+  const version: BoardVersion = {
+    id: uid(),
+    at: Number.isFinite(at) ? at : 0,
+    label: name,
+    kept: !!name,
+    data: JSON.parse(json),
+  };
+  board.versions = [version, ...board.versions].sort((a, b) => b.at - a.at);
+  trimVersions();
+  markDirty();
+  bus.emit('versions');
+  return version;
+}
+
+/** Drop one, by id. Not undoable, for the same reason saving one is not. */
+export function forgetVersion(id: string): boolean {
+  const before = board.versions.length;
+  board.versions = board.versions.filter(v => v.id !== id);
+  if (board.versions.length === before) return false;
+  markDirty();
+  bus.emit('versions');
+  return true;
+}
+
+/**
+ * Put the board back to a stored version, as **one undoable command**.
+ *
+ * Undoable is the whole design of this function. Landing on the wrong version
+ * is exactly as likely as landing on the wrong anything else, and a restore
+ * that could not be taken back would be a feature for recovering from mistakes
+ * that made the worst mistake of all unrecoverable.
+ *
+ * Which means it cannot go through loadBoard(), whatever the shape suggests:
+ * that clears the history, and a restore that cleared the history would delete
+ * the undo entry it had just created. So the current board is captured first,
+ * both directions are ordinary board replacements, and commit() runs the redo
+ * half itself.
+ *
+ * The version list survives both directions untouched. Restoring is not an edit
+ * to the history, and a redo that put the board back and *also* rewrote which
+ * versions exist would be two actions wearing one label.
+ */
+export function restoreVersion(id: string): boolean {
+  const version = board.versions.find(v => v.id === id);
+  if (!version) return false;
+  const before = JSON.parse(JSON.stringify(serializeBoard()));
+  const after = version.data;
+  const label = version.label
+    ? `Restore "${version.label}"` : 'Restore an earlier version';
+  const swap = (data: unknown) => {
+    const versions = board.versions;
+    loadBoard(data);
+    // Carried across by hand: loadBoard() replaces every field of the board
+    // from the document it was given, and the document a version holds has no
+    // versions in it (see saveVersion). Without this line, restoring anything
+    // would empty the list it was restored from.
+    board.versions = versions;
+    bus.emit('versions');
+  };
+  commit(label, () => swap(after), () => swap(before), board.items.length || 1);
+  return true;
+}
+
+/** Newest first, which is the order they are stored in. */
+export const boardVersions = (): BoardVersion[] => board.versions;
+
+/**
+ * Hold the two lists to their caps.
+ *
+ * Named and automatic are trimmed separately, which is the point of having two
+ * kinds: a ring that dropped somebody's named version to make room for an
+ * automatic one would be answering neither of the questions the pair exists to
+ * answer.
+ */
+function trimVersions() {
+  const kept = board.versions.filter(v => v.kept).slice(0, VERSION_KEPT_MAX);
+  const auto = board.versions.filter(v => !v.kept).slice(0, VERSION_RING);
+  board.versions = [...kept, ...auto].sort((a, b) => b.at - a.at);
+}
+
 /**
  * Replace the whole board (open / new). Clears selection and history.
  *
@@ -1556,6 +1716,7 @@ export function loadBoard(data: unknown) {
   board.connections = next.connections;
   board.audioOrder = next.audioOrder;
   board.tour = next.tour;
+  board.versions = next.versions;
   // A filter is about the tags of the board that set it, and the board leaving
   // took those with it. Left standing, opening a second board would fade most
   // of it out for a reason that is no longer on screen anywhere. Not saved

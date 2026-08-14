@@ -25,7 +25,7 @@ import {
   board, bus, setAppearance, setSetting, MOBILE_APPEARANCE_VARS,
 } from '../state.ts';
 import { autoPaletteReady, whimsyControlsSnap } from '../layout-settings.ts';
-import { clamp, readToken } from '../util.ts';
+import { readToken } from '../util.ts';
 import { oklch, parseHex } from '../color.ts';
 import { toast } from '../notify.ts';
 import { readPrefJSON, writePref } from '../prefs.ts';
@@ -33,9 +33,15 @@ import { assetURL, getAsset } from '../storage/assets.ts';
 import {
   extractPalette, paletteFromAccent, samplePixels, MAX_SOURCES, PALETTE_TOKENS,
 } from './pigments.ts';
-// What a board is allowed to ask for. Kept in its own module because this one
-// touches document at import time and that one must stay testable - see look.js.
-import { safeVars } from './look.ts';
+// What a board is allowed to ask for, and what a look *is*. Kept in its own
+// module because this one touches document at import time and that one must
+// stay testable - see look.ts. The model half moved there in the same spirit:
+// clone, the two provenance flags and the equality are arithmetic over a plain
+// object, and none of them has any business needing a browser.
+import {
+  safeVars, cloneLook, sameLook, hasLook, autoOn, clampWhimsy, WHIMSY, DEFAULT_WHIMSY,
+} from './look.ts';
+
 import {
   initAppearanceControls, buildControls, syncControls, syncControlVisibility,
   syncPaletteMode, syncPaletteSources, wirePaletteSources,
@@ -43,17 +49,13 @@ import {
 } from './appearance-controls.ts';
 import type { ControlSpec, Look } from './appearance-controls.ts';
 
+// Re-exported under its old name because this is where the rest of the app has
+// always asked for it, and moving the declaration is not a reason to make every
+// caller say so. The stops themselves are a property of the look model, not of
+// the panel that draws them.
+export { WHIMSY };
+
 const STORE_KEY = 'mbrd.appearance';
-
-/**
- * The stops on the whimsy slider. The index is the value written to :root, and
- * the names are the ones printed under the track in index.html - what each
- * stop *does* is visible the moment you move it, so nothing here is captioned.
- */
-export const WHIMSY = ['Softish', 'Middle', 'Harsh.'];
-
-/** Where a board starts: the middle, which is also the bare stylesheet. */
-const DEFAULT_WHIMSY = 1;
 
 /**
  * The plain end of the axis, named because two things key off it rather than
@@ -227,7 +229,7 @@ export function initAppearance(handlers: { onChange?: () => void } = {}) {
   // A board's own look wins when it brought one; otherwise fall back to the
   // user's saved preferences.
   const fromBoard = board.settings.appearance;
-  current = hasLook(fromBoard) ? clone(fromBoard) : stored;
+  current = hasLook(fromBoard) ? cloneLook(fromBoard) : stored;
   apply(current);
 
   buildControls();
@@ -280,7 +282,7 @@ export function initAppearance(handlers: { onChange?: () => void } = {}) {
 
   const syncFromBoard = () => {
     const look = board.settings.appearance;
-    const next = hasLook(look) ? clone(look) : readStored();
+    const next = hasLook(look) ? cloneLook(look) : readStored();
     if (sameLook(next, current)) return;
     current = next;
     apply(current);
@@ -990,7 +992,7 @@ function flushLook() {
 
 function persist({ soon = false } = {}) {
   storeLook(soon);
-  setAppearance(clone(current));
+  setAppearance(cloneLook(current));
   onChange();
 }
 
@@ -1052,89 +1054,6 @@ function setVar(name: string, value: string) {
 }
 
 function readStored() {
-  return clone(readPrefJSON(STORE_KEY));
+  return cloneLook(readPrefJSON(STORE_KEY));
 }
 
-// Compared against the default rather than tested for truthiness: whimsy 0 is
-// Softish, a deliberate choice, and `!0` would file a board saved at that end of
-// the axis as having brought no look at all.
-const hasLook = (look: Partial<Look> | null | undefined) =>
-  !!look && ((look.whimsy != null && +look.whimsy !== DEFAULT_WHIMSY) ||
-             look.palette || Object.keys(look.vars || {}).length);
-/**
- * A level the stylesheet actually answers to.
- *
- * Clamped, not trusted: this value arrives from localStorage, from the slider,
- * and from other people's .mbrd files, and an out-of-range one would set a
- * data-whimsy no rule matches - leaving the interface in whatever the base look
- * is while the slider claims otherwise. `|| 0` catches the non-number, since
- * clamping NaN only gives NaN back.
- */
-const clampWhimsy = (v: unknown) => clamp(Math.round(Number(v)) || 0, 0, WHIMSY.length - 1);
-
-// Every look in this module - the user's stored one, the one a board brought,
-// the one a control just edited - is built here, which is what makes this the
-// one place the rules have to hold. `vars` is filtered rather than rejected
-// wholesale: a board with one bad token should lose that token, not its look.
-const clone = (look: Partial<Look> | null | undefined): Look => withProvenance(look, {
-  whimsy: look?.whimsy == null ? DEFAULT_WHIMSY : clampWhimsy(look.whimsy),
-  // Becomes an attribute value that stylesheet rules match on, so it is held to
-  // the shape a palette name has rather than trusted to be one.
-  //
-  // The typeof guard is load-bearing, not defensive padding. RegExp.test()
-  // coerces its argument to a string, and `String(undefined)` is "undefined" -
-  // twenty-four lowercase letters, which this pattern happily matches. So a
-  // `look` of null took the true branch and then threw on `look.palette`, and
-  // clone(null) is not a hypothetical: readStored() calls it with whatever
-  // readPrefJSON returns, which is null on any browser that has never saved a
-  // preference. A fresh profile therefore threw inside initAppearance() before
-  // it had built a single control - the palette menu, the whimsy slider and
-  // every token control were dead on a first visit, and only a first visit.
-  palette: typeof look?.palette === 'string' && /^[a-z0-9-]{1,24}$/i.test(look.palette)
-    ? look.palette : '',
-  vars: safeVars(look?.vars),
-});
-
-/**
- * The two fields of a look that are not tokens.
- *
- * Neither is ever applied to :root - they describe the look rather than being
- * part of it - but both have to survive clone(), because clone() is what every
- * look in this module passes through. A flag dropped here is dropped on every
- * save, every reload and every board that travels with an extracted palette.
- *
- *   derived  who wrote these pigments. Provenance, set by setPigments() and
- *            cleared the moment a pigment is set by hand. Only wirePalette()
- *            reads it, to decide whether switching palette drops two tokens or
- *            all fourteen.
- *   auto     whether the board may take its colours from the pictures at all.
- *            The user's setting, written by the two ends of the palette menu -
- *            Dynamic deletes it, a named palette sets it false.
- *
- * `auto` is stored inverted - present and false means off, absent means on -
- * because on is the default. A board that has never been near this setting has
- * no field for it, and that has to mean the same thing as a board that chose
- * Dynamic, or the default would only apply to boards made after it changed.
- * The only value written is `false`; choosing Dynamic deletes the field.
- *
- * Both are held to an exact value, and `derived` additionally to there being
- * something for it to be true *of* - so a .mbrd claiming a derived look with no
- * pigments in it cannot make the palette menu throw away tokens it never wrote.
- */
-function withProvenance(from: Partial<Look> | null | undefined, look: Look): Look {
-  if (from?.derived === true && Object.keys(look.vars).length) look.derived = true;
-  if (from?.auto === false) look.auto = false;
-  return look;
-}
-
-/** Whether the extraction is on. Absent means on - see withProvenance(). */
-const autoOn = (look: Partial<Look> | null | undefined) => look?.auto !== false;
-
-// Both sides put through clone() first, which is what makes a string compare
-// safe here: it fixes the key order. `current` is mutated in place all over this
-// module - setPigments() adds `derived` at the end, the switch adds `auto` -
-// so two looks that are equal can serialise differently depending on which flag
-// happened to be set second, and this would then re-apply a look identical to
-// the one already on screen every time the board emitted an event.
-const sameLook = (a: Partial<Look> | null | undefined, b: Partial<Look> | null | undefined) =>
-  JSON.stringify(clone(a)) === JSON.stringify(clone(b));

@@ -270,6 +270,13 @@ export function writeFit(el: HTMLElement, item: ItemLike): void {
   const own = item?.meta?.fit;
   if (own === 'cover' || own === 'contain') el.dataset.fitOwn = own;
   else delete el.dataset.fitOwn;
+  // The cut-out flag, written here for the same reason the fit is: it is a
+  // stylesheet question, and the alternative is a renderer that knows about
+  // paper. An attribute rather than a class so it reads like the rest of the
+  // card's state in the inspector, and so item-chrome.css can answer it with
+  // one selector next to the rules it is turning off.
+  if (item?.meta?.bare === true) el.dataset.bare = '';
+  else delete el.dataset.bare;
 }
 
 /**

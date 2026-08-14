@@ -14,7 +14,7 @@ import {
   board, selection, loadBoard, serializeBoard, addItems, removeItems, undo,
   byId, select, deselect, clearSelection, selectAll, setItemText, renameItem,
   NOTE_MAX, setItemCover, setItemPoster, setTitle, cleanBoardTitle,
-  cleanBoardTitleDraft, BOARD_TITLE_MAX, setBoardMode,
+  cleanBoardTitleDraft, BOARD_TITLE_MAX, setBoardMode, setItemBare,
 } from '../web/assets/js/state.ts';
 import { hash } from './helpers.js';
 import { fresh, note, photo, clip } from './state-fixtures.js';
@@ -171,3 +171,61 @@ test('deleting an item drops it from the selection', () => {
   assert.equal(selection.size, 0);
 });
 
+
+// ---------------------------------------------------------------------------
+// The card, on or off
+//
+// A cut-out - a logo or a leaf saved with a transparent background - was landing
+// in a box drawn round its bounding rectangle, which for a cut-out is mostly
+// empty. meta.bare is the flag that says this one is a shape rather than a
+// photograph. What is asserted here is the write; the paint is a stylesheet
+// question and the guess is import/drop.js's.
+// ---------------------------------------------------------------------------
+
+test('a picture can have its card taken away, and given back', () => {
+  const [p] = addItems([photo()]);
+  setItemBare(p.id, true);
+  assert.equal(byId(p.id).meta.bare, true);
+  setItemBare(p.id, false);
+  assert.equal('bare' in (byId(p.id).meta || {}), false,
+    'stored only when true - `bare: false` on every ordinary photograph would be '
+    + 'a byte per card in every file to say nothing is unusual');
+});
+
+test('only a picture can lose its card', () => {
+  // A note without its paper is text lying on the board with nothing holding
+  // it, and a video without its card loses the surface its controls sit on.
+  const [n] = addItems([note()]);
+  const [v] = addItems([clip()]);
+  setItemBare(n.id, true);
+  setItemBare(v.id, true);
+  assert.equal(byId(n.id).meta?.bare, undefined);
+  assert.equal(byId(v.id).meta?.bare, undefined);
+});
+
+test('taking the card away is undoable, and survives a file', () => {
+  const [p] = addItems([photo()]);
+  setItemBare(p.id, true);
+  undo();
+  assert.equal(byId(p.id).meta?.bare, undefined, 'undone');
+  setItemBare(p.id, true);
+  const written = JSON.parse(JSON.stringify(serializeBoard()));
+  loadBoard(written);
+  assert.equal(board.items[0].meta.bare, true);
+});
+
+test('anything other than true is not a flag', () => {
+  // The validator is `v === true ? true : null`, so a file carrying a string or
+  // a 1 does not quietly switch the card off on somebody's board.
+  const [p] = addItems([photo()]);
+  for (const junk of ['true', 1, {}, [], 'yes']) {
+    setItemBare(p.id, junk);
+    assert.equal(byId(p.id).meta?.bare, true,
+      'truthy values are accepted as the flag they obviously mean');
+    setItemBare(p.id, null);
+  }
+  loadBoard({ title: 'T', items: [photo({ id: 'p', meta: { bare: 'yes' } })] });
+  assert.equal(byId('p').meta?.bare, 'yes',
+    'the schema does not validate meta - the write door is what holds the shape, '
+    + 'and writeFit only answers to === true');
+});

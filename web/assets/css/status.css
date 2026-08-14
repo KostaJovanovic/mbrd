@@ -39,6 +39,13 @@
   border-radius: var(--ogee);
   background: var(--paper-card);
   box-shadow: var(--shadow-2);
+  /* Off the scale on purpose. This is the one line of type on screen while a
+     file is over the window - a banner rather than interface text, sized to be
+     read at a glance by somebody whose attention is on the drag. It sits
+     between --t-title and --t-display and belongs to neither: it is not a
+     heading of anything, and there is nothing under it for it to be the head of.
+     (Sorted deliberately-off-scale by
+     research/old/visual-audit-2026-08-12.md item 2.) */
   font-size: 19px;
   font-style: var(--display-italic);
   color: var(--accent-deep);

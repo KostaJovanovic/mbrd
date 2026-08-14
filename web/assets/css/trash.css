@@ -316,6 +316,12 @@
   border: var(--hairline) solid var(--rule);
   border-radius: var(--radius-xs);
   background: var(--paper-2);
+  /* The smallest type in the app, and off the scale on purpose: this is the
+     extension lettering inside a thumbnail-sized square standing in for a file
+     with no picture. It is drawn against that square, uppercase and letter-
+     spaced so three characters fill it - so it is a mark rather than text, and
+     the nearest scale step would overflow the box it has to sit in. (Sorted
+     deliberately-off-scale by research/old/visual-audit-2026-08-12.md item 2.) */
   font-size: 8px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -339,6 +345,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 10px is the sub-tiny caption register, off the scale on purpose - see
+   .ctx-item kbd in menu.css. An age is a caption on the row, not the row. */
 .bin-when { flex: none; font-size: 10px; color: var(--ink-3); font-family: var(--font-mono); }
 
 /* The thing under the pointer while it is being carried back to the board. */

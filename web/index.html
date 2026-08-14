@@ -1253,6 +1253,48 @@
   </div>
 </dialog>
 
+<!-- What is in this board and what it weighs. A shell only, unlike #credits
+     above: that one is two names decided at build time, and this one is the
+     board described back to you, so everything inside #inventory-body is built
+     by ui/inventory.js on each open. It is a sheet rather than a panel section
+     because it is a report and not a setting - nothing in it has a value.
+     Opened from System - What is in this board, immediately above Optimize,
+     which is the point of it: the optimizer is a button nobody has a reason to
+     press until something here says a photograph is 12 MB. -->
+<dialog id="inventory" aria-labelledby="inventory-title">
+  <h2 id="inventory-title">What is in this board</h2>
+  <div id="inventory-body"></div>
+  <!-- #ask's row, the same one #credits borrows. Optimize sits at the left and
+       Close at the right, with the gap between them, because they are not two
+       ways out: one of them is the thing this sheet exists to lead to.
+       An id rather than a data-cmd, and that is not a style choice: the panel's
+       delegated data-cmd listener is bound to the sidebar, and a <dialog> is in
+       the top layer and is not inside it. A data-cmd here would look like every
+       other button in the app and do nothing. ui/inventory.js wires it. -->
+  <div class="ask-row">
+    <button type="button" id="inventory-optimize">Optimize</button>
+    <span class="ask-gap"></span>
+    <button type="button" id="inventory-close">Close</button>
+  </div>
+</dialog>
+
+<!-- What this board looked like before. A shell, like #inventory above: the
+     list is the board's own history and is built by ui/versions.js on each
+     open, and again while it is open when one is taken or restored.
+     Reached from System - Earlier versions. Restoring is one undoable command
+     (state.js/restoreVersion), which is why the sheet has no confirmation of
+     its own: the answer to landing on the wrong one is Ctrl+Z, and a dialog
+     asking "are you sure" before an undoable action teaches that it is not. -->
+<dialog id="versions" aria-labelledby="versions-title">
+  <h2 id="versions-title">Earlier versions</h2>
+  <div id="versions-body"></div>
+  <div class="ask-row">
+    <button type="button" id="versions-save">Keep this one</button>
+    <span class="ask-gap"></span>
+    <button type="button" id="versions-close">Close</button>
+  </div>
+</dialog>
+
 <input id="file-input" type="file" multiple hidden>
 
 <!-- The bundle, not the source tree, and this is the line where that changed.
