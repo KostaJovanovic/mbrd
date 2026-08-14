@@ -153,6 +153,14 @@ const BASE = new Set([
   // nothing else. state.js reads mobileArrangement() from it to know which of
   // the two catalogues a stored id belongs to, and that read is downward.
   'arrange/arrangements.ts',
+  // Folding one board into another: the id remap and where the arrivals land.
+  // Pure - board-model.js, geometry.js and util.js, and nothing above them - and
+  // down here for a reason its own header gives at length: a collision handled
+  // wrongly produces a board that looks right and has a note stuck to the wrong
+  // photograph, so the only way to know it works is to hammer it in a test with
+  // no board in scope. state.js imports its *type* to declare mergeBoard(),
+  // which is downward.
+  'merge.ts',
   // The sticker catalogue, beside the arrangement catalogue and for the same
   // reason: it is a hand-written table and nothing else. It imports *nothing* -
   // not even geometry.js - which makes it the lowest module in the graph, and

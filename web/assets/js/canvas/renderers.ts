@@ -12,7 +12,7 @@
 import { extOf, baseName, formatBytes } from '../util.ts';
 import type { Item, ItemType } from '../board-model.ts';
 import { assetURL, getAsset, readText } from '../storage/assets.ts';
-import { byId, bus, markDirty, board, isDefaultTitle, setSwatchHex } from '../state.ts';
+import { byId, bus, markDirty, board, isDefaultTitle, itemCrop, setSwatchHex } from '../state.ts';
 import { latticeBox } from '../geometry.ts';
 import { describeExt, PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS } from '../import/formats.ts';
 import { registerPlayer } from './audio.ts';
@@ -401,15 +401,24 @@ const RENDERERS = {
     // own embedded JPEG - see import/preview.js and meta.preview in drop.js.
     const hash = metaStr(item.meta?.preview) || item.asset?.hash;
     const vector = (getAsset(hash)?.mime || '').toLowerCase().includes('svg');
+    // The crop rides down into the display copy, which is what applies it - see
+    // the Crop note in canvas/display.ts. Nothing else in this function changes
+    // for a cropped card, and that is the point of doing it there: the copy is
+    // already the cropped picture by the time object-fit, the aspect adopted on
+    // load and the far-zoom twin get hold of it.
+    const crop = itemCrop(item);
     if (hash && !isAnimated(item) && !vector) {
-      const ready = displayURLReady(hash);
+      const ready = displayURLReady(hash, crop);
       if (ready) {
         img.src = ready;
       } else {
         const thumbHash = metaStr(item.meta?.thumb);
         const thumb = thumbHash && assetURL(thumbHash);
-        if (thumb) img.src = thumb;   // crisp-enough stand-in while the copy renders
-        ensureDisplay(hash).then(u => { if (u && img.isConnected) img.src = u; });
+        // The thumbnail is the whole picture, so on a cropped card it is a
+        // stand-in for something else - it would show the full frame and then
+        // snap to the detail. Better to show nothing for the moment it takes.
+        if (thumb && !crop) img.src = thumb;   // crisp-enough stand-in while the copy renders
+        ensureDisplay(hash, crop).then(u => { if (u && img.isConnected) img.src = u; });
       }
     } else {
       const url = hash && assetURL(hash);

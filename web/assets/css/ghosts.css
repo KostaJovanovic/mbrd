@@ -148,7 +148,7 @@
      --t-display at 30px would make it a heading instead of a mark. World space
      as well: it sits on a card and zooms with the board, while every --t-* step
      is chrome type at a fixed screen size. Sized against the card it lives in.
-     (Sorted deliberately-off-scale by research/visual-audit-2026-08-12.md item
+     (Sorted deliberately-off-scale by research/old/visual-audit-2026-08-12.md item
      2, which asked for exactly this line rather than a token.) */
   font-size: 64px;
   font-style: normal;
@@ -308,7 +308,18 @@
    corner grows; the track steps in with them, which is right - a track that ran
    into the curve would look like it continued behind it. */
 :root[data-whimsy="0"] .ghost-card[data-hint="whimsy"] { --card-pad-x: 28px; }
-.item[data-type="ghost"] .ghost-dial {
+/* .ghost-mount is the element a ghost card is mounted in, on either surface
+   that mounts one: the canvas's .item (canvas/item-dom.ts) and the Feed's
+   .feed-hint (ui/feed.ts). Both add it themselves.
+
+   It exists because these rules used to be written against
+   `.item[data-type="ghost"]`, which is the canvas's wrapper and nothing else -
+   so on the Feed the whimsy card arrived with no row sizing, no stop names and
+   no track height, and the dial was the one control on an empty board that did
+   not fit the box it was in. The two mounts have no element and no attribute in
+   common, which is why this is a class they both opt into rather than a second
+   selector on every rule below. */
+.ghost-mount .ghost-dial {
   /* Sized by its contents, not stretched to the card. The card centres what is
      in it (justify-content on .ghost-card), and a row told to fill the height
      leaves its three lines sitting at the top of whatever it filled - which is
@@ -325,7 +336,7 @@
 }
 /* The name of the axis. The loudest of the three lines and still a quiet one -
    letter-spaced rather than enlarged, the way a caption on a plate is. */
-.item[data-type="ghost"] .ghost-dial > span:first-child {
+.ghost-mount .ghost-dial > span:first-child {
   margin: 0;
   font-size: var(--t-small);
   line-height: 1.15;
@@ -337,7 +348,7 @@
    short of each end of the track. Ranged flush with the card's padding they sit
    a little wide of the positions they name - and at Softish, where the corners
    are turning hard, the outer two crowd them. */
-.item[data-type="ghost"] .ghost-dial .field-stops {
+.ghost-mount .ghost-dial .field-stops {
   margin: 0;
   padding: 0 5px;
   font-size: var(--t-tiny);
@@ -346,7 +357,7 @@
 }
 /* 18px rather than 22. The dead air in a form-sized hit box, and nothing that
    is drawn: track 3px, thumb 15, both the panel's. */
-.item[data-type="ghost"] .ghost-dial input[type="range"] { height: 18px; }
+.ghost-mount .ghost-dial input[type="range"] { height: 18px; }
 
 /* ---- Mobile ------------------------------------------------------------
    A phone reads these at arm's length, and it reads them zoomed out: the Mobile
@@ -390,15 +401,15 @@
 /* The dial, where the same card is two rows tall and eight columns wide instead
    of one by four. It gets its full 22px hit box back with the larger type - this
    is the one layout where the control is worked with a thumb, not a pointer. */
-:root[data-board-mode="mobile"] .item[data-type="ghost"] .ghost-dial > span:first-child {
+:root[data-board-mode="mobile"] .ghost-mount .ghost-dial > span:first-child {
   font-size: 17px;
   margin-bottom: 3px;
 }
-:root[data-board-mode="mobile"] .item[data-type="ghost"] .ghost-dial .field-stops {
+:root[data-board-mode="mobile"] .ghost-mount .ghost-dial .field-stops {
   font-size: 14px;
   margin-top: 3px;
 }
-:root[data-board-mode="mobile"] .item[data-type="ghost"] .ghost-dial input[type="range"] {
+:root[data-board-mode="mobile"] .ghost-mount .ghost-dial input[type="range"] {
   height: 22px;
 }
 

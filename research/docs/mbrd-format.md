@@ -140,6 +140,7 @@ filename supplies one and is decoded the same way.
   },
   "connections": [ ["k3f9a2", "p81m4x"] ],
   "audioOrder": [ "a91k2c", "a44m7d" ],
+  "tour": [ "k3f9a2", "p81m4x" ],
   "trash": [ { "at": 1753440000000, "item": { … } } ]
 }
 ```
@@ -351,6 +352,43 @@ Additive with an empty default (`[]`), so it needs no format-version bump: a
 board that predates it simply has no saved order and sorts by arrangement, and —
 like `connections` — an older reader drops the unknown key rather than carrying
 it through.
+
+### `tour`
+
+The board's tour: the cards it stops at, in order, as a flat list of item ids.
+A tour is a *reading* of a board — somebody's route through it — and the app
+walks it with a camera move per stop.
+
+**Top-level, not inside a layout,** for exactly the reason `connections` and
+`audioOrder` are: it is an ordering of *items*, items are shared across Desktop
+and Mobile, and a per-layout copy would let a tour built on a laptop come back
+pointing at different cards on a phone. The geometry each stop is framed against
+is already in `layouts`, so the same list frames the same cards on both.
+
+**Where the reader had got to is not here, and will not be.** What the file
+carries is the itinerary; the position in it is a fact about a reading session,
+the same kind of thing as the Feed's scroll offset, and writing it would make
+opening a board a change to it.
+
+What is held to, on the way in and out:
+
+- Every id must name an item the file carries, **live or binned** — the same
+  union `connections` and `audioOrder` use, so a stop whose card is in the bin
+  survives to be restored with it. The *running* tour is held to the live board
+  instead and simply skips what is not there, which is the one place the two
+  differ and is deliberate: a file must remember, a camera must not fly to a
+  card that is not on the board.
+- Duplicates and non-string entries are dropped one at a time rather than
+  failing the load; the cap is `MAX_ITEMS`. `normalizeTour` is `normalizeIdList`
+  under another name — the same function `audioOrder` is normalised through.
+- Written even when empty, for the reason the same rule is stated for
+  `audioOrder`: a tour that was built and then cleared must not read as a board
+  that never had one.
+
+Additive with an empty default (`[]`), so it needs no format-version bump, and
+an older reader drops the unknown key rather than carrying it through — the same
+caveat `connections` carries about round-tripping through a build that predates
+the field.
 
 ### Fences
 

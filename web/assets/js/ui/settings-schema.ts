@@ -53,6 +53,11 @@ import {
 } from '../state.ts';
 import { ARRANGEMENTS, MOBILE_ARRANGEMENTS } from '../arrange/arrangements.ts';
 import { currentLens } from './board-view.ts';
+// The palette row's chips, read out of tokens.css at the moment the menu opens.
+// Its own leaf module rather than ui/appearance-controls.ts, where the rest of
+// that row lives: this table, the panel builder and the controls form a ring if
+// the function sits with its neighbours. See the header of ui/palettes.ts.
+import { paletteSwatches } from './palettes.ts';
 import { itemBounds } from '../geometry.ts';
 import { toUnits, formatLength, paperMm, PAPERS } from '../measure.ts';
 import {
@@ -146,6 +151,27 @@ export type SelectControl = Common & {
   get?: () => string,
   set?: (value: string) => unknown,
 };
+/**
+ * A select whose options are worth *seeing* rather than only reading.
+ *
+ * The same shape as SelectControl above - same `options`, same `get`/`set`,
+ * same `external` - and it exists because a native <option> cannot paint
+ * anything. No browser lets a stylesheet inside a dropdown list, so a palette
+ * row that wants to show its own colours has to stop being a <select>. The
+ * builder opens ui/menu.ts's anchored panel instead, which is the app's one
+ * menu and already draws a colour chip per row.
+ *
+ * `swatches` answers, for one option value, the colours to draw beside it. An
+ * empty array is a legal answer and draws a row with a label and no chips -
+ * which is what a palette whose block cannot be read falls back to.
+ */
+export type PickerControl = Common & {
+  type: 'picker', label: string, fieldId?: string,
+  options?: (ctx: Ctx) => Option[],
+  swatches?: (value: string) => string[],
+  get?: () => string,
+  set?: (value: string) => unknown,
+};
 export type ButtonsControl = Common & {
   type: 'buttons', group?: boolean, ariaLabel?: string, buttons: ButtonSpec[],
 };
@@ -157,7 +183,7 @@ export type KeysControl = Common & {
   type: 'keys', keys: readonly (readonly [readonly string[], string])[],
 };
 export type Control =
-  | TextControl | CheckControl | RangeControl | SelectControl
+  | TextControl | CheckControl | RangeControl | SelectControl | PickerControl
   | ButtonsControl | SlotControl | HintControl | KeysControl;
 
 /** One heading's worth of controls, and which tab it lives in. */
@@ -282,6 +308,13 @@ export const SECTIONS: Section[] = [
       ] },
       // Which board you are on. Three verbs, one row, none of them about the
       // board's contents.
+      //
+      // Merging two boards is deliberately *not* a fourth button here. It is
+      // reached by dropping a .mbrd on a board that already has something on it,
+      // which asks whether to open it or fold it in - see importFiles() in
+      // import/drop.ts. A row here would be a second door onto a question that
+      // only ever comes up when a file arrives, and it would have to open a
+      // picker to ask the same thing the drop has already answered.
       { type: 'buttons', buttons: [
         { cmd: 'new', label: 'New' },
         { cmd: 'open', label: 'Open' },
@@ -441,7 +474,17 @@ export const SECTIONS: Section[] = [
       // 'dynamic' is DYNAMIC in ui/appearance-controls.js, which owns what the
       // menu does with it; this file is data and imports no panel module, so
       // tests/settings-panel.test.js holds the two strings together.
-      { id: 'opt-palette', type: 'select', label: 'Palette', external: true,
+      // A picker rather than a select, and the difference is that you can see
+      // what you are choosing between: each row carries its palette's own paper,
+      // accent and ink as a split chip. A native <option> cannot paint anything
+      // in any browser, which is the whole reason this one row is not a <select>
+      // like every other list in the panel. See buildPicker() in ui/panel.ts.
+      //
+      // `swatches` reads the colours out of the live tokens.css rather than from
+      // a table here - see paletteSwatches() in ui/appearance-controls.ts, which
+      // explains why a copy in JS would be a second definition that drifts.
+      { id: 'opt-palette', type: 'picker', label: 'Palette', external: true,
+        swatches: paletteSwatches,
         options: () => [
           { value: 'dynamic', label: 'Dynamic' },
           { value: '', label: 'Papyrus' },
@@ -627,34 +670,6 @@ export const SECTIONS: Section[] = [
     ],
   },
   {
-    // What changed, which is web/patch.html - the public changelog, and the only
-    // page this site has that is not the app.
-    //
-    // In System because the tab is already where everything about this copy of
-    // the app rather than about a board lives, and the version number the notes
-    // are keyed to is printed at the foot of this same panel. There is no About
-    // page to file it under, and inventing one to hold a single link would be a
-    // second front door to the same page.
-    //
-    // Second in the tab rather than last. The section below this one ends on
-    // Clear everything, which is deliberately at the far end where it cannot be
-    // hit on the way to something else - so anything filed after it is filed
-    // past the way out, where nobody goes looking. The order the tab reads in is
-    // a setting, then a thing to read, then the housekeeping and the door.
-    //
-    // A button and a command, not an anchor. The whole panel reaches the app
-    // through one delegated data-cmd listener - see the credit in the footer of
-    // index.html, which is a link dressed as a button for exactly this reason -
-    // and a lone <a> in here would be the first row in the panel that works a
-    // different way from every other row.
-    id: 'notes', tab: 'system', title: 'What changed',
-    controls: [
-      { type: 'buttons', buttons: [{ cmd: 'patch-notes', label: 'Patch notes' }] },
-      { id: 'notes-hint', type: 'hint',
-        text: () => 'Every version since the first, newest first. Opens in a new tab.' },
-    ],
-  },
-  {
     // Housekeeping on the copy kept in this browser, done once in a while and
     // not while you are working - and the way out, which belongs at the far end
     // of the panel where it cannot be hit on the way to Save.
@@ -695,8 +710,21 @@ export const SECTIONS: Section[] = [
       { type: 'buttons', buttons: [
         { cmd: 'restart', label: 'Reload mbrd', title: () => 'Save and load the page again' },
       ] },
+      // The changelog, directly under Reload rather than in a section of its
+      // own. It had one, two headings up, on the argument that a thing to read
+      // is not housekeeping - which was true and did not earn a heading: one
+      // button and one line of hint under a title of their own made the tab read
+      // as three sections where there are two things to do. Under Reload it is
+      // where the rest of "this copy of the app" already is, and the version
+      // number the notes are keyed to is a few rows below it in the same panel.
+      //
+      // A button and a command, not an anchor. The whole panel reaches the app
+      // through one delegated data-cmd listener - see the credit in the footer
+      // of index.html, which is a link dressed as a button for exactly this
+      // reason - and a lone <a> in here would be the first row in the panel
+      // that works a different way from every other row.
       { type: 'buttons', buttons: [
-        { cmd: 'clear-data', label: 'Clear everything', className: 'danger' },
+        { cmd: 'patch-notes', label: 'Patch notes', title: () => 'Every version since the first. Opens in a new tab' },
       ] },
     ],
   },
@@ -726,11 +754,15 @@ export const SECTIONS: Section[] = [
         // itself - the #grips URL and mbrd.debugGrips() drive the same toggle -
         // and a painted value would put the button back to false behind it.
         { cmd: 'debug-grips', label: 'Highlight resize grips', ariaPressed: 'false' },
-        // The same arrangement, and for the same reason: cmds.debugWheel writes
-        // its own aria-pressed, since the #wheel URL and the console drive the
-        // one toggle. Prints one line per swipe - what the touchpad delivered,
-        // against what the app read it as.
-        { cmd: 'debug-wheel', label: 'Log touchpad swipes', ariaPressed: 'false' },
+        // The frame profiler, which until now had no way in from the interface
+        // at all - a console call or a URL fragment, on a tool whose whole point
+        // is the device with neither. Writes its own aria-pressed for the reason
+        // the grips row does: the fragment drives the same toggle.
+        { cmd: 'debug-perf', label: 'Profile the frame', ariaPressed: 'false' },
+        // Its own row rather than something the toggle prints on the way off:
+        // the useful sequence is arm, drive the board, read, drive some more,
+        // and turning it off to see the numbers would reset them.
+        { cmd: 'debug-perf-report', label: 'Print the frame report' },
         // Every line between cards, in one press. Here rather than beside the
         // Join tool because it is a demolition and not a drawing tool: the way
         // to remove *a* connection is to draw over it, and a board-wide clear is
@@ -738,6 +770,47 @@ export const SECTIONS: Section[] = [
         // mean to. Undoable like anything else, which is what keeps it out of
         // the danger dressing the clear-everything button wears.
         { cmd: 'clear-connections', label: 'Remove all connections' },
+      ] },
+      // Four readouts. Buttons rather than live rows, and that is forced rather
+      // than chosen: paintPanel() repaints on `board`, `settings`, `layout` and
+      // `lens`, and on none of the events these four would have to follow - not
+      // `items`, not `history`, and not on the panel being opened. A hint
+      // showing the undo depth would be stale the moment anybody read it, and a
+      // wrong number reads as a fact where a button reads as a question.
+      //
+      // Each answers into a toast and into the console: the toast for whoever
+      // pressed it, the console line for whoever is reading it back off a bug
+      // report. See the four commands in commands/file.ts.
+      { type: 'buttons', advanced: true, buttons: [
+        // The one question here that is not a developer's - "if I close this
+        // tab, is my board still here tomorrow?" - and until now it was
+        // answerable only after a crash, because errors.ts was the only reader
+        // of boardSafety().
+        { cmd: 'board-safe', label: 'Is my work safe?' },
+        { cmd: 'storage-state', label: 'Storage' },
+        { cmd: 'board-weight', label: 'What this board weighs' },
+        { cmd: 'history-state', label: 'Undo history' },
+      ] },
+      // The way out, and it lives in here now rather than at the foot of "This
+      // browser". It used to sit at the far end of the tab on the argument that
+      // a destructive control belongs where it cannot be hit on the way to
+      // something else - which is the right instinct and this is a stronger
+      // version of it: a fold that is closed on arrival is further from an
+      // accidental press than any amount of distance down an open panel, and it
+      // puts the button among the other things nobody needs while using a
+      // board.
+      //
+      // It keeps the danger dressing and it keeps the three-press arming behind
+      // it (see armClear in ui/board-actions.ts). Being harder to reach is not a
+      // reason to make it easier to fire.
+      //
+      // `advanced` is what actually puts it *in* the fold rather than under it:
+      // this section has no heading, so a control without the flag is appended
+      // to the section body and lands below the closed <details> - which would
+      // have left the one button here that must not be pressed by accident as
+      // the only one on permanent display. See buildFold() in ui/panel.ts.
+      { type: 'buttons', advanced: true, buttons: [
+        { cmd: 'clear-data', label: 'Clear everything', className: 'danger' },
       ] },
     ],
   },

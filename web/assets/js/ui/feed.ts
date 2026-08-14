@@ -24,7 +24,8 @@
 // the now-playing one is released and its element dropped back to a poster; the
 // now-playing one is kept mounted wherever it has scrolled to.
 
-import { board, bus, isDefaultTitle, byId, stuckTo, isRider } from '../state.ts';
+import { board, bus, isDefaultTitle, byId, itemAdjust, itemCrop, stuckTo, isRider } from '../state.ts';
+import { displayURLReady, ensureDisplay } from '../canvas/display.ts';
 import { baseName, clamp, isRecord } from '../util.ts';
 import { mobileOrder } from '../arrange/arrangements.ts';
 import { assetURL, readText } from '../storage/assets.ts';
@@ -73,6 +74,35 @@ type Tile = {
   ratio: number;
   kind: TileKind;
   video: HTMLVideoElement | null;
+  /**
+   * How much of the wall's width this tile takes, as a fraction in (0, 1]. One
+   * for everything except a hint.
+   *
+   * A fraction rather than a column count, because the column count is not
+   * known when a tile is built - it comes out of the window width in layout() -
+   * and because a fraction is what was actually meant: the dial took the whole
+   * board and each sentence took half of it. feedMasonry() turns it into
+   * columns for whatever the wall is at now.
+   *
+   * A hint is a sentence, not a picture, and a sentence in a fifth of the
+   * screen is four words a line. The old mobile board sized these against the
+   * column - the dial across all of it, the three hints across half - and the
+   * Feed threw that away by packing every tile into exactly one of its two to
+   * five columns. This is that number carried back: onboarding.ts writes the
+   * fraction it seeded at into `meta.span` and fillHint() reads it here.
+   */
+  span: number;
+  /**
+   * A height in pixels this tile insists on, measured from its own content
+   * rather than computed from `ratio`.
+   *
+   * Only hints have one. Every other tile on the wall is a picture, a poster or
+   * a plate, and for those a shape is exactly the right thing to lay out by -
+   * they crop, they letterbox, they do not have a last line that can fall off
+   * the bottom. A hint does. So it is measured after it is built and the packer
+   * is given the answer, which is why layout() runs the masonry twice.
+   */
+  measured: number;
 };
 
 /** One tile's box, as feedMasonry() packs it. */
@@ -111,7 +141,7 @@ export interface FeedCommands {
  *
  * A *loose* sticker has no host tile to be drawn on, and so is not drawn at
  * all. That is the one place this view is knowingly not the board - see the
- * open questions in research/stickers-2026-08-12.md. Not drawing it is the safe
+ * open questions in research/old/stickers-2026-08-12.md. Not drawing it is the safe
  * read: the alternative is that lone panel.
  */
 const HIDDEN = new Set(['title', 'fence', 'sticker']);
@@ -422,7 +452,14 @@ function buildTile(item: Item): Tile {
   const el = div('feed-tile');
   el.dataset.kind = kind;
   el.dataset.id = item.id;
-  const t: Tile = { el, item, ratio: ratioOf(item), kind, video: null };
+  const t: Tile = {
+    el, item, ratio: ratioOf(item), kind, video: null,
+    // Both are hints' business and both are settled by fillHint(), which runs
+    // below inside fillTile(): the span from the item's own seeded fraction,
+    // the height from measuring what it built. Everything else on the wall
+    // keeps the defaults and is laid out by its shape, as before.
+    span: 1, measured: 0,
+  };
   fillTile(t);
   wireOpen(t);
   return t;
@@ -488,7 +525,13 @@ function fillTile(t: Tile) {
  * moves and changes nothing.
  */
 function fillHint(t: Tile) {
-  const host = div('feed-hint');
+  // .ghost-mount is what the dial's own rules hang off, and it is why they
+  // apply here at all: every one of them used to be scoped to
+  // `.item[data-type="ghost"]`, which exists on the canvas and nowhere else, so
+  // on the Feed the whimsy card arrived with none of its layout - no sized row,
+  // no stop names, no track. That was the whole of what was wrong with it here.
+  // See the block above .ghost-dial in ghosts.css.
+  const host = div('feed-hint ghost-mount');
   // The value the border width is computed from. Not inherited from anywhere on
   // this surface - #world is where the canvas writes it.
   host.style.setProperty('--iz', '1');
@@ -496,6 +539,17 @@ function fillHint(t: Tile) {
   t.el.appendChild(host);
   const dial = host.querySelector<HTMLInputElement>('input[type="range"]');
   if (dial) bindDial(dial);
+  // The fraction of the board this hint was seeded at - 1 for the dial, a half
+  // for each of the three sentences - carried through as a column count by
+  // layout(). Absent on a hint from a board written before this existed, and
+  // one column is exactly what such a board already got.
+  const span = Number(t.item.meta?.span);
+  t.span = Number.isFinite(span) && span > 0 ? Math.min(1, span) : 1;
+  // Re-measured on the next layout(), because the width it will be measured at
+  // is not known until the column count is. Zeroing it here is what makes a
+  // rebuilt hint - the whimsy dial moving rewrites the card - stop insisting on
+  // the height its previous wording happened to need.
+  t.measured = 0;
 }
 
 function fillImage(t: Tile) {
@@ -510,7 +564,34 @@ function fillImage(t: Tile) {
   // asset to show.
   const url = (t.item.asset?.hash && assetURL(t.item.asset.hash)) || pictureURL(t.item);
   if (url) img.src = url;
+  // A cropped picture is cropped here too, and by the same route the card and
+  // the viewer take: the display copy is where the rectangle is applied. The
+  // Feed is the whole board on a phone, so a tile showing the full frame of a
+  // picture that is cropped everywhere else would not be a small inconsistency -
+  // it would be the only view most phone users ever see.
+  const crop = itemCrop(t.item);
+  const hash = t.item.asset?.hash;
+  if (crop && hash) {
+    const ready = displayURLReady(hash, crop);
+    if (ready) img.src = ready;
+    else ensureDisplay(hash, crop).then(u => { if (u && img.isConnected) img.src = u; });
+  }
+  applyGrade(img, t.item);
   t.el.appendChild(img);
+}
+
+/**
+ * The three picture adjustments onto one element of a tile.
+ *
+ * The canvas puts them on .item-body through a custom property, which cannot be
+ * reused here: a tile is not a card and has no such element. Same three
+ * numbers, same order, written straight onto the node that shows the picture.
+ */
+function applyGrade(el: HTMLElement, item: Item) {
+  const adjust = itemAdjust(item);
+  if (!adjust) return;
+  el.style.filter =
+    `brightness(${adjust.brightness}) contrast(${adjust.contrast}) saturate(${adjust.saturation})`;
 }
 
 function fillVideo(t: Tile) {
@@ -519,6 +600,10 @@ function fillVideo(t: Tile) {
     const img = document.createElement('img');
     img.loading = 'lazy'; img.decoding = 'async'; img.draggable = false; img.alt = '';
     img.src = url;
+    // The poster carries the clip's grade, so a graded video reads the same on
+    // the Feed as it does on the board. There is no crop on a clip - see
+    // setItemCrop() in state.ts.
+    applyGrade(img, t.item);
     t.el.appendChild(img);
   }
   const badge = div('feed-play');
@@ -748,13 +833,115 @@ function feedMasonry(list: Tile[], width: number):
   const heights: number[] = new Array(cols).fill(0);
   const boxes: TileBox[] = [];
   for (const t of list) {
+    const span = spanFor(t, colW);
+    // The best run of `span` adjacent columns: the one whose *tallest* column is
+    // lowest, since a wide tile has to start below every column it covers. Ties
+    // go to the leftmost, which keeps a full-width tile at x = 0 and keeps the
+    // whole wall stable between layouts.
     let c = 0;
-    for (let i = 1; i < cols; i++) if (heights[i] < heights[c] - 0.5) c = i;
-    const h = colW / t.ratio;
-    boxes.push({ t, x: c * (colW + GAP), y: heights[c], w: colW, h });
-    heights[c] += h + GAP;
+    let best = Infinity;
+    for (let i = 0; i + span <= cols; i++) {
+      const top = Math.max(...heights.slice(i, i + span));
+      if (top < best - 0.5) { best = top; c = i; }
+    }
+    const w = span * colW + (span - 1) * GAP;
+    // A measured height wins over the shape, and only hints have one - see
+    // Tile.measured. Falling back to the ratio keeps every other tile, and a
+    // hint on the very first pass before it has been measured, exactly as they
+    // were.
+    const h = t.measured > 0 ? t.measured : w / t.ratio;
+    const y = span > 1 ? best : heights[c];
+    boxes.push({ t, x: c * (colW + GAP), y, w, h });
+    // Every column the tile covers is filled to the same line, or the next tile
+    // would tuck under a wide one and overlap it.
+    for (let i = c; i < c + span; i++) heights[i] = y + h + GAP;
   }
   return { boxes, colW, height: Math.max(0, ...heights) - GAP };
+}
+
+/**
+ * How many columns a tile takes.
+ *
+ * **One, unless it is a hint**, and that guard is the whole function. Every
+ * other tile on the wall - every photograph, clip, track, note and file card -
+ * is one column wide and always has been; spanning is a thing hints do because
+ * they are sentences rather than pictures, and nothing else on the Feed has a
+ * reason to want more room than its neighbours.
+ *
+ * Said as a `kind` test rather than read off `Tile.span`, which is what the
+ * first version did and got wrong: `span` defaults to 1 for every tile, 1 means
+ * "the whole width" for a hint, and the two together silently made every track
+ * and every photograph full width. A default that means something different
+ * depending on the type carrying it is a default waiting to be misread, so the
+ * type is asked first and `span` is only consulted for the type it describes.
+ */
+function spanFor(t: Tile, colW: number): number {
+  if (t.kind !== 'hint') return 1;
+  // Its seeded fraction of the wall, and at least enough width to set a line of
+  // prose in. On a two-column phone the floor does not bind and a half-width
+  // hint stays half-width, which is what the old mobile board did.
+  const want = t.span >= 1 ? cols : Math.round(cols * t.span);
+  const need = Math.ceil((HINT_MIN_W + GAP) / (colW + GAP));
+  return clamp(Math.max(want, need), 1, cols);
+}
+
+/**
+ * The narrowest a hint may be drawn, in pixels.
+ *
+ * A floor, not the intended width: what a hint actually asks for is the
+ * fraction of the board it was seeded at, and this only stops that fraction
+ * becoming absurd. It is set deliberately low - low enough that on a phone,
+ * where the wall is two columns, a half-width hint stays half-width and the
+ * three of them pair up exactly as they did on the old mobile board. Above
+ * that it binds only on a wide wall, where a half of five columns would round
+ * down to a strip too narrow to set a sentence in.
+ *
+ * The height is not this function's problem. Every hint is measured before it
+ * is packed (measureHints), so a narrow hint is a tall one rather than a
+ * clipped one, which is what makes it safe for this number to be small.
+ */
+const HINT_MIN_W = 170;
+
+/**
+ * Give every hint tile the height its own words need, before the wall is packed.
+ *
+ * The Feed lays out by *shape*: a tile is a fraction of a column wide and its
+ * height falls out of an aspect ratio. That is right for a picture, which crops,
+ * and wrong for a hint, which has a last line that either fits or does not - and
+ * on a narrow wall it did not, so the three sentences and the whimsy dial were
+ * being cut off at the bottom with nothing to say they had been.
+ *
+ * So each hint is laid out once at the width it is about to be given, with its
+ * height released, and asked how tall it came out. The answer goes on the tile
+ * and feedMasonry() uses it instead of the ratio.
+ *
+ * **This forces a layout flush**, which is the thing the rest of this module is
+ * careful never to do per tile - see releaseOffscreen(), which hoists one
+ * getBoundingClientRect out of a loop for exactly this reason. It is affordable
+ * here and nowhere else: hints exist only on a board with nothing on it, there
+ * are at most four of them, and the moment they stop being the whole board they
+ * are gone. A wall of two hundred photographs measures nothing.
+ */
+function measureHints(list: Tile[], width: number) {
+  const colW = (width - (cols - 1) * GAP) / cols;
+  for (const t of list) {
+    if (t.kind !== 'hint') continue;
+    // The same width the packer is about to give it, from the same function, so
+    // the measurement cannot be taken at a width the tile never gets.
+    const span = spanFor(t, colW);
+    const w = span * colW + (span - 1) * GAP;
+    // Width first and height auto, so what is read back is the height this card
+    // needs at the width it is about to get rather than the height it happens
+    // to have from the previous layout.
+    t.el.style.width = `${w}px`;
+    t.el.style.height = 'auto';
+    // scrollHeight rather than getBoundingClientRect: the tile is the box being
+    // sized, so its own rect is the thing in question, and scrollHeight is the
+    // content's answer to it. Floored at a sensible minimum so a card whose
+    // fonts have not landed yet cannot collapse the tile to nothing.
+    t.measured = Math.max(72, Math.ceil(t.el.scrollHeight));
+    t.el.style.height = `${t.measured}px`;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -857,6 +1044,7 @@ function layout() {
   if (width < 1) return;
   cols = clamp(Math.round(width / TILE_TARGET), 2, MAX_COLS);
   const list = feedItems().map(it => tiles.get(it.id)).filter(t => !!t);
+  measureHints(list, width);
   const { boxes, height } = feedMasonry(list, width);
   for (const b of boxes) {
     b.t.el.style.width = `${b.w}px`;

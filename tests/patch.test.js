@@ -25,7 +25,7 @@ import { join } from 'node:path';
 import { ROOT, WEB, read } from './helpers.js';
 import { VERSION } from '../web/assets/js/version.js';
 
-const SOURCE = join(ROOT, 'research', 'patch-notes.md');
+const SOURCE = join(ROOT, 'patch-notes.md');
 const source = read(SOURCE);
 const html = read(join(WEB, 'patch.html'));
 const prose = html.replace(/<!--[\s\S]*?-->/g, '');
@@ -344,5 +344,5 @@ test('what is committed is what the generator writes', () => {
   execFileSync(process.execPath, [join(ROOT, 'tools', 'gen-patch-page.mjs')], { cwd: ROOT });
   assert.equal(before, read(join(WEB, 'patch.html')),
     'web/patch.html is not what the generator produces - it is built from '
-    + 'index.html and research/patch-notes.md, so run `node tools/gen-patch-page.mjs`');
+    + 'index.html and patch-notes.md, so run `node tools/gen-patch-page.mjs`');
 });

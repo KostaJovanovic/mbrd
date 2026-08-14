@@ -43,6 +43,25 @@ const store = new Map<string, Asset>();
 export function getAsset(hash: string | null | undefined) { return store.get(hash as string); }
 export function allAssets() { return store; }
 
+/**
+ * How much the registry is holding, and in how many files.
+ *
+ * A total rather than a map, because the only question anybody asks of the whole
+ * store is how big it is - the Debug fold's "what this board weighs" row, and
+ * nothing else. Callers had to reduce over allAssets() to get it, which is the
+ * same three lines written at the call site and one more place that has to know
+ * an Asset carries `size`.
+ *
+ * `size` is the blob's own length, so this is the bytes on disk before the ZIP
+ * deflates them - which is the honest number for "what is in memory", and an
+ * over-estimate of what a saved .mbrd will weigh.
+ */
+export function assetBytes() {
+  let bytes = 0;
+  for (const a of store.values()) bytes += a.size;
+  return { bytes, count: store.size };
+}
+
 /** Object URL for an asset, created on first use and reused after. */
 export function assetURL(hash: string): string | null {
   const a = store.get(hash);

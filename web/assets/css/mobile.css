@@ -463,9 +463,33 @@
      slightly taller than the box the packer gave it should show its last line
      rather than be clipped to it. */
   overflow: visible;
+  /* Rendered whether or not it is on screen, unlike every other tile.
+
+     .feed-tile carries `content-visibility: auto`, which lets the browser skip
+     laying out what is scrolled away - a real saving on a wall of two hundred
+     photographs, and a correctness problem on exactly these four cards:
+     measureHints() reads scrollHeight to find out how tall a hint needs to be,
+     and a skipped subtree reports its containment box rather than its content.
+     The hints are the whole of an empty board, so there is nothing here to
+     save. */
+  content-visibility: visible;
 }
 .feed-hint { width: 100%; height: 100%; }
-.feed-hint > .card { width: 100%; height: 100%; box-sizing: border-box; }
+/* Height auto with a floor, not a flat 100%.
+
+   The Feed measures a hint before it packs it - see measureHints() in
+   ui/feed.ts - by releasing the tile's height and reading what the card comes
+   out at. A card fixed to `height: 100%` of a tile that is momentarily `auto`
+   resolves to nothing, so the measurement would come back as the padding and
+   every hint would be packed into a sliver. `min-height` fills the tile once
+   the packer has given it a real one, which is the other half of the job the
+   old declaration was doing. */
+.feed-hint > .card {
+  width: 100%;
+  height: auto;
+  min-height: 100%;
+  box-sizing: border-box;
+}
 
 .feed-file {
   width: 100%;
@@ -847,6 +871,9 @@
   padding: 14px 18px 12px;
   border-bottom: var(--hairline) solid var(--rule-2);
 }
+/* display:flex above beats the [hidden] default, so it has to be said. ui/playlist.js
+   sets it on a board with no audio - see fill(). */
+.pw-player[hidden] { display: none; }
 .pw-top { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .pw-cover {
   flex: none;
@@ -956,6 +983,52 @@
 }
 .pw-play:hover { background: var(--accent); color: var(--accent-fg); }
 .pw-play svg { width: 18px; height: 18px; }
+/* The two ends of a list being read straight through. Only ever set with repeat
+   off and shuffle off - see refresh() in ui/playlist.js, which is where the
+   argument for that lives. It has to *look* dead, because it is: the press does
+   nothing rather than wrapping to the other end of the list. */
+.pw-btn:disabled { color: var(--ink-3); opacity: 0.4; cursor: default; }
+.pw-btn:disabled:hover { background: none; color: var(--ink-3); }
+
+/* "4 of 12", under the artist. A third line in the info column rather than
+   something in the seek row, because it is a fact about the *list* and the two
+   times either side of the scrubber are facts about the track. */
+.pw-pos {
+  font-size: var(--t-tiny);
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.pw-pos[hidden] { display: none; }
+
+/* The volume, and only the lens builds one - see makePlayer(). Its own row under
+   the controls rather than a sixth button in them: a slider is a different kind
+   of object from a transport button, and five round glyphs with a rail wedged
+   between two of them reads as a broken row. */
+.pw-volume { display: flex; align-items: center; gap: 10px; }
+.pw-volume svg { flex: none; width: 16px; height: 16px; color: var(--ink-3); }
+.pw-volume input { flex: 1 1 auto; min-width: 0; }
+
+/* The lens is a phone-width sheet rather than a small floating window, so the
+   same classes are laid out with the room they have. Scoped to the lens's own
+   host, which is the one selector that separates the two homes - the classes
+   themselves are deliberately shared, so a change to the transport is one edit
+   and not two. */
+#mobile-playlist .pw-player {
+  gap: 14px;
+  padding: 4px 0 16px;
+  border-bottom: var(--hairline) solid var(--rule-2);
+}
+/* No cover here: the hero above it is already a cover the width of the sheet,
+   and a second one 64px square directly under it is the same picture twice. */
+#mobile-playlist .pw-cover { display: none; }
+#mobile-playlist .pw-title { font-size: var(--t-body); }
+/* Room for a thumb on all five, and a scrubber tall enough to catch. */
+#mobile-playlist .pw-controls { gap: 14px; }
+#mobile-playlist .pw-btn { width: 44px; height: 44px; }
+#mobile-playlist .pw-btn svg { width: 20px; height: 20px; }
+#mobile-playlist .pw-play { width: 56px; height: 56px; }
+#mobile-playlist .pw-play svg { width: 22px; height: 22px; }
+#mobile-playlist .pw-line { height: 22px; }
 
 /* Reduced motion: no tile reflow easing while reordering, no scroll glide, and a
    still equalizer (the row still lights, it just does not dance). */
@@ -1115,7 +1188,7 @@
 
        `inherit` and not a repeat of --leaf: the toggle is the only child and
        fills the bar exactly, so its corner *is* the bar's corner - and that
-       radius is struck from --radius now (see research/visual-audit-2026-08-12.md),
+       radius is struck from --radius now (see research/old/visual-audit-2026-08-12.md),
        so a second literal here would drift the day the slider moves. */
     border-radius: inherit;
   }

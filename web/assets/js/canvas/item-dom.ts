@@ -45,7 +45,7 @@
 // table.
 
 import { extOf, shuffle } from '../util.ts';
-import { isFence } from '../state.ts';
+import { adjustFilter, isFence, isLocked } from '../state.ts';
 import { buildContent, fitMode } from './renderers.ts';
 import type { Item } from '../board-model.ts';
 
@@ -96,8 +96,12 @@ const TYPE_LABEL: Record<string, string> = {
  */
 export function itemAccessibleName(item?: ItemFragment | null): string {
   const name = typeof item?.name === 'string' ? item.name.trim() : '';
-  if (name) return name;
-  return `Untitled ${TYPE_LABEL[item?.type ?? ''] || 'item'}`;
+  const base = name || `Untitled ${TYPE_LABEL[item?.type ?? ''] || 'item'}`;
+  // Suffixed rather than announced by a separate element, because what a lock
+  // changes is what this card *is* to somebody driving by keyboard: it is the
+  // one that will not move. The padlock in the corner is the same sentence
+  // drawn, and is marked aria-hidden so the two do not both speak.
+  return isLocked(item) ? `${base}, locked` : base;
 }
 
 /**
@@ -269,6 +273,64 @@ export function writeFit(el: HTMLElement, item: ItemLike): void {
 }
 
 /**
+ * The lock, and the three picture adjustments, onto a card.
+ *
+ * Both are here rather than in the renderers for the reason writeFit() is: they
+ * describe the *card*, not its content, and both have to be re-readable on a
+ * card that already exists - an item event rebuilds a card's body and would
+ * otherwise leave the outer element carrying the old answer.
+ *
+ * data-locked drives two rules and no more: the grips do not draw, and a small
+ * padlock sits in the corner. The lock is enforced in canvas/input.ts, never
+ * here - a stylesheet that was the only thing standing between a pointer and an
+ * item's geometry would be one `display: block` in a user stylesheet away from
+ * meaning nothing.
+ *
+ * The adjustments become one CSS custom property holding a whole `filter`
+ * value, rather than three properties the stylesheet assembles. The stylesheet
+ * cannot assemble them: `filter: brightness(var(--x))` with `--x` unset is an
+ * invalid declaration and drops the whole filter, so every card on the board
+ * would need all three set to keep the one card that uses them working. One
+ * property, set only where there is something to say, and `none` everywhere
+ * else by the rule's own default.
+ */
+export function writeAdjust(el: HTMLElement, item: ItemLike): void {
+  const locked = isLocked(item);
+  if (locked) el.dataset.locked = '';
+  else delete el.dataset.locked;
+  // The badge, and it exists because the lock is otherwise invisible: a locked
+  // card looks exactly like an unlocked one until you press it and nothing
+  // happens. It is drawn only while the card is *selected* (see the rule in
+  // item-chrome.css), because that is the moment the question is asked - you
+  // select the card, no grips appear, and this says why.
+  //
+  // Built here with createElementNS rather than through ui/menu.ts's icon(),
+  // which is the same six lines: canvas/ may not import ui/, and one small
+  // duplicate is the price of that arrow pointing the way it does.
+  const badge = el.querySelector(':scope > .item-locked');
+  if (locked && !badge) {
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('class', 'ico item-locked');
+    // The card's accessible name already says it is locked - see
+    // itemAccessibleName() - so announcing this as well reads it out twice.
+    svg.setAttribute('aria-hidden', 'true');
+    const use = document.createElementNS(NS, 'use');
+    use.setAttribute('href', 'assets/icons.svg#i-lock-shut');
+    svg.append(use);
+    el.append(svg);
+  } else if (!locked && badge) {
+    badge.remove();
+  }
+  // The string itself is board-model.ts's now, because ui/snapshot.ts assigns
+  // the same one to a canvas context - see adjustFilter(). What is left here is
+  // where it goes.
+  const filter = adjustFilter(item);
+  if (filter) el.style.setProperty('--item-filter', filter);
+  else el.style.removeProperty('--item-filter');
+}
+
+/**
  * The whole of one card's markup, unplaced and unregistered.
  *
  * `tilt` comes in rather than being dealt here because the geometry twin has to
@@ -290,7 +352,15 @@ export function buildItem(item: ItemLike, tilt: string, picked: boolean): HTMLDi
   el.className = 'item';
   el.dataset.id = item.id;
   el.dataset.type = item.type;
+  // What the ghost card's own rules hang off, on both surfaces that mount one.
+  // The Feed puts the same class on its .feed-hint wrapper - see fillHint() -
+  // so the dial is laid out the same way in both places rather than only on the
+  // canvas, which is where its rules used to be scoped and where they used to
+  // stop. A class rather than the existing [data-type="ghost"], because the two
+  // mounts have no element in common to key off.
+  if (item.type === 'ghost') el.classList.add('ghost-mount');
   writeFit(el, item);
+  writeAdjust(el, item);
   // A named, self-describing card for assistive technology. The full
   // keyboard-selection model (roving tabindex, arrow navigation) is a separate,
   // browser-verified change; naming and role are the part that is safe to ship

@@ -62,7 +62,7 @@ import { clamp } from '../util.ts';
 import {
   board, byId, selection, select, deselect, clearSelection, topZ, stackOrder,
   snapshotGeom, applyGeom, commitGeom, bus, stuckFollowers, stuckPlacement, wouldStick,
-  travelling, isFence, dragRoot, isPinned, isSticky, resettle,
+  travelling, isFence, isLocked, dragRoot, isPinned, isSticky, resettle,
   copyItems, cutItems, pasteItems, clipboardSize, clipboardBounds, clipboardHasOurs,
   baseStep,
 } from '../state.ts';
@@ -843,6 +843,10 @@ type InputCommands = {
   editTitleText?(): unknown,
   openViewer?(id: string): unknown,
   playPause?(): boolean,
+  // The tour's two keys, in the shape the three above use: the command answers
+  // whether it took the press. See the Escape and arrow cases below.
+  tourStop?(): boolean,
+  tourStep?(delta: number): boolean,
 };
 
 export function initInput(vp: Viewport, cmds: InputCommands): void {
@@ -1224,14 +1228,24 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // Mapped across the whole selection rather than off `id` alone, so a
     // multi-select holding a pinned item and something else drives both roots;
     // dedupe, because two stickers on one photo resolve to the same root.
-    const roots = [...new Set([...selection].map(rootOf))];
+    // Locked cards are not picked up, and they are dropped here rather than at
+    // the press so that a mixed selection still works: press one of six cards
+    // where two are locked and the other four move, which is what somebody who
+    // locked two of them meant. A press *on* a locked card never reaches this
+    // function at all - see the move branch of onDown(), where it pans instead.
+    const roots = [...new Set([...selection].map(rootOf))].filter(sid => !isLocked(byId(sid)));
     // Whatever is stuck to the selection comes with it, and whatever is fenced
     // by it. Worked out once, here, and then held for the length of the gesture:
     // recomputing it per frame would let notes latch on and fall off as the drag
     // swept the selection across other items, so the group you picked up would
     // not be the group you put down. What is stuck when you take hold is what
     // travels. See travelling() in layout.js, where the fixed point is worked out.
-    const moving = travelling(roots);
+    // Filtered again on the way out, and not only on the way in: travelling()
+    // adds what is stuck to the selection and what is fenced by it, so a locked
+    // card inside a fence that is being dragged would otherwise be carried by
+    // the fence. A lock that holds against a direct drag and yields to an
+    // indirect one is not a lock.
+    const moving = travelling(roots).filter(sid => !isLocked(byId(sid)));
     // Snapshotted here, before anything is touched, so the raise below rides
     // along in the same undo entry as the move it belongs to.
     const before = snapshotGeom(moving);
@@ -1563,7 +1577,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       }
       e.preventDefault();
       startPan(e);
-    } else if (grip && id && selection.size <= 1) {
+    } else if (grip && id && selection.size <= 1 && !isLocked(byId(id))) {
       // A grip press is only a candidate. Waiting for movement keeps a plain tap
       // on a corner from touching snapped geometry, and leaves the tap free to
       // mean select rather than a zero-distance resize.
@@ -1626,17 +1640,36 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       if (additive) select([id], true);
       else if (!held) select([id]);
       taps.card = { pointerId: e.pointerId, id, x: e.clientX, y: e.clientY, slop: DRAG_SLOP };
-      const move = startMove(e, id);
-      // Carried on the gesture so the lift can tell a selection edit from a
-      // pick - see `unpick` in endPointer(). A modified press means "toggle
-      // this card", and whether the lift should drop it again depends on what
-      // the press found, not on how big the selection ended up.
+      // A locked card is not something the pointer can take hold of, so the
+      // press does what a press on bare board does and pans. Note what is above
+      // this line and therefore still happens: the card is *selected*, so its
+      // menu, its name, its colour, Delete and the unlock that undoes all this
+      // are all still one click away. Only the grab is gone.
       //
-      // Written straight onto the standing gesture, which startMove() hands
-      // back: it is the `move` mode's own state, and only `mode` itself has to
-      // go through enter().
-      move.additive = additive;
-      move.wasSelected = held;
+      // Panning rather than doing nothing is the whole feel of the feature. The
+      // case lock exists for is a backdrop photograph under the cards somebody
+      // is arranging, and there every press meant for the board lands on it; a
+      // locked card that swallowed those presses would be worse than the
+      // unlocked one, not better.
+      //
+      // Not an early return, which would fall past the long-press arming at the
+      // foot of this function - and on a phone that hold is the *only* way to
+      // reach a locked card's menu, which is where the unlock is.
+      if (isLocked(byId(id))) {
+        startPan(e);
+      } else {
+        const move = startMove(e, id);
+        // Carried on the gesture so the lift can tell a selection edit from a
+        // pick - see `unpick` in endPointer(). A modified press means "toggle
+        // this card", and whether the lift should drop it again depends on what
+        // the press found, not on how big the selection ended up.
+        //
+        // Written straight onto the standing gesture, which startMove() hands
+        // back: it is the `move` mode's own state, and only `mode` itself has to
+        // go through enter().
+        move.additive = additive;
+        move.wasSelected = held;
+      }
     } else if (e.shiftKey || e.ctrlKey || e.metaKey) {
       startMarquee(e);
     } else {
@@ -2121,47 +2154,9 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
 
   // ---- wheel ------------------------------------------------------------
 
-  // ---- what a swipe actually delivered ----------------------------------
-  //
-  // The wheel handler is the only place in this file that guesses at hardware,
-  // and the guess cannot be checked by reading the code: a two-finger scroll is
-  // *railed* by the platform - the axis you set off in is decided before the
-  // page is told anything - so the numbers that arrive are the only evidence of
-  // what the pad and the driver between them did with the gesture.
-  //
-  // Summarised per gesture rather than printed per event. A swipe is forty
-  // events and the question is never about one of them: it is "did the sideways
-  // half arrive at all, and in what shape?" - nothing, a trickle, or the
-  // hundred-pixel lumps a non-precision horizontal wheel sends. Those are three
-  // different faults with three different fixes, and one line each tells them
-  // apart. Off unless asked for: cmds.debugWheel(), or open the board on #wheel.
-  let swipe: { n: number, x: number, y: number, sideways: number, biggest: number } | null = null;
-  let swipeTimer: ReturnType<typeof setTimeout> | 0 = 0;
-  function noteWheel(e: WheelEvent, kind: WheelKind) {
-    if (!document.documentElement.hasAttribute('data-debug-wheel')) return;
-    swipe ??= { n: 0, x: 0, y: 0, sideways: 0, biggest: 0 };
-    swipe.n++;
-    swipe.x += Math.abs(e.deltaX);
-    swipe.y += Math.abs(e.deltaY);
-    if (e.deltaX) swipe.sideways++;
-    swipe.biggest = Math.max(swipe.biggest, Math.abs(e.deltaX));
-    clearTimeout(swipeTimer);
-    swipeTimer = setTimeout(() => {
-      // `swipe!`: the only thing that arms this timer is the line above, which
-      // has just made a summary, and the only thing that clears one is this
-      // callback. A timer in flight therefore has a swipe behind it.
-      const s = swipe!;
-      swipe = null;
-      console.info(`[mbrd] swipe: ${s.n} events, read as ${kind}. `
-        + `Down the page ${Math.round(s.y)}px, across ${Math.round(s.x)}px `
-        + `in ${s.sideways} of them, biggest single sideways step ${Math.round(s.biggest)}px.`);
-    }, WHEEL_STREAM_MS + 100);
-  }
-
   el.addEventListener('wheel', e => {
     e.preventDefault();
     const w = readWheel(e, vp.height);
-    noteWheel(e, w.kind);
     // Mobile is a fixed-width feed with one navigable axis, so everything that
     // arrives moves the feed along it - a sideways swipe and a Shift+wheel
     // included, since neither has anywhere else to go. A pinch too: there is
@@ -2298,11 +2293,23 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       case '+': case '=': vp.zoomBy(1.25, zoomMs()); break;
       case '-': case '_': vp.zoomBy(1 / 1.25, zoomMs()); break;
       case 'Escape':
+        // A running tour first: Escape is the way out of every temporary state
+        // in this app, and while the bar is up the tour is the outermost of them.
+        // It answers false when there is none, so the ordinary three still run.
+        if (cmds.tourStop?.()) break;
         clearSelection();
         cmds.clearActiveConnection?.();
         cmds.closeSidebar();
         break;
       case 'ArrowLeft': case 'ArrowRight': case 'ArrowUp': case 'ArrowDown':
+        // The tour owns the arrows while it is up - stepping a reading is what
+        // they mean there - and it says so by answering true, including at the
+        // last stop. Falls through to the nudge otherwise. Left/Up go back and
+        // Right/Down go on, which is the reading order on both axes.
+        if (cmds.tourStep?.(e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 1)) {
+          e.preventDefault();
+          break;
+        }
         nudge(e);
         break;
     }
@@ -2336,7 +2343,11 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // notes and the same fenced cards. No z-bump here: a nudge does not raise
     // anything, and the pair are already in the right order relative to each
     // other.
-    const before = snapshotGeom(travelling(selection));
+    // Locked out, on the same terms as a drag: the arrow keys are a drag by
+    // another route, so a lock that held one and not the other would be a lock
+    // that depends on which hand you used.
+    const before = snapshotGeom(travelling(selection).filter(id => !isLocked(byId(id))));
+    if (!before.length) return;
     const { dx, dy } = nudgeBy(sx, sy, e.shiftKey, before);
     if (!dx && !dy) return;
     // The one door where "immovable" answers differently: an arrow key on a

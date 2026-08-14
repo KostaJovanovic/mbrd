@@ -1,5 +1,13 @@
 # Scalability, efficiency & readability audit — 2026-07-27
 
+> **Moved to `old/` on 2026-08-14.** All eight leverage items are closed and four
+> more closed since without this document being told; the medium and low findings
+> that are still live are S1 to S9 in `research/open-work-2026-08-14.md`. Read
+> this for the measurements and for the two status blocks below, which record
+> what was *withdrawn* as well as what was built — a withdrawn finding is the
+> expensive kind to re-derive. Paths written `old/…` below were written from
+> `research/` and mean this directory.
+
 ## Status, 2026-07-31 — all eight leverage items closed
 
 Checked against the code rather than against the last status note, which had
@@ -101,6 +109,42 @@ into `state`/`canvas`/`storage`; the two sources of truth for "the look";
 `storage.js`; the global singletons and untyped bus; `input.js`'s ten gesture
 globals), the remaining efficiency notes in Part 3, and the Part 4 cleanups.
 This document stays in `research/` for those.
+
+### What has closed since, 2026-08-14
+
+Checked against the tree rather than against the paragraph above it, which had
+gone stale in one direction only — every correction here is an item that
+finished without this list being told.
+
+- **§2.7, `input.js`'s ten gesture globals — closed.** This is now item 4 of
+  `build-and-framework-audit-2026-08-12.md`, carried out there: one `gesture`
+  object with a discriminated `mode`, a single writer, and the transitions in a
+  table. What remains is three `let`s in the `initInput` closure — `gesture`,
+  `spaceDown` and `hover` — of which only the first is gesture state, and the
+  other two are the two things this document's own §2.7 list named that were
+  never modes: what the *next* press means, and where the pointer is when
+  nothing is happening. Six module-scope `let`s survive above them and none is
+  gesture state at all: the wheel-kind memo and the axis counters.
+- **§2.6, the untyped bus — half closed.** `bus` is `emitter<BusEvents>()` in
+  `board-store.ts`, so every event and its payload are declared in one place and
+  a typo is a type error rather than a silent no-op. The *other* half stands:
+  `board` and `selection` are still exported as mutable singletons and
+  `window.mbrd` still hands them to the console, which is deliberate and
+  documented but is still what §2.6 was measuring.
+- **§2.5, `storage.js` — the split is done.** The IndexedDB working
+  cache, the autosave and the session live in `storage/session.ts`;
+  `storage/storage.ts` keeps the file door. `main.ts` is 767 lines rather than
+  1,213, so the fifteen concerns are fewer, but that half is a reduction rather
+  than a close.
+- **§1.6, `ui/search.js` re-scanning per keystroke — withdrawn.** The rescan is
+  now a decision with the reasoning at `ui/search.ts:148`: the fields are built
+  per query on purpose, because a board is hundreds of items and a stale index
+  is a class of bug that costs more than the scan does. Do not "fix" it.
+- **§1.6's other two and §2.3–§2.4 are as written.** `stacking.ts:21` carries
+  the O(n²) note in the source now, which is the right place for it.
+  `ui/appearance.ts` is 1,140 lines, `sameLook` is still a `JSON.stringify`
+  compare, and "what is a pigment token" still has three homes — so §2.4 is
+  untouched and is the largest thing left in this document.
 
 **Not verified in a browser.** Item 8's control-row conversion changes DOM that
 `tests/settings-panel.test.js` says outright it does not cover, and the perf

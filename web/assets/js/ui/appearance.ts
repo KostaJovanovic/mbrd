@@ -171,8 +171,14 @@ const BODY_FACES = [
  * made easiest to make.
  */
 const CONTROLS: ControlSpec[] = [
-  { var: '--font-display', label: 'Display', type: 'font', options: DISPLAY_FACES, host: 'type' },
-  { var: '--font-body',    label: 'Body',    type: 'font', options: BODY_FACES,    host: 'type' },
+  // "Display font" and "Body font", not "Display" and "Body". The two sit side
+  // by side in one .field-pair and the shorter words read as a pair of
+  // categories - display *what*, body *what* - where the panel around them is
+  // otherwise a list of nouns you set. The extra word costs nothing: the pair
+  // is a grid of two equal minmax(0, 1fr) columns, so the <select> under each
+  // label sets the column width and a longer label cannot push it.
+  { var: '--font-display', label: 'Display font', type: 'font', options: DISPLAY_FACES, host: 'type' },
+  { var: '--font-body',    label: 'Body font',    type: 'font', options: BODY_FACES,    host: 'type' },
   { var: '--accent',      label: 'Pigment',       type: 'color', host: 'main' },
   // Floored well above zero. The bottom of this range used to be an invisible
   // grid, which is a second, hidden "off" switch sitting next to the real one

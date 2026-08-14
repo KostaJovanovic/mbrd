@@ -447,6 +447,32 @@
   z-index: 2;
 }
 .item.is-selected .grip { display: block; }
+/* A locked card is selectable and has no grips: its size is exactly as fixed as
+   its position, so drawing eight handles that refuse to drag would be the
+   interface promising something canvas/input.ts then declines. The lock itself
+   lives there and not here - see writeAdjust() in canvas/item-dom.ts. */
+.item[data-locked] .grip { display: none; }
+
+/* The padlock, where the north-east grip would have been - which is the point:
+   it appears exactly where the handle you reached for is missing, and only
+   while the card is selected, which is when you reached for it.
+
+   Hidden with the rest of the chrome below the label rung. A card too small to
+   show its own name is too small for a 12px padlock to be anything but a
+   speck, and the far view is not where anyone is trying to drag things. */
+.item-locked {
+  position: absolute;
+  top:   calc(var(--sel-edge) * -1 - 2px * var(--iz));
+  right: calc(var(--sel-edge) * -1 - 2px * var(--iz));
+  width:  calc(12px * var(--iz));
+  height: calc(12px * var(--iz));
+  display: none;
+  color: var(--ink-2);
+  pointer-events: none;
+  z-index: 2;
+}
+.item[data-locked].is-selected > .item-locked { display: block; }
+#world.zoom-tiny .item-locked { display: none; }
 /* Grips outlast the labels: gone only when the card is too small to aim at, two
    rungs below where the chrome drops. See GRIP_MIN_ZOOM in viewport.js. */
 #world.zoom-tiny .grip { display: none; }

@@ -83,8 +83,24 @@ export type MenuEntry = {
   hidden?: boolean;
   danger?: boolean;
   sep?: boolean;
-  /** a colour, drawn in the icon column instead of an icon */
-  swatch?: string;
+  /**
+   * A colour drawn in the icon column instead of an icon - or several, drawn as
+   * one split chip.
+   *
+   * The list form arrived with the palette picker, whose rows are choices
+   * between whole palettes rather than between single colours: three bands of
+   * paper, accent and ink say which palette a row is far better than any one of
+   * the three alone. A bare string is still a bare string and draws exactly as
+   * it did for the note tints and the connection colours.
+   */
+  swatch?: string | string[];
+  /**
+   * A row that reads rather than acts: shown, greyed, and skipped by the arrow
+   * keys. There is no heading in this renderer and this is deliberately not one
+   * - a heading labels the rows under it, where these say something about the
+   * state the menu is describing ("Showing 4 of 61", "nothing is tagged yet").
+   */
+  disabled?: boolean;
   /** a child menu, opened in place */
   sub?: MenuEntry[];
   /** where the Back row goes - the parent menu it was drilled into from */
@@ -139,12 +155,34 @@ export interface MenuCommands {
   canCoverItem: (id: string) => boolean;
   canClearCover: (id: string) => boolean;
   canSetFit: (id: string) => boolean;
+  canEditPicture: (id: string) => boolean;
   canFlipUpAxis: (id: string) => boolean;
   canRotateModel: (id: string) => boolean;
   canExtractSwatches: (id: string) => boolean;
   canTintSticker: (id: string) => boolean;
   canViewItem: (id: string) => boolean;
   canUnstick: () => boolean;
+  canTag: () => boolean;
+  boardTags: () => { tag: string, count: number }[];
+  selectionHasTag: (tag: string) => boolean;
+  toggleSelectionTag: (tag: string) => unknown;
+  addTag: () => unknown;
+  tagFilter: () => string[];
+  hasTagFilter: () => boolean;
+  isTagFiltered: (tag: string) => boolean;
+  toggleTagFilter: (tag: string) => unknown;
+  clearTagFilter: () => unknown;
+  filterCounts: () => { shown: number, all: number };
+  selectFiltered: () => unknown;
+  selectionInTour: () => boolean;
+  toggleSelectionTour: () => unknown;
+  inTour: () => boolean;
+  tourLength: () => number;
+  tourStart: () => unknown;
+  tourStop: () => unknown;
+  canLock: () => boolean;
+  lockableCount: () => number;
+  lockedCount: () => number;
   selectionHasStackOverlap: () => boolean;
   itemFit: (id: string) => string;
   stickerTintOf: (id: string) => number;
@@ -153,6 +191,7 @@ export interface MenuCommands {
   setCover: (id: string) => unknown;
   clearCover: (id: string) => unknown;
   setItemFit: (id: string, fit: string) => unknown;
+  editPicture: (id: string) => unknown;
   flipUpAxis: (id: string) => unknown;
   extractSwatches: (id: string) => unknown;
   rotateModel: (id: string) => unknown;
@@ -160,6 +199,7 @@ export interface MenuCommands {
   raise: () => unknown;
   lower: () => unknown;
   unstick: () => unknown;
+  lockSelection: (on: boolean) => unknown;
   resetSize: () => unknown;
   rearrangeSelection: () => unknown;
   fenceSelection: () => unknown;
@@ -386,6 +426,14 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
   // cover actions above and for the same reason: it is an edit to one picture.
   const fittable = !many && cmds!.canSetFit(id);
   const fills = fittable && cmds!.itemFit(id) === 'cover';
+  // A photograph can be cropped and graded. Single-item like the fit pair above
+  // it, and offered on the Feed too: neither edit is spatial - the crop is a
+  // rectangle over the picture's own pixels, not over the board - so both mean
+  // exactly the same thing on a phone.
+  const croppable = !many && cmds!.canEditPicture(id);
+  // Anything in the selection that a tag can go on: content, so not a fence and
+  // not furniture. Selection-wide like the lock, and for the same reason.
+  const taggable = cmds!.canTag();
   const flippable = !many && cmds!.canFlipUpAxis(id);
   // A model card is a photograph of a model until somebody asks for the model.
   // Single-item for the same reason as the rest: you turn one thing over.
@@ -400,6 +448,12 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
   // the edit group before them: taking nine stickies off one photograph means
   // exactly what taking one off means.
   const unstickable = !mobile && cmds!.canUnstick();
+  // Offered on the Feed as well as the canvas, unlike Unstick above it. A lock
+  // is a fact about the item rather than about a position, it survives the trip
+  // between the two layouts, and the Feed is exactly where somebody scrolling a
+  // board on a phone notices that a card ought not to move on the other one.
+  const lockable = cmds!.canLock();
+  const allLocked = lockable && cmds!.lockedCount() === cmds!.lockableCount();
   // A picture can hand over its own colours as swatches. Single-item, like the
   // cover and fit actions above: it reads the one image under the cursor, and
   // "the colours of these nine" is not a thing a person means.
@@ -436,6 +490,13 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
       action: () => cmds!.setItemFit(id, 'cover') },
     { label: 'Fit in the card', icon: 'i-fit-card', check: fittable && !fills,
       hidden: !fittable, action: () => cmds!.setItemFit(id, 'contain') },
+    // Below the fit pair and above the palette, which is where it belongs in the
+    // sentence: Fill and Fit are about the card, this is about the picture, and
+    // Extract palette is about what the picture is made of. The ellipsis is the
+    // one in this menu that means it - the row opens a surface and decides
+    // nothing on its own.
+    { label: 'Crop & adjust…', icon: 'i-crop', hidden: !croppable,
+      action: () => cmds!.editPicture(id) },
     // OBJ says nothing about which way is up and both readings are common, so
     // the format's default is a guess. This is the way out of a wrong one - and
     // it is on the item rather than in Appearance because a board can hold a
@@ -457,6 +518,25 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // which one it is on now.
     { label: 'Colour', icon: 'i-swatch', hidden: !tintable,
       sub: tintable ? stickerTintEntries(id) : undefined },
+    // Tags, as a fold. On the Feed as well as the canvas - a tag is a fact
+    // about the card and not about where it is - and on the selection rather
+    // than on the one card under the cursor, which is why the label does not
+    // change with the count the way Unstick's does: "Tags" is what the fold
+    // holds whether it is about one card or nine.
+    { label: 'Tags', icon: 'i-tag', hidden: !taggable,
+      sub: taggable ? tagEntries() : undefined },
+    // The tour, as a single ticked row rather than a fold. There is exactly one
+    // tour on a board, so there is nothing to choose between - the whole of the
+    // question is "is this card a stop", and a fold holding one entry would be a
+    // drill-down into a checkbox. Selection-wide and three-state on the same
+    // terms as the tags above it: ticked only when every eligible card in the
+    // selection is already on, so a half-added selection completes.
+    //
+    // The zoom-to icon rather than an invented one, and it is the honest glyph:
+    // what a stop *is* is a card the camera goes and frames.
+    { label: many ? 'These are tour stops' : 'A tour stop', icon: 'i-zoom-to',
+      check: taggable && cmds!.selectionInTour(), hidden: !taggable,
+      action: () => cmds!.toggleSelectionTour() },
     { sep: true, hidden: !editable && !renamable && !coverable && !covered && !fittable && !flippable && !turnable && !swatchable && !tintable },
     // The other mirrored pair: one card and one arrow, turned over.
     { label: 'Bring to front', icon: 'i-front', hidden: !stackable, action: () => cmds!.raise() },
@@ -471,6 +551,20 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // a card sits on the board rather than about what the card is.
     { label: many ? 'Unstick these' : 'Unstick', icon: 'i-lock-open',
       hidden: !unstickable, action: () => cmds!.unstick() },
+    // Fix it where it is. Beside Unstick because the two are the same kind of
+    // sentence about how a card sits on the board, and one row rather than a
+    // checked pair: the answer is Lock until everything in the selection is
+    // locked, at which point it becomes Unlock. A mixed selection therefore
+    // offers Lock and means it - see lockedCount() in commands/item-meta.ts.
+    // A mirrored pair drawn as two rows of which exactly one shows, the shape
+    // the Fill/Fit pair above uses. One row with a conditional icon would have
+    // read the same and been the one entry in this file whose icon is not a
+    // literal - which tests/icons.test.js counts, and rightly: an icon computed
+    // in a ternary is an icon nobody can grep for.
+    { label: many ? 'Lock these' : 'Lock', icon: 'i-lock-shut',
+      hidden: !lockable || allLocked, action: () => cmds!.lockSelection(true) },
+    { label: many ? 'Unlock these' : 'Unlock', icon: 'i-lock-open',
+      hidden: !lockable || !allLocked, action: () => cmds!.lockSelection(false) },
     // The way back from a corner dragged too far. With the stacking pair rather
     // than in the group above, because those are all edits to what a card *is*
     // and this is one to how it sits on the board - the same kind of thing as
@@ -616,6 +710,66 @@ function connectionEntries(conn: { a: string, b: string }): MenuEntry[] {
  * numbers are what reaches meta.tint and items.css, and nothing but the index
  * ties them together, which is exactly why the list has one home.
  */
+/**
+ * The tag fold on an item's menu: every tag the board knows, ticked where the
+ * whole selection carries it, and a row for a new one.
+ *
+ * The board's tags rather than this item's, which is the decision that makes
+ * the fold worth having: a list of the tags already on the card would be a
+ * readout, and what somebody opening this menu wants is to put one of the tags
+ * they have already invented onto this card too. The ticks are what turn the
+ * same list into the readout as well.
+ *
+ * Counts are shown against each. On a board with forty tags the useful ones are
+ * the ones already used a lot, which is exactly the order boardTags() returns
+ * and exactly what the number says.
+ */
+function tagEntries(): MenuEntry[] {
+  const tags = cmds!.boardTags();
+  const rows: MenuEntry[] = tags.map(({ tag, count }) => ({
+    label: `${tag}  (${count})`,
+    icon: 'i-tag',
+    check: cmds!.selectionHasTag(tag),
+    action: () => cmds!.toggleSelectionTag(tag),
+  }));
+  // The separator only where there is something above it to separate from. A
+  // board with no tags yet opens this fold on one row, which is the whole of
+  // what it can offer and reads as an invitation rather than as an empty list.
+  if (rows.length) rows.push({ sep: true });
+  rows.push({ label: 'New tag…', icon: 'i-plus', action: () => cmds!.addTag() });
+  return rows;
+}
+
+/**
+ * The filter fold on the canvas menu: every tag, ticked where it is filtering.
+ *
+ * Two rows at the foot that the item fold has no equivalent of, and both exist
+ * because a filter is a state you can get lost in: one says how much of the
+ * board is currently showing, and one takes the filter off. The count is a
+ * disabled row rather than a heading because ui/menu.ts has no heading - and a
+ * row that says "showing 4 of 61" is worth more than the tidiness.
+ */
+function filterEntries(): MenuEntry[] {
+  const tags = cmds!.boardTags();
+  const rows: MenuEntry[] = tags.map(({ tag, count }) => ({
+    label: `${tag}  (${count})`,
+    icon: 'i-tag',
+    check: cmds!.isTagFiltered(tag),
+    action: () => cmds!.toggleTagFilter(tag),
+  }));
+  if (!rows.length) {
+    return [{ label: 'Nothing on this board is tagged yet', icon: 'i-tag', disabled: true }];
+  }
+  if (cmds!.hasTagFilter()) {
+    const { shown, all } = cmds!.filterCounts();
+    rows.push({ sep: true });
+    rows.push({ label: `Showing ${shown} of ${all}`, icon: 'i-find', disabled: true });
+    rows.push({ label: 'Select those', icon: 'i-select-all', action: () => cmds!.selectFiltered() });
+    rows.push({ label: 'Show everything', icon: 'i-close', action: () => cmds!.clearTagFilter() });
+  }
+  return rows;
+}
+
 function stickerTintEntries(id: string): MenuEntry[] {
   const now = cmds!.stickerTintOf(id);
   return STICKER_TINT_NAMES.map((text, i) => ({
@@ -675,6 +829,13 @@ function canvasEntries(at: Point): MenuEntry[] {
     { label: 'Find', icon: 'i-find', accel: 'Ctrl K', action: () => cmds!.find() },
     { label: 'Select all', icon: 'i-select-all', accel: 'Ctrl A',
       action: () => cmds!.selectAll() },
+    // The filter, beside Find and Select all because it is the third thing in
+    // this menu about *narrowing the board down* rather than about changing it.
+    // Ticked in the label when one is up, so the state is visible from the row
+    // above the fold rather than only inside it - a filter you cannot see is
+    // the failure mode this whole feature has to avoid.
+    { label: cmds!.hasTagFilter() ? `Filter by tag (${cmds!.tagFilter().length})` : 'Filter by tag',
+      icon: 'i-tag', check: cmds!.hasTagFilter() || undefined, sub: filterEntries() },
     fence
       ? { label: 'Rearrange fence', icon: 'i-rearrange',
         action: () => cmds!.rearrangeFence(fence) }
@@ -684,6 +845,16 @@ function canvasEntries(at: Point): MenuEntry[] {
     { sep: true },
     { label: 'Zoom to fit', icon: 'i-fit', accel: 'F', action: () => cmds!.fit() },
     { label: 'Back to 0,0', icon: 'i-home', accel: '0', action: () => cmds!.recenter() },
+    // The tour, with the two camera rows and not with the board's own settings
+    // below them, because that is what it is: a way of moving the view. One row
+    // that flips rather than a pair, the same shape Lock/Unlock uses on an item
+    // - a tour is running or it is not, and only one of the two sentences can
+    // be true. Absent entirely on a board with no stops on it yet, which is the
+    // schema's own "absence, not disabling" rule: a row offering to start a tour
+    // of nothing is a row that can only apologise.
+    { label: cmds!.inTour() ? 'End the tour' : `Take the tour (${cmds!.tourLength()})`,
+      icon: 'i-zoom-to', hidden: !cmds!.tourLength(),
+      action: () => (cmds!.inTour() ? cmds!.tourStop() : cmds!.tourStart()) },
     { sep: true },
     // The board's own two marks: the lattice, and the lattice with a card
     // locked onto it. The tick that says which way they are set is a separate
@@ -760,6 +931,11 @@ function render(entries: MenuEntry[], clientX: number, clientY: number, opts: Me
     btn.setAttribute('role', 'menuitem');
     btn.className = 'ctx-item';
     if (entry.danger) btn.classList.add('is-danger');
+    // Greyed and inert. `disabled` on the button is what actually stops the
+    // press; the class is only the dressing, and the arrow-key walk skips it
+    // because that walk collects .ctx-item and a disabled button cannot take
+    // focus.
+    if (entry.disabled) { btn.disabled = true; btn.classList.add('is-inert'); }
     if (entry.check != null) {
       btn.classList.add('is-toggle');
       btn.classList.toggle('is-checked', !!entry.check);
@@ -913,10 +1089,20 @@ function rangeRow(entry: MenuEntry) {
  * symbol is a drawing of a paint chip and the drawing is not the point - the
  * colour is. Sized to the icons beside it so the column stays a column.
  */
-function chip(color: string) {
+function chip(color: string | string[]) {
   const dot = document.createElement('span');
   dot.className = 'ctx-chip';
-  dot.style.background = color;
+  // One colour fills the chip; several split it into equal vertical bands, which
+  // is a linear-gradient with hard stops rather than N child elements - the chip
+  // is 13px, and three nested spans to paint three stripes inside it would be
+  // three layout boxes for something the background can say in one string.
+  if (Array.isArray(color)) {
+    const step = 100 / color.length;
+    const stops = color.map((c, i) => `${c} ${i * step}% ${(i + 1) * step}%`);
+    dot.style.background = `linear-gradient(90deg, ${stops.join(', ')})`;
+  } else {
+    dot.style.background = color;
+  }
   return dot;
 }
 
@@ -955,7 +1141,12 @@ export function icon(name: string, extra?: string) {
 function moveFocus(step: number) {
   // `node` is asserted because the one caller tests it first; the rows are
   // buttons because render() puts .ctx-item on nothing else.
-  const items = [...node!.querySelectorAll<HTMLElement>('.ctx-item')];
+  //
+  // :not(:disabled), because a readout row cannot take focus - so without this
+  // the walk would land on it, focus() would do nothing, and the next press
+  // would compute its step from whatever still had focus. One inert row would
+  // stop the arrow keys dead in the middle of the menu.
+  const items = [...node!.querySelectorAll<HTMLElement>('.ctx-item:not(:disabled)')];
   if (!items.length) return;
   const at = items.findIndex(row => row === document.activeElement);
   const next = at < 0 ? (step > 0 ? 0 : items.length - 1) : (at + step + items.length) % items.length;

@@ -413,6 +413,67 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 0 10px;
+  /* Bottoms aligned, not stretched.
+
+     The two labels above the pair are ordinary flex rows with no `nowrap`, so
+     at the narrow end of the sidebar slider (260px, about 115px a column) a
+     two-word label wraps to a second line and its neighbour does not. Stretched,
+     that leaves the two <select>s a line out of step with each other - which
+     reads as a broken row rather than as a long word. Aligned to the bottom,
+     the controls stay level and the label above one of them is simply taller.
+     Free at every width where nothing wraps. */
+  align-items: end;
+}
+
+/* The palette row: a button that opens the app's own menu, not a <select>.
+
+   It is dressed to sit in the same column as the selects beside it - same
+   height, same border, same paper - because it is the same kind of choice and a
+   row that looked like a button would read as an action. The chevron is the one
+   thing that says it opens something; a <select> gets that from the platform.
+
+   The chips are the whole reason it is not a <select>: no browser paints
+   anything inside a native dropdown list. See buildPicker() in ui/panel.ts. */
+.field-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: calc(30px * var(--density));
+  padding: 0 10px;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease),
+              background var(--dur-fast) var(--ease);
+}
+.field-picker:hover { border-color: var(--accent); background: var(--paper-2); }
+.field-picker:focus { outline: none; }
+.field-picker:focus-visible {
+  outline: var(--sel-line) solid var(--select);
+  outline-offset: var(--sel-gap);
+}
+/* The name takes the room and the chips are pushed to the trailing edge, which
+   is where the request put them and where a value belongs on a row like this. */
+.field-picker-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.field-picker-chips { flex: none; display: flex; gap: 3px; }
+.field-picker-chips > i {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  /* An inset ring rather than a border: a pale palette's paper chip against the
+     panel's own paper is otherwise a chip you cannot see the edge of. */
+  box-shadow: inset 0 0 0 var(--hairline) color-mix(in srgb, var(--ink) 22%, transparent);
 }
 
 /* The fold. Everything here is something you set once - or never - and it was

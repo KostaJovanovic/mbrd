@@ -39,13 +39,18 @@
 
 import { toast } from '../notify.ts';
 import { goHome } from '../page.ts';
-import { board, setSetting, setBoardMode as selectBoardMode } from '../state.ts';
+import {
+  board, isContent, isFiltered, select, setSetting, setTagFilter, tagFilter,
+  setBoardMode as selectBoardMode,
+} from '../state.ts';
 import { DEFAULT_SCALE } from '../measure.ts';
 import { clearQualityOverrides } from '../quality.ts';
 import { travelMs } from '../canvas/viewport.ts';
 import type { Viewport } from '../canvas/viewport.ts';
+import type { ViewPerf } from '../perf/view-perf.ts';
 import { togglePlayback } from '../canvas/audio.ts';
 import { currentLens, setLens } from '../ui/board-view.ts';
+import { goToStop, startTour, stepTour, stopTour, tourActive, tourLength } from '../ui/tour.ts';
 import { togglePlayerWindow } from '../ui/playlist.ts';
 import { openCredits } from '../ui/credits.ts';
 import { paintZoom, zoomText } from '../ui/hud.ts';
@@ -67,10 +72,56 @@ export type CommandViewport = Viewport;
 /** What main.ts hands in through createCommands, of which this run wants one. */
 export interface ViewDeps {
   resetAppearance: () => void;
+  perf: ViewPerf;
 }
 
-export function viewCommands(vp: CommandViewport, { resetAppearance }: ViewDeps) {
+export function viewCommands(vp: CommandViewport, { resetAppearance, perf }: ViewDeps) {
   return {
+    /**
+     * The tag filter: which tags the board is showing, and the two ways to
+     * change it.
+     *
+     * In this run rather than with the tag *writes* in commands/item-meta.ts,
+     * and the split is the one this file's header describes: those change the
+     * board, and this changes what you are looking at. Nothing here is
+     * undoable, nothing here is saved, and a filter left up when the board
+     * closes is gone - see tagFilter in board-store.ts.
+     *
+     * `toggleTagFilter` builds the set up rather than replacing it, so ticking
+     * three tags shows the union of three piles. The counting entry is what the
+     * menu draws its "showing N of M" line from, and it exists because a filter
+     * whose result is an empty board has to say so - otherwise a tag nobody
+     * used any more just makes the board look wiped.
+     */
+    tagFilter: () => [...tagFilter],
+    hasTagFilter: () => tagFilter.size > 0,
+    isTagFiltered: (tag: string) => tagFilter.has(tag),
+    toggleTagFilter: (tag: string) => {
+      const next = new Set(tagFilter);
+      if (!next.delete(tag)) next.add(tag);
+      setTagFilter(next);
+    },
+    clearTagFilter: () => setTagFilter([]),
+    filterCounts: () => {
+      const shown = board.items.filter(i => isContent(i) && !isFiltered(i)).length;
+      const all = board.items.filter(isContent).length;
+      return { shown, all };
+    },
+    /**
+     * Select everything the filter is showing.
+     *
+     * The bridge between a filter and everything else the app can do to a
+     * selection: line them up, fence them, tag them again, rearrange just
+     * those. Without it a filter would be a way of *looking* only, and the
+     * commonest thing anybody wants after narrowing a board down is to act on
+     * what is left.
+     */
+    selectFiltered: () => {
+      if (!tagFilter.size) return;
+      const ids = board.items.filter(i => isContent(i) && !isFiltered(i)).map(i => i.id);
+      if (!ids.length) { toast('Nothing on the board carries those tags'); return; }
+      select(ids);
+    },
     /**
      * The two mobile boards, each its own sidebar button.
      *
@@ -116,6 +167,29 @@ export function viewCommands(vp: CommandViewport, { resetAppearance }: ViewDeps)
       }
       togglePlayerWindow();
     },
+    /**
+     * The tour: the board read as a sequence of stops.
+     *
+     * In this run rather than beside the tag writes in commands/item-meta.ts,
+     * and it is the same split that file's header describes: putting a card
+     * *on* the tour changes the board, and these four only change where the
+     * camera is pointing. The runner itself is ui/tour.ts - see the head of
+     * that module for why it is in ui/ and why the index it walks is not a
+     * field on the board.
+     *
+     * `tourStep` and `tourStop` answer whether they took the press, which is
+     * what makes them usable as the first try in canvas/input.ts's arrow and
+     * Escape cases: the same shape as playPause() below and
+     * deleteActiveConnection(). While the bar is up the arrows belong to the
+     * tour even at its last stop, so tourStep answers true there rather than
+     * dropping the press through to nudging the selection a pixel.
+     */
+    tourStart: () => startTour(),
+    tourStop: () => stopTour(),
+    tourStep: (delta: number) => stepTour(delta),
+    tourGo: (i: number) => goToStop(i),
+    inTour: () => tourActive(),
+    tourLength: () => tourLength(),
     // Space, from the canvas key handler: play or pause the current track. Returns
     // whether it did - false when nothing is loaded, so Space falls back to pan.
     playPause: () => togglePlayback(),
@@ -148,22 +222,37 @@ export function viewCommands(vp: CommandViewport, { resetAppearance }: ViewDeps)
       document.querySelector('[data-cmd="debug-grips"]')?.setAttribute('aria-pressed', String(on));
       return on;
     },
-    // Dev: print what each swipe of a touchpad actually delivered - see the
-    // wheel handler in canvas/input.js. The same shape as the grip overlay: an
-    // attribute that module reads, a button that reflects it, and mbrd.debugWheel()
-    // or the #wheel URL for the console.
-    //
-    // This one exists because the wheel handler is the only place in the app
-    // that guesses at hardware, and the guess cannot be checked by reading it.
-    // A two-finger scroll is railed by the platform before the page ever sees
-    // it, and whether the sideways half arrives as nothing, as a trickle or in
-    // hundred-pixel lumps decides which fix is the right one - a question only
-    // the machine under the hand can answer.
-    debugWheel: () => {
-      const on = document.documentElement.toggleAttribute('data-debug-wheel');
-      document.querySelector('[data-cmd="debug-wheel"]')?.setAttribute('aria-pressed', String(on));
-      toast(on ? 'Swipe the board - each gesture prints to the console' : 'Wheel logging off');
+    /**
+     * Arm the frame profiler, and print what it saw.
+     *
+     * The profiler has existed for a long time with no way into it from the
+     * interface at all: `mbrd.perf.on()` from a console, or the `#perf`
+     * fragment, which is the only one of the two a phone has - and a phone is
+     * the device whose frames are worth timing. These two rows are that door.
+     *
+     * The same arrangement as the grip overlay above: this writes its own
+     * aria-pressed, because the fragment and the console drive the one toggle
+     * and a value painted by the panel would go stale behind either.
+     */
+    debugPerf: () => {
+      const on = !perf.active;
+      if (on) perf.on(); else perf.off();
+      document.querySelector('[data-cmd="debug-perf"]')?.setAttribute('aria-pressed', String(on));
+      toast(on ? 'Profiling - pan and zoom for a while, then Print the report' : 'Profiling off');
       return on;
+    },
+    /**
+     * The report, to the console.
+     *
+     * Its own row rather than something the toggle prints on the way off,
+     * because the useful sequence is arm, drive the board about, read, drive
+     * some more - and turning the profiler off to see the numbers would reset
+     * the counters that produced them.
+     */
+    debugPerfReport: () => {
+      if (!perf.active) { toast('Turn profiling on first, then pan and zoom'); return; }
+      const r = perf.report();
+      toast(r ? 'Report printed to the console' : 'Nothing sampled yet - pan or zoom first');
     },
     // Hold the magnification where it is. A command rather than two lines in the
     // click handler, because that is what a user-facing action is here - the one

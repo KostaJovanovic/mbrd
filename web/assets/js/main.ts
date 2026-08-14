@@ -42,9 +42,10 @@ import { initStills } from './canvas/stills.ts';
 import { initInput } from './canvas/input.ts';
 import { initDrop } from './import/drop.ts';
 import {
-  initStorage, restoreSession, openFile, autosave, setPrompt, suspendCache,
-  resetSessionLatches, boardSafety,
+  initStorage, restoreSession, openFile, autosave, setPrompt, setBoardThumb,
+  suspendCache, resetSessionLatches, boardSafety,
 } from './storage/storage.ts';
+import { boardThumb } from './ui/snapshot.ts';
 import { flushNoteEdit, growNote } from './canvas/notes.ts';
 import { initAssets, getAsset } from './storage/assets.ts';
 import { initSidebar } from './ui/sidebar.ts';
@@ -67,7 +68,9 @@ import { initMobileHeaderEditor, isPanelOpen as isHeaderPanelOpen, closePanel as
 import { initAudio } from './canvas/audio.ts';
 import { initFeed } from './ui/feed.ts';
 import { initViewer } from './ui/viewer.ts';
+import { initDarkroom } from './ui/darkroom.ts';
 import { initPlaylist } from './ui/playlist.ts';
+import { initTour } from './ui/tour.ts';
 
 import { createCommands } from './commands.ts';
 import { createViewPerf, initPerfHash } from './perf/view-perf.ts';
@@ -143,7 +146,12 @@ const vp = new Viewport(el('viewport')!, el('world')!, el('origin-mark')!);
 // a DOM. The same injection shape as setAssetNameLookup() and setPrompt() below.
 initBoardView(vp);
 initBoardActions(vp);
-const cmds = createCommands(vp, { resetAppearance, setWhimsy });
+// The frame profiler. Made here rather than down beside the view-change frame
+// it times, because the command surface needs it: the Debug fold can arm it
+// now, and until it could, the only ways in were mbrd.perf.on() and the #perf
+// fragment - a tool with no door in the interface at all.
+const viewPerf = createViewPerf(vp);
+const cmds = createCommands(vp, { resetAppearance, setWhimsy, perf: viewPerf });
 
 // ---------------------------------------------------------------------------
 // Wiring
@@ -236,6 +244,16 @@ initPlaylist(vp, cmds, styleFeedMasthead);
 // the asset store directly and is opened by id, so there is no viewport and no
 // command surface in it - see the head of the module.
 initViewer();
+// The crop and the three dials, and it takes nothing for the same reason the
+// viewer does not: it is opened by id, reads the board and the asset store, and
+// writes back through state.ts.
+initDarkroom();
+// The tour runner. Takes the viewport and nothing else: the itinerary is on the
+// board, which it reads directly, and the index it walks is its own - see the
+// head of the module for why that is not a field on the board. Before
+// initInput, so the arrow and Escape keys have a runner to ask by the time the
+// handler can fire.
+initTour(vp);
 initInput(vp, cmds);
 initMenu(vp, cmds);
 // The offer that follows a rubber band. Takes the viewport and not cmds: the
@@ -250,7 +268,7 @@ initSearch(vp);
 // fifteen still seconds by definition. What it faded there was the one control
 // the page has, and a faded control takes pointer-events: none with it - so the
 // menu button went and the sidebar could not be opened at all. See the same
-// trap, from the other side, in research/ui-audit-2026-08-13.md.
+// trap, from the other side, in research/old/ui-audit-2026-08-13.md.
 if (!isPatch) initIdle(vp);
 initTrash(vp);
 // After initAudio(), which is what reads the stored volume - the bar's slider
@@ -282,8 +300,14 @@ initConnChip(cmds, vp);
 // The board's name, on the masthead and on the Desktop card.
 initBoardTitle();
 // Hand storage the confirmation prompt it cannot import (ui sits above storage
-// - AUD-12): the discard-unsaved and clear-everything dialogs.
+// - AUD-12): the clear-everything dialog.
 setPrompt(ask);
+// And the board's own picture, for the same reason and through the same shape.
+// Every door onto "replace the board" now files the outgoing one on the shelf,
+// and two of those doors - a .mbrd dropped on the canvas, and the PWA file
+// handler - are below ui/ and could not have been handed a thumbnail as an
+// argument. See setBoardThumb() in storage/storage.ts.
+setBoardThumb(boardThumb);
 initStorage();
 
 // ---------------------------------------------------------------------------
@@ -293,7 +317,6 @@ initStorage();
 // The grid is screen-space, so it repaints on every view change. Two tiers are
 // four CSS gradients; Harsh draws its lattice, but only over the canvas, which
 // is the viewport - so both are bounded by the screen rather than the board.
-const viewPerf = createViewPerf(vp);
 
 // The view is board state and is saved with the board, but it changes on every
 // frame of a pan - so it is written here on each change and *announced* on a
@@ -429,19 +452,18 @@ declare global {
 // A console handle, deliberately public: `mbrd.board` to inspect state,
 // `mbrd.cmds.fit()` to drive the app, `mbrd.vp` for the coordinate model,
 // `mbrd.perf.on()` to profile the pan/zoom frame, `mbrd.debugGrips()` to see the
-// resize hitboxes, `mbrd.debugWheel()` to print what a touchpad swipe delivered.
+// resize hitboxes.
 const handle = {
   board, bus, vp, cmds, selection, perf: viewPerf,
-  debugGrips: cmds.debugGrips, debugWheel: cmds.debugWheel,
+  debugGrips: cmds.debugGrips,
 };
 window.mbrd = handle;
 
 // The profiler can be armed from the URL as well as from the console, which is
-// the only way in on a phone - see initPerfHash. The grip overlay and the swipe
-// log ride the same trick with `#grips` and `#wheel`.
+// the only way in on a phone - see initPerfHash. The grip overlay rides the same
+// trick with `#grips`.
 initPerfHash(viewPerf);
 if (location.hash.includes('grips')) cmds.debugGrips();
-if (location.hash.includes('wheel')) cmds.debugWheel();
 
 // ---------------------------------------------------------------------------
 // Start

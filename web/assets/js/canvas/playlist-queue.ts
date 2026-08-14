@@ -50,11 +50,34 @@
 // player is not a node anybody sees, it is a decoder with a volume.
 
 import type { Item } from '../board-model.ts';
+import { readPref, writePref } from '../prefs.ts';
 import { assetURL } from '../storage/assets.ts';
 import {
   claimPlayer, nowPlaying, onPlayerReleased, ownerOf,
   registerPlayer, registeredPlayers, setNowPlaying,
 } from './audio.ts';
+
+/**
+ * Shuffle and repeat are the listener's, not the board's.
+ *
+ * Kept in prefs rather than in the .mbrd, and that is the same argument
+ * canvas/audio.ts makes one file over for the volume: how you like to listen is
+ * a property of the room you are sitting in, and writing it into the file would
+ * mean opening somebody else's board silently changed how yours plays - or, the
+ * other way round, that sending a board to somebody sent your shuffle setting
+ * with it. No schema change, and nothing here ever calls markDirty().
+ *
+ * They survive a board load for the same reason: clearQueue() empties the list,
+ * and the list is what changed. The mode is not part of it.
+ */
+const SHUFFLE_KEY = 'mbrd.shuffle';
+const REPEAT_KEY = 'mbrd.repeat';
+
+/** 'off' for anything the store does not hold or a build wrote and this one does not know. */
+function readRepeat(): RepeatMode {
+  const v = readPref(REPEAT_KEY);
+  return v === 'all' || v === 'one' ? v : 'off';
+}
 
 /**
  * The one field of a board item the queue reads.
@@ -79,13 +102,28 @@ export interface QueueSnapshot {
   repeat: RepeatMode;
   active: boolean;
   length: number;
+  /**
+   * Where we are in the *list*, not in the play order: `queuePos` mapped back
+   * through `queueOrder`, and -1 when nothing is loaded.
+   *
+   * The mapping is the whole of why it is a field rather than something a
+   * transport works out. Under shuffle, `queuePos` is a position in a permuted
+   * index list and means nothing to anybody looking at the rows; what a reader
+   * wants is "the fourth of twelve", counted down the list they can see.
+   *
+   * It is what greys prev and next at the ends and what the lens transport
+   * prints as "4 of 12". Deliberately not an "up next" - a queue under shuffle
+   * has a next track and printing it invites the question of why it is not the
+   * row below, which is a question with a long answer and no useful one.
+   */
+  index: number;
 }
 
 let queueItems: Track[] = [];   // the audio items, in list order
 let queueOrder: number[] = [];  // indices into queueItems, in play order (shuffled or not)
 let queuePos = -1;              // where we are within queueOrder
-let shuffleOn = false;
-let repeatMode: RepeatMode = 'off';
+let shuffleOn = readPref(SHUFFLE_KEY) === '1';
+let repeatMode: RepeatMode = readRepeat();
 /** The one shared <audio>, for tracks with no card on screen. */
 let player: HTMLAudioElement | null = null;
 // The element the queue is driving right now. See the header: this is a card's
@@ -110,6 +148,11 @@ export function queueState(): QueueSnapshot {
     repeat: repeatMode,
     active: !!queuePlayerEl && nowPlaying()?.el === queuePlayerEl,
     length: queueItems.length,
+    // Guarded on both ends rather than indexed straight: queuePos is -1 before
+    // anything has been started, and queueOrder is rebuilt whenever the list or
+    // the shuffle changes, so a stale position is a real state rather than a
+    // theoretical one.
+    index: queuePos >= 0 && queuePos < queueOrder.length ? queueOrder[queuePos] : -1,
   };
 }
 
@@ -282,6 +325,7 @@ function advanceQueue(auto: boolean): void {
 
 export function toggleShuffle(): void {
   shuffleOn = !shuffleOn;
+  writePref(SHUFFLE_KEY, shuffleOn ? '1' : '0');
   rebuildOrder();
   notifyQueue();
 }
@@ -289,6 +333,7 @@ export function toggleShuffle(): void {
 /** off -> all -> one -> off. */
 export function cycleRepeat(): void {
   repeatMode = repeatMode === 'off' ? 'all' : repeatMode === 'all' ? 'one' : 'off';
+  writePref(REPEAT_KEY, repeatMode);
   notifyQueue();
 }
 

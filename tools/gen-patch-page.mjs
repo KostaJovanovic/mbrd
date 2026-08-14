@@ -1,4 +1,4 @@
-// Build the changelog page, from research/patch-notes.md.
+// Build the changelog page, from patch-notes.md at the repository root.
 //
 //   node tools/gen-patch-page.mjs
 //
@@ -49,7 +49,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const SOURCE = join(ROOT, 'research', 'patch-notes.md');
+const SOURCE = join(ROOT, 'patch-notes.md');
 const SHELL = join(ROOT, 'web', 'index.html');
 const OUT = join(ROOT, 'web', 'patch.html');
 
@@ -268,7 +268,7 @@ function buildPage(shell, releases, entries) {
 <html lang="en">
 <head>
 <!-- GENERATED - do not edit. Run: node tools/gen-patch-page.mjs
-     The prose lives in research/patch-notes.md, which is the only place the
+     The prose lives in patch-notes.md at the repository root, the only place the
      changelog is written. The load block below is index.html's own, copied at
      build time so this page wears the app's cascade rather than a second
      account of it. See the head of the generator. -->

@@ -202,10 +202,13 @@ error rather than becoming a broken runner.
   teardown is load-bearing: a `<video>` left mounted keeps its decoder, a
   document's blob URLs are this module's to revoke, and a parsed PDF holds the
   whole file.
-- **`#toolbar` must stay before `#nowplaying` in `index.html`.** The rules that
-  step the player up a tier when the phone's toolbar opens are general sibling
-  combinators, which only look forward. Reordering the two breaks the layout
-  silently and only on a phone.
+- **`#toolbar` must stay before `#nowplaying` in `index.html`, and `#tour` must
+  stay after it.** The rules that step the player up a tier when the phone's
+  toolbar opens are general sibling combinators, and so is the one that lifts the
+  tour bar clear of the player; those only look forward. The two constraints
+  point opposite ways and fix all three elements in one order. Reordering breaks
+  a layout silently — the first only on a phone, the second only while something
+  is playing.
 - **Import paths are case-sensitive on the deployed host and not on this
   machine.** Windows resolves `'./Foo.js'` for `foo.js` happily; the Pages
   demo, served off a Linux filesystem, 404s. The CI job runs on `ubuntu-latest`
@@ -233,8 +236,12 @@ error rather than becoming a broken runner.
   the session is never read, `suspendCache()` stops the writer and
   `freezePrefs()` stops the panel recording a whimsy nudge as a preference, so
   nothing done while reading changes what they own. It is **generated** by
-  `node tools/gen-patch-page.mjs` from `research/patch-notes.md`, which is the
-  only place the prose is written; `save.bat` re-runs it on every commit and
+  `node tools/gen-patch-page.mjs` from `patch-notes.md` at the repository root,
+  which is the only place the prose is written. It sits there rather than under
+  `research/` because it is neither an argument nor a specification — it is the
+  record of what shipped, and `research/README.md` is the file that says why
+  nothing of that kind belongs in there. `save.bat` re-runs the generator on
+  every commit and
   `tests/patch.test.js` runs it again and fails if what is committed differs. It
   may not be hand-edited.
   - **The page scrolls inside its own fixed surface**, the way `#mobile-feed`

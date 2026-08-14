@@ -23,7 +23,8 @@
 // Nothing here reaches `document` at import time - initViewer() does, and
 // tests/imports.test.js holds this file to that.
 
-import { byId } from '../state.ts';
+import { byId, itemAdjust, itemCrop } from '../state.ts';
+import { displayURLReady, ensureDisplay } from '../canvas/display.ts';
 import { assetURL, getAsset, readText } from '../storage/assets.ts';
 import { baseName, formatBytes } from '../util.ts';
 import { linkURL } from '../canvas/renderers.ts';
@@ -216,6 +217,33 @@ const VIEWS: Record<string, View> = {
     img.alt = item.name || '';
     img.decoding = 'async';
     img.src = url;
+    // A cropped picture is shown cropped, and the crop arrives the only way it
+    // exists: as the display copy, which is where canvas/display.ts bakes it.
+    // So this is the one case where the viewer does not show the original file -
+    // and it must not, because the original is a picture the person has already
+    // said they are not showing. The copy is bounded by the quality dial's
+    // sharpness rather than by the file, which is a real loss of resolution
+    // here and the honest trade: the alternative is a full-size view that
+    // disagrees with every card on the board.
+    //
+    // Asynchronous and layered over the original rather than replacing it,
+    // because the copy may not be made yet - the card is usually what made it,
+    // and a card that has never been on screen has not. The full frame shows for
+    // that moment, which is the same stand-in the card itself uses.
+    const crop = itemCrop(item);
+    const hash = item.asset?.hash;
+    if (crop && hash) {
+      const ready = displayURLReady(hash, crop);
+      if (ready) img.src = ready;
+      else ensureDisplay(hash, crop).then(u => { if (u && img.isConnected) img.src = u; });
+    }
+    // The grade is a filter and applies whatever the source, so it rides on top
+    // of either branch above.
+    const adjust = itemAdjust(item);
+    if (adjust) {
+      img.style.filter =
+        `brightness(${adjust.brightness}) contrast(${adjust.contrast}) saturate(${adjust.saturation})`;
+    }
     host.append(img);
   },
 
@@ -238,6 +266,13 @@ const VIEWS: Record<string, View> = {
     const poster = urlOf(item.meta?.cover || item.meta?.poster);
     if (poster) el.poster = poster;
     el.src = url;
+    // The grade, as on the card. A clip can be adjusted and cannot be cropped -
+    // see setItemCrop() in state.ts, which explains why the two differ.
+    const adjust = itemAdjust(item);
+    if (adjust) {
+      el.style.filter =
+        `brightness(${adjust.brightness}) contrast(${adjust.contrast}) saturate(${adjust.saturation})`;
+    }
     host.append(el);
   },
 

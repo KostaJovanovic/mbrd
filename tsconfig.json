@@ -7,7 +7,7 @@
   // commands.js, the large stateful modules where a wrong type is a silently
   // wrong board, and where JSDoc costs more typing than a type annotation
   // would. That is the whole argument for this file - see
-  // research/build-and-framework-audit-2026-08-12.md, Finding 2.
+  // research/old/build-and-framework-audit-2026-08-12.md, Finding 2.
   //
   // ── Nothing here compiles the app ──
   //

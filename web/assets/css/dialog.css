@@ -473,3 +473,156 @@
   font-family: var(--font-mono);
   font-size: 0.92em;
 }
+
+/* ═════════════════════════════════════════════════════════════════════════
+   The darkroom: one picture, cropped and graded.
+
+   Here rather than in a sheet of its own because it is a dialog and this is the
+   sheet dialogs live in - and because its buttons are #ask's buttons (.ask-row
+   above), which is the whole reason it has no button styling at all.
+   ═════════════════════════════════════════════════════════════════════════ */
+
+#darkroom {
+  width: min(880px, calc(100vw - 32px));
+  max-width: none;
+  max-height: calc(100dvh - 32px);
+  padding: 18px 20px 16px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--ogee);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
+  color: var(--ink);
+  margin: auto;
+  animation: ask-in var(--dur-base) var(--ease-back);
+}
+/* The flat display belongs to the open state, or it outranks the UA
+   stylesheet's `display: none` and leaves a closed dialog on screen - the same
+   thing #viewer and #compose both learned. */
+#darkroom[open] { display: flex; flex-direction: column; gap: 14px; }
+#darkroom::backdrop {
+  background: color-mix(in srgb, var(--ink) 42%, transparent);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+
+#darkroom-head { display: flex; align-items: baseline; gap: 12px; }
+#darkroom-title {
+  margin: 0;
+  flex: 1 1 auto;
+  font-family: var(--font-display);
+  font-size: var(--t-title);
+  font-weight: var(--display-weight);
+}
+#darkroom-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: calc(30px * var(--density));
+  height: calc(30px * var(--density));
+  color: var(--ink-2);
+  border: none;
+  border-radius: var(--leaf);
+  background: none;
+  cursor: pointer;
+}
+#darkroom-close:hover { color: var(--accent); background: var(--paper-2); }
+
+/* The stage centres the plate; the plate *is* the picture. Nothing may size the
+   plate independently - the frame inside it is positioned in percentages, and a
+   plate wider than the photograph would put every one of those percentages off
+   by however much empty space sat beside it. See the note in index.html. */
+#darkroom-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  background: var(--paper-2);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+#darkroom-plate { position: relative; display: inline-block; line-height: 0; }
+#darkroom-image {
+  display: block;
+  max-width: 100%;
+  /* Bounded against the window rather than against the dialog, so a tall
+     portrait picture cannot push the dials and the buttons off the bottom. */
+  max-height: min(56dvh, 560px);
+  width: auto;
+  height: auto;
+  /* Nothing here is a drag target except the frame, and a picture that could be
+     dragged away as a file mid-crop is a gesture fighting a gesture. */
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+/* Everything outside the crop is dimmed by one enormous spread rather than by
+   four positioned panels: one shadow cannot disagree with itself about where
+   the edges are, and the plate's `overflow: hidden` is what stops it painting
+   the rest of the dialog. */
+#darkroom-frame {
+  position: absolute;
+  box-shadow: 0 0 0 100vmax color-mix(in srgb, var(--ink) 55%, transparent);
+  outline: var(--hairline) solid var(--paper);
+  cursor: move;
+  touch-action: none;
+}
+#darkroom-frame[hidden] { display: none; }
+/* Thirds, drawn as two lines each way. Decoration only - nothing snaps to
+   them - and aria-hidden in the markup for that reason. */
+.dk-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  background:
+    linear-gradient(to right,  transparent calc(33.333% - 0.5px), var(--paper) calc(33.333% - 0.5px), var(--paper) calc(33.333% + 0.5px), transparent calc(33.333% + 0.5px)),
+    linear-gradient(to right,  transparent calc(66.666% - 0.5px), var(--paper) calc(66.666% - 0.5px), var(--paper) calc(66.666% + 0.5px), transparent calc(66.666% + 0.5px)),
+    linear-gradient(to bottom, transparent calc(33.333% - 0.5px), var(--paper) calc(33.333% - 0.5px), var(--paper) calc(33.333% + 0.5px), transparent calc(33.333% + 0.5px)),
+    linear-gradient(to bottom, transparent calc(66.666% - 0.5px), var(--paper) calc(66.666% - 0.5px), var(--paper) calc(66.666% + 0.5px), transparent calc(66.666% + 0.5px));
+}
+
+/* The eight handles. Bigger than they look: the drawn square is 10px and the
+   grab is 22px, because a 10px target is a miss on a trackpad and a certainty
+   of a miss on a touchscreen. Same trade the board's own grips make with their
+   ::before. */
+.dk-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: var(--paper);
+  border: var(--hairline) solid var(--ink-3);
+  border-radius: 2px;
+}
+.dk-handle::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+}
+.dk-handle[data-h="nw"] { top: -5px;  left: -5px;  cursor: nwse-resize; }
+.dk-handle[data-h="n"]  { top: -5px;  left: 50%; margin-left: -5px; cursor: ns-resize; }
+.dk-handle[data-h="ne"] { top: -5px;  right: -5px; cursor: nesw-resize; }
+.dk-handle[data-h="e"]  { top: 50%; margin-top: -5px; right: -5px; cursor: ew-resize; }
+.dk-handle[data-h="se"] { bottom: -5px; right: -5px; cursor: nwse-resize; }
+.dk-handle[data-h="s"]  { bottom: -5px; left: 50%; margin-left: -5px; cursor: ns-resize; }
+.dk-handle[data-h="sw"] { bottom: -5px; left: -5px;  cursor: nesw-resize; }
+.dk-handle[data-h="w"]  { top: 50%; margin-top: -5px; left: -5px; cursor: ew-resize; }
+
+/* Three dials in a column, each a label, a slider and its readout on one line.
+   The readout is monospace and a fixed width so the row does not jitter as the
+   number goes from 99% to 100%. */
+#darkroom-dials { display: flex; flex-direction: column; gap: 8px; }
+.dk-dial {
+  display: grid;
+  grid-template-columns: minmax(72px, auto) 1fr 3.5em;
+  align-items: center;
+  gap: 12px;
+  font-size: var(--t-small);
+  color: var(--ink-2);
+}
+.dk-dial input[type="range"] { width: 100%; accent-color: var(--accent); }
+.dk-dial output {
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  color: var(--ink-3);
+  text-align: right;
+}

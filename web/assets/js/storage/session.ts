@@ -47,6 +47,13 @@ export interface PromptOptions {
   keep?: string;
   cancel?: string;
   go?: string;
+  /**
+   * Whether the `go` button is dressed as destructive. Absent means "decide
+   * from the shape", which is what ui/dialog.ts did while every question this
+   * app stopped to ask was a destructive one. The open-or-merge question is
+   * not, and passes false.
+   */
+  danger?: boolean;
 }
 
 /**
@@ -223,7 +230,7 @@ function referencedHashes(data: BoardLike) {
 // Save, and the pagehide flush all called it directly. Two overlapping runs
 // could finish out of order, landing an older snapshot on top of a newer one,
 // and an older run's sweep could delete an asset only the newer snapshot still
-// referenced. See AUD-02 in research/full-code-audit-2026-07-26.md.
+// referenced. See AUD-02 in research/old/full-code-audit-2026-07-26.md.
 //
 // One writer fixes both. `saveGen` counts changes worth persisting; a run
 // captures the generation it is about to write and, if newer edits landed while

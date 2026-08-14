@@ -229,6 +229,21 @@ test('the palette menu carries Dynamic, and it is the only way to ask for it', a
   const tokens = await readFile(
     new URL('../web/assets/css/tokens.css', import.meta.url), 'utf8');
   assert.doesNotMatch(tokens, new RegExp(`\\[data-palette=["']?${owned}`));
+
+  // The mirror of that last one, and the reason it is worth having: the row
+  // draws each palette's own colours by walking tokens.css for the block its
+  // value names (paletteSwatches in ui/palettes.ts). A named palette with no
+  // block would therefore be an option that opens with no chips beside it -
+  // which looks like a rendering fault rather than like a missing stylesheet.
+  //
+  // Dynamic and Papyrus are exempt for the two reasons they are always exempt:
+  // Dynamic has no block by design (the assertion above says so), and Papyrus
+  // *is* the bare `:root`.
+  for (const { value, label } of options) {
+    if (!value || value === owned) continue;
+    assert.match(tokens, new RegExp(`\\[data-palette=["']?${value}["']?\\]`),
+      `${label} is offered by the panel but tokens.css declares no block for it`);
+  }
 });
 
 test('the whimsy stops keep the id the stylesheet sets them by', async () => {

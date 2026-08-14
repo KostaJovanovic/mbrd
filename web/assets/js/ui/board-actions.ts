@@ -40,7 +40,7 @@ import {
   board, bus, selection, setSetting, byId,
   snapshotGeom, applyGeom, commitGeom, baseStep,
   recheckBoardGeometry, placeMobileItems,
-  isRider, stuckTo, stuckPlacement, isFence, fenceOf, fenceBox,
+  isRider, stuckTo, stuckPlacement, isFence, isLocked, fenceOf, fenceBox,
 } from '../state.ts';
 import { latticeBox, itemBounds } from '../geometry.ts';
 import { travelMs } from '../canvas/viewport.ts';
@@ -300,7 +300,9 @@ export async function resetSize() {
   // region down to a small box and drop everything in it, which is the same
   // silent loss the resize grips now floor against; there is no floor to apply
   // here, since the whole action is "go back to a size of your own".
-  const items = board.items.filter(i => selection.has(i.id) && !isFence(i));
+  // And so does anything locked: this writes w and h, which is geometry, and a
+  // lock is a promise about geometry whatever the route to it.
+  const items = board.items.filter(i => selection.has(i.id) && !isFence(i) && !isLocked(i));
   if (!items.length) return;
 
   const step = baseStep();
@@ -530,10 +532,22 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
   // has to be in the list it is handed. See placeMobileItems().
   const carried = mobile ? [] : items.filter(it => {
     const parent = parentOf.get(it.id);
-    return !isRider(it) && parent != null && inSet.has(parent);
+    return !isRider(it) && !isLocked(it) && parent != null && inSet.has(parent);
   });
   const carriedIds = new Set(carried.map(it => it.id));
-  const free = items.filter(it => !isRider(it) && !carriedIds.has(it.id));
+  // Locked cards are dealt no slot and carried by nothing, so a rearrangement
+  // lays the rest of the board out around them and they stay exactly where they
+  // were. That is the strongest thing a lock does - Rearrange is the one command
+  // that moves everything at once, and it is the accident lock is usually
+  // bought for.
+  //
+  // Excluded here rather than at the two call sites in commands.ts, so that
+  // `whole` above is still read off the list that came in: "Rearrange
+  // everything" on a board with one locked card is still a rearrangement of
+  // everything, and still rebuilds about the origin and flies the view there.
+  // Filtering earlier would have made one locked card silently turn it into the
+  // subset behaviour, which is a different command wearing the same name.
+  const free = items.filter(it => !isRider(it) && !isLocked(it) && !carriedIds.has(it.id));
   // The region joins the snapshot when there is one, so closing it around the
   // result is inside the same undo entry as the layout that made it necessary.
   const beforeAll = snapshotGeom(

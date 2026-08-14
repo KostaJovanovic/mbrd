@@ -32,8 +32,13 @@
 // here; what is here is only which button reaches which of them.
 
 import { busy, toast } from '../notify.ts';
-import { board } from '../state.ts';
-import { exportBoard, newBoard, openBoard, saveBlob, shareBoard } from '../storage/storage.ts';
+import { formatBytes } from '../util.ts';
+import { board, historyDepth, historyState, historyWeight } from '../state.ts';
+import {
+  boardSafety, exportBoard, lastSaveFailure, newBoard, openBoard,
+  saveBlob, shareBoard, storageReport,
+} from '../storage/storage.ts';
+import { assetBytes } from '../storage/assets.ts';
 import { openLibrary } from '../ui/library.ts';
 import { boardPdf, boardPng } from '../ui/snapshot.ts';
 import { saveWithCooldown } from '../ui/board-actions.ts';
@@ -66,10 +71,79 @@ export function fileCommands() {
     open: () => openBoard(),
     // The board library - several boards kept in this browser, not just the one
     // the session slot holds. Opens the switcher (ui/library.js); the storage
-    // behind it is in storage/library.js. Distinct from New, which still guards
-    // the single session slot by offering to export first: the library's own New
-    // has the shelf to set the old board on, so it never has to ask.
+    // behind it is in storage/library.js.
+    //
+    // It used to be distinct from New: New guarded a single session slot and
+    // offered to export first, while the library had the shelf to set the old
+    // board on and never had to ask. That asymmetry is gone - Open and New file
+    // the outgoing board on the shelf too, and there is one New. This is now the
+    // same door with a list in front of it.
     library: () => openLibrary(),
+    /**
+     * The four Debug readouts. Buttons that report, not live rows, and that
+     * shape is forced rather than chosen: ui/panel.ts repaints on `board`,
+     * `settings`, `layout` and `lens` and on nothing else - not on `items`, not
+     * on `history`, and not when the panel is opened. A hint showing the undo
+     * depth or the asset weight would therefore be stale the moment anybody
+     * looked at it, which is worse than a button, because a wrong number reads
+     * as a fact.
+     *
+     * Each says its answer twice: a toast for the person who pressed it, and a
+     * console line for the person reading it back off a bug report. The toast
+     * has to fit on a phone, so anything longer than a sentence goes to the
+     * console alone.
+     */
+    boardSafe: () => {
+      const { state, detail } = boardSafety();
+      const failure = lastSaveFailure();
+      const headline = state === 'saved' ? 'Your work is saved in this browser'
+        : state === 'unsaved' ? 'There are changes that are not saved'
+          : 'Cannot tell whether the last changes were saved';
+      toast(detail ? `${headline} - ${detail}` : headline, state === 'unsaved' ? 'error' : undefined);
+      console.info('[mbrd] board safety:', { state, detail, lastSaveFailure: failure || null });
+    },
+    /**
+     * Whether the browser has promised to keep this origin, and roughly how much
+     * room it thinks there is.
+     *
+     * The one Debug row that answers a question people genuinely have and no
+     * other surface answers: "if I close this tab, is my board still here
+     * tomorrow?" `persisted` is null until the first explicit Save, because that
+     * is when the app asks - and null is reported as such rather than as "no".
+     */
+    storageState: async () => {
+      const { persisted, used, quota } = await storageReport();
+      const durable = persisted === null ? 'not asked yet - save once and it will be'
+        : persisted ? 'durable: the browser has promised to keep it'
+          : 'best-effort: the browser may clear it to make room';
+      const room = used == null ? '' : ` Using ${formatBytes(used)}${quota ? ' of ' + formatBytes(quota) : ''}.`;
+      toast(`Storage is ${durable}.${room}`);
+      console.info('[mbrd] storage:', { persisted, used, quota });
+    },
+    /**
+     * What is on this board and how much of it is already optimised.
+     *
+     * The import is dynamic and must stay dynamic. `optimize/` is deliberately
+     * unranked in tests/layers.test.js because it is loaded on demand and is a
+     * button; a static import here would make the whole optimiser a dependency
+     * of the settings panel and quietly end that.
+     */
+    boardWeight: async () => {
+      const { bytes, count } = assetBytes();
+      const { planOptimize, describeSaving } = await import('../optimize/optimize.ts');
+      const plan = planOptimize();
+      toast(`${count} files, ${formatBytes(bytes)} in this browser. `
+        + `${plan.total} could be made smaller, ${plan.done} already are.`);
+      console.info('[mbrd] board weight:', { files: count, bytes, plan, saving: describeSaving });
+    },
+    /** How deep the undo stack is, and what it is holding on to. */
+    historyState: () => {
+      const { undo, redo } = historyDepth();
+      const { undo: undoLabel, redo: redoLabel } = historyState();
+      toast(`${undo} back, ${redo} forward, holding ${historyWeight()} items.`);
+      console.info('[mbrd] history:', { undo, redo, next: { undo: undoLabel, redo: redoLabel },
+        weight: historyWeight() });
+    },
     save: () => saveWithCooldown(),
     export: () => exportBoard(),
     exportAs: () => exportBoard({ pickNew: true }),

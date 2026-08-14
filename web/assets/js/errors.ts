@@ -6,7 +6,7 @@
 // waiting on. Until it existed there was no window.onerror and no
 // unhandledrejection listener anywhere in web/, so the whole of that class went
 // to a console nobody has open - see Finding 6 of
-// research/build-and-framework-audit-2026-08-12.md.
+// research/old/build-and-framework-audit-2026-08-12.md.
 //
 // The failure mode that finding names is specific and worth restating, because
 // it is the one this module is shaped around: an app with no account, no

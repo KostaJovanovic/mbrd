@@ -576,6 +576,131 @@
 /* An engaged shuffle or repeat reads in the accent. */
 #nowplaying .np-qbtn[aria-pressed="true"] { color: var(--accent); }
 
+/* ---------------------------------------------------------------------------
+   The tour bar (ui/tour.js)
+
+   The same card as the player next to it - same paper, same hairline, same
+   --leaf corner - because on a board that is playing something the two share an
+   edge, and two objects on one edge wearing two different corners read as two
+   unrelated strips. That is the argument #nowplaying makes about the add bar,
+   one object over.
+
+   In the same slot, and lifted clear of the player when there is one. The
+   combinator only looks forward, which is why #tour sits *after* #nowplaying in
+   index.html while #toolbar sits before it: this rule needs to see the player
+   from the tour, and the player's own needs to see the toolbar from the player.
+   Both directions are load-bearing and neither is reorderable.
+
+   Not on the idle list below, and that is deliberate rather than an omission. A
+   stop is something you look at, and looking at one for fifteen still seconds is
+   the normal case rather than the absent one - a bar that faded out while you
+   read would take pointer-events with it and leave the tour with no visible way
+   on or out. The board's own furniture still goes; this stays, because it is the
+   thing the board is currently being read through. */
+#tour {
+  --tour-gap: 12px;
+
+  position: fixed;
+  z-index: 21;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  left: max(16px, env(safe-area-inset-left));
+  right: max(16px, env(safe-area-inset-right));
+  width: max-content;
+  max-width: min(420px, 100vw - 32px);
+  margin-inline: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-1);
+  user-select: none;
+}
+#tour[hidden] { display: none; }
+/* Above the player rather than over it. The sum is each term named: the bar's
+   own height at this padding, plus the gap the player keeps from the edge. */
+#nowplaying:not([hidden]) ~ #tour {
+  bottom: calc(max(16px, env(safe-area-inset-bottom)) + 76px);
+}
+/* And out of the sidebar's way, on the one side it opens from. The player next
+   door loses width here; this one is content-width already, so it moves. */
+#sidebar.is-open ~ #tour {
+  left: calc(max(14px, env(safe-area-inset-left))
+             + min(var(--sidebar-w), 100vw - 28px) + var(--tour-gap));
+}
+#header-panel.is-open ~ #tour {
+  right: calc(max(14px, env(safe-area-inset-right))
+              + min(var(--sidebar-w), 100vw - 28px) + var(--tour-gap));
+}
+
+/* The entrance, in the player's own idiom: up from under the edge, and back
+   under it on the way out. ui/tour.js unhides a frame before it adds .is-up,
+   because an element going straight from display:none to its final state is a
+   jump rather than a transition. */
+#tour {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(calc(100% + 24px)) scale(0.98);
+  transition: opacity var(--dur-fast) var(--ease),
+              transform var(--dur-fast) var(--ease);
+}
+#tour.is-up {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+  transition: opacity var(--dur-base) var(--ease),
+              transform var(--dur-base) var(--ease-back);
+}
+@media (prefers-reduced-motion: reduce) {
+  #tour { transition: none; }
+  #tour.is-up { transition: none; }
+}
+
+/* Two lines in the middle: which card, and how far through. The name gets what
+   is left after the three buttons and ellipses rather than pushing them off -
+   the same bargain the track name makes in the bar below. */
+#tour .tour-where {
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: 0 6px;
+  text-align: center;
+}
+#tour .tour-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--ink);
+}
+#tour .tour-count {
+  font-size: 11px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+#tour button {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+#tour button:hover:not(:disabled) { background: var(--paper-2); color: var(--accent-deep); }
+/* Greyed at the ends. Clamped rather than wrapped - see stepTour() - so the
+   first and last stops each have one dead button, and it has to look dead. */
+#tour button:disabled { color: var(--ink-3); opacity: 0.45; cursor: default; }
+#tour button svg { width: 15px; height: 15px; }
+#tour .tour-close { margin-left: 2px; border-left: var(--hairline) solid var(--rule); border-radius: 0 var(--leaf) var(--leaf) 0; }
+#tour .tour-close svg { width: 12px; height: 12px; }
+
 /* Idle - fifteen seconds of nothing, and the furniture goes.
    ui/idle.js puts the class on and takes it off; what counts as "something
    happened" is decided there.

@@ -1,9 +1,20 @@
 # The visual audit: what the axis exposes
 
-*Open. Written 2026-08-12. An element-by-element pass over the interface at all
-three whimsy stops, ranked worst to best, with the corner scale rebuilt as a
-scale. The high-severity half is **already applied** — see* Applied *below; the
-rest is the plan.*
+> **Moved to `old/` on 2026-08-14.** Five of its six plan items are done and
+> annotated in place; the sixth, the type scale, is V1 in
+> `research/open-work-2026-08-14.md`. Read this for the reasoning rather than the
+> list — in particular the closing rule, which is the most reusable thing in it:
+> *audit at the ends of the whimsy axis, never at the middle*, because a literal
+> is indistinguishable from a token at the value it was copied from and obvious
+> at every other. Paths written `old/…` below were written from `research/` and
+> mean this directory.
+
+*Open on one item. Written 2026-08-12, re-checked 2026-08-14. An
+element-by-element pass over the interface at all three whimsy stops, ranked
+worst to best, with the corner scale rebuilt as a scale. The high-severity half
+was applied on the day — see* Applied *below — and five of the six items in the
+plan have gone in since. **What is left is item 2, the type scale**, and it is
+the one the plan itself called the real work.*
 
 **`overlays.css` no longer exists.** Every `overlays.css:NNN` below is a
 reference into a file that was split into eight subsystem sheets the same week
@@ -185,40 +196,60 @@ oversight.
 
 ## The plan for what is left
 
-*Six when this was written; **five** now — item 6 is done, and where it went is
-under it. The other five are as written.*
+*Six when this was written; **one** now. Items 1, 3, 4, 5 and 6 are done, each
+annotated in place below. Item 2 is the only one still open, and it is the one
+this list called the real work.*
 
-**1 — Decide the circle question.** Harsh says nothing curves; ~13 elements are
-`border-radius: 50%` and stay perfectly round there. A swatch dot and a slider
-thumb are shapes rather than eased corners, so this may well be correct — but it
-is currently correct by accident, since nobody chose it. One line either way,
-and the answer belongs in the `--radius-pill` comment. *This is a taste call and
-wants the maintainer, not a patch.*
+~~**1 — Decide the circle question.**~~ **Done.** Harsh says nothing curves; ~13
+elements are `border-radius: 50%` and stay perfectly round there. A swatch dot
+and a slider thumb are shapes rather than eased corners, so this may well be
+correct — but it was correct by accident, since nobody had chosen it. It has
+been chosen, and the answer is where this list said it belonged: the
+`--radius-pill` comment in `tokens.css`. The rule it settles on is worth
+knowing before adding any `border-radius` at all — *an eased corner follows
+`--radius`, a capped end follows `--radius-pill`, and a circle is drawn as a
+circle at every tier*, because the axis governs how much the interface softens
+and does not get to redraw what a thing is. Fourteen elements, not thirteen.
 
-**2 — Draw the line under the type scale.** Not "replace 29 literals with
-tokens" — most should stay. The work is to sort them into *on-scale*,
-*deliberately off-scale* (glyphs, mastheads, `clamp()`ed world-space text), and
-*never looked*, then fix only the third pile and comment the second. Expect the
-third pile to be small; the corners were the systemic failure, the type mostly
-is not.
+**2 — Draw the line under the type scale.** ***Open, and now the only open item
+here.*** Not "replace 29 literals with tokens" — most should stay. The work is
+to sort them into *on-scale*, *deliberately off-scale* (glyphs, mastheads,
+`clamp()`ed world-space text), and *never looked*, then fix only the third pile
+and comment the second. Expect the third pile to be small; the corners were the
+systemic failure, the type mostly is not.
 
-**3 — Three stray durations.** The autosave mark's `640ms` (now `trash.css`),
-`.toast-line`'s `300ms` (now `status.css`), and `#mobile-header-edit-btn`'s
-`0.3s`, which `sidebar.css:60` already documents as *asked for as a number*. Two
-to fix, one to leave — but they should be told apart explicitly, the way the type
-sizes should. The `300ms` is the interesting one and may well be a *leave*: it is
-paired with `TOAST_FADE_MS` on the JavaScript side, and a duration the axis could
-flatten to zero would leave the timer holding an invisible line on screen.
+*Two notes from 2026-08-14. **The pile has not grown**, which is worth saying
+because a first count suggested it had: `font-size:` with a bare pixel value —
+which is what the 29 above counts — appears **27** times now, and 26 of those
+are in sheets that already existed when this was written. The number that looks
+alarming is 55, and that is every `font-size` not reading a `var()`, which
+sweeps in the `em`, `rem` and `clamp()` values that this item's own second pile
+is *for*. Counting those as debt is the mistake this item exists to stop, so
+count px. And exactly one literal has been sorted so far: `ghosts.css:145`
+carries the "off the type scale on purpose" annotation and names this item as
+the reason. That is the shape the rest want — for the second pile the
+annotation is the deliverable, not the token.*
 
-**4 — `lab.html`, or not.** Eight literal radii and a private colour vocabulary.
-Either import the tokens and let the lab render at the current tier — which would
-make it useful for exactly this kind of audit — or write one comment at the top
-saying it is off-system on purpose. Doing neither is the only bad option.
+~~**3 — Three stray durations.**~~ **Done, and it came out two-to-leave rather
+than two-to-fix.** The autosave mark's `640ms` was the real one and is struck
+from `--dur-travel` now (`1.6 × 400ms` is exactly the 640 it always was, so
+Middle does not move and the ends come out for free: 1120ms at Softish, 352ms at
+Harsh). `.toast-line`'s `300ms` stayed, and the guess below was right about why —
+it is paired with `TOAST_FADE_MS` on the JavaScript side, so a duration the axis
+could flatten to zero would leave the timer holding an invisible line on screen.
+`#mobile-header-edit-btn`'s `0.3s` stayed as already documented. All three are
+now commented where they sit, which was the actual ask.
 
-**5 — `--font-serif-display` is declared and read by nothing.** `tokens.css`
-already explains why it stays (Playfair is offered by name in two font menus and
-saved boards may carry it). That reasoning is sound; it wants a test asserting it
-rather than a comment defending it, so the next reader does not delete it.
+~~**4 — `lab.html`, or not.**~~ **Done, the comment way.** `web/lab.html` opens
+with an *"Off the design system on purpose"* block naming this document, and
+`CLAUDE.md` carries the same reasoning: a bench that renders at the current
+whimsy tier makes a wrong colour and a warmly-displayed colour look identical.
+
+~~**5 — `--font-serif-display` is declared and read by nothing.**~~ **Done, the
+way this item asked for it** — asserted rather than argued.
+`tests/font-tokens.test.js` holds it: the token stays declared, nothing reads
+it, and the test fails if Playfair leaves both font menus, which is the
+condition under which it may finally go.
 
 ~~**6 — Write the z-index table.**~~ **Done.** *The stack* in
 `research/docs/architecture.md`. It came out as four tables rather than one, and

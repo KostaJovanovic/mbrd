@@ -309,6 +309,21 @@
 .item[data-fit="contain"] .item-body img,
 .item[data-fit="contain"] .item-body video { object-fit: contain; }
 
+/* The three picture adjustments, as one filter.
+
+   On .item-body rather than on the img, so the twin (.still) and a video's
+   poster get the same treatment as the picture itself and a card cannot show
+   one grade zoomed in and another zoomed out.
+
+   The whole value arrives in one custom property rather than three, because a
+   filter assembled from unset properties is an invalid declaration and drops -
+   see writeAdjust() in canvas/item-dom.ts, which explains the choice at the
+   place that makes it. `none` is the default here, so every card that has never
+   been adjusted carries no filter at all rather than an identity one: an
+   identity filter still promotes the element to its own layer, which on a board
+   of two hundred cards is two hundred layers bought for nothing. */
+.item-body { filter: var(--item-filter, none); }
+
 /* The zoomed-out stand-in. Two things arrive here by the same door: a frozen
    GIF frame shot by canvas/stills.js, and a photograph's hundred-pixel
    thumbnail made at import. Both are a sibling <img class="still">, and both
@@ -478,3 +493,22 @@
   color: var(--ink-2);
 }
 
+
+/* Dimmed by the tag filter.
+
+   Faded, not hidden, and still fully interactive: the filter's whole promise is
+   that the board goes on showing everything that is on it - see tagFilter in
+   board-store.ts. So this is one opacity and nothing else. No pointer-events,
+   no display, no visibility: a card you can see but cannot touch is a worse
+   answer than either showing it or not.
+
+   The transition is what makes ticking a tag read as an answer rather than as a
+   redraw, and it is the only thing here that is not strictly necessary. */
+.item.is-filtered,
+.item-shadow.is-filtered { opacity: 0.16; }
+.item, .item-shadow { transition: opacity var(--dur-base) var(--ease); }
+/* A dimmed card that is selected comes most of the way back, because the
+   selection is a stronger statement about what you are looking at than the
+   filter is: you reached past the fade and picked this one up, and it has to be
+   legible while you move it. */
+.item.is-filtered.is-selected { opacity: 0.75; }

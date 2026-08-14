@@ -19,7 +19,7 @@
 // and "what is it" are the same question - a list of names with no positions
 // would tell you the thing exists, which you already suspected.
 
-import { board, byId, select } from '../state.ts';
+import { board, byId, itemTags, select } from '../state.ts';
 import { travelMs } from '../canvas/viewport.ts';
 import { extOf } from '../util.ts';
 import { describeExt } from '../import/formats.ts';
@@ -38,6 +38,7 @@ type Fields = {
   url: string,
   kind: string,
   kindLabel: string,
+  tags: string[],
 };
 
 /** One answer: the item, what was matched against, and how well. */
@@ -172,6 +173,9 @@ function fields(item: Item): Fields {
     // one is a bag of words to match against and reads like one - "audio
     // Waveform audio Sound" is a fine haystack and a terrible caption.
     kindLabel: kind ? [kind.label, kind.categoryLabel].filter(Boolean).join(' · ') : '',
+    // Already lowercased and already clean - itemTags() does both - so nothing
+    // here has to fold case the way the four fields above do.
+    tags: itemTags(item),
   };
 }
 
@@ -188,11 +192,19 @@ const afterFirstLine = (s: string) => {
  * contains it is probably it; a word buried in a note is a maybe; and the file
  * kind is last, because "image" matches half the board and is a filter rather
  * than an identification.
+ *
+ * A tag scores second, above everything but the name, and that placing is the
+ * whole argument for tags being searchable at all: a tag is the one field on an
+ * item that somebody typed *in order to find it again*. An exact one beats a
+ * name that merely contains the query, because typing a whole tag is a
+ * deliberate act and nothing else in the list is.
  */
 function score(f: Fields, q: string) {
   const name = f.name.toLowerCase();
   if (name.startsWith(q)) return 1000 - name.length;   // shortest exact-ish first
+  if (f.tags.includes(q)) return 800;
   if (name.includes(q)) return 600 - name.length;
+  if (f.tags.some(t => t.includes(q))) return 500;
   if (f.url.toLowerCase().includes(q)) return 400;
   if (f.text.toLowerCase().includes(q)) return 300;
   if (f.kind.toLowerCase().includes(q)) return 100;

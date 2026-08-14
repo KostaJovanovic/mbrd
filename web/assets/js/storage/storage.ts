@@ -35,12 +35,14 @@ import { uid, isRecord } from '../util.ts';
 import { toast, busy } from '../notify.ts';
 import { idbGet, idbSet } from './idb.ts';
 import {
-  libraryIndex, putLibraryBoard, getLibraryBoard, removeLibraryBoard,
+  libraryIndex, putLibraryBoard, getLibraryBoard, removeLibraryBoard, hasLibraryBoard,
 } from './library.ts';
 import {
-  board, serializeBoard, loadBoard, markDirty, isDirty, setTitle, bus,
-  defaultBoardTitle, isNotFoundBoard,
+  board, serializeBoard, loadBoard, markDirty, setTitle, bus, mergeBoard,
+  defaultBoardTitle, isNotFoundBoard, hasContent,
 } from '../state.ts';
+import { normalizeBoard } from '../board-schema.ts';
+import { planMerge } from '../merge.ts';
 import { packBoard, unpackBoard, MIME } from './mbrd.ts';
 import { allAssets, clearAssets } from './assets.ts';
 import { fileNameFor, titleFromFileName, titleForOpenedBoard } from './naming.ts';
@@ -70,15 +72,41 @@ const detailOf = (err: unknown) => String(isRecord(err) ? err.message : undefine
 
 /** The one throw every picker and share sheet makes when it is dismissed. */
 const isAbort = (err: unknown) => isRecord(err) && err.name === 'AbortError';
-// The confirmation dialogs below - discard-unsaved and clear-everything - are
-// the one thing this module needs from the interface, and ui/ sits *above*
-// storage in the layering (AUD-12). So the prompt is injected rather than
-// imported: main.js wires setPrompt() to ui/dialog's ask() at startup. Left
-// unset - in a test, or before wiring - it answers 'cancel', which is the safe
-// default here: nothing is discarded and nothing is wiped without a real answer.
+// The clear-everything dialog is the one thing this module still needs from the
+// interface, and ui/ sits *above* storage in the layering (AUD-12). So the
+// prompt is injected rather than imported: main.js wires setPrompt() to
+// ui/dialog's ask() at startup. Left unset - in a test, or before wiring - it
+// answers 'cancel', which is the safe default here: nothing is wiped without a
+// real answer.
+//
+// It used to ask twice. The other question was "you have unsaved changes,
+// discard them?" in front of Open and New, and it is gone: both now file the
+// outgoing board onto the library shelf instead, which is a better answer than
+// any dialog because it needs no answer. See shelveCurrent().
 let prompt: Prompt = async () => 'cancel';
 export function setPrompt(fn: Prompt | null | undefined) {
   prompt = typeof fn === 'function' ? fn : async () => 'cancel';
+}
+
+/**
+ * The board's own picture, for the shelf. Injected for exactly the reason the
+ * prompt above is: it is rendered by ui/snapshot.ts and ui/ sits above storage.
+ *
+ * It became an injection when every door onto "replace the board" started
+ * putting the old one on the shelf first. Before that only the library asked
+ * for a stash, and the library is a ui/ module and could hand a thumbnail in as
+ * an argument. Now openFile() stashes too - and openFile() is also called by
+ * import/drop.ts, which may not import ui/ either, and by main.ts's file
+ * handler. An argument would have had to be threaded through all three; this is
+ * one wire in main.ts and none of the three knows.
+ *
+ * Unwired it answers null, which is exactly what LibraryEntry.thumb already
+ * means. A shelf row without a picture is a shelf row.
+ */
+type ThumbMaker = () => Promise<string | null>;
+let makeThumb: ThumbMaker = async () => null;
+export function setBoardThumb(fn: ThumbMaker | null | undefined) {
+  makeThumb = typeof fn === 'function' ? fn : async () => null;
 }
 
 /**
@@ -147,6 +175,27 @@ async function ensurePersistence() {
     persistent = false;   // an engine that refuses to answer is not a durable one
   }
   return persistent;
+}
+
+/**
+ * What the engine said about durability, and how much room it thinks there is.
+ *
+ * Reported rather than asked: `persisted` is whatever ensurePersistence() has
+ * already settled on, and null means nobody has saved yet, which is a real
+ * answer and not a missing one. Asking here instead would make a Debug row
+ * request a permission, which is not what a readout does.
+ *
+ * The estimate is the browser's and is deliberately vague - engines round it,
+ * and some report the whole origin group - so it is worth showing and not worth
+ * computing anything from. Absent where the API is not there.
+ */
+export async function storageReport() {
+  const est = await navigator.storage?.estimate?.().catch(() => null) || null;
+  return {
+    persisted: persistent,
+    used: typeof est?.usage === 'number' ? est.usage : null,
+    quota: typeof est?.quota === 'number' ? est.quota : null,
+  };
 }
 
 /**
@@ -353,27 +402,27 @@ export async function openBoard() {
 
 /**
  * Open a .mbrd File. The one door onto "replace the board with this", and so
- * the one place the unsaved-work question belongs.
+ * the one place the board being replaced is put somewhere safe.
  *
- * It used to live in openBoard() alone, which covered the Open button and
- * nothing else: a .mbrd dropped on the canvas (import/drop.js) and one handed
- * over by the OS through the PWA's file handler (main.js, launchQueue) both
- * came straight in here and replaced an edited board without a word. Three
- * doors, one of them guarded. Now the guard is on the room.
+ * It used to be the one place the unsaved-work *question* belonged, and it used
+ * to ask. It does not any more: the board leaving the screen is filed on the
+ * shelf a moment before the next one arrives, so there is nothing to lose and
+ * nothing to ask about. See shelveCurrent(), which carries the argument.
  *
- * A clean board is never interrupted - confirmDiscard() only asks when there
- * is something to lose - so the common case of opening a board you have just
- * saved still costs nothing.
+ * The stash happens *before* unpacking, deliberately, and for the same reason
+ * the question used to: withFreshAssets() sets the current board's assets aside
+ * and registers the new file's in their place, so a stash after that had run
+ * would be packing the outgoing board against the incoming board's bytes.
  *
- * Asked *before* unpacking, deliberately, even though that means a corrupt
- * file can prompt and then fail. withFreshAssets() sets the current board's
- * assets aside and registers the new file's in their place; answering "keep my
- * work" after that had run would leave the old board on screen with the new
- * board's bytes behind it.
+ * A fresh board id is minted on the way past. Without it the arriving board
+ * would inherit the shelf row of the one just put away and overwrite it on the
+ * next stash - two boards, one row, and the older of them gone.
  */
 export async function openFile(file: File, handle: FileSystemFileHandle | null = null) {
-  if (!(await confirmDiscard('Opening another board'))) return false;
   try {
+    // Refused rather than risked: if the outgoing board could not be filed,
+    // opening this one would destroy it. shelveCurrent() has already said so.
+    if (!(await shelveCurrent())) return false;
     // Unpack *and* load inside the transaction. Loading used to sit outside
     // it, on the reading that unpacking was the risky half - but the board is
     // only actually replaced by loadBoard(), and a file can be a perfectly
@@ -383,6 +432,11 @@ export async function openFile(file: File, handle: FileSystemFileHandle | null =
     // still on screen pointing at nothing. Now nothing is committed until the
     // board itself is in.
     const job = busy('Opening ' + file.name);
+    // Set inside the transaction, read in the finally. `handle` is null on two
+    // of the three doors into here, so it cannot tell a completed open from a
+    // failed one - and what the finally decides is whether the arriving board
+    // takes a new shelf row or the outgoing one keeps its old one.
+    let opened = false;
     try {
       return await withFreshAssets(async () => {
         const { manifest, board: data } = await unpackBoard(file);
@@ -395,17 +449,116 @@ export async function openFile(file: File, handle: FileSystemFileHandle | null =
         // Anything else starts the board's created date afresh at the next save,
         // which is what an absent one has always done.
         created = (typeof manifest.created === 'string' && manifest.created) || null;
+        opened = true;
         toast('Opened ' + file.name);
         return true;
       });
     } finally {
       job.end();
+      // After the load and outside the transaction: an open that failed leaves
+      // the old board on screen, and that board must keep the id its shelf row
+      // is filed under. Only a board that actually arrived gets a new one.
+      if (opened) await setCurrentBoardId(uid('brd'));
+      // The latches belong to the board that has just left - a quota error its
+      // photographs raised, an asset it had lost. Same reasoning switchBoard()
+      // and New both give.
+      resetSessionLatches();
     }
   } catch (err) {
     console.error(err);
     toast('Could not open that file: ' + detailOf(err), 'error');
     return false;
   }
+}
+
+/**
+ * Fold a .mbrd into the board that is already open, instead of replacing it.
+ *
+ * The third thing that can be done with a board file, beside Open and Export,
+ * and the only one that is additive. Everything about it follows from that:
+ *
+ * **No withFreshAssets(), and this is the load-bearing difference from
+ * openFile().** That transaction exists to swap one board's assets for
+ * another's atomically; a merge wants both. The incoming bytes are registered
+ * alongside what is there, and because every asset is keyed by the SHA-256 of
+ * itself, two boards sharing a photograph share one entry with no work. If the
+ * merge then fails, a few blobs nothing points at are left in the registry -
+ * which is not a leak to fix: the autosave sweep collects unreferenced assets on
+ * the next write, so it heals itself. Wrapping this in the transaction to
+ * "tidy" that would take the arriving items' bytes away from the board they
+ * just landed on.
+ *
+ * **No loadBoard().** normalizeBoard() gives a clean incoming board without
+ * touching the live one, and planMerge() turns that into items and relations
+ * with every id remapped. The live board is only written by mergeBoard(), in
+ * one undoable step.
+ *
+ * **Most of the file is deliberately dropped**: the incoming title, settings,
+ * look, palette sources, Mobile geometry and - the one worth naming - its
+ * *bin*. A merge that carried the incoming trash would silently push the host's
+ * own deleted items out against TRASH_LIMIT, throwing away something the person
+ * had not thrown away. Mobile geometry is left for completeLayout() to pack,
+ * since a column somebody else's phone packed says nothing about this one.
+ */
+export async function mergeFile(file: File) {
+  const job = busy('Merging ' + file.name);
+  try {
+    const { board: data } = await unpackBoard(file);
+    const incoming = normalizeBoard(data);
+    // The live ids *and* the bin's: a restored card comes back with the id it
+    // had, so an arrival that took that string would collide the moment somebody
+    // dragged the old one out of the trash.
+    const taken = new Set([
+      ...board.items.map(i => i.id),
+      ...board.trash.map(t => t.item.id),
+    ]);
+    const plan = planMerge(incoming, taken, board.items);
+    const n = mergeBoard(plan, 'Merge ' + file.name);
+    if (!n) { toast('There was nothing on that board to merge'); return false; }
+    toast(`Merged ${n} item${n === 1 ? '' : 's'} from ${file.name}`);
+    return true;
+  } catch (err) {
+    console.error(err);
+    toast('Could not merge that file: ' + detailOf(err), 'error');
+    return false;
+  } finally {
+    job.end();
+  }
+}
+
+/**
+ * A .mbrd has landed on the board. Open it, or fold it in?
+ *
+ * The question lives here rather than in import/drop.ts because import/ sits
+ * below ui/ and cannot reach a dialog, while this module already has one
+ * injected for the clear-everything question - and because both answers are
+ * this module's functions. drop.ts asks the door, the door asks the person.
+ *
+ * **Not asked on an empty board.** Merging into nothing and opening are the
+ * same outcome, so offering two words for one result would be a dialog that
+ * teaches people to stop reading them. hasContent() is the same test the
+ * onboarding hints use for "is there anything here yet", which is exactly the
+ * question being asked.
+ *
+ * Merge leads, because the drop happened *onto* something: a person with a
+ * board in front of them who drags a second board onto it has said where they
+ * want it. Open is the second answer rather than the first, and neither wears
+ * the danger dressing - see AskOptions.danger in ui/dialog.ts, which became a
+ * parameter for this question.
+ */
+export async function openOrMergeFile(file: File) {
+  if (!hasContent()) return openFile(file);
+  const answer = await prompt({
+    title: 'Two boards',
+    body: `Add ${file.name} to the board you have here, or open it on its own?`,
+    go: 'Merge it in',
+    keep: 'Open it',
+    cancel: 'Cancel',
+    danger: false,
+  });
+  if (answer === 'go') return mergeFile(file);
+  if (answer === 'keep') return openFile(file);
+  return false;
 }
 
 /**
@@ -491,28 +644,49 @@ function pickViaInput() {
 // New
 // ---------------------------------------------------------------------------
 
+/**
+ * Start a fresh board, putting the one on screen on the shelf first.
+ *
+ * **This is the only New.** There used to be two - this one, which guarded a
+ * single session slot and so stopped to ask whether to discard, and
+ * newLibraryBoard(), which had the shelf to set the old board on and simply
+ * did. Two doors onto one room with two different safety models is the drift
+ * the headers in this codebase keep warning about, and it survived only as long
+ * as the top-level door had nowhere to put anything. It has somewhere now, so
+ * the two collapsed into the better of them.
+ *
+ * The library's New calls this; so does the Board panel's.
+ */
 export async function newBoard() {
   // A not-found board is not the visitor's board. It was never loaded from the
   // session slot, so clearing that slot below would delete a board they cannot
-  // see and have not been asked about - confirmDiscard() would ask about the
-  // blank message on screen, which has nothing to lose - and resetSessionLatches()
-  // would then let the blank replacement autosave over it. Refused rather than
-  // routed through leaveNotFound(): restoring their board only to discard it a
-  // line later is tidier to read and worse to be on the end of, and it would
-  // announce "Moved to your board" on the way past.
+  // see and have not been asked about - and worse now than when this only
+  // refused a prompt, because the stash below would file the blank message onto
+  // the shelf under their board's id. resetSessionLatches() would then let the
+  // blank replacement autosave over it. Refused rather than routed through
+  // leaveNotFound(): restoring their board only to discard it a line later is
+  // tidier to read and worse to be on the end of, and it would announce "Moved
+  // to your board" on the way past.
   if (isNotFoundBoard()) {
     toast('This address has no board to start over - put something on it first');
     return false;
   }
-  if (!(await confirmDiscard('Starting a new one'))) return false;
   // Stop the closing board's autosave from repopulating the store after it is
-  // cleared: drop the latch and drain any in-flight writer before touching the
-  // asset store or the session. See AUD-03.
-  suspendCache();
-  await drainSave();
+  // cleared, and put the board being left onto the shelf. See AUD-03 for the
+  // latch, and shelveCurrent() for why nothing is asked any more.
+  //
+  // **The order is load-bearing and always has been.** clearAssets() revokes
+  // every object URL, and the stash inside shelveCurrent() packs *from* the
+  // asset store - so a clear before the stash writes an empty board onto the
+  // shelf, silently, and the board that was on screen is gone.
+  if (!(await shelveCurrent())) return false;
   clearAssets();
   fileHandle = null;
   created = null;
+  // A new board is a new board, and it needs a row of its own. Without this it
+  // would inherit the shelf row of the board just filed and overwrite it at the
+  // next stash.
+  await setCurrentBoardId(uid('brd'));
   // Announced rather than acted on, because the look lives in ui/appearance.js
   // and this module has to keep loading without a browser.
   //
@@ -543,38 +717,6 @@ export async function newBoard() {
   // reloaded, on a board that is now empty.
   resetSessionLatches();
   return true;
-}
-
-/**
- * Stop and ask, when there is something to lose.
- *
- * Three answers rather than two, and the third is the point. Save keeps a board
- * in *this browser* and there is exactly one slot - newBoard() calls
- * clearSession() a few lines later, which wipes it - so "save it first" is not
- * an option that exists here. Writing a file is. A dialog that announces
- * unsaved changes and then offers no way to keep them is the one people
- * complain about, and Export is the honest version of that offer.
- *
- * Looped, because exporting can fail or be cancelled at the picker. Coming back
- * to the question is right: somebody who asked to keep the board and did not
- * keep it has not answered yet.
- */
-async function confirmDiscard(what: string) {
-  if (!isDirty()) return true;
-  for (;;) {
-    const answer = await prompt({
-      title: 'Unsaved changes',
-      body: `This board has changes that are not in a file. ${what} will discard them.`,
-      keep: 'Export first',
-      cancel: 'Cancel',
-      go: 'Discard',
-    });
-    if (answer === 'cancel') return false;
-    if (answer === 'go') return true;
-    // exportBoard() clears the dirty flag when it writes, so a success here is
-    // the same state as never having been dirty.
-    if (await exportBoard()) return true;
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -616,11 +758,18 @@ export async function listLibrary() {
 /**
  * File the board on screen onto the shelf, thumbnail and all. Overwrites its own
  * row if it already has one, which is how a board's shelf copy is kept current.
- * The thumbnail is rendered by the caller - a ui/ concern this layer sits below -
- * and handed in.
+ *
+ * The thumbnail is taken here rather than handed in. It used to be a parameter,
+ * because the only caller was the library and the library is a ui/ module that
+ * could render one; every door onto "replace the board" stashes now, and two of
+ * those doors are modules that may not reach ui/ at all. See setBoardThumb().
+ *
+ * A failed thumbnail is not a failed stash. The picture is how you recognise a
+ * board on the shelf, and a board on the shelf without one is still the board.
  */
-export async function stashCurrent(thumb: string | null = null) {
+export async function stashCurrent() {
   const id = await ensureBoardId();
+  const thumb = await makeThumb().catch(() => null);
   const data = serializeBoard();
   const { blob, manifest } = await packBoard(data, { created });
   created = manifest.created;
@@ -629,20 +778,99 @@ export async function stashCurrent(thumb: string | null = null) {
 }
 
 /**
+ * Put the board on screen on the shelf, and stop the writer that was serving it.
+ *
+ * The three lines every door onto "replace the board" opens with, and the whole
+ * of what replaced the discard prompt. Suspend the autosave latch so the closing
+ * board cannot repopulate the store behind the swap, let any in-flight write
+ * finish, then file the board.
+ *
+ * **This is why nothing asks about unsaved work any more.** The question
+ * "you have changes that are not in a file, discard them?" had one honest answer
+ * while there was one session slot and the shelf was somewhere you had to go on
+ * purpose: there was nowhere to put the outgoing board, so the only thing on
+ * offer was Export. There is somewhere now. A board that is always filed before
+ * the next one arrives has nothing to lose, so there is nothing to ask - and a
+ * dialog that interrupts every Open to protect work that is already safe is
+ * worse than no dialog, because people learn to dismiss it.
+ *
+ * What it does not do is clear the dirty flag. loadBoard() does that on the way
+ * in, and the flag is about the board on screen rather than about the shelf.
+ *
+ * **Answers whether the board is actually on the shelf, and the callers must
+ * refuse if it is not.** This is where the safety the discard prompt used to
+ * provide now lives, and it is the whole reason this returns anything. The
+ * prompt existed because a board could be destroyed by the next one arriving;
+ * that is still true if the shelf write fails, which is what a full disk or a
+ * broken IndexedDB looks like from here. Carrying on regardless would mean the
+ * one case the old dialog was built for is the one case nothing now guards -
+ * and it would fail silently, which is worse than the dialog ever was.
+ */
+async function shelveCurrent() {
+  suspendCache();
+  await drainSave();
+  try {
+    await stashCurrent();
+    return true;
+  } catch (err) {
+    console.error('[mbrd] could not file the board on the shelf:', err);
+    toast('Could not file this board, so it has been left where it is. '
+      + 'Export it before opening another.', 'error');
+    // The writer went down at the top of this function and the board is staying,
+    // so it has to come back up or the board on screen stops autosaving for the
+    // rest of the session.
+    resetSessionLatches();
+    return false;
+  }
+}
+
+/**
+ * Make sure the board on screen has a row on the shelf, and put one there if it
+ * has not.
+ *
+ * The library only ever wrote a row on the way *out* of a board - stashCurrent()
+ * ran from switchBoard() and from New and nowhere else - so on a browser that
+ * had never switched boards the shelf was empty and "Your boards" said so, with
+ * the board you were looking at absent from its own list. It was not missing a
+ * badge; it was missing a row.
+ *
+ * Called by the library before it draws. hasLibraryBoard() has waited for a
+ * caller since it was written and this is the one: the check is cheap, and the
+ * stash behind it costs a pack and a thumbnail once per browser, on a click that
+ * was about to render a thumbnail anyway.
+ *
+ * The rejected alternative was a virtual "current" row with no blob behind it.
+ * That makes the list honest and the shelf a lie - Delete would face a row with
+ * nothing under it, and Switch would write the real one a moment later anyway.
+ */
+export async function ensureCurrentOnShelf() {
+  const id = await ensureBoardId();
+  if (await hasLibraryBoard(id).catch(() => true)) return id;
+  await stashCurrent().catch(err => {
+    console.warn('[mbrd] could not file the current board on the shelf:', err);
+  });
+  return id;
+}
+
+/**
  * Put the current board on the shelf and open another in its place.
  *
- * Stash-then-load, so nothing is lost in the swap and no discard prompt is owed:
- * the board leaving the screen is safe on the shelf a moment before the next one
- * arrives. The asset swap is the same atomic withFreshAssets() Open uses, so a
- * corrupt shelf blob leaves the current board intact.
+ * Stash-then-load, so nothing is lost in the swap. This was once the only door
+ * that behaved this way and the argument for it was written here; Open and New
+ * do it now too, and the argument moved to shelveCurrent() with them. The asset
+ * swap is the same atomic withFreshAssets() Open uses, so a corrupt shelf blob
+ * leaves the current board intact.
+ *
+ * Note what this one does *not* do that the other two do: it does not mint a new
+ * board id, because the board arriving already has one - it is the row being
+ * opened. Open and New are arrivals from outside the shelf and need a row made
+ * for them.
  */
-export async function switchBoard(id: string, thumb: string | null = null) {
+export async function switchBoard(id: string) {
   if (!id || id === boardId) return false;
   const job = busy('Switching boards');
   try {
-    suspendCache();
-    await drainSave();
-    await stashCurrent(thumb);
+    if (!(await shelveCurrent())) return false;
     const blob = await getLibraryBoard(id);
     if (!blob) { toast('That board is not on the shelf any more', 'error'); return false; }
     await withFreshAssets(async () => {
@@ -658,35 +886,6 @@ export async function switchBoard(id: string, thumb: string | null = null) {
   } catch (err) {
     console.error(err);
     toast('Could not open that board: ' + detailOf(err), 'error');
-    return false;
-  } finally {
-    resetSessionLatches();
-    job.end();
-  }
-}
-
-/**
- * Start a fresh board without losing the one on screen: stash it, then load a
- * blank. The library's own New - where the top-level one has a single slot to
- * protect and so asks to export first, this one has the shelf to set the old
- * board on and simply does.
- */
-export async function newLibraryBoard(thumb: string | null = null) {
-  const job = busy('Making a new board');
-  try {
-    suspendCache();
-    await drainSave();
-    await stashCurrent(thumb);
-    clearAssets();
-    fileHandle = null;
-    created = null;
-    await setCurrentBoardId(uid('brd'));
-    bus.emit('board:new');
-    loadBoard({ title: defaultBoardTitle() });
-    return true;
-  } catch (err) {
-    console.error(err);
-    toast('Could not make a new board: ' + detailOf(err), 'error');
     return false;
   } finally {
     resetSessionLatches();
@@ -720,6 +919,10 @@ export {
   // answer about a board - but the latches that answer it are session.js's, so
   // it is asked where they live rather than reconstructed anywhere else.
   boardSafety,
+  // Out for the same reason and to the same kind of caller: the Debug fold's
+  // safety row says what went wrong as well as that something did, and the text
+  // is the engine's own.
+  lastSaveFailure,
   // Out to main.js as well as used in here, and as a pair: a boot into
   // not-found opens a blank board that must never be written over the one the
   // visitor already has, so the writer is stopped before anything can fire.

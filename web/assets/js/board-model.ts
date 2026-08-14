@@ -169,6 +169,7 @@ export type Board = {
   paletteSources: number;
   connections: Connection[];
   audioOrder: string[];
+  tour: string[];
   trash: TrashEntry[];
 };
 
@@ -187,7 +188,7 @@ import { MIN_SIZE, MAX_SIZE } from './geometry.ts';
 import { DEFAULT_SCALE } from './measure.ts';
 import { splitAppearance, mergeAppearance } from './layout-settings.ts';
 import type { Look } from './layout-settings.ts';
-import { bus } from './board-store.ts';
+import { bus, tagFilter } from './board-store.ts';
 
 /** The longest a sticky note may be. Enforced at every door onto the board. */
 export const NOTE_MAX = 512;
@@ -472,6 +473,17 @@ export const board: Board = {
   // an empty default, so it costs no .mbrd version bump - a track with no entry
   // sorts by the board's arrangement, and an older reader drops the key on save.
   audioOrder: [],
+  // The stops of the board's tour, in order, as item ids. An item or a fence -
+  // a stop is "frame this and stop", and a fence is the thing on a board that
+  // most often names a part of an argument worth stopping on.
+  //
+  // Top-level for the third time and for the same reason as the two lists above
+  // it: a tour is an ordering of *items*, items are shared across Desktop and
+  // Mobile, and a per-layout copy would let a tour built on a laptop come back
+  // scrambled on a phone. What is per-layout is where each stop *is*, which is
+  // already in board.layouts - so the same tour frames the same cards on both,
+  // wherever each layout happens to have put them.
+  tour: [],
   // Thrown away but not gone. Entries are { item, at }, newest first.
   trash: [] as TrashEntry[],
 };
@@ -639,7 +651,23 @@ export function normalizeConnections(raw: unknown, live?: Set<string> | null): C
  * wrong. Not filtered to audio here: this layer does not know an item's type,
  * and applyAudioOrder() does that filtering where it does.
  */
-export function normalizeAudioOrder(raw: unknown, live?: Set<string> | null): string[] {
+export const normalizeAudioOrder = normalizeIdList;
+
+/**
+ * The board's tour, out of whatever arrived. Same shape, same rules, same
+ * reader as the Playlist's order above - an ordered list of ids that has to
+ * survive the items it names being deleted, binned and restored.
+ *
+ * Two lists, one reader, and the name at each call site is what says which is
+ * being read. They were the same nine lines twice for about an hour.
+ */
+export const normalizeTour = normalizeIdList;
+
+/**
+ * An ordered list of item ids: deduped, held to `live` when one is given, and
+ * bounded. The shared body of the two above.
+ */
+function normalizeIdList(raw: unknown, live?: Set<string> | null): string[] {
   if (!Array.isArray(raw)) return [];
   const out: string[] = [];
   const seen = new Set();
@@ -725,6 +753,221 @@ export const isContent = (it: unknown) =>
 export const isJoinEnd = (it: unknown) =>
   isRecord(it) && it.type !== 'ghost' && it.type !== 'sticker';
 
+/**
+ * Is this item's geometry fixed - `meta.locked`?
+ *
+ * A lock is about *geometry and nothing else*, which is narrower than the word
+ * suggests and is the whole of what makes it predictable. A locked card cannot
+ * be dragged, resized, nudged, aligned, distributed or picked up by a rearrange;
+ * it can still be selected, renamed, recoloured, opened, copied, connected and
+ * deleted. The alternative - a lock that also refuses deletion - was rejected
+ * because it strands the person who locked something and then wanted it gone:
+ * they get an item that ignores Delete with no visible reason, and the bin and
+ * undo already cover the accident that lock would have been guarding against.
+ *
+ * The case it exists for is the one nothing else answers: a photograph used as a
+ * backdrop, or a fence somebody is arranging *inside*, where every press meant
+ * for the cards on top lands on the thing underneath them. So a press on a
+ * locked card pans the board, exactly as a press on bare board does - the card
+ * stops being something the pointer can take hold of, which is what "part of the
+ * background" means. See the move branch of onDown() in canvas/input.ts.
+ *
+ * Truthiness rather than `=== true`, the same reading the flags in
+ * BoardSettings get and for the same reason: this comes out of somebody else's
+ * file, and a hand-written `"locked": 1` plainly means locked.
+ */
+export const isLocked = (it: unknown) => isRecord(it) && !!it.meta
+  && isRecord(it.meta) && !!it.meta.locked;
+
+/**
+ * The crop rectangle over an item's own picture, or null for the whole of it.
+ *
+ * Four fractions of the source, not pixels: `{ x, y, w, h }` in 0..1 with the
+ * origin at the top left, so the record survives the picture being re-encoded
+ * at another size by Optimize, and survives an older build that carried the key
+ * through without understanding it. Pixels would have meant a crop that quietly
+ * moved the first time the bytes behind it changed.
+ *
+ * **Non-destructive, and that is the point.** Nothing here touches the asset -
+ * the original bytes stay in the store, get written to the .mbrd, and are what
+ * Export hands back. The crop is applied when the display copy is made
+ * (canvas/display.ts), so what the card mounts is already cropped and every
+ * consumer downstream - object-fit, the far-zoom twin, the aspect the card
+ * adopts - carries on working without knowing this exists.
+ *
+ * Null for anything that is not a usable rectangle, including the full-frame
+ * one: a crop that selects the whole picture is not a crop, and storing it
+ * would put a key on the item that says nothing. Clamped rather than refused
+ * where it can be, since a rectangle dragged to the very edge routinely arrives
+ * at 1.0000000001.
+ */
+export function itemCrop(it: unknown): { x: number, y: number, w: number, h: number } | null {
+  if (!isRecord(it) || !isRecord(it.meta)) return null;
+  const raw = it.meta.crop;
+  if (!isRecord(raw)) return null;
+  const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : NaN);
+  let x = num(raw.x), y = num(raw.y), w = num(raw.w), h = num(raw.h);
+  if (!(x >= 0) || !(y >= 0) || !(w > 0) || !(h > 0)) return null;
+  x = Math.min(x, 1); y = Math.min(y, 1);
+  w = Math.min(w, 1 - x); h = Math.min(h, 1 - y);
+  // A degenerate slice is not a crop anybody asked for, and a full frame is the
+  // absence of one. MIN_CROP keeps the display copy from being asked for a
+  // one-pixel region.
+  if (w < MIN_CROP || h < MIN_CROP) return null;
+  if (x <= 0 && y <= 0 && w >= 1 && h >= 1) return null;
+  return { x, y, w, h };
+}
+
+/** The smallest fraction of a picture a crop may keep on either axis. */
+export const MIN_CROP = 0.02;
+
+/**
+ * The three picture adjustments, or null when this item is left alone.
+ *
+ * `{ brightness, contrast, saturation }`, each a multiplier around 1 where 1 is
+ * the picture as it arrived, clamped to 0..2. They become one CSS `filter` on
+ * the card (see writeAdjust in canvas/item-dom.ts), which is why they are three
+ * numbers and not thirty: everything here has to be a thing the compositor can
+ * do to a mounted image for free, on every card, at every zoom. Anything that
+ * needs a second decode belongs in optimize/ instead.
+ *
+ * Null when every value is neutral, so an item that has been adjusted back to
+ * where it started carries no key - the same rule itemCrop() applies to a
+ * full-frame rectangle, and for the same reason.
+ */
+export function itemAdjust(it: unknown): { brightness: number, contrast: number, saturation: number } | null {
+  if (!isRecord(it) || !isRecord(it.meta)) return null;
+  const raw = it.meta.adjust;
+  if (!isRecord(raw)) return null;
+  const one = (v: unknown) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? Math.min(2, Math.max(0, n)) : 1;
+  };
+  const out = {
+    brightness: one(raw.brightness),
+    contrast: one(raw.contrast),
+    saturation: one(raw.saturation),
+  };
+  if (out.brightness === 1 && out.contrast === 1 && out.saturation === 1) return null;
+  return out;
+}
+
+/**
+ * The three adjustments as one `filter` value, or null where there is nothing
+ * to say.
+ *
+ * Here rather than in canvas/item-dom.ts, which is where it was written and is
+ * still the only place it reaches a *card*. It moved because it is now read
+ * twice: the card sets it as `--item-filter`, and ui/snapshot.ts assigns the
+ * same string to a canvas context's `filter` so an exported picture carries the
+ * grade the screen shows. Two builders would have drifted - a fourth adjustment,
+ * or a change to the order the three are applied in, would have had to be
+ * remembered in two files - and this is a pure function of the item, which is
+ * what makes the floor the right place for it.
+ *
+ * The string is the whole filter, not three fragments a caller assembles.
+ * `filter: brightness(var(--x))` with `--x` unset is an invalid declaration and
+ * drops the whole filter, so a card would need all three set to keep the one
+ * card that uses them working; and a canvas context has the same all-or-nothing
+ * behaviour on an unparsable value.
+ */
+export function adjustFilter(it: unknown): string | null {
+  const a = itemAdjust(it);
+  return a
+    ? `brightness(${a.brightness}) contrast(${a.contrast}) saturate(${a.saturation})`
+    : null;
+}
+
+/** The longest a single tag may be, and the most one item may carry. */
+export const TAG_MAX = 24;
+export const TAGS_PER_ITEM = 12;
+
+/**
+ * One tag, cleaned, or '' for anything that is not one.
+ *
+ * Folded to lower case and squeezed to single spaces, because a tag is an
+ * *identity* - "Kitchen" and "kitchen" are one tag, and a filter that showed
+ * them as two would make the feature useless on the first typo.
+ *
+ * The character rule is an **allow-list**, not a list of things to strip:
+ * letters of any script, digits, combining marks, and the three separators a
+ * label reads with (space, underscore, hyphen). Everything else becomes a
+ * space. That covers the two cases that actually matter without either being
+ * named - a comma cannot survive, so the comma-separated input can never split
+ * ambiguously, and no control character can reach a menu label out of somebody
+ * else's file - and it is the same argument the SVG reader in ui/documents.ts
+ * makes for allowing rather than blocking: a block-list is a promise that the
+ * author thought of everything.
+ */
+export function cleanTag(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  return raw
+    .replace(/[^\p{L}\p{N}\p{M} _-]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+    .slice(0, TAG_MAX);
+}
+
+/**
+ * An item's tags: a deduped, sorted, bounded list of clean strings.
+ *
+ * Sorted because two items tagged with the same words are the same to every
+ * reader of this list - the filter, the by-tag arrangement, the chips on the
+ * card - and an order nobody chose is an order that shows up as a diff in a
+ * saved file for no reason. Deduped after cleaning rather than before, so
+ * "Kitchen" and "kitchen " collapse.
+ */
+export function itemTags(it: unknown): string[] {
+  if (!isRecord(it) || !isRecord(it.meta)) return [];
+  const raw = it.meta.tags;
+  if (!Array.isArray(raw)) return [];
+  const out = new Set<string>();
+  for (const t of raw) {
+    const tag = cleanTag(t);
+    if (tag) out.add(tag);
+    if (out.size >= TAGS_PER_ITEM) break;
+  }
+  return [...out].sort();
+}
+
+/**
+ * Is this item dimmed by the tag filter as it stands?
+ *
+ * False whenever no filter is set, which is the overwhelmingly common case and
+ * is why the size check comes first. Otherwise an item is dimmed unless it
+ * carries one of the filtered tags - *any* of them, see tagFilter in
+ * board-store.ts for why any rather than all.
+ *
+ * Furniture is never dimmed. The title card and the onboarding hints are the
+ * app talking rather than anything of the user's, and fading the hints on an
+ * empty board that somebody has just set a filter on would be the app hiding
+ * its own instructions. Fences are not exempt: a region is something a person
+ * drew, it can be tagged, and a filter that faded its contents but left every
+ * box crisp would read as the boxes being what matched.
+ */
+export const isFiltered = (it: unknown) => {
+  if (!tagFilter.size || isFurniture(it)) return false;
+  return !itemTags(it).some(t => tagFilter.has(t));
+};
+
+/**
+ * Every tag on the board, each with how many items wear it, most-used first and
+ * alphabetical within a count.
+ *
+ * Over the live board only - the bin is not somewhere you filter - and over
+ * content rather than furniture, since a hint card cannot be tagged and the
+ * title card has nothing a tag would mean.
+ */
+export function boardTags(): { tag: string, count: number }[] {
+  const counts = new Map<string, number>();
+  for (const it of board.items) {
+    if (!isContent(it)) continue;
+    for (const tag of itemTags(it)) counts.set(tag, (counts.get(tag) || 0) + 1);
+  }
+  return [...counts].map(([tag, count]) => ({ tag, count }))
+    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+}
 
 /**
  * id -> item, an index beside board.items rather than a replacement for it.

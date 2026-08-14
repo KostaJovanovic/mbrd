@@ -4,11 +4,16 @@
 // A not-found boot deliberately never reads the session slot: the visitor's own
 // board is not loaded, not shown, and - this is the part with teeth - not
 // *asked about*. So New and Clear everything are both aiming at a board that is
-// not on screen. New asked nothing at all (confirmDiscard() looks at the blank
-// message, which has nothing to lose), wiped the slot, and then re-armed the
+// not on screen. New asked nothing at all, wiped the slot, and then re-armed the
 // writer so the blank replacement autosaved over the hole. That is a stranger's
 // wrong URL costing somebody their board, so it is refused here rather than
 // confirmed harder.
+//
+// The guard matters more since New stopped asking about unsaved work entirely
+// and started filing the outgoing board on the library shelf instead. On this
+// board that would file the blank not-found message under the visitor's own
+// board id - overwriting on the shelf what it used to only overwrite in the
+// session slot.
 //
 // Driven through a fake IndexedDB whose only job is to say whether a wipe was
 // reached. state.js is a module singleton, so each case sets the latch it needs.
@@ -25,7 +30,22 @@ globalThis.indexedDB = {
   open() {
     const req = {};
     soon(() => {
-      const store = { clear: () => { clears++; return makeRequest(); } };
+      // `clear` is the thing under test; the rest are stubs so that the code
+      // path *reaching* it can run. New files the outgoing board onto the
+      // library shelf before it wipes anything, and refuses outright if that
+      // write fails - which is the point of the change and is correct, but it
+      // means a store with only clear() on it now makes New decline before it
+      // gets anywhere near the wipe. These four say "the write worked" and
+      // nothing more; none of them records anything, because nothing here
+      // asserts on what was written.
+      const store = {
+        clear: () => { clears++; return makeRequest(); },
+        put: () => makeRequest(),
+        get: () => makeRequest(),
+        getAll: () => makeRequest(),
+        getAllKeys: () => makeRequest(),
+        delete: () => makeRequest(),
+      };
       req.result = {
         objectStoreNames: { contains: () => true },
         createObjectStore() {}, close() {},

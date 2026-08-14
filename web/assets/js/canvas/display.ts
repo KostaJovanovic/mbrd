@@ -54,9 +54,43 @@ const displayMax = () => quality.sharpness;
 /** WebP quality for the copy. High enough not to band on paper. */
 const QUALITY = 0.82;
 
-/** hash -> { url, own }. own=false when the entry points at the original's URL. */
+/**
+ * The rectangle of the source a copy keeps: four fractions, or null for all of
+ * it. See itemCrop() in board-model.ts, which is where the shape is defined and
+ * validated; this module only draws what it is handed.
+ *
+ * **The crop is baked into the display copy, and that is the whole design.**
+ * The alternative was CSS - an oversized <img> inside an overflow-hidden box,
+ * offset by a percentage - and it fails on the thing this app cares about
+ * most: object-fit. A card's picture is already being fitted or filled inside
+ * its box, and object-fit works on the whole image, so a CSS crop would have
+ * had to reimplement cover/contain arithmetic over a sub-rectangle at every
+ * card size and every zoom. Cropping the pixels instead means everything
+ * downstream - fit, the far-zoom twin, the aspect the card adopts on load -
+ * carries on working without knowing crops exist.
+ *
+ * It costs one WebP per distinct crop of a picture, held for the session. A
+ * board where the same photograph is cropped three ways holds three copies,
+ * which is correct, and re-cropping one card leaves the previous rectangle's
+ * copy behind until the board closes. Card-sized, so that is tens of kilobytes
+ * per abandoned attempt rather than megabytes, and clearDisplay() collects the
+ * lot on the next board load.
+ */
+export type Crop = { x: number, y: number, w: number, h: number } | null;
+
+/**
+ * The cache key: the content hash, plus the rectangle when there is one.
+ *
+ * The uncropped key is the bare hash and not `hash|0,0,1,1`, so every entry
+ * made before crops existed keys exactly as it did - and, more to the point, so
+ * the common case stays one string concatenation of nothing.
+ */
+const keyFor = (hash: string, crop: Crop) =>
+  (crop ? `${hash}|${crop.x},${crop.y},${crop.w},${crop.h}` : hash);
+
+/** key -> { url, own }. own=false when the entry points at the original's URL. */
 const cache = new Map<string, { url: string; own: boolean }>();
-/** hash -> in-flight Promise<url|null>, so two mounts of one photo share a job. */
+/** key -> in-flight Promise<url|null>, so two mounts of one photo share a job. */
 const pending = new Map<string, Promise<string | null>>();
 /** The serialization chain: one full decode live at a time. */
 let queue: Promise<unknown> = Promise.resolve();
@@ -73,8 +107,8 @@ let epoch = 0;
  * re-mount of a picture whose copy exists (panned back into view, say) sets its
  * src at once with no flicker.
  */
-export function displayURLReady(hash: string): string | null {
-  return cache.get(hash)?.url || null;
+export function displayURLReady(hash: string, crop: Crop = null): string | null {
+  return cache.get(keyFor(hash, crop))?.url || null;
 }
 
 /**
@@ -82,27 +116,29 @@ export function displayURLReady(hash: string): string | null {
  * URL. Idempotent and shared: repeated calls for the same hash return the one
  * in-flight or finished job. Resolves to null only if the asset is gone.
  */
-export function ensureDisplay(hash: string): Promise<string | null> {
-  const done = cache.get(hash);
+export function ensureDisplay(hash: string, crop: Crop = null): Promise<string | null> {
+  const key = keyFor(hash, crop);
+  const done = cache.get(key);
   if (done) return Promise.resolve(done.url);
-  const inFlight = pending.get(hash);
+  const inFlight = pending.get(key);
   if (inFlight) return inFlight;
   // Chain onto the queue so generation is serial; keep the chain alive past a
   // failure so one undecodable file does not stall every picture behind it.
   const mine = epoch;
-  const job = queue.then(() => generate(hash, mine));
+  const job = queue.then(() => generate(hash, crop, mine));
   queue = job.catch(() => {});
-  const tracked = job.finally(() => pending.delete(hash));
-  pending.set(hash, tracked);
+  const tracked = job.finally(() => pending.delete(key));
+  pending.set(key, tracked);
   return tracked;
 }
 
-async function generate(hash: string, mine: number): Promise<string | null> {
-  const existing = cache.get(hash);
+async function generate(hash: string, crop: Crop, mine: number): Promise<string | null> {
+  const key = keyFor(hash, crop);
+  const existing = cache.get(key);
   if (existing) return existing.url;
   const a = getAsset(hash);
   if (!a) return null;
-  const small = await shrink(a.blob);
+  const small = await shrink(a.blob, crop);
   // A clear landed while that decode ran - a new board, or a new sharpness
   // ceiling. Publishing now would put back a copy the clear meant to drop, at a
   // resolution nobody asked for, and the entry would outlive the board it came
@@ -110,10 +146,10 @@ async function generate(hash: string, mine: number): Promise<string | null> {
   // has nothing to revoke and cannot leak. Callers read null as "no copy yet",
   // which is true, and resetItems() remounts every card behind the clear anyway.
   if (mine !== epoch) return null;
-  // Two jobs for one hash can only exist across a clear, which empties pending.
+  // Two jobs for one key can only exist across a clear, which empties pending.
   // If the later one already published, keep its entry: it was made under the
   // current ceiling. Dropping `small` here is free - no URL was ever handed out.
-  const won = cache.get(hash);
+  const won = cache.get(key);
   if (won) return won.url;
   // A copy that came out is ours to revoke; a picture already small enough rides
   // the asset store's own URL, which assets.js revokes - do not double-manage it.
@@ -122,7 +158,7 @@ async function generate(hash: string, mine: number): Promise<string | null> {
   const entry = small
     ? { url: URL.createObjectURL(small), own: true }
     : { url: assetURL(hash)!, own: false };
-  cache.set(hash, entry);
+  cache.set(key, entry);
   return entry.url;
 }
 
@@ -133,7 +169,7 @@ async function generate(hash: string, mine: number): Promise<string | null> {
  * the browser cannot decode it - because those are not failures: the original is
  * already a fine thing to mount. Same four-call shape as optimize/picture.js.
  */
-async function shrink(blob: Blob | null | undefined): Promise<Blob | null> {
+async function shrink(blob: Blob | null | undefined, crop: Crop = null): Promise<Blob | null> {
   if (!blob || !/^image\//i.test(blob.type)) return null;
   let bmp;
   try {
@@ -142,10 +178,20 @@ async function shrink(blob: Blob | null | undefined): Promise<Blob | null> {
     return null;
   }
   try {
-    const scale = Math.min(1, displayMax() / Math.max(bmp.width, bmp.height));
-    if (scale === 1) return null;   // already inside the ceiling: mount the original
-    const w = Math.max(1, Math.round(bmp.width * scale));
-    const h = Math.max(1, Math.round(bmp.height * scale));
+    // The region being kept, in the source's own pixels. The whole picture when
+    // there is no crop, which is what makes the two paths one piece of code.
+    const sx = crop ? Math.round(crop.x * bmp.width) : 0;
+    const sy = crop ? Math.round(crop.y * bmp.height) : 0;
+    const sw = Math.max(1, crop ? Math.round(crop.w * bmp.width) : bmp.width);
+    const sh = Math.max(1, crop ? Math.round(crop.h * bmp.height) : bmp.height);
+    const scale = Math.min(1, displayMax() / Math.max(sw, sh));
+    // Already inside the ceiling: mount the original - but only when there is no
+    // crop to apply. A cropped picture always needs a copy made, however small
+    // it is, because the copy *is* the crop. This is the one branch where the
+    // two paths genuinely differ.
+    if (scale === 1 && !crop) return null;
+    const w = Math.max(1, Math.round(sw * scale));
+    const h = Math.max(1, Math.round(sh * scale));
     const canvas = new OffscreenCanvas(w, h);
     const ctx = canvas.getContext('2d', { alpha: true });
     // No 2d context is one more "leave the original alone" case, and it already
@@ -156,11 +202,19 @@ async function shrink(blob: Blob | null | undefined): Promise<Blob | null> {
     // downscale.
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(bmp, 0, 0, w, h);
+    ctx.drawImage(bmp, sx, sy, sw, sh, 0, 0, w, h);
     // A browser that cannot write WebP hands back a PNG silently, which would be
     // a copy larger than the original - refuse it and mount the original instead.
+    //
+    // Unless there is a crop, where "mount the original" is not a graceful
+    // fallback but a wrong picture: the card would show the whole photograph
+    // where the person cropped it to a detail, silently and only on that
+    // engine. A larger-than-ideal PNG of the right rectangle beats a
+    // right-sized picture of the wrong one, so the size trade is taken the
+    // other way round here and the copy is kept whatever came out.
     const out = await canvas.convertToBlob({ type: 'image/webp', quality: QUALITY });
-    if (!out || out.type.toLowerCase() !== 'image/webp') return null;
+    if (!out) return null;
+    if (out.type.toLowerCase() !== 'image/webp' && !crop) return null;
     return out;
   } catch {
     return null;

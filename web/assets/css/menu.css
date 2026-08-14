@@ -210,6 +210,15 @@
 }
 .ctx-item.is-danger:hover,
 .ctx-item.is-danger:focus-visible { color: var(--danger); }
+/* A row that reads rather than acts - "Showing 4 of 61". Greyed, and it takes
+   no hover: the pointer must not suggest it is a thing to press, and the
+   button's own `disabled` is what actually stops it. The arrow-key walk skips
+   it for the same reason - see moveFocus() in ui/menu.ts. */
+.ctx-item.is-inert {
+  color: var(--ink-3);
+  cursor: default;
+}
+.ctx-item.is-inert:hover { background: none; color: var(--ink-3); }
 .ctx-item kbd {
   border: 0;
   background: none;
