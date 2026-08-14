@@ -61,7 +61,7 @@ myboard.mbrd                    ZIP, renamed
 ├── mimetype                    the media type, first and uncompressed
 ├── manifest.json               what this file is
 ├── board.json                  the board itself
-├── assets/<hash>.<ext>         embedded bytes, deduped by content hash
+├── assets/<slug>--<hash>.<ext> embedded bytes, deduped by content hash
 ├── notes/<slug>--<id>.md       one sticky note, as Markdown
 └── waveforms/<hash>.json       one audio file's measured readings
 ```
@@ -681,11 +681,42 @@ a future version can add one without older readers losing it.
 
 ---
 
-## `assets/<hash>.<ext>`
+## `assets/<slug>--<hash>.<ext>`
 
 The bytes, named by the SHA-256 of themselves. Two identical photographs
 dropped twice are one entry.
 
+```
+assets/kitchen-window--9f2c4a…b71e.jpg
+assets/inter--3d81ff…09ac.woff2
+assets/c07e12…4d55.mp4                  also legal — the slug is optional
+```
+
+**The slug is for you and the hash is for the reader**, the same split the note
+sidecars make and for the same reason: a board of forty photographs that unzips
+to forty files named in hexadecimal satisfies every promise this format makes
+except the one about being able to read it.
+
+- **`<slug>` is optional and is discarded on read.** A reader must accept
+  `assets/<hash>.<ext>` exactly as it accepts the decorated form, and must not
+  derive anything from the slug — not the type, not the name, not the order.
+  Requiring it would mean requiring every implementation to reproduce this
+  app's slug function byte for byte in order to write a file this one will read.
+  Writing it is a courtesy; ignoring it is conformant.
+- **The hash remains the only identity.** The digest is still checked against
+  the bytes, dedup is still by digest, and two entries carrying the same digest
+  under different slugs are still refused as stored twice. A slug that lies
+  about what the bytes are costs nothing.
+- **Split on the last `--`.** The slug has its own runs of punctuation collapsed
+  to a single dash, so two in a row appear nowhere inside it.
+- What it is made of: what the card calls the asset, then the filename the bytes
+  arrived under, then — for a face, which nothing on the board names — the font
+  family. Lowercased, non-alphanumerics collapsed to dashes, 48 characters. The
+  extension is dropped from the label where it matches the entry's own `<ext>`,
+  so a card named `kitchen-window.jpg` files as `kitchen-window`, while one
+  named `Notes v1.2` keeps its version number. Where a hash is referenced more
+  than once the first reference wins, in a fixed order, so an archive is
+  reproducible.
 - `<hash>` is 64 lowercase hex characters. Enforced in both directions.
 - `<ext>` is `[a-z0-9]{1,12}`, taken from the original filename, and used only
   to rebuild the MIME type on the way back in — ZIP entries carry no content

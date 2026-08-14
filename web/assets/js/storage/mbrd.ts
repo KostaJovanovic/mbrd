@@ -5,7 +5,7 @@
 //   |- mimetype             application/vnd.mbrd+zip, first and stored
 //   |- manifest.json        { format, version, app, created, modified, title }
 //   |- board.json           { view, settings, arrangement, items[], trash[] }
-//   |- assets/<hash>.<ext>  embedded bytes, deduped by content hash
+//   |- assets/<slug>--<hash>.<ext>  bytes, deduped by content hash
 //   |- notes/<slug>--<id>.md    one sticky note, as Markdown
 //   \- waveforms/<hash>.json    one audio file's measured readings
 //

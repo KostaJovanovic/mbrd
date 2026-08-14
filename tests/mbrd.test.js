@@ -96,7 +96,9 @@ test('the archive holds a manifest, a board, and the referenced bytes', async ()
 
   assert.ok(files.has('manifest.json'));
   assert.ok(files.has('board.json'));
-  assert.ok(files.has(`assets/${id}.png`));
+  // Named for the card, then the digest. The slug is what makes an unzipped
+  // board readable; the hash is what makes it verifiable.
+  assert.ok(files.has(`assets/a--${id}.png`));
   assert.equal(manifest.format, 'mbrd');
   assert.equal(manifest.title, 'Test board');
 });
@@ -110,7 +112,113 @@ test('the same asset used twice is stored once', async () => {
   ]);
   const files = await readZip((await packBoard(board)).blob);
   const assetFiles = [...files.keys()].filter(n => n.startsWith('assets/'));
-  assert.deepEqual(assetFiles, [`assets/${id}.png`]);
+  // One entry, and it takes its name from the first card to reference it -
+  // otherwise which of the two names won would come down to iteration order.
+  assert.deepEqual(assetFiles, [`assets/a--${id}.png`]);
+});
+
+// ---------------------------------------------------------------------------
+// Asset names: a slug for the person, a digest for the reader
+// ---------------------------------------------------------------------------
+
+/** The one entry under assets/, for the many tests that write exactly one. */
+const soleAsset = async board =>
+  [...(await readZip((await packBoard(board)).blob)).keys()]
+    .find(n => n.startsWith('assets/'));
+
+test('the extension is not slugged into the name', async () => {
+  // item.name is seeded from the filename at import, extension and all, so the
+  // ordinary case would read `kitchen-window-jpg--<hash>.jpg` without this.
+  clearAssets();
+  const id = await stubAsset('kitchen-window', { ext: 'jpg', mime: 'image/jpeg' });
+  const name = await soleAsset(boardOf([withAsset(id, { id: 'i1', name: 'kitchen-window.jpg' })]));
+  assert.equal(name, `assets/kitchen-window--${id}.jpg`);
+});
+
+test('a dot that is not the extension is kept', async () => {
+  // Matched against the asset's own ext rather than against a pattern for what
+  // an extension looks like, so a version number survives being filed.
+  clearAssets();
+  const id = await stubAsset('doc', { ext: 'png', mime: 'image/png' });
+  const name = await soleAsset(boardOf([withAsset(id, { id: 'i1', name: 'Notes v1.2' })]));
+  assert.equal(name, `assets/notes-v1-2--${id}.png`);
+});
+
+test('the card name wins over the stored filename', async () => {
+  // The two are the same string until somebody renames the card, and a
+  // deliberate rename is the better name to file the work under.
+  clearAssets();
+  const id = await stubAsset('IMG_4821', { ext: 'jpg', mime: 'image/jpeg' });
+  const name = await soleAsset(boardOf([withAsset(id, { id: 'i1', name: 'the kitchen window' })]));
+  assert.equal(name, `assets/the-kitchen-window--${id}.jpg`);
+});
+
+test('bytes no item names fall back to the stored filename', async () => {
+  // A cover is the ordinary case: nothing on the board is called by its name.
+  clearAssets();
+  const cover = await stubAsset('album-art', { ext: 'jpg', mime: 'image/jpeg' });
+  const files = await readZip((await packBoard(
+    boardOf([item({ id: 'i1', type: 'note', meta: { text: 'x', cover } })]),
+  )).blob);
+  assert.ok(files.has(`assets/album-art--${cover}.jpg`));
+});
+
+test('a name with nothing spellable in it writes the bare hash', async () => {
+  clearAssets();
+  const id = await stubAsset('', { ext: 'png', mime: 'image/png' });
+  const name = await soleAsset(boardOf([withAsset(id, { id: 'i1', name: '???' })]));
+  assert.equal(name, `assets/${id}.png`, 'no slug, no separator');
+});
+
+test('a hostile name cannot become a path', async () => {
+  // The slugifier is an allow-list, so this is safe by construction rather than
+  // by having thought of `../`. The same reasoning as the hash rule, one out.
+  clearAssets();
+  const id = await stubAsset('x', { ext: 'png', mime: 'image/png' });
+  const name = await soleAsset(boardOf([
+    withAsset(id, { id: 'i1', name: '../../etc/passwd' }),
+  ]));
+  assert.equal(name, `assets/etc-passwd--${id}.png`);
+  assert.ok(!name.includes('..'), 'nothing that could climb a directory');
+});
+
+test('a slugged archive round-trips', async () => {
+  clearAssets();
+  const id = await stubAsset('holiday', { ext: 'jpg', mime: 'image/jpeg' });
+  const { blob } = await packBoard(boardOf([withAsset(id, { id: 'i1', name: 'holiday.jpg' })]));
+  clearAssets();
+  const { board } = await unpackBoard(blob);
+  assert.equal(board.items[0].asset.hash, id, 'the hash survives the decoration');
+});
+
+test('a bare-hash archive still reads', async () => {
+  // What another implementation writes. Computing a slug is a courtesy, and
+  // requiring one would mean requiring everybody to reproduce our slug function.
+  clearAssets();
+  const data = enc.encode('bytes');
+  const id = await realHash(data);
+  const archive = await writeZip([
+    { name: 'manifest.json', data: enc.encode('{"format":"mbrd","version":1}') },
+    { name: 'board.json', data: enc.encode(JSON.stringify({ items: [] })) },
+    { name: `assets/${id}.png`, data },
+  ]);
+  const { board } = await unpackBoard(archive);
+  assert.deepEqual(board.items, []);
+});
+
+test('one digest under two slugs is still stored twice', async () => {
+  // The dedup refusal keys off the hash, so decorating the name must not give
+  // an archive a way to smuggle the same content id in twice.
+  clearAssets();
+  const data = enc.encode('bytes');
+  const id = await realHash(data);
+  const archive = await writeZip([
+    { name: 'manifest.json', data: enc.encode('{"format":"mbrd","version":1}') },
+    { name: 'board.json', data: enc.encode(JSON.stringify({ items: [] })) },
+    { name: `assets/one--${id}.png`, data },
+    { name: `assets/two--${id}.png`, data },
+  ]);
+  await assert.rejects(() => unpackBoard(archive), /stored twice/);
 });
 
 // ---------------------------------------------------------------------------
@@ -188,7 +296,7 @@ test('a WOFF2 face is stored rather than deflated', async () => {
   const entries = localEntries(await packedBytes(
     boardOf([], { settings: { fonts: [{ hash: id, family: 'Face' }] } }),
   ));
-  const face = entries.find(e => e.name === `assets/${id}.woff2`);
+  const face = entries.find(e => e.name === `assets/face--${id}.woff2`);
   assert.ok(face, 'the face is in the archive');
   assert.equal(face.method, 0);
 });
@@ -202,7 +310,7 @@ test('a TTF face is still deflated', async () => {
   const entries = localEntries(await packedBytes(
     boardOf([], { settings: { fonts: [{ hash: id, family: 'Face' }] } }),
   ));
-  const face = entries.find(e => e.name === `assets/${id}.ttf`);
+  const face = entries.find(e => e.name === `assets/face--${id}.ttf`);
   assert.ok(face, 'the face is in the archive');
   assert.equal(face.method, 8);
 });
