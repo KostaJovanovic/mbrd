@@ -1,19 +1,21 @@
 <!doctype html>
 <html lang="en">
 <head>
-<!-- GENERATED - do not edit. Run: node tools/gen-patch-board.mjs
-     The prose lives in research/patch-notes.md; the shell below is index.html's
-     own body, copied at build time so the app on this page is the app. See the
-     head of the generator for both halves of why. -->
+<!-- GENERATED - do not edit. Run: node tools/gen-patch-page.mjs
+     The prose lives in research/patch-notes.md, which is the only place the
+     changelog is written. The load block below is index.html's own, copied at
+     build time so this page wears the app's cascade rather than a second
+     account of it. See the head of the generator. -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <!-- NO <base href="/"> HERE, unlike index.html, and that is a decision.
 
      The app carries one because it is served at every address it does not
      have. This page is served at exactly one, so it has nothing to fix - and a
-     base would break the changelog: a fragment-only href resolves against the
-     base rather than the document, so every #release link in the fallback
-     below would point at /#release and load a board instead of scrolling. -->
+     base would break every row in the sidebar's index: a fragment-only href
+     resolves against the base rather than the document, so #r-the-viewer would
+     become /#r-the-viewer and clicking it would leave the changelog and load a
+     board. It shipped once and did exactly that. -->
 <title>Patch notes - mbrd</title>
 <meta name="description" content="Every version of mbrd, newest first - what was added, what was fixed and what got faster on the infinite freeform moodboard that runs in your browser.">
 <meta name="author" content="valjdakosta">
@@ -53,6 +55,14 @@
   ]
 }
 </script>
+<!-- Nothing in either block may depend on the releases, and that is a rule
+     rather than an oversight. An inline script is admitted by the hash of its
+     bytes (script-src in web/_headers, no unsafe-inline), so a block carrying
+     the newest version number is a block whose hash rotates every time somebody
+     writes a changelog entry - and the failure that buys is not a stack trace,
+     it is the deployed page silently refusing its own metadata. It carried
+     "version" until v0.195 and did exactly that. The page states every version
+     it covers in its own prose; a crawler is not short of them. -->
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -61,7 +71,6 @@
   "description": "Every version of mbrd, newest first - what was added, what was fixed and what got faster.",
   "url": "https://mbrd.valjdakosta.com/patch",
   "mainEntityOfPage": "https://mbrd.valjdakosta.com/patch",
-  "version": "0.156 - 0.187",
   "image": "https://mbrd.valjdakosta.com/assets/img/og.png",
   "author": { "@type": "Person", "name": "valjdakosta" },
   "about": { "@type": "SoftwareApplication", "name": "mbrd", "url": "https://mbrd.valjdakosta.com/" }
@@ -137,14 +146,15 @@
   } catch (e) {}
 </script>
 
-<!-- Only when there is no script to build the board. A <link> inside <noscript>
-     is parsed exactly then and never otherwise, so the fallback below costs a
-     visitor with JavaScript on nothing at all - not a request, not a rule. -->
-<noscript><link rel="stylesheet" href="assets/css/patch.css"></noscript>
+<link rel="stylesheet" href="assets/css/patch.css">
 </head>
-<body>
-<!-- The app, from index.html. Everything below this line up to the fallback is
-     that file's body, copied verbatim by tools/gen-patch-board.mjs. -->
+<body class="is-patch">
+
+<!-- index.html's body, copied verbatim. All of it: the sidebar with its three
+     real tabs, the menu button, the viewport, the toolbar, every dialog, and
+     the bundle at the end. patch.css hides the board furniture - this page is a
+     document - and leaves the panel, which is then the app's own rather than a
+     likeness of it that drifts. -->
 <!-- The boot cover, over the page until main.js has a board on it.
 
      What it hides is not a slow app so much as an ugly order of events: the
@@ -1104,161 +1114,329 @@
      should not grow by that much for a convenience nobody reviews. -->
 <script type="module" src="assets/app.js"></script>
 
-<!-- The changelog, for a reader with no JavaScript - a crawler, a text browser,
-     a locked-down phone. The app never sees this: markup inside <noscript> is
-     text to a parser with scripting on, so nothing here is in the DOM the board
-     is built into. patch.css dresses it and hides the app shell above, and is
-     itself only fetched when this block is live. -->
-<noscript>
-<div class="patch-fallback">
-<header class="patch-head">
-  <a class="patch-mark" href="/">mbrd.</a>
-  <h1 class="patch-title">Patch notes</h1>
-  <p class="patch-lede">Every version, newest first. This page is a board -
-    with JavaScript on you get it as one, and each release is a card you can
-    open. This is the same thing written out.</p>
-</header>
-<main>
-<article class="patch-entry">
-  <p class="patch-version">0.156 - 0.187</p>
-  <h2 class="patch-name">Under the Floor</h2>
-  <p class="patch-date">13 August 2026</p>
-  <ul class="patch-list">
-    <li><strong>Almost nothing here is visible on a board</strong>, and it would be dishonest to pretend otherwise. This is the release where the app was rewritten in a language that checks itself, taken apart into smaller pieces, and given a policy that limits what a page is allowed to do. What it buys you is fewer of the faults below arriving in the first place.</li>
-    <li><span class="patch-tag is-fix">Fix</span><strong>The app now tells you when something goes wrong.</strong> A failure that used to end in a half-finished board and a message only the browser console ever saw now says what happened, on the board, in words.</li>
-    <li><span class="patch-tag is-fix">Fix</span><strong>Hovering works on a laptop that reports itself as a touchscreen.</strong> Two-in-one machines say they have a finger even when a mouse is on them, and everything that appears when you point at it was staying hidden.</li>
-    <li><span class="patch-tag">New</span><strong>This page.</strong> The app now has a changelog written for the person using it, reachable from System - What changed. Nothing here is folded away or archived: the whole history is one column, oldest at the bottom.</li>
-    <li><span class="patch-tag is-fix">Fix</span><strong>The buttons round the edge of the board react to the pointer again in Chrome.</strong> The menu button, the bin, the zoom pill and the panel close had all gone still on desktop Chrome, which reports itself as a touchscreen with no touchscreen attached. The menu button was the tell: its three bars changed colour and the button under them did not.</li>
-    <li><span class="patch-tag">New</span><strong>The hint cards show on the Feed.</strong> The three cards a brand-new board opens with had only ever been drawn on the canvas, so opening the app on a phone gave you an empty column and no suggestion of what to do with it.</li>
-    <li><span class="patch-tag is-fix">Fix</span>A card no longer takes the accent outline just for being pointed at - that mark means <em>selected</em>, and spending it on a hover left nothing to say which card you had actually chosen.</li>
-  </ul>
-  <hr class="patch-rule">
-  <p class="patch-sub">Maintenance</p>
-  <ul class="patch-list">
-    <li><strong>Written in TypeScript and shipped as one file.</strong> Ninety-odd source modules are compiled and bundled, so a board now downloads one script instead of fetching the whole tree - and a whole class of mistake is caught before it can ship.</li>
-    <li><strong>A Content-Security-Policy, with a test that keeps it honest.</strong> The page now declares exactly what it is allowed to load and where from, which is the difference between a bug being a bug and a bug being a way in.</li>
-    <li><strong>The two largest files were split up</strong> - the one that owned every board operation, and the one that styled every card - and a test now enforces the rule about which piece may reach for which. Continuous integration runs the suite, the types and the linter on every push.</li>
-  </ul>
-</article>
-<article class="patch-entry">
-  <p class="patch-version">0.145 - 0.155</p>
-  <h2 class="patch-name">The Viewer</h2>
-  <p class="patch-date">12 August 2026</p>
-  <ul class="patch-list">
-    <li><span class="patch-tag">New</span><strong>Open one thing as big as the window will allow.</strong> Anything on the board can now be lifted off it and shown full size, with the board waiting behind - a photograph at its real resolution, a video with its own controls, a document you can read.</li>
-    <li><span class="patch-tag">New</span><strong>Documents open properly:</strong> Word, OpenDocument, slides, spreadsheets, CSV, SVG and comic archives. Not a download prompt and not a filename - the actual pages, read in the app.</li>
-    <li><span class="patch-tag">New</span><strong>A PDF opens page by page</strong>, so a long one starts reading immediately instead of after the whole file has been parsed.</li>
-    <li><span class="patch-tag">New</span><strong>Markdown is set as prose</strong>, on the card and in the viewer - headings, lists, quotes and links, rather than the asterisks you typed.</li>
-    <li><span class="patch-tag">New</span><strong>A document shows the picture it already has of itself.</strong> Most of these formats carry a preview image inside them, and using it means a card that looks like its contents without anything having to be rendered.</li>
-    <li><span class="patch-tag">New</span>A dropped text file shows <strong>its opening words</strong> on the Feed instead of its name.</li>
-    <li><span class="patch-tag">New</span>The Feed has a <strong>right-click menu</strong>, which it had gone without since it arrived.</li>
-  </ul>
-</article>
-<article class="patch-entry">
-  <p class="patch-version">0.135 - 0.144</p>
-  <h2 class="patch-name">Both Hands</h2>
-  <p class="patch-date">12 August 2026</p>
-  <ul class="patch-list">
-    <li><strong>The phone and the desk stopped pretending to be each other.</strong> The two layouts had been one design with things hidden out of the smaller one; each is now placed on its own terms, and what the desk was missing was put there rather than copied across.</li>
-    <li><span class="patch-tag">New</span><strong>Colour, Link and Stickers moved behind a More button on the phone</strong>, so the toolbar holds what you reach for and not everything that exists.</li>
-    <li><span class="patch-tag">New</span><strong>The Board tab was rebuilt</strong> around one primary section and one fold, with a View row at the top that says which of the three faces of a board you are looking at.</li>
-    <li><span class="patch-tag is-fix">Fix</span><strong>The note composer drew its sheet at life size, off to the left</strong> - writing a note meant aiming at a box that was not where it appeared to be.</li>
-    <li><span class="patch-tag is-fix">Fix</span><strong>The sticker drawer shuts the moment a shape is dragged out of it</strong>, instead of staying open over the place you were dragging the shape to.</li>
-    <li><span class="patch-tag is-fix">Fix</span><strong>The Feed is printed on paper again.</strong> It had been on untextured stock since it replaced the old strip, so the phone board was the one surface in the app with no tooth to it.</li>
-    <li><span class="patch-tag is-fix">Fix</span>The phone toolbar handle showed a square corner while pressed, and the Debug section was folded away so the System tab no longer ends on a footnote.</li>
-  </ul>
-</article>
-<article class="patch-entry">
-  <p class="patch-version">0.130 - 0.134</p>
-  <h2 class="patch-name">Threads and Shapes</h2>
-  <p class="patch-date">12 August 2026</p>
-  <ul class="patch-list">
-    <li><span class="patch-tag">New</span><strong>Draw a connection between two cards</strong>, and edit it from a small chip that follows the line while it is selected. A board can now say that this relates to that.</li>
-    <li><span class="patch-tag">New</span><strong>Stickers</strong> - a drawer of shapes you can drag onto the board, each tintable from the board&rsquo;s own palette rather than from a stock set of primaries.</li>
-    <li><span class="patch-tag">New</span><strong>Hover flyouts on the toolbar</strong>, so a tool with options shows them where the tool is instead of sending you to a menu to look for them.</li>
-    <li>A full pass over the look of the app, with everything it found written down rather than quietly fixed - including which parts were deliberately left alone.</li>
-  </ul>
-</article>
-<article class="patch-entry">
-  <p class="patch-version">0.126 - 0.129</p>
-  <h2 class="patch-name">Feed and Playlist</h2>
-  <p class="patch-date">11 August 2026</p>
-  <ul class="patch-list">
-    <li><span class="patch-tag">New</span><strong>The Feed</strong> - a board read as one scrolling column instead of a cramped canvas. It is a way to browse what is on a board, not a smaller version of the board.</li>
-    <li><span class="patch-tag">New</span><strong>The Playlist</strong>: every piece of audio on a board, as a player.</li>
-    <li><span class="patch-tag">New</span><strong>More than one board.</strong> A switcher that holds them all, each with a picture of itself, so a board is no longer the single thing this browser happens to be holding.</li>
-  </ul>
-</article>
-<article class="patch-entry">
-  <p class="patch-version">0.117 - 0.125</p>
-  <h2 class="patch-name">Regions</h2>
-  <p class="patch-date">4 - 6 August 2026</p>
-  <ul class="patch-list">
-    <li><span class="patch-tag">New</span><strong>Fences</strong> - a named region drawn on the board rather than a card lying on it. Things inside one move with it, and its name is readable at any zoom, which is what makes a large board navigable.</li>
-    <li><span class="patch-tag">New</span><strong>A colour picker</strong>, so a pigment can be chosen by eye rather than picked from a list.</li>
-    <li>At the softer end of the look, a region is now drawn as a <strong>cork board</strong>, with the stock to match.</li>
-  </ul>
-</article>
-<article class="patch-entry">
-  <p class="patch-version">0.105 - 0.116</p>
-  <h2 class="patch-name">Grain and Credit</h2>
-  <p class="patch-date">1 - 3 August 2026</p>
-  <ul class="patch-list">
-    <li><span class="patch-tag">New</span><strong>The paper got its tooth.</strong> The sheet is a real 300gsm grain now, multiplied over the board and travelling with it as you pan and zoom, rather than a flat wash of colour.</li>
-    <li><span class="patch-tag">New</span><strong>A now-playing bar</strong> for whatever the board is playing, and a <strong>credits sheet</strong> for the two people who made this.</li>
-    <li><span class="patch-tag">New</span><strong>The toolbar</strong>, in the shape it still has.</li>
-    <li>Maintenance: the single stylesheet the whole app had grown into was split into one file per subsystem, and the first full audit of the code was carried out and written down.</li>
-  </ul>
-</article>
-<article class="patch-entry">
-  <p class="patch-version">0.87 - 0.92</p>
-  <h2 class="patch-name">Solid Ground</h2>
-  <p class="patch-date">31 July 2026</p>
-  <ul class="patch-list">
-    <li><span class="patch-tag is-fix">Fix</span><strong>A board with an unresolved conflict refuses to save</strong> rather than writing something half-merged over the good copy, and three races behind that were closed with it.</li>
-    <li><span class="patch-tag is-faster">Faster</span><strong>Exporting no longer holds the whole board in memory twice.</strong> The archive is written as it goes, which is the difference between a large board exporting and a large board failing to.</li>
-    <li><span class="patch-tag is-faster">Faster</span>Undo history is now bounded by <strong>how much it is holding</strong> rather than by how many steps it has, so a few very large steps can no longer fill the browser&rsquo;s storage on their own.</li>
-    <li>Maintenance: the file that owned every board operation was given a floor to stand on and had its layouts, geometry and stacking lifted out of it.</li>
-  </ul>
-</article>
-<article class="patch-entry">
-  <p class="patch-version">0.59 - 0.75</p>
-  <h2 class="patch-name">Measured</h2>
-  <p class="patch-date">28 - 31 July 2026</p>
-  <ul class="patch-list">
-    <li><span class="patch-tag is-faster">Faster</span><strong>Panning and zooming a large board</strong>, worked on against measurements rather than impressions - the reading taken against the display&rsquo;s own refresh, and the numbers kept.</li>
-    <li><span class="patch-tag is-faster">Faster</span><strong>Photographs are mounted at a sensible size</strong> for how large they are actually being drawn, and a video does not load until it is first played on a touch device. Zoomed out, image decoding and card shadows are shed entirely.</li>
-    <li><span class="patch-tag">New</span>A redrawn app icon: three cards on the grid.</li>
-  </ul>
-</article>
-<article class="patch-entry">
-  <p class="patch-version">0.41 - 0.57</p>
-  <h2 class="patch-name">Hardening</h2>
-  <p class="patch-date">26 - 28 July 2026</p>
-  <ul class="patch-list">
-    <li><strong>The boundaries where a file comes in were tightened</strong> - what is stored, what is imported and what is drawn - so that a malformed or hostile file is refused rather than trusted. The readers that parse files this app did not write check their sizes before they allocate.</li>
-    <li><span class="patch-tag is-fix">Fix</span><strong>Gestures snap to the board&rsquo;s real grid</strong>, not to the lattice as it appears at the current zoom - so a card dropped at 40% lands where one dropped at 100% would.</li>
-    <li>Every bundled typeface now carries its provenance and its licence.</li>
-  </ul>
-</article>
-<article class="patch-entry">
-  <p class="patch-version">0.00 - 0.21</p>
-  <h2 class="patch-name">First Light</h2>
-  <p class="patch-date">25 July 2026</p>
-  <ul class="patch-list">
-    <li><strong>mbrd arrived.</strong> An infinite freeform board in a browser tab, with no account, no server and nothing uploaded - and it was very nearly all built in a day.</li>
-    <li><span class="patch-tag">New</span><strong>The whimsy axis</strong>: one dial that takes the whole interface from scrapbook to spec sheet - the corners, the type, the ornament and how much anything moves - and the palettes that ride on it.</li>
-    <li><span class="patch-tag">New</span><strong>Notes, links, audio cards, pictures and 3D models</strong>, with album art filling a music card, a YouTube link that becomes a player if you ask it to, and Markdown in a note.</li>
-    <li><span class="patch-tag">New</span><strong>A web of threads between items</strong>, a bin that greys out when it is empty, renaming in place, and Find on the board with <code>Ctrl+K</code>.</li>
-    <li><span class="patch-tag">New</span><strong>A board you can hold in one hand</strong>, and the file format the whole thing saves to, specified and written down.</li>
-  </ul>
-</article>
+<!-- The changelog: a fixed scroller of its own, the way #mobile-feed is, so the
+     app stays pinned to the window exactly as base.css pins it. See the head of
+     patch.css for what happened when the body was unpinned instead. -->
+<main class="pn">
+ <div class="pn-inner">
+  <header class="pn-head">
+    <h1 class="pn-title">Patch notes</h1>
+    <p class="pn-lede">Everything that has changed in mbrd, newest first.</p>
+    <!-- The three numbers this page can state without anybody writing them
+         down: how many releases there are, how many commits they cover, and
+         when it started. All counted from the source. -->
+    <p class="pn-tally">
+      <span>13 releases</span>
+      <span>195 commits</span>
+      <span>since 25 July 2026</span>
+    </p>
+  </header>
+
+  <ol class="pn-list">
+<li class="pn-rel" id="r-on-the-record">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">8</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.188 - 0.195</p>
+      <h2 class="pn-name">On the Record</h2>
+      <p class="pn-date">13 - 14 August 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>The changelog is a page of the app now, and this is it.</strong> It used to be a text file nobody outside the repository could read, then a board drawn out of one. It is neither: it is a document, printed by the app's own stylesheets, with the app's own sidebar over it. Reached from System - What changed.</li>
+      <li><span class="pn-tag is-new">New</span><strong>It is printed the way your board is printed.</strong> The page reads your saved look before it paints, so the whimsy dial prints the changelog three ways - a scrapbook at one end, a straightened room in the middle, a spec sheet at the other - and moving the dial while you are reading moves the page in front of you. Nothing you touch there is kept: the page never opens your session and never writes a preference, so a look tried out on the changelog is forgotten the moment you leave.</li>
+      <li><span class="pn-tag is-new">New</span><strong><code>Canvas</code>, <code>Feed</code> and <code>Playlist</code> take you back to the board.</strong> They are the one row of the sidebar that still means something on a page with no board, so on the changelog they mean the only thing they can - and the face you press is the face the board opens on.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Everything that needs a board is greyed there instead of missing.</strong> <code>Save</code>, <code>Export</code>, <code>Add files</code>, the arrangement, the grid, the paper sheet, <code>Optimize</code> and <code>Clear everything</code> are all visible and all switched off. The whimsy dial, the palette and the quality settings are not among them, because those move the page you are actually looking at.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The menu button stopped fading away on the changelog.</strong> The furniture around a board steps back when you leave it alone, which on a page of prose faded the one control the page has - and a faded control stops taking clicks, so the sidebar could not be opened at all.</li>
+      <li class="is-plain"><strong>The whole record was rewritten, which is why the entries below this one are longer than they were.</strong> Four runs of versions had fallen through the gaps between releases and were described nowhere; several features that shipped months of commits ago - the palette read off your own photographs, <code>Optimize</code>, the paper sheet and real-size measuring, installing the app, the board library - had never been mentioned at all. They are in their proper releases now, dated to when they actually landed rather than to when they were written up.</li>
+    </ul>
+    <h3 class="pn-part">Maintenance</h3>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>The last two files carrying an exemption from the type checker were typed, and the count is zero.</strong> The migration renamed a hundred and five modules in one step and carried a hundred and three of them unchecked; the number has come down every release since and this is the one that closes it. It is a plain guard now rather than a countdown - a file that asks for the exemption back fails the suite.</li>
+      <li class="is-plain"><strong>The script that commits also builds.</strong> What reaches a visitor is whichever bundle was last committed, and the bundle was only ever as fresh as the last time somebody happened to build it by hand. Now a build that fails stops the commit rather than warning about it.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-under-the-floor">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">32</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.156 - 0.187</p>
+      <h2 class="pn-name">Under the Floor</h2>
+      <p class="pn-date">12 - 13 August 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>Almost nothing here is visible on a board</strong>, and it would be dishonest to pretend otherwise. This is the release where the app was rewritten in a language that checks itself, taken apart into smaller pieces, and given a policy that limits what a page is allowed to do. What it buys you is fewer of the faults below arriving in the first place.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The app now tells you when something goes wrong.</strong> A failure that used to end in a half-finished board and a message only the browser console ever saw now says what happened, on the board, in words.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Hovering works on a laptop that reports itself as a touchscreen.</strong> Two-in-one machines say they have a finger even when a mouse is on them, and everything that appears when you point at it was staying hidden.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The buttons round the edge of the board react to the pointer again in Chrome.</strong> The menu button, the bin, the zoom pill and the panel close had all gone still on desktop Chrome, which reports itself as a touchscreen with no touchscreen attached. The menu button was the tell: its three bars changed colour and the button under them did not.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The hint cards show on the Feed.</strong> The three cards a brand-new board opens with had only ever been drawn on the canvas, so opening the app on a phone gave you an empty column and no suggestion of what to do with it.</li>
+      <li><span class="pn-tag is-fix">Fix</span>A card no longer takes the accent outline just for being pointed at - that mark means <em>selected</em>, and spending it on a hover left nothing to say which card you had actually chosen.</li>
+      <li><span class="pn-tag is-fix">Fix</span>The slider thumb stopped leaking its fill past its own border, which showed as a bright hairline round every dial in the panel.</li>
+    </ul>
+    <h3 class="pn-part">Maintenance</h3>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>Written in TypeScript and shipped as one file.</strong> Ninety-odd source modules are compiled and bundled, so a board now downloads one script instead of fetching the whole tree - and a whole class of mistake is caught before it can ship.</li>
+      <li class="is-plain"><strong>A Content-Security-Policy, with a test that keeps it honest.</strong> The page now declares exactly what it is allowed to load and where from, which is the difference between a bug being a bug and a bug being a way in.</li>
+      <li class="is-plain"><strong>The two largest files were split up</strong> - the one that owned every board operation, and the one that styled every card - and a test now enforces the rule about which piece may reach for which. Continuous integration runs the suite, the types and the linter on every push.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-the-viewer">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">11</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.145 - 0.155</p>
+      <h2 class="pn-name">The Viewer</h2>
+      <p class="pn-date">12 August 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>Open one thing as big as the window will allow.</strong> Anything on the board can now be lifted off it and shown full size, with the board waiting behind - a photograph at its real resolution, a video with its own controls, a document you can read.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Documents open properly:</strong> Word, OpenDocument, slides, spreadsheets, CSV, SVG and comic archives. Not a download prompt and not a filename - the actual pages, read in the app.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A PDF opens page by page</strong>, so a long one starts reading immediately instead of after the whole file has been parsed.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Markdown is set as prose</strong>, on the card and in the viewer - headings, lists, quotes and links, rather than the asterisks you typed.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A document shows the picture it already has of itself.</strong> Most of these formats carry a preview image inside them, and using it means a card that looks like its contents without anything having to be rendered.</li>
+      <li><span class="pn-tag is-new">New</span>A dropped text file shows <strong>its opening words</strong> on the Feed instead of its name.</li>
+      <li><span class="pn-tag is-new">New</span>The Feed has a <strong>right-click menu</strong>, which it had gone without since it arrived.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-both-hands">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">10</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.135 - 0.144</p>
+      <h2 class="pn-name">Both Hands</h2>
+      <p class="pn-date">12 August 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>The phone and the desk stopped pretending to be each other.</strong> The two layouts had been one design with things hidden out of the smaller one; each is now placed on its own terms, and what the desk was missing was put there rather than copied across.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Colour, Link and Stickers moved behind a More button on the phone</strong>, so the toolbar holds what you reach for and not everything that exists.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The Board tab was rebuilt</strong> around one primary section and one fold, with a View row at the top that says which of the three faces of a board you are looking at.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The note composer drew its sheet at life size, off to the left</strong> - writing a note meant aiming at a box that was not where it appeared to be.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The sticker drawer shuts the moment a shape is dragged out of it</strong>, instead of staying open over the place you were dragging the shape to.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The Feed is printed on paper again.</strong> It had been on untextured stock since it replaced the old strip, so the phone board was the one surface in the app with no tooth to it.</li>
+      <li><span class="pn-tag is-fix">Fix</span>The phone toolbar handle showed a square corner while pressed, the pen came down as soon as the Feed's title page had scrolled away, and the Debug section was folded so the System tab no longer ends on a footnote.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-threads-and-shapes">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">5</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.130 - 0.134</p>
+      <h2 class="pn-name">Threads and Shapes</h2>
+      <p class="pn-date">12 August 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>Draw a connection between two cards</strong>, and edit it from a small chip that follows the line while it is selected. A board can now say that this relates to that.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Stickers</strong> - a drawer of shapes you can drag onto the board, each tintable from the board's own palette rather than from a stock set of primaries.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Windows you can move and leave open</strong>, which the sticker drawer is the first of and the Playlist the second - a thing you keep reaching for stops being a menu that shuts behind you every time.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Hover flyouts on the toolbar</strong>, so a tool with options shows them where the tool is instead of sending you to a menu to look for them.</li>
+      <li class="is-plain">A full pass over the look of the app, with everything it found written down rather than quietly fixed - including which parts were deliberately left alone.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-feed-and-playlist">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">4</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.126 - 0.129</p>
+      <h2 class="pn-name">Feed and Playlist</h2>
+      <p class="pn-date">11 August 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>The Feed</strong> - a board read as one scrolling column instead of a cramped canvas. It is a way to browse what is on a board, not a smaller version of the board.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The Playlist</strong>: every piece of audio on a board, as a player.</li>
+      <li><span class="pn-tag is-new">New</span><strong>More than one board.</strong> A switcher that holds them all, each with a picture of itself, so a board is no longer the single thing this browser happens to be holding.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Save a picture of the board, or a PDF of it.</strong> Until these two the only thing that ever left mbrd was a file only mbrd could open, which is an odd property for a thing made to be shown to somebody.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Share</strong>, on a phone that has a share sheet - the board goes into it as a file rather than turning quietly into a download.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A PDF dropped on the board shows its first page</strong>, and every other format that carries a preview picture inside it now uses that picture instead of standing there as a filename.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-regions">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">9</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.117 - 0.125</p>
+      <h2 class="pn-name">Regions</h2>
+      <p class="pn-date">4 - 6 August 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>Fences</strong> - a named region drawn on the board rather than a card lying on it. Things inside one move with it, and its name is readable at any zoom, which is what makes a large board navigable.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A colour picker</strong>, so a pigment can be chosen by eye rather than picked from a list.</li>
+      <li><span class="pn-tag is-new">New</span><strong>mbrd is on the web at an address</strong>, findable, and with a 404 that is the app itself: a mistyped path opens a board rather than a dead end, and the moment you put something on that board it becomes an ordinary one at the ordinary address.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The browser's copy of a board is tidied on every save</strong>, so pictures belonging to something you deleted a week ago stop taking up room you cannot see and cannot get back.</li>
+      <li><span class="pn-tag is-new">New</span>At the softer end of the look, a region is drawn as a <strong>cork board</strong>, with the stock to match, and the whole app moved onto <strong>one set of drawn icons</strong> rather than the characters it had been borrowing.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Dropping a folder of more than five hundred files now says so.</strong> The cut was always made - the app stops at five hundred - but the receipt said it had brought in everything, so a thousand photographs became five hundred and nothing mentioned it.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-grain-and-credit">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">11</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.106 - 0.116</p>
+      <h2 class="pn-name">Grain and Credit</h2>
+      <p class="pn-date">1 - 4 August 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>The paper got its tooth.</strong> The sheet is a real 300gsm grain now, multiplied over the board and travelling with it as you pan and zoom, rather than a flat wash of colour.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A now-playing bar</strong> for whatever the board is playing, and a <strong>credits sheet</strong> for the two people who made this.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The toolbar</strong>, in the shape it still has.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Threads route around the cards they pass</strong>, instead of running under them - a line between two cards on a busy board now reads as a line rather than as something disappearing behind furniture.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A second typeface to set the app in.</strong> Playfair joined what the switcher offers, which is what gives the softer end of the dial a face with some weight to it rather than one voice doing every job.</li>
+      <li class="is-plain">Maintenance: the single stylesheet the whole app had grown into was split into one file per subsystem, and the first full audit of the code was carried out and written down.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-solid-ground">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">19</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.87 - 0.105</p>
+      <h2 class="pn-name">Solid Ground</h2>
+      <p class="pn-date">31 July 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>A release about the board staying smooth while it moves, and about not losing anything.</strong> Nothing new to look at; three costs paid on every frame of every gesture, and four faults closed behind them.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>Editing a note no longer drags the whole board down.</strong> While a note was open, its little toolbar measured itself four times a frame, at the worst possible moment - just after the board had moved - which made the browser recalculate the entire page's layout sixty times a second for as long as the note was open. It now works out where to sit from what the board already knows.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>The grid stops redrawing when nothing has moved</strong>, which is most of the tail of a flicked pan and most of what a trackpad sends while it settles.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>Zooming out does less work per frame.</strong> The check for what has left the view used to run on every frame of the whole gesture; it now runs about eight times a second while you move and once more the moment you stop.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>Exporting no longer holds the whole board in memory twice.</strong> Writing a <code>.mbrd</code> used to read every photo, video and sound into memory and then hold a second copy of each while the archive was assembled, so a board a browser could comfortably display was not necessarily one it could save. It is written straight from where the files already sit, a piece at a time.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>Saving and reopening a board full of photographs is much quicker.</strong> The background save made one separate trip to the browser's storage per picture, waiting for each before starting the next - five hundred photographs meant five hundred round trips, once on the way in and again on the way back.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>Dragging a colour stops writing to disk sixty times a second.</strong> Moving the picker saved your whole look on every frame of the drag, a blocking write on the same thread as the picture you were watching. It saves about five times a second now, and always once more on the way out.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A picture from a board you had already closed can no longer reappear on the next one.</strong> mbrd makes a screen-sized copy of every photograph in the background; if you opened a different board - or moved the sharpness dial - while one was still being made, the finished copy arrived afterwards and quietly filed itself.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Undo stopped holding on to more than it should.</strong> The history remembered its last two hundred actions and counted them all the same, so nudging two cards and nudging ten thousand cost the same one slot while the second quietly held two copies of the whole board's positions. Heavy actions now declare their true cost. The one thing never dropped is a single action bigger than the entire budget, which is precisely the one you are most likely to want back.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A board with an unresolved conflict refuses to save</strong> rather than writing something half-merged over the good copy, and a stuck database connection - the kind that itself blocks the next tab - is now cleaned up rather than left open with nobody holding it.</li>
+    </ul>
+    <h3 class="pn-part">Maintenance</h3>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>The central file became seven.</strong> The bus and the dirty flag, the board's own shape, the undo engine, sticky-note relations, the two layouts and the front-to-back card order each moved into a file of their own, and the file that draws the threads stopped also being the file that decides where they go. Nothing that used any of it had to change.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-measured">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">28</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.59 - 0.86</p>
+      <h2 class="pn-name">Measured</h2>
+      <p class="pn-date">28 - 31 July 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>Worked on against measurements rather than impressions</strong>, which is the whole point of the entry: the readings were taken against the display's own refresh, the numbers were kept, and one of the two campaigns below ended in a decision not to build anything.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>Panning and zooming a large board.</strong> The cost of a frame stopped depending on how much was on the board and started depending on how much was on the screen.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>Photographs are mounted at a sensible size</strong> for how large they are actually being drawn, rather than at whatever the camera produced - a 4K photo on a card three inches wide was a 4K photo.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>A video does not load until it is first played on a touch device</strong>, and zoomed out, image decoding and card shadows are shed entirely.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A redrawn app icon:</strong> three cards on the grid.</li>
+      <li><span class="pn-tag is-new">New</span>Cards <strong>animate out when they leave</strong>, so something deleted reads as having gone rather than as having never been there.</li>
+      <li class="is-plain"><strong>The phone scroll campaign ended in no rewrite</strong>, and that is the finding. Eleven versions went into measuring the Feed's scroll against the display's beat rather than against an average, and the conclusion was that the grid did not need rebuilding. Building against no measurement is how a regression ships, and so is rebuilding against one that says you do not have to.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-hardening">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">6</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.53 - 0.58</p>
+      <h2 class="pn-name">Hardening</h2>
+      <p class="pn-date">28 July 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>The boundaries where a file comes in were tightened</strong> - what is stored, what is imported and what is drawn - so that a malformed or hostile file is refused rather than trusted. The readers that parse files this app did not write check their sizes before they allocate.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A ceiling on what one drop may bring in</strong>, so a folder pointed at the board by accident is refused with a sentence rather than absorbed until the tab dies.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Sticky notes were rebuilt</strong>: how a note sizes itself to what it says, where the writing sits on the sheet, and what happens to a note too long for its own card.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>Only what is on screen is worked on.</strong> The board keeps an index of where things are, so the cost of a gesture stopped scaling with the size of the board.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Gestures snap to the board's real grid</strong>, not to the lattice as it appears at the current zoom - so a card dropped at 40% lands where one dropped at 100% would.</li>
+      <li class="is-plain">Every bundled typeface now carries its provenance and its licence.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-pigment-and-paper">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">12</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.41 - 0.52</p>
+      <h2 class="pn-name">Pigment and Paper</h2>
+      <p class="pn-date">26 - 27 July 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>The palette is read off your own pictures.</strong> Set the palette to <code>Dynamic</code> and the board takes its sheet, its ink and its accent from the photographs pinned to it - one to three hues, none of them invented, so a board of one colour gets a palette in one colour. How many pictures it reads is yours to set.</li>
+      <li><span class="pn-tag is-new">New</span><strong><code>Optimize</code></strong> - one menu item that trims a board down to what a board actually needs. Photographs are re-encoded at the size they are drawn at, sound is re-encoded as Opus, and video is deliberately left alone. It never touches anything it cannot make meaningfully smaller, it never throws the originals away, and it is one undo from being reversed. Nothing runs on import, on save or on a timer: it happens because you asked.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Real size.</strong> Put a paper outline on the board - A4, Letter, portrait or landscape - drag its corners to set the board's scale, or point at something whose size you already know, and the board will tell you how big it is in millimetres or in inches.</li>
+      <li><span class="pn-tag is-new">New</span><strong>mbrd is installable properly.</strong> It had claimed to be an app you could keep since the first day and had no icons to be kept as; it has them now, at both sizes and in the masked shape a phone crops to, so it goes on a home screen or into a dock and opens in its own window with the whole app already cached and no connection required.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A zoom pill and a scale bar</strong> at the edge of the board, so how far in you are is a number and a length rather than a guess.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The furniture steps back when you leave the board alone</strong>, and comes back the moment you touch anything.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A masthead on the phone</strong>, holding the board's name and the way into everything else, rather than the desk's controls squeezed sideways.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A live font switcher</strong>, so each of the two type voices is chosen while you look at the result rather than picked from a list and hoped for.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-first-light">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">41</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.00 - 0.40</p>
+      <h2 class="pn-name">First Light</h2>
+      <p class="pn-date">25 July 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>mbrd arrived.</strong> An infinite freeform board in a browser tab, with no account, no server and nothing uploaded - and all of it was built in a day.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The whimsy axis</strong>: one dial that takes the whole interface from scrapbook to spec sheet - the corners, the type, the ornament and how much anything moves - and the palettes that ride on it.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Notes, links, audio cards, pictures and 3D models</strong>, with album art filling a music card, a YouTube link that becomes a player if you ask it to, and Markdown in a note.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A web of threads between items</strong>, drawn at whatever density the machine can afford, a bin that greys out when it is empty, renaming in place, and Find on the board with <code>Ctrl+K</code>.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A board you can hold in one hand</strong>, and the file format the whole thing saves to, specified and written down.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Save, and Export</strong>, which are two different things: one keeps the board in this browser, the other writes a file you can put somewhere.</li>
+    </ul>
+  </article>
+</li>
+  </ol>
+
+  <footer class="pn-foot">
+    <span>mbrd by valjdakosta</span>
+    <a href="/">Back to the board</a>
+  </footer>
+ </div>
 </main>
-<footer class="patch-foot">
-  <span>mbrd by valjdakosta</span>
-  <a href="/">Back to the board</a>
-</footer>
-</div>
-</noscript>
 </body>
 </html>

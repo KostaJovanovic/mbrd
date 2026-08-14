@@ -30,8 +30,15 @@
 // Nor the lens machinery. Which of Feed and Playlist is up is ui/board-view.ts;
 // the three commands here are the buttons that ask for one, including the
 // deliberate asymmetry that Canvas is idempotent and the other two are toggles.
+//
+// All three open with the same guard, which is the one thing about them that is
+// not about lenses: on /patch there is no board to put a lens on, so goHome()
+// navigates instead and the body below never runs. Before the guard, Feed put
+// the empty board behind the changelog into the mobile layout and Playlist
+// floated a player window over the prose. See page.ts.
 
 import { toast } from '../notify.ts';
+import { goHome } from '../page.ts';
 import { board, setSetting, setBoardMode as selectBoardMode } from '../state.ts';
 import { DEFAULT_SCALE } from '../measure.ts';
 import { clearQualityOverrides } from '../quality.ts';
@@ -87,9 +94,11 @@ export function viewCommands(vp: CommandViewport, { resetAppearance }: ViewDeps)
      * false for a mode that is live, so the toast is only for a real crossing.
      */
     canvas: () => {
+      if (goHome('canvas')) return;
       if (selectBoardMode('desktop')) toast('Back to the canvas');
     },
     feed: () => {
+      if (goHome('feed')) return;
       if (board.layoutMode === 'mobile') {
         if (currentLens() === 'feed') { selectBoardMode('desktop'); toast('Back to the canvas'); }
         else setLens('feed');
@@ -99,6 +108,7 @@ export function viewCommands(vp: CommandViewport, { resetAppearance }: ViewDeps)
       selectBoardMode('mobile');
     },
     playlist: () => {
+      if (goHome('playlist')) return;
       if (board.layoutMode === 'mobile') {
         if (currentLens() === 'playlist') { selectBoardMode('desktop'); toast('Back to the canvas'); }
         else setLens('playlist');

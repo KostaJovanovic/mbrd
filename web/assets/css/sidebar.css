@@ -874,3 +874,32 @@ kbd {
   outline: var(--sel-line) solid var(--select);
   outline-offset: var(--sel-gap);
 }
+
+/* ---------------------------------------------------------------------------
+   Greyed, on the one page with no board under the panel
+
+   /patch is the app showing the changelog: the real sidebar, over a document
+   instead of a canvas. Everything on the Board tab, the grid, the paper sheet
+   and the three housekeeping buttons act on a board a reader has not got, so
+   they are shown and switched off rather than hidden - hiding two thirds of
+   the panel would turn the real sidebar back into a likeness of one, which is
+   the whole thing that page exists not to be. ui/settings-schema.js marks
+   which with `needsBoard` and says why; ui/panel.js sets `disabled` here, and
+   that - not this class - is what stops the click.
+
+   Only the fade and the cursor, then. `pointer-events` goes on the controls
+   and never on the row, so the labels stay selectable and the panel stays
+   scrollable with a finger anywhere on it. A fold's summary is left alone
+   deliberately: Paper and Debug are folds with nothing outside them, and a
+   summary that will not open is the greying turning back into hiding.
+
+   The nested rule is not decoration: a greyed section holds greyed rows, and
+   two multiplied opacities put the Board tab at a fifth of its ink - legible
+   as damage rather than as off. The section carries the fade and its rows
+   inherit it. */
+#sidebar .is-inert { opacity: 0.45; }
+#sidebar .is-inert .is-inert { opacity: 1; }
+#sidebar .is-inert :is(button, input, select) {
+  pointer-events: none;
+  cursor: default;
+}

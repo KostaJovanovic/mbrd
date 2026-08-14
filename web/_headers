@@ -67,9 +67,17 @@
 #     only thing telling a crawler this page belongs to the app rather than
 #     being a second, unrelated root.
 #
+#     Neither block may carry anything that changes when a release is written,
+#     and the article block used to: it named the newest version, so its hash
+#     rotated every time somebody added an entry to the changelog and the
+#     deployed page then refused its own metadata until this line was edited to
+#     match. A hash covering bytes that a routine edit changes is a trap, not a
+#     policy. It was taken out at v0.195; see the note above the block in
+#     tools/gen-patch-page.mjs.
+#
 #     Its other two inline scripts need no entry of their own, and the reason is
 #     worth knowing before somebody goes looking for the missing hashes: /patch
-#     IS the app. tools/gen-patch-board.mjs builds that page out of index.html's
+#     IS the app. tools/gen-patch-page.mjs builds that page out of index.html's
 #     own body and load block, so the pre-paint restore and the boot-cover
 #     rescue arrive in it byte for byte and hash to the two values already
 #     listed above. A hash covers bytes, not a file, which is what makes a
@@ -251,7 +259,7 @@
 # report to, which is the whole architecture).
 
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-TXFmC+WkJ7pej6GG4eilTgWXAPfRfnxeO2p8iCMvh/k=' 'sha256-DkygY3dxoCj3zPATesYHPgON9mIeqlu6UbH2c+3mStw=' 'sha256-eJzJ8523EitoBKAS5A1tCSnraL7SAmf2gesGT63wGSk=' 'sha256-7MOXuzYEVnwtGN5LaHmnA8It5SPyIoYzkvOEItbnkGg=' 'sha256-Q8ZzrQgcVPkApKR0qNf6mroKHffRQsjhyVVZIRu0QtU=' 'sha256-2ztZkIyPsbLvWnZmekpOu/jnZWNEV6sJ/h0Ybu51Zz4='; style-src 'self' 'sha256-wkVFcbpQLLLncGzQDSypPX4g+PgpgKuYUfkJ3D7xrA8=' 'sha256-9MwbduHoYcvGbMyIKsXKkXLfI0H0ks+ah6sfj4TrmeA='; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self' blob:; connect-src 'self' blob: https://cdn.jsdelivr.net; worker-src 'self'; manifest-src 'self'; frame-src https://www.youtube-nocookie.com https://open.spotify.com; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-TXFmC+WkJ7pej6GG4eilTgWXAPfRfnxeO2p8iCMvh/k=' 'sha256-DkygY3dxoCj3zPATesYHPgON9mIeqlu6UbH2c+3mStw=' 'sha256-eJzJ8523EitoBKAS5A1tCSnraL7SAmf2gesGT63wGSk=' 'sha256-7MOXuzYEVnwtGN5LaHmnA8It5SPyIoYzkvOEItbnkGg=' 'sha256-Q8ZzrQgcVPkApKR0qNf6mroKHffRQsjhyVVZIRu0QtU=' 'sha256-8ZGO4EWxaESz6+qYFa7Px/8iyW9D2UaZh/+P4/mg99Q='; style-src 'self' 'sha256-wkVFcbpQLLLncGzQDSypPX4g+PgpgKuYUfkJ3D7xrA8=' 'sha256-9MwbduHoYcvGbMyIKsXKkXLfI0H0ks+ah6sfj4TrmeA='; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self' blob:; connect-src 'self' blob: https://cdn.jsdelivr.net; worker-src 'self'; manifest-src 'self'; frame-src https://www.youtube-nocookie.com https://open.spotify.com; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
 
 # The one exemption, and the only interesting thing about the whole file.
 #

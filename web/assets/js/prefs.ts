@@ -58,20 +58,22 @@ export function readPref(key: string, fallback: string | null = null): string | 
  * Every write from here on is a no-op, until the page is reloaded.
  *
  * The counterpart to suspendCache() in storage/session.ts, and it exists for
- * the same reason at the other end of the app. /patch opens the changelog as a
- * real board in the real app, which means the real sidebar: a visitor can move
- * the whimsy dial, switch to Canvas, change the quality tier. Every one of
- * those writes a preference, and none of them was a decision about *their*
- * app - it was somebody reading the release notes. Coming back to a board
- * wearing a palette they never chose, because they clicked something on a
- * changelog, is the kind of small betrayal nobody would ever trace.
+ * the same reason at the other end of the app. /patch runs the real app so it
+ * can carry the real sidebar - the whole panel, every tab - which means a
+ * visitor reading the changelog can move the whimsy dial, switch to Canvas,
+ * change the quality tier. Every one of those writes a preference, and none of
+ * them was a decision about *their* app: it was somebody reading the release
+ * notes. Coming back to a board wearing a palette they never chose, because
+ * they touched something on a changelog, is the kind of small betrayal nobody
+ * would ever trace.
  *
  * So the page that is a document rather than a workspace turns the writer off,
  * exactly as it turns the autosave off, and for the same one-sentence reason:
  * nothing you do while reading may change what you own.
  *
- * Reads are untouched. The board still opens wearing whatever look the visitor
- * already set, which is the half worth keeping.
+ * Reads are untouched. The page still arrives wearing whatever look the visitor
+ * already set, which is the half worth keeping - and is what makes the
+ * changelog print itself three different ways.
  */
 let frozen = false;
 

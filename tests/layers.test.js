@@ -1,6 +1,7 @@
 // The module layering, as executable policy rather than prose.
 //
-// CLAUDE.md draws the intended graph:
+// research/docs/architecture.md draws the intended graph, and CLAUDE.md carries
+// the same line:
 //
 //   util/geometry <- state <- {import, storage, canvas} <- ui
 //
@@ -21,10 +22,11 @@
 // fails the second. The list can only shrink.
 //
 // optimize/ is deliberately not ranked here. It is dynamically imported, half
-// leaf-helpers and half orchestrators (CLAUDE.md: "it is a button"), and
-// CLAUDE.md's arrow never mentions it; inventing a tier for it would be this
-// test asserting an opinion the guide does not hold. The acyclicity check still
-// covers it, which is the part that actually matters.
+// leaf-helpers and half orchestrators, and it is a button. This used to be the
+// test declining to invent a tier the guide had no opinion about; CLAUDE.md now
+// states the exclusion and the reason for it in the layering bullet, so the two
+// agree rather than one being silent. The acyclicity check still covers it,
+// which is the part that actually matters.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -136,6 +138,12 @@ test('the import graph has no cycle', () => {
 
 const BASE = new Set([
   'util.ts', 'geometry.ts', 'measure.ts', 'layout-settings.ts', 'version.js',
+  // Which page of the site this is. It imports nothing at all and reads the URL
+  // lazily, and three tiers apart ask it the same question: main.ts (restore a
+  // session or not), ui/panel.ts (grey what needs a board) and
+  // commands/view.ts (the changelog's way back). A fact that far-flung has to
+  // be at the bottom or it is an inversion for two of the three.
+  'page.ts',
   // The quality dial's flags. Bottom of the graph on purpose: canvas/* reads
   // them and ui/quality.js writes them, and a setting canvas has to import
   // cannot sit in ui/ without inverting the whole graph.
@@ -259,11 +267,11 @@ function inverted(from, to) {
   if (from === 'state.ts' && !BASE.has(to)) return true;   // state is below the services and the ui
   if (from.startsWith('storage/') && to.startsWith('ui/')) return true;   // storage must not open the interface
   if (from.startsWith('canvas/') && to.startsWith('import/') && to !== 'import/formats.ts') return true; // canvas -> import: catalog only
-  // The service layer must not reach up into the interface. CLAUDE.md and
-  // architecture.md have both called a ui/ import from canvas/ "a layering
-  // regression, not a style note" for as long as they have existed, and until
-  // now nothing checked it: the graph happened to be clean, so the claim was
-  // true by luck rather than by enforcement. There are still zero such edges,
+  // The service layer must not reach up into the interface. architecture.md has
+  // called a ui/ import from canvas/ "a layering regression" - "a test failure
+  // and not a style note" - for as long as it has existed, and until now nothing
+  // checked it: the graph happened to be clean, so the claim was true by luck
+  // rather than by enforcement. There are still zero such edges,
   // which is exactly why this is cheap to add - a rule written while the ledger
   // is empty costs nothing and can only be paid for later.
   //
@@ -271,8 +279,8 @@ function inverted(from, to) {
   // import/ has drop.ts doing the same. optimize/ is deliberately left out of
   // this, as it is left out of the rest of the ranking - it is dynamically
   // imported and half of it is orchestration, and optimize/ui.ts genuinely does
-  // open a dialog. Ranking it here would be this test asserting an opinion the
-  // guide does not hold.
+  // open a dialog. Both guides now say the same, so leaving it out follows them
+  // rather than dodging them.
   if (from.startsWith('canvas/') && to.startsWith('ui/')) return true;
   if (from.startsWith('import/') && to.startsWith('ui/')) return true;
   return false;

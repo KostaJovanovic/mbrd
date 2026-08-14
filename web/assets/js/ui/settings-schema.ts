@@ -18,6 +18,21 @@
 //   outright. Mobile has no paper sheet and no spacing, and a greyed-out row
 //   for one is a promise the layout cannot keep.
 //
+//   `needsBoard: true` is the one deliberate inversion of that rule, and it
+//   applies on exactly one page. /patch is this app showing the changelog, with
+//   this panel over it and no board underneath - and there the point of the
+//   sidebar is that it is *the* sidebar, the real tabs with the real sections
+//   in them, not a likeness. Hiding two thirds of it would make it a likeness
+//   again. So the rows that would act on a board a reader has not got are shown
+//   and greyed: Save, Export, Add files, the arrangement, the grid, the paper
+//   sheet, Optimize, Clear everything. The whimsy dial and the palette are not
+//   among them, because the changelog is printed by the same tokens the board
+//   is and moving that dial moves the page in front of you.
+//
+//   The View row is the one part of the Board tab a reader can still press, and
+//   it does the only thing it can mean there: goHome() in page.ts takes them to
+//   the board, showing the face they pressed.
+//
 //   `advanced: true` sinks a control into its section's fold. The rule for
 //   which side of the fold something belongs on is whether a board is worse
 //   for never touching it: Whimsy and Palette move every token the fold sets
@@ -53,7 +68,11 @@ import {
  * What the panel knows about the board while it paints: the one fact every
  * `when`, `options`, `pressed` and `text` closure below is asked against.
  */
-export type Ctx = { mobile: boolean };
+export type Ctx = {
+  mobile: boolean,
+  /** The changelog: this panel, over a document, with no board under it. */
+  patch: boolean,
+};
 
 /** One entry of a <select>. */
 export type Option = { value: string, label: string };
@@ -79,6 +98,12 @@ type Common = {
   className?: string,
   /** False and the control is not on screen at all - absence, not disabling. */
   when?: (ctx: Ctx) => boolean,
+  /**
+   * The control acts on a board, so it is greyed where there is none. Set on a
+   * section it covers every control in it. See the head of this file: this is
+   * the single exception to absence-not-disabling, and it applies on /patch.
+   */
+  needsBoard?: true,
   /** Sinks the control into its section's one fold. */
   advanced?: boolean,
   /** Another module owns the behaviour; this file only asks for the element. */
@@ -144,6 +169,8 @@ export type Section = {
   fold?: string,
   foldId?: string,
   when?: (ctx: Ctx) => boolean,
+  /** Every control under this heading acts on a board. See Common.needsBoard. */
+  needsBoard?: true,
   controls: Control[],
 };
 
@@ -235,7 +262,10 @@ const QUALITY_HINT = {
 export const SECTIONS: Section[] = [
   // --- Board -------------------------------------------------------------
   {
-    id: 'name', tab: 'board', title: 'Board',
+    // Every row here names the board or produces a file out of it, down to the
+    // title in the field at the top, so the whole heading comes down together
+    // where there is no board to name.
+    id: 'name', tab: 'board', title: 'Board', needsBoard: true,
     controls: [
       // A real input rather than a <p> you can click into, so it is reachable by
       // tab and by touch without inventing a role. Empty rather than carrying
@@ -292,7 +322,7 @@ export const SECTIONS: Section[] = [
     // Named for the verb rather than for the noun. "Content" is what the two
     // buttons under it produce; Add is what pressing them does, and a heading
     // that says what the row does is the one you can find without reading it.
-    id: 'add', tab: 'board', title: 'Add',
+    id: 'add', tab: 'board', title: 'Add', needsBoard: true,
     controls: [
       { type: 'buttons', buttons: [
         { cmd: 'add-files', label: 'Add files' },
@@ -349,7 +379,11 @@ export const SECTIONS: Section[] = [
       // questions: Desktop picks a shape, and Mobile - which packs a column and
       // throws every computed position away - can only pick the order the
       // packer meets things in. Six of Desktop's seven meant nothing here.
-      { id: 'arrangement', type: 'select', label: 'Layout',
+      // From here down the section is about a board's contents rather than
+      // about which face of it you are looking at, so these four grey where the
+      // View row above them does not. The row is the only thing on this tab a
+      // reader of the changelog can press, and pressing it is how they leave.
+      { id: 'arrangement', type: 'select', label: 'Layout', needsBoard: true,
         options: ctx => (ctx.mobile ? MOBILE_ARRANGEMENTS : ARRANGEMENTS)
           .map(a => ({ value: a.id, label: a.label })),
         get: () => board.arrangement,
@@ -362,11 +396,12 @@ export const SECTIONS: Section[] = [
       // the next Rearrange will use, Mobile's moves the column the moment it is
       // touched, because on a phone the gap is baked into where the packer put
       // things. Mobile starts at zero and no saved board moves on its own.
-      { id: 'spacing', type: 'range', label: 'Spacing', advanced: true,
+      { id: 'spacing', type: 'range', label: 'Spacing', advanced: true, needsBoard: true,
         min: 0, max: 200, step: 4, unit: 'px',
         get: () => board.settings.spacing,
         set: v => setSetting('spacing', v) },
-      { type: 'buttons', buttons: [{ cmd: 'rearrange', label: 'Rearrange everything' }] },
+      { type: 'buttons', needsBoard: true,
+        buttons: [{ cmd: 'rearrange', label: 'Rearrange everything' }] },
       { type: 'hint', when: desktop,
         html: 'New drops use this layout. <em>Free</em> leaves every position untouched.' },
       // The Mobile half of the same sentence, and it has to be a different one:
@@ -375,7 +410,7 @@ export const SECTIONS: Section[] = [
       { type: 'hint', when: mobile,
         html: 'The column is always packed tight - this is the order it packs in. '
           + '<em>As placed</em> keeps the one it already has.' },
-      { id: 'opt-snap', type: 'check', label: 'Snap to grid', advanced: true,
+      { id: 'opt-snap', type: 'check', label: 'Snap to grid', advanced: true, needsBoard: true,
         get: () => !!board.settings.snap,
         set: v => setSetting('snap', v) },
     ],
@@ -440,7 +475,12 @@ export const SECTIONS: Section[] = [
       // stored as 0. ui/appearance.js owns the mapping and rewrites `max` from
       // MAX_SOURCES itself, so this is the shape of the element and not the
       // second place the number lives.
-      { id: 'opt-palette-sources', type: 'range', label: 'Pictures used',
+      // The one row of Appearance that is about the board rather than about the
+      // look: it counts the board's own photographs. Everything above it - the
+      // whimsy dial, the palette, the two faces, the tokens - moves the page
+      // the reader is on, changelog included, which is why this section is not
+      // greyed wholesale.
+      { id: 'opt-palette-sources', type: 'range', label: 'Pictures used', needsBoard: true,
         external: true, ownVisibility: true, advanced: true, fieldId: 'palette-sources-field',
         min: 1, max: 25, step: 1, value: 12 },
       { id: 'appearance-advanced-vars', type: 'slot', advanced: true },
@@ -449,7 +489,7 @@ export const SECTIONS: Section[] = [
     ],
   },
   {
-    id: 'board-grid', tab: 'look', title: 'Board & grid',
+    id: 'board-grid', tab: 'look', title: 'Board & grid', needsBoard: true,
     controls: [
       { id: 'opt-grid', type: 'check', label: 'Show grid',
         get: () => !!board.settings.grid, set: v => setSetting('grid', v) },
@@ -495,7 +535,7 @@ export const SECTIONS: Section[] = [
     // needs a millimetre either, so all of it is behind one word. Same
     // arrangement the keyboard legend has, and the reason `fold` exempts a
     // section from the "keep something above the fold" rule.
-    id: 'real-size', tab: 'look', fold: 'Paper',
+    id: 'real-size', tab: 'look', fold: 'Paper', needsBoard: true,
     controls: [
       { id: 'opt-units', type: 'select', label: 'Units', advanced: true,
         options: () => [
@@ -633,7 +673,14 @@ export const SECTIONS: Section[] = [
     // the .mbrd profile - but nothing the user reads says it any more: it stopped
     // being about a device the moment it became a way to browse rather than a
     // cramped canvas.
-    id: 'browser', tab: 'system', title: 'This browser',
+    // Greyed on the changelog, all three of it, and Clear everything is the one
+    // that matters: the whole promise of that page is that nothing a reader
+    // does while they are on it can touch what they own, and a live button
+    // there that wipes every board they have would be that promise broken in
+    // the loudest way available. Optimize needs a board to trim. Reload saves
+    // before it reloads, which on a page whose writer is deliberately suspended
+    // is a button that would have to explain itself.
+    id: 'browser', tab: 'system', title: 'This browser', needsBoard: true,
     controls: [
       { type: 'buttons', buttons: [{ cmd: 'optimize', label: 'Optimize' }] },
       // Feed | Playlist used to live here, next to Clear everything; it is the
@@ -672,7 +719,7 @@ export const SECTIONS: Section[] = [
     // is the panel ending on a footnote. `fold` with no `title` is what makes the
     // summary stand where the heading did rather than hang off a list above it -
     // see buildFold() and the is-head class in ui/panel.js.
-    id: 'debug', tab: 'system', fold: 'Debug', foldId: 'debug-fold',
+    id: 'debug', tab: 'system', fold: 'Debug', foldId: 'debug-fold', needsBoard: true,
     controls: [
       { type: 'buttons', advanced: true, buttons: [
         // No `pressed` here on purpose: cmds.debugGrips writes aria-pressed
@@ -699,6 +746,17 @@ export const SECTIONS: Section[] = [
 /** Whether a control belongs on screen in this layout mode. */
 export const controlVisible = (c: Control, ctx: Ctx) =>
   (typeof c.when === 'function' ? !!c.when(ctx) : true);
+
+/**
+ * Whether a control may be touched, which is a different question from whether
+ * it is on screen and is asked on exactly one page.
+ *
+ * A control is inert when it acts on a board and there is none - either because
+ * it says so itself or because its whole heading does. Everywhere but /patch
+ * this is true of everything, and ui/panel.js writes no attribute at all.
+ */
+export const controlEnabled = (c: Control, section: Section, ctx: Ctx) =>
+  !(ctx.patch && (c.needsBoard || section.needsBoard));
 
 /**
  * Whether a section has anything left to show.
