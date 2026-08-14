@@ -95,6 +95,24 @@ export type MenuEntry = {
    */
   swatch?: string | string[];
   /**
+   * The same colours, on the trailing edge instead, and wider.
+   *
+   * **Two positions rather than one, because there are two kinds of row.** A
+   * note tint or a connection colour *is* the colour - the row says Yellow and
+   * the chip is what yellow means - so the chip belongs where an icon would be,
+   * in front of the word it is defining. A palette is not: the row says
+   * *Terracotta* and the chip is three bands showing what that palette is made
+   * of, which is a specimen of the thing rather than an icon for it. Specimens
+   * belong on the trailing edge, in a column of their own, where they line up
+   * against each other and can be compared down the list - which is the whole
+   * act a palette menu exists for and is impossible when they are interleaved
+   * with the words in a ragged left column.
+   *
+   * Drawn as a bar rather than a square, for the same reason: five colours in a
+   * thirteen-pixel square is five bands of two and a half pixels.
+   */
+  swatchEnd?: string | string[];
+  /**
    * A row that reads rather than acts: shown, greyed, and skipped by the arrow
    * keys. There is no heading in this renderer and this is deliberately not one
    * - a heading labels the rows under it, where these say something about the
@@ -267,6 +285,46 @@ let lastOpts: MenuOpts = {};
 let onClose: (() => void) | null = null;
 export function setMenuCloseHook(fn: (() => void) | null) { onClose = fn; }
 
+/**
+ * The press that dismissed the menu, and when - so that pressing the button
+ * that opened it a second time *closes* it.
+ *
+ * **Why this needs recording at all, which is the whole of the bug.** The
+ * outside-press listener below closes on `pointerdown`, in the capture phase,
+ * and a button that opens a menu is outside that menu. So a second tap on the
+ * More button already did close it - and then the `click` that followed a few
+ * milliseconds later ran the command and opened it again. The menu never looked
+ * as though it had closed, and every attempt to fix it by adding a toggle in the
+ * *opener* failed for the same reason: by the time the opener runs, the menu is
+ * shut and there is nothing left to see.
+ *
+ * So the fact has to survive the gap between the two events, and it is a fact
+ * about that press rather than about the menu: *this element's pointerdown is
+ * what dismissed it*. An opener asks, and declines to reopen.
+ *
+ * Timestamped because the pair is a pointerdown and its own click. A stale
+ * record would make the *next* press on that button do nothing, which is a
+ * worse bug than the one being fixed - so anything older than a slow tap is
+ * treated as unrelated.
+ */
+let dismissed: { by: EventTarget | null, at: number } = { by: null, at: -Infinity };
+const DISMISS_MS = 400;
+
+/**
+ * Did a press on (or inside) this element just close the menu?
+ *
+ * Asked by anything that opens a menu from a button it owns. True means the
+ * press the caller is handling *was* the close, and opening again would undo it.
+ * Consumed on the way out, so one press answers one question.
+ */
+export function justDismissed(el: Element | null): boolean {
+  if (!el || !dismissed.by) return false;
+  if (performance.now() - dismissed.at > DISMISS_MS) return false;
+  if (!el.contains(dismissed.by as Node)) return false;
+  dismissed = { by: null, at: -Infinity };
+  return true;
+}
+
 // `vp` and `cmds` are read with `!` throughout: initMenu() is called from
 // main.ts before anything can open a menu, so an absent one is a broken build
 // rather than a state to paint around - the reading ui/hud.ts states at length.
@@ -282,7 +340,11 @@ export function initMenu(viewport: Viewport, commands: MenuCommands) {
   // the window scrolls (see render), and closing on the wheel that scrolls it
   // would make the entries past the fold unreachable with a mouse.
   addEventListener('pointerdown', e => {
-    if (node && !node.contains(e.target as Node | null)) close();
+    if (!node || node.contains(e.target as Node | null)) return;
+    // Recorded before the close, because close() is what clears the state this
+    // is a fact about. See justDismissed().
+    dismissed = { by: e.target, at: performance.now() };
+    close();
   }, true);
   addEventListener('wheel', e => {
     if (node && !node.contains(e.target as Node | null)) close();
@@ -301,8 +363,80 @@ export function initMenu(viewport: Viewport, commands: MenuCommands) {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       moveFocus(e.key === 'ArrowDown' ? 1 : -1);
+      return;
+    }
+    // The ends. Cheap, and the first thing a keyboard reaches for in a list of
+    // eleven papers - the arrows are for the row next door, not for the far end.
+    if (e.key === 'Home' || e.key === 'End') {
+      e.preventDefault();
+      focusEnd(e.key === 'Home' ? 1 : -1);
+      return;
+    }
+    // And type-ahead, which is the one thing a native <select> does that no
+    // amount of arrow keys substitutes for: in a list of eleven papers, `t`
+    // is the difference between reading the list and knowing where you are
+    // going. Written here rather than left as a gap, because this menu is what
+    // a dropdown in this app is built out of and the gap is what made replacing
+    // a native control a regression rather than a change.
+    //
+    // Anything that is not a single printable character is somebody else's key.
+    // The modifier test is what keeps Ctrl+C and the accelerators out of it.
+    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (typeAhead(e.key)) e.preventDefault();
     }
   }, true);
+}
+
+/**
+ * Jump to the first or last row that can take focus.
+ *
+ * Shares moveFocus's `:not(:disabled)` reasoning: a readout row cannot take
+ * focus, so landing on one would leave the keyboard nowhere.
+ */
+function focusEnd(dir: 1 | -1) {
+  const items = [...node!.querySelectorAll<HTMLElement>('.ctx-item:not(:disabled)')];
+  if (items.length) items[dir > 0 ? 0 : items.length - 1].focus();
+}
+
+/**
+ * The letters typed so far, and when the last one landed.
+ *
+ * A buffer rather than a single character, because *Terracotta* and *Tea rose*
+ * are told apart by their second letter and a per-key search would flip between
+ * them for ever. It clears itself after a pause, so a later `t` starts a new
+ * search rather than continuing one from a minute ago.
+ *
+ * One exception, and it is the convention every platform's list control shares:
+ * the *same* letter pressed repeatedly cycles through the rows beginning with
+ * it rather than searching for a doubled letter. `p p p` walks the P's; `p a`
+ * looks for Papyrus.
+ */
+let typed = '';
+let typedAt = -Infinity;
+const TYPE_MS = 900;
+
+function typeAhead(key: string): boolean {
+  const now = performance.now();
+  typed = now - typedAt > TYPE_MS ? key : typed + key;
+  typedAt = now;
+  const items = [...node!.querySelectorAll<HTMLElement>('.ctx-item:not(:disabled)')];
+  if (!items.length) return false;
+  // The row's own words, lowercased. A row's first child may be an icon or a
+  // chip, so this reads the whole button rather than one element - the accel
+  // key and the tick contribute nothing a person would type at the front.
+  const words = items.map(row => (row.textContent || '').trim().toLowerCase());
+  const want = typed.toLowerCase();
+  const repeat = want.length > 1 && [...want].every(c => c === want[0]);
+  const needle = repeat ? want[0] : want;
+  // From the row after the current one, so a repeated letter advances rather
+  // than landing on the same match every time. A fresh search still finds the
+  // first match from here, which for a menu just opened is the top.
+  const from = items.findIndex(row => row === document.activeElement);
+  for (let i = 1; i <= items.length; i += 1) {
+    const at = (Math.max(from, 0) + (repeat || typed.length === 1 ? i : i - 1)) % items.length;
+    if (words[at].startsWith(needle)) { items[at].focus(); return true; }
+  }
+  return false;
 }
 
 export function close() {
@@ -312,6 +446,11 @@ export function close() {
   const held = node.contains(document.activeElement);
   node.remove();
   node = null;
+  // The letters somebody was typing belonged to the menu that has just gone.
+  // Left standing, the first key pressed in the next one would continue a search
+  // against a list it was never made about.
+  typed = '';
+  typedAt = -Infinity;
   const back = opener;
   opener = null;
   // Only when the menu actually had focus. Closing on a pointerdown elsewhere
@@ -1012,6 +1151,9 @@ function render(entries: MenuEntry[], clientX: number, clientY: number, opts: Me
     // the same sprite as everything else, rather than being the one glyph in
     // the row set in a typeface.
     if (entry.check != null) btn.append(icon('i-check', 'ctx-tick'));
+    // And the specimen, outermost of all - the one column in the row that is
+    // read *down* rather than across. See MenuEntry.swatchEnd.
+    if (entry.swatchEnd) btn.append(chip(entry.swatchEnd, 'ctx-chip is-end'));
     // Three kinds of row. A `sub` opens a child menu in place; a `to` is the
     // Back row that returns to a parent menu; everything else runs its action
     // and closes. The two navigators re-render rather than fly a second panel
@@ -1039,9 +1181,26 @@ function render(entries: MenuEntry[], clientX: number, clientY: number, opts: Me
   // so a menu with more entries than the window is tall scrolls rather than
   // running off the bottom: the flip below can only work with a box that fits.
   node.style.visibility = 'hidden';
+  const pad = 8;
+  // How tall a hung panel may be, measured off its own anchor rather than off
+  // the top toolbar.
+  //
+  // It was a stylesheet rule counting down from --toolbar-h, which is the height
+  // of the bar at the *top* of the window - correct while the three desktop
+  // hover flyouts were the only callers, and wrong for the phone's More button,
+  // which is on a bar pinned to the bottom. There the cap was computed against a
+  // bar the menu has nothing to do with, so a panel that should have been capped
+  // at the room above it was allowed to be nearly the whole window tall, could
+  // not fit either way, and hung off the screen.
+  //
+  // Set before the measurement below, or the height read back is the uncapped
+  // one and the flip is decided on a number that will never be true.
+  if (opts.anchor) {
+    const room = Math.max(innerHeight - opts.anchor.bottom, opts.anchor.top) - pad * 2;
+    node.style.maxHeight = `${Math.max(120, Math.round(room))}px`;
+  }
   document.body.append(node);
   const { width, height } = node.getBoundingClientRect();
-  const pad = 8;
   let x, y;
   if (opts.anchor) {
     // Hung off a button, so the horizontal rule the cursor case uses is wrong:
@@ -1078,7 +1237,19 @@ function render(entries: MenuEntry[], clientX: number, clientY: number, opts: Me
     // above the *button*, and hanging a panel over the thing it belongs to is
     // how you lose track of which one it belongs to.
     const above = opts.anchor.top - height - pad;
-    y = (clientY + height + pad > innerHeight && above >= pad) ? above : clientY;
+    const up = clientY + height + pad > innerHeight && above >= pad;
+    y = up ? above : clientY;
+    // And the panel wears its square edge on the side it is attached to.
+    //
+    // .is-flyout squares the *top* and drops the top border, which is what a
+    // panel hanging under a bar wants: it is the underside of something already
+    // drawn, and a rounded lip with its own hairline a pixel below the bar's
+    // reads as a second object that has landed on the first. Flipped above a
+    // bottom bar, every word of that applies to the other edge - and it was
+    // still squaring the top, so the phone's More menu had a rounded edge
+    // pressed into the bar and a square one facing the open board, which is the
+    // wrong way round twice.
+    node.classList.toggle('is-flyout-up', up && !!opts.flyout);
   } else {
     // Flip rather than clamp when there isn't room: a menu pinned to the edge
     // ends up under the cursor, and the first entry gets clicked by accident.
@@ -1138,9 +1309,9 @@ function rangeRow(entry: MenuEntry) {
  * symbol is a drawing of a paint chip and the drawing is not the point - the
  * colour is. Sized to the icons beside it so the column stays a column.
  */
-function chip(color: string | string[]) {
+function chip(color: string | string[], className = 'ctx-chip') {
   const dot = document.createElement('span');
-  dot.className = 'ctx-chip';
+  dot.className = className;
   // One colour fills the chip; several split it into equal vertical bands, which
   // is a linear-gradient with hard stops rather than N child elements - the chip
   // is 13px, and three nested spans to paint three stripes inside it would be

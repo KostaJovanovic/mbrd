@@ -115,6 +115,24 @@ test('every id an item can carry counts as a reference', () => {
   assert.equal(boardInventory().orphans.count, 0);
 });
 
+test('a file names the live cards using it, and an orphan names none', () => {
+  // What the sheet's jump is built on. Live cards only: a binned card keeps the
+  // file off the orphan list - that is what the test above is about - but there
+  // is nowhere to fly to for one, and a row offering to take somebody to a card
+  // that is in the bin would be a dead control that looks live.
+  asset('a'.repeat(64), 500, 'shared.png');
+  asset('z'.repeat(64), 400, 'stray.png');
+  const [one, two] = addItems([
+    photo({ asset: { hash: 'a'.repeat(64) } }),
+    photo({ asset: { hash: 'a'.repeat(64) } }),
+  ]);
+  const by = Object.fromEntries(boardInventory().largest.map(a => [a.name, a.cards]));
+  assert.deepEqual(by['shared.png'], [one.id, two.id]);
+  assert.deepEqual(by['stray.png'], []);
+  removeItems([two.id]);
+  assert.deepEqual(boardInventory().largest.find(a => a.name === 'shared.png').cards, [one.id]);
+});
+
 test('sizes are written the way the rest of the app writes them', () => {
   // util.ts's formatBytes, not a second one of this sheet's own. It was very
   // nearly written twice - the second decimal, on the argument that a file

@@ -10,9 +10,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { packBoard, unpackBoard } from '../web/assets/js/storage/mbrd.ts';
+import { packBoard, unpackBoard, MIME } from '../web/assets/js/storage/mbrd.ts';
 import { putAsset, clearAssets } from '../web/assets/js/storage/assets.ts';
-import { readZip } from '../web/assets/js/storage/zip.ts';
+import { readZip, writeZip } from '../web/assets/js/storage/zip.ts';
 import { item, hash, realHash } from './helpers.js';
 
 const enc = new TextEncoder();
@@ -111,6 +111,100 @@ test('the same asset used twice is stored once', async () => {
   const files = await readZip((await packBoard(board)).blob);
   const assetFiles = [...files.keys()].filter(n => n.startsWith('assets/'));
   assert.deepEqual(assetFiles, [`assets/${id}.png`]);
+});
+
+// ---------------------------------------------------------------------------
+// What the archive looks like to something that is not this app
+//
+// readZip() is the wrong instrument for the two rules below, and deliberately
+// not used: it hands back decompressed bytes in a Map, which is precisely the
+// two facts under test - the order entries were written in, and whether each
+// one was deflated - already thrown away. So these walk the local file headers
+// the way any other ZIP reader does.
+// ---------------------------------------------------------------------------
+
+/** Every local file header, in the order the archive actually carries them. */
+function localEntries(bytes) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const out = [];
+  let p = 0;
+  while (p + 30 <= bytes.length && view.getUint32(p, true) === 0x04034b50) {
+    const nameLen = view.getUint16(p + 26, true);
+    const extraLen = view.getUint16(p + 28, true);
+    const at = p + 30 + nameLen + extraLen;
+    const csize = view.getUint32(p + 18, true);
+    out.push({
+      name: new TextDecoder().decode(bytes.subarray(p + 30, p + 30 + nameLen)),
+      method: view.getUint16(p + 8, true),
+      extraLen, at, csize,
+    });
+    p = at + csize;
+  }
+  return out;
+}
+
+const packedBytes = async board => new Uint8Array(await (await packBoard(board)).blob.arrayBuffer());
+
+test('the media type sits where file(1) looks for it', async () => {
+  clearAssets();
+  const bytes = await packedBytes(boardOf([]));
+  // No parsing at all, which is the entire point: a local header is 30 bytes,
+  // so the first entry's name starts at 30 and its content at 38. This is the
+  // rule libmagic already carries for EPUB and ODF, and the reason the entry has
+  // to be first, stored, and free of an extra field.
+  const dec = new TextDecoder();
+  assert.equal(dec.decode(bytes.subarray(30, 38)), 'mimetype');
+  assert.equal(dec.decode(bytes.subarray(38, 38 + MIME.length)), MIME);
+});
+
+test('the mimetype entry is first, stored, and carries no extra field', async () => {
+  clearAssets();
+  const [first] = localEntries(await packedBytes(boardOf([])));
+  assert.equal(first.name, 'mimetype');
+  assert.equal(first.method, 0, 'deflating it would move the media type off its offset');
+  assert.equal(first.extraLen, 0, 'an extra field would move it too');
+  assert.equal(first.at, 38, 'the offset the rule above depends on');
+});
+
+test('a board with no mimetype entry still opens', async () => {
+  // Every file written before the entry existed looks like this, and the reader
+  // must not have grown a requirement the format cannot make retroactively.
+  clearAssets();
+  const { blob } = await packBoard(boardOf([item({ id: 'i1', name: 'kept' })]));
+  const files = await readZip(blob);
+  const rest = [...files].filter(([name]) => name !== 'mimetype')
+    .map(([name, data]) => ({ name, data, compress: name.endsWith('.json') }));
+  const { board } = await unpackBoard(await writeZip(rest, { mime: MIME }));
+  assert.equal(board.items[0].name, 'kept');
+});
+
+test('a WOFF2 face is stored rather than deflated', async () => {
+  clearAssets();
+  // Bytes that would compress enormously, so this cannot pass by accident on
+  // writeZip's own "only keep the deflate when it wins" guard. What is under
+  // test is the decision not to attempt it, which is about the format carrying
+  // its own Brotli rather than about the outcome for these particular bytes.
+  const id = await stubAsset('face', { ext: 'woff2', mime: 'font/woff2', body: 'A'.repeat(4000) });
+  const entries = localEntries(await packedBytes(
+    boardOf([], { settings: { fonts: [{ hash: id, family: 'Face' }] } }),
+  ));
+  const face = entries.find(e => e.name === `assets/${id}.woff2`);
+  assert.ok(face, 'the face is in the archive');
+  assert.equal(face.method, 0);
+});
+
+test('a TTF face is still deflated', async () => {
+  // The other half of the same rule. TTF tables are uncompressed, and this is
+  // the largest single win the packer gets on a board carrying a face - a skip
+  // list that caught it would cost more than the WOFF2 skip saves.
+  clearAssets();
+  const id = await stubAsset('face', { ext: 'ttf', mime: 'font/ttf', body: 'A'.repeat(4000) });
+  const entries = localEntries(await packedBytes(
+    boardOf([], { settings: { fonts: [{ hash: id, family: 'Face' }] } }),
+  ));
+  const face = entries.find(e => e.name === `assets/${id}.ttf`);
+  assert.ok(face, 'the face is in the archive');
+  assert.equal(face.method, 8);
 });
 
 test('created is carried across saves, modified is not', async () => {
@@ -412,59 +506,96 @@ test('a board written by another format is refused', async () => {
   await assert.rejects(() => unpackBoard(foreign), /sketch/);
 });
 
+test('a board requiring a feature this build lacks is refused, not flattened', async () => {
+  // The one rule in the format that fails rather than degrades. A reader that
+  // opened this would drop the field it cannot see and write the loss back on
+  // the next save, reporting success the whole way - which is the failure the
+  // list exists to convert into an error somebody can act on.
+  const newer = await writeZip([
+    {
+      name: 'manifest.json',
+      data: enc.encode('{"format":"mbrd","version":1,"requires":["sculpture"]}'),
+      compress: false,
+    },
+    { name: 'board.json', data: enc.encode('{"items":[]}'), compress: false },
+  ]);
+  await assert.rejects(() => unpackBoard(newer), err => {
+    assert.match(err.message, /sculpture/, 'must name what is missing');
+    assert.match(err.message, /Nothing was opened/, 'must say the file was left alone');
+    return true;
+  });
+});
+
+test('a requires list this build satisfies opens normally', async () => {
+  // Empty is the intended state, and the check has to be a no-op in it: every
+  // board this app writes carries `"requires": []`, so a gate that tripped on
+  // its own output would stop the app opening its own files.
+  clearAssets();
+  const { blob, manifest } = await packBoard(boardOf([item({ id: 'i1', name: 'here' })]));
+  assert.deepEqual(manifest.requires, [], 'written, and written empty');
+  const { board } = await unpackBoard(blob);
+  assert.equal(board.items[0].name, 'here');
+});
+
+test('a non-string in the requires list gates nothing', async () => {
+  // The list is a claim like every other key in the manifest. A number names no
+  // feature, so it can withhold none - refusing on one would make a hand-mangled
+  // manifest unopenable for no gain.
+  const odd = await writeZip([
+    {
+      name: 'manifest.json',
+      data: enc.encode('{"format":"mbrd","version":1,"requires":[7,null]}'),
+      compress: false,
+    },
+    { name: 'board.json', data: enc.encode('{"items":[]}'), compress: false },
+  ]);
+  const { board } = await unpackBoard(odd);
+  assert.deepEqual(board.items, []);
+});
+
 // ---------------------------------------------------------------------------
-// Stored versions, and the third class of reference
+// A file from v0.197, which carried stored versions
 // ---------------------------------------------------------------------------
 //
-// A version names cards the board no longer has - that is the whole of what one
-// is for - so the archive has to carry their bytes too. This is the failure the
-// missing-asset check above exists to stop, one level further in, and it is the
-// worse shape of it: the file would pack *successfully*, with a version in it
-// that cannot be restored, and every signal the person had would say the work
-// was safe.
+// For one release a board held a ring of whole copies of itself, in a `versions`
+// key and in a `versions/<id>.json` directory beside board.json. Both are gone
+// (see board-model.ts). What has to go on being true is that a file written by
+// that release still *opens*: the key is read past, the directory is walked
+// past, and what somebody gets back is their board without its snapshots rather
+// than an error.
 
-/** A board carrying one stored version, in the shape serializeBoard() writes. */
-const withVersion = (items, versionItems, extra = {}) => boardOf(items, {
-  versions: [{ id: 'v1', at: 1000, label: 'earlier', kept: true,
-               data: { items: versionItems, trash: [] } }],
-  ...extra,
-});
-
-test('a picture only a stored version uses is written into the archive', async () => {
-  clearAssets();
-  const live = await stubAsset('live', { body: 'live-bytes' });
-  const gone = await stubAsset('gone', { body: 'gone-bytes' });
-  const board = withVersion(
-    [withAsset(live, { id: 'i1', name: 'live.png' })],
-    [withAsset(gone, { id: 'i0', name: 'gone.png' })],
-  );
-  const { blob } = await packBoard(board);
-  const files = await readZip(blob);
-  const names = [...files.keys()];
-  assert.ok(names.some(n => n.includes(gone)),
-    'the version\'s picture is in the archive - without it the version restores '
-    + 'to holes where the photographs were, having reported a clean save');
-  assert.ok(names.some(n => n.includes(live)));
-});
-
-test('packing still fails when a version names bytes that are gone', async () => {
-  // The check has to reach inside versions as well, or the refusal that keeps
-  // an incomplete archive off disk simply stops applying to half the file.
+test('a board written with stored versions still opens', async () => {
   clearAssets();
   const live = await stubAsset('live');
-  const board = withVersion(
-    [withAsset(live, { id: 'i1', name: 'live.png' })],
-    [withAsset(hash('missing'), { id: 'i0', name: 'lost.png' })],
-  );
-  await assert.rejects(() => packBoard(board), /lost\.png/);
-});
-
-test('a version survives the round trip', async () => {
-  clearAssets();
-  const live = await stubAsset('live');
-  const board = withVersion([withAsset(live, { id: 'i1', name: 'live.png' })], []);
+  const board = boardOf([withAsset(live, { id: 'i1', name: 'live.png' })], {
+    versions: [{ id: 'v1', at: 1000, label: 'earlier', kept: true,
+                 data: { items: [{ id: 'i0', type: 'image' }], trash: [] } }],
+  });
   const { blob } = await packBoard(board);
   const back = await unpackBoard(blob);
-  assert.equal(back.board.versions.length, 1);
-  assert.equal(back.board.versions[0].label, 'earlier');
+  assert.equal(back.board.items.length, 1);
+  assert.equal(back.board.items[0].name, 'live.png');
+});
+
+test('a versions/ entry in an archive is walked past, not read as an asset', async () => {
+  // The one thing that would be worse than dropping the snapshots: a file with
+  // a versions/ directory in it failing the read outright, or its entries being
+  // mistaken for something the reader does trust.
+  clearAssets();
+  const live = await stubAsset('live');
+  const { blob } = await packBoard(
+    boardOf([withAsset(live, { id: 'i1', name: 'live.png' })]));
+  const files = await readZip(blob);
+  const entries = [...files.entries()]
+    .filter(([name]) => name !== 'mimetype')
+    .map(([name, data]) => ({ name, data, compress: false }));
+  entries.push({
+    name: 'versions/v1.json',
+    data: enc.encode('{"items":[{"id":"i0","type":"image"}],"trash":[]}'),
+    compress: false,
+  });
+  const back = await unpackBoard(await writeZip(entries, { mime: MIME }));
+  assert.equal(back.board.items.length, 1);
+  assert.equal(back.board.versions, undefined,
+    'the key is not reconstructed out of the directory either');
 });

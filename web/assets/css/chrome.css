@@ -238,35 +238,49 @@
    The now-playing bar (ui/nowplaying.js)
    --------------------------------------------------------- */
 
-/* Along the foot, in the gap between the bin's corner and the zoom cluster's.
-   Two insets rather than a centre and a width, and that is the whole of how it
-   stays out of the way: left and right say what it must not sit on top of,
-   max-width caps it, and `margin-inline: auto` centres whatever is left over
-   inside that gap. Narrow the window and the bar shrinks instead of sliding
-   under the furniture; open the sidebar and only one number changes.
+/* ── The gap along the foot, which two bars share ──────────────────────────
 
-   The gutters are the furniture's own arithmetic where it has any. The bin's
-   row is three chrome buttons and the gap between the trash and the history
-   pair, which is a sum this can take. The zoom cluster is a segmented pill of
-   six buttons of three different widths, which is not - so its width is named
-   once here, beside the thing that needs it.
+   The bottom edge has furniture at both ends - the bin's row on the left, the
+   zoom cluster on the right - and the space between them is where anything
+   else along that edge has to fit. Two things want it: the player, and the
+   timeline strip. So the arithmetic is named here, once, at the root, rather
+   than computed twice.
+
+   That is not tidiness. The terms below are measurements of *other rules* - the
+   bin's row is three chrome buttons and a gap, the zoom cluster is a segmented
+   pill whose width has to be stated because it cannot be derived - so a second
+   copy would go stale the day a button is added to either cluster, and it would
+   go stale in only one of the two bars. One of them would then sit on the
+   furniture and the other would not, which reads as a bug in whichever one you
+   happened to be looking at.
+
+   Two insets rather than a centre and a width, and that is the whole of how a
+   bar stays out of the way: left and right say what it must not sit on top of.
+   Narrow the window and the bar shrinks instead of sliding under the furniture;
+   open the sidebar and only one number changes. */
+:root {
+  --foot-corner-w: 214px;
+  --foot-gap: 12px;
+  --foot-left: calc(max(16px, env(safe-area-inset-left))
+                    + 3 * var(--chrome-button-w) + 8px + var(--foot-gap));
+  --foot-right: calc(max(16px, env(safe-area-inset-right))
+                     + var(--foot-corner-w) + var(--foot-gap));
+}
+
+/* The now-playing bar in that gap. `max-width` caps it and `margin-inline:
+   auto` centres whatever is left over inside the gap - a player is a control
+   and does not want to be a metre wide, which is the one way it differs from
+   the strip, which does.
 
    Same card as the add bar next door: the same paper, the same hairline, the
    same --leaf corner. It shares an edge with that bar on a phone, and two
    objects on one edge wearing two different corners read as two strips. */
 #nowplaying {
-  --np-corner-w: 214px;
-  --np-gap: 12px;
-  --np-left: calc(max(16px, env(safe-area-inset-left))
-                  + 3 * var(--chrome-button-w) + 8px + var(--np-gap));
-  --np-right: calc(max(16px, env(safe-area-inset-right))
-                   + var(--np-corner-w) + var(--np-gap));
-
   position: fixed;
   z-index: 20;
   bottom: max(16px, env(safe-area-inset-bottom));
-  left: var(--np-left);
-  right: var(--np-right);
+  left: var(--foot-left);
+  right: var(--foot-right);
   max-width: 520px;
   margin-inline: auto;
   /* Two rows now: the name-and-controls row, and the thin seek line under it. */
@@ -308,7 +322,7 @@
 :root[data-feed-lens="playlist"] #nowplaying {
   visibility: hidden;
   opacity: 0;
-  transform: translateY(calc(100% + var(--np-gap, 12px)));
+  transform: translateY(calc(100% + var(--foot-gap, 12px)));
   transition: opacity var(--dur-base) var(--ease),
               transform var(--dur-base) var(--ease),
               visibility 0s linear var(--dur-base);
@@ -385,15 +399,20 @@
 
    One number: the left gutter clears the panel rather than the trash. The
    right-hand one is untouched, so the bar keeps its own right edge and simply
-   loses width - it does not slide across under the sidebar. */
-#sidebar.is-open ~ #nowplaying {
-  --np-left: calc(max(14px, env(safe-area-inset-left))
-                  + min(var(--sidebar-w), 100vw - 28px) + var(--np-gap));
+   loses width - it does not slide across under the sidebar.
+
+   Both foot bars, because both are in the gap and a panel covers both ends of
+   it equally. The general sibling combinator only looks forward, which is why
+   #sidebar and #header-panel precede the pair in index.html and why the strip
+   sits between #toolbar and #nowplaying rather than anywhere else. */
+#sidebar.is-open ~ :is(#nowplaying, #timeline-strip) {
+  --foot-left: calc(max(14px, env(safe-area-inset-left))
+                    + min(var(--sidebar-w), 100vw - 28px) + var(--foot-gap));
 }
 /* The masthead panel is the same object from the other side. */
-#header-panel.is-open ~ #nowplaying {
-  --np-right: calc(max(14px, env(safe-area-inset-right))
-                   + min(var(--sidebar-w), 100vw - 28px) + var(--np-gap));
+#header-panel.is-open ~ :is(#nowplaying, #timeline-strip) {
+  --foot-right: calc(max(14px, env(safe-area-inset-right))
+                     + min(var(--sidebar-w), 100vw - 28px) + var(--foot-gap));
 }
 /* Where a panel and the zoom cluster together leave too little to be a player,
    the bar steps over the cluster rather than squeezing between the two.
@@ -403,24 +422,29 @@
    pill to --chrome-button-h would have left the player eight pixels low and
    sitting on it - and on a touch pointer, where the token is 46 rather than 40,
    fourteen. A literal here is a measurement of another rule, and it goes stale
-   the moment that rule moves. Each term below is the thing it names. */
+   the moment that rule moves. Each term below is the thing it names.
+
+   Named as a property rather than written into `bottom` directly, because the
+   strip may be up as well and then the player has to clear both. See
+   timeline.css, which adds its own height to this. */
 @media (max-width: 1080px) {
-  :is(#sidebar, #header-panel).is-open ~ #nowplaying {
-    left: max(16px, env(safe-area-inset-left));
-    right: max(16px, env(safe-area-inset-right));
-    bottom: calc(max(16px, env(safe-area-inset-bottom))
-                 + var(--chrome-button-h) + 2 * var(--hairline)  /* the zoom pill */
-                 + 8px                                           /* #corner's gap */
-                 + 25px                                          /* the scale bar */
-                 + 10px);                                        /* clearance */
+  :is(#sidebar, #header-panel).is-open ~ :is(#nowplaying, #timeline-strip) {
+    --foot-left: max(16px, env(safe-area-inset-left));
+    --foot-right: max(16px, env(safe-area-inset-right));
+    --foot-bottom: calc(max(16px, env(safe-area-inset-bottom))
+                        + var(--chrome-button-h) + 2 * var(--hairline)  /* the zoom pill */
+                        + 8px                                           /* #corner's gap */
+                        + 25px                                          /* the scale bar */
+                        + 10px);                                        /* clearance */
   }
-  #sidebar.is-open ~ #nowplaying {
-    left: calc(max(14px, env(safe-area-inset-left))
-               + min(var(--sidebar-w), 100vw - 28px) + var(--np-gap));
+  :is(#sidebar, #header-panel).is-open ~ #nowplaying { bottom: var(--foot-bottom); }
+  #sidebar.is-open ~ :is(#nowplaying, #timeline-strip) {
+    --foot-left: calc(max(14px, env(safe-area-inset-left))
+                      + min(var(--sidebar-w), 100vw - 28px) + var(--foot-gap));
   }
-  #header-panel.is-open ~ #nowplaying {
-    right: calc(max(14px, env(safe-area-inset-right))
-                + min(var(--sidebar-w), 100vw - 28px) + var(--np-gap));
+  #header-panel.is-open ~ :is(#nowplaying, #timeline-strip) {
+    --foot-right: calc(max(14px, env(safe-area-inset-right))
+                       + min(var(--sidebar-w), 100vw - 28px) + var(--foot-gap));
   }
 }
 

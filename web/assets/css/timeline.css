@@ -1,0 +1,485 @@
+/* The Timeline: every change to this board as a step.
+
+   Two faces, and the file is in two halves to match. A strip along the foot on
+   a wide window, which is everything down to the media query at the very
+   bottom; a sheet on a narrow one, which is the block above it. Which one opens
+   is decided in ui/timeline-view.ts and not here - the media query is only the
+   belt for a window that got narrow while the strip was up.
+
+   Opened on demand and never by default. The bottom edge already carries the
+   bin, the zoom cluster and the player, and a fourth permanent tenant there
+   would be the app talking about itself while somebody is trying to work.
+
+   It sits *in* the gap between the two clusters rather than across them, on the
+   --foot-left / --foot-right the player already uses - see the block that
+   defines them in chrome.css for why they are shared rather than computed
+   twice. It shipped for one day as a full-width bar pinned to the bottom edge,
+   on the argument that a history is a *scale* and a scale ought to run edge to
+   edge. That argument was wrong in the way arguments about chrome usually are:
+   it put the bar over the bin and over the zoom cluster, so the price of
+   looking at the history was not being able to reach the two controls beside
+   it. A scale you can read and a board you can work on is the better trade, and
+   the gap between the clusters is still most of the window.
+
+   Unlike the player it takes no max-width. A player is a control and does not
+   want to be a metre wide; a scale does. */
+
+#timeline-strip {
+  position: fixed;
+  z-index: 21;
+  left: var(--foot-left);
+  right: var(--foot-right);
+  bottom: max(16px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px 9px;
+  border: var(--hairline) solid var(--rule-2);
+  /* The same corner as the player and the add bar. Three cards on one edge
+     wearing two different corners read as two families of object. */
+  border-radius: var(--leaf);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-1);
+  user-select: none;
+}
+#timeline-strip[hidden] { display: none; }
+
+/* Up from under the edge, the way the player arrives. Slower than a menu and
+   faster than a panel: it is a surface being consulted, not a mode being
+   entered. The travel clears its own bottom offset as well as its height, or
+   the card would come to rest with a strip of itself still showing. */
+#timeline-strip {
+  transform: translateY(calc(100% + max(16px, env(safe-area-inset-bottom))));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease),
+              transform var(--dur-fast) var(--ease);
+}
+#timeline-strip.is-up {
+  transform: none;
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity var(--dur-base) var(--ease),
+              transform var(--dur-base) var(--ease-back);
+}
+
+/* And the player steps up over it while it is open.
+
+   A general sibling combinator, which only looks forward - which is why the
+   strip is before #nowplaying in index.html and why that ordering is written
+   down in three places. Without this the strip covers the transport, and the
+   one thing a player must never be is unreachable while it is playing.
+
+   Still needed now the strip is a card rather than a full-width bar. The two
+   share a gap, not an edge: fitting the strip between the clusters took it off
+   the bin and the zoom pill, and put it squarely on the player, which lives in
+   exactly the same gap for exactly the same reason.
+
+   --foot-bottom is the floor the player would otherwise stand on - normally
+   unset, and set by chrome.css only in the narrow case where a panel makes it
+   step over the zoom cluster. Falling back to the plain inset means this one
+   rule covers both, rather than a second copy of it inside that media query. */
+#timeline-strip.is-up ~ #nowplaying {
+  bottom: calc(var(--foot-bottom, max(16px, env(safe-area-inset-bottom)))
+               + var(--tl-h, 74px) + var(--foot-gap));
+}
+
+#timeline-strip .tl-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  /* font-size, not the `font` shorthand: --t-small is a length, and `font: 13px`
+     is not a valid shorthand - it needs a family - so the whole declaration was
+     being dropped and this row was reading at the body size. */
+  font-size: var(--t-small);
+  color: var(--ink-3);
+}
+#timeline-strip .tl-title { font-weight: 600; color: var(--ink-2); }
+/* Where the marker is, in words. The strip can be read without it - the greyed
+   tail says the same thing - but "12 of 40" is the sentence somebody reads when
+   they are trying to say where they are to another person. */
+#timeline-strip .tl-where { margin-left: auto; font-variant-numeric: tabular-nums; }
+/* The two controls in the head, which are the same button twice: one names the
+   point the board is standing on, one puts the strip away. Written together
+   because a pair of icon buttons on one row that measured differently would
+   read as two kinds of thing. */
+#timeline-strip .tl-close,
+#timeline-strip .tl-name {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--seed);
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+#timeline-strip .tl-close:hover,
+#timeline-strip .tl-name:hover { background: var(--wash); color: var(--ink); }
+#timeline-strip .tl-close svg,
+#timeline-strip .tl-name svg { width: 14px; height: 14px; }
+/* Absent at the start of the board, where there is no step to name. A grid
+   display would otherwise outrank the attribute the way every other flat
+   display in this codebase has learned to. */
+#timeline-strip .tl-name[hidden] { display: none; }
+
+/* The track itself. Scrolls in its own box rather than wrapping: a history is
+   one line by definition, and a wrapped one stops being a scale. */
+#timeline-strip .tl-track {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0 6px;
+  scrollbar-width: thin;
+}
+
+/* One step: a mark on a rule.
+
+   The cell is 26 rather than the 22 it started at, because the mark is a glyph
+   now rather than a dot and a glyph is not legible at nine pixels. That is the
+   one number here that other things are measured against - the connector is a
+   percentage of it, and the strip's own height is measured at runtime into
+   --tl-h for the player to stand on - so it can move, but not quietly. */
+#timeline-strip .tl-step {
+  position: relative;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+/* The rule between this step and the one before it.
+
+   It runs from the *previous* cell's centre to this one's, which is why the
+   left inset is negative: -50% of a cell is exactly half a cell, and the cells
+   touch. Drawn under both dots rather than up to their edges - a dot paints
+   over it, so the join needs no arithmetic and cannot be a fraction of a pixel
+   out at any zoom.
+
+   It read as a row of disconnected dashes for its first day, because the rule
+   only spanned this cell's left half: each dot's right side had nothing drawn
+   from it, so every gap between two steps was half a line and half a hole. The
+   translate is the other half of that fix - `top: 50%` puts the line's *top
+   edge* on the midpoint, which leaves a hairline sitting half its own height
+   low. */
+#timeline-strip .tl-step::before {
+  content: '';
+  position: absolute;
+  left: -50%;
+  right: 50%;
+  top: 50%;
+  transform: translateY(-50%);
+  height: var(--hairline);
+  background: var(--rule-2);
+}
+#timeline-strip .tl-step:first-child::before { display: none; }
+
+/* The mark. A disc the width of the cell's inner square, carrying the glyph for
+   what was done - and painting over the connector, which is what lets that rule
+   run straight through underneath without any arithmetic at the joins.
+
+   It keeps a background even though it now holds a drawing, because the rule
+   passes behind it: a glyph with the line running through its middle is a glyph
+   with a strikethrough. */
+#timeline-strip .tl-step .tl-dot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--paper-card);
+  color: var(--ink-3);
+  transition: color var(--dur-fast) var(--ease),
+              background var(--dur-fast) var(--ease),
+              transform var(--dur-fast) var(--ease);
+}
+#timeline-strip .tl-step .tl-dot .ico { width: 14px; height: 14px; }
+#timeline-strip .tl-step:hover .tl-dot {
+  transform: scale(1.15);
+  background: var(--wash);
+  color: var(--ink);
+}
+
+/* The start of the board, which is a position rather than an event and so has
+   no glyph in it. Back to a plain dot, drawn by the mark itself. */
+#timeline-strip .tl-step:first-child .tl-dot {
+  background: none;
+  box-shadow: inset 0 0 0 5px var(--ink-3);
+  border-radius: 50%;
+  width: 10px;
+  height: 10px;
+}
+#timeline-strip .tl-step:first-child:hover .tl-dot {
+  box-shadow: inset 0 0 0 5px var(--ink);
+  background: none;
+}
+
+/* Ahead of the marker: done, then stepped back past. Present and faded rather
+   than absent, because the whole reason to step back is to be able to come
+   forward again, and a redo you cannot see is a redo you do not know you have. */
+#timeline-strip .tl-step.is-ahead .tl-dot { opacity: 0.42; }
+
+/* Where the board actually is. The one filled accent on the strip. */
+#timeline-strip .tl-step.is-at .tl-dot {
+  background: var(--accent);
+  color: var(--paper-card);
+  transform: scale(1.1);
+}
+#timeline-strip .tl-step.is-at:hover .tl-dot {
+  background: var(--accent);
+  color: var(--paper-card);
+}
+#timeline-strip .tl-step.is-at::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+/* Sealed against ruled, which is the one distinction the strip has to make
+   legible without a legend: it is the difference between a right-click that
+   offers something and one that does nothing.
+
+   It used to be carried by the shape of the mark - a square dot for sealed, a
+   round one for ruled - and that room ran out the moment the mark became a
+   glyph, since the glyph is now saying what the step *was* and cannot also say
+   how it is stored. So sealed is the plain state and carries nothing, and a
+   ruled step wears a ring. Most steps are sealed, so the strip stays quiet and
+   the few editable ones stand out, which is the right way round. */
+#timeline-strip .tl-step.is-ruled .tl-dot {
+  box-shadow: 0 0 0 var(--hairline) color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+/* Broken: names a card that is no longer there, so it cannot run. Skipped
+   rather than deleted, and shown rather than hidden - the board still builds,
+   and this is the thing you would want to go and look at. */
+#timeline-strip .tl-step.is-broken .tl-dot {
+  color: var(--bad, #c0392b);
+  box-shadow: 0 0 0 var(--hairline) var(--bad, #c0392b);
+}
+
+/* Named: a point somebody stopped and called something. A pip under the mark,
+   so that a long history reads as a few landmarks with work between them rather
+   than as four hundred identical glyphs - and drawn under rather than over,
+   because what is over is the glyph saying what happened. */
+#timeline-strip .tl-step.is-named .tl-dot { color: var(--ink); }
+/* On the mark rather than on the cell, because the cell's own ::after is the
+   accent ring around wherever the board is - and a step can be both. */
+#timeline-strip .tl-step.is-named .tl-dot::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -1px;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* A stale history: the steps do not add up to the board beside them, so nothing
+   on this strip can be trusted to take you anywhere. Shown and inert, with the
+   reason in the head, rather than silently absent. */
+#timeline-strip.is-stale .tl-track { opacity: 0.4; pointer-events: none; }
+#timeline-strip.is-stale .tl-where { color: var(--bad, #c0392b); }
+
+/* The trim offer. Under the track rather than over it, because it is about the
+   history rather than part of it, and because a row that appears above the
+   steps would move every dot down the moment a board crossed the threshold.
+
+   Unscoped, unlike everything above it: the sheet offers the same trim from the
+   same builder, and the two faces put it in different slots. Class names this
+   particular are their own scope. */
+.tl-trim {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* font-size, for the reason .tl-head above gives. */
+  font-size: var(--t-tiny);
+  color: var(--ink-3);
+}
+.tl-trim-why { color: var(--ink-4, var(--ink-3)); }
+.tl-trim-go {
+  font: inherit;
+  padding: 3px 9px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--seed);
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.tl-trim-go:hover { background: var(--wash); color: var(--ink); }
+
+/* ═════════════════════════════════════════════════════════════════════════
+   The sheet: the Timeline on a window too narrow for a scale.
+
+   Dressed as a sheet by dialog.css, which names it beside #ask, #credits and
+   #inventory and hands it the paper, the hairline, the ogee, the backdrop and
+   the arrival. What is here is only what a list of steps needs on top of that,
+   which is the same division ui/inventory.ts's rows keep.
+
+   A column, and the column scrolls rather than the dialog: the head says where
+   you are and the buttons at the foot are how you name a point and how you
+   leave, and neither should travel off the screen because the history is long.
+   ═════════════════════════════════════════════════════════════════════════ */
+
+#timeline-sheet {
+  /* A width rather than only the max-width the shared block gives it. A dialog
+     is shrink-to-fit, so a sheet of ellipsised rows would be as wide as its
+     longest sentence happened to be - and since the sentences change with the
+     board, the sheet would be a different width every time it opened. */
+  width: min(420px, calc(100vw - 32px));
+  /* Against the small viewport unit, which is the one that accounts for a
+     phone's address bar being on screen. A sheet measured against 100vh is a
+     sheet whose last row is under the browser's own chrome exactly when the
+     history is long enough to need it. */
+  max-height: calc(100svh - 32px);
+}
+/* The flat display belongs to the open state, or it outranks the UA
+   stylesheet's `display: none` and leaves a closed dialog on screen holding the
+   board under a backdrop nothing can dismiss - the same thing #viewer, #compose
+   and #darkroom each learned in turn. */
+#timeline-sheet[open] { display: flex; flex-direction: column; }
+
+#tl-sheet-where {
+  margin: 0 0 10px;
+  font-size: var(--t-small);
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+#timeline-sheet.is-stale #tl-sheet-where { color: var(--bad, #c0392b); }
+/* A stale history: the steps do not add up to the board beside them, so nothing
+   here can be trusted to take you anywhere. Shown and inert, with the reason in
+   the head, rather than silently absent - the same answer the strip gives. */
+#timeline-sheet.is-stale #tl-sheet-list { opacity: 0.4; pointer-events: none; }
+
+#tl-sheet-list {
+  flex: 1 1 auto;
+  /* Without this a flex child refuses to shrink below its content, so a long
+     history makes the dialog taller than the window instead of scrolling. */
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0 0 4px;
+  padding: 0;
+  list-style: none;
+  scrollbar-width: thin;
+}
+
+/* The rule between rows belongs to the row and everything else to the button
+   inside it, the division ui/inventory.ts's list makes and for the same reason:
+   the button is the hit target and it should be the full width of the sheet,
+   because this list is read and pressed with a thumb. */
+#timeline-sheet .tl-row { border-bottom: var(--hairline) solid var(--rule); }
+#timeline-sheet .tl-row:last-child { border-bottom: 0; }
+#timeline-sheet .tl-go {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin: 0;
+  /* Tall enough to be hit: 44px is the smallest target a finger reliably lands
+     on, and the mark inside is 26 of it. */
+  min-height: 44px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--leaf);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--t-small);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+#timeline-sheet .tl-go:hover { background: var(--paper-2); }
+#timeline-sheet .tl-go:focus { outline: none; }
+#timeline-sheet .tl-go:focus-visible {
+  outline: var(--sel-line) solid var(--select);
+  outline-offset: calc(var(--sel-gap) * -1);
+}
+
+/* The mark: the same disc the strip draws, at the size a row can afford. It is
+   what makes the list skimmable - a column of glyphs down the left is read far
+   faster than a column of sentences. */
+#timeline-sheet .tl-mark {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--paper-2);
+  color: var(--ink-3);
+}
+#timeline-sheet .tl-mark .ico { width: 15px; height: 15px; }
+/* The sentence gives way and the time never does: the time is a fixed-width
+   column somebody scans down, and a long note title that pushed it off the edge
+   would take the one thing on the row that is the same on every row. */
+#timeline-sheet .tl-said {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-2);
+}
+#timeline-sheet .tl-when {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+}
+
+/* Where the board actually is. The one filled accent in the list, and the row
+   the sheet scrolls to on open. */
+#timeline-sheet .tl-row.is-at .tl-mark { background: var(--accent); color: var(--paper-card); }
+#timeline-sheet .tl-row.is-at .tl-said { color: var(--ink); }
+/* Ahead of the marker: done, then stepped back past. Faded rather than absent,
+   because the whole reason to step back is to be able to come forward again and
+   a redo you cannot see is a redo you do not know you have. */
+#timeline-sheet .tl-row.is-ahead .tl-go { opacity: 0.45; }
+/* Named: a point somebody stopped and called something. A ring rather than the
+   strip's pip - a row is a sentence and the sentence is already the name, so
+   what the mark has to say is only that this one was chosen. */
+#timeline-sheet .tl-row.is-named .tl-mark {
+  box-shadow: 0 0 0 var(--hairline) var(--accent);
+}
+#timeline-sheet .tl-row.is-named .tl-said { color: var(--ink); }
+/* Broken: names a card that is no longer there, so it cannot run. Skipped
+   rather than deleted, and shown rather than hidden. */
+#timeline-sheet .tl-row.is-broken .tl-mark {
+  color: var(--bad, #c0392b);
+  box-shadow: 0 0 0 var(--hairline) var(--bad, #c0392b);
+}
+
+/* The trim offer's slot, which is empty on nearly every board. `:empty` rather
+   than a hidden attribute, because what fills it is a replaceChildren of
+   nothing and an element that is there but says nothing should take no room. */
+#tl-sheet-trim { margin: 0 0 12px; }
+#tl-sheet-trim:empty { display: none; }
+#tl-sheet-trim .tl-trim { flex-wrap: wrap; }
+
+/* And the strip goes away at the width the sheet takes over at.
+
+   **720px, and it must agree with onNarrow() in ui/timeline-view.ts** - that
+   function is the decision about which face opens, and this is the belt for a
+   window narrowed while the strip was already up. The module closes the strip
+   on the same change for the state that a hidden element still carries: .is-up
+   is what the rule stepping the player over the strip is written against, so a
+   strip that were only hidden would leave the player standing over nothing. */
+@media (max-width: 720px) {
+  #timeline-strip { display: none; }
+}

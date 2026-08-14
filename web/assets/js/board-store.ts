@@ -53,7 +53,6 @@ import { emitter } from './util.ts';
  *   view          - the viewport settled after a pan or a zoom
  *   trash         - something was thrown away, restored, or purged
  *   trash:evicted - the bin overflowed and dropped its oldest (payload: how many)
- *   versions      - a stored version was taken, named, forgotten or restored
  *   history       - the undo or redo stack changed
  *   connections   - board.connections changed
  *   autosaved     - the session was written to IndexedDB
@@ -79,7 +78,6 @@ export type BusEvents = {
   'board:new': void,
   view: void,
   trash: void,
-  versions: void,
   'trash:evicted': number,
   history: void,
   connections: void,

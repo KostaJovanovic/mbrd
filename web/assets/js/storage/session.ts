@@ -17,6 +17,9 @@
 // user exported.
 
 import { itemHashes, isRecord } from '../util.ts';
+// The step ledger's share of the reference union. Read out of the stored
+// document, like everything else this sweep walks.
+import { timelineHashes } from '../timeline.ts';
 import { toast, busy } from '../notify.ts';
 import { clearPrefs } from '../prefs.ts';
 import {
@@ -75,7 +78,9 @@ export function initSession(deps: SessionDeps) {
  * two different things - the board serializeBoard() just produced, and the one
  * that came back out of IndexedDB, which is `unknown` until it is looked at.
  */
-type BoardLike = { items?: unknown, trash?: unknown, settings?: unknown, versions?: unknown };
+type BoardLike = {
+  items?: unknown, trash?: unknown, settings?: unknown, timeline?: unknown,
+};
 
 /** The list at a key, or none. What `data.items || []` said before it had a type. */
 const listOf = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
@@ -189,20 +194,19 @@ function referencedHashes(data: BoardLike) {
   };
   for (const it of listOf(data.items)) add(it);
   for (const t of listOf(data.trash)) add(isRecord(t) ? t.item : null);
-  // And the stored versions, which are the third class of reference and the one
-  // that arrived last. A version names cards this board no longer has - that is
-  // the whole of what it is for - so an asset only a version points at is
-  // *live*, and this sweep deletes whatever nothing claims. Missing it here
-  // would not lose a version: it would leave the version standing with holes
-  // where its photographs used to be, discovered the day somebody restored one.
+  // And the history, which is the third class and the one with the sharpest
+  // teeth, because it is the only one whose whole purpose is to name things the
+  // board no longer has. A step that deleted a photograph carries that
+  // photograph on its *before* side; that is what stepping back puts on the
+  // board again. This sweep deletes whatever nothing claims, so missing it here
+  // would leave the history standing and quietly unable to walk back through
+  // anything that removed a picture.
   //
-  // Walked out of the stored document rather than out of a live board, the same
-  // way everything else in this function is - see versionHashes().
-  for (const v of listOf(data.versions)) {
-    if (!isRecord(v) || !isRecord(v.data)) continue;
-    for (const it of listOf(v.data.items)) add(it);
-    for (const t of listOf(v.data.trash)) add(isRecord(t) ? t.item : null);
-  }
+  // Note what this changes about the paragraph at the head of this function,
+  // which reasoned that bytes reachable only through undo were not worth
+  // keeping *because undo does not survive a reload*. The timeline does. That
+  // argument retires with it.
+  for (const hash of timelineHashes(data.timeline)) out.add(hash);
   // The files the optimiser replaced. Not in itemHashes() on purpose - that one
   // drives the *packer*, and an export is the artifact the optimising was for,
   // so it carries the small copies alone. Here they are held, because this drives

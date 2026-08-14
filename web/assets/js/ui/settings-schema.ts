@@ -167,7 +167,33 @@ export type SelectControl = Common & {
  *
  * `swatches` answers, for one option value, the colours to draw beside it. An
  * empty array is a legal answer and draws a row with a label and no chips -
- * which is what a palette whose block cannot be read falls back to.
+ * which is what a palette whose block cannot be read falls back to. They are
+ * drawn on the row's trailing edge (MenuEntry.swatchEnd), because a palette chip
+ * is a specimen to be compared down a column rather than an icon for the word
+ * beside it.
+ *
+ * ── And why this is the exception, not the new default ──
+ *
+ * Every `type: 'select'` row still in this file was asked whether it should
+ * become one of these, and the answer was no. It is worth writing down, because
+ * "make them all match" is a persuasive-sounding reason to spend a day making
+ * four controls worse.
+ *
+ * A native <select> is not just a shape. It brings type-ahead, Home and End, a
+ * real listbox that a screen reader announces as *"combo box, Units,
+ * Millimetres, 1 of 2"*, and on a phone the platform's own wheel. ui/menu.ts has
+ * the keyboard now, but it announces itself as a *menu* - `role="menu"`,
+ * `role="menuitem"` - and menu roles are not listbox roles. Converting these
+ * would trade real semantics for visual consistency.
+ *
+ * So the rule is: a dropdown here stops being native when there is something a
+ * native one *cannot do*, not when it looks different from its neighbours. Two
+ * have cleared that bar. The palette, above, because no browser paints inside an
+ * <option>. The note toolbar's face (canvas/notes.ts), because a native dropdown
+ * takes focus and that bar sits over an editor which must not lose it - and
+ * removing it deleted three separate workarounds. The board's faces
+ * (ui/appearance-controls.ts) did not, and neither did Layout, Units, Paper
+ * outline, Picture sharpness or Cards built per frame.
  */
 export type PickerControl = Common & {
   type: 'picker', label: string, fieldId?: string,
@@ -714,29 +740,38 @@ export const SECTIONS: Section[] = [
     // is a button that would have to explain itself.
     id: 'browser', tab: 'system', title: 'This browser', needsBoard: true,
     controls: [
-      // Directly above Optimize, and that order is the feature. The optimizer
-      // works and has always been a button you had to already know about -
-      // nothing in the app gave you a reason to press it. This is the reason:
-      // it says what the board is made of and what the heaviest thing in it
-      // weighs, and its own footer offers Optimize as the next step. Reading
-      // before trimming, in the order somebody would want to do it.
+      // The only way to Optimize from this panel, and that is the whole of the
+      // arrangement. The optimizer works and had always been a button you had
+      // to already know about - nothing in the app gave you a reason to press
+      // it. This sheet is the reason: it says what the board is made of and
+      // what the heaviest thing in it weighs, and its own footer offers
+      // Optimize as the next step. It used to sit directly above a standalone
+      // `optimize` row, which is the arrangement that says "read first" while
+      // leaving the door beside the reading room open; the row is gone.
+      //
+      // A label rather than a question. It read "What is in this board", which
+      // is a sentence in a column of nouns - the sheet keeps that sentence as
+      // its own heading, where a heading is allowed to be one.
       { type: 'buttons', buttons: [
-        { cmd: 'inventory', label: 'What is in this board',
-          title: () => 'Counts, weights and the heaviest files. Nothing is changed' },
+        { cmd: 'inventory', label: 'Board contents',
+          title: () => 'Counts, weights and the heaviest files. A row takes you to the card' },
       ] },
       // Above the two below it because it is the one that answers "something
       // has gone wrong", and the row somebody is looking for in a hurry should
       // not be under the two that are housekeeping. It needs a board for the
       // obvious reason and is greyed on the changelog with the rest.
       { type: 'buttons', buttons: [
-        { cmd: 'versions', label: 'Earlier versions',
-          title: () => 'Go back to what this board looked like before' },
+        // *Earlier versions* stood beside this until v0.198 and is gone. The
+        // two answered the same question at two grains - "take me back" by
+        // named copy and "take me back" by step - and once a step could be
+        // named, the copies were a second, coarser, more expensive answer.
+        { cmd: 'timeline', label: 'Timeline',
+          title: () => 'Every change to this board, as steps you can go back to' },
       ] },
-      { type: 'buttons', buttons: [{ cmd: 'optimize', label: 'Optimize' }] },
       // Feed | Playlist used to live here, next to Clear everything; it is the
       // board's own navigation, so it moved to the top of the Board tab (the
       // 'views' section above). What is left here is genuinely about this copy of
-      // the app in this browser: optimise its assets, reload it, wipe it.
+      // the app in this browser: read what it is holding, reload it, wipe it.
       // The refresh gesture this app takes away: pull-to-refresh is off because
       // every downward swipe on the board is a pan, and on a home screen there
       // is no address bar either. It saves first - which is why the label says
@@ -824,7 +859,13 @@ export const SECTIONS: Section[] = [
         { cmd: 'board-safe', label: 'Is my work safe?' },
         { cmd: 'storage-state', label: 'Storage' },
         { cmd: 'board-weight', label: 'What this board weighs' },
-        { cmd: 'history-state', label: 'Undo history' },
+        // Not "Undo history", which is what it said and which reads as a
+        // button that will do something to your undo history - close to the
+        // opposite of what it does. A bare noun phrase in a panel where the
+        // row above it toggles an overlay and the one below wipes the browser
+        // is read as an action, so this one is phrased as the question it
+        // answers, the way "Is my work safe?" three rows up is.
+        { cmd: 'history-state', label: 'How much can be undone' },
       ] },
       // The way out, and it lives in here now rather than at the foot of "This
       // browser". It used to sit at the far end of the tab on the argument that

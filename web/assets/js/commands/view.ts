@@ -54,7 +54,7 @@ import { goToStop, startTour, stepTour, stopTour, tourActive, tourLength } from 
 import { togglePlayerWindow } from '../ui/playlist.ts';
 import { openCredits } from '../ui/credits.ts';
 import { openInventory } from '../ui/inventory.ts';
-import { openVersions } from '../ui/versions.ts';
+import { toggleTimeline } from '../ui/timeline-view.ts';
 import { paintZoom, zoomText } from '../ui/hud.ts';
 import { reloadBoard, restartApp, scaleFromItem } from '../ui/board-actions.ts';
 
@@ -286,7 +286,16 @@ export function viewCommands(vp: CommandViewport, { resetAppearance, perf }: Vie
     // ui/inventory.ts. It sits beside credits here because both are "open the
     // one screen that says something", which is the whole of what they share.
     inventory: () => openInventory(),
-    versions: () => openVersions(),
+    // The Timeline. A toggle rather than an open, because it is a surface you
+    // consult and dismiss rather than a screen you go to - and because it is
+    // the one piece of chrome in the app you might want on the whole time you
+    // are working, which makes closing it something the same control should do.
+    //
+    // One command for both faces: which one this window gets - the strip along
+    // the foot, or the sheet a narrow window can actually read - is decided
+    // inside ui/timeline-view.ts, because it is a fact about the width and not
+    // about the action.
+    timeline: () => toggleTimeline(),
     // What changed, which is web/patch.html - the one page this site has that is
     // not the app. A command for the same reason the credit above is one, and it
     // sits beside it because the two are the same kind of thing: the only rows in

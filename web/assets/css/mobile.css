@@ -1281,8 +1281,8 @@
      volume slider and a close on a phone, and of those four the name is the one
      the card itself already carries - you started this from somewhere. */
   #nowplaying {
-    --np-left: max(12px, env(safe-area-inset-left));
-    --np-right: max(12px, env(safe-area-inset-right));
+    --foot-left: max(12px, env(safe-area-inset-left));
+    --foot-right: max(12px, env(safe-area-inset-right));
     bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--bar-h) + var(--bar-gap));
     max-width: none;
   }

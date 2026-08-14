@@ -41,6 +41,7 @@ import {
   snapshotGeom, applyGeom, commitGeom, baseStep,
   recheckBoardGeometry, placeMobileItems,
   isRider, stuckTo, stuckPlacement, isFence, isLocked, fenceOf, fenceBox,
+  declareOp,
 } from '../state.ts';
 import { latticeBox, itemBounds } from '../geometry.ts';
 import { travelMs } from '../canvas/viewport.ts';
@@ -794,6 +795,22 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
   // they have not moved relative to anything, and a card that asked again here
   // would be asking about a board it did not travel across. The fences themselves
   // are driven, so a region dealt a slot inside a larger one nests as it should.
+  // What this step is a case of, so the history strip can offer to run it again
+  // under a different arrangement. The cards it was given and the layout it used
+  // are the whole of the rule; everything above this line is that rule being
+  // worked out. See registerLayoutOps() in commands.ts.
+  //
+  // Not declared for a region's rearrangement, and that is deliberate rather
+  // than an omission: `enclose` closes a fence around the result inside the same
+  // commit, so re-running the layout alone would move the cards and leave the
+  // region where it was. A fence rearrangement stays sealed until the op carries
+  // the enclosing too.
+  if (!options.enclose) {
+    declareOp('arrange', {
+      ids: items.map(i => i.id),
+      name: options.name || board.arrangement,
+    });
+  }
   commitGeom(options.label || (whole ? 'Rearrange' : `Rearrange ${items.length} items`),
     beforeAll, [...free.map(g => g.id), ...closing], mobile ? { preservePresnap: true } : {});
   // A whole-board layout rebuilds around the origin, so the view has to follow

@@ -18,6 +18,7 @@ import { el } from './util.ts';
 import { toast } from './notify.ts';
 import { initErrors, setBoardProbe } from './errors.ts';
 import { initOverlays } from './ui/overlays.ts';
+import { initTimeline } from './ui/timeline-view.ts';
 import { ask } from './ui/dialog.ts';
 import { VERSION } from './version.js';
 import {
@@ -25,7 +26,7 @@ import {
   ensureTitleCard, isTitleHidden, TITLE_ID, setTitle,
   ensureGhostCards, reseedGhostCards, hasContent, dismissGhosts,
   leaveNotFoundBoard, isContent,
-  defaultBoardTitle, saveVersion,
+  defaultBoardTitle,
 } from './state.ts';
 import { freezePrefs } from './prefs.ts';
 import { homePath, isPatchPage, isNotFoundPage, openingFace } from './page.ts';
@@ -46,12 +47,12 @@ import {
   suspendCache, resetSessionLatches, boardSafety,
 } from './storage/storage.ts';
 import { boardThumb } from './ui/snapshot.ts';
-import { flushNoteEdit, growNote } from './canvas/notes.ts';
+import { flushNoteEdit, growNote, setNoteMenu } from './canvas/notes.ts';
 import { initAssets, getAsset } from './storage/assets.ts';
 import { initSidebar } from './ui/sidebar.ts';
 import { buildPanel } from './ui/panel.ts';
 import { armQuality, watchQuality } from './ui/quality.ts';
-import { initMenu } from './ui/menu.ts';
+import { initMenu, openAnchored, justDismissed } from './ui/menu.ts';
 import { initFencePrompt } from './ui/fence-prompt.ts';
 import { initConnChip } from './ui/conn-chip.ts';
 import { initSearch } from './ui/search.ts';
@@ -69,6 +70,7 @@ import { initAudio } from './canvas/audio.ts';
 import { initFeed } from './ui/feed.ts';
 import { initViewer } from './ui/viewer.ts';
 import { initDarkroom } from './ui/darkroom.ts';
+import { initInventory } from './ui/inventory.ts';
 import { initPlaylist } from './ui/playlist.ts';
 import { initTour } from './ui/tour.ts';
 
@@ -162,6 +164,19 @@ initAssets();
 // (storage sits above state - AUD-12). This is the original-filename fallback
 // renameItem() uses when a name is cleared.
 setAssetNameLookup((hash: string) => getAsset(hash)?.name);
+// And the note toolbar's face menu, for the same reason from the other side:
+// canvas/ may not import ui/, so the editor is handed the one verb it needs
+// rather than the module that answers it. See NoteMenu in canvas/notes.ts.
+setNoteMenu((anchor, rows, current, pick) => {
+  // The second press on the button closes rather than reopening - the menu's
+  // outside-press listener has already shut it by the time the click lands.
+  if (justDismissed(anchor)) return;
+  openAnchored(anchor.getBoundingClientRect(), rows.map(row => ({
+    label: row.label,
+    check: row.value === current,
+    action: () => pick(row.value),
+  })), { label: 'Font', focus: true });
+});
 // The saved quality level onto <html>, before anything reads a flag off it.
 // The inline guard in index.html has already done this for the stylesheet; this
 // is the module half, and it is also what fills `quality` for canvas/*.
@@ -248,6 +263,10 @@ initViewer();
 // viewer does not: it is opened by id, reads the board and the asset store, and
 // writes back through state.ts.
 initDarkroom();
+// The board weighed and named, and - since a row of it is a way to the card
+// that holds the file - the camera. That is the only thing it takes: it reads
+// the board and the asset store itself and is opened by a cmd.
+initInventory(vp);
 // The tour runner. Takes the viewport and nothing else: the itinerary is on the
 // board, which it reads directly, and the index it walks is its own - see the
 // head of the module for why that is not a field on the board. Before
@@ -274,6 +293,12 @@ initTrash(vp);
 // After initAudio(), which is what reads the stored volume - the bar's slider
 // paints itself from that value on the way up.
 initNowPlaying();
+// The Timeline. After the player, because the CSS rule that steps the player up
+// over the strip is a general sibling combinator and this is the order the two
+// elements sit in - see the note over #timeline-strip in index.html. Nothing is
+// drawn until it is asked for; this only wires the shell that is already in the
+// markup. The phone's face is a <dialog> and is wired on its first open.
+initTimeline();
 initDrop(vp);
 // The glass: the zoom cluster, undo/redo, and the readouts. After buildPanel()
 // (its controls are in the static markup, but the save button it does not own
@@ -384,38 +409,6 @@ bus.on('selection', () => {
 bus.on('items', syncMobileBoardBounds);
 bus.on('geom', syncMobileBoardBounds);
 
-/**
- * The automatic half of the version history.
- *
- * Hung off 'autosaved' rather than given a timer of its own, and that is worth
- * a line. The autosave already answers "has anything actually changed?" - it
- * only announces when a write happened that a person caused - so this gets the
- * same gate for free and cannot fill the ring on a board somebody is only
- * looking at. A second timer would have had to re-derive that, badly.
- *
- * The interval is deliberately far longer than the autosave's twenty seconds.
- * A version answers *what did I just break*, and the useful granularity for
- * that is an hour of work in a handful of steps, not one per save - a ring of
- * eight that turns over every three minutes is eight copies of the last three
- * minutes, which is the one span undo already covers.
- *
- * saveVersion() is itself a no-op when nothing changed since the last automatic
- * one, so this is bounded twice.
- */
-const AUTO_VERSION_MS = 10 * 60 * 1000;
-let lastAutoVersion = 0;
-bus.on('autosaved', () => {
-  const now = Date.now();
-  // The first autosave of a session does not take one: the board has just
-  // arrived, so the version would be a copy of the file that is already on
-  // disk, and it would push a real one off the end of the ring to say so.
-  if (!lastAutoVersion) { lastAutoVersion = now; return; }
-  if (now - lastAutoVersion < AUTO_VERSION_MS) return;
-  lastAutoVersion = now;
-  saveVersion();
-});
-// A new board has its own history, and the clock starts again with it.
-bus.on('board:load', () => { lastAutoVersion = 0; });
 // A note can arrive with text already in it - pasted, duplicated, or loaded
 // from a file saved before it grew - so it is sized for what it says as soon
 // as it has a node to measure.

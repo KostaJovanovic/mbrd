@@ -174,6 +174,13 @@ const BASE = new Set([
   // separate files, since a concern lifted out of state.js can only stay out if
   // what it stands on is lower than what it left.
   'board-store.ts', 'board-model.ts', 'history.ts', 'sticky.ts', 'layout.ts', 'stacking.ts',
+  // The step ledger, below history.js rather than beside it. history.js keeps
+  // changes as closures and calls in here to keep the same change as data; the
+  // arrow points that way and may never point back, because a closure can be
+  // built out of a record and a record cannot be built out of a closure. It
+  // stands on board-model.js and knows nothing about the file format - which is
+  // why board-schema.js imports *it*, and not the reverse.
+  'timeline.ts',
   // The .mbrd format, in both directions. Below state.js for the reason its own
   // header gives: reading a file is a pure raw -> clean transformation over
   // data, and only the assignment that swaps the result in is a mutation. The

@@ -88,7 +88,9 @@
   width: 100%;
   padding: 7px 9px;
   border: 0;
-  border-radius: var(--radius-sm);
+  /* The same nested radius as .ctx-item, against #search's own outer corner and
+     its own 6px of padding. See the note there. */
+  border-radius: max(0px, calc(var(--ogee) - 6px));
   background: none;
   text-align: left;
   cursor: pointer;
@@ -165,14 +167,27 @@
    landed on the first. The bottom keeps the menu's corner, which is the whole
    point of leaving the rest of the rule alone.
 
-   The max-height counts from the bar rather than from the top of the window,
-   so a long flyout scrolls inside what is actually below it. --toolbar-h is
-   published by chrome.css for exactly this kind of arithmetic. */
+   The max-height is not here any more. It counted down from --toolbar-h, the
+   bar at the *top* of the window, which was right for the three desktop hover
+   flyouts and wrong for the phone's More button on the bar at the bottom. It is
+   measured off the panel's own anchor in ui/menu.ts now - see the note over the
+   measurement there. */
 #ctx-menu.is-flyout {
   border-top: 0;
   border-top-left-radius: 0;
   border-top-right-radius: 0;
-  max-height: calc(100vh - var(--toolbar-h) - max(16px, env(safe-area-inset-top)) - 8px);
+}
+/* And the same panel flipped above a bar at the bottom of the window, where
+   every word of the paragraph above applies to the other edge. Both halves are
+   written out rather than one being toggled, because the base rule has already
+   squared the top by the time this applies. */
+#ctx-menu.is-flyout.is-flyout-up {
+  border-top: var(--hairline) solid var(--rule-2);
+  border-top-left-radius: var(--radius);
+  border-top-right-radius: var(--radius);
+  border-bottom: 0;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
 }
 
 /* Three columns: the icon, the label, and whatever sits on the trailing edge -
@@ -188,13 +203,35 @@
    with the text, so it was sitting a pixel or two low against every label. */
 .ctx-item {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  /* Four now, not three. The fourth is the trailing swatch column - see
+     MenuEntry.swatchEnd - and it collapses to nothing on every row that has no
+     specimen in it, which is every row in the app but the palette picker's. A
+     row with a tick *and* a specimen needs both to have somewhere to go, and
+     three columns made the second of them wrap onto a line of its own. */
+  grid-template-columns: auto 1fr auto auto;
   align-items: center;
   gap: 10px;
   width: 100%;
   padding: 7px 10px;
   border: 0;
-  border-radius: var(--radius-sm);
+  /* Outer radius minus the gap, which is the whole of the nested-radius rule and
+     is what makes a highlighted first or last row sit *concentrically* inside
+     the menu's corner rather than cutting across it.
+
+     It was --radius-sm, which is a fixed ratio of --radius and not a function of
+     the padding, so it was only ever right by coincidence. At the middle whimsy
+     tier the coincidence held - 13px outer, 5px padding, 8px wanted, and
+     --radius-sm is 8. At the low tier it does not: 26px outer wants 21 and
+     --radius-sm gives 16, so the bottom row's highlight had a five-pixel bite
+     taken out of each corner by a curve it was supposed to follow. Which is why
+     this only ever looked wrong on the softest setting.
+
+     max(0px, ...) because --radius is 0 on the sharp tier and a bare subtraction
+     lands at -5px, which is not a valid radius - the browser throws the whole
+     declaration away rather than clamping it, and square-inside-square happens
+     to look right, so the rule being dropped goes unnoticed. Same guard as
+     #search-field above and the card's inner rule in items.css. */
+  border-radius: max(0px, calc(var(--radius) - 5px));
   background: none;
   color: var(--ink);
   font-size: var(--t-small);
@@ -298,6 +335,24 @@
   height: 13px;
   border-radius: var(--radius-sm);
   box-shadow: inset 0 0 0 var(--hairline) color-mix(in srgb, var(--ink) 22%, transparent);
+}
+
+/* The same chip on the trailing edge, for the rows whose colour is a specimen
+   rather than an icon - the palette picker's, and so far only those.
+
+   Wider, because it is showing several bands of a palette and a thirteen-pixel
+   square divides into bands of two.
+
+   And a near-square corner, capped at three pixels rather than taken from a
+   token. Every other radius in this file follows the whimsy dial, and this is
+   the one place that must not: --radius-xs is 8px on the softest tier, which on
+   a 14px bar is a full pill, and a pill eats the outermost band at both ends -
+   the two a palette is most identified by. min() rather than a literal so the
+   sharp tier, where every radius is 0, still gets a square. */
+.ctx-chip.is-end {
+  width: 30px;
+  height: 14px;
+  border-radius: min(3px, var(--radius-xs));
 }
 
 /* The one row here that is a dial and not an action - Spacing, under Arrange.

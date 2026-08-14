@@ -17,6 +17,7 @@
 import { bus, markDirty } from './board-store.ts';
 import {
   snapshot, recordStep, markerBack, markerForward, dropLastStep, resetTimeline,
+  stepBack, stepForward, stepBackLabel, stepForwardLabel, isReplaying,
 } from './timeline.ts';
 
 /**
@@ -82,8 +83,12 @@ function trim() {
  * back rather than only whether it can.
  */
 export const historyState = () => ({
-  undo: undoStack.at(-1)?.label || null,
-  redo: redoStack.at(-1)?.label || null,
+  // Falling back to the record for the same reason undo() does, and it has to:
+  // every control in the app binds to this, so a board reopened with a history
+  // and an empty stack would show its undo button greyed while undo would in
+  // fact work. The button and the key have to agree about what is possible.
+  undo: undoStack.at(-1)?.label || stepBackLabel(),
+  redo: redoStack.at(-1)?.label || stepForwardLabel(),
 });
 
 /**
@@ -104,7 +109,10 @@ const historyChanged = () => bus.emit('history');
  * that closes over a whole-board snapshot, leave it alone for the rest. It only
  * decides eviction; nothing else reads it.
  */
-export function commit(label: string, redo: () => void, undo: () => void, weight = 1) {
+export function commit(
+  label: string, redo: () => void, undo: () => void, weight = 1,
+  rewind?: () => void,
+) {
   // The snapshot has to be taken here rather than by the caller, and this is
   // the whole of what makes the timeline cost one change instead of thirty:
   // this function runs the redo half itself, so it is the one place in the app
@@ -112,6 +120,33 @@ export function commit(label: string, redo: () => void, undo: () => void, weight
   // records a step without knowing timeline.js exists - including the ones
   // written next year, which is what takes coverage off the list of things
   // somebody has to remember. See the header there for why the diff is cheap.
+  //
+  // **`rewind` is the exception, and it exists because one caller genuinely
+  // cannot fit that shape.** The contract almost everywhere is "hand over a
+  // redo that does the work, and commit() runs it" - so the board is still in
+  // the before state when this line is reached. A finished drag is not like
+  // that: the card has been moving under the pointer for two seconds and is
+  // already where it ends up, and commitGeom()'s redo half re-applies values
+  // the board already holds. Snapshotting there would compare a state with
+  // itself and record nothing, which is exactly what the first run of
+  // tests/timeline.test.js found.
+  //
+  // So a caller that has already mutated hands over a way back, this puts the
+  // board where it was, takes the picture, and lets `redo` bring it forward
+  // again. That is one extra site to know about rather than thirty, and it is
+  // discoverable rather than silent: a commit that mutated first and forgot
+  // this records an empty step, which the oracle test catches.
+  // A rebuild re-runs a step's rule by calling the command that made it, and
+  // commands come through here. During one, this is a pass-through: do the work
+  // and leave both engines alone. Without it, editing one step in the past would
+  // leave an undo entry for every step after it - entries for the replay of work
+  // that is already on the strip.
+  if (isReplaying()) {
+    if (rewind) rewind();
+    redo();
+    return { label, redo, undo, weight: 1 };
+  }
+  if (rewind) rewind();
   const before = snapshot();
   redo();
   recordStep(label, before);
@@ -175,7 +210,25 @@ function clearRedo() {
 
 export function undo() {
   const cmd = undoStack.pop();
-  if (!cmd) return false;
+  // Nothing left in this session's stack, so fall through to the written
+  // record. **This is the whole of what phase 2 buys**: until now, closing the
+  // tab was the end of undo, because a closure cannot be saved and these
+  // stacks are closures. The steps can be, so undo now reaches back past the
+  // refresh - and past every refresh before it, as far as the file goes.
+  //
+  // The stack is tried first rather than the record, and that ordering is the
+  // second decision the design takes: a step on the strip is a whole run of
+  // small changes collapsed into one, and unwinding a run keystroke by
+  // keystroke is what undo has always felt like. So the finer engine answers
+  // while it still can, and the coarser one takes over when it cannot. The cost
+  // is that undo is finer today than tomorrow, which is stated in the format
+  // document rather than left to be discovered.
+  if (!cmd) {
+    if (!stepBack()) return false;
+    markDirty();
+    historyChanged();
+    return true;
+  }
   cmd.undo();
   // The marker follows rather than drives, for now. Running the closure is
   // faster than replaying, and during phase 1 it is also the thing the replay
@@ -191,8 +244,17 @@ export function undo() {
 
 export function redo() {
   const cmd = redoStack.pop();
-  if (!cmd) return false;
+  // The other half of the fall-through above. Redo after a refresh is the same
+  // trick and is worth as much: having stepped back through work done last
+  // week, there has to be a way forward again.
+  if (!cmd) {
+    if (!stepForward()) return false;
+    markDirty();
+    historyChanged();
+    return true;
+  }
   cmd.redo();
+  markerForward();
   undoStack.push(cmd);
   heldWeight += cmd.weight;
   markDirty();
@@ -205,6 +267,12 @@ export function clearHistory() {
   undoStack.length = 0;
   redoStack.length = 0;
   heldWeight = 0;
+  // The ledger starts over with the board as it stands, which is what keeps
+  // phase 1's contract - replay and undo agree - true by construction. It is
+  // also where this currently throws away history it ought to keep: setBoardMode
+  // clears the stacks, so switching layout wipes the timeline. Rebasing instead
+  // of resetting is phase 2 work, and resetTimeline()'s header says so.
+  resetTimeline();
   historyChanged();
 }
 

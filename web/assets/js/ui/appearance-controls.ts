@@ -142,6 +142,23 @@ export function buildControls() {
 
     // A <select> for a face (a choice from a list), a swatch button for a colour
     // (the app's own picker, not the OS one), a range for everything else.
+    //
+    // **The <select> stays a <select>, and that is a decision rather than an
+    // omission.** Every other dropdown-shaped control in this app has been
+    // asked whether it should become a button opening ui/menu.ts, and two
+    // answered yes - the palette picker, because no browser paints a colour
+    // inside a native option, and the note toolbar's face, because a native
+    // dropdown took focus out of an editor that must not lose it. Neither
+    // argument applies here.
+    //
+    // What does apply is the other side of the ledger. This list is *unbounded*:
+    // the shipped faces plus one entry per font file dropped on the board. A
+    // native select gives it type-ahead, Home and End, a real listbox announced
+    // as one, and on a phone the platform's own wheel - which is a better way
+    // through forty faces than a panel scrolling inside an already-scrolling
+    // sheet. ui/menu.ts has the first two now and still announces itself as a
+    // menu rather than a listbox, so converting this would cost accessibility
+    // to buy consistency. See the same note in ui/settings-schema.ts.
     let input: HTMLSelectElement | HTMLButtonElement | HTMLInputElement;
     if (c.type === 'font') {
       input = document.createElement('select');

@@ -234,18 +234,19 @@
      --accent-fg is the one mixed to stay legible when the palette moves. */
   color: var(--accent-fg);
 }
+/* The face control. A .ntb-btn like the rest of the bar now, wearing one extra
+   rule: it is the only control here whose label is a word rather than a glyph,
+   so it needs room to say Sheet and Terracotta rather than being held to the
+   34px square the icons sit in.
+
+   It was a <select>, and the tinted well below is what is left of the dressing
+   that made a platform control look like it belonged - see the note over it in
+   canvas/notes.ts for what went with it. */
 .note-toolbar .ntb-select {
-  height: 36px;
-  border: 0;
-  border-radius: var(--leaf);
+  width: auto;
+  min-width: 62px;
+  padding: 0 10px;
   background: color-mix(in srgb, var(--ink) 6%, transparent);
-  color: var(--ink);
-  font: inherit;
-  /* The same 36px box as the buttons beside it, and sized to it for the same
-     reason - see the note above. */
-  font-size: 18px;
-  padding: 0 8px;
-  cursor: pointer;
 }
 
 /* The alignment and vertical-placement glyphs, drawn as bars rather than trusted
