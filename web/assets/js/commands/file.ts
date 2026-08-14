@@ -33,14 +33,14 @@
 
 import { busy, toast } from '../notify.ts';
 import { formatBytes } from '../util.ts';
-import { board, historyDepth, historyState, historyWeight } from '../state.ts';
+import { board, historyDepth, historyState, historyWeight, selection } from '../state.ts';
 import {
   boardSafety, exportBoard, lastSaveFailure, newBoard, openBoard,
   saveBlob, shareBoard, storageReport,
 } from '../storage/storage.ts';
 import { assetBytes } from '../storage/assets.ts';
 import { openLibrary } from '../ui/library.ts';
-import { boardPdf, boardPng } from '../ui/snapshot.ts';
+import { boardPdf, boardPng, styleTilePng, styleTilePdf } from '../ui/snapshot.ts';
 import { saveWithCooldown } from '../ui/board-actions.ts';
 
 /**
@@ -48,9 +48,12 @@ import { saveWithCooldown } from '../ui/board-actions.ts';
  * characters, spaces and dashes - the artefact carries the board's name, not its
  * punctuation, and it is a filename bound for a dozen different filesystems.
  */
-function boardArtefactName(ext: string): string {
+function boardArtefactName(ext: string, suffix = ''): string {
   const base = (board.title || '').replace(/[^\w -]+/g, '').trim().slice(0, 60) || 'board';
-  return `${base}.${ext}`;
+  // The suffix keeps a style tile from overwriting a picture of the same board
+  // in the same folder - two derived artefacts, one name, and the second one
+  // silently replacing the first would be the export losing somebody's work.
+  return suffix ? `${base} ${suffix}.${ext}` : `${base}.${ext}`;
 }
 
 /**
@@ -180,6 +183,47 @@ export function fileCommands() {
       } catch (err) {
         console.error(err);
         toast('Could not draw the board: ' + why(err), 'error');
+      } finally { job.end(); }
+    },
+    /**
+     * The other document: a summary rather than a photograph.
+     *
+     * The two above both answer *show me the board*, which is only readable by
+     * somebody who was in the room. This one answers *what does this board look
+     * like* - the palette with its values, the faces in use, a few pictures,
+     * the name and the date. It is the thing that goes in a deck.
+     *
+     * The selection is handed over rather than read inside the renderer, so
+     * "these four cards" is an ordinary export of a chosen set and the same
+     * command with nothing selected is an export of the board. One command,
+     * because they are one document with a different input.
+     *
+     * Entries beside the other exports rather than a door of their own, and
+     * through the same saveBlob and the same artefact naming: this is a third
+     * derived artefact, not a third kind of saving.
+     */
+    exportStyleTile: async () => {
+      const job = busy('Drawing the tile');
+      try {
+        const blob = await styleTilePng(selection);
+        if (!blob) { toast('There is nothing on the board to summarise yet'); return; }
+        saveBlob(blob, boardArtefactName('png', 'style'));
+        toast(selection.size ? 'Saved a style tile from the selection' : 'Saved a style tile');
+      } catch (err) {
+        console.error(err);
+        toast('Could not draw the tile: ' + why(err), 'error');
+      } finally { job.end(); }
+    },
+    exportStyleTilePdf: async () => {
+      const job = busy('Drawing the tile');
+      try {
+        const blob = await styleTilePdf(selection);
+        if (!blob) { toast('There is nothing on the board to summarise yet'); return; }
+        saveBlob(blob, boardArtefactName('pdf', 'style'));
+        toast('Saved a style tile PDF');
+      } catch (err) {
+        console.error(err);
+        toast('Could not draw the tile: ' + why(err), 'error');
       } finally { job.end(); }
     },
     // Strictly asked for, never automatic - see optimize/optimize.js. Loaded on

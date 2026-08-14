@@ -20,6 +20,7 @@ import {
   setSetting,
   serializeBoard,
 } from '../web/assets/js/state.ts';
+import { TOKENS } from '../web/assets/js/ui/look.ts';
 import { hash } from './helpers.js';
 
 const desktopFontHash = hash('desktop-font');
@@ -112,6 +113,29 @@ test('the shared appearance allowlist contains only palette colors', () => {
   assert.ok(!PALETTE_TOKENS.includes('--font-body'));
   assert.ok(!PALETTE_TOKENS.includes('--grid-alpha'));
   assert.deepEqual(TYPOGRAPHY_TOKENS, ['--font-display', '--font-body']);
+});
+
+test('every shared token is one a look is allowed to carry', () => {
+  // There are three token lists in this app and they are three *different*
+  // questions, which is worth stating because a reading of them as three homes
+  // for one question is what an audit reported:
+  //
+  //   look.ts TOKENS            what a board may name at all - the allowlist,
+  //                             held against tokens.css by appearance.test.js
+  //   PALETTE_TOKENS            which of those are one identity for the whole
+  //   + TYPOGRAPHY_TOKENS       board rather than per-layout (this file)
+  //   appearance.ts AXIS_TOKENS which of those the whimsy dial itself writes
+  //
+  // Each is in a defensible place. What was missing is the edge between the
+  // first two: a token added here and not to TOKENS would be declared shared by
+  // both layouts and then silently refused on the way in, so the setting would
+  // exist, be saved, travel in a .mbrd, and never once be applied. Nothing
+  // pointed that out, because each list is individually consistent.
+  for (const token of [...PALETTE_TOKENS, ...TYPOGRAPHY_TOKENS]) {
+    assert.ok(TOKENS.has(token),
+      `${token} is shared across layouts but is not on look.ts's allowlist, so a `
+      + 'board carrying it would save it and never apply it');
+  }
 });
 
 test('new Mobile profiles use the compact grid defaults and eight spaces', () => {

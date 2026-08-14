@@ -49,8 +49,12 @@
 // empty host with today's id and the owning module fills it exactly as before.
 
 import {
-  board, setSetting, setArrangement,
+  board, setSetting, setArrangement, selection,
 } from '../state.ts';
+
+/** How many cards are picked. Read by the style tile row's title, which says
+ *  what the export will draw from and so changes with the selection. */
+const selectionSize = () => selection.size;
 import { ARRANGEMENTS, MOBILE_ARRANGEMENTS } from '../arrange/arrangements.ts';
 import { currentLens } from './board-view.ts';
 // The palette row's chips, read out of tokens.css at the moment the menu opens.
@@ -348,6 +352,19 @@ export const SECTIONS: Section[] = [
       { type: 'buttons', advanced: true, buttons: [
         { cmd: 'export-image', label: 'Save image' },
         { cmd: 'export-pdf', label: 'Save PDF' },
+      ] },
+      // And the other document, on its own row under the two pictures of the
+      // board because it is not one. A style tile is the *summary* - the palette
+      // with its values, the faces in use, a few of the pictures - which is what
+      // goes into a deck or to a printer, where a photograph of a moodboard is
+      // only readable by somebody who was in the room. The title says what it
+      // draws from, because the answer changes with the selection.
+      { type: 'buttons', advanced: true, buttons: [
+        { cmd: 'export-style-tile', label: 'Save style tile',
+          title: () => (selectionSize()
+            ? 'The palette, the faces and the cards you have selected'
+            : 'The palette, the faces and a few of the pictures') },
+        { cmd: 'export-style-tile-pdf', label: 'Style tile PDF' },
       ] },
     ],
   },
@@ -697,6 +714,24 @@ export const SECTIONS: Section[] = [
     // is a button that would have to explain itself.
     id: 'browser', tab: 'system', title: 'This browser', needsBoard: true,
     controls: [
+      // Directly above Optimize, and that order is the feature. The optimizer
+      // works and has always been a button you had to already know about -
+      // nothing in the app gave you a reason to press it. This is the reason:
+      // it says what the board is made of and what the heaviest thing in it
+      // weighs, and its own footer offers Optimize as the next step. Reading
+      // before trimming, in the order somebody would want to do it.
+      { type: 'buttons', buttons: [
+        { cmd: 'inventory', label: 'What is in this board',
+          title: () => 'Counts, weights and the heaviest files. Nothing is changed' },
+      ] },
+      // Above the two below it because it is the one that answers "something
+      // has gone wrong", and the row somebody is looking for in a hurry should
+      // not be under the two that are housekeeping. It needs a board for the
+      // obvious reason and is greyed on the changelog with the rest.
+      { type: 'buttons', buttons: [
+        { cmd: 'versions', label: 'Earlier versions',
+          title: () => 'Go back to what this board looked like before' },
+      ] },
       { type: 'buttons', buttons: [{ cmd: 'optimize', label: 'Optimize' }] },
       // Feed | Playlist used to live here, next to Clear everything; it is the
       // board's own navigation, so it moved to the top of the Board tab (the

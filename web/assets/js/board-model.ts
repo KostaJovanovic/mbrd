@@ -171,7 +171,62 @@ export type Board = {
   audioOrder: string[];
   tour: string[];
   trash: TrashEntry[];
+  versions: BoardVersion[];
 };
+
+/**
+ * One stored version of this board: what it looked like, and when.
+ *
+ * Undo lives in memory and dies at the refresh, so the only recovery from *I
+ * have spent an hour making this worse* used to be having thought to save a
+ * copy first. This is that copy, kept in the board itself.
+ *
+ * **Why it is affordable, which is not obvious.** A `.mbrd` is a ZIP, assets
+ * are stored once by hash and referenced, and `board.json` is small - so a
+ * version is one more JSON document and duplicates **not one photograph**.
+ * Twenty versions of a 40 MB board cost twenty copies of a text file.
+ *
+ * **What it costs instead is the meaning of the word "unreferenced".** An asset
+ * a stored version points at is *live*, even when no card on the board does -
+ * see the reference union in packBoard() and in ui/inventory.ts, which both had
+ * to learn about this at the same time as it landed. Getting that wrong does
+ * not lose a version, it loses the photographs inside one.
+ *
+ * `data` is the serialised board exactly as `board.json` carries it. It is
+ * `unknown` here rather than a Board because the two are not the same shape and
+ * must not be allowed to drift into each other: a version is a *document*, read
+ * back through normalizeBoard() like any other file, not a live board with live
+ * geometry that some later refactor might start writing into.
+ *
+ * `kept` marks a version somebody named. Automatic ones evict, named ones never
+ * do - the two answer different questions, *what did I just break* and *the one
+ * I showed the client*, and a ring that dropped the second to make room for the
+ * first would be answering neither.
+ */
+export type BoardVersion = {
+  id: string;
+  /** Epoch milliseconds. */
+  at: number;
+  label: string;
+  kept: boolean;
+  data: unknown;
+};
+
+/**
+ * How many automatic versions a board keeps before the oldest falls off.
+ *
+ * A shallow ring on purpose. This is *what did I just break*, which is answered
+ * by the last few and never by the fortieth - and every one of them is parsed
+ * on the way into a board, so a deep ring is a slower load for a question
+ * nobody asks. Named versions are not counted against it and never evict.
+ */
+export const VERSION_RING = 8;
+
+/** The ceiling on named versions, so a runaway script cannot grow a file forever. */
+export const VERSION_KEPT_MAX = 32;
+
+/** The longest a version's name may be. */
+export const VERSION_LABEL_MAX = 60;
 
 /**
  * One thing in the bin: the item as it was, and when it went in.
@@ -411,6 +466,37 @@ const initialLayoutSettings = {
   mobile: defaultLayoutSettings('mobile'),
 };
 
+/**
+ * The board. One of them, exported as a mutable object, and that is a decision
+ * rather than an oversight - it has been raised as one twice, so here is the
+ * answer in the place it applies.
+ *
+ * **What is true.** Any module that imports this can write to it without going
+ * through `commit()`, and a change made that way cannot be undone and announces
+ * nothing. That is a real hazard and nothing in the type system prevents it.
+ *
+ * **Why there is no accessor seam.** The alternative is `getBoard()` and a
+ * write door for every field, which does not actually prevent the hazard - the
+ * object handed back is still the object - unless it also deep-freezes or deep-
+ * copies on every read. Freezing breaks the in-place geometry writes the drag
+ * path depends on; copying puts an allocation of the whole board on the hot
+ * path. So the honest choice is between a seam that costs a lot and prevents
+ * little, and a stated boundary. This is the stated boundary:
+ *
+ *   Mutating `board` outside the commit path is a bug, and the review that
+ *   catches it is a human one.
+ *
+ * Two things do most of the work the seam was wanted for, and both already
+ * exist. `tests/layers.test.js` stops the *shape* of the code drifting - nothing
+ * below state.ts may reach back up, so the set of modules that could do this is
+ * bounded and listed. And the bus is typed, so the other half of the original
+ * finding - a stringly-typed emitter where a misspelt event failed silently - is
+ * gone: `bus.emit('itms', …)` is a build error now.
+ *
+ * `window.mbrd` hands the same object to the console on purpose, and that is
+ * separate and stays. It is how the app is poked at while it is running; see
+ * CLAUDE.md. A console session is a person choosing to reach past the door.
+ */
 export const board: Board = {
   title: defaultBoardTitle(),
   view: { pan: { x: 0, y: 0 }, zoom: 1 },
@@ -486,6 +572,10 @@ export const board: Board = {
   tour: [],
   // Thrown away but not gone. Entries are { item, at }, newest first.
   trash: [] as TrashEntry[],
+  // What this board looked like before. Newest first, and see BoardVersion:
+  // these hold references to assets, so an asset one of them names is live even
+  // when no card on the board wants it.
+  versions: [] as BoardVersion[],
 };
 
 /**

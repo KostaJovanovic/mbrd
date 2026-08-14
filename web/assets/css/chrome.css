@@ -667,15 +667,19 @@
   padding: 0 6px;
   text-align: center;
 }
+/* Both sizes here were the scale's own values written as numbers - 13 is
+   --t-small and 11 is --t-tiny at the middle tier - so they read as on-scale
+   and behaved as off-scale, holding still while every other piece of chrome
+   stepped with the axis. Sorted on-scale by the visual audit's item 2. */
 #tour .tour-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: var(--t-small);
   color: var(--ink);
 }
 #tour .tour-count {
-  font-size: 11px;
+  font-size: var(--t-tiny);
   color: var(--ink-3);
   font-variant-numeric: tabular-nums;
 }

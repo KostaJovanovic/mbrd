@@ -390,6 +390,72 @@ an older reader drops the unknown key rather than carrying it through — the sa
 caveat `connections` carries about round-tripping through a build that predates
 the field.
 
+### `versions`
+
+What this board looked like before. A list of stored copies, newest first:
+
+```json
+"versions": [
+  { "id": "v7k2m", "at": 1755180000000, "label": "Before the redesign",
+    "kept": true, "data": { "…": "a whole board.json" } }
+]
+```
+
+Undo lives in memory and dies at the refresh, so until this existed the only
+recovery from an hour of making a board worse was to have thought to save a copy
+first. `data` is a complete `board.json` document — the same shape as the file
+that contains it, one level in.
+
+**This costs no photographs, and that is the whole reason it is affordable.**
+Assets are stored once under `assets/<hash>` and referenced by id, and
+`board.json` is small. Twenty versions of a 40 MB board are twenty copies of a
+text file, not twenty copies of the pictures.
+
+**What it costs instead is the meaning of the word "unreferenced", and that is a
+correctness problem rather than a size one.** The packer writes only hashes
+something still points at, and the browser's own housekeeping sweep deletes
+whatever nothing claims. There are now **three** classes of reference, not two:
+
+1. an item on the live board,
+2. an item in the bin,
+3. **an item inside a stored version.**
+
+A version names cards the board no longer has — that is the entire point of one
+— so an asset only a version wants is *live*. Miss the third class and nothing
+loses a version: it leaves the version standing with holes where its photographs
+were, discovered on the day somebody restores it and having reported every save
+as a success. Anything added later that computes "what is still used" has to
+count versions, and there are three such places today: `packBoard`, the autosave
+sweep, and the inventory sheet.
+
+`data` never contains a `versions` key of its own. A version of a board that
+already had versions would nest — the second carrying a copy of the first, the
+third a copy of both — and a board left open would grow its own history
+exponentially inside itself.
+
+What is held to, on the way in and out:
+
+- **`id`** is required and unique; an entry without one, or without `data`, is
+  dropped rather than kept as a row that cannot be restored.
+- **`at`** is epoch milliseconds. Non-numeric becomes `0`, and the list is
+  sorted newest first on the way in rather than trusted — a hand-edited file
+  cannot make the ring evict the wrong end.
+- **`label`** is whitespace-collapsed and capped at 60 characters. Its presence
+  is not what makes a version kept; `kept` is.
+- **`kept: true`** marks a version somebody named. Kept versions never evict and
+  are capped at 32. Unnamed ones ride a ring of 8 and the oldest falls off.
+  The two are trimmed **separately**, which is the point of having two kinds: a
+  ring that dropped a named version to make room for an automatic one would be
+  answering neither of the questions the pair exists to answer — *what did I
+  just break*, and *the version I showed the client*.
+- **`data` is not validated on the way in**, deliberately. It is a document that
+  will be read back through the ordinary board reader when somebody restores it,
+  and validating it here would mean the reader had to know the whole schema of a
+  board from inside the function that *is* that reader.
+
+Additive with an empty default (`[]`), so it needs no version bump — see the
+compatibility note below, which this field is the reason for.
+
 ### Fences
 
 A **fence** is an item of `type: "fence"` — a labelled rectangle, with the cards
@@ -610,6 +676,35 @@ For anyone changing this format later:
 - **Removing a fallback is the dangerous change.** The two "sidecar outranks
   `board.json`, `board.json` still works" rules are what let an old board open
   in a new mbrd. Deleting either half silently breaks files that already exist.
+
+### An older build opening a newer file loses what it does not know
+
+Stated on its own because `versions` is the first field where it costs something
+a person would miss, and because the obvious protection turns out not to exist.
+
+The reader builds an explicit board object field by field, so a key it has never
+heard of is **dropped on load** — and then absent from the next file that build
+writes. A board with six months of history, opened once in an older mbrd and
+saved, comes back with none.
+
+The tempting answer is to move `version` in `manifest.json` so an old build
+declines the file instead of flattening it. **That does not work, and the reason
+is worth writing down rather than rediscovering.** Older builds do not decline a
+newer file: the check is `if (Number(manifest.version) > FORMAT_VERSION)
+console.warn(…)` and the load continues. Bumping the number changes a console
+message and nothing else. There is no build in the wild that would refuse, so
+there is nothing to protect with, and bumping would only cost every existing
+reader a warning about a file it can open perfectly well.
+
+**So the decision is: history is losable by an older build, and it is written
+down here rather than defended in code.** The blast radius is bounded by what a
+version actually is — a convenience copy of something you still have in front of
+you — and the alternative buys nothing at all.
+
+The one thing this *does* impose is on any future field: if something is ever
+added that a person would rather lose the whole file than silently lose, the
+protection has to be a real one (a `format` change, which older readers do
+refuse), not a `version` bump.
 
 ---
 

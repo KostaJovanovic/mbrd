@@ -180,6 +180,13 @@
   background: transparent;
   color: var(--ink-2);
   font: inherit;
+  /* A glyph sized to its own button rather than to the type scale, and off it on
+     purpose: this is a character standing in for an icon in a 36px box, so it is
+     drawn against the box the way an icon would be. --t-* steps would make it
+     wander inside a control whose size does not move with them. The same holds
+     for the select beside it, for the library's two round buttons and for the
+     sidebar's icon button. (Sorted deliberately-off-scale by
+     research/old/visual-audit-2026-08-12.md item 2.) */
   font-size: 19px;
   line-height: 36px;
   cursor: pointer;
@@ -234,6 +241,8 @@
   background: color-mix(in srgb, var(--ink) 6%, transparent);
   color: var(--ink);
   font: inherit;
+  /* The same 36px box as the buttons beside it, and sized to it for the same
+     reason - see the note above. */
   font-size: 18px;
   padding: 0 8px;
   cursor: pointer;

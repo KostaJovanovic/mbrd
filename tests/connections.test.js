@@ -20,7 +20,7 @@ import {
   updateConnection, connectionMeta,
 } from '../web/assets/js/state.ts';
 import { createCommands } from '../web/assets/js/commands.ts';
-import { fresh, note, photo } from './state-fixtures.js';
+import { fresh, note, photo, sticker } from './state-fixtures.js';
 
 beforeEach(() => {
   setBoardMode('desktop');
@@ -177,6 +177,38 @@ test('a hint card can never carry one into a file', () => {
   // loadBoard drops incoming ghosts outright, so the pair is pruned on the way
   // in as well; assert the way out, which is the boundary that matters.
   assert.deepEqual(serializeBoard().connections, []);
+});
+
+test('a sticker cannot be an end, on the way in or the way out', () => {
+  // The tap path used to write these and nothing ever drew them: centres() in
+  // canvas/web.js filters its ends through isJoinEnd(), so a pair naming a
+  // sticker is skipped every frame, in silence, and survives a save. Boards
+  // written before the tool checked can already carry one, which is why both
+  // boundaries prune rather than just the tool.
+  loadBoard({
+    title: 'T',
+    items: [photo({ id: 'p' }), sticker({ id: 's' }), photo({ id: 'q' })],
+    connections: [['p', 's'], ['p', 'q']],
+  });
+  assert.equal(areConnected('p', 's'), false, 'dropped on the way in');
+  assert.equal(areConnected('p', 'q'), true, 'and the real pair is untouched');
+  // The way out as well, for a pair that got into the live board some other way.
+  board.connections.push(['p', 's']);
+  assert.deepEqual(serializeBoard().connections, [['p', 'q']]);
+});
+
+test('a stuck note keeps its lines', () => {
+  // The trap in the fix above. The draw path refuses riders too, but a rider is
+  // a note that happens to be stuck to something *right now* - unstick it and
+  // the line is drawable again. Pruning on that would delete real connections
+  // the first time somebody opened a board with a stuck note on it, so the
+  // prune is isJoinEnd() alone, which is a property of the type and permanent.
+  const [host] = addItems([photo({ id: 'h' })]);
+  const [n] = addItems([note({ id: 'n', x: host.x, y: host.y })]);
+  toggleConnection(n.id, host.id);
+  const written = JSON.parse(JSON.stringify(serializeBoard()));
+  loadBoard(written);
+  assert.equal(areConnected('n', 'h'), true);
 });
 
 // ---------------------------------------------------------------------------

@@ -44,19 +44,21 @@
 //
 // Nothing here imports state.js - see tests/layers.test.js, where this is BASE.
 
-import { clamp, isFamily, isHash, isRecord } from './util.ts';
+import { clamp, isFamily, isHash, isRecord, itemHashes } from './util.ts';
 // The board's link to real-world sizes, and the sheet catalogue. A scale and a
 // paper id arriving from a file both have to be held to what the app can draw.
 import { clampScale, PAPERS } from './measure.ts';
 import { splitAppearance } from './layout-settings.ts';
 import {
-  board, makeItem, dedupeIds, cleanBoardTitle, cloneSettings, layoutSettingsOf,
+  board, makeItem, dedupeIds, cleanBoardTitle, cloneSettings, layoutSettingsOf, isJoinEnd,
   settingsFor, MAX_ITEMS, TRASH_LIMIT, MOBILE_COLUMNS, MOBILE_APPEARANCE_VARS,
   DEFAULT_SETTINGS, DEFAULT_MOBILE_HEADER, mobileColumnCount,
   normalizeConnections, normalizeAudioOrder, normalizeTour,
+  VERSION_RING, VERSION_KEPT_MAX, VERSION_LABEL_MAX,
 } from './board-model.ts';
 import type {
-  Board, BoardSettings, FontAxis, FontSpec, Geometry, Item, LayoutMode, MobileHeader,
+  Board, BoardSettings, BoardVersion, FontAxis, FontSpec, Geometry, Item,
+  LayoutMode, MobileHeader,
 } from './board-model.ts';
 import type { Look } from './layout-settings.ts';
 // Geometry profiles. The reader has to fill in the layout a file does not carry
@@ -114,6 +116,30 @@ export function normalizeBoard(data: unknown): Omit<Board, 'settings' | 'arrange
   // normalizeLayout()/completeLayout() below overwrite the geometry anyway. What
   // it must never become is load-bearing.
   const normalizedItems = dedupeIds(items.map(makeItem), ids);
+  // Hoisted out of the literal below, where it used to be built inline, because
+  // two properties need it now: `trash` itself and the connection prune, which
+  // has to know what kind of item each binned id names. The order is the load-
+  // bearing part and is unchanged - the live board fills `ids` first, the bin
+  // second, so a binned item colliding with a live one is still the one that
+  // gets renamed.
+  const trashItems = dedupeIds(trash.map(t => makeItem(t.item as Record<string, unknown>)), ids);
+  // The ids a connection may name, which is narrower than `ids` and narrower
+  // for a reason the id union cannot express: a line to a sticker or a ghost is
+  // one nothing will ever draw. centres() in canvas/web.js filters the ends it
+  // places through isJoinEnd(), so such a pair is skipped every frame, forever,
+  // in silence - and boards written before the tool checked can already carry
+  // them. Pruning here is the only place that gets them out of the file.
+  //
+  // isJoinEnd() and *not* isRider(), though the draw path refuses both. A rider
+  // is a note that happens to be stuck to something at the moment; unstick it
+  // and its lines are drawable again, so pruning riders here would delete real
+  // connections the first time a board with a stuck note was opened. What this
+  // set holds is the ends that can never become valid, which is a property of
+  // the item's type and cannot change.
+  const joinEnds = new Set<string>();
+  for (const it of [...normalizedItems, ...trashItems]) {
+    if (isJoinEnd(it)) joinEnds.add(it.id);
+  }
   const rawLayouts: Record<string, unknown> = isRecord(src.layouts) ? src.layouts : {};
   const desktopRecord = layoutRecord(rawLayouts.desktop);
   const mobileRecord = layoutRecord(rawLayouts.mobile);
@@ -163,14 +189,14 @@ export function normalizeBoard(data: unknown): Omit<Board, 'settings' | 'arrange
     items: normalizedItems,
     // The cast is the filter above written down: every entry kept has an object
     // under `item`, which is what makeItem() takes.
-    trash: dedupeIds(trash.map(t => makeItem(t.item as Record<string, unknown>)), ids)
-      .map((item, i) => ({ item, at: Number(trash[i].at) || 0 })),
-    // Against `ids`, which dedupeIds() has by now filled with every id on the
-    // board *and* every id in the bin - and filled with the ids as they ended
-    // up, so a pair naming a duplicate that was renamed on the way in is pruned
-    // rather than pointing at whichever card won the collision. A connection to
-    // a binned card is kept: restoring it has to bring its lines back with it.
-    connections: normalizeConnections(src.connections, ids),
+    trash: trashItems.map((item, i) => ({ item, at: Number(trash[i].at) || 0 })),
+    // Against `joinEnds`, built above from the board *and* the bin - and from
+    // the ids as they ended up, so a pair naming a duplicate that was renamed on
+    // the way in is pruned rather than pointing at whichever card won the
+    // collision. A connection to a binned card is kept: restoring it has to
+    // bring its lines back with it. What is dropped on top of that is a pair
+    // naming something no line can ever reach; see the note on `joinEnds`.
+    connections: normalizeConnections(src.connections, joinEnds),
     // Held to the same id union as connections - the board's cards and the bin's -
     // so a saved order that names a since-thrown-away track survives to be restored
     // with it. The Playlist filters this to the audio it actually has.
@@ -179,7 +205,55 @@ export function normalizeBoard(data: unknown): Omit<Board, 'settings' | 'arrange
     // stop whose card is in the bin has to come back when the card does, or
     // deleting one card would silently renumber somebody's tour.
     tour: normalizeTour(src.tour, ids),
+    // Not held to `ids` at all, and that is the difference from every line
+    // above it. A version is a document, not a relation between cards on *this*
+    // board - the whole point of one is that it names cards this board no
+    // longer has. Pruning it against the live id set would empty every version
+    // the moment it became useful.
+    versions: normalizeVersions(src.versions),
   };
+}
+
+/**
+ * The stored versions, out of whatever arrived.
+ *
+ * Total like the rest of this file, and stricter than it looks: `data` is kept
+ * as it came, because it is a document that will be read back through
+ * normalizeBoard() when somebody restores it - validating it twice would mean
+ * this function had to know the whole schema of a board, which is the function
+ * it is inside.
+ *
+ * The two caps are separate on purpose. Automatic versions ride a shallow ring
+ * and evict; named ones do not, so a file cannot arrive claiming ten thousand
+ * of either. Ordering is newest first and is imposed here rather than trusted,
+ * so a hand-edited file cannot make the ring evict the wrong end.
+ */
+function normalizeVersions(raw: unknown): BoardVersion[] {
+  if (!Array.isArray(raw)) return [];
+  const out: BoardVersion[] = [];
+  const seen = new Set<string>();
+  for (const entry of raw) {
+    if (!isRecord(entry)) continue;
+    // No data, no version. An entry that lost its document in some earlier
+    // round-trip is a row in the list that cannot be restored, which is worse
+    // than not offering it.
+    if (entry.data == null) continue;
+    const id = typeof entry.id === 'string' && entry.id ? entry.id : '';
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push({
+      id,
+      at: Number.isFinite(Number(entry.at)) ? Number(entry.at) : 0,
+      label: typeof entry.label === 'string'
+        ? entry.label.replace(/\s+/g, ' ').trim().slice(0, VERSION_LABEL_MAX) : '',
+      kept: entry.kept === true,
+      data: entry.data,
+    });
+  }
+  out.sort((a, b) => b.at - a.at);
+  const kept = out.filter(v => v.kept).slice(0, VERSION_KEPT_MAX);
+  const auto = out.filter(v => !v.kept).slice(0, VERSION_RING);
+  return [...kept, ...auto].sort((a, b) => b.at - a.at);
 }
 
 function layoutRecord(raw: unknown): { items: unknown[], settings: unknown, arrangement: string } {
@@ -399,6 +473,16 @@ export function serializeBoard() {
   // Every id this file will carry: the real items and the bin's. What
   // connections are pruned against - see the note beside them below.
   const filed = new Set([...real.map(i => i.id), ...board.trash.map(t => t.item.id)]);
+  // The same union narrowed to what a line may reach, for connections alone.
+  // Ghosts are already out of `filed` - they never reach a file at all - so what
+  // this actually removes is stickers, which the draw path has always refused
+  // and the tap path used to allow. Separate from `filed` rather than a
+  // narrowing of it because the tour may legitimately stop on a sticker: three
+  // relations, two id unions, and collapsing them would quietly delete somebody's
+  // tour stop to fix a connection bug.
+  const joinFiled = new Set(
+    [...real, ...board.trash.map(t => t.item)].filter(isJoinEnd).map(i => i.id),
+  );
   const desktopSettings = settingsFor(board.layoutSettings.desktop, board.sharedAppearance);
   const desktopById = layoutMap(desktop);
   const itemIn = (item: Item, geometry: Geometry | undefined) => {
@@ -471,7 +555,7 @@ export function serializeBoard() {
     //
     // This is the only place dangling pairs are collected. While the app is
     // running they are simply not drawn - see the note over toggleConnection().
-    connections: normalizeConnections(board.connections, filed),
+    connections: normalizeConnections(board.connections, joinFiled),
     // The Playlist's order, pruned to the same union the connections are. An
     // empty one is written as [] rather than dropped, so a board that had its
     // playlist arranged and then cleared does not silently re-sort on reload.
@@ -480,7 +564,51 @@ export function serializeBoard() {
     // above it: a board whose tour was built and then cleared must not come
     // back carrying the old one from a file that simply omitted the key.
     tour: normalizeTour(board.tour, filed),
+    // Written through as they are, and *not* pruned against `filed`. Every
+    // other relation above names cards on this board; a version names cards
+    // this board may no longer have, which is the whole of what it is for.
+    //
+    // Held to the caps here as well as on the way in, because a board can grow
+    // versions while it is open and this is the last door before a file.
+    versions: [
+      ...board.versions.filter(v => v.kept).slice(0, VERSION_KEPT_MAX),
+      ...board.versions.filter(v => !v.kept).slice(0, VERSION_RING),
+    ].sort((a, b) => b.at - a.at),
   };
+}
+
+/**
+ * Every asset id the stored versions point at.
+ *
+ * **The single most important function in this feature, and the one that makes
+ * it a correctness problem rather than a size one.** packBoard() writes only
+ * hashes something references and the autosave sweep deletes whatever nothing
+ * claims; both had exactly two classes of reference - the live board and the
+ * bin - and a version is a third. Miss it and restoring a version shows holes
+ * where the photographs were, having been told the save succeeded.
+ *
+ * Read out of the stored *document* rather than out of a live board, which is
+ * why this is here and not in board-model.ts: a version's `data` is
+ * board.json's shape, so the items are wherever that file puts them, and the
+ * bin inside a version counts too - a version restored has to bring its own
+ * bin back with its own lines.
+ */
+export function versionHashes(versions: BoardVersion[]): Set<string> {
+  const out = new Set<string>();
+  for (const version of versions) {
+    const data = version.data;
+    if (!isRecord(data)) continue;
+    const lists = [data.items, ...(Array.isArray(data.trash) ? [data.trash.map(
+      (t: unknown) => (isRecord(t) ? t.item : null))] : [])];
+    for (const list of lists) {
+      if (!Array.isArray(list)) continue;
+      for (const item of list) {
+        if (!isRecord(item)) continue;
+        for (const hash of itemHashes(item)) out.add(hash);
+      }
+    }
+  }
+  return out;
 }
 
 const serializeItem = (i: Item) => ({

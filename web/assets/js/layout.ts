@@ -393,6 +393,46 @@ export function baseStep() {
 
 const GEOM_KEYS = ['x', 'y', 'w', 'h', 'rot', 'z'] as const;
 
+/**
+ * The middle of all three geometry writers: fit the patched item to the live
+ * board mode, then copy the keys that were asked for back onto it.
+ *
+ * Three loops in this file wrote geometry - writeLayout(), applyGeom() and
+ * writeSnapState() - and all three had these two lines in the middle of them.
+ * They differ in three ways that are all real and none of which is this: where
+ * the patches come from, which keys they carry, and what each does about
+ * presnap. So what is shared is the fit and the copy, and the loops keep their
+ * own shapes rather than being folded into one function with three flags.
+ *
+ * fitBoardMode() is the load-bearing half. A patch is applied to a *copy* first
+ * and the copy is what gets fitted, so an out-of-range value never lands on the
+ * item even briefly - and on Mobile the fit is what holds a card to the column.
+ */
+function fitOnto(it: Item, patch: object, keys: readonly GeomKey[]): void {
+  const next = fitBoardMode({ ...it, ...patch }) as Item;
+  for (const key of keys) it[key] = next[key];
+}
+
+/**
+ * The keys either list may name. Both are numbers, which is what lets one
+ * assignment above serve both: widened to `keyof Item` the copy would be an
+ * assignment between two unrelated union types and the checker would refuse it,
+ * correctly - `it.meta = next.meta` is not a geometry write.
+ */
+type GeomKey = 'x' | 'y' | 'w' | 'h' | 'rot' | 'z';
+
+/**
+ * The presnap memo, written or forgotten. The other line all three shared.
+ *
+ * Copied rather than referenced: the memo comes off a snapshot that the history
+ * stack is still holding, and an item pointing into it would let a later nudge
+ * edit the undo entry that undoes it.
+ */
+function writePresnap(it: Item, presnap: Presnap | null | undefined): void {
+  if (presnap) it.meta = { ...it.meta, presnap: { ...presnap } };
+  else forgetPresnap(it);
+}
+
 /** The fixed width of the Mobile board in world units. */
 export function mobileBoardWidth(
   step = baseStep(),
@@ -805,12 +845,13 @@ export function writeLayout(layout: Geometry[]) {
   for (const it of board.items) {
     const saved = map.get(it.id);
     if (!saved) continue;
-    const next = fitBoardMode({ ...it, ...saved });
-    for (const key of GEOM_KEYS) it[key] = next[key];
-    if (saved.presnap) it.meta = { ...it.meta, presnap: { ...saved.presnap } };
-    else forgetPresnap(it);
+    fitOnto(it, saved, GEOM_KEYS);
+    writePresnap(it, saved.presnap);
     ids.push(it.id);
   }
+  // Walked over board.items rather than over the layout, so an id in the file
+  // that is on no card is skipped rather than looked up and dropped - and the
+  // event carries the ids in board order.
   if (ids.length) bus.emit('geom', ids);
 }
 
@@ -906,16 +947,18 @@ export function applyGeom(snap: GeomPatch[]) {
   for (const g of snap) {
     const it = byId(g.id);
     if (!it) continue;
-    const next = fitBoardMode({ ...it, ...g });
-    for (const k of GEOM_KEYS) it[k] = next[k];
-    if ('presnap' in g) {
-      const presnap = usableMemo(g.presnap);
-      if (presnap) it.meta = { ...it.meta, presnap: { ...presnap } };
-      else forgetPresnap(it);
-    }
+    fitOnto(it, g, GEOM_KEYS);
+    // `in` rather than truthiness, and that is the difference from the other
+    // two: a patch that says nothing about presnap must leave it alone, where a
+    // patch carrying an explicit null is asking for it to be forgotten.
+    if ('presnap' in g) writePresnap(it, usableMemo(g.presnap));
     if ('loose' in g) writeLoose(it, !!g.loose);
     ids.push(g.id);
   }
+  // Unguarded, unlike the other two. This is the live path - a drag frame - and
+  // its callers rely on the frame being announced even when every id in the
+  // patch has since been deleted, so the view stops drawing what is no longer
+  // there.
   bus.emit('geom', ids);
 }
 
@@ -1215,10 +1258,13 @@ function writeSnapState(list: SnapState[]) {
   for (const g of list) {
     const it = byId(g.id);
     if (!it) continue;
-    const next = fitBoardMode({ ...it, ...g });
-    for (const k of SNAP_KEYS) it[k] = next[k];
-    if (g.pre) it.meta = { ...it.meta, presnap: g.pre };
-    else forgetPresnap(it);
+    // SNAP_KEYS, not GEOM_KEYS: snapping moves and resizes and must not touch
+    // rotation or z, which is the whole reason there are two lists.
+    fitOnto(it, g, SNAP_KEYS);
+    // `pre` is unknown on SnapState because it arrives from a caller that took
+    // it off an item's meta; usableMemo() is the same check applyGeom() runs and
+    // is what turns it back into a memo or into nothing.
+    writePresnap(it, usableMemo(g.pre));
     ids.push(g.id);
   }
   if (ids.length) bus.emit('geom', ids);

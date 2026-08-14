@@ -54,6 +54,9 @@
   height: 30px;
   border: 0;
   background: none;
+  /* A glyph in a fixed 30px box - sized to the box, not to the type scale. See
+     the note on the note toolbar's buttons in cards.css, which is the same case
+     and carries the argument. */
   font-size: 22px;
   line-height: 1;
   color: var(--ink-3);
@@ -113,6 +116,7 @@
   border-radius: 50%;
   background: color-mix(in oklab, var(--paper) 82%, transparent);
   color: var(--ink-2);
+  /* A glyph in a fixed 24px round box - see .library-close above. */
   font-size: 16px;
   line-height: 1;
   cursor: pointer;

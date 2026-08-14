@@ -400,6 +400,12 @@
 }
 .card-icon {
   font-family: var(--font-display);
+  /* Off the type scale on purpose, and 11 happening to equal --t-tiny at the
+     middle tier is a coincidence rather than a reason. This is world-space type
+     on a card that zooms; --t-* is chrome type at a fixed screen size, and the
+     two only agree at one zoom level. See the block at the head of ghosts.css,
+     which states the rule for the whole world-space set. (Sorted
+     deliberately-off-scale by research/old/visual-audit-2026-08-12.md item 2.) */
   font-size: 11px;
   font-style: var(--display-italic);
   letter-spacing: calc(0.16em * var(--ls-scale));
@@ -512,3 +518,36 @@
    filter is: you reached past the fade and picked this one up, and it has to be
    legible while you move it. */
 .item.is-filtered.is-selected { opacity: 0.75; }
+
+/* ── A cut-out: the picture without the card ──────────────────────────────
+
+   A logo, a leaf, an arrow saved with a transparent background was cut out so
+   it would sit *on* the board rather than in a box. The box was being drawn
+   round its bounding rectangle, which for a cut-out is mostly empty - a frame
+   round nothing, with a picture somewhere inside it.
+
+   Nothing new is drawn here. A sticker has had no card since stickers existed;
+   this is an image saying it is that kind of thing. state.ts writes meta.bare,
+   canvas/item-dom.ts puts the attribute on, and canvas/items.ts leaves the
+   shadow twin out of #item-shadows for the same reason it leaves a sticker's
+   out - the twin is a rounded rectangle at the item box, and there is no
+   rectangle here.
+
+   **The paint goes, the box stays.** Nothing below touches layout. Hit-testing,
+   the marquee, the selection ring and the eight resize grips all measure this
+   element's rectangle, and a picture you could not select or resize would be a
+   worse bug than the one this fixes. */
+.item[data-bare] {
+  background: transparent;
+}
+/* The hover ring goes with it. On a card the ring traces an edge that is
+   actually there; on a cut-out it would draw the empty rectangle back the
+   moment the pointer arrived, which is the whole fault returning on hover. The
+   selection ring is deliberately *not* here: that one is the app answering a
+   click, and an item you have selected has to show you what you have got. */
+.item[data-bare]:hover { box-shadow: none; }
+/* And the far-zoom edge, which is item-chrome.css's ::after - the rule that
+   gives every card an outline once its body is down. Same argument as the
+   hover ring, and it has to be said here as well because that rule keys off
+   #world.zoom-far and would otherwise outweigh anything less specific. */
+#world.zoom-far .item[data-bare]::after { box-shadow: none; }

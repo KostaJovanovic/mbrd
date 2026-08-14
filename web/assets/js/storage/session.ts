@@ -75,7 +75,7 @@ export function initSession(deps: SessionDeps) {
  * two different things - the board serializeBoard() just produced, and the one
  * that came back out of IndexedDB, which is `unknown` until it is looked at.
  */
-type BoardLike = { items?: unknown, trash?: unknown, settings?: unknown };
+type BoardLike = { items?: unknown, trash?: unknown, settings?: unknown, versions?: unknown };
 
 /** The list at a key, or none. What `data.items || []` said before it had a type. */
 const listOf = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
@@ -189,6 +189,20 @@ function referencedHashes(data: BoardLike) {
   };
   for (const it of listOf(data.items)) add(it);
   for (const t of listOf(data.trash)) add(isRecord(t) ? t.item : null);
+  // And the stored versions, which are the third class of reference and the one
+  // that arrived last. A version names cards this board no longer has - that is
+  // the whole of what it is for - so an asset only a version points at is
+  // *live*, and this sweep deletes whatever nothing claims. Missing it here
+  // would not lose a version: it would leave the version standing with holes
+  // where its photographs used to be, discovered the day somebody restored one.
+  //
+  // Walked out of the stored document rather than out of a live board, the same
+  // way everything else in this function is - see versionHashes().
+  for (const v of listOf(data.versions)) {
+    if (!isRecord(v) || !isRecord(v.data)) continue;
+    for (const it of listOf(v.data.items)) add(it);
+    for (const t of listOf(v.data.trash)) add(isRecord(t) ? t.item : null);
+  }
   // The files the optimiser replaced. Not in itemHashes() on purpose - that one
   // drives the *packer*, and an export is the artifact the optimising was for,
   // so it carries the small copies alone. Here they are held, because this drives

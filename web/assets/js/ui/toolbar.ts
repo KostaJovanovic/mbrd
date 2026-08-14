@@ -26,7 +26,8 @@
 // go one way.
 
 import { el } from '../util.ts';
-import { bus, toggleConnection } from '../state.ts';
+import { board, bus, isJoinEnd, toggleConnection } from '../state.ts';
+import { toast } from '../notify.ts';
 import { setConnectPick } from '../canvas/items.ts';
 // The line that follows the pointer out of the picked card. Written from the
 // same place as the ring, because they are one state: a pick with no draft is
@@ -136,20 +137,41 @@ let pick: string | null = null;
  *                                   is not a connection, and pressing the card
  *                                   you just picked is how you change your mind
  *   anything, empty canvas          clear the pick
+ *   anything, a card no line can    refuse it, and *keep the pick*
+ *   reach
  *
  * What it never does is disarm. Staying armed after a pair is what makes
  * connecting five things one trip to the toolbar, and clicking empty canvas is
  * "not that one" rather than "stop" - Escape and the button are the two ways to
  * stop, and both of them are unmistakable.
+ *
+ * `joinable` is the fifth case and the reason this function grew a parameter
+ * rather than an import. It stays pure: the caller answers "may this id be an
+ * end", because the answer needs the board and this file is four lines of
+ * arithmetic that a test can drive with strings. Passing it *false* is not the
+ * same as passing empty canvas, and the difference is the whole point - empty
+ * canvas is "not that one" and clears the pick, while a sticker is a slip of the
+ * hand and must cost nothing. Losing a standing pick to a mis-tap means pointing
+ * at the first card again.
+ *
+ * `refused` is separate from the pick because the caller has to say something.
+ * Silence here is what the defect was: the pair went into the board, saved,
+ * survived a reload, and was never drawn, and the only way to find out was to
+ * read the file.
  */
 export function connectStep(
   from: string | null,
   id: string | null,
-): { pick: string | null; connect: [string, string] | null } {
-  if (!id) return { pick: null, connect: null };
-  if (!from) return { pick: id, connect: null };
-  if (from === id) return { pick: null, connect: null };
-  return { pick: null, connect: [from, id] };
+  joinable = true,
+): { pick: string | null; connect: [string, string] | null; refused: boolean } {
+  if (!id) return { pick: null, connect: null, refused: false };
+  // Before every other case, including `from === id`: a sticker you picked by
+  // mistake cannot have been picked in the first place, so there is no
+  // "pressing it again to change your mind" to honour.
+  if (!joinable) return { pick: from, connect: null, refused: true };
+  if (!from) return { pick: id, connect: null, refused: false };
+  if (from === id) return { pick: null, connect: null, refused: false };
+  return { pick: null, connect: [from, id], refused: false };
 }
 
 /**
@@ -190,8 +212,31 @@ function setPick(id: string | null): void {
  */
 export function connectTap(id: string | null): boolean {
   if (!armed) return false;
-  const next = connectStep(pick, id);
+  const next = connectStep(pick, id, !id || canJoin(id));
   setPick(next.pick);
+  if (next.refused) toast('A sticker is already a remark about the card under it');
   if (next.connect) toggleConnection(next.connect[0], next.connect[1]);
+  // True even when the tap was refused, and deliberately: the press was the
+  // connector's, it has been answered, and falling through into selection would
+  // put the sticker in the selection as a consolation prize for a gesture that
+  // was about something else.
   return true;
+}
+
+/**
+ * May a line reach this id?
+ *
+ * The same question the draw path asks, asked one gesture earlier. `centres()`
+ * in canvas/web.js filters the ends it places through isJoinEnd(), so a pair
+ * naming anything else is skipped every frame - which is invisible, permanent,
+ * and survives a save. The selection door already asked it (`joinable` in
+ * commands/connections.js); this is the tap door catching up.
+ *
+ * isRider() is deliberately *not* part of it, though the draw path refuses that
+ * too. A rider is a note stuck to something right now; unstick it and the line
+ * appears. Refusing here would turn a temporary display rule into a permanent
+ * refusal, which is a bigger loss than the bug.
+ */
+function canJoin(id: string): boolean {
+  return isJoinEnd(board.items.find(i => i.id === id));
 }

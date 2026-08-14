@@ -101,7 +101,22 @@
 /* Both weights are the ones an ordinary card uses - the title reads like
    .card-name, the line like secondary text. No transparency anywhere: a hint is
    meant to be read, and the dashed edge is already carrying the whole "this is
-   not yours and is not staying" message on its own. */
+   not yours and is not staying" message on its own.
+
+   ── Every font-size in this file is off the type scale on purpose ──
+
+   Sorted deliberately-off-scale by research/old/visual-audit-2026-08-12.md item
+   2, and stated once here rather than eight times below. A ghost is a card: it
+   lives in world space and zooms with the board, while every --t-* step is
+   *chrome* type at a fixed screen size. Putting a token on any of these would
+   tie the size of something that scales to a scale that does not, and the two
+   would agree at exactly one zoom level.
+
+   That is the same argument the .ghost-hint-mark block further down makes at
+   length for its 64px glyph, and the same one items.css makes for .card-icon.
+   The rule it comes to: **world-space type is sized against the card it lives
+   in; --t-* is for chrome.** A number in this file is a decision about a card,
+   not a literal nobody looked at. */
 .ghost-title {
   font-family: var(--font-display);
   font-size: 15px;

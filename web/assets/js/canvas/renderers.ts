@@ -73,7 +73,7 @@ export type Size = { w: number; h: number };
  * two fallback paths return the placeholder and say nothing about it, which is
  * exactly what import/drop.js reads it for.
  */
-export type MeasuredSize = Size & { decodable: boolean; measured?: boolean };
+export type MeasuredSize = Size & { decodable: boolean; measured?: boolean; natural?: Size };
 
 const TEXT_EXT = new Set([
   'txt', 'md', 'markdown', 'rst', 'log', 'csv', 'tsv', 'json', 'xml', 'yml', 'yaml',
@@ -211,6 +211,15 @@ export function swatchHex(raw: unknown): string {
  * it would grow past its cell and sit on its neighbours. Measuring first makes
  * every layout exact. Falls back to the placeholder size if the media can't be
  * decoded - adoptAspect() then picks it up later, capped so it can't overflow.
+ *
+ * `natural` is the file's own pixel dimensions, carried alongside the world box
+ * rather than folded into it, because fitToBox() deliberately throws them away -
+ * it answers how much *board* an item takes, which is area-preserving and says
+ * nothing about how many pixels are in the file. One caller needs the pixels:
+ * makeThumb() can ask the decoder for a downscaled bitmap instead of a full one,
+ * and to know whether that is worth doing it has to know how big the picture
+ * actually is. Measuring it twice to find out would be the opposite of the
+ * point.
  */
 export async function measureSize(type: string, file: File): Promise<MeasuredSize> {
   const box = defaultSize(type);
@@ -225,7 +234,7 @@ export async function measureSize(type: string, file: File): Promise<MeasuredSiz
   if (type === 'image' && isSvgImage(file)) {
     const natural = await svgSize(file).catch(() => null);
     return natural
-      ? { ...fitToBox('image', natural.w, natural.h), measured: true, decodable: true }
+      ? { ...fitToBox('image', natural.w, natural.h), measured: true, decodable: true, natural }
       : { ...box, decodable: true };
   }
   try {
@@ -233,7 +242,7 @@ export async function measureSize(type: string, file: File): Promise<MeasuredSiz
     // An image the browser cannot decode (HEIC, JXL, camera RAW) is reported
     // so the importer can fall back to a named card instead of a broken <img>.
     if (!natural) return { ...box, decodable: false };
-    return { ...fitToBox(type, natural.w, natural.h), measured: true, decodable: true };
+    return { ...fitToBox(type, natural.w, natural.h), measured: true, decodable: true, natural };
   } catch {
     return { ...box, decodable: false };
   }

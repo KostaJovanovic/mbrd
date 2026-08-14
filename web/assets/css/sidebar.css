@@ -263,7 +263,12 @@
    two rules that would drift. */
 .wordmark :is(h1, h2) {
   margin: 0;
-  font-size: 30px;
+  /* --t-display, which at the middle tier is exactly the 30px this used to say.
+     It is the app's own name, so it is the one piece of type that most obviously
+     ought to move with the axis - and being written as the token's value meant
+     it was the one that did not. Sorted on-scale by the visual audit's item 2;
+     the ends now step to 28 and 25 with everything else. */
+  font-size: var(--t-display);
   /* The tier's own display weight, unshifted - 400 at the soft and plain ends,
      300 in the middle. Bolding a serif at 30px thickens the stems without
      making it any more of a title, so the wordmark has never asked for more
@@ -278,6 +283,12 @@
 .wordmark .sub {
   display: block;
   margin-top: 3px;
+  /* The sub-tiny caption register, one step below --t-tiny and off the scale on
+     purpose - see .ctx-item kbd in menu.css, which carries the argument for all
+     five members of it. Note this sits directly under a wordmark that *does*
+     follow the scale, which is the register doing its job: the name moves with
+     the axis and the line under it stays put, so the pair does not scale as one
+     lump. */
   font-size: 10px;
   font-style: var(--display-italic);
   letter-spacing: calc(0.22em * var(--ls-scale));
@@ -387,6 +398,12 @@
   border-radius: var(--radius-xs);
   background: none;
   font: inherit;
+  /* The board's name, typed into. Off the scale on purpose and *below* the
+     wordmark above it, which follows --t-display: this is a field somebody
+     edits, so it is sized to be comfortable to type in rather than to rank
+     against the heading. Sitting on a scale step would also make the caret jump
+     between tiers while a name was being typed. (Sorted deliberately-off-scale
+     by research/old/visual-audit-2026-08-12.md item 2.) */
   font-size: 18px;
   color: inherit;
   cursor: text;
@@ -882,6 +899,8 @@
 kbd {
   font-family: var(--font-mono);
   font-style: normal;
+  /* The sub-tiny caption register - the keyboard legend, and the same argument
+     as .ctx-item kbd in menu.css, which is the other half of this pair. */
   font-size: 10px;
   padding: 2px 6px;
   border: 1px solid var(--rule-2);
