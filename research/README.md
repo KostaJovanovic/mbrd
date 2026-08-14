@@ -98,8 +98,20 @@ all five in `old/` with the reasoning intact:
   it is the only item on the list that can change what every board looks like for
   everybody.
 
-That is the whole of this level, and the second file is the exception this rule
-asks for rather than a hole in it. **A second open document here is the thing to
+- `timeline-2026-08-14.md` — **the design for T1**, the editable timeline, which
+  is the largest thing ever asked of this app: every change becomes a step in the
+  board file, you can change one in the past and have the rest rebuild on top of
+  it, and it **replaces undo** rather than sitting beside it. Nothing is built.
+  It is a third file at this level under the same exception as the plan — the
+  register says what T1 is, this says how, and neither repeats the other. Two
+  things in it are worth knowing even if the feature is never started: the app is
+  unusually well suited to it in two specific ways (arrangements are already
+  deterministic, and assets are content-addressed so imports replay without
+  touching a disk), and the **reference union grows a fourth member**, which is
+  the part most likely to cause real data loss if a later change forgets it.
+
+That is the whole of this level, and the second and third files are the exception
+this rule asks for rather than a hole in it. **A second open document here is the thing to
 argue about, not to add quietly** — the point of one register is that it cannot
 disagree with itself, and that property is lost the moment there are two. The
 argument for the plan is that it *cannot* disagree with the register, because it
