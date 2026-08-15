@@ -1163,6 +1163,27 @@
       </div>
     </div>
   </div>
+  <!-- The two mirrors. Buttons rather than a third and fourth slider, because
+       neither is a quantity: a picture is turned or it is not, and the control
+       that says so is one that stays pressed. aria-pressed is written by
+       ui/darkroom.js from the same value the picture is drawn from, so the
+       button cannot claim one thing while the plate shows another.
+
+       The word and the sentence both, and deliberately: flip and flop are the
+       words asked for, they are each other's opposite in half the software that
+       has them, and the title is what settles which way this one turns. -->
+  <div id="darkroom-tools">
+    <button type="button" id="dk-flip-x" class="dk-tool" aria-pressed="false"
+            title="Mirror the picture left to right">
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-flip-h"/></svg>
+      Flip
+    </button>
+    <button type="button" id="dk-flip-y" class="dk-tool" aria-pressed="false"
+            title="Mirror the picture top to bottom">
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-flip-v"/></svg>
+      Flop
+    </button>
+  </div>
   <div id="darkroom-dials">
     <label class="dk-dial">
       <span>Brightness</span>

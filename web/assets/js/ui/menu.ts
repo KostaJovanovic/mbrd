@@ -707,6 +707,25 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
   // ask them rather than repeat the five tests.
   const editable_picture = pictureEdits.some(e => !e.hidden);
   return [
+    // Off its host and left exactly where it is. A stuck note is *pinned* - a
+    // drag on it moves the card underneath it instead - so this is the only way
+    // out that is not dropping it somewhere else, and the menu is the only place
+    // it can be. An open padlock rather than a pin, because the entry is the act
+    // of letting go and the badge on the card is already the pin.
+    //
+    // First, above even Open, and it earns that on the same argument the whole
+    // of this menu is now ordered by: a row is high because it is what the press
+    // was for. Only a rider can be unstuck, only a note or a sticker can be a
+    // rider (isSticky in sticky.ts is that list), and the reason somebody
+    // right-clicks a sticky lying on a photograph is nearly always that they
+    // want it off. It sat with the stacking pair on the reading that it is about
+    // how a card sits on the board, which is true and was the wrong thing to
+    // sort by - it put the answer four bands below the question.
+    //
+    // Absent on everything else, so this costs the other types no row at all:
+    // the band below is the first thing a photograph shows.
+    { label: many ? 'Unstick these' : 'Unstick', icon: 'i-lock-open',
+      hidden: !unstickable, action: () => cmds!.unstick() },
     // First of all, because on a wall of thumbnails it is the thing you most
     // often want and the one row that was not reachable any other way. Above
     // Edit text and not below it: a note is the one type where both apply, and
@@ -769,7 +788,8 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // positions of one dial and belong together wherever they live; this asks
     // whether the card exists at all, which is a question about the *item*, and
     // the fold's own note already says edits to the item stay in the main
-    // column.
+    // column. A sticky proves the point - it can be bare and has no picture
+    // fold to have been buried in.
     //
     // Inside, it also made the fold lie: Fit and No card are independent, so
     // both could read ticked at once in a list whose two other ticks are a radio
@@ -822,18 +842,7 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // The other mirrored pair: one card and one arrow, turned over.
     { label: 'Bring to front', icon: 'i-front', hidden: !stackable, action: () => cmds!.raise() },
     { label: 'Send to back', icon: 'i-back', hidden: !stackable, action: () => cmds!.lower() },
-    // Off its host and left exactly where it is. A stuck note is *pinned* - a
-    // drag on it moves the card underneath it instead - so this is the only way
-    // out that is not dropping it somewhere else, and the menu is the only place
-    // it can be. An open padlock rather than a pin, because the entry is the act
-    // of letting go and the badge on the card is already the pin.
-    //
-    // With the stacking pair for the reason the row below gives: it is about how
-    // a card sits on the board rather than about what the card is.
-    { label: many ? 'Unstick these' : 'Unstick', icon: 'i-lock-open',
-      hidden: !unstickable, action: () => cmds!.unstick() },
-    // Fix it where it is. Beside Unstick because the two are the same kind of
-    // sentence about how a card sits on the board, and one row rather than a
+    // Fix it where it is. One row rather than a
     // checked pair: the answer is Anchor until everything in the selection is
     // anchored, at which point it becomes Unanchor. A mixed selection therefore
     // offers Anchor and means it - see lockedCount() in commands/item-meta.ts.

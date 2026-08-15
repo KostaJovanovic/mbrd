@@ -24,7 +24,7 @@ import { itemRadius, rotatedExtents } from '../geometry.ts';
 import type { Bounds } from '../geometry.ts';
 import type { Item } from '../board-model.ts';
 import type { Viewport } from './viewport.ts';
-import { buildContent } from './renderers.ts';
+import { buildContent, paintStyleTileFaces } from './renderers.ts';
 import {
   buildItem, buildShadow, buildTitleControls, farKind, itemAccessibleName,
   resetTilt, restingTilt, setGrips, wantsHead, writeFit, writeAdjust,
@@ -265,6 +265,22 @@ export function initItems(world: HTMLElement, viewport: Viewport) {
       if (item && (item.type === 'image' || item.type === 'video')) writeFit(el, item);
     }
   });
+  // A style tile follows the look on its own everywhere it can - its swatches
+  // hold `var(--accent)` rather than a colour and re-resolve when the palette
+  // moves under them. The two face *names* are the exception, because they are
+  // text: nothing repaints a string. So they are rewritten here, on the two
+  // announcements that can change which face a token resolves to.
+  //
+  // No rebuild, for the same reason the fit above is not one: the card is
+  // correct apart from two lines of text, and tearing it down would drop the
+  // strip's decoded pictures to rewrite them.
+  const refreshTiles = () => {
+    for (const [id, el] of nodes) {
+      if (byId(id)?.type === 'style-tile') paintStyleTileFaces(el);
+    }
+  };
+  bus.on('settings', key => { if (key === 'appearance') refreshTiles(); });
+  bus.on('fonts', refreshTiles);
   // A layout-mode switch rewrites every item's geometry through writeLayout()
   // and announces it with 'layout' alone - no 'geom' per id, no 'items'. The old
   // whole-board scan read board.items fresh and never noticed; the index has to
@@ -958,6 +974,48 @@ function noTwin(item: Item): boolean {
   return NO_TWIN.has(item.type) || item.meta?.bare === true;
 }
 
+/**
+ * Bring an existing card's twin into line with what noTwin() now says.
+ *
+ * build() asks the question once, when the card is made, and for the four
+ * *types* on the list that is the only time it can change - nothing turns a
+ * sticker into a photograph. `meta.bare` is the fifth case and the one that
+ * moves: it is toggled from the menu on a card that has been on the board for
+ * as long as you like, arrives as an ordinary 'item' event, and rebuild() was
+ * patching the card and leaving the shadow layer exactly as it found it.
+ *
+ * So taking the card off left the rectangular twin lying under a thing with no
+ * rectangle - which is word for word the fault the flag exists to fix, and it
+ * shipped that way because a cut-out photograph mostly covers its own shadow.
+ * An emptied sticky does not cover anything, so what you get is a shadow with
+ * nothing casting it.
+ *
+ * Both directions. Putting the card back has to hand the shadow back with it,
+ * or "No card" would be a one-way door for everything but the paint.
+ *
+ * The tilt is read off the card rather than dealt again, and that is the whole
+ * reason this takes the node: tiltFactor() deals a fresh angle per call, so a
+ * recomputed one would stand the shadow at a different lean from the card it is
+ * under. See the note on build(), which deals it once for exactly this reason.
+ */
+function syncTwin(el: HTMLElement, item: Item) {
+  const had = shadows.get(item.id);
+  const wants = quality.shadows && !noTwin(item);
+  if (had && !wants) {
+    had.remove();
+    shadows.delete(item.id);
+    return;
+  }
+  if (had || !wants) return;
+  const twin = buildShadow(item, el.style.getPropertyValue('--item-tilt'));
+  placeBox(twin, item);
+  shadows.set(item.id, twin);
+  // Mounted here rather than left to the render pass that appends any twin it
+  // finds unconnected: that pass runs on the next frame, and a card whose
+  // shadow arrives a frame late is a card that flickers flat and then settles.
+  if (shadowLayerEl && !twin.isConnected) shadowLayerEl.append(twin);
+}
+
 /** Rebuild one item's content in place (note edits, renames). */
 function rebuild(id: string) {
   const el = nodes.get(id);
@@ -981,6 +1039,9 @@ function rebuild(id: string) {
   // the same reason: locking a card, or moving a brightness dial, arrives as an
   // 'item' event and lands here.
   writeAdjust(el, item);
+  // And the shadow twin, which is not on this element at all - see syncTwin(),
+  // and the reason a question build() asks once has to be asked again here.
+  syncTwin(el, item);
   // The bar is a sibling of the body, so replaceChildren above does not touch
   // it - only the caption inside it needs the new name. Patched rather than
   // rebuilt so the handle beside it keeps its identity, and with it any focus

@@ -332,6 +332,18 @@
    of two hundred cards is two hundred layers bought for nothing. */
 .item-body { filter: var(--item-filter, none); }
 
+/* The mirror, on the same element and for the same two reasons: the twin and the
+   poster turn with the picture, and one property carries a whole value.
+
+   Safe on .item-body specifically because of what that box is - `position:
+   absolute; inset: 0`, so it is exactly the card and mirroring it about its own
+   centre lands on the card again. A transform does make a containing block, and
+   there is nothing inside the body that positions against anything further out.
+
+   The caption and the menu handle are outside it: .item-bar is a sibling, which
+   is what stops a flipped photograph from captioning itself backwards. */
+.item-body { transform: var(--item-flip, none); }
+
 /* The zoomed-out stand-in. Two things arrive here by the same door: a frozen
    GIF frame shot by canvas/stills.js, and a photograph's hundred-pixel
    thumbnail made at import. Both are a sibling <img class="still">, and both
@@ -493,6 +505,91 @@
 .swatch-well::-webkit-color-swatch-wrapper { padding: 0; }
 .swatch-well::-webkit-color-swatch { border: 0; border-radius: inherit; }
 .swatch-well::-moz-color-swatch { border: 0; border-radius: inherit; }
+
+/* ── The style tile ─────────────────────────────────────────────────────────
+   The board's own look as a card: a strip of its pictures, a band of its
+   pigments, its two faces named in themselves. Built by the 'style-tile'
+   renderer in canvas/renderers.ts.
+
+   Three bands stacked, and the middle one is the only one with a fixed height.
+   The strip takes what is left because a picture is the part that benefits from
+   a bigger card, and the type block sizes to its own two lines.
+
+   Nothing here names a colour. The swatches are handed `var(--accent)` and so
+   on as the value of --chip by the renderer, which is what makes a tile follow
+   the palette being changed under it rather than freezing what it was made
+   with - so this sheet only has to say where the boxes go. */
+.style-tile-card {
+  gap: 10px;
+  align-items: stretch;
+}
+
+.style-tile-strip {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 5px;
+}
+
+/* Cover-cropped into equal boxes, the choice the printed tile made and for the
+   same reason: a style tile is about the register, and three photographs at
+   their own aspect ratios would be a contact sheet. */
+.style-tile-shot {
+  flex: 1;
+  min-width: 0;
+  border-radius: var(--radius-sm);
+  background-image: var(--shot);
+  background-size: cover;
+  background-position: center;
+  box-shadow: 0 0 0 var(--board-hairline) color-mix(in srgb, var(--ink) 10%, transparent);
+}
+
+/* One continuous band rather than separate chips with gaps between them. At a
+   card's width fourteen pigments are a few pixels each, and a gap at that size
+   is the paper showing through as a fifteenth colour. Butted together they read
+   as one palette, which is what they are. */
+.style-tile-band {
+  flex: none;
+  display: flex;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  box-shadow: 0 0 0 var(--board-hairline) color-mix(in srgb, var(--ink) 10%, transparent);
+}
+
+.style-tile-chip {
+  flex: 1;
+  min-width: 0;
+  background: var(--chip);
+}
+
+.style-tile-type {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+/* Each name set in the face it names - the whole reason for printing them
+   rather than listing them. --face carries `var(--font-display)` or
+   `var(--font-body)`, so this follows a face being changed the same way the
+   swatches follow a colour. Clipped rather than wrapped: a long family name is
+   the one thing on this card that could push the bands out of the box. */
+.style-tile-face {
+  font-family: var(--face);
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.style-tile-face:first-child {
+  font-size: var(--t-body);
+  color: var(--ink);
+}
+
+.style-tile-face:last-child { font-size: var(--t-small); }
 
 /* The number, set in the mono face and ranged centre under the colour. Mono
    because it is a value rather than a word - the same reason the coordinate

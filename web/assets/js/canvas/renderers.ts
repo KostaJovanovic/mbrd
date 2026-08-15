@@ -24,6 +24,8 @@ import { buildModelCard } from './model.ts';
 import { hintFor, hintKey, tapeStyle, bindDial, STOPS, DIAL } from './ghosts.ts';
 import { ensureDisplay, displayURLReady } from './display.ts';
 import { meshKind } from '../mesh.ts';
+import { PALETTE_TOKENS } from '../layout-settings.ts';
+import { faceName, pixelHash } from '../style-tile.ts';
 import { normalizeNoteRich, applyNoteStyle, buildNoteLine } from './note-model.ts';
 import type { NoteRichInput } from './note-model.ts';
 import {
@@ -167,6 +169,10 @@ export function defaultSize(type: string): Size {
     // next to it rather than like a card with a body. Two grid spaces square at
     // the default step, plus the row the hex is printed in.
     case 'swatch':  return { w: 128, h: 148 };
+    // Four grid spaces wide at the default step and a little over five tall.
+    // Portrait because it is three bands stacked - pictures, pigments, faces -
+    // and each of them wants the card's full width rather than a share of it.
+    case 'style-tile': return { w: 256, h: 328 };
     default:        return { w: 200, h: 112 };
   }
 }
@@ -181,6 +187,27 @@ export function defaultSize(type: string): Size {
  * rather than as a decision already made.
  */
 export const SWATCH_DEFAULT = '#8a8a8a';
+
+/**
+ * Write the two face names into a style tile, in the faces themselves.
+ *
+ * The one part of the card that cannot be a `var()` and so cannot follow the
+ * look on its own: the swatches are handed a reference to their token and
+ * re-resolve on every paint, but a *name* is text, and text has to be written.
+ *
+ * Exported because canvas/items.js calls it again when the look changes - see
+ * the settings listener there. Safe on a card that is not a tile and on a tile
+ * that is half built: it writes whatever `.style-tile-face` nodes it finds and
+ * does nothing where there are none.
+ */
+export function paintStyleTileFaces(root: HTMLElement): void {
+  for (const face of root.querySelectorAll<HTMLElement>('.style-tile-face')) {
+    const token = face.dataset.token || '';
+    // 'Default' rather than an empty row: a board on the stock face has one, and
+    // a blank line under the palette reads as a tile that failed to draw.
+    face.textContent = (token && faceName(token)) || 'Default';
+  }
+}
 
 /**
  * A swatch's colour, held to what it has to be.
@@ -951,6 +978,96 @@ const RENDERERS = {
     card.append(well, code);
     return card;
   },
+
+  /**
+   * The board's own look, as a card on the board: pictures, pigments, faces.
+   *
+   * This was a 1500x1000 canvas that you saved as a PNG. Making it a card
+   * changed what belongs on it, and the two things that came off are the point
+   * of the redesign rather than economies:
+   *
+   *   - **the board's name and the date.** A printed tile needed them because
+   *     it was leaving; a card sitting on the board it describes is under the
+   *     title card already, and repeating the name is a caption on a caption.
+   *   - **a fourth picture.** See TILE_IMAGES. The board is right there behind
+   *     it, so the strip is a reminder of the register rather than a contact
+   *     sheet standing in for pictures the reader cannot see.
+   *
+   * **Live, and live without re-rendering.** The swatches are not painted the
+   * colours the palette held when the card was made - each one is handed
+   * `var(--accent)` and so on as the *value* of its own property, so the
+   * stylesheet resolves it against :root every time it paints. Change the
+   * palette, or the whimsy dial, and every tile on the board follows in the
+   * same frame, with no listener and nothing to invalidate. Only the two face
+   * names are text this has to write, and canvas/items.js refreshes those when
+   * the look changes - see repaintStyleTiles().
+   *
+   * The pictures are *recorded*, not recomputed. `meta.shots` holds the ids the
+   * tile was made from, chosen once by tilePictures() when the card was added,
+   * so the card means the same thing after a reload and after the board has
+   * moved on. A tile that re-picked its own strip on every draw would reshuffle
+   * itself whenever anything was dropped, and would describe the board as it is
+   * now rather than as it was when you asked - which is the opposite of what a
+   * summary on a board is for. An id whose picture has since gone simply drops
+   * out of the strip.
+   */
+  'style-tile'(item: Item) {
+    const card = document.createElement('div');
+    card.className = 'card style-tile-card';
+
+    // The strip. Cover-cropped into equal boxes on purpose, the same choice the
+    // printed tile made: a style tile is about the palette and the register,
+    // and three photographs at their own aspect ratios would be a contact sheet.
+    const strip = document.createElement('div');
+    strip.className = 'style-tile-strip';
+    const shots = Array.isArray(item.meta?.shots) ? item.meta.shots : [];
+    for (const id of shots) {
+      const picture = typeof id === 'string' ? byId(id) : null;
+      const hash = picture ? pixelHash(picture) : null;
+      const url = hash ? assetURL(hash) : null;
+      if (!url) continue;
+      const shot = document.createElement('div');
+      shot.className = 'style-tile-shot';
+      // A property rather than a background, for the reason the swatch gives:
+      // items.css decides what is done with it, and a renderer that wrote
+      // `background` would have settled that here.
+      shot.style.setProperty('--shot', `url("${url}")`);
+      strip.append(shot);
+    }
+
+    // The pigments, as one band. No hex printed under them, unlike the page
+    // this replaced: at a card's width fourteen labels are fourteen illegible
+    // smudges, and the value of a colour on a board you are looking at is the
+    // colour. The numbers are still available - see tilePalette().
+    const band = document.createElement('div');
+    band.className = 'style-tile-band';
+    for (const token of PALETTE_TOKENS) {
+      const chip = document.createElement('span');
+      chip.className = 'style-tile-chip';
+      // The indirection that makes this live: the property holds a reference to
+      // the token, not the token's current value, so it re-resolves on paint.
+      chip.style.setProperty('--chip', `var(${token})`);
+      chip.dataset.token = token;
+      band.append(chip);
+    }
+
+    const type = document.createElement('div');
+    type.className = 'style-tile-type';
+    for (const token of ['--font-display', '--font-body']) {
+      const face = document.createElement('div');
+      face.className = 'style-tile-face';
+      face.dataset.token = token;
+      // Set in itself, which is the whole reason for printing a face rather
+      // than listing it.
+      face.style.setProperty('--face', `var(${token})`);
+      type.append(face);
+    }
+
+    card.append(strip, band, type);
+    paintStyleTileFaces(card);
+    return card;
+  },
+
 
   /**
    * A sticker: one shape out of web/assets/stickers.svg, and nothing else.

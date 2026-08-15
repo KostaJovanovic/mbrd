@@ -206,26 +206,31 @@
    canvas/items.js writes left/top/width/height on the node itself - so the only
    way to show one anywhere else is to take the positioning away. `static` does
    that: the two coordinates stop meaning anything and the two sizes go on
-   meaning exactly what they mean on the board, which is what keeps the sheet
-   the size a note is. It is also why the note grows here as it is typed, from
-   the same growNote() that grows one on the board.
+   meaning what any width and height mean, which is the size of the box. That is
+   what lets the dialog write its own pair over them, and what makes the sheet
+   grow downwards as it is typed.
 
-   --sheet-zoom is how much bigger than life the sheet is drawn, set by
-   composeNote() along with the box the mount reserves for the scaled card. --iz
-   is the inverse of the board's zoom, which the item chrome uses to hold its
-   size on screen; here the zoom is this one, so the counter comes out the size
-   it is on the board rather than twice it. */
+   The two sizes are openComposer()'s, not the note's: it writes EDIT_W across
+   and a height to fit the text, and puts the card's own pair back on the way
+   out. The mount needs no box of its own for that - a static child sizes its
+   parent, which is the whole reason the positioning comes off.
+
+   --iz is the inverse of the board's zoom, which the item chrome uses to hold
+   its size on screen. There is no zoom here, so it is 1: the sheet is drawn at
+   life size and anything hanging off it comes out the size it is on the board.
+   It was a magnification for as long as the sheet was the note's own box, since
+   a 120px note in the middle of a dimmed screen is a stamp. */
 #compose-mount {
   position: relative;
-  --sheet-zoom: 1;
-  --iz: calc(1 / var(--sheet-zoom));
+  --iz: 1;
 }
 #compose-mount .item {
   position: static;
-  transform: scale(var(--sheet-zoom));
-  /* Top left, so the scaled card lands exactly on the box the mount reserved -
-     from the centre it would grow out of it in every direction. */
-  transform-origin: 0 0;
+  /* placeBox() writes a transform inline on every item - a sub-pixel device
+     snap, and a rotate() on a note pinned to the board at an angle. Taken off
+     in JS, which is what an inline declaration takes; this is the resting state
+     it is taken off to. */
+  transform: none;
   /* The board's own item transition would slide the card in from wherever it
      was; it is not going anywhere, it is being written on. */
   transition: none;
@@ -238,6 +243,22 @@
    .card here instead would hide the wrapper and leave the sheet with no box at
    all, which is a zero-height contenteditable and a caret with nowhere to go. */
 #compose-mount .item > :not(.item-body, .note-count) { display: none; }
+
+/* The counter, once editNote() has put it in the row rather than on the sheet.
+   Everything the board version needs is about hanging off a card inside a
+   scaled world - absolute placement, the --iz correction, a transform origin -
+   and none of it survives contact with a flex row, so all of it comes off.
+   What is left is a line of text at the left end of the button row.
+   Aligned to the buttons rather than to the top of the row: it is a label on
+   the same line as two controls, and a number floating above their centre reads
+   as a caption for the dialog instead of a reading off it. */
+#compose .ask-gap > .note-count {
+  position: static;
+  transform: none;
+  margin: 0;
+  align-self: center;
+  text-align: left;
+}
 
 /* The bar, in a row of the dialog rather than floating over a board. */
 .note-toolbar.is-inline {
@@ -610,6 +631,36 @@
 .dk-handle[data-h="s"]  { bottom: -5px; left: 50%; margin-left: -5px; cursor: ns-resize; }
 .dk-handle[data-h="sw"] { bottom: -5px; left: -5px;  cursor: nesw-resize; }
 .dk-handle[data-h="w"]  { top: 50%; margin-top: -5px; left: -5px; cursor: ew-resize; }
+
+/* The two mirrors, above the dials and below the plate.
+
+   Dressed as the app's own small buttons rather than as anything new: paper, a
+   hairline, the pill radius the toolbar's controls carry. The pressed state is
+   the accent on paper-3 and it is keyed off aria-pressed rather than a class,
+   so the only thing that has to be right is the attribute a screen reader is
+   already reading - one state, not two that can disagree. */
+#darkroom-tools { display: flex; gap: 8px; }
+.dk-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px 6px 10px;
+  font: inherit;
+  font-size: var(--t-small);
+  color: var(--ink-2);
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--radius-pill);
+  background: var(--paper);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.dk-tool:hover { color: var(--ink); background: var(--paper-2); }
+.dk-tool[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: var(--paper-3);
+}
+.dk-tool .ico { width: 15px; height: 15px; }
 
 /* Three dials in a column, each a label, a slider and its readout on one line.
    The readout is monospace and a fixed width so the row does not jitter as the

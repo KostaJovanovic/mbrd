@@ -32,29 +32,51 @@
   --item-shadow: var(--note-shadow);
   --shape-radius: var(--note-radius);
   --note-paper: var(--note-1);
-  /* Every measurement on a sticky is a fraction of the sticky.
+  /* The sticky's furniture is a fraction of the sticky. Its type is not.
      A note was 240px square and its furniture was written as the fixed numbers
-     that suited a note that size - 20px of margin, a 30px adhesive band, a
-     title off the display ramp. Halve the square and none of that halves with
-     it: the title alone takes a third of the sheet, the margins take most of
-     what is left, and a note that holds 512 characters shows about three lines
-     of them before .note-rich's clip quietly eats the rest. A small note has
-     to be a small note, not a big note's fittings crammed into a smaller
-     square.
+     that suited a note that size - 20px of margin, a 30px adhesive band. Halve
+     the square and neither halves with it: the margins take most of the sheet
+     and there is nowhere left to write. So the margin and the band are shares
+     of the note, and a small note is a small note rather than a big note's
+     fittings crammed into a smaller square.
 
-     --half-min is min(w, h) / 2, written per item by canvas/items.js/place().
-     Every coefficient below is calibrated on the 240px default, so a note that
-     size still resolves to exactly the number it was drawn with and nothing on
-     an existing board moves; only the smaller ones change. The clamps are
-     floors and ceilings, not the operative value - the ceiling is what keeps a
-     note that has been dragged out to 900px from setting its title in 110pt,
-     and the floor is the size below which type stops being type. */
-  --note-half:    var(--half-min, 120px);
-  --note-pad:     clamp(9px,  calc(var(--note-half) * 0.167),  20px);
-  --note-gap:     clamp(4px,  calc(var(--note-half) * 0.075),  9px);
-  --note-band:    clamp(12px, calc(var(--note-half) * 0.25),   30px);
-  --note-t-title: clamp(12px, calc(var(--note-half) * 0.25),   var(--t-display));
-  --note-t-body:  clamp(10px, calc(var(--note-half) * 0.1333), 16px);
+     **The type is a size, not a share.** It was a share too, and that made
+     resizing a note a zoom: the same paragraph on a 400px note and on a 160px
+     one were not the same words at two lengths, they were two different type
+     sizes, and dragging the corner slid between them. Words on a board have a
+     size the way words on paper do - the sheet you write them on is not what
+     decides it. Pulling a note about now rewraps what it says and moves
+     nothing else, which is what a bigger sheet is for. The size is the user's
+     to set, on the note, with A- and A+ (--note-scale) - see the note over the
+     three kinds below.
+
+     That also closes a loop the old ramp could not get out of. Both halves of
+     the fitting contract in canvas/notes.ts - the note grows to its text, the
+     resize floor stops at the height its text needs - are a *measurement* of
+     the wrapped column, and a ramp keyed to the box changed the wrapping
+     whenever the measurement changed the box. Growing a landscape note by a
+     line raised min(w, h), which grew the type, which needed another line.
+     Every number below is now keyed to the width alone (--half-w, w / 2, from
+     canvas/items.js/placeBox) or to nothing at all, so the height a note is
+     given can never alter what fits in it.
+
+     Calibrated on the 240px default, where --half-w is the 120 the old
+     --half-min was: a default note resolves to exactly the numbers it was
+     drawn with. Notes wider than tall change, and grow on the next pass of
+     growNote() if their text now needs the room. */
+  --note-half:    var(--half-w, 120px);
+  --note-pad:     clamp(9px,  calc(var(--note-half) * 0.167), 20px);
+  --note-band:    clamp(12px, calc(var(--note-half) * 0.25),  30px);
+  /* Tokens rather than numbers, so the ramp still moves with the whimsy tier
+     the way every other size on a board does. --t-title and not --t-display:
+     the display step is the largest thing on a board and a heading on a 120px
+     sticky is not that. A note is small, and a title that takes a third of the
+     sheet before the first word of the body is a title nobody chose - the old
+     box-keyed ramp reached --t-display only on notes far bigger than the one
+     anybody actually writes on. --note-t-body is 16px and not --t-body's 15: a
+     sticky is read at arm's length across a board. */
+  --note-t-title: var(--t-title);
+  --note-t-body:  16px;
   /* The item under the card takes the pad colour too. Two rounded boxes of the
      same radius stacked exactly on top of each other still leave a hairline of
      the lower one showing along the curve, where the antialiasing of the two
@@ -83,17 +105,55 @@
 /* The filed-card inner rule has no business on a sticky. */
 .item[data-type="note"] .card::after { content: none; }
 
+/* "No card" on a sticky - the same promise it makes on a cut-out, which is that
+   the paper goes and what was on it stays. Here the words stay: same face, same
+   size, same alignment, sitting on the board the way something written straight
+   onto it would.
+
+   Said here rather than beside the other [data-bare] rules in items.css,
+   because what it has to cancel is written here and nowhere else - the pad
+   colour on the item, and the band, the paper and the inset line on the card.
+   `.item[data-bare]` and `.item[data-type="note"]` have the same weight, so a
+   cancel written in the other file would win or lose on which sheet loaded
+   last, which is not a thing to leave to the <link> order.
+
+   The band is the part worth naming. It is the adhesive strip reading through
+   the sheet, so a note with no sheet must not keep it - a gradient with no
+   paper under it is a smear across the top of the text with nothing to stick
+   to, and it survives `background: none` on the item alone because it is
+   painted on .card.
+
+   The item's own box-shadow is deliberately untouched, exactly as items.css
+   leaves the selection ring alone: the drop shadow is --item-shadow and the
+   shadow twin is left out of #item-shadows for anything bare (noTwin() in
+   canvas/items.ts, reconciled on every edit by syncTwin() beside it), while the
+   ring is the app answering a click and an item you have selected has to show
+   you what you have got. */
+.item[data-type="note"][data-bare] { background: none; }
+.item[data-type="note"][data-bare] .card {
+  background: none;
+  box-shadow: none;
+}
+
 /* A note is a column of formatted block-lines (renderers.js/note). The column
    carries the note's font, its size (through --note-scale) and its vertical
    placement (justify-content); each line carries only its own kind and its
    alignment. font-family is written inline by applyNoteStyle from an allowlist,
-   so the rule here is just the fallback before that runs. */
+   so the rule here is just the fallback before that runs.
+
+   The gap between blocks belongs to the type and is written here rather than
+   with the sheet's other measures above, for a reason that is easy to trip
+   over: --note-scale is set *on this element* by applyNoteStyle, and a custom
+   property is substituted where it is declared. A `--note-gap` declared on the
+   item would read the scale off the item, where it is not set, and inherit the
+   answer down already multiplied by 1. The 9px is the old box-keyed gap at the
+   240px default. */
 .item[data-type="note"] .note-rich {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--note-gap);
+  gap: calc(9px * var(--note-scale, 1));
   overflow: hidden;
   font-family: var(--font-display);
   color: var(--ink);
@@ -104,10 +164,12 @@
 .item[data-type="note"] .note-rich[data-valign="middle"] { justify-content: center; }
 .item[data-type="note"] .note-rich[data-valign="bottom"] { justify-content: flex-end; }
 
-/* The three kinds. Each scales with the note (--note-t-* is a share of the
-   sticky's own size) and with the user's chosen multiplier (--note-scale,
-   default 1). h1/h2 inherit the note's font so a font change carries the whole
-   sheet; only weight and size set them apart. */
+/* The three kinds. --note-scale, default 1, is the only thing that sizes them:
+   the note's own setting, off A- and A+ in the editor, applied to the three
+   fixed steps of the ramp above. Nothing about the box appears here, which is
+   the whole of what makes resizing a note a rewrap rather than a zoom. h1/h2
+   inherit the note's font so a font change carries the whole sheet; only weight
+   and size set them apart. */
 .item[data-type="note"] .note-line { line-height: 1.4; }
 .item[data-type="note"] .note-line.note-h1 {
   font-weight: calc(var(--display-weight) + 300);
@@ -293,13 +355,25 @@
   transform: scale(var(--iz));
   transform-origin: 100% 0;
   font-family: var(--font-display);
-  font-size: var(--t-tiny);
+  /* One step up the ramp from --t-tiny, and one step up the ink from --ink-3.
+     It was the smallest size in the ramp set in the faintest ink there is, in
+     an italic, tucked under the bottom-right corner of the sheet - four ways of
+     being quiet at once, and the note above this rule says the one thing this
+     must not be is a limit you find out about by hitting it. Still the quietest
+     thing on a note being written, which is right: it is a number you glance at
+     twice and read once. */
+  font-size: var(--t-small);
   font-style: var(--display-italic);
-  color: var(--ink-3);
+  color: var(--ink-2);
   white-space: nowrap;
   pointer-events: none;
 }
-.note-count.is-low { color: var(--danger); }
+/* Running out. The colour carries it and the weight backs the colour up, which
+   matters on a board wearing a palette where --danger is not far from --ink-2.
+   Weight rather than size: this sits under a sheet that grows as it is written,
+   and a counter that changed size at forty characters left would move the sheet
+   under the caret. */
+.note-count.is-low { color: var(--danger); font-weight: 600; }
 
 /* Links: the other item born on the board, and the only one whose subject is
    somewhere else entirely. Drawn as an ordinary filed card, because that is
