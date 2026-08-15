@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   isDoubleTap, needsSelectionBeforeMove, repeatsLongPressContextMenu,
-  releasePointerSafely, resizeHandleAction, shortcutsSuppressed,
+  releasePointerSafely, capturePointerSafely, resizeHandleAction, shortcutsSuppressed,
   readWheel, resetWheelKind, WHEEL_NOTCH, WHEEL_STREAM_MS,
   carryFloor, drewRectangle, marqueeHit,
   GESTURE_MOVES, gestureTransition,
@@ -285,6 +285,76 @@ test('a pointer invalidated during capture release is already released', () => {
   };
 
   assert.equal(releasePointerSafely(stale, 7), false);
+});
+
+test('taking capture survives a pointer that has already gone', () => {
+  // The other half of the pair. setPointerCapture() throws NotFoundError for a
+  // pointer that is no longer active - a finger that left the glass between the
+  // event being queued and the handler running - and it was called bare, so
+  // that race threw out of pointerdown before the gesture was entered and left
+  // a press that selected a card and then did nothing.
+  const gone = {
+    setPointerCapture: () => { throw new DOMException('Invalid pointer id', 'NotFoundError'); },
+  };
+  assert.equal(capturePointerSafely(gone, 7), false);
+  assert.equal(capturePointerSafely(null, 7), false);
+  assert.equal(capturePointerSafely({}, 7), false);
+
+  let asked = null;
+  assert.equal(capturePointerSafely({ setPointerCapture: id => { asked = id; } }, 9), true);
+  assert.equal(asked, 9);
+
+  // A failure that is not the race is still a failure - the same line
+  // releasePointerSafely() draws, so the two cannot drift.
+  assert.throws(() => capturePointerSafely({
+    setPointerCapture: () => { throw new TypeError('not a DOMException'); },
+  }, 7), TypeError);
+});
+
+test('every pointer the pipeline tracks is one it can take capture of', async () => {
+  // The pinch leak, held down where the pipeline itself cannot be reached from
+  // here: onDown returned for `pointers.size === 2` *before* the line that
+  // takes capture, so only the first finger was ever captured. Lift the second
+  // over the toolbar, the sidebar or the window edge and its pointerup went to
+  // that element instead of a descendant of #viewport - endPointer never ran
+  // and the id stayed in `pointers` for the life of the page, so every later
+  // single-finger press found two pointers, entered a pinch against a finger
+  // that was not there, and a plain tap panned and zoomed the board.
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../web/assets/js/canvas/input.ts', import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^[ \t]*\/\/.*$/gm, '');
+
+  assert.ok(!/\bel\.setPointerCapture\(/.test(src),
+    'input.ts takes capture directly again - use capturePointerSafely()');
+  // One per branch that returns before the shared line: the two-finger pinch,
+  // the third finger, and the ordinary press.
+  const takes = src.match(/capturePointerSafely\(el,/g) || [];
+  assert.ok(takes.length >= 3,
+    `only ${takes.length} capture sites - a branch that adds to \`pointers\` and returns early is leaking again`);
+});
+
+test('a drag with nothing to carry is not entered at all', async () => {
+  // The wedge. A pinned sticker on a *locked* photograph passed the press
+  // check as an unlocked sticker, and startMove()'s two filters then resolved
+  // it to its locked host and dropped it - so `origin` came out empty, the
+  // first movement past the slop read `drag.origin[0]` as undefined and threw
+  // on `lead.x`, inside the handler and before applyGeom. The gesture stayed
+  // standing with capture held and every later pointermove threw again until
+  // the button came up: one press wedged the pipeline for the session.
+  //
+  // Read off the source because the pipeline is a closure over #viewport and
+  // there is no browser here. What is asserted is the shape of the repair - the
+  // function may answer "nothing to take hold of", and the press branch that
+  // calls it looks.
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../web/assets/js/canvas/input.ts', import.meta.url), 'utf8');
+  assert.match(src, /function startMove\([^)]*\): MoveGesture \| null/,
+    'startMove() can no longer say there is nothing to pick up');
+  assert.match(src, /if \(!before\.length\) return null;/,
+    'startMove() builds a gesture out of an empty snapshot again');
+  assert.match(src, /const move = startMove\(e, id\);[\s\S]{0,400}?if \(!move\) startPan\(e\);/,
+    'the press branch stopped checking whether startMove() found anything');
 });
 
 // ---------------------------------------------------------------------------

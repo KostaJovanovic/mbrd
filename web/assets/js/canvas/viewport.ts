@@ -881,7 +881,16 @@ export class Viewport {
    * Guarded like --iz, so the ordinary resize writes nothing.
    */
   _setDpr() {
-    const dpr = globalThis.devicePixelRatio || 1;
+    // deviceRatio(), not the raw reading. Its own header says it is "one
+    // definition, because two things snap to this grid and they have to agree
+    // about where it is: the axis rules here, and the lattice of marks the grid
+    // paints along them" - and this line, the one that publishes the ratio to
+    // the stylesheet that draws those marks, was the one place not asking it. On
+    // a display reporting 4, or a page zoomed to 50% and reporting 0.5,
+    // axisOrigin() snapped against the clamped value while --device-px rounded
+    // hairlines against the raw one, and the axis rule landed off the column of
+    // marks it is meant to run down. Exactly the failure that header describes.
+    const dpr = deviceRatio();
     if (dpr === this._dpr) return;
     this._dpr = dpr;
     // Stringified here rather than left to the DOM's own coercion, which is
