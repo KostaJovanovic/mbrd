@@ -943,14 +943,14 @@ function paintGrain(ctx: CanvasRenderingContext2D, look: Look, W: number, H: num
  * export. Until it is taken, this is the honest half of the answer: right for
  * every card on screen, straight for the rest.
  */
-async function renderBoardCanvas(detail: Detail = 'full') {
+async function renderBoardCanvas(detail: Detail = 'full', maxEdge = MAX_EDGE) {
   const items = drawable();
   const b = itemBounds(items);
   if (!b) return null;
 
   const worldW = (b.x1 - b.x0) + MARGIN * 2;
   const worldH = (b.y1 - b.y0) + MARGIN * 2;
-  const scale = Math.min(1, MAX_EDGE / Math.max(worldW, worldH));
+  const scale = Math.min(1, maxEdge / Math.max(worldW, worldH));
   const W = Math.max(1, Math.ceil(worldW * scale));
   const H = Math.max(1, Math.ceil(worldH * scale));
 
@@ -1039,7 +1039,18 @@ export async function boardPng() {
  * paid for on a gesture somebody is waiting on.
  */
 export async function boardThumb(max = 360) {
-  const shot = await renderBoardCanvas('thumb');
+  // Rendered near the size it is going to be, not at MAX_EDGE and then shrunk.
+  //
+  // It used to draw the whole board at 8000 on its long edge - 8000 x 8000 x 4
+  // is 256 MB, and 64 megapixels is four times iOS Safari's canvas ceiling, so
+  // on exactly the platform canvas/display.ts exists to protect the thumbnail
+  // came back blank or null. And this runs on every open and every new, per its
+  // own doc above, for a picture that ends up 360px wide.
+  //
+  // Four times the target leaves room for the downscale to stay smooth and for
+  // a board whose aspect is far from square, and costs about 2 MB instead of
+  // 256.
+  const shot = await renderBoardCanvas('thumb', max * 4);
   if (!shot) return null;
   const scale = Math.min(1, max / Math.max(shot.w, shot.h));
   const tw = Math.max(1, Math.round(shot.w * scale));

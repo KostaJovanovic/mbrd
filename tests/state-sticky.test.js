@@ -454,3 +454,39 @@ test('a note lying on bare board can be anchored like anything else', () => {
   setItemsLocked([n.id], true);
   assert.equal(isLocked(byId(n.id)), true);
 });
+
+test('a note stuck to itself does not freeze the board', { timeout: 5000 }, () => {
+  // Demonstrated before the fix by running it under node: the process had to be
+  // killed. dragRoot() walks up the pile on pointerdown - `for (let host =
+  // pinnedTo(it); host; host = pinnedTo(it)) it = host;` - and seedSticks()
+  // accepted whatever meta.stuckTo said, so `n -> n` was a loop with no exit
+  // and no allocation. The tab stops responding to anything.
+  loadBoard({ title: 'T', items: [
+    { id: 'n', type: 'note', x: 0, y: 0, w: 80, h: 80, meta: { text: 'n', stuckTo: 'n' } },
+  ] });
+  assert.equal(stuckTo(byId('n')), null, 'a note cannot be stuck to itself');
+});
+
+test('two notes stuck to each other do not freeze the board', { timeout: 5000 }, () => {
+  loadBoard({ title: 'T', items: [
+    { id: 'a', type: 'note', x: 0, y: 0, w: 80, h: 80, meta: { text: 'a', stuckTo: 'b' } },
+    { id: 'b', type: 'note', x: 90, y: 0, w: 80, h: 80, meta: { text: 'b', stuckTo: 'a' } },
+  ] });
+  // One of the two loses its pin - whichever closes the loop - and neither walk
+  // runs away. Which one is not the interesting part; that both terminate is.
+  const pins = [stuckTo(byId('a')), stuckTo(byId('b'))];
+  assert.ok(pins.some(p => p === null), 'the cycle was not broken anywhere');
+});
+
+test('a longer cycle is broken, and the honest pins below it survive', { timeout: 5000 }, () => {
+  loadBoard({ title: 'T', items: [
+    { id: 'pic', type: 'image', x: 0, y: 0, w: 300, h: 300 },
+    { id: 'a', type: 'note', x: 0, y: 0, w: 80, h: 80, meta: { text: 'a', stuckTo: 'b' } },
+    { id: 'b', type: 'note', x: 90, y: 0, w: 80, h: 80, meta: { text: 'b', stuckTo: 'c' } },
+    { id: 'c', type: 'note', x: 180, y: 0, w: 80, h: 80, meta: { text: 'c', stuckTo: 'a' } },
+    { id: 'd', type: 'note', x: 10, y: 10, w: 80, h: 80, meta: { text: 'd', stuckTo: 'pic' } },
+  ] });
+  assert.equal(stuckTo(byId('d'))?.id, 'pic', 'an unrelated pin is not collateral');
+  const pins = ['a', 'b', 'c'].map(id => stuckTo(byId(id)));
+  assert.equal(pins.filter(p => p === null).length, 1, 'exactly one link in the ring goes');
+});

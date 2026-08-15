@@ -61,6 +61,18 @@ type Bytes = Uint8Array<ArrayBuffer>;
  */
 const MAX_ART = 12 * 1024 * 1024;
 
+/**
+ * The biggest ID3 tag this will pull into memory.
+ *
+ * This one *is* a safety limit, unlike MAX_ART above. The tag states its own
+ * length and the file was written by somebody else, so the number is a claim
+ * rather than a fact - and it is used both to read and, when the
+ * unsynchronisation flag is set, to allocate a second copy in desync(). A tag
+ * is the picture plus a few kilobytes of text, so this is MAX_ART with room for
+ * the text and nothing else.
+ */
+const MAX_ID3_BYTES = MAX_ART + 256 * 1024;
+
 /** How far into an MP4 the atom walk will go before giving up. */
 const MAX_ATOMS = 4096;
 
@@ -205,6 +217,20 @@ const isID3 = (h: Bytes) => h.length >= 10 && ascii(h, 0, 3) === 'ID3' && h[3] <
 async function id3Body(file: Blob, head: Bytes): Promise<Bytes | null> {
   const size = syncsafe(head, 6);
   if (size <= 0) return null;
+  // Capped before it is read, not after it is extracted.
+  //
+  // `size` is the tag's own claim about itself, out of a file this app did not
+  // write, and it was used to pull that many bytes into memory - then desync()
+  // allocated a second copy of them. A 300 MB .mp3 declaring a 256 MB synchsafe
+  // tag with the unsynchronisation flag set cost 512 MB, six at a time under
+  // the import pool. MAX_ART is checked in coverArt(), which is after all of
+  // that has already happened, and the module header's promise that
+  // "everything here is read through Blob.slice(), never by pulling the file
+  // into memory" was not kept by this line.
+  //
+  // A tag is the picture plus a few kilobytes of text, so the picture's own
+  // ceiling plus room for the text is the honest bound.
+  if (size > MAX_ID3_BYTES) return null;
   const footer = (head[5] & 0x10) ? 10 : 0;
   const tag = await bytes(file, 10, size + footer);
   // Tag-level unsynchronisation: every 0xFF in the body was followed by a

@@ -106,6 +106,17 @@ function showConnections(): void {
  * One predicate rather than three copies of it: both doors into the generator
  * ask the same question, and so does the tool when it reads the selection.
  */
+/**
+ * The most cards "Connect these" will join when nothing is selected.
+ *
+ * The selection case is bounded by what somebody picked. The no-selection case
+ * is the whole board, and the spanning tree it runs is quadratic with nothing
+ * in front of it - DENSE_LIMIT gates the second pass only. This is generously
+ * past any board a person has arranged by hand and comfortably inside what the
+ * arithmetic can do without the tab going quiet.
+ */
+const CONNECT_ALL_MAX = 2000;
+
 const joinable = (items: Joinable[]): Joinable[] =>
   items.filter(i => !isFurniture(i) && !isRider(i) && !isFence(i) && isJoinEnd(i));
 
@@ -298,6 +309,20 @@ export function connectionCommands() {
         selection.size < 2 || selection.has(i.id)));
       if (pool.length < 2) {
         toast('Pick two or more cards, or put something on the board');
+        return;
+      }
+      // The no-selection case is the whole board, and the spanning tree under
+      // joinAll() is O(n squared) distance tests with nothing gating it -
+      // DENSE_LIMIT in web-graph.ts gates only the *second* pass, which the
+      // guard's own comment gets backwards. On a board near MAX_ITEMS that is
+      // about 4x10^8 tests on the main thread, after which addConnections()
+      // throws all but MAX_CONNECTIONS of the result away.
+      //
+      // Refused rather than truncated: "connect everything" over twenty
+      // thousand cards is not a thing anybody means, and a silent sample of it
+      // would be a web nobody asked for over cards nobody chose.
+      if (selection.size < 2 && pool.length > CONNECT_ALL_MAX) {
+        toast(`Too many cards to join at once - select up to ${CONNECT_ALL_MAX} of them`);
         return;
       }
       joinAll(pool);

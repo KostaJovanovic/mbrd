@@ -266,3 +266,45 @@ test('CRLF is read the same as LF', async () => {
   assert.match(html, /<h1>One<\/h1>/);
   assert.match(html, /<ul><li>a<\/li><li>b<\/li><\/ul>/);
 });
+
+test('a paragraph of backticks does not block the thread', { timeout: 10000 }, async () => {
+  // Measured at 13.7 seconds on node 22 before this: `(`+)([\s\S]*?)\1`
+  // backtracks quadratically, and inline() is handed a whole paragraph up to
+  // TEXT_MAX = 200,000 characters. A leading run of three or more would be
+  // caught by FENCE - a run after any other character is not, which is what
+  // makes `x` the whole of the exploit.
+  const src = 'x' + '`'.repeat(200_000);
+  const started = process.hrtime.bigint();
+  const { html } = await render(src);
+  const ms = Number(process.hrtime.bigint() - started) / 1e6;
+  assert.ok(typeof html === 'string');
+  assert.ok(ms < 2000, `took ${Math.round(ms)}ms - the backtracking is still there`);
+});
+
+test('code spans still work, and still suspend the markup inside them', async () => {
+  // The guard must not cost the feature: a backtick span is the one thing that
+  // turns everything else off inside it.
+  const { html } = await render('a `**not bold**` b');
+  assert.match(html, /<code>\*\*not bold\*\*<\/code>/);
+  assert.doesNotMatch(html, /<strong>/);
+});
+
+test('a doubled backtick fence still pairs with its partner', async () => {
+  const { html } = await render('a ``x ` y`` b');
+  assert.match(html, /<code>x ` y<\/code>/);
+});
+
+test('an unpaired backtick is left as a character', async () => {
+  const { html } = await render('50% of `things');
+  assert.doesNotMatch(html, /<code>/);
+  assert.match(html, /`things/);
+});
+
+test('a wall of blockquote markers renders rather than blanking the file', { timeout: 5000 }, async () => {
+  // blocks() recursed once per `>`, so 50,000 of them overflowed the stack -
+  // and the viewer's catch turns that into an empty holder, so the document
+  // rendered blank with nothing saying why.
+  const { html } = await render('>'.repeat(50_000) + ' deep\n');
+  assert.ok(html.length > 0, 'the file rendered as nothing at all');
+  assert.match(html, /blockquote/);
+});

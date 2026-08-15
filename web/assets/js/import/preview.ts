@@ -162,7 +162,15 @@ async function fromTiff(file: Blob): Promise<Blob | null> {
     // (0x014A) may be a single inline offset or a pointer to a list of them;
     // only the single-offset case is followed, which covers the RAW layouts
     // that actually hide previews there.
-    const next = dv.getUint32(entries * 12, le);
+    // Only when the four bytes are actually there. `bytes()` clamps its read to
+    // file.size, so a .dng or .cr2 truncated exactly at the end of its last IFD
+    // entry gives a block of precisely `entries * 12` - the guard above uses
+    // `<` and passes - and this read went four bytes past the DataView. The
+    // RangeError escaped fromTiff() entirely and was caught by
+    // embeddedPreview()'s outer catch, which threw away every candidate already
+    // collected *and* skipped the scanForJpeg() fallback that would have found
+    // the picture. A truncated file lost its preview twice over.
+    const next = block.length >= entries * 12 + 4 ? dv.getUint32(entries * 12, le) : 0;
     if (next) queue.push(next);
     const sub = tags.get(0x014a);
     if (sub && sub.count === 1) { const o = await scalar(sub); if (o) queue.push(o); }
@@ -209,19 +217,45 @@ async function scanForJpeg(file: Blob): Promise<Blob | null> {
   const buf = await bytes(file, 0, Math.min(file.size, SCAN_CAP));
   if (buf.length < MIN_JPEG) return null;
   let best: Candidate | null = null;
-  for (let i = 0; i + 1 < buf.length; i++) {
+
+  // The end marker at or after `from`, or -1 when there is none left.
+  //
+  // A cursor rather than a fresh inner loop, and that is the whole of the fix.
+  // The nested version was O(n squared) over a 12 MB window on the main thread,
+  // uncapped and uncancellable: a file whose extension makes classify() say
+  // image and whose bytes are 12 MB of repeating FF D8 FF with no FF D9 gave
+  // about four million matching offsets, each running the inner scan to the end
+  // of the buffer - roughly 5x10^13 comparisons, and the tab is gone for the
+  // rest of the afternoon. The `i += best.len - 1` skip below only ever fires
+  // when an end *was* found, so the pathological input never reached it, and
+  // the module header's promise to "cap every count read from the file before
+  // it is used to loop" was not kept for this loop.
+  //
+  // Ends are non-decreasing as `i` advances, so one pointer that never rewinds
+  // answers every question and the whole scan is linear.
+  let cursor = 0;
+  let found = -1;
+  const endFrom = (from: number): number => {
+    if (found >= from) return found;
+    if (cursor >= buf.length) return -1;
+    for (let j = Math.max(cursor, from); j + 1 < buf.length; j++) {
+      if (buf[j] === 0xff && buf[j + 1] === 0xd9) { cursor = j; found = j; return j; }
+    }
+    cursor = buf.length;
+    found = -1;
+    return -1;
+  };
+
+  for (let i = 0; i + 2 < buf.length; i++) {
     if (buf[i] !== 0xff || buf[i + 1] !== 0xd8 || buf[i + 2] !== 0xff) continue;
     // Found a start; find its matching end. Scanning forward for FF D9 is not
     // exact - a marker's byte pattern can occur inside compressed data - but a
     // wrong end only makes the blob longer, and the browser stops decoding a
     // JPEG at the first real EOI regardless, so an over-long slice still draws.
-    for (let j = i + 3; j + 1 < buf.length; j++) {
-      if (buf[j] === 0xff && buf[j + 1] === 0xd9) {
-        const len = j + 2 - i;
-        if (len >= MIN_JPEG && (!best || len > best.len)) best = { off: i, len };
-        break;
-      }
-    }
+    const j = endFrom(i + 3);
+    if (j < 0) break;                       // no end anywhere ahead: nothing left to find
+    const len = j + 2 - i;
+    if (len >= MIN_JPEG && (!best || len > best.len)) best = { off: i, len };
     // No need to re-enter the same JPEG on every byte of it.
     if (best && best.off === i) i += best.len - 1;
   }

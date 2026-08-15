@@ -361,7 +361,19 @@ function within(end: number, size: number, what: string) {
  * Reads the central directory (not a linear scan), so entries written by any
  * conforming zipper - including Explorer's "Send to > Compressed folder" - work.
  */
-export async function readZip(source: Blob | ArrayBuffer | ArrayBufferView<ArrayBuffer>) {
+export async function readZip(
+  source: Blob | ArrayBuffer | ArrayBufferView<ArrayBuffer>,
+  // The inflate ceiling for *this* read, when the caller knows something the
+  // defaults cannot. LIMITS is sized for a whole board archive; a caller
+  // opening one document knows its budget is three orders of magnitude
+  // smaller, and until this argument existed it had no way to say so -
+  // import/document.ts capped the *compressed* container at 96 MB and then
+  // inherited a 768 MB inflate ceiling at a 200:1 ratio, six of those running
+  // at once under the import pool.
+  limits: { entry?: number, total?: number } = {},
+) {
+  const entryCap = limits.entry ?? LIMITS.entry;
+  const totalCap = limits.total ?? LIMITS.total;
   // Blob is what the app passes (a File, or one built by the packer). The
   // typed-array and ArrayBuffer forms are for anything already in memory -
   // notably the tests, which have no reason to wrap bytes in a Blob first.
@@ -459,10 +471,10 @@ export async function readZip(source: Blob | ArrayBuffer | ArrayBufferView<Array
     // Everything here is judged from the *declared* size, before a byte is
     // inflated. That is the point: the cost of a decompression bomb is paid
     // during the inflate, so the decision has to be made before it starts.
-    if (usize > LIMITS.entry) {
+    if (usize > entryCap) {
       throw new Error(`"${name}" is too large to open (${usize} bytes)`);
     }
-    if (totalOut + usize > LIMITS.total) {
+    if (totalOut + usize > totalCap) {
       throw new Error('Archive expands to more than this app will open at once');
     }
     if (usize > LIMITS.ratioFloor && csize > 0 && usize / csize > LIMITS.ratio) {

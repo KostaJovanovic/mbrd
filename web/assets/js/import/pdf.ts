@@ -30,8 +30,6 @@
 // else's code, and it bends the no-runtime-dependency rule the same controlled
 // way. Called out here so the bending is on the record.
 
-import { clamp } from '../util.ts';
-
 // The library and its worker, from the same versioned directory so the two
 // always match. The ESM build loads as a module; its worker is a module worker
 // pdf.js spawns itself once workerSrc points at it.
@@ -129,8 +127,10 @@ export async function openPdf(file: Blob) {
       // Scaled to the box it is going into rather than to a fixed target: a
       // viewer is as wide as the window and a thumbnail is not, so the same
       // ceiling would either blur one or waste memory on the other. Capped at 3
-      // so a business card does not become a wall.
-      const scale = clamp(width / base.width, 0.1, 3);
+      // so a business card does not become a wall, and with no floor for the
+      // reason firstPageRaster() gives below: a floor makes the requested width
+      // a suggestion, and the page decides how much canvas to ask for.
+      const scale = Math.min(width / Math.max(base.width, 1), 3);
       const viewport = page.getViewport({ scale });
       const canvas = document.createElement('canvas');
       canvas.width = Math.max(1, Math.ceil(viewport.width));
@@ -162,7 +162,16 @@ export async function firstPageRaster(file: Blob) {
     const page = await doc.getPage(1);
 
     const base = page.getViewport({ scale: 1 });
-    const scale = clamp(TARGET / Math.max(base.width, base.height), 0.1, 3);
+    // No floor on the way down, which is what makes TARGET a cap rather than a
+    // wish. `clamp(..., 0.1, 3)` refused to scale a page below a tenth, so a
+    // MediaBox of 200,000 units - or an ordinary page with a large UserUnit -
+    // asked the canvas for 20,000 x 20,000, which is 1.6 GB. The docstring's
+    // claim that "a poster-sized one is brought down rather than rendered at
+    // hundreds of megapixels" was the opposite of what the floor did.
+    //
+    // The ceiling stays: scaling a stamp-sized page up to something legible is
+    // the thing the number is for.
+    const scale = Math.min(TARGET / Math.max(base.width, base.height, 1), 3);
     const viewport = page.getViewport({ scale });
     const w = Math.max(1, Math.ceil(viewport.width));
     const h = Math.max(1, Math.ceil(viewport.height));

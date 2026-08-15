@@ -377,9 +377,23 @@ export const isPinned = (it: Stickable | null | undefined) => !!pinnedTo(it);
  *
  * It terminates for the same reason stuckFollowers() does: being stuck requires
  * a lower z, so the relation is a strict order and cannot close on itself.
+ * seedSticks() is what makes that true of the memo as well as of the
+ * measurement - see the note there.
+ *
+ * The visited set is the belt to that braces. This walk runs on pointerdown, so
+ * the cost of the invariant being wrong is not a wrong answer, it is a browser
+ * that stops responding to anything - and the guarantee is currently spread
+ * across two functions in two files, one of which reads its input from a file
+ * somebody else wrote. A bound that can only ever be reached by a bug is worth
+ * the Set.
  */
 export function dragRoot(it: Item): Item {
-  for (let host = pinnedTo(it); host; host = pinnedTo(it)) it = host;
+  const seen = new Set<string>([it.id]);
+  for (let host = pinnedTo(it); host; host = pinnedTo(it)) {
+    if (seen.has(host.id)) break;
+    seen.add(host.id);
+    it = host;
+  }
   return it;
 }
 
@@ -448,8 +462,48 @@ export function seedSticks() {
   for (const it of board.items) {
     if (isSticky(it) && it.meta && 'stuckTo' in it.meta) {
       const hostId = it.meta.stuckTo ?? null;
-      sticks.set(it.id, furniture.has(hostId) ? null : hostId);
+      // Self-reference first, because it is the cheapest cycle there is and the
+      // one a hand-edited file produces by accident.
+      sticks.set(it.id, furniture.has(hostId) || hostId === it.id ? null : hostId);
     }
+  }
+  breakCycles();
+}
+
+/**
+ * Drop any seeded pin that stands in a cycle.
+ *
+ * dragRoot() and stuckFollowers() both terminate for one stated reason: being
+ * stuck requires a lower z, so the relation is a strict order and cannot close
+ * on itself. That is true of measureStick(), which is where the claim comes
+ * from - and it was never true of the *memo*, which takes whatever meta.stuckTo
+ * says after testing only that it does not name furniture. A .mbrd whose note is
+ * stuck to itself, or two notes naming each other, seeded a cycle; `settling` is
+ * cleared on load so nothing masked it; and the first press on the note put
+ * dragRoot() into a loop with no exit and no allocation, so the tab simply
+ * stopped. Verified under node, where the process had to be killed by timeout.
+ *
+ * Checked here rather than by holding the memo to the z rule, because z is not
+ * populated at the point a board is seeded - the pin has to survive a file that
+ * says "stuck" while the note lies nowhere near its host, which is the whole
+ * reason the memo outranks the measurement.
+ *
+ * The walk is the standard three-colour one: follow each chain, mark what is on
+ * the current path, and null the entry that closes the loop. Only that entry -
+ * everything below it in the pile is a legitimate pin and stays.
+ */
+function breakCycles() {
+  const settled = new Set<unknown>();
+  for (const start of sticks.keys()) {
+    if (settled.has(start)) continue;
+    const path = new Set<unknown>();
+    let at: unknown = start;
+    while (at != null && !settled.has(at)) {
+      if (path.has(at)) { sticks.set(at as string, null); break; }
+      path.add(at);
+      at = sticks.get(at as string) ?? null;
+    }
+    for (const id of path) settled.add(id);
   }
 }
 

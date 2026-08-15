@@ -448,6 +448,7 @@ export async function importFiles(
     return false;
   });
   if (!files.length) {
+    budget.release();
     toast('Those files are too large to import', 'error');
     return [];
   }
@@ -512,6 +513,12 @@ export async function importFiles(
     // would leave the strip up over a board that is doing nothing, for the rest
     // of the session, with no way to take it down.
     job.end();
+    // And the shared byte account, here for the same reason and at the same
+    // moment: this is where the preparing stops and the memory goes back. The
+    // budget was per call, so two folder drops a second apart each claimed a
+    // fresh gigabyte and the two together hashed, decoded and thumbnailed two
+    // gigabytes at once - each import under budget, and the tab over it.
+    budget.release();
   }
   const drafts = prepared.filter((d): d is Draft => !!d);
 
@@ -739,7 +746,16 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
   // second time. A miss is silent and leaves the card exactly as it was.
   if (!size && hasBakedPreview(file)) {
     const baked = await bakedPreview(file).catch(() => null);
-    const shot = baked && await measureSize('image', baked);
+    // Budgeted, like every other picture. This path sets `size` itself, so it
+    // runs *before* the overPixelBudget() branch below and skipped it entirely -
+    // and what it hands to measureSize() came out of a container somebody else
+    // wrote. A .docx whose docProps/thumbnail.png is a hundred-byte PNG with an
+    // IHDR of 65535x65535 is accepted on its signature by document.ts and then
+    // decoded here, twice: once to measure and once by makeThumb() further
+    // down. A preview that is over budget is not a preview - the card falls
+    // back to the document it always was.
+    const bakedOk = baked && !(await overPixelBudget(baked));
+    const shot = bakedOk ? await measureSize('image', baked) : null;
     // `baked` again rather than only `shot`: without a preview there is no
     // measurement either, so the two are one condition said twice.
     if (baked && shot?.decodable) {
@@ -772,7 +788,13 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
     // Not found, it is a named card, exactly as before.
     if (type === 'image' && !size.decodable) {
       const preview = await embeddedPreview(file).catch(() => null);
-      const shot = preview && await measureSize('image', preview);
+      // Budgeted for the same reason the baked path above now is. preview.ts
+      // verifies the lead bytes are FF D8 FF and admits a JPEG up to MAX_JPEG
+      // (128 MB) with no dimension check at all - so a .dng whose
+      // JPEGInterchangeFormat entry points at a two-kilobyte JPEG declaring
+      // 65535x65535 in its SOF0 was handed straight to createImageBitmap().
+      const previewOk = preview && !(await overPixelBudget(preview));
+      const shot = previewOk ? await measureSize('image', preview) : null;
       if (preview && shot?.decodable) {
         previewFile = preview;
         previewHash = await addFile(preview);
@@ -1173,7 +1195,23 @@ export async function filesFrom(dt: DataTransfer) {
   return { files: out.length ? out : flat, fromFolder, truncated: out.length >= MAX_FILES };
 }
 
-async function walkEntry(entry: FileSystemEntry, out: File[]) {
+/**
+ * How deep a dropped folder may go, and how many directories may be visited.
+ *
+ * The recursion below had neither, and the MAX_FILES guards are no substitute:
+ * they count *files*, so a symlink loop or ten thousand nested empty
+ * directories produce none, never trip a guard, and run until the stack blows
+ * or the drop simply never finishes. A visited set is not available - a
+ * FileSystemEntry has no stable identity to key on - so the bounds are the
+ * walk's own shape.
+ *
+ * Nobody organises photographs thirty-two folders deep, and eight thousand
+ * directories is an order of magnitude past MAX_FILES.
+ */
+const MAX_DEPTH = 32;
+const MAX_DIRS = 8192;
+
+async function walkEntry(entry: FileSystemEntry, out: File[], depth = 0, seen = { dirs: 0 }) {
   if (out.length >= MAX_FILES) return;
   if (isFileEntry(entry)) {
     const file = await new Promise<File | null>(res => entry.file(res, () => res(null)));
@@ -1181,12 +1219,13 @@ async function walkEntry(entry: FileSystemEntry, out: File[]) {
     return;
   }
   if (!isDirEntry(entry)) return;
+  if (depth >= MAX_DEPTH || ++seen.dirs > MAX_DIRS) return;
   const reader = entry.createReader();
   // readEntries returns at most ~100 per call and must be drained in a loop.
   for (;;) {
     const batch = await new Promise<FileSystemEntry[]>(res => reader.readEntries(res, () => res([])));
     if (!batch.length) break;
-    for (const child of batch) await walkEntry(child, out);
+    for (const child of batch) await walkEntry(child, out, depth + 1, seen);
     if (out.length >= MAX_FILES) break;
   }
 }

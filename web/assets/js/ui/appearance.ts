@@ -648,9 +648,30 @@ function pictureHashes() {
  */
 function sourceCount() {
   const n = board.paletteSources;
-  if (n === 0) return Infinity;
+  if (n === 0) return ALL_SOURCES_MAX;
   return Number.isFinite(n) ? Math.max(1, Math.min(MAX_SOURCES, n)) : MAX_SOURCES;
 }
+
+/**
+ * What "every photo" actually costs, at most.
+ *
+ * The stop used to return Infinity, which flowed into `hashes.slice(0,
+ * sourceCount()).map(assetURL)` - so one `items` event on a 400-photo board
+ * with Dynamic on minted a blob URL for all four hundred pictures, and
+ * storage/assets.ts caches those for the session with no per-hash release. That
+ * defeats canvas/items.ts's discard() bookkeeping outright, and samplePixels()
+ * then fetched and full-resolution-decoded all four hundred, one after another.
+ * pictureHashes()'s own header says this must never happen, and the slice was
+ * written to stop it.
+ *
+ * A number rather than Infinity, and it is a judgement: a palette read from a
+ * hundred and twenty photographs is the same palette as one read from four
+ * hundred - the hues have long since converged - and the difference is whether
+ * a phone survives it. The stop still means "far more than the dial offers",
+ * which is what somebody choosing it is asking for; it no longer means "however
+ * many there are, whatever that costs".
+ */
+const ALL_SOURCES_MAX = 120;
 
 /**
  * The slider position that means "every picture".

@@ -289,7 +289,11 @@ function isSvgImage(file: File): boolean {
  * does and cannot be refused the way a decode can.
  */
 async function svgSize(file: File): Promise<Size | null> {
-  const text = (await file.text()).slice(0, 4096);
+  // Sliced before it is decoded, not after. `file.text()` on a 200 MB .svg
+  // allocated about 400 MB as UTF-16 - during *import measurement*, on a file
+  // that was then thrown away except for its first four kilobytes. Slicing the
+  // Blob first is the same answer, bounded.
+  const text = await file.slice(0, 4096).text();
   const tag = text.match(/<svg\b[^>]*>/i)?.[0] || '';
   // parseFloat('') is NaN, which is exactly what an absent capture already gave
   // it - the `?? ''` is that same non-answer in a form parseFloat's type takes.
