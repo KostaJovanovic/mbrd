@@ -58,7 +58,15 @@ type InkCanvas = HTMLCanvasElement & { _dpr: number };
 // rather than against a copy of two numbers that has to be edited twice.
 export const MIN_PX = 40;    // spacing below which we step up to a coarser grid
 export const MAX_PX = 160;   // ...and above which we step down to a finer one
-const MAJOR = 4;             // major line every N minor steps
+// Exported for the same reason MIN_PX and MAX_PX are, and one more: ui/snapshot.ts
+// draws the lattice a second time onto the export canvas, and had its own copy of
+// this number. The techniques cannot be shared - that file's header says so and is
+// right - but the policy can, and a major every fifth mark in a PNG and every
+// fourth on screen would be two different grids.
+export const MAJOR = 4;      // major line every N minor steps
+
+/** How much heavier a major mark is drawn than a minor one, on both surfaces. */
+export const MAJOR_WEIGHT = 1.5;
 
 /**
  * The same band for a finger, in the only unit that makes the question
@@ -316,7 +324,7 @@ export function paintGrid(vp: Viewport) {
   // a synchronous style flush per frame for a value that changes about once an
   // afternoon. ui/appearance.js announces the change instead, so the attribute
   // is always current by the time we look at it.
-  const harsh = document.documentElement.dataset.whimsy === HARSH;
+  const harsh = harshGrid();
 
   if (harsh) {
     // The two painters are exclusive. Leaving the gradients up under the canvas
@@ -705,8 +713,17 @@ const still = () => !!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)'
  * what a data attribute holds, and `data-whimsy` is always written - see the
  * note on `apply()` in ui/appearance.js - so an absent attribute here means
  * the page has not booted yet, not "the middle".
+ *
+ * Exported because ui/snapshot.ts asks the same question of the same attribute
+ * to decide whether the export draws crosses or dots, and was asking it with a
+ * bare '2'. Three spellings of one tier - a number in ui/appearance.ts, this
+ * string here, a literal there - is two too many for a value that decides what
+ * a mark looks like.
  */
-const HARSH = '2';
+export const HARSH = '2';
+
+/** Whether the board is at the tier that draws registration crosses. */
+export const harshGrid = () => document.documentElement.dataset.whimsy === HARSH;
 
 /** Both marks are sized from --grid-dot, the user's grid-weight slider. */
 const scaled = (scale: number) => `calc(var(--grid-dot) * ${scale})`;
