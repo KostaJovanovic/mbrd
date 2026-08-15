@@ -43,6 +43,9 @@
 // MOBILE_ARRANGEMENTS.
 
 import { cellInset } from '../geometry.ts';
+// Shortest-column-first, shared with the Feed's wall - see the head of that file
+// for why the two masonries are one rule and two surfaces.
+import { packColumns } from './columns.ts';
 
 /** A position in world units - what every layout hands back, one per item. */
 export type Point = { x: number, y: number };
@@ -403,25 +406,30 @@ const LAYOUTS: Record<string, Layout> = {
     if (rnd) cols = reflow(cols, items.length, rnd);
     cols = Math.min(cols, items.length);
 
-    // Which column an item lands in depends only on heights, so the widths can
-    // be gathered on the way past and spent afterwards - each column exactly as
-    // wide as the widest thing that chose it.
-    const heights = new Array<number>(cols).fill(0);
+    // Which column an item lands in depends only on heights, and that half is
+    // packColumns() - the same call the Feed's wall is packed by, so the two
+    // cannot drift apart again. No span and no tolerance: a card is one column
+    // wide, and on a board two columns level to within a rounding error are two
+    // different places.
+    const { spots, height: tallest } = packColumns(items, { cols, gap: o.spacing });
+
+    // The widths are this surface's half and stay here. A wall of tiles has one
+    // column width; a board of cards does not, so each column comes out exactly
+    // as wide as the widest thing that chose it - which is only knowable once
+    // everything has chosen.
     const widths = new Array<number>(cols).fill(0);
-    const placed = items.map(it => {
-      let c = 0;
-      for (let k = 1; k < cols; k++) if (heights[k] < heights[c]) c = k;
-      const y = heights[c] + it.h / 2;
-      heights[c] += it.h + o.spacing;
+    items.forEach((it, i) => {
+      const c = spots[i].col;
       widths[c] = Math.max(widths[c], it.w + o.spacing);
-      return { c, y };
     });
+    // The top packColumns() answers with is a box's leading edge; an item's
+    // place on this board is its centre.
+    const placed = items.map((it, i) => ({ c: spots[i].col, y: spots[i].top + it.h / 2 }));
 
     const mid: number[] = [];
     let edge = 0;
     for (const w of widths) { mid.push(edge + w / 2); edge += w; }
     // Centre the whole block on the target point.
-    const tallest = Math.max(...heights) - o.spacing;
     return placed.map(p => ({
       x: o.center.x + mid[p.c] - edge / 2,
       y: o.center.y + p.y - tallest / 2,
