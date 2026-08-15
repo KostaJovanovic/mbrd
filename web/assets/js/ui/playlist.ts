@@ -52,15 +52,17 @@ import {
   board, bus, isDefaultTitle, markDirty, setAudioOrder,
 } from '../state.ts';
 import { baseName, clamp } from '../util.ts';
-import { seekInnerHTML, sizeSeekWave } from '../media/transport.ts';
+import {
+  bindScrub, clock, seekInnerHTML, sizeSeekWave, reportPlayError,
+  PAUSE_ICON, PLAY_ICON,
+} from '../media/transport.ts';
 import { mobileOrder, applyAudioOrder } from '../arrange/arrangements.ts';
 import { assetURL, getAsset, addFile } from '../storage/assets.ts';
-import { nowPlaying, onNowPlaying, togglePlayback } from '../canvas/audio.ts';
+import { nowPlaying, onNowPlaying } from '../canvas/audio.ts';
 import {
   clearQueue, cycleRepeat, isQueuePlayer, onQueue, playTrack, queueNext,
   queuePrev, queueState, setQueue, toggleShuffle,
 } from '../canvas/playlist-queue.ts';
-import { bindScrub, clock, PAUSE_ICON, PLAY_ICON } from '../media/transport.ts';
 import { audioTags, coverArt } from '../import/artwork.ts';
 import { resetPanels } from './panel-stack.ts';
 import { makeWindowDrag, makeWindowResize } from './float-window.ts';
@@ -331,7 +333,7 @@ function queueEl() {
 /** Play the queue from cold, resume it, or pause it - whichever applies. */
 function togglePlay() {
   const el = queueEl();
-  if (el) { el.paused ? el.play().catch(() => {}) : el.pause(); return; }
+  if (el) { el.paused ? el.play().catch(reportPlayError) : el.pause(); return; }
   const audio = orderedAudio();
   if (audio.length) playTrack(audio[0]);
 }
@@ -781,21 +783,66 @@ async function ensureTrackMeta(item: Item) {
   if (changed) { markDirty(); rebuildRow(item.id); }
 }
 
+/**
+ * How many duration probes may be in flight at once, and how long one is
+ * allowed to take.
+ *
+ * A 200-track board fired 200 `preload="metadata"` fetches in a single render
+ * pass, each an <audio> the browser then has to schedule. The queue below runs
+ * them a handful at a time, in the order the rows were drawn, which is the
+ * order somebody is looking at them.
+ *
+ * The timeout is the backstop canvas/poster.ts already carries for the same
+ * shape of probe: an element that fires neither `loadedmetadata` nor `error` -
+ * a truncated file, a codec the engine will not admit to - would otherwise sit
+ * on a slot for the session.
+ */
+const PROBE_LIMIT = 4;
+const PROBE_MS = 15_000;
+const probeQueue: Item[] = [];
+let probesRunning = 0;
+
 function probeDuration(item: Item) {
-  const url = item.asset?.hash && assetURL(item.asset.hash);
-  if (!url) return;
-  const probe = new Audio();
-  probe.preload = 'metadata';
-  probe.src = url;
-  probe.addEventListener('loadedmetadata', () => {
-    if (Number.isFinite(probe.duration)) {
-      item.meta.duration = probe.duration;
-      markDirty();
-      rebuildRow(item.id);
-    }
-    probe.removeAttribute('src');
-  }, { once: true });
-  probe.addEventListener('error', () => probe.removeAttribute('src'), { once: true });
+  probeQueue.push(item);
+  pumpProbes();
+}
+
+function pumpProbes() {
+  while (probesRunning < PROBE_LIMIT && probeQueue.length) {
+    const item = probeQueue.shift()!;
+    const url = item.asset?.hash && assetURL(item.asset.hash);
+    if (!url) continue;
+    probesRunning += 1;
+    const probe = new Audio();
+    let timer = 0;
+    // The one exit, so a slot is given back exactly once whichever way the
+    // probe ended. load() after clearing the src is what actually makes the
+    // element let go of what it buffered - the same pairing canvas/items.ts,
+    // canvas/poster.ts and canvas/renderers.ts all make, and the one this was
+    // missing.
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      probe.removeAttribute('src');
+      probe.load();
+      probesRunning -= 1;
+      pumpProbes();
+    };
+    probe.preload = 'metadata';
+    probe.addEventListener('loadedmetadata', () => {
+      if (Number.isFinite(probe.duration)) {
+        item.meta.duration = probe.duration;
+        markDirty();
+        rebuildRow(item.id);
+      }
+      finish();
+    }, { once: true });
+    probe.addEventListener('error', finish, { once: true });
+    timer = setTimeout(finish, PROBE_MS);
+    probe.src = url;
+  }
 }
 
 /** Redraw one track's row in every home it appears in, after metadata arrived. */
@@ -918,8 +965,18 @@ function showAlbumView() {
   cmds?.setBoardMode('mobile');
 }
 
-/** The slide-out backstop, so a close that never sees transitionend still finishes. */
-let windowExit = 0;
+/**
+ * The slide-out backstop, so a close that never sees transitionend still
+ * finishes - one per element, not one for the module.
+ *
+ * There was a single `windowExit` handle. Close the window, reopen it and close
+ * it again quickly, and the second close's `clearTimeout(windowExit)` killed
+ * the *first* element's backstop: that one then depended entirely on a
+ * transitionend that may never arrive, and an invisible .player-window was left
+ * on the body. A timer belongs to the animation it is backing up, and there can
+ * be two of those in flight.
+ */
+const windowExits = new WeakMap<Element, number>();
 
 function closePlayerWindow() {
   // Before the early return, not after: if the window ever goes away by some
@@ -936,10 +993,10 @@ function closePlayerWindow() {
   windowView = null;
   // Scale it back down, then take it away once the transform has run.
   el.classList.remove('is-open');
-  clearTimeout(windowExit);
-  const done = () => { clearTimeout(windowExit); el.remove(); };
+  clearTimeout(windowExits.get(el));
+  const done = () => { clearTimeout(windowExits.get(el)); windowExits.delete(el); el.remove(); };
   el.addEventListener('transitionend', e => { if (e.propertyName === 'transform') done(); }, { once: true });
-  windowExit = setTimeout(done, 500);
+  windowExits.set(el, setTimeout(done, 500));
   markTransport();
 }
 
@@ -1031,6 +1088,12 @@ function makePlayer(): Player {
   const waveSvg = line.querySelector('.pw-line-wave-svg');
   const wavePathEl = line.querySelector('.pw-line-fill-wave');
   const sizeWave = () => sizeSeekWave(line, waveSvg, wavePathEl);
+  // Once unconditionally, and then again on every resize where there is a
+  // ResizeObserver to say so. The call was *only* inside the guard, so on a
+  // browser without one the path's `d` stayed empty and the scrubber had no
+  // wave at all - a graceful degradation that degraded to nothing.
+  // ui/nowplaying.ts has always called it outside the guard.
+  sizeWave();
   if (typeof ResizeObserver === 'function') new ResizeObserver(sizeWave).observe(line);
   const total = document.createElement('span');
   total.className = 'pw-time'; total.textContent = '0:00';
@@ -1039,9 +1102,15 @@ function makePlayer(): Player {
   const controls = div('pw-controls');
   const shuffleBtn = pwBtn('pw-shuffle', SHUFFLE_ICON, 'Shuffle', toggleShuffle);
   const prevBtn = pwBtn('pw-prev', PREV_ICON, 'Previous', queuePrev);
-  const playBtn = pwBtn('pw-play', PW_PLAY_ICON, 'Play', () => {
-    if (!togglePlayback()) { const a = orderedAudio(); if (a.length) playTrack(a[0]); }
-  });
+  // The same togglePlay() the hero uses, which is the point of the change.
+  //
+  // It called togglePlayback() on whatever nowPlaying() happened to be, and
+  // that is not always this window's queue: with a video sounding on the board,
+  // this button paused the *video* while the hero button one panel away started
+  // the audio queue. Two buttons in one player, in sight of each other, meaning
+  // two different things by "play". This window is the queue's transport; the
+  // queue is what its play button plays.
+  const playBtn = pwBtn('pw-play', PW_PLAY_ICON, 'Play', togglePlay);
   const nextBtn = pwBtn('pw-next', NEXT_ICON, 'Next', queueNext);
   const repeatBtn = pwBtn('pw-repeat', REPEAT_ICON, 'Repeat', cycleRepeat);
   controls.append(shuffleBtn, prevBtn, playBtn, nextBtn, repeatBtn);

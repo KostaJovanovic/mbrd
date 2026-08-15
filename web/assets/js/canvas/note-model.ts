@@ -255,8 +255,12 @@ export function applyNoteStyle(wrap: HTMLElement, rich: NoteRich): void {
  * The marker is an attribute where the level and the alignment are classes, and
  * that is not inconsistency: a class is a set a line is in, and the wash is a
  * value the line *carries* into the stylesheet - cards.css turns data-wash into
- * a --wash colour, which the toolbar's own chip reads through the same rule. A
- * class would have needed the mapping written twice.
+ * a --note-wash colour, which the toolbar's own chip reads through the same
+ * rule. A class would have needed the mapping written twice.
+ *
+ * The property was `--wash`, which tokens.css has owned since long before as
+ * the whimsy ornament multiplier. See the block in cards.css for what that
+ * collision cost.
  */
 export function buildNoteLine(block: NoteBlock): HTMLDivElement {
   const line = document.createElement('div');

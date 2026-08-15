@@ -6,10 +6,16 @@
 // middle of it. This is what replaced it, and it is the half of the old
 // canvas/audio.js that builds nodes.
 //
-// Two callers on the board (canvas/renderers.js for an audio card,
-// canvas/video.js for a video one) and two above it (ui/nowplaying.js's bar,
-// ui/playlist.js's window), which is what makes it worth being one function
-// rather than four strips that drifted.
+// One caller: canvas/renderers.js, for an audio card.
+//
+// It said four - this file for an audio card, canvas/video.js for a video one,
+// ui/nowplaying.js's bar and ui/playlist.js's window - and named that as the
+// reason to be one function rather than four strips that drifted. Three of the
+// four never arrived. What the other three actually share is the part that went
+// down to media/transport.js (bindScrub, clock, the two glyphs, and now
+// reportPlayError), which is where a claim about four players belongs; each
+// builds its own strip around them. The options this file carried for those
+// callers - `line`, `signal`, `alive` - are gone with the sentence.
 //
 // ── Why canvas/ and not media/ ──
 //
@@ -20,10 +26,15 @@
 // reads `bus` and `selection` from state.ts to know when a card has been let go
 // of and may redraw its bars at a new width; it calls peaks() in
 // canvas/waveform.js, which reaches storage/assets.js and marks the board dirty;
-// it starts playback through canvas/playlist-queue.js; and it complains through
-// notify.js. media/ is in BASE in tests/layers.test.js precisely because
-// everything in it imports nothing at all, and a module with four dependencies
-// filed beside one with none would make the directory mean two opposite things.
+// and it starts playback through canvas/playlist-queue.js. media/ is in BASE in
+// tests/layers.test.js precisely because everything in it sits at the bottom of
+// the graph, and a module with three dependencies on state.ts and storage filed
+// beside one with none would make the directory mean two opposite things.
+//
+// Complaining is the one item that has since gone the other way. A rejected
+// play() is the same sentence in five players, so reportPlayError() is in
+// media/transport.js now and takes notify.js with it - which is the one import
+// that module has, and notify.js is beside it in BASE.
 //
 // So what went down to media/transport.js is the part that genuinely satisfies
 // that promise - bindScrub(), clock(), and the two glyphs, none of which touch
@@ -45,9 +56,8 @@
 
 import { clamp } from '../util.ts';
 import { bus, selection } from '../state.ts';
-import { toast } from '../notify.ts';
 import {
-  PAUSE_ICON, PLAY_ICON, bindScrub, clock, seekInnerHTML, sizeSeekWave,
+  PAUSE_ICON, PLAY_ICON, bindScrub, clock, reportPlayError,
 } from '../media/transport.ts';
 import { nowPlaying } from './audio.ts';
 import type { Track } from './playlist-queue.ts';
@@ -67,18 +77,19 @@ const MIN_BARS = 10;
  */
 export type TransportItem = Measurable & Track;
 
-export interface TransportOptions {
-  /**
-   * Draw a plain progress line instead of measured bars. What the now-playing
-   * bar uses for video - see the note on buildTransport() for why that is the
-   * only honest option rather than a style choice.
-   */
-  line?: boolean;
-  /** Ends the handlers put on `sound`, for a transport rebuilt onto a live element. */
-  signal?: AbortSignal;
-  /** Whether this strip is still on screen. Defaults to "is it inside a card". */
-  alive?: () => boolean;
-}
+// There was a `TransportOptions` here with three members - `line`, `signal` and
+// `alive` - and nothing ever passed one. buildTransport() has exactly one call
+// site (canvas/renderers.ts, an audio card) and calls it with two arguments, so
+// `line` was permanently false and the whole branch it gated was unreachable,
+// `signal` was permanently undefined on every addEventListener below, and
+// `alive` always fell through to its default.
+//
+// The prose was the expensive part: the header claimed four callers, the
+// docstring below explained at length how the bar uses the line form, and
+// ui/nowplaying.ts's own header pointed here for it - a design described in
+// three files and implemented in none of them. The bar draws its own strip out
+// of seekInnerHTML() and clock(), which is what its header says a few lines
+// further down.
 
 /**
  * Build the play button, the waveform and the clock for one audio item.
@@ -95,33 +106,14 @@ export interface TransportOptions {
  * construction, and drawing only its top half is a bar chart of a sound rather
  * than a picture of one.
  *
- * Built for a card and, since the now-playing bar, for one other place. The only
- * thing that has to change between the two is how it knows it has been thrown
- * away: `opts.alive` for the selection listener at the foot, and `opts.signal`
- * for the handlers on the <audio> itself.
- *
- * The signal matters because the element outlives the transport now. A card's
- * <audio> is built with the card and dies with it, so its listeners die with it
- * too; the bar's transport is rebuilt every time you switch back to a track it
- * has already shown, onto the same long-lived element, and without a way to let
- * go it would leave a play/pause/timeupdate set behind on every visit.
- *
- * `opts.line` draws a plain progress line where the waveform would go, and it
- * is what the bar uses for video. Not a style choice - it is the only honest
- * option. A measured waveform means decodeAudioData over the file's whole
- * arrayBuffer, which for a clip off a phone is hundreds of megabytes read into
- * memory to draw forty bars; and the readings would land in item.meta.peaks,
- * which collectWaveforms() in storage/mbrd.js writes out as a waveforms/<hash>
- * sidecar without asking what kind of item it came off. So video gets the same
- * line its own card carries, and peaks() is never called for one.
+ * Built for an audio card, and for nothing else. See the note above the
+ * signature about the three options that used to be here for callers that were
+ * never written.
  */
 export function buildTransport(
   item: TransportItem,
   sound: HTMLMediaElement,
-  opts: TransportOptions = {},
 ): HTMLDivElement {
-  const line = !!opts.line;
-
   const transport = document.createElement('div');
   transport.className = 'transport';
 
@@ -134,7 +126,7 @@ export function buildTransport(
   // The thing you seek on, in whichever of its two forms. Same role, same keys,
   // same scrub - only the ink differs, and only paint() below knows which.
   const wave = document.createElement('div');
-  wave.className = line ? 'vtrack' : 'wave';
+  wave.className = 'wave';
   // role="slider" is a promise: focusable, driven by the arrow keys, and
   // reporting where it is. It had the role and the label and none of the rest,
   // which is worse than no role at all - a screen reader announces a slider
@@ -155,36 +147,13 @@ export function buildTransport(
     wave.setAttribute('aria-disabled', String(!on));
   };
   setSeekable(false);
-  // The two stacked lanes, in the waveform form only - drawBars() is the only
-  // reader and is never reached on the line path, which has one rectangle and
-  // nothing to redraw at a new pitch. Held as a list rather than as two names
-  // because that is all either of them is ever used as.
+  // The two stacked lanes. Held as a list rather than as two names because that
+  // is all either of them is ever used as.
   const lanes: HTMLElement[] = [];
-  let fill: HTMLElement;
-  let vtWave: Element | null = null, vtWavePath: Element | null = null;
-  if (line) {
-    // The same shape the now-playing bar and the playlist window draw, so all
-    // three scrubbers wave together at the soft end of the whimsy axis - see the
-    // note in media/transport.js. It was a div scaled on X, which is the one thing a wave
-    // cannot be: scaling one horizontally changes its frequency as it plays, so
-    // the played part is revealed with a clip instead.
-    wave.innerHTML = seekInnerHTML('vt');
-    fill = wave.querySelector('.vt-fill') as HTMLElement;
-    vtWave = wave.querySelector('.vt-wave-svg');
-    vtWavePath = wave.querySelector('.vt-fill-wave');
-    // On a resize, not on a playback frame. The path is a string built in a loop
-    // over the line's width, so laying it every frame would rebuild it sixty
-    // times a second to arrive at the same characters; the width is what it
-    // actually depends on, and a video card is resizable.
-    if (typeof ResizeObserver === 'function') {
-      new ResizeObserver(() => sizeSeekWave(wave, vtWave, vtWavePath)).observe(wave);
-    }
-  } else {
-    const base = lane('wave-base');
-    fill = lane('wave-fill');
-    lanes.push(base, fill);
-    wave.append(base, fill);
-  }
+  const base = lane('wave-base');
+  const fill = lane('wave-fill');
+  lanes.push(base, fill);
+  wave.append(base, fill);
 
   const time = document.createElement('span');
   time.className = 'transport-time';
@@ -219,12 +188,10 @@ export function buildTransport(
 
   const paint = () => {
     const at = sound.duration ? clamp(sound.currentTime / sound.duration, 0, 1) : 0;
-    // A clip on the bars, a scale on the line, and each is the cheap way to
-    // move the one it belongs to: the waveform's fill has to reveal shaped ink
-    // so it is cut rather than resized, where the line is a plain rectangle and
-    // scaleX never touches layout. Both run on every frame of playback.
-    if (line) wave.style.setProperty('--vt-progress', at.toFixed(4));
-    else fill.style.clipPath = `inset(0 ${((1 - at) * 100).toFixed(3)}% 0 0)`;
+    // A clip rather than a scale, and it is the cheap way to move this one:
+    // the fill has to reveal shaped ink, so it is cut rather than resized.
+    // Runs on every frame of playback.
+    fill.style.clipPath = `inset(0 ${((1 - at) * 100).toFixed(3)}% 0 0)`;
     // How long it is until it starts, where it is once it has. A card sitting
     // at the top of a track has nothing to report about the playhead - it is at
     // the beginning, which is where the playhead always is before you press
@@ -252,9 +219,7 @@ export function buildTransport(
     frame = sound.paused ? 0 : requestAnimationFrame(follow);
   };
 
-  // Only for the waveform. A line has nothing to measure, and measuring it
-  // anyway is the expensive mistake the header above spells out.
-  if (!line) peaks(item).then(v => { values = v; drawBars(); });
+  peaks(item).then(v => { values = v; drawBars(); });
 
   // The first draw waits for the element to have a real width, rather than
   // taking whatever it measures at the moment the readings arrive.
@@ -270,24 +235,16 @@ export function buildTransport(
   //
   // Only while there is nothing drawn yet. Once there is, resizes are left to
   // the deselect below, so the bars do not reflow under a dragging pointer.
-  if (!line) {
-    const watch = new ResizeObserver(() => {
-      if (builtFor || !wave.clientWidth || !values) return;
-      drawBars();
-      watch.disconnect();
-    });
-    watch.observe(wave);
-  }
+  const watch = new ResizeObserver(() => {
+    if (builtFor || !wave.clientWidth || !values) return;
+    drawBars();
+    watch.disconnect();
+  });
+  watch.observe(wave);
 
-  // A rejected play() is never swallowed - almost always the browser refusing
-  // rather than a broken file (Firefox blocks audible playback outright when a
-  // site's autoplay permission is set to block), and an empty catch is why "the
-  // cards are unplayable" once had nothing behind it in the console.
-  const reportPlayError = (err: { name?: string } | null | undefined) =>
-    toast(err && err.name === 'NotAllowedError'
-      ? 'Your browser blocked playback — allow audio for this site'
-      : 'Could not play this file');
-
+  // The rule this module argued for and kept to itself now lives in
+  // media/transport.ts, where the other four players can reach it. See
+  // reportPlayError() there.
   play.addEventListener('click', () => {
     // The card is a voice of the shared queue: pressing play starts the queue here,
     // so the track advances to the next when it ends and the bar shows the playlist
@@ -299,8 +256,10 @@ export function buildTransport(
       playTrack(item);
     }
   });
-  const on = (type: string, fn: () => void) =>
-    sound.addEventListener(type, fn, { signal: opts.signal });
+  // No signal to pass. The <audio> is built with the card and dies with it, so
+  // these listeners die with it - which is the whole of why the `signal` option
+  // that used to be threaded through here was never needed by the one caller.
+  const on = (type: string, fn: () => void) => sound.addEventListener(type, fn);
 
   on('play', () => {
     transport.classList.add('is-playing');
@@ -402,24 +361,44 @@ export function buildTransport(
   // item and will never be seen again; that is when this stops. `.item` and not
   // isConnected, deliberately: buildContent() composes a card while it is still
   // detached, so a selection event landing in that window would read as death
-  // and quietly cost the card its resize redraw for good. A transport built
-  // somewhere other than a card - the now-playing bar - has no .item to find
-  // and says for itself when it is finished.
-  const alive = opts.alive || (() => !!wave.closest('.item'));
+  // and quietly cost the card its resize redraw for good.
+  const alive = () => !!wave.closest('.item');
   // Annotated because the unsubscribe is called from inside the handler that
   // `bus.on` is being handed - state.ts is still unchecked, so its return type
   // is inferred, and an inferred type that refers to itself is a cycle tsc
   // cannot close.
   const off: () => void = bus.on('selection', () => {
     if (!alive()) { off(); return; }
-    // A line has no bars to redraw at a new pitch - it is one rectangle that
-    // scales - so it has no reason to be listening at all past the liveness
-    // check above.
-    if (line || selection.has(item.id)) return;
+    if (selection.has(item.id)) return;
     if (wave.clientWidth && wave.clientWidth !== builtFor) drawBars();
   });
+  // ...and the same unsubscribe reachable from outside, because the check above
+  // only ever runs when the selection *next* changes. Pan a board of fifty
+  // audio cards until they are all discarded and then touch nothing: fifty live
+  // subscriptions, each holding the wave, the item, the element and the
+  // detached strip, for as long as the tab is open. A liveness test that runs
+  // only on an event nobody is going to fire is not a teardown. See
+  // releaseTransports(), which discard() calls.
+  (transport as TransportNode)._offSelection = off;
 
   return transport;
+}
+
+/** A built strip, with the way to stop it listening hung off it. */
+type TransportNode = HTMLElement & { _offSelection?: () => void };
+
+/**
+ * Unsubscribe every transport inside `el`. Called by discard() in
+ * canvas/items.ts, beside the media and picture teardown it does there.
+ *
+ * Not called by culling: a culled card is coming back, and its strip has to go
+ * on redrawing its bars at the width it comes back to.
+ */
+export function releaseTransports(el: Element): void {
+  for (const strip of el.querySelectorAll<TransportNode>('.transport')) {
+    strip._offSelection?.();
+    strip._offSelection = undefined;
+  }
 }
 
 function lane(className: string): HTMLDivElement {

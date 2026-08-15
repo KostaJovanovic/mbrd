@@ -36,16 +36,37 @@ const MAX_STILL = 640;
 type ZoomSource = Pick<Viewport, 'zoom' | 'onChange'>;
 
 /**
- * The twin <img>, with the object URL it is currently showing hung off it. The
- * URL lives on the node rather than in a map here because the node is what
- * culling throws away, and a map would be the leak this property prevents.
+ * The twin <img>, with the object URL it is currently showing hung off it.
+ *
+ * The URL lives on the node rather than in a map here because the node is what
+ * culling throws away - and the reason that is not the whole story is the whole
+ * of releaseStills() below. A blob URL is an entry in the *document's* URL
+ * store, not a property of the element that names it: throwing the node away
+ * throws away the string and leaves the blob where it was, for the life of the
+ * tab. Zoom out below stillZoom() on a board of thirty GIFs, pan until they are
+ * discarded, come back: one WebP per GIF per freeze, pinned.
  */
 type StillImage = HTMLImageElement & { _stillUrl?: string };
 
+/**
+ * Give back every frozen frame inside `el`. Called by discard() in
+ * canvas/items.ts, beside the src-clearing it does for the same reason.
+ *
+ * Not called by culling, which puts the same node back and wants the frame it
+ * had. The two are told apart there and this is the discard half.
+ */
+export function releaseStills(el: Element): void {
+  for (const twin of el.querySelectorAll<StillImage>('img.still')) {
+    if (twin._stillUrl) URL.revokeObjectURL(twin._stillUrl);
+    twin._stillUrl = undefined;
+    twin.classList.remove('is-ready');
+  }
+}
+
 let worldEl: HTMLElement | null = null;
 let stilled = false;
-/** How many nodes were mounted at the last sweep - see the guard in update(). */
-let mounted = -1;
+/** A sweep already booked for this frame - see the throttle in update(). */
+let sweep = 0;
 /** The live update, so a quality change can ask the question again. */
 let recheck = () => {};
 
@@ -74,16 +95,24 @@ export function initStills(world: HTMLElement, vp: ZoomSource): void {
     // pass. Culling remounts items as you pan, and a GIF that arrived after
     // the freeze has no frame of its own yet.
     //
-    // Guarded on the number of mounted nodes rather than run every time. The
-    // sweep is a querySelectorAll across the whole world, and this runs on
-    // every frame of every pan and zoom that happens to be below the freeze -
-    // which is a tree walk per frame to find, almost always, nothing. The
-    // count is what culling changes when it mounts something, so it answers
-    // "is there anything new to look at" for the price of reading a property.
+    // Throttled to a frame rather than guarded on a count. The sweep is a
+    // querySelectorAll across the whole world, and this runs on every frame of
+    // every pan and zoom that happens to be below the freeze - a tree walk per
+    // frame to find, almost always, nothing.
+    //
+    // It was guarded on `world.childElementCount`, which is the wrong question
+    // asked cheaply: a pan across a large board mounts and discards in the same
+    // onChange pass, so the count is frequently unchanged while the *set* is
+    // not, and a GIF that arrived in one of those passes never had capture()
+    // run over it. It kept animating with `is-stilled` on - the one state this
+    // module exists to prevent, in the case it is most likely to happen.
+    //
+    // A rAF coalesces every onChange in a frame into one sweep, which is the
+    // same saving the count was after and does not depend on guessing what
+    // changed.
     if (!want) return;
-    if (world.childElementCount === mounted) return;
-    mounted = world.childElementCount;
-    capture(false);
+    if (sweep) return;
+    sweep = requestAnimationFrame(() => { sweep = 0; capture(false); });
   };
 
   recheck = update;
