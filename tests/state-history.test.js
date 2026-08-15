@@ -13,6 +13,7 @@ import assert from 'node:assert/strict';
 import {
   board, addItems, removeItems, restoreItems, emptyTrash, undo, redo, byId,
   setBoardMode, setSetting, recheckBoardGeometry, lastCommand, takeBack,
+  snapshotGeom, commitGeom,
 } from '../web/assets/js/state.ts';
 import { fresh, photo } from './state-fixtures.js';
 
@@ -315,4 +316,34 @@ test('re-asserting the grid on load never touches the setting', () => {
   assert.equal(board.settings.snap, true);
   undo();
   assert.equal(board.settings.snap, false, 'only the original toggle was in history');
+});
+
+test('a card deleted mid-gesture leaves the pair describing one set of cards', () => {
+  // snapshotGeom() drops an id whose item is gone, so `after` is a subset of
+  // `before` - and commitGeom() paired the two arrays by index. Marquee-drag
+  // five cards, delete one mid-gesture, release: from the deleted card onwards
+  // each `after[i]` was compared against a different item's `before[i]`, so the
+  // change test, the presnap invalidation and the fence-resize detection all
+  // read unrelated items.
+  //
+  // What is checkable from here is the committed pair. `b` is the middle card,
+  // so an index pairing puts `c`'s new position against `b`'s old one - and the
+  // undo half then carries three entries for two cards.
+  fresh([
+    photo({ id: 'a', x: 0, y: 0 }),
+    photo({ id: 'b', x: 100, y: 0 }),
+    photo({ id: 'c', x: 200, y: 0 }),
+  ]);
+  const before = snapshotGeom(['a', 'b', 'c']);
+  for (const id of ['a', 'b', 'c']) byId(id).x += 40;
+  // Through the mutation door, so the id index goes with it - which is what
+  // makes snapshotGeom() answer two entries where `before` has three.
+  removeItems(['b']);
+  commitGeom('Move', before, ['a', 'b', 'c']);
+
+  assert.equal(byId('a').x, 40);
+  assert.equal(byId('c').x, 240);
+  // The entry weighs what it actually holds - two cards, not three.
+  assert.equal(lastCommand().weight, 4,
+    'the committed pair still carries the card that left the board');
 });

@@ -44,7 +44,13 @@ different questions. Desktop picks a **shape** — spiral, grid rings, masonry a
 the rest of `ARRANGEMENTS`. Mobile packs a column and throws every computed
 position away, so the only thing left to choose is the **order** the packer
 meets things in: `MOBILE_ARRANGEMENTS`, which is `fit`, `free`, `date`, `type`,
-`name` and `shuffle`.
+`tag`, `name` and `shuffle`.
+
+`tag` is Desktop's with the page taken away, the way `date` and `type` are: a
+column has no blocks to put side by side, so what carries over is the grouping —
+everything with one tag together, then the next, untagged last. This paragraph
+listed six and the code has carried seven for some time; the code is right, and
+a spec that names six is a spec that will be used to argue the seventh away.
 
 `free`, `date` and `type` are deliberately the same id in both, so a board
 switched to Mobile and back keeps the setting it had. Anything else stored for
