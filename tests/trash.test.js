@@ -58,3 +58,22 @@ test('the trash button deletes the selection and otherwise opens the bin', (t) =
   elements['bin-btn'].listeners.get('click')();
   assert.equal(elements['bin-panel'].hidden, false);
 });
+
+// The bin draws items out of a .mbrd somebody else wrote, which puts it under
+// the rule in CLAUDE.md: nothing that reads a foreign document may touch
+// innerHTML. It did - the sticker thumbnail was a template string with two
+// values out of an item's open `meta` interpolated into it, one of them inside
+// an attribute. Both were narrowed a line above, so nothing was actually
+// getting through; "safe because of a guard three lines up" is the arrangement
+// the rule exists to refuse, because the guard and the escaping are then held
+// together by nothing. It builds the same <svg> with createElementNS now, the
+// way canvas/renderers.ts does.
+test('ui/trash.ts builds its thumbnails rather than writing markup', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../web/assets/js/ui/trash.ts', import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^[ \t]*\/\/.*$/gm, '');
+  for (const sink of ['innerHTML', 'outerHTML', 'insertAdjacentHTML']) {
+    assert.ok(!src.includes(sink), `ui/trash.ts is back to ${sink} on a document it did not write`);
+  }
+});

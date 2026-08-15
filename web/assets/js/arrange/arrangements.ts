@@ -163,8 +163,15 @@ type Layout = (items: ArrangeItem[], o: Laying) => Point[];
  */
 export function arrange(items: ArrangeItem[], opts: ArrangeOpts = {}): Point[] {
   const o = { center: { x: 0, y: 0 }, spacing: 12, ...opts };
-  const name = o.name || 'grid';
-  const fn = LAYOUTS[name] || LAYOUTS.grid;
+  // `hasOwn`, because a plain-object lookup resolves inherited keys. `board
+  // .arrangement` reaches here unvalidated - layout.ts:900 is `stored ||
+  // 'spiral'` - so a .mbrd carrying `"arrangement": "constructor"` made `fn`
+  // the Object constructor, and `out.map` a few lines down threw and took
+  // Rearrange with it. `toString`, `valueOf` and `hasOwnProperty` are the same
+  // shape. The fallback was always there; it just was not reached.
+  const asked = o.name || 'grid';
+  const name = Object.hasOwn(LAYOUTS, asked) ? asked : 'grid';
+  const fn = LAYOUTS[name];
   if (!items.length) return [];
   if (name === 'free') return fn(items, o);
   // When a caller is about to snap the result to a grid (`cellStep` is that

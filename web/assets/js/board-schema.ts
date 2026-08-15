@@ -246,6 +246,58 @@ function normalizeLayoutSettings(raw: unknown, mode: LayoutMode, fallback: Board
   }, mode));
 }
 
+/**
+ * The settings a file may set, each held to the shape its default has.
+ *
+ * `...settings` used to spread the file's raw object straight over
+ * DEFAULT_SETTINGS, so only the six fields re-validated below it were held to
+ * anything at all. Everything else arrived from a foreign document untouched:
+ * `gridStep: 1e300` makes baseStep() return it and latticeBox() collapse a
+ * snapped board onto a single point, `spacing` and `scale` feed the same
+ * arithmetic, and the five flags are read as booleans by every consumer.
+ *
+ * Written as a table rather than a chain of ifs so that a *new* setting is
+ * covered by being added to DEFAULT_SETTINGS and named here - and an unknown
+ * key is dropped, which is the half a spread cannot do. The three fields with
+ * their own rules further down (appearance, fonts, mobileColumns) are left to
+ * them; a value that fails here falls back to the default rather than to
+ * nothing, because half a settings object is worse than a stock one.
+ */
+const NUMERIC: Record<string, [number, number]> = {
+  gridStep: [1, 4096],
+  spacing: [0, 4096],
+  scale: [1e-6, 1e6],
+  mobileColumns: [1, 64],
+};
+
+function cleanSettings(settings: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, fallback] of Object.entries(DEFAULT_SETTINGS)) {
+    if (!(key in settings)) continue;
+    const value = settings[key];
+    if (typeof fallback === 'boolean') {
+      // Exactly true or exactly false. A file saying `"grid": "yes"` is saying
+      // something this app does not read, and truthiness would make it mean on.
+      if (typeof value === 'boolean') out[key] = value;
+      continue;
+    }
+    if (typeof fallback === 'number') {
+      const range = NUMERIC[key];
+      if (typeof value === 'number' && Number.isFinite(value)
+        && (!range || (value >= range[0] && value <= range[1]))) out[key] = value;
+      continue;
+    }
+    if (typeof fallback === 'string') {
+      if (typeof value === 'string') out[key] = value;
+      continue;
+    }
+    // appearance and fonts, both re-derived below from `raw` rather than from
+    // this - carried through so the code under it reads what it always read.
+    out[key] = value;
+  }
+  return out;
+}
+
 function normalizeSettings(raw: unknown, mode: LayoutMode): BoardSettings {
   const settings: Record<string, unknown> = isRecord(raw) ? raw : {};
   const appearance: Record<string, unknown> = isRecord(settings.appearance)
@@ -262,7 +314,7 @@ function normalizeSettings(raw: unknown, mode: LayoutMode): BoardSettings {
   return {
     ...DEFAULT_SETTINGS,
     snap: mode === 'mobile',
-    ...settings,
+    ...cleanSettings(settings),
     mobileColumns: mode === 'mobile'
       ? mobileColumnCount(settings.mobileColumns ?? MOBILE_COLUMNS)
       : DEFAULT_SETTINGS.mobileColumns,

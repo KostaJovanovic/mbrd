@@ -37,6 +37,31 @@ async function withoutSubtle(fn) {
   }
 }
 
+/** Run `fn` with no `crypto` global at all - the case `crypto?.subtle` missed. */
+async function withoutCrypto(fn) {
+  const had = 'crypto' in globalThis;
+  const before = globalThis.crypto;
+  delete globalThis.crypto;
+  try {
+    return await fn();
+  } finally {
+    if (had) Object.defineProperty(globalThis, 'crypto', { value: before, configurable: true, writable: true });
+  }
+}
+
+test('a missing crypto global takes the fallback rather than throwing', async () => {
+  // `crypto?.subtle` reads as a check and is not one. Optional chaining guards
+  // a property being absent; an undeclared identifier throws a ReferenceError
+  // before the `?.` is reached. The two are the same where `crypto` exists
+  // without a `subtle` - the insecure-origin case above, which is what the
+  // fallback was written for - and not the same where the global is not there,
+  // which takes the whole import path down with an error naming neither
+  // hashing nor the file being read.
+  const b = fill(1024);
+  const out = await withoutCrypto(() => sha256(b));
+  assert.equal(out, reference(b));
+});
+
 /** Deterministic filler - a fixed pattern beats a random one that fails once. */
 const fill = n => Uint8Array.from({ length: n }, (_, i) => (i * 37 + (i >> 8) * 11) & 0xff);
 

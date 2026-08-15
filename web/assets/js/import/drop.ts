@@ -29,6 +29,7 @@ import { looksLikeMbrd } from '../storage/mbrd.ts';
 import { openOrMergeFile } from '../storage/storage.ts';
 import { stickerShape, stickerTint, DEFAULT_SHAPE } from '../stickers/catalogue.ts';
 import { tilePictures } from '../style-tile.ts';
+import { NOTE_TINTS } from '../canvas/note-model.ts';
 import type { Point } from '../arrange/arrangements.ts';
 import type { Size } from '../canvas/renderers.ts';
 import type { Item, ItemMeta } from '../board-model.ts';
@@ -913,8 +914,11 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
   };
 }
 
-/** How many colours the sticky pad comes in (see --note-1..4 in tokens.css). */
-export const NOTE_TINTS = 4;
+// The pad's size lives beside the note's model now, because three surfaces
+// outside this module read a stored tint and only one of them may import from
+// here. Re-exported so the flyout and the tests that already name it here keep
+// working. See noteTint() in canvas/note-model.ts.
+export { NOTE_TINTS };
 
 /**
  * A text card with no source file - the one item type born on the board.

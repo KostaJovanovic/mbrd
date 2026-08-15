@@ -47,6 +47,7 @@
 import { extOf, shuffle } from '../util.ts';
 import { adjustFilter, flipTransform, isFence, isLocked } from '../state.ts';
 import { buildContent, fitMode } from './renderers.ts';
+import { noteTint } from './note-model.ts';
 import type { Item } from '../board-model.ts';
 
 /**
@@ -392,8 +393,20 @@ export function buildItem(item: ItemLike, tilt: string, picked: boolean): HTMLDi
   // Which colour off the sticky pad. CSS picks the tint from this. `meta` is
   // unknown per key by design - see board-model.ts - so the tint is read as the
   // string it is meant to be rather than trusted to be one.
-  const tint = item.meta.tint;
-  if (typeof tint === 'string' && tint) el.dataset.tint = tint;
+  // A *number*, which is what addNote() writes: `meta: { text, tint }` with
+  // tint an integer 1..4, cycled or picked off the Note flyout's pad. This read
+  // `typeof tint === 'string'`, so data-tint was never written and
+  // cards.css:87-89 never matched - **every note on every board rendered on
+  // sheet 1 and the four-colour pad did nothing.** Introduced by 7724374
+  // ("Type most of the tree"), which replaced `if (item.meta.tint)
+  // el.dataset.tint = item.meta.tint` - where dataset coerced the number - with
+  // a string test. Sticker tints were unaffected because renderers.ts:1107
+  // writes String(...).
+  //
+  // Both forms are accepted rather than one, because a .mbrd written by any
+  // build in between may carry either and neither is wrong.
+  const tint = noteTint(item.meta.tint);
+  if (tint) el.dataset.tint = String(tint);
   if (picked) el.dataset.pick = '';
   el.style.setProperty('--item-tilt', tilt);
 

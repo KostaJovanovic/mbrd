@@ -164,10 +164,24 @@ function binRow(entry: TrashEntry) {
     // including a value that is not a string at all.
     const shape = stickerShape(item.meta?.shape)?.id ?? DEFAULT_SHAPE;
     thumb.classList.add('is-sticker');
-    thumb.innerHTML =
-      `<svg class="sticker-art" viewBox="${STICKER_VIEWBOX}" aria-hidden="true"
-            data-tint="${stickerTint(item.meta?.tint, shape)}">`
-      + `<use href="${STICKER_SPRITE}#${shape}"/></svg>`;
+    // Built rather than written. The markup this replaced interpolated two
+    // values out of an item's open `meta` into an attribute inside a string
+    // handed to innerHTML - and `meta` is whatever a .mbrd said it was. Both
+    // are narrowed a line above, so nothing was actually getting through, but
+    // "safe because of a guard three lines up" is the arrangement the rule in
+    // CLAUDE.md exists to refuse: a tree built with createElementNS has no
+    // escaping to get right and cannot be got wrong by a later edit to
+    // stickerTint(). The same five lines canvas/renderers.ts's sticker() uses,
+    // which is the fifth place that builds one of these.
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'sticker-art');
+    svg.setAttribute('viewBox', STICKER_VIEWBOX);
+    svg.setAttribute('aria-hidden', 'true');
+    svg.dataset.tint = String(stickerTint(item.meta?.tint, shape));
+    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', `${STICKER_SPRITE}#${shape}`);
+    svg.append(use);
+    thumb.append(svg);
   } else if (item.type === 'link') {
     // A link's name is a hostname, not a filename, and extOf() reads the last
     // dot in it - so "example.com" came out as a card badged "com" filed under

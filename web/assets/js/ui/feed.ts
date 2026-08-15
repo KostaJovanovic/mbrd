@@ -31,8 +31,9 @@ import { displayURLReady, ensureDisplay } from '../canvas/display.ts';
 import { baseName, clamp, isRecord } from '../util.ts';
 import { mobileOrder } from '../arrange/arrangements.ts';
 import { assetURL, readText } from '../storage/assets.ts';
-import { linkURL, buildContent } from '../canvas/renderers.ts';
+import { linkURL, buildContent, swatchHex } from '../canvas/renderers.ts';
 import { bindDial } from '../canvas/ghosts.ts';
+import { noteTint } from '../canvas/note-model.ts';
 import {
   registerPlayer, releasePlayers, nowPlaying, onNowPlaying,
 } from '../canvas/audio.ts';
@@ -727,8 +728,15 @@ function fillNote(t: Tile) {
   const body = div('feed-note');
   const text = noteText(t.item);
   body.textContent = text;
-  const tint = str(t.item.meta?.color);
-  if (tint) body.style.background = tint;
+  // The sheet the note is actually on, through the same validator the card
+  // uses. This read `meta.color`, which nothing in the app writes - notes carry
+  // `meta.tint`, an integer 1..4 - so a yellow note opened white on the Feed
+  // while its card was tinted on the canvas. And because normalizeMeta() passes
+  // unknown keys straight through, a hand-edited `meta.color:
+  // "url(https://attacker/beacon.png)"` went into the CSSOM and made the
+  // request.
+  const tint = noteTint(t.item.meta?.tint);
+  if (tint) body.style.background = `var(--note-${tint})`;
   t.el.appendChild(body);
 }
 
@@ -770,7 +778,16 @@ function fillLink(t: Tile) {
 
 function fillSwatch(t: Tile) {
   const block = div('feed-swatch');
-  const color = str(t.item.meta?.color) || t.item.name || '#888';
+  // Through swatchHex(), which is the only thing that decides what a swatch is.
+  //
+  // This read `meta.color`, a key no swatch carries - they store `meta.hex` -
+  // and so fell through to `item.name` every time, straight into the CSSOM. Two
+  // consequences: every swatch on the Feed was coloured by its own *name*, so
+  // renaming one changed its colour and dropped it to #888; and a .mbrd
+  // carrying `{"type":"swatch","name":"url(https://attacker/x.png)"}` put that
+  // value into a background, which is the request swatchHex()'s
+  // /^#[0-9a-f]{6}$/ exists to prevent.
+  const color = swatchHex(t.item.meta?.hex);
   block.style.background = color;
   const label = div('feed-swatch-label');
   label.textContent = color;

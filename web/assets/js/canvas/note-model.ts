@@ -93,6 +93,29 @@ export const NOTE_VALIGNS: NoteValign[] = ['top', 'middle', 'bottom'];
  */
 export const NOTE_WASHES: NoteWash[] = ['amber', 'terracotta', 'olive', 'graphite'];
 
+/** How many colours the sticky pad comes in (see --note-1..4 in tokens.css). */
+export const NOTE_TINTS = 4;
+
+/**
+ * A sheet number off the pad, or 0 for "no tint recorded".
+ *
+ * Here rather than beside addNote() in import/drop.ts, because three surfaces
+ * need it and only one of them may import that module: the card writes
+ * `data-tint`, and the Feed tile and the viewer sheet colour themselves from
+ * the same number. Each of the three used to read it its own way, and each of
+ * the three read it wrongly - canvas/item-dom.ts tested `typeof === 'string'`
+ * against a number, so no note has been tinted since 7724374, while the Feed
+ * and the viewer read `meta.color`, a key nothing in the app has ever written,
+ * and assigned it unvalidated to style.background.
+ *
+ * Both forms accepted, because a file written by any build in between may carry
+ * either: `4` and `"4"` are the same sheet.
+ */
+export function noteTint(raw: unknown): number {
+  const n = typeof raw === 'string' ? Number(raw) : raw;
+  return typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= NOTE_TINTS ? n : 0;
+}
+
 // The widening to `readonly string[]` is only so `.includes()` will take an
 // arbitrary string: a NoteTag[] *is* a readonly string[], so nothing is claimed
 // here that is not already true.

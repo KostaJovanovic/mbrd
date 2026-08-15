@@ -207,9 +207,18 @@ export function formatBytes(n: number) {
  *
  * The values are `unknown`, not any: knowing that a key can be read is not the
  * same as knowing what came back, and the caller narrows what it takes.
+ *
+ * An array is not one. It used to be - `typeof [] === 'object'` and it is not
+ * null - and every one of the ninety-odd callers then read named keys off a
+ * list and got `undefined` back, which is the answer to a question nobody
+ * asked. Where that mattered it mattered badly: a `.mbrd` whose `board.json` is
+ * `[1,2,3]` passed the guard, spread into a board, and replaced the open one
+ * with a blank. Nothing in the graph passes a list to this on purpose - the
+ * comparators beside it compare four named fields, not elements - so the narrow
+ * reading is the one every caller already meant.
  */
 export const isRecord = (v: unknown): v is Record<string, unknown> =>
-  typeof v === 'object' && v !== null;
+  typeof v === 'object' && v !== null && !Array.isArray(v);
 
 export const isHash = (v: unknown): v is string =>
   typeof v === 'string' && /^[0-9a-f]{64}$/.test(v);

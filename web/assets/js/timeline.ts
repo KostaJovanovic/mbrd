@@ -1137,6 +1137,49 @@ export function serializeTimeline(fingerprintOf = '') {
   };
 }
 
+/** A map of id to serialised text, as a file claims one, or null. */
+function readKeyed(raw: unknown): Keyed | null {
+  if (!isRecord(raw)) return null;
+  const out: Keyed = {};
+  for (const [id, text] of Object.entries(raw)) {
+    // Every value here is fed to JSON.parse() by restore(). A number or a null
+    // among them is a replay that throws halfway through putting a board back.
+    if (typeof text !== 'string') return null;
+    out[id] = text;
+  }
+  return out;
+}
+
+/** A list of ids, ditto. */
+const readOrder = (raw: unknown): string[] | null =>
+  Array.isArray(raw) && raw.every(id => typeof id === 'string') ? raw as string[] : null;
+
+/**
+ * A stored `base` as a Snap, or null if it is not one.
+ *
+ * `raw.base as Snap` was the whole check, behind an isRecord() that only said
+ * "an object". Every field below is read by restore() without looking - the
+ * orders are mapped over, the keyed maps are handed to JSON.parse - so a file
+ * whose base is `{}` gave a timeline that threw the moment somebody scrubbed
+ * it, several frames and one screenful away from the file that caused it.
+ *
+ * All or nothing rather than field-by-field defaults: a base with half its
+ * sections is a base that replays to a board nobody had, and the module's own
+ * rule is that a history describing the wrong board is worse than no history.
+ */
+function readSnap(raw: unknown): Snap | null {
+  if (!isRecord(raw)) return null;
+  const items = readKeyed(raw.items);
+  const desktop = readKeyed(raw.desktop);
+  const mobile = readKeyed(raw.mobile);
+  const trash = readKeyed(raw.trash);
+  const rest = readKeyed(raw.rest);
+  const itemOrder = readOrder(raw.itemOrder);
+  const trashOrder = readOrder(raw.trashOrder);
+  if (!items || !desktop || !mobile || !trash || !rest || !itemOrder || !trashOrder) return null;
+  return { items, itemOrder, desktop, mobile, trash, trashOrder, rest };
+}
+
 /**
  * Take a stored timeline as this session's history.
  *
@@ -1148,7 +1191,9 @@ export function serializeTimeline(fingerprintOf = '') {
  */
 export function adoptTimeline(raw: unknown, doc?: unknown) {
   resetTimeline();
-  if (!isRecord(raw) || !Array.isArray(raw.steps) || !isRecord(raw.base)) return;
+  if (!isRecord(raw) || !Array.isArray(raw.steps)) return;
+  const readBase = readSnap(raw.base);
+  if (!readBase) return;
   const parsed: Step[] = [];
   for (const entry of raw.steps) {
     if (!isRecord(entry) || !isRecord(entry.delta)) continue;
@@ -1176,7 +1221,7 @@ export function adoptTimeline(raw: unknown, doc?: unknown) {
   // its latest step. `stale` is the flag that already means "this ledger does
   // not describe the board in front of you", and a truncated one does not.
   const truncated = Array.isArray(raw.steps) && raw.steps.length > parsed.length;
-  base = raw.base as Snap;
+  base = readBase;
   steps = parsed;
   forgetBytes();
   at = Number.isFinite(raw.at)

@@ -308,6 +308,55 @@ test('frame-src is exactly the hosts canvas/embed.ts frames', () => {
     `frame-src allows ${extra.join(' ')}, which embed.ts never frames`);
 });
 
+test('no module names a remote host the policy does not allow', () => {
+  // The general form of the check below, and the one that was missing.
+  // csp.test.js greps optimize/media.ts by name for its host, so a *second*
+  // module reaching for a CDN was invisible: import/pdf.ts loaded pdf.js from
+  // cdn.jsdelivr.net against `script-src 'self'` and pointed a worker at it
+  // against `worker-src 'self'`, so PDF import and viewing were dead on the
+  // deploy and alive under serve.py, which sends no headers. The catch turned
+  // both refusals into a grey card. The URL was in the committed bundle - it is
+  // what shipped.
+  //
+  // Comments are stripped first: half the modules here discuss hosts in prose,
+  // and _headers is itself quoted in a few of them. What is left is a URL that
+  // opens a string literal or a template, which is a URL the code will use.
+  const allowed = new Set(
+    [...directives.values()].flat().filter(s => s.startsWith('http')).map(s => s.replace(/\/$/, '')));
+
+  /**
+   * Hosts that appear in a string and are never fetched.
+   *
+   * Each of these is here for a stated reason, which is the point: the check is
+   * worth nothing if the way past it is to add a name. A URL in a module is
+   * either something the app will load - and then the policy has to carry it -
+   * or one of these three shapes.
+   */
+  const NOT_FETCHED = new Map([
+    // The XML and SVG namespaces, handed to createElementNS. A namespace is an
+    // identifier that happens to look like an address; nothing resolves it.
+    ['http://www.w3.org', 'an XML namespace, not an address'],
+    // Recognised, not requested: canvas/embed.ts matches a pasted watch link
+    // and rewrites it to youtube-nocookie.com, which frame-src does carry.
+    ['https://www.youtube.com', 'matched when a link is pasted, then rewritten'],
+    // A placeholder in a field.
+    ['https://example.com', 'placeholder text'],
+  ]);
+
+  const offenders = [];
+  for (const rel of walk(JS, ['.ts', '.js'])) {
+    const code = read(join(WEB, rel))
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^[ \t]*\/\/.*$/gm, '');
+    for (const m of code.matchAll(/['"`](https?:\/\/[^/'"`]+)/g)) {
+      if (!allowed.has(m[1]) && !NOT_FETCHED.has(m[1])) offenders.push(`${rel} -> ${m[1]}`);
+    }
+  }
+  assert.deepEqual([...new Set(offenders)], [],
+    'these reach a host the policy does not carry, so they work under serve.py '
+    + 'and are refused on the deploy');
+});
+
 test('connect-src carries the one host the app fetches from', () => {
   // optimize/media.ts is the only outbound request mbrd makes on its own. The
   // check is on the host rather than the whole URL because that is all CSP

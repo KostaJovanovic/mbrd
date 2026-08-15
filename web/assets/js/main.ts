@@ -510,10 +510,17 @@ declare global {
   interface Window { mbrd: typeof handle }
 }
 
-// A console handle, deliberately public: `mbrd.board` to inspect state,
-// `mbrd.cmds.fit()` to drive the app, `mbrd.vp` for the coordinate model,
-// `mbrd.perf.on()` to profile the pan/zoom frame, `mbrd.debugGrips()` to see the
-// resize hitboxes.
+// A console handle, deliberately public, and the list below is all of it:
+// `mbrd.board` to inspect state, `mbrd.cmds.fit()` to drive the app, `mbrd.vp`
+// for the coordinate model, `mbrd.bus` to listen to or fire an app event,
+// `mbrd.selection` for what is picked, `mbrd.perf.on()` to profile the pan/zoom
+// frame, `mbrd.debugGrips()` to see the resize hitboxes.
+//
+// `bus` and `selection` were on the object and in no comment, which is how a
+// deliberate handle turns into an accidental one: seven keys are reachable from
+// any console on the deploy and the file describing it named five. Naming them
+// is the fix rather than removing them - both are exactly the kind of thing the
+// handle is for, and nothing here is a secret. It is a page anyone can read.
 const handle = {
   board, bus, vp, cmds, selection, perf: viewPerf,
   debugGrips: cmds.debugGrips,

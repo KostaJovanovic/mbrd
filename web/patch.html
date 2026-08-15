@@ -113,9 +113,18 @@
      stylesheet already renders, so the common case sets nothing at all. */
   try {
     var s = JSON.parse(localStorage.getItem('mbrd.appearance') || '{}');
-    /* != null, not truthiness: 0 is Softish, a real level with its own rules. */
-    if (s.whimsy != null) document.documentElement.dataset.whimsy = s.whimsy;
-    if (s.palette) document.documentElement.dataset.palette = s.palette;
+    /* != null, not truthiness: 0 is Softish, a real level with its own rules.
+       Both are held to their shape for the reason the quality dial below is
+       and the vars loop further down is: this runs before ui/look.js can
+       filter anything, all three reach the page as attribute selectors, and
+       until now only one of the three said so. Same rules as readLook() -
+       whimsy is a stop on a three-point axis, a palette id is a short slug. */
+    if (s.whimsy != null && /^[0-2]$/.test(String(s.whimsy))) {
+      document.documentElement.dataset.whimsy = s.whimsy;
+    }
+    if (typeof s.palette === 'string' && /^[a-z0-9-]{1,24}$/i.test(s.palette)) {
+      document.documentElement.dataset.palette = s.palette;
+    }
     /* The quality dial, for the same reason and from its own key: a phone left
        on Light should not be shown one blurred, shadowed frame first. Held to
        the three known stops rather than trusted, because this reaches the page

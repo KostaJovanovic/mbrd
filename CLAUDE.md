@@ -205,5 +205,5 @@ the top level, carried-out work in `old/`, speculative work in `future/`. See
 [`research/README.md`](research/README.md). **Nothing in `old/` is
 authoritative** — if it disagrees with the code, the code is right.
 
-`window.mbrd` is a deliberate console handle: `mbrd.board`, `mbrd.cmds.fit()`,
-`mbrd.vp`.
+`window.mbrd` is a deliberate console handle, and `main.ts` names all seven
+keys: `board`, `bus`, `vp`, `cmds`, `selection`, `perf`, `debugGrips`.

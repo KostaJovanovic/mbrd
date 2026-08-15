@@ -125,6 +125,29 @@ test('the pre-paint anti-flash guard carries look.js\'s grammar and function all
   assert.match(html, /\^--\[a-z0-9-\]\+\$/i, 'the anti-flash guard no longer requires a custom-property key');
 });
 
+test('the anti-flash guard holds whimsy and palette to their shapes too', () => {
+  // The third value the guard writes was checked and the first two were not:
+  // `dataset.whimsy = s.whimsy` and `dataset.palette = s.palette` straight out
+  // of localStorage, while the quality dial three lines below was held to its
+  // three stops and the vars loop below that to a grammar. All three reach the
+  // page the same way - as an attribute an `[data-*]` selector reads - so all
+  // three are held the same way. Same rules as readLook(): whimsy is a stop on
+  // a three-point axis, a palette id is a short slug.
+  const html = read(join(WEB, 'index.html'));
+  const look = read(join(WEB, 'assets', 'js', 'ui', 'look.ts'));
+
+  assert.match(html, /\/\^\[0-2\]\$\/\.test\(String\(s\.whimsy\)\)/,
+    'the anti-flash guard writes data-whimsy without checking it');
+  const PALETTE_SRC = '/^[a-z0-9-]{1,24}$/i';
+  assert.ok(look.includes(PALETTE_SRC), 'look.js moved its palette-id pattern - update the anti-flash guard');
+  assert.ok(html.includes(PALETTE_SRC), 'the anti-flash guard writes data-palette without checking it');
+
+  // The axis has three stops, and the guard spells that as a character class it
+  // cannot import. If a fourth is ever added, this is where the two disagree.
+  const stops = look.match(/WHIMSY = \[([^\]]*)\]/)[1].split(',').length;
+  assert.equal(stops, 3, `WHIMSY has ${stops} stops - the inline /^[0-2]$/ no longer covers it`);
+});
+
 test('the appearance panel no longer builds a density slider', () => {
   const source = read(join(WEB, 'assets', 'js', 'ui', 'appearance.ts'));
   assert.ok(!source.includes("label: 'Panel density'"));

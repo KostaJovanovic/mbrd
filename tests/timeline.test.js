@@ -220,6 +220,37 @@ test('a timeline that does not describe its board is marked stale', () => {
   assert.equal(timelineStale(), true);
 });
 
+// A stored `base` that is not a snapshot.
+//
+// `raw.base as Snap` behind an isRecord() was the whole check, and every field
+// of a Snap is read without looking by restore(): the two orders are mapped
+// over, the five keyed maps are handed to JSON.parse. So a file whose base was
+// `{}` - or one whose `items` held a number where a serialised card belongs -
+// adopted cleanly and threw the first time anybody scrubbed the timeline,
+// several frames and one screenful from the file that caused it. Refusing the
+// ledger is the answer rather than repairing it: a base with half its sections
+// replays to a board nobody had, and this module's own rule is that a history
+// describing the wrong board is worse than no history.
+for (const [what, base] of [
+  ['an empty object', {}],
+  ['no itemOrder', { items: {}, desktop: {}, mobile: {}, trash: {}, rest: {}, trashOrder: [] }],
+  ['an itemOrder of numbers', { items: {}, itemOrder: [1, 2], desktop: {}, mobile: {}, trash: {}, trashOrder: [], rest: {} }],
+  ['a serialised card that is not text', { items: { i1: 7 }, itemOrder: ['i1'], desktop: {}, mobile: {}, trash: {}, trashOrder: [], rest: {} }],
+  ['a base that is a list', []],
+  ['no base at all', undefined],
+]) {
+  test(`a stored timeline with ${what} is not adopted`, () => {
+    const [a] = addItems([photo({ x: 0, y: 0 })]);
+    move(a.id, 40, 0);
+    const doc = serializeBoard();
+    assert.ok(doc.timeline.steps.length >= 2, 'the fixture needs a ledger to break');
+    doc.timeline.base = base;
+    loadBoard(doc);
+    assert.equal(timelineSteps().length, 0,
+      'a base that is not a snapshot was taken as one - a replay will throw');
+  });
+}
+
 test('an asset only a step names is still referenced', () => {
   const hash = 'a'.repeat(64);
   const [a] = addItems([photo({ x: 0, y: 0, asset: { hash } })]);
