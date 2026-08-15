@@ -1187,7 +1187,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
    * A low edge onto the lattice, or left alone when the gesture is not snapping.
    *
    * `snap` is passed rather than read, so that a drag can hold the answer it
-   * started with - see MoveGesture.snap and insetNow().
+   * started with - see MoveGesture.snap and insetFor().
    */
   const snapLowFor = (v: number, snap: boolean) => (snap ? latticeLow(v, stepNow()) : v);
 
@@ -1219,21 +1219,18 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
    * high edge a seam short of the next, which is why the snapping below still
    * has to know which edge the pointer is holding.
    */
-  const insetFor = (snap: boolean) => (snap ? cellInset(stepNow()) : 0);
-
   /**
-   * ...for a gesture that has not frozen an answer of its own.
+   * ...for a gesture that says whether it is snapping.
    *
-   * The two that have - a resize grip and a move - pass `insetFor(g.snap)`
-   * instead, and that distinction is the bug this parameter exists to close. A
-   * grip decides `snap` once when it is taken, deliberately (see startResize);
-   * the seam was read live. Toggle snapping mid-resize and the edge went on
-   * quantising to `step` with the seam dropped to zero, which puts every
-   * snapped edge one `cellInset` off the lattice the rest of the board is laid
-   * on. The step and the seam are two halves of one lattice and have to come
-   * from one decision.
+   * `snap` is passed rather than read off `board.settings`, and that is the bug
+   * this parameter closes. A resize grip decides `snap` once when it is taken,
+   * deliberately (see startResize) - the seam was read live, so toggling
+   * snapping mid-resize left the edge quantising to `step` with the seam
+   * dropped to zero, which puts every snapped edge one `cellInset` off the
+   * lattice the rest of the board is laid on. The step and the seam are two
+   * halves of one lattice and have to come from one decision.
    */
-  const insetNow = () => insetFor(board.settings.snap);
+  const insetFor = (snap: boolean) => (snap ? cellInset(stepNow()) : 0);
 
   /**
    * One axis of a resize, against this board's current step and seam.
@@ -2235,7 +2232,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         if (grip.snap) {
           // A whole number of cells less a seam at each end - the same shape
           // latticeSide() gives, rounded up rather than to the nearest.
-          // The grip's frozen answer, not the live setting - see insetNow().
+          // The grip's frozen answer, not the live setting - see insetFor().
           const step = stepNow(), gap = 2 * insetFor(grip.snap);
           floor = Math.ceil((floor + gap) / step) * step - gap;
         }

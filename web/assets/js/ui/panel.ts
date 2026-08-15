@@ -129,6 +129,12 @@ export function buildPanel(root = document.getElementById('sidebar')) {
   }
 
   strip.setAttribute('role', 'tablist');
+  // Removed first, so a second build does not leave two of them on one strip.
+  // replaceChildren() above drops the tab buttons and their listeners, but
+  // `strip` itself survives every rebuild - and this function is exported, and
+  // re-exported through ui/sidebar.ts. Idempotent today because nothing calls
+  // it twice; a no-op line is a cheaper guarantee than a convention.
+  strip.removeEventListener('keydown', onTabKey);
   strip.addEventListener('keydown', onTabKey);
 
   for (const section of SECTIONS) {
@@ -381,7 +387,13 @@ function buildPicker(c: PickerControl) {
         c.set?.(o.value);
       },
     }));
-    openAnchored(btn.getBoundingClientRect(), entries);
+    // focus: true, because this one was opened by a press on a control and a
+    // press is somebody choosing to be here. openAnchored() defaults it off for
+    // the hover flyout - a panel that took the keyboard because a pointer
+    // drifted over a button would move the caret out of whatever was being
+    // typed - and that default was left standing on the click route too, so a
+    // keyboard user got a panel Tab could not reach.
+    openAnchored(btn.getBoundingClientRect(), entries, { owner: btn, focus: true });
   });
   // The other direction: ui/appearance-controls.ts writes `data-value` when the
   // look changes underneath and asks for the face to follow. An event rather

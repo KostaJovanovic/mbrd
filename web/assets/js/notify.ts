@@ -100,6 +100,33 @@ export function toast(msg: string, kind: ToastKind = ''): void {
 }
 
 /**
+ * Run a command from a button and say so if it fails.
+ *
+ * The two delegated `data-cmd` dispatchers - ui/sidebar.ts and ui/toolbar.ts -
+ * called `fn()` and threw the return value away. Half the commands behind those
+ * buttons are async (`save`, `clear-data`, `restart`, `export`, `optimize`), so
+ * a rejection became an unhandled rejection with no toast, no console line
+ * anybody would connect to the press, and no change to the button: the press
+ * read as having silently done nothing. It is also what made two stranded-
+ * button bugs in ui/board-actions.ts invisible for as long as they lasted.
+ *
+ * Here rather than in each dispatcher because there are two of them and they
+ * are the same door, and here rather than in a ui/ helper because this is the
+ * module that owns saying things to people.
+ *
+ * Synchronous throws are left alone deliberately: those are programming errors
+ * in this codebase's own command surface and belong in the console with their
+ * stack, not behind a toast.
+ */
+export function runCommand(result: unknown, what = 'That'): void {
+  if (typeof (result as { then?: unknown } | null)?.then !== 'function') return;
+  (result as Promise<unknown>).catch((err: unknown) => {
+    console.warn('[mbrd] command failed', err);
+    toast(`${what} did not work`, 'error');
+  });
+}
+
+/**
  * Say that something is being waited on. Returns the handle that ends it.
  *
  *   const job = busy('Reading 40 files');

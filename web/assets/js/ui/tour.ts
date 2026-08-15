@@ -191,8 +191,16 @@ export function goToStop(i: number) {
   if (at < 0 && !startTour()) return false;
   const list = stops();
   if (!list.length) return false;
-  at = Math.min(Math.max(Math.trunc(i) || 0, 0), list.length - 1);
-  travel();
+  const want = Math.min(Math.max(Math.trunc(i) || 0, 0), list.length - 1);
+  // Only when it is a different stop from the one startTour() may have just
+  // flown to. Jumping to stop 4 with no tour running used to fire two camera
+  // animations in the same tick: startTour() sets `at = 0` and travels there,
+  // then this set `at = 4` and travelled again - so the board lurched towards
+  // the first stop and then set off for the fourth. stepTour() above has always
+  // guarded its travel the same way.
+  const moved = want !== at;
+  at = want;
+  if (moved) travel();
   paint();
   return true;
 }

@@ -96,7 +96,7 @@ type GeomRow = Omit<Geometry, 'presnap'> & {
   loose: boolean;
 };
 
-/** The three options rearrange() takes - see the note above it. */
+/** The four options rearrange() takes - see the note above it. */
 type RearrangeOptions = {
   /** the layout, overriding the board's own */
   name?: string;
@@ -156,6 +156,21 @@ export async function saveWithCooldown() {
   let ok = false;
   try {
     ok = await saveBoard();
+  } catch (err) {
+    // A rejection is a failed save, not a broken button.
+    //
+    // There was no catch, and the shape of the damage is worth writing down:
+    // `finally` cleared `saving`, the throw then skipped every line after it,
+    // and the button was left disabled reading "Saving..." with no saveTick
+    // interval to repaint it - for the rest of the session, on the one control
+    // that stops work being lost. Plus an unhandled rejection in the console
+    // saying nothing about where it came from.
+    //
+    // That saveBoard() can reject is not hypothetical: runSaves() in
+    // storage/session.ts has try/finally and no catch, and four call sites
+    // around it defend against exactly this.
+    console.warn('[mbrd] save failed', err);
+    ok = false;
   } finally {
     saving = false;
   }
@@ -447,7 +462,16 @@ export function reloadBoard() {
  */
 export async function restartApp(): Promise<boolean> {
   flushNoteEdit();
-  if (!(await autosave())) {
+  // A rejection is a failed autosave, and a failed autosave is exactly the case
+  // the dialog below exists for - so it is caught rather than allowed to walk
+  // out of the function. It used to walk out, which made Restart do nothing at
+  // all: no dialog, no reload, one unhandled rejection. On a phone this is the
+  // only way back to a fresh page, per this function's own header.
+  const stored = await autosave().catch(err => {
+    console.warn('[mbrd] autosave failed before restart', err);
+    return false;
+  });
+  if (!stored) {
     const answer = await ask({
       title: 'Restart anyway?',
       body: 'This board could not be stored in this browser, so reloading the '
@@ -468,34 +492,6 @@ export async function restartApp(): Promise<boolean> {
 // Rearrange
 // ---------------------------------------------------------------------------
 
-/**
- * Lay `items` out again under the board's current arrangement.
- *
- * The whole board or a selection of it, and the difference is more than which
- * ids move. A rearrangement of everything is entitled to rebuild the board
- * around the origin and fly the view to it, because there is nothing else on
- * the board to be in the way. A rearrangement of nine cards is not: those nine
- * are somewhere for a reason, the rest of the board is around them, and hauling
- * them to 0,0 would be a move you did not ask for wearing a layout's clothes.
- * So a subset is relaid about its own centre and covers its own ground, and the
- * view stays where it is - the cards rearrange in front of you, which is the
- * plainest feedback there is and the reason a Fit would only get in the way.
- *
- * Three options, all of them a region's (see cmds.rearrangeFence):
- *
- *   name     the layout, overriding the board's own. A region gets masonry
- *            whatever the board is set to, because the board's arrangement is a
- *            statement about the board.
- *   center   where to lay it out about, overriding the two rules above. A
- *            region is relaid about *itself*, not about the middle of whatever
- *            happens to be in it - the region is the thing that is staying put.
- *   enclose  a fence id to close around the result, inside the same commit. The
- *            layout is not bounded by anything, so its block can come out wider
- *            or narrower than the region it was made for; a region that ended up
- *            not holding its own contents would then have them measured out of
- *            it. So the rectangle follows the cards, which is also the shape a
- *            fence is made with in the first place - see fenceBox().
- */
 /**
  * A card that is staying put, as the arrangement engine reads one.
  *
@@ -521,6 +517,42 @@ function obstacleBox(item: Item, step: number): Obstacle {
   return { x: box.x, y: box.y, w: 2 * hw, h: 2 * hh };
 }
 
+/**
+ * Lay `items` out again under the board's current arrangement.
+ *
+ * The whole board or a selection of it, and the difference is more than which
+ * ids move. A rearrangement of everything is entitled to rebuild the board
+ * around the origin and fly the view to it, because there is nothing else on
+ * the board to be in the way. A rearrangement of nine cards is not: those nine
+ * are somewhere for a reason, the rest of the board is around them, and hauling
+ * them to 0,0 would be a move you did not ask for wearing a layout's clothes.
+ * So a subset is relaid about its own centre and covers its own ground, and the
+ * view stays where it is - the cards rearrange in front of you, which is the
+ * plainest feedback there is and the reason a Fit would only get in the way.
+ *
+ * Four options, three of them a region's (see cmds.rearrangeFence):
+ *
+ *   name     the layout, overriding the board's own. A region gets masonry
+ *            whatever the board is set to, because the board's arrangement is a
+ *            statement about the board.
+ *   center   where to lay it out about, overriding the two rules above. A
+ *            region is relaid about *itself*, not about the middle of whatever
+ *            happens to be in it - the region is the thing that is staying put.
+ *   enclose  a fence id to close around the result, inside the same commit. The
+ *            layout is not bounded by anything, so its block can come out wider
+ *            or narrower than the region it was made for; a region that ended up
+ *            not holding its own contents would then have them measured out of
+ *            it. So the rectangle follows the cards, which is also the shape a
+ *            fence is made with in the first place - see fenceBox().
+ *   label    the undo entry's words, overriding the ones picked below. The
+ *            fourth, and it was in neither of the two places this option set is
+ *            written down - the type said three and so did this list, while the
+ *            field sat between them.
+ *
+ * This block used to sit above obstacleBox(), which was inserted underneath it
+ * by a half-finished edit, so the function it documents had no documentation
+ * and the one it did not had two.
+ */
 export function rearrange(items: Item[], options: RearrangeOptions = {}) {
   if (!items.length) return;
   const whole = items.length === board.items.length;
@@ -691,12 +723,11 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
     // whole column below an anchored card - the one thing an obstacle does -
     // would hang the board under a hole whenever the anchor sat near the foot of
     // it. See packMobileGrid().
-    const blockers = anchored;
     // Rearrangement changes order and position, not the sizes already visible
     // on this layout. In particular, do not rebuild them from meta.presnap:
     // that is the geometry to restore when snapping is disabled, not a sizing
     // source for every later press of Rearrange.
-    placed = placeMobileItems(placed, obstacles, { preserveSize: true, blockers });
+    placed = placeMobileItems(placed, obstacles, { preserveSize: true, blockers: anchored });
   } else {
     const spots = arrange(laid, {
       name: options.name || board.arrangement,

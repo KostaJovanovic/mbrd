@@ -19,6 +19,7 @@ import { board, bus, setSetting } from '../state.ts';
 import { VERSION } from '../version.js';
 import { el } from '../util.ts';
 import { readPref, writePref } from '../prefs.ts';
+import { runCommand } from '../notify.ts';
 import { buildPanel, paintPanel } from './panel.ts';
 import { paintTitleField, wireTitleField } from './board-title.ts';
 
@@ -122,7 +123,10 @@ export function initSidebar(cmds: SidebarCommands): void {
     const btn = (e.target as Element).closest<HTMLElement>('[data-cmd]');
     if (!btn) return;
     const fn = cmds[camel(btn.dataset.cmd!)];
-    if (fn) fn();
+    // Through runCommand(), so an async command that rejects says so instead of
+    // reading as a press that did nothing - see notify.ts. The button's own
+    // words are what gets reported, because they are what was pressed.
+    if (fn) runCommand(fn(), (btn.textContent || '').trim() || 'That');
   });
 
   // The file carries both arrangements, while each device remembers which one

@@ -33,15 +33,47 @@ function ago(at: number) {
   return Math.round(s / 86400) + ' d ago';
 }
 
+/** Whatever had the keyboard when the shelf opened, so it can be given back. */
+let opener: HTMLElement | null = null;
+
 function closeLibrary() {
   if (!root) return;
+  const held = root.contains(document.activeElement);
   root.remove();
   root = null;
   removeEventListener('keydown', onKey, true);
+  const back = opener;
+  opener = null;
+  // Only when the shelf actually had it: closing on a press elsewhere means the
+  // browser is about to place focus itself, and taking it back would fight
+  // that. The same rule ui/menu.ts's close() states.
+  if (held && back?.isConnected) back.focus({ preventScroll: true });
 }
 
 function onKey(e: KeyboardEvent) {
-  if (e.key === 'Escape') { e.stopPropagation(); closeLibrary(); }
+  if (!root) return;
+  if (e.key === 'Escape') { e.stopPropagation(); closeLibrary(); return; }
+  // The Tab trap `aria-modal="true"` was promising and nothing was keeping.
+  //
+  // This panel is a div on the body, not a <dialog> - so nothing outside it is
+  // inert, and a keyboard walked straight out of a thing that had announced
+  // itself as modal, into a board it could not see and could still delete
+  // cards on. showModal() would give the trap for nothing, and is not
+  // available here: the shelf is drawn under the same overlay stack as the
+  // viewer and the tour, and a top-layer dialog would sit above all of them.
+  if (e.key !== 'Tab') return;
+  const stops = [...root.querySelectorAll<HTMLElement>(
+    'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), '
+    + 'textarea:not(:disabled), [tabindex]:not([tabindex="-1"])')];
+  if (!stops.length) return;
+  const first = stops[0], last = stops[stops.length - 1];
+  const on = document.activeElement;
+  // Wrapped by hand at both ends, and also for a focus that has already
+  // escaped - which is the state the panel opens in until the line in
+  // openLibrary() below places it.
+  if (!root.contains(on)) { e.preventDefault(); (e.shiftKey ? last : first).focus(); return; }
+  if (!e.shiftKey && on === last) { e.preventDefault(); first.focus(); return; }
+  if (e.shiftKey && on === first) { e.preventDefault(); last.focus(); }
 }
 
 /**
@@ -61,6 +93,9 @@ async function guard(fn: () => Promise<void>) {
 export async function openLibrary() {
   if (typeof document === 'undefined') return;
   closeLibrary();
+  // Read before the panel exists, so it is the button that opened the shelf and
+  // not something inside it.
+  opener = document.activeElement as HTMLElement | null;
 
   root = document.createElement('div');
   root.id = 'library';
@@ -74,6 +109,10 @@ export async function openLibrary() {
   document.body.append(root);
   addEventListener('keydown', onKey, true);
   await render();
+  // Focus in, once there is something to focus. A panel that says aria-modal
+  // and leaves the keyboard behind it announces itself to a screen reader and
+  // then reads out the page underneath.
+  root?.querySelector<HTMLElement>('button:not(:disabled)')?.focus({ preventScroll: true });
 }
 
 async function render() {

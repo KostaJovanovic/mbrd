@@ -185,6 +185,11 @@ setNoteMenu((anchor, rows, current, pick) => {
     // aria-label, because it needs one there anyway.
     label: anchor.getAttribute('aria-label') || 'Font',
     focus: true,
+    // Which button this hangs off, so that the toggle question above is about
+    // *this* one. Font and Highlight are two buttons in one bar, and without
+    // this a press on the second while the first was open closed one and opened
+    // neither - see menuOwner in ui/menu.ts.
+    owner: anchor,
   });
 });
 // The saved quality level onto <html>, before anything reads a flag off it.

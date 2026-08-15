@@ -26,6 +26,7 @@
 
 import {
   board, bus, isDefaultTitle, byId, itemAdjust, itemCrop, flipTransform, stuckTo, isRider,
+  select, selection,
 } from '../state.ts';
 import { displayURLReady, ensureDisplay } from '../canvas/display.ts';
 import { baseName, clamp, isRecord } from '../util.ts';
@@ -246,6 +247,30 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
     if (at) cmds?.addStickerAt(shape, at);
   }, true);
 
+  /**
+   * The tile's menu, aimed at the tile.
+   *
+   * The retarget is the whole of it, and it was missing. Every selection-wide
+   * row this menu draws - Delete item, Copy, Tags, A tour stop, Anchor - acts
+   * on the *canvas* selection, which nothing in the Feed had ever set: select a
+   * card on the canvas, switch to Feed, long-press a different tile, tap Delete
+   * item, and the card you selected on the canvas died while the one under your
+   * thumb stayed. With nothing selected the row did nothing at all.
+   *
+   * The same call openMenuAt() makes in canvas/input.ts, on the same rule every
+   * file manager follows: opening a menu outside the selection retargets it,
+   * opening inside one leaves the group. `selection.size` rather than a hardcoded
+   * 1 for the same reason - the menu draws different rows for a group.
+   *
+   * Not a second selection model, which is what a Feed-local "current tile"
+   * would have been. The Feed shows the board's items; the board's selection is
+   * what "this one" means.
+   */
+  function openTileMenu(x: number, y: number, id: string) {
+    if (!selection.has(id)) select([id]);
+    cmds?.contextMenu(x, y, id, selection.size, { mobile: true });
+  }
+
   // The right-click slot, which the Feed did not own.
   //
   // There is exactly one contextmenu listener on the canvas side and it is bound
@@ -268,7 +293,7 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
     if (!id) return;
     e.preventDefault();
     cancelHold();
-    cmds?.contextMenu(e.clientX, e.clientY, id, 1, { mobile: true });
+    openTileMenu(e.clientX, e.clientY, id);
   });
   root.addEventListener('pointerdown', e => {
     // Touch only. A mouse has the button above, and a pen reports its own
@@ -294,7 +319,7 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
       // click handler opens the viewer, and a hold that opened a menu and an
       // item is a press that did two things.
       heldOpen = true;
-      cmds?.contextMenu(holdFrom.x, holdFrom.y, holdFrom.id, 1, { mobile: true });
+      openTileMenu(holdFrom.x, holdFrom.y, holdFrom.id);
     }, HOLD_MS);
   }, { passive: true });
   // A finger that moved is scrolling, and a scroll is not a hold. The slop is

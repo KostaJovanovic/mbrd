@@ -51,12 +51,15 @@ import { saveWithCooldown } from '../ui/board-actions.ts';
  * characters, spaces and dashes - the artefact carries the board's name, not its
  * punctuation, and it is a filename bound for a dozen different filesystems.
  */
-function boardArtefactName(ext: string, suffix = ''): string {
+function boardArtefactName(ext: string): string {
   const base = (board.title || '').replace(/[^\w -]+/g, '').trim().slice(0, 60) || 'board';
-  // The suffix keeps a style tile from overwriting a picture of the same board
-  // in the same folder - two derived artefacts, one name, and the second one
-  // silently replacing the first would be the export losing somebody's work.
-  return suffix ? `${base} ${suffix}.${ext}` : `${base}.${ext}`;
+  // There was a `suffix` parameter here, defaulted to '', with a comment
+  // arguing that it kept a style tile from overwriting a picture of the same
+  // board in the same folder. Both call sites pass one argument, the style tile
+  // it was written for is gone, and the two artefacts that remain differ by
+  // their extension. A parameter nobody passes is a claim about a collision
+  // that cannot happen.
+  return `${base}.${ext}`;
 }
 
 /**

@@ -181,10 +181,15 @@ type MenuOpts = {
  * initMenu() rather than imported.
  */
 export interface MenuCommands {
+  // Five members that no builder in this file called were removed - addFiles,
+  // find, fit, recenter and duplicate. This interface's own sentence above is
+  // "what this menu asks of the command surface, and nothing else", and a
+  // declaration nothing reads is a requirement on every implementer for
+  // nothing: commands.ts still has all five, the keyboard still reaches
+  // duplicate on Ctrl+D, and this list is now the menu again.
+  //
   // The canvas menu
   addNoteAt: (at: Point | null) => unknown;
-  addFiles: () => unknown;
-  find: () => unknown;
   selectAll: () => unknown;
   rearrange: () => unknown;
   rearrangeFence: (id: string) => unknown;
@@ -192,8 +197,6 @@ export interface MenuCommands {
   multiSelect: () => boolean;
   toggleMultiSelect: () => unknown;
   reload: () => unknown;
-  fit: () => unknown;
-  recenter: () => unknown;
   fenceUnder: (at: Point) => string | null;
   getSetting: (key: 'snap' | 'grid') => unknown;
   toggleSetting: (key: 'snap' | 'grid') => unknown;
@@ -257,7 +260,6 @@ export interface MenuCommands {
   fenceSelection: () => unknown;
   alignSelection: (edge: string) => unknown;
   distributeSelection: (axis: 'x' | 'y') => unknown;
-  duplicate: () => unknown;
   copy: () => unknown;
   paste: (at: Point | null) => unknown;
   canPaste: () => boolean;
@@ -334,8 +336,25 @@ export function setMenuCloseHook(fn: (() => void) | null) { onClose = fn; }
  * worse bug than the one being fixed - so anything older than a slow tap is
  * treated as unrelated.
  */
-let dismissed: { by: EventTarget | null, at: number } = { by: null, at: -Infinity };
+let dismissed: { by: EventTarget | null, at: number, owner: Element | null } =
+  { by: null, at: -Infinity, owner: null };
 const DISMISS_MS = 400;
+
+/**
+ * The button the standing menu hangs off, when it hangs off one.
+ *
+ * Passed by the three openers that also ask justDismissed(), and it is what
+ * turns that question from "did a press just close a menu" into "did a press on
+ * *this* button close *this* button's menu" - which is what it always meant.
+ *
+ * Without it, pressing a second menu button while the first's menu was up
+ * closed one and opened neither: the capture pointerdown recorded the second
+ * button as the dismisser, and the second button's own opener then read that as
+ * "I am the toggle that just closed" and declined. Reproduces in the note
+ * composer between Font and Highlight, and on the toolbar between More and the
+ * palette picker - two buttons, one press, nothing on screen.
+ */
+let menuOwner: Element | null = null;
 
 /**
  * Did a press on (or inside) this element just close the menu?
@@ -348,7 +367,11 @@ export function justDismissed(el: Element | null): boolean {
   if (!el || !dismissed.by) return false;
   if (performance.now() - dismissed.at > DISMISS_MS) return false;
   if (!el.contains(dismissed.by as Node)) return false;
-  dismissed = { by: null, at: -Infinity };
+  // ...and it has to have been *this* button's menu. See menuOwner. A menu with
+  // no owner - the right-click menu, a fold - was never a toggle, so a press on
+  // a button that happens to close one is that button's ordinary press.
+  if (!dismissed.owner || !el.contains(dismissed.owner)) return false;
+  dismissed = { by: null, at: -Infinity, owner: null };
   return true;
 }
 
@@ -374,6 +397,21 @@ export function justDismissed(el: Element | null): boolean {
 const insideMenu = (target: EventTarget | null) =>
   !!node?.contains(target as Node | null) || !!child?.contains(target as Node | null);
 
+/**
+ * Does the open menu own the keyboard?
+ *
+ * Two ways to own it, and both are needed. Focus being inside the panel is the
+ * ordinary one - a menu opened from a keyboard press, or one a row has since
+ * been arrowed onto. `lastOpts.focus` covers the frame after render() and
+ * before the browser has settled focus, and it is also the honest answer for a
+ * panel that asked for the keyboard and is between rows.
+ *
+ * The hover flyout answers no to both, which is the whole point: it declined
+ * focus on the way in, so it may not take a keystroke on the way past.
+ */
+const ownsKeyboard = () =>
+  !!lastOpts.focus || insideMenu(document.activeElement);
+
 export function initMenu(viewport: Viewport, commands: MenuCommands) {
   vp = viewport;
   cmds = commands;
@@ -386,7 +424,7 @@ export function initMenu(viewport: Viewport, commands: MenuCommands) {
     if (!node || insideMenu(e.target)) return;
     // Recorded before the close, because close() is what clears the state this
     // is a fact about. See justDismissed().
-    dismissed = { by: e.target, at: performance.now() };
+    dismissed = { by: e.target, at: performance.now(), owner: menuOwner };
     close();
   }, true);
   addEventListener('wheel', e => {
@@ -402,7 +440,23 @@ export function initMenu(viewport: Viewport, commands: MenuCommands) {
   addEventListener('blur', close);
   addEventListener('keydown', e => {
     if (!node) return;
+    // Escape closes whatever is up, focus or no focus: a panel a pointer opened
+    // by drifting over a button is still a panel somebody wants gone, and
+    // Escape is how anything in this app is dismissed.
     if (e.key === 'Escape') { e.stopPropagation(); close(); return; }
+    // Everything below this line is *navigation of the menu*, and it only
+    // belongs to the menu when the menu has the keyboard.
+    //
+    // It used to belong to it whenever a panel was up, which openAnchored's own
+    // header says is wrong: `focus` is false for a hover precisely so that "a
+    // panel that took the keyboard because a pointer drifted over a button"
+    // does not "move the caret out of whatever was being typed". This listener
+    // is on the window, in the capture phase, and did exactly that - dwell on
+    // the toolbar's Note button, press Ctrl+K, type `cat`, and each letter went
+    // to typeAhead(), matched a flyout row, focused it and was eaten by
+    // preventDefault(). The caret left the field and the word never arrived.
+    // The arrows and Home/End the same.
+    if (!ownsKeyboard()) return;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       moveFocus(e.key === 'ArrowDown' ? 1 : -1);
@@ -437,8 +491,31 @@ export function initMenu(viewport: Viewport, commands: MenuCommands) {
  * focus, so landing on one would leave the keyboard nowhere.
  */
 function focusEnd(dir: 1 | -1) {
-  const items = [...node!.querySelectorAll<HTMLElement>('.ctx-item:not(:disabled)')];
+  const items = focusRows();
   if (items.length) items[dir > 0 ? 0 : items.length - 1].focus();
+}
+
+/**
+ * The rows the keyboard is walking: the panel that holds focus.
+ *
+ * All three keyboard routes - the arrows, Home/End and type-ahead - queried the
+ * root and only the root. The hover child is a *sibling* of the root on the
+ * body, not a descendant, so a keyboard inside it walked the rows behind it
+ * instead: focus jumped out of the panel it was in and back into the one
+ * underneath, one row at a time, which reads as the menu refusing to move.
+ *
+ * Following focus rather than following the child is the whole of the rule. A
+ * hover flyout must not take the keyboard merely by being open - openAnchored's
+ * header says why, and ownsKeyboard() holds the same line one level up.
+ *
+ * :not(:disabled), because a readout row cannot take focus - so without it the
+ * walk would land on one, focus() would do nothing, and the next press would
+ * compute its step from whatever still had focus. One inert row would stop the
+ * arrow keys dead in the middle of the menu.
+ */
+function focusRows(): HTMLElement[] {
+  const panel = child?.contains(document.activeElement) ? child : node;
+  return panel ? [...panel.querySelectorAll<HTMLElement>('.ctx-item:not(:disabled)')] : [];
 }
 
 /**
@@ -462,7 +539,7 @@ function typeAhead(key: string): boolean {
   const now = performance.now();
   typed = now - typedAt > TYPE_MS ? key : typed + key;
   typedAt = now;
-  const items = [...node!.querySelectorAll<HTMLElement>('.ctx-item:not(:disabled)')];
+  const items = focusRows();
   if (!items.length) return false;
   // The row's own words, lowercased. A row's first child may be an icon or a
   // chip, so this reads the whole button rather than one element - the accel
@@ -496,6 +573,9 @@ export function close() {
   // against a list it was never made about.
   typed = '';
   typedAt = -Infinity;
+  // Ditto the button it hung off. `dismissed` has already taken its copy by the
+  // time this runs - see the capture listener in initMenu().
+  menuOwner = null;
   const back = opener;
   opener = null;
   // Only when the menu actually had focus. Closing on a pointerdown elsewhere
@@ -529,9 +609,13 @@ export function close() {
  * leaves one. A menu is a closed panel wherever it is opened from.
  */
 export function openAnchored(rect: MenuAnchor, entries: MenuEntry[],
-  { label = 'Menu', focus = false }: { label?: string, focus?: boolean } = {}) {
+  { label = 'Menu', focus = false, owner = null }:
+    { label?: string, focus?: boolean, owner?: Element | null } = {}) {
   close();
   opener = document.activeElement as HTMLElement | null;
+  // The button this hangs off, for the toggle question - see menuOwner. Set
+  // after close(), which clears it.
+  menuOwner = owner;
   render(entries, rect.left, rect.bottom, { anchor: rect, label, focus });
 }
 
@@ -1303,6 +1387,15 @@ function swap(entries: MenuEntry[]) {
   // should not suddenly start swallowing arrow keys, and one drilled into from
   // the keyboard must not drop them.
   const held = !!node && node.contains(document.activeElement);
+  // The hover child goes with the page it was flown out of. close() does this
+  // first for the same reason and this did not: `node.remove()` left the
+  // submenu on screen hanging off nothing, with `childRow` pointing at a
+  // detached button and `childFrom` at a detached panel - and since the only
+  // thing that clears those is `childFrom === panel` against a panel that no
+  // longer exists, the orphan stayed until something else closed the menu
+  // outright. Hover Edit, arrow to Tags, press Enter, and the Edit fold was
+  // still there over the new page.
+  closeChild();
   if (node) { node.remove(); node = null; }
   render(entries, lastX, lastY, { ...lastOpts, focus: lastOpts.focus || held });
 }
@@ -1475,7 +1568,7 @@ function fillPanel(panel: HTMLElement, entries: MenuEntry[]) {
       if (entry.sub) btn.append(icon('i-chevron-right', 'ctx-chevron'));
       // Both assertions are the branch this is inside: one of the two is set,
       // and each arm has just tested which.
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', e => {
         // Unless the list being asked for is already on screen. Hovering this
         // row flew it out beside the row a moment ago, and a press that lands
         // afterwards is a press asking for something it can already see - so
@@ -1484,14 +1577,24 @@ function fillPanel(panel: HTMLElement, entries: MenuEntry[]) {
         // the menu flinching at being clicked: the thing you were pointing at
         // moved, and the row now under the pointer is a different one.
         //
-        // The condition is *this row's child is up*, not *a mouse did it*.
-        // Which pointer a click came from is a question with three different
-        // answers across the engines and a fourth for the keyboard, and it is
-        // not the question anyway. The two routes that still need the drill-in
-        // - a finger, which never fires the pointerenter below, and the arrow
-        // keys, which do not fire it either - are exactly the two that arrive
-        // here with nothing open.
-        if (entry.sub && child && childRow === btn) return;
+        // The condition is *this row's child is up*, not *a mouse did it* -
+        // with the one exception the claim below was wrong about.
+        //
+        // It used to say the keyboard "arrives here with nothing open", which
+        // is only true when the pointer has since left the row. Leave the mouse
+        // resting on the Edit fold, arrow back onto it and press Enter: the
+        // child was open, `childRow` was this button, and the press did
+        // nothing at all. A dead key on a focused row is the worst answer
+        // available - there is no feedback to tell it from a menu that has
+        // stopped listening.
+        //
+        // `detail === 0` is the keyboard, and it is the one thing about the
+        // *route* that every engine agrees on: a click synthesized by Enter or
+        // Space carries no click count, and a real one always carries at least
+        // 1. Which pointer a pointer-click came from stays unasked, because
+        // that is the question with four answers.
+        const byKey = e.detail === 0;
+        if (entry.sub && child && childRow === btn && !byKey) return;
         swap(entry.sub ? subMenu(entry.sub, entries) : entry.to!);
       });
       // And the other route into the same list: hover it open beside the row,
@@ -1800,14 +1903,7 @@ export function icon(name: string, extra?: string) {
 }
 
 function moveFocus(step: number) {
-  // `node` is asserted because the one caller tests it first; the rows are
-  // buttons because render() puts .ctx-item on nothing else.
-  //
-  // :not(:disabled), because a readout row cannot take focus - so without this
-  // the walk would land on it, focus() would do nothing, and the next press
-  // would compute its step from whatever still had focus. One inert row would
-  // stop the arrow keys dead in the middle of the menu.
-  const items = [...node!.querySelectorAll<HTMLElement>('.ctx-item:not(:disabled)')];
+  const items = focusRows();
   if (!items.length) return;
   const at = items.findIndex(row => row === document.activeElement);
   const next = at < 0 ? (step > 0 ? 0 : items.length - 1) : (at + step + items.length) % items.length;

@@ -641,14 +641,21 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
         { label: 'Add a colour', icon: 'i-swatch', action: () => cmds.addSwatch() },
         { label: 'Add a link', icon: 'i-link', action: () => cmds.addLink() },
         { label: 'Stickers', icon: 'i-sticker', action: () => cmds.stickers() },
-      ], { label: 'More tools' });
+      // focus: true for the same reason buildPicker() passes it - this menu is
+      // opened by a press on a button, not by a pointer drifting over one.
+      ], { label: 'More tools', owner: btn, focus: true });
     },
     // --- one card at a time: the can*/setter pairs the menu reads ---
     ...itemMetaCommands(),
 
     // On the command surface as well as on Ctrl+K, because a keyboard shortcut
     // nothing mentions is a feature only the person who wrote it has.
-    find: () => openSearch(),
+    // The toolbar's Find button, so a second tap on it closes rather than
+    // throwing away a typed query - see open() in ui/search.ts. Ctrl+K arrives
+    // here too and hands over the same button, which costs nothing: the record
+    // open() checks is written by a *pointerdown* on it inside the last four
+    // hundred milliseconds, and a keystroke writes none.
+    find: () => openSearch(document.querySelector('#toolbar [data-cmd="find"]')),
     getSetting: (key: string) => settingsBag()[key],
     toggleSetting: (key: string) => setSetting(key, !settingsBag()[key]),
     // The dial's half of the pair. The panel writes settings through

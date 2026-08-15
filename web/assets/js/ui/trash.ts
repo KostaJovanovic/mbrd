@@ -52,7 +52,19 @@ export function initTrash(viewport: Viewport) {
   hint = el('bin-hint');
   emptyBtn = el('bin-empty') as HTMLButtonElement | null;
   titleRestore = el('title-restore');
-  if (!panel || !button) return;
+  // All five that this module then dereferences with `!`, not the two.
+  //
+  // The comment above says the file "returns early when the two that matter are
+  // missing" and that everything below reads its nodes with `!` on that
+  // strength - but four more were taken and asserted: a missing #bin-list or
+  // #bin-empty threw here at boot, which takes the whole app down rather than
+  // the bin. Either the guard covers what the assertions claim or the
+  // assertions are wishes; this is the smaller of the two repairs.
+  //
+  // #title-restore stays optional and keeps its `?.`, which is not a third
+  // policy: it is genuinely conditional markup, present only while a board can
+  // have lost its title card.
+  if (!panel || !button || !list || !none || !hint || !emptyBtn) return;
 
   button.addEventListener('click', () => {
     if (selection.size) {
@@ -277,11 +289,17 @@ function startDrag(e: PointerEvent) {
 
   const onMove = (ev: PointerEvent) => moveGhost(ev.clientX, ev.clientY);
 
-  const onUp = (ev: PointerEvent) => {
-    line.removeEventListener('pointermove', onMove);
-    line.removeEventListener('pointerup', onUp);
-    line.removeEventListener('pointercancel', onCancel);
+  // Taken off the window, because that is where they are put - see the note at
+  // the foot of this function.
+  const unwire = () => {
+    removeEventListener('pointermove', onMove);
+    removeEventListener('pointerup', onUp);
+    removeEventListener('pointercancel', onCancel);
     line.classList.remove('is-lifting');
+  };
+
+  const onUp = (ev: PointerEvent) => {
+    unwire();
     dropGhost();
 
     // Let go over the panel itself and nothing happens - that is a cancel, and
@@ -296,16 +314,21 @@ function startDrag(e: PointerEvent) {
   };
 
   const onCancel = () => {
-    line.removeEventListener('pointermove', onMove);
-    line.removeEventListener('pointerup', onUp);
-    line.removeEventListener('pointercancel', onCancel);
-    line.classList.remove('is-lifting');
+    unwire();
     dropGhost();
   };
 
-  line.addEventListener('pointermove', onMove);
-  line.addEventListener('pointerup', onUp);
-  line.addEventListener('pointercancel', onCancel);
+  // On the window, not on the row.
+  //
+  // paint() calls list.replaceChildren() on every 'trash' and 'board:load'
+  // emit, and this drag ends by restoring an item - which emits both. A row
+  // detached mid-gesture took its three listeners with it: onUp never fired,
+  // #bin-ghost was left following the pointer with nothing to dismiss it, and
+  // the row it came from no longer existed. The same reasoning the pointer
+  // pipeline gives for capture, applied to a list that rebuilds itself.
+  addEventListener('pointermove', onMove);
+  addEventListener('pointerup', onUp);
+  addEventListener('pointercancel', onCancel);
 }
 
 function makeGhost(item: Item) {
