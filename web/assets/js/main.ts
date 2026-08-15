@@ -9,10 +9,19 @@
 // left is the order things are brought up in, the subscriptions that cross
 // subsystems, and the lifecycle.
 //
-// The init order below is load-bearing and is commented where it is. This is
-// one of only three modules allowed to touch a browser global at import time
-// (tests/imports.test.js); everything it calls exports an init*() for exactly
-// that reason.
+// The init order below is load-bearing and is commented where it is. About a
+// dozen of those comments are constraints rather than notes - "Before
+// initSidebar()", "After initAudio()" - and each of them is now a row in
+// tests/boot-order.test.js, which reads the real sequence out of this file and
+// checks it against them. That table *is* the boot order, the way
+// tests/layers.test.js's BASE list *is* the split: getting one of these wrong
+// fails silently and usually in one state rather than at boot, and there is no
+// browser-driven suite to notice. **Moving a call here means checking that
+// test, and adding one with an ordering requirement means adding a row to it.**
+//
+// This is one of only three modules allowed to touch a browser global at import
+// time (tests/imports.test.js); everything it calls exports an init*() for
+// exactly that reason.
 
 import { el, rafThrottle } from './util.ts';
 import { toast } from './notify.ts';
@@ -31,12 +40,16 @@ import {
 import { freezePrefs } from './prefs.ts';
 import { homePath, isPatchPage, isNotFoundPage, openingFace } from './page.ts';
 import { Viewport } from './canvas/viewport.ts';
-import { paintGrid, paintGridOnView, resetGridInk } from './canvas/grid.ts';
-import { initGrain, paintGrain, resetGrain } from './canvas/grain.ts';
-import { initPaper, paintPaper } from './canvas/paper.ts';
-import { initMobileFrame, paintMobileFrame } from './canvas/mobile-frame.ts';
+import { paintGrid, paintGridOnView } from './canvas/grid.ts';
+import { initGrain, paintGrain } from './canvas/grain.ts';
+import { initPaper } from './canvas/paper.ts';
+import { initMobileFrame } from './canvas/mobile-frame.ts';
+// The four painters under the cards, and the three caches they resolve out of
+// the look. Both sequences used to be written out here and again in
+// ui/board-actions.ts; see the head of canvas/ground.ts.
+import { repaintGround, forgetLookInk } from './canvas/ground.ts';
 import { initItems, resetItems } from './canvas/items.ts';
-import { resetModels, resetModelInk } from './canvas/model.ts';
+import { resetModels } from './canvas/model.ts';
 import { initWeb } from './canvas/web.ts';
 import { initGhosts } from './canvas/ghosts.ts';
 import { initStills } from './canvas/stills.ts';
@@ -219,16 +232,15 @@ initFonts();
 // unlike every other tier they cannot follow a custom property on their own -
 // see canvas/grid.js. Every edit to a look hands the resolved colours back and
 // repaints; the other tiers repaint for nothing, which is four gradients.
-// resetGrain for the same reason one line up: --grain is a token, and the layer
-// caches whether it resolves to anything rather than asking per frame. Then a
-// paint, because a look that turns the grain back on has a layer standing at
+// forgetLookInk() is all three of the caches that go stale together - the grid's
+// colours, the ink an uncoloured model card's still is stamped in (a slider drag
+// commits no setting, so without it the cards compare against a stale colour for
+// the whole gesture) and whether --grain resolves to anything. Then the two
+// paints, because a look that turns the grain back on has a layer standing at
 // whatever position it was left at when it went transparent.
 initAppearance({
-  // resetModelInk for the third: an uncoloured model card's still is stamped
-  // with the ink it was drawn in, and a slider drag commits no setting - so
-  // without this the cards compare against a stale colour for the whole gesture.
   onChange: () => {
-    resetGridInk(); resetModelInk(); paintGrid(vp); resetGrain(); paintGrain(vp);
+    forgetLookInk(); paintGrid(vp); paintGrain(vp);
   },
 });
 initGrain(vp);
@@ -428,8 +440,9 @@ vp.onChange(() => {
 
 bus.on('settings', key => {
   // The whimsy slider arrives here, and it moves the grid's colours as well as
-  // its mark - so the resolved copy the Harsh crosses hold has to go back.
-  if (key === 'appearance') resetGridInk();
+  // its mark - so the resolved copy the Harsh crosses hold has to go back, along
+  // with the two beside it. See canvas/ground.ts.
+  if (key === 'appearance') forgetLookInk();
   if (key === 'gridStep' || key === 'mobileColumns') syncBoardMode();
   paintGrid(vp);
   if (key === 'hud') el('hud')!.hidden = !board.settings.hud;
@@ -508,8 +521,10 @@ bus.on('board:load', () => {
   // was set from its contents inside loadBoard().
   ensureGhostCards();
   // A board can bring its own look, applied without going through persist() -
-  // so this is the other door the grid's colours change behind.
-  resetGridInk();
+  // so this is the other door the ground's resolved colours change behind. It
+  // used to give back the grid's alone and leave every model card stamped in the
+  // ink of the board you had open before; forgetLookInk() is all three.
+  forgetLookInk();
   resetItems();
   // Parsed geometry is keyed by asset hash and the old board's assets are gone.
   resetModels();
@@ -785,10 +800,7 @@ const started = (async function start() {
   if (restored) toast('Restored your last board');
   el('hud')!.hidden = !board.settings.hud;
   paintSnap();
-  paintGrid(vp);
-  paintGrain(vp);
-  paintPaper();
-  paintMobileFrame();
+  repaintGround(vp);
   paintCount();
   vp.apply();
   console.log('[mbrd] v' + VERSION + ' ready');

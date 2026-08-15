@@ -6,7 +6,7 @@ import {
   releasePointerSafely, capturePointerSafely, resizeHandleAction, shortcutsSuppressed,
   readWheel, resetWheelKind, WHEEL_NOTCH, WHEEL_STREAM_MS,
   carryFloor, drewRectangle, marqueeHit,
-  GESTURE_MOVES, gestureTransition,
+  GESTURE_MOVES, gestureTransition, pressIntent,
   resizeAxisOn, nudgeDelta,
 } from '../web/assets/js/canvas/input.ts';
 import { cellInset, MIN_SIZE, MAX_SIZE } from '../web/assets/js/geometry.ts';
@@ -353,7 +353,10 @@ test('a drag with nothing to carry is not entered at all', async () => {
     'startMove() can no longer say there is nothing to pick up');
   assert.match(src, /if \(!before\.length\) return null;/,
     'startMove() builds a gesture out of an empty snapshot again');
-  assert.match(src, /const move = startMove\(e, id\);[\s\S]{0,400}?if \(!move\) startPan\(e\);/,
+  // The id's local name is not the point and has already changed once - the
+  // cascade carries it as `cardId` since pressIntent() started handing the four
+  // card branches their own id. What is asserted is that the call is looked at.
+  assert.match(src, /const move = startMove\(e, \w+\);[\s\S]{0,400}?if \(!move\) startPan\(e\);/,
     'the press branch stopped checking whether startMove() found anything');
 });
 
@@ -695,4 +698,122 @@ test('an axis with no direction pressed does not move', () => {
   const lead = { x: 37, y: 91, w: 100, h: 100 };
   assert.deepEqual(nudgeDelta(0, 0, false, lead, true, STEP, INSET), { dx: 0, dy: 0 });
   assert.equal(nudgeDelta(1, 0, false, lead, true, STEP, INSET).dy, 0);
+});
+
+// ---------------------------------------------------------------------------
+// What a press means
+// ---------------------------------------------------------------------------
+//
+// The eight branches of the pointerdown cascade, which until pressIntent()
+// existed could not be asked anything: the decision was interleaved with the
+// select, the pointer capture and the enter() each branch performs, so the only
+// way to find out what a press on an unpicked card under a finger does was to
+// press one. Every case below is a sentence out of that handler's own comments.
+
+/** A press on bare board with a mouse, nothing held, nothing selected. */
+const press = (over = {}) => ({
+  pointerType: 'mouse',
+  button: 0,
+  additive: false,
+  spaceDown: false,
+  onWidget: false,
+  onGrip: false,
+  onCard: null,
+  locked: false,
+  needsTapFirst: false,
+  wasSelected: false,
+  selectionSize: 0,
+  doubleTapDrag: false,
+  isMobile: false,
+  ...over,
+});
+
+test('a press on bare board clears and pans; a modified one bands', () => {
+  assert.deepEqual(pressIntent(press()), { kind: 'empty' });
+  assert.deepEqual(pressIntent(press({ additive: true })), { kind: 'marquee' });
+});
+
+test('a widget inside a card owns the press, unless the press means pan', () => {
+  // Capturing on a scrubber would redirect every following move to #viewport
+  // and leave the scrubber dead.
+  assert.deepEqual(pressIntent(press({ onWidget: true, onCard: 'a' })), { kind: 'widget' });
+  // Space and the middle button mean pan from anywhere, including from over one.
+  assert.deepEqual(pressIntent(press({ onWidget: true, spaceDown: true })),
+    { kind: 'pan', middle: false });
+  assert.deepEqual(pressIntent(press({ onWidget: true, button: 1 })),
+    { kind: 'pan', middle: true });
+});
+
+test('a grip is a resize only with one card picked or none', () => {
+  const grip = { onGrip: true, onCard: 'a', wasSelected: true };
+  assert.deepEqual(pressIntent(press({ ...grip, selectionSize: 1 })),
+    { kind: 'resize', id: 'a' });
+  assert.deepEqual(pressIntent(press({ ...grip, selectionSize: 0 })),
+    { kind: 'resize', id: 'a' });
+  // With more than one it is not a resize at all - there is no defined answer
+  // for what a corner drag means across a selection, so it picks the selection
+  // up like a press anywhere else on the card.
+  assert.deepEqual(pressIntent(press({ ...grip, selectionSize: 2 })),
+    { kind: 'move', id: 'a', additive: false, wasSelected: true });
+});
+
+test('a locked card has no grips and does not move', () => {
+  // It still selects - its menu, its name, its colour and the unlock are all one
+  // click away. Only the grab is gone, and the press pans as bare board does.
+  assert.deepEqual(
+    pressIntent(press({ onCard: 'a', locked: true, onGrip: true, wasSelected: true })),
+    { kind: 'lockedPan', id: 'a', additive: false, wasSelected: true },
+  );
+});
+
+test('an unpicked card is the two-step gate under a finger and on Mobile', () => {
+  const unpicked = { onCard: 'a', needsTapFirst: true };
+  // A finger navigates more than it drags, so this pans now and selects on lift.
+  assert.deepEqual(pressIntent(press({ ...unpicked, pointerType: 'touch' })),
+    { kind: 'tapGate', id: 'a', additive: false });
+  // The Mobile board is a feed you scroll far more than you rearrange, whatever
+  // the pointer is.
+  assert.deepEqual(pressIntent(press({ ...unpicked, isMobile: true })),
+    { kind: 'tapGate', id: 'a', additive: false });
+  // A mouse on the Desktop board has no such tension: a left press is a grab.
+  assert.deepEqual(pressIntent(press(unpicked)),
+    { kind: 'move', id: 'a', additive: false, wasSelected: false });
+});
+
+test('a picked card moves under a finger without the gate', () => {
+  assert.deepEqual(
+    pressIntent(press({ onCard: 'a', pointerType: 'touch', wasSelected: true })),
+    { kind: 'move', id: 'a', additive: false, wasSelected: true },
+  );
+});
+
+test('the second tap of a touch double tap is a band, not a pan', () => {
+  assert.deepEqual(pressIntent(press({ pointerType: 'touch', doubleTapDrag: true })),
+    { kind: 'marqueeDrag' });
+  // But a grip still wins it - the cascade decides corners before double taps.
+  assert.deepEqual(
+    pressIntent(press({ doubleTapDrag: true, onGrip: true, onCard: 'a' })),
+    { kind: 'resize', id: 'a' },
+  );
+});
+
+test('what the lift needs to tell a selection edit from a pick is carried', () => {
+  // `additive` and `wasSelected` are read by endPointer() to decide whether a
+  // modified press that did not move should drop the card again.
+  assert.deepEqual(
+    pressIntent(press({ onCard: 'a', additive: true, wasSelected: true })),
+    { kind: 'move', id: 'a', additive: true, wasSelected: true },
+  );
+});
+
+test('space beats every branch below it', () => {
+  // "middle-drag or space+drag ... pan, from anywhere" - the gesture map at the
+  // head of the module, held to.
+  for (const over of [
+    { onCard: 'a' }, { onGrip: true, onCard: 'a' }, { onCard: 'a', needsTapFirst: true },
+    { doubleTapDrag: true }, { additive: true }, { onCard: 'a', locked: true },
+  ]) {
+    assert.equal(pressIntent(press({ ...over, spaceDown: true })).kind, 'pan',
+      `space did not win over ${JSON.stringify(over)}`);
+  }
 });

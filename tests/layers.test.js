@@ -183,6 +183,12 @@ const BASE = new Set([
   // nothing else. state.js reads mobileArrangement() from it to know which of
   // the two catalogues a stored id belongs to, and that read is downward.
   'arrange/arrangements.ts',
+  // Shortest-column-first packing, one floor below the catalogue that reads it.
+  // It imports nothing at all, like stickers/catalogue.js, and it is down here
+  // rather than inside arrangements.js because the *Feed* is its other caller:
+  // ui/feed.js packs its wall by the same rule, and a rule two tiers apart both
+  // reach for has to be under both of them.
+  'arrange/columns.ts',
   // Folding one board into another: the id remap and where the arrivals land.
   // Pure - board-model.js, geometry.js and util.js, and nothing above them - and
   // down here for a reason its own header gives at length: a collision handled

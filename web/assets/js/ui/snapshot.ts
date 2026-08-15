@@ -23,7 +23,7 @@
 // way out of that while the DOM route taints: what can be done is to reach for
 // the *pure* halves of the real thing wherever they exist rather than restating
 // them, and this file does - fitMode(), itemCrop(), itemFlip(), adjustFilter(),
-// routeConnection(), pathData(), connMeta(), boardGridStep(), flattenNoteRich()
+// routeConnection(), pathData(), connMeta(), boardGridStep(), noteWords()
 // and paperMm() are all the board's own answers, asked here.
 //
 // Three things genuinely cannot be reused and are restated below: paintGrid(),
@@ -56,10 +56,14 @@ import { paperMm, toUnits } from '../measure.ts';
 import { connMeta, pairKey } from '../board-model.ts';
 import { CLEARANCE, routeConnection, pathData } from '../web-route.ts';
 import type { RouteOpts } from '../web-route.ts';
-import { boardGridStep } from '../canvas/grid.ts';
+// The lattice's policy, shared with the live grid: how often a mark is major,
+// how much heavier a major one is drawn, and which tier draws crosses. The
+// *drawing* is restated below and always will be - see the head of this file -
+// but a major every fifth mark in a PNG and every fourth on screen would be two
+// different grids.
+import { boardGridStep, MAJOR, MAJOR_WEIGHT, harshGrid } from '../canvas/grid.ts';
 import { fitMode } from '../canvas/renderers.ts';
-import { flattenNoteRich } from '../canvas/note-model.ts';
-import type { NoteRichInput } from '../canvas/note-model.ts';
+import { noteWords } from '../canvas/note-model.ts';
 import { tiltOf } from '../canvas/items.ts';
 import { describeExt } from '../import/formats.ts';
 import { extOf, formatBytes } from '../util.ts';
@@ -218,7 +222,10 @@ function readLook(detail: Detail): Look {
     grid: full && board.settings.grid ? {
       minor: readToken('--grid-minor') || 'rgba(0,0,0,0.08)',
       major: readToken('--grid-major') || 'rgba(0,0,0,0.14)',
-      harsh: document.documentElement.dataset.whimsy === '2',
+      // harshGrid(), not a bare '2': the tier that draws crosses is
+      // canvas/grid.ts's constant, and this file was carrying a second spelling
+      // of it.
+      harsh: harshGrid(),
     } : null,
     web: full && board.settings.web ? {
       line: readToken('--web-line') || '#9a9384',
@@ -406,11 +413,16 @@ function paintFence({ ctx, it, w, h, look, scale }: Paint) {
  * `meta.rich` is blocks with their own tags, font, size, alignment and vertical
  * placement, and drawing that on a canvas would be a text engine - a second one,
  * disagreeing with the note on screen at the first styled note somebody made.
- * flattenNoteRich() is the board's own answer to "what does this note say", it
- * is what `meta.text` already holds, and it is what goes here.
+ * noteWords() is the board's own answer to "what does this note say", and it is
+ * what goes here.
  *
- * It was `it.name` before, which is the note's *first line* - so a six-line note
- * exported as its own heading and nothing else.
+ * It was flattenNoteRich() before, which is the answer to a different question -
+ * that one writes the *storage* form, with the `# ` and `## ` that let a note
+ * round-trip as plaintext, and this paints its result onto a picture. A note
+ * with a heading came out of the export reading "# Kitchen".
+ *
+ * And it was `it.name` before that, which is the note's *first line* - so a
+ * six-line note exported as its own heading and nothing else.
  */
 function paintNote({ ctx, it, w, h, look, scale }: Paint) {
   ctx.fillStyle = readToken(`--note-${(Number(it.meta?.tint) || 1)}`) || '#fff7d6';
@@ -418,8 +430,10 @@ function paintNote({ ctx, it, w, h, look, scale }: Paint) {
   ctx.fill();
   if (look.detail !== 'full') return;
 
-  const rich = it.meta?.rich;
-  const text = (rich ? flattenNoteRich(rich as NoteRichInput) : metaStr(it.meta?.text)) || it.name || '';
+  // noteWords() and not flattenNoteRich(): that one writes the storage form,
+  // markers and all, and this paints straight onto the export canvas - so a note
+  // with a heading came out of the PNG reading "# Kitchen". See note-model.ts.
+  const text = noteWords(it.meta) || it.name || '';
   if (!text) return;
   const size = Math.max(9, Math.min(w, h) * 0.09);
   ctx.save();
@@ -645,8 +659,13 @@ type Project = (x: number, y: number) => { x: number, y: number };
  * paintGrid() itself cannot be reused and this is not an oversight: it paints
  * against a live viewport, into an on-screen canvas, as a tiled background for
  * two of the three tiers - none of which exists here. What *is* reused is the
- * pure half: boardGridStep() answers what the step is, and the two ink tokens
- * are the same ones the real lattice reads.
+ * pure half, and the line between the two is worth stating because it is where
+ * this file's copies were: the *drawing* is restated, the *policy* is imported.
+ * boardGridStep() answers what the step is, MAJOR how often a mark is major,
+ * MAJOR_WEIGHT how much heavier one is drawn, harshGrid() which tier draws
+ * crosses, and the two ink tokens are the ones the real lattice reads. All four
+ * of those were written out again here, so the export could have disagreed with
+ * the screen about what the grid *is* while agreeing about how to paint it.
  *
  * Marks, not ruled lines, for the reason the real one gives: a full-bleed line
  * grid beats against the pixel grid into moire and competes with the axes for
@@ -666,7 +685,6 @@ function paintGrid(
   // moodboard is dirt. The real one coarsens as the zoom drops; this simply
   // stops, because there is no zoom here to coarsen with.
   if (drawn < 4) return;
-  const MAJOR = 4;
 
   // Rounded outward to the lattice, so the marks land on the board's own
   // coordinates rather than on the export's frame - the origin has to be one of
@@ -678,7 +696,7 @@ function paintGrid(
     for (let wy = y0; wy <= world.y1; wy += step) {
       const major = Math.round(wx / step) % MAJOR === 0 && Math.round(wy / step) % MAJOR === 0;
       const p = project(wx, wy);
-      const r = (major ? 1.5 : 1) * Math.max(1, scale);
+      const r = (major ? MAJOR_WEIGHT : 1) * Math.max(1, scale);
       ctx.fillStyle = major ? g.major : g.minor;
       if (g.harsh) {
         // A registration cross, the mark the plain tier draws.

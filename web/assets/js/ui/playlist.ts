@@ -49,9 +49,9 @@
 // document reach is inside initPlaylist() or a handler that runs after it.
 
 import {
-  board, bus, isDefaultTitle, markDirty, setAudioOrder,
+  board, bus, isDefaultTitle, markDirty, setAudioOrder, trackTitle,
 } from '../state.ts';
-import { baseName, clamp } from '../util.ts';
+import { clamp } from '../util.ts';
 import {
   bindScrub, clock, seekInnerHTML, sizeSeekWave, reportPlayError,
   PAUSE_ICON, PLAY_ICON,
@@ -641,7 +641,7 @@ function fillRow(r: Row, view: View) {
 
   const main = div('pl-main');
   const title = div('pl-title');
-  title.textContent = trackTitle(item);
+  title.textContent = trackName(item);
   main.appendChild(title);
   const sub = str(item.meta?.artist) || str(item.meta?.album) || '';
   if (sub) {
@@ -673,9 +673,15 @@ function fillRow(r: Row, view: View) {
   ensureTrackMeta(item);
 }
 
-/** A track's display title: the tag, or the filename without its extension. */
-function trackTitle(item: Item) {
-  return str(item.meta?.trackTitle) || baseName(item.name) || item.name || 'Untitled';
+/**
+ * A track's display title, and the word for one that has no title at all.
+ *
+ * The chain is board-model.ts's - the Feed lists the same tracks and had the
+ * same four terms written out beside it, differing only in this last word. See
+ * trackTitle() there for why the placeholder stayed with the surface.
+ */
+function trackName(item: Item) {
+  return trackTitle(item) || 'Untitled';
 }
 
 // ---------------------------------------------------------------------------
@@ -1195,7 +1201,7 @@ function makePlayer(): Player {
       if (!src) { const img = board.items.find(it => it.type === 'image' && it.asset?.hash); if (img) src = assetURL(img.asset!.hash); }
       if (src) { cover.className = 'pw-cover'; cover.appendChild(coverImg(src)); }
       else { cover.className = 'pw-cover is-placeholder'; cover.innerHTML = DISC_ICON; }
-      title.textContent = trackTitle(item);
+      title.textContent = trackName(item);
       artist.textContent = str(item.meta?.artist) || str(item.meta?.album) || '';
       artist.hidden = !artist.textContent;
     } else {

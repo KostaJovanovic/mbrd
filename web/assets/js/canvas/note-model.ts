@@ -9,6 +9,7 @@
 // the one model through these functions.
 
 import { NOTE_MAX } from '../state.ts';
+import { isRecord } from '../util.ts';
 
 // ---------------------------------------------------------------------------
 // Sticky-note formatting model
@@ -237,6 +238,50 @@ export function flattenNoteRich(rich: NoteRichInput): string {
   return normalizeNoteRich(rich).blocks
     .map(b => NOTE_MARKER[b.tag] + b.text)
     .join('\n');
+}
+
+/**
+ * A note's words, as a reader should see them.
+ *
+ * The twin of flattenNoteRich() and deliberately not the same function. That one
+ * writes the *storage* form - `# ` and `## ` in front of the headings, so a note
+ * round-trips through a reader that has never heard of `meta.rich`. This one
+ * writes what the note says. Both paths go through the block model to get there,
+ * so a note stored as rich blocks and the same note stored as flat Markdown come
+ * out identical, which is the property that made three surfaces' copies look
+ * interchangeable when they were not.
+ *
+ * ── The markers were reaching the screen ──
+ *
+ * Three surfaces read a note's words and each did it differently. ui/feed.ts
+ * mapped the rich blocks and dropped the markers, which is right.
+ * ui/snapshot.ts called flattenNoteRich() and painted the result straight onto
+ * the export canvas, so a note with a heading came out of a PNG reading
+ * "# Kitchen". ui/trash.ts took the first line of `meta.text`, so the same note
+ * sat in the bin as "# Kitchen". Neither is a note anybody wrote: the marker is
+ * a storage convention this app invented so that plaintext could carry a
+ * heading, and showing it to the person who typed the heading is showing them
+ * the plumbing.
+ *
+ * Returns the words and nothing else: no trim, no first line, no placeholder for
+ * a note with none. Each of the three callers wants a different one of those and
+ * each is one expression at the call site, where it can be read.
+ *
+ * Takes `meta` rather than the item, so it stays a fact about a note's contents
+ * and this module goes on needing nothing from the board model.
+ */
+export function noteWords(meta: unknown): string {
+  if (!isRecord(meta)) return '';
+  const rich = meta.rich;
+  const blocks = isRecord(rich) ? rich.blocks : null;
+  if (Array.isArray(blocks) && blocks.length) {
+    return normalizeNoteRich(rich as NoteRichInput).blocks.map(b => b.text).join('\n');
+  }
+  // Through the parser rather than returned raw: a note written before meta.rich
+  // existed carries its markers inline, and they are no more a part of what it
+  // says than the rich model's are.
+  const text = typeof meta.text === 'string' ? meta.text : '';
+  return text ? parseNoteText(text).map(b => b.text).join('\n') : '';
 }
 
 /** Write a note's board-wide look onto its rich wrapper (font, size, vAlign). */
