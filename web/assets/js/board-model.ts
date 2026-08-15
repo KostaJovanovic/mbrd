@@ -199,7 +199,7 @@ export type Board = {
  */
 export type TrashEntry = { item: Item; at: number };
 
-import { uid, isHash, isRecord } from './util.ts';
+import { uid, isHash, isRecord, baseName } from './util.ts';
 import { MIN_SIZE, MAX_SIZE } from './geometry.ts';
 import { DEFAULT_SCALE } from './measure.ts';
 import { splitAppearance, mergeAppearance } from './layout-settings.ts';
@@ -799,6 +799,36 @@ export const isContent = (it: unknown) =>
  */
 export const isJoinEnd = (it: unknown) =>
   isRecord(it) && it.type !== 'ghost' && it.type !== 'sticker';
+
+/**
+ * What a track is called: the tag, or the filename without its extension.
+ *
+ * One chain, and it was written out twice - ui/feed.ts and ui/playlist.ts are
+ * the two surfaces that list audio, and they had the same four terms in the same
+ * order. They had also already come apart at the end, which is the whole
+ * argument for this being a function: the same untitled MP3 read "Audio" on the
+ * Feed and "Untitled" in the Playlist, so a track could change its name by being
+ * looked at through the other lens.
+ *
+ * **Returns '' rather than a placeholder**, and the callers still supply their
+ * own. That is deliberate rather than a half-measure: the chain is a fact about
+ * the file and belongs here, while the word to print when there is no fact is a
+ * fact about the surface - a row in a queue and a caption on a tile are not
+ * obliged to say the same thing. What the split buys is that the difference is
+ * now visible at both call sites instead of being buried at the end of two
+ * identical expressions.
+ *
+ * `meta` is open (see the head of this file), so both reads are narrowed rather
+ * than trusted: a `trackTitle` that is not a string is treated exactly as a
+ * missing one, which is what the `||` chain was already doing by accident.
+ */
+export function trackTitle(it: unknown): string {
+  if (!isRecord(it)) return '';
+  const tagged = it.meta && isRecord(it.meta) ? it.meta.trackTitle : null;
+  if (typeof tagged === 'string' && tagged) return tagged;
+  const name = typeof it.name === 'string' ? it.name : '';
+  return baseName(name) || name;
+}
 
 /**
  * Is this item's geometry fixed - `meta.locked`?
