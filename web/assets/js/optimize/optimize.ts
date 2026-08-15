@@ -313,10 +313,17 @@ async function pool<T>(
  * thread something to run the progress dialog on.
  *
  * Posters are lower again because a clip is the heaviest thing here: each one
- * spins up a real media pipeline and holds a decoded frame. Two is enough to
- * stop one stalled clip blocking the queue, which is the actual win - see
- * POSTER_MS in canvas/poster.js, where a clip that will not seek costs six
- * seconds whatever else is happening.
+ * spins up a real media pipeline and holds a decoded frame. The number that
+ * matters is not throughput but how far one stalled clip can block the queue -
+ * see POSTER_MS in canvas/poster.js, where a clip that will not seek costs six
+ * seconds whatever else is happening, so a board with four such clips is
+ * twenty-four seconds of nothing at one lane and six at four.
+ *
+ * Three rather than the two this was, and the reason it can go up at all is
+ * that a grab no longer buffers the whole file (preload, canvas/poster.js).
+ * Not higher: iOS rations simultaneous video decoders hard enough to lose the
+ * tab, which is the ceiling the video renderer is built around, and this pass
+ * runs on the phones that ceiling is about.
  *
  * Thumbnails are cheapest, because past this change they decode straight to a
  * hundred pixels rather than in full - see the width hint in backfillThumbs().
@@ -324,7 +331,7 @@ async function pool<T>(
 const LANES = {
   get media() { return Math.max(1, Math.min(4, cores() - 1)); },
   get thumbs() { return Math.max(1, Math.min(6, cores() - 1)); },
-  posters: 2,
+  posters: 3,
 };
 
 /** Cores, where the runtime admits to having any. Node and old engines say 4. */
@@ -433,8 +440,18 @@ export async function runOptimize(
   // Items whose picture is not the picture it was a moment ago. Their old
   // thumbnail is a thumbnail of bytes that no longer exist on this card.
   const restaged = new Set(swaps.filter(s => s.asset).map(s => s.id));
-  report.thumbs = await backfillThumbs(restaged, width, onProgress);
+  // Posters first, and the order is the whole of what makes a board of video
+  // come out of this with anything to draw.
+  //
+  // A thumbnail is cut from whatever picture the item has - thumbSource() -
+  // and a clip's picture is its poster. Run the other way round, every video
+  // that arrived here without one was skipped by the thumbnail pass for having
+  // no picture, *then* given a poster it was now too late to cut a thumbnail
+  // from. The board looked right at full zoom and had nothing at all zoomed
+  // out, and a second run of the optimiser was what finally fixed it - which is
+  // the tell, and was the bug.
   report.posters = await backfillPosters(onProgress);
+  report.thumbs = await backfillThumbs(restaged, width, onProgress);
   return report;
 }
 
@@ -460,20 +477,18 @@ async function backfillPosters(onProgress: (p: Progress) => void): Promise<numbe
     it.type === 'video' && it.asset?.hash && !(it.meta?.cover && getAsset(it.meta.cover)));
   if (!wanted.length) return 0;
 
-  // Loaded here rather than at the top of the file: it reaches for `document`
-  // inside the call, but it also drags the whole renderer module in, and this
-  // pass does nothing at all on the boards that already have their posters.
-  const { videoFrame } = await import('../canvas/renderers.ts');
+  // Loaded here rather than at the top of the file, and from canvas/poster.js
+  // rather than through the renderer that re-exports it: the renderer is the
+  // whole card-building module and none of it is wanted here, while poster.js
+  // imports nothing at all and only reaches for `document` inside the call.
+  const { videoFrame } = await import('../canvas/poster.ts');
 
   let made = 0, n = 0;
   await pool(wanted, LANES.posters, async item => {
     const asset = getAsset(item.asset?.hash);
     if (!asset) { onProgress({ done: ++n, total: wanted.length, name: item.name || '', phase: 'posters' }); return; }
     try {
-      // The second half of the same seam `cards()` names: canvas/poster.js is
-      // unchecked, so its promise types as unknown. This says what it resolves
-      // with, and goes when that module says so itself.
-      const frame = await videoFrame(asset.blob) as { blob: Blob } | null;
+      const frame = await videoFrame(asset.blob);
       if (!frame) return;
       const hash = await addFile(new File([frame.blob], 'poster.webp', { type: 'image/webp' }));
       setItemPoster(item.id, hash);

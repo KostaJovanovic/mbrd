@@ -39,9 +39,28 @@ export type NoteTag = 'h1' | 'h2' | 'p';
 export type NoteAlign = 'left' | 'center' | 'right';
 export type NoteValign = 'top' | 'middle' | 'bottom';
 export type NoteFont = 'sheet' | 'sans' | 'serif' | 'mono';
+/**
+ * The marker a line can be drawn over with, and the one of these vocabularies
+ * with no "off" member in it.
+ *
+ * An unmarked line is a block with no `wash` key, not a block with `wash:
+ * 'none'`, and the difference is worth the sentence. Every other field here
+ * describes something every line has - a level, an alignment - and a note is
+ * mostly unmarked lines, so a fifth key repeating "no" on each of them is a
+ * fifth of the file saying nothing. It also keeps the shape of an ordinary
+ * block exactly what it was before this existed, which is what a reader written
+ * against the older format still expects to find.
+ */
+export type NoteWash = 'amber' | 'terracotta' | 'olive' | 'graphite';
 
 /** One line of a note: its block level, its alignment and its single line. */
-export type NoteBlock = { tag: NoteTag; align: NoteAlign; text: string };
+export type NoteBlock = {
+  tag: NoteTag;
+  align: NoteAlign;
+  text: string;
+  /** absent, not 'none' - see NoteWash */
+  wash?: NoteWash;
+};
 
 /** A whole note's formatting model, after normalizeNoteRich() has had it. */
 export type NoteRich = {
@@ -60,6 +79,19 @@ export type NoteRichInput = { [key: string]: unknown } | null | undefined;
 export const NOTE_TAGS: NoteTag[] = ['h1', 'h2', 'p'];
 export const NOTE_ALIGNS: NoteAlign[] = ['left', 'center', 'right'];
 export const NOTE_VALIGNS: NoteValign[] = ['top', 'middle', 'bottom'];
+/**
+ * The four markers, in the order the menu offers them. Names and not numbers,
+ * unlike the four sheets a note is cut from (`meta.tint`, 1..4): a tint is one
+ * of a pack and you take the next one off it, where a mark is chosen for being
+ * that colour.
+ *
+ * Each name is also the tail of its token - `--note-wash-amber` in tokens.css,
+ * where the colours actually live - so the toolbar can build a swatch out of a
+ * stored word and there is no second copy of the palette in here to drift. This
+ * list is the allowlist that makes that safe, the same rule NOTE_FONTS keeps
+ * below and for the same reason: `meta.rich` comes off disk.
+ */
+export const NOTE_WASHES: NoteWash[] = ['amber', 'terracotta', 'olive', 'graphite'];
 
 // The widening to `readonly string[]` is only so `.includes()` will take an
 // arbitrary string: a NoteTag[] *is* a readonly string[], so nothing is claimed
@@ -70,6 +102,8 @@ const isAlign = (v: unknown): v is NoteAlign =>
   typeof v === 'string' && (NOTE_ALIGNS as readonly string[]).includes(v);
 const isValign = (v: unknown): v is NoteValign =>
   typeof v === 'string' && (NOTE_VALIGNS as readonly string[]).includes(v);
+const isWash = (v: unknown): v is NoteWash =>
+  typeof v === 'string' && (NOTE_WASHES as readonly string[]).includes(v);
 
 /**
  * The font families a note may wear, as an allowlist. The value reaches the DOM
@@ -119,13 +153,21 @@ function normalizeBlock(raw: unknown): NoteBlock | null {
   const tag = 'tag' in raw ? raw.tag : undefined;
   const align = 'align' in raw ? raw.align : undefined;
   const text = 'text' in raw ? raw.text : undefined;
-  return {
+  const wash = 'wash' in raw ? raw.wash : undefined;
+  const block: NoteBlock = {
     tag: isTag(tag) ? tag : 'p',
     align: isAlign(align) ? align : 'left',
     // One line per block: a stray newline in stored text would otherwise smuggle
     // a second, unstyled line into a block the editor cannot address.
     text: typeof text === 'string' ? text.replace(/\n/g, ' ') : '',
   };
+  // Written on rather than declared above, so an unmarked block is the same
+  // three keys it has always been - see NoteWash. An unknown colour is dropped
+  // and not repaired, which is the one place this differs from the two fields
+  // over it: there is no nearest marker to round a stranger's name to, and no
+  // mark is the honest reading of a mark nobody here can draw.
+  if (isWash(wash)) block.wash = wash;
+  return block;
 }
 
 /**
@@ -164,8 +206,9 @@ export function normalizeNoteRich(rich: NoteRichInput, text: unknown = ''): Note
 
 /**
  * The plaintext a rich model flattens to - the Markdown that lands in meta.text.
- * Font, size, alignment and vertical placement have no plaintext form and are
- * simply absent from it; that is the deal meta.text makes to stay portable.
+ * Font, size, alignment, vertical placement and the marker have no plaintext
+ * form and are simply absent from it; that is the deal meta.text makes to stay
+ * portable.
  */
 export function flattenNoteRich(rich: NoteRichInput): string {
   return normalizeNoteRich(rich).blocks
@@ -183,10 +226,19 @@ export function applyNoteStyle(wrap: HTMLElement, rich: NoteRich): void {
   wrap.dataset.valign = rich.valign;
 }
 
-/** One block as an editable line element. */
+/**
+ * One block as an editable line element.
+ *
+ * The marker is an attribute where the level and the alignment are classes, and
+ * that is not inconsistency: a class is a set a line is in, and the wash is a
+ * value the line *carries* into the stylesheet - cards.css turns data-wash into
+ * a --wash colour, which the toolbar's own chip reads through the same rule. A
+ * class would have needed the mapping written twice.
+ */
 export function buildNoteLine(block: NoteBlock): HTMLDivElement {
   const line = document.createElement('div');
   line.className = `note-line note-${block.tag} al-${block.align}`;
+  if (block.wash) line.dataset.wash = block.wash;
   line.textContent = block.text;
   return line;
 }

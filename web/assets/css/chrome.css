@@ -323,14 +323,16 @@
    anything. The name says the fact this rule depends on rather than the one that
    usually comes with it, which is what makes it safe for the next body.
 
-   The Mobile lens is the same test by a different name - the lens carries its own
-   hero and controls, so `data-feed-lens` stands in for it there.
+   The Mobile lens used to be listed here too, on the same reasoning - it carried
+   a transport of its own, so `data-feed-lens` stood in for the flag. It does not
+   any more: the lens is a header with Play and Shuffle over a track list, and
+   this bar is its transport, which is the arrangement the flag's own name was
+   written to make room for. The bar is the one player on the phone now.
 
    It leaves and returns by sliding under the edge rather than blinking, using the
    same four whimsy-tier properties the bar's own entrance uses; `visibility`
    rather than `display` so there is a box for that to happen in. */
-:root.playlist-transport #nowplaying,
-:root[data-feed-lens="playlist"] #nowplaying {
+:root.playlist-transport #nowplaying {
   visibility: hidden;
   opacity: 0;
   transform: translateY(calc(100% + var(--foot-gap, 12px)));
@@ -339,8 +341,7 @@
               visibility 0s linear var(--dur-base);
 }
 @media (prefers-reduced-motion: reduce) {
-  :root.playlist-transport #nowplaying,
-  :root[data-feed-lens="playlist"] #nowplaying { transition: none; }
+  :root.playlist-transport #nowplaying { transition: none; }
 }
 
 /* The top row: the name on the left, the controls pushed to the right. */

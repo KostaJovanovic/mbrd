@@ -43,7 +43,7 @@ import {
   isRider, stuckTo, stuckPlacement, isFence, isLocked, fenceOf, fenceBox,
   declareOp,
 } from '../state.ts';
-import { latticeBox, itemBounds } from '../geometry.ts';
+import { latticeBox, itemBounds, rotatedExtents } from '../geometry.ts';
 import { travelMs } from '../canvas/viewport.ts';
 import { paintGrid, resetGridInk } from '../canvas/grid.ts';
 import { paintGrain } from '../canvas/grain.ts';
@@ -57,6 +57,7 @@ import { getAsset } from '../storage/assets.ts';
 import { saveBoard, exportBoard, autosave, clearAllData } from '../storage/storage.ts';
 import { defaultSize, measureSize } from '../canvas/renderers.ts';
 import { arrange, mobileOrder } from '../arrange/arrangements.ts';
+import type { Obstacle } from '../arrange/arrangements.ts';
 import { syncBoardMode } from './board-view.ts';
 import type { Item, Geometry } from '../board-model.ts';
 import type { Point } from '../geometry.ts';
@@ -495,6 +496,31 @@ export async function restartApp(): Promise<boolean> {
  *            it. So the rectangle follows the cards, which is also the shape a
  *            fence is made with in the first place - see fenceBox().
  */
+/**
+ * A card that is staying put, as the arrangement engine reads one.
+ *
+ * The box you can see, so a turned card is kept clear of by the rectangle it
+ * actually covers rather than by its unturned one - arrange() takes a plain
+ * `{x, y, w, h}` and has no idea anything on a board can be at an angle.
+ *
+ * `step` is the lattice, or 0 when nothing is being snapped, and passing it is
+ * not tidiness. arrange() reserves whole cells for what it lays out (`cellStep`,
+ * and toCells() there) and rearrange() then snaps each result to the lattice; an
+ * obstacle measured off its raw rectangle can be cleared by half a cell and have
+ * that half cell rounded straight back, which is the same overlap cellStep
+ * exists to rule out arriving from the other side. Measured on the lattice, the
+ * two round the same way and a card can at worst come to rest in the cell next
+ * door.
+ */
+function obstacleBox(item: Item, step: number): Obstacle {
+  const box = step > 0 ? latticeBox(item, step) : item;
+  // The snapped box with the item's own angle: latticeBox() lays out the
+  // unturned sides, and the extents of those sides at that angle contain the
+  // card whichever way round the two are asked.
+  const { hw, hh } = rotatedExtents({ ...box, rot: item.rot });
+  return { x: box.x, y: box.y, w: 2 * hw, h: 2 * hh };
+}
+
 export function rearrange(items: Item[], options: RearrangeOptions = {}) {
   if (!items.length) return;
   const whole = items.length === board.items.length;
@@ -559,6 +585,41 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
   // chain has nothing in this set to be carried by, and is free.
   if (!free.length) return;
 
+  // What the layout has to keep off, and the reason it needs telling.
+  //
+  // An anchored card was left out of `free` precisely so that it would not move
+  // - and the layout, knowing nothing about it, went on dealing a slot where it
+  // stands. The lock held the geometry and lost the picture: the card stayed
+  // exactly where it was, under whatever the rearrangement put on top of it,
+  // which is the opposite of what anybody anchors a card for.
+  //
+  // Anchored, *or carried by something anchored*. A card in an anchored region
+  // is carried by a fence that has not moved, so its translation is zero and it
+  // is standing just as still as the fence is - see the carry pass below.
+  const held = new Set(board.items.filter(isLocked).map(it => it.id));
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const it of carried) {
+      const parent = parentOf.get(it.id);
+      if (held.has(it.id) || !parent || !held.has(parent)) continue;
+      held.add(it.id);
+      grew = true;
+    }
+  }
+  // A region that *contains* what is being laid out is not something to avoid:
+  // it is the room the layout is happening in. That includes the one being
+  // closed around the result, which is about to be resized to fit it - counting
+  // it would push a region's own contents out of the region. Read here, with
+  // parentOf above, because fenceOf() measures against live geometry.
+  const around = new Set<string>();
+  for (const it of items) {
+    for (let f = fenceOf(it); f && !around.has(f.id); f = fenceOf(f)) around.add(f.id);
+  }
+  // Riders are never obstacles: a note sits on its host, so counting one would
+  // wall off the card it is stuck to with a box that is already inside it.
+  const anchored = board.items.filter(it =>
+    held.has(it.id) && !isRider(it) && !around.has(it.id));
+
   const at = options.center ?? (whole ? { x: 0, y: 0 } : middleOf(free));
   const before = snapshotGeom(free.map(i => i.id)) as GeomRow[];
   // Two things vary here, and neither is enough on its own.
@@ -622,12 +683,20 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
     const moving = new Set(free.map(item => item.id));
     // Riders are not obstacles - they overlap their host and would wall it off.
     const obstacles = whole ? [] : board.items.filter(item =>
-      !moving.has(item.id) && !isRider(item));
+      !moving.has(item.id) && !isRider(item) && !held.has(item.id));
+    // The column tells the two apart, which Desktop has no need to. An anchored
+    // card holds its own cells and the pack flows round it from the top; the
+    // rest of the board sets the first row the pack may use, so a partial
+    // rearrangement still appends below what it is not touching. Pushing the
+    // whole column below an anchored card - the one thing an obstacle does -
+    // would hang the board under a hole whenever the anchor sat near the foot of
+    // it. See packMobileGrid().
+    const blockers = anchored;
     // Rearrangement changes order and position, not the sizes already visible
     // on this layout. In particular, do not rebuild them from meta.presnap:
     // that is the geometry to restore when snapping is disabled, not a sizing
     // source for every later press of Rearrange.
-    placed = placeMobileItems(placed, obstacles, { preserveSize: true });
+    placed = placeMobileItems(placed, obstacles, { preserveSize: true, blockers });
   } else {
     const spots = arrange(laid, {
       name: options.name || board.arrangement,
@@ -637,6 +706,7 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
       // round two tight cards into an overlap - see arrange()/toCells.
       cellStep: snapDesktop ? step : 0,
       seed,
+      obstacles: anchored.map(item => obstacleBox(item, snapDesktop ? step : 0)),
     });
     placed = laid.map((item, slot) => ({
       ...item,

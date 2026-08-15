@@ -183,7 +183,7 @@
 
 /* Lozenges become squares. Same target size, no tilt. */
 :root[data-whimsy="2"] .grip,
-:root[data-whimsy="2"] :is(.field, .np-volume, .pw-volume, .ctx-range, .dk-dial) input[type="range"]::-webkit-slider-thumb { transform: none; }
+:root[data-whimsy="2"] :is(.field, .np-volume, .ctx-range, .dk-dial) input[type="range"]::-webkit-slider-thumb { transform: none; }
 
 /* The toast sits straight rather than tossed onto the page. */
 :root[data-whimsy="2"] .toast-line {

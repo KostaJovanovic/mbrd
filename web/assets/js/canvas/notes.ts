@@ -43,10 +43,10 @@ import { linkURL, linkDraft } from './renderers.ts';
 // way, and the split is what let it be straightened.
 import {
   normalizeNoteRich, flattenNoteRich, buildNoteLine,
-  NOTE_TAGS, NOTE_ALIGNS, NOTE_FONTS, NOTE_FONT_KEYS, NOTE_MARKER,
+  NOTE_TAGS, NOTE_ALIGNS, NOTE_FONTS, NOTE_FONT_KEYS, NOTE_MARKER, NOTE_WASHES,
   NOTE_SIZE_MIN, NOTE_SIZE_MAX, NOTE_SIZE_STEP,
 } from './note-model.ts';
-import type { NoteTag, NoteAlign, NoteValign, NoteFont } from './note-model.ts';
+import type { NoteTag, NoteAlign, NoteValign, NoteFont, NoteWash } from './note-model.ts';
 import type { Item } from '../board-model.ts';
 
 /**
@@ -67,7 +67,12 @@ import type { Item } from '../board-model.ts';
 export type NoteMenu = (
   /** The control the menu hangs off. Its box, and its identity for the toggle. */
   anchor: HTMLElement,
-  rows: { value: string, label: string }[],
+  /**
+   * `swatch` is a CSS colour, drawn in the row's icon column. Absent is not the
+   * same as a colour that happens to be transparent: the marker's off row has
+   * no chip at all, which is the empty column saying so.
+   */
+  rows: { value: string, label: string, swatch?: string }[],
   current: string,
   pick: (value: string) => void,
 ) => void;
@@ -211,12 +216,22 @@ const lineTag = (line: Element): NoteTag =>
   NOTE_TAGS.find(t => line.classList.contains('note-' + t)) || 'p';
 const lineAlign = (line: Element): NoteAlign =>
   NOTE_ALIGNS.find(a => line.classList.contains('al-' + a)) || 'left';
+// The odd one out, and only because the model is: an unmarked line has no wash
+// at all rather than a wash of 'none', so this answers undefined where the two
+// above answer a default. Read back through the allowlist all the same - the
+// attribute is on an element the user has been typing into.
+const lineWash = (line: Element): NoteWash | undefined =>
+  NOTE_WASHES.find(w => (line as HTMLElement).dataset.wash === w);
 
 function setLineTag(line: Element, tag: NoteTag) {
   for (const t of NOTE_TAGS) line.classList.toggle('note-' + t, t === tag);
 }
 function setLineAlign(line: Element, align: NoteAlign) {
   for (const a of NOTE_ALIGNS) line.classList.toggle('al-' + a, a === align);
+}
+function setLineWash(line: Element, wash: NoteWash | null) {
+  if (wash) (line as HTMLElement).dataset.wash = wash;
+  else delete (line as HTMLElement).dataset.wash;
 }
 
 /** The block-line the caret is in, if any. */
@@ -282,6 +297,10 @@ function readRich(wrap: HTMLElement) {
     tag: lineTag(line),
     align: lineAlign(line),
     text: textOf(line).replace(/\n/g, ' '),
+    // undefined on an unmarked line, and normalizeNoteRich drops the key rather
+    // than storing it - the whole of what keeps an unmarked note's blocks the
+    // shape they were before there was a marker. See NoteWash.
+    wash: lineWash(line),
   }));
   return normalizeNoteRich({
     font: wrap.dataset.font,
@@ -310,6 +329,7 @@ type NoteToolbarApi = {
   setTag(tag: NoteTag): void;
   setAlign(align: NoteAlign): void;
   setValign(v: NoteValign): void;
+  setWash(wash: NoteWash | null): void;
   setFont(key: string): void;
   bumpSize(delta: number): void;
 };
@@ -383,6 +403,50 @@ function buildToolbar(api: NoteToolbarApi) {
   btn(gV, { icon: 'va-middle', title: 'Middle', fn: () => api.setValign('middle'), key: 'valign:middle' });
   btn(gV, { icon: 'va-bottom', title: 'Bottom', fn: () => api.setValign('bottom'), key: 'valign:bottom' });
 
+  // The marker. A button whose face is the colour it will draw with, opening
+  // the same menu the font does.
+  //
+  // A chip and not a glyph, and it is the same argument the menu's own swatch
+  // rows are built on: an icon of a highlighter is a drawing of the tool, where
+  // what anybody needs off this button is which colour is on the line the caret
+  // is in. Unmarked, the chip is an empty outline - the absence drawn, rather
+  // than a fifth colour meaning "none".
+  //
+  // Beside the placement controls rather than with the font: this sets one
+  // line, like the headings and unlike the face, which is the whole sheet.
+  const gWash = group('wash');
+  let wash: NoteWash | null = null;
+  const washBtn = document.createElement('button');
+  washBtn.type = 'button';
+  washBtn.className = 'ntb-btn ntb-wash';
+  washBtn.title = 'Highlight';
+  washBtn.setAttribute('aria-label', 'Highlight');
+  washBtn.setAttribute('aria-haspopup', 'menu');
+  const washChip = document.createElement('span');
+  washChip.className = 'ntb-chip';
+  washBtn.append(washChip);
+  washBtn.addEventListener('click', () => {
+    openMenu?.(
+      washBtn,
+      // The off row first, which is where a row that undoes the other four
+      // belongs, and the only one with no swatch: an empty icon column is the
+      // absence said again.
+      [{ value: '', label: 'No mark' }, ...NOTE_WASHES.map(w => ({
+        value: w,
+        // The name with a capital on it. The four are words rather than codes
+        // precisely so this needs no table - see NOTE_WASHES.
+        label: w[0].toUpperCase() + w.slice(1),
+        // Built from the name, which is why the tokens are named after the
+        // washes. The interpolation is safe because `w` came out of the
+        // allowlist two lines up and cannot be anything else.
+        swatch: `var(--note-wash-${w})`,
+      }))],
+      wash || '',
+      key => api.setWash((NOTE_WASHES as readonly string[]).includes(key) ? key as NoteWash : null),
+    );
+  });
+  gWash.append(washBtn);
+
   // The face, as a button that opens the app's own menu.
   //
   // **This was a <select>, and replacing it deleted three workarounds rather
@@ -423,7 +487,10 @@ function buildToolbar(api: NoteToolbarApi) {
   btn(gSize, { text: 'A+', title: 'Larger', fn: () => api.bumpSize(NOTE_SIZE_STEP), key: 'size:up' });
 
   /** Light up the controls that match the line the caret is in. */
-  const reflect = (tag: NoteTag, align: NoteAlign, valign: string, fontKey: string) => {
+  const reflect = (
+    tag: NoteTag, align: NoteAlign, valign: string, fontKey: string,
+    washKey: NoteWash | undefined,
+  ) => {
     for (const b of bar.querySelectorAll<HTMLElement>('.ntb-btn[data-key]')) {
       // The selector is what makes the attribute present.
       const [k, v] = b.dataset.key!.split(':');
@@ -431,11 +498,18 @@ function buildToolbar(api: NoteToolbarApi) {
         (k === 'tag' && v === tag) || (k === 'align' && v === align) ||
         (k === 'valign' && v === valign));
     }
-    // Held in a closure rather than read off the control, which is what a
-    // <select> gave for free and a button does not: the menu is built fresh on
-    // every press and needs to know which row to tick.
+    // Both held in a closure rather than read back off their controls, which is
+    // what a <select> gave for free and a button does not: each menu is built
+    // fresh on every press and needs to know which row to tick.
     font = fontKey;
     sel.textContent = LABEL[fontKey] || fontKey;
+    wash = washKey || null;
+    // The chip carries the name and cards.css turns it into the colour, which is
+    // the same rule the line on the sheet is painted by. Removed rather than set
+    // to anything when there is no mark - the empty outline is a rule keyed on
+    // the attribute being absent.
+    if (wash) washChip.dataset.wash = wash;
+    else delete washChip.dataset.wash;
   };
 
   return { el: bar, reflect };
@@ -529,7 +603,8 @@ export function editNote(
       line ? lineTag(line) : 'p',
       line ? lineAlign(line) : 'left',
       wrap.dataset.valign || 'top',
-      wrap.dataset.font || 'sheet');
+      wrap.dataset.font || 'sheet',
+      line ? lineWash(line) : undefined);
   };
 
   const afterEdit = () => { growNote(id); refreshCount(); reflectNow(); placeToolbar(); };
@@ -540,6 +615,11 @@ export function editNote(
     // sheet, so every line takes the alignment at once whatever the caret is in.
     setAlign(align) { for (const l of wrap.querySelectorAll<HTMLElement>('.note-line')) setLineAlign(l, align); afterEdit(); },
     setValign(v) { wrap.dataset.valign = v; afterEdit(); },
+    // A line at a time, like the headings and unlike the alignment. A marker is
+    // drawn over the words you meant, and a note whose every line is
+    // highlighted has said nothing about any of them - at which point the tint
+    // of the sheet is the control that was wanted.
+    setWash(w) { for (const l of selectedLines(wrap)) setLineWash(l, w); afterEdit(); },
     setFont(key) {
       // NOTE_FONT_KEYS is Object.keys(NOTE_FONTS) and so answers `true` only for
       // a NoteFont; 'sheet' is one as well. The cast is that pair of facts, which
@@ -957,21 +1037,28 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>) {
   const after = node.nextSibling;
   mount.append(node);
 
-  node.style.width = EDIT_W + 'px';
+  // EDIT_W, or what the window can hold, whichever is less. The dialog is
+  // allowed the viewport less 32px (#compose in dialog.css) and the sheet has to
+  // sit inside that with room to look like it was put there - on a narrow phone
+  // the full sheet would hang off both sides of a dialog that had already given
+  // it everything it had. Read once, here: a modal is not a thing you resize the
+  // window behind.
+  const sheetW = Math.max(200, Math.min(EDIT_W, innerWidth - 48));
+  node.style.width = sheetW + 'px';
   // The margins are a share of the width (--note-half in cards.css), so the
   // stand-in width has to bring its own half or the sheet is drawn at this size
   // in the margins of whatever size it is on the board.
-  node.style.setProperty('--half-w', (EDIT_W / 2) + 'px');
+  node.style.setProperty('--half-w', (sheetW / 2) + 'px');
   // Measured at the width just set - noteHeight() with no width of its own
-  // reads the card as it stands. Never below EDIT_W, so a note of two words is
-  // a sheet and not a strip, and the vertical placement the toolbar sets has
-  // somewhere to place things.
+  // reads the card as it stands. Never below its own width, so a note of two
+  // words is a sheet and not a strip, and the vertical placement the toolbar
+  // sets has somewhere to place things.
   //
   // Written after the mount and not before: the world layer culls what is off
   // screen, and a note reached from the menu rather than from a double-click
   // can be measured while it is still in there. A card no browser is laying
   // out answers 0 to every measurement.
-  const fit = () => { node.style.height = Math.max(EDIT_W, noteHeight(id)) + 'px'; };
+  const fit = () => { node.style.height = Math.max(sheetW, noteHeight(id)) + 'px'; };
   // Registered before editNote(), which grows the note as part of starting.
   standIn = { id, fit };
   fit();
@@ -1103,9 +1190,9 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>) {
 }
 
 /**
- * The width of the sheet in the composer, and its smallest height. See
- * openComposer(), which is where the argument for it being one number for every
- * note is written.
+ * The width of the sheet in the composer, and its smallest height - on any
+ * window with room for it; see the clamp in openComposer(), which is also where
+ * the argument for it being one number for every note is written.
  *
  * Life size, not magnified. The type is a fixed size now and 16px is 16px in a
  * dialog; while the sheet was the note's own box the magnification was there to

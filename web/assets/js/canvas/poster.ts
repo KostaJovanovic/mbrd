@@ -79,7 +79,14 @@ export function videoFrame(file: Blob): Promise<VideoFrameShot | null> {
     // draws as a transparent rectangle onto a canvas however far it has seeked.
     v.muted = true;
     v.playsInline = true;
-    v.preload = 'auto';
+    // 'metadata', not 'auto', and on a board of phone clips this is most of what
+    // the grab costs. 'auto' asks the browser to buffer the *whole* file before
+    // it is needed - a four-minute 4K clip is half a gigabyte read and held to
+    // produce one frame a tenth of a second in, and a pass over twenty of them
+    // was the optimiser sitting there for minutes. A seek to 0.1s needs the
+    // header and the first keyframe, which is what 'metadata' plus the seek
+    // below fetches. play() still pulls whatever the decoder wants past that.
+    v.preload = 'metadata';
     v.addEventListener('error', () => done(null), { once: true });
 
     v.addEventListener('loadedmetadata', () => {

@@ -52,7 +52,7 @@ for a change without checking the current source first.
 
 ## Current
 
-**One file, and this is the change worth understanding.** This level used to
+**One register, and this is the change worth understanding.** This level used to
 hold five documents at once, each with its own status block claiming which of its
 own items were done. On 2026-08-14 all five were read against the source, and
 three of those blocks were wrong — every one of them in the same direction, and
@@ -60,8 +60,9 @@ none of them through carelessness. Work carried out under one document closes
 items belonging to another, and nothing tells the other document. Five status
 blocks is five things that can be wrong about the same tree.
 
-So the open items are now in one register, and the documents that argued them are
-all five in `old/` with the reasoning intact:
+So the open items are in one register, and the documents that argued them are all
+five in `old/` with the reasoning intact. Three files at this level now, the
+register and two subject documents:
 
 - `open-work-2026-08-14.md` — **the whole of what is open, in plain language.**
   Twenty items with an id each: five things somebody using the app would hit
@@ -85,33 +86,58 @@ all five in `old/` with the reasoning intact:
   keystroke, that looks exactly like a defect, and it is a decision with the
   reasoning written next to it. Do not "fix" it.
 
-- `plan-2026-08-14.md` — **the order the register is being worked in**, for the
-  eighteen items picked out of it on 2026-08-14 (everything except **L1** and
-  **B1**, both of which stay open and unscheduled). Ten batches, the decisions
-  each one needs before it can start, and what to look at afterwards. Three
-  orderings in it are load-bearing rather than preference and are argued at the
-  top: **S8 before U5**, because the cut-out guess should borrow the decode the
-  import path already does rather than add one to a path about to be rebuilt;
-  **L4 before L3, report-only**, because both turn on the word *unreferenced* and
-  an inventory that offers to delete orphans becomes a data-loss bug the moment
-  stored versions can hold the only reference to one; and **S1 alone**, because
-  it is the only item on the list that can change what every board looks like for
-  everybody.
+- `mbrd-format-2026-08-14.md` — **what is left to settle in the container while
+  it is still free to change.** Most of it is done and listed as done; the one
+  thing still open is that a board's history is a blob of escaped JSON nested
+  inside `board.json`, and it wants to be `timeline/base.json` plus a
+  `timeline/steps.jsonl` you can read a line of. It was blocked on the
+  timeline's phase 3 and is not any more. Read the window it opens with before
+  proposing anything else: nothing has shipped, so `version` stays `1` and no
+  compatibility is owed yet — and read *Not now* and *Never* before proposing
+  something it has already ruled out, which for Zstd, encryption and a binary
+  `board.json` is most of the ideas that come up.
 
-- `timeline-2026-08-14.md` — **the design for T1**, the editable timeline, which
-  is the largest thing ever asked of this app: every change becomes a step in the
-  board file, you can change one in the past and have the rest rebuild on top of
-  it, and it **replaces undo** rather than sitting beside it. Nothing is built.
-  It is a third file at this level under the same exception as the plan — the
-  register says what T1 is, this says how, and neither repeats the other. Two
-  things in it are worth knowing even if the feature is never started: the app is
-  unusually well suited to it in two specific ways (arrangements are already
-  deterministic, and assets are content-addressed so imports replay without
-  touching a disk), and the **reference union grows a fourth member**, which is
-  the part most likely to cause real data loss if a later change forgets it.
-  **Built, all five phases, on the day it was written** — the same file carries
-  what was built and where it diverged from the plan, because a design nobody
-  updated after building it is worse than no design.
+- `ui-clutter-2026-08-15.md` — **seven findings about the interface, one of them
+  carried out.** Audited by driving the real app rather than by reading the CSS,
+  which is the rule that made it worth writing. Its diagnosis is the part that
+  outlives the list: no surface in the app is overloaded on its own, and the
+  weight is that one command rests on three or four surfaces at once under two
+  or three names — which the structural rules in `CLAUDE.md` permit, because
+  nothing in them bounds how many surfaces a command may appear on. Finding **A**
+  is done (the canvas menu is six rows, and `canvasEntries()` carries the
+  argument); **B–H** are open, in the order the *Sequence* section gives.
+
+Two documents that were at this level went down to `old/` on 2026-08-15.
+
+`plan-2026-08-14.md` was **the order the register was worked in** — eighteen
+items in ten batches, everything except **L1** and **B1**. It said in its own
+text that it goes to `old/` on the last commit of the work it schedules, and all
+ten batches have run; the one thing not finished under it, the rest of **S1**, is
+carried by the register, which is exactly the split that lets the plan end. It is
+worth reading for the three orderings it argues at the top, because each is a
+trap rather than a preference: **S8 before U5**, because the cut-out guess should
+borrow the decode the import path already does rather than add one to a path
+about to be rebuilt; **L4 before L3, report-only**, because both turn on the word
+*unreferenced* and an inventory that offers to delete orphans becomes a data-loss
+bug the moment stored versions can hold the only reference to one; and **S1
+alone**, because it is the only item on the list that can change what every board
+looks like for everybody.
+
+`timeline-2026-08-14.md` was **the design for T1**, the editable timeline, and
+the largest thing ever asked of this app: every change becomes a step in the
+board file, you can change one in the past and have the rest rebuild on top of
+it, and it takes over the stored half of undo. **All five phases were built on
+the day it was written**, which is why it is down there — the same file carries
+what was built and where it diverged from the plan, because a design nobody
+updated after building it is worse than no design. Two things in it are worth
+knowing without touching the feature: the app is unusually well suited to it in
+two specific ways (arrangements are already deterministic, and assets are
+content-addressed so imports replay without touching a disk), and the
+**reference union grows a fourth member**, which is the part most likely to
+cause real data loss if a later change forgets it. What the register still
+carries for T1 is the tail: more commands converted from sealed to editable, a
+saved version ceasing to hold its own copy of the board, reordering and *insert
+here*.
 
 `feedback-plan-2026-08-14.md` was here and is not any more. It was a work queue
 of twelve things seen on screen, it said in its own text that it went to `old/`
@@ -124,17 +150,25 @@ holds: *do not fix this by reading the CSS* — every one of the four was found 
 opening the app, and every one of them had a plausible wrong answer available to
 anybody who did not.
 
-That is the whole of this level, and the second and third files are the exception
-this rule asks for rather than a hole in it. **A second open document here is the thing to
+That is the whole of this level. **A second open document here is the thing to
 argue about, not to add quietly** — the point of one register is that it cannot
 disagree with itself, and that property is lost the moment there are two. The
-argument for a plan at this level is that it *cannot* disagree with the register,
-because it carries no description of any item: only ids, order, and what to
-check. If a sentence in it starts explaining what an item is, it has become a
-second register and belongs back in the first. It also has an end — it goes to
-`old/` on the last commit of the work it schedules, and the register outlives it.
-The feedback plan is the proof that the end is real rather than a promise: it was
-written and retired inside one day.
+plan was the clean version of the exception: it *could not* disagree with the
+register, because it carried no description of any item, only ids, order and what
+to check — and it had an end, which it kept, going to `old/` on the last commit of
+the work it scheduled. The feedback plan is the proof that the end is real rather
+than a promise: it was written and retired inside one day.
+
+**The two subject documents are the untidy version of it, and this is the debt to
+be honest about.** `mbrd-format` and `ui-clutter` each carry open items the
+register has never heard of — a history that wants to come out of `board.json`,
+and seven findings about the interface — so there are three places at this level
+that can be wrong about the same tree, which is the number this whole
+reorganisation cut to one. Neither belongs in `old/` while its items are open,
+and neither is speculative enough for `future/`. The fix is to give each of them
+a row in the register the way T1 has one, with the document keeping the argument;
+until somebody does that, read them as what they are — open work filed beside the
+register instead of inside it.
 
 The five that were here went down on the same commit, and the four in `old/` are
 the unusual case the filing rule at the top does not cover: `ui-audit` went down
