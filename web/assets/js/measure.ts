@@ -274,7 +274,15 @@ export function scaleStep(pxPerMm: number, maxPx: number, system = 'metric') {
  */
 function decades(maxMm: number) {
   const out: number[] = [];
-  const top = Math.max(1, Math.ceil(Math.log10(Math.max(maxMm, 1))));
+  // The ladder has no top, and the *loop* has to. `top` is derived from the
+  // argument, so a non-finite maxMm made it Infinity and this ran forever
+  // pushing numbers until the tab died. Not reachable today - ui/scalebar.ts
+  // bounds pxPerMm through clampScale and the zoom clamps, and the ratio is
+  // what arrives here - but "no caller passes that" is the kind of guarantee
+  // that holds until somebody adds a caller. Twenty-four decades is from a
+  // tenth of a millimetre to well past the diameter of the earth.
+  const raw = Math.ceil(Math.log10(Math.max(maxMm, 1)));
+  const top = Number.isFinite(raw) ? Math.max(1, Math.min(24, raw)) : 1;
   for (let e = -2; e <= top; e++) {
     const unit = Math.pow(10, e);
     for (const s of METRIC_STEPS) out.push(s * unit);

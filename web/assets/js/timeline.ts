@@ -533,6 +533,7 @@ export function resetTimeline() {
   base = snapshot();
   checkpoints = new Map();
   stale = false;
+  forgetBytes();
 }
 
 /**
@@ -688,10 +689,31 @@ export function dropLastStep() {
  * generous direction would never offer while an estimate wrong the other way
  * would offer on a board that did not need it.
  */
+let bytesFor = -1;
+let bytesWas = 0;
+
 export function timelineBytes(): number {
+  // Memoised against the step count, because the caller is a render.
+  //
+  // ui/timeline-view.ts calls this from render(), which runs on every `history`
+  // bus event while the strip or the sheet is up - so dragging a colour slider
+  // ran a full serializeTimeline() plus a JSON.stringify of a two-megabyte
+  // ledger per tick, on the thread that was supposed to be drawing the colour.
+  //
+  // The ledger only grows at its end and only through recordStep(), so the step
+  // count is a sound revision marker: a change that leaves the count identical
+  // cannot change the serialised size by more than the last step's own bytes,
+  // and the number is used to decide whether to *offer* a trim at a two-megabyte
+  // threshold. resetTimeline() and adoptTimeline() both reset it below.
+  if (bytesFor === steps.length) return bytesWas;
   const doc = serializeTimeline();
-  return doc ? JSON.stringify(doc).length : 0;
+  bytesWas = doc ? JSON.stringify(doc).length : 0;
+  bytesFor = steps.length;
+  return bytesWas;
 }
+
+/** Forget the memo above - any wholesale change to the ledger calls this. */
+const forgetBytes = () => { bytesFor = -1; };
 
 /** Past this, the app offers to trim. It never trims without being asked. */
 export const TRIM_BYTES = 2_000_000;
@@ -756,6 +778,7 @@ function foldOldest(count: number) {
   steps = steps.slice(take);
   at -= take;
   checkpoints = new Map();
+  forgetBytes();
 }
 
 /** Apply steps to a snapshot without touching the board. Used by foldOldest. */
@@ -1155,6 +1178,7 @@ export function adoptTimeline(raw: unknown, doc?: unknown) {
   const truncated = Array.isArray(raw.steps) && raw.steps.length > parsed.length;
   base = raw.base as Snap;
   steps = parsed;
+  forgetBytes();
   at = Number.isFinite(raw.at)
     ? Math.max(0, Math.min(Number(raw.at), steps.length))
     : steps.length;  // Against the document that arrived, not against the board that was built

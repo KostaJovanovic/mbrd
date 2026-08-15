@@ -70,7 +70,22 @@ const TABLE_RULE = /^ *\|?[ :|-]+\|[ :|-]*$/;
  * one or by a marker. `i` moves forward only, which is what keeps a malformed
  * document - an unclosed fence, a table with no body - from looping.
  */
-function blocks(lines: string[]): HTMLElement[] {
+/**
+ * The deepest a blockquote may nest.
+ *
+ * blocks() recurses once per `>` on a quoted line, so 50,000 of them overflowed
+ * the stack - and the viewer's `.catch` turns that into `holder.textContent =
+ * ''`, so the file rendered blank with nothing anywhere saying why. The module
+ * header's promise that every count is capped before it is looped on did not
+ * cover depth, here or in ui/documents.ts.
+ *
+ * Sixty-four is past anything anybody quotes and far under any engine's limit.
+ * Beyond it the rest is kept as text, which is what an unparseable run of `>`
+ * looks like anyway.
+ */
+const MAX_QUOTE_DEPTH = 64;
+
+function blocks(lines: string[], depth = 0): HTMLElement[] {
   const out: HTMLElement[] = [];
   let i = 0;
   while (i < lines.length) {
@@ -102,14 +117,14 @@ function blocks(lines: string[]): HTMLElement[] {
       continue;
     }
 
-    if (QUOTE.test(line)) {
+    if (QUOTE.test(line) && depth < MAX_QUOTE_DEPTH) {
       const inner: string[] = [];
       while (i < lines.length && (QUOTE.test(lines[i]) || (inner.length && lines[i].trim()))) {
         inner.push(lines[i].match(QUOTE)?.[1] ?? lines[i]);
         i++;
       }
       const q = document.createElement('blockquote');
-      for (const node of blocks(inner)) q.append(node);
+      for (const node of blocks(inner, depth + 1)) q.append(node);
       out.push(q);
       continue;
     }
@@ -300,14 +315,69 @@ function table(head: string[], body: string[][], align: string[]) {
 // because a backtick span suspends everything else inside it - `**not bold**`
 // is four asterisks and two words.
 //
+/**
+ * The longest an inline code span may be.
+ *
+ * Half of the fix for the one measured hang in this module. `(`+)([\s\S]*?)\1`
+ * backtracks quadratically: at every backtick the lazy body expands looking for
+ * a closing run of the same length, and when there is not one it expands to the
+ * end of the paragraph. inline() is handed a whole paragraph up to TEXT_MAX =
+ * 200,000 characters, so a `.md` whose first line is `x` followed by 200,000
+ * backticks - a leading run of three or more would be caught by FENCE; a run
+ * after any other character is not - **blocked the main thread for 13.7
+ * seconds, measured on node 22**. 50,000 characters took 0.8s, which is clean
+ * quadratic.
+ *
+ * Ten thousand characters is far past any inline span anybody writes - a long
+ * listing is a fenced block, which never reaches this function - and it turns
+ * the per-start cost into a constant. See runsCanPair() for the other half.
+ */
+const CODE_SPAN_MAX = 10_000;
+
+/**
+ * Whether any two runs of backticks in this text are the same length.
+ *
+ * The other half. A code span needs an opening run and a closing run of exactly
+ * the same length, so if no length occurs twice there is no code span in this
+ * text at all - and the alternative can be dropped rather than tried at every
+ * backtick and failed at every backtick. One left-to-right pass, and it turns
+ * the pathological input above into a single run with no partner, which is the
+ * shape the measurement was taken on.
+ *
+ * A cheap sufficient condition rather than a proof of linearity: a document
+ * that genuinely does have pairable runs still goes through the regex, where
+ * CODE_SPAN_MAX is what bounds it. Between the two, the cost is bounded by the
+ * text and not by the square of it.
+ */
+function runsCanPair(text: string): boolean {
+  const seen = new Set<number>();
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== '`') continue;
+    let n = 1;
+    while (text[i + n] === '`') n++;
+    if (seen.has(n)) return true;
+    seen.add(n);
+    i += n - 1;
+  }
+  return false;
+}
+
 // A *source* string, not a RegExp, and that is not a style choice. A global
 // regex carries `lastIndex` on the object, and inline() recurses - a link's
 // label goes back through it - so one shared instance has the inner call reset
 // the outer call's cursor to zero and the outer loop starts the same text over
 // from the beginning, forever. A fresh instance per call is a few microseconds
 // and cannot do that.
+// `%CODE%` is a guard the caller fills in: empty when a code span is possible
+// in this text, and the always-failing lookahead `(?!)` when runsCanPair() has
+// already proved it is not. An alternative that fails at its first character
+// costs one step at each position instead of a scan to the end of the
+// paragraph - and it is written as a guard rather than by deleting the
+// alternative because the backreferences below are absolute across the whole
+// pattern. Dropping two groups would silently repoint \8 and \10, which is the
+// bug the comment under them records.
 const INLINE_SRC = [
-  '(`+)([\\s\\S]*?)\\1',                       // 1,2  code
+  '%CODE%(`+)([\\s\\S]{0,' + CODE_SPAN_MAX + '}?)\\1',  // 1,2  code
   '!\\[([^\\]]*)\\]\\(([^()\\s]+)[^)]*\\)',    // 3,4  image
   '\\[([^\\]]*)\\]\\(([^()\\s]+)[^)]*\\)',     // 5,6  link
   '<((?:https?|mailto):[^>\\s]+)>',            // 7    autolink
@@ -331,7 +401,7 @@ const INLINE_SRC = [
 function inline(src: unknown) {
   const frag = document.createDocumentFragment();
   const text = String(src ?? '');
-  const re = new RegExp(INLINE_SRC, 'g');
+  const re = new RegExp(INLINE_SRC.replace('%CODE%', runsCanPair(text) ? '' : '(?!)'), 'g');
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {

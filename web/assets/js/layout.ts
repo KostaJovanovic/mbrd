@@ -196,11 +196,31 @@ export function packMobileGrid(
       for (let x = col; x < col + cols; x++) occupied.add(`${x}:${y}`);
     }
   };
+  /** Any free cell at all in this row - the weakest test, for the floor below. */
+  const anyOpen = (row: number) => {
+    for (let x = 0; x < columns; x++) if (!occupied.has(`${x}:${row}`)) return true;
+    return false;
+  };
 
+  // The lowest row still worth looking at.
+  //
+  // The scan restarted at `startRow` for every item, so the pack is quadratic
+  // in the number of rows already filled, with a string-keyed Set probe per
+  // cell: on a 2,000-card Mobile board each item walks from row 0 past every
+  // occupied row times eight columns, which is tens of millions of template
+  // strings on the main thread - every time the column-count select or the
+  // spacing slider moves, and repackMobileBoard() passes no obstacles so
+  // `startRow` really is 0.
+  //
+  // A floor rather than a cursor, because an item may still land *above* the
+  // last one placed when a narrow card fits a gap a wide one left. What cannot
+  // happen is a fit below every row that is already full to the width of the
+  // widest item, and the floor only moves up when a whole row band is closed.
+  let floor = startRow;
   return items.map(item => {
     const cols = mobileCellSpan(item.w, step, columns, spacing);
     const rows = mobileCellSpan(item.h, step, Number.POSITIVE_INFINITY, spacing);
-    let row = startRow;
+    let row = floor;
     let col = 0;
     let found = false;
     while (!found) {
@@ -210,7 +230,14 @@ export function packMobileGrid(
           break;
         }
       }
-      if (!found) row++;
+      if (!found) {
+        // Nothing of *any* width fits this row, so no later item will look at
+        // it either and the floor may come up past it. Checked with the
+        // narrowest possible span so the floor never rises over a gap a small
+        // card could still use.
+        if (row === floor && !anyOpen(row)) floor = row + 1;
+        row++;
+      }
     }
     claim(col, row, cols, rows);
     const left = (-columns / 2 + col) * step;
@@ -969,10 +996,17 @@ export function setBoardMode(mode: string | null) {
  */
 export function travelling(ids: Iterable<string>) {
   const out = [...ids];
+  // A Set beside the array. `out.includes(id)` inside a loop that grows `out`
+  // makes the fixed-point walk quadratic in the set it accumulates, which on a
+  // fence holding several hundred cards is the drag doing that arithmetic on
+  // every commit. The array is still what comes back, because order is what the
+  // callers use it for.
+  const have = new Set(out);
   for (let grew = true; grew;) {
     grew = false;
     for (const id of [...stuckFollowers(out), ...fenceFollowers(out)]) {
-      if (out.includes(id)) continue;
+      if (have.has(id)) continue;
+      have.add(id);
       out.push(id);
       grew = true;
     }

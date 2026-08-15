@@ -265,3 +265,58 @@ test('a file with an SOI and no EOI yields nothing', async () => {
   buf[100] = 0xff; buf[101] = 0xd8; buf[102] = 0xff;
   assert.equal(await embeddedPreview(new Blob([buf])), null);
 });
+
+test('a file full of starts and no end does not hang the tab', { timeout: 10000 }, async () => {
+  // The measured one. classify() calls a .heic an image, measureSize() reports
+  // it undecodable, and the marker scan is the fallback - so 12 MB of repeating
+  // FF D8 FF with no FF D9 anywhere gave about four million matching offsets,
+  // each running an inner scan to the end of the buffer. Roughly 5x10^13
+  // comparisons, on the main thread, with no cap and no way to cancel.
+  //
+  // 2 MB here rather than the full 12: the old code is quadratic, so this
+  // fixture took long enough to make the point without making the suite slow.
+  const n = 2 * 1024 * 1024;
+  const buf = new Uint8Array(n);
+  for (let i = 0; i + 2 < n; i += 3) { buf[i] = 0xff; buf[i + 1] = 0xd8; buf[i + 2] = 0xff; }
+  const started = process.hrtime.bigint();
+  assert.equal(await embeddedPreview(new Blob([buf])), null);
+  const ms = Number(process.hrtime.bigint() - started) / 1e6;
+  assert.ok(ms < 3000, `the scan took ${Math.round(ms)}ms - it is not linear`);
+});
+
+test('the scan still finds the last and largest JPEG among several', async () => {
+  // The linear cursor must not cost the answer: a camera writes a thumbnail and
+  // a full preview, and the big one is the picture worth showing.
+  const small = jpeg(1200);
+  const big = jpeg(9000);
+  const buf = new Uint8Array(64 + small.length + 32 + big.length);
+  buf.set(small, 64);
+  buf.set(big, 64 + small.length + 32);
+  const found = await embeddedPreview(new Blob([buf]));
+  assert.ok(found, 'neither JPEG was found');
+  assert.equal(found.size, big.length);
+});
+
+test('a TIFF truncated exactly at its last IFD entry still reaches the fallback', async () => {
+  // `bytes()` clamps to file.size, so the block comes back at precisely
+  // entries * 12, the `<` guard passes, and reading the next-IFD pointer went
+  // four bytes past the DataView. The RangeError escaped fromTiff() and was
+  // caught by embeddedPreview()'s outer catch - which threw away every
+  // candidate already collected and skipped the marker scan too, so a truncated
+  // file lost its preview twice.
+  const art = jpeg(3000);
+  const full = tiff([
+    [JPEG_OFFSET, LONG, 1, 0],
+    [JPEG_LENGTH, LONG, 1, 0],
+  ], art);
+  // Cut the four-byte next-IFD pointer off the end of the directory, keeping
+  // the entries themselves. The payload goes with it, so the marker scan is
+  // what has to answer - which is the point.
+  const cut = full.bytes.slice(0, 8 + 2 + 2 * 12);
+  const whole = new Uint8Array(cut.length + art.length);
+  whole.set(cut, 0);
+  whole.set(art, cut.length);
+  const found = await embeddedPreview(new Blob([whole]));
+  assert.ok(found, 'the truncated directory took the fallback down with it');
+  assert.equal(found.size, art.length);
+});

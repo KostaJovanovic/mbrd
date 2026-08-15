@@ -189,6 +189,13 @@ function tableOf(rows: (string | null)[][], { head = true } = {}) {
     if (cells > MAX_CELLS) return;
     const tr = el('tr');
     for (const value of row) {
+      // Checked per *cell*, not once per row. A row is a loop like any other
+      // and nothing bounded this one, so a .csv of a single line with twenty
+      // million commas - comfortably under MAX_CONTAINER - survived
+      // parseDelimited() as one row and created twenty million elements here.
+      // That is not a truncated read, it is the tab going down. An xlsx row
+      // whose <c> cells carry no `r` attribute has the same shape.
+      if (cells > MAX_CELLS) break;
       const cell = el(head && n === 0 ? 'th' : 'td');
       cell.textContent = value;
       tr.append(cell);
@@ -435,6 +442,12 @@ async function ooxmlSlides(blob: Blob, urls: string[]) {
   if (!slides.length) throw new Error('That presentation has no slides');
 
   const frag = document.createDocumentFragment();
+  // Across the whole deck, not per slide. The twelve-a-slide cap below is about
+  // how a slide reads; MAX_IMAGES is about what the tab can hold, and this path
+  // ignored it entirely - so a .pptx of 400 slides carrying 12 blips each minted
+  // 4,800 blob URLs and mounted 4,800 <img> elements, sixteen times the
+  // documented ceiling, every one of them alive until releaseDoc().
+  let images = 0;
   slides.forEach((path, n) => {
     const section = el('section', 'doc-slide');
     section.append(partHead(`Slide ${n + 1}`));
@@ -454,12 +467,13 @@ async function ooxmlSlides(blob: Blob, urls: string[]) {
       }
       let drawn = 0;
       for (const blip of byLocal(doc, 'blip')) {
-        if (drawn++ >= 12) break;
+        if (drawn++ >= 12 || images >= MAX_IMAGES) break;
         const id = blip.getAttribute('r:embed') || blip.getAttribute('embed');
         const target = id && rels.get(id);
         if (!target) continue;
         const url = urlFor(entries, resolveFrom('ppt/slides/', target), urls);
         if (!url) continue;
+        images++;
         const img = el('img', 'doc-image');
         img.src = url;
         img.alt = '';
@@ -529,6 +543,10 @@ async function ooxmlSheets(blob: Blob) {
         if (rows.length > MAX_BLOCKS) break;
         const cells: (string | null)[] = [];
         for (const c of [...row.children].filter(x => x.localName === 'c')) {
+          // Bounded per row, like the .csv path in tableOf(). A <c> with no `r`
+          // attribute falls through to a plain push, so a sheet whose row is
+          // one long run of them is a loop with nothing stopping it.
+          if (cells.length > 4096) break;
           // The column letter in r="B7" is the position; without it a row of
           // three values with a gap in the middle would close up.
           const at = colIndex(c.getAttribute('r') || '');
@@ -837,7 +855,22 @@ const SVG_OK = new Set([
   'marker', 'switch', 'style',
 ]);
 
-function scrub(node: Element) {
+/**
+ * How deep the allow-list walk will follow a tree.
+ *
+ * scrub() recurses per nesting level and odfBlocks()'s walk() does the same, so
+ * 50,000 nested <g> elements threw a RangeError - which the viewer turns into
+ * "That file could not be read", a wrong message rather than a crash, but a
+ * wrong message about a file that is simply deep. The header's promise that
+ * every count is capped before it is looped on does not cover depth.
+ *
+ * Past this the subtree is removed rather than kept unscrubbed, which is the
+ * only safe direction for a function whose job is to decide what may stay.
+ */
+const MAX_SVG_DEPTH = 256;
+
+function scrub(node: Element, depth = 0) {
+  if (depth >= MAX_SVG_DEPTH) { node.replaceChildren(); return; }
   for (const child of [...node.children]) {
     if (!SVG_OK.has(child.localName)) { child.remove(); continue; }
     for (const attr of [...child.attributes]) {
@@ -852,7 +885,7 @@ function scrub(node: Element) {
         || value.includes('data:text/html');
       if (away) child.removeAttribute(attr.name);
     }
-    scrub(child);
+    scrub(child, depth + 1);
   }
 }
 

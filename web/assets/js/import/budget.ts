@@ -56,13 +56,36 @@ export function makeByteBudget(limit: number = IMPORT_LIMITS.batchBytes) {
     take(bytes: number) {
       const n = Number.isFinite(bytes) ? bytes : 0;
       if (n > IMPORT_LIMITS.fileBytes) return false;
-      if (spent + n > limit) return false;
+      if (spent + n > limit || inFlight + n > limit) return false;
       spent += n;
+      inFlight += n;
       return true;
     },
     spent: () => spent,
+    /** Give this budget's charge back to the shared account. */
+    release() { inFlight = Math.max(0, inFlight - spent); },
   };
 }
+
+/**
+ * Bytes charged across every import that has not finished yet.
+ *
+ * The budget above is per call, so two folder drops a second apart each got a
+ * fresh gigabyte - and a drop while a paste is still preparing is not exotic,
+ * it is what happens when somebody is filling a board. Each import was under
+ * budget on its own and the two together were two gigabytes of files being
+ * hashed, decoded and thumbnailed at once, which is the thing batchBytes
+ * exists to bound. MAX_FILES has exactly the same shape and the same answer.
+ *
+ * A module-level counter rather than a queue: the point is not to serialise
+ * imports, which would make a second drop feel broken, but to stop the second
+ * one claiming a budget the first is still spending. releaseByteBudget() is
+ * called when an import finishes, however it finishes.
+ */
+let inFlight = 0;
+
+/** For a test, or a caller that wants the shared account back at zero. */
+export const resetByteBudget = () => { inFlight = 0; };
 
 const u16be = (b: Uint8Array, o: number) => (b[o] << 8) | b[o + 1];
 const u16le = (b: Uint8Array, o: number) => b[o] | (b[o + 1] << 8);
@@ -76,10 +99,26 @@ export type Dimensions = { w: number, h: number };
  * Pixel dimensions read from a raster header, without decoding.
  *
  * Covers the formats a browser will actually turn into a bitmap and that carry
- * their size in a fixed or shallow-scannable header: PNG, GIF, JPEG, WebP.
+ * their size in a fixed or shallow-scannable header: PNG, GIF, JPEG, WebP, BMP,
+ * ICO, AVIF/HEIC and TIFF.
  * Returns `{ w, h }` or null when the bytes are unrecognised or truncated - in
  * which case the byte caps still apply and the decoder's own failure is the
  * backstop.
+ *
+ * The last four are late arrivals and the reason is the finding that added
+ * them: this knew only the first four, while all eight are in PHOTO_EXTS
+ * (import/formats.ts) and all eight are things a browser will decode. So
+ * overPixelBudget() answered false for a BMP on the grounds that it could not
+ * read one - and a sixty-byte file whose BITMAPINFOHEADER declares 30000x30000
+ * went straight to createImageBitmap(), which allocated about 3.6 GB. That is
+ * precisely the allocation this module's header says it exists to stop, made by
+ * a file small enough to paste into a chat window.
+ *
+ * Being unable to read a header is still a false: the caps and the decoder
+ * remain the backstop, and a false positive here would refuse somebody's
+ * photograph. That asymmetry is why the ISO-BMFF branch scans for `ispe` rather
+ * than walking the box tree - a miss costs a check we did not make, and a wrong
+ * hit costs a picture.
  */
 export function imageDimensions(b: Uint8Array): Dimensions | null {
   const n = b.length;
@@ -123,6 +162,63 @@ export function imageDimensions(b: Uint8Array): Dimensions | null {
       o += 2 + len;
     }
     return null;
+  }
+  // BMP: BITMAPINFOHEADER width/height, signed little-endian at 18 and 22. The
+  // height is negative for a top-down bitmap, which is legal and says nothing
+  // about how many pixels there are.
+  if (n >= 26 && b[0] === 0x42 && b[1] === 0x4d) {
+    const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+    return { w: Math.abs(dv.getInt32(18, true)), h: Math.abs(dv.getInt32(22, true)) };
+  }
+  // ICO/CUR: the largest entry in the directory, since that is the one a
+  // browser draws. A zero byte in the size field means 256, which is the format
+  // being clever about fitting a dimension in eight bits.
+  if (n >= 6 && b[0] === 0 && b[1] === 0 && (b[2] === 1 || b[2] === 2) && b[3] === 0) {
+    const count = u16le(b, 4);
+    let best: Dimensions | null = null;
+    for (let i = 0; i < count && 6 + i * 16 + 2 <= n; i++) {
+      const at = 6 + i * 16;
+      const w = b[at] || 256, h = b[at + 1] || 256;
+      if (!best || w * h > best.w * best.h) best = { w, h };
+    }
+    return best;
+  }
+  // AVIF and HEIC: ISO-BMFF, so the size lives in an `ispe` box somewhere in
+  // the metadata rather than at a fixed offset. Scanned for rather than walked,
+  // which is the same bargain the JPEG branch above makes - the box tree is
+  // deep, the fourcc is four bytes, and being wrong here costs a false negative
+  // rather than a false positive.
+  if (n >= 12 && b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70) {
+    let best: Dimensions | null = null;
+    for (let o = 0; o + 20 <= n; o++) {
+      if (b[o] !== 0x69 || b[o + 1] !== 0x73 || b[o + 2] !== 0x70 || b[o + 3] !== 0x65) continue;
+      // ispe: fourcc, version+flags (4), width (4), height (4).
+      const w = u32be(b, o + 8), h = u32be(b, o + 12);
+      if (w > 0 && h > 0 && (!best || w * h > best.w * best.h)) best = { w, h };
+    }
+    return best;
+  }
+  // TIFF: the first IFD's ImageWidth (256) and ImageLength (257). Both may be
+  // SHORT or LONG, which is why the type is read rather than assumed.
+  if (n >= 8 && ((b[0] === 0x49 && b[1] === 0x49) || (b[0] === 0x4d && b[1] === 0x4d))) {
+    const le = b[0] === 0x49;
+    const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+    if (dv.getUint16(2, le) !== 42) return null;
+    const ifd = dv.getUint32(4, le);
+    if (ifd + 2 > n) return null;
+    const entries = dv.getUint16(ifd, le);
+    let w = 0, h = 0;
+    for (let i = 0; i < entries && ifd + 2 + i * 12 + 12 <= n; i++) {
+      const at = ifd + 2 + i * 12;
+      const tag = dv.getUint16(at, le);
+      if (tag !== 256 && tag !== 257) continue;
+      const type = dv.getUint16(at + 2, le);
+      const value = type === 3 ? dv.getUint16(at + 8, le)
+        : type === 4 ? dv.getUint32(at + 8, le)
+        : 0;
+      if (tag === 256) w = value; else h = value;
+    }
+    return w > 0 && h > 0 ? { w, h } : null;
   }
   return null;
 }

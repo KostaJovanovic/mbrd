@@ -704,3 +704,110 @@ test('an index outside the position count does not read past the array', () => {
     }
   }
 });
+
+test('a MAT4 accessor is bounded by what it allocates, not by its count', () => {
+  // 356 bytes that allocated 366 MiB, measured. The count guard bounds
+  // `acc.count` and the allocation is `count * comps`, and comps is 16 for a
+  // MAT4 - so the ceiling was off by sixteen times its own stated intent, and
+  // the per-element bounds check that would have caught it runs afterwards.
+  assert.throws(() => parseGLB(gltfBytes({
+    accessors: [{ type: 'MAT4', componentType: 5126, count: 6_000_000, bufferView: 0 }],
+    bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: 4 }],
+    buffers: [{ byteLength: 4, uri: 'data:application/octet-stream;base64,AAAAAA==' }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+    nodes: [{ mesh: 0 }],
+    scenes: [{ nodes: [0] }],
+  })), /implausible amount of geometry/);
+});
+
+test('an accessor with no bufferView cannot claim gigabytes it does not carry', () => {
+  // Legal - a view-less accessor is defined as all zeroes, and is how a sparse
+  // one starts - and bounded by nothing in the document and no byte on disk.
+  // Worse, the array was built before the view was looked at, so the cost was
+  // paid once per primitive naming the accessor: forty primitives against one
+  // `{type:'MAT4', count:6000000}` asked for 384 MB forty times from a 1.4 KB
+  // file, and MAX_TRIANGLES never came near it.
+  assert.throws(() => parseGLB(gltfBytes({
+    accessors: [{ type: 'MAT4', componentType: 5126, count: 6_000_000 }],
+    meshes: [{ primitives: Array.from({ length: 40 }, () => ({ attributes: { POSITION: 0 } })) }],
+    nodes: [{ mesh: 0 }],
+    scenes: [{ nodes: [0] }],
+  })), /declares data it does not contain|implausible amount of geometry/);
+});
+
+test('a small view-less accessor is still legal', () => {
+  // The guard must not refuse the thing it is named after: a sparse base is a
+  // handful of vertices, defined as zeroes, and those files have to keep
+  // opening. Three vertices at the origin is a degenerate triangle, not an
+  // error.
+  const mesh = parseGLB(gltfBytes({
+    accessors: [{ type: 'VEC3', componentType: 5126, count: 3 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+    nodes: [{ mesh: 0 }],
+    scenes: [{ nodes: [0] }],
+  }));
+  assert.equal(mesh.positions.length, 9);
+  assert.ok([...mesh.positions].every(n => n === 0), 'a view-less accessor is zeroes');
+});
+
+test('a negative component is read as negative, not as four billion', () => {
+  // A conformant glTF 2.0 file with a signed SHORT accessor - core glTF, no
+  // extension, what every quantising exporter emits. The readers were always
+  // right; the destination was a Uint32Array for everything that was not a
+  // float, so every negative wrapped to about 4.29 billion. With a signed
+  // NORMAL the model was lit from the wrong side; with a quantized POSITION the
+  // geometry was noise rather than a refusal.
+  const pos = new Int16Array([-100, 0, 0, 100, 0, 0, 0, 100, 0]);
+  const b64 = Buffer.from(new Uint8Array(pos.buffer)).toString('base64');
+  const mesh = parseGLB(gltfBytes({
+    accessors: [{ type: 'VEC3', componentType: 5122, count: 3, bufferView: 0 }],
+    bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: pos.byteLength }],
+    buffers: [{ byteLength: pos.byteLength, uri: 'data:application/octet-stream;base64,' + b64 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+    nodes: [{ mesh: 0 }],
+    scenes: [{ nodes: [0] }],
+  }));
+  assert.ok(Math.min(...mesh.positions) < 0,
+    `no negative coordinate survived: ${[...mesh.positions].slice(0, 3)}`);
+  assert.ok(Math.max(...mesh.positions) < 1e6, 'a component wrapped into the billions');
+});
+
+test('a node matrix that is not sixteen numbers is refused, not multiplied', () => {
+  // `"matrix": [1, 2]` made every read past index 1 undefined and the subtree's
+  // vertices NaN - and grow() ignores NaN, so `bounds` kept whatever a sibling
+  // set and finish()'s finiteness guard passed. The model rendered as garbage
+  // instead of earning the refusal every other malformed field here earns.
+  const pos = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+  const b64 = Buffer.from(new Uint8Array(pos.buffer)).toString('base64');
+  const doc = matrix => gltfBytes({
+    accessors: [{ type: 'VEC3', componentType: 5126, count: 3, bufferView: 0 }],
+    bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: 36 }],
+    buffers: [{ byteLength: 36, uri: 'data:application/octet-stream;base64,' + b64 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+    nodes: [{ mesh: 0, matrix }],
+    scenes: [{ nodes: [0] }],
+  });
+  for (const junk of [[1, 2], [], 'matrix', Array(16).fill(NaN), Array(17).fill(1)]) {
+    const mesh = parseGLB(doc(junk));
+    for (const n of mesh.positions) {
+      assert.ok(Number.isFinite(n), `${JSON.stringify(junk).slice(0, 20)} produced ${n}`);
+    }
+  }
+  // And a real one still applies.
+  const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+  assert.equal(parseGLB(doc(identity)).positions.length, 9);
+});
+
+test('a scrambled GLB JSON chunk earns a sentence, not a SyntaxError', () => {
+  const json = new TextEncoder().encode('{"asset":');
+  const total = 12 + 8 + json.length;
+  const buf = new ArrayBuffer(total);
+  const dv = new DataView(buf);
+  dv.setUint32(0, 0x46546c67, true);        // 'glTF'
+  dv.setUint32(4, 2, true);
+  dv.setUint32(8, total, true);
+  dv.setUint32(12, json.length, true);
+  dv.setUint32(16, 0x4e4f534a, true);       // 'JSON'
+  new Uint8Array(buf).set(json, 20);
+  assert.throws(() => parseGLB(buf), /not a glTF file/);
+});

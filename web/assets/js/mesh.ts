@@ -68,6 +68,22 @@ export const MAX_TRIANGLES = 2_000_000;
  */
 export const MAX_ELEMENTS = MAX_TRIANGLES * 3;
 
+/**
+ * The most an accessor with no bufferView may declare.
+ *
+ * Such an accessor is defined as all zeroes and is how a sparse one starts, so
+ * it is legal and it costs the file nothing to write - which is exactly the
+ * problem: its size is bounded by no number in the document and by no byte on
+ * disk. MAX_ELEMENTS is the right ceiling for data a file actually carries and
+ * far too generous for data it merely claims.
+ *
+ * A sparse base is a handful of vertices in every real model that uses one.
+ * This is three orders of magnitude above that and three below the ceiling
+ * that made the finding, which leaves an honest file untouched and a 1.4 KB
+ * one unable to ask for gigabytes.
+ */
+const VIEWLESS_MAX = 100_000;
+
 /** Decoded bytes of one embedded (data-URI) buffer. atob() allocates the whole
  *  binary string, so this is checked from the base64 length before decoding. */
 const MAX_BUFFER_BYTES = 512 * 1024 ** 2;
@@ -296,7 +312,12 @@ function asciiSTL(text: string) {
   let t = 0;
 
   for (const facet of facets) {
-    const nums = facet.match(/-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?/g);
+    // The full set of shapes a float is written in, which this did not have:
+    // `-?\d+(\.\d+)?` matched neither `.5` nor `1.` nor `+1`, all of which
+    // exporters emit. What it did instead was match the *digits* it could see -
+    // `vertex .5 -.25 1.` came out as 5, 25 and 1, three wrong coordinates
+    // accepted in silence, with the sign gone from the second.
+    const nums = facet.match(/[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g);
     // A normal (3) and three vertices (9). Fewer means a truncated facet, and
     // a facet that is not a triangle is not one this can draw.
     if (!nums || nums.length < 12) continue;
@@ -561,7 +582,17 @@ export function parseGLB(bytes: ArrayBuffer): Mesh {
       const type = view.getUint32(at + 4, true);
       const body = at + 8;
       if (body + len > bytes.byteLength) throw new MeshError('This GLB is truncated');
-      if (type === CHUNK_JSON) json = JSON.parse(new TextDecoder().decode(new Uint8Array(bytes, body, len)));
+      if (type === CHUNK_JSON) {
+        // Caught, like the .gltf branch below it. A truncated or scrambled JSON
+        // chunk threw a raw SyntaxError out of here, which reaches the user as
+        // whatever the caller makes of an unknown throw rather than as the
+        // sentence every other unreadable file in this module earns.
+        try {
+          json = JSON.parse(new TextDecoder().decode(new Uint8Array(bytes, body, len)));
+        } catch {
+          throw new MeshError('This is not a glTF file');
+        }
+      }
       else if (type === CHUNK_BIN) bin = new Uint8Array(bytes, body, len);
       // Chunks are four-byte aligned, and an unknown one is skipped by spec.
       at = body + len + ((4 - (len % 4)) % 4);
@@ -638,7 +669,14 @@ function walkNode(
       if (++visits > MAX_NODE_VISITS) throw new MeshError('This model has too many nodes in it');
       seen.add(frame.index);
 
-      const local = node.matrix ? node.matrix : trs(node);
+      // Checked, not taken on trust. `node.matrix` came straight out of the
+      // file and went straight into mul(), so `"matrix": [1, 2]` made every
+      // read past index 1 undefined, the subtree's vertices NaN, and - because
+      // grow() ignores NaN and so `bounds` kept whatever a sibling set -
+      // finish()'s finiteness guard passed. The model rendered as garbage where
+      // it should have earned the same clear refusal every other malformed
+      // field here earns.
+      const local = isMatrix(node.matrix) ? node.matrix : trs(node);
       frame.world = mul(frame.parent, local);
 
       if (node.mesh !== undefined) {
@@ -716,10 +754,20 @@ const COMPONENTS: Record<string, number | undefined> =
  * because there is nothing to order in one byte - which is exactly what passing
  * `true` to them meant before.
  */
-const READERS: Record<number, { size: number, read: (view: DataView, at: number) => number } | undefined> = {
-  5120: { size: 1, read: (v, at) => v.getInt8(at) },
+// `signed` is what the value is written *into*, not how it is read out. The
+// readers were always right - getInt8 and getInt16 return negatives - and the
+// destination was a Uint32Array for everything that was not a float, so every
+// negative component wrapped to around 4.29 billion. A conformant glTF 2.0 file
+// with a normalized SHORT NORMAL accessor - core glTF, no extension, and what
+// every quantising exporter emits - had one face of the model lit from the
+// wrong side; with quantized POSITION the geometry came out as noise rather
+// than being refused.
+const READERS: Record<number, {
+  size: number, signed?: boolean, read: (view: DataView, at: number) => number,
+} | undefined> = {
+  5120: { size: 1, signed: true, read: (v, at) => v.getInt8(at) },
   5121: { size: 1, read: (v, at) => v.getUint8(at) },
-  5122: { size: 2, read: (v, at) => v.getInt16(at, true) },
+  5122: { size: 2, signed: true, read: (v, at) => v.getInt16(at, true) },
   5123: { size: 2, read: (v, at) => v.getUint16(at, true) },
   5125: { size: 4, read: (v, at) => v.getUint32(at, true) },
   5126: { size: 4, read: (v, at) => v.getFloat32(at, true) },
@@ -751,12 +799,49 @@ function readAccessor(json: GLTF, buffers: (Uint8Array | null)[], index: number 
   if (typeof count !== 'number' || !Number.isInteger(count) || count < 0 || count > MAX_ELEMENTS) {
     throw new MeshError('This model declares an implausible amount of geometry');
   }
-  const out = new (acc.componentType === 5126 ? Float32Array : Uint32Array)(count * comps);
+  // The *elements*, which is what gets allocated - not the count.
+  //
+  // The guard above bounds `count` and the line below allocates `count *
+  // comps`, and comps is 16 for a MAT4. So the ceiling was off by up to
+  // sixteen times its own stated intent: a 356-byte GLB whose POSITION accessor
+  // says `{type:'MAT4', componentType:5126, count:6000000}` allocated
+  // 384,000,000 bytes - measured at 366 MiB of arrayBuffers - before the
+  // per-element bounds check below could throw. On a phone the tab is simply
+  // gone, and the file that did it fits in a text message.
+  if (count * comps > MAX_ELEMENTS) {
+    throw new MeshError('This model declares an implausible amount of geometry');
+  }
 
   const bv = json.bufferViews?.[acc.bufferView ?? -1];
   // An accessor with no bufferView is defined as all zeroes, and is how a
   // sparse one starts. Sparse substitution itself is not read.
-  if (!bv) return out;
+  //
+  // Allocated *after* the bufferView is known, which is the other half of the
+  // same finding. An accessor with no view returns a full zero-filled array
+  // without touching a buffer, so the file's own size bounded the allocation
+  // not at all - and because the array is built before this line ran, the cost
+  // was paid once per primitive that named the accessor. A 1.4 KB GLB listing
+  // forty primitives against one `{type:'MAT4', count:6000000}` accessor asked
+  // for 384 MB forty times over, and the triangle cap never came near it: with
+  // `n = pos.length / 3` not divisible by 3, the `if (n % 3) return;` above
+  // sends the loop round again before MAX_TRIANGLES is consulted.
+  // Float, signed integer, unsigned integer - three destinations, because two
+  // was one too few. Int32Array holds every signed component type this reads
+  // and is equally correct for an index, which is never signed.
+  const Arr = acc.componentType === 5126 ? Float32Array
+    : reader.signed ? Int32Array
+    : Uint32Array;
+  const alloc = () => new Arr(count * comps);
+  if (!bv) {
+    // A view-less accessor is legal and is zeroes, but a *large* one is a
+    // claim the file has not paid for in bytes. Bounded against what a real
+    // sparse base looks like rather than against nothing at all.
+    if (count * comps > VIEWLESS_MAX) {
+      throw new MeshError('This model declares data it does not contain');
+    }
+    return alloc();
+  }
+  const out = alloc();
   // A bufferView with no `buffer` names none: `buffers[undefined]` was already
   // undefined, and the line below is what turns that into the refusal.
   const buf = bv.buffer === undefined ? null : buffers[bv.buffer];
@@ -795,6 +880,10 @@ function dataURIBytes(uri: string) {
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
 }
+
+/** Sixteen finite numbers, which is the only thing mul() can be handed. */
+const isMatrix = (m: unknown): m is number[] =>
+  Array.isArray(m) && m.length === 16 && m.every(n => typeof n === 'number' && Number.isFinite(n));
 
 /** Translation, rotation (a quaternion) and scale, in that order, as a matrix. */
 function trs(node: GLTFNode): Matrix {

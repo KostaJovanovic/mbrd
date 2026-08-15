@@ -52,12 +52,35 @@ const placed = new Map<string, string[]>();
 const keyOf = (cx: number, cy: number) => cx + ',' + cy;
 const cellIndex = (v: number) => Math.floor(v / cell);
 
+/**
+ * How many cells one item may be filed under.
+ *
+ * The loop below is one iteration per overlapped cell with nothing bounding the
+ * box, and this module's own header says it "knows nothing about what an item
+ * *is*" - which is the argument for clamping here rather than trusting whoever
+ * called. MIN_SIZE and MAX_SIZE are enforced by the resize gesture and by
+ * latticeSide, neither of which a hand-edited or corrupt .mbrd goes through: an
+ * item arriving with `w = 1e9, h = 1e9` is (2 x 1e9 / 512) squared, about
+ * 1.5x10^13 iterations pushing string keys, and the tab is gone before anything
+ * is drawn.
+ *
+ * A real item spans a handful of cells; a thousand is a card the size of a
+ * town. Past it the item is filed under the corner it starts in, which makes
+ * the index approximate for an item nothing legitimate produces rather than
+ * making the app stop.
+ */
+const MAX_CELLS = 1024;
+
 /** The cell keys a centre-and-size box overlaps, one per cell it touches. */
 function cellsFor(box: SpatialBox): string[] {
   const cx0 = cellIndex(box.x - box.w / 2);
   const cx1 = cellIndex(box.x + box.w / 2);
   const cy0 = cellIndex(box.y - box.h / 2);
   const cy1 = cellIndex(box.y + box.h / 2);
+  if (!Number.isFinite(cx0) || !Number.isFinite(cy0)
+    || (cx1 - cx0 + 1) * (cy1 - cy0 + 1) > MAX_CELLS) {
+    return [keyOf(cx0 || 0, cy0 || 0)];
+  }
   const keys = [];
   for (let cx = cx0; cx <= cx1; cx++)
     for (let cy = cy0; cy <= cy1; cy++) keys.push(keyOf(cx, cy));

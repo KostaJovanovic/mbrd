@@ -48,6 +48,17 @@ import { extOf } from '../util.ts';
  */
 const MAX_CONTAINER = 96 * 1024 * 1024;
 
+/**
+ * How much a document may inflate to, whatever it compressed down from.
+ *
+ * MAX_CONTAINER is a cap on the bytes that arrive; this is the cap on the bytes
+ * that come out, which is the number that actually has to fit in memory - and
+ * six of these run at once under IMPORT_WORKERS. A document that expands past
+ * this is not a document, and the caller turns the refusal into a named card
+ * exactly as it does every other miss here.
+ */
+const MAX_INFLATED = 192 * 1024 * 1024;
+
 /** A preview under a kilobyte is not one. Same floor import/preview.js uses. */
 const MIN_IMAGE = 512;
 
@@ -163,7 +174,14 @@ async function fromZip(file: Blob, paths: string[]): Promise<File | null> {
   // readZip throws on anything that is not a well-formed archive, on an entry
   // whose checksum does not match, and on the expansion ratios a zip bomb needs.
   // All of that is caught by the caller and comes back as null.
-  const entries = await readZip(file);
+  // Its own inflate ceiling, not the board archive's. MAX_CONTAINER above caps
+  // what arrives *compressed*, and until this argument existed nothing capped
+  // what came out: readZip's own ceiling is LIMITS.total = 768 MB at a 200:1
+  // ratio, so six 96 MB files of compressible padding - IMPORT_WORKERS is 6 -
+  // could each hold 768 MB of inflated entries at once. That is ~4.6 GB, which
+  // is precisely the tab that stops responding MAX_CONTAINER's comment says it
+  // exists to prevent.
+  const entries = await readZip(file, { entry: MAX_INFLATED, total: MAX_INFLATED });
   for (const path of paths) {
     const bytes = entries.get(path);
     if (!bytes || bytes.length < MIN_IMAGE) continue;
@@ -245,7 +263,9 @@ async function fromPsd(file: Blob): Promise<File | null> {
     if (q + 4 > end) break;
     const size = view.getUint32(q, false);
     q += 4;
-    if (size < 0 || q + size > end) break;
+    // `size` is a getUint32, so it is never negative and the first half of this
+    // was dead. Kept as the bound that matters, said once.
+    if (q + size > end) break;
 
     if ((id === RES_THUMBNAIL || id === RES_THUMBNAIL_OLD) && size > 28) {
       // The record's own 28-byte header - format, dimensions, row bytes, sizes,
