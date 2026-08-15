@@ -161,7 +161,7 @@ function onTabKey(e: KeyboardEvent) {
 }
 
 /** Show one tab. Roving tabindex, so the strip is one stop in the tab order. */
-export function showTab(id: string) {
+function showTab(id: string) {
   if (!tabs.has(id)) return;
   currentTab = id;
   for (const [key, { tab, panel }] of tabs) {
@@ -172,8 +172,6 @@ export function showTab(id: string) {
     panel.hidden = !on;
   }
 }
-
-export const openTab = () => currentTab;
 
 // ---------------------------------------------------------------------------
 // Sections and controls

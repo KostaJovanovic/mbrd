@@ -361,6 +361,29 @@ ${body}
      patch.css for what happened when the body was unpinned instead. -->
 <main class="pn">
  <div class="pn-inner">
+  <!-- The way back, and it is a real one.
+
+       There is a link in the footer and there has been all along, which is the
+       bottom of a page fifteen thousand pixels tall - a way out you have to
+       read the whole changelog to reach. The panel's View rows go home too
+       (goHome in page.ts), and a reader who has not opened the panel has no
+       reason to know that. So: a button, at the top, that stays at the top. It
+       is sticky inside the scroller rather than fixed to the window, because
+       fixed would put it over the board's own menu button in the corner.
+
+       An <a> and not a <button data-cmd>, which is the opposite of the rule the
+       panel follows - and it is right here for the same reason that rule is
+       right there. The panel reaches the app through one delegated listener
+       because the panel is part of the app; this is a document, and the way out
+       of a document is a link. It also means it works before the bundle has
+       parsed, which on the one page that is mostly prose is the whole point.
+
+       href="/" and not "patch/..", matching the footer: this page carries no
+       <base>, and the root is the root. -->
+  <a class="pn-back" href="/">
+    <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-chevron-left"/></svg>
+    Back to the board
+  </a>
   <header class="pn-head">
     <h1 class="pn-title">Patch notes</h1>
     <p class="pn-lede">Everything that has changed in mbrd, newest first.</p>

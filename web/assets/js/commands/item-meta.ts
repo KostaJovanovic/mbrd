@@ -51,14 +51,28 @@ import { canEditPicture, openDarkroom } from '../ui/darkroom.ts';
 import { resetSize } from '../ui/board-actions.ts';
 
 /**
- * The members of the selection a lock can be put on: everything but furniture.
+ * The members of the selection an anchor can be put on.
+ *
+ * Everything but furniture, and **not a rider**: a note or a sticker that is
+ * stuck to something has no geometry of its own to hold. Its position is its
+ * host's, and it is recomputed from the host every time the host moves.
+ *
+ * Offering it was not merely meaningless, it was actively broken. A drag
+ * carries whatever is stuck to what it picked up, and then filters the anchored
+ * out of that set (see `moving` in canvas/input.ts, and the note there about a
+ * lock that yields to an indirect drag) - so an anchored sticky did the one
+ * thing a sticky must never do: the photograph slid out from under it and the
+ * note stayed where it was, still claiming to be stuck to a card now somewhere
+ * else on the board. The way to hold a sticky still is to anchor *the card it
+ * is on*, which already works and carries the note with it.
  *
  * A free function rather than a fourth entry in the object, because it is not a
  * command - nothing outside this file asks it, and the three entries that do
  * would otherwise have to reach for each other through the surface they are
  * being built into.
  */
-const lockable = () => board.items.filter(i => selection.has(i.id) && !isFurniture(i));
+const lockable = () =>
+  board.items.filter(i => selection.has(i.id) && !isFurniture(i) && !isRider(i));
 
 /**
  * The members of the selection a tag can go on.
@@ -150,7 +164,9 @@ export function itemMetaCommands() {
       // Said out loud because the effect is the *absence* of something - a card
       // that no longer moves looks exactly like a card that does - and because
       // the way back is in a menu the person has just closed.
-      toast(on ? 'Locked. Drag it to pan the board.' : 'Unlocked');
+      // "Anchored", not "Locked" - the word the menu row uses, and the reason
+      // it changed is written out beside that row in ui/menu.ts.
+      toast(on ? 'Anchored. Drag it to pan the board.' : 'Unanchored');
     },
     isLockedItem: (id: string) => isLocked(byId(id)),
 

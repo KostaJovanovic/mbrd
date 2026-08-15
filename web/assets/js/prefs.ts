@@ -105,7 +105,7 @@ export function readPrefJSON<T = unknown>(key: string, fallback: T | null = null
 }
 
 /** Every key this app writes wears it. The only reason it is named here. */
-export const PREF_PREFIX = 'mbrd.';
+const PREF_PREFIX = 'mbrd.';
 
 /**
  * Forget every preference, whichever module happens to own it.

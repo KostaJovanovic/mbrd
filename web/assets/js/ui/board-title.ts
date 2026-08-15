@@ -186,7 +186,7 @@ export function paintTitleField(input: HTMLInputElement | null) {
  * standing still, and once it is editable input.js recognises a contenteditable
  * and leaves the gesture alone.
  */
-export function editMobileTitle() {
+function editMobileTitle() {
   editBoardName(el('mobile-board-title'));
 }
 

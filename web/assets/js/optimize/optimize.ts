@@ -276,6 +276,60 @@ function mediaKind({ mime, ext, type, isCover }: {
  * was never content, rather than rewriting what is - and the note over it says
  * why the two should not share a Ctrl+Z.
  */
+/**
+ * Run `task` over `items`, at most `limit` at a time.
+ *
+ * Every pass below used to be a plain `for` loop with an `await` in it, which
+ * meant one picture was decoded, encoded, hashed and stored before the next one
+ * started - on a machine with eight cores doing nothing. The work is genuinely
+ * independent: addFile() is content-addressed and already expects concurrent
+ * callers (see its note about six imports at once), and setItemThumb() and
+ * setItemPoster() each touch one item.
+ *
+ * Lanes rather than Promise.all over everything, and the limits below are low
+ * on purpose - see LANES. The cost of this is memory, not correctness: the
+ * whole point of a lane is that only that many pictures are decoded at once.
+ */
+async function pool<T>(
+  items: T[],
+  limit: number,
+  task: (item: T, index: number) => Promise<void>,
+): Promise<void> {
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      for (let i = next++; i < items.length; i = next++) await task(items[i], i);
+    }),
+  );
+}
+
+/**
+ * How many of each job run at once.
+ *
+ * Deliberately small, and bounded by what a *decode* costs rather than by what
+ * the CPU could schedule. A 24-megapixel phone photograph is about 100 MB
+ * decoded, so four at once is already most of what a phone will give up - and
+ * this feature exists for phones. One less than the core count leaves the main
+ * thread something to run the progress dialog on.
+ *
+ * Posters are lower again because a clip is the heaviest thing here: each one
+ * spins up a real media pipeline and holds a decoded frame. Two is enough to
+ * stop one stalled clip blocking the queue, which is the actual win - see
+ * POSTER_MS in canvas/poster.js, where a clip that will not seek costs six
+ * seconds whatever else is happening.
+ *
+ * Thumbnails are cheapest, because past this change they decode straight to a
+ * hundred pixels rather than in full - see the width hint in backfillThumbs().
+ */
+const LANES = {
+  get media() { return Math.max(1, Math.min(4, cores() - 1)); },
+  get thumbs() { return Math.max(1, Math.min(6, cores() - 1)); },
+  posters: 2,
+};
+
+/** Cores, where the runtime admits to having any. Node and old engines say 4. */
+const cores = () => globalThis.navigator?.hardwareConcurrency || 4;
+
 export async function runOptimize(
   { onProgress = () => {} }: { onProgress?: (p: Progress) => void } = {},
 ): Promise<Report> {
@@ -312,23 +366,30 @@ export async function runOptimize(
   const replacement = new Map<string | undefined, string>();
   const report: Report = { done: 0, changed: 0, before: 0, after: 0, failed: 0, skipped: 0 };
 
+  // How wide each replacement came out, so the thumbnail pass can ask the
+  // decoder for a small bitmap instead of a full one - see backfillThumbs().
+  const width = new Map<string, number>();
+
+  // Counted on completion rather than on start, because several are in flight:
+  // a bar driven by what has been *begun* would run to the end immediately and
+  // then sit there. `name` is the file that just finished for the same reason -
+  // there is no single current file any more.
   let n = 0;
-  for (const job of jobs) {
-    onProgress({ done: n, total: jobs.length, name: job.name });
-    n++;
+  await pool(jobs, LANES.media, async job => {
     const asset = getAsset(job.hash);
-    if (!asset) { report.skipped++; continue; }
+    if (!asset) { report.skipped++; onProgress({ done: ++n, total: jobs.length, name: job.name }); return; }
     try {
       const smaller = await encodeOne(asset, job);
       report.done++;
-      if (!smaller) { report.skipped++; continue; }
+      if (!smaller) { report.skipped++; return; }
       const hash = await addFile(new File(
         [smaller.blob], renameFor(asset.name || job.name, smaller.blob.type), { type: smaller.blob.type },
       ));
       // The new bytes hashed to the old id: the file was already exactly this.
       // Nothing to swap, and swapping would leave `was` pointing at itself.
-      if (hash === job.hash) { report.skipped++; continue; }
+      if (hash === job.hash) { report.skipped++; return; }
       replacement.set(job.hash, hash);
+      if ('width' in smaller && smaller.width) width.set(hash, smaller.width);
       report.changed++;
       report.before += asset.size;
       report.after += smaller.blob.size;
@@ -337,8 +398,10 @@ export async function runOptimize(
       // is counted, and the rest of the board still gets smaller.
       console.warn('[mbrd] could not optimize', job.name || job.hash, err);
       report.failed++;
+    } finally {
+      onProgress({ done: ++n, total: jobs.length, name: job.name });
     }
-  }
+  });
   onProgress({ done: jobs.length, total: jobs.length, name: '' });
 
   // Everything that was looked at goes to swapAssets(), not only what changed:
@@ -370,7 +433,7 @@ export async function runOptimize(
   // Items whose picture is not the picture it was a moment ago. Their old
   // thumbnail is a thumbnail of bytes that no longer exist on this card.
   const restaged = new Set(swaps.filter(s => s.asset).map(s => s.id));
-  report.thumbs = await backfillThumbs(restaged, onProgress);
+  report.thumbs = await backfillThumbs(restaged, width, onProgress);
   report.posters = await backfillPosters(onProgress);
   return report;
 }
@@ -403,17 +466,15 @@ async function backfillPosters(onProgress: (p: Progress) => void): Promise<numbe
   const { videoFrame } = await import('../canvas/renderers.ts');
 
   let made = 0, n = 0;
-  for (const item of wanted) {
-    onProgress({ done: n, total: wanted.length, name: item.name || '', phase: 'posters' });
-    n++;
+  await pool(wanted, LANES.posters, async item => {
     const asset = getAsset(item.asset?.hash);
-    if (!asset) continue;
+    if (!asset) { onProgress({ done: ++n, total: wanted.length, name: item.name || '', phase: 'posters' }); return; }
     try {
       // The second half of the same seam `cards()` names: canvas/poster.js is
       // unchecked, so its promise types as unknown. This says what it resolves
       // with, and goes when that module says so itself.
       const frame = await videoFrame(asset.blob) as { blob: Blob } | null;
-      if (!frame) continue;
+      if (!frame) return;
       const hash = await addFile(new File([frame.blob], 'poster.webp', { type: 'image/webp' }));
       setItemPoster(item.id, hash);
       made++;
@@ -421,8 +482,10 @@ async function backfillPosters(onProgress: (p: Progress) => void): Promise<numbe
       // One clip that will not give up a frame is not a failed pass. It stays
       // the card it already was.
       console.warn('[mbrd] no poster for', item.name || item.id, err);
+    } finally {
+      onProgress({ done: ++n, total: wanted.length, name: item.name || '', phase: 'posters' });
     }
-  }
+  });
   return made;
 }
 
@@ -486,6 +549,7 @@ function thumbSource(it: ItemView): string | null {
 
 async function backfillThumbs(
   restaged: Set<string>,
+  width: Map<string, number>,
   onProgress: (p: Progress) => void,
 ): Promise<number> {
   const wanted = cards().filter(it => {
@@ -501,14 +565,21 @@ async function backfillThumbs(
   if (!wanted.length) return 0;
 
   let made = 0, n = 0;
-  for (const item of wanted) {
-    onProgress({ done: n, total: wanted.length, name: item.name || '', phase: 'thumbs' });
-    n++;
-    const asset = getAsset(thumbSource(item));
-    if (!asset) continue;
+  await pool(wanted, LANES.thumbs, async item => {
+    const source = thumbSource(item);
+    const asset = getAsset(source);
+    if (!asset) { onProgress({ done: ++n, total: wanted.length, name: item.name || '', phase: 'thumbs' }); return; }
     try {
-      const small = await makeThumb(asset.blob);
-      if (!small) continue;
+      // The width hint is the whole difference between a full decode and a
+      // hundred-pixel one, and makeThumb() has taken it since import/drop.js
+      // started passing it - this caller simply never did, so every thumbnail
+      // on the board was cut by decoding the picture in full and turning it
+      // down. Known for anything the pass above just rewrote, which is exactly
+      // the set being re-cut; a repair of an untouched picture passes 0 and
+      // gets the old behaviour, because nothing here knows its size without
+      // decoding it to find out.
+      const small = await makeThumb(asset.blob, (source && width.get(source)) || 0);
+      if (!small) return;
       const hash = await addFile(new File([small.blob], 'thumb.webp', { type: 'image/webp' }));
       setItemThumb(item.id, hash);
       made++;
@@ -516,8 +587,10 @@ async function backfillThumbs(
       // One picture that will not decode is not a failed pass. It keeps drawing
       // full size at every zoom, which is exactly what it did before.
       console.warn('[mbrd] no thumbnail for', item.name || item.id, err);
+    } finally {
+      onProgress({ done: ++n, total: wanted.length, name: item.name || '', phase: 'thumbs' });
     }
-  }
+  });
   return made;
 }
 
@@ -607,6 +680,3 @@ export function describeSaving(report: Report) {
 
 /** The weight of everything the board is carrying, for the dialog's first line. */
 export const boardWeight = () => planOptimize().total;
-
-/** Whether an item still holds bytes this replaced. Used by the menu. */
-export const wasOptimized = (id: string) => !!byId(id)?.meta?.was;

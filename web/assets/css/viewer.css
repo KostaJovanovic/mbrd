@@ -123,6 +123,97 @@
 }
 .viewer-audio { width: min(640px, 100%); margin-top: 16px; }
 
+/* ── The lightbox: what the viewer becomes for a picture or a clip ─────────
+
+   Everything above dresses this dialog as a sheet of the app's own paper, which
+   is right for the six things in here made of words - a text file, a Markdown
+   page, a PDF, a .docx - because those are read and reading wants a page. It is
+   wrong for the two that are looked at. A photograph in a paper card 1100px
+   wide, on a monitor three times that, is the same complaint the board itself
+   answers with this dialog: the thing is smaller than the room it is in.
+
+   So a picture and a clip get the other treatment. ui/viewer.ts writes
+   `data-media` on the dialog when the view it dispatched to is one of those two,
+   and everything below hangs off that one attribute. Nothing here reaches a
+   document view, and no document rule below has to know this exists.
+
+   ── Why the fit was broken, which is not the same question ──
+
+   `.viewer-media` already says max-width and max-height 100%, and a large
+   picture still overflowed and scrolled. The reason is that #viewer-body is a
+   grid whose single row is `auto`: a percentage height resolves against a
+   *definite* containing block, an auto track is not one, so `max-height: 100%`
+   computed to none and the picture drew at its natural size. The row is pinned
+   below - `minmax(0, 1fr)` of a body that has a definite height because it is
+   the stretched item of a full-height column - and the same declaration that was
+   already there starts meaning what it says. */
+#viewer[data-media] {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  /* Near-black rather than the ink token: this is the one surface in the app
+     that is deliberately not paper, and a photograph is judged against a neutral
+     ground. A tinted scrim would put the board's palette into every picture
+     somebody opened to look at properly. */
+  background: rgb(14 13 12 / 0.94);
+  /* The picture is the light in here, so the chrome over it is not ink. */
+  color: rgb(255 255 255 / 0.92);
+}
+/* The backdrop still has to be dark, because the dialog does not quite cover
+   the visual viewport while a phone's address bar is retracting. */
+#viewer[data-media]::backdrop {
+  background: rgb(14 13 12 / 0.94);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+/* The head stops being a bar and becomes a caption over the picture: no sheet
+   under it, no rule below it, and it does not take a strip of the window away
+   from the thing being looked at. It stays in the flow rather than going
+   absolute, so a portrait picture is centred in what is left rather than under
+   the name. */
+#viewer[data-media] #viewer-head {
+  border-bottom: 0;
+  background: none;
+}
+#viewer[data-media] #viewer-meta { color: rgb(255 255 255 / 0.55); }
+#viewer[data-media] #viewer-close { color: rgb(255 255 255 / 0.75); }
+#viewer[data-media] #viewer-close:hover {
+  background: rgb(255 255 255 / 0.14);
+  color: rgb(255 255 255 / 1);
+}
+/* The stage. One definite row and one definite column, which is the fix
+   described above; no scrolling, because a picture that fits has nothing to
+   scroll and a zoomed one is panned rather than scrolled. */
+#viewer[data-media] #viewer-body {
+  overflow: hidden;
+  background: none;
+  padding: 0 16px 20px;
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  /* The stage owns the wheel and the drag - see attachZoomPan in ui/viewer.ts -
+     so the browser must not also read them as a scroll or a page zoom. */
+  touch-action: none;
+}
+#viewer[data-media] .viewer-media {
+  border-radius: 0;
+  background: none;
+  /* The zoom transform is written to .style by attachZoomPan; this is only the
+     origin it grows about and the cursor that says it can be. */
+  transform-origin: center center;
+  cursor: zoom-in;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+#viewer[data-media] .viewer-media.is-zoomed { cursor: grab; }
+#viewer[data-media] .viewer-media.is-panning { cursor: grabbing; }
+/* A clip keeps its controls, and controls are things you press - so it is never
+   put under the zoom cursor and never claims the drag. */
+#viewer[data-media] video.viewer-media { cursor: default; }
+
 /* Words: top-left, monospaced, the whole file. The grid centring above is undone
    per-item rather than turned off, because most of what this dialog shows is a
    picture and centring is right for those. */

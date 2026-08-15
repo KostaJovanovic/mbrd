@@ -62,6 +62,7 @@ const JS_BUILT = {
   'appearance-fonts': 'the font list, poured into a slot the settings schema declares',
   'bin-ghost': 'the card that flies into the bin as it is deleted',
   'conn-chip': 'the little editor that follows a selected connection',
+  'ctx-child': 'the hover submenu flown out beside a fold - the menu node again, once',
   'ctx-menu': 'the right-click menu - every menu in the app is this one node',
   'exit-layer': 'the overlay an exit animation is drawn on, above everything',
   'fence-ghost': 'the preview rectangle drawn while a fence is being placed',

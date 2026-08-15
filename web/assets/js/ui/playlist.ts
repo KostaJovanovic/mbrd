@@ -817,7 +817,7 @@ export function togglePlayerWindow() {
   if (windowEl) closePlayerWindow(); else openPlayerWindow();
 }
 
-export function openPlayerWindow() {
+function openPlayerWindow() {
   if (windowEl) return;
   windowEl = div('player-window');
   markTransport();
@@ -907,7 +907,7 @@ function showAlbumView() {
 /** The slide-out backstop, so a close that never sees transitionend still finishes. */
 let windowExit = 0;
 
-export function closePlayerWindow() {
+function closePlayerWindow() {
   // Before the early return, not after: if the window ever goes away by some
   // other road the flag has to be able to come off, and this is the one call
   // every road ends at.

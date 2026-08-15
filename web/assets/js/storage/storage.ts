@@ -141,8 +141,7 @@ let fileHandle: FileSystemFileHandle | null = null;
 /** First-created timestamp, carried across saves of the same board. */
 let created: string | null = null;
 
-export const canPickFiles = () => typeof window.showSaveFilePicker === 'function';
-export const currentFileName = () => fileHandle?.name || null;
+const canPickFiles = () => typeof window.showSaveFilePicker === 'function';
 
 // ---------------------------------------------------------------------------
 // Save
@@ -345,10 +344,6 @@ export function saveBlob(blob: Blob, name: string) {
   download(blob, name);
 }
 
-/** Whether the engine can hand a packed board to a native share sheet. */
-export const canShareBoard = () =>
-  typeof navigator !== 'undefined' && typeof navigator.canShare === 'function';
-
 /**
  * Hand the packed .mbrd to the operating system's share sheet.
  *
@@ -523,7 +518,7 @@ export async function openFile(file: File, handle: FileSystemFileHandle | null =
  * had not thrown away. Mobile geometry is left for completeLayout() to pack,
  * since a column somebody else's phone packed says nothing about this one.
  */
-export async function mergeFile(file: File) {
+async function mergeFile(file: File) {
   const job = busy('Merging ' + file.name);
   try {
     const { board: data } = await unpackBoard(file);
@@ -756,8 +751,6 @@ export async function newBoard() {
 
 /** The active board's library id, restored on boot and minted on first need. */
 let boardId: string | null = null;
-
-export function currentBoardId() { return boardId; }
 
 async function ensureBoardId() {
   if (boardId) return boardId;

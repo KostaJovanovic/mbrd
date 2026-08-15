@@ -144,6 +144,55 @@ body.is-patch::before {
    thirty-two commits and the page can say so without anybody writing it down.
    --------------------------------------------------------- */
 
+/* The way back.
+
+   Sticky rather than fixed, and inside the scroller rather than over the
+   window: the board's own menu button is fixed in the top-left corner of this
+   page - it is the app's real sidebar, which is the whole design of /patch -
+   and a second fixed control would land on top of it. Sticking inside the
+   column means it rides the measure, stays clear of that corner at every width,
+   and cannot be somewhere different on a phone.
+
+   It has to be opaque and it has to outrank the plates. A sticky element with a
+   transparent ground is a word with a changelog scrolling through it, and the
+   plates below carry their own paper - so this one carries paper too, and a
+   z-index above them. 3 rather than 2: .pn-mark in the margin already takes 2.
+
+   Everything about the shape is a token, so it arrives dressed in whatever the
+   reader's own board is wearing - a tape-and-scrapbook pill at Softish and a
+   square hairline chip at Harsh, with nothing here saying either. */
+.pn-back {
+  position: sticky;
+  top: 14px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  margin: 0 0 clamp(26px, 4vw, 40px);
+  padding: 9px 16px 9px 12px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--radius-pill);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-1);
+  color: var(--ink-2);
+  font-family: var(--font-display);
+  font-size: var(--t-small);
+  font-style: var(--display-italic);
+  letter-spacing: calc(0.04em * var(--ls-scale));
+  text-decoration: none;
+  transition: color var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease),
+              transform var(--dur-fast) var(--ease);
+}
+.pn-back:hover {
+  color: var(--accent-deep);
+  border-color: var(--accent);
+  /* Towards the board, which is the direction the chevron is pointing. */
+  transform: translateX(-2px);
+}
+.pn-back .ico { width: 14px; height: 14px; }
+
 .pn-head {
   margin-bottom: clamp(38px, 7vw, 70px);
 }

@@ -38,7 +38,10 @@
 // Nothing reaches `document` at import time; initDarkroom() does, and
 // tests/imports.test.js holds this file to that.
 
-import { byId, itemAdjust, itemCrop, setItemAdjust, setItemCrop, MIN_CROP } from '../state.ts';
+import {
+  byId, itemAdjust, itemCrop, setItemAdjust, setItemCrop, MIN_CROP,
+  isLocked, snapshotGeom, applyGeom, commitGeom,
+} from '../state.ts';
 import { assetURL } from '../storage/assets.ts';
 
 /** The crop rectangle, as fractions of the source. */
@@ -89,7 +92,16 @@ export function initDarkroom() {
     // a grade that only arrived when the slider was let go would make the dial
     // feel like a form field rather than like a control on a photograph.
     el.addEventListener('input', () => {
-      grade = { ...grade, [key]: Number(el.value) || 1 };
+      // `Number.isFinite`, and emphatically not `Number(el.value) || 1`. Zero
+      // is a real position on this control - saturation runs 0..2, and 0 is
+      // greyscale, which is the single most-wanted grade there is. `|| 1` read
+      // it as absent and put the dial back to neutral, so the slider sprang
+      // back to 100% at the far left and the picture could not be desaturated
+      // at all. Brightness and contrast start at 0.4 and never reached the trap,
+      // which is why only one of the three ever looked broken. The guard is the
+      // one itemAdjust() already applies on the way back out of the file.
+      const n = Number(el.value);
+      grade = { ...grade, [key]: Number.isFinite(n) ? n : 1 };
       paint();
     });
   }
@@ -262,9 +274,66 @@ const clamp01 = (v: number, size: number) => Math.min(Math.max(0, v), 1 - size);
 function apply() {
   const id = openId;
   if (!id) return;
+  const was = itemCrop(byId(id)) || { ...FULL };
   const full = rect.x <= 0 && rect.y <= 0 && rect.w >= 1 && rect.h >= 1;
   setItemCrop(id, full ? null : rect);
+  // The card follows the crop. After the write rather than before it, which is
+  // the order the two read in: the picture is cropped, and then the card it
+  // sits in is the shape of what is left. A Ctrl+Z takes the size back and a
+  // second takes the crop, which is the same "two independent things" the two
+  // writes above already are.
+  if (was.w !== rect.w || was.h !== rect.h) refitCard(id);
   const neutral = GRADE.every(k => grade[k] === 1);
   setItemAdjust(id, neutral ? null : grade);
   dlg!.close();
+}
+
+/**
+ * The card, reshaped to the crop, holding the area it already covered.
+ *
+ * A crop changes the picture's proportions and the card kept the old ones, so a
+ * 16:9 slice of a square photograph was drawn letterboxed inside a square card -
+ * the crop's whole point, thrown away by the frame around it. This makes the
+ * card the shape of what the crop left.
+ *
+ * **Area, not width.** Holding the width shrinks a card every time somebody
+ * crops a tall photograph to a wide one, and holding the longer side grows one
+ * every time they do the reverse; either way a crop quietly changes how loud the
+ * card is on the board, which is not what was asked for. Area holds that fixed
+ * and lets only the proportions move. It also means the reverse crop lands back
+ * on the size it started at, which neither of the others does.
+ *
+ * Grown about the centre, because that is where the eye is: the picture under
+ * the pointer stays under the pointer instead of the card growing away to the
+ * right and down from a corner nobody was looking at.
+ *
+ * Through the geometry writers rather than by assigning w and h, so the board
+ * mode, the snap lattice and the undo entry are all somebody else's problem -
+ * see fitOnto() in layout.ts, which is what applyGeom runs each patch through.
+ *
+ * A locked card is left alone. Its contract is that its geometry does not move
+ * (isLocked in board-model.ts), and "except when you crop it" is not a lock.
+ */
+function refitCard(id: string) {
+  const it = byId(id);
+  if (!it || isLocked(it)) return;
+  const nw = img!.naturalWidth;
+  const nh = img!.naturalHeight;
+  if (!nw || !nh || !it.w || !it.h) return;
+  // The crop's own proportions, in source pixels: the fractions are of a
+  // picture that is not square, so the fractions alone do not say the shape.
+  const aspect = (rect.w * nw) / (rect.h * nh);
+  if (!Number.isFinite(aspect) || aspect <= 0) return;
+  const area = it.w * it.h;
+  const h = Math.max(1, Math.round(Math.sqrt(area / aspect)));
+  const w = Math.max(1, Math.round(h * aspect));
+  if (w === it.w && h === it.h) return;
+  const before = snapshotGeom([id]);
+  applyGeom([{
+    id,
+    x: it.x + (it.w - w) / 2,
+    y: it.y + (it.h - h) / 2,
+    w, h, rot: it.rot, z: it.z,
+  }]);
+  commitGeom('Crop', before);
 }

@@ -613,7 +613,15 @@
 
 /* Three dials in a column, each a label, a slider and its readout on one line.
    The readout is monospace and a fixed width so the row does not jitter as the
-   number goes from 99% to 100%. */
+   number goes from 99% to 100%.
+
+   The slider itself is not drawn here and must not be. The ruled track and its
+   terracotta lozenge are one rule in sidebar.css, over a :is() list that names
+   every slider in the app - .dk-dial is the fourth entry on it. These three
+   carried `accent-color` and a native track instead, which is why the one dialog
+   that is otherwise dressed in the app's own paper had three browser controls
+   sitting in the middle of it. See the note over that rule; quality.css carries
+   the same list and squares the lozenge at the plain end of the whimsy axis. */
 #darkroom-dials { display: flex; flex-direction: column; gap: 8px; }
 .dk-dial {
   display: grid;
@@ -623,7 +631,6 @@
   font-size: var(--t-small);
   color: var(--ink-2);
 }
-.dk-dial input[type="range"] { width: 100%; accent-color: var(--accent); }
 .dk-dial output {
   font-family: var(--font-mono);
   font-size: var(--t-tiny);

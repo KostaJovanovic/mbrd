@@ -12,6 +12,15 @@
   registration, no inline script and no inline style, which is what keeps it
   outside the CSP hash list entirely. See the head of privacy.css.
 
+  It wears the changelog's clothes: the sticky pill back to the board, the
+  display title over a lede and a tracked line of facts, and the prose on plates
+  down a spine with the subject of each in the margin. Same shapes, same class
+  shape (pv- for pn-), and every one of them struck from the same tokens - the
+  two documents on this site should not look like two different sites. What it
+  does *not* copy is the machinery: /patch is index.html's body with the app
+  booted inside it, and this page is three paragraphs that must render with the
+  network off and nothing parsed.
+
   Precached in SHELL in web/sw.js along with its stylesheet, the way the
   changelog is: a page about what happens to your files that cannot be read
   offline is a poor advertisement for an app whose whole claim is that it needs
@@ -33,83 +42,101 @@
 </head>
 <body>
 
-<h1>Privacy</h1>
-<p class="sub">What mbrd does with your things. Last changed 14 August 2026.</p>
+<main class="pv">
+ <div class="pv-inner">
 
-<p>
-  mbrd runs entirely in your browser. There is no account, no sign-in and no
-  server that holds your work. Nothing you put on a board is sent anywhere.
-</p>
+  <!-- The way out, in the corner /patch puts it. A link and not the app's own
+       menu button, for the same reason the changelog gives: this is a document,
+       and the way out of a document is a link that works with nothing parsed.
 
-<h2>Your boards and files</h2>
-<p>
-  Images, video, audio, notes and everything else you add stay on your own
-  computer, in your browser's storage. Exporting a board writes a
-  <code>.mbrd</code> file to wherever you choose to put it. We never receive a
-  copy, because there is nowhere for a copy to go.
-</p>
-<p>
-  Clearing your browser's data for this site deletes your boards. There is no
-  backup on our side to restore them from, which is the other half of the same
-  promise - so export anything you would be sorry to lose.
-</p>
+       A character and not <use href="assets/icons.svg#i-chevron-left"/>, which
+       is what the changelog can afford - an external sprite reference in <use>
+       is not fetched by every browser, and there is no bundle here to inline
+       the sheet the way the app does. -->
+  <a class="pv-back" href="/"><span class="pv-arrow" aria-hidden="true">&#8592;</span> Back to the board</a>
 
-<h2>What we collect</h2>
-<p>
-  Nothing. No analytics, no tracking pixels, no cookies, no fingerprinting, no
-  error reporting. The app works with the internet switched off, and opening a
-  board tells nobody.
-</p>
+  <header class="pv-head">
+    <h1 class="pv-title">Privacy</h1>
+    <p class="pv-lede">What mbrd does with your things, which is nothing at all - and this is the long way of saying so.</p>
+    <!-- The changelog's tally counts releases; the only numbers this page has
+         are zeroes, so it states them as the three absences it is really about,
+         and the date it last changed. -->
+    <p class="pv-tally">
+      <span>no account</span>
+      <span>no upload</span>
+      <span>no tracking</span>
+      <span>last changed 14 August 2026</span>
+    </p>
+  </header>
 
-<h2>The three times something leaves your machine</h2>
-<p>
-  All three are things you have to ask for, and none of them sends your board:
-</p>
-<ul>
-  <li>
-    Pressing play on a YouTube or Spotify card loads that card from YouTube or
-    Spotify, who then see the request the way they would if you opened it in a
-    tab. The YouTube embed uses their no-cookie host.
-  </li>
-  <li>
-    Generating a preview image for a video your browser cannot read downloads a
-    converter from a public code mirror (jsDelivr). The video itself never
-    leaves your machine - the converter comes to it.
-  </li>
-  <li>
-    Loading the page at all fetches it from our host, which like every web
-    server sees the request. We do not keep it or look at it.
-  </li>
-</ul>
+  <ol class="pv-list">
+   <li class="pv-sec">
+    <div class="pv-margin" aria-hidden="true">
+      <span class="pv-mark"></span>
+      <span class="pv-count">Your things</span>
+    </div>
+    <article class="pv-plate">
+     <p>
+      mbrd runs entirely in your browser. There is no account, no sign-in and no
+      server that holds your work: images, video, audio, notes and everything
+      else you add stay on your own computer, in your browser's storage, and
+      exporting a board writes a <code>.mbrd</code> file wherever you choose to
+      put it. We collect nothing at all - no analytics, no tracking pixels, no
+      cookies, no fingerprinting, no error reporting - and the app works with the
+      internet switched off, so opening a board tells nobody. The other half of
+      that promise is that clearing your browser's data for this site deletes
+      your boards and we have no backup to restore them from, so export anything
+      you would be sorry to lose.
+     </p>
+    </article>
+   </li>
 
-<h2>Hosting</h2>
-<p>
-  The site is served by Cloudflare as static files. They operate the network the
-  page arrives over and see the traffic that reaches it; we have added no
-  analytics and no logging of our own on top.
-</p>
+   <li class="pv-sec">
+    <div class="pv-margin" aria-hidden="true">
+      <span class="pv-mark"></span>
+      <span class="pv-count">The network</span>
+    </div>
+    <article class="pv-plate">
+     <p>
+      Three things reach the network. All three you have to ask for, and none of
+      them sends your board. Pressing play on a YouTube or Spotify card loads
+      that card from YouTube or Spotify, who then see the request the way they
+      would if you opened it in a tab; the YouTube embed uses their no-cookie
+      host. Generating a preview image for a video your browser cannot read
+      downloads a converter from a public code mirror, jsDelivr - the converter
+      comes to the video, never the other way round. And loading this page at all
+      fetches it from our host, Cloudflare, which serves the site as static files
+      and sees the traffic that reaches it the way every web server does; we have
+      added no logging of our own on top.
+     </p>
+    </article>
+   </li>
 
-<h2>Children</h2>
-<p>
-  There is no account to create and nothing is collected, so there is nothing
-  here that treats a child's data differently from anybody else's - because
-  neither is collected at all.
-</p>
+   <li class="pv-sec">
+    <div class="pv-margin" aria-hidden="true">
+      <span class="pv-mark"></span>
+      <span class="pv-count">The rest</span>
+    </div>
+    <article class="pv-plate">
+     <p>
+      There is no account to create and nothing is gathered, so a child's data is
+      treated no differently from anybody else's - neither is collected. If any
+      of this ever stops being true, this page changes first and the date at the
+      top changes with it, and mbrd is open source, so you do not have to take
+      our word for any of it. Questions go to
+      <a href="https://github.com/KostaJovanovic/mbrd/issues">the project's issues page</a>.
+     </p>
+    </article>
+   </li>
+  </ol>
 
-<h2>Changes</h2>
-<p>
-  If this ever stops being true, this page changes first and the date at the top
-  changes with it. mbrd is open source, so you do not have to take our word for
-  any of the above - the code is there to read.
-</p>
+  <footer class="pv-foot">
+    <span>mbrd by valjdakosta</span>
+    <a href="/">Back to the board</a>
+  </footer>
 
-<h2>Getting in touch</h2>
-<p>
-  Questions go to
-  <a href="https://github.com/KostaJovanovic/mbrd/issues">the project's issues page</a>.
-</p>
-
-<a class="back" href="/">Back to mbrd</a>
+ </div>
+</main>
 
 </body>
 </html>

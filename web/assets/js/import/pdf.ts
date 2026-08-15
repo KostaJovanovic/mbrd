@@ -38,9 +38,6 @@ import { clamp } from '../util.ts';
 const PDF_VERSION = '4.7.76';
 const PDF_BASE = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDF_VERSION}/build/`;
 
-/** Roughly what pdf.js weighs, for anywhere that wants to warn before fetching. */
-export const PDF_MB = 4;
-
 /** Long-edge ceiling for the rendered page, in device pixels. */
 const TARGET = 1600;
 

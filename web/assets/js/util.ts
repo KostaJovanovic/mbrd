@@ -271,6 +271,12 @@ export const itemHashes = (
  * pass-through; it cannot import this module, so the two are kept in step by
  * hand rather than shared.
  *
+ * **Nothing calls this, and it stays anyway.** tests/sw.test.js reads the regex
+ * straight out of this file and asserts sw.js carries the same one, so this is
+ * the anchor half of a parity check rather than dead code - deleting it does
+ * not fail a type check or a lint, it fails that test, and the failure mode it
+ * guards against is a service worker that caches the dev server.
+ *
  * A function, and memoised, rather than the constant this used to be. A
  * constant meant `location` was read the moment this module was imported, and
  * because almost everything imports util.js that made the whole app impossible
@@ -289,3 +295,4 @@ export function isDev() {
   }
   return devHost;
 }
+

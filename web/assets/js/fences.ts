@@ -398,7 +398,7 @@ export function mobileRuns(items: Item[]): { band: Item | null, items: Item[] }[
 }
 
 /** The stem every unnamed fence is given, numbered. */
-export const FENCE_NAME = 'Untitled fence';
+const FENCE_NAME = 'Untitled fence';
 
 /**
  * The name a new fence opens with.

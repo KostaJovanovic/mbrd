@@ -349,7 +349,7 @@ const WHEEL_MAX_STEP = 400;
  *
  * This is the one number to turn if it feels wrong.
  */
-export const UNRAIL_GAIN = 3;
+const UNRAIL_GAIN = 3;
 
 /**
  * The most one event may be *boosted* by, in pixels.
@@ -2183,7 +2183,26 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   // meaning left is opening a note to edit, which is not a zoom and stays. Zoom
   // to fit is still on the F key and in the menu.
   el.addEventListener('dblclick', e => {
-    const id = itemIdFromEvent(e.target);
+    // The point, not the target - and that is not a preference.
+    //
+    // onDown captures the pointer on #viewport (el.setPointerCapture, above), and
+    // while a capture is set the browser targets the *compatibility* mouse events
+    // at the capture element rather than at whatever is under the pointer. So
+    // every dblclick that reaches this listener arrives with e.target === el, and
+    // itemIdFromEvent() - which walks up from the target looking for a .item -
+    // could only ever answer null. Double-clicking a photograph fell straight
+    // into the "not on a card" branch below and did nothing.
+    //
+    // A note escaped it, which is why this went unnoticed: a contenteditable is
+    // caught by the `widget` branch in onDown, which returns before the capture
+    // is taken - so on the one type where the gesture had a visible answer, the
+    // target was real and the answer arrived.
+    //
+    // elementFromPoint() asks the question the target was meant to answer: what
+    // is under this pointer. The event target is still tried first, so nothing
+    // that already worked starts going through a hit test to get the same answer.
+    const id = itemIdFromEvent(e.target)
+      ?? itemIdFromEvent(document.elementFromPoint(e.clientX, e.clientY));
     // Not on a card: it may be on a line, and a label is the thing a line is
     // most often opened to be given. The same gesture a note answers with its
     // editor, asked of the other thing on the board that carries words.

@@ -203,7 +203,7 @@ type GhostCommands = { setWhimsy?: (level: number) => unknown };
 let cmds: GhostCommands | null = null;
 
 /** Move the whole interface along the whimsy axis, from the card's dial. */
-export const setWhimsyLevel = (level: number) => cmds?.setWhimsy?.(level);
+const setWhimsyLevel = (level: number) => cmds?.setWhimsy?.(level);
 
 /**
  * Put a dial on a level: the thumb, and the word a screen reader reads out.

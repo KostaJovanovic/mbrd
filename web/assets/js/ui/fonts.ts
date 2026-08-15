@@ -341,7 +341,7 @@ export function headerFontAxes(value: string, computedStack = ''): FontAxis[] {
  * Black painted the Bold. Three controls that did nothing, and a stored weight
  * that did not describe what was on the screen.
  */
-export const STATIC_WEIGHTS = Object.freeze([
+const STATIC_WEIGHTS = Object.freeze([
   Object.freeze({ value: 400, label: 'Regular' }),
   Object.freeze({ value: 700, label: 'Bold' }),
 ]);

@@ -42,6 +42,7 @@ import {
   board, selection, selectAll, removeItems, setSetting, undo, redo, byId,
   raiseSelection, lowerSelection, selectionHasStackOverlap,
   duplicateItems, select,
+  copyItems, pasteItems, clipboardSize,
   setBoardMode as selectBoardMode,
   restoreTitleCard, resetTitlePosition,
   isFurniture, isRider, isFence, isLocked, setArrangement,
@@ -503,6 +504,36 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
       const copies = duplicateItems(selection);
       if (copies.length) select(copies.map((i: Item) => i.id));
     },
+    // Copy and paste from the menu, which is the one route to them that is not a
+    // clipboard event. canvas/input.ts has the other, and the two are not the
+    // same code path for a reason worth writing down: a `copy` listener is
+    // handed a ClipboardEvent and may write to the system clipboard
+    // synchronously, and nothing else in a browser may. From a menu row there is
+    // no event, so the receipt has to go out through the async API instead.
+    //
+    // What that costs, exactly: the internal clipboard is filled either way, so
+    // menu-copy → menu-paste and menu-copy → Ctrl+V both work. What can fail is
+    // only the receipt - if writeText() is refused, the system clipboard keeps
+    // whatever it held, and a later Ctrl+V sees somebody else's text on it and
+    // yields to it (see the paste listener in input.ts, which is right to). The
+    // copy is not lost, it is out-voted, and Paste on this menu still has it.
+    // Swallowed rather than toasted: a permission prompt the user dismissed is
+    // not an error they need told about twice.
+    copy: () => {
+      const text = copyItems(selection);
+      if (text) navigator.clipboard?.writeText(text).catch(() => {});
+    },
+    // The point is nullable on the same contract addNoteAt() documents below:
+    // the Feed has no "here" to paste at, and pasteItems() reads null as "beside
+    // the original", which is the honest answer on a packed wall.
+    paste: (at: Point | null) => {
+      const copies = pasteItems(at);
+      // Selected afterwards for the reason the Ctrl+V path gives: the copies are
+      // what a following nudge or drag acts on, and it tells the eye where the
+      // paste landed.
+      if (copies.length) select(copies.map((i: Item) => i.id));
+    },
+    canPaste: () => clipboardSize() > 0,
     zoomToSelection: () => {
       const items = board.items.filter(i => selection.has(i.id));
       if (items.length) vp.fit(items, 120, travelMs());

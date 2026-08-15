@@ -97,11 +97,11 @@ const TYPE_LABEL: Record<string, string> = {
 export function itemAccessibleName(item?: ItemFragment | null): string {
   const name = typeof item?.name === 'string' ? item.name.trim() : '';
   const base = name || `Untitled ${TYPE_LABEL[item?.type ?? ''] || 'item'}`;
-  // Suffixed rather than announced by a separate element, because what a lock
-  // changes is what this card *is* to somebody driving by keyboard: it is the
-  // one that will not move. The padlock in the corner is the same sentence
+  // Suffixed rather than announced by a separate element, because what an
+  // anchor changes is what this card *is* to somebody driving by keyboard: it
+  // is the one that will not move. The badge in the corner is the same sentence
   // drawn, and is marked aria-hidden so the two do not both speak.
-  return isLocked(item) ? `${base}, locked` : base;
+  return isLocked(item) ? `${base}, anchored` : base;
 }
 
 /**
@@ -305,8 +305,8 @@ export function writeAdjust(el: HTMLElement, item: ItemLike): void {
   const locked = isLocked(item);
   if (locked) el.dataset.locked = '';
   else delete el.dataset.locked;
-  // The badge, and it exists because the lock is otherwise invisible: a locked
-  // card looks exactly like an unlocked one until you press it and nothing
+  // The badge, and it exists because the anchor is otherwise invisible: an
+  // anchored card looks exactly like a free one until you press it and nothing
   // happens. It is drawn only while the card is *selected* (see the rule in
   // item-chrome.css), because that is the moment the question is asked - you
   // select the card, no grips appear, and this says why.
@@ -319,11 +319,14 @@ export function writeAdjust(el: HTMLElement, item: ItemLike): void {
     const NS = 'http://www.w3.org/2000/svg';
     const svg = document.createElementNS(NS, 'svg');
     svg.setAttribute('class', 'ico item-locked');
-    // The card's accessible name already says it is locked - see
+    // The card's accessible name already says it is anchored - see
     // itemAccessibleName() - so announcing this as well reads it out twice.
     svg.setAttribute('aria-hidden', 'true');
+    // i-anchor, where this was a padlock. The class stays .item-locked: it is
+    // the hook item-chrome.css draws the badge by, and a class rename is a
+    // second edit in a second file buying nothing anybody can see.
     const use = document.createElementNS(NS, 'use');
-    use.setAttribute('href', 'assets/icons.svg#i-lock-shut');
+    use.setAttribute('href', 'assets/icons.svg#i-anchor');
     svg.append(use);
     el.append(svg);
   } else if (!locked && badge) {

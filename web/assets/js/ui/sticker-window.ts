@@ -131,7 +131,7 @@ export function toggleStickerWindow() {
   if (win) closeStickerWindow(); else openStickerWindow();
 }
 
-export function openStickerWindow() {
+function openStickerWindow() {
   if (win) return;
   win = div('sticker-window');
 
@@ -168,7 +168,7 @@ export function openStickerWindow() {
 /** The slide-out backstop, so a close that never sees transitionend finishes. */
 let exitTimer = 0;
 
-export function closeStickerWindow() {
+function closeStickerWindow() {
   if (!win) return;
   const el = win;
   win = null;

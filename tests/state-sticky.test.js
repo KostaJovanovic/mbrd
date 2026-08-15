@@ -15,7 +15,7 @@ import {
   stuckTo, stuckFollowers, stuckPlacement, restick, STICK_MIN, snapshotGeom,
   applyGeom, commitGeom, setBoardMode, raiseSelection, lowerSelection,
   visualStackOrder, selectionHasStackOverlap, wouldStick, board, ensureTitleCard,
-  ensureGhostCards, TITLE_ID, undo, redo,
+  ensureGhostCards, TITLE_ID, undo, redo, setItemsLocked, isLocked,
 } from '../web/assets/js/state.ts';
 import { overlapFraction } from '../web/assets/js/geometry.ts';
 import { fresh, note, photo } from './state-fixtures.js';
@@ -414,4 +414,43 @@ test('a file that pins a note to the title card opens with it loose', () => {
   ] });
   ensureTitleCard();
   assert.equal(stuckTo(byId('n')), null);
+});
+
+// ---------------------------------------------------------------------------
+// Anchoring, which a rider is not offered and cannot be given
+// ---------------------------------------------------------------------------
+
+test('a note stuck to a photo cannot be anchored', () => {
+  // A rider has no geometry of its own to fix - it is placed from its host every
+  // time the host moves - and the drag path drops anchored items out of the set
+  // it carries. So an anchored sticky was left standing while the card it is
+  // stuck to slid away, which is the one thing a sticky must never do.
+  const [pic] = addItems([photo({ x: 0, y: 0, w: 300, h: 300 })]);
+  const [n] = addItems([note({ x: 0, y: 0, w: 80, h: 80 })]);
+  assert.equal(stuckTo(byId(n.id))?.id, pic.id, 'the fixture must be a rider');
+
+  setItemsLocked([n.id], true);
+  assert.equal(isLocked(byId(n.id)), false, 'the rider took an anchor');
+});
+
+test('anchoring a photo and its own sticky anchors only the photo', () => {
+  // The door has to refuse as well as the menu, because lockSelection() hands
+  // over the whole selection rather than the rows the menu offered - and a
+  // photograph is very often picked with the note lying on it.
+  const [pic] = addItems([photo({ x: 0, y: 0, w: 300, h: 300 })]);
+  const [n] = addItems([note({ x: 0, y: 0, w: 80, h: 80 })]);
+
+  setItemsLocked([pic.id, n.id], true);
+  assert.equal(isLocked(byId(pic.id)), true, 'the host should be anchored');
+  assert.equal(isLocked(byId(n.id)), false, 'the rider should not be');
+});
+
+test('a note lying on bare board can be anchored like anything else', () => {
+  // The exclusion is about being stuck, not about being a note: a sticky nobody
+  // has put on anything is an ordinary card with an ordinary position.
+  const [n] = addItems([note({ x: 900, y: 900, w: 80, h: 80 })]);
+  assert.equal(stuckTo(byId(n.id)), null, 'the fixture must not be a rider');
+
+  setItemsLocked([n.id], true);
+  assert.equal(isLocked(byId(n.id)), true);
 });

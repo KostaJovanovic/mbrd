@@ -1035,10 +1035,22 @@ export function setStickerTint(id: string, tint: unknown) {
  * the same reason: locking nine cards is one thing somebody did, and nine
  * entries would make Ctrl+Z walk back through them one at a time.
  *
- * Written on any type. There is no `can*` narrowing here because there is no
- * type a lock is meaningless on - a fence, a note, a sticker and a photograph
- * are all things somebody may want to stop moving - and the only exclusion is
- * furniture, which has no menu to ask from and whose geometry the app owns.
+ * Written on any *type*: a fence, a note, a sticker and a photograph are all
+ * things somebody may want to stop moving, so there is no narrowing by type
+ * here. The two exclusions are about the item's situation rather than its kind.
+ *
+ * Furniture, which has no menu to ask from and whose geometry the app owns.
+ *
+ * And a **rider** - a note or a sticker stuck to a host - which has no geometry
+ * of its own to fix: it is placed from its host every time the host moves. A
+ * drag carries the riders of what it picked up and then drops the anchored ones
+ * out of the travelling set, so an anchored sticky was left behind by the very
+ * card it is stuck to. The exclusion is at this door as well as in lockable()
+ * (commands/item-meta.ts), which is where the note explaining it lives, because
+ * the menu row is not the only caller: lockSelection() hands over the whole
+ * selection, so a photograph picked with its own sticky would otherwise anchor
+ * both. Same rule at the door as in the offer - the arrangement setItemsTagged()
+ * and taggable() already use.
  *
  * What a lock actually stops is in isLocked()'s note in board-model.ts: the
  * geometry, and nothing else. This function is the only writer.
@@ -1046,7 +1058,7 @@ export function setStickerTint(id: string, tint: unknown) {
 export function setItemsLocked(ids: Iterable<string>, locked: boolean) {
   const affected = [...new Set(ids)].filter(id => {
     const it = byId(id);
-    return !!it && !isFurniture(it) && !!it.meta.locked !== locked;
+    return !!it && !isFurniture(it) && !isRider(it) && !!it.meta.locked !== locked;
   });
   if (!affected.length) return;
   const write = (on: boolean) => {
@@ -1059,7 +1071,13 @@ export function setItemsLocked(ids: Iterable<string>, locked: boolean) {
     }
   };
   const many = affected.length > 1 ? ` ${affected.length} items` : '';
-  commit((locked ? 'Lock' : 'Unlock') + many,
+  // The words a person reads in the Timeline and in the undo toast, so they are
+  // the menu's words - Anchor, not Lock. `meta.locked` above is the stored key
+  // and stays: it is in every .mbrd ever written. See the note beside the menu
+  // row in ui/menu.ts for why the label moved and the key did not, and
+  // HISTORY_ICONS in ui/timeline-view.ts, which is keyed off these two strings
+  // and has to be changed in step with them.
+  commit((locked ? 'Anchor' : 'Unanchor') + many,
     () => write(locked), () => write(!locked));
 }
 
@@ -1162,28 +1180,6 @@ export function setItemsTagged(ids: Iterable<string>, tag: unknown, on: boolean)
   };
   const many = before.size > 1 ? ` ${before.size} items` : '';
   commit((on ? 'Tag' : 'Untag') + many, () => write(on), () => write(!on));
-}
-
-/**
- * Replace one item's whole tag list. What the tag editor writes.
- *
- * Beside the add/remove pair above rather than instead of it, because they are
- * different acts: that one is "put this word on these nine", this one is "these
- * are the words on this card now". Folding the second into a loop of the first
- * would make one edit of a card's tags into up to twelve history entries.
- */
-export function setItemTags(id: string, tags: unknown) {
-  const it = byId(id);
-  if (!it || !isContent(it)) return;
-  patchMeta(id, 'tags', tags, 'Tags',
-    value => {
-      const list = itemTags({ meta: { tags: value } });
-      return list.length ? list : null;
-    },
-    // Joined on a comma, which cleanTag() guarantees no tag contains, and
-    // against the knowledge that the validator answers null or a *non-empty*
-    // list - so no list can ever join to the empty string an absence maps to.
-    (a, b) => (Array.isArray(a) ? a.join(',') : '') === (Array.isArray(b) ? b.join(',') : ''));
 }
 
 // ---------------------------------------------------------------------------

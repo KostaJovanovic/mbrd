@@ -394,18 +394,15 @@ export const SECTIONS: Section[] = [
       ] },
     ],
   },
-  {
-    // Named for the verb rather than for the noun. "Content" is what the two
-    // buttons under it produce; Add is what pressing them does, and a heading
-    // that says what the row does is the one you can find without reading it.
-    id: 'add', tab: 'board', title: 'Add', needsBoard: true,
-    controls: [
-      { type: 'buttons', buttons: [
-        { cmd: 'add-files', label: 'Add files' },
-        { cmd: 'add-note', label: 'Write a note' },
-      ] },
-    ],
-  },
+  // No Add section. It held two buttons - Add files, Write a note - and both
+  // are the toolbar's leftmost two, sitting on screen unprompted at all times
+  // and named there in fewer words. The panel's copy was the fourth place
+  // add-note could be pressed and the second name it went by, and a panel you
+  // open to reach a button already in view is a panel teaching that the button
+  // in view is not the real one.
+  //
+  // Board is what this tab is for: the file, where it goes, how it is laid out.
+  // Putting things *on* the board is the toolbar's whole job.
   {
     // Board layout and Arrange were one idea under two headings: which of the
     // two arrangements you are in, how wide it is, and how things are placed
@@ -794,7 +791,11 @@ export const SECTIONS: Section[] = [
       // reason - and a lone <a> in here would be the first row in the panel
       // that works a different way from every other row.
       { type: 'buttons', buttons: [
-        { cmd: 'patch-notes', label: 'Patch notes', title: () => 'Every version since the first. Opens in a new tab' },
+        // The hint used to end "Opens in a new tab" and no longer can: the trip
+        // is a navigation now (see patchNotes in commands/view.ts). What it says
+        // instead is the thing somebody about to press it wants to know - that
+        // the board is saved on the way out and is still there on the way back.
+        { cmd: 'patch-notes', label: 'Patch notes', title: () => 'Every version since the first. Your board is saved and waiting when you come back' },
       ] },
     ],
   },

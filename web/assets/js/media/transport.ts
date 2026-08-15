@@ -80,7 +80,7 @@ export const WAVE_HALF = 7;
  * (2 * WAVE_HALF, kept in step with the keyframe in the CSS) and loops, which is
  * seamless because the wave repeats.
  */
-export function wavePath(width: number): string {
+function wavePath(width: number): string {
   let d = 'M0 4';
   let up = true;
   for (let x = 0; x < width + 4 * WAVE_HALF; x += WAVE_HALF) {

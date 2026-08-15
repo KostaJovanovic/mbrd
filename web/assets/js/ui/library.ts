@@ -32,9 +32,7 @@ function ago(at: number) {
   return Math.round(s / 86400) + ' d ago';
 }
 
-export function isLibraryOpen() { return !!root; }
-
-export function closeLibrary() {
+function closeLibrary() {
   if (!root) return;
   root.remove();
   root = null;

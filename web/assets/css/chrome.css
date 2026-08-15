@@ -216,22 +216,33 @@
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
-/* Same bargain as #bin and the bar this replaced, and the same width it is
-   struck at as the player's own accommodation just below: above 1080 a panel is
-   a strip down one side and the bar keeps its middle, so nothing needs to move.
-   Below it the panel reaches the bar, and a control you cannot see should not
-   still be in the tab order underneath it. Fading rather than sliding, because
-   there is nowhere for a centred object to slide to.
+/* The bar goes while a panel is open. Same bargain as #bin and the bar this
+   replaced, and fading rather than sliding, because there is nowhere for a
+   centred object to slide to.
+
+   **At every width, and it used to be only below 1080.** The breakpoint was a
+   measurement dressed as a rule: above 1080 a panel was a strip down one side
+   and the bar kept the middle, so nothing had to move. That was true of the bar
+   as it stood when the number was written. The bar has since grown - it is
+   eight segments now - and it is centred, so its left edge walks *inward* as it
+   gets wider while the panel's right edge does not move at all. The sidebar
+   ends at 14px + --sidebar-w = 336, and the bar reaches past that well before
+   the window is down to 1080: the first tool sits under the panel while the
+   other seven look perfectly fine, which is exactly the kind of overlap nobody
+   reports for months.
+
+   So there is no width to strike it at. A number chosen against today's bar is
+   a number that is wrong the next time a tool is added, and this is the second
+   time it has been wrong. A panel is over the board and the bar is a control on
+   the board: while the panel is up, the bar goes. Nothing to keep in step.
 
    visibility carries the delay so it leaves the tab order only once the fade
    has finished, and comes back the instant the panel starts to close. */
-@media (max-width: 1080px) {
-  :is(#sidebar, #header-panel).is-open ~ #toolbar {
-    opacity: 0;
-    visibility: hidden;
-    pointer-events: none;
-    transition: opacity var(--dur-base) var(--ease), visibility 0s var(--dur-base);
-  }
+:is(#sidebar, #header-panel).is-open ~ #toolbar {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity var(--dur-base) var(--ease), visibility 0s var(--dur-base);
 }
 
 /* ---------------------------------------------------------

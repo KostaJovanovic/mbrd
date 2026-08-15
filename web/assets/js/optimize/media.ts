@@ -50,7 +50,7 @@ const CORE_DIR = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/';
 const CORE_JS = CORE_DIR + 'ffmpeg-core.js';
 
 /** Roughly what it weighs, for the sentence in the dialog. */
-export const MEDIA_MB = 32;
+const MEDIA_MB = 32;
 
 /**
  * One run of the encoder, as the worker is asked for it. `bytes` is transferred

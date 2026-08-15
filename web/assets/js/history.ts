@@ -24,12 +24,18 @@ import {
  * One entry: what to call it, the two halves, and what the pair retains. The
  * type is the contract the header describes - a caller that knows how to
  * reverse itself - and `weight` is the only field the engine itself reads.
+ *
+ * `step` is the ledger's, not this engine's: the id of the step in timeline.js
+ * that this command landed in. It is what keeps the two counts honest when they
+ * disagree, which they are *designed* to - see undo() below. Null for a command
+ * that recorded no step at all.
  */
 export type Command = {
   label: string,
   redo: () => void,
   undo: () => void,
   weight: number,
+  step?: string | null,
 };
 
 const undoStack: Command[] = [];
@@ -149,9 +155,13 @@ export function commit(
   if (rewind) rewind();
   const before = snapshot();
   redo();
-  recordStep(label, before);
+  // The step this landed in, kept on the entry. recordStep() answers with the
+  // *merged* step when this change joined a run, so several consecutive
+  // commands can carry the same id - which is exactly the fact undo() needs and
+  // cannot work out for itself.
+  const step = recordStep(label, before);
   const held = Number.isFinite(weight) && weight > 1 ? Math.floor(weight) : 1;
-  const cmd = { label, redo, undo, weight: held };
+  const cmd = { label, redo, undo, weight: held, step: step ? step.id : null };
   undoStack.push(cmd);
   heldWeight += held;
   trim();
@@ -234,7 +244,22 @@ export function undo() {
   // faster than replaying, and during phase 1 it is also the thing the replay
   // engine is being checked against - a marker that drove the board would be
   // marking its own homework. Phase 2 turns this round.
-  markerBack();
+  //
+  // **But it follows the ledger's count, not this one, and the two differ by
+  // design.** A run of small changes to one card is several entries here and a
+  // single step there - that is what the strip is for. Moving the marker once
+  // per entry walked it back three steps for a three-nudge run, so it came to
+  // rest on a step the board had never been at, and every replay from that
+  // point - a press on a dot, a reload - rebuilt an older board and dropped
+  // whatever the steps in between had added. A card added and then left alone
+  // is the one it takes with it, because nothing later mentions that card to
+  // put it back.
+  //
+  // So the marker moves when the run does: only when the entry being taken back
+  // is the *first* of its step, which is to say when nothing left on the stack
+  // still belongs to it. A command that recorded no step at all moves nothing.
+  const below = undoStack[undoStack.length - 1];
+  if (cmd.step && below?.step !== cmd.step) markerBack();
   heldWeight -= cmd.weight;
   redoStack.push(cmd);
   markDirty();
@@ -254,7 +279,11 @@ export function redo() {
     return true;
   }
   cmd.redo();
-  markerForward();
+  // The mirror of the rule in undo(), and it has to be the mirror or the two
+  // walk out of step over a single run: forward once as the run is *entered*,
+  // which is the entry whose step nothing on the stack is already standing in.
+  const resuming = undoStack[undoStack.length - 1];
+  if (cmd.step && resuming?.step !== cmd.step) markerForward();
   undoStack.push(cmd);
   heldWeight += cmd.weight;
   markDirty();

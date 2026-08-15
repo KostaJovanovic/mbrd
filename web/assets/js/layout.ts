@@ -90,7 +90,7 @@ const boxOf = (g: { x: number, y: number, w: number, h: number, rot?: number }):
   ({ x: g.x, y: g.y, w: g.w, h: g.h, rot: g.rot || 0 });
 
 /** The four fields snapping moves, and the four a presnap memo remembers. */
-export const SNAP_KEYS = ['x', 'y', 'w', 'h'] as const;
+const SNAP_KEYS = ['x', 'y', 'w', 'h'] as const;
 
 const MOBILE_PACK_EPSILON = 1e-9;
 
@@ -1078,7 +1078,7 @@ function writeLoose(it: Item, loose: boolean) {
   restick([it.id]);
 }
 
-export function forgetPresnap(it: Item | null | undefined) {
+function forgetPresnap(it: Item | null | undefined) {
   if (!it?.meta || !('presnap' in it.meta)) return;
   const { presnap, ...rest } = it.meta;
   it.meta = rest;

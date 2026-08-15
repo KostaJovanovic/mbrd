@@ -605,15 +605,15 @@ export const MAX_CONNECTIONS = 2000;
 export const CONN_DIRECTIONS = ['none', 'fwd', 'back', 'both'] as const;
 export const CONN_STYLES = ['solid', 'dashed', 'dotted'] as const;
 /** 'line' is the board's own grey - the default, and what a plain pair draws. */
-export const CONN_COLORS = ['line', 'accent', 'warm', 'leaf', 'danger'] as const;
-export const CONN_WEIGHTS = ['fine', 'normal', 'bold'] as const;
+const CONN_COLORS = ['line', 'accent', 'warm', 'leaf', 'danger'] as const;
+const CONN_WEIGHTS = ['fine', 'normal', 'bold'] as const;
 
 export type ConnDir = typeof CONN_DIRECTIONS[number];
 export type ConnStyle = typeof CONN_STYLES[number];
 export type ConnColor = typeof CONN_COLORS[number];
 export type ConnWeight = typeof CONN_WEIGHTS[number];
 
-export const CONN_LABEL_MAX = 60;
+const CONN_LABEL_MAX = 60;
 const DIR_SET: ReadonlySet<ConnDir> = new Set(CONN_DIRECTIONS);
 const STYLE_SET: ReadonlySet<ConnStyle> = new Set(CONN_STYLES);
 const COLOR_SET: ReadonlySet<ConnColor> = new Set(CONN_COLORS);

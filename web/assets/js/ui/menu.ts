@@ -30,7 +30,21 @@
 // icons on the half of it somebody thought worth marking reads as a menu with
 // pieces missing, and the eye stops using the column as a column. Where an
 // action is already on the toolbar the entry names that toolbar icon and no
-// second drawing exists (Add files, Add a note, Find, Rearrange, Zoom to fit).
+// second drawing exists - the item menu's "Add a note here" wears the toolbar's
+// pen.
+//
+// ── One resting home per action ──
+//
+// Sharing the icon was the answer to an action appearing twice. It is not an
+// answer to an action appearing four times, which is what add-note managed:
+// toolbar, canvas menu, item menu and the panel, under two different names. The
+// canvas menu has since given up its six duplicated rows (see canvasEntries).
+//
+// The rule that replaced them: an action rests in exactly one place - one you
+// can see without doing anything - and may be repeated elsewhere only where the
+// repeat reaches something the resting home cannot. The cursor point is the
+// usual excuse and a good one; "also handy" is not one. A keyboard accelerator
+// is not a second home and never counted against this.
 
 // Reached straight rather than through cmds, which every other entry here goes
 // by. Renaming *is* the name drawn on the item, so the affordance lives with
@@ -134,13 +148,12 @@ export type MenuEntry = {
  * reason this is the three numbers rather than the rectangle.
  *
  * `bounds` is the fourth thing and the optional one: the container the panel
- * must stay inside, when there is one it should. A flyout is drawn as the
- * *underside of the bar* - menu.css drops its top border and both top corner
- * radii so it reads as part of the bar rather than as a second object landed on
- * it - and that illusion holds only while the panel is over the bar. Past the
- * end, the squared top corner is a cut edge hanging against the board, which is
- * precisely the shape of a rendering mistake. The window is the wrong container
- * for that and was the only one render() had.
+ * must stay inside, when there is one it should. It arrived for a reason that
+ * has since gone - a flyout used to be drawn as the *underside of the bar*, and
+ * past the end of the bar its squared top corner became a cut edge hanging
+ * against the board - and it stays for one that has not: a panel belonging to a
+ * button on a bar should not hang off the end of that bar, whatever shape it is.
+ * The window is the wrong container for that and was the only one render() had.
  *
  * Left off, the behaviour is exactly what it was: the window is the bound.
  */
@@ -157,7 +170,6 @@ type MenuOpts = {
   focus?: boolean;
   /** hung off a button rather than dropped at a cursor - see render() */
   anchor?: MenuAnchor;
-  flyout?: boolean;
 };
 
 /**
@@ -243,6 +255,9 @@ export interface MenuCommands {
   alignSelection: (edge: string) => unknown;
   distributeSelection: (axis: 'x' | 'y') => unknown;
   duplicate: () => unknown;
+  copy: () => unknown;
+  paste: (at: Point | null) => unknown;
+  canPaste: () => boolean;
   zoomToSelection: () => unknown;
   deleteSelection: () => unknown;
   // The title card
@@ -331,6 +346,22 @@ export function justDismissed(el: Element | null): boolean {
 // The `e.target as Node | null` below is the same cast ui/search.ts and
 // ui/fence-prompt.ts make in this exact close-on-outside listener: contains()
 // takes a Node or null and is only being asked whether the press was inside.
+/**
+ * Is this press inside the menu - counting the hover submenu as part of it?
+ *
+ * **Both panels, and the second one is the whole reason this is a function.**
+ * The child is a sibling of the root on `<body>`, not a descendant of it, so
+ * `node.contains()` alone calls every press inside a submenu an outside press.
+ * The three listeners below close on that in the *capture* phase, which is
+ * before the click - so a submenu row could be opened, hovered, pointed at and
+ * pressed, and the only thing that happened was the menu closing. Every row in
+ * the Edit fold was dead on arrival and looked like a menu that simply ignored
+ * you. The same trap the two panels' own `pointerleave` handling has to dodge,
+ * from the other side.
+ */
+const insideMenu = (target: EventTarget | null) =>
+  !!node?.contains(target as Node | null) || !!child?.contains(target as Node | null);
+
 export function initMenu(viewport: Viewport, commands: MenuCommands) {
   vp = viewport;
   cmds = commands;
@@ -340,20 +371,20 @@ export function initMenu(viewport: Viewport, commands: MenuCommands) {
   // the window scrolls (see render), and closing on the wheel that scrolls it
   // would make the entries past the fold unreachable with a mouse.
   addEventListener('pointerdown', e => {
-    if (!node || node.contains(e.target as Node | null)) return;
+    if (!node || insideMenu(e.target)) return;
     // Recorded before the close, because close() is what clears the state this
     // is a fact about. See justDismissed().
     dismissed = { by: e.target, at: performance.now() };
     close();
   }, true);
   addEventListener('wheel', e => {
-    if (node && !node.contains(e.target as Node | null)) close();
+    if (node && !insideMenu(e.target)) close();
   }, { passive: true, capture: true });
   // Capture, because a scroll does not bubble. The board itself does not
   // scroll today, so this is the surrounding page moving under a menu that is
   // pinned to the window - the anchor point would be a lie afterwards.
   addEventListener('scroll', e => {
-    if (node && !node.contains(e.target as Node | null)) close();
+    if (node && !insideMenu(e.target)) close();
   }, true);
   addEventListener('resize', close);
   addEventListener('blur', close);
@@ -441,6 +472,8 @@ function typeAhead(key: string): boolean {
 
 export function close() {
   if (!node) return;
+  // The child first, or it outlives its parent as a panel hanging off nothing.
+  closeChild();
   // Read before the node goes: removing the element that holds focus drops the
   // keyboard on <body>, and the board's shortcuts go with it.
   const held = node.contains(document.activeElement);
@@ -466,20 +499,28 @@ export function close() {
 /**
  * The same panel, hung under an element instead of dropped at a cursor.
  *
- * `rect` is the anchor's getBoundingClientRect(). The toolbar's flyouts are the
- * only caller (ui/flyout.js); everything about the panel below this line is the
- * right-click menu's, which is the point.
+ * `rect` is the anchor's getBoundingClientRect(). Everything about the panel
+ * below this line is the right-click menu's, which is the point.
  *
  * `focus` is false for a hover, and that is not a detail: a panel that took the
  * keyboard because a pointer drifted over a button would move the caret out of
  * whatever was being typed. The keyboard route (ArrowDown on the button) passes
  * true and gets the ordinary behaviour.
+ *
+ * There is no third option saying what the panel is hung off, and there was.
+ * `flyout` used to be hardcoded true here on the reading that the toolbar was
+ * the only caller, which stopped being so when the settings panel's pickers
+ * started using this door - and menu.css answered it by squaring the corners on
+ * the attached edge, so the palette menu was drawn as a box with one side
+ * missing beside a field with no bar within two hundred pixels of it. Making it
+ * a parameter fixed that and left two panel shapes in the app; taking it out
+ * leaves one. A menu is a closed panel wherever it is opened from.
  */
 export function openAnchored(rect: MenuAnchor, entries: MenuEntry[],
   { label = 'Menu', focus = false }: { label?: string, focus?: boolean } = {}) {
   close();
   opener = document.activeElement as HTMLElement | null;
-  render(entries, rect.left, rect.bottom, { anchor: rect, label, focus, flyout: true });
+  render(entries, rect.left, rect.bottom, { anchor: rect, label, focus });
 }
 
 /**
@@ -624,6 +665,47 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
   // Anything with something worth seeing full size. Single-item: the viewer
   // shows one thing, which is the whole of what it is for.
   const viewable = !many && cmds!.canViewItem(id);
+  // ── The picture edits, as a fold ──
+  //
+  // Four rows about how one picture *looks*, taken out of the main column and
+  // put behind one. The card menu had reached a dozen entries on a photograph -
+  // long enough that the rows anybody actually presses were somewhere in the
+  // middle of it - and these four are the group that reads as one subject: how
+  // the picture sits in its card, and what the picture is made of. Crop leads
+  // because it is the one that opens a surface.
+  //
+  // What deliberately did *not* come in here: Rename, Set a picture, Turn it
+  // upright and Rotate model. Those are edits to the *item* rather than to the
+  // look of the picture on it, and they are each one press today - burying a
+  // one-press action one level down to tidy a menu is a menu tidied against the
+  // person using it. No card was in here and left for exactly that reason; it
+  // sits under the fold's own row now.
+  //
+  // Hovering opens it beside the row and pressing it turns the page; see
+  // openChild in this file for why it is both and not either.
+  const pictureEdits: MenuEntry[] = [
+    // The ellipsis is the one in this menu that means it - the row opens a
+    // surface and decides nothing on its own.
+    { label: 'Crop & adjust…', icon: 'i-crop', hidden: !croppable,
+      action: () => cmds!.editPicture(id) },
+    // A radio pair drawn as two ticked entries: the current fit reads checked,
+    // the other is the one click to switch to it. The icons are a mirrored
+    // pair, arrows out and arrows in, so the column says "one or the other"
+    // before the tick says which.
+    { label: 'Fill the card', icon: 'i-fill', check: fills, hidden: !fittable,
+      action: () => cmds!.setItemFit(id, 'cover') },
+    { label: 'Fit in the card', icon: 'i-fit-card', check: fittable && !fills,
+      hidden: !fittable, action: () => cmds!.setItemFit(id, 'contain') },
+    // A photo's own palette, dropped beside it as swatches. Last, because it is
+    // the only row here that puts something new on the board rather than
+    // changing the thing under the cursor.
+    { label: 'Extract palette', icon: 'i-swatch', hidden: !swatchable,
+      action: () => cmds!.extractSwatches(id) },
+  ];
+  // A fold with nothing behind it is a row that opens an empty box. The rows
+  // hide themselves one at a time on the conditions above, so the fold has to
+  // ask them rather than repeat the five tests.
+  const editable_picture = pictureEdits.some(e => !e.hidden);
   return [
     // First of all, because on a wall of thumbnails it is the thing you most
     // often want and the one row that was not reachable any other way. Above
@@ -636,45 +718,71 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // into should offer to type into it before anything else on the card.
     { label: 'Edit text', icon: 'i-edit-text', accel: 'dbl-click', hidden: !editable,
       action: () => cmds!.editNote(id) },
-    { label: 'Rename', icon: 'i-rename', accel: 'F2', hidden: !renamable,
-      action: () => editItemName(id) },
+    // Copy and paste rather than Duplicate, and the swap is not a rename. A
+    // duplicate is a copy that lands somewhere the app chose - beside the
+    // original, always - and it is one press for that one case. Copy and paste
+    // are two presses and answer the case duplicate cannot: the copy lands where
+    // the cursor is, on this board or another, now or after ten minutes of
+    // looking around. That is the thing people right-click a card to do.
+    //
+    // Ctrl+D still duplicates, and cmds.duplicate() is still there for it. The
+    // key kept the one-press case; the menu took the general one.
+    //
+    // i-duplicate on Copy, deliberately: the two cards *are* the copy mark, and
+    // it is the drawing every other surface in the app already uses to mean "a
+    // second of this". Paste gets its own, because a menu with two rows drawn
+    // the same is a menu with one row read twice.
+    { label: many ? `Copy ${count} items` : 'Copy', icon: 'i-duplicate', accel: 'Ctrl C',
+      action: () => cmds!.copy() },
+    // Absent on an empty clipboard rather than greyed - the schema's rule, and
+    // the honest one here: a Paste that cannot paste has nothing to explain.
+    { label: 'Paste', icon: 'i-paste', accel: 'Ctrl V', hidden: !cmds!.canPaste(),
+      action: () => cmds!.paste(at) },
+    // The accel is conditional for the same reason Open's is, and the two
+    // conditions are the two halves of one rule: `input.ts` sends a double-click
+    // on anything that is not a note and not the title card to openViewer, so on
+    // a photograph the gesture opens the viewer and belongs to Open. Printed on
+    // both rows it was a menu advertising one key twice, which teaches the wrong
+    // thing about both of them. Zoom keeps it only where nothing else claims it.
+    { label: 'Zoom to it', icon: 'i-zoom-to', accel: viewable || editable ? '' : 'dbl-click',
+      action: () => cmds!.zoomToSelection(), hidden: mobile || many },
+    { label: 'Zoom to them', icon: 'i-zoom-to',
+      action: () => cmds!.zoomToSelection(), hidden: mobile || !many },
+    // ── What the card is ──
+    //
+    // The edits to the thing itself, all of them conditional on what the thing
+    // is, which is why this rule has to ask every one of them: on a sticker the
+    // band is one row, on a photograph it is six, and on a fence there is no
+    // band at all.
+    { sep: true, hidden: !coverable && !covered && !editable_picture && !flippable
+      && !turnable && !tintable && !taggable },
     { label: covered ? 'Change picture' : 'Set a picture', icon: 'i-picture',
       hidden: !coverable, action: () => cmds!.setCover(id) },
     { label: 'Remove picture', icon: 'i-picture-off', hidden: !covered,
       action: () => cmds!.clearCover(id) },
-    // A radio pair drawn as two ticked entries: the current fit reads checked,
-    // the other is the one click to switch to it. The icons are a mirrored
-    // pair, arrows out and arrows in, so the column says "one or the other"
-    // before the tick says which.
-    { label: 'Fill the card', icon: 'i-fill', check: fills, hidden: !fittable,
-      action: () => cmds!.setItemFit(id, 'cover') },
-    { label: 'Fit in the card', icon: 'i-fit-card', check: fittable && !fills,
-      hidden: !fittable, action: () => cmds!.setItemFit(id, 'contain') },
-    // Under the two fit rows because it is the same question one step further
-    // out: those decide how the picture sits in its card, this decides whether
-    // there is a card at all. A tick rather than a pair of rows - "no card" has
-    // no opposite worth naming, and Fill/Fit are two positions of one dial while
-    // this is on or off.
+    // The five picture edits, one row deep. Built above, where the note saying
+    // what is in it and what is deliberately not sits with the list itself.
+    { label: 'Edit', icon: 'i-crop', hidden: !editable_picture,
+      sub: editable_picture ? pictureEdits : undefined },
+    // Out of the fold and directly under the row that opens it, because it was
+    // the one entry in there that is not about the picture. Fill and Fit are two
+    // positions of one dial and belong together wherever they live; this asks
+    // whether the card exists at all, which is a question about the *item*, and
+    // the fold's own note already says edits to the item stay in the main
+    // column.
+    //
+    // Inside, it also made the fold lie: Fit and No card are independent, so
+    // both could read ticked at once in a list whose two other ticks are a radio
+    // pair. One level out, the tick has nothing to be mistaken for. A tick
+    // rather than a pair of rows - "no card" has no opposite worth naming.
     { label: 'No card', icon: 'i-cut-out', check: bare, hidden: !bareable,
       action: () => cmds!.setItemBare(id, !bare) },
-    // Below the fit pair and above the palette, which is where it belongs in the
-    // sentence: Fill and Fit are about the card, this is about the picture, and
-    // Extract palette is about what the picture is made of. The ellipsis is the
-    // one in this menu that means it - the row opens a surface and decides
-    // nothing on its own.
-    { label: 'Crop & adjust…', icon: 'i-crop', hidden: !croppable,
-      action: () => cmds!.editPicture(id) },
     // OBJ says nothing about which way is up and both readings are common, so
     // the format's default is a guess. This is the way out of a wrong one - and
     // it is on the item rather than in Appearance because a board can hold a
     // Z-up scan and a Y-up export at the same time.
     { label: 'Turn it upright', icon: 'i-upright', hidden: !flippable,
       action: () => cmds!.flipUpAxis(id) },
-    // A photo's own palette, dropped beside it as swatches. On the image's own
-    // group with the picture and fit rows, because it is one more thing you do
-    // to a picture rather than to the board.
-    { label: 'Extract palette', icon: 'i-swatch', hidden: !swatchable,
-      action: () => cmds!.extractSwatches(id) },
     // Above the upright toggle would put the rare fix in front of the ordinary
     // gesture; below it, this is the last thing on the model's own group.
     { label: 'Rotate model', icon: 'i-rotate', hidden: !turnable,
@@ -704,7 +812,13 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     { label: many ? 'These are tour stops' : 'A tour stop', icon: 'i-zoom-to',
       check: taggable && cmds!.selectionInTour(), hidden: !taggable,
       action: () => cmds!.toggleSelectionTour() },
-    { sep: true, hidden: !editable && !renamable && !coverable && !covered && !fittable && !flippable && !turnable && !swatchable && !tintable },
+    // ── How it sits on the board ──
+    //
+    // Everything above this rule is about what the card *is*. Everything below
+    // it, as far as the next rule, is about where it sits and what it sits on.
+    // The band can empty out completely on a phone, where none of the spatial
+    // rows are offered - hence the condition, which asks the two that survive.
+    { sep: true, hidden: mobile && !lockable && !many },
     // The other mirrored pair: one card and one arrow, turned over.
     { label: 'Bring to front', icon: 'i-front', hidden: !stackable, action: () => cmds!.raise() },
     { label: 'Send to back', icon: 'i-back', hidden: !stackable, action: () => cmds!.lower() },
@@ -720,17 +834,30 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
       hidden: !unstickable, action: () => cmds!.unstick() },
     // Fix it where it is. Beside Unstick because the two are the same kind of
     // sentence about how a card sits on the board, and one row rather than a
-    // checked pair: the answer is Lock until everything in the selection is
-    // locked, at which point it becomes Unlock. A mixed selection therefore
-    // offers Lock and means it - see lockedCount() in commands/item-meta.ts.
+    // checked pair: the answer is Anchor until everything in the selection is
+    // anchored, at which point it becomes Unanchor. A mixed selection therefore
+    // offers Anchor and means it - see lockedCount() in commands/item-meta.ts.
     // A mirrored pair drawn as two rows of which exactly one shows, the shape
     // the Fill/Fit pair above uses. One row with a conditional icon would have
     // read the same and been the one entry in this file whose icon is not a
     // literal - which tests/icons.test.js counts, and rightly: an icon computed
     // in a ternary is an icon nobody can grep for.
-    { label: many ? 'Lock these' : 'Lock', icon: 'i-lock-shut',
+    //
+    // "Anchor", and it used to be "Lock". The act is holding a card still on a
+    // board, and a padlock is what you put on a door: it promises a card nobody
+    // can change, which is not what this does - the name, the colour, the tags
+    // and Delete are all still one click away, and only the *geometry* is
+    // fixed. An anchor says exactly that much and no more, and it belongs to
+    // the same room as the paper, the tape and the pins. The word "pin" was
+    // the first answer and is already taken: isPinned() is a sticky riding on
+    // its host, and the badge for it is a pin. See isLocked() in
+    // board-model.ts, which is the *stored* name and deliberately unchanged -
+    // renaming a key in the file format to rename a word on a menu would make
+    // every board written before today ask a question this app stopped
+    // answering. "Unanchor" rather than "Release", matching Unstick above.
+    { label: many ? 'Anchor these' : 'Anchor', icon: 'i-anchor',
       hidden: !lockable || allLocked, action: () => cmds!.lockSelection(true) },
-    { label: many ? 'Unlock these' : 'Unlock', icon: 'i-lock-open',
+    { label: many ? 'Unanchor these' : 'Unanchor', icon: 'i-anchor-off',
       hidden: !lockable || !allLocked, action: () => cmds!.lockSelection(false) },
     // The way back from a corner dragged too far. With the stacking pair rather
     // than in the group above, because those are all edits to what a card *is*
@@ -775,34 +902,40 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // even though the band is now the ordinary way in.
     { label: `Fence these ${count}`, icon: 'i-fence', hidden: !many,
       action: () => cmds!.fenceSelection() },
-    // On both menus, and on this one deliberately: a right-click is the way
-    // back to the board's own actions from wherever the pointer happens to be,
-    // and having to first find empty ground to ask for a reload would be the
-    // menu being precious about which surface it was opened on.
-    { label: 'Reload board', icon: 'i-reload', action: () => cmds!.reload() },
-    { sep: true },
-    { label: `Duplicate ${what}`, icon: 'i-duplicate', accel: 'Ctrl D',
-      action: () => cmds!.duplicate() },
-    // The zoom pair and "here" are the two most spatial rows on the menu, and
-    // the Feed has neither a zoom nor a here: it is a packed wall, so a note
-    // placed at the point somebody pressed would be picked up by the packer and
-    // put wherever the column had room. Add is on the toolbar there, which is
-    // the surface that means "somewhere on this board" rather than "at this
-    // spot" - and that is the only promise the Feed can keep.
-    // The accel is conditional for the same reason Open's is, and the two
-    // conditions are the two halves of one rule: `input.ts` sends a double-click
-    // on anything that is not a note and not the title card to openViewer, so on
-    // a photograph the gesture opens the viewer and belongs to Open. Printed on
-    // both rows it was a menu advertising one key twice, which teaches the wrong
-    // thing about both of them. Zoom keeps it only where nothing else claims it.
-    { label: 'Zoom to it', icon: 'i-zoom-to', accel: viewable || editable ? '' : 'dbl-click',
-      action: () => cmds!.zoomToSelection(), hidden: mobile || many },
-    { label: 'Zoom to them', icon: 'i-zoom-to',
-      action: () => cmds!.zoomToSelection(), hidden: mobile || !many },
+    // ── The board, from here ──
+    //
+    // Two rows that are not about the card under the cursor at all. They are on
+    // this menu deliberately: a right-click is the way back to the board's own
+    // actions from wherever the pointer happens to be, and having to first find
+    // empty ground would be the menu being precious about which surface it was
+    // opened on. Last before the naming and the unmaking, because that is what
+    // they are - the thing you do next, not the thing you opened the menu for.
     { sep: true, hidden: mobile },
+    // The Feed has no "here": it is a packed wall, so a note placed at the point
+    // somebody pressed would be picked up by the packer and put wherever the
+    // column had room. Add is on the toolbar there, which is the surface that
+    // means "somewhere on this board" rather than "at this spot" - and that is
+    // the only promise the Feed can keep.
     { label: 'Add a note here', icon: 'i-pen', hidden: mobile,
       action: () => cmds!.addNoteAt(at) },
+    { label: 'Reload board', icon: 'i-reload', action: () => cmds!.reload() },
+    // ── The name, and the end of the card ──
+    //
+    // Rename is a one-press action sitting at the foot of the menu, which the
+    // picture-fold note above argues against: burying a one-press action to tidy
+    // a menu is a menu tidied against the person using it. It is here anyway and
+    // on purpose. Renaming is the last thing you do to a card you are keeping,
+    // the way deleting is the last thing you do to one you are not, and read in
+    // that order the two are the pair they have always been. F2 stays printed on
+    // the row for anyone who disagrees, which is the difference between moving a
+    // row down and taking it away.
+    // One band, not two. Delete is drawn in the danger colour and carries Del,
+    // which is the marking that keeps it from being pressed by accident - a rule
+    // above it was doing the same job twice and cost the pair the thing that
+    // makes them read as a pair.
     { sep: true },
+    { label: 'Rename', icon: 'i-rename', accel: 'F2', hidden: !renamable,
+      action: () => editItemName(id) },
     { label: `Delete ${what}`, icon: 'i-delete', accel: 'Del', danger: true,
       action: () => cmds!.deleteSelection() },
   ];
@@ -991,36 +1124,63 @@ function canvasEntries(at: Point): MenuEntry[] {
   // no pointer, which is what keeps panning and banding working inside one - so
   // this menu is what a right-click *in* a region opens, and the board is not
   // what it is about. "Rearrange everything" would be the loudest possible
-  // reading of a click aimed at one shelf. It swaps for that shelf instead, and
-  // only swaps: there is one row either way, because the two are the same
-  // question asked of different scopes.
+  // reading of a click aimed at one shelf, so the shelf's own row is the only
+  // one of the pair this menu draws.
+  //
+  // ── What is not here, and why ──
+  //
+  // Add a note, Add files, Find, Rearrange everything, Zoom to fit and Back to
+  // 0,0 were all on this menu and are all still one press away on the toolbar,
+  // the zoom cluster or the keyboard. Six of twelve rows, every one of them a
+  // second copy of a control already sitting on screen unprompted. A menu that
+  // reprints the chrome behind it teaches that right-click is where everything
+  // is, which is the reading that made this list twelve rows long.
+  //
+  // The test for a row here is not "would this be handy" - everything is handy
+  // - it is whether the row reaches something no resting surface can. `at` is
+  // what usually earns it: a scope, a shelf, a point under the cursor. Rows
+  // that pass and stayed: the tag filter, the fence, the two board marks.
   const fence = cmds!.fenceUnder(at);
   return [
-    { label: 'Add a note here', icon: 'i-pen', action: () => cmds!.addNoteAt(at) },
-    { label: 'Add files', icon: 'i-plus', action: () => cmds!.addFiles() },
-    { sep: true },
-    { label: 'Find', icon: 'i-find', accel: 'Ctrl K', action: () => cmds!.find() },
+    // Paste, and it passes the test above rather than being let off it: the
+    // point under the cursor is where a paste lands, and no resting surface in
+    // the app has a point. It is also the half of copy/paste that has to be
+    // reachable from empty ground - a copy is made on a card and put down where
+    // there is no card, so an item-menu-only Paste would be a Paste you can
+    // never press where you mean it.
+    //
+    // Absent on an empty clipboard, like its twin on the item menu, which is
+    // also what keeps this menu at six rows for anyone who has not copied
+    // anything.
+    { label: 'Paste', icon: 'i-paste', accel: 'Ctrl V', hidden: !cmds!.canPaste(),
+      action: () => cmds!.paste(at) },
     { label: 'Select all', icon: 'i-select-all', accel: 'Ctrl A',
       action: () => cmds!.selectAll() },
-    // The filter, beside Find and Select all because it is the third thing in
-    // this menu about *narrowing the board down* rather than about changing it.
+    // The filter, beside Select all because the two are the same idea at
+    // opposite ends: everything, or only what carries a tag.
     // Ticked in the label when one is up, so the state is visible from the row
     // above the fold rather than only inside it - a filter you cannot see is
     // the failure mode this whole feature has to avoid.
     { label: cmds!.hasTagFilter() ? `Filter by tag (${cmds!.tagFilter().length})` : 'Filter by tag',
       icon: 'i-tag', check: cmds!.hasTagFilter() || undefined, sub: filterEntries() },
-    fence
-      ? { label: 'Rearrange fence', icon: 'i-rearrange',
-        action: () => cmds!.rearrangeFence(fence) }
-      : { label: 'Rearrange everything', icon: 'i-rearrange',
-        action: () => cmds!.rearrange() },
+    // Only the fence reading survives. "Rearrange everything" is the toolbar's
+    // Arrange button said a second time, and a row that repeats a button two
+    // inches away is the row this menu can least afford; rearranging *one
+    // shelf* is a scope no resting surface can express, so it stays. Absent
+    // rather than disabled off a fence - the schema's rule, and the reason
+    // there is one row here on some clicks and none on others.
+    ...(fence
+      ? [{ label: 'Rearrange fence', icon: 'i-rearrange',
+        action: () => cmds!.rearrangeFence(fence) }]
+      : []),
     { label: 'Reload board', icon: 'i-reload', action: () => cmds!.reload() },
     { sep: true },
-    { label: 'Zoom to fit', icon: 'i-fit', accel: 'F', action: () => cmds!.fit() },
-    { label: 'Back to 0,0', icon: 'i-home', accel: '0', action: () => cmds!.recenter() },
-    // The tour, with the two camera rows and not with the board's own settings
-    // below them, because that is what it is: a way of moving the view. One row
-    // that flips rather than a pair, the same shape Lock/Unlock uses on an item
+    // The tour, alone in its band now that Zoom to fit and Back to 0,0 have
+    // gone to the zoom cluster where they were already drawn. It is the one way
+    // of moving the view that no button on the chrome offers, which is exactly
+    // why it survived the cut its two neighbours did not.
+    //
+    // One row that flips rather than a pair, the same shape Lock/Unlock uses on an item
     // - a tour is running or it is not, and only one of the two sentences can
     // be true. Absent entirely on a board with no stops on it yet, which is the
     // schema's own "absence, not disabling" rule: a row offering to start a tour
@@ -1072,21 +1232,41 @@ function render(entries: MenuEntry[], clientX: number, clientY: number, opts: Me
   node.id = 'ctx-menu';
   node.setAttribute('role', 'menu');
   node.setAttribute('aria-label', opts.label || 'Board actions');
-  // A hover flyout is the same panel wearing a different corner: it hangs off
-  // the bar rather than floating free, so the top of it is square. One class,
-  // because everything else about it is the menu's.
-  if (opts.flyout) node.classList.add('is-flyout');
+  // No variant class here any more. A hover flyout used to wear one that
+  // squared the corners on the edge it hung off; there is one panel shape now,
+  // whatever opened it - see the block at the head of the menu rules.
   // Focusable but not tabbable: the menu takes the keyboard when it opens, so
   // a screen reader announces it and Escape and the arrows have somewhere to
   // land. The entries themselves are what Tab and the arrows then walk.
   node.tabIndex = -1;
 
+  fillPanel(node, entries);
+
+  // Measure off-screen, then place - the menu's size depends on its entries.
+  // The height read here is already capped by the max-height in overlays.css,
+  // so a menu with more entries than the window is tall scrolls rather than
+  // running off the bottom: the flip below can only work with a box that fits.
+  node.style.visibility = 'hidden';
+  placeRoot(node, clientX, clientY, opts);
+}
+
+/**
+ * The rows of one panel, from one list of entries.
+ *
+ * Lifted out of render() so that a hover submenu is *the same rows* rather than
+ * a second row builder - which is the rule CLAUDE.md states about menus, one
+ * level down. A child panel that drew its own buttons would have its own idea
+ * of what a tick is inside a quarter.
+ *
+ * `panel` is the root menu or a child of it, and nothing here knows which.
+ */
+function fillPanel(panel: HTMLElement, entries: MenuEntry[]) {
   for (const entry of entries) {
     if (entry.hidden) continue;
     if (entry.sep) {
       const hr = document.createElement('div');
       hr.className = 'ctx-sep';
-      node.append(hr);
+      panel.append(hr);
       continue;
     }
     // A dial rather than an action, and the one row here that is not a button.
@@ -1096,7 +1276,7 @@ function render(entries: MenuEntry[], clientX: number, clientY: number, opts: Me
     // on every input event, because a spacing you cannot see change is a
     // spacing you set by guessing.
     if (entry.range) {
-      node.append(rangeRow(entry));
+      panel.append(rangeRow(entry));
       continue;
     }
     const btn = document.createElement('button');
@@ -1165,7 +1345,25 @@ function render(entries: MenuEntry[], clientX: number, clientY: number, opts: Me
       // Both assertions are the branch this is inside: one of the two is set,
       // and each arm has just tested which.
       btn.addEventListener('click', () => swap(entry.sub ? subMenu(entry.sub, entries) : entry.to!));
+      // And the other route into the same list: hover it open beside the row,
+      // the way a desktop context menu has always done. The click above is kept
+      // rather than replaced, because it is the only route a finger or a
+      // keyboard has - see openChild for why hover cannot be the whole answer.
+      if (entry.sub) {
+        btn.addEventListener('pointerenter', e => {
+          if (e.pointerType !== 'mouse') return;
+          openChild(btn, entry.sub!, panel);
+        });
+      }
     } else {
+      // A row with no children closes whatever child is up: sliding down the
+      // column past Edit has to put Edit's panel away, or the menu ends up
+      // showing a submenu belonging to a row the pointer left three rows ago.
+      // Only rows of the panel the child came *from* - a row of the child
+      // itself must not shut the panel it is in.
+      btn.addEventListener('pointerenter', e => {
+        if (e.pointerType === 'mouse' && childFrom === panel) closeChild();
+      });
       btn.addEventListener('click', () => {
         close();
         // Everything that is not a separator, a slider, a fold or a Back row is
@@ -1173,14 +1371,110 @@ function render(entries: MenuEntry[], clientX: number, clientY: number, opts: Me
         entry.action!();
       });
     }
-    node.append(btn);
+    panel.append(btn);
   }
+}
 
-  // Measure off-screen, then place - the menu's size depends on its entries.
-  // The height read here is already capped by the max-height in overlays.css,
-  // so a menu with more entries than the window is tall scrolls rather than
-  // running off the bottom: the flip below can only work with a box that fits.
-  node.style.visibility = 'hidden';
+// ---------------------------------------------------------------------------
+// The child panel
+// ---------------------------------------------------------------------------
+
+/**
+ * A submenu flown out beside its row, and the drill-down it does not replace.
+ *
+ * The card menu had grown to a dozen rows and the picture edits were most of
+ * them, so they are a fold now - and a fold you have to *press*, which then
+ * takes the menu away and puts a different list in its place, is a worse way to
+ * reach a row than the long menu was. This is the other behaviour: hover the
+ * row, the list appears next to it, press what you came for.
+ *
+ * **It is a second node, not a second implementation.** The rows are built by
+ * fillPanel(), the same function that fills the root, and the panel wears
+ * #ctx-menu's own rules (menu.css names both ids in one selector). What is new
+ * here is where the box goes and when it goes away.
+ *
+ * **The drill-down stays.** Hover is a mouse idea: a finger has none, and a
+ * keyboard has none. Pressing a fold still turns the page the way it always
+ * did, which is what keeps the phone and the arrow keys working - so this is an
+ * addition to that route rather than a replacement for it, and the two cannot
+ * both be up at once because opening either closes the other.
+ *
+ * The close is deferred by a beat. A submenu that vanished the instant the
+ * pointer left its row could not be reached at all: the way to it crosses the
+ * gap between the two panels, and in that gap the pointer is over neither.
+ */
+let child: HTMLElement | null = null;
+/** The panel a live child was opened from - see the pointerenter above. */
+let childFrom: HTMLElement | null = null;
+/** The row it belongs to, so a re-hover of the same row is not a re-open. */
+let childRow: HTMLElement | null = null;
+let childTimer = 0;
+
+/** How long the pointer may be over neither panel before the child gives up. */
+const CHILD_GRACE_MS = 220;
+
+function closeChild() {
+  clearTimeout(childTimer);
+  childTimer = 0;
+  child?.remove();
+  child = null;
+  childFrom = null;
+  childRow?.classList.remove('is-open');
+  childRow = null;
+}
+
+/** Let go of the child after the grace period, unless something asks again. */
+function fadeChild() {
+  clearTimeout(childTimer);
+  childTimer = setTimeout(closeChild, CHILD_GRACE_MS);
+}
+
+function openChild(row: HTMLElement, entries: MenuEntry[], from: HTMLElement) {
+  // Already this row's: the pointer came back inside the grace period, which is
+  // the ordinary case of travelling to the panel and is not a reopen.
+  if (childRow === row && child) { clearTimeout(childTimer); childTimer = 0; return; }
+  closeChild();
+  child = document.createElement('div');
+  child.id = 'ctx-child';
+  child.setAttribute('role', 'menu');
+  child.setAttribute('aria-label', row.textContent?.trim() || 'More');
+  child.tabIndex = -1;
+  fillPanel(child, entries);
+  child.style.visibility = 'hidden';
+  document.body.append(child);
+
+  const pad = 8;
+  const r = row.getBoundingClientRect();
+  const box = child.getBoundingClientRect();
+  // Beside the row, overlapping the parent's padding by the same amount the
+  // panel pads its rows - so the two read as one object hinged at the row
+  // rather than as two panels that happen to touch.
+  const parent = from.getBoundingClientRect();
+  const right = parent.right - 4;
+  // Flip to the other side when there is no room, and only then: a submenu that
+  // opened to the left by preference would cross back over the list it came
+  // from every time the menu was near the middle of the window.
+  const x = right + box.width + pad > innerWidth
+    ? Math.max(pad, parent.left - box.width + 4)
+    : right;
+  // Top-aligned with its row, then lifted just enough to fit. Aligning to the
+  // row is what says which row it belongs to; the clamp is what stops a long
+  // list running off the bottom of the window.
+  const y = Math.max(pad, Math.min(r.top - 5, innerHeight - box.height - pad));
+  child.style.left = `${Math.round(x)}px`;
+  child.style.top = `${Math.round(y)}px`;
+  child.style.visibility = '';
+
+  childRow = row;
+  childFrom = from;
+  row.classList.add('is-open');
+  row.addEventListener('pointerleave', fadeChild);
+  child.addEventListener('pointerenter', () => { clearTimeout(childTimer); childTimer = 0; });
+  child.addEventListener('pointerleave', fadeChild);
+}
+
+/** Where the root panel goes, once its rows are in and it can be measured. */
+function placeRoot(node: HTMLElement, clientX: number, clientY: number, opts: MenuOpts) {
   const pad = 8;
   // How tall a hung panel may be, measured off its own anchor rather than off
   // the top toolbar.
@@ -1239,17 +1533,11 @@ function render(entries: MenuEntry[], clientX: number, clientY: number, opts: Me
     const above = opts.anchor.top - height - pad;
     const up = clientY + height + pad > innerHeight && above >= pad;
     y = up ? above : clientY;
-    // And the panel wears its square edge on the side it is attached to.
-    //
-    // .is-flyout squares the *top* and drops the top border, which is what a
-    // panel hanging under a bar wants: it is the underside of something already
-    // drawn, and a rounded lip with its own hairline a pixel below the bar's
-    // reads as a second object that has landed on the first. Flipped above a
-    // bottom bar, every word of that applies to the other edge - and it was
-    // still squaring the top, so the phone's More menu had a rounded edge
-    // pressed into the bar and a square one facing the open board, which is the
-    // wrong way round twice.
-    node.classList.toggle('is-flyout-up', up && !!opts.flyout);
+    // Which side the flip landed on used to change the panel's *shape* - a
+    // squared, borderless edge against whichever bar it was attached to, with
+    // the two cases written out separately. It does not any more: there is one
+    // panel shape, and the flip is now only about where the box goes. See the
+    // head of the menu rules in menu.css.
   } else {
     // Flip rather than clamp when there isn't room: a menu pinned to the edge
     // ends up under the cursor, and the first entry gets clicked by accident.
