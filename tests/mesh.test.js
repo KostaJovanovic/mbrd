@@ -591,3 +591,116 @@ test('a deep acyclic node chain is refused instead of overflowing the stack', ()
   assert.throws(() => parseGLB(gltfBytes({ nodes, scenes: [{ nodes: [0] }] })),
     /nested too deeply/);
 });
+
+// ---------------------------------------------------------------------------
+// The rest of the accessor's arithmetic
+//
+// The three guards above are the ones AUD-06 added, and between them they cover
+// one shape of accessor: VEC3 float, present bufferView, count out of range.
+// Everything else an accessor can lie about was untested - which is why the
+// count guard could be off by the component multiplier for as long as it was
+// without any of this reddening.
+// ---------------------------------------------------------------------------
+
+/** A whole document around one accessor, so a fixture is one object. */
+const around = (accessor, extra = {}) => gltfBytes({
+  accessors: [accessor],
+  bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: 36 }],
+  buffers: [{ byteLength: 36, uri: 'data:application/octet-stream;base64,' + 'A'.repeat(48) }],
+  meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+  nodes: [{ mesh: 0 }],
+  scenes: [{ nodes: [0] }],
+  ...extra,
+});
+
+test('a negative accessor count is refused', () => {
+  assert.throws(() => parseGLB(around({ type: 'VEC3', componentType: 5126, count: -1, bufferView: 0 })),
+    /implausible amount of geometry/);
+});
+
+test('a bufferView naming a buffer that is not there is refused', () => {
+  assert.throws(() => parseGLB(around(
+    { type: 'VEC3', componentType: 5126, count: 3, bufferView: 0 },
+    { bufferViews: [{ buffer: 9, byteLength: 36 }] },
+  )), /refers to data that is not in the file/);
+});
+
+test('an unknown componentType is not read as some other type', () => {
+  // READERS has no entry, so the accessor yields null rather than being read at
+  // whatever width happened to be lying around - and a POSITION that read as
+  // nothing leaves the model with no geometry, which is the refusal.
+  assert.throws(() => parseGLB(around({ type: 'VEC3', componentType: 9999, count: 3, bufferView: 0 })),
+    /no geometry in it/);
+});
+
+test('an unknown accessor type is not read as some other type', () => {
+  assert.throws(() => parseGLB(around({ type: 'VEC9', componentType: 5126, count: 3, bufferView: 0 })),
+    /no geometry in it/);
+});
+
+test('a count that reads past the real buffer is refused, not read short', () => {
+  // The truncation guard, reached the way a truncated file reaches it: the
+  // declared count needs more bytes than the buffer has. `subarray` would
+  // quietly hand back the short remainder and the model would render wrong
+  // rather than be refused.
+  //
+  // Note that the *declared* byteLength of a bufferView is not what bounds the
+  // read - the buffer's real length is - so a view claiming 3600 bytes over a
+  // 36-byte buffer is harmless. It is the count that has to be caught.
+  assert.throws(() => parseGLB(around(
+    { type: 'VEC3', componentType: 5126, count: 300, bufferView: 0 },
+    { bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: 3600 }] },
+  )), /truncated/);
+});
+
+test('an accessor byteOffset that runs past the view is refused', () => {
+  assert.throws(() => parseGLB(around(
+    { type: 'VEC3', componentType: 5126, count: 3, bufferView: 0, byteOffset: 30 },
+  )), /truncated/);
+});
+
+test('a malformed data URI is refused rather than decoded', () => {
+  assert.throws(() => parseGLB(around(
+    { type: 'VEC3', componentType: 5126, count: 3, bufferView: 0 },
+    { buffers: [{ byteLength: 36, uri: 'data:application/octet-stream;base64' }] },
+  )), /malformed data URI/);
+});
+
+// The MAX_BUFFER_BYTES ceiling (512 MB) has no test here on purpose: reaching
+// it needs a base64 body of about 683 million characters, and V8 refuses to
+// build a string that long. A guard no input can reach is a finding rather than
+// a fixture - see the fix commit for the mesh allocation guards.
+
+test('an index outside the position count does not read past the array', () => {
+  const pos = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+  const idx = new Uint16Array([0, 1, 99]);
+  const bin = new Uint8Array(pos.byteLength + idx.byteLength);
+  bin.set(new Uint8Array(pos.buffer), 0);
+  bin.set(new Uint8Array(idx.buffer), pos.byteLength);
+  const b64 = Buffer.from(bin).toString('base64');
+
+  const build = () => parseGLB(gltfBytes({
+    accessors: [
+      { type: 'VEC3', componentType: 5126, count: 3, bufferView: 0 },
+      { type: 'SCALAR', componentType: 5123, count: 3, bufferView: 1 },
+    ],
+    bufferViews: [
+      { buffer: 0, byteOffset: 0, byteLength: pos.byteLength },
+      { buffer: 0, byteOffset: pos.byteLength, byteLength: idx.byteLength },
+    ],
+    buffers: [{ byteLength: bin.length, uri: 'data:application/octet-stream;base64,' + b64 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 }, indices: 1 }] }],
+    nodes: [{ mesh: 0 }],
+    scenes: [{ nodes: [0] }],
+  }));
+
+  // Either refused outright or dropped - what it must not do is emit a triangle
+  // whose vertex is read from past the end of the positions.
+  let mesh = null;
+  try { mesh = build(); } catch { /* a refusal is a fine answer */ }
+  if (mesh) {
+    for (let i = 0; i < mesh.positions.length; i++) {
+      assert.ok(Number.isFinite(mesh.positions[i]), 'a vertex came back non-finite');
+    }
+  }
+});

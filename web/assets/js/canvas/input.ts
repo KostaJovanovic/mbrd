@@ -591,6 +591,116 @@ const NUDGE_LEAP = 10;
  */
 const ON_LINE = 1e-6;
 
+/**
+ * One axis of a resize: the extent it should end up with, given the box the
+ * gesture started from and how far the pointer has travelled along that axis.
+ *
+ * Up here with the other pure rules, and for the same reason. Every other rule
+ * in this file that is a function of its arguments alone - isDoubleTap,
+ * drewRectangle, marqueeHit, carryFloor, resizeHandleAction, gestureTransition,
+ * readWheel, releasePointerSafely - was deliberately hoisted so tests/input.test.js
+ * could reach it. These two were the exceptions, and they were the two riskiest
+ * pieces of arithmetic in the file: the anchor derivation below and the "flush
+ * already" branch in nudgeDelta() had no coverage at all while every trivial
+ * predicate around them had plenty. `step` and `inset` are passed in rather than
+ * read, which is the whole of what kept them inside the closure.
+ *
+ * `sign` is +1 when the handle drags the high edge (east, or north - world y
+ * points up), -1 for the low one, and 0 for an axis the handle does not touch,
+ * whose extent comes back untouched.
+ *
+ * `snap` is the *grip's*, not the board's: a sticky lying on something is sized
+ * off the lattice however the board is set - see startResize().
+ *
+ * Snapping quantises the *moving edge's world position*, not the extent.
+ * Rounding a width to the step would leave both edges off the lattice, since
+ * the pinned edge was never on it to begin with; it is the edge the pointer is
+ * actually holding that has to land on a grid line for the result to sit flush
+ * against the dots on screen. The extent then falls out of the distance back to
+ * the edge that stayed put, which is why the anchor is derived here rather than
+ * the size being adjusted afterwards.
+ *
+ * `inset` is the seam, and its sign is what makes the two directions different.
+ * A high edge belongs a seam short of its line, so the seam is added before the
+ * rounding and taken off after; a low edge belongs a seam past its line, so the
+ * same happens the other way about. Both by half the old seam, so two
+ * neighbours stand exactly as far apart as they always did while a single item
+ * now sits centred in its cells instead of shoved into a corner of them.
+ *
+ * The limits are applied before the snap so the rounding is handed an edge that
+ * is already legal, and repaired after it by stepping one grid line the other
+ * way: rounding can only move the edge by half a step, so one line always
+ * brings it back inside, and the answer is still on the lattice rather than
+ * parked at a bare limit that no grid line passes through. The closing clamp is
+ * what actually guarantees the range - it has to hold even where the step is
+ * coarser than the whole band between floor and ceiling, and a floor that only
+ * usually holds is the same collapsed item it exists to prevent.
+ */
+export function resizeAxisOn(
+  sign: number, centre: number, extent: number, travel: number,
+  snap: boolean, step: number, inset: number,
+) {
+  if (!sign) return extent;
+  let size = clamp(extent + sign * travel, MIN_SIZE, MAX_SIZE);
+  if (snap) {
+    const anchor = centre - sign * extent / 2;
+    const bias = sign * inset;
+    const edge = (k: number) => sign * (k * step - bias - anchor);
+    const k = Math.round((anchor + sign * size + bias) / step);
+    size = edge(k);
+    if (size < MIN_SIZE) size = edge(k + sign);
+    else if (size > MAX_SIZE) size = edge(k - sign);
+  }
+  return clamp(size, MIN_SIZE, MAX_SIZE);
+}
+
+/**
+ * How far one press of an arrow key moves the selection.
+ *
+ * Snapped and unsnapped are two different questions rather than one question
+ * with a different step size, which is the thing this used to get wrong: it
+ * added a fixed distance either way, so on a snapped board every arrow key took
+ * the item straight off the lattice that dragging it had just put it on, and
+ * the only way to line it up again was to pick it up with the mouse.
+ *
+ * Snapped, the answer is a grid line rather than a distance - the next one
+ * along in the direction pressed. An item that is already flush moves exactly
+ * one cell; one that is not is pulled onto the lattice by the first press and
+ * then moves a cell at a time like everything else. Deriving it from lines
+ * rather than from a delta is also what makes the two agree at any zoom: the
+ * lattice on screen coarsens as you pull back, and a distance computed from the
+ * old step would land between the dots you are looking at.
+ *
+ * One delta for the whole selection, taken from `lead` - the same bargain the
+ * drag makes. Snapping each item to its own nearest line would collapse a
+ * carefully spaced group onto the grid the first time somebody tapped an arrow
+ * key, which is a rearrangement rather than a nudge.
+ */
+export function nudgeDelta(
+  sx: number, sy: number, far: boolean, lead: { x: number, y: number, w: number, h: number },
+  snap: boolean, step: number, inset: number,
+) {
+  if (!snap) {
+    const by = far ? step : 1;
+    return { dx: sx * by, dy: sy * by };
+  }
+  const cells = far ? NUDGE_LEAP : 1;
+  // The item's *low edges* land on the lattice, not its centre - see the move
+  // gesture for why, and snapAll() in state.js for the arrangement this is
+  // keeping rather than imposing. Measured from the seam rather than from the
+  // line, so "flush already" means the same thing here as it does there.
+  const axis = (sign: number, low: number) => {
+    if (!sign) return 0;
+    const k = (low - inset) / step;
+    const near = Math.round(k);
+    const next = Math.abs(k - near) < ON_LINE
+      ? near + sign                                   // flush already: move on
+      : (sign > 0 ? Math.ceil(k) : Math.floor(k));    // adrift: come aboard
+    return (next + sign * (cells - 1)) * step + inset - low;
+  };
+  return { dx: axis(sx, lead.x - lead.w / 2), dy: axis(sy, lead.y - lead.h / 2) };
+}
+
 // ---------------------------------------------------------------------------
 // The gesture machine
 // ---------------------------------------------------------------------------
@@ -944,6 +1054,22 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     at: (Point & { id: string | null }) | null,
     menu: TapPoint | null,
   } = { timer: 0, at: null, menu: null };
+  // The pointer id of a touch press on bare board that owes the selection a
+  // clear, spent on the lift. Null on a mouse, which clears on the press as it
+  // always has.
+  //
+  // A finger cannot right-click: the hold *is* the menu, and the hold starts
+  // with a press on the board. Clearing on that press meant that on a phone the
+  // only gesture that opens the board menu was also the gesture that threw away
+  // the group you were about to open it for - and a group assembled by tapping
+  // cards one at a time on a phone is the most expensive thing on the board to
+  // rebuild. So the clear waits, and the hold cancels it.
+  //
+  // Deferred rather than made conditional on movement, so everything else about
+  // this press means what it did: a tap on bare board still deselects, a pan
+  // still lands with nothing selected. Only the moment moves, from the press to
+  // the lift.
+  let clearOnLift: number | null = null;
   // The presses that may still turn out to be taps, and the taps just past.
   //
   // None of these is a mode: every one of them coexists with a live gesture -
@@ -1052,57 +1178,14 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   const insetNow = () => (board.settings.snap ? cellInset(stepNow()) : 0);
 
   /**
-   * One axis of a resize: the extent it should end up with, given the box the
-   * gesture started from and how far the pointer has travelled along that axis.
+   * One axis of a resize, against this board's current step and seam.
    *
-   * `sign` is +1 when the handle drags the high edge (east, or north - world y
-   * points up), -1 for the low one, and 0 for an axis the handle does not
-   * touch, whose extent comes back untouched.
-   *
-   * `snap` is the *grip's*, not the board's: a sticky lying on something is
-   * sized off the lattice however the board is set - see startResize().
-   *
-   * Snapping quantises the *moving edge's world position*, not the extent.
-   * Rounding a width to the step would leave both edges off the lattice, since
-   * the pinned edge was never on it to begin with; it is the edge the pointer
-   * is actually holding that has to land on a grid line for the result to sit
-   * flush against the dots on screen. The extent then falls out of the distance
-   * back to the edge that stayed put, which is why the anchor is derived here
-   * rather than the size being adjusted afterwards.
-   *
-   * `bias` is the seam, signed, and it is what makes the two directions
-   * different. A high edge belongs a seam short of its line, so the seam is added
-   * before the rounding and taken off after; a low edge belongs a seam past its
-   * line, so the same happens the other way about. Both by half the old seam, so
-   * two neighbours stand exactly as far apart as they always did while a single
-   * item now sits centred in its cells instead of shoved into a corner of them.
-   *
-   * The limits are applied before the snap so the rounding is handed an edge
-   * that is already legal, and repaired after it by stepping one grid line the
-   * other way: rounding can only move the edge by half a step, so one line
-   * always brings it back inside, and the answer is still on the lattice rather
-   * than parked at a bare limit that no grid line passes through. The closing
-   * clamp is what actually guarantees the range - it has to hold even where the
-   * step is coarser than the whole band between floor and ceiling, and a floor
-   * that only usually holds is the same collapsed item it exists to prevent.
+   * The arithmetic is resizeAxisOn() at module scope; this is the two readings
+   * that make it about *this* board. See the note there for why it moved.
    */
-  function resizeAxis(
+  const resizeAxis = (
     sign: number, centre: number, extent: number, travel: number, snap: boolean,
-  ) {
-    if (!sign) return extent;
-    let size = clamp(extent + sign * travel, MIN_SIZE, MAX_SIZE);
-    if (snap) {
-      const anchor = centre - sign * extent / 2;
-      const step = stepNow();
-      const bias = sign * insetNow();
-      const edge = (k: number) => sign * (k * step - bias - anchor);
-      const k = Math.round((anchor + sign * size + bias) / step);
-      size = edge(k);
-      if (size < MIN_SIZE) size = edge(k + sign);
-      else if (size > MAX_SIZE) size = edge(k - sign);
-    }
-    return clamp(size, MIN_SIZE, MAX_SIZE);
-  }
+  ) => resizeAxisOn(sign, centre, extent, travel, snap, stepNow(), insetNow());
 
   function setPanCursor() {
     el.classList.toggle('can-pan', spaceDown && gesture.mode === 'idle');
@@ -1483,6 +1566,8 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       taps.lastEmpty = null;
       taps.arm = null;
       taps.card = null;
+      // A pinch is a zoom, and a zoom is not an answer about what is selected.
+      clearOnLift = null;
       abortGesture();
       const [a, b] = [...pointers.values()];
       enter('pinch', {
@@ -1698,7 +1783,9 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     } else if (e.shiftKey || e.ctrlKey || e.metaKey) {
       startMarquee(e);
     } else {
-      if (selection.size) clearSelection();
+      // Touch defers it to the lift so a hold can cancel it - see clearOnLift.
+      if (e.pointerType === 'touch') clearOnLift = selection.size ? e.pointerId : null;
+      else if (selection.size) clearSelection();
       // A press on bare board that happens to land on a connection points at
       // that connection instead of at nothing - which is what the line lighting
       // up under the pointer has been promising all along, and what gives Delete
@@ -1722,11 +1809,13 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         taps.lastEmpty = null;
         taps.arm = null;
         taps.card = null;
+        // The press that opens the menu is not the tap that clears the board.
+        clearOnLift = null;
         // Whatever the finger had started - a move, a pan, a marquee - it was
         // not that. Dropped rather than committed, since nothing moved.
         abortGesture();
         hold.menu = { x: p.x, y: p.y, at: performance.now() };
-        openMenuAt(p.x, p.y, p.id);
+        openMenuAt(p.x, p.y, p.id, true);
       }, LONG_PRESS_MS);
     }
     setPanCursor();
@@ -2055,6 +2144,14 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     if (taps.card?.pointerId === e.pointerId) {
       if (e.type === 'pointerup') pauseOnTap(taps.card.id);
       taps.card = null;
+    }
+    // The deselect a touch press on bare board put off - see clearOnLift. Spent
+    // whichever way the press ended, cancel included: the press was still a
+    // hand put on empty board, and the only thing that ever calls it off is the
+    // hold, which does so where it opens the menu.
+    if (clearOnLift === e.pointerId) {
+      clearOnLift = null;
+      if (selection.size) clearSelection();
     }
     cancelPress();
     pointers.delete(e.pointerId);
@@ -2421,50 +2518,15 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   }
 
   /**
-   * How far one press of an arrow key moves the selection.
+   * How far one press of an arrow key moves the selection, on this board.
    *
-   * Snapped and unsnapped are two different questions rather than one question
-   * with a different step size, which is the thing this used to get wrong: it
-   * added a fixed distance either way, so on a snapped board every arrow key
-   * took the item straight off the lattice that dragging it had just put it on,
-   * and the only way to line it up again was to pick it up with the mouse.
-   *
-   * Snapped, the answer is a grid line rather than a distance - the next one
-   * along in the direction pressed. An item that is already flush moves exactly
-   * one cell; one that is not is pulled onto the lattice by the first press and
-   * then moves a cell at a time like everything else. Deriving it from lines
-   * rather than from a delta is also what makes the two agree at any zoom: the
-   * lattice on screen coarsens as you pull back, and a distance computed from
-   * the old step would land between the dots you are looking at.
-   *
-   * One delta for the whole selection, taken from the lead - the same bargain
-   * the drag makes. Snapping each item to its own nearest line would collapse a
-   * carefully spaced group onto the grid the first time somebody tapped an
-   * arrow key, which is a rearrangement rather than a nudge.
+   * The lead is picked here - the selection is the closure's - and the
+   * arithmetic is nudgeDelta() at module scope, where the reasoning lives.
    */
   function nudgeBy(sx: number, sy: number, far: boolean, before: GeomSnap[]) {
-    if (!board.settings.snap) {
-      const step = far ? stepNow() : 1;
-      return { dx: sx * step, dy: sy * step };
-    }
     const step = stepNow();
-    const inset = cellInset(step);
-    const cells = far ? NUDGE_LEAP : 1;
     const lead = before.find(b => selection.has(b.id)) || before[0];
-    // The item's *low edges* land on the lattice, not its centre - see the move
-    // gesture above for why, and snapAll() in state.js for the arrangement this
-    // is keeping rather than imposing. Measured from the seam rather than from
-    // the line, so "flush already" means the same thing here as it does there.
-    const axis = (sign: number, low: number) => {
-      if (!sign) return 0;
-      const k = (low - inset) / step;
-      const near = Math.round(k);
-      const next = Math.abs(k - near) < ON_LINE
-        ? near + sign                                   // flush already: move on
-        : (sign > 0 ? Math.ceil(k) : Math.floor(k));    // adrift: come aboard
-      return (next + sign * (cells - 1)) * step + inset - low;
-    };
-    return { dx: axis(sx, lead.x - lead.w / 2), dy: axis(sy, lead.y - lead.h / 2) };
+    return nudgeDelta(sx, sy, far, lead, board.settings.snap, step, cellInset(step));
   }
 
   // ---- clipboard --------------------------------------------------------
@@ -2546,6 +2608,12 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   // and the browser's menu can't express any of them.
   el.addEventListener('contextmenu', e => {
     e.preventDefault();
+    // Read before cancelPress() takes it away. `hold.at` is set on a touch press
+    // and on no other, so it is this listener's only way of telling the engines
+    // that synthesize a contextmenu out of a long press from a right-click on a
+    // mouse - and the two owe the selection different things (see openMenuAt).
+    const held = !!hold.at;
+    if (held) clearOnLift = null;
     // Some touch engines synthesize this before our hold timer, others after.
     // Whichever arrives first owns the gesture; cancelling here prevents the
     // other path from closing and rebuilding the same menu a moment later.
@@ -2562,14 +2630,22 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       return;
     }
     hold.menu = null;
-    openMenuAt(e.clientX, e.clientY, itemIdFromEvent(e.target));
+    openMenuAt(e.clientX, e.clientY, itemIdFromEvent(e.target), held);
   });
 
-  function openMenuAt(x: number, y: number, id: string | null) {
+  /**
+   * `keep` is the touch hold, and it holds the selection through the menu.
+   *
+   * On a mouse, opening the menu on bare board is a click on nothing and says
+   * so: the selection goes. A finger has no second button, so the same gesture
+   * has to be both "show me the board menu" and it cannot also mean "and drop
+   * what I picked" - see clearOnLift for the other half of this.
+   */
+  function openMenuAt(x: number, y: number, id: string | null, keep = false) {
     // Opening outside the selection retargets it, the way every file manager
     // behaves; opening inside one leaves the group intact.
     if (id && !selection.has(id)) select([id]);
-    if (!id) clearSelection();
+    if (!id && !keep) clearSelection();
     cmds.contextMenu(x, y, id, selection.size);
   }
 }

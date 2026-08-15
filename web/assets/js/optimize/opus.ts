@@ -220,7 +220,16 @@ const CRC = (() => {
   return table;
 })();
 
-function crc32(b: Uint8Array): number {
+// Everything from here down is exported for one reason: it is pure, and it is
+// the half of this module a test can reach. toOpus() needs AudioEncoder,
+// AudioData and OfflineAudioContext, none of which exist outside a browser, so
+// the container writer below - the segment table, the CRC, the granule
+// arithmetic, the two headers - had no coverage at all while being a
+// hand-written binary format with three separate ways to be off by one.
+//
+// The same argument canvas/input.ts makes for hoisting its pure rules to module
+// scope: a rule nothing can call is a rule nothing checks. See tests/opus.test.js.
+export function crc32(b: Uint8Array): number {
   let c = 0;
   for (let i = 0; i < b.length; i++) c = ((c << 8) ^ CRC[((c >>> 24) ^ b[i]) & 0xff]) >>> 0;
   return c >>> 0;
@@ -299,7 +308,7 @@ const NO_GRANULE = -1;
  * it. All three of those are the album-art case, and all three are why this is
  * a small machine rather than a loop.
  */
-function pager() {
+export function pager() {
   const pages: Uint8Array[] = [];
   let laces: number[] = [];
   let body: Uint8Array[] = [];
@@ -370,7 +379,7 @@ function pager() {
 }
 
 /** The encoder's own header, if it gave one and it is the shape it should be. */
-function usableHead(head: Uint8Array | null, channels: number): Uint8Array | null {
+export function usableHead(head: Uint8Array | null, channels: number): Uint8Array | null {
   if (!head || head.length < 19) return null;
   if (String.fromCharCode(...head.subarray(0, 8)) !== 'OpusHead') return null;
   if (head[9] !== channels) return null;
@@ -384,7 +393,7 @@ function usableHead(head: Uint8Array | null, channels: number): Uint8Array | nul
  * the track by six milliseconds, which is inaudible - but getting it right
  * costs nothing.
  */
-function opusHead(channels: number) {
+export function opusHead(channels: number) {
   const b = new Uint8Array(19);
   b.set([0x4f, 0x70, 0x75, 0x73, 0x48, 0x65, 0x61, 0x64], 0);     // 'OpusHead'
   b[8] = 1;                                                       // version
@@ -403,7 +412,7 @@ function opusHead(channels: number) {
  * block, base64'd, which is the roundabout but entirely standard way an Opus
  * stream carries a picture, and what every player that shows one reads.
  */
-function opusTags(comments: TagPair[] | null, picture: string | null) {
+export function opusTags(comments: TagPair[] | null, picture: string | null) {
   const enc = new TextEncoder();
   const vendor = enc.encode('mbrd');
   const list = (comments || []).map(([k, v]) => enc.encode(`${k}=${v}`));
@@ -477,7 +486,7 @@ async function pictureBlock(file: Blob, width = 0, height = 0): Promise<string |
  * of three so no chunk boundary lands mid-triplet and produces padding in the
  * middle of the string.
  */
-function base64(bytes: Uint8Array): string {
+export function base64(bytes: Uint8Array): string {
   const CHUNK = 12288;
   let s = '';
   for (let i = 0; i < bytes.length; i += CHUNK) {
