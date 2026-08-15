@@ -248,13 +248,17 @@ test('empty and whitespace-only input render nothing', async () => {
   }
 });
 
-test('a document of markers terminates', async () => {
+test('a document of markers terminates', { timeout: 5000 }, async () => {
   // Every parser bug in this file so far has been a loop that did not advance,
-  // so the assertion that matters here is that the call returns at all.
+  // so the assertion that matters here is that the call returns at all - and
+  // the way to assert *that* is the timeout, not `typeof html === 'string'`.
+  // render() cannot resolve with anything but a string, so the old assertion
+  // held for any parser that finished and the suite simply hung for one that
+  // did not. A hang is a failure and should be reported as one.
   const src = '*'.repeat(200) + '\n' + '_'.repeat(200) + '\n' + '#'.repeat(200)
     + '\n> > > >\n- - - -\n|||||\n```\n';
   const { html } = await render(src);
-  assert.equal(typeof html, 'string');
+  assert.ok(html.length > 0, 'a document of markers rendered to nothing at all');
 });
 
 test('CRLF is read the same as LF', async () => {

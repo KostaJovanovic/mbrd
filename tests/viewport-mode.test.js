@@ -388,6 +388,12 @@ test('the feed surface is a sibling of #viewport, never a child of it', async ()
   // close comes before #mobile-feed.
   const viewportOpen = html.indexOf('<div id="viewport">');
   const worldClose = html.indexOf('<div id="marquee" hidden></div>');
+  // Found before ordered. Either indexOf returning -1 makes the chain below
+  // true for free, and -1 is exactly what a renamed or reformatted element
+  // returns - so the check would go green on the edit most likely to break the
+  // ordering it is guarding.
+  assert.ok(viewportOpen > -1, 'no <div id="viewport"> in the markup');
+  assert.ok(worldClose > -1, 'no #marquee - the end of the viewport block has moved');
   assert.ok(viewportOpen < worldClose && worldClose < feedAt,
     'the feed div comes after the viewport block closes');
 });

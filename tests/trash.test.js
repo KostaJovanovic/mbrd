@@ -28,13 +28,19 @@ class FakeElement {
   replaceChildren() {}
 }
 
-test('the trash button deletes the selection and otherwise opens the bin', () => {
+test('the trash button deletes the selection and otherwise opens the bin', (t) => {
   const ids = ['bin-panel', 'bin-btn', 'bin-list', 'bin-none', 'bin-hint', 'bin-empty', 'viewport'];
   const elements = Object.fromEntries(ids.map(id => [id, new FakeElement()]));
   globalThis.document = {
     getElementById: id => elements[id] || null,
     createElement: () => new FakeElement(),
   };
+  // Taken down whatever happens below. The `delete` at the end of the body only
+  // ran when every assertion passed, so one failure left a fake `document` on
+  // the global for the rest of the process - and tests/imports.test.js exists
+  // precisely because a stray browser global makes an unrelated module throw at
+  // import. A failing test should red one test.
+  t.after(() => { delete globalThis.document; });
 
   loadBoard({ title: 'Trash button', items: [], trash: [] });
   initTrash({ width: 800, height: 600 });
@@ -51,6 +57,4 @@ test('the trash button deletes the selection and otherwise opens the bin', () =>
 
   elements['bin-btn'].listeners.get('click')();
   assert.equal(elements['bin-panel'].hidden, false);
-
-  delete globalThis.document;
 });

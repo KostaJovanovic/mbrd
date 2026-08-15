@@ -351,9 +351,20 @@ test('a pinch zooms from either device, and takes nothing with it', () => {
 
   // Worth more per unit than a wheel notch: the two devices count in different
   // sizes, and at the wheel's rate a pinch would move almost nothing.
+  //
+  // Compared per unit of delta, over a notch big enough to *be* a zoom. It used
+  // to read `pinch.factor > notch.factor || notch.kind === 'pan'` against a
+  // notch of -6 - and |6| is under WHEEL_NOTCH, so that notch is classified
+  // 'pan' every time and the right-hand disjunct carried the assertion by
+  // itself. The pinch rate could have been dropped below the wheel's and this
+  // went on passing.
   resetWheelKind();
-  const notch = wheel({ deltaY: -6, timeStamp: 9_000 });
-  assert.ok(pinch.factor > notch.factor || notch.kind === 'pan');
+  const notch = wheel({ deltaY: -240, timeStamp: 9_000 });
+  assert.equal(notch.kind, 'zoom', 'the fixture has to clear WHEEL_NOTCH to be a zoom at all');
+  const per = (action, dy) => (action.factor - 1) / Math.abs(dy);
+  assert.ok(per(pinch, 6) > per(notch, 240),
+    `a pinch unit is worth ${per(pinch, 6)} and a wheel unit ${per(notch, 240)} - `
+    + 'at the wheel rate a pinch across the whole pad would move almost nothing');
 
   // And a pinch does not latch: it is also what ctrl+wheel on a real mouse
   // looks like, and a modifier must not change what the next plain notch means.

@@ -225,15 +225,25 @@ test('taking the card away is undoable, and survives a file', () => {
   assert.equal(board.items[0].meta.bare, true);
 });
 
-test('anything other than true is not a flag', () => {
-  // The validator is `v === true ? true : null`, so a file carrying a string or
-  // a 1 does not quietly switch the card off on somebody's board.
+test('the write door stores true or nothing, whatever it was handed', () => {
+  // Named for what it asserts. It was called "anything other than true is not a
+  // flag" and its comment quoted `v === true ? true : null` as though that were
+  // the door - but that validator is patchMeta's *fifth* argument, and the
+  // value reaching it is already `bare ? true : null` from the third. So a
+  // truthy junk value is coerced at the door and `true` is what lands in the
+  // file; nothing is ever stored as 'yes' or 1.
+  //
+  // The old name mattered: it described a stricter door than the code has, and
+  // anyone tightening the door to match the name would have reddened a suite
+  // that was pinning the opposite the whole time.
   const [p] = addItems([photo()]);
   for (const junk of ['true', 1, {}, [], 'yes']) {
     setItemBare(p.id, junk);
     assert.equal(byId(p.id).meta?.bare, true,
-      'truthy values are accepted as the flag they obviously mean');
+      `${JSON.stringify(junk)} is coerced to the flag it obviously means`);
     setItemBare(p.id, null);
+    assert.equal(byId(p.id).meta?.bare, undefined,
+      'and cleared rather than stored as false');
   }
   loadBoard({ title: 'T', items: [photo({ id: 'p', meta: { bare: 'yes' } })] });
   assert.equal(byId('p').meta?.bare, 'yes',

@@ -545,7 +545,13 @@ test('a run merged into a checkpointed step still replays', () => {
   // CHECKPOINT_EVERY is 50 and private to the module; this lands exactly on it,
   // because the bug is a picture filed under a mark whose step then changed.
   const [a] = addItems([photo({ x: 0, y: 0 })]);
-  while (timelineSteps().length < 49) addItems([photo({ x: 0, y: 0 })]);
+  // Bounded. `while (timelineSteps().length < 49)` with nothing else in it is a
+  // test that hangs rather than fails the moment recordStep() stops recording -
+  // and a suite that hangs reports nothing about the other 1300 tests either.
+  for (let guard = 0; timelineSteps().length < 49; guard++) {
+    assert.ok(guard < 200, `${timelineSteps().length} steps after ${guard} adds - the ledger is not growing`);
+    addItems([photo({ x: 0, y: 0 })]);
+  }
   move(a.id, 10, 0);
   assert.equal(timelineSteps().length, 50, 'the run should land on the mark');
   move(a.id, 10, 0);

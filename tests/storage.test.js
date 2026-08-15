@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import {
   fileNameFor, titleForOpenedBoard, titleFromFileName,
 } from '../web/assets/js/storage/storage.ts';
+import { BOARD_TITLE_MAX } from '../web/assets/js/board-model.ts';
 
 test('export filenames replace board-name spaces with underscores', () => {
   assert.equal(fileNameFor('Summer references'), 'Summer_references.mbrd');
@@ -66,5 +67,14 @@ test('the sidebar title field carries the shared thirty-two-character limit', as
   // limit comes back cut.
   const schema = await readFile(
     new URL('../web/assets/js/ui/settings-schema.ts', import.meta.url), 'utf8');
-  assert.match(schema, /id: 'board-title'[\s\S]{0,200}?maxlength: 32/);
+  // The control, then its own maxlength - rather than "a maxlength of 32
+  // somewhere in the next 200 characters", which the next control's would
+  // satisfy just as well. And compared against BOARD_TITLE_MAX rather than
+  // against a 32 typed here, so the pair moves together: the whole point is
+  // that the field stops where cleanBoardTitle() stops.
+  const control = /\{[^{}]*id: 'board-title'[\s\S]*?\n\s*\},/.exec(schema);
+  assert.ok(control, "no 'board-title' control in settings-schema.ts");
+  const max = /maxlength:\s*(\d+)/.exec(control[0]);
+  assert.ok(max, 'the board-title field carries no maxlength');
+  assert.equal(Number(max[1]), BOARD_TITLE_MAX);
 });

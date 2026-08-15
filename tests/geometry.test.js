@@ -341,14 +341,24 @@ test('touching an edge or a corner counts', () => {
   assert.ok(seg(-5, 15, 15, -5), 'the anti-diagonal through both corners');
 });
 
-test('it never loops, however far out the ends are', () => {
-  // Cohen-Sutherland settles in four turns; a wrong loop condition hangs
-  // rather than failing, so the assertion here is that it returns at all.
+test('it never loops, however far out the ends are', { timeout: 5000 }, () => {
+  // Cohen-Sutherland settles in four turns; a wrong loop condition hangs rather
+  // than failing, and the timeout above is what turns that hang into a failure.
+  // It used to be asserted as `typeof seg(...) === 'boolean'`, which seg()
+  // cannot fail whatever it computes - so the six cases ran and their answers
+  // went unread. They have answers, so they are asserted.
   const far = 1e9;
-  for (const [ax, ay, bx, by] of [
-    [-far, -far, far, far], [far, -far, -far, far], [-far, 5, far, 5],
-    [5, -far, 5, far], [-far, -far, -far, far], [far, far, far + 1, far + 1],
-  ]) assert.equal(typeof seg(ax, ay, bx, by), 'boolean');
+  for (const [ax, ay, bx, by, want] of [
+    [-far, -far, far, far, true],       // the diagonal, straight through it
+    [far, -far, -far, far, true],       // the anti-diagonal, through the origin corner
+    [-far, 5, far, 5, true],            // horizontal, across the middle
+    [5, -far, 5, far, true],            // vertical, up the middle
+    [-far, -far, -far, far, false],     // a vertical a billion units to the left
+    [far, far, far + 1, far + 1, false],// a short segment nowhere near it
+  ]) {
+    assert.equal(seg(ax, ay, bx, by), want,
+      `seg(${ax}, ${ay}, ${bx}, ${by}) should be ${want}`);
+  }
 });
 
 // ---------------------------------------------------------------------------

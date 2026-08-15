@@ -94,6 +94,18 @@ const lattice = n => {
 
 const noCrossings = (pts, label) => {
   const edges = threads(pts);
+  // Before the loop, because everything below it is inside one. `threads()`
+  // returning [] satisfied all five "no two threads cross" tests at once - the
+  // strongest possible planarity guarantee, over no threads - and every caller
+  // discarded the return value, so nothing downstream noticed either.
+  //
+  // Any connected web over n points has at least n-1 threads in it; that is the
+  // weakest true statement about the output, and it is enough to make an empty
+  // one fail here rather than pass everywhere.
+  if (pts.length > 1) {
+    assert.ok(edges.length >= pts.length - 1,
+      `${label}: ${edges.length} threads over ${pts.length} points is not a web`);
+  }
   for (let i = 0; i < edges.length; i++) {
     for (let j = i + 1; j < edges.length; j++) {
       const [a, b] = edges[i], [c, d] = edges[j];

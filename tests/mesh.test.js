@@ -534,7 +534,10 @@ test('colours outside 0-1 are clamped rather than passed to the shader', () => {
 
 test('the triangle ceiling is a number a card could plausibly be asked for', () => {
   // Not a behaviour so much as a guard against someone "tidying" it to 100.
-  assert.ok(MAX_TRIANGLES >= 1_000_000);
+  // Both ends: a ceiling raised out of the way is the same as no ceiling, and
+  // this file's whole other half is about what an unbounded count costs.
+  assert.ok(MAX_TRIANGLES >= 1_000_000, `MAX_TRIANGLES is ${MAX_TRIANGLES} - too low for a real model`);
+  assert.ok(MAX_TRIANGLES <= 20_000_000, `MAX_TRIANGLES is ${MAX_TRIANGLES} - that is not a ceiling`);
 });
 
 // ---------------------------------------------------------------------------

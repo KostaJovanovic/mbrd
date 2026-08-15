@@ -251,12 +251,19 @@ test('the look is restored before first paint, from the same bytes as the app', 
   const mine = [...html.replace(/\r\n?/g, '\n').matchAll(INLINE)].map(m => m[1]);
   const theirs = [...read(join(WEB, 'index.html')).replace(/\r\n?/g, '\n').matchAll(INLINE)]
     .map(m => m[1]);
-  assert.ok(mine.some(s => theirs.includes(s)),
-    'patch.html carries no script that index.html also carries - the pre-paint '
-    + 'restore has been rewritten rather than copied, so the page will flash the '
-    + 'default look and the CSP hash is now its own');
-  assert.ok(mine.some(s => s.includes('data-whimsy') || s.includes('dataset.whimsy')),
-    'nothing on the page puts the saved whimsy level on <html>');
+  // The pre-paint restore in particular, and byte for byte. `some(s =>
+  // theirs.includes(s))` asked only that *one* inline script be shared, and the
+  // page carries several - so the restore could be rewritten, mis-hashed and
+  // flashing the default look while a different shared script kept this green.
+  const restore = s => s.includes('data-whimsy') || s.includes('dataset.whimsy');
+  const ours = mine.filter(restore);
+  const source = theirs.filter(restore);
+  assert.equal(ours.length, 1, 'nothing on the page puts the saved whimsy level on <html>');
+  assert.equal(source.length, 1, 'index.html no longer has one pre-paint restore');
+  assert.equal(ours[0], source[0],
+    'the pre-paint restore has been rewritten rather than copied, so the page '
+    + 'will flash the default look and the CSP hash is now its own');
+  assert.ok(mine.some(s => theirs.includes(s)), 'and the copy is a copy');
 });
 
 test('the sidebar is whole: the shell for it, and the tabs it fills at runtime', () => {

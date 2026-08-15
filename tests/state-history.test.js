@@ -221,6 +221,10 @@ test('the weight limit evicts the oldest, and never the last', async () => {
   // The oldest went; walking back must not reach it.
   const seen = [];
   for (let i = 0; i < 4; i++) { if (historyState().undo) seen.push(historyState().undo); undo(); }
+  // An empty walk contains nothing, 'first' included, so `!seen.includes(...)`
+  // was satisfied by an eviction that took the whole stack - which is the other
+  // way this can go wrong and the worse one.
+  assert.ok(seen.length > 0, 'the eviction emptied the stack rather than trimming it');
   assert.ok(!seen.includes('first'), 'the oldest was evicted');
   clearHistory();
 });

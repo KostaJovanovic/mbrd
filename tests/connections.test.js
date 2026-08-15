@@ -158,7 +158,10 @@ test('a connection to a card that is gone for good is collected on the way out',
   board.trash = [];
   assert.equal(board.connections.length, 1, 'still there while the app is running');
   assert.deepEqual(serializeBoard().connections, [], 'and collected at the file boundary');
-  assert.ok(a);
+  // `assert.ok(a)` stood here, which is true of any object the fixture returns.
+  // The half worth asserting is that collecting the dangling connection did not
+  // take the surviving end with it.
+  assert.ok(board.items.some(i => i.id === a.id), 'the end that is still there stayed');
 });
 
 test('connections round-trip through a file', () => {
