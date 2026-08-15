@@ -119,7 +119,7 @@ import {
   MOBILE_COLUMNS, MOBILE_COLUMN_OPTIONS, MOBILE_TOP_ROWS, MOBILE_MIN_ROWS,
   MOBILE_BOTTOM_ROWS, MOBILE_APPEARANCE_VARS, cleanBoardTitleDraft, cleanBoardTitle,
   defaultBoardTitle, isDefaultTitle, mobileColumnCount, board, TITLE_ID, byId,
-  topZ, makeItem, isFurniture, isContent, isJoinEnd,
+  topZ, makeItem, isFurniture, isContent, isJoinEnd, trackTitle,
 } from './board-model.ts';
 import {
   cloneSettings, layoutSettingsOf, dropIdIndex,
@@ -220,7 +220,7 @@ export {
   MOBILE_COLUMNS, MOBILE_COLUMN_OPTIONS, MOBILE_TOP_ROWS, MOBILE_MIN_ROWS,
   MOBILE_BOTTOM_ROWS, MOBILE_APPEARANCE_VARS, cleanBoardTitleDraft, cleanBoardTitle,
   defaultBoardTitle, isDefaultTitle, mobileColumnCount, board, TITLE_ID, byId,
-  topZ, makeItem, isFurniture, isContent, isJoinEnd,
+  topZ, makeItem, isFurniture, isContent, isJoinEnd, trackTitle,
 };
 
 

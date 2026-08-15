@@ -15,7 +15,7 @@ import {
 import { latticeBox } from '../web/assets/js/geometry.ts';
 import {
   gridStep, boardGridStep, inkBox, MOBILE_GRID_EDGE_CLEARANCE,
-  MIN_PX, MAX_PX, MIN_PX_TOUCH, MAX_PX_TOUCH,
+  MIN_PX, MAX_PX, MIN_PX_TOUCH, MAX_PX_TOUCH, MAJOR,
 } from '../web/assets/js/canvas/grid.ts';
 import { farZoom, onSmallScreen, stillZoom, thumbZoom, MIN_ZOOM, MAX_ZOOM } from '../web/assets/js/canvas/viewport.ts';
 import { item } from './helpers.js';
@@ -425,9 +425,13 @@ test('two grid dots are never closer than 1.41 cm under a finger', () => {
     `${(MIN_PX_TOUCH * cmPerPx).toFixed(3)} cm is under the floor`);
   // And it really is a rise: the desktop band would have drawn them closer.
   assert.ok(MIN_PX_TOUCH > MIN_PX);
-  // The factor of four between the ends is MAJOR, and both bands keep it - so
-  // the minor lattice at its tightest is exactly as dense as the major lattice
-  // at its loosest, and the board never gets tighter than the tier below it.
+  // The factor between the ends is MAJOR, and both bands keep it - so the minor
+  // lattice at its tightest is exactly as dense as the major lattice at its
+  // loosest, and the board never gets tighter than the tier below it. Asserted
+  // against MAJOR itself now that it is exported, rather than against the four
+  // it happens to be: the sentence above is the rule, and a band that kept a
+  // factor of four after MAJOR became five would be two grids.
+  assert.equal(MAX_PX / MIN_PX, MAJOR);
   assert.equal(MAX_PX / MIN_PX, MAX_PX_TOUCH / MIN_PX_TOUCH);
 });
 
