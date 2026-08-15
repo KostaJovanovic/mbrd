@@ -41,8 +41,42 @@ import { join } from 'node:path';
  */
 const CEILING = 0;
 
+/**
+ * The file's leading trivia: every comment and blank line before the first
+ * thing tsc would call code.
+ *
+ * This used to be `read(...).startsWith('// @ts-nocheck')`, which only ever saw
+ * the pragma on byte 0 - and tsc honours it anywhere in a file's leading
+ * comments. Every module in this codebase opens with a header comment arguing
+ * its own design, so the house style was itself the bypass: put the pragma on
+ * line two and the module is excused from strict while staying invisible to
+ * both ratchets below.
+ *
+ * Matched the way tsc matches it - the pragma has to *open* the comment text,
+ * so `// @ts-nocheck` counts and `// under @ts-nocheck, which hides the errors`
+ * does not. Three module headers here discuss the pragma in prose; a plain
+ * substring search would call all three unchecked and the guard would be
+ * shouting about files that are fine.
+ */
+const leadingTrivia = src => {
+  let i = 0;
+  for (;;) {
+    while (i < src.length && /\s/.test(src[i])) i++;
+    if (src.startsWith('//', i)) {
+      const nl = src.indexOf('\n', i);
+      i = nl === -1 ? src.length : nl + 1;
+    } else if (src.startsWith('/*', i)) {
+      const end = src.indexOf('*/', i + 2);
+      if (end === -1) return src;
+      i = end + 2;
+    } else return src.slice(0, i);
+  }
+};
+
+const PRAGMA = /^[ \t]*(?:\/\/\/?|\/\*+|\*)?[ \t]*@ts-nocheck\b/m;
+
 const unchecked = walk(JS, ['.ts'])
-  .filter(rel => read(join(WEB, rel)).startsWith('// @ts-nocheck'));
+  .filter(rel => PRAGMA.test(leadingTrivia(read(join(WEB, rel)))));
 
 test('the unchecked list is no longer than it was', () => {
   assert.ok(unchecked.length <= CEILING,
@@ -52,13 +86,20 @@ test('the unchecked list is no longer than it was', () => {
 
 test('the ceiling is not left standing above the real count', () => {
   // The other direction, and the half that makes this a ratchet rather than a
-  // limit: convert five modules without lowering CEILING and the number stops
-  // describing anything. Kept as a range rather than an equality so that
-  // converting a module is one edit and not two - but a gap this wide means the
-  // ledger has drifted.
-  assert.ok(CEILING - unchecked.length < 5,
-    `CEILING is ${CEILING} but only ${unchecked.length} modules are unchecked - ` +
-    `lower it to ${unchecked.length} in the commit that converted them.`);
+  // limit.
+  //
+  // It read `CEILING - unchecked.length < 5` while the migration was running,
+  // which stopped meaning anything the moment CEILING reached 0: the test above
+  // already forces the count to 0, so `0 - 0 < 5` could not fail. At zero the
+  // ratchet is finished and the only thing left to guard is the number itself,
+  // so that is what this asserts - a raise has to be argued for in the header
+  // above rather than typed into the constant.
+  assert.equal(CEILING, 0,
+    `CEILING is ${CEILING}. Every module in web/assets/js is checked under `
+    + 'strict; raising this is new debt, and the header above is where the case '
+    + 'for it goes.');
+  assert.equal(unchecked.length, CEILING,
+    `${unchecked.length} modules are unchecked but CEILING is ${CEILING}.`);
 });
 
 test('nothing claims the pragma without being a module', () => {

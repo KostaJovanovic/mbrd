@@ -97,65 +97,92 @@ test('incompressible data is stored, not deflated', async () => {
 // Malformed and hostile archives
 // ---------------------------------------------------------------------------
 
-const rejects = (promise, why) => assert.rejects(promise, /.+/, why);
+/**
+ * Refused, and refused by the guard we meant.
+ *
+ * This was `assert.rejects(promise, /.+/)` - satisfied by any error at all with
+ * a non-empty message. Thirteen of the fifteen archives below routed through it,
+ * so a TypeError out of a half-broken reader read as "rejects a CRC mismatch"
+ * and "rejects a decompression bomb" identically to the guard firing. Every
+ * caller now names the sentence its fixture is supposed to earn, which is also
+ * the only way the file records *which* of the twenty-odd refusals in zip.ts
+ * each fixture is here to exercise.
+ */
+const rejects = (promise, message, why) => assert.rejects(promise, message, why);
 
 test('rejects something that is not a ZIP at all', async () => {
-  await rejects(readZip(enc.encode('this is a text file, not a board')));
+  await rejects(readZip(enc.encode('this is a text file, not a board')),
+    /no end-of-central-directory record/);
 });
 
 test('rejects an archive too short to hold a directory', async () => {
-  await rejects(readZip(new Uint8Array(8)));
+  await rejects(readZip(new Uint8Array(8)), /too short to hold a directory/);
 });
 
 test('rejects a truncated archive', async () => {
+  // Keep the directory, lose the payload it points at - which the old fixture
+  // said it did and did not do. It sliced at `cdAt(archive) - 500`, taking the
+  // central directory and the EOCD with it, so it landed on the same "no
+  // end-of-central-directory record" branch as the two tests above and left
+  // zip.ts's truncation guard - the one thing between a hostile .mbrd and an
+  // out-of-range read - covered only by the forged-csize fixture below.
+  //
+  // So: splice 500 bytes out of the payload and pull the trailer up to meet it.
+  // The directory survives intact and still declares 2000 bytes of entry data
+  // that are no longer in the file.
   const archive = await buf([{ name: 'a.bin', data: bytes(2000), compress: false }]);
-  // Keep the directory, lose the payload it points at.
-  const cut = archive.slice(0, cdAt(archive) - 500);
-  await rejects(readZip(cut));
+  const cd = cdAt(archive);
+  const CUT = 500;
+  const cut = new Uint8Array(archive.length - CUT);
+  cut.set(archive.subarray(0, cd - CUT), 0);
+  cut.set(archive.subarray(cd), cd - CUT);
+  put32(cut, eocdAt(cut) + 16, cd - CUT);
+  await rejects(readZip(cut), /the data for "a\.bin" points past the end of the file/);
 });
 
 test('rejects a central directory pointing outside the file', async () => {
   const archive = await buf([{ name: 'a.bin', data: bytes(500) }]);
   put32(archive, eocdAt(archive) + 16, 0xfffff0);
-  await rejects(readZip(archive));
+  await rejects(readZip(archive), /central directory/);
 });
 
 test('rejects a local-header offset pointing outside the file', async () => {
   const archive = await buf([{ name: 'a.bin', data: bytes(500) }]);
   put32(archive, cdAt(archive) + 42, 0xfffff0);
-  await rejects(readZip(archive));
+  await rejects(readZip(archive), /the header for "a\.bin" points past the end of the file/);
 });
 
 test('rejects an entry whose data runs past the end', async () => {
   const archive = await buf([{ name: 'a.bin', data: bytes(500), compress: false }]);
   put32(archive, cdAt(archive) + 20, 0xffff);      // csize
   put32(archive, cdAt(archive) + 24, 0xffff);      // usize, kept equal for STORE
-  await rejects(readZip(archive));
+  await rejects(readZip(archive), /the data for "a\.bin" points past the end of the file/);
 });
 
 test('rejects a stored entry whose two sizes disagree', async () => {
   const archive = await buf([{ name: 'a.bin', data: bytes(500), compress: false }]);
   put32(archive, cdAt(archive) + 24, 400);         // usize != csize
-  await rejects(readZip(archive));
+  await rejects(readZip(archive), /stored, but its two sizes disagree/);
 });
 
 test('rejects a CRC mismatch', async () => {
   const archive = await buf([{ name: 'a.bin', data: bytes(500), compress: false }]);
   put32(archive, cdAt(archive) + 16, 0xdeadbeef);
-  await rejects(readZip(archive), 'a damaged photo must not open silently');
+  await rejects(readZip(archive), /damaged \(checksum mismatch\)/,
+    'a damaged photo must not open silently');
 });
 
 test('rejects a deflated entry that inflates to the wrong size', async () => {
   const data = enc.encode('x'.repeat(4000));
   const archive = await buf([{ name: 'a.txt', data, compress: true }]);
   put32(archive, cdAt(archive) + 24, 3999);        // declared usize is now a lie
-  await rejects(readZip(archive));
+  await rejects(readZip(archive), /inflates to more than the 3999 bytes it declares/);
 });
 
 test('rejects an unsupported compression method', async () => {
   const archive = await buf([{ name: 'a.bin', data: bytes(500) }]);
   put16(archive, cdAt(archive) + 10, 12);          // bzip2
-  await rejects(readZip(archive));
+  await rejects(readZip(archive), /uses unsupported compression method 12/);
 });
 
 test('rejects duplicate entry names', async () => {
@@ -165,13 +192,13 @@ test('rejects duplicate entry names', async () => {
     { name: 'board.json', data: enc.encode('{"items":[]}') },
     { name: 'board.json', data: enc.encode('{"items":[{"evil":true}]}') },
   ]);
-  await rejects(readZip(archive));
+  await rejects(readZip(archive), /"board\.json" appears twice/);
 });
 
 test('rejects an absurd entry count', async () => {
   const archive = await buf([{ name: 'a.bin', data: bytes(100) }]);
   put16(archive, eocdAt(archive) + 10, 60000);
-  await rejects(readZip(archive));
+  await rejects(readZip(archive), /declares too many entries \(60000\)|central directory/);
 });
 
 test('rejects a decompression bomb by its declared ratio', async () => {
@@ -181,7 +208,7 @@ test('rejects a decompression bomb by its declared ratio', async () => {
   const data = zeros(8 * 1024 * 1024);
   const archive = await buf([{ name: 'bomb', data, compress: true }]);
   assert.ok(archive.length < 64 * 1024, 'fixture is not actually a bomb');
-  await rejects(readZip(archive));
+  await rejects(readZip(archive), /expands \d+x - refusing to unpack it/);
 });
 
 test('rejects a bomb that lies about its uncompressed size', async () => {
@@ -209,7 +236,7 @@ test('the inflate budget is the declared size, not a round number', async () => 
   const archive = await buf([{ name: 'board.json', data, compress: true }]);
   const cd = cdAt(archive);
   put32(archive, cd + 24, data.length - 1);
-  await rejects(readZip(archive));
+  await rejects(readZip(archive), new RegExp(`inflates to more than the ${data.length - 1} bytes it declares`));
 });
 
 test('a big but honest entry is still accepted', async () => {

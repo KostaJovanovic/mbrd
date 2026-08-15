@@ -67,10 +67,21 @@ test('a region keeps its name at every zoom, plate and label together', () => {
   // And each sits *below* the rule it exempts, which is the whole of why it wins:
   // the two selectors in each pair do not weigh the same, but the label pair does
   // once :not([hidden]) is counted, and document order is what settles a tie.
-  assert.ok(css.indexOf('#world.zoom-far .item-bar { display: none; }')
-    < css.indexOf('#world.zoom-far .item[data-type="fence"] .item-bar'),
+  //
+  // Both halves have to be found before they can be ordered. `indexOf(a) <
+  // indexOf(b)` is true for free when `a` is absent - -1 is below everything -
+  // so deleting the rule being exempted made this pass, which is the one edit
+  // that actually breaks the pair.
+  const before = (a, b, why) => {
+    const i = css.indexOf(a), j = css.indexOf(b);
+    assert.notEqual(i, -1, `the rule being exempted is gone: ${a}`);
+    assert.notEqual(j, -1, `the exemption is gone: ${b}`);
+    assert.ok(i < j, why);
+  };
+  before('#world.zoom-far .item-bar { display: none; }',
+    '#world.zoom-far .item[data-type="fence"] .item-bar',
     'the exemption is above the rule it exempts and loses the tie');
-  assert.ok(css.indexOf('#world.zoom-far .item:not(.is-editing) .item-label')
-    < css.indexOf('#world.zoom-far .item[data-type="fence"] .item-label'),
+  before('#world.zoom-far .item:not(.is-editing) .item-label',
+    '#world.zoom-far .item[data-type="fence"] .item-label',
     'the label exemption is above the rule it exempts');
 });
