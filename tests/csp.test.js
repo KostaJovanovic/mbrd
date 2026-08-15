@@ -240,6 +240,20 @@ test('nothing in web/ writes a style attribute', () => {
   for (const rel of walk(JS, ['.ts', '.js'])) {
     const src = read(join(WEB, rel));
     if (/setAttribute\(\s*['"]style['"]/.test(src)) offenders.push(`${rel} (setAttribute)`);
+    // The half the comment above promised and the check did not do. Scanning
+    // only for setAttribute left the shape it actually names - a template
+    // string interpolating into style="..." - completely uncovered, and
+    // innerHTML and insertAdjacentHTML are live in canvas/item-dom.ts,
+    // canvas/transport.ts and canvas/video.ts. Such an attribute is legal
+    // JavaScript, reaches the DOM, and is then dropped by style-src on the
+    // deploy and nowhere else, so it works in front of whoever wrote it.
+    //
+    // Comments come off first: this rule is discussed in prose in several
+    // module headers. Block comments in full, line comments only where the //
+    // opens the line, so that a 'https://...' inside a string literal survives
+    // for the connect-src check further down.
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+    if (/\bstyle\s*=\s*\\?["']/.test(code)) offenders.push(`${rel} (style= in a string)`);
   }
   assert.deepEqual(offenders, [],
     `these write a style attribute, which style-src will refuse: ${offenders.join(', ')}`);
@@ -298,7 +312,13 @@ test('connect-src carries the one host the app fetches from', () => {
   // optimize/media.ts is the only outbound request mbrd makes on its own. The
   // check is on the host rather than the whole URL because that is all CSP
   // matches on, and the version in the path is expected to move.
-  const core = /https:\/\/([^/'"]+)\//.exec(read(join(JS, 'optimize', 'media.ts')));
+  //
+  // Matched only where the URL *opens a string literal*. It used to be the
+  // first `https://` anywhere in the file, which a sentence of prose in the
+  // module header could retarget - the check would then assert connect-src
+  // against a host the code never fetches, and pass while the real one was
+  // missing. A quote in front of it is what makes it code.
+  const core = /['"`]https:\/\/([^/'"`]+)\//.exec(read(join(JS, 'optimize', 'media.ts')));
   assert.ok(core, 'no absolute URL in optimize/media.ts - has the core moved?');
   const sources = directives.get('connect-src') ?? [];
   assert.ok(sources.includes(`https://${core[1]}`),

@@ -20,9 +20,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { join } from 'node:path';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
 
 import { ROOT, WEB, read } from './helpers.js';
+import { COMMIT_COUNT, VERSION } from '../web/assets/js/version.js';
 
 const SOURCE = join(ROOT, 'patch-notes.md');
 const source = read(SOURCE);
@@ -120,6 +123,20 @@ test('the spans are contiguous, and they cover every commit from the first', () 
         ? ` - 0.${prevHigh + 1}${low - prevHigh > 2 ? ` to 0.${low - 1}` : ''} is in no release`
         : ' - the two overlap'));
   }
+
+  // And the top of the ladder, which is the half that was missing. Contiguity
+  // from 0 only proves the record has no holes in it; it says nothing about
+  // whether the record has caught up. CLAUDE.md states the rule as the high end
+  // of the newest span equalling VERSION, and with only the bottom asserted the
+  // suite stayed green through a four-commit gap - the record reading complete
+  // and being four releases short, which is the failure the contiguity test
+  // above was written for in the first place.
+  const [newestName, , newestHigh] = spans.at(-1);
+  assert.equal(`0.${newestHigh}`, VERSION,
+    `version.js is at ${VERSION} and the newest release "${newestName}" tops out at 0.${newestHigh}`
+    + (COMMIT_COUNT > newestHigh
+      ? ` - 0.${newestHigh + 1}${COMMIT_COUNT - newestHigh > 1 ? ` to ${VERSION}` : ''} is described by no release`
+      : ' - the record is ahead of the app'));
 });
 
 test('every date is written the one way', () => {
@@ -329,9 +346,19 @@ test('what is committed is what the generator writes', () => {
   //
   // Run for real rather than reimplemented: a second copy of the generator in
   // here would only prove the two copies agree.
-  const before = read(join(WEB, 'patch.html'));
-  execFileSync(process.execPath, [join(ROOT, 'tools', 'gen-patch-page.mjs')], { cwd: ROOT });
-  assert.equal(before, read(join(WEB, 'patch.html')),
-    'web/patch.html is not what the generator produces - it is built from '
-    + 'index.html and patch-notes.md, so run `node tools/gen-patch-page.mjs`');
+  //
+  // Written to a temp path and compared, never over web/patch.html. Running the
+  // generator in place made this test repair the thing it was inspecting: a
+  // drifted page failed once, was silently rewritten by the failing run, and
+  // passed forever after, while CI on a fresh checkout kept reddening. It also
+  // meant `npm test` was not read-only and dirtied the tree on every run.
+  const out = join(mkdtempSync(join(tmpdir(), 'mbrd-patch-')), 'patch.html');
+  try {
+    execFileSync(process.execPath, [join(ROOT, 'tools', 'gen-patch-page.mjs'), out], { cwd: ROOT });
+    assert.equal(read(join(WEB, 'patch.html')), read(out),
+      'web/patch.html is not what the generator produces - it is built from '
+      + 'index.html and patch-notes.md, so run `node tools/gen-patch-page.mjs`');
+  } finally {
+    rmSync(dirname(out), { recursive: true, force: true });
+  }
 });

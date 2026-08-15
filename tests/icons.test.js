@@ -28,7 +28,15 @@ const html = read(join(WEB, 'index.html'));
 const menu = read(join(JS, 'ui', 'menu.ts'));
 
 /** Every id the sprite defines. */
-const defined = new Set([...sprite.matchAll(/<symbol\s+id="([^"]+)"/g)].map(m => m[1]));
+// Attribute order is the author's choice, not the format's - so this reads the
+// whole tag and picks the id out of it. Requiring id to come first made a
+// `<symbol viewBox="..." id="...">` invisible to every check in this file at
+// once, including the two directions below: an unseen symbol is neither missing
+// nor an orphan.
+const defined = new Set(
+  [...sprite.matchAll(/<symbol\b([^>]*)>/g)]
+    .map(m => (/\bid="([^"]+)"/.exec(m[1]) ?? [])[1])
+    .filter(Boolean));
 
 /**
  * Every icon the app asks for, with where it asked.
@@ -95,9 +103,20 @@ test('every symbol is drawn to the same box', () => {
   // live on .ico in base.css, so they are written once; the viewBox cannot be,
   // and a symbol drawn in a different one is scaled to the wrapper's 16px and
   // arrives at a weight nothing else in the set is at.
-  const boxes = [...sprite.matchAll(/<symbol\s+id="([^"]+)"\s+viewBox="([^"]+)"/g)];
-  assert.equal(boxes.length, defined.size, 'a symbol without a viewBox');
-  for (const [, id, box] of boxes) {
+  //
+  // Attributes read in either order. The regex used to require id before
+  // viewBox, so `<symbol viewBox="0 0 24 24" id="i-x">` - the order half the
+  // drawing tools emit - was invisible to this check and to the two below it.
+  // The count assertion hid it: a symbol the regex could not see was a symbol
+  // it did not count either.
+  const symbols = [...sprite.matchAll(/<symbol\b([^>]*)>/g)]
+    .map(([, attrs]) => ({
+      id: (/\bid="([^"]+)"/.exec(attrs) ?? [])[1],
+      box: (/\bviewBox="([^"]+)"/.exec(attrs) ?? [])[1],
+    }));
+  assert.equal(symbols.length, defined.size, 'a symbol the attribute scan cannot see');
+  for (const { id, box } of symbols) {
+    assert.ok(id, `a symbol with no id: viewBox ${box}`);
     assert.equal(box, '0 0 16 16', `${id} is drawn in ${box}`);
   }
 });
@@ -115,7 +134,7 @@ test('no icon is drawn twice', () => {
   // drawings of one thing that will drift, which is the state index.html was in
   // before the sprite existed - three close crosses and two pens, each a few
   // characters different from its twin.
-  const shapes = [...sprite.matchAll(/<symbol\s+id="([^"]+)"[^>]*>([\s\S]*?)<\/symbol>/g)]
+  const shapes = [...sprite.matchAll(/<symbol\b[^>]*\bid="([^"]+)"[^>]*>([\s\S]*?)<\/symbol>/g)]
     .map(([, id, body]) => [id, body.replace(/<!--[\s\S]*?-->/g, '').replace(/\s+/g, ' ').trim()]);
   const seen = new Map();
   for (const [id, body] of shapes) {
@@ -133,11 +152,39 @@ test('the right-click menu offers an icon on every entry', () => {
   // Counted off `label:`, which is what makes an entry an entry. The two are
   // written on the same object, so an entry that gained a label without an icon
   // shows up here as a count that does not match.
-  const labels = menu.match(/\blabel:/g) ?? [];
-  const icons = menu.match(/\bicon: '/g) ?? [];
-  assert.ok(labels.length > 25, `only ${labels.length} entries found - has menu.js moved?`);
-  assert.equal(icons.length, labels.length,
-    `${labels.length} entries but ${icons.length} icons`);
+  // Checked per entry rather than by counting. Two totals compared is a balance
+  // that balances: one entry losing its icon while another gains a second key
+  // leaves the sums equal and the menu with a hole in the column. So each
+  // `label:` is walked out to the object literal that holds it, and that object
+  // is asked for its own icon.
+  const labels = [...menu.matchAll(/\blabel:/g)];
+  assert.ok(labels.length > 25, `only ${labels.length} entries found - has menu.ts moved?`);
+
+  /** The `{ ... }` that immediately encloses this offset. */
+  const enclosing = at => {
+    let depth = 0, open = -1;
+    for (let i = at; i >= 0; i--) {
+      if (menu[i] === '}') depth++;
+      else if (menu[i] === '{') { if (depth === 0) { open = i; break; } depth--; }
+    }
+    if (open === -1) return null;
+    depth = 0;
+    for (let i = open; i < menu.length; i++) {
+      if (menu[i] === '{') depth++;
+      else if (menu[i] === '}' && --depth === 0) return menu.slice(open, i + 1);
+    }
+    return null;
+  };
+
+  const bare = [];
+  for (const m of labels) {
+    const entry = enclosing(m.index);
+    assert.ok(entry, `could not find the object literal around menu.ts:${m.index}`);
+    if (!/\bicon:\s*'/.test(entry)) {
+      bare.push((/\blabel:\s*'([^']*)'/.exec(entry) ?? [, `at offset ${m.index}`])[1]);
+    }
+  }
+  assert.deepEqual(bare, [], `these menu entries draw a row with no icon: ${bare.join(', ')}`);
 });
 
 test('the padlock keeps its switch outside the shadow tree', () => {

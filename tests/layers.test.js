@@ -46,51 +46,81 @@ import { JS, walk } from './helpers.js';
 // under web/assets/js is gone this goes back to one extension.
 const modules = walk(JS, ['.js', '.ts'], JS);
 
+/** Resolve one './x' or '../y' specifier against the module that wrote it. */
+function resolveSpec(mod, spec) {
+  const dir = mod.includes('/') ? mod.slice(0, mod.lastIndexOf('/')) : '';
+  const parts = (dir ? dir.split('/') : []);
+  for (const seg of spec.split('/')) {
+    if (seg === '.' || seg === '') continue;
+    if (seg === '..') parts.pop();
+    else parts.push(seg);
+  }
+  let target = parts.join('/');
+  // Specifiers in this codebase carry the real extension of the file they
+  // name - './foo.ts' for a converted module, './foo.js' for one not yet -
+  // because that is what lets Node run the suite with nothing installed
+  // (tsconfig.json says why). The append below is the extensionless case,
+  // which should not occur and is kept so a stray one resolves rather than
+  // vanishing from the graph unnoticed.
+  if (!/\.(js|ts)$/.test(target)) target += '.js';
+  return target;
+}
+
 /** Static import specifiers in one module, resolved to module-relative paths. */
 function importsOf(mod) {
   const src = readFileSync(join(JS, mod), 'utf8');
-  const dir = mod.includes('/') ? mod.slice(0, mod.lastIndexOf('/')) : '';
   const out = [];
   // `import ... from './x'`, `export ... from './x'`, and side-effect
-  // `import './x'`. Dynamic import() is intentionally not counted: it is the
-  // seam the layering uses on purpose (optimize/, worst-case media paths).
+  // `import './x'`. Dynamic import() is counted separately, below.
   const withFrom = /(?:^|\n)\s*(?:import|export)\b[^;]*?\bfrom\s*['"](\.[^'"]+)['"]/g;
   const bare = /(?:^|\n)\s*import\s*['"](\.[^'"]+)['"]/g;
   for (const re of [withFrom, bare]) {
     let m;
-    while ((m = re.exec(src))) {
-      const spec = m[1];
-      // Resolve './x' and '../y' against this module's directory.
-      const parts = (dir ? dir.split('/') : []);
-      for (const seg of spec.split('/')) {
-        if (seg === '.' || seg === '') continue;
-        if (seg === '..') parts.pop();
-        else parts.push(seg);
-      }
-      let target = parts.join('/');
-      // Specifiers in this codebase carry the real extension of the file they
-      // name - './foo.ts' for a converted module, './foo.js' for one not yet -
-      // because that is what lets Node run the suite with nothing installed
-      // (tsconfig.json says why). The append below is the extensionless case,
-      // which should not occur and is kept so a stray one resolves rather than
-      // vanishing from the graph unnoticed.
-      if (!/\.(js|ts)$/.test(target)) target += '.js';
-      out.push(target);
-    }
+    while ((m = re.exec(src))) out.push(resolveSpec(mod, m[1]));
   }
   return out;
 }
 
+/**
+ * Dynamic `import('./x')` specifiers, kept apart from the static ones.
+ *
+ * They are excluded from the cycle check on purpose - a dynamic import is the
+ * seam that legitimately breaks a cycle, which is how optimize/ and the
+ * worst-case media paths hang off the graph without inverting it. What they were
+ * *also* excluded from was the direction check, and that part was a hole: the
+ * rules below are about which way an arrow points, and an arrow does not stop
+ * pointing that way for being deferred to a click. An inversion routed through
+ * `await import()` was invisible to this file entirely.
+ *
+ * So they are ranked by the same `inverted()` and carry their own ledger. Being
+ * a deliberate seam is a thing to write down, not a thing to be exempt from.
+ */
+function dynamicImportsOf(mod) {
+  const src = readFileSync(join(JS, mod), 'utf8');
+  const out = [];
+  const re = /\bimport\s*\(\s*['"](\.[^'"]+)['"]/g;
+  let m;
+  while ((m = re.exec(src))) out.push(resolveSpec(mod, m[1]));
+  return out;
+}
+
 const edges = [];
+const dynamicEdges = [];
 for (const mod of modules) {
   for (const target of importsOf(mod)) edges.push([mod, target]);
+  for (const target of dynamicImportsOf(mod)) dynamicEdges.push([mod, target]);
 }
 
 test('every import resolves to a module that exists', () => {
   // A parser this small is only trustworthy if its targets are real files;
   // this also catches a rename that left a dangling specifier.
+  //
+  // Dynamic specifiers are checked here too, and they are the ones that most
+  // need it: esbuild resolves them in CI's build leg, which reports after the
+  // push, and CLAUDE.md's warning about case-sensitive paths on the deployed
+  // host applies to them exactly as much.
   const present = new Set(modules);
-  const dangling = edges.filter(([, to]) => !present.has(to));
+  const dangling = [...edges, ...dynamicEdges].filter(([, to]) => !present.has(to));
   assert.deepEqual(dangling.map(e => e.join(' -> ')), [], 'import target not found on disk');
 });
 
@@ -329,4 +359,40 @@ test('no line of debt has already been paid off', () => {
   const present = new Set(edges.map(([from, to]) => `${from} -> ${to}`));
   const stale = [...DEBT.keys()].filter(e => !present.has(e));
   assert.deepEqual(stale, [], 'listed as debt but the import is already gone');
+});
+
+/**
+ * The same ledger for edges taken through `await import()`.
+ *
+ * Empty, and that is the point of writing it now: there are eight literal
+ * dynamic imports in the tree and not one of them inverts, so this costs
+ * nothing today and cannot be added to quietly tomorrow. It is a second map
+ * rather than entries in DEBT because the two are different admissions - a
+ * static inversion is a wire that should not exist, and a dynamic one is a wire
+ * somebody argued was worth deferring.
+ */
+const DYNAMIC_DEBT = new Map([]);
+
+test('no layering inversion hides behind a dynamic import', () => {
+  const found = dynamicEdges
+    .filter(([from, to]) => inverted(from, to))
+    .map(([from, to]) => `${from} -> ${to}`)
+    .sort();
+  assert.deepEqual(found, [...DYNAMIC_DEBT.keys()].sort());
+});
+
+test('no line of dynamic debt has already been paid off', () => {
+  const present = new Set(dynamicEdges.map(([from, to]) => `${from} -> ${to}`));
+  const stale = [...DYNAMIC_DEBT.keys()].filter(e => !present.has(e));
+  assert.deepEqual(stale, [], 'listed as debt but the dynamic import is already gone');
+});
+
+test('the dynamic walk found the seams it is supposed to be watching', () => {
+  // The guard on the guard. A regex that matched nothing would make both tests
+  // above pass while proving nothing at all - the same failure mode the module
+  // walk in ts-debt.test.js has its own guard for. Eight is what the tree
+  // carries; the number is here so that removing the last dynamic import is a
+  // deliberate edit rather than a silent loss of coverage.
+  assert.ok(dynamicEdges.length >= 8,
+    `the dynamic import walk found ${dynamicEdges.length} edges - the tree has at least eight`);
 });

@@ -43,11 +43,76 @@ test('every module is listed as testable or as a DOM entry point', () => {
   for (const m of DOM_ENTRY_POINTS) {
     assert.ok(modules.includes(m), `${m} is listed as an entry point but does not exist`);
   }
+  // The list is the rule's only escape hatch, so its length is part of the rule.
+  // Without this, the way to get an import-time `document` past this file is to
+  // add a fourth name here - a one-line edit that reads like housekeeping and
+  // silently exempts a module from the thing that makes the suite possible.
+  assert.equal(DOM_ENTRY_POINTS.size, 3,
+    'there are three documented DOM entry points; a fourth needs the argument '
+    + 'for it written into the comment above, not just the name added');
 });
+
+/**
+ * Browser globals that Node also defines.
+ *
+ * The import below used to be the whole test: a module that read `document` at
+ * import time threw, and that was the check. But the rule is about the *shape*
+ * of a module, not about which globals this particular runtime happens to lack,
+ * and Node 22 defines `navigator`, `crypto`, `performance`, `Blob` and `File`.
+ * So a module doing `const IS_SAFARI = /safari/i.test(navigator.userAgent)` at
+ * module scope imported perfectly cleanly here while being exactly the thing
+ * the header above forbids - and would then bake a wrong answer into a worker,
+ * or read a stale one after a runtime swap.
+ *
+ * These are recorded rather than thrown from. A getter that throws leaves the
+ * module half-evaluated and reports the symptom two frames from the cause; a
+ * getter that notes the name lets the module finish and names it directly.
+ */
+const NODE_PROVIDES = ['navigator', 'crypto', 'performance', 'Blob', 'File'];
+
+function watchGlobals(touched) {
+  const saved = [];
+  for (const name of NODE_PROVIDES) {
+    const desc = Object.getOwnPropertyDescriptor(globalThis, name);
+    if (!desc || !desc.configurable) continue;
+    saved.push([name, desc]);
+    Object.defineProperty(globalThis, name, {
+      configurable: true,
+      enumerable: desc.enumerable,
+      get() {
+        touched.add(name);
+        return desc.get ? desc.get.call(globalThis) : desc.value;
+      },
+    });
+  }
+  return () => { for (const [name, desc] of saved) Object.defineProperty(globalThis, name, desc); };
+}
 
 for (const mod of modules) {
   if (DOM_ENTRY_POINTS.has(mod)) continue;
   test(`${mod} imports without a browser`, async () => {
-    await import(pathToFileURL(join(JS, mod)).href);
+    const touched = new Set();
+    const restore = watchGlobals(touched);
+    try {
+      await import(pathToFileURL(join(JS, mod)).href);
+    } finally {
+      restore();
+    }
+    assert.deepEqual([...touched], [],
+      `${mod} reads ${[...touched].join(', ')} while its body runs. Node defines `
+      + 'these, so the import succeeds and the module is still browser-only at '
+      + 'load. Move the read into a function or an init*().');
   });
 }
+
+test('the worker parses, though nothing can import it', async () => {
+  // optimize/media-worker.js is skipped by the loop above because it is a
+  // classic worker and cannot be imported at all, and it is excluded from the
+  // bundle - so until now the only thing that ever looked at its syntax was
+  // CI's parse leg, which reports after the push and after the deploy has
+  // started. Parsing it here costs a millisecond and moves that to `npm test`.
+  const { Script } = await import('node:vm');
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(join(JS, 'optimize', 'media-worker.js'), 'utf8');
+  assert.doesNotThrow(() => new Script(src, { filename: 'media-worker.js' }));
+});

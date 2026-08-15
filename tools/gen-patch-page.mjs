@@ -45,13 +45,17 @@
 // is the same promise the old design needed a freeze to make.
 
 import { readFileSync, writeFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SOURCE = join(ROOT, 'patch-notes.md');
 const SHELL = join(ROOT, 'web', 'index.html');
-const OUT = join(ROOT, 'web', 'patch.html');
+// An argument overrides where the page lands. save.bat and every hand run pass
+// nothing and write web/patch.html; tests/patch.test.js passes a temp path, so
+// the drift check can run the real generator without writing over the file it
+// is checking. A test that repairs what it inspects only ever fails once.
+const OUT = process.argv[2] ? resolve(process.argv[2]) : join(ROOT, 'web', 'patch.html');
 
 const SITE = 'https://mbrd.valjdakosta.com';
 
@@ -422,4 +426,4 @@ const page = buildPage(
 );
 writeFileSync(OUT, page);
 console.log(`${releases.length} releases`);
-console.log(`  web/patch.html  ${page.length} bytes`);
+console.log(`  ${OUT}  ${page.length} bytes`);
