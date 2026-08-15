@@ -243,6 +243,13 @@ function watchWhimsy() {
 /** Wire a freshly built dial: drive the axis, and keep its own valuetext true. */
 export function bindDial(dial: HTMLInputElement): void {
   showLevel(dial, dial.value);
+  // Once per element. RENDERERS.ghost binds the slider it has just built, and
+  // ui/feed.ts binds it again after calling that same builder - so on the Feed
+  // every move of the dial called setWhimsyLevel() twice. A flag on the node
+  // rather than a set here, for the reason canvas/stills.ts gives about the
+  // still twin's URL: the node is what goes away.
+  if (dial.dataset.dialBound) return;
+  dial.dataset.dialBound = '1';
   dial.addEventListener('input', () => {
     showLevel(dial, dial.value);
     setWhimsyLevel(+dial.value);

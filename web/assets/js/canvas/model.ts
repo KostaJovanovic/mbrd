@@ -295,6 +295,12 @@ export function buildModelCard(item: Item) {
   // follow the box rather than the other way round.
   const ro = new ResizeObserver(paint);
   ro.observe(stage);
+  // Hung on the node so it can be disconnected when the card is thrown away -
+  // see releaseModels(). An observer whose only reference is this closure is
+  // reachable for as long as its target is, and `paint` closes over the parsed
+  // Mesh, so a culled model card kept a whole mesh alive past the point
+  // MESH_CACHE_MAX would have evicted it.
+  (stage as StageCanvas)._modelRO = ro;
 
   orbit(stage, view, paint);
 
@@ -390,6 +396,27 @@ async function paint(mesh: Mesh) {
  * materials in it and a model that has no business being on a moodboard.
  */
 const MTL_MAX = 256 * 1024;
+
+/** A model card's canvas, with the observer that follows its box. */
+type StageCanvas = HTMLCanvasElement & { _modelRO?: ResizeObserver };
+
+/**
+ * Disconnect the size observer on every model stage inside `el`.
+ *
+ * Called by discard() in canvas/items.ts, beside the media and picture
+ * teardown. Nothing disconnected these: the observer's callback closes over the
+ * parsed Mesh, so a culled model card held one for as long as the observer was
+ * reachable - past the point MESH_CACHE_MAX would have evicted it.
+ *
+ * Not called by culling, which puts the same node back and wants the canvas to
+ * go on following its box.
+ */
+export function releaseModels(el: Element): void {
+  for (const stage of el.querySelectorAll<StageCanvas>('canvas.model-stage')) {
+    stage._modelRO?.disconnect();
+    stage._modelRO = undefined;
+  }
+}
 
 /** Drop every cached mesh - the board has been replaced. */
 export function resetModels() {
@@ -827,7 +854,18 @@ function renderShared(mesh: Mesh, view: View, w: number, h: number, cssColor: st
 
 /** `rgb(r, g, b)` from getComputedStyle, as three floats. */
 function rgbOf(css: string): number[] {
-  const n = css.match(/[\d.]+/g);
+  // Anchored on `rgb(`/`rgba(`, not a scan for numbers anywhere in the string.
+  //
+  // getComputedStyle().color is serialised as `rgb(r g b)` by every engine
+  // today, and this leaned on that by pulling every run of digits out of
+  // whatever came back. A wide-gamut serialisation - `color(display-p3 0.2 0.3
+  // 0.4)`, which is what a colour outside sRGB will eventually come back as -
+  // makes that scan answer ["3", "0.2", "0.3", "0.4"], where the leading 3 is
+  // the one in "display-p3", and every uncoloured model on the board is then
+  // shaded from a garbage triple. A form this cannot read falls back to the
+  // default clay below, which is a colour rather than a colour-shaped accident.
+  const m = css.match(/^\s*rgba?\(([^)]*)\)/i);
+  const n = m && !m[1].includes('%') ? m[1].match(/[\d.]+/g) : null;
   if (!n || n.length < 3) return [0.42, 0.36, 0.31];
   // Nudged towards mid grey: a token meant for text on paper is nearly black,
   // and a nearly black model shows no shading at all.

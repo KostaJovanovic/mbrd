@@ -222,4 +222,13 @@ function place(at: { x: number; y: number }): void {
   const x = Math.min(Math.max(pad, p.x - size.w / 2), innerWidth - size.w - pad);
   node.style.left = Math.round(x) + 'px';
   node.style.top = Math.round(y) + 'px';
+  // Hidden when the line it belongs to is not on screen. The clamp above keeps
+  // the chip inside the window whatever the anchor is - which is right while
+  // the line is visible and wrong the moment it is not: panning the marked line
+  // off to the left parked the chip against the screen edge, editing a
+  // connection nobody could see. The chip is a label on a thing, so it goes
+  // where the thing is or it goes away.
+  const off = p.x < -pad || p.y < -pad
+    || p.x > innerWidth + pad || p.y > innerHeight + pad;
+  node.hidden = off;
 }

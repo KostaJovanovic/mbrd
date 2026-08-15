@@ -358,8 +358,13 @@ export function routeConnection(
   const ends = [blockOf(from), blockOf(to)];
 
   // Sorted nearest-first once, so every attempt drops the same furthest cards
-  // first when it has to trim.
-  const ordered = [...near].sort((p, q) => distSqToMidpoint(p, from, to) - distSqToMidpoint(q, from, to));
+  // first when it has to trim - and sorted *only* when the cap did not already
+  // do it. `near` is either the caller's list untouched or a copy this function
+  // has just sorted by this same comparator, so re-sorting it was a second pass
+  // over the whole array to arrive at the order it was already in.
+  const ordered = obstacles.length <= MAX_OBSTACLES
+    ? [...near].sort((p, q) => distSqToMidpoint(p, from, to) - distSqToMidpoint(q, from, to))
+    : near;
 
   /** The obstacle blocks at a given margin, on the lattice or off it. */
   const blocksAt = (pad: number, snap: boolean) => ordered.map(it => {

@@ -734,7 +734,12 @@ const RENDERERS = {
     //
     // <pre> and textContent, never innerHTML: most of what classify() routes
     // here is source, config or tabular data whose whitespace is its shape,
-    // and .html and .svg are both on the list of things that land here.
+    // and .html is on the list of things that land here.
+    //
+    // (It said ".html and .svg". An SVG is routed to `image` by classify() two
+    // hundred lines up and has been for a long time, so half the justification
+    // for this rule named a file type that never reaches it. The rule is right
+    // for the half that is true, and it would still be right for one file.)
     const body = document.createElement('pre');
     body.className = 'card-text';
 
@@ -750,7 +755,14 @@ const RENDERERS = {
       body.textContent = text;
       // Said out loud rather than left to the fade, which looks identical
       // whether the file ended or the preview did.
-      if (text.length >= TEXT_PREVIEW) {
+      //
+      // Measured against the *file*, not against the decoded string.
+      // readText() slices the blob at TEXT_PREVIEW bytes and `text.length`
+      // counts UTF-16 code units, so for any file that is not pure ASCII the
+      // string is shorter than the limit and the notice never appeared - a
+      // truncated preview presented as the whole file, which is the one thing
+      // this line exists to prevent.
+      if ((getAsset(hash)?.blob.size ?? 0) > TEXT_PREVIEW) {
         const more = document.createElement('div');
         more.className = 'card-meta';
         more.textContent = `first ${formatBytes(TEXT_PREVIEW)} shown`;
@@ -878,12 +890,16 @@ const RENDERERS = {
       // Under the track, the same way round as the panel: the name of the axis
       // over it, the names of its three stops under it.
       const stops = document.createElement('span');
-      stops.className = 'field-stops';
-      // The id is a styling hook as much as a target for aria-describedby: each
-      // name is set in the face of the tier it names, and the CSS reaches both
-      // whimsy rows - this one and the panel's #whimsy-stop-labels - through one
-      // block. Safe as an id because a board carries at most one dial card.
-      stops.id = 'ghost-whimsy-stops';
+      // The styling hook is a *class* now, and the id is only the target for
+      // aria-describedby. It was one hardcoded id doing both jobs, under a
+      // comment saying "safe as an id because a board carries at most one dial
+      // card" - which stopped being true when ui/feed.ts started calling this
+      // same builder: with the Feed up and the canvas card mounted the document
+      // held two elements with that id, and the Feed slider's aria-describedby
+      // resolved to the canvas's node. quality.css reaches both whimsy rows
+      // through .whimsy-stops and #whimsy-stop-labels.
+      stops.className = 'field-stops whimsy-stops';
+      stops.id = `ghost-whimsy-stops-${item.id}`;
       stops.setAttribute('aria-hidden', 'true');
       for (const name of STOPS) {
         const stop = document.createElement('span');

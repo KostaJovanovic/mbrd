@@ -63,7 +63,16 @@ function sweepOnEnd(node: Element): void {
   let done = false;
   const finish = () => { if (done) return; done = true; clearTimeout(timer); node.remove(); };
   const timer = setTimeout(finish, FALLBACK_MS);
-  node.addEventListener('animationend', finish, { once: true });
+  // `e.target !== node` fences it. animationend bubbles, and the ghost is a
+  // *deep* clone of a card - so any descendant that happens to be animating
+  // when the copy was taken (a spinner, a waveform, an is-landing note) ended
+  // the whole ghost's life on its own first frame. `once` is kept: the first
+  // event this filter admits is the one it was waiting for.
+  node.addEventListener('animationend', function onEnd(e) {
+    if (e.target !== node) return;
+    node.removeEventListener('animationend', onEnd);
+    finish();
+  });
 }
 
 /**

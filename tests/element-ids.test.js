@@ -67,7 +67,12 @@ const JS_BUILT = {
   'exit-layer': 'the overlay an exit animation is drawn on, above everything',
   'fence-ghost': 'the preview rectangle drawn while a fence is being placed',
   'fence-prompt': 'the name-this-fence prompt',
-  'ghost-whimsy-stops': 'the whimsy-tier gradient stops inside a ghost card',
+  // Off the table, and the removal is the point: it was one hardcoded id on a
+  // node canvas/renderers.js builds for the canvas *and* for the Feed, so two
+  // of them could be in the document at once and the Feed slider's
+  // aria-describedby resolved to the canvas's node. The row is styled through
+  // .whimsy-stops now and its id is per item, which is not a name any
+  // stylesheet can be written against - so it does not belong here.
   'library': 'the board switcher',
   'search': 'the Find panel',
   'search-field': 'the Find input',
