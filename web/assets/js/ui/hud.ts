@@ -60,6 +60,8 @@ const SAVED_MS = 1500;
 let vp: HudViewport | null = null;
 /** The readout last written, so a pan does not rewrite it sixty times a second. */
 let zoomShown = '';
+/** The same for the coordinate pair, which fires at the pointer's rate. */
+let xyShown = '';
 let savedTimer = 0;
 
 /**
@@ -139,8 +141,16 @@ export function initHud(viewport: HudViewport, cmds: HudCommands) {
   el('viewport')!.addEventListener('pointermove', e => {
     const p = vp!.toWorld(e.clientX, e.clientY);
     const { scale, units } = board.settings;
-    el('hud-xy')!.textContent =
+    const text =
       `${px(p.x)}, ${px(p.y)} px · ${formatLength(p.x, scale, units)}, ${formatLength(p.y, scale, units)}`;
+    // Keyed and returned, the way paintZoom() below is and ui/scalebar.ts is.
+    // This fires at the pointer's rate - a hundred times a second on a
+    // trackpad - and the readout is rounded to whole pixels, so most of those
+    // events carry the string already on screen. Writing it anyway is a layout
+    // per event for nothing, on the surface a drag is happening over.
+    if (text === xyShown) return;
+    xyShown = text;
+    el('hud-xy')!.textContent = text;
   }, { passive: true });
 }
 

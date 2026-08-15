@@ -27,7 +27,7 @@
 
 import { el } from '../util.ts';
 import { board, bus, isJoinEnd, toggleConnection } from '../state.ts';
-import { toast } from '../notify.ts';
+import { toast, runCommand } from '../notify.ts';
 import { setConnectPick } from '../canvas/items.ts';
 // The line that follows the pointer out of the picked card. Written from the
 // same place as the ring, because they are one state: a pick with no draft is
@@ -63,7 +63,9 @@ export function initToolbar(cmds: ToolbarCommands): void {
     if (!btn) return;
     const fn = cmds[camel(btn.dataset.cmd!)];
     if (!fn) return;
-    fn();
+    // See notify.ts: the returned promise was dropped, so an async command that
+    // rejected read as a button that did nothing at all.
+    runCommand(fn(), btn.getAttribute('aria-label') || (btn.textContent || '').trim() || 'That');
     // Except the one command whose whole result is a menu hanging off the bar.
     // The three tools behind More are still on the tier - they are only hidden
     // from it - and closing the drawer would take the button the menu is pointing

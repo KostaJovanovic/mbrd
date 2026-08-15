@@ -169,11 +169,21 @@ function onOver(e: PointerEvent) {
   // this is about the gesture, and a finger is a press either way.
   if (e.pointerType === 'touch') return;
 
-  // Inside the open panel. Nothing to do but stay.
+  // Inside the open panel - or inside a submenu flown out of it, which is the
+  // same panel as far as a pointer is concerned and was not treated as one.
+  //
+  // #ctx-child is a *sibling* of #ctx-menu on the body, not a descendant, so
+  // `closest('#ctx-menu')` missed it entirely and a pointer moving into a
+  // submenu fell through to the bottom of this function and started the 250 ms
+  // close timer - closing the panel out from under the hand that was reaching
+  // into it. Exactly the trap insideMenu() documents in ui/menu.ts, from the
+  // other side. Latent today, because no FLYOUTS builder uses `sub`; written
+  // now because the first one that does would not connect the two.
+  //
   // The two reads below are on the window, so the target can be any node - the
   // optional call is the guard it always was, and the cast only says that
   // closest() is the thing being asked for.
-  if ((e.target as Element).closest?.('#ctx-menu')) { hold(); return; }
+  if ((e.target as Element).closest?.('#ctx-menu, #ctx-child')) { hold(); return; }
 
   const btn = (e.target as Element).closest?.<HTMLElement>('#toolbar [data-cmd]');
   if (btn && FLYOUTS[btn.dataset.cmd!]) {

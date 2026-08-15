@@ -90,14 +90,50 @@ export function initSearch(viewport: Viewport) {
 
   // Anything that makes the board move out from under the answers.
   addEventListener('pointerdown', e => {
-    if (node && !node.contains(e.target as Node | null)) close();
+    if (!node || node.contains(e.target as Node | null)) return;
+    // Recorded before the close, which is what clears the state this is a fact
+    // about - the same shape justDismissed() has in ui/menu.ts, and here for
+    // the same reason. This listener is in the capture phase, so a tap on the
+    // Find button has already closed the palette by the time the click reaches
+    // open(): the query somebody had typed was thrown away and a fresh empty
+    // palette was built in its place, and open()'s own `if (node)` branch -
+    // the one that keeps the query and selects the field - was unreachable
+    // from any button in the app.
+    dismissedBy = e.target as Node | null;
+    dismissedAt = performance.now();
+    close();
   }, true);
   addEventListener('wheel', () => close(), { passive: true });
   addEventListener('blur', () => close());
 }
 
-export function open() {
+/**
+ * What closed the palette last, and when. See the pointerdown listener above.
+ *
+ * A record rather than a flag, and timestamped for the reason justDismissed()
+ * gives: the pair being reconciled is one press and its own click, and a stale
+ * record would make the *next* press on that button do nothing.
+ */
+let dismissedBy: Node | null = null;
+let dismissedAt = -Infinity;
+const DISMISS_MS = 400;
+
+/**
+ * Open the palette, or leave it shut when this press is what closed it.
+ *
+ * `from` is the button being pressed, where there is one - the toolbar's Find
+ * and the mobile header's. Without it the button is not a toggle: a second tap
+ * discards the query and rebuilds an empty palette, because the capture-phase
+ * closer above has already run by the time the click gets here.
+ */
+export function open(from: Element | null = null) {
   if (node) { field!.select(); return; }
+  if (from && dismissedBy && performance.now() - dismissedAt <= DISMISS_MS
+    && from.contains(dismissedBy)) {
+    dismissedBy = null;
+    dismissedAt = -Infinity;
+    return;
+  }
 
   node = document.createElement('div');
   node.id = 'search';

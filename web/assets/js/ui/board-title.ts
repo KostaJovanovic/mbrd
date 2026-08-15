@@ -253,6 +253,8 @@ function editBoardName(node: HTMLElement | null) {
     field.removeEventListener('keydown', onKey);
     field.removeEventListener('input', onInput);
     field.removeEventListener('blur', finish);
+    offRebuild?.();
+    offRebuild = null;
     field.contentEditable = 'false';
     field.blur();
     // Put the stored name back first. A name that comes back unchanged commits
@@ -271,6 +273,24 @@ function editBoardName(node: HTMLElement | null) {
   field.addEventListener('keydown', onKey);
   field.addEventListener('input', onInput);
   field.addEventListener('blur', finish);
+  // And the case none of the three can see: the node going away underneath the
+  // edit.
+  //
+  // On Desktop `field` is `.title-name` inside the title *card*, which
+  // canvas/items.ts culls when it scrolls out of view and rebuilds on a quality
+  // or whimsy change or any 'items' emit. A rebuilt card is a new node, so
+  // every listener above went with the old one: `finish()` never ran, the name
+  // somebody had typed was dropped on the floor with no sign that anything had
+  // happened, and `done` stayed false so the rAF below focused a node that was
+  // no longer in the document. The masthead is markup in index.html and is
+  // never culled, which is why this only ever went wrong on the card.
+  //
+  // Committing rather than cancelling: the letters were typed on purpose, and a
+  // remount is not somebody changing their mind. Checked rather than assumed,
+  // because most 'items' emits leave the node exactly where it was.
+  let offRebuild: (() => void) | null = bus.on('items', () => {
+    if (!done && !field.isConnected) finish();
+  });
   // Focus on the next frame, not now. On the Desktop card this opens from the
   // T button's pointerdown, and the <button> then takes focus itself on the click
   // that follows - which would blur the field the instant it was focused, run

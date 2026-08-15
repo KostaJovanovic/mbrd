@@ -165,7 +165,9 @@ export function initMobileHeaderEditor(vp: Viewport | null) {
   // data-desktop and there is no Ctrl+K or right-click on touch). It rides the
   // Mobile board whichever lens is up, so unlike the pen it is not lens-gated.
   findBtn = el('mobile-find-btn')!;
-  findBtn.addEventListener('click', () => openSearch());
+  // The button, so a second tap closes rather than discarding the query and
+  // rebuilding an empty palette - see open() in ui/search.ts.
+  findBtn.addEventListener('click', () => openSearch(findBtn));
   // The name at the top of the panel, on ui/board-title.js's wiring rather than
   // on its own. It is the same field the sidebar's Board section has, and a
   // rename typed into either shows in the other because both are painted from

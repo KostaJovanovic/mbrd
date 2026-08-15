@@ -168,7 +168,6 @@ export function itemMetaCommands() {
       // it changed is written out beside that row in ui/menu.ts.
       toast(on ? 'Anchored. Drag it to pan the board.' : 'Unanchored');
     },
-    isLockedItem: (id: string) => isLocked(byId(id)),
 
     /**
      * Tags: what this card carries, what the board knows about, and the two
@@ -250,8 +249,12 @@ export function itemMetaCommands() {
      * The same eligibility as a tag: isContent(), so no fence and no title
      * card. A tour stop is a card the camera can frame and somebody can look
      * at, and a fence is already a name drawn round a group.
+     *
+     * There was a `canTour` here saying exactly that in exactly canTag()'s
+     * words, and nothing called it: the tour row in ui/menu.ts gates on
+     * canTag(). One predicate under two names is a rule that stops being one
+     * rule the first time somebody edits the copy they found.
      */
-    canTour: () => taggable().length > 0,
     selectionInTour: () => {
       const items = taggable();
       const stops = new Set(board.tour);
@@ -280,7 +283,6 @@ export function itemMetaCommands() {
     // any card, and state.js says why - so a picture an older build put on
     // something else still draws. canClearCover is how it comes back off.
     canCoverItem: (id: string) => byId(id)?.type === 'audio',
-    itemHasCover: (id: string) => !!byId(id)?.meta?.cover,
     // Anything already wearing one, except a video: a video's cover is the
     // poster frame the importer grabs and the optimiser repairs, not a choice
     // somebody made, and taking it away would only mean the board makes it again.

@@ -48,7 +48,15 @@ export function makeWindowDrag(win: HTMLElement, handle: HTMLElement): void {
     win.classList.add('is-moving');
     e.preventDefault();
   });
-  handle.addEventListener('pointermove', e => {
+  // On the window, not on the handle - so the drag does not depend on capture
+  // having been granted. All three were bound to the title bar and the whole
+  // gesture rode on an optional-chained setPointerCapture(): where capture is
+  // refused or absent, a pointer that left the bar delivered nothing here, `d`
+  // was never cleared by an `up` that also went elsewhere, and the window went
+  // on following the pointer with no way to put it down. `d` is what says
+  // whether a drag is running; the listeners only have to be somewhere they
+  // will hear about it.
+  addEventListener('pointermove', e => {
     if (!d) return;
     win.style.left = `${clamp(e.clientX - d.dx, MARGIN, window.innerWidth - d.w - MARGIN)}px`;
     win.style.top = `${clamp(e.clientY - d.dy, MARGIN, window.innerHeight - d.h - MARGIN)}px`;
@@ -59,8 +67,8 @@ export function makeWindowDrag(win: HTMLElement, handle: HTMLElement): void {
     handle.releasePointerCapture?.(e.pointerId);
     win.classList.remove('is-moving');
   };
-  handle.addEventListener('pointerup', end);
-  handle.addEventListener('pointercancel', end);
+  addEventListener('pointerup', end);
+  addEventListener('pointercancel', end);
 }
 
 /**
@@ -92,7 +100,9 @@ export function makeWindowResize(
     win.classList.add('is-resizing');
     e.preventDefault();
   });
-  handle.addEventListener('pointermove', e => {
+  // On the window, for the reason the move drag above gives: the grip is
+  // twenty pixels square and a resize leaves it almost immediately.
+  addEventListener('pointermove', e => {
     if (!d) return;
     win.style.width =
       `${clamp(d.w + (e.clientX - d.x), minW, window.innerWidth - d.left - MARGIN)}px`;
@@ -105,6 +115,6 @@ export function makeWindowResize(
     handle.releasePointerCapture?.(e.pointerId);
     win.classList.remove('is-resizing');
   };
-  handle.addEventListener('pointerup', end);
-  handle.addEventListener('pointercancel', end);
+  addEventListener('pointerup', end);
+  addEventListener('pointercancel', end);
 }

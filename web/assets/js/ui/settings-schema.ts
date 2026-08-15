@@ -660,7 +660,12 @@ export const SECTIONS: Section[] = [
       // Dragging the corners is how the scale gets set, which means it is also
       // how the scale gets lost - and no setting is on the undo stack.
       { type: 'buttons', when: desktop, advanced: true, buttons: [
-        { cmd: 'reset-scale', label: 'Reset size' },
+        // "Reset scale", not "Reset size". The item menu already ships a row
+        // called Reset size (menu.ts) and it does something else entirely:
+        // that one puts a card back to its intrinsic size, this one throws
+        // away the board's units-per-millimetre. Two different acts under one
+        // word, a settings panel and a right-click apart.
+        { cmd: 'reset-scale', label: 'Reset scale' },
       ] },
       { id: 'scale-hint', type: 'hint', advanced: true,
         text: () => (board.items.length
