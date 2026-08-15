@@ -60,7 +60,7 @@
 
 import { clamp } from '../util.ts';
 import {
-  board, byId, selection, select, deselect, clearSelection, topZ, stackOrder,
+  board, byId, selection, select, deselect, clearSelection, isMultiSelect, topZ, stackOrder,
   snapshotGeom, applyGeom, commitGeom, bus, stuckFollowers, stuckPlacement, wouldStick,
   travelling, isFence, isLocked, dragRoot, isPinned, isSticky, stuckTo, resettle,
   copyItems, cutItems, pasteItems, clipboardSize, clipboardBounds, clipboardHasOurs,
@@ -947,7 +947,11 @@ type InputCommands = {
   editNote(id: string): unknown,
   editConnectionLabel(a: string, b: string): unknown,
   fencePrompt(x: number, y: number, rect: Bounds): void,
-  contextMenu(x: number, y: number, id: string | null, count: number): void,
+  contextMenu(x: number, y: number, id: string | null, count: number,
+    opts?: { touch?: boolean }): void,
+  // Read straight from state.ts on the pointer path - the flag is state, not a
+  // command - so what is wanted here is only the way *out*, for Escape.
+  toggleMultiSelect?(): unknown,
   connectTap?(id: string | null): boolean,
   connectionUnder?(at: Point): { a: string, b: string } | null,
   pickConnection?(at: Point): unknown,
@@ -1740,12 +1744,17 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         id,
         x: e.clientX,
         y: e.clientY,
-        additive: e.shiftKey || e.ctrlKey || e.metaKey,
+        // The mode reads as a modifier held down, here and in the branch below,
+        // and that is the whole of what it does to a press on a card: the tap
+        // that would have replaced the selection adds to it instead. Everything
+        // that follows - the peel on a second tap, the drag that moves the
+        // group - already worked that way for Shift and needs nothing new.
+        additive: e.shiftKey || e.ctrlKey || e.metaKey || isMultiSelect(),
       };
       taps.card = { pointerId: e.pointerId, id, x: e.clientX, y: e.clientY, slop: TAP_MOVE_SLOP };
       startPan(e);
     } else if (id) {
-      const additive = e.shiftKey || e.ctrlKey || e.metaKey;
+      const additive = e.shiftKey || e.ctrlKey || e.metaKey || isMultiSelect();
       const held = selection.has(id);
       if (additive) select([id], true);
       else if (!held) select([id]);
@@ -1783,8 +1792,15 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     } else if (e.shiftKey || e.ctrlKey || e.metaKey) {
       startMarquee(e);
     } else {
+      // Nothing a press on bare board does clears the group while the mode is
+      // on - not a pan, not a tap. That is the half of it a person can feel:
+      // building a group of nine on a board bigger than the screen means panning
+      // between them, and a pan that cost you the nine is the mode failing at
+      // the one thing it exists for. The way out is the row that turned it on,
+      // Escape, or tapping the cards back off.
+      if (isMultiSelect()) clearOnLift = null;
       // Touch defers it to the lift so a hold can cancel it - see clearOnLift.
-      if (e.pointerType === 'touch') clearOnLift = selection.size ? e.pointerId : null;
+      else if (e.pointerType === 'touch') clearOnLift = selection.size ? e.pointerId : null;
       else if (selection.size) clearSelection();
       // A press on bare board that happens to land on a connection points at
       // that connection instead of at nothing - which is what the line lighting
@@ -2438,6 +2454,11 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         // in this app, and while the bar is up the tour is the outermost of them.
         // It answers false when there is none, so the ordinary three still run.
         if (cmds.tourStop?.()) break;
+        // And the pick mode next, for the same reason and with the same shape:
+        // it is a temporary state, so Escape ends it - and only it, keeping the
+        // group the mode was for. A second Escape then clears that group, which
+        // is Escape meaning what it always did one layer further in.
+        if (isMultiSelect()) { cmds.toggleMultiSelect?.(); break; }
         clearSelection();
         cmds.clearActiveConnection?.();
         cmds.closeSidebar();
@@ -2620,6 +2641,14 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     cancelPress();
     taps.arm = null;
     taps.card = null;
+    // The same four the hold timer drops, and for the same reason: on the
+    // engines that synthesize this event *instead of* letting our timer fire,
+    // this listener is the long press. Leaving the two empty-tap records
+    // standing left the press that opened a menu seeded as the first half of a
+    // double tap, so the tap that dismissed the menu could come back as a
+    // marquee.
+    taps.empty = null;
+    taps.lastEmpty = null;
     abortGesture();
     if (repeatsLongPressContextMenu(hold.menu, {
       x: e.clientX,
@@ -2634,18 +2663,26 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   });
 
   /**
-   * `keep` is the touch hold, and it holds the selection through the menu.
+   * `touch` is the hold, and it changes two things about the menu it opens.
    *
-   * On a mouse, opening the menu on bare board is a click on nothing and says
-   * so: the selection goes. A finger has no second button, so the same gesture
-   * has to be both "show me the board menu" and it cannot also mean "and drop
-   * what I picked" - see clearOnLift for the other half of this.
+   * It holds the selection: on a mouse, opening the menu on bare board is a
+   * click on nothing and says so, and the selection goes. A finger has no second
+   * button, so the same gesture is the only way to reach this menu at all and
+   * cannot also mean "and drop what I picked" - see clearOnLift for the other
+   * half of that.
+   *
+   * And it is passed on to the menu, which draws one row - Select multiple - for
+   * a finger and not for a pointer that has a Shift key beside it.
    */
-  function openMenuAt(x: number, y: number, id: string | null, keep = false) {
+  function openMenuAt(x: number, y: number, id: string | null, touch = false) {
+    // `touch` is the same fact twice: the menu keeps the selection (below), and
+    // the menu itself is told, because one of its rows is the finger's answer to
+    // a Shift key and has no business on a menu a mouse opened.
+    const keep = touch;
     // Opening outside the selection retargets it, the way every file manager
     // behaves; opening inside one leaves the group intact.
-    if (id && !selection.has(id)) select([id]);
-    if (!id && !keep) clearSelection();
-    cmds.contextMenu(x, y, id, selection.size);
+    if (id && !selection.has(id)) select([id], isMultiSelect());
+    if (!id && !keep && !isMultiSelect()) clearSelection();
+    cmds.contextMenu(x, y, id, selection.size, { touch });
   }
 }

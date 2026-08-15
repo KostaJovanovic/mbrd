@@ -22,7 +22,7 @@ import { initTimeline } from './ui/timeline-view.ts';
 import { ask } from './ui/dialog.ts';
 import { VERSION } from './version.js';
 import {
-  board, bus, selection, byId, setAssetNameLookup,
+  board, bus, selection, byId, setAssetNameLookup, isMultiSelect,
   ensureTitleCard, isTitleHidden, TITLE_ID, setTitle,
   ensureGhostCards, reseedGhostCards, hasContent, dismissGhosts,
   leaveNotFoundBoard, isContent,
@@ -428,6 +428,19 @@ bus.on('selection', () => {
     closeHeaderPanel();
   }
 });
+// The standing sign for multi-select - the finger's Shift key, see
+// isMultiSelect() in board-store.ts. A board-wide class, the same shape as
+// is-connecting and for the same reason: the row that turned the mode on is a
+// menu that closed behind it, and the hand is at the other end of the screen
+// from anything that could have stayed pressed.
+//
+// Synced from the flag on every selection event rather than written where the
+// mode is toggled, because there are three ways out of it - the menu row,
+// Escape, and a board loaded under it - and only the first is a command. A mark
+// written by the way *in* is a mark that outlives the other two.
+bus.on('selection', () => {
+  document.documentElement.classList.toggle('is-picking', isMultiSelect());
+});
 bus.on('items', syncMobileBoardBounds);
 bus.on('geom', syncMobileBoardBounds);
 
@@ -529,7 +542,30 @@ if (location.hash.includes('grips')) cmds.debugGrips();
 // The unconditional autosave matters now the background save is a 20s interval
 // rather than a per-edit debounce - without it, a tab closed mid-interval would
 // lose up to 20s of edits.
-const flushEdits = () => { flushNoteEdit(); autosave().catch(() => {}); };
+//
+// Armed only once the session has been read, which it was not. These listeners
+// are registered while the module body runs and start() does not reach
+// restoreSession() until later - so for the whole of that read, `board` is
+// still the blank default. restoreSession() is one idbGet plus ceil(n/32)
+// chunked idbGetMany round trips, hundreds of milliseconds on a heavy board and
+// stated as such below; hide the tab or reload inside that window and this ran
+// autosave() over the empty board. The committedGen short-circuit does not
+// catch it, writeSnapshot() passes the cacheOk gate on an ordinary boot, and the
+// blank board is serialised over the stored one. Then the sweep runs
+// idbDelMany('assets', ...) against a `referenced` set built from no items, so
+// **every asset in the cache is deleted** - and the restore's remaining chunks
+// come back to nothing, leaving a board of empty frames.
+//
+// The latch is one-way and set in start(). Failing closed is the right
+// direction: a throw before the session is read means nothing is written, which
+// is what the visitor wants from a boot that did not finish.
+let sessionReady = false;
+const markSessionReady = () => { sessionReady = true; };
+const flushEdits = () => {
+  if (!sessionReady) return;
+  flushNoteEdit();
+  autosave().catch(() => {});
+};
 addEventListener('pagehide', flushEdits);
 addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') flushEdits();
@@ -638,6 +674,9 @@ const started = (async function start() {
   // board nobody is looking at.
   if (notFound || isPatch) suspendCache();
   const restored = (notFound || isPatch) ? false : await restoreSession();
+  // The board in memory is now the board that was stored, so a page going away
+  // may write it. See flushEdits() for what the window before this cost.
+  markSessionReady();
   // A restored or freshly-opened board runs ensureTitleCard() inside loadBoard();
   // the very first blank session never calls loadBoard, so seed the title card
   // here and mount it. initItems() has already run (module top), so its 'items'

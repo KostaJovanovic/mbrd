@@ -15,6 +15,7 @@ import {
   listLibrary, switchBoard, newBoard, deleteLibraryBoard, ensureCurrentOnShelf,
 } from '../storage/storage.ts';
 import { toast } from '../notify.ts';
+import { ask } from './dialog.ts';
 import type { LibraryEntry } from '../storage/library.ts';
 
 /** A shelf row as the switcher sees it - the index entry, plus "is this the one on screen". */
@@ -166,7 +167,26 @@ function card(b: ShelfEntry) {
     del.className = 'library-del';
     del.setAttribute('aria-label', 'Delete this board');
     del.textContent = '×';
+    // Asked for, because there is nothing behind it. The bin covers items, not
+    // boards: deleteLibraryBoard() drops the packed blob and its index row, and
+    // there is no undo, no restore and no second copy. This is a 22px glyph in
+    // the corner of a card whose whole face is the Open button, so the gesture
+    // that opens a board and the gesture that destroys one are half a
+    // centimetre apart on a phone.
+    //
+    // One dialog rather than clear-data's three-press arming: this is one
+    // board, not everything, and the board's own name in the question is what
+    // makes the answer informed. Every accidental way out of ask() - Escape,
+    // the backdrop, the close button - is 'cancel'.
     del.addEventListener('click', () => guard(async () => {
+      const answer = await ask({
+        title: 'Delete this board?',
+        body: `"${b.title || 'Untitled board'}" will be removed from the shelf. `
+          + 'This cannot be undone, and the bin does not hold boards.',
+        go: 'Delete',
+        danger: true,
+      });
+      if (answer !== 'go') return;
       await deleteLibraryBoard(b.id);
       await render();
     }));

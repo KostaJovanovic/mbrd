@@ -335,11 +335,20 @@ async function roundTrip(board) {
   return (await unpackBoard(blob)).board;
 }
 
+// The heading marker below is the change. parseNote() used to strip it, so a
+// note came back as `Shopping\nbread` where meta.text is Markdown and
+// flattenNoteRich() writes `# Shopping\nbread` - which meant the sidecar never
+// equalled the flattened model and the reconciliation rebuilt every note's
+// blocks from plaintext on an untouched export and re-import. These fixtures
+// pass meta.text with no marker, which is a legacy note's shape; what comes
+// back is the canonical one. The parsed model is identical either way, since an
+// unmarked first line is h1 too - so nothing on screen moves, and the two halves
+// of the file now agree.
+
 test('a note round-trips through its own .md file', async () => {
   clearAssets();
-  const text = 'Shopping\nbread\nmilk';
-  const back = await roundTrip(noteBoard(text));
-  assert.equal(back.items[0].meta.text, text);
+  const back = await roundTrip(noteBoard('Shopping\nbread\nmilk'));
+  assert.equal(back.items[0].meta.text, '# Shopping\nbread\nmilk');
 });
 
 test('the blank line under the title is structure, not content', async () => {
@@ -350,20 +359,56 @@ test('the blank line under the title is structure, not content', async () => {
   // written without one.
   clearAssets();
   const back = await roundTrip(noteBoard('Shopping\n\nbread'));
-  assert.equal(back.items[0].meta.text, 'Shopping\nbread');
+  assert.equal(back.items[0].meta.text, '# Shopping\nbread');
 });
 
 test('blank lines inside the body are kept', async () => {
   clearAssets();
-  const text = 'Shopping\nbread\n\nmilk';
-  const back = await roundTrip(noteBoard(text));
-  assert.equal(back.items[0].meta.text, text);
+  const back = await roundTrip(noteBoard('Shopping\nbread\n\nmilk'));
+  assert.equal(back.items[0].meta.text, '# Shopping\nbread\n\nmilk');
 });
 
 test('a title-only note round-trips', async () => {
   clearAssets();
   const back = await roundTrip(noteBoard('just a title'));
-  assert.equal(back.items[0].meta.text, 'just a title');
+  assert.equal(back.items[0].meta.text, '# just a title');
+});
+
+test('a note that already carries its marker is not given a second one', async () => {
+  clearAssets();
+  const back = await roundTrip(noteBoard('# Shopping\nbread'));
+  assert.equal(back.items[0].meta.text, '# Shopping\nbread');
+  const twice = await roundTrip(noteBoard('## Shopping\nbread'));
+  assert.equal(twice.items[0].meta.text, '## Shopping\nbread', 'and h2 stays h2');
+});
+
+test('an untouched rich note keeps its alignment and its markers', async () => {
+  // The defect this whole change is about, stated as the thing a user would
+  // notice: export a board of marked-up notes, open the file again, and every
+  // highlighter mark is gone and every centred line is left-aligned. No edit,
+  // no hand-editing, no warning - the file simply went out and came back.
+  clearAssets();
+  const rich = {
+    font: 'serif', size: 1.4, valign: 'middle',
+    blocks: [
+      { tag: 'h1', align: 'center', text: 'original', wash: 'amber' },
+      { tag: 'p', align: 'right', text: 'body', wash: 'olive' },
+    ],
+  };
+  const back = await roundTrip(boardOf([item({
+    id: 'i1', type: 'note', meta: { text: '# original\nbody', rich },
+  })]));
+
+  const meta = back.items[0].meta;
+  assert.equal(meta.text, '# original\nbody', 'the sidecar and the model agree');
+  assert.deepEqual(meta.rich.blocks.map(b => b.wash), ['amber', 'olive'],
+    'the highlighter marks survived');
+  assert.deepEqual(meta.rich.blocks.map(b => b.align), ['center', 'right'],
+    'and so did the alignment');
+  assert.deepEqual(meta.rich.blocks.map(b => b.tag), ['h1', 'p']);
+  assert.equal(meta.rich.font, 'serif');
+  assert.equal(meta.rich.size, 1.4);
+  assert.equal(meta.rich.valign, 'middle');
 });
 
 test('the note file is named after what it says', async () => {
@@ -389,7 +434,7 @@ test('a hand-edited note file wins over board.json', async () => {
   })));
 
   const back = (await unpackBoard(edited)).board;
-  assert.equal(back.items[0].meta.text, 'edited by hand\nwith a body');
+  assert.equal(back.items[0].meta.text, '# edited by hand\nwith a body');
 });
 
 test('a hand-edited note file wins over meta.rich as well', async () => {
@@ -425,7 +470,7 @@ test('a hand-edited note file wins over meta.rich as well', async () => {
 
   const back = (await unpackBoard(edited)).board;
   const meta = back.items[0].meta;
-  assert.equal(meta.text, 'edited by hand\nwith a body');
+  assert.equal(meta.text, '# edited by hand\nwith a body');
   assert.deepEqual(meta.rich.blocks.map(b => b.text), ['edited by hand', 'with a body'],
     'the blocks are re-derived from the sidecar');
   // Words, not looks: the .md has no way to carry a face or a size, so the note

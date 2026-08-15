@@ -1016,6 +1016,37 @@
 :root.is-connecting #viewport,
 :root.is-connecting .item { cursor: crosshair; }
 
+/* The board while a finger is collecting cards - the second mode, and the one
+   that had to say so somewhere a cursor cannot. It is a touch mode by
+   construction (the row that turns it on is drawn only on a menu a finger
+   opened), so a crosshair would be a sign painted for a pointer that is not
+   there and the sign has to be the board itself.
+
+   An inset line at the window's edge rather than anything on the cards: what is
+   selected is already drawn on the cards, and a second mark over them would be
+   two things saying one thing while hiding the pictures underneath. It is drawn
+   *round the whole surface* because that is the scope of what changed - every
+   tap on this board now means something else.
+
+   pointer-events stay off it: this is a mark, and a mark that swallowed the
+   first tap along the edge of the screen would be a mode that fights the very
+   gesture it exists for.
+
+   On #viewport rather than on #world, which is the one thing here that is not a
+   preference: #world carries the pan and the zoom, so a frame drawn on it would
+   travel with the board and be off screen by the second card. The viewport is
+   fixed to the window and `contain: paint` seals both the clip and the z-index
+   inside it, so this sits over the cards and under every panel without naming
+   any of them. */
+:root.is-picking #viewport::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  border: 2px solid var(--select);
+}
+
 /* The first end, once one is chosen. canvas/items.js writes data-pick, and it
    writes it in build() as well as on the live node - a card culled while it is
    picked is thrown away and rebuilt, and a mark applied only to the node would

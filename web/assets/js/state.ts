@@ -82,6 +82,7 @@ export { removeItems, restoreItems, emptyTrash };
 import {
   bus, selection, isDirty, markDirty, resetDirty,
   select, clearSelection, deselect, tagFilter, setTagFilter,
+  isMultiSelect, setMultiSelect, resetMultiSelect,
 } from './board-store.ts';
 import {
   commit, undo, redo, historyState, historyDepth, historyWeight,
@@ -106,6 +107,7 @@ export {
 
 export { bus, selection, isDirty, markDirty, select, clearSelection, deselect };
 export { tagFilter, setTagFilter };
+export { isMultiSelect, setMultiSelect };
 export { commit, undo, redo, historyState, historyDepth, historyWeight, lastCommand, takeBack };
 
 // The board's shape and its index, one level down - see board-model.js. The
@@ -1205,8 +1207,14 @@ export function setItemsTagged(ids: Iterable<string>, tag: unknown, on: boolean)
     for (const [id, was] of before) {
       const it = byId(id);
       if (!it) continue;
+      // A union, not an append. `was` is the tag list as it stood when the
+      // command was built, and on an Untag that list already contains the tag -
+      // so `[...was, clean]` on the redo direction of an undo wrote it twice.
+      // itemTags() dedupes on read, which is why nothing looked wrong; the
+      // duplicate still consumed a slot against TAGS_PER_ITEM and still landed
+      // in the file.
       const tags = next
-        ? [...was, clean].sort()
+        ? [...new Set([...was, clean])].sort()
         : was.filter(t => t !== clean);
       if (tags.length) it.meta = { ...it.meta, tags };
       else { const { tags: _drop, ...rest } = it.meta || {}; it.meta = rest; }
@@ -1485,11 +1493,24 @@ export function setArrangement(name: string) {
  * listener waking for something only it cares about.
  */
 export function setAudioOrder(ids: unknown) {
-  const live = new Set(board.items.map(i => i.id));
-  board.audioOrder = normalizeAudioOrder(ids, live);
+  board.audioOrder = normalizeAudioOrder(ids, filedIds());
   markDirty();
   bus.emit('audioOrder', board.audioOrder);
 }
+
+/**
+ * Every id this board still answers for: what is on it, plus what is in the bin.
+ *
+ * The union board-schema.ts writes the tour and the playlist order against, and
+ * the reason it is a union: a card in the bin can come back, and its place in
+ * an ordering has to come back with it. A pruner that only knows about live
+ * items turns "delete a card" into "and forget where it stood", quietly and
+ * permanently, on the next unrelated edit.
+ */
+const filedIds = () => new Set([
+  ...board.items.map(i => i.id),
+  ...board.trash.map(t => t.item.id),
+]);
 
 /**
  * The board's tour: which cards it stops at, in order.
@@ -1500,15 +1521,21 @@ export function setAudioOrder(ids: unknown) {
  * step over the real work done between them. The stops are cards that already
  * exist; nothing here creates, moves or deletes anything.
  *
- * Held to the live board rather than to the board-plus-bin union the file
- * reader uses. That asymmetry is deliberate and it is the same one the Playlist
- * has: a *file* must keep a stop whose card is in the bin, because restoring the
- * card has to bring its place in the tour back with it, while a tour being
- * played right now must not stop at a card that is not on the board.
+ * Held to the board-plus-bin union, the same one board-schema.ts writes with.
+ *
+ * It used to prune against the live board alone, and the comment here argued
+ * that the asymmetry was deliberate: a *file* must keep a stop whose card is in
+ * the bin, while a tour being played must not stop at a card that is not there.
+ * The second half is true and is not this function's job - ui/tour.ts's stops()
+ * resolves board.tour through byId() on every read for exactly that reason, and
+ * says so. What pruning here actually did was destroy the first half: delete a
+ * card, then make any later edit to the tour, and the deleted card's place is
+ * gone from board.tour and from the file, so restoring it out of the bin no
+ * longer brings its stop back. Nothing said so and nothing could be undone -
+ * this is off the undo stack.
  */
 export function setTour(ids: unknown) {
-  const live = new Set(board.items.map(i => i.id));
-  board.tour = normalizeTour(ids, live);
+  board.tour = normalizeTour(ids, filedIds());
   markDirty();
   bus.emit('tour', board.tour);
 }
@@ -1681,6 +1708,13 @@ export function loadBoard(data: unknown) {
   activateLayoutSettings(layoutMode);
   writeLayout(completeLayout(layoutMode));
   selection.clear();
+  // The mode the selection was being built in goes with it. A board arriving
+  // under a mode that says "a tap adds to the group" would open with no group
+  // and that rule still standing, which is the one state it can never be
+  // explained from - nothing on screen is what turned it on. Quietly, like the
+  // clear above it: the 'selection' at the foot of this function is the one
+  // announcement a load makes about either.
+  resetMultiSelect();
   clearHistory();
   // After clearHistory(), which resets the ledger to this board as its starting
   // point - so a file that carries a timeline replaces that reset, and one that

@@ -15,6 +15,7 @@ import {
   byId, select, deselect, clearSelection, selectAll, setItemText, renameItem,
   NOTE_MAX, setItemCover, setItemPoster, setTitle, cleanBoardTitle,
   cleanBoardTitleDraft, BOARD_TITLE_MAX, setBoardMode, setItemBare,
+  setItemsTagged,
 } from '../web/assets/js/state.ts';
 import { hash } from './helpers.js';
 import { fresh, note, photo, clip } from './state-fixtures.js';
@@ -249,4 +250,28 @@ test('the write door stores true or nothing, whatever it was handed', () => {
   assert.equal(byId('p').meta?.bare, 'yes',
     'the schema does not validate meta - the write door is what holds the shape, '
     + 'and writeFit only answers to === true');
+});
+
+test('undoing an Untag does not write the tag twice', () => {
+  // `was` is the tag list as it stood when the command was built, and on an
+  // Untag it already contains the tag - so the redo direction used to do
+  // `[...was, clean]` and store it twice. itemTags() dedupes on read, which is
+  // why nothing looked wrong on screen; the duplicate still spent a slot
+  // against TAGS_PER_ITEM and still went into the file.
+  const [p] = addItems([photo()]);
+  setItemsTagged([p.id], 'kitchen', true);
+  assert.deepEqual(byId(p.id).meta.tags, ['kitchen']);
+
+  setItemsTagged([p.id], 'kitchen', false);
+  assert.equal(byId(p.id).meta?.tags, undefined, 'the last tag off drops the key');
+
+  undo();
+  assert.deepEqual(byId(p.id).meta.tags, ['kitchen'], 'and back exactly as it was');
+});
+
+test('a tag that is already there is not added a second time', () => {
+  const [p] = addItems([photo({ meta: { tags: ['kitchen', 'blue'] } })]);
+  setItemsTagged([p.id], 'blue', false);
+  undo();
+  assert.deepEqual(byId(p.id).meta.tags.slice().sort(), ['blue', 'kitchen']);
 });

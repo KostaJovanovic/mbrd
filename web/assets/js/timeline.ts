@@ -717,7 +717,14 @@ export function trimmable(now = Date.now()): number {
  */
 function foldableCount(before: number): number {
   let count = 0;
-  while (count < at && steps[count].at < before && !steps[count].name) count += 1;
+  // `at > 0` is a real timestamp. adoptTimeline() coerces a missing or
+  // non-finite `at` to exactly 0, so a file whose steps carry no timestamps -
+  // one written by hand, or by a build before the field existed - had every
+  // step read as older than any cutoff. The strip then offered to fold the
+  // whole ledger, and pressing the offer folded this morning's work into the
+  // starting state, irreversibly. A step with no date is a step this cannot
+  // judge, so it is not foldable rather than infinitely foldable.
+  while (count < at && steps[count].at > 0 && steps[count].at < before && !steps[count].name) count += 1;
   return count;
 }
 
@@ -1134,6 +1141,18 @@ export function adoptTimeline(raw: unknown, doc?: unknown) {
     if (parsed.length >= TIMELINE_STEP_CAP) break;
   }
   if (!parsed.length) return;
+  // Whether the cap actually bit. The oldest steps are the ones kept, because
+  // `base` is the state step 0 follows from and dropping the front would leave
+  // the ledger describing a board it cannot replay to - recordStep() can fold
+  // the oldest away safely only because it replays them into `base` first, and
+  // there is nothing to replay into here.
+  //
+  // What that costs is the newest steps, which are the ones somebody would
+  // want, and until now nothing said so: `at` was clamped to steps.length, so
+  // the marker sat at the end of a truncated ledger claiming the board was at
+  // its latest step. `stale` is the flag that already means "this ledger does
+  // not describe the board in front of you", and a truncated one does not.
+  const truncated = Array.isArray(raw.steps) && raw.steps.length > parsed.length;
   base = raw.base as Snap;
   steps = parsed;
   at = Number.isFinite(raw.at)
@@ -1143,7 +1162,7 @@ export function adoptTimeline(raw: unknown, doc?: unknown) {
   // taken at its word: that is what a file written before this check existed
   // looks like, and refusing those would be treating an old friend as a forgery.
   const claimed = typeof raw.fingerprint === 'string' ? raw.fingerprint : '';
-  stale = !!claimed && doc !== undefined && claimed !== docFingerprint(doc);
+  stale = truncated || (!!claimed && doc !== undefined && claimed !== docFingerprint(doc));
 }
 
 /**
