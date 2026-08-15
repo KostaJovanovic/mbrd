@@ -30,6 +30,11 @@ const COVER = {
 const familyOf = file => basename(file).split('-')[0];
 
 test('every shipped face belongs to a known family', () => {
+  // The walk first. `shipped.filter(...)` over an empty walk is an empty list
+  // of unmapped faces, so a broken directory read - a rename, a moved folder -
+  // reported perfect licence coverage over no fonts at all.
+  assert.ok(shipped.length >= Object.keys(COVER).length,
+    `only ${shipped.length} faces found in ${FONTS} - has the folder moved?`);
   const unknown = shipped.filter(f => !COVER[familyOf(f)]);
   assert.deepEqual(unknown, [], `no licence mapping for:\n  ${unknown.join('\n  ')}`);
 });

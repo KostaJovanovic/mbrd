@@ -20,6 +20,10 @@
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { JS } from './helpers.js';
 
 const soon = fn => Promise.resolve().then(fn);
 
@@ -67,8 +71,8 @@ globalThis.indexedDB = {
 };
 
 const {
-  loadBoard, ensureGhostCards, isNotFoundBoard, leaveNotFoundBoard, board,
-  setTitle, defaultBoardTitle, addItems,
+  loadBoard, ensureGhostCards, isNotFoundBoard, leaveNotFoundBoard,
+  setTitle, addItems,
 } = await import('../web/assets/js/state.ts');
 const { newBoard, clearAllData, setPrompt } = await import('../web/assets/js/storage/storage.ts');
 
@@ -118,15 +122,31 @@ test('the handover clears the latch, so the next New behaves normally', async ()
 });
 
 test('a not-found board that had no session to go back to loses the name too', () => {
-  // What leaveNotFound() in main.js does in the `else` of `if (had)`. The name
-  // is set at boot so the title card and the Mobile masthead say what happened;
-  // on the branch where no stored board arrives, nothing else overwrites it, and
-  // 'Not found' would go on to be the board's name in the file Export writes.
+  // The name is set at boot so the title card and the Mobile masthead say what
+  // happened; on the branch where no stored board arrives, nothing else
+  // overwrites it, and 'Not found' would go on to be the board's name in the
+  // file Export writes.
+  //
+  // The reset lives in main.ts's leaveNotFound(), not in anything importable
+  // here - so this used to perform it (`setTitle(defaultBoardTitle())`) and then
+  // assert the value it had just written. Both assertions held whatever
+  // main.ts did, including deleting the line: the test proved that setTitle
+  // sets a title.
+  //
+  // Split in two. The half that is state's own is asserted by running it; the
+  // half that is main.ts's is asserted against main.ts, which is where it is.
   setTitle('Not found');
   ensureGhostCards({ notFound: true });
   addItems([{ type: 'note', w: 200, h: 200 }]);
   leaveNotFoundBoard();
-  setTitle(defaultBoardTitle());
-  assert.equal(board.title, defaultBoardTitle());
-  assert.notEqual(board.title, 'Not found');
+  assert.equal(isNotFoundBoard(), false, 'the latch is what state owns here');
+
+  const main = readFileSync(join(JS, 'main.ts'), 'utf8');
+  const handover = /async function leaveNotFound\(\)[\s\S]*?\n}/.exec(main);
+  assert.ok(handover, 'leaveNotFound() has moved or been renamed in main.ts');
+  const branch = /\n  } else \{([\s\S]*?)\n  }/.exec(handover[0]);
+  assert.ok(branch, 'leaveNotFound() no longer has the "nothing to go back to" branch');
+  assert.match(branch[1], /setTitle\(defaultBoardTitle\(\)\)/,
+    'the branch where no stored board arrives must put the name back, or '
+    + "'Not found' is what Export writes");
 });

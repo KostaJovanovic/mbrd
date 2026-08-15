@@ -25,8 +25,27 @@ const fresh = (items = []) => loadBoard({ title: 'T', items });
 const photo = (props = {}) => ({ type: 'image', w: 200, h: 200, ...props });
 
 const ghosts = () => board.items.filter(i => i.type === 'ghost');
+
+/**
+ * The hints, asserted to be there before anything walks them.
+ *
+ * Several tests in this file assert only *inside* a walk over the hints, so
+ * `ensureGhostCards()` seeding nothing at all satisfied every one of them: no
+ * hint is off the lattice, off the Mobile frame or badly taped when there are
+ * no hints. `ghosts()` is left alone because six other tests here use it to
+ * assert emptiness, which is the opposite thing and equally real.
+ */
+const someGhosts = () => {
+  const out = ghosts();
+  assert.ok(out.length > 0, 'ensureGhostCards() seeded nothing - there is nothing under test');
+  return out;
+};
 // The hints that are pages. The dial is a card at every tier, so it has no tape.
-const taped = () => ghosts().filter(i => i.meta?.hint !== DIAL);
+const taped = () => {
+  const out = ghosts().filter(i => i.meta?.hint !== DIAL);
+  assert.ok(out.length > 0, 'no taped hints on the board - there is nothing under test');
+  return out;
+};
 
 beforeEach(() => {
   setBoardMode('desktop');
@@ -62,7 +81,7 @@ test('seeding twice does not double the hints', () => {
 
 test('every hint carries a key the copy knows a sentence for', () => {
   ensureGhostCards();
-  for (const g of ghosts()) {
+  for (const g of someGhosts()) {
     assert.ok(g.meta.hint, 'the item carries its key');
     assert.ok(HINTS[g.meta.hint], `${g.meta.hint} has copy`);
     assert.ok(hintFor(g.meta.hint).title, 'and the copy has a title');
@@ -303,7 +322,7 @@ test('a snapped board seeds its hints on the lattice', () => {
   setSetting('snap', true);
   ensureGhostCards();
   const step = 64;
-  for (const g of ghosts()) {
+  for (const g of someGhosts()) {
     assert.deepEqual(
       { x: g.x, y: g.y, w: g.w, h: g.h },
       latticeBox({ x: g.x, y: g.y, w: g.w, h: g.h }, step),
@@ -320,7 +339,7 @@ test('the hints are written in whole grid spaces, so snapping cannot move them',
   // neighbouring cells and is not a move.
   fresh();
   ensureGhostCards();
-  const unsnapped = ghosts().map(g => ({ id: g.id, x: g.x, y: g.y, w: g.w, h: g.h }));
+  const unsnapped = someGhosts().map(g => ({ id: g.id, x: g.x, y: g.y, w: g.w, h: g.h }));
   const seam = 2 * 64 * CELL_GAP;
   for (const g of unsnapped) {
     const box = latticeBox(g, 64);
@@ -341,7 +360,7 @@ test('the not-found cards are on the lattice too', () => {
   ensureGhostCards({ notFound: true });
   const seam = 2 * 64 * CELL_GAP;
   assert.equal(ghosts().length, NOTFOUND_IDS.length, 'a not-found board opens with its own set');
-  for (const g of ghosts()) {
+  for (const g of someGhosts()) {
     const box = latticeBox({ x: g.x, y: g.y, w: g.w, h: g.h }, 64);
     assert.equal(box.x, g.x, `${g.meta.hint} keeps its x`);
     assert.equal(box.y, g.y, `${g.meta.hint} keeps its y`);
@@ -353,7 +372,7 @@ test('the not-found cards are on the lattice too', () => {
 test('hints are packed into the Mobile column like real cards', () => {
   ensureGhostCards();
   setBoardMode('mobile');
-  for (const g of ghosts()) {
+  for (const g of someGhosts()) {
     assert.ok(Number.isFinite(g.x) && Number.isFinite(g.y), 'has a Mobile place');
   }
   const xs = new Set(ghosts().map(g => g.x));
@@ -371,7 +390,7 @@ test('a board born on Mobile packs its hints into the column', () => {
   ensureGhostCards();
   const width = mobileBoardWidth();
   const half = width / 2;
-  for (const g of ghosts()) {
+  for (const g of someGhosts()) {
     assert.ok(g.x - g.w / 2 >= -half && g.x + g.w / 2 <= half,
       `${g.meta.hint} is inside the Mobile frame`);
     // The dial takes the whole width; a hint takes half of it, so two sit side

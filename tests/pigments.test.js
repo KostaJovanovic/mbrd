@@ -103,7 +103,12 @@ test('two distinct colours give two hues, and near neighbours give one', () => {
 
 test('never more than three hues, however many colours are in the picture', () => {
   const many = ['#c25c2b', '#1f7a72', '#7d8f3c', '#4050c0', '#b03a8a', '#d8c020'];
-  assert.ok(huesOf(many.map(c => block(c))).length <= 3);
+  const hues = huesOf(many.map(c => block(c)));
+  // Both ends. `<= 3` alone is satisfied by zero, which is the other way this
+  // can be wrong and the more likely one: six strongly coloured pictures that
+  // produce no hue at all is a broken extractor, not a restrained one.
+  assert.ok(hues.length >= 1, 'six coloured pictures produced no hue at all');
+  assert.ok(hues.length <= 3, `got ${hues.length}: ${hues}`);
 });
 
 test('a grey screenshot with one stray coloured pixel does not vote', () => {
@@ -120,6 +125,7 @@ test('a grey screenshot with one stray coloured pixel does not vote', () => {
   // And the real board it came from: rose and magenta pictures outvote it, and
   // the palette is theirs rather than the stray pixel's.
   const real = huesOf([stray, block('#b0417f', 2304), block('#c25c4a', 2304)]);
+  assert.ok(real.length > 0, 'two strongly coloured pictures produced no hue');
   assert.ok(real.every(h => apart(h, 102) > 30), `the stray hue survived: ${real}`);
 });
 
@@ -507,8 +513,17 @@ test('pictures with no colour in them yield no palette at all', () => {
 });
 
 test('the same pictures always give the same palette', () => {
-  const px = [block('#1f7a72'), block('#c25c2b')];
-  assert.deepEqual(extractPalette(px), extractPalette(px));
+  // Two separate arrays of separately built blocks, with an unrelated
+  // extraction in between. `deepEqual(f(px), f(px))` over one array proves
+  // almost nothing: same object, same order, back to back. What it has to rule
+  // out is a palette that depends on call order, on module state left by the
+  // previous board, or on the identity of the buffers rather than their bytes -
+  // and none of those show up when the same array is handed over twice.
+  const first = extractPalette([block('#1f7a72'), block('#c25c2b')]);
+  assert.ok(first, 'two coloured pictures produced no palette');
+  extractPalette([block('#4050c0'), block('#d8c020')]);
+  const again = extractPalette([block('#1f7a72'), block('#c25c2b')]);
+  assert.deepEqual(again, first);
 });
 
 // ---------------------------------------------------------------------------

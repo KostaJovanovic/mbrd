@@ -113,7 +113,13 @@ test('every shape has an ink layer', () => {
   // is the mark alone. Either way at least one path has to carry the ink, or
   // the shape is a paper silhouette on paper - invisible on the board, and
   // invisible in a way no test of the *sprite* would otherwise notice.
-  for (const [, id, chunk] of sprite.matchAll(/<symbol id="([^"]+)"([\s\S]*?)<\/symbol>/g)) {
+  // Attribute order is the author's, and the count is asserted: this used to
+  // require id to be the first attribute and to assert only inside the walk, so
+  // a sprite the regex could not read was a sprite with nothing wrong with it.
+  const drawings = [...sprite.matchAll(/<symbol\b[^>]*\bid="([^"]+)"[^>]*>([\s\S]*?)<\/symbol>/g)];
+  assert.equal(drawings.length, STICKERS.length,
+    `the sprite walk found ${drawings.length} symbols and the catalogue has ${STICKERS.length}`);
+  for (const [, id, chunk] of drawings) {
     assert.ok(chunk.includes('fill="currentColor"'), `${id} draws no ink`);
   }
 });

@@ -632,7 +632,16 @@ function crosses(a, b, c, d) {
 }
 
 test('the crossing predicate agrees with obvious cases', () => {
-  // The test's own tool, checked before it is trusted below.
+  // The test's own tool, checked before it is trusted below - except that
+  // nothing below ever came to use it. `threads()` is not imported in this
+  // file, no planarity suite follows, and this ended up asserting that a
+  // fifteen-line helper in a test file does what its own fifteen lines say.
+  //
+  // Kept rather than deleted, because the tool is correct and the assertions
+  // are the readable statement of what "crossing" means - but the property it
+  // was written to check lives in tests/web.test.js, where noCrossings() runs
+  // the same predicate over real threads(). This is that helper's unit test;
+  // web.test.js is the one that would notice a regression.
   const p = (x, y) => ({ x, y });
   assert.ok(crosses(p(-1, 0), p(1, 0), p(0, -1), p(0, 1)), 'an X crosses');
   assert.ok(!crosses(p(-1, 0), p(1, 0), p(-1, 1), p(1, 1)), 'parallel lines do not');

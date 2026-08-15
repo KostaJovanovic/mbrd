@@ -64,13 +64,18 @@ test('every button names a command that exists', () => {
     { toWorld: () => ({ x: 0, y: 0 }), left: 0, top: 0, cx: 0, cy: 0, fit() {}, recenter() {} },
     { resetAppearance() {}, setWhimsy() {} });
   const camel = s => s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+  let checked = 0;
   for (const [, c] of allControls()) {
     for (const b of c.buttons || []) {
       if (!b.cmd) continue;
+      checked++;
       const key = camel(b.cmd);
       assert.ok(key in cmds, `data-cmd="${b.cmd}" has no cmds.${key}`);
     }
   }
+  // The loop has two ways to iterate nothing - no controls, or no buttons with
+  // a cmd on them - and both left this passing with every button unchecked.
+  assert.ok(checked > 5, `only ${checked} data-cmd buttons found in the schema`);
 });
 
 test('a control that can be set can also be read', () => {

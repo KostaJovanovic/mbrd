@@ -73,6 +73,19 @@ test('the layouts are the arrangement catalogue, in its order', () => {
   // panel offers and the flyout silently does not.
   const rows = arrangeEntries(stub()).filter(e => e.check != null);
   assert.deepEqual(rows.map(r => r.label), ARRANGEMENTS.map(a => a.label));
+
+  // And the same set as the settings panel offers, which is the failure the
+  // comment above describes and the line above cannot see: arrangeEntries
+  // builds its rows *out of* ARRANGEMENTS, so comparing the two is comparing
+  // the implementation with itself. The pair that can actually drift is the
+  // flyout and the panel, and they drift by one of them being given its own
+  // list.
+  const schema = read(join(JS, 'ui', 'settings-schema.ts'));
+  const opts = /id: 'arrangement'[\s\S]*?\boptions:([\s\S]*?)\bget:/.exec(schema);
+  assert.ok(opts, "no 'arrangement' control in settings-schema.ts - has it moved?");
+  assert.match(opts[1], /\bARRANGEMENTS\b/,
+    'the settings panel builds its arrangement rows from somewhere other than '
+    + 'the catalogue, so the panel and the flyout can now offer different shapes');
 });
 
 test('exactly one layout is ticked, and it is the one the board is in', () => {
@@ -112,12 +125,26 @@ test('the spacing dial reads and writes the spacing setting', () => {
 test('the pad offers every sheet the notes are printed on, and only those', () => {
   const rows = noteEntries(stub());
   assert.equal(rows.length, NOTE_TINTS);
-  // The chip is the token itself, so a fifth sheet added to tokens.css and to
-  // NOTE_TINTS turns up here drawn in its own colour rather than as a gap.
-  assert.deepEqual(
-    rows.map(r => r.swatch),
-    Array.from({ length: NOTE_TINTS }, (_, i) => `var(--note-${i + 1})`),
-  );
+
+  // Against tokens.css, which is what the comment here always claimed and what
+  // it never did. The expectation used to be
+  // `Array.from({length: NOTE_TINTS}, (_, i) => \`var(--note-${i + 1})\`)` -
+  // character for character how noteEntries builds the row - so it held however
+  // many sheets NOTE_TINTS named, whether or not tokens.css declared them. The
+  // failure it is supposed to catch is a fifth sheet in one file and not the
+  // other, and that is exactly the pair it was not comparing.
+  const tokens = read(join(WEB, 'assets', 'css', 'tokens.css'));
+  const sheets = new Set([...tokens.matchAll(/^\s*--note-(\d+):/gm)].map(m => Number(m[1])));
+  assert.ok(sheets.size > 0, 'no --note-N tokens found - has tokens.css moved?');
+  assert.deepEqual([...sheets].sort((a, b) => a - b),
+    Array.from({ length: NOTE_TINTS }, (_, i) => i + 1),
+    `tokens.css declares ${sheets.size} note sheets and NOTE_TINTS says ${NOTE_TINTS}`);
+
+  for (const [i, row] of rows.entries()) {
+    const named = /^var\((--note-\d+)\)$/.exec(row.swatch);
+    assert.ok(named, `row ${i + 1} draws its chip as ${row.swatch}, not as a token`);
+    assert.ok(tokens.includes(`${named[1]}:`), `${named[1]} is not declared in tokens.css`);
+  }
 });
 
 test('picking a sheet asks for that sheet by number', () => {

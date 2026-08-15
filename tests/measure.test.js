@@ -120,15 +120,21 @@ test('the scale bar is a round number that fits', () => {
 test('the bar it draws is the length it prints', () => {
   // The one way a scale bar can be actively wrong. Walked across four decades
   // of zoom, because the rung it lands on changes at every one of them.
+  let drawn = 0;
   for (let pxPerMm = 0.002; pxPerMm < 200; pxPerMm *= 1.7) {
     for (const system of ['metric', 'imperial']) {
       const step = scaleStep(pxPerMm, 116, system);
       if (!step) continue;
+      drawn++;
       assert.ok(step.px <= 116, `overflowed at ${pxPerMm} ${system}`);
       assert.ok(Math.abs(step.mm * pxPerMm - step.px) < 1e-9,
         `bar and label disagree at ${pxPerMm} ${system}`);
     }
   }
+  // Because `if (!step) continue` is the whole loop's escape hatch: a
+  // scaleStep() that returned null at every zoom in four decades passed this
+  // test, having drawn nothing and disagreed with nothing.
+  assert.ok(drawn > 20, `only ${drawn} of the ~30 zoom levels produced a bar at all`);
 });
 
 test('the bar takes the longest rung that fits, not the nearest', () => {

@@ -269,6 +269,28 @@ test('Desktop and Mobile retain independent settings and local appearance', () =
 });
 
 test('layout settings round-trip in the responsive .mbrd schema', () => {
+  // Its own board. This used to open on `serializeBoard()` with no setup at
+  // all, reading whatever the test above happened to leave in the module
+  // singleton - so it asserted another test's arrangement and proved nothing
+  // about a round trip, and running it on its own (`node --test
+  // --test-name-pattern "round-trip in the responsive"`, which CLAUDE.md
+  // documents as a supported workflow) failed at the first line: expected 80,
+  // actual 64. There is no beforeEach in this file, and the two tests that
+  // build a board build different ones, so the setup belongs in each.
+  setBoardMode('desktop');
+  loadBoard({ items: [] });
+  setSetting('gridStep', 80);
+  setSetting('mobileColumns', 6);
+  setArrangement('grid');
+  setAppearance({ ...board.settings.appearance, vars: { '--radius': '14px' } });
+
+  setBoardMode('mobile');
+  setSetting('gridStep', 48);
+  setSetting('mobileColumns', 8);
+  setSetting('spacing', 20);
+  setArrangement('type');
+  setAppearance({ ...board.settings.appearance, vars: { '--radius': '5px' } });
+
   const saved = serializeBoard();
 
   assert.equal(saved.layouts.desktop.settings.gridStep, 80);

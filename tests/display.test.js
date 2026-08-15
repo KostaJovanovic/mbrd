@@ -25,9 +25,24 @@ const imageBlob = () => ({ type: 'image/png', size: 1024 });
  * open so a test can interleave a clear with a generation in flight.
  *
  * Returns `release()` to let the decode finish, plus counters proving nothing
- * was allocated behind a refused job.
+ * was allocated behind a refused job, plus `restore()`.
+ *
+ * `restore()` matters more than it looks: `globalThis.URL` is replaced below by
+ * an object with two methods on it, and Node's real URL is a *class* that the
+ * rest of the suite constructs. Leaving the stub standing meant every test file
+ * that ran after this one in the same process inherited it, and the failure
+ * would land somewhere else entirely - `new URL(...) is not a constructor` in a
+ * module that never asked for a stub.
  */
 function stubImageAPIs() {
+  const saved = ['createImageBitmap', 'OffscreenCanvas', 'URL']
+    .map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]);
+  const restore = () => {
+    for (const [name, desc] of saved) {
+      if (desc) Object.defineProperty(globalThis, name, desc);
+      else delete globalThis[name];
+    }
+  };
   let release;
   const decoding = new Promise(r => { release = r; });
   let created = 0;
@@ -56,7 +71,7 @@ function stubImageAPIs() {
     revokeObjectURL: () => { revoked++; },
   };
 
-  return { release, urls: () => created, revoked: () => revoked, peak: () => peak };
+  return { release, restore, urls: () => created, revoked: () => revoked, peak: () => peak };
 }
 
 // display.js keeps its cache in module scope, so each test needs its own copy.
@@ -64,8 +79,9 @@ function stubImageAPIs() {
 let n = 0;
 const freshDisplay = () => { clearAssets(); return import(`../web/assets/js/canvas/display.ts?case=${n++}`); };
 
-test('a copy generated across a clear is discarded, not published', async () => {
+test('a copy generated across a clear is discarded, not published', async (t) => {
   const api = stubImageAPIs();
+  t.after(api.restore);
   const { ensureDisplay, displayURLReady, clearDisplay } = await freshDisplay();
 
   putAsset('h1', imageBlob());
@@ -78,8 +94,9 @@ test('a copy generated across a clear is discarded, not published', async () => 
   assert.equal(api.urls(), 0, 'a refused job must not create an object URL');
 });
 
-test('a clear does not reset the queue, so decodes stay serialized', async () => {
+test('a clear does not reset the queue, so decodes stay serialized', async (t) => {
   const api = stubImageAPIs();
+  t.after(api.restore);
   const { ensureDisplay, clearDisplay } = await freshDisplay();
 
   putAsset('a', imageBlob());
@@ -100,8 +117,9 @@ test('a clear does not reset the queue, so decodes stay serialized', async () =>
   assert.equal(api.peak(), 1, 'and the whole run never holds two decodes at once');
 });
 
-test('generation still works normally when no clear intervenes', async () => {
+test('generation still works normally when no clear intervenes', async (t) => {
   const api = stubImageAPIs();
+  t.after(api.restore);
   const { ensureDisplay, displayURLReady } = await freshDisplay();
 
   putAsset('h2', imageBlob());

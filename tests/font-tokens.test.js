@@ -23,7 +23,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 
-import { WEB, JS, read } from './helpers.js';
+import { WEB, JS, read, appCss } from './helpers.js';
 
 const tokens = read(join(WEB, 'assets', 'css', 'tokens.css'));
 const fonts = read(join(WEB, 'assets', 'css', 'fonts.css'));
@@ -39,13 +39,22 @@ test('the token is kept by the font menus, not by a stylesheet rule', () => {
   // The honest statement of the situation: nothing in the CSS reads it. That is
   // not rot, it is the reason the test exists - so assert it, and let the
   // assertion below carry the actual justification.
-  const readers = [...tokens.matchAll(/var\(--font-serif-display/g)];
+  // Across the whole cascade, not just tokens.css. Searching the one file the
+  // token is *declared* in was the one place a reader could not be: a rule that
+  // used it would be in cards.css or chrome.css like every other rule in the
+  // app, and this said "nothing reads it" without having looked there.
+  const readers = [...appCss().matchAll(/var\(--font-serif-display/g)];
   assert.equal(readers.length, 0,
     'a rule now reads this token, so it defends itself and this file can be simplified');
 
   // What genuinely keeps it: Playfair is offered by name in both font menus, so
   // a board can be carrying it as a saved override.
-  assert.match(appearance, /Playfair/,
+  //
+  // Comments stripped first. The old check matched 'Playfair' anywhere in
+  // appearance.ts, and the module discusses the faces it offers in prose - so
+  // deleting the row and leaving the paragraph about it passed.
+  const code = appearance.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+  assert.match(code, /Playfair/,
     'Playfair is no longer offered in the appearance menu');
   assert.match(fontMenu, /label: 'Playfair'/,
     'Playfair is no longer offered in the font menu - if it is gone from both, --font-serif-display may go too');

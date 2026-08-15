@@ -71,6 +71,11 @@ test('the heaviest come first, and the order is stable', () => {
   asset('d'.repeat(64), 1200, 'tie-one.png');
   asset('e'.repeat(64), 1200, 'tie-two.png');
   const first = boardInventory().largest.map(a => a.hash);
+  // The two tied assets have to be in it before comparing two runs proves
+  // anything: `deepEqual(f(), first)` over an empty largest[] is two empty
+  // arrays agreeing, which is what a report that lists nothing looks like.
+  assert.ok(first.includes('d'.repeat(64)) && first.includes('e'.repeat(64)),
+    'the two tied assets are not in the report at all');
   assert.deepEqual(boardInventory().largest.map(a => a.hash), first);
 });
 

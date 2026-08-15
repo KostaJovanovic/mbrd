@@ -151,8 +151,18 @@ test('the palette compares pictures by hash, without minting an object URL', () 
   assert.ok(walk.includes('getAsset('), 'the walk should test registration, not resolve');
   assert.ok(!walk.includes('assetURL('), 'the walk must not mint an object URL per picture');
 
-  const key = source.match(/function sourceKey\([^)]*\)[\s\S]*?\n}/)[0];
-  assert.ok(key.includes('pictureHashes()'), 'the comparison key is built from hashes');
+  // The body, not the signature. sourceKey is declared
+  // `function sourceKey(hashes = pictureHashes())`, so the old check -
+  // `key.includes('pictureHashes()')` over a match that began at the signature -
+  // was satisfied by the default parameter it had already matched. The body
+  // could be emptied and this went on saying the comparison key is built from
+  // hashes.
+  const decl = source.match(/function sourceKey\([\s\S]*?\n}/)[0];
+  const body = decl.slice(decl.indexOf('{') + 1);
+  assert.ok(body.includes('hashes'), 'the comparison key is built from the hashes it was handed');
+  assert.ok(body.includes('sourceCount()'),
+    'and from the source dial - a key over every picture is a key that never settles');
+  assert.ok(!body.includes('assetURL('), 'the key must not mint an object URL either');
 
   // And the resolve that does happen is of the slice, not of the board.
   assert.match(source, /hashes\.slice\(0, sourceCount\(\)\)\.map\(assetURL\)/);
