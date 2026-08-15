@@ -57,6 +57,29 @@
 //   midPaste ........ the X11 primary-selection guard. Outlives the gesture on
 //                     purpose - the paste it swallows arrives a task *after* the
 //                     pan that armed it. Three closure variables, one record.
+//
+// ── Deciding and doing are two things, and only the first can be tested ──
+//
+// The file is not to be split - CONTRIBUTING.md says so and the reason is the
+// single active gesture, which a second pipeline would reintroduce exactly the
+// bugs of. What that rule has never forbidden, and what this file spent a long
+// time not doing, is *naming* the decisions inside it.
+//
+// So the pure half is exported and the effects stay where they are. `readWheel`
+// is the oldest of these, `gestureTransition` the mode table, and `pressIntent`
+// the newest and the largest: the eight branches of the pointerdown cascade,
+// which used to be that cascade interleaved with the select, the pointer
+// capture and the enter() each branch performs. The handler gathers facts,
+// asks once what the press means, and then performs the answer - and nothing
+// below the ask re-decides it.
+//
+// That is not a machine standing beside the pipeline. There is still one file,
+// one `gesture`, one pointerdown and one of every listener; what changed is that
+// "a press on an unpicked card, under a finger, pans and selects on the lift" is
+// a sentence tests/input.test.js can put to the module rather than a comment a
+// reader has to trust. Roughly two thirds of this file is still inside
+// initInput() and out of a test's reach - the next thing worth naming is the
+// tap and hold bookkeeping, for the same reason and in the same shape.
 
 import { clamp } from '../util.ts';
 import {
@@ -145,6 +168,144 @@ export function shortcutsSuppressed(
   overlayOwnsKeyboard: boolean,
 ): boolean {
   return !!(defaultPrevented || overlayOwnsKeyboard);
+}
+
+// ---------------------------------------------------------------------------
+// What a press means
+// ---------------------------------------------------------------------------
+//
+// The pointerdown handler is a cascade of eight branches deciding what a press
+// has just started, and it used to be that cascade *interleaved with the effects
+// each branch performs* - a select here, a pointer capture there, an enter()
+// with a DOM node on it. Two hundred and seventy lines in which the decision and
+// the doing could only be read together, and in which the decision could not be
+// reached by a test at all: every one of those branches turns on facts a headless
+// runner can state in a line (a pointer type, a modifier, whether the thing under
+// the point was a card) and none of them could be asked.
+//
+// So the decision is this function and the doing stays in the handler. **The
+// pipeline is not split**: there is still one file, one active gesture and one
+// pointerdown, and this is not a second machine standing beside it - it is the
+// existing branch order, written down where it can be asked a question. What it
+// buys is that "a press on an unpicked card, on a phone, pans and selects on
+// lift" is now a sentence a test can put to the module rather than a comment
+// somebody has to trust.
+//
+// It is deliberately *not* the whole handler. The four claims above it - the
+// connector tool, the title card's pen, its rename button, its double tap - each
+// call a command and end the press, so they are effects wearing a condition and
+// they stay where they are. This begins where the branch order stops calling out
+// and starts choosing.
+
+/**
+ * What a press turns out to be. One variant per branch of the cascade.
+ *
+ *   widget ...... a real control inside a card owns the whole gesture. The card
+ *                 is selected and the pointer is let go of - capturing here
+ *                 would redirect every following move to #viewport and leave a
+ *                 scrubber dead.
+ *   pan ......... the board follows the pointer. `middle` is the X11 primary
+ *                 selection guard's business, not the pan's.
+ *   resize ...... a grip press, waiting out the slop before it touches geometry.
+ *   marqueeDrag . the second tap of a touch double tap, waiting for the same.
+ *   tapGate ..... a press on an unpicked card, on touch or on Mobile: pan now,
+ *                 select on the lift.
+ *   move ........ the selection follows the pointer. `additive` and
+ *                 `wasSelected` are what the lift reads to tell a selection
+ *                 edit from a pick.
+ *   lockedPan ... a press on a locked card. It selects and then pans, which is
+ *                 what a press on bare board does.
+ *   marquee ..... a modified press on empty board.
+ *   empty ....... an unmodified one: clear the selection, point at whatever line
+ *                 is under it, and pan.
+ */
+export type PressIntent =
+  | { kind: 'widget' }
+  | { kind: 'pan', middle: boolean }
+  | { kind: 'resize', id: string }
+  | { kind: 'marqueeDrag' }
+  | { kind: 'tapGate', id: string, additive: boolean }
+  | { kind: 'move', id: string, additive: boolean, wasSelected: boolean }
+  | { kind: 'lockedPan', id: string, additive: boolean, wasSelected: boolean }
+  | { kind: 'marquee' }
+  | { kind: 'empty' };
+
+/**
+ * Everything the cascade reads, as facts rather than as objects.
+ *
+ * Named off what the branches ask rather than off where the answer comes from,
+ * which is what keeps this a decision and not a second copy of the handler's
+ * imports: `onCard` is an id because two branches need to say which card, and
+ * everything else is a boolean because that is all any branch does with it.
+ */
+export type PressFacts = {
+  pointerType: string;
+  button: number;
+  /** shift, ctrl or meta - the three the cascade treats identically. */
+  additive: boolean;
+  spaceDown: boolean;
+  /** A control inside a card: a scrubber, a button, a note being edited. */
+  onWidget: boolean;
+  /** A resize handle, after the corner-yield look-through. */
+  onGrip: boolean;
+  /** The item under the point, or null for bare board. */
+  onCard: string | null;
+  /** Is that card's geometry pinned - `meta.locked`? */
+  locked: boolean;
+  /** Is it unpicked, so that a drag would have to select it first? */
+  needsTapFirst: boolean;
+  /** Is it already in the selection? */
+  wasSelected: boolean;
+  selectionSize: number;
+  /** The second tap of a touch double tap on empty board. */
+  doubleTapDrag: boolean;
+  isMobile: boolean;
+};
+
+/**
+ * The branch a press takes, in the order the handler has always taken them.
+ *
+ * The order is the whole of it and each step is load-bearing:
+ *
+ *   1. A widget claims the press outright - but not while space is held or on a
+ *      middle button, both of which mean pan from anywhere, including from over
+ *      a scrubber.
+ *   2. Space or the middle button, therefore, is a pan.
+ *   3. A grip is a resize *candidate*, and only with one card picked or none:
+ *      resize drives one item off one corner and there is no defined answer for
+ *      what a corner drag means across a selection. With more than one it falls
+ *      through and picks the selection up like any other press on a card. A
+ *      locked card has no grips to press either.
+ *   4. The second tap of a double tap on empty board is a marquee candidate.
+ *   5. An unpicked card under a finger - or under anything at all on Mobile - is
+ *      the two-step gate. A mouse on the Desktop board has no such tension: a
+ *      left press on a card is a grab, and waiting for select-then-drag felt
+ *      broken, so it falls through to the move below.
+ *   6. Any other press on a card moves it, or pans if it is locked.
+ *   7. A modified press on bare board bands.
+ *   8. An unmodified one clears, points at a line, and pans.
+ */
+export function pressIntent(f: PressFacts): PressIntent {
+  const middle = f.button === 1;
+  if (f.onWidget && !f.spaceDown && !middle) return { kind: 'widget' };
+  if (f.spaceDown || middle) return { kind: 'pan', middle };
+  if (f.onGrip && f.onCard && f.selectionSize <= 1 && !f.locked) {
+    return { kind: 'resize', id: f.onCard };
+  }
+  if (f.doubleTapDrag) return { kind: 'marqueeDrag' };
+  if (f.onCard && f.needsTapFirst && (f.pointerType === 'touch' || f.isMobile)) {
+    return { kind: 'tapGate', id: f.onCard, additive: f.additive };
+  }
+  if (f.onCard) {
+    // The four card branches carry the id rather than leaving the caller to
+    // reach for it again. It is the same string the facts arrived with - what it
+    // buys is that a branch which only exists because there *was* a card says so
+    // in its own type, so nothing downstream has to assert it.
+    const carried = { id: f.onCard, additive: f.additive, wasSelected: f.wasSelected };
+    return f.locked ? { kind: 'lockedPan', ...carried } : { kind: 'move', ...carried };
+  }
+  if (f.additive) return { kind: 'marquee' };
+  return { kind: 'empty' };
 }
 
 /** Whether a native contextmenu repeats the menu a touch hold already opened. */
@@ -1582,7 +1743,26 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         : null;
     }
 
-    if (widget && !spaceDown && e.button !== 1) {
+    // What this press is, decided in one place off facts a test can state - see
+    // pressIntent() above. Everything below performs the answer; nothing below
+    // re-decides it.
+    const intent = pressIntent({
+      pointerType: e.pointerType,
+      button: e.button,
+      additive: e.shiftKey || e.ctrlKey || e.metaKey,
+      spaceDown,
+      onWidget: !!widget,
+      onGrip: !!grip,
+      onCard: id,
+      locked: !!id && isLocked(byId(id)),
+      needsTapFirst: !!id && needsTapFirst(id),
+      wasSelected: !!id && selection.has(id),
+      selectionSize: selection.size,
+      doubleTapDrag,
+      isMobile: vp.isMobile,
+    });
+
+    if (intent.kind === 'widget') {
       if (id) select([id]);
       pointers.delete(e.pointerId);
       return;
@@ -1594,15 +1774,15 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // the one branch below that disagrees says so itself, by marking one again.
     cmds.clearActiveConnection?.();
 
-    if (spaceDown || e.button === 1) {
-      if (e.button === 1) {
+    if (intent.kind === 'pan') {
+      if (intent.middle) {
         midPaste.down = true;
         midPaste.dragged = false;
         midPaste.at = { x: e.clientX, y: e.clientY };
       }
       e.preventDefault();
       startPan(e);
-    } else if (grip && id && selection.size <= 1 && !isLocked(byId(id))) {
+    } else if (intent.kind === 'resize') {
       // A grip press is only a candidate. Waiting for movement keeps a plain tap
       // on a corner from touching snapped geometry, and leaves the tap free to
       // mean select rather than a zero-distance resize.
@@ -1619,15 +1799,17 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // is which of the two it will become.
       enter('press', {
         intent: 'resize',
-        id,
-        corner: grip.dataset.g,
+        id: intent.id,
+        // pressIntent() only answers 'resize' when onGrip was true, and onGrip
+        // is this element - so the branch itself is what makes this non-null.
+        corner: grip!.dataset.g,
         x: e.clientX,
         y: e.clientY,
         // `?.` rather than a bare read: a grip only exists because `target` did
         // (it came off target.closest), so this can never be the null branch.
         node: target?.closest('.item') ?? null,
       });
-    } else if (doubleTapDrag) {
+    } else if (intent.kind === 'marqueeDrag') {
       // Wait for movement before showing or applying the marquee. A plain double
       // tap does nothing now (it used to fit the board); holding and dragging the
       // second tap turns into select.
@@ -1635,7 +1817,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       enter('press', {
         intent: 'marquee', clientX: e.clientX, clientY: e.clientY, x0: p.x, y0: p.y,
       });
-    } else if (id && needsTapFirst(id) && (e.pointerType === 'touch' || vp.isMobile)) {
+    } else if (intent.kind === 'tapGate') {
       // Touch, or the mobile layout whatever the pointer. A finger - and the
       // mobile board, which is a vertical feed you scroll far more than you
       // rearrange - navigates more than it drags, so a press on an unpicked card
@@ -1652,19 +1834,22 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // space would, or the gate would still be moving the selection about.
       taps.arm = {
         pointerId: e.pointerId,
-        id,
+        id: intent.id,
         x: e.clientX,
         y: e.clientY,
-        additive: e.shiftKey || e.ctrlKey || e.metaKey,
+        additive: intent.additive,
       };
-      taps.card = { pointerId: e.pointerId, id, x: e.clientX, y: e.clientY, slop: TAP_MOVE_SLOP };
+      taps.card = {
+        pointerId: e.pointerId, id: intent.id, x: e.clientX, y: e.clientY, slop: TAP_MOVE_SLOP,
+      };
       startPan(e);
-    } else if (id) {
-      const additive = e.shiftKey || e.ctrlKey || e.metaKey;
-      const held = selection.has(id);
-      if (additive) select([id], true);
-      else if (!held) select([id]);
-      taps.card = { pointerId: e.pointerId, id, x: e.clientX, y: e.clientY, slop: DRAG_SLOP };
+    } else if (intent.kind === 'move' || intent.kind === 'lockedPan') {
+      const { id: cardId, additive, wasSelected: held } = intent;
+      if (additive) select([cardId], true);
+      else if (!held) select([cardId]);
+      taps.card = {
+        pointerId: e.pointerId, id: cardId, x: e.clientX, y: e.clientY, slop: DRAG_SLOP,
+      };
       // A locked card is not something the pointer can take hold of, so the
       // press does what a press on bare board does and pans. Note what is above
       // this line and therefore still happens: the card is *selected*, so its
@@ -1680,10 +1865,10 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // Not an early return, which would fall past the long-press arming at the
       // foot of this function - and on a phone that hold is the *only* way to
       // reach a locked card's menu, which is where the unlock is.
-      if (isLocked(byId(id))) {
+      if (intent.kind === 'lockedPan') {
         startPan(e);
       } else {
-        const move = startMove(e, id);
+        const move = startMove(e, cardId);
         // Carried on the gesture so the lift can tell a selection edit from a
         // pick - see `unpick` in endPointer(). A modified press means "toggle
         // this card", and whether the lift should drop it again depends on what
@@ -1695,7 +1880,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         move.additive = additive;
         move.wasSelected = held;
       }
-    } else if (e.shiftKey || e.ctrlKey || e.metaKey) {
+    } else if (intent.kind === 'marquee') {
       startMarquee(e);
     } else {
       if (selection.size) clearSelection();
