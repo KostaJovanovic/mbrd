@@ -22,6 +22,13 @@
 // a resize drag stops at the height the text requires - so there is no state in
 // which a note is hiding something.
 //
+// Both rules are the *box* giving way, never the text. A note's type is a fixed
+// size the user sets on the note (A- and A+, --note-scale); the sheet is what
+// changes shape around it. Resizing a note therefore rewraps what it says and
+// rescales nothing, which is also what makes the single measurement in
+// noteHeight() below an answer rather than the first step of an iteration. See
+// the block over --note-half in cards.css for what that replaced.
+//
 // One note stops being a note. If what it says turns out to be an address and
 // nothing else, it becomes a link item as the edit closes - see linkify() below.
 
@@ -95,6 +102,14 @@ const textOf = (el: Element): string => el.textContent!;
  * placed by justify-content, and a stretched element reports its box rather than
  * its content - so it is briefly released to its natural height, pinned to the
  * top, to be measured.
+ *
+ * One answer, never an iteration, and that is a fact about cards.css rather
+ * than about this function: the sticky's type is a fixed size and its margins
+ * are a share of the *width*, so nothing the caller does with the height it is
+ * given can change what was just measured. While the margins came off
+ * min(w, h) they could - a taller note had wider margins, so a note grown by a
+ * line came back needing another one - and the loop had no exit written for it
+ * because it was never visible on the square notes the ramp was drawn for.
  */
 function noteHeight(id: string, width?: number | null): number {
   const el = nodeFor(id);
@@ -105,7 +120,17 @@ function noteHeight(id: string, width?: number | null): number {
   if (!el || !card || !wrap) return 0;
 
   const prevWidth = el.style.width;
-  if (width != null) el.style.width = width.toFixed(2) + 'px';
+  // --half-w with it, and not as a nicety: it is w / 2, placeBox() writes it
+  // from the item's *committed* width, and the sheet's padding is a clamp on
+  // it. Setting the one and not the other measures the proposed width's
+  // wrapping inside the old width's margins, which is wrong in the direction
+  // that hides text - a note dragged wider has more room than the floor
+  // measured it with.
+  const prevHalfW = el.style.getPropertyValue('--half-w');
+  if (width != null) {
+    el.style.width = width.toFixed(2) + 'px';
+    el.style.setProperty('--half-w', (width / 2).toFixed(2) + 'px');
+  }
   const prevFlex = wrap.style.flex;
   const prevHeight = wrap.style.height;
   const prevJustify = wrap.style.justifyContent;
@@ -122,9 +147,29 @@ function noteHeight(id: string, width?: number | null): number {
   wrap.style.flex = prevFlex;
   wrap.style.height = prevHeight;
   wrap.style.justifyContent = prevJustify;
-  if (width != null) el.style.width = prevWidth;
+  if (width != null) {
+    el.style.width = prevWidth;
+    // setProperty with '' is a removal, which is the right restore for the one
+    // caller that can reach here before placeBox() has written the property:
+    // measuring a card built this frame would otherwise leave it pinned to the
+    // measured width for good.
+    el.style.setProperty('--half-w', prevHalfW);
+  }
   return need;
 }
+
+/**
+ * The card is standing in for itself somewhere else, at a size that is not its
+ * own. Set by the composer while it holds the note; see openComposer().
+ *
+ * It exists so that growing a note stays *one* call from *one* place. Every
+ * route that changes what a note says or how it is set - a keystroke, a paste,
+ * an alignment, a font, A+ - ends at afterEdit(), and afterEdit() calls
+ * growNote(). A second grower wired up beside it for the dialog would be a
+ * second thing to remember to call, and the one it was forgotten on would clip
+ * its text silently.
+ */
+let standIn: { id: string; fit: () => void } | null = null;
 
 /**
  * Grow a note to fit its text. Never shrinks: a note you deliberately made
@@ -134,8 +179,15 @@ function noteHeight(id: string, width?: number | null): number {
  * Not undoable, on purpose - the same reasoning as adoptAspect() in
  * renderers.js. It is part of the text arriving, not an edit of its own, and an
  * undo entry per keystroke would bury the edit it belongs to.
+ *
+ * A note the composer is showing grows *there* and not here. The card in the
+ * dialog is drawn at a standard size rather than at its own, so what it needs
+ * at that size is not a fact about the note - writing it to the item would
+ * resize a note on the board to fit a box it is not in. The board note is
+ * re-fitted once, on the way home.
  */
 export function growNote(id: string) {
+  if (standIn?.id === id) { standIn.fit(); return; }
   const it = byId(id);
   if (!it || it.type !== 'note') return;
   const need = noteHeight(id, it.w);
@@ -449,7 +501,22 @@ export function editNote(
   // you cannot see is indistinguishable from a broken keyboard.
   const counter = document.createElement('div');
   counter.className = 'note-count';
-  node.append(counter);
+  // In the composer it belongs to the dialog rather than to the sheet, and that
+  // is not tidiness. Hung off the card it is a child of a box drawn at twice
+  // life size and leaning a degree off square, so "just under the right-hand
+  // corner" resolves against a scaled, rotated box and lands somewhere over the
+  // note at whatever size the scale left it - which is how a counter reading
+  // "475 left" came out twenty-one pixels wide behind the sheet.
+  //
+  // The dialog's button row is flat, at one scale, and already carries a gap
+  // that pushes Cancel and Save to the right. That gap is the one piece of the
+  // dialog nothing else wants, and it puts the number at the opposite end of
+  // the same line from the buttons - which is where a form puts one.
+  //
+  // No slot of its own in index.html, deliberately: an element that exists to
+  // be filled by one caller is a slot, and .ask-gap already *is* that shape.
+  const slot = surface?.querySelector<HTMLElement>('.ask-gap');
+  (slot || node).append(counter);
   const refreshCount = () => {
     const left = NOTE_MAX - flatLength(wrap);
     counter.textContent = left + ' left';
@@ -817,6 +884,28 @@ export function editNote(
  * still written, just on the board, which is where the context menu writes one
  * anyway.
  */
+/**
+ * The composer, opened on a note that is already on the board.
+ *
+ * Editing a sticky used to be the floating bar over the card, and composing a
+ * new one the dialog - two surfaces for one act, and the smaller of the two got
+ * the harder job. The bar is around 700px of controls for a note 130 wide: it
+ * cannot sit beside what it edits, so it sits over the cards behind it, and at
+ * the right-hand edge of the board it runs out of room to sit anywhere. The
+ * dialog has the space the controls actually need, dims everything that is not
+ * this note, and gives the words a sheet of a sensible size to be written on
+ * whatever size the note itself is.
+ *
+ * No `added` to hand on, and that is the whole difference between the two ways
+ * in - see onDone in openComposer(), where it is the one thing an empty note is
+ * read against. No animation frame either: composeNote() waits one because the
+ * card it is about was made a moment ago and the canvas has not built it yet,
+ * and a card already on the board has no such wait to do.
+ */
+export function editNoteInComposer(id: string) {
+  openComposer(id, null);
+}
+
 export function composeNote(make: () => Item | null | undefined) {
   const before = lastCommand();
   const item = make();
@@ -837,27 +926,29 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>) {
   const node: HTMLElement | undefined = nodeFor(id);
   if (!node || !mount || typeof dlg?.showModal !== 'function') { editNote(id); return; }
 
-  // Shown at twice the size, which is a zoom and not a different note: the card
-  // is the same box with the same --half-min, so every fraction of itself the
-  // sticky is drawn from - the margins, the adhesive band, the type ramp - lands
-  // exactly where it lands on the board. A note is 120 across by default, and
-  // 120 points of paper in the middle of a dimmed screen is a stamp.
+  // The dialog draws every note on the same sheet, whatever the note's own box
+  // is, and this is the whole of what it is for: it is where the words are
+  // written, and nowhere else in the app is the size of the paper a thing you
+  // are asked about while you are choosing them.
   //
-  // A transform rather than the zoom property, because zoom changes the numbers
-  // offsetHeight reports and noteHeight() measures with it - a sheet that
-  // reported twice its height would grow the item to twice the height it needs.
-  // The mount reserves the scaled box in its place, since a transform does not.
-  mount.style.setProperty('--sheet-zoom', String(SHEET_ZOOM));
-  const fit = () => {
-    const it = byId(id);
-    if (!it) return;
-    mount.style.width = (it.w * SHEET_ZOOM) + 'px';
-    mount.style.height = (it.h * SHEET_ZOOM) + 'px';
-  };
-  fit();
-  // The note grows as it is written, on the board and here alike; the box the
-  // dialog keeps for it has to grow with it.
-  const offGeom = bus.on('geom', ids => { if (ids?.includes?.(id)) fit(); });
+  // It showed the note at its own size for a while, magnified, on the argument
+  // that a writer should see what they are making. What that produced was a
+  // dialog whose shape was somebody else's earlier decision - a note dragged
+  // out into a banner opened as a letterbox two lines deep and half the screen
+  // wide, one dragged narrow opened as a chimney, and the sheet jumped a step
+  // wider or taller as the note grew under the caret. None of that is about the
+  // sentence being written. The board is where a note has a shape; here it has
+  // a column to write down.
+  //
+  // So: EDIT_W across, at least EDIT_W down, growing downwards to hold what is
+  // typed and never sideways. Everything about how the words are *set* is still
+  // true here - the type is a fixed size (see cards.css), so the line breaks
+  // fall where they fall on a note this wide and the sheet is legible without
+  // being magnified. What is not true here is the note's own width, and the
+  // wrapping that follows from it; the board is one refresh away.
+  const prevWidth = node.style.width;
+  const prevHeight = node.style.height;
+  const prevHalfW = node.style.getPropertyValue('--half-w');
 
   // Where the canvas had it, to the sibling: the world layer is in z-order and
   // handing the card back at the end of the row would put it in front of things
@@ -866,22 +957,39 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>) {
   const after = node.nextSibling;
   mount.append(node);
 
-  // The card's own transform comes off while it is out of the world layer, and
-  // this is not tidiness - without it the sheet is drawn at life size against
-  // the left edge of a mount reserved at twice that.
+  node.style.width = EDIT_W + 'px';
+  // The margins are a share of the width (--note-half in cards.css), so the
+  // stand-in width has to bring its own half or the sheet is drawn at this size
+  // in the margins of whatever size it is on the board.
+  node.style.setProperty('--half-w', (EDIT_W / 2) + 'px');
+  // Measured at the width just set - noteHeight() with no width of its own
+  // reads the card as it stands. Never below EDIT_W, so a note of two words is
+  // a sheet and not a strip, and the vertical placement the toolbar sets has
+  // somewhere to place things.
   //
-  // canvas/items.js writes `transform` *inline* on every item (placeBox), and an
-  // inline declaration outranks the stylesheet rule that scales the sheet here
-  // (#compose-mount .item in overlays.css). The string is almost never empty:
-  // deviceSnap() returns a sub-pixel correction at any zoom and any device pixel
-  // ratio, and a rotated note carries a rotate() instead. So the scale never
-  // applied and the mount's reserved box was twice the size of what stood in it.
+  // Written after the mount and not before: the world layer culls what is off
+  // screen, and a note reached from the menu rather than from a double-click
+  // can be measured while it is still in there. A card no browser is laying
+  // out answers 0 to every measurement.
+  const fit = () => { node.style.height = Math.max(EDIT_W, noteHeight(id)) + 'px'; };
+  // Registered before editNote(), which grows the note as part of starting.
+  standIn = { id, fit };
+  fit();
+
+  // The card's own transform comes off while it is out of the world layer, and
+  // this is not tidiness. canvas/items.js writes `transform` *inline* on every
+  // item (placeBox) and the string is almost never empty: deviceSnap() returns a
+  // sub-pixel correction at any zoom and any device pixel ratio, and a rotated
+  // note carries a rotate() instead. A sheet nudged a third of a pixel sideways
+  // for a board zoom this dialog is not at, or stood on its corner at the angle
+  // it was pinned to the board at, is the board's arrangement of the note
+  // showing up in the one place that is deliberately not about it.
   //
   // Stashed rather than recomputed, and put back below: what it was is a fact
   // about the board's zoom at the moment the dialog opened, and placeBox() is
   // not called again on the way home. resnap() would rewrite it on the next view
-  // change anyway - it is now barred from doing so while the node is out of the
-  // world layer, which is the other half of this fix.
+  // change anyway - it is barred from doing so while the node is out of the
+  // world layer, which is the other half of the same fix.
   const worldTransform = node.style.transform;
   node.style.transform = '';
 
@@ -890,17 +998,35 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>) {
   // carries its two buttons.
   const go = document.getElementById('compose-go')!;
   const cancel = document.getElementById('compose-cancel')!;
+  // The same dialog says two different things depending on which way in it was
+  // opened, and the words are the whole of the difference. "Add" on a note that
+  // does not exist yet is a promise the button keeps; on one that has been on
+  // the board for a week it is the button offering to make a second copy, which
+  // is not what it does. Written on every open rather than restored on close -
+  // the markup's own "Add" is the state a fresh page is in, and one of the two
+  // branches below always runs before it is seen.
+  go.textContent = added ? 'Add' : 'Save';
+  dlg.setAttribute('aria-label', added ? 'Write a note' : 'Edit note');
 
   const handle = editNote(id, {
     surface: dlg,
     onDone: text => {
-      offGeom();
       go.removeEventListener('click', onGo);
       cancel.removeEventListener('click', onCancel);
       dlg.removeEventListener('cancel', onEscape);
-      mount.style.width = mount.style.height = '';
-      // Before the node goes home, so it is never drawn in the world layer
-      // without the snap it was mounted with. See the stash above.
+      // Everything the dialog wrote onto the card, off. placeBox() will write
+      // all three again the next time the item's geometry changes - which is
+      // exactly the event that might not come, since a note whose text did not
+      // grow it never moves. Restored to what was stashed rather than cleared,
+      // for the same reason.
+      //
+      // Before the node goes home in every case, so it is never drawn in the
+      // world layer at the dialog's size or without the snap it was mounted
+      // with. See the stashes above.
+      standIn = null;
+      node.style.width = prevWidth;
+      node.style.height = prevHeight;
+      node.style.setProperty('--half-w', prevHalfW);
       node.style.transform = worldTransform;
       dlg.close();
       // `after` was captured before the dialog opened; culling can detach that
@@ -911,6 +1037,13 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>) {
         else home.appendChild(node);
       } else node.remove();
       if (text?.trim()) {
+        // The one grow the board note gets out of this sitting, now the card is
+        // back at its own width and can be measured at it. Every grow while the
+        // dialog was up went to the sheet in it (see standIn above), so without
+        // this line a note written past the bottom of its box would keep the box
+        // it had - which is the one state the second of this file's two rules
+        // exists to rule out.
+        growNote(id);
         // It landed. The card is already where the note lives - it was made at
         // the middle of the view, which is where the dialog was - so this is
         // the last of the movement rather than a journey.
@@ -918,10 +1051,17 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>) {
         node.addEventListener('animationend', () => node.classList.remove('is-landing'), { once: true });
         return;
       }
-      // Nothing was written, so nothing was made. takeBack() answers false if
-      // anything has been committed since the add, which cannot happen while a
-      // modal is up and is not worth being wrong about: an ordinary delete is
-      // the fallback, and that one is undoable like any other.
+      // Nothing was written. What that means depends entirely on whether this
+      // sitting made the note: a blank note nobody has seen was never a note,
+      // and a note that has been on the board and was emptied is a note
+      // somebody emptied. Deleting the second would be the editor answering
+      // "clear this" with "throw it away", and the undo it filed would be for
+      // the wrong act.
+      if (!added) return;
+      // takeBack() answers false if anything has been committed since the add,
+      // which cannot happen while a modal is up and is not worth being wrong
+      // about: an ordinary delete is the fallback, and that one is undoable
+      // like any other.
       if (!takeBack(added)) removeItems([id], 'Discard note');
     },
   });
@@ -962,8 +1102,19 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>) {
   dlg.addEventListener('cancel', onEscape);
 }
 
-/** How much bigger than life the composer draws the sheet. See composeNote(). */
-const SHEET_ZOOM = 2;
+/**
+ * The width of the sheet in the composer, and its smallest height. See
+ * openComposer(), which is where the argument for it being one number for every
+ * note is written.
+ *
+ * Life size, not magnified. The type is a fixed size now and 16px is 16px in a
+ * dialog; while the sheet was the note's own box the magnification was there to
+ * make a 120px stamp readable, and a stamp is what this number replaced.
+ * Wide enough for the toolbar above it not to be a bar over a postage stamp,
+ * and near enough the widest a note is usually dragged to that the line breaks
+ * here are not a surprise on the board.
+ */
+const EDIT_W = 320;
 
 /** Insert `el` after `ref` and return it. */
 function insertAfter<T extends Element>(ref: Element, el: T): T {

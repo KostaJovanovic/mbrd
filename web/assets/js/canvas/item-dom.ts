@@ -45,7 +45,7 @@
 // table.
 
 import { extOf, shuffle } from '../util.ts';
-import { adjustFilter, isFence, isLocked } from '../state.ts';
+import { adjustFilter, flipTransform, isFence, isLocked } from '../state.ts';
 import { buildContent, fitMode } from './renderers.ts';
 import type { Item } from '../board-model.ts';
 
@@ -140,6 +140,9 @@ const NO_HEAD = new Set([
   'sticker',  // a shape pressed onto a picture. Its name exists for the trash
               // and for Find; printing "Star" across a star at the index rung
               // would be a caption on a mark, which is a caption on a caption.
+  'style-tile', // three labelled bands and two face names already. A plate over
+              // the top would be a fourth heading on a card that is nothing but
+              // headings.
 ]);
 
 export const wantsHead = (item: ItemFragment): boolean => !NO_HEAD.has(item.type ?? '');
@@ -280,9 +283,9 @@ export function writeFit(el: HTMLElement, item: ItemLike): void {
 }
 
 /**
- * The lock, and the three picture adjustments, onto a card.
+ * The lock, the three picture adjustments and the mirror, onto a card.
  *
- * Both are here rather than in the renderers for the reason writeFit() is: they
+ * All are here rather than in the renderers for the reason writeFit() is: they
  * describe the *card*, not its content, and both have to be re-readable on a
  * card that already exists - an item event rebuilds a card's body and would
  * otherwise leave the outer element carrying the old answer.
@@ -338,6 +341,14 @@ export function writeAdjust(el: HTMLElement, item: ItemLike): void {
   const filter = adjustFilter(item);
   if (filter) el.style.setProperty('--item-filter', filter);
   else el.style.removeProperty('--item-filter');
+  // The mirror, by the same route and for the same reason: one property holding
+  // a whole value, set only where there is something to say. It goes on the body
+  // rather than the picture so a card cannot show one way round zoomed in and
+  // the other zoomed out - see the rule in items.css, and flipTransform() in
+  // board-model.ts, which is the one place the string is built.
+  const flip = flipTransform(item);
+  if (flip) el.style.setProperty('--item-flip', flip);
+  else el.style.removeProperty('--item-flip');
 }
 
 /**

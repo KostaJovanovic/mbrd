@@ -45,7 +45,7 @@
 /** Every type classify() can produce, and the whole of what RENDERERS answers. */
 export type ItemType =
   | 'image' | 'video' | 'audio' | 'note' | 'link' | 'text' | 'model'
-  | 'title' | 'ghost' | 'swatch' | 'sticker' | 'fence' | 'generic';
+  | 'title' | 'ghost' | 'swatch' | 'sticker' | 'fence' | 'style-tile' | 'generic';
 
 /**
  * The bytes an item points at, or null for one that is only geometry and text.
@@ -923,6 +923,55 @@ export function adjustFilter(it: unknown): string | null {
   return a
     ? `brightness(${a.brightness}) contrast(${a.contrast}) saturate(${a.saturation})`
     : null;
+}
+
+/**
+ * Which way round a picture is hung, or null for the ordinary way.
+ *
+ * `{ x, y }` - two booleans, where `x` mirrors left to right and `y` top to
+ * bottom. Two flags rather than one of four names ("none", "h", "v", "hv")
+ * because the two axes are genuinely independent: the interface is two toggles
+ * and each writes its own without having to parse what the other left behind.
+ *
+ * **Not folded into the crop.** A crop is baked into the display copy - real
+ * pixels, drawn once and cached - and a mirror is a compositor transform that
+ * costs nothing at any size. Putting the mirror in the copy would key a second
+ * WebP per flip, make every toggle a decode, and hand the person a stale picture
+ * for the moment it took. So the crop cuts the source and the mirror turns what
+ * is left, in that order, and the order is visible: the darkroom frames the
+ * *displayed* picture and mirrors the rectangle on the way to the file.
+ *
+ * Truthiness, not `=== true`, the same reading isLocked() gives its flag and for
+ * the same reason: this comes out of somebody else's file, and `"x": 1` plainly
+ * means mirrored.
+ *
+ * Null when neither axis is on, so a picture flipped and flipped back carries no
+ * key - the rule itemCrop() applies to a full frame and itemAdjust() to a
+ * neutral grade.
+ */
+export function itemFlip(it: unknown): { x: boolean, y: boolean } | null {
+  if (!isRecord(it) || !isRecord(it.meta)) return null;
+  const raw = it.meta.flip;
+  if (!isRecord(raw)) return null;
+  const out = { x: !!raw.x, y: !!raw.y };
+  return out.x || out.y ? out : null;
+}
+
+/**
+ * The mirror as one `transform` value, or null where there is nothing to say.
+ *
+ * The sibling of adjustFilter() above, here for the same reason it is: three
+ * surfaces need this string - the card sets it as `--item-flip`, ui/feed.ts
+ * writes it onto a tile, and ui/snapshot.ts hands the two numbers to a canvas
+ * context so an exported picture faces the way the screen does. One builder, so
+ * a fourth surface cannot get a different answer.
+ *
+ * `scale()` with both numbers rather than scaleX/scaleY, so the string is one
+ * shape whichever axes are on and there is nothing to concatenate.
+ */
+export function flipTransform(it: unknown): string | null {
+  const f = itemFlip(it);
+  return f ? `scale(${f.x ? -1 : 1}, ${f.y ? -1 : 1})` : null;
 }
 
 /** The longest a single tag may be, and the most one item may carry. */

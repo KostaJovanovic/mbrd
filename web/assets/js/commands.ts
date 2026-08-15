@@ -54,7 +54,7 @@ import { alignTargets, distributeTargets, separateOverlaps } from './geometry.ts
 // Still needed here for zoomToSelection, which is a selection-wide action and
 // stayed put; the rest of the camera went to commands/view.ts with it.
 import { travelMs } from './canvas/viewport.ts';
-import { pickFiles, addNote, addSwatch, addLink, addSticker } from './import/drop.ts';
+import { pickFiles, addNote, addSwatch, addLink, addSticker, addStyleTile } from './import/drop.ts';
 import { linkURL, SWATCH_DEFAULT, defaultSize } from './canvas/renderers.ts';
 import { samplePixels, dominantColors } from './ui/pigments.ts';
 import { arrange } from './arrange/arrangements.ts';
@@ -70,7 +70,7 @@ import {
   openPanel as openHeaderPanel, closePanel as closeHeaderPanel,
   isPanelOpen as isHeaderPanelOpen,
 } from './ui/mobile-header.ts';
-import { composeNote, editNote } from './canvas/notes.ts';
+import { composeNote, editNoteInComposer } from './canvas/notes.ts';
 import { editTitleCard } from './ui/board-title.ts';
 import { armClear, rearrange } from './ui/board-actions.ts';
 import { fileCommands } from './commands/file.ts';
@@ -302,6 +302,20 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     // not a question to open a dialog about. The dialog is still the row at the
     // foot of that flyout, and still the plain click on the button.
     addSwatchOf: (hex: string) => addSwatch(vp.toWorld(vp.left + vp.cx, vp.top + vp.cy), hex),
+    /**
+     * The board's own look, as a card: pictures, pigments, faces.
+     *
+     * This was two commands that wrote a PNG and a PDF. What it produces now is
+     * a card, so it is here with the other adders rather than beside the
+     * exports - and the change is more than where the bytes go. A saved tile was
+     * a photograph of the look at one moment; a card *reads* the look, and
+     * follows the palette and the faces being changed under it.
+     *
+     * The selection is handed on as the curation, exactly as the export did:
+     * with cards selected the strip is those, and with nothing selected it is
+     * the board's largest pictures. See tilePictures().
+     */
+    addStyleTile: () => addStyleTile(vp.toWorld(vp.left + vp.cx, vp.top + vp.cy), selection),
     // A card for somewhere else, typed rather than dropped. Nothing is fetched:
     // a link card is a name and an address until somebody clicks it, and that
     // stays true however the address arrived.
@@ -492,7 +506,16 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     // have to be told which panel is up. Still named for the sidebar, which is
     // what the keyboard binds to and what it means to whoever presses it.
     closeSidebar: () => { closeSidebar(); closeHeaderPanel(); closeToolbar(); },
-    editNote,
+    // The composer, not the floating bar - a double-click on a sticky and the
+    // toolbar's Note button now open the same surface, because they are the same
+    // act with the note made at different times. See editNoteInComposer() in
+    // canvas/notes.ts for what the bar could not do at a note's size.
+    //
+    // canvas/notes.ts still exports editNote() and the composer is its only
+    // caller now: it is the editor, and this is one of the two ways to reach it.
+    // A page with no <dialog> falls back to it on the board, which is the branch
+    // openComposer() takes when showModal() is not a function.
+    editNote: (id: string) => editNoteInComposer(id),
 
     // --- right-click menu ---
     contextMenu: (x: number, y: number, id: string | null, count: number,
@@ -544,10 +567,16 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     // into a column rather than placed - drops the row instead of passing none.
     // So this is the unreachable half of that contract, written down rather than
     // left to throw inside addNote() if it ever stops being unreachable.
+    //
+    // composeNote() rather than add-then-edit, which is the same route the
+    // toolbar's Note button takes and matters for one reason: it holds the add
+    // command, so a note opened here and left empty is taken back off the stack
+    // instead of being left on the board as a blank sticky. Writing it the long
+    // way was what made "Add a note here" the one creation path that could
+    // strand one.
     addNoteAt: (at: Point | null) => {
       if (!at) return;
-      const item = addNote(at);
-      requestAnimationFrame(() => cmds.editNote(item.id));
+      composeNote(() => addNote(at));
     },
     /**
      * Press a sticker onto the board at a world point.

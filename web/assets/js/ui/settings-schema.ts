@@ -329,12 +329,19 @@ export const SECTIONS: Section[] = [
       // back to it. ui/sidebar.js owns the typing behaviour - see wireTitle().
       { id: 'board-title', type: 'text', external: true, className: 'board-title',
         maxlength: 32, placeholder: 'Untitled board', ariaLabel: 'Board name' },
-      // Save alone on its row, and it is the only button on this tab with a
-      // deadline attached to it. It used to sit second in a row of two, at the
-      // same weight as Export - which is the panel saying that keeping your work
-      // and producing a copy of it are the same size of decision.
+      // Save and Export share a row, and the weight between them is what keeps
+      // them apart rather than the distance. Save is the only button on this tab
+      // with a deadline attached to it, so it carries `primary` and Export does
+      // not: one row, two verbs, one of them obviously the answer.
+      //
+      // They were split for a while, Export folded away with the other things
+      // that produce a file. The argument then was that a row of two at equal
+      // weight made Save look like an option; the answer to that turned out to
+      // be the weight, not the row - and Export writes the real .mbrd, which is
+      // the one file on this tab that opens again.
       { type: 'buttons', buttons: [
         { cmd: 'save', label: 'Save', className: 'primary' },
+        { cmd: 'export', label: 'Export' },
       ] },
       // Which board you are on. Three verbs, one row, none of them about the
       // board's contents.
@@ -350,21 +357,27 @@ export const SECTIONS: Section[] = [
         { cmd: 'open', label: 'Open' },
         { cmd: 'library', label: 'Boards' },
       ] },
-      // And the four that produce a file which is not this board, behind one
-      // fold. They were four rows of the five this section had, they are the four
-      // least-pressed things on the tab, and they are one idea - make something
-      // to send somebody - stated four ways. A section may have exactly one fold
-      // (buildSection, ui/panel.js), which is the whole reason they group rather
-      // than each getting its own heading.
-      //
-      // Export is in here with them and not beside Save, which is the arguable
-      // half: it writes the real .mbrd and is the only one of the four that
-      // round-trips. But what it writes is still a file you go and put somewhere,
-      // where Save is the board keeping itself, and putting the two on one row
-      // was what made Save look like an option rather than the answer.
-      { type: 'buttons', advanced: true, buttons: [
-        { cmd: 'export', label: 'Export' },
+      // The style tile, which is no longer a file at all: it is a card you add
+      // to the board - the palette, the faces and a few of the pictures. So it
+      // sits above the fold and outside `advanced`, with the things you do to
+      // the board rather than the things you make to send. The title says what
+      // it draws from, because the answer changes with the selection.
+      { type: 'buttons', needsBoard: true, buttons: [
+        { cmd: 'add-style-tile', label: 'Add style tile',
+          title: () => (selectionSize()
+            ? 'The palette, the faces and the cards you have selected'
+            : 'The palette, the faces and a few of the pictures') },
       ] },
+      // And the three that produce a file which is not this board, behind one
+      // fold. They are the least-pressed things on the tab and they are one idea
+      // - make something to send somebody - stated three ways. A section may
+      // have exactly one fold (buildSection, ui/panel.js), which is the whole
+      // reason they group rather than each getting its own heading.
+      //
+      // Export is deliberately not among them any more: what these three write
+      // is a picture or a summary, and what Export writes is the board. It sits
+      // with Save, above.
+      //
       // Share keeps its own row and its own guard: it shows only where the engine
       // can actually put a file into the share sheet - hidden outright otherwise,
       // the same rule the paper sheet follows, because a Share that quietly
@@ -378,19 +391,6 @@ export const SECTIONS: Section[] = [
       { type: 'buttons', advanced: true, buttons: [
         { cmd: 'export-image', label: 'Save image' },
         { cmd: 'export-pdf', label: 'Save PDF' },
-      ] },
-      // And the other document, on its own row under the two pictures of the
-      // board because it is not one. A style tile is the *summary* - the palette
-      // with its values, the faces in use, a few of the pictures - which is what
-      // goes into a deck or to a printer, where a photograph of a moodboard is
-      // only readable by somebody who was in the room. The title says what it
-      // draws from, because the answer changes with the selection.
-      { type: 'buttons', advanced: true, buttons: [
-        { cmd: 'export-style-tile', label: 'Save style tile',
-          title: () => (selectionSize()
-            ? 'The palette, the faces and the cards you have selected'
-            : 'The palette, the faces and a few of the pictures') },
-        { cmd: 'export-style-tile-pdf', label: 'Style tile PDF' },
       ] },
     ],
   },

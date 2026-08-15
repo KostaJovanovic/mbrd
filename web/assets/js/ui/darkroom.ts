@@ -1,19 +1,32 @@
-// The darkroom: one picture, cropped and graded.
+// The darkroom: one picture, cropped, turned and graded.
 //
-// Two edits live here and they are together because they are the same sitting -
-// you look at a photograph, take the edge off it, and warm it up. Splitting them
-// into two dialogs would mean opening the second to see what the first did.
+// Three edits live here and they are together because they are the same sitting
+// - you look at a photograph, take the edge off it, turn it the way round it
+// should have been, and warm it up. Splitting them into three dialogs would mean
+// opening the second to see what the first did.
 //
 // ── Nothing here is destructive, and that is the whole contract ──
 //
-// A crop is four fractions of the source and a grade is three multipliers. Both
-// are stored on the item, in `meta`, and neither touches a byte of the asset:
-// the original is what the .mbrd carries, what Export hands back and what
-// Optimize re-encodes. So Reset is a real way back rather than a best effort,
-// Ctrl+Z works because both writes go through state.ts like every other, and a
-// board cropped in this build opens uncropped in an older one with the pictures
-// intact. See itemCrop() and itemAdjust() in board-model.ts, which are the
-// definitions; this module only drives them.
+// A crop is four fractions of the source, a mirror is two flags and a grade is
+// three multipliers. All are stored on the item, in `meta`, and none of them
+// touches a byte of the asset: the original is what the .mbrd carries, what
+// Export hands back and what Optimize re-encodes. So Reset is a real way back
+// rather than a best effort, Ctrl+Z works because all three writes go through
+// state.ts like every other, and a board cropped in this build opens uncropped
+// in an older one with the pictures intact. See itemCrop(), itemFlip() and
+// itemAdjust() in board-model.ts, which are the definitions; this module only
+// drives them.
+//
+// ── The crop cuts, the mirror turns, in that order ──
+//
+// A crop is baked into the display copy - real pixels, one WebP per rectangle -
+// and a mirror is a compositor transform that costs nothing. So the crop is
+// applied to the source and the mirror to what is left, and the dialog shows
+// exactly that: the picture is drawn turned, the frame is placed over the turned
+// picture, and both the frame's position and every drag delta are reflected on
+// the way to and from `rect`, which stays in the source's own coordinates. A
+// reader that carries `meta.flip` through without understanding it still cuts
+// the right slice out of the right photograph.
 //
 // ── Why the crop is in fractions ──
 //
@@ -39,7 +52,7 @@
 // tests/imports.test.js holds this file to that.
 
 import {
-  byId, itemAdjust, itemCrop, setItemAdjust, setItemCrop, MIN_CROP,
+  byId, itemAdjust, itemCrop, itemFlip, setItemAdjust, setItemCrop, setItemFlip, MIN_CROP,
   isLocked, snapshotGeom, applyGeom, commitGeom,
 } from '../state.ts';
 import { assetURL } from '../storage/assets.ts';
@@ -55,6 +68,22 @@ const GRADE = ['brightness', 'contrast', 'saturation'] as const;
 type Grade = Record<typeof GRADE[number], number>;
 const NEUTRAL: Grade = { brightness: 1, contrast: 1, saturation: 1 };
 
+/**
+ * The two mirrors, and the button that toggles each.
+ *
+ * `x` is flip - left to right, the one you want on a portrait facing out of the
+ * frame the wrong way - and `y` is flop, top to bottom. The words are
+ * ImageMagick's the other way round; the buttons carry both the word and a
+ * sentence saying which way it turns, which is the only thing that settles it
+ * for somebody who has not read this line.
+ */
+const FLIPS = [
+  { axis: 'x', id: 'dk-flip-x' },
+  { axis: 'y', id: 'dk-flip-y' },
+] as const;
+type Flip = { x: boolean, y: boolean };
+const UNFLIPPED: Flip = { x: false, y: false };
+
 // The dialog and everything in it, taken once in initDarkroom(). Read with `!`
 // past that guard, the way ui/viewer.ts reads its own: init returns early
 // without the dialog and open() refuses before it touches any of them.
@@ -62,11 +91,13 @@ let dlg: HTMLDialogElement | null = null;
 let img: HTMLImageElement | null = null;
 let frame: HTMLElement | null = null;
 const dials: Partial<Record<typeof GRADE[number], HTMLInputElement>> = {};
+const mirrors: Partial<Record<keyof Flip, HTMLButtonElement>> = {};
 
-/** Which item is open, and the two edits as they stand right now. */
+/** Which item is open, and the three edits as they stand right now. */
 let openId = '';
 let rect: Rect = { ...FULL };
 let grade: Grade = { ...NEUTRAL };
+let flip: Flip = { ...UNFLIPPED };
 
 /**
  * The eight handles, by the corner or edge each drives.
@@ -105,6 +136,19 @@ export function initDarkroom() {
       paint();
     });
   }
+  for (const { axis, id } of FLIPS) {
+    const el = document.getElementById(id) as HTMLButtonElement | null;
+    if (!el) continue;
+    mirrors[axis] = el;
+    // A toggle, not a verb: pressing it twice puts the picture back, and
+    // aria-pressed is what says which state it is in. Written by writeDials()
+    // rather than here, so the button and `flip` cannot disagree on the way in.
+    el.addEventListener('click', () => {
+      flip = { ...flip, [axis]: !flip[axis] };
+      writeDials();
+      paint();
+    });
+  }
   for (const name of HANDLES) {
     const h = document.createElement('div');
     h.className = 'dk-handle';
@@ -122,6 +166,7 @@ export function initDarkroom() {
   document.getElementById('darkroom-reset')?.addEventListener('click', () => {
     rect = { ...FULL };
     grade = { ...NEUTRAL };
+    flip = { ...UNFLIPPED };
     writeDials();
     paint();
   });
@@ -151,6 +196,7 @@ export function openDarkroom(id: string) {
   openId = id;
   rect = itemCrop(it) || { ...FULL };
   grade = itemAdjust(it) || { ...NEUTRAL };
+  flip = itemFlip(it) || { ...UNFLIPPED };
   // The *original*, not the display copy. The copy is already cropped - it is
   // what the crop is applied to - so editing against it would compose each new
   // rectangle on top of the last and there would be no way back out to the full
@@ -162,11 +208,17 @@ export function openDarkroom(id: string) {
   dlg.showModal();
 }
 
-/** The three sliders, set from `grade`. The other direction is their listener. */
+/**
+ * The three sliders and the two mirror buttons, set from `grade` and `flip`.
+ * The other direction is their listeners.
+ */
 function writeDials() {
   for (const key of GRADE) {
     const el = dials[key];
     if (el) el.value = String(grade[key]);
+  }
+  for (const { axis } of FLIPS) {
+    mirrors[axis]?.setAttribute('aria-pressed', flip[axis] ? 'true' : 'false');
   }
 }
 
@@ -181,12 +233,24 @@ function writeDials() {
 function paint() {
   const pc = (n: number) => `${(n * 100).toFixed(4)}%`;
   frame!.hidden = false;
-  frame!.style.left = pc(rect.x);
-  frame!.style.top = pc(rect.y);
+  // The frame is placed over the *displayed* picture, which is mirrored, while
+  // `rect` is always in the source's own coordinates - so a mirrored axis is
+  // reflected on the way out here and on the way back in onGrab(). Doing it in
+  // those two places rather than storing the rectangle as drawn is what keeps
+  // the file honest: `meta.crop` means the same thing whether or not the picture
+  // is turned, so a reader that ignores `meta.flip` still cuts the right slice.
+  frame!.style.left = pc(flip.x ? 1 - rect.x - rect.w : rect.x);
+  frame!.style.top = pc(flip.y ? 1 - rect.y - rect.h : rect.y);
   frame!.style.width = pc(rect.w);
   frame!.style.height = pc(rect.h);
   img!.style.filter =
     `brightness(${grade.brightness}) contrast(${grade.contrast}) saturate(${grade.saturation})`;
+  // The picture, and only the picture: the frame is a sibling inside the plate,
+  // so it does not turn with it and its handles stay where the hand expects
+  // them. Same string the card will get - see flipTransform() - but built here,
+  // since this one has to exist at neutral too or a flip back would leave the
+  // last transform on the node.
+  img!.style.transform = `scale(${flip.x ? -1 : 1}, ${flip.y ? -1 : 1})`;
   // The readouts beside the dials, as whole percentages - which is what the
   // numbers mean and is shorter to read than 1.14.
   for (const key of GRADE) {
@@ -205,7 +269,7 @@ function paint() {
  */
 function onGrab(e: PointerEvent) {
   if (!(e.target instanceof HTMLElement)) return;
-  const handle = (e.target.dataset.h || 'move') as Handle;
+  const handle = mirrorHandle((e.target.dataset.h || 'move') as Handle);
   // The drawn size of the picture, read once at the press. Every delta below is
   // divided by it to become a fraction, which is the only pixel measurement in
   // this module and the note at the top of the file says why it is here.
@@ -218,8 +282,12 @@ function onGrab(e: PointerEvent) {
   frame!.setPointerCapture(e.pointerId);
 
   const onMove = (ev: PointerEvent) => {
-    const dx = (ev.clientX - x0) / box.width;
-    const dy = (ev.clientY - y0) / box.height;
+    // Negated on a mirrored axis, for the reason the frame's position is
+    // reflected in paint(): the hand is moving over the displayed picture and
+    // `rect` is in the source's coordinates, so a drag to the right on a
+    // mirrored photograph is a move to the left through the file.
+    const dx = ((ev.clientX - x0) / box.width) * (flip.x ? -1 : 1);
+    const dy = ((ev.clientY - y0) / box.height) * (flip.y ? -1 : 1);
     rect = handle === 'move' ? moved(from, dx, dy) : resized(from, handle, dx, dy);
     paint();
   };
@@ -231,6 +299,27 @@ function onGrab(e: PointerEvent) {
   frame!.addEventListener('pointermove', onMove);
   frame!.addEventListener('pointerup', onUp);
   frame!.addEventListener('pointercancel', onUp);
+}
+
+/**
+ * A handle, named for the edge of the *source* it drives.
+ *
+ * The eight are laid out around the frame and the frame sits over the displayed
+ * picture, so on a mirrored axis the grip on the visual left is the source's own
+ * right edge. resized() below works in source coordinates and nothing else in
+ * this module has to know that the picture is turned - which is why the swap is
+ * one lookup here rather than a flip-aware branch in the resize arithmetic.
+ *
+ * Per axis, not per handle: a corner on a picture mirrored one way keeps the
+ * letter belonging to the other axis.
+ */
+function mirrorHandle(handle: Handle): Handle {
+  if (handle === 'move' || (!flip.x && !flip.y)) return handle;
+  const swap: Record<string, string> = { w: 'e', e: 'w', n: 's', s: 'n' };
+  return [...handle]
+    .map(c => ((flip.x && (c === 'w' || c === 'e')) || (flip.y && (c === 'n' || c === 's'))
+      ? swap[c] : c))
+    .join('') as Handle;
 }
 
 /**
@@ -265,8 +354,8 @@ const clamp01 = (v: number, size: number) => Math.min(Math.max(0, v), 1 - size);
 /**
  * Write both edits and close.
  *
- * Two calls and therefore two history entries, which is the honest count: they
- * are two independent things about the picture, either may be unchanged, and
+ * Three calls and therefore three history entries, which is the honest count:
+ * they are three independent things about the picture, any may be unchanged, and
  * state.ts drops a write that changes nothing on its own. Folding them into one
  * entry would mean a Ctrl+Z after a session where only the crop moved still
  * announcing that it had put the grade back.
@@ -285,6 +374,12 @@ function apply() {
   if (was.w !== rect.w || was.h !== rect.h) refitCard(id);
   const neutral = GRADE.every(k => grade[k] === 1);
   setItemAdjust(id, neutral ? null : grade);
+  // The third write, and a third history entry by the same argument: which way
+  // round a picture is hung is its own decision, and a Ctrl+Z after a sitting
+  // where only the mirror moved should not announce that it has put the grade
+  // back. Null rather than two falses, so a picture flipped and flipped again
+  // leaves no key - the same shape the two writes above take.
+  setItemFlip(id, flip.x || flip.y ? flip : null);
   dlg!.close();
 }
 

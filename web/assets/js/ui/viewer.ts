@@ -23,7 +23,7 @@
 // Nothing here reaches `document` at import time - initViewer() does, and
 // tests/imports.test.js holds this file to that.
 
-import { byId, itemAdjust, itemCrop } from '../state.ts';
+import { byId, itemAdjust, itemCrop, flipTransform } from '../state.ts';
 import { displayURLReady, ensureDisplay } from '../canvas/display.ts';
 import { assetURL, getAsset, readText } from '../storage/assets.ts';
 import { baseName, formatBytes } from '../util.ts';
@@ -248,9 +248,20 @@ const DRAG_SLOP = 6;
  */
 function attachZoomPan(img: HTMLElement, stage: HTMLElement): () => void {
   let scale = 1, tx = 0, ty = 0;
+  // Whatever the view already wrote, read once and kept underneath everything
+  // this function does. That is the mirror (see the image view above), and
+  // reading it rather than being told it means this knows nothing about flips:
+  // any future base transform composes the same way.
+  //
+  // Last in the list, so it happens *first* - a CSS transform list applies right
+  // to left. The picture is turned in its own space and then panned and zoomed
+  // in the window's, which is the only order where a drag on a mirrored
+  // photograph still follows the hand.
+  const base = img.style.transform;
 
   const paint = () => {
-    img.style.transform = scale === 1 ? '' : `translate(${tx}px, ${ty}px) scale(${scale})`;
+    img.style.transform =
+      scale === 1 ? base : `translate(${tx}px, ${ty}px) scale(${scale}) ${base}`.trimEnd();
     img.classList.toggle('is-zoomed', scale > 1);
   };
   const reset = () => { scale = 1; tx = 0; ty = 0; paint(); };
@@ -371,7 +382,11 @@ function attachZoomPan(img: HTMLElement, stage: HTMLElement): () => void {
   return () => {
     stage.removeEventListener('click', onStageClick);
     removeEventListener('resize', onResize);
-    img.style.transform = '';
+    // Back to the base, not to nothing: what this attached to was a picture that
+    // may already have been mirrored, and detaching the zoom is not an undo of
+    // the flip. The node is usually thrown away a line later anyway; on the path
+    // where it is not, this leaves it as it was found.
+    img.style.transform = base;
   };
 }
 
@@ -434,6 +449,13 @@ const VIEWS: Record<string, View> = {
       img.style.filter =
         `brightness(${adjust.brightness}) contrast(${adjust.contrast}) saturate(${adjust.saturation})`;
     }
+    // And the mirror, which rides on top of either branch for the same reason
+    // the grade does - it is a transform of whatever picture arrived, not a
+    // property of the file. Written before the zoom is attached, deliberately:
+    // attachZoomPan() reads this as the base it composes onto, so the order of
+    // these two lines is the order of the two transforms. See flipTransform().
+    const flip = flipTransform(item);
+    if (flip) img.style.transform = flip;
     host.append(img);
   },
 

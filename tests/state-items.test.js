@@ -192,14 +192,25 @@ test('a picture can have its card taken away, and given back', () => {
     + 'a byte per card in every file to say nothing is unusual');
 });
 
-test('only a picture can lose its card', () => {
-  // A note without its paper is text lying on the board with nothing holding
-  // it, and a video without its card loses the surface its controls sit on.
+test('a note can lose its paper, and keeps its words', () => {
+  // Text lying straight on the board, which is what a caption over a photograph
+  // and a title across a corner both wanted and had to be faked with a
+  // transparent image. Only the paint goes - cards.css cancels the pad colour,
+  // the adhesive band and the inset line, and nothing about the box moves.
   const [n] = addItems([note()]);
-  const [v] = addItems([clip()]);
   setItemBare(n.id, true);
+  assert.equal(byId(n.id).meta.bare, true);
+  setItemBare(n.id, false);
+  assert.equal('bare' in (byId(n.id).meta || {}), false, 'stored only when true');
+});
+
+test('nothing else can lose its card', () => {
+  // A video without its card loses the surface its controls sit on. The list is
+  // pictures and notes - see canSetBare() in commands/item-meta.ts, which is the
+  // same list and says why - and this is the door refusing everything off it, so
+  // a flag nothing draws never reaches a file.
+  const [v] = addItems([clip()]);
   setItemBare(v.id, true);
-  assert.equal(byId(n.id).meta?.bare, undefined);
   assert.equal(byId(v.id).meta?.bare, undefined);
 });
 

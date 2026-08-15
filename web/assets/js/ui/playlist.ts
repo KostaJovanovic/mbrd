@@ -1,11 +1,21 @@
 // The Playlist: the board's audio as a proper player, in two homes.
 //
 // One is the Mobile board's second lens - Feed | Playlist - where it fills the
-// screen as an Apple-Music-style player: an album header (a mosaic of the board's
-// own covers, the board's name, "N songs, M min", and Play / Shuffle) over a
-// track list you can drag to reorder. The other is a floating window on the
-// Desktop board, opened from the sidebar - draggable and resizable, and one body
-// only: a compact transport over a plain list.
+// screen as the board pressed to a record: a sleeve (a mosaic of the board's own
+// covers) with the disc sliding out from behind it, the board's name, a "N songs
+// · M min" ledger line and Play / Shuffle, then the transport in a well of its
+// own, then a ruled track list you can drag to reorder. The other is a floating
+// window on the Desktop board, opened from the sidebar - draggable and
+// resizable, and one body only: a compact transport over a plain list.
+//
+// The lens was a stack of centred blocks separated by full-bleed rules, each
+// weighing the same as the next, with the transport flush to the paper's edge
+// while the list beside it was inset - three left edges down one column. What
+// fixed it was not a nicer button: it was one gutter (--pl-gutter) that every
+// part of the lens insets by, and giving each part a *form* instead of a rule -
+// the header is paper, the transport is a well, the list is ruled. The record
+// behind the sleeve is the one flourish, and it earns its place by saying
+// something true: it turns while the board is playing.
 //
 // The window used to be able to wear the album view too, in miniature, which made
 // the same view reachable two ways and made the window's title-bar button a switch
@@ -83,6 +93,16 @@ type ActionGroup = {
   shuffle: HTMLButtonElement;
   playIco: HTMLElement;
   playLabel: HTMLElement;
+  /**
+   * The header these two sit in, when there is one, so the record drawn behind
+   * its sleeve turns while the board is playing and stands still when it is not.
+   *
+   * On the group rather than on a handle of its own because refreshActions() is
+   * already the one pass that knows whether anything is playing, and a second
+   * fan-out over the headers would be a second thing to keep in step. The window
+   * has no header, hence optional.
+   */
+  hero?: HTMLElement;
 };
 
 /** One track list, in either home - see createView(), which is the only builder. */
@@ -151,8 +171,6 @@ export interface PlaylistCommands {
   setBoardMode: (mode: string) => unknown;
 }
 
-const NOTE_ICON =
-  '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.5 2.5v7.1a2.2 2.2 0 11-1-1.84V4.3l-4.5.98v5.06a2.2 2.2 0 11-1-1.84V3.2z"/></svg>';
 const DISC_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.1" fill="currentColor" stroke="none"/><path d="M12 3.5a8.5 8.5 0 016.4 2.9" stroke-linecap="round"/></svg>';
 const GRIP_ICON =
@@ -373,6 +391,7 @@ function refreshActions() {
     g.playLabel.textContent = playing ? 'Pause' : 'Play';
     g.play.setAttribute('aria-label', playing ? 'Pause' : 'Play');
     g.play.classList.toggle('is-playing', playing);
+    g.hero?.classList.toggle('is-spinning', playing);
     g.shuffle.classList.toggle('is-on', shuffling);
     g.shuffle.setAttribute('aria-pressed', String(shuffling));
   }
@@ -446,7 +465,16 @@ function createView(container: HTMLElement,
   let group: ActionGroup | null = null;
   if (lens) {
     hero = div('pl-hero');
+    // The sleeve, and the record sliding out from behind it. The disc is drawn
+    // entirely in the stylesheet - three radial gradients, no asset and no
+    // sprite - so it takes the board's own accent and disappears at the plain
+    // end of the whimsy axis without this file knowing either fact. It carries
+    // no information a screen reader wants, hence aria-hidden.
+    const sleeve = div('pl-sleeve');
+    const disc = div('pl-disc');
+    disc.setAttribute('aria-hidden', 'true');
     cover = div('pl-cover');
+    sleeve.append(disc, cover);
     const heroText = div('pl-hero-text');
     titleEl = document.createElement('h2');
     titleEl.className = 'pl-hero-title';
@@ -454,8 +482,9 @@ function createView(container: HTMLElement,
     heroText.append(titleEl, metaEl);
     const made = makeActions();
     group = made.group;
+    group.hero = hero;
     heroText.append(made.row);
-    hero.append(cover, heroText);
+    hero.append(sleeve, heroText);
     surface.appendChild(hero);
   }
 
@@ -532,14 +561,20 @@ function createView(container: HTMLElement,
   return view;
 }
 
-/** "9 songs" or "9 songs, 33 min" once the durations are known. */
+/**
+ * "9 songs", or "9 songs · 33 min" once the durations are known.
+ *
+ * A middot rather than a comma: the line is set in small caps in the header, and
+ * a comma between two counts reads as one clause there where a dot reads as two
+ * facts - which is what they are.
+ */
 function metaText(audio: Item[]) {
   const n = audio.length;
   const songs = `${n} ${n === 1 ? 'song' : 'songs'}`;
   const total = audio.reduce((s, it) => s + secs(it.meta?.duration), 0);
   if (!total) return songs;
   const mins = Math.round(total / 60);
-  return mins < 1 ? songs : `${songs}, ${mins} min`;
+  return mins < 1 ? songs : `${songs} · ${mins} min`;
 }
 
 /**
@@ -614,8 +649,12 @@ function fillRow(r: Row, view: View) {
   if (cover) {
     art.appendChild(coverImg(cover));
   } else {
+    // No embedded art, which is the common case for a loose MP3: the tile
+    // carries the track's number instead of the note glyph it used to, because
+    // nine copies of one glyph down a list is a column that says nothing nine
+    // times. The number is a CSS counter over .pl-row (mobile.css), so a drag
+    // renumbers the list without anything here walking it.
     art.classList.add('is-placeholder');
-    art.innerHTML = NOTE_ICON;
   }
   // The equalizer, shown by CSS only on the .is-playing row.
   const eq = div('pl-eq');
@@ -1103,6 +1142,14 @@ function makePlayer({ volume: wantVolume }: { volume: boolean }): Player {
   function refresh() {
     const s = queueEl();
     const playing = !!s && !s.paused;
+    // Paused, which the scrubber needs and nothing else here does: at the soft
+    // end of the whimsy axis the seek line is a travelling wave, and it flattens
+    // to a straight line when the sound stops. The now-playing bar has said this
+    // with the same class since it was drawn (see chrome.css) - this transport
+    // was given the same three-svg line and never the flag, so its wave stood
+    // there rippling over a paused track. On the player rather than on the line
+    // because what is paused is the player.
+    el.classList.toggle('is-paused', !playing);
     // Both `.pw-ico` spans are asserted: pwBtn() is what built the button, and
     // the glyph span is the whole of what it put inside one.
     playBtn.querySelector('.pw-ico')!.innerHTML = playing ? PAUSE_ICON : PW_PLAY_ICON;

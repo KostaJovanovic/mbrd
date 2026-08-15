@@ -305,11 +305,22 @@ export function itemMetaCommands() {
     },
     setItemFit: (id: string, fit: string) => setItemFit(id, fit),
 
-    // The card, on or off - only pictures, and only one at a time, like every
-    // other picture row here. A cut-out is a judgement about *this* image, and
-    // the import guess is a default rather than a verdict: whatever is chosen
-    // here wins and is what gets saved.
-    canSetBare: (id: string) => byId(id)?.type === 'image',
+    // The card, on or off - and only one at a time, like every other row here.
+    // A cut-out is a judgement about *this* item, and the import guess is a
+    // default rather than a verdict: whatever is chosen here wins and is what
+    // gets saved.
+    //
+    // Pictures and notes, which is two readings of one idea. On a photograph
+    // the card is a mount and taking it away leaves the silhouette; on a sticky
+    // the card is the pad paper and taking it away leaves the words, sitting on
+    // the board the way something written straight onto it would. A caption
+    // over a photograph, a title across a corner of the board, a line of text
+    // that is not a note about anything - those all wanted a note with no paper
+    // and had to be made by dropping a transparent image instead.
+    canSetBare: (id: string) => {
+      const type = byId(id)?.type;
+      return type === 'image' || type === 'note';
+    },
     itemBare: (id: string) => byId(id)?.meta?.bare === true,
     setItemBare: (id: string, bare: boolean) => setItemBare(id, bare),
 

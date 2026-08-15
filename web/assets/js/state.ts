@@ -128,14 +128,16 @@ import {
 // keeps "what this app will store" and "what a reader will get back" one answer
 // rather than two that agree today - see setItemCrop().
 import {
-  isLocked, isFiltered, itemCrop, itemAdjust, adjustFilter, itemTags, boardTags, cleanTag,
+  isLocked, isFiltered, itemCrop, itemAdjust, adjustFilter, itemFlip, flipTransform,
+  itemTags, boardTags, cleanTag,
   normalizeTour, TAGS_PER_ITEM, TAG_MAX, MIN_CROP,
 } from './board-model.ts';
 import type { Item } from './board-model.ts';
 import type { MergePlan } from './merge.ts';
 
 export { MAX_CONNECTIONS, pairKey, CONN_DIRECTIONS, CONN_STYLES };
-export { isLocked, isFiltered, itemCrop, itemAdjust, adjustFilter, itemTags, boardTags, cleanTag };
+export { isLocked, isFiltered, itemCrop, itemAdjust, adjustFilter, itemFlip, flipTransform };
+export { itemTags, boardTags, cleanTag };
 export { TAGS_PER_ITEM, TAG_MAX, MIN_CROP };
 
 // Every write to board.connections, one level down - see connections.js. The
@@ -999,7 +1001,11 @@ export function setItemFit(id: string, fit: unknown) {
  */
 export function setItemBare(id: string, bare: unknown) {
   const it = byId(id);
-  if (!it || it.type !== 'image') return;
+  // The two types that have a card to lose - see canSetBare() in
+  // commands/item-meta.ts, which is the same list and says why. Guarded here as
+  // well because this is the door: a `bare` flag on a sticker or a fence would
+  // be a byte in the file that nothing draws and nothing can take off again.
+  if (!it || (it.type !== 'image' && it.type !== 'note')) return;
   // Stored only when true, which is what the null branch of patchMeta's write()
   // is for: `bare: false` on every ordinary photograph would be a byte per card
   // in every file to say that nothing is unusual.
@@ -1138,6 +1144,35 @@ const sameAdjust = (a: unknown, b: unknown) => {
   if (!isRecord(a) || !isRecord(b)) return a === b;
   return a.brightness === b.brightness && a.contrast === b.contrast
     && a.saturation === b.saturation;
+};
+
+/**
+ * Which way round one picture is hung: mirrored left to right, top to bottom,
+ * both, or neither.
+ *
+ * Pictures only, the same guard setItemCrop() carries and not the wider one the
+ * grade carries - but for the opposite reason. A mirror is a transform and the
+ * compositor would turn a video frame as happily as a still; what stops it is
+ * that there is nowhere to ask from. The darkroom is the only surface that
+ * writes this and canEditPicture() will not open it on a clip, so a guard that
+ * allowed video would be a door onto a room with no handle. Widen both together
+ * or neither.
+ *
+ * Whole, not partial, where setItemAdjust() above merges: the two toggles read
+ * the live value and hand back both axes, because unlike three sliders in three
+ * places they are two buttons in one row looking at one picture.
+ */
+export function setItemFlip(id: string, flip: unknown) {
+  const it = byId(id);
+  if (!it || it.type !== 'image') return;
+  patchMeta(id, 'flip', flip, next => (next ? 'Mirror picture' : 'Unmirror picture'),
+    value => itemFlip({ meta: { flip: value } }), sameFlip);
+}
+
+/** Two mirrors, or two absences, are the same mirror. */
+const sameFlip = (a: unknown, b: unknown) => {
+  if (!isRecord(a) || !isRecord(b)) return a === b;
+  return a.x === b.x && a.y === b.y;
 };
 
 /**

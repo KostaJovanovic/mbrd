@@ -28,6 +28,7 @@ import { makeThumb } from '../optimize/picture.ts';
 import { looksLikeMbrd } from '../storage/mbrd.ts';
 import { openOrMergeFile } from '../storage/storage.ts';
 import { stickerShape, stickerTint, DEFAULT_SHAPE } from '../stickers/catalogue.ts';
+import { tilePictures } from '../style-tile.ts';
 import type { Point } from '../arrange/arrangements.ts';
 import type { Size } from '../canvas/renderers.ts';
 import type { Item, ItemMeta } from '../board-model.ts';
@@ -968,6 +969,36 @@ export function addSwatch(centre: Point, hex: string = SWATCH_DEFAULT) {
     x: centre.x, y: centre.y, w: size.w, h: size.h,
     meta: { hex: value },
   }], 'Add swatch');
+  select([item.id]);
+  return item;
+}
+
+/**
+ * The board's own look, as a card on it. The fourth fileless type.
+ *
+ * Beside the swatch for the same reason the swatch is here: this file is where
+ * the types born on the board are minted, and a style tile has no file behind
+ * it either.
+ *
+ * The pictures are chosen *now* and written down - see the style-tile renderer
+ * for why the card records them rather than re-picking on every draw. The
+ * palette and the faces are deliberately not written down: those follow the
+ * board, and a tile that froze them would be a photograph of the look rather
+ * than a reading of it.
+ *
+ * The name is what the trash and Find have to show, and it is fixed rather than
+ * dated - two tiles on one board are told apart by what is drawn on them, and a
+ * timestamp in the name would be the one part of the card that could disagree
+ * with the rest of it after a palette change.
+ */
+export function addStyleTile(centre: Point, selected: Set<string> | null = null) {
+  const size = defaultSize('style-tile');
+  const [item] = addItems([{
+    type: 'style-tile',
+    name: 'Style tile',
+    x: centre.x, y: centre.y, w: size.w, h: size.h,
+    meta: { shots: tilePictures(selected).map(it => it.id) },
+  }], 'Add style tile');
   select([item.id]);
   return item;
 }

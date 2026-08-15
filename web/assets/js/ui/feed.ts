@@ -24,7 +24,9 @@
 // the now-playing one is released and its element dropped back to a poster; the
 // now-playing one is kept mounted wherever it has scrolled to.
 
-import { board, bus, isDefaultTitle, byId, itemAdjust, itemCrop, stuckTo, isRider } from '../state.ts';
+import {
+  board, bus, isDefaultTitle, byId, itemAdjust, itemCrop, flipTransform, stuckTo, isRider,
+} from '../state.ts';
 import { displayURLReady, ensureDisplay } from '../canvas/display.ts';
 import { baseName, clamp, isRecord } from '../util.ts';
 import { mobileOrder } from '../arrange/arrangements.ts';
@@ -581,17 +583,25 @@ function fillImage(t: Tile) {
 }
 
 /**
- * The three picture adjustments onto one element of a tile.
+ * The three picture adjustments, and the mirror, onto one element of a tile.
  *
- * The canvas puts them on .item-body through a custom property, which cannot be
- * reused here: a tile is not a card and has no such element. Same three
+ * The canvas puts them on .item-body through two custom properties, which
+ * cannot be reused here: a tile is not a card and has no such element. Same
  * numbers, same order, written straight onto the node that shows the picture.
  */
 function applyGrade(el: HTMLElement, item: Item) {
   const adjust = itemAdjust(item);
-  if (!adjust) return;
-  el.style.filter =
-    `brightness(${adjust.brightness}) contrast(${adjust.contrast}) saturate(${adjust.saturation})`;
+  if (adjust) {
+    el.style.filter =
+      `brightness(${adjust.brightness}) contrast(${adjust.contrast}) saturate(${adjust.saturation})`;
+  }
+  // And which way round it is hung, for the reason the crop above is honoured:
+  // on a phone this tile is the picture, and a photograph facing the other way
+  // here than on every other surface is not a small inconsistency. The string is
+  // board-model.ts's - see flipTransform() - because the card and the export
+  // both want the same one.
+  const flip = flipTransform(item);
+  if (flip) el.style.transform = flip;
 }
 
 function fillVideo(t: Tile) {

@@ -536,6 +536,22 @@
   <path d="M4.4 1.6v10h10M1.6 4.4h10v10"/>
 </symbol>
 
+<!-- The two mirrors, drawn as the same picture twice about a broken axis. The
+     axis is dashed rather than solid because it is not part of the shape - it
+     is where the fold is - and the two wedges are filled so that the pair reads
+     as one thing reflected rather than as two arrowheads pointing apart. -->
+<symbol id="i-flip-h" viewBox="0 0 16 16">
+  <path d="M8 1.4v13.2" stroke-dasharray="2 2"/>
+  <path d="M6.1 3.6 2.1 8l4 4.4z" fill="currentColor"/>
+  <path d="M9.9 3.6 13.9 8l-4 4.4z"/>
+</symbol>
+
+<symbol id="i-flip-v" viewBox="0 0 16 16">
+  <path d="M1.4 8h13.2" stroke-dasharray="2 2"/>
+  <path d="M3.6 6.1 8 2.1l4.4 4z" fill="currentColor"/>
+  <path d="M3.6 9.9 8 13.9l4.4-4z"/>
+</symbol>
+
 <!-- A luggage label, hole and all. The hole is a filled dot rather than a ring:
      at 16px a ring of stroke-width 1.5 closes up into a dot anyway, and drawing
      the dot means it closes up on purpose. -->

@@ -1,8 +1,9 @@
 // The style tile: the summary, rather than a photograph of the board.
 //
-// The drawing is canvas and is not tested here - there is no document in a
-// runner. What is tested is the part that decides *what goes on it*, which is
-// where the three taste decisions this feature had to take actually live:
+// The drawing is a card now (canvas/renderers.js) and is not tested here -
+// there is no document in a runner. What is tested is the part that decides
+// *what goes on it*, which is where the taste decisions this feature had to
+// take actually live:
 //
 //   whose colours    the board's own current palette, read off the live tokens
 //   which pictures   the selection when there is one, else the largest by area
@@ -11,13 +12,18 @@
 // The second is the one with a rule worth pinning. "The selection if there is
 // one" has to mean *pictures in the selection* - a selection of three notes is
 // not a curation of pictures, and falling through to the largest is the right
-// answer rather than exporting a tile with no images on it.
+// answer rather than making a tile with no images on it.
+//
+// Imported from style-tile.ts rather than from ui/snapshot.js, which is where
+// this lived while a tile was a PNG you saved. The move is the layering rule:
+// the renderer is under canvas/ and canvas/ may not import from ui/, so the
+// choosing had to come down to a tier both it and this file can reach.
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { addItems, setBoardMode } from '../web/assets/js/state.ts';
-import { styleTileContents } from '../web/assets/js/ui/snapshot.ts';
+import { styleTileContents, TILE_IMAGES } from '../web/assets/js/style-tile.ts';
 import { fresh, note, photo } from './state-fixtures.js';
 
 const HASH = c => c.repeat(64);
@@ -41,11 +47,15 @@ test('with nothing selected it takes the largest pictures', () => {
   assert.deepEqual(styleTileContents(null).pictures.map(p => p.id), ['b', 'c', 'a']);
 });
 
-test('it takes at most four', () => {
+test('it takes at most TILE_IMAGES, largest first', () => {
+  // Asserted against the constant rather than against a literal, because the
+  // number came down from four to three when the tile became a card and the
+  // point of the test is the cap, not the value - see TILE_IMAGES.
   addItems([pic('a', 60, 60), pic('b', 80, 80), pic('c', 100, 100),
     pic('d', 120, 120), pic('e', 140, 140), pic('f', 160, 160)]);
-  assert.equal(styleTileContents(null).pictures.length, 4);
-  assert.deepEqual(styleTileContents(null).pictures.map(p => p.id), ['f', 'e', 'd', 'c']);
+  assert.equal(styleTileContents(null).pictures.length, TILE_IMAGES);
+  assert.deepEqual(styleTileContents(null).pictures.map(p => p.id),
+    ['f', 'e', 'd', 'c'].slice(0, TILE_IMAGES));
 });
 
 test('a selection is the curation, and beats size', () => {

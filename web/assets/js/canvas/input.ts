@@ -62,7 +62,7 @@ import { clamp } from '../util.ts';
 import {
   board, byId, selection, select, deselect, clearSelection, topZ, stackOrder,
   snapshotGeom, applyGeom, commitGeom, bus, stuckFollowers, stuckPlacement, wouldStick,
-  travelling, isFence, isLocked, dragRoot, isPinned, isSticky, resettle,
+  travelling, isFence, isLocked, dragRoot, isPinned, isSticky, stuckTo, resettle,
   copyItems, cutItems, pasteItems, clipboardSize, clipboardBounds, clipboardHasOurs,
   baseStep,
 } from '../state.ts';
@@ -790,6 +790,10 @@ type ResizeGesture = {
   // A fence's carry, and null for everything else - see carryFloor().
   holds: CarryHold[] | null,
   lockAspect: boolean,
+  // Whether this grip lands on the lattice at all. The board setting, less the
+  // one exception - a sticky lying on something - decided once when the grip is
+  // taken. See the note at startResize().
+  snap: boolean,
 };
 
 /** The one gesture, whichever mode it is in. */
@@ -1055,6 +1059,9 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
    * points up), -1 for the low one, and 0 for an axis the handle does not
    * touch, whose extent comes back untouched.
    *
+   * `snap` is the *grip's*, not the board's: a sticky lying on something is
+   * sized off the lattice however the board is set - see startResize().
+   *
    * Snapping quantises the *moving edge's world position*, not the extent.
    * Rounding a width to the step would leave both edges off the lattice, since
    * the pinned edge was never on it to begin with; it is the edge the pointer
@@ -1079,10 +1086,12 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
    * step is coarser than the whole band between floor and ceiling, and a floor
    * that only usually holds is the same collapsed item it exists to prevent.
    */
-  function resizeAxis(sign: number, centre: number, extent: number, travel: number) {
+  function resizeAxis(
+    sign: number, centre: number, extent: number, travel: number, snap: boolean,
+  ) {
     if (!sign) return extent;
     let size = clamp(extent + sign * travel, MIN_SIZE, MAX_SIZE);
-    if (board.settings.snap) {
+    if (snap) {
       const anchor = centre - sign * extent / 2;
       const step = stepNow();
       const bias = sign * insetNow();
@@ -1324,6 +1333,21 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     const node = origin?.node
       || (e.target instanceof Element ? e.target.closest('.item') : null);
     node?.classList.add('is-resizing');
+    // A sticky lying on something is sized off the lattice, and this is the one
+    // decision that says so - everything below reads `snap` off the grip rather
+    // than off the board. It is the same exception the move gesture makes for a
+    // note being dropped onto a host: a sticky belongs to the picture under it
+    // and not to the grid, so a corner that jumped to the nearest line would
+    // pull it off the thing it is stuck to, which reads as a refusal. Its host
+    // is on the lattice; the sticky sits where it was put.
+    //
+    // stuckTo() rather than isPinned(): a sticker dropped three seconds ago is
+    // lying on the photograph whatever the settle clock says, and a grip taken
+    // during that window must not square it up either.
+    //
+    // Decided once, with the grip, like everything else here - a note dragged
+    // off its host mid-resize would otherwise start snapping halfway through.
+    const snap = board.settings.snap && !stuckTo(it);
     // Squared up before the drag begins, if snapping is on and this box was
     // never on the lattice - a photograph imported at its own proportions, a
     // paste, anything a layout placed. Everything below rounds the edge under
@@ -1336,7 +1360,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // where it is asked for, and because `before` above was taken first - so the
     // correction is inside the same undo entry as the drag that prompted it, and
     // one Ctrl+Z puts back the picture's own shape.
-    const box = board.settings.snap
+    const box = snap
       ? ontoLattice(it)
       : { x: it.x, y: it.y, w: it.w, h: it.h };
     if (box.x !== it.x || box.y !== it.y || box.w !== it.w || box.h !== it.h) {
@@ -1433,6 +1457,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // Kept as a field rather than folded into the XOR below because it is the
       // *default* for this grip, and a future one may well want its own.
       lockAspect: false,
+      snap,
     });
   }
 
@@ -1903,8 +1928,8 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       const signX = c.includes('e') ? 1 : c.includes('w') ? -1 : 0;
       // 'n' is the +y side of the item, because world y points up.
       const signY = c.includes('n') ? 1 : c.includes('s') ? -1 : 0;
-      let w = resizeAxis(signX, grip.box.x, grip.box.w, dx);
-      let h = resizeAxis(signY, grip.box.y, grip.box.h, dy);
+      let w = resizeAxis(signX, grip.box.x, grip.box.w, dx, grip.snap);
+      let h = resizeAxis(signY, grip.box.y, grip.box.h, dy, grip.snap);
       // Apply the card and carry its stuck notes with it. Each note is placed at
       // the fraction of the card it held when the drag began (grip.box is that
       // start box), so a note near a moving edge is dragged along by that edge and
@@ -1943,7 +1968,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         // allow - within half a cell of the picture's own - and the grid wins
         // the remainder. Snapping is off most of the time and this does
         // nothing then; the proportion is exact again the moment it is.
-        if (board.settings.snap) {
+        if (grip.snap) {
           const lattice = ontoLattice({ x: 0, y: 0, w, h });
           w = lattice.w;
           h = lattice.h;
@@ -1976,7 +2001,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         // the nearest line could land under the floor, which is the one thing
         // the floor is for - and for the same reason it is not capped at
         // MAX_SIZE, which the floor is already allowed to overrule.
-        if (board.settings.snap) {
+        if (grip.snap) {
           // A whole number of cells less a seam at each end - the same shape
           // latticeSide() gives, rounded up rather than to the nearest.
           const step = stepNow(), gap = 2 * insetNow();
