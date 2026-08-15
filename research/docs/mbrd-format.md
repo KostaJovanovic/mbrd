@@ -91,10 +91,13 @@ top-level directory is free.
 
 The media type, as bytes, with no trailing newline. **First entry in the
 archive, stored rather than deflated, and written with no extra field** — which
-puts the string `application/vnd.mbrd+zip` at a fixed offset 30 bytes into the
-file, where a tool that has never heard of this format can find it. It is the
-ODF and EPUB convention, and it is there so `file(1)` can name a `.mbrd` instead
-of shrugging and saying "Zip archive data".
+puts it at a fixed offset, where a tool that has never heard of this format can
+find it. A local file header is 30 bytes plus the name, so offset 30 holds the
+eight bytes `mimetype` and the string `application/vnd.mbrd+zip` begins at
+**offset 38** — the number a `file(1)` magic rule wants, and the number this
+paragraph got wrong by exactly the length of the name for as long as it has
+existed. It is the ODF and EPUB convention, and it is there so `file(1)` can
+name a `.mbrd` instead of shrugging and saying "Zip archive data".
 
 It is written for other software rather than for this app, and mbrd's own reader
 deliberately **does not check it**. `manifest.json`'s `format` is the answer to

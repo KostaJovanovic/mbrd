@@ -391,7 +391,7 @@
   transform-origin: center;
 }
 .exit-dissolve { animation: exit-dissolve var(--dur-base) var(--ease) forwards; }
-.exit-fall    { animation: exit-fall     var(--dur-base) var(--ease-in, ease-in) forwards; }
+.exit-fall    { animation: exit-fall     var(--dur-base) var(--ease-in) forwards; }
 .exit-shatter { animation: exit-shatter  var(--dur-base) var(--ease) forwards; }
 
 /* The title card leaves no clone - it just vanishes. This chip is the only

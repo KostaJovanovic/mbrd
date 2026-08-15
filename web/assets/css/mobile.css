@@ -1433,10 +1433,13 @@
 
      The name goes with it. There is no room for a filename, a waveform, a
      volume slider and a close on a phone, and of those four the name is the one
-     the card itself already carries - you started this from somewhere. */
+     the card itself already carries - you started this from somewhere.
+
+     The gap itself is not set here. --foot-left / --foot-right are defined once
+     at :root in chrome.css and changed for both foot bars together wherever
+     they are changed; the phone-width pair lives there beside the others. This
+     block keeps what is about the player alone. */
   #nowplaying {
-    --foot-left: max(12px, env(safe-area-inset-left));
-    --foot-right: max(12px, env(safe-area-inset-right));
     bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--bar-h) + var(--bar-gap));
     max-width: none;
   }

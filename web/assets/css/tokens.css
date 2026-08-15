@@ -502,6 +502,11 @@
   --ease:      cubic-bezier(0.22, 0.9, 0.28, 1);
   /* A slight overshoot, so panels settle like they have weight. */
   --ease-back: cubic-bezier(0.34, 1.4, 0.5, 1);
+  /* The one direction --ease cannot do: a thing leaving, which starts where it
+     was and gathers speed. trash.css's exit-fall is the caller, and it had been
+     asking for this name with a `ease-in` fallback behind it since before the
+     name existed. */
+  --ease-in:   cubic-bezier(0.4, 0, 1, 1);
   /* Read by canvas/viewport.js, so the board's own movement sits on the same
      axis as the interface's - not in a JS constant that ignores it. */
   --dur-zoom:   190ms;

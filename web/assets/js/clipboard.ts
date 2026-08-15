@@ -67,8 +67,21 @@ export type ItemDraft = Omit<Item, 'id' | 'z'>;
  * `id` and `z` are left off so makeItem() mints a fresh id and puts the copy on
  * top. The asset is copied by *reference*, never by bytes: assets are keyed by
  * content hash and the packer writes each hash once, so duplicating a 40 MB
- * video costs nothing on disk. meta is shallow-copied because every field in it
- * is a scalar - text, tint, mime, size and the rest.
+ * video costs nothing on disk.
+ *
+ * meta is copied all the way down, and the shallow spread it used to get was
+ * defended with "every field in it is a scalar", which has not been true for a
+ * long time: `crop`, `adjust`, `flip`, `view`, `presnap`, `rich`, `tags` and
+ * `opt` are all objects or arrays, and a shallow copy handed the duplicate the
+ * *same* ones. Nothing bit today only because every writer replaces the key
+ * rather than reaching into it - which is a convention, held by nobody, in a
+ * bag of values whose whole point is that anything may be put in it. One
+ * in-place edit anywhere and a change to a note's blocks or a photo's crop
+ * would have shown up on a copy made a week earlier.
+ *
+ * structuredClone rather than a hand-written walk: meta is written to
+ * board.json, so everything in it is data by construction, and a copy that
+ * knows the shapes would be a second place to teach every time one is added.
  */
 export function cloneItem(i: ItemDraft, dx = 0, dy = 0): ItemDraft {
   return {
@@ -78,7 +91,7 @@ export function cloneItem(i: ItemDraft, dx = 0, dy = 0): ItemDraft {
     w: i.w, h: i.h, rot: i.rot,
     name: i.name,
     asset: i.asset ? { ...i.asset } : null,
-    meta: { ...i.meta },
+    meta: structuredClone(i.meta),
   };
 }
 

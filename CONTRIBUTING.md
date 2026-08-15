@@ -82,15 +82,13 @@ genuinely lacks, and it is no longer answered with JSDoc: the app is TypeScript,
 `tsconfig.json` runs tsc `--noEmit` under **strict** over the whole tree, and
 esbuild - not tsc - builds what ships.
 
-Not every module is annotated yet. The rename moved 104 files in one step and
-the ones still untyped carry `// @ts-nocheck`; `tests/ts-debt.test.js` holds the
-count with a ceiling that may only fall. So a green typecheck means *everything
-not on that list is clean under strict*. Converting a module is deleting its
-pragma, fixing what tsc then says, and lowering the ceiling in the same commit.
-Do it a module at a time with the run clean at each step. Its ancestor earned
-its keep immediately: it found `web-graph.ts` calling two `geometry.ts` helpers it
-had never imported, which threw out of `threads()` and stopped the relationship
-web drawing.
+Every module is annotated. The rename moved 104 files in one step and the ones
+still untyped carried `// @ts-nocheck` behind a ceiling that could only fall;
+the ceiling reached zero, and `tests/ts-debt.test.js` is now a plain guard that
+fails if a pragma comes back. So a green typecheck means the whole tree is clean
+under strict, with nothing excused. It earned its keep immediately: it found
+`web-graph.ts` calling two `geometry.ts` helpers it had never imported, which
+threw out of `threads()` and stopped the relationship web drawing.
 
 There is no browser-driven suite. The four things a headless unit test
 structurally cannot see — pan and zoom, add/select/delete/undo, save → refresh →

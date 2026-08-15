@@ -5,7 +5,7 @@ and no runtime dependency — the browser loads the ES modules under `web/`
 directly. Everything below follows from that: the supported set is "browsers
 new enough to run the modules as written", stated here so "supported" is a
 contract rather than a guess. This file is what the startup capability check
-(`warnMissingCapabilities()` in `main.js`) points at when it finds a gap.
+(`warnMissingCapabilities()` in `main.ts`) points at when it finds a gap.
 
 ## The floor and the target
 
@@ -21,15 +21,15 @@ Chrome and Firefox: current and one prior major. Both clear the floor comfortabl
 
 ## What sets the floor
 
-A `.mbrd` written by a modern browser deflates its entries (`storage/mbrd.js`),
+A `.mbrd` written by a modern browser deflates its entries (`storage/mbrd.ts`),
 and the reader inflates only through `DecompressionStream('deflate-raw')`
-(`storage/zip.js`) — there is no JavaScript fallback. That is the single hard
+(`storage/zip.ts`) — there is no JavaScript fallback. That is the single hard
 break below Safari 16.4 and the only capability the startup check raises a toast
 for. The rest degrade inside optional paths:
 
-- **OffscreenCanvas 2D** — image thumbnails and the optimiser (`optimize/picture.js`,
-  `canvas/model.js` still capture).
-- **`<dialog>.showModal()`** — the discard/clear question; `ui/dialog.js` already
+- **OffscreenCanvas 2D** — image thumbnails and the optimiser (`optimize/picture.ts`,
+  `canvas/model.ts` still capture).
+- **`<dialog>.showModal()`** — the discard/clear question; `ui/dialog.ts` already
   feature-detects and defaults destructive answers to cancel when it is absent.
 - **CSS `:has()`, `@property`, `color-mix()`, modern colour** — the palette and a
   handful of layout rules.
@@ -51,13 +51,13 @@ for. The rest degrade inside optional paths:
 Documented so "Safari support" does not imply feature parity on every point release:
 
 - **iPhone volume is locked to the hardware buttons.** Assigning `media.volume`
-  is ignored; `canvas/audio.js` detects this and hides the volume slider, showing
+  is ignored; `canvas/audio.ts` detects this and hides the volume slider, showing
   "use the device volume buttons" instead. iPadOS gained script volume in Safari 26.
 - **No File System Access picker.** Safari has no `showOpenFilePicker` /
   `showSaveFilePicker`; Open falls back to a hidden `<input>` and Export to a Blob
-  download (`storage/storage.js`).
+  download (`storage/storage.ts`).
 - **No `launchQueue` / `file_handlers`.** "Open with mbrd" from the OS is absent
-  rather than broken; the `launchQueue` use in `main.js` is guarded.
+  rather than broken; the `launchQueue` use in `main.ts` is guarded.
 - **Best-effort storage.** WebKit may evict the IndexedDB copy under pressure.
   The first explicit Save requests `navigator.storage.persist()`, and the receipt
   says "export a file to keep a durable copy" when persistence was not granted.
@@ -75,14 +75,14 @@ Deliberate boundaries rather than bugs, documented so they read as stated scope:
 - **HEVC/H.265 posters need the network, and show black offline.** A clip the
   browser cannot decode itself (HEVC everywhere but Safari, AV1 on old builds,
   ProRes) has its poster frame pulled by the optional ffmpeg core, which is a
-  one-time ~32 MB fetch from a CDN (`optimize/media.js`) and is deliberately *not*
+  one-time ~32 MB fetch from a CDN (`optimize/media.ts`) and is deliberately *not*
   in the service-worker precache. So the first HEVC poster on a fresh install
   needs a connection, and offline it degrades to a black rectangle with a dead
   play button. The clip itself still plays where the browser can decode it; only
   the still is affected. This is cross-browser, not a Safari quirk — Safari is the
   one desktop browser that decodes HEVC natively and so rarely reaches this path.
 - **No keyboard navigation on the spatial canvas.** Board items carry `role` and
-  an accessible name for assistive tech (`canvas/items.js`), but there is no
+  an accessible name for assistive tech (`canvas/items.ts`), but there is no
   roving-tabindex / arrow-to-move-focus / Enter-to-select model yet: items are
   selected and created by pointer, and the arrow keys nudge a selection made with
   the mouse rather than moving focus between cards. The full keyboard model is a
@@ -104,7 +104,7 @@ iPhone + iPad Safari** before a release:
 3. Pan / pinch-zoom / marquee-select / resize handles on touch and trackpad.
    Specifically: a two-finger swipe on the trackpad must **pan** and a mouse
    wheel must **zoom**, on the same machine — `readWheel()` tells them apart by
-   the shape of the deltas, and Safari's are its own (see `canvas/input.js`).
+   the shape of the deltas, and Safari's are its own (see `canvas/input.ts`).
 4. Save, then Export a `.mbrd`; reopen it. Cross-check: export from Chromium,
    open in Safari, and back.
 5. Clear everything → confirm the wipe, and that Cancel aborts it.

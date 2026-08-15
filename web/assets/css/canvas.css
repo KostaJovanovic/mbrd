@@ -885,8 +885,8 @@
    declarations are the fallback: an engine that does not know the keyword drops
    the second and keeps the grey, which leaves a coloured line with a grey head
    rather than no head at all. Safari is the floor here (see
-   docs/browser-support.md), and this is a difference in shade on an arrow, not
-   a feature that fails to work. */
+   research/docs/browser-support.md), and this is a difference in shade on an
+   arrow, not a feature that fails to work. */
 #web .web-arrowhead {
   fill: var(--web-line);
   fill: context-stroke;

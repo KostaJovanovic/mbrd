@@ -1,11 +1,17 @@
 // A stack of the exclusive right-side panels, so they hide and come back rather
 // than just replacing each other.
 //
-// The Playlist player and the header edit bar dock on the same right edge and only
+// The header edit bar and the sticker drawer dock on the same right edge and only
 // one can hold it. Opening the second hides the first; closing the second brings
 // the first back exactly where it was. That "come back" is the difference between
 // this and a plain close-on-open: the panels form a stack, and the one underneath
 // is waiting, not gone.
+//
+// Those two are the whole membership - registerPanel() is called once each, in
+// ui/mobile-header.ts and ui/sticker-window.ts. The Playlist player was a member
+// while it was a docked panel; it is a floating window on the Desktop and a lens
+// on Mobile now, neither of which takes the right edge from anything, and
+// ui/playlist.ts imports resetPanels() alone.
 //
 // It owns no DOM. Each panel registers how to open and close itself and reports
 // when it has become visible or has closed; this drives those two callbacks to keep

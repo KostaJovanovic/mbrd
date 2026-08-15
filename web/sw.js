@@ -101,13 +101,19 @@ const SHELL = [
   // And the licence for them, because the shapes were drawn by other people.
   // Phosphor is MIT and its one condition is that the notice travels with the
   // copies, so an installed app that carries the drawings offline and leaves
-  // the notice on the server is an installed app that does not meet it. The
-  // bundled faces predate this reading and their OFL files are not here; that
-  // is a gap rather than a decision. See THIRD-PARTY.md.
+  // the notice on the server is an installed app that does not meet it. See
+  // THIRD-PARTY.md.
   // (No apostrophes anywhere in this array, comments included - see CLAUDE.md.
   // tests/sw.test.js reads SHELL by pulling out single-quoted runs, and one
   // apostrophe up here silently unlists every entry below it.)
   './assets/phosphor-LICENSE.txt',
+  // The three faces the same way, and for the same reason spelled the same way.
+  // The OFL asks that the notice accompany the fonts; every .woff2 below is in
+  // this list, so offline the app was carrying three typefaces and none of the
+  // three notices. Thirteen kilobytes for a condition that is met or is not.
+  './assets/fonts/geist-OFL.txt',
+  './assets/fonts/fraunces-OFL.txt',
+  './assets/fonts/playfair-OFL.txt',
   './assets/img/icon.svg',
   './assets/img/icon-maskable.svg',
   // The same two icons as bitmaps, because not every place an installed icon
@@ -149,8 +155,10 @@ const SHELL = [
   // One artifact, not ninety-six modules. The app is TypeScript now and a
   // browser cannot fetch a .ts file, so what ships is the bundle esbuild
   // writes - see the script tag in index.html. Every module that used to be
-  // listed here one by one is inside it, and the map beside it points back at
-  // the sources, which still ship.
+  // listed here one by one is inside it. No source map: npm run build does not
+  // pass --sourcemap and nothing beside the bundle is committed, so there is
+  // nothing here to cache and a line number off the deploy is a line number in
+  // the bundle. npm run dev builds one, for the browser that is looking at it.
   './assets/app.js',
   // The exception, and a real one: the media worker is fetched by URL at
   // runtime rather than imported, so it is not in the bundle and stays a

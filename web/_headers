@@ -32,15 +32,16 @@
 # a change that would break the deploy fails in `npm test` instead.
 #
 # ---------------------------------------------------------------------------
-# script-src 'self' + four hashes
+# script-src 'self' + six hashes
 # ---------------------------------------------------------------------------
 #
 # No 'unsafe-inline', which is the whole value of the directive: with hashes
 # present a browser ignores 'unsafe-inline' for scripts anyway, and an injected
 # <script> - inline or not - has nowhere to come from.
 #
-# The four hashes are the four inline scripts this app ships, and none of them
-# can become a file:
+# The six hashes are every inline script this app ships - three in index.html,
+# two more that only /patch has, and the bench - and none of the first three can
+# become a file:
 #
 #   - index.html's pre-paint appearance restore. Running before first paint is
 #     its entire purpose: it reads the saved whimsy level, palette and token

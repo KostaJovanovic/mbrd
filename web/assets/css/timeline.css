@@ -158,7 +158,7 @@
   height: 24px;
   padding: 0;
   border: 0;
-  border-radius: var(--seed);
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--ink-3);
   cursor: pointer;
@@ -362,8 +362,8 @@
    rather than deleted, and shown rather than hidden - the board still builds,
    and this is the thing you would want to go and look at. */
 #timeline-strip .tl-step.is-broken .tl-dot {
-  color: var(--bad, #c0392b);
-  box-shadow: 0 0 0 var(--hairline) var(--bad, #c0392b);
+  color: var(--danger);
+  box-shadow: 0 0 0 var(--hairline) var(--danger);
 }
 
 /* Named: a point somebody stopped and called something. A pip under the mark,
@@ -389,7 +389,7 @@
    on this strip can be trusted to take you anywhere. Shown and inert, with the
    reason in the head, rather than silently absent. */
 #timeline-strip.is-stale .tl-track { opacity: 0.4; pointer-events: none; }
-#timeline-strip.is-stale .tl-where { color: var(--bad, #c0392b); }
+#timeline-strip.is-stale .tl-where { color: var(--danger); }
 
 /* The trim offer. Under the track rather than over it, because it is about the
    history rather than part of it, and because a row that appears above the
@@ -406,12 +406,12 @@
   font-size: var(--t-tiny);
   color: var(--ink-3);
 }
-.tl-trim-why { color: var(--ink-4, var(--ink-3)); }
+.tl-trim-why { color: var(--ink-3); }
 .tl-trim-go {
   font: inherit;
   padding: 3px 9px;
   border: var(--hairline) solid var(--rule-2);
-  border-radius: var(--seed);
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--ink-2);
   cursor: pointer;
@@ -461,7 +461,7 @@
   color: var(--ink-3);
   font-variant-numeric: tabular-nums;
 }
-#timeline-sheet.is-stale #tl-sheet-where { color: var(--bad, #c0392b); }
+#timeline-sheet.is-stale #tl-sheet-where { color: var(--danger); }
 /* A stale history: the steps do not add up to the board beside them, so nothing
    here can be trusted to take you anywhere. Shown and inert, with the reason in
    the head, rather than silently absent - the same answer the strip gives. */
@@ -564,8 +564,8 @@
 /* Broken: names a card that is no longer there, so it cannot run. Skipped
    rather than deleted, and shown rather than hidden. */
 #timeline-sheet .tl-row.is-broken .tl-mark {
-  color: var(--bad, #c0392b);
-  box-shadow: 0 0 0 var(--hairline) var(--bad, #c0392b);
+  color: var(--danger);
+  box-shadow: 0 0 0 var(--hairline) var(--danger);
 }
 
 /* The trim offer's slot, which is empty on nearly every board. `:empty` rather

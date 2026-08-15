@@ -392,27 +392,29 @@ media element from the document pauses it, so before that a pan stopped the
 music.
 
 **A track that ends hands over to the next only while the playlist is open.**
-`canvas/audio.ts` takes the predicate by injection (`setAdvanceGate`) rather than
-importing it, because the answer is "is the playlist on screen" and audio sits
-below `ui/` — the same one-way seam `setAssetNameLookup` and `setPrompt` use.
-`ui/nowplaying.ts` supplies it, because the full player is a lens on Mobile and a
-floating window on the Desktop and this is the file that already knows both. The
+`canvas/playlist-queue.ts` takes the predicate by injection (`setAdvanceGate`) rather than
+importing it, because the answer is "is the playlist on screen" and `canvas/`
+sits below `ui/` — the same one-way seam `setAssetNameLookup` and `setPrompt`
+use. `ui/nowplaying.ts` supplies it, because the full player is a lens on Mobile
+and a floating window on the Desktop and this is the file that already knows
+both. The
 gate is read when a track *ends*, so closing the playlist mid-track stops the
 queue at the end of it and opening it lets the queue carry on; there is nothing
 to arm. Only the automatic hand-over is gated — a Next press is somebody asking —
 and repeat-'one' is left alone, since replaying one track is an instruction
 already given about the track you chose rather than moving on to another.
 
-The volume is the one of those five that came back, and only on one surface.
-`#nowplaying` is hidden outright on the Mobile Playlist lens — the lens carries
-its own transport, so the bar would be a second copy laid over the surface
-showing the first — which leaves the lens as the only place a level can be
-reached for at all while it is up. So the lens transport has a volume row and
-the Desktop window still does not, and the reasoning is the same either way: a
-level is a property of the room rather than of a list, and it belongs where the
-sound is stopped. `volumeLocked()` is copied to both, because a slider iOS
-ignores is a control that lies, and the row is not built at all rather than built
-and disabled.
+The volume is the one of those five that came back, and it is on the bar. The
+Mobile Playlist lens carried a transport of its own for a while — seek,
+prev/next, repeat and a level, in a panel between the header and the list — and
+that panel was the thing on the surface you had to scroll past to reach the
+music. It is gone: the lens is a header with Play and Shuffle over a track list,
+`#nowplaying` is no longer hidden under `data-feed-lens`, and the bar at the foot
+is the one player on the phone. So the level lives in the bar and the Desktop
+window still has none, which is the same reasoning it always was — a level is a
+property of the room rather than of a list, and it belongs where the sound is
+stopped. `volumeLocked()` guards it, because a slider iOS ignores is a control
+that lies, and the row is not built at all rather than built and disabled.
 
 `ui/tour.ts` is the board read as a sequence of stops rather than as a surface.
 `board.tour` — the itinerary, top-level in the `.mbrd` beside `connections` and
@@ -457,7 +459,7 @@ a search you have to open a drawer to reach is one you stop using — and it exi
 because an infinite canvas can lose a thing that is saved and intact, four
 screens away at last week's zoom.
 
-`ui/idle.ts` fades the corner controls after five seconds of nothing and brings
+`ui/idle.ts` fades the corner controls after fifteen seconds of nothing and brings
 them back on any sign of life; waking too eagerly costs nothing, being invisible
 when somebody reaches for a control costs everything.
 
@@ -1468,7 +1470,12 @@ specificity:
 | `tokens.css` | every custom property |
 | `base.css` | reset, type, the page, paper, grain, the surround, the boot cover |
 | `canvas.css` | `#viewport`, `#world`, the transform layer, the grid, the connections, item shadows, the paper outline, the Mobile sheet and masthead in screen space |
-| `items.css` | the cards per type, the ghost hints, the grips, and what the board stops paying for while it is being moved |
+| `items.css` | the item box itself, and the plate a filed card is printed on |
+| `ghosts.css` | the hints a brand-new board opens with |
+| `fences.css` | a region drawn on the board rather than a card lying on it |
+| `media.css` | cover art, and the two players that run on a card |
+| `cards.css` | the cards whose face the app draws — notes, links, stickers, models, embeds |
+| `item-chrome.css` | what is drawn over a card rather than in it — grips, marks, the aim ring |
 | `sidebar.css` | the panel — tabs, sections, folds, `.field` and its variants |
 | `chrome.css` | the corner, HUD readouts, the toolbar, the now-playing bar |
 | `trash.css` | the bin and its panel (`ui/trash.ts`), and the fly-out a deleted card plays (`canvas/exit-anim.ts`) |
@@ -1480,14 +1487,24 @@ specificity:
 | `color-picker.css` | the saturation square and the hue (`ui/color-picker.ts`) |
 | `sticker-pad.css` | the drawer of shapes (`ui/sticker-window.ts`) |
 | `mobile.css` | touch, small screens, and the mobile-only rules |
+| `timeline.css` | the Timeline in both its faces — the foot strip and the sheet |
 | `quality.css` | the `[data-whimsy]` and `[data-quality]` tails — **must stay last**, because both have the same specificity as what they override and win on document order alone |
+
+Twenty-three, and that is the whole of `index.html`'s list. Two more sheets
+exist and are not in it, which is why they are not in the table: `patch.css`,
+loaded by `web/patch.html` alone to hide the board behind the changelog, and
+`privacy.css`. `SHELL` in `web/sw.js` caches all twenty-five, since an installed
+app is offline on every page it has.
 
 This was one 6,000-line `app.css` until it became the file every interface
 change had to touch at once. The eight from `trash.css` to `sticker-pad.css`
 were then one 2,370-line `overlays.css` until *that* file had eleven unrelated
-subsystems in it and had become the thing the first split was for. The order
-above is `index.html`'s, and **the order is the cascade** — it is not cosmetic,
-and `quality.css` being last is load-bearing rather than tidy.
+subsystems in it and had become the thing the first split was for; `items.css`
+went the same way afterwards, into the six from `items.css` to `item-chrome.css`
+above. The order above is `index.html`'s, and **the order is the cascade** — it
+is not cosmetic, and `quality.css` being last is load-bearing rather than tidy.
+A table that lists fewer sheets than the page loads is worse than no table: a
+new sheet placed by it lands in the wrong half of the cascade.
 
 ### The stack
 
@@ -1750,13 +1767,13 @@ over nine files, and then closed properly: the app is TypeScript. `npm run
 typecheck` runs `tsc --noEmit` under `strict`, nothing is emitted, and no
 TypeScript ships — esbuild builds the bundle, tsc only checks.
 
-The types are not all written yet, and the ledger is explicit rather than
-implied. A mechanical rename moved 104 modules in one step and left 4,935
-errors under `strict`; the unannotated ones carry `// @ts-nocheck` and
-`tests/ts-debt.test.js` holds the count with a ceiling that may only fall. So
-what the typecheck asserts is *everything not on that list is clean under
-strict* — true today, truer each time a module is converted. Converting one is
-deleting its pragma and lowering the ceiling. It paid for itself on the first
+The types are all written, and the ledger that got them there is worth keeping
+in view. A mechanical rename moved 104 modules in one step and left 4,935 errors
+under `strict`; the unannotated ones carried `// @ts-nocheck` behind a ceiling
+in `tests/ts-debt.test.js` that could only fall. It fell to zero, and that test
+is now a plain guard against the pragma returning. So what the typecheck asserts
+is the whole tree, clean under strict, with nothing excused. It paid for itself
+on the first
 run by finding `web-graph.ts` calling `corners()` and `pointInItem()` without
 importing either — a `ReferenceError` out of `threads()` that stopped the
 relationship web drawing past its spanning tree, silently, for the life of the
