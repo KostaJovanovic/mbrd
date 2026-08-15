@@ -14,6 +14,58 @@ export const TYPOGRAPHY_TOKENS = ['--font-display', '--font-body'];
 const paletteToken = new Set([...PALETTE_TOKENS, ...TYPOGRAPHY_TOKENS]);
 
 /**
+ * Tokens the whimsy axis owns. A hand-set value beats any stylesheet, which is
+ * what you want for a pigment - but not for these: leaving a hand-picked 13px
+ * radius inline would keep the corners round in a mode whose whole point is
+ * that they are square. So sliding the axis drops them back to the stylesheet.
+ *
+ * The grid pair belongs here for the same reason - each level sets its own
+ * weight and strength, and touching either slider once would otherwise pin the
+ * grid for good and leave it ignoring the axis from then on.
+ *
+ * The snap setting is owned in exactly this spirit without being a token at
+ * all; see axisMoved() in ui/appearance.ts for why it is, and for what it
+ * costs.
+ *
+ * ── The rule, and why the list used to be three names long ──
+ *
+ * It held `--radius`, `--grid-alpha` and `--grid-dot`, out of the sixty the
+ * `[data-whimsy]` blocks in tokens.css declare. So a .mbrd carrying
+ * `--item-shadow: none` or `--tilt-max: 0deg` - both on the look allowlist,
+ * both declared per tier - kept the old level's elevation and lean through
+ * every move of the slider, and only Reset appearance could clear them. Three
+ * of sixty is not an axis, it is the two controls somebody happened to have
+ * been annoyed by.
+ *
+ * The rule now is: **the axis owns what only the axis declares.** A token a
+ * `[data-palette]` block also sets belongs to the palette, and the two faces
+ * belong to the face picker - both are chosen out loud, where a tier is a
+ * personality. That is PALETTE_TOKENS and TYPOGRAPHY_TOKENS above, which is why
+ * they are subtracted rather than a second list being written.
+ * tests/appearance.test.js holds both halves against tokens.css, so a token
+ * added to a tier block and not to this list fails rather than quietly going on
+ * ignoring the slider.
+ *
+ * Here rather than in ui/appearance.ts, beside the two lists it is defined
+ * against: that module touches `document` at import time, so a test cannot read
+ * this out of it, and a list nothing can check is the shape of the bug being
+ * fixed.
+ */
+export const AXIS_TOKENS = [
+  '--btn-grow', '--btn-lift', '--btn-press', '--card-rule-gap', '--cork',
+  '--display-italic', '--display-weight', '--dur-base', '--dur-fast',
+  '--dur-travel', '--dur-zoom', '--ease', '--ease-back',
+  '--font-mono', '--ghost-edge', '--ghost-ink',
+  '--ghost-ink-2', '--ghost-weight', '--grain', '--grid-alpha', '--grid-dot',
+  '--grow-hover', '--highlight', '--highlight-ink', '--item-border',
+  '--item-shadow', '--lift-drag', '--lift-hover', '--note-1', '--note-2',
+  '--note-3', '--note-4', '--note-shadow', '--radius', '--radius-pill',
+  '--sel-corner', '--sel-gap', '--sel-line', '--sel-reach', '--shadow-1',
+  '--shadow-2', '--stock', '--t-display', '--t-title', '--tilt-drag',
+  '--tilt-max', '--vignette', '--wash',
+];
+
+/**
  * The whimsy axis may suggest Desktop snapping, but Mobile's grid choice is a
  * layout setting controlled only by its own checkbox after the profile exists.
  */

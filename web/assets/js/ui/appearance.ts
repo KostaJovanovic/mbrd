@@ -24,7 +24,7 @@
 import {
   board, bus, setAppearance, setSetting, MOBILE_APPEARANCE_VARS,
 } from '../state.ts';
-import { autoPaletteReady, whimsyControlsSnap } from '../layout-settings.ts';
+import { autoPaletteReady, whimsyControlsSnap, AXIS_TOKENS } from '../layout-settings.ts';
 import { readToken } from '../util.ts';
 import { oklch, parseHex } from '../color.ts';
 import { toast } from '../notify.ts';
@@ -67,20 +67,6 @@ const STORE_KEY = 'mbrd.appearance';
  */
 const HARSH = 2;
 
-/**
- * Tokens the whimsy axis owns. A hand-set value beats any stylesheet, which is
- * what you want for a pigment - but not for these: leaving a hand-picked 13px
- * radius inline would keep the corners round in a mode whose whole point is
- * that they are square. So sliding the axis drops them back to the stylesheet.
- *
- * The grid pair belongs here for the same reason - each level sets its own
- * weight and strength, and touching either slider once would otherwise pin the
- * grid for good and leave it ignoring the axis from then on.
- *
- * The snap setting is owned in exactly this spirit without being a token at
- * all; see axisMoved() for why it is, and for what it costs.
- */
-const AXIS_TOKENS = ['--radius', '--grid-alpha', '--grid-dot'];
 
 /**
  * Faces the board can be set in, live.
@@ -321,6 +307,16 @@ export function setWhimsy(level: number | string) {
   if (n === current.whimsy) return;
   // Hand-set values for tokens this axis owns would outrank the new level
   // (they are inline), so they go back to the stylesheet.
+  //
+  // With one exception the axis cannot win, and it is worth naming rather than
+  // leaving as a puzzle: on Mobile the grid pair comes back. normalizeSettings()
+  // spreads MOBILE_APPEARANCE_VARS *under* a board's saved vars on every read,
+  // so --grid-alpha and --grid-dot are re-injected as a floor the next time the
+  // board is normalised. That is deliberate on the Mobile side -
+  // whimsyControlsSnap() says the same thing about snapping, that Mobile's grid
+  // is a layout setting with its own control - so the deletion here is a no-op
+  // there rather than a fight. Removing them from AXIS_TOKENS would be worse:
+  // Desktop does want the axis to own them.
   for (const key of AXIS_TOKENS) {
     delete current.vars[key];
     root.style.removeProperty(key);
@@ -357,10 +353,14 @@ function reshade() {
     ? paletteFromAccent(current.vars['--accent'], { plain: current.whimsy === HARSH })
     : null;
   if (!sheet) return;
-  // ui/pigments.js still carries its migration pragma, so the token map it
-  // builds types as an empty object. Every pair in it is a token name and
-  // the colour to write; the assertion comes out when that file is annotated.
-  for (const [key, value] of Object.entries(sheet) as [string, string][]) {
+  // Every pair is a token name and the colour to write.
+  //
+  // There was an `as [string, string][]` here and at the second copy of this
+  // loop below, each under a comment saying ui/pigments.js "still carries its
+  // migration pragma, so the token map it builds types as an empty object".
+  // That pragma is gone - tests/ts-debt.js counted the migration to zero - and
+  // the assertion it justified was doing nothing.
+  for (const [key, value] of Object.entries(sheet)) {
     current.vars[key] = value;
     root.style.setProperty(key, value);
     applied.add(key);
@@ -421,15 +421,20 @@ export function setPigments(vars: Record<string, string>) {
   //
   // Through the same filter as anything else, because the eventual caller is
   // pigments read out of whatever pictures were dropped on the board.
-  for (const [key, value] of Object.entries(safeVars(vars))) {
+  const clean = safeVars(vars);
+  for (const [key, value] of Object.entries(clean)) {
     current.vars[key] = value;
     root.style.setProperty(key, value);
     applied.add(key);
   }
   // Marked as the machine's work, which is what lets the next import replace it
-  // without asking. Set after the loop rather than before, so a call that
-  // filtered down to nothing does not claim a look it did not write.
-  if (Object.keys(current.vars).length) current.derived = true;
+  // without asking. Counted on what this call actually wrote, not on the whole
+  // var map - which is what the line above was doing, and which made the test
+  // unconditional on Mobile: MOBILE_APPEARANCE_VARS puts --grid-alpha and
+  // --grid-dot into `current.vars` on every Mobile board, so a call that
+  // filtered down to nothing claimed a look it had not written. The comment
+  // already said this was the thing being prevented.
+  if (Object.keys(clean).length) current.derived = true;
   paintThemeColour();
   persist();
   syncControls();
@@ -471,17 +476,26 @@ function followFade() {
   // reading the same colour, and the two crossing is what flashes.
   if (!still) root.classList.add('is-fading');
   const step = () => {
-    onChange();
-    // The swatch travels with the board rather than jumping at either end of
-    // the fade, which costs one assignment a frame and is the honest picture:
-    // the value it is showing really is the value the interface is painted in
-    // at that instant.
-    paintPigment();
-    if (performance.now() < fadeEnd) requestAnimationFrame(step);
-    else {
-      fading = false;
-      root.classList.remove('is-fading');
-      settle();
+    // try/finally, because `fading` and `.is-fading` are cleared only on the
+    // loop's normal exit. onChange() is injected by main.ts and walks the
+    // canvas; a throw out of it left `fading` true - so no later palette change
+    // could ever restart the loop - and left `.is-fading` on :root, which
+    // suppresses every transition in the app. One bad frame and the interface
+    // stopped animating for the session.
+    try {
+      onChange();
+      // The swatch travels with the board rather than jumping at either end of
+      // the fade, which costs one assignment a frame and is the honest picture:
+      // the value it is showing really is the value the interface is painted in
+      // at that instant.
+      paintPigment();
+    } finally {
+      if (performance.now() < fadeEnd) requestAnimationFrame(step);
+      else {
+        fading = false;
+        root.classList.remove('is-fading');
+        settle();
+      }
     }
   };
   requestAnimationFrame(step);
@@ -516,12 +530,19 @@ function settle() {
 function paintPigment() {
   const entry = inputs.get('--accent');
   if (!entry) return;
-  // Never onto an input somebody is inside: a colour picker being assigned to
-  // while its own dialog is open is how a value jumps back under the pointer.
-  // A hand-picked colour is not a fade anyway - setVar() writes it straight.
-  if (document.activeElement === entry.input) return;
+  // `.style.background`, not `.value`. The pigment control has been a <button>
+  // since it stopped being an `<input type="color">` - syncControls() paints it
+  // by setting its background - and this went on assigning `value`, a property
+  // a button carries and never renders. So the per-frame paint over
+  // --dur-palette did nothing at all, and the swatch jumped once at settle()
+  // instead of travelling with the board, which is the opposite of what the
+  // note above this pair says happens.
+  //
+  // The activeElement guard went with it, and that is right rather than an
+  // omission: it was there for a native picker's own mid-drag value, and the
+  // picker is a modal now with nothing to jump under.
   const now = toHex(readToken('--accent'));
-  if (now) entry.input.value = now;
+  if (now) entry.input.style.background = now;
 }
 
 /**
@@ -899,8 +920,21 @@ export function resetAppearance() {
  * hand-picked --accent went on tinting the next board that never asked for one,
  * and the controls would show the palette's value while the stale inline
  * property was what you could actually see.
+ *
+ * Seeded from what is already inline, not from nothing. The pre-paint guard in
+ * index.html writes custom properties on :root before this module exists, and
+ * its filter is *not* this one: it tests the key against `^--[a-z0-9-]+$` where
+ * safeVars() tests it against TOKENS. So a saved look carrying a key the
+ * allowlist has since dropped was written by the guard, rejected by cloneLook(),
+ * and then never removed - the loop below iterated an empty set - and the
+ * property survived every board load for the session with no control able to
+ * clear it. Whatever the guard put there is this module's to take away.
  */
-let applied = new Set<string>();
+let applied = new Set<string>(
+  typeof document === 'object'
+    ? [...document.documentElement.style].filter(name => name.startsWith('--'))
+    : [],
+);
 
 function apply(look: Look) {
   // Always written, including the default: the stylesheet's base *is* the
@@ -1054,10 +1088,9 @@ function setVar(name: string, value: string) {
   // the most deliberate colour decision the panel offers.
   const sheet = name === '--accent'
     ? paletteFromAccent(value, { plain: current.whimsy === HARSH }) : null;
-  // ui/pigments.js still carries its migration pragma, so the token map it
-  // builds types as an empty object. Every pair in it is a token name and
-  // the colour to write; the assertion comes out when that file is annotated.
-  for (const [key, hue] of Object.entries(sheet || {}) as [string, string][]) {
+  // See the same loop in setPalette() for what the assertion that used to be
+  // here was standing in for, and why it is not needed.
+  for (const [key, hue] of Object.entries(sheet || {})) {
     current.vars[key] = hue;
     root.style.setProperty(key, hue);
     applied.add(key);

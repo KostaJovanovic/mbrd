@@ -13,7 +13,7 @@
 // constant it replaced. That is the property worth keeping: installing a new
 // version must not quietly change what anyone's board looks like.
 //
-// Under the dial sit the same seven flags as overrides. Moving the dial rewrites
+// Under the dial sit the same six flags as overrides. Moving the dial rewrites
 // all of them; setting one by hand pins that one and leaves the rest following.
 // It is the same bargain the appearance panel makes with Whimsy and its token
 // sliders, and it fails the same way without a way back - hence
@@ -211,7 +211,7 @@ export function initQuality(stored: unknown = readPrefJSON(PREF)) {
 }
 
 /**
- * Only the seven known keys, each held to the type its preset has.
+ * Only the six known keys, each held to the type its preset has.
  *
  * localStorage is same-origin storage anyone with a console can edit, and these
  * numbers reach a canvas size and a loop bound. A string where a number belongs

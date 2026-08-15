@@ -133,6 +133,12 @@ export function buildControls() {
     if (node) { node.replaceChildren(); hosts[name] = node; }
   }
   if (!Object.keys(hosts).length) return;
+  // The map goes with the nodes it names. Every host above was just emptied, so
+  // every row this map held is now a detached element - and a rebuild that
+  // filed fewer rows than the last one (a host that has gone, a control the
+  // table dropped) left the missing ones pointing at nodes no longer in the
+  // document, which syncControls() and paintPigment() then paint for nobody.
+  inputs.clear();
 
   for (const c of d.CONTROLS) {
     const host = hosts[c.host];
@@ -361,10 +367,18 @@ export function toHex(value: string): string | null {
   const v = value.trim();
   if (/^#[0-9a-f]{6}$/i.test(v)) return v.toLowerCase();
   if (/^#[0-9a-f]{3}$/i.test(v)) return '#' + [...v.slice(1)].map(c => c + c).join('').toLowerCase();
+  // Plain numeric channels only. `rgb(100%, 0%, 0%)` is legal CSS and passes
+  // SAFE_VALUE, and `.map(Number)` turned every one of those into NaN, which
+  // clamp255() then turned into 0 - so a percentage form silently painted the
+  // swatch black and opened the picker on black instead of on red. A form this
+  // branch cannot read falls through to the canvas below, which reads all of
+  // them.
   const m = v.match(/^rgba?\(([^)]+)\)$/i);
-  if (m) {
+  if (m && !m[1].includes('%')) {
     const [r, g, b] = m[1].split(/[\s,/]+/).map(Number);
-    return '#' + [r, g, b].map(n => clamp255(n).toString(16).padStart(2, '0')).join('');
+    if ([r, g, b].every(Number.isFinite)) {
+      return '#' + [r, g, b].map(n => clamp255(n).toString(16).padStart(2, '0')).join('');
+    }
   }
   // color(), oklch(), a named colour: round-trip it through a canvas.
   try {
