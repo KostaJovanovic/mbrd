@@ -95,6 +95,8 @@ const mirrors: Partial<Record<keyof Flip, HTMLButtonElement>> = {};
 
 /** Which item is open, and the three edits as they stand right now. */
 let openId = '';
+/** Whether a grip is already being dragged - see onGrab(). */
+let grabbing = false;
 let rect: Rect = { ...FULL };
 let grade: Grade = { ...NEUTRAL };
 let flip: Flip = { ...UNFLIPPED };
@@ -170,7 +172,11 @@ export function initDarkroom() {
     writeDials();
     paint();
   });
-  dlg.addEventListener('close', () => { openId = ''; img!.removeAttribute('src'); });
+  // `img?.`, not `img!`. Only `dlg` was null-checked on the way into this
+  // function, so a page carrying the dialog without the picture inside it threw
+  // here on close - taking the openId reset with it, which is the one line that
+  // has to run whatever else does not.
+  dlg.addEventListener('close', () => { openId = ''; grabbing = false; img?.removeAttribute('src'); });
 }
 
 /**
@@ -269,12 +275,19 @@ function paint() {
  */
 function onGrab(e: PointerEvent) {
   if (!(e.target instanceof HTMLElement)) return;
+  // One grab at a time. Every press bound its own three listeners and the
+  // matching `up` removed only its own, so a second finger on the frame left
+  // the first press's onMove bound for good: after both lifted, merely moving
+  // a pointer across the frame recomputed the rectangle from a stale `from`
+  // and the crop jumped with no button pressed.
+  if (grabbing) return;
+  grabbing = true;
   const handle = mirrorHandle((e.target.dataset.h || 'move') as Handle);
   // The drawn size of the picture, read once at the press. Every delta below is
   // divided by it to become a fraction, which is the only pixel measurement in
   // this module and the note at the top of the file says why it is here.
   const box = img!.getBoundingClientRect();
-  if (!box.width || !box.height) return;
+  if (!box.width || !box.height) { grabbing = false; return; }
   const from = { ...rect };
   const x0 = e.clientX;
   const y0 = e.clientY;
@@ -295,6 +308,7 @@ function onGrab(e: PointerEvent) {
     frame!.removeEventListener('pointermove', onMove);
     frame!.removeEventListener('pointerup', onUp);
     frame!.removeEventListener('pointercancel', onUp);
+    grabbing = false;
   };
   frame!.addEventListener('pointermove', onMove);
   frame!.addEventListener('pointerup', onUp);

@@ -10,6 +10,9 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 
 import { TOKENS, safeVars } from '../web/assets/js/ui/look.ts';
+import {
+  PALETTE_TOKENS, TYPOGRAPHY_TOKENS, AXIS_TOKENS,
+} from '../web/assets/js/layout-settings.ts';
 import { WEB, read } from './helpers.js';
 
 // ---------------------------------------------------------------------------
@@ -98,6 +101,60 @@ test('the allowlist is exactly the tokens tokens.css declares', () => {
 
   assert.deepEqual(missing, [], 'declared in tokens.css but not allowed in a look');
   assert.deepEqual(stale, [], 'allowed in a look but no longer in tokens.css');
+});
+
+/**
+ * Every custom property a set of blocks in tokens.css declares.
+ *
+ * Comments come off first: this file argues about token names in prose all the
+ * way down, and half of those sentences are inside the blocks being read.
+ */
+function declaredIn(pattern) {
+  const css = read(join(WEB, 'assets', 'css', 'tokens.css')).replace(/\/\*[\s\S]*?\*\//g, '');
+  const out = new Set();
+  for (const block of css.matchAll(pattern)) {
+    for (const decl of block[2].matchAll(/(--[a-z0-9-]+)\s*:/g)) out.add(decl[1]);
+  }
+  return out;
+}
+
+const WHIMSY_BLOCKS = /:root\[data-whimsy="(\d)"\]\s*\{([\s\S]*?)\n\}/g;
+const PALETTE_BLOCKS = /:root\[data-palette="([a-z0-9-]+)"\]\s*\{([\s\S]*?)\n\}/g;
+
+test('PALETTE_TOKENS covers every token a palette block sets', () => {
+  // appearance.ts:414 says this is "checked, not assumed" and nothing was
+  // checking it. A pigment added to the three [data-palette] blocks and not to
+  // this list is a token dropPigments() and setPalette() leave inline after a
+  // switch, so the named palette is outvoted on exactly that colour - which
+  // looks like the palette being wrong rather than like a list being short.
+  const declared = declaredIn(PALETTE_BLOCKS);
+  assert.ok(declared.size >= 10, `only ${declared.size} tokens found - has the block shape moved?`);
+  const missing = [...declared].filter(t => !PALETTE_TOKENS.includes(t)).sort();
+  assert.deepEqual(missing, [], 'set by a [data-palette] block and not in PALETTE_TOKENS');
+  // The list may be wider than the blocks, and is: --accent-fg is derived from
+  // the accent and declared per whimsy tier, so it travels with a palette
+  // without being written in one.
+  const extra = PALETTE_TOKENS.filter(t => !declared.has(t));
+  assert.deepEqual(extra, ['--accent-fg'],
+    'PALETTE_TOKENS carries a name no palette block sets, and it is not the documented one');
+});
+
+test('the whimsy axis owns every token only a whimsy block sets', () => {
+  // AXIS_TOKENS held three of the sixty the [data-whimsy] blocks declare, so a
+  // .mbrd carrying --item-shadow or --tilt-max kept the old tier's elevation
+  // and lean through every move of the slider, and only Reset appearance could
+  // clear them.
+  //
+  // The rule: the axis owns what only the axis declares. A token a palette
+  // block also sets belongs to the palette, and the two faces belong to the
+  // face picker - both are chosen out loud, where a tier is a personality.
+  const whimsy = declaredIn(WHIMSY_BLOCKS);
+  assert.ok(whimsy.size >= 40, `only ${whimsy.size} tokens found - has the block shape moved?`);
+  const owned = new Set([...PALETTE_TOKENS, ...TYPOGRAPHY_TOKENS]);
+  const want = [...whimsy].filter(t => !owned.has(t)).sort();
+  assert.deepEqual([...AXIS_TOKENS].sort(), want,
+    'AXIS_TOKENS and the [data-whimsy] blocks have drifted - a token set per tier '
+    + 'and missing here goes on ignoring the slider');
 });
 
 test('the pre-paint anti-flash guard carries look.js\'s grammar and function allowlist', () => {
