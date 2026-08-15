@@ -26,9 +26,11 @@
 
 import {
   board, bus, isDefaultTitle, byId, itemAdjust, itemCrop, flipTransform, stuckTo, isRider,
+  trackTitle,
 } from '../state.ts';
+import { noteWords } from '../canvas/note-model.ts';
 import { displayURLReady, ensureDisplay } from '../canvas/display.ts';
-import { baseName, clamp, isRecord } from '../util.ts';
+import { baseName, clamp } from '../util.ts';
 import { mobileOrder } from '../arrange/arrangements.ts';
 import { assetURL, readText } from '../storage/assets.ts';
 import { linkURL, buildContent } from '../canvas/renderers.ts';
@@ -670,7 +672,10 @@ function fillAudio(t: Tile) {
 
   const cap = div('feed-tile-cap');
   const title = div('feed-cap-title');
-  title.textContent = str(item.meta?.trackTitle) || baseName(item.name) || item.name || 'Audio';
+  // The Playlist lists the same tracks and this chain used to be written out
+  // there too, differing only in the last word - so the same untitled MP3 read
+  // "Audio" here and "Untitled" there. See trackTitle() in board-model.ts.
+  title.textContent = trackTitle(item) || 'Audio';
   cap.appendChild(title);
   const bits: string[] = [];
   if (str(item.meta?.artist)) bits.push(str(item.meta?.artist));
@@ -723,16 +728,17 @@ function fillNote(t: Tile) {
   t.el.appendChild(body);
 }
 
-/** The note's words, from the rich model if it has one, else the flat text. */
+/**
+ * The note's words, from the rich model if it has one, else the flat text.
+ *
+ * The read itself is canvas/note-model.ts's, which is the module that owns the
+ * bargain between `meta.rich` and `meta.text` - three surfaces were making it
+ * independently. What stays here is what this surface wants on top of it: the
+ * name as a last resort, and a trim, because a tile is a fixed box and a leading
+ * blank line in it is a tile that looks empty.
+ */
 function noteText(item: Item) {
-  // The same read canvas/renderers.ts makes of a `rich` off disk: meta is
-  // unknown per key, and a value that is not an object is no rich model.
-  const rich = item.meta?.rich;
-  const blocks = isRecord(rich) ? rich.blocks : null;
-  if (Array.isArray(blocks) && blocks.length) {
-    return blocks.map((b: unknown) => (isRecord(b) ? str(b.text) : '')).join('\n').trim();
-  }
-  return (str(item.meta?.text) || item.name || '').trim();
+  return (noteWords(item.meta) || item.name || '').trim();
 }
 
 function fillLink(t: Tile) {

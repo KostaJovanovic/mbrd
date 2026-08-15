@@ -23,7 +23,7 @@
 // way out of that while the DOM route taints: what can be done is to reach for
 // the *pure* halves of the real thing wherever they exist rather than restating
 // them, and this file does - fitMode(), itemCrop(), itemFlip(), adjustFilter(),
-// routeConnection(), pathData(), connMeta(), boardGridStep(), flattenNoteRich()
+// routeConnection(), pathData(), connMeta(), boardGridStep(), noteWords()
 // and paperMm() are all the board's own answers, asked here.
 //
 // Three things genuinely cannot be reused and are restated below: paintGrid(),
@@ -58,8 +58,7 @@ import { CLEARANCE, routeConnection, pathData } from '../web-route.ts';
 import type { RouteOpts } from '../web-route.ts';
 import { boardGridStep } from '../canvas/grid.ts';
 import { fitMode } from '../canvas/renderers.ts';
-import { flattenNoteRich } from '../canvas/note-model.ts';
-import type { NoteRichInput } from '../canvas/note-model.ts';
+import { noteWords } from '../canvas/note-model.ts';
 import { tiltOf } from '../canvas/items.ts';
 import { describeExt } from '../import/formats.ts';
 import { extOf, formatBytes } from '../util.ts';
@@ -406,11 +405,16 @@ function paintFence({ ctx, it, w, h, look, scale }: Paint) {
  * `meta.rich` is blocks with their own tags, font, size, alignment and vertical
  * placement, and drawing that on a canvas would be a text engine - a second one,
  * disagreeing with the note on screen at the first styled note somebody made.
- * flattenNoteRich() is the board's own answer to "what does this note say", it
- * is what `meta.text` already holds, and it is what goes here.
+ * noteWords() is the board's own answer to "what does this note say", and it is
+ * what goes here.
  *
- * It was `it.name` before, which is the note's *first line* - so a six-line note
- * exported as its own heading and nothing else.
+ * It was flattenNoteRich() before, which is the answer to a different question -
+ * that one writes the *storage* form, with the `# ` and `## ` that let a note
+ * round-trip as plaintext, and this paints its result onto a picture. A note
+ * with a heading came out of the export reading "# Kitchen".
+ *
+ * And it was `it.name` before that, which is the note's *first line* - so a
+ * six-line note exported as its own heading and nothing else.
  */
 function paintNote({ ctx, it, w, h, look, scale }: Paint) {
   ctx.fillStyle = readToken(`--note-${(Number(it.meta?.tint) || 1)}`) || '#fff7d6';
@@ -418,8 +422,10 @@ function paintNote({ ctx, it, w, h, look, scale }: Paint) {
   ctx.fill();
   if (look.detail !== 'full') return;
 
-  const rich = it.meta?.rich;
-  const text = (rich ? flattenNoteRich(rich as NoteRichInput) : metaStr(it.meta?.text)) || it.name || '';
+  // noteWords() and not flattenNoteRich(): that one writes the storage form,
+  // markers and all, and this paints straight onto the export canvas - so a note
+  // with a heading came out of the PNG reading "# Kitchen". See note-model.ts.
+  const text = noteWords(it.meta) || it.name || '';
   if (!text) return;
   const size = Math.max(9, Math.min(w, h) * 0.09);
   ctx.save();

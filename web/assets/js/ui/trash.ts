@@ -22,6 +22,7 @@ import {
 } from '../state.ts';
 import { assetURL } from '../storage/assets.ts';
 import { extOf, baseName, el } from '../util.ts';
+import { noteWords } from '../canvas/note-model.ts';
 import { toast } from '../notify.ts';
 import {
   STICKER_SPRITE, STICKER_VIEWBOX, DEFAULT_SHAPE, stickerShape, stickerTint,
@@ -189,10 +190,16 @@ function binRow(entry: TrashEntry) {
   return node;
 }
 
-/** A note's text out of the open `meta`, or '' for anything that is not text. */
+/**
+ * A note's words - canvas/note-model.ts's reading, not this file's.
+ *
+ * It was `meta.text` raw, which carries the `# ` and `## ` that let a note
+ * round-trip as plaintext, so a note with a heading sat in the bin as
+ * "# Kitchen". The marker is storage, not something the person who typed the
+ * heading should be shown.
+ */
 function noteText(item: Item): string {
-  const text = item.meta?.text;
-  return typeof text === 'string' ? text : '';
+  return noteWords(item.meta);
 }
 
 function label(item: Item): string {
