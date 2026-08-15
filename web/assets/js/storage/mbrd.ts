@@ -743,7 +743,23 @@ export async function unpackBoard(blob: Blob) {
     );
   }
 
-  const board: FileBoard = JSON.parse(dec.decode(boardBytes));
+  // Parsed and then *checked*, which the bare `JSON.parse` here was not doing.
+  // A zip whose board.json holds `"hello"`, `[1,2,3]` or `null` is a valid zip
+  // and got this far: the string spread into loadBoard() as indexed keys and
+  // the open board was replaced by a blank one under an "Opened <name>" toast,
+  // and null threw a bare TypeError several frames later. Every other malformed
+  // file in this reader earns a sentence, and so does this one.
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(dec.decode(boardBytes));
+  } catch {
+    throw new Error('The board inside this file is not readable (board.json will not parse)');
+  }
+  if (!isRecord(parsed)) throw new Error('The board inside this file is not a board (board.json is not an object)');
+  // Cast, not a check: FileBoard says `items?: unknown[]` on purpose, and what
+  // holds that claim up is the loop below throwing on a file whose items are
+  // not a list. See the type.
+  const board = parsed as FileBoard;
   if (manifest.title && !board.title) board.title = manifest.title;
 
   // Notes come back from their own files, which outrank the copy in

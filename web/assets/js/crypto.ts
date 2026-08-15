@@ -56,8 +56,17 @@ export async function sha256(buf: ArrayBuffer | ArrayBufferView): Promise<string
   const bytes = buf instanceof ArrayBuffer
     ? new Uint8Array(buf)
     : new Uint8Array(buf.buffer as ArrayBuffer, buf.byteOffset, buf.byteLength);
-  if (crypto?.subtle) {
-    const digest = await crypto.subtle.digest('SHA-256', bytes);
+  // `globalThis.crypto`, not the bare name. `crypto?.subtle` reads as a check
+  // and is not one: optional chaining guards a *property* being absent, and an
+  // undeclared identifier throws a ReferenceError before the `?.` is reached.
+  // Where `crypto` is a global that exists without a `subtle` - an http:// page
+  // on a phone, the case this fallback was written for - the two are the same.
+  // Where the global is not there at all, the bare name takes the whole import
+  // path down with an error naming neither hashing nor the file being read,
+  // while the fallback sitting right below it would have answered.
+  const subtle = globalThis.crypto?.subtle;
+  if (subtle) {
+    const digest = await subtle.digest('SHA-256', bytes);
     return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
   }
   return [...await sha256Words(bytes)].map(w => (w >>> 0).toString(16).padStart(8, '0')).join('');

@@ -28,6 +28,7 @@ import { displayURLReady, ensureDisplay } from '../canvas/display.ts';
 import { assetURL, getAsset, readText } from '../storage/assets.ts';
 import { baseName, formatBytes } from '../util.ts';
 import { linkURL } from '../canvas/renderers.ts';
+import { noteTint } from '../canvas/note-model.ts';
 import { renderMarkdown } from './markdown.ts';
 // Statically: the reader's only import is storage/zip.js, which is already in
 // memory because it is what opens every .mbrd, and the browser's own DOMParser.
@@ -557,8 +558,11 @@ const VIEWS: Record<string, View> = {
     sheet.textContent = blocks?.length
       ? blocks.map(b => (b && typeof b === 'object' && 'text' in b ? str(b.text) : '')).join('\n').trim()
       : (str(item.meta?.text) || item.name || '').trim();
-    const tint = str(item.meta?.color);
-    if (tint) sheet.style.background = tint;
+    // meta.tint, not meta.color - see noteTint(). `color` is a key nothing in
+    // the app has ever written, so this both failed to tint a yellow note and
+    // put whatever a hand-edited file did put there straight into a background.
+    const tint = noteTint(item.meta?.tint);
+    if (tint) sheet.style.background = `var(--note-${tint})`;
     host.append(sheet);
   },
 

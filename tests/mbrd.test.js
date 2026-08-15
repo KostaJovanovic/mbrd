@@ -579,6 +579,41 @@ test('a ZIP with no board.json is refused', async () => {
   await assert.rejects(() => unpackBoard(notABoard), /board\.json/);
 });
 
+// A board.json that parses and is not a board. `JSON.parse` used to be the
+// whole check here, so a document holding a string spread into loadBoard() as
+// indexed keys and the open board was replaced by a blank one under an
+// "Opened <name>" toast - a data-loss path reached by opening a file. `null`
+// threw a bare TypeError instead, several frames from the file that caused it.
+// Every other malformed file this reader meets earns a sentence.
+for (const [what, text] of [
+  ['a string', '"hello"'],
+  ['a list', '[1, 2, 3]'],
+  ['null', 'null'],
+  ['a number', '42'],
+]) {
+  test(`a board.json holding ${what} is refused with something to read`, async () => {
+    const { writeZip } = await import('../web/assets/js/storage/zip.ts');
+    const blob = await writeZip([
+      { name: 'board.json', data: enc.encode(text), compress: false },
+    ], { mime: MIME });
+    await assert.rejects(() => unpackBoard(blob), err => {
+      assert.match(err.message, /not a board/);
+      return true;
+    });
+  });
+}
+
+test('a board.json that is not JSON at all is refused the same way', async () => {
+  const { writeZip } = await import('../web/assets/js/storage/zip.ts');
+  const blob = await writeZip([
+    { name: 'board.json', data: enc.encode('{"items": [1,'), compress: false },
+  ], { mime: MIME });
+  await assert.rejects(() => unpackBoard(blob), err => {
+    assert.match(err.message, /not readable/);
+    return true;
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Asset paths and content ids
 //

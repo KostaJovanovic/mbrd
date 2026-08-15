@@ -166,7 +166,7 @@
 # connect-src 'self' blob: https://cdn.jsdelivr.net
 # ---------------------------------------------------------------------------
 #
-# Exactly three things fetch:
+# Exactly three origins are fetched from:
 #
 #   'self'    - ui/snapshot.ts reads assets/stickers.svg as text, and sw.js
 #               fetches same-origin requests it is caching. The service worker
@@ -174,10 +174,19 @@
 #   blob:     - ui/pigments.ts fetches an asset's own object URL to get bytes
 #               for createImageBitmap, deliberately rather than pointing an
 #               <img> at it. A fetch of a blob: URL is a connect, not an image.
-#   jsdelivr  - optimize/media.ts probes the vendored ffmpeg core with a
-#               one-byte ranged GET before offering to download it. This is the
-#               only outbound request the app makes on its own, and it is the
-#               single reason a remote host appears anywhere in this file.
+#   jsdelivr  - the ffmpeg core, twice: optimize/media.ts probes it with a
+#               one-byte ranged GET before offering to download it, and
+#               optimize/media-worker.js then fetches ffmpeg-core.wasm itself
+#               rather than letting Emscripten resolve it (see the comment
+#               there). The worker's half was missing from this list, which
+#               mattered less than it might because the two share a host -
+#               named now so the count below is the truth.
+#
+#               These are the only outbound requests the app makes on its own,
+#               and they are the single reason a remote host appears anywhere in
+#               this file. pdf.js used to be a third, loaded from this same host
+#               by import/pdf.ts and never mentioned here; it is vendored into
+#               web/assets/vendor/pdfjs now and reaches nothing.
 #
 # Pinned to the host, not the path: CSP has no useful path matching for this and
 # pretending otherwise would read as a promise the directive cannot keep.
@@ -259,7 +268,7 @@
 # report to, which is the whole architecture).
 
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-TXFmC+WkJ7pej6GG4eilTgWXAPfRfnxeO2p8iCMvh/k=' 'sha256-DkygY3dxoCj3zPATesYHPgON9mIeqlu6UbH2c+3mStw=' 'sha256-eJzJ8523EitoBKAS5A1tCSnraL7SAmf2gesGT63wGSk=' 'sha256-7MOXuzYEVnwtGN5LaHmnA8It5SPyIoYzkvOEItbnkGg=' 'sha256-Q8ZzrQgcVPkApKR0qNf6mroKHffRQsjhyVVZIRu0QtU=' 'sha256-8ZGO4EWxaESz6+qYFa7Px/8iyW9D2UaZh/+P4/mg99Q='; style-src 'self' 'sha256-wkVFcbpQLLLncGzQDSypPX4g+PgpgKuYUfkJ3D7xrA8=' 'sha256-9MwbduHoYcvGbMyIKsXKkXLfI0H0ks+ah6sfj4TrmeA='; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self' blob:; connect-src 'self' blob: https://cdn.jsdelivr.net; worker-src 'self'; manifest-src 'self'; frame-src https://www.youtube-nocookie.com https://open.spotify.com; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-TXFmC+WkJ7pej6GG4eilTgWXAPfRfnxeO2p8iCMvh/k=' 'sha256-qxiwxtjeQUbsHr4op9ZRXOdxUq+CLu4QIJRuvidUe5c=' 'sha256-eJzJ8523EitoBKAS5A1tCSnraL7SAmf2gesGT63wGSk=' 'sha256-7MOXuzYEVnwtGN5LaHmnA8It5SPyIoYzkvOEItbnkGg=' 'sha256-Q8ZzrQgcVPkApKR0qNf6mroKHffRQsjhyVVZIRu0QtU=' 'sha256-8ZGO4EWxaESz6+qYFa7Px/8iyW9D2UaZh/+P4/mg99Q='; style-src 'self' 'sha256-wkVFcbpQLLLncGzQDSypPX4g+PgpgKuYUfkJ3D7xrA8=' 'sha256-9MwbduHoYcvGbMyIKsXKkXLfI0H0ks+ah6sfj4TrmeA='; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self' blob:; connect-src 'self' blob: https://cdn.jsdelivr.net; worker-src 'self'; manifest-src 'self'; frame-src https://www.youtube-nocookie.com https://open.spotify.com; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
 
 # The one exemption, and the only interesting thing about the whole file.
 #

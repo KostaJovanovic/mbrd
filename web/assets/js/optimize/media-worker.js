@@ -11,10 +11,48 @@
 
 let core = null;
 
+// The one door in, and it checks what comes through it.
+//
+// A dedicated worker's port is reachable only by the document that spawned it -
+// there is no cross-origin postMessage into one - so this is not a boundary
+// against a stranger, and saying otherwise would overstate it. What the checks
+// buy is smaller and real: `boot` passes its argument to importScripts(), which
+// executes whatever is at that URL inside this worker, and a bug in
+// optimize/media.ts that posted the wrong field would have that run with no
+// complaint. The host is pinned to the one the CSP's connect-src already names,
+// so the two agree by construction rather than by memory. See CORE_JS there.
+//
+// `run` is checked for shape rather than content: FS.writeFile with a number
+// for a name and callMain with a non-array both fail deep inside Emscripten,
+// with an error naming neither. Its `id` is checked with the rest because it is
+// the only way back - media.ts parks each job in a map keyed by it and drops
+// any reply without one, so an id-less request that fails silently is a job
+// sitting on the fifteen-minute timeout instead of erroring at once.
+//
+// `boot` answers itself rather than running twice. A second one used to
+// re-importScripts the core and re-instantiate it, which is minutes of work and
+// a fresh filesystem underneath whatever job was mid-encode.
+const CORE_ORIGIN = 'https://cdn.jsdelivr.net';
+
+let booted = false;
+
 self.onmessage = async e => {
   const msg = e.data || {};
-  if (msg.type === 'boot') return boot(msg.core);
-  if (msg.type === 'run') return run(msg);
+  if (msg.type === 'boot') {
+    if (booted) return self.postMessage({ type: 'ready', ok: !!core, error: 'already started' });
+    if (typeof msg.core !== 'string' || !msg.core.startsWith(CORE_ORIGIN + '/')) {
+      return self.postMessage({ type: 'ready', ok: false, error: 'the core url is not one we serve from' });
+    }
+    booted = true;
+    return boot(msg.core);
+  }
+  if (msg.type === 'run') {
+    if (msg.id == null || typeof msg.inName !== 'string' || typeof msg.out !== 'string'
+      || !Array.isArray(msg.argv) || !msg.argv.every(a => typeof a === 'string')) {
+      return self.postMessage({ id: msg.id ?? null, error: 'malformed run request' });
+    }
+    return run(msg);
+  }
 };
 
 async function boot(url) {

@@ -33,8 +33,46 @@
 // The library and its worker, from the same versioned directory so the two
 // always match. The ESM build loads as a module; its worker is a module worker
 // pdf.js spawns itself once workerSrc points at it.
-const PDF_VERSION = '4.7.76';
-const PDF_BASE = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDF_VERSION}/build/`;
+//
+// **Served from this origin, and that is the fix rather than a preference.**
+// It used to be `https://cdn.jsdelivr.net/npm/pdfjs-dist@.../build/`, and
+// web/_headers carries `script-src 'self'` plus six hashes and `worker-src
+// 'self'` - so on the deployed site the import was refused outright and the
+// worker was refused again, firstPageRaster()'s catch swallowed both, and every
+// PDF and .ai became a grey named card. It worked perfectly on tools/serve.py,
+// which sends no headers, so the feature was dead exactly where anybody else
+// would see it and alive exactly where it was written. tests/csp.test.js greps
+// optimize/media.ts for a host and nothing else, so nothing caught it.
+//
+// The three ways out were: widen script-src to a CDN, which hands an outside
+// host script rights over every board and over the whole of localStorage and
+// IndexedDB; drop PDF support; or carry the library. Carrying it costs 1.7 MB
+// in the repository - more than the app's own bundle - and buys a feature that
+// works offline, cannot change under the app, and needs no exception in the
+// policy. See web/assets/vendor/pdfjs/LICENSE.txt; pdf.js is Apache-2.0 and the
+// build is pinned below.
+// Exported so tests/pdf-vendor.test.js can hold it to the bytes actually
+// sitting in web/assets/vendor/pdfjs. A version recorded only in a comment
+// beside a file nobody re-reads is a version that stops being true the first
+// time somebody drops a newer build in.
+export const PDF_VERSION = '4.7.76';
+const PDF_DIR = './assets/vendor/pdfjs/';
+
+/**
+ * Where the two files are, as absolute URLs.
+ *
+ * Resolved against `document.baseURI` rather than written as a relative
+ * specifier, because the two consumers do not agree about what a relative path
+ * is relative *to*: a dynamic `import()` resolves against the module that wrote
+ * it, which after esbuild is `assets/app.js`, while `workerSrc` becomes a
+ * `new Worker(...)` and resolves against the document. One base for both, and
+ * it is the document's - the same one `new Worker('./assets/js/...')` in
+ * optimize/media.ts already uses, with `<base href="/">` in index.html.
+ *
+ * A function because this module may not touch `document` at import time; see
+ * tests/imports.test.js.
+ */
+const pdfURL = (file: string) => new URL(PDF_DIR + file, document.baseURI).href;
 
 /** Long-edge ceiling for the rendered page, in device pixels. */
 const TARGET = 1600;
@@ -79,13 +117,17 @@ let libPromise: Promise<PdfJs> | null = null;
 
 /**
  * pdf.js, fetched once. The worker source is set on the shared module the first
- * time through; it is cross-origin, so the service worker leaves it alone.
+ * time through. Same-origin now, so the service worker will cache it on first
+ * use like any other asset - which is what makes opening a PDF work offline
+ * once one has been opened online. It is deliberately not in SHELL: 1.7 MB
+ * precached on every install, for a feature most boards never touch, is a
+ * worse trade than a first PDF that needs the network.
  */
 function loadPdfjs(): Promise<PdfJs> {
   if (!libPromise) {
-    libPromise = import(PDF_BASE + 'pdf.min.mjs').then(mod => {
+    libPromise = import(/* @vite-ignore */ pdfURL('pdf.min.mjs')).then(mod => {
       const pdfjs = mod.default && mod.default.getDocument ? mod.default : mod;
-      pdfjs.GlobalWorkerOptions.workerSrc = PDF_BASE + 'pdf.worker.min.mjs';
+      pdfjs.GlobalWorkerOptions.workerSrc = pdfURL('pdf.worker.min.mjs');
       return pdfjs;
     });
   }
