@@ -45,9 +45,16 @@ research/                the reasoning behind past decisions; research/docs/
 util / geometry  ←  state  ←  { import, storage, canvas }  ←  ui
 ```
 
-`canvas` reaches into `import` only for the generated format catalog. **A `ui/`
-module imported from `canvas/` is a layering regression** — `tests/layers.test.js`
-enforces the graph, so it is a test failure and not a style note.
+Two edges run sideways between peers, and only two. `canvas` reaches into
+`import` for the generated format catalogue, and `storage` reaches into
+`canvas/note-model.ts` for the note flavour of Markdown that `.mbrd` sidecars
+are written in — pure string functions, and the alternative is the file format
+carrying a second answer to what `# ` means. Both are named in
+`tests/layers.test.js`, and every other module of the far side is closed:
+`storage/x.ts → canvas/anything-else` fails, exactly as `canvas/x.ts →
+import/anything-else` does. **A `ui/` module imported from `canvas/` is a
+layering regression** — `tests/layers.test.js` enforces the graph, so it is a
+test failure and not a style note.
 
 Anything that builds an item's DOM belongs under `canvas/`. That is why
 `renderers.ts`, `notes.ts`, `audio.ts` and `model.ts` live there rather than

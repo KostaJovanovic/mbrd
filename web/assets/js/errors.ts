@@ -123,7 +123,8 @@
 // off the probe goes through prop(), so a hostile or half-built object with a
 // throwing getter is contained at the read rather than at the top. `inside`
 // guards the one genuinely dangerous shape: toast() raising an error that comes
-// straight back here.
+// straight back here - and it guards only the toast, never the console line,
+// so the promise above survives the one case that would otherwise break it.
 //
 // Installed with addEventListener rather than by assigning window.onerror.
 // Assignment is a single slot - a later `window.onerror = ...` from anywhere,
@@ -261,16 +262,29 @@ function onRejection(event: Event): void {
  * different routes.
  */
 function report(cause: unknown, given: string, hint: string, context: string): void {
+  let where = '';
+  let what = '';
+  // Always, and before any decision about whether to interrupt anybody - and
+  // outside the re-entry guard, which is the point of this half standing on its
+  // own. The header says this module never swallows; a guard that covers the
+  // console line makes it swallow exactly when the app is worst off, because
+  // the shape `inside` exists for is a *second* fault raised while the first is
+  // still being told about, and that second one is the interesting one. It gets
+  // its console line; what it does not get is a toast on top of a toast that is
+  // already failing. The browser logs uncaught errors itself and this
+  // duplicates that line; the duplicate earns its place by carrying the
+  // place-name the toast used, so a console and a screenshot of a toast
+  // describe the same fault.
+  try {
+    where = placeOf(cause, hint);
+    what = messageOf(cause, given);
+    console.error(`[mbrd] ${context}${where ? ' in ' + where : ''}:`, cause ?? what);
+  } catch {
+    // See the tail below: nowhere left to report it.
+  }
   if (inside) return;
   inside = true;
   try {
-    const where = placeOf(cause, hint);
-    const what = messageOf(cause, given);
-    // Always, and before any decision about whether to interrupt anybody. The
-    // browser logs uncaught errors itself and this duplicates that line; the
-    // duplicate earns its place by carrying the place-name the toast used, so
-    // a console and a screenshot of a toast describe the same fault.
-    console.error(`[mbrd] ${context}${where ? ' in ' + where : ''}:`, cause ?? what);
     if (told >= MAX_TOLD) return;
     const key = `${context}|${what}@${where}`;
     if (seen.has(key)) return;

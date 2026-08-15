@@ -303,6 +303,41 @@ test('a toast that throws does not come back round as a second fault', () => {
   }
 });
 
+test('a fault raised while reporting one still reaches the console', () => {
+  // The other half of the guard above, and the half it used to get wrong. The
+  // re-entry test came first in report(), so a second error arriving while the
+  // first was still on the stack - a toast host that throws, and a bus
+  // subscriber that throws inside the same turn - was swallowed whole: no
+  // toast, which is right, and no console line, which contradicts this module's
+  // header outright. The console is the record; the ceiling is about the
+  // screen.
+  const lines = [];
+  const real = console.error;
+  console.error = (...args) => lines.push(args);
+  const host = makeHost();
+  setOverlays({
+    toast() {
+      // Reporting from inside the report, which is exactly the shape `inside`
+      // exists for. The second fault is the interesting one.
+      reportCaught(new Error('the second thing'), 'a subscriber');
+      throw new Error('the toast host is gone');
+    },
+    busy: () => ({}),
+  });
+  setBoardProbe(SAFE);
+  const stop = initErrors(host);
+  try {
+    assert.doesNotThrow(() => host.fire('error', errorEvent('the first thing')));
+    assert.equal(lines.length, 2);
+    assert.match(String(lines[1][0]), /a subscriber/);
+  } finally {
+    stop();
+    setBoardProbe(null);
+    setOverlays(null);
+    console.error = real;
+  }
+});
+
 test('a rejection reason that is not an object at all is survived', () => {
   const said = withErrors(SAFE, (host) => {
     assert.doesNotThrow(() => host.fire('unhandledrejection', { reason: undefined }));

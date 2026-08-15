@@ -199,6 +199,14 @@ export function claimPlayer(el: Player, item: Item | null | undefined): void {
  */
 export function initAudio() {
   volume = readVolume();
+  // The other half of the throttled write - see storeVolume(). pagehide rather
+  // than beforeunload, which iOS Safari does not reliably fire, and
+  // visibilitychange as well, because a tab discarded in the background never
+  // gets either of the unload events. The same pair ui/appearance.js uses.
+  addEventListener('pagehide', flushVolume);
+  addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushVolume();
+  });
 }
 
 /**
@@ -228,8 +236,43 @@ export function volumeLocked() {
 export function setVolume(v: number): void {
   volume = clamp(+v || 0, 0, 1);
   for (const a of players) a.volume = volume;
-  writePref(VOLUME_KEY, volume);
+  storeVolume();
   for (const fn of volumeWatchers) fn(volume);
+}
+
+/**
+ * How long the stored volume may lag behind the live one.
+ *
+ * The same 200ms, and for the same reason, as PREF_MS in ui/appearance.js -
+ * which writes twenty lines about why a preference written on every frame of a
+ * drag is a mistake, and then this one did it anyway. ui/nowplaying.js calls
+ * setVolume() from the slider's `input` event, so a thumb dragged across the
+ * bar was making sixty synchronous localStorage writes a second on the thread
+ * that draws the board, next to whatever is playing.
+ *
+ * A throttle with a trailing write rather than a debounce, so a drag that never
+ * pauses still saves as it goes. The pending write reads `volume` when it
+ * fires, not when it was scheduled, so what lands is always the latest.
+ */
+const PREF_MS = 200;
+let prefTimer = 0;
+
+function storeVolume(now = false) {
+  if (now) {
+    if (prefTimer) { clearTimeout(prefTimer); prefTimer = 0; }
+    writePref(VOLUME_KEY, volume);
+    return;
+  }
+  if (prefTimer) return;
+  prefTimer = setTimeout(() => {
+    prefTimer = 0;
+    writePref(VOLUME_KEY, volume);
+  }, PREF_MS);
+}
+
+/** Write a pending volume now. The tab is going away. */
+function flushVolume() {
+  if (prefTimer) storeVolume(true);
 }
 
 function readVolume() {

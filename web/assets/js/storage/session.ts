@@ -70,6 +70,10 @@ let d: SessionDeps | null = null;
 /** Hand the session engine what it needs from the file half. Called once. */
 export function initSession(deps: SessionDeps) {
   d = deps;
+  // A boot has started, so what is in the store is not known until
+  // restoreSession() has been in and looked. See boardSafety(), and `opened`
+  // for why the default is the other way round.
+  opened = false;
 }
 
 /**
@@ -259,6 +263,18 @@ let saveGen = 0;         // bumped by every change worth a snapshot
 let committedGen = -1;   // saveGen of the last durable write (-1: nothing yet)
 let saving: Promise<boolean> | null = null;   // in-flight run, or null
 let lastResult = false;  // result of the most recent completed run
+/**
+ * Whether the store has been read yet. Read by boardSafety() alone - see the
+ * rung it holds up there.
+ *
+ * True until a boot says otherwise, which is the way round that makes it mean
+ * what it says. This is a statement about *this app's boot*: initSession()
+ * turns it off and restoreSession() turns it back on, on every way out. Nothing
+ * else in the graph has a boot, and a caller that loaded a board by hand - a
+ * test, or any future entry point that does its own opening - has a board in
+ * front of it that was never in doubt.
+ */
+let opened = true;
 
 /**
  * Persist the working state, coalescing concurrent callers into one writer.
@@ -505,6 +521,10 @@ export async function restoreSession() {
   } catch (err) {
     console.warn('[mbrd] no session restored:', err);
     return false;
+  } finally {
+    // Whichever way it left - a board, no board, or a throw - the store has
+    // been looked in, and boardSafety() may stop saying it does not know.
+    opened = true;
   }
 }
 
@@ -703,6 +723,15 @@ export function boardSafety(): BoardSafety {
   if (!cacheOk) {
     return { state: 'unsaved', detail: 'your board is not being kept in this browser, export it to a file' };
   }
+  // Boot, and the stored board has not been read back yet. Both of the rungs
+  // below would answer 'saved' here - nothing has been written because nothing
+  // has happened, and a board nobody has touched is not dirty - and that is the
+  // one direction this ladder is not allowed to fall. What is in the browser is
+  // exactly what is not known yet; an error raised in this window is also the
+  // likeliest reason it never will be.
+  if (!opened) {
+    return { state: 'unknown', detail: 'your board was still being read back, so what is in this browser is not known yet' };
+  }
   // Every change is covered by a write that succeeded.
   if (committedGen >= saveGen && lastResult) return { state: 'saved' };
   // Nothing the person did is waiting, whatever the generation says.
@@ -740,4 +769,23 @@ export function resetSessionLatches() {
   suspended = false;
   warnedIncomplete = false;
   lastFailure = '';
+}
+
+/**
+ * A handover that got as far as the address and no further.
+ *
+ * `suspended` says "this address has no board of its own", and the moment
+ * leaveNotFound() calls history.replaceState() that has stopped being true - the
+ * address is theirs now, and whatever they dropped is on it. Left set, every
+ * message the app gives them from then on is about somebody else's problem.
+ *
+ * `cacheOk` deliberately stays false, so this is not resetSessionLatches() with
+ * one line missing. The board in memory after a failed handover may be a
+ * half-restored one, and writing it is precisely the damage the ordering in
+ * leaveNotFound() exists to prevent. The writer stays off and boardSafety()
+ * falls to 'unsaved' - export it to a file - which is the true thing to say
+ * about a board that is on the screen and is not being kept.
+ */
+export function failHandover() {
+  suspended = false;
 }

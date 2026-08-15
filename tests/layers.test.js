@@ -312,6 +312,15 @@ function inverted(from, to) {
   if (from === 'state.ts' && !BASE.has(to)) return true;   // state is below the services and the ui
   if (from.startsWith('storage/') && to.startsWith('ui/')) return true;   // storage must not open the interface
   if (from.startsWith('canvas/') && to.startsWith('import/') && to !== 'import/formats.ts') return true; // canvas -> import: catalog only
+  // The second peer edge, on the same terms as the first: one named module, and
+  // the rest of canvas/ closed to storage/. storage/mbrd.ts reads and writes the
+  // note sidecars a .mbrd carries, and canvas/note-model.ts is the format's own
+  // Markdown flavour written down once - pure functions of a string, no DOM in
+  // the two it takes. The alternative is twenty lines of block splitting copied
+  // into the container, which would give the file format a second answer to what
+  // `# ` means. This edge was argued in that module's header and checked by
+  // nothing, which is the half that was wrong.
+  if (from.startsWith('storage/') && to.startsWith('canvas/') && to !== 'canvas/note-model.ts') return true;
   // The service layer must not reach up into the interface. architecture.md has
   // called a ui/ import from canvas/ "a layering regression" - "a test failure
   // and not a style note" - for as long as it has existed, and until now nothing
