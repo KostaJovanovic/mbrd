@@ -309,7 +309,10 @@ export async function writeZip(
  * hundred photos and some video, with a lot of headroom, rather than for the
  * format's own ceilings.
  */
-const LIMITS = {
+// Exported so tests/zip.test.js can build a fixture that sits one byte over a
+// ceiling rather than typing the number twice - a hostile-archive test written
+// against a copy of the limit stops testing the limit the moment it moves.
+export const LIMITS = {
   /** The archive itself. Beyond this the browser is in trouble regardless. */
   archive: 768 * 1024 ** 2,
   /** Entries. A 500-file board (import/drop.js caps there) plus its notes and

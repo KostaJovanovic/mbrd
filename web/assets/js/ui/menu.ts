@@ -1144,18 +1144,18 @@ function canvasEntries(at: Point): MenuEntry[] {
   // A press inside a region falls through to the board - the fence's face takes
   // no pointer, which is what keeps panning and banding working inside one - so
   // this menu is what a right-click *in* a region opens, and the board is not
-  // what it is about. "Rearrange everything" would be the loudest possible
-  // reading of a click aimed at one shelf, so the shelf's own row is the only
-  // one of the pair this menu draws.
+  // what it is about. "Rearrange board" would be the loudest possible reading of
+  // a click aimed at one shelf, so the two are one row that swaps: inside a
+  // region it is the region's, and only on empty ground is it the board's.
   //
   // ── What is not here, and why ──
   //
-  // Add a note, Add files, Find, Rearrange everything, Zoom to fit and Back to
-  // 0,0 were all on this menu and are all still one press away on the toolbar,
-  // the zoom cluster or the keyboard. Six of twelve rows, every one of them a
-  // second copy of a control already sitting on screen unprompted. A menu that
-  // reprints the chrome behind it teaches that right-click is where everything
-  // is, which is the reading that made this list twelve rows long.
+  // Add a note, Add files, Find, Zoom to fit and Back to 0,0 were all on this
+  // menu and are all still one press away on the toolbar, the zoom cluster or
+  // the keyboard. Five of twelve rows, every one of them a second copy of a
+  // control already sitting on screen unprompted. A menu that reprints the
+  // chrome behind it teaches that right-click is where everything is, which is
+  // the reading that made this list twelve rows long.
   //
   // The test for a row here is not "would this be handy" - everything is handy
   // - it is whether the row reaches something no resting surface can. `at` is
@@ -1184,16 +1184,22 @@ function canvasEntries(at: Point): MenuEntry[] {
     // the failure mode this whole feature has to avoid.
     { label: cmds!.hasTagFilter() ? `Filter by tag (${cmds!.tagFilter().length})` : 'Filter by tag',
       icon: 'i-tag', check: cmds!.hasTagFilter() || undefined, sub: filterEntries() },
-    // Only the fence reading survives. "Rearrange everything" is the toolbar's
-    // Arrange button said a second time, and a row that repeats a button two
-    // inches away is the row this menu can least afford; rearranging *one
-    // shelf* is a scope no resting surface can express, so it stays. Absent
-    // rather than disabled off a fence - the schema's rule, and the reason
-    // there is one row here on some clicks and none on others.
-    ...(fence
-      ? [{ label: 'Rearrange fence', icon: 'i-rearrange',
-        action: () => cmds!.rearrangeFence(fence) }]
-      : []),
+    // One row, two scopes, and `at` is what picks between them: a right-click
+    // inside a region lays out that region, a right-click on empty ground lays
+    // out the board. Both readings are the point under the cursor answering a
+    // question no resting surface can be asked - the toolbar's Arrange button
+    // has no position, so it can only ever mean everything, and it cannot mean
+    // *this shelf* at all.
+    //
+    // Never both at once. A menu offering "Rearrange fence" and "Rearrange
+    // board" a row apart is a menu asking which of two irreversible-looking
+    // sweeps you meant, over ground where the difference is invisible until
+    // after the press.
+    fence
+      ? { label: 'Rearrange fence', icon: 'i-rearrange',
+        action: () => cmds!.rearrangeFence(fence) }
+      : { label: 'Rearrange board', icon: 'i-rearrange',
+        action: () => cmds!.rearrange() },
     { label: 'Reload board', icon: 'i-reload', action: () => cmds!.reload() },
     { sep: true },
     // The tour, alone in its band now that Zoom to fit and Back to 0,0 have

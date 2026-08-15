@@ -14,7 +14,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { writeZip, readZip, crc32 } from '../web/assets/js/storage/zip.ts';
+import { writeZip, readZip, crc32, LIMITS } from '../web/assets/js/storage/zip.ts';
 import { bytes, zeros } from './helpers.js';
 
 const enc = new TextEncoder();
@@ -309,6 +309,87 @@ test('a Blob and a byte entry can share one archive', async () => {
 test('an empty Blob entry is written and read as empty', async () => {
   const files = await readZip(await buf([{ name: 'empty', data: new Blob([]), compress: true }]));
   assert.deepEqual(files.get('empty'), new Uint8Array(0));
+});
+
+// ---------------------------------------------------------------------------
+// The container's own structure
+//
+// The fixtures above all corrupt a *field* in a well-formed archive. These
+// corrupt the structure around the fields - the signatures, the directory's own
+// extent, the payload - which is the half a truncated or hand-rezipped .mbrd
+// actually arrives as.
+// ---------------------------------------------------------------------------
+
+test('a corrupt central-directory signature is refused', async () => {
+  const archive = await buf([{ name: 'a.bin', data: bytes(500) }]);
+  put32(archive, cdAt(archive), 0xdeadbeef);
+  await rejects(readZip(archive), /Corrupt central directory/);
+});
+
+test('a corrupt local-header signature is refused', async () => {
+  const archive = await buf([{ name: 'a.bin', data: bytes(500) }]);
+  put32(archive, 0, 0xdeadbeef);
+  await rejects(readZip(archive), /Corrupt entry "a\.bin"/);
+});
+
+test('a central directory longer than the space before its own record is refused', async () => {
+  // `p + cdSize > eocd` at zip.ts:405, which is a different guard from "points
+  // past the end of the file": the directory fits inside the archive and does
+  // not fit inside the room the EOCD leaves it. Sized to land in that window
+  // rather than past the file, which is why it is computed and not a constant.
+  const archive = await buf([{ name: 'a.bin', data: bytes(500) }]);
+  const eocd = eocdAt(archive);
+  put32(archive, eocd + 12, (eocd - cdAt(archive)) + 10);   // cdSize
+  await rejects(readZip(archive), /the central directory overruns its own record/);
+});
+
+test('an entry over the per-entry ceiling is refused on its declared size', async () => {
+  // Compressible content, so the writer actually deflates it: a stored entry
+  // whose two sizes disagree is caught by an earlier guard and never reaches
+  // this one.
+  const archive = await buf([{ name: 'big.bin', data: enc.encode('x'.repeat(4000)), compress: true }]);
+  put32(archive, cdAt(archive) + 24, LIMITS.entry + 1);
+  await rejects(readZip(archive), /is too large to open/);
+});
+
+test('a garbage DEFLATE payload fails as a bad entry, not as a crash', async () => {
+  // A payload long enough that corrupting its middle cannot reach the central
+  // directory - 4000 bytes of one character deflate to a few dozen, and the
+  // first fixture for this scribbled straight through the trailer.
+  const data = bytes(40000, 5);
+  const archive = await buf([{ name: 'a.bin', data, compress: true }]);
+  const from = Math.floor(cdAt(archive) / 2);
+  for (let i = from; i < from + 200; i++) archive[i] = 0xff;
+  await rejects(archive.length ? readZip(archive) : Promise.reject(new Error('empty')),
+    /failed to inflate cleanly|checksum mismatch|inflates to more than|is damaged/);
+});
+
+test('hostile entry names are read as names and nothing more', async () => {
+  // readZip does not resolve paths - it returns a Map keyed by whatever the
+  // archive said - so the guard against traversal is one layer up, in whoever
+  // consumes the map. What this asserts is the half that is readZip's: a name
+  // full of separators, dots and control characters produces an entry with that
+  // name and does not escape the reader.
+  //
+  // The control character is built rather than typed, so this file stays
+  // something grep will read as text.
+  const names = [
+    '../../etc/passwd',
+    '/absolute',
+    'back\\slash',
+    'control' + String.fromCharCode(1) + 'char',
+    '..',
+  ];
+  const archive = await buf(names.map((name, i) => ({ name, data: bytes(64, i + 1) })));
+  const files = await readZip(archive);
+  assert.deepEqual([...files.keys()], names, 'a name came back changed');
+  for (const name of names) assert.equal(files.get(name).length, 64);
+});
+
+test('a name length past the end of the directory is refused', async () => {
+  const archive = await buf([{ name: 'a.bin', data: bytes(500) }]);
+  put16(archive, cdAt(archive) + 28, 0xffff);        // nameLen
+  await rejects(readZip(archive), /an entry name points past the end of the file/);
 });
 
 test('the streamed CRC agrees with the whole-buffer one', async () => {

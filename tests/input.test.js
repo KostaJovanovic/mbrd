@@ -7,7 +7,9 @@ import {
   readWheel, resetWheelKind, WHEEL_NOTCH, WHEEL_STREAM_MS,
   carryFloor, drewRectangle, marqueeHit,
   GESTURE_MOVES, gestureTransition,
+  resizeAxisOn, nudgeDelta,
 } from '../web/assets/js/canvas/input.ts';
+import { cellInset, MIN_SIZE, MAX_SIZE } from '../web/assets/js/geometry.ts';
 
 test('double taps match within the touch timing and distance windows', () => {
   const first = { x: 100, y: 200, at: 1_000 };
@@ -507,4 +509,120 @@ test('safe pointer release does not hide ordinary programming errors', () => {
   };
 
   assert.throws(() => releasePointerSafely(broken, 7), /broken release implementation/);
+});
+
+// ---------------------------------------------------------------------------
+// The two rules that used to be unreachable
+//
+// resizeAxisOn() and nudgeDelta() were closures inside initInput(), so the
+// snap-anchor derivation and the "flush already" branch - the two riskiest
+// pieces of arithmetic in the file - had no coverage at all, while every
+// trivial predicate around them had plenty. They take their step and seam as
+// arguments now, which was the whole of what kept them inside.
+// ---------------------------------------------------------------------------
+
+const STEP = 64;
+const INSET = cellInset(STEP);
+
+test('an axis the handle does not touch comes back untouched', () => {
+  assert.equal(resizeAxisOn(0, 100, 250, 999, true, STEP, INSET), 250);
+  assert.equal(resizeAxisOn(0, 100, 250, 999, false, STEP, INSET), 250);
+});
+
+test('unsnapped, the extent follows the pointer exactly', () => {
+  assert.equal(resizeAxisOn(1, 0, 200, 37, false, STEP, 0), 237);
+  assert.equal(resizeAxisOn(-1, 0, 200, 37, false, STEP, 0), 163,
+    'dragging the low edge outward shortens by the same travel');
+});
+
+test('snapped, it is the moving edge that lands on a grid line', () => {
+  // The rule the docstring turns on: the *edge* is quantised, not the extent.
+  // A width rounded to the step would leave both edges off the lattice, since
+  // the pinned edge was never on it.
+  const centre = 100, extent = 150;
+  for (const sign of [1, -1]) {
+    for (const travel of [-40, -7, 0, 3, 41, 90]) {
+      const size = resizeAxisOn(sign, centre, extent, travel, true, STEP, INSET);
+      if (size === MIN_SIZE || size === MAX_SIZE) continue;   // clamped, not snapped
+      const anchor = centre - sign * extent / 2;
+      const edge = anchor + sign * size;
+      // The moving edge sits a seam short of its line going one way and a seam
+      // past it going the other, which is what the signed bias is for.
+      const k = (edge + sign * INSET) / STEP;
+      assert.ok(Math.abs(k - Math.round(k)) < 1e-9,
+        `sign ${sign} travel ${travel}: the edge landed at ${edge}, off the lattice`);
+    }
+  }
+});
+
+test('the size limits hold even where one step spans the whole band', () => {
+  // The closing clamp, and the case it exists for: a step coarser than the
+  // range between floor and ceiling leaves no grid line inside it, so the
+  // repair by one line cannot land legally and the clamp has to.
+  const huge = MAX_SIZE * 4;
+  for (const sign of [1, -1]) {
+    for (const travel of [-1e6, -100, 100, 1e6]) {
+      const size = resizeAxisOn(sign, 0, 200, travel, true, huge, cellInset(huge));
+      assert.ok(size >= MIN_SIZE && size <= MAX_SIZE,
+        `sign ${sign} travel ${travel} gave ${size}, outside [${MIN_SIZE}, ${MAX_SIZE}]`);
+    }
+  }
+});
+
+test('a resize can never collapse an item or run it past the ceiling', () => {
+  for (const sign of [1, -1]) {
+    for (const snap of [true, false]) {
+      for (const travel of [-1e9, 1e9]) {
+        const size = resizeAxisOn(sign, 0, 200, travel, snap, STEP, INSET);
+        assert.ok(size >= MIN_SIZE && size <= MAX_SIZE, `${sign} ${snap} ${travel}: ${size}`);
+      }
+    }
+  }
+});
+
+test('unsnapped, a bare arrow key moves one unit and shift moves a step', () => {
+  const lead = { x: 0, y: 0, w: 100, h: 100 };
+  assert.deepEqual(nudgeDelta(1, 0, false, lead, false, STEP, INSET), { dx: 1, dy: 0 });
+  assert.deepEqual(nudgeDelta(0, -1, false, lead, false, STEP, INSET), { dx: 0, dy: -1 });
+  assert.deepEqual(nudgeDelta(1, 0, true, lead, false, STEP, INSET), { dx: STEP, dy: 0 });
+});
+
+test('snapped and already flush, an arrow key moves exactly one cell', () => {
+  // The "flush already" branch, and the tolerance it needs: a board's
+  // coordinates come out of divisions and accumulated drags, so an item on a
+  // line is routinely at 3.9999999 cells rather than 4. Without ON_LINE the
+  // next line along is the one it is standing on, which reads as a key that
+  // did nothing.
+  const low = 4 * STEP + INSET;
+  for (const drift of [0, 1e-9, -1e-9]) {
+    const lead = { x: low + drift + 50, y: 0, w: 100, h: 100 };
+    const { dx } = nudgeDelta(1, 0, false, lead, true, STEP, INSET);
+    assert.ok(Math.abs(dx - STEP) < 1e-6, `drift ${drift} moved by ${dx}, not one cell`);
+  }
+});
+
+test('snapped and adrift, the first press comes aboard rather than overshooting', () => {
+  const lead = { x: 4 * STEP + INSET + 20 + 50, y: 0, w: 100, h: 100 };
+  const right = nudgeDelta(1, 0, false, lead, true, STEP, INSET);
+  const left = nudgeDelta(-1, 0, false, lead, true, STEP, INSET);
+  // Right goes to the next line up, left to the one just below - both less than
+  // a full cell away, because the item was between them.
+  assert.ok(right.dx > 0 && right.dx < STEP, `came aboard by ${right.dx}`);
+  assert.ok(left.dx < 0 && left.dx > -STEP, `came aboard by ${left.dx}`);
+  // And having come aboard, it is on the lattice.
+  const after = lead.x - lead.w / 2 + right.dx;
+  const k = (after - INSET) / STEP;
+  assert.ok(Math.abs(k - Math.round(k)) < 1e-9, 'the first press did not land on a line');
+});
+
+test('shift on a snapped board is a decade of cells, not a step', () => {
+  const lead = { x: 4 * STEP + INSET + 50, y: 0, w: 100, h: 100 };
+  const { dx } = nudgeDelta(1, 0, true, lead, true, STEP, INSET);
+  assert.ok(Math.abs(dx - 10 * STEP) < 1e-6, `shift moved ${dx}, not ten cells`);
+});
+
+test('an axis with no direction pressed does not move', () => {
+  const lead = { x: 37, y: 91, w: 100, h: 100 };
+  assert.deepEqual(nudgeDelta(0, 0, false, lead, true, STEP, INSET), { dx: 0, dy: 0 });
+  assert.equal(nudgeDelta(1, 0, false, lead, true, STEP, INSET).dy, 0);
 });
