@@ -218,6 +218,30 @@
   --note-2: color-mix(in srgb, var(--accent) 17%, var(--paper-card));
   --note-3: color-mix(in srgb, var(--leafy) 26%, var(--paper-card));
   --note-4: color-mix(in srgb, var(--accent-warm) 13%, var(--paper-2));
+  /* And the marker drawn over one, which the toolbar sets a line at a time.
+     Four again and mixed the same way, for the same reason: a highlighter that
+     was office-yellow outright would be the one thing on a sage board that came
+     from somewhere else.
+
+     Translucent, and that is the load-bearing half - the same decision, made
+     for the same reason, as --highlight above. A wash goes over four different
+     sheets and over a note wearing no sheet at all, and it has to leave the ink
+     under it readable on every one of them; a solid block would need a colour
+     per paper and a text colour to go with it. Stronger than --highlight is,
+     though, because a selection is a thing you are doing right now and a mark
+     on a note has to still be visible across a board a week later.
+
+     Named and not numbered, which the four sheets above are not. A sheet is one
+     of a pack and you take the next one off it; a mark is picked for being that
+     colour, so it is offered by its name and the name is what is stored. It is
+     also what lets canvas/notes.ts build the swatch for the menu row out of the
+     stored word - `var(--note-wash-` + name + `)` - instead of carrying a
+     second copy of this table in JavaScript for the four colours to drift
+     apart in. */
+  --note-wash-amber:      color-mix(in srgb, var(--accent-warm) 46%, transparent);
+  --note-wash-terracotta: color-mix(in srgb, var(--accent) 28%, transparent);
+  --note-wash-olive:      color-mix(in srgb, var(--leafy) 34%, transparent);
+  --note-wash-graphite:   color-mix(in srgb, var(--ink) 14%, transparent);
   /* Guillotined from a pad, not die-cut - so a sticky's corner is tighter than
      a card's, but a fraction of it rather than an independent number. That way
      the Corner radius slider moves the notes along with everything else. */

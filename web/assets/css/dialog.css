@@ -172,9 +172,22 @@
 
    The bar comes from canvas/notes.js and lands last in the DOM, so `order` is
    what puts it back on top. Written on the three children rather than on the
-   bar alone, so the reading order of the rule is the reading order on screen. */
+   bar alone, so the reading order of the rule is the reading order on screen.
+
+   **The width is the toolbar's.** A dialog is `width: fit-content` in the UA
+   stylesheet, so what this rule does is say how far that is allowed to go, and
+   it used to stop at 560px. The bar is about 640 with its six groups on one
+   line, so the cap was the whole reason it wrapped: it broke into two rows on a
+   4K monitor, not because the screen was short of room but because a number
+   here said the dialog was finished at 560. Nothing else in the dialog wants
+   560 either - the sheet sets its own width and the button row takes what it is
+   given.
+
+   So the only limit left is the window, and the wrap in .note-toolbar.is-inline
+   is what happens when that limit really does bite. One row by default, two on
+   a phone, and the line between them is the width of the glass. */
 #compose {
-  max-width: min(560px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
   margin: auto;
   padding: 0;
   border: 0;
@@ -260,11 +273,19 @@
   text-align: left;
 }
 
-/* The bar, in a row of the dialog rather than floating over a board. */
+/* The bar, in a row of the dialog rather than floating over a board.
+
+   The wrap is a fallback and not the layout. The dialog takes its width from
+   this element (see #compose above), so on any screen with room the bar is one
+   line and the wrap never fires; it fires when the window itself is narrower
+   than the controls, which is the only time two rows are better than a row that
+   has run off the side of the glass. row-gap so the second line, when it does
+   come, is not sitting on the first. */
 .note-toolbar.is-inline {
   position: static;
   max-width: 100%;
   flex-wrap: wrap;
+  row-gap: 6px;
   justify-content: center;
   transform: none;
 }

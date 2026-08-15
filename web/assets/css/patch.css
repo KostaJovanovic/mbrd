@@ -64,47 +64,74 @@ body.is-patch :is(#viewport, #toolbar, #hud, #corner, #bin, #scale-bar,
 }
 
 /* ---------------------------------------------------------
-   The page scrolls; the app stays pinned
+   The document scrolls, and the paper goes with it
 
    base.css pins the app to the window - height 100%, overflow hidden - because
-   every gesture on a board belongs to the board. The obvious way to get a
-   document out of that is to undo the pin and let the body grow, which is what
-   this file did first and is the wrong shape: it leaves the app's own fixed
-   furniture measuring itself against a window while the thing it is pinned
-   inside is fifteen thousand pixels tall, and every rule in base.css that says
-   "the app is the window" quietly stops being true.
+   every gesture on a board belongs to the board. This page is not a board. The
+   viewport is hidden a few rules up, what is left of the app is #sidebar and
+   #menu-btn, and both of those are `position: fixed`, which measures itself
+   against the window whatever the document under it does. So the pin comes off
+   here and the changelog scrolls the way a document scrolls.
 
-   So the pin stays and the changelog scrolls inside a surface of its own -
-   which is exactly what the Feed already does on the Mobile board, one fixed
-   scroller with the wall inside it. Nothing about the app's layout is touched
-   and both claims hold: the app is pinned to the window, and the page scrolls.
+   An earlier version kept the pin and scrolled the changelog inside a fixed
+   surface of its own, the way the Feed does on the Mobile board. That works,
+   and this file argued for it at length - but it puts the paper outside the
+   thing that moves. The ground is painted on <body>, <body> never scrolls, and
+   so the blooms and the tooth of the stock sit dead still while the prose
+   slides over them. A texture that does not travel with the page it is printed
+   on is a backdrop, not stock; the whole claim of this page is that it is
+   printed on the reader's own board.
+
+   Taking the pin off is what lets one word - `scroll` - fix that, with the
+   sheet in base.css untouched. This file is loaded by web/patch.html and by
+   nothing else, so an unqualified `html, body` here reaches only this page.
    --------------------------------------------------------- */
 
-.pn {
-  position: fixed;
-  inset: 0;
-  z-index: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
-  overscroll-behavior: contain;
+html, body {
+  height: auto;
+  /* The only pairing `visible` is allowed to keep company with. Softish leans
+     its plates a fraction off square and tapes them down past the row, which
+     is a few pixels of horizontal overflow nobody should be able to scroll to. */
+  overflow-x: clip;
+  overflow-y: visible;
+}
+
+html {
   scrollbar-width: thin;
   scrollbar-color: var(--rule-2) transparent;
 }
 
-/* Fixed, so the blooms stay in the corners of the window rather than sliding
-   off the top of a long page. On a board this layer never scrolls because the
-   board never does. */
-body { background-attachment: fixed; }
+body {
+  /* The containing block for the grain below, which is now as tall as the
+     changelog rather than as tall as the window. min-height keeps a short page
+     - one release, on a big screen - still covered to the foot. */
+  position: relative;
+  min-height: 100vh;
+  /* The ground travels with the page. base.css lays three radial gradients over
+     the paper, two colour blooms and a vignette, and every stop in them is a
+     percentage of the box they are painted in - so on a document a few thousand
+     pixels tall they would stretch into smears with no edge anywhere. Sized to
+     one screen and told not to repeat, they stay the wash they were drawn as
+     and leave over the top of the page like everything else. */
+  background-attachment: scroll;
+  background-repeat: no-repeat;
+  background-size: 100% 100vh;
+}
+
+.pn {
+  position: relative;
+  z-index: 1;
+}
 
 /* The stock, and what makes this paper rather than a background colour. Same
    tile, same blend and the same dial as #grain in base.css - --grain is 1.25 at
    Softish and 0 at Harsh, so the tooth arrives and leaves with the rest of the
    personality and this rule needs no level of its own.
-   Fixed to the window rather than laid over the column, so it is one screen of
-   blended texture however long the changelog runs. */
+   Absolute rather than fixed, and against a body that is now the height of the
+   changelog: the tooth runs the length of the sheet and scrolls with it. */
 body.is-patch::before {
   content: "";
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 0;
   pointer-events: none;
@@ -115,8 +142,7 @@ body.is-patch::before {
   opacity: calc(0.8 * var(--grain));
 }
 
-/* The column inside that scroller. The scroller is the window; this is the
-   measure of prose in the middle of it.
+/* The measure of prose down the middle of the page.
 
    Note what is *not* here: #sidebar and #menu-btn. An earlier version of this
    file gave them `position: relative` "to lift them above the grain", which
@@ -146,7 +172,7 @@ body.is-patch::before {
 
 /* The way back.
 
-   Sticky rather than fixed, and inside the scroller rather than over the
+   Sticky rather than fixed, and inside the column rather than over the
    window: the board's own menu button is fixed in the top-left corner of this
    page - it is the app's real sidebar, which is the whole design of /patch -
    and a second fixed control would land on top of it. Sticking inside the

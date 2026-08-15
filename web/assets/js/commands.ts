@@ -173,7 +173,7 @@ export interface CommandDeps {
  * cards it was run on, which is what makes a step on the history strip editable
  * rather than sealed. A command reads the selection and decides what the job
  * is; these do the job. See registerLayoutOps() below, and
- * research/timeline-2026-08-14.md, which says why these three came first: they
+ * research/old/timeline-2026-08-14.md, which says why these three came first: they
  * are the steps where changing something in the past actually changes what
  * comes after it. Most steps in this app are absolute - *put this card here* -
  * and editing one of those ripples nowhere.

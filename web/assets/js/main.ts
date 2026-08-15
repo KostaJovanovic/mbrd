@@ -57,6 +57,7 @@ import { initFencePrompt } from './ui/fence-prompt.ts';
 import { initConnChip } from './ui/conn-chip.ts';
 import { initSearch } from './ui/search.ts';
 import { initIdle } from './ui/idle.ts';
+import { initBackfill } from './optimize/backfill.ts';
 import { initScaleBar } from './ui/scalebar.ts';
 import { initTrash } from './ui/trash.ts';
 import { initNowPlaying } from './ui/nowplaying.ts';
@@ -173,9 +174,18 @@ setNoteMenu((anchor, rows, current, pick) => {
   if (justDismissed(anchor)) return;
   openAnchored(anchor.getBoundingClientRect(), rows.map(row => ({
     label: row.label,
+    swatch: row.swatch,
     check: row.value === current,
     action: () => pick(row.value),
-  })), { label: 'Font', focus: true });
+  })), {
+    // Off the control rather than named here. Two of the bar's buttons open this
+    // now - the face and the marker - and a panel that called itself Font
+    // whichever one was pressed would be a screen reader announcing the wrong
+    // menu half the time. Each button already carries the word as its
+    // aria-label, because it needs one there anyway.
+    label: anchor.getAttribute('aria-label') || 'Font',
+    focus: true,
+  });
 });
 // The saved quality level onto <html>, before anything reads a flag off it.
 // The inline guard in index.html has already done this for the stylesheet; this
@@ -289,6 +299,13 @@ initSearch(vp);
 // menu button went and the sidebar could not be opened at all. See the same
 // trap, from the other side, in research/old/ui-audit-2026-08-13.md.
 if (!isPatch) initIdle(vp);
+// Video posters, made in the background from here on - see optimize/backfill.js.
+// Not on the changelog either, and for a harder reason than the fade above: the
+// page freezes the cache and the preferences so a reader records nothing, and
+// this pass *writes to the board* (a poster and its thumbnail, then a dirty
+// mark). It is the one thing wired here that would turn reading the patch notes
+// into an edit.
+if (!isPatch) initBackfill();
 initTrash(vp);
 // After initAudio(), which is what reads the stored volume - the bar's slider
 // paints itself from that value on the way up.

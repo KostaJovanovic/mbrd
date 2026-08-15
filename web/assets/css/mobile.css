@@ -58,7 +58,17 @@
    inset by it, so the sheet has a single left edge rather than the three it grew:
    a centred hero, a transport flush to the paper (the window's padding, which has
    no side room to give) and a list inset by a hard 12. */
-#mobile-playlist { --feed-w: 520px; --pl-gutter: clamp(14px, 4.5vw, 22px); }
+#mobile-playlist {
+  --feed-w: 520px;
+  --pl-gutter: clamp(14px, 4.5vw, 22px);
+  /* Room under the last track for the now-playing bar, which is this lens's
+     transport and is up whenever there is anything to play. The bar is fixed to
+     the foot of the window and floats over the sheet, so without a bottom inset
+     of its own the last row of a list is the one row that cannot be tapped. The
+     Feed does not need this - a tile half under the bar is still a tile you can
+     see, and the Feed has no reason to expect the bar at all. */
+  --feed-inset-bottom: calc(max(16px, env(safe-area-inset-bottom)) + 78px);
+}
 
 /* One lens shows, the canvas is always hidden under it. Feed is the default, so it
    shows whenever Mobile is on and Playlist is not - robust to a missing attribute. */
@@ -550,9 +560,15 @@
    Shuffle, the way to start the board cold. It hides when there is no audio,
    leaving the empty note in its place.
 
+   The two buttons are the only controls on the lens: the transport is the
+   now-playing bar at the foot of the window, which is up whenever there is
+   anything to transport (chrome.css no longer hides it here), and a row is how a
+   track is chosen. So this header is how a board is *started*, and it is sized
+   for that.
+
    The record is the one flourish on this surface and everything else is kept
-   quiet around it - the rule that used to close the header off is gone, because
-   the transport below is a well now and separates itself. It is drawn in CSS
+   quiet around it - the rule that used to close the header off is gone, and the
+   ruled list below starts itself. It is drawn in CSS
    from three radial gradients (spindle hole, label, grooves), so it costs no
    asset and it presses the palette's own accent: a teal board gets a teal label.
    It turns only while something is playing, which is the whole of what it says -
@@ -574,9 +590,15 @@
   position: relative;
   width: clamp(150px, 44vw, 206px);
   aspect-ratio: 1;
-  transform: translateX(-9%);
 }
+/* Softish only, both of them. The record is ornament - it says something true
+   about the surface, but the surface says the same thing without it - and the
+   soft tier is the one that is *for* ornament, the same tier that rounds the
+   corners to 26px and draws the scrubber as a travelling wave. Off by default so
+   that adding a fourth tier tomorrow does not quietly turn it on. */
+:root[data-whimsy="0"] .pl-sleeve { transform: translateX(-9%); }
 .pl-disc {
+  display: none;
   position: absolute;
   top: 7%;
   bottom: 7%;
@@ -599,15 +621,11 @@
       color-mix(in srgb, var(--ink) 70%, transparent) 1.5px 3.5px);
   box-shadow: var(--shadow-1);
 }
+:root[data-whimsy="0"] .pl-disc { display: block; }
 /* One turn every five and a half seconds - a record's own 33rpm would be a blur
    at this size, and the point is that it is moving, not how fast. */
 .pl-hero.is-spinning .pl-disc { animation: pl-spin 5.5s linear infinite; }
 @keyframes pl-spin { to { rotate: 1turn; } }
-/* The plain end of the whimsy axis has no radius, no shadow and no ornament, and
-   a drawn record is the one thing on this sheet that is not information. It goes,
-   and the nudge that made room for it goes with it. */
-:root[data-whimsy="2"] .pl-disc { display: none; }
-:root[data-whimsy="2"] .pl-sleeve { transform: none; }
 @media (prefers-reduced-motion: reduce) {
   .pl-hero.is-spinning .pl-disc { animation: none; }
 }
@@ -667,20 +685,22 @@
   font-variant-numeric: tabular-nums;
   color: var(--ink-3);
 }
-.pl-hero-actions { display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap; margin-top: 8px; }
-/* Two weights, not two of the same button. Play is the one thing this header is
-   for and carries the fill; Shuffle is the other way in and is a hairline. They
-   were a matched pair of 132px pills, which is what made the header read as a
-   dialog asking a question rather than a record with a way to start it. */
+.pl-hero-actions { display: flex; gap: 10px; justify-content: center; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+/* Big, and they can be: they are the only controls on the lens now that the
+   transport is the bar at the foot of the window. Two weights rather than two of
+   the same button - Play is what this header is for and carries the fill,
+   Shuffle is the other way in and is a hairline. They were a matched pair of
+   132px pills, which is what made the header read as a dialog asking a question
+   rather than a record with a way to start it. */
 .pl-play, .pl-shuffle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 11px 20px;
+  gap: 10px;
+  padding: 15px 26px;
   border-radius: var(--radius-pill);
   font-family: var(--font-body);
-  font-size: var(--t-body);
+  font-size: calc(var(--t-body) + 1px);
   font-weight: 600;
   cursor: pointer;
   border: var(--hairline) solid transparent;
@@ -693,7 +713,7 @@
    with the palette, so a teal or sage board still printed cold white on its
    primary button and darkened it towards grey on hover. */
 .pl-play {
-  min-width: 148px;
+  min-width: 172px;
   background: var(--accent);
   color: var(--accent-fg);
   border-color: var(--accent);
@@ -709,7 +729,7 @@
 }
 .pl-play:active, .pl-shuffle:active { transform: translateY(1px); }
 .pl-play .pl-ico, .pl-shuffle .pl-ico { display: inline-flex; }
-.pl-play svg, .pl-shuffle svg { width: 16px; height: 16px; }
+.pl-play svg, .pl-shuffle svg { width: 18px; height: 18px; }
 
 /* The Playlist list, in normal flow. In the Mobile lens it sits on the board
    sheet; in the Desktop window it fills the window body. */
@@ -743,20 +763,22 @@
    were told apart by hover alone, which left a list of nine reading as one grey
    field. A hairline between them is the cheapest thing that makes it a listing. */
 .pl-row + .pl-row { border-top: var(--hairline) solid var(--rule); }
+/* A tinted row is its own block and takes the rules either side of it with it -
+   a hairline running into the top corner of a lit row reads as a mistake in the
+   ruling rather than as the edge of the row it belongs to. */
+.pl-row.is-playing,
+.pl-row.is-playing + .pl-row { border-top-color: transparent; }
 .pl-row:hover { background: var(--paper-3); }
 .pl-row.is-playing { background: color-mix(in srgb, var(--accent) 10%, var(--paper-card)); }
-/* The needle: the playing row is marked at the edge rather than by tint alone,
-   so it is still the current track when it scrolls half off the screen. */
-.pl-row.is-playing::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 5px;
-  bottom: 5px;
-  width: 2px;
-  border-radius: var(--radius-pill);
-  background: var(--accent);
-}
+/* The needle: the playing row is marked at its edge and not by tint alone, so it
+   is still the current track when it has scrolled half off the screen.
+
+   An inset shadow rather than an absolutely-positioned bar, and the radius axis
+   is the whole reason - a shadow is clipped to the border-radius, so the mark
+   follows the row's own corner at every tier. A 2px bar drawn down the left edge
+   was straight past a corner that curves 20px at the soft end, and stood outside
+   the block it was marking at top and bottom. */
+.pl-row.is-playing { box-shadow: inset 2px 0 0 var(--accent); }
 .pl-row.is-dragging {
   background: var(--paper-card);
   box-shadow: var(--shadow-2);
@@ -837,11 +859,16 @@
 .pl-grip:hover { background: var(--paper-3); color: var(--ink-2); }
 .pl-row.is-dragging .pl-grip { cursor: grabbing; }
 .pl-grip svg { width: 16px; height: 16px; }
-/* On a mouse the handle waits to be asked for. Nine of them standing at the
-   right margin read as a form, and the row is the play control - the grip is the
-   exception to it. On a finger there is no hover to ask with, so it stays put:
-   this is the one gesture on the lens that has no other way in. */
-@media (hover: hover) and (pointer: fine) {
+/* Where there is a pointer the handle waits to be asked for. Nine of them
+   standing at the right margin read as a form, and the row is the play control -
+   the grip is the exception to it. Where there is no hover to ask with it stays
+   put, because this is the one gesture on the lens that has no other way in.
+
+   `hover` alone and not `and (pointer: fine)`: the question is whether the
+   surface can show a control on approach, which is what hover answers. A
+   touchscreen laptop with a mouse reports a coarse primary pointer and would
+   have been read as a phone. */
+@media (hover: hover) {
   .pl-grip { opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
   .pl-row:hover .pl-grip,
   .pl-row.is-dragging .pl-grip,
@@ -1148,89 +1175,14 @@
 }
 .pw-pos[hidden] { display: none; }
 
-/* The volume, and only the lens builds one - see makePlayer(). Its own row under
-   the controls rather than a sixth button in them: a slider is a different kind
-   of object from a transport button, and five round glyphs with a rail wedged
-   between two of them reads as a broken row. */
-.pw-volume { display: flex; align-items: center; gap: 10px; }
-.pw-volume svg { flex: none; width: 16px; height: 16px; color: var(--ink-3); }
-.pw-volume input { flex: 1 1 auto; min-width: 0; }
-
-/* The lens is a phone-width sheet rather than a small floating window, so the
-   same classes are laid out with the room they have. Scoped to the lens's own
-   host, which is the one selector that separates the two homes - the classes
-   themselves are deliberately shared, so a change to the transport is one edit
-   and not two. */
-/* On the lens the transport is a well, not a band.
-
-   It was a strip of rules across the sheet with no side padding of its own - the
-   window's padding, which the lens overrode away - so the track title started
-   hard against the paper's edge while the list under it was inset, and two
-   full-bleed hairlines cut the sheet into slabs of equal weight. One inset panel
-   in the gutter every other part of the lens uses says the same thing without a
-   single rule: this is the thing that is playing, and the list below is what it
-   is playing from. */
-#mobile-playlist .pw-player {
-  gap: 12px;
-  margin: 2px var(--pl-gutter) 16px;
-  padding: 14px 16px 16px;
-  /* The shorthand, which is what takes the base rule's border-bottom off. */
-  border: var(--hairline) solid var(--rule);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--accent) 5%, var(--paper-2));
-}
-/* No cover here: the hero above it is already a cover the width of the sheet,
-   and a second one 64px square directly under it is the same picture twice. */
-#mobile-playlist .pw-cover { display: none; }
-/* The label on the record: the title in the display face, which is the one thing
-   on the lens that is neither a heading nor a row, and "3 of 9" ranged right on
-   its line rather than orphaned under it. */
-#mobile-playlist .pw-info {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  column-gap: 12px;
-  align-items: baseline;
-}
-#mobile-playlist .pw-title {
-  grid-area: 1 / 1;
-  font-family: var(--font-display);
-  font-size: var(--t-title);
-  font-weight: 600;
-  line-height: 1.15;
-}
-#mobile-playlist .pw-pos { grid-area: 1 / 2; }
-#mobile-playlist .pw-artist { grid-area: 2 / 1 / 3 / -1; }
-/* The seek gets the full width and the two times sit under its ends, where they
-   read as the ends of the track. Ranged either side of the line they pushed it
-   into the middle third of the panel and left two gutters of nothing. */
-#mobile-playlist .pw-seek {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  row-gap: 2px;
-}
-#mobile-playlist .pw-line { grid-area: 1 / 1 / 2 / -1; height: 22px; }
-#mobile-playlist .pw-time:first-child { grid-area: 2 / 1; text-align: left; }
-#mobile-playlist .pw-time:last-child { grid-area: 2 / 2; }
-/* Room for a thumb on all five, and a scrubber tall enough to catch. */
-#mobile-playlist .pw-controls { gap: 14px; }
-#mobile-playlist .pw-btn { width: 44px; height: 44px; }
-#mobile-playlist .pw-btn svg { width: 20px; height: 20px; }
-/* On paper rather than floating on it: the ring alone read as an outline waiting
-   to be filled, with nothing behind it but the well. */
-#mobile-playlist .pw-play {
-  width: 56px;
-  height: 56px;
-  background: var(--paper-card);
-  box-shadow: var(--shadow-1);
-}
-#mobile-playlist .pw-play svg { width: 22px; height: 22px; }
-/* The volume closes the panel, so it is ruled off from the controls above it
-   rather than being a sixth thing in the stack. */
-#mobile-playlist .pw-volume {
-  margin-top: 2px;
-  padding-top: 12px;
-  border-top: var(--hairline) solid var(--rule);
-}
+/* There is one transport and it is the Desktop window's, so there is no lens
+   scope under here any more. The lens carried a copy for a while - the same
+   `pw-` classes laid out with the room a phone-width sheet has - and it is gone
+   with the panel it was in: on the phone the now-playing bar is already at the
+   foot of the screen and already the transport for every other surface, and a
+   second one on the lens was a thing to scroll past on the way to the music.
+   ui/playlist.js builds a player for the window variant only, and chrome.css no
+   longer hides #nowplaying under data-feed-lens. */
 
 /* Reduced motion: no tile reflow easing while reordering, no scroll glide, and a
    still equalizer (the row still lights, it just does not dance). */

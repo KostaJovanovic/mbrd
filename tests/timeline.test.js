@@ -2,7 +2,7 @@
 // that matters.
 //
 // That check is the last test in this file, and it is the whole safety net for
-// the phase that follows. Phase 1 of research/timeline-2026-08-14.md leaves the
+// the phase that follows. Phase 1 of research/old/timeline-2026-08-14.md leaves the
 // closure-based undo engine running beside the new record-based one *and asserts
 // they agree*, because there is no browser-driven suite here and "replay and
 // undo produce the same board" is the strongest thing that can be said about

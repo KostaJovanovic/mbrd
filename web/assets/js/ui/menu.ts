@@ -707,36 +707,48 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
   // ask them rather than repeat the five tests.
   const editable_picture = pictureEdits.some(e => !e.hidden);
   return [
+    // The very first row, on the one type it appears on at all.
+    //
+    // The whole of this menu is ordered by one question - is this row what the
+    // press was for - and on a sticky the answer is not close. A note is the
+    // only item in the app whose content you make rather than import, it is
+    // made empty and filled afterwards, and there is nothing else about a
+    // square of paper with four words on it that anybody opens a menu to do.
+    // Everything above it here was something the card *is* lying on or lying
+    // under; this is the card itself.
+    //
+    // It was below Open and below Unstick, each of which had a good argument
+    // for its own place and neither of which was arguing against this one. Open
+    // on a note shows the same words larger, which is the second thing you want
+    // from a note and reads as the first when it is printed above the row that
+    // lets you change them; Unstick is the answer to a question about the
+    // photograph underneath.
+    { label: 'Edit text', icon: 'i-edit-text', accel: 'dbl-click', hidden: !editable,
+      action: () => cmds!.editNote(id) },
     // Off its host and left exactly where it is. A stuck note is *pinned* - a
     // drag on it moves the card underneath it instead - so this is the only way
     // out that is not dropping it somewhere else, and the menu is the only place
     // it can be. An open padlock rather than a pin, because the entry is the act
     // of letting go and the badge on the card is already the pin.
     //
-    // First, above even Open, and it earns that on the same argument the whole
-    // of this menu is now ordered by: a row is high because it is what the press
-    // was for. Only a rider can be unstuck, only a note or a sticker can be a
-    // rider (isSticky in sticky.ts is that list), and the reason somebody
-    // right-clicks a sticky lying on a photograph is nearly always that they
-    // want it off. It sat with the stacking pair on the reading that it is about
-    // how a card sits on the board, which is true and was the wrong thing to
-    // sort by - it put the answer four bands below the question.
+    // Above Open, and it earns that on the same argument: only a rider can be
+    // unstuck, only a note or a sticker can be a rider (isSticky in sticky.ts is
+    // that list), and the reason somebody right-clicks a sticky lying on a
+    // photograph is nearly always that they want it off. It sat with the
+    // stacking pair on the reading that it is about how a card sits on the
+    // board, which is true and was the wrong thing to sort by - it put the
+    // answer four bands below the question.
     //
     // Absent on everything else, so this costs the other types no row at all:
     // the band below is the first thing a photograph shows.
     { label: many ? 'Unstick these' : 'Unstick', icon: 'i-lock-open',
       hidden: !unstickable, action: () => cmds!.unstick() },
-    // First of all, because on a wall of thumbnails it is the thing you most
-    // often want and the one row that was not reachable any other way. Above
-    // Edit text and not below it: a note is the one type where both apply, and
-    // there the editor is the nearer meaning - which is why this row carries no
-    // accelerator on a note, since the double-click belongs to the other one.
+    // First on everything that is not a note, because on a wall of thumbnails it
+    // is the thing you most often want and the one row that was not reachable
+    // any other way. It carries no accelerator on a note: the double-click there
+    // belongs to Edit text, which is also why it sits below it.
     { label: 'Open', icon: 'i-expand', accel: editable ? '' : 'dbl-click',
       hidden: !viewable, action: () => cmds!.openViewer(id) },
-    // Only on a note: right-clicking the one item type you can actually type
-    // into should offer to type into it before anything else on the card.
-    { label: 'Edit text', icon: 'i-edit-text', accel: 'dbl-click', hidden: !editable,
-      action: () => cmds!.editNote(id) },
     // Copy and paste rather than Duplicate, and the swap is not a rename. A
     // duplicate is a copy that lands somewhere the app chose - beside the
     // original, always - and it is one press for that one case. Copy and paste
@@ -1233,6 +1245,49 @@ function subMenu(sub: MenuEntry[], parent: MenuEntry[]): MenuEntry[] {
   return [{ label: 'Back', icon: 'i-chevron-left', to: parent }, { sep: true }, ...sub];
 }
 
+/**
+ * Where a panel is hung: inside the open modal, if there is one, and on the body
+ * otherwise.
+ *
+ * A modal `<dialog>` is drawn in the **top layer**, which is a different thing
+ * from a high z-index and beats every one of them. `showModal()` puts the dialog
+ * and its backdrop above the whole page, so a panel appended to the body renders
+ * *behind* the dimming - it was there, at the right coordinates, under 42% ink.
+ * The note editor's own font button is how this was found: the composer is a
+ * modal, and choosing a face meant pressing something you could not see.
+ *
+ * z-index cannot answer it. Only being in the top layer can, and the way to be
+ * in it without becoming a dialog of your own is to be inside the element that
+ * already is.
+ *
+ * Two more things come right with it, both of which were bugs waiting rather
+ * than luck. The panel can take focus: a modal makes everything outside itself
+ * inert, so `focus: true` on a panel out on the body was a request the browser
+ * was entitled to refuse. And the note editor's focusout guard - which asks
+ * whether focus is still somewhere inside its surface - now says yes to a press
+ * on a menu row, where before a font row was a press *outside* the dialog and
+ * ended the edit it was formatting.
+ *
+ * `position: fixed` inside the dialog still resolves against the viewport, so
+ * the placement below needs no adjusting - the one thing that would break that
+ * is a transform on the dialog, and #compose's entry animation has ended long
+ * before any menu can be opened in it.
+ */
+function panelHost(): HTMLElement {
+  const open = document.querySelectorAll<HTMLDialogElement>('dialog[open]');
+  // Backwards: the last one opened is the one on top, and document order is the
+  // best statement of that available without tracking every showModal() in the
+  // app from here.
+  for (let i = open.length - 1; i >= 0; i--) {
+    // :modal is the only way to ask whether a dialog is *modal* rather than
+    // merely open, and matches() throws on a selector the engine has not heard
+    // of. Treating an unknown answer as modal is the safe half: a non-modal
+    // dialog hosting the panel places it exactly where the body would have.
+    try { if (open[i].matches(':modal')) return open[i]; } catch { return open[i]; }
+  }
+  return document.body;
+}
+
 function render(entries: MenuEntry[], clientX: number, clientY: number, opts: MenuOpts = {}) {
   lastX = clientX;
   lastY = clientY;
@@ -1353,7 +1408,25 @@ function fillPanel(panel: HTMLElement, entries: MenuEntry[]) {
       if (entry.sub) btn.append(icon('i-chevron-right', 'ctx-chevron'));
       // Both assertions are the branch this is inside: one of the two is set,
       // and each arm has just tested which.
-      btn.addEventListener('click', () => swap(entry.sub ? subMenu(entry.sub, entries) : entry.to!));
+      btn.addEventListener('click', () => {
+        // Unless the list being asked for is already on screen. Hovering this
+        // row flew it out beside the row a moment ago, and a press that lands
+        // afterwards is a press asking for something it can already see - so
+        // the honest answer to it is nothing at all. Drilling in on it took the
+        // open panel away and put the same rows in the parent's place, which is
+        // the menu flinching at being clicked: the thing you were pointing at
+        // moved, and the row now under the pointer is a different one.
+        //
+        // The condition is *this row's child is up*, not *a mouse did it*.
+        // Which pointer a click came from is a question with three different
+        // answers across the engines and a fourth for the keyboard, and it is
+        // not the question anyway. The two routes that still need the drill-in
+        // - a finger, which never fires the pointerenter below, and the arrow
+        // keys, which do not fire it either - are exactly the two that arrive
+        // here with nothing open.
+        if (entry.sub && child && childRow === btn) return;
+        swap(entry.sub ? subMenu(entry.sub, entries) : entry.to!);
+      });
       // And the other route into the same list: hover it open beside the row,
       // the way a desktop context menu has always done. The click above is kept
       // rather than replaced, because it is the only route a finger or a
@@ -1402,11 +1475,15 @@ function fillPanel(panel: HTMLElement, entries: MenuEntry[]) {
  * #ctx-menu's own rules (menu.css names both ids in one selector). What is new
  * here is where the box goes and when it goes away.
  *
- * **The drill-down stays.** Hover is a mouse idea: a finger has none, and a
- * keyboard has none. Pressing a fold still turns the page the way it always
- * did, which is what keeps the phone and the arrow keys working - so this is an
- * addition to that route rather than a replacement for it, and the two cannot
- * both be up at once because opening either closes the other.
+ * **The drill-down stays, for the two routes that have no hover.** A finger has
+ * none and a keyboard has none, so pressing a fold on either still turns the
+ * page the way it always did - which is what keeps the phone and the arrow keys
+ * working, and the two panels cannot both be up at once because opening either
+ * closes the other.
+ *
+ * What a press does *not* do is turn the page on a row whose list is already
+ * flown out beside it. See the click handler in fillPanel(): the press has
+ * arrived after the hover has answered it.
  *
  * The close is deferred by a beat. A submenu that vanished the instant the
  * pointer left its row could not be reached at all: the way to it crosses the
@@ -1450,7 +1527,7 @@ function openChild(row: HTMLElement, entries: MenuEntry[], from: HTMLElement) {
   child.tabIndex = -1;
   fillPanel(child, entries);
   child.style.visibility = 'hidden';
-  document.body.append(child);
+  panelHost().append(child);
 
   const pad = 8;
   const r = row.getBoundingClientRect();
@@ -1502,7 +1579,7 @@ function placeRoot(node: HTMLElement, clientX: number, clientY: number, opts: Me
     const room = Math.max(innerHeight - opts.anchor.bottom, opts.anchor.top) - pad * 2;
     node.style.maxHeight = `${Math.max(120, Math.round(room))}px`;
   }
-  document.body.append(node);
+  panelHost().append(node);
   const { width, height } = node.getBoundingClientRect();
   let x, y;
   if (opts.anchor) {

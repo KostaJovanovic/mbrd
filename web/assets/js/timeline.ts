@@ -22,7 +22,7 @@
 // small objects, and only for the items that actually changed - a nudge is a
 // couple of hundred bytes.
 //
-// That is the whole reason phase 1 of research/timeline-2026-08-14.md converts
+// That is the whole reason phase 1 of research/old/timeline-2026-08-14.md converts
 // none of the thirty commit sites: commit() runs its own redo half, so it can
 // snapshot on either side of that call and keep the difference. Every site
 // records a step without knowing this module exists, including every site

@@ -133,13 +133,56 @@ function mobilePackStartRow(obstacles: Item[], step: number) {
   );
 }
 
-/** Compact row-major packing into the selected Mobile occupancy grid. */
+/**
+ * The cells an item that is not being packed already stands in.
+ *
+ * The inverse of the placement arithmetic at the foot of packMobileGrid, seam
+ * included: a card claims every cell any part of its box plus its seam touches,
+ * so nothing can be packed into the half cell beside it. Rotation-aware through
+ * itemBounds(), because what must be kept clear is the box you can see.
+ *
+ * Columns are clamped and rows are not. The column count is the width of the
+ * board and there is nothing outside it; a card above the top edge or below the
+ * lowest packed row is simply in rows the search will never ask about.
+ */
+function claimBlocked(
+  occupied: Set<string>, box: Item, step: number, columns: number, spacing: number,
+) {
+  const bounds = itemBounds([box]);
+  if (!bounds) return;
+  const inset = mobileSeam(step, spacing);
+  const c0 = Math.max(0, Math.floor(
+    (bounds.x0 - inset) / step + columns / 2 + MOBILE_PACK_EPSILON));
+  const c1 = Math.min(columns - 1, Math.ceil(
+    (bounds.x1 + inset) / step + columns / 2 - MOBILE_PACK_EPSILON) - 1);
+  const r0 = Math.max(0, Math.floor(
+    MOBILE_TOP_ROWS - (bounds.y1 + inset) / step + MOBILE_PACK_EPSILON));
+  const r1 = Math.ceil(
+    MOBILE_TOP_ROWS - (bounds.y0 - inset) / step - MOBILE_PACK_EPSILON) - 1;
+  for (let row = r0; row <= r1; row++) {
+    for (let col = c0; col <= c1; col++) occupied.add(`${col}:${row}`);
+  }
+}
+
+/**
+ * Compact row-major packing into the selected Mobile occupancy grid.
+ *
+ * `obstacles` and `blockers` are two different things and the difference is the
+ * whole of how an anchored card survives a Rearrange. An obstacle sets the first
+ * row the pack may use, so everything lands below it - which is what an import
+ * appending to a column wants. A blocker holds only the cells it actually
+ * stands in, and the pack flows around it from the top - which is what an
+ * anchored card wants, since pushing the column below a card anchored near the
+ * foot of it would leave the whole board hanging under a hole.
+ */
 export function packMobileGrid(
   items: Item[], obstacles: Item[], step: number, columns: number, spacing = 0,
+  blockers: Item[] = [],
 ): Item[] {
   const occupied = new Set<string>();
   const startRow = mobilePackStartRow(obstacles, step);
   const inset = mobileSeam(step, spacing);
+  for (const held of blockers) claimBlocked(occupied, held, step, columns, spacing);
   const open = (col: number, row: number, cols: number, rows: number) => {
     for (let y = row; y < row + rows; y++) {
       for (let x = col; x < col + cols; x++) {
@@ -227,20 +270,22 @@ function bandBox(fence: Item, step: number, columns: number, spacing: number): I
  */
 function packRuns(
   items: Item[], obstacles: Item[], step: number, columns: number, spacing: number,
+  blockers: Item[] = [],
 ): Item[] {
   const runs = mobileRuns(items);
   if (runs.length === 1 && !runs[0].band) {
-    return packMobileGrid(items, obstacles, step, columns, spacing);
+    return packMobileGrid(items, obstacles, step, columns, spacing, blockers);
   }
   const placed: Item[] = [];
   const behind = [...obstacles];
   for (const run of runs) {
     if (run.band) {
       const [band] = packMobileGrid(
-        [bandBox(run.band!, step, columns, spacing)], behind, step, columns, spacing);
+        [bandBox(run.band!, step, columns, spacing)], behind, step, columns, spacing,
+        blockers);
       if (band) { placed.push(band); behind.push(band); }
     }
-    const got = packMobileGrid(run.items, behind, step, columns, spacing);
+    const got = packMobileGrid(run.items, behind, step, columns, spacing, blockers);
     placed.push(...got);
     behind.push(...got);
   }
@@ -271,7 +316,7 @@ export function placeMobileItems(
   obstacles: Item[] = board.items,
   options: {
     step?: number, snap?: boolean, preserveSize?: boolean,
-    columns?: number, spacing?: number,
+    columns?: number, spacing?: number, blockers?: Item[],
   } = {},
 ): Item[] {
   const step = options.step && options.step > 0 ? options.step : baseStep();
@@ -279,6 +324,12 @@ export function placeMobileItems(
   const preserveSize = options.preserveSize === true;
   const columns = mobileColumnCount(options.columns ?? board.settings.mobileColumns);
   const spacing = Math.max(0, options.spacing ?? board.settings.spacing ?? 0);
+  // Cards that hold their own cells rather than setting the floor of the pack -
+  // an anchored card during a Rearrange. See packMobileGrid(). They are filtered
+  // like the obstacles below, for the same reason: neither the Desktop title
+  // card nor a hint has a place on this board to hold.
+  const blockers = (options.blockers || [])
+    .filter(it => it.type !== 'title' && it.type !== 'ghost');
   // Two kinds of card are never neighbours, and neither may set the first free
   // row - mobilePackStartRow() measures from the highest obstacle, so anything
   // left in this list that is not really in the way costs every import the rows
@@ -309,7 +360,14 @@ export function placeMobileItems(
     const pre = usableMemo(item.meta?.presnap);
     return fitMobile(pre ? { ...item, ...pre } : item, false, step, columns, spacing);
   });
-  const raw = packRuns(rawItems, rawObstacles, step, columns, spacing);
+  // A blocker is measured where it will still be sitting when the pack is done -
+  // it is not moving - so the unsnapped pass reads it through its presnap memo
+  // exactly as an obstacle is, and the live pass reads it as it stands.
+  const rawBlockers = blockers.map((item: Item) => {
+    const pre = usableMemo(item.meta?.presnap);
+    return fitMobile(pre ? { ...item, ...pre } : item, false, step, columns, spacing);
+  });
+  const raw = packRuns(rawItems, rawObstacles, step, columns, spacing, rawBlockers);
   if (!snap) return raw;
 
   const liveItems = preserveSize
@@ -322,7 +380,10 @@ export function placeMobileItems(
         return fitMobile({ ...item, w: box.w, h: box.h }, false, step, columns, spacing);
       });
   const liveObstacles = obstacles.map((item: Item) => fitMobile(item, false, step, columns, spacing));
-  return packRuns(liveItems, liveObstacles, step, columns, spacing).map((item, index) => ({
+  const liveBlockers = blockers.map((item: Item) => fitMobile(item, false, step, columns, spacing));
+  return packRuns(
+    liveItems, liveObstacles, step, columns, spacing, liveBlockers,
+  ).map((item, index) => ({
     ...item,
     meta: {
       ...item.meta,

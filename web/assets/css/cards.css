@@ -191,6 +191,49 @@
 .item[data-type="note"] .note-line.al-center { text-align: center; }
 .item[data-type="note"] .note-line.al-right { text-align: right; }
 
+/* ── The marker ──────────────────────────────────────────────────────────────
+   A line drawn over with a highlighter, set from the toolbar. `wash` in the
+   block model (canvas/note-model.ts), which writes the name onto the line as
+   data-wash and never anything else - the four names below are the allowlist
+   and the attribute is the only way a colour out of a file reaches the page.
+
+   The mapping is deliberately unscoped. Two elements that have nothing else to
+   do with each other carry this attribute - the line on the sheet, and the chip
+   on the toolbar button that says which colour is set - and the whole reason
+   the wash is an attribute rather than a class is that both of them then read
+   one name through one rule. Scoping it would mean writing the four colours
+   twice and finding out later that only one copy was updated. */
+[data-wash="amber"]      { --wash: var(--note-wash-amber); }
+[data-wash="terracotta"] { --wash: var(--note-wash-terracotta); }
+[data-wash="olive"]      { --wash: var(--note-wash-olive); }
+[data-wash="graphite"]   { --wash: var(--note-wash-graphite); }
+
+/* Around the words and not across the column, which is the difference between a
+   marker and a ruled band. A block-level line fills its container, so the box
+   is shrunk to the text with max-content and let back out to the column's width
+   for anything that wraps - at which point the mark does fill the width, which
+   is also what a real one does over a full line.
+
+   The negative margins are exactly the padding, so marking a line moves the
+   words not at all: the stroke overshoots the text into the sheet's own margin,
+   where a hand-drawn one goes, and the line under the caret does not jump
+   sideways as the colour is chosen. --note-pad is 9px at its smallest and the
+   overshoot is a third of an em, so it cannot reach the edge of the paper.
+
+   align-self and not margin auto: these are flex items in the column, and a
+   flex item with a width of its own is placed by the cross-axis alignment. The
+   text-align above still does the wrapped lines inside the box. */
+.item[data-type="note"] .note-line[data-wash] {
+  background: var(--wash);
+  width: max-content;
+  max-width: calc(100% + 0.64em);
+  padding-inline: 0.32em;
+  margin-inline: -0.32em;
+  border-radius: 0.18em;
+}
+.item[data-type="note"] .note-line[data-wash].al-center { align-self: center; }
+.item[data-type="note"] .note-line[data-wash].al-right { align-self: flex-end; }
+
 /* The formatting toolbar floats above the note while it is edited. Outside .card
    so the card's clip cannot cut it, and scaled by --iz like the rest of the item
    chrome so it holds its size on screen at any zoom. */
@@ -309,6 +352,27 @@
   min-width: 62px;
   padding: 0 10px;
   background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+
+/* The marker control, whose face is the colour rather than a picture of a pen.
+   The chip is drawn from --wash, which the data-wash block up by the note lines
+   sets - one attribute, one mapping, two very different elements reading it.
+
+   Unmarked there is no attribute and so no --wash, and the fallback is the whole
+   of what "none" looks like here: nothing inside a ring. The ring is on in both
+   states deliberately, so the chip does not change size or weight as a colour is
+   chosen - only what is in it. */
+.note-toolbar .ntb-chip {
+  display: block;
+  width: 17px;
+  height: 17px;
+  border-radius: 4px;
+  background: var(--wash, transparent);
+  box-shadow: inset 0 0 0 var(--hairline) color-mix(in srgb, var(--ink) 30%, transparent);
+}
+/* On the accent, where the ring would vanish into it. */
+.note-toolbar .ntb-btn.is-active .ntb-chip {
+  box-shadow: inset 0 0 0 var(--hairline) color-mix(in srgb, var(--accent-fg) 55%, transparent);
 }
 
 /* The alignment and vertical-placement glyphs, drawn as bars rather than trusted

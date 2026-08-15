@@ -53,17 +53,24 @@ body {
   font-size: var(--t-body);
   line-height: 1.62;
   text-wrap: pretty;
-  /* Fixed, so the grain below stays one screen of texture however long the
-     page runs, rather than sliding off the top of it. */
-  background-attachment: fixed;
+  /* The containing block for the grain below, which is the height of the page
+     and not the height of the window. min-height keeps a page shorter than the
+     screen covered to the foot. */
+  position: relative;
+  min-height: 100vh;
+  background-attachment: scroll;
 }
 
 /* The stock, and what makes this paper rather than a background colour. Same
    tile, same blend and the same dial as #grain in base.css and as the
-   changelog's own, so the two documents are printed on the same stuff. */
+   changelog's own, so the two documents are printed on the same stuff.
+
+   Absolute rather than fixed, so the tooth runs the length of the sheet and
+   travels with it. Fixing it makes one screen of texture that the prose slides
+   over, which is a backdrop rather than the stock the page is printed on. */
 body::before {
   content: "";
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 0;
   pointer-events: none;
@@ -74,10 +81,8 @@ body::before {
   opacity: calc(0.8 * var(--grain));
 }
 
-/* Over the grain. The changelog needs a fixed scroller here because the app
-   underneath it is pinned to the window; nothing is pinned on this page, so
-   this is only a stacking context and the body scrolls the way a document
-   does. */
+/* Over the grain, and nothing more than that - the body scrolls the way a
+   document does, so this is only a stacking context. */
 .pv {
   position: relative;
   z-index: 1;
