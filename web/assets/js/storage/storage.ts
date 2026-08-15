@@ -36,6 +36,7 @@ import { toast, busy } from '../notify.ts';
 import { idbGet, idbSet } from './idb.ts';
 import {
   libraryIndex, putLibraryBoard, getLibraryBoard, removeLibraryBoard, hasLibraryBoard,
+  trimLibrary, sweepLibrary,
 } from './library.ts';
 import {
   board, serializeBoard, loadBoard, markDirty, setTitle, bus, mergeBoard,
@@ -787,7 +788,14 @@ export async function stashCurrent() {
   const id = await ensureBoardId();
   const thumb = await makeThumb().catch(() => null);
   const data = serializeBoard();
-  const { blob, manifest } = await packBoard(data, { created });
+  // The shelf tolerates a missing asset; Export does not. Both go through
+  // packBoard() and the refusal was written for the file, so a board that had
+  // lost one photograph could not be shelved - and since every door out of a
+  // board shelves first, it could not be opened away from, switched, replaced
+  // or exported either. The only escape the interface offered was Clear
+  // everything. See the allowMissing note in storage/mbrd.ts: the shelf is the
+  // app's own working copy, and one that is a picture short beats none.
+  const { blob, manifest } = await packBoard(data, { created, allowMissing: true });
   created = manifest.created;
   await putLibraryBoard(id, blob, { title: board.title, at: Date.now(), thumb });
   return id;
@@ -827,6 +835,12 @@ async function shelveCurrent() {
   await drainSave();
   try {
     await stashCurrent();
+    // After the stash, and never allowed to fail it: an eviction that throws
+    // must not turn a board that *is* on the shelf into one the caller thinks
+    // is not. The sweep is here rather than at boot because this is the only
+    // place that adds to the shelf, so it is the only place it can grow.
+    await trimLibrary().catch(err => console.warn('[mbrd] shelf not trimmed:', err));
+    await sweepLibrary().catch(() => {});
     return true;
   } catch (err) {
     console.error('[mbrd] could not file the board on the shelf:', err);

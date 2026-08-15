@@ -274,6 +274,15 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
     // contextmenu on a barrel press; arming a timer for either would open the
     // menu twice or open it on a drag that was going to scroll.
     if (e.pointerType !== 'touch') return;
+    // Spend the suppression here, not only in the click that was supposed to
+    // consume it. A long press does not always synthesize one - iOS fires none
+    // at all, and neither does an engine that opened its own contextmenu - so a
+    // flag set at the menu and cleared only by a click could outlive its press
+    // and swallow the *next* tap on a tile, which reads as a dead thumb on the
+    // one surface a phone has. The click this exists to eat belongs to the
+    // press that opened the menu, so it can only arrive before this line runs
+    // again: clearing it on the following press is bounded and complete.
+    heldOpen = false;
     const id = tileIdAt(e.target);
     if (!id) return;
     holdFrom = { x: e.clientX, y: e.clientY, id };

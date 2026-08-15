@@ -99,7 +99,19 @@ export function planMerge(
   // was not in the incoming board is a dangling reference in *that* file, and
   // carrying it over would make it dangle here - where it would eventually
   // resolve, wrongly, against a host card that happens to share the string.
-  const arriving = new Set(items.map(i => i.id));
+  //
+  // Tested against the ids the file *arrived* with, not against the ids it
+  // leaves with. Those are different sets the moment dedupeIds() renames
+  // anything, and the difference is a hole: host owns `a`, the incoming file
+  // has an image `a` and a note whose meta.stuckTo says `a~2`, naming nothing.
+  // dedupeIds renames the image to `a~2` - so `a~2` is now in the outgoing set,
+  // the dangling reference matches it, and the note is pinned to a card it was
+  // never on. Verified against planMerge(); the rename is exactly what makes
+  // the collision, so the busier the host board the likelier it is.
+  //
+  // `was` is the arriving set, so a reference is kept only when the file it
+  // came from really contained that id - and is then put through the rename.
+  const arriving = new Set(was);
 
   for (const it of items) {
     if (!isRecord(it.meta)) continue;
@@ -107,18 +119,16 @@ export function planMerge(
     // out of a file, and nothing else holds them.
     const stuck = it.meta.stuckTo;
     if (typeof stuck === 'string') {
-      const next = now(stuck);
       // A host id that the arrival cannot legitimately name. Dropping the key
       // sends the question back to the measurement, which is what an absent
       // stuckTo already means - see sticky.ts. Better a note that re-measures
       // than a note pinned to a stranger.
-      if (arriving.has(next)) it.meta.stuckTo = next;
+      if (arriving.has(stuck)) it.meta.stuckTo = now(stuck);
       else delete it.meta.stuckTo;
     }
     const fence = it.meta.fence;
     if (typeof fence === 'string') {
-      const next = now(fence);
-      if (arriving.has(next)) it.meta.fence = next;
+      if (arriving.has(fence)) it.meta.fence = now(fence);
       else delete it.meta.fence;
     }
   }
@@ -127,11 +137,16 @@ export function planMerge(
 
   return {
     items,
+    // Filtered on the arriving id and then renamed, in that order - the same
+    // rule as the two meta keys above, and for the same reason. Testing
+    // `arriving.has(now(id))` asked whether the *result* of the rename names
+    // something, which a dangling reference can satisfy by colliding with a
+    // card the rename just created.
     connections: incoming.connections
-      .filter(c => arriving.has(now(c[0])) && arriving.has(now(c[1])))
+      .filter(c => arriving.has(c[0]) && arriving.has(c[1]))
       .map(c => (c.length > 2 ? [now(c[0]), now(c[1]), c[2]] : [now(c[0]), now(c[1])]) as Connection),
-    audioOrder: incoming.audioOrder.map(now).filter(id => arriving.has(id)),
-    tour: incoming.tour.map(now).filter(id => arriving.has(id)),
+    audioOrder: incoming.audioOrder.filter(id => arriving.has(id)).map(now),
+    tour: incoming.tour.filter(id => arriving.has(id)).map(now),
   };
 }
 

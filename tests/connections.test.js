@@ -17,7 +17,7 @@ import {
   board, byId, addItems, removeItems, restoreItems, undo, redo, loadBoard,
   serializeBoard, setBoardMode, toggleConnection, addConnections, areConnected,
   connectedTo, pairKey, MAX_CONNECTIONS, select, clearConnections,
-  updateConnection, connectionMeta,
+  updateConnection, connectionMeta, setTour, setAudioOrder,
 } from '../web/assets/js/state.ts';
 import { createCommands } from '../web/assets/js/commands.ts';
 import { fresh, note, photo, sticker } from './state-fixtures.js';
@@ -439,4 +439,41 @@ test('a setting put back to its default leaves no third element behind', () => {
   updateConnection(ca, cb, { color: 'line' });
   assert.equal(connectionMeta(ca, cb), null);
   assert.equal(board.connections[0].length, 2);
+});
+
+test('a binned card keeps its place in the tour and in the playlist', () => {
+  // setTour() and setAudioOrder() used to prune against the live board alone,
+  // while board-schema.ts prunes against the board-plus-bin union - and the
+  // comment argued the asymmetry was deliberate, on the grounds that a running
+  // tour must not stop at a card that is not there. That second half is true
+  // and is ui/tour.ts's job: stops() resolves board.tour through byId() on
+  // every read, and says so.
+  //
+  // What pruning here actually did was destroy the first half. Delete a card,
+  // make any later edit to the tour, and the deleted card's stop is gone from
+  // board.tour and from the file - so restoring it out of the bin no longer
+  // brings its place back. Off the undo stack, so there was nothing to undo.
+  const [a, b, c] = addItems([photo({ id: 'a' }), photo({ id: 'b' }), photo({ id: 'c' })]);
+  setTour([a.id, b.id]);
+  setAudioOrder([a.id, b.id]);
+
+  removeItems([b.id]);                       // to the bin, not gone
+  assert.ok(board.trash.some(t => t.item.id === b.id), 'the fixture needs it binned');
+
+  setTour([a.id, b.id, c.id]);                // any later edit
+  setAudioOrder([a.id, b.id, c.id]);
+
+  assert.ok(board.tour.includes(b.id), 'the binned card lost its stop');
+  assert.ok(board.audioOrder.includes(b.id), 'the binned card lost its place in the playlist');
+
+  // And the file carries it, which is what makes restoring work.
+  const saved = serializeBoard();
+  assert.ok(saved.tour.includes(b.id));
+  assert.ok(saved.audioOrder.includes(b.id));
+});
+
+test('an id that is on neither the board nor the bin is still pruned', () => {
+  const [a] = addItems([photo({ id: 'a' })]);
+  setTour([a.id, 'never-existed']);
+  assert.deepEqual(board.tour, [a.id]);
 });

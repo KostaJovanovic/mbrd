@@ -1250,7 +1250,7 @@ export function makeItem(partial: Record<string, unknown>): Item {
  * The list is the same one itemHashes() in util.js reports, less the item's own
  * asset. Anything added there wants adding here too.
  */
-const META_HASHES = ['cover', 'shot', 'thumb', 'preview'];
+const META_HASHES = ['cover', 'shot', 'thumb', 'preview', 'poster'];
 
 function normalizeMeta(meta: ItemMeta): ItemMeta {
   let out = meta;

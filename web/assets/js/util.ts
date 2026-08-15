@@ -262,8 +262,17 @@ export const isFamily = (v: unknown): v is string =>
 export const itemHashes = (
   item: { asset?: { hash?: string } | null, meta?: Record<string, unknown> | null } | null | undefined,
 ): string[] =>
-  [item?.asset?.hash, item?.meta?.cover, item?.meta?.shot, item?.meta?.thumb, item?.meta?.preview]
-    .filter((h): h is string => Boolean(h));
+  [
+    item?.asset?.hash, item?.meta?.cover, item?.meta?.shot,
+    item?.meta?.thumb, item?.meta?.preview,
+    // `poster` is a legacy key - nothing writes it any more, and
+    // optimize/optimize.ts still resolves it. It was on neither this list nor
+    // META_HASHES, so on a board old enough to carry one the bytes were in
+    // neither the packer's reference union nor the autosave sweep's: the first
+    // sweep after opening such a board deleted them, and the next export
+    // omitted them. A key nothing writes is still a key files contain.
+    item?.meta?.poster,
+  ].filter((h): h is string => Boolean(h));
 
 /**
  * Running against the local dev server - server.bat on localhost, or a LAN IP

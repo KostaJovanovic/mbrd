@@ -145,6 +145,55 @@ export function deselect(id: string) {
 }
 
 /**
+ * Whether a tap adds to the selection instead of replacing it.
+ *
+ * Here beside the selection for the same reason the tag filter below is: it is
+ * not board state - nothing is dirtied, there is nothing to undo, and it is
+ * deliberately not saved - but it changes what the three writers above mean, so
+ * it belongs where they are rather than in the pipeline that reads it.
+ *
+ * **It exists because a finger has no Shift key.** Every other way of holding
+ * more than one card is a modifier or a rectangle dragged with a mouse: on a
+ * phone the only ways left were a double-tap-drag band and Select all, and
+ * neither can say "these four". Tapping one card at a time can, which is what
+ * every phone gallery already teaches - so this is the gesture people arrive
+ * with, and the mode is what makes it available without breaking the one-tap
+ * meaning of a tap on the board a finger normally gets.
+ *
+ * A mode, and modes are expensive, so what it costs is worth stating: while it
+ * is on, a tap on a card toggles it rather than picking it alone, and nothing a
+ * finger does to the *board* - a pan, a tap on bare ground, opening the menu -
+ * clears the selection any more. The board is otherwise unchanged: dragging a
+ * selected card still moves the group, an unselected one still pans, pinch still
+ * zooms. It ends from the menu row it was started from, from Escape, and from a
+ * board being loaded under it.
+ */
+let multiSelect = false;
+
+export const isMultiSelect = () => multiSelect;
+
+export function setMultiSelect(on: boolean) {
+  const next = !!on;
+  if (multiSelect === next) return;
+  multiSelect = next;
+  // On 'selection' rather than an event of its own: what changed is how the
+  // selection behaves, every listener that cares about one cares about the
+  // other, and a second event would be a second thing to remember to emit.
+  bus.emit('selection');
+}
+
+/**
+ * Put the mode down without announcing it, for a caller already emitting.
+ *
+ * loadBoard()'s reset, and the same shape as resetDirty() below and as the Set
+ * being cleared directly beside it: a load is halfway through replacing the
+ * board when it gets here, and an event from this point would have listeners
+ * painting against a board that is not finished. It emits 'selection' itself at
+ * the end, which is where the mark in main.ts catches up.
+ */
+export function resetMultiSelect() { multiSelect = false; }
+
+/**
  * Which tags the board is being filtered to, or an empty set for "everything".
  *
  * Here beside the selection because it is the same kind of thing and wants the

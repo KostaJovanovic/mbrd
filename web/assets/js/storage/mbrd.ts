@@ -150,7 +150,8 @@ const json = (obj: unknown) => enc.encode(JSON.stringify(obj, null, 2));
  */
 export async function packBoard(
   boardData: PackedBoard,
-  { created = null }: { created?: string | null } = {},
+  { created = null, allowMissing = false }:
+    { created?: string | null, allowMissing?: boolean } = {},
 ) {
   const now = new Date();
   const manifest = {
@@ -289,7 +290,24 @@ export async function packBoard(
     if (asset) assets.push({ hash, asset, label: assetLabel(null, asset) });
   }
 
-  if (missing.length) {
+  // `allowMissing` is the shelf, and only the shelf.
+  //
+  // The refusal above is right about a *file*: a .mbrd with a hole in it,
+  // written under an "Exported" toast onto a board marked clean, is the worst
+  // outcome this module has. But shelveCurrent() packs through here too, and
+  // every door out of a board - Open, New, Switch - calls it first. So one
+  // photograph whose bytes had gone took the whole board hostage: it could not
+  // be opened away from, switched, replaced or exported, and the only escape
+  // the interface offered was Clear everything, which is the one thing that
+  // cannot be undone.
+  //
+  // The shelf is not a file somebody is handed; it is the app's own working
+  // copy of a board it is about to put down, and a working copy that is one
+  // picture short is worth incomparably more than no copy at all. The item
+  // stays on the board with its hash intact, exactly as restoreSession() leaves
+  // it, so if the bytes turn up again the card comes back. What the caller must
+  // do is say so, which is why the count is returned rather than swallowed.
+  if (missing.length && !allowMissing) {
     const shown = missing.slice(0, 3).join(', ');
     const rest = missing.length > 3 ? ` and ${missing.length - 3} more` : '';
     throw new Error(
@@ -460,10 +478,24 @@ function noteMarkdown(item: Item) {
  * ...and back. Tolerant on the way in, because by design these are files a
  * person may have typed into: the heading marker is optional, so is the blank
  * line under it, and trailing whitespace is nobody's content.
+ *
+ * The marker is *kept*, which it was not. Stripping it here made this the
+ * inverse of nothing: noteMarkdown() writes `# title` and this returned
+ * `title`, so the sidecar text never equalled flattenNoteRich(rich) and the
+ * reconciliation below rebuilt every note's blocks from plaintext on an
+ * ordinary export and re-import. What that costs is everything the plaintext
+ * cannot carry - each block's alignment reset to left, and every `wash` key
+ * gone, which is the whole highlighter feature. Nobody edited anything; the
+ * file simply went out and came back.
+ *
+ * Tolerance is unaffected: a note typed by hand with no marker still parses,
+ * and still differs from the flattened model, and is still rebuilt - which is
+ * the right answer, because that file really has been edited. What this fixes
+ * is the file the app itself wrote ten seconds earlier.
  */
 function parseNote(text: string) {
   const lines = text.replace(/\r\n/g, '\n').split('\n');
-  const title = (lines.shift() || '').replace(/^#+\s*/, '').trim();
+  const title = (lines.shift() || '').trim();
   while (lines.length && !lines[0].trim()) lines.shift();
   while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
   return [title, ...lines].join('\n').replace(/\n+$/, '');

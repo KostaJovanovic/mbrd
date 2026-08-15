@@ -188,6 +188,9 @@ export interface MenuCommands {
   selectAll: () => unknown;
   rearrange: () => unknown;
   rearrangeFence: (id: string) => unknown;
+  // The touch multi-select mode: whether it is on, and the one way in or out.
+  multiSelect: () => boolean;
+  toggleMultiSelect: () => unknown;
   reload: () => unknown;
   fit: () => unknown;
   recenter: () => unknown;
@@ -287,6 +290,15 @@ let opener: HTMLElement | null = null;
 // still hang below the bar and must still not grab the keyboard.
 let lastX = 0, lastY = 0;
 let lastOpts: MenuOpts = {};
+
+/**
+ * Whether the menu that is up was opened by a finger.
+ *
+ * Set by openContextMenu() from what the pipeline knows about the press. It is
+ * the one thing this module asks about the *pointer* rather than about the
+ * board, and exactly one row reads it - see multiSelectEntry().
+ */
+let byTouch = false;
 
 /**
  * Told after every close, whoever caused it.
@@ -533,7 +545,13 @@ export function openAnchored(rect: MenuAnchor, entries: MenuEntry[],
  * half zoom and half board-wide placement, and the Feed can honour neither.
  */
 export function openContextMenu(clientX: number, clientY: number, itemId: string | null,
-  selectionSize: number, { mobile = false }: { mobile?: boolean } = {}) {
+  selectionSize: number,
+  { mobile = false, touch = false }: { mobile?: boolean, touch?: boolean } = {}) {
+  // Which pointer opened this menu, for the one row that is about the pointer -
+  // see multiSelectEntry(). Written to a module field rather than threaded
+  // through four entry builders: it is a fact about the menu that is up, which
+  // is what this module's other module fields already hold.
+  byTouch = touch;
   if (mobile) {
     if (!itemId) return;
     close();
@@ -743,6 +761,13 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // the band below is the first thing a photograph shows.
     { label: many ? 'Unstick these' : 'Unstick', icon: 'i-lock-open',
       hidden: !unstickable, action: () => cmds!.unstick() },
+    // The card menu's copy of the board menu's row, and it earns the duplication
+    // that this file otherwise refuses: a hold on a *card* is how somebody starts
+    // collecting - the card under the thumb is already the first of the group -
+    // and sending them to bare board to find the switch would mean beginning by
+    // pointing at nothing. Never on the Feed, which has no selection to build.
+    // Never on a mouse either; see multiSelectEntry.
+    ...(mobile ? [] : multiSelectEntry()),
     // First on everything that is not a note, because on a wall of thumbnails it
     // is the thing you most often want and the one row that was not reachable
     // any other way. It carries no accelerator on a note: the double-click there
@@ -969,6 +994,39 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
  * two distributions. Each closes the menu and files one undo step through the
  * command, so it reads and undoes as the single tidy-up it is.
  */
+/**
+ * The finger's Shift key, as one row on both board menus.
+ *
+ * A phone can hold a group by dragging a band with a double tap or by taking
+ * the whole board with Select all, and by nothing else: every other way of
+ * saying "these four" in this app is a modifier key. So the row turns on a mode
+ * in which a tap adds instead of replacing - see isMultiSelect() in
+ * board-store.ts, which is where the mode is described and where the argument
+ * for having one at all lives.
+ *
+ * **Only on a menu a finger opened**, which is what `byTouch` is for and the
+ * only thing this module asks about the pointer. A mouse already has three
+ * modifiers and a marquee, and a row offering a slower version of Shift to
+ * somebody holding Shift is a row explaining the app to itself. It stays on
+ * once the mode is on whatever opened the menu, because a mode with no way out
+ * is worse than a row in the wrong place - and a mode entered with a finger and
+ * left by picking up the mouse is exactly the case that would strand it.
+ *
+ * One row that flips, the shape the tour and Lock use: the mode is on or it is
+ * not, and the way out being where the way in was is the whole reason a mode is
+ * bearable. The tick says which, in the column the snap and grid rows use.
+ */
+function multiSelectEntry(): MenuEntry[] {
+  const on = cmds!.multiSelect();
+  if (!byTouch && !on) return [];
+  return [{
+    label: on ? 'Done selecting' : 'Select multiple',
+    icon: 'i-select-all',
+    check: on,
+    action: () => cmds!.toggleMultiSelect(),
+  }];
+}
+
 function alignDistributeEntries(): MenuEntry[] {
   return [
     { label: 'Align left', icon: 'i-align-left', action: () => cmds!.alignSelection('left') },
@@ -1177,6 +1235,9 @@ function canvasEntries(at: Point): MenuEntry[] {
       action: () => cmds!.paste(at) },
     { label: 'Select all', icon: 'i-select-all', accel: 'Ctrl A',
       action: () => cmds!.selectAll() },
+    // Beside Select all, which is the other half of the same sentence: all of
+    // them, or the ones you point at. Absent on a mouse - see multiSelectEntry.
+    ...multiSelectEntry(),
     // The filter, beside Select all because the two are the same idea at
     // opposite ends: everything, or only what carries a tag.
     // Ticked in the label when one is up, so the state is visible from the row

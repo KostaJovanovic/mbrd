@@ -42,6 +42,7 @@ import {
   board, selection, selectAll, removeItems, setSetting, undo, redo, byId,
   raiseSelection, lowerSelection, selectionHasStackOverlap,
   duplicateItems, select,
+  isMultiSelect, setMultiSelect,
   copyItems, pasteItems, clipboardSize,
   setBoardMode as selectBoardMode,
   restoreTitleCard, resetTitlePosition,
@@ -495,6 +496,24 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     ...viewCommands(vp, { resetAppearance, perf }),
 
     selectAll,
+    // The finger's Shift key - see isMultiSelect() in board-store.ts for what
+    // the mode changes and why a phone needs one at all.
+    //
+    // The command is a toggle and the menu row it hangs off says which way it
+    // is set, so there is one thing to find rather than a Start and a Stop that
+    // can only ever be half-right. Turning it *off* leaves the selection alone:
+    // the group is the whole point of having been in the mode, and dropping it
+    // on the way out would mean the mode could only be left by pressing the
+    // thing you wanted to press next.
+    multiSelect: isMultiSelect,
+    toggleMultiSelect: () => {
+      const on = !isMultiSelect();
+      setMultiSelect(on);
+      // The standing mark that says the app is in a mode is not written here -
+      // it is synced off the bus in main.ts, so that every way *out* of the mode
+      // takes it with it. See there.
+      if (on) toast('Tap cards to add them. Drag a selected one to move them all.');
+    },
     undo, redo,
     deleteSelection: () => {
       if (!selection.size) return;
@@ -519,7 +538,7 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
 
     // --- right-click menu ---
     contextMenu: (x: number, y: number, id: string | null, count: number,
-      opts?: { mobile?: boolean }) => openContextMenu(x, y, id, count, opts),
+      opts?: { mobile?: boolean, touch?: boolean }) => openContextMenu(x, y, id, count, opts),
     selectionHasStackOverlap,
     raise: raiseSelection,
     lower: lowerSelection,

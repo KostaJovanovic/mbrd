@@ -138,3 +138,41 @@ test('content hashes are not ids and are never remapped', () => {
   assert.notEqual(plan.items[0].id, 'track', 'the id did collide');
   assert.equal(plan.items[0].meta.cover, hash, 'and the hash is untouched');
 });
+
+test('a dangling reference does not latch onto a card the rename just created', () => {
+  // The failure this module's header says it exists to prevent, reached by the
+  // rename rather than in spite of it.
+  //
+  // The host owns `a`. The incoming file has an image `a` and a note whose
+  // meta.stuckTo says `a~2` - a reference to nothing, in that file. dedupeIds()
+  // renames the image to `a~2` to clear the collision, and the guard used to
+  // ask whether the *renamed* id was among the arrivals: it is, because the
+  // rename had just made it. So the note came out pinned to a photograph it
+  // had never been on, silently, and the busier the host board the likelier
+  // the collision.
+  const plan = planMerge(incoming([
+    { id: 'a', type: 'image', w: 200, h: 200 },
+    { id: 'note', type: 'note', meta: { stuckTo: 'a~2' } },
+  ]), ['a']);
+
+  const [photo, note] = plan.items;
+  assert.equal(photo.id, 'a~2', 'the fixture depends on this being the rename');
+  assert.equal(note.meta.stuckTo, undefined,
+    'a reference the file never resolved must not resolve here');
+});
+
+test('a dangling fence, connection, tour stop and track are dropped the same way', () => {
+  const plan = planMerge(incoming(
+    [
+      { id: 'a', type: 'image', w: 200, h: 200 },
+      { id: 'note', type: 'note', meta: { fence: 'a~2' } },
+    ],
+    { connections: [['a~2', 'note']], tour: ['a~2'], audioOrder: ['a~2'] },
+  ), ['a']);
+
+  const note = plan.items.find(i => i.id === 'note');
+  assert.equal(note.meta.fence, undefined);
+  assert.deepEqual(plan.connections, []);
+  assert.deepEqual(plan.tour, []);
+  assert.deepEqual(plan.audioOrder, []);
+});
