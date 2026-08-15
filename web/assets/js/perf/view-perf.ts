@@ -18,15 +18,6 @@ import { cullProfile, viewStats } from '../canvas/items.ts';
 import { mobilePerfFlags } from '../canvas/viewport.ts';
 
 /**
- * @param vp  the live Viewport - only `mobile()` touches it, to re-apply after
- *            a kill switch is thrown, which is the whole of what is asked of it
- *            and so the whole of what the parameter names.
- */
-export function createViewPerf(vp: { apply(): void }) {
-  return makeViewPerf(vp);
-}
-
-/**
  * One session's profiler, as its callers know it.
  *
  * Inferred from the factory rather than written out, because the object below
@@ -35,9 +26,14 @@ export function createViewPerf(vp: { apply(): void }) {
  * into the command surface (main.ts hands it to createCommands), and an
  * injection needs a name for what is being handed over.
  */
-export type ViewPerf = ReturnType<typeof makeViewPerf>;
+export type ViewPerf = ReturnType<typeof createViewPerf>;
 
-function makeViewPerf(vp: { apply(): void }) {
+/**
+ * @param vp  the live Viewport - only `mobile()` touches it, to re-apply after
+ *            a kill switch is thrown, which is the whole of what is asked of it
+ *            and so the whole of what the parameter names.
+ */
+export function createViewPerf(vp: { apply(): void }) {
   let on = false, raf = 0, lastRaf = 0, moved = false;
   // An on-screen readout, built lazily the first time it is asked for. The
   // point of it is the phone: a device with no console the median frame rate can
@@ -413,7 +409,7 @@ function makeViewPerf(vp: { apply(): void }) {
  * is more than can be said for two readings either side of a reload. Arming an
  * already-armed profiler restarts its counters, so each run is measured clean.
  */
-export function initPerfHash(perf: ReturnType<typeof createViewPerf>) {
+export function initPerfHash(perf: ViewPerf) {
   const armPerf = () => {
     const run = location.hash.match(/perf(\d)?/);
     if (!run) {

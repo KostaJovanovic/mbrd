@@ -89,7 +89,7 @@ html, body {
    same family and the whole rule is a no-op. Grouped rather than repeated
    thirteen times, and kept next to the body rule it is the counterweight to. */
 .card-icon, .card-meta, .item-label, .wordmark :is(h1, h2), .wordmark .sub,
-.side-sec h2, .field > span, .hint, .keys li, .side-foot,
+.side-sec h2, .field > span, .dk-dial > span, .hint, .keys li, .side-foot,
 #bin-panel h2, #bin-none, #bin-hint, #drop-overlay div, #toast {
   font-family: var(--font-display);
 }
@@ -463,7 +463,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 @media (forced-colors: active) {
   #menu-btn, #mobile-header-edit-btn, #mobile-find-btn, #bin, #bin-btn,
   #history-ctl, #zoom-ctl, #toolbar, #nowplaying, #busy,
-  #sidebar, #header-panel, .player-window, #search, #ctx-menu, #pick {
+  #sidebar, #header-panel, .player-window, #search, #ctx-menu, #ctx-child, #pick {
     border: 1px solid CanvasText;
   }
   /* Keyboard focus stays obvious even where the app draws its own accent ring. */

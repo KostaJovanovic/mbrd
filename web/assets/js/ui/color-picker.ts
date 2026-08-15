@@ -59,7 +59,7 @@ let current: Promise<string | null> | null = null;
  * demands of a swatch and the one `<input type="color">` will accept, so it is
  * produced here rather than anywhere the value passes through afterwards.
  */
-export function hsvToHex(h: number, s: number, v: number): string {
+function hsvToHex(h: number, s: number, v: number): string {
   const c = v * s;
   const hp = (((h % 360) + 360) % 360) / 60;
   const x = c * (1 - Math.abs((hp % 2) - 1));
@@ -84,7 +84,7 @@ export function hsvToHex(h: number, s: number, v: number): string {
  * using it, and moving the handle to grey on the way past `#f` would fight the
  * typing.
  */
-export function hexToHsv(raw: unknown): Hsv | null {
+function hexToHsv(raw: unknown): Hsv | null {
   const s = String(raw ?? '').trim().toLowerCase();
   const full = /^#[0-9a-f]{6}$/.test(s) ? s
     : /^#[0-9a-f]{3}$/.test(s) ? '#' + s.slice(1).replace(/./g, c => c + c)

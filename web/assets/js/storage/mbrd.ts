@@ -33,8 +33,8 @@ import { VERSION } from '../version.js';
 import { parseNoteText, flattenNoteRich } from '../canvas/note-model.ts';
 import type { Item, TrashEntry, FontSpec } from '../board-model.ts';
 
-export const FORMAT = 'mbrd';
-export const FORMAT_VERSION = 1;
+const FORMAT = 'mbrd';
+const FORMAT_VERSION = 1;
 export const MIME = 'application/vnd.mbrd+zip';
 
 /**
@@ -63,7 +63,7 @@ export const MIME = 'application/vnd.mbrd+zip';
  * reason it is here while it is empty. A gate added the day it is first needed
  * is a gate no existing reader checks.
  */
-export const SUPPORTED_FEATURES: ReadonlySet<string> = new Set<string>();
+const SUPPORTED_FEATURES: ReadonlySet<string> = new Set<string>();
 
 const ASSETS_DIR = 'assets/';
 

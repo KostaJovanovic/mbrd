@@ -39,7 +39,18 @@
    print scales as a print: 12px of mat is a frame on a thumbnail and a
    hairline on a photograph two thousand across. Taking it off the shorter
    side is what makes the mat the same real width on all four edges. */
-:root[data-whimsy="0"] .item[data-type="image"] {
+/* :not([data-bare]) here and on the two rules below it, which is the whole of
+   what a cut-out has to say to this tier.
+
+   A print is the one thing a cut-out is not. The mat, the chin and the hairline
+   round the picture are a photograph *in* something, and "No card" means there
+   is nothing to be in - so on a leaf or a logo the print treatment drew the mat
+   as a band of empty board on three sides, the chin as a fourth, and then put a
+   pale rule round the whole rectangle: a frame round nothing, which is the fault
+   the cut-out exists to fix, arriving by another door at one whimsy tier only.
+   Exempting the rule is right rather than overriding it further down, because
+   what is true is that this tier's print does not apply to a shape. */
+:root[data-whimsy="0"] .item[data-type="image"]:not([data-bare]) {
   --mat:  calc(var(--half-min, 120px) * 0.08);
   --chin: calc(var(--half-min, 120px) * 0.26);
   /* A print has a cut edge, not a mathematical one - so not zero, but a long
@@ -61,7 +72,7 @@
    Widths written out are unambiguous for a replaced box.
    Both pictures of an animated pair are matched, so a frozen GIF sits in its
    frame exactly where the moving one did. */
-:root[data-whimsy="0"] .item[data-type="image"] .item-body img {
+:root[data-whimsy="0"] .item[data-type="image"]:not([data-bare]) .item-body img {
   position: absolute;
   left: var(--mat);
   top:  var(--mat);
@@ -87,7 +98,7 @@
    (six classes to its five), so it holds whatever the source order. The picture
    then letterboxes inside the mat window; the hairline traces the window, which
    is the honest cost of a print that has been told not to crop. */
-:root[data-whimsy="0"] .item[data-type="image"][data-fit-own="contain"] .item-body img {
+:root[data-whimsy="0"] .item[data-type="image"][data-fit-own="contain"]:not([data-bare]) .item-body img {
   object-fit: contain;
 }
 /* The caption stops being a strip laid across the foot of the picture and
@@ -172,7 +183,7 @@
 
 /* Lozenges become squares. Same target size, no tilt. */
 :root[data-whimsy="2"] .grip,
-:root[data-whimsy="2"] :is(.field, .np-volume, .ctx-range) input[type="range"]::-webkit-slider-thumb { transform: none; }
+:root[data-whimsy="2"] :is(.field, .np-volume, .ctx-range, .dk-dial) input[type="range"]::-webkit-slider-thumb { transform: none; }
 
 /* The toast sits straight rather than tossed onto the page. */
 :root[data-whimsy="2"] .toast-line {
@@ -423,12 +434,21 @@
    ring lands on top of the picture. Still an inset shadow rather than a border,
    for the reason .card gives - the item clips at its own radius and a real
    border would be shaved at the corners. */
-:root[data-whimsy="2"] .item[data-type="image"]::after,
-:root[data-whimsy="2"] .item[data-type="video"]::after,
-:root[data-quality="light"]:not([data-q-shadows]) .item[data-type="image"]::after,
-:root[data-quality="light"]:not([data-q-shadows]) .item[data-type="video"]::after,
-:root[data-q-shadows="off"] .item[data-type="image"]::after,
-:root[data-q-shadows="off"] .item[data-type="video"]::after {
+/* :not([data-bare]) on every one of them, and it is the same sentence the
+   hover ring and the far-zoom edge already say in items.css: a cut-out has no
+   card, so it has no edge for a ring to trace. Drawn anyway, this one was the
+   worst of the three - it is an *inset* ring on a pseudo-element that paints
+   over the picture, so on a leaf or a logo with a transparent background it
+   drew a rectangle straight across the shape, which is precisely the frame
+   round nothing that "No card" exists to take away. Written into the selectors
+   rather than undone by a rule underneath, because the honest statement is that
+   the tier's edge does not apply here, not that it applies and is then removed. */
+:root[data-whimsy="2"] .item[data-type="image"]:not([data-bare])::after,
+:root[data-whimsy="2"] .item[data-type="video"]:not([data-bare])::after,
+:root[data-quality="light"]:not([data-q-shadows]) .item[data-type="image"]:not([data-bare])::after,
+:root[data-quality="light"]:not([data-q-shadows]) .item[data-type="video"]:not([data-bare])::after,
+:root[data-q-shadows="off"] .item[data-type="image"]:not([data-bare])::after,
+:root[data-q-shadows="off"] .item[data-type="video"]:not([data-bare])::after {
   content: '';
   position: absolute;
   inset: 0;

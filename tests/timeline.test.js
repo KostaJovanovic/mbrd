@@ -484,3 +484,76 @@ test('replaying to a point produces the board undoing to it produces', () => {
     assert.equal(fingerprint(), marks.get(target), `replay to ${target}`);
   }
 });
+
+// ---------------------------------------------------------------------------
+// Where the two engines are allowed to disagree, and where they are not
+// ---------------------------------------------------------------------------
+//
+// The test above walks the closures to *both ends* and the records across every
+// mark, and it was green through a bug that permanently deleted cards. What it
+// could not see is the middle of a run: undo is finer than the strip on purpose,
+// so several entries in the stack collapse to one step, and the marker moved
+// once per entry rather than once per step. Three nudges undone walked it back
+// three steps, and it came to rest two steps behind the board. Everything after
+// that rebuilt an older board - and a card added and then left alone is the one
+// that never comes back, because no later step mentions it.
+//
+// The reason the end-to-end walk missed it: `at` is clamped at zero, so undoing
+// all the way hides any amount of over-counting. These check where it cannot.
+
+const idsOnBoard = () => board.items.map(i => i.id).sort().join(',');
+
+test('undo inside a run leaves the marker on the run it is inside', () => {
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  move(a.id, 10, 0);
+  move(a.id, 10, 0);
+  move(a.id, 10, 0);
+  assert.equal(timelineSteps().length, 2, 'the three nudges are one step');
+  assert.equal(timelineAt(), 2);
+
+  undo();
+  assert.equal(timelineAt(), 2, 'one nudge back is still inside the step');
+  undo();
+  assert.equal(timelineAt(), 2, 'and so is the second');
+  undo();
+  assert.equal(timelineAt(), 1, 'the whole run off takes the marker with it');
+  redo();
+  assert.equal(timelineAt(), 2, 'and entering it again brings it back');
+});
+
+test('a card no step touched survives a replay after a partial undo', () => {
+  // Added first and never mentioned again - the shape of a card somebody puts
+  // at the top of a board and leaves there.
+  const [keep] = addItems([note({ x: 0, y: 0 })]);
+  const [a] = addItems([photo({ x: 400, y: 0 })]);
+  move(a.id, 10, 0);
+  move(a.id, 10, 0);
+  move(a.id, 10, 0);
+  undo();
+  undo();
+
+  // Not the fingerprint: mid-run the board is deliberately finer than the step,
+  // so the two differ by two nudges and that is the design. Membership is not
+  // allowed to differ by anything, because a run never adds or removes a card.
+  const seen = idsOnBoard();
+  replayTo(timelineAt());
+  assert.equal(idsOnBoard(), seen, 'the replay lost a card the board still had');
+  assert.ok(byId(keep.id), 'the untouched card is gone');
+});
+
+test('a run merged into a checkpointed step still replays', () => {
+  // CHECKPOINT_EVERY is 50 and private to the module; this lands exactly on it,
+  // because the bug is a picture filed under a mark whose step then changed.
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  while (timelineSteps().length < 49) addItems([photo({ x: 0, y: 0 })]);
+  move(a.id, 10, 0);
+  assert.equal(timelineSteps().length, 50, 'the run should land on the mark');
+  move(a.id, 10, 0);
+  move(a.id, 10, 0);
+  assert.equal(timelineSteps().length, 50, 'and should still be one step');
+
+  const top = fingerprint();
+  replayTo(0);
+  replayTo(50);
+  assert.equal(fingerprint(), top, 'the checkpoint at 50 was a step and a half old');
+});

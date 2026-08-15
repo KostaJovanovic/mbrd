@@ -142,14 +142,28 @@ export function openViewer(id: string) {
   metaEl!.textContent = describe(item);
   bodyEl!.replaceChildren();
   dlg.dataset.type = item.type;
+  // Which of the two shapes this viewing is - a lightbox or a page. The test is
+  // on the view that was *dispatched to* rather than on the item's type, and
+  // that is the whole reason it is here and not a lookup in the stylesheet: a
+  // .docx that imported as an `image` because import/document.ts found its baked
+  // preview is type image and opens as a document, and a document read on a
+  // black ground with no page under it would be unreadable. viewFor() has
+  // already answered this question; this only writes down what it said.
+  if (view === VIEWS.image || view === VIEWS.video) dlg.dataset.media = '';
+  else delete dlg.dataset.media;
   view(item, bodyEl!);
+  // The picture, once the view has mounted it. A clip is deliberately left out:
+  // its controls are things to press, and a wheel or a drag over them meaning
+  // zoom would take the scrubber away.
+  const pic = bodyEl!.querySelector<HTMLImageElement>('img.viewer-media');
+  if (pic) detachZoom = attachZoomPan(pic, bodyEl!);
   dlg.showModal();
   // The body, not the close button. Scrolling a long file with the keyboard is
   // the first thing anybody does in here, and a focused button swallows Space.
   bodyEl!.focus?.();
 }
 
-export function closeViewer() {
+function closeViewer() {
   if (dlg?.open) dlg.close();   // 'close' runs teardown
 }
 
@@ -180,9 +194,185 @@ function teardown() {
   // - it checks that the page list is still connected between pages.
   pdfDoc?.destroy();
   pdfDoc = null;
+  // The zoom's listeners are on the picture, which is about to be thrown away -
+  // but two of them are not: the window resize and the stage's own click. This
+  // is what takes those off, and it has to run before the body is emptied so the
+  // handler cannot fire against a picture that is no longer in the document.
+  detachZoom?.();
+  detachZoom = null;
   bodyEl?.replaceChildren();
   // Only bound as a listener on the dialog, so there is one here to clear.
   delete dlg!.dataset.type;
+  delete dlg!.dataset.media;
+}
+
+// ---------------------------------------------------------------------------
+// Zoom and pan, for the one view that is looked at rather than read
+// ---------------------------------------------------------------------------
+
+/** Torn down with the viewing. See teardown(). */
+let detachZoom: (() => void) | null = null;
+
+/** How far in a picture goes. Past this a photograph is pixels, not detail. */
+const ZOOM_MAX = 8;
+/** What one plain click asks for, which is a look rather than an inspection. */
+const ZOOM_CLICK = 2.5;
+/** Movement past this, in screen pixels, makes a press a drag and not a click. */
+const DRAG_SLOP = 6;
+
+/**
+ * Wheel, pinch and drag over an open picture.
+ *
+ * The viewer's whole argument is that a card is too small to see a photograph
+ * in; fitting it to the window is most of the answer and not all of it, because
+ * a 6000px scan fitted to a laptop is still a tenth of its own detail. So the
+ * fitted picture is where this starts and not where it ends.
+ *
+ * **One transform on the picture itself.** No wrapper, no second element to keep
+ * in step: `translate(...) scale(...)` written to the element's own style, which
+ * is the compositor's cheapest path and survives the picture being swapped
+ * underneath it (the crop's display copy arrives asynchronously and replaces
+ * `src`, not the node). Setting `.style` from script is fine under the CSP; a
+ * `style` attribute in markup would not be.
+ *
+ * **The zoom goes to the pointer, not to the middle.** With the origin at the
+ * centre, holding the point under the cursor still costs one correction:
+ * `t += (cursor - centre) * (1 - next/current)`. Zooming to the middle of the
+ * window instead is the thing that makes every other image viewer feel like it
+ * is fighting you - you point at a face and the face leaves.
+ *
+ * **The pan is clamped, not free.** Half the scaled picture past the window edge
+ * plus a margin, so a fling cannot put the thing somewhere it has to be hunted
+ * for. Returns its own detach, because two of the four listeners are not on the
+ * picture and would outlive it.
+ */
+function attachZoomPan(img: HTMLElement, stage: HTMLElement): () => void {
+  let scale = 1, tx = 0, ty = 0;
+
+  const paint = () => {
+    img.style.transform = scale === 1 ? '' : `translate(${tx}px, ${ty}px) scale(${scale})`;
+    img.classList.toggle('is-zoomed', scale > 1);
+  };
+  const reset = () => { scale = 1; tx = 0; ty = 0; paint(); };
+
+  const clampPan = () => {
+    // offsetWidth is the *laid out* size, which is the fitted picture - the
+    // transform does not touch it. That is what makes this arithmetic stable
+    // while the thing it is measuring is scaled.
+    const w = img.offsetWidth || 1;
+    const h = img.offsetHeight || 1;
+    const maxX = Math.max(0, (w * scale - innerWidth) / 2) + 40;
+    const maxY = Math.max(0, (h * scale - innerHeight) / 2) + 40;
+    tx = Math.min(maxX, Math.max(-maxX, tx));
+    ty = Math.min(maxY, Math.max(-maxY, ty));
+  };
+
+  const zoomTo = (next: number, cx: number, cy: number) => {
+    const ns = Math.min(ZOOM_MAX, Math.max(1, next));
+    if (ns === scale) return;
+    const r = img.getBoundingClientRect();
+    const dx = cx - (r.left + r.width / 2);
+    const dy = cy - (r.top + r.height / 2);
+    tx += dx * (1 - ns / scale);
+    ty += dy * (1 - ns / scale);
+    scale = ns;
+    // All the way out is all the way back: a picture at 1 that is still offset
+    // is a picture sitting somewhere nobody put it.
+    if (scale === 1) { tx = 0; ty = 0; }
+    clampPan();
+    paint();
+  };
+
+  const onWheel = (e: WheelEvent) => {
+    e.preventDefault();
+    zoomTo(scale * Math.exp(-e.deltaY * 0.0015), e.clientX, e.clientY);
+  };
+
+  // pointerId -> where it is now. Two of these is a pinch; one is a drag.
+  const points = new Map<number, { x: number, y: number }>();
+  let pinchFrom = 0, pinchScale = 1, lastX = 0, lastY = 0;
+  let downX = 0, downY = 0, dragging = false, moved = false;
+
+  const onDown = (e: PointerEvent) => {
+    img.setPointerCapture(e.pointerId);
+    points.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (points.size === 1) { downX = e.clientX; downY = e.clientY; moved = false; }
+    if (points.size === 2) {
+      const [a, b] = [...points.values()];
+      pinchFrom = Math.hypot(a.x - b.x, a.y - b.y);
+      pinchScale = scale;
+      dragging = false;
+      // A pinch that ended where it started is still a pinch, never a click.
+      moved = true;
+    } else if (scale > 1) {
+      dragging = true;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      img.classList.add('is-panning');
+    }
+  };
+
+  const onMove = (e: PointerEvent) => {
+    if (!points.has(e.pointerId)) return;
+    points.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (Math.hypot(e.clientX - downX, e.clientY - downY) > DRAG_SLOP) moved = true;
+    if (points.size === 2 && pinchFrom) {
+      const [a, b] = [...points.values()];
+      const now = Math.hypot(a.x - b.x, a.y - b.y);
+      zoomTo(pinchScale * (now / pinchFrom), (a.x + b.x) / 2, (a.y + b.y) / 2);
+      return;
+    }
+    if (!dragging) return;
+    tx += e.clientX - lastX;
+    ty += e.clientY - lastY;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    clampPan();
+    paint();
+  };
+
+  const onUp = (e: PointerEvent) => {
+    points.delete(e.pointerId);
+    if (points.size < 2) pinchFrom = 0;
+    if (!points.size) {
+      dragging = false;
+      img.classList.remove('is-panning');
+    }
+  };
+
+  // A plain click on the picture is the cheap way in and the cheap way out: in
+  // to a look at the detail under the pointer, out to the whole frame again.
+  // Guarded by `moved`, or the lift at the end of every pan would toggle it.
+  const onClick = (e: MouseEvent) => {
+    if (moved) { moved = false; return; }
+    if (scale > 1) reset();
+    else zoomTo(ZOOM_CLICK, e.clientX, e.clientY);
+  };
+
+  // The ground around the picture is the way out, which is what a dark surround
+  // has always meant. Only the stage itself - a press that reached the picture
+  // is handled above and never arrives here.
+  const onStageClick = (e: MouseEvent) => { if (e.target === stage) closeViewer(); };
+
+  // A resized window re-fits the picture underneath a transform that was
+  // computed against the old one, so the offset is now measured off nothing.
+  // Putting it back is the honest answer and the one that cannot be subtly wrong.
+  const onResize = () => { if (scale !== 1) reset(); };
+
+  img.addEventListener('wheel', onWheel, { passive: false });
+  img.addEventListener('pointerdown', onDown);
+  img.addEventListener('pointermove', onMove);
+  img.addEventListener('pointerup', onUp);
+  img.addEventListener('pointercancel', onUp);
+  img.addEventListener('click', onClick);
+  stage.addEventListener('click', onStageClick);
+  addEventListener('resize', onResize);
+
+  return () => {
+    stage.removeEventListener('click', onStageClick);
+    removeEventListener('resize', onResize);
+    img.style.transform = '';
+  };
 }
 
 /** The line under the name: what the file is and how big. */

@@ -973,7 +973,7 @@ function measureHints(list: Tile[], width: number) {
  * photograph than the thumb did. The alternative is refusing to place on the
  * clamped tiles at all, which is a worse answer to a smaller problem.
  */
-export function feedPointToWorld(clientX: number, clientY: number): Point | null {
+function feedPointToWorld(clientX: number, clientY: number): Point | null {
   const el = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>('.feed-tile');
   const item = el && byId(str(el.dataset.id));
   if (!item) return null;

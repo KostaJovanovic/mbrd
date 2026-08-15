@@ -987,7 +987,7 @@ export function addLink(centre: Point, url: URL) {
  * links dropped at a spot you chose: a cascade keeps the first one exactly
  * where the pointer was, and a dropped link should land under the pointer.
  */
-export function addLinks(at: Point, urls: URL[]) {
+function addLinks(at: Point, urls: URL[]) {
   if (!urls.length) return [];
   const drafts = urls.map((url: URL, i: number) => ({
     ...linkDraft(url),

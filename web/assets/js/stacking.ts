@@ -32,7 +32,7 @@ import { stuckTo, isSticky } from './sticky.ts';
 import { fenceOf, isFence } from './fences.ts';
 import { snapshotGeom, commitGeom } from './layout.ts';
 
-export function bottomZ() {
+function bottomZ() {
   return board.items.reduce((m, i) => Math.min(m, i.z || 0), 0);
 }
 
@@ -250,7 +250,7 @@ export function stackRoot(item: Item): Item {
 }
 
 /** Sticky layers ordered externally by their root, internally by raw z. */
-export function stackGroups() {
+function stackGroups() {
   const boardOrder = new Map(board.items.map((item, index) => [item.id, index]));
   const groups = new Map<string, { root: Item, items: Item[] }>();
   for (const item of board.items) {

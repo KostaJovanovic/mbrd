@@ -96,7 +96,7 @@ const textOf = (el: Element): string => el.textContent!;
  * its content - so it is briefly released to its natural height, pinned to the
  * top, to be measured.
  */
-export function noteHeight(id: string, width?: number | null): number {
+function noteHeight(id: string, width?: number | null): number {
   const el = nodeFor(id);
   const card = el?.querySelector<HTMLElement>('.card');
   const wrap = card?.querySelector<HTMLElement>('.note-rich');

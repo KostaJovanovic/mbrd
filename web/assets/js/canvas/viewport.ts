@@ -73,9 +73,9 @@ export const BASE_ZOOM = 1;
 
 export const MIN_ZOOM = 0.1 * BASE_ZOOM;   // 10% as printed
 export const MAX_ZOOM = 5 * BASE_ZOOM;     // 500% as printed
-export const MOBILE_SIDE_PAD = 16;
-export const MOBILE_TOP_PAD = 32;
-export const MOBILE_BOTTOM_PAD = 32;
+const MOBILE_SIDE_PAD = 16;
+const MOBILE_TOP_PAD = 32;
+const MOBILE_BOTTOM_PAD = 32;
 
 /**
  * How far below the chrome buttons a Mobile board comes to rest.
@@ -328,7 +328,7 @@ export function onSmallScreen(): boolean {
 }
 
 /** The rung in force, as a zoom factor. */
-export const lodZoom = () => (onSmallScreen() ? LOD_ZOOM_SMALL : LOD_ZOOM);
+const lodZoom = () => (onSmallScreen() ? LOD_ZOOM_SMALL : LOD_ZOOM);
 
 /** Below this, item chrome (labels, grips) is more noise than help. */
 export const farZoom = () => lodZoom();

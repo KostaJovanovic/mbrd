@@ -561,3 +561,21 @@
    hover ring, and it has to be said here as well because that rule keys off
    #world.zoom-far and would otherwise outweigh anything less specific. */
 #world.zoom-far .item[data-bare]::after { box-shadow: none; }
+/* And the caption plate, which is the last thing on a cut-out that was still
+   drawing the card. It is item-chrome.css's .item-bar: a solid sheet of
+   --paper-card across the foot with a hairline along its top edge and the name
+   set on it. On a photograph that is a museum label and is the point of it; on a
+   cut-out it is a strip of paper stuck across the bottom of a leaf, and the
+   hairline over it reads as the one edge of a frame that never went away. "No
+   card" has to mean no card, so it takes the label with it.
+
+   Hidden here rather than added to the type list in item-chrome.css, because
+   that list is about *types* that never draw a caption and this is one item
+   saying it is a cut-out. Both are `display: none` and neither has to outweigh
+   the other.
+
+   :not(.is-editing) for the reason the far-zoom rule two lines up carries the
+   same guard: F2 renames a picture by putting the caret in this very label, and
+   a plate that is display:none while it is being typed into is a rename with
+   nowhere to type. It comes back for the edit and goes again after it. */
+.item[data-bare]:not(.is-editing) .item-bar { display: none; }

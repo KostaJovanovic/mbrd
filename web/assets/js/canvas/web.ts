@@ -1319,7 +1319,7 @@ function drawHover() {
  * is. Repaints the highlight only when the hovered line actually changes, so a
  * pointer sliding along one line is not a stream of identical redraws.
  */
-export function hoverConnectionAt(wx: number, wy: number, tolPx = 12) {
+function hoverConnectionAt(wx: number, wy: number, tolPx = 12) {
   const hit = nearestSeg(wx, wy, tolPx);
   const key = hit ? hit.key : null;
   if (key !== hoveredKey) { hoveredKey = key; drawHover(); }
@@ -1419,7 +1419,7 @@ function drawDraft(minX: number, minY: number, r: number) {
 }
 
 /** Drop any hover highlight - the pointer left the board, or a gesture began. */
-export function clearHover() {
+function clearHover() {
   if (hoveredKey !== null) { hoveredKey = null; drawHover(); }
 }
 

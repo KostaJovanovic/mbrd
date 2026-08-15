@@ -136,7 +136,13 @@
   color: var(--ink-3);
 }
 
-#ctx-menu {
+/* #ctx-child is the hover submenu, and it is named here rather than given
+   rules of its own for the reason every menu in this app is one node: a second
+   panel with a second description of what a menu looks like is two menus by the
+   end of the quarter. It is a separate element only because two boxes cannot be
+   one id - everything it is made of is fillPanel's rows and this block. See
+   openChild in ui/menu.ts. */
+#ctx-menu, #ctx-child {
   position: fixed;
   z-index: 60;
   min-width: 208px;
@@ -157,38 +163,45 @@
 }
 /* The menu takes focus when it opens so the keyboard has somewhere to land;
    the ring belongs on the entry the arrows reach, not round the whole stock. */
-#ctx-menu:focus { outline: none; }
+:is(#ctx-menu, #ctx-child):focus { outline: none; }
+/* The child sits *beside* its row rather than under the pointer, so it arrives
+   from the side. Same duration, same easing - only the direction says which of
+   the two panels it is. */
+#ctx-child { animation-name: ctx-in-side; }
 @keyframes ctx-in { from { opacity: 0; transform: translateY(-3px); } }
+@keyframes ctx-in-side { from { opacity: 0; transform: translateX(-4px); } }
+/* The row a child is hanging off stays lit while it is up. Without it the menu
+   has two panels open and nothing saying which row the second one belongs to -
+   and the hover highlight has already left the row by then, because the pointer
+   is in the child. */
+.ctx-item.is-open { background: var(--paper-3); }
 
-/* The same panel, hung off the toolbar (ui/flyout.js).
-   Square across the top and no border there, because it is not floating free -
-   it is the underside of a bar that is already drawn, and a rounded lip with
-   its own hairline a pixel below the bar's reads as a second object that has
-   landed on the first. The bottom keeps the menu's corner, which is the whole
-   point of leaving the rest of the rule alone.
+/* ── One shape, wherever the panel is opened ───────────────────────────────
 
-   The max-height is not here any more. It counted down from --toolbar-h, the
-   bar at the *top* of the window, which was right for the three desktop hover
+   There were two shapes here and there is now one. A panel hung off the
+   toolbar (ui/flyout.ts) used to square the two corners on the side it was
+   attached to and drop that border, so it read as the underside of a bar
+   already drawn rather than as a second object landed on the first - and a
+   second rule wrote the whole thing out again for a panel flipped above a bar
+   at the *bottom* of the window, where the same argument applies to the other
+   edge. Two variants of one panel, held in step by hand.
+
+   They are gone, and what took them out was finding the treatment somewhere it
+   made no sense: openAnchored() applied it to everything anchored, so the
+   palette picker in the settings panel - which hangs off a *field*, with no bar
+   within two hundred pixels of it - was drawn as a box with one edge missing.
+
+   The fix could have been an opt-in, and was for about an hour. One shape is
+   the better answer: a menu in this app is a closed panel with four corners and
+   four sides, whatever it was opened from, and there is now nothing to know,
+   nothing to pass, and no second variant to keep in step. The bar and the panel
+   under it are two objects, which is what they are.
+
+   The max-height is not here either. It counted down from --toolbar-h, the bar
+   at the *top* of the window, which was right for the three desktop hover
    flyouts and wrong for the phone's More button on the bar at the bottom. It is
    measured off the panel's own anchor in ui/menu.ts now - see the note over the
    measurement there. */
-#ctx-menu.is-flyout {
-  border-top: 0;
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
-}
-/* And the same panel flipped above a bar at the bottom of the window, where
-   every word of the paragraph above applies to the other edge. Both halves are
-   written out rather than one being toggled, because the base rule has already
-   squared the top by the time this applies. */
-#ctx-menu.is-flyout.is-flyout-up {
-  border-top: var(--hairline) solid var(--rule-2);
-  border-top-left-radius: var(--radius);
-  border-top-right-radius: var(--radius);
-  border-bottom: 0;
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
-}
 
 /* Three columns: the icon, the label, and whatever sits on the trailing edge -
    an accel key, a tick, or nothing.

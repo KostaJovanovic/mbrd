@@ -184,9 +184,16 @@ test('ui/menu.js can draw the two row kinds these lists use', () => {
   assert.match(menu, /export function openAnchored/, 'the anchored open has gone');
 });
 
-test('the flyout panel is styled and does not scroll off the bottom of the bar', () => {
+test('the flyout wears the menu panel and no shape of its own', () => {
+  // This used to assert the opposite: that menu.css carried an `.is-flyout`
+  // block squaring the two corners the panel hung off the bar by. That was one
+  // panel with two shapes, and the second shape escaped - openAnchored() applied
+  // it to every anchored menu, so the settings panel's palette picker was drawn
+  // as a box with one side missing beside a field with no bar near it. There is
+  // one shape now, so the check is that the variant has not come back.
   const css = read(join(WEB, 'assets', 'css', 'menu.css'));
-  assert.match(css, /#ctx-menu\.is-flyout\s*\{/, 'no is-flyout block in menu.css');
+  assert.doesNotMatch(css, /\.is-flyout/, 'a second panel shape is back in menu.css');
+  assert.match(css, /#ctx-menu, #ctx-child\s*\{/, 'the menu panel has no rule');
   assert.match(css, /\.ctx-chip\s*\{/, 'the colour chips have no rule');
   assert.match(css, /\.ctx-range\s*\{/, 'the spacing row has no rule');
 });

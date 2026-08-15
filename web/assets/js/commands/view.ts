@@ -38,7 +38,7 @@
 // floated a player window over the prose. See page.ts.
 
 import { toast } from '../notify.ts';
-import { goHome } from '../page.ts';
+import { goHome, homePath } from '../page.ts';
 import {
   board, isContent, isFiltered, select, setSetting, setTagFilter, tagFilter,
   setBoardMode as selectBoardMode,
@@ -301,11 +301,31 @@ export function viewCommands(vp: CommandViewport, { resetAppearance, perf }: Vie
     // sits beside it because the two are the same kind of thing: the only rows in
     // the panel that are about the app rather than about a board.
     //
-    // A new tab, not this one. Everything you have is on the board behind this
-    // panel, and leaving the page to read release notes would be asking somebody
-    // to trust the autosave in order to find out what changed. `noopener` is not
-    // ceremony either - without it the opened page gets a live handle on this
-    // window through window.opener and can navigate it.
-    patchNotes: () => { window.open('patch', '_blank', 'noopener'); },
+    // This tab, not a new one, and that is a reversal. It was a window.open for
+    // a good reason - everything you have is on the board behind this panel, and
+    // leaving the page to read release notes reads as being asked to trust the
+    // autosave in order to find out what changed. What settled it is that the
+    // trip is not a leap of faith and the new tab was not free:
+    //
+    //   The board is already written down on the way out. main.ts flushes on
+    //   pagehide *and* on visibilitychange - the open note closed, the snapshot
+    //   taken - so the state this navigation leaves behind is the same state a
+    //   refresh leaves behind, which the app has always survived. Back, or the
+    //   changelog's own View row (goHome in page.ts, the far end of this trip),
+    //   restores it.
+    //
+    //   A new tab flashed. A browser paints a tab it has just opened in its own
+    //   theme, before the document it is going to fetch has committed anything -
+    //   so on a dark-themed browser every visit to the changelog opened on a
+    //   black rectangle and then a cream page, and nothing this app can put in
+    //   patch.html paints that frame. Its <meta name="color-scheme"> is read
+    //   after it. Navigating in place has no such frame at all: the engine holds
+    //   the board on screen until the changelog has painted, which is the same
+    //   reason a refresh of this app does not flash either.
+    //
+    // Through homePath() rather than the bare 'patch' window.open took, for the
+    // reason goHome() does it: the address is relative to wherever the app is
+    // hosted, not to the page it is being asked from.
+    patchNotes: () => { location.href = homePath() + 'patch'; },
   };
 }

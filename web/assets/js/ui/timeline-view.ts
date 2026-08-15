@@ -125,7 +125,7 @@ const KINDS: Record<string, { icon: string, said: string }> = {
   'Restore': { icon: 'i-restore', said: 'Restored' },
   'Empty': { icon: 'i-delete', said: 'Emptied the bin' },
   'Duplicate': { icon: 'i-duplicate', said: 'Duplicated' },
-  'Paste': { icon: 'i-duplicate', said: 'Pasted' },
+  'Paste': { icon: 'i-paste', said: 'Pasted' },
   'Rename': { icon: 'i-rename', said: 'Renamed' },
   'Rearrange': { icon: 'i-rearrange', said: 'Rearranged' },
   'Align': { icon: 'i-align-left', said: 'Aligned' },
@@ -135,8 +135,10 @@ const KINDS: Record<string, { icon: string, said: string }> = {
   'Edit connection': { icon: 'i-connect', said: 'Changed the join on' },
   'Remove connection': { icon: 'i-connect', said: 'Unjoined' },
   'Recolour swatch': { icon: 'i-swatch', said: 'Recoloured' },
-  'Lock': { icon: 'i-lock-shut', said: 'Locked' },
-  'Unlock': { icon: 'i-lock-open', said: 'Unlocked' },
+  // Keyed off the commit labels in setItemsLocked (state.ts), which is where
+  // the two strings are written and where the note about the word lives.
+  'Anchor': { icon: 'i-anchor', said: 'Anchored' },
+  'Unanchor': { icon: 'i-anchor-off', said: 'Unanchored' },
   'Tag': { icon: 'i-tag', said: 'Tagged' },
   'Untag': { icon: 'i-tag', said: 'Untagged' },
   'Unstick': { icon: 'i-snap', said: 'Unstuck' },

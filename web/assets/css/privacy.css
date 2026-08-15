@@ -11,85 +11,341 @@
    It loads tokens.css and nothing else of the app's. The page is a document,
    not the app: base.css pins the app to the window with everything fixed
    inside it, which is exactly wrong for something you scroll and read - the
-   same reason patch.css exists. But the colours, the faces and the corners are
-   the app's, so the page belongs to the site rather than looking like a legal
-   annexe someone bolted on.
+   same reason patch.css exists.
+
+   ── It is the changelog's page, drawn from scratch ──
+
+   /patch and /privacy are the only two documents on this site, and two
+   documents that look like two sites is the thing worth avoiding here - so
+   everything below is patch.css's shape under a pv- prefix: the sticky pill
+   back to the board, the display title over a lede and a tracked line of
+   facts, the plates down a spine with a mark on it and the subject of each in
+   the margin, the rule-topped foot. The tokens are doing all of it, which is
+   why so few numbers appear below.
+
+   Not shared with patch.css, and deliberately: that file's first forty lines
+   are about putting a running board away and scrolling inside an app pinned to
+   the window, and none of that exists here. What is common between them is a
+   handful of shapes, and a shape is cheaper to restate than a dependency
+   between a document that boots the app and one whose whole claim is that it
+   does not.
+
+   ── One tier, not three ──
 
    No whimsy dial here and no pre-paint restore script, which means :root
    carries no data-whimsy - and tokens.css is written so that an unset
    data-whimsy and data-whimsy="1" are the same thing, so the page renders in
-   the middle of the axis for everyone. That is the right choice for a document
-   that is mostly read once: the scrapbook tier tilts and tapes things, which is
-   charming on a board and wrong on a page about what happens to your files.
+   the middle of the axis for everyone. That is why there is no scrapbook block
+   and no spec-sheet block below, unlike patch.css: a :root[data-whimsy="0"]
+   selector on this page would never match anything. It is also the right
+   choice for a document that is mostly read once - the scrapbook tier tilts
+   and tapes things, which is charming on a board and wrong on a page about
+   what happens to your files.
    ========================================================= */
 
 *, *::before, *::after { box-sizing: border-box; }
 
 body {
   margin: 0;
-  padding: 8vh 24px 14vh;
   background: var(--paper);
-  color: var(--ink);
-  font-family: var(--font-body);
-  /* The reading size for a page of prose, and off the interface scale on
-     purpose: --t-body is 15px because it is *interface* text sitting beside
-     controls, and a privacy notice is a document somebody actually reads
-     top to bottom. Same reasoning as the changelog page. (Sorted
-     deliberately-off-scale by research/old/visual-audit-2026-08-12.md item 2.) */
-  font-size: 16px;
-  line-height: 1.6;
-  /* A measure, not a width: prose reads at about this and the page is nothing
-     but prose. */
-  max-width: 34rem;
-  margin-inline: auto;
-  text-wrap: pretty;
-}
-
-h1 {
-  margin: 0 0 4px;
-  font-family: var(--font-display);
-  font-size: 2rem;
-  font-style: var(--display-italic);
-  font-weight: var(--display-weight);
-  line-height: 1.1;
-}
-
-h2 {
-  margin: 2.2em 0 0.4em;
-  font-family: var(--font-display);
-  font-size: 1.15rem;
-  font-weight: var(--display-weight);
-  line-height: 1.25;
-}
-
-p { margin: 0 0 1em; }
-
-/* The one line under the title: what this page is, and when it last changed. */
-.sub {
-  margin: 0 0 2.5em;
-  color: var(--ink-3);
-  font-size: 0.9rem;
-}
-
-ul { margin: 0 0 1em; padding-left: 1.2em; }
-li { margin: 0 0 0.35em; }
-
-a { color: var(--accent-deep); }
-a:hover { text-decoration: none; }
-
-/* The way back into the app, at the foot where somebody who has finished
-   reading is looking. A link and not a button: it goes somewhere. */
-.back {
-  display: inline-block;
-  margin-top: 2.5em;
-  padding-top: 1.5em;
-  border-top: 1px solid var(--rule-2);
-  width: 100%;
   color: var(--ink-2);
-  font-size: 0.9rem;
+  font-family: var(--font-body);
+  font-size: var(--t-body);
+  line-height: 1.62;
+  text-wrap: pretty;
+  /* Fixed, so the grain below stays one screen of texture however long the
+     page runs, rather than sliding off the top of it. */
+  background-attachment: fixed;
 }
 
-code {
+/* The stock, and what makes this paper rather than a background colour. Same
+   tile, same blend and the same dial as #grain in base.css and as the
+   changelog's own, so the two documents are printed on the same stuff. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: url("../img/paper-grain.webp");
+  background-repeat: repeat;
+  background-size: 512px 512px;
+  mix-blend-mode: multiply;
+  opacity: calc(0.8 * var(--grain));
+}
+
+/* Over the grain. The changelog needs a fixed scroller here because the app
+   underneath it is pinned to the window; nothing is pinned on this page, so
+   this is only a stacking context and the body scrolls the way a document
+   does. */
+.pv {
+  position: relative;
+  z-index: 1;
+}
+
+/* The measure, and the same one the changelog uses - 880 with the margin
+   column inside it, not beside it. */
+.pv-inner {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: clamp(48px, 9vw, 96px) clamp(18px, 5vw, 40px) 96px;
+}
+
+/* ---------------------------------------------------------
+   The way back
+   --------------------------------------------------------- */
+
+/* Sticky rather than fixed, and inside the column rather than over the window:
+   it rides the measure, so it cannot be somewhere different on a phone. It has
+   to be opaque and it has to outrank the plates, because a sticky element with
+   a transparent ground is a word with a privacy notice scrolling through it -
+   hence the card paper and the z-index.
+
+   One step larger than the changelog's, at --t-body rather than --t-small: on
+   /patch the app's own menu button is in the corner and this pill is the
+   second way out, while here it is the only control on the page and reads as a
+   footnote at small. */
+.pv-back {
+  position: sticky;
+  top: 14px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  margin: 0 0 clamp(26px, 4vw, 40px);
+  padding: 10px 18px 10px 14px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--radius-pill);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-1);
+  color: var(--ink-2);
+  font-family: var(--font-display);
+  font-size: var(--t-body);
+  font-style: var(--display-italic);
+  letter-spacing: calc(0.04em * var(--ls-scale));
+  text-decoration: none;
+  transition: color var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease),
+              translate var(--dur-fast) var(--ease);
+}
+.pv-back:hover {
+  color: var(--accent-deep);
+  border-color: var(--accent);
+  /* Towards the board, which is the direction the arrow is pointing. */
+  translate: -2px 0;
+}
+/* The arrow rides in the body face: the display face sets it as an italic
+   glyph leaning away from the direction it means. */
+.pv-arrow {
+  font-family: var(--font-body);
+  font-style: normal;
+}
+
+/* ---------------------------------------------------------
+   The head
+   --------------------------------------------------------- */
+
+.pv-head { margin-bottom: clamp(38px, 7vw, 70px); }
+
+/* Struck from --t-display rather than written as a number, so it moves with a
+   look that changes the display scale. Same rule as the changelog's title, and
+   the two pages should sit at the same height. */
+.pv-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(var(--t-display), 8vw, calc(var(--t-display) * 2.1));
+  font-weight: var(--display-weight);
+  letter-spacing: calc(0.01em * var(--ls-scale));
+  line-height: 1.04;
+  color: var(--ink);
+}
+
+.pv-lede {
+  margin: 14px 0 0;
+  max-width: 48ch;
+  font-size: calc(var(--t-body) * 1.06);
+  color: var(--ink-2);
+}
+
+/* The changelog states three counts here; this page states three absences and
+   a date. Divided by hairlines rather than by punctuation, the same join the
+   sidebar makes between its own sections. */
+.pv-tally {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 14px;
+  margin: 22px 0 0;
+  font-family: var(--font-display);
+  font-size: var(--t-tiny);
+  font-style: var(--display-italic);
+  letter-spacing: calc(0.2em * var(--ls-scale));
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.pv-tally span + span {
+  padding-left: 14px;
+  border-left: var(--hairline) solid var(--rule);
+}
+
+/* ---------------------------------------------------------
+   The spine
+
+   The margin cells of consecutive sections touch, so one border down their
+   right-hand side draws a single line the length of the page with no element
+   of its own. Each section marks it once, at its own head.
+   --------------------------------------------------------- */
+
+.pv-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pv-sec {
+  display: grid;
+  /* Wider than the changelog's 74px, because what stands in the margin here is
+     a subject and not a version number. */
+  grid-template-columns: 116px minmax(0, 1fr);
+  column-gap: clamp(18px, 3vw, 34px);
+}
+
+.pv-margin {
+  position: relative;
+  padding: 0 14px 0 0;
+  border-right: var(--hairline) solid var(--rule);
+  text-align: right;
+}
+
+/* The mark sits *on* the line, which is what the negative offset is for. */
+.pv-mark {
+  position: absolute;
+  top: 0.72em;
+  right: -4px;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+
+/* What the plate beside it is about. Quiet, in the display face, set against
+   the line rather than under the mark - it labels the thing beside it, so it
+   reads as a margin note and not as a heading the prose sits under. Which is
+   the point: three paragraphs need finding your way around, and none of them
+   needs a heading. */
+.pv-count {
+  display: block;
+  padding-top: 0.34em;
+  font-family: var(--font-display);
+  font-size: var(--t-tiny);
+  font-style: var(--display-italic);
+  letter-spacing: calc(0.08em * var(--ls-scale));
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* ---------------------------------------------------------
+   The plates
+   --------------------------------------------------------- */
+
+.pv-plate {
+  margin: 0 0 clamp(20px, 3.4vw, 34px);
+  padding: clamp(22px, 3.6vw, 34px) clamp(22px, 3.6vw, 36px);
+  border: var(--hairline) solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-1);
+  transition: box-shadow var(--dur-base) var(--ease),
+              translate var(--dur-base) var(--ease-back);
+}
+
+/* The lift every control on the board answers a pointer with, through the same
+   token - a real hover at Softish, a small one in the middle, and nothing at
+   all at Harsh, where --lift-hover is 0 and this rule quietly stops meaning
+   anything. The token is already negative, so it is used as it is. */
+@media (hover: hover) {
+  .pv-plate:hover {
+    translate: 0 var(--lift-hover);
+    box-shadow: var(--shadow-2);
+  }
+}
+
+.pv-plate p { margin: 0; }
+
+/* The spine is drawn by the margin cells, which are as tall as their rows - so
+   the gap under the last plate would hang thirty pixels of line below the end
+   of the page, pointing at nothing. */
+.pv-sec:last-child .pv-plate { margin-bottom: 0; }
+
+/* ---------------------------------------------------------
+   Links, code and the foot
+   --------------------------------------------------------- */
+
+/* Named by their containers rather than as `.pv a`, which would also be a
+   selector for the pill - one type more specific than .pv-back is, so the
+   pill's own colour would lose to it and only under hover, which is exactly
+   the kind of thing that ships. */
+.pv-plate a, .pv-foot a {
+  color: var(--accent);
+  text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  text-underline-offset: 2px;
+}
+.pv-plate a:hover, .pv-foot a:hover { color: var(--accent-deep); }
+.pv-plate a:focus-visible, .pv-foot a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: var(--radius-xs);
+}
+/* The pill is already a shape, so it keeps its own corner. */
+.pv-back:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.pv-plate code {
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+  background: var(--paper-2);
   font-family: var(--font-mono);
   font-size: 0.9em;
+  color: var(--ink);
+}
+
+.pv-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: clamp(34px, 6vw, 60px);
+  padding-top: 20px;
+  border-top: var(--hairline) solid var(--rule);
+  font-family: var(--font-display);
+  font-size: var(--t-tiny);
+  font-style: var(--display-italic);
+  letter-spacing: calc(0.1em * var(--ls-scale));
+  color: var(--ink-3);
+}
+
+/* ---------------------------------------------------------
+   Narrow
+
+   The margin goes rather than shrinks, the way the changelog's does: a
+   hundred-odd pixels of gutter on a phone is a third of the measure spent on
+   two words. The label goes with it - it is a finding aid for a page you can
+   see the whole of, and on a phone you cannot.
+   --------------------------------------------------------- */
+
+@media (max-width: 640px) {
+  .pv-sec { grid-template-columns: minmax(0, 1fr); }
+  .pv-margin { display: none; }
+  .pv-plate { padding: 20px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pv-plate, .pv-back { transition: none; }
+  @media (hover: hover) {
+    .pv-plate:hover { translate: none; }
+    .pv-back:hover { translate: none; }
+  }
 }

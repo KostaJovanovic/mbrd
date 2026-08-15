@@ -123,6 +123,30 @@
   <path d="M5.75 7.25V5.1a2.25 2.25 0 0 1 4.5 0v2.15"/>
 </symbol>
 
+<!-- Holding a card still, which is a different act from locking a door and now
+     says so. The two padlocks above stay where they are and mean what they have
+     always meant - they are the *zoom* lock's, and a zoom held at 100% really is
+     a thing shut rather than a thing moored.
+
+     Four strokes: the ring, the shank, the stock across it, and the flukes as
+     one sweep under. The sweep is a true semicircle - its radius is half the
+     chord - so it cannot be drawn slightly wrong at one size and right at
+     another. The off variant is the same drawing under the slash i-picture-off
+     uses, corner to corner, because a set with two ways of saying "not this" is
+     a set with none. -->
+<symbol id="i-anchor" viewBox="0 0 16 16">
+  <circle cx="8" cy="3.2" r="1.5"/>
+  <path d="M8 4.7v8.6M5.1 6.6h5.8"/>
+  <path d="M3.6 9.6a4.4 4.4 0 0 0 8.8 0"/>
+</symbol>
+
+<symbol id="i-anchor-off" viewBox="0 0 16 16">
+  <circle cx="8" cy="3.2" r="1.5"/>
+  <path d="M8 4.7v8.6M5.1 6.6h5.8"/>
+  <path d="M3.6 9.6a4.4 4.4 0 0 0 8.8 0"/>
+  <path d="M3.2 13.4 12.8 2.6"/>
+</symbol>
+
 <!-- A drop of colour. Part filled, and filled at all, which is the one thing kept
      from what was here before: this is the tool whose subject *is* colour, and
      an outline of a colour chip is a picture of a card. Everything in this file
@@ -527,6 +551,16 @@
 <symbol id="i-cut-out" viewBox="0 0 16 16">
   <path d="M2.2 5V2.2H5M11 2.2H13.8V5M13.8 11V13.8H11M5 13.8H2.2V11"/>
   <path d="M5.6 9.9C4.9 8.2 5.6 6.2 7.2 5.5 8.9 4.8 10.4 5.9 10.4 7.5 10.4 9.1 9.2 10.6 7.6 10.9 6.8 11 6 10.7 5.6 9.9Z"/>
+</symbol>
+
+<!-- The board with the clip, and no page on it. Paste's partner in the menu is
+     Copy, which uses i-duplicate - two cards, one behind the other - so the two
+     rows do not have to be read to be told apart: one is cards, one is a
+     clipboard. Drawing a page onto this one would have made it the cards again
+     at 16px, which is the size it is always seen at. -->
+<symbol id="i-paste" viewBox="0 0 16 16">
+  <path d="M6.2 4H4.6A1.4 1.4 0 0 0 3.2 5.4v7A1.4 1.4 0 0 0 4.6 13.8h6.8a1.4 1.4 0 0 0 1.4-1.4v-7A1.4 1.4 0 0 0 11.4 4H9.8"/>
+  <rect x="6.2" y="2.2" width="3.6" height="3" rx="1"/>
 </symbol>
 
 </svg>

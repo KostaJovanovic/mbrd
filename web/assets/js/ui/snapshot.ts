@@ -936,7 +936,7 @@ function paintGrain(ctx: CanvasRenderingContext2D, look: Look, W: number, H: num
  * export. Until it is taken, this is the honest half of the answer: right for
  * every card on screen, straight for the rest.
  */
-export async function renderBoardCanvas(detail: Detail = 'full') {
+async function renderBoardCanvas(detail: Detail = 'full') {
   const items = drawable();
   const b = itemBounds(items);
   if (!b) return null;
@@ -1228,7 +1228,7 @@ function faceName(token: string): string {
 }
 
 /** Draw the tile. Exported for the test, which has no way to open a canvas. */
-export function renderStyleTile(
+function renderStyleTile(
   selected: Set<string> | null,
   images: (HTMLImageElement | null)[],
 ) {

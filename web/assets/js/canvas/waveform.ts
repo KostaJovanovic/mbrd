@@ -79,7 +79,7 @@ export interface Measurable {
  * averaged down to fit. Re-measuring on resize would mean decoding the file
  * again to draw the same shape at a different pitch.
  */
-export const PEAK_RES = 256;
+const PEAK_RES = 256;
 
 /**
  * The context, once. `null` is "not asked yet" and `false` is "asked and

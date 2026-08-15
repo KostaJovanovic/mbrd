@@ -152,7 +152,7 @@ export function initHud(viewport: HudViewport, cmds: HudCommands) {
  * you meant, which on a board where the last four actions were drags is the
  * only way to know without trying it.
  */
-export function paintHistory() {
+function paintHistory() {
   const state = historyState();
   for (const btn of el('history-ctl')!.querySelectorAll<HTMLButtonElement>('[data-history]')) {
     // The markup carries exactly two values here, and the pair below reads the

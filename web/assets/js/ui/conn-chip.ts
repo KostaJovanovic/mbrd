@@ -144,7 +144,7 @@ export function syncConnChip(): void {
 }
 
 /** Take the chip away. Nothing to remember: the next one is built from the board. */
-export function closeConnChip(): void {
+function closeConnChip(): void {
   node?.remove();
   node = null;
   sig = '';

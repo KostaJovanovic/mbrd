@@ -429,8 +429,6 @@ let steps: Step[] = [];
 let at = 0;
 /** The board before step 0. Every replay starts here. */
 let base: Snap = snapshot();
-/** The snapshot the next step will be diffed against. Kept, not retaken. */
-let head: Snap = base;
 /**
  * Full snapshots at intervals, so going backwards is bounded.
  *
@@ -512,7 +510,7 @@ let replaying = false;
 export const isReplaying = () => replaying;
 
 /** How many steps a file may carry, before trimming is offered. */
-export const TIMELINE_STEP_CAP = 20000;
+const TIMELINE_STEP_CAP = 20000;
 
 export const timelineSteps = () => steps;
 export const timelineAt = () => at;
@@ -533,7 +531,6 @@ export function resetTimeline() {
   steps = [];
   at = 0;
   base = snapshot();
-  head = base;
   checkpoints = new Map();
   stale = false;
 }
@@ -558,7 +555,6 @@ export function recordStep(label: string, before: Snap): Step | null {
   if (replaying) return null;
   const after = snapshot();
   const delta = diff(before, after);
-  head = after;
   if (!delta) return null;
   // Doing something new with the marker rolled back drops what was ahead of it,
   // the way undo does everywhere. Fusion inserts instead; see the design note.
@@ -579,9 +575,29 @@ export function recordStep(label: string, before: Snap): Step | null {
     // stops "moved it and moved it back" leaving a dot behind.
     if (!Object.keys(prev.delta).length) {
       steps.pop();
+      checkpoints.delete(at);
       at = steps.length;
       return null;
     }
+    // **A checkpoint on this mark now describes a board that never existed.**
+    //
+    // The mark a checkpoint is filed under means *the board after this many
+    // steps*, and this branch has just changed what the last of those steps
+    // does without changing how many there are. The picture taken when the step
+    // first landed shows the board after the first nudge of a run, and replayTo
+    // trusts it over the base: so every jump to this mark or past it rebuilt
+    // from a board a step and a half old, and every field the rest of the run
+    // touched stayed at its first value for the rest of the session.
+    //
+    // Refreshed rather than dropped, because `after` is exactly the picture the
+    // mark is supposed to hold - the board as it stands, which is where this
+    // run has got to. Dropping it would be correct too and would cost the next
+    // jump a walk from the last checkpoint.
+    //
+    // Only this mark can be wrong. Nothing is filed beyond `at` - the marker is
+    // at the end of the list on this path, and the truncation above has already
+    // cleared anything a rolled-back marker left ahead of it.
+    if (checkpoints.has(at)) checkpoints.set(at, after);
     return prev;
   }
   const step: Step = {
@@ -643,9 +659,6 @@ function changedFields(before: string, after: string): string[] {
   return out;
 }
 
-/** The snapshot the next step is measured against. commit() takes this. */
-export const timelineHead = () => head;
-
 /**
  * Note that the board moved without a step being recorded.
  *
@@ -655,23 +668,17 @@ export const timelineHead = () => head;
  * module which way the marker went rather than driving it.
  */
 export function markerBack() {
-  if (at > 0) at -= 1;
-  head = snapshot();
-}
+  if (at > 0) at -= 1;}
 
 export function markerForward() {
-  if (at < steps.length) at += 1;
-  head = snapshot();
-}
+  if (at < steps.length) at += 1;}
 
 /** Drop the newest step, for a caller withdrawing something it did itself. */
 export function dropLastStep() {
   if (at !== steps.length || !steps.length) return;
   steps.pop();
   checkpoints.delete(at);
-  at = steps.length;
-  head = snapshot();
-}
+  at = steps.length;}
 
 /**
  * How large the history would be in a file, in bytes.
@@ -788,9 +795,7 @@ export function replayTo(target: number) {
       checkpoints.set(next, snapshot());
     }
   }
-  at = want;
-  head = snapshot();
-}
+  at = want;}
 
 /**
  * Say that the board changed wholesale.
@@ -925,9 +930,7 @@ export function rebuildFrom(index: number) {
     // that looks like nothing rather than like an error.
     replaying = false;
   }
-  at = steps.length;
-  head = snapshot();
-  // Every checkpoint behind the rebuilt run described boards that no longer
+  at = steps.length;  // Every checkpoint behind the rebuilt run described boards that no longer
   // exist. Cheaper to drop them than to work out which survived.
   checkpoints = new Map();
   announce();
@@ -1135,9 +1138,7 @@ export function adoptTimeline(raw: unknown, doc?: unknown) {
   steps = parsed;
   at = Number.isFinite(raw.at)
     ? Math.max(0, Math.min(Number(raw.at), steps.length))
-    : steps.length;
-  head = snapshot();
-  // Against the document that arrived, not against the board that was built
+    : steps.length;  // Against the document that arrived, not against the board that was built
   // from it - see docFingerprint(). A timeline with no fingerprint at all is
   // taken at its word: that is what a file written before this check existed
   // looks like, and refusing those would be treating an old friend as a forgery.

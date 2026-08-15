@@ -131,7 +131,7 @@ export async function shrinkPicture(
  * is the picture at roughly life size for that view, and every pixel past it is
  * downsampled by the compositor for nothing.
  */
-export const THUMB_SIDE = 100;
+const THUMB_SIDE = 100;
 
 /**
  * And how hard it is compressed.
