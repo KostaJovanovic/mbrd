@@ -9,10 +9,19 @@
 // left is the order things are brought up in, the subscriptions that cross
 // subsystems, and the lifecycle.
 //
-// The init order below is load-bearing and is commented where it is. This is
-// one of only three modules allowed to touch a browser global at import time
-// (tests/imports.test.js); everything it calls exports an init*() for exactly
-// that reason.
+// The init order below is load-bearing and is commented where it is. About a
+// dozen of those comments are constraints rather than notes - "Before
+// initSidebar()", "After initAudio()" - and each of them is now a row in
+// tests/boot-order.test.js, which reads the real sequence out of this file and
+// checks it against them. That table *is* the boot order, the way
+// tests/layers.test.js's BASE list *is* the split: getting one of these wrong
+// fails silently and usually in one state rather than at boot, and there is no
+// browser-driven suite to notice. **Moving a call here means checking that
+// test, and adding one with an ordering requirement means adding a row to it.**
+//
+// This is one of only three modules allowed to touch a browser global at import
+// time (tests/imports.test.js); everything it calls exports an init*() for
+// exactly that reason.
 
 import { el } from './util.ts';
 import { toast } from './notify.ts';
