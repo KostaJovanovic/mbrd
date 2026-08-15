@@ -33,6 +33,8 @@ import { POSTER_TIME } from './video.ts';
 import { clearDisplay } from './display.ts';
 import { releasePlayers } from './audio.ts';
 import { flyOut } from './exit-anim.ts';
+import { releaseStills } from './stills.ts';
+import { releaseTransports } from './transport.ts';
 import * as spatial from './spatial.ts';
 
 // The three pure questions about what a card says. They were exported from here
@@ -492,6 +494,15 @@ function discard(el: HTMLElement) {
   // next GC, and a board panned across hundreds of photos discards that many at
   // once. Clearing the src (and the still twin's) hands the decode back now.
   for (const im of el.querySelectorAll('img')) im.removeAttribute('src');
+  // And the frozen-GIF frames, which are object URLs this app made rather than
+  // ones the asset store owns. Clearing the src above drops the *reference*;
+  // the blob stays in the document's URL store until it is revoked by name. See
+  // releaseStills().
+  releaseStills(el);
+  // And the transports' selection subscriptions, which unsubscribe themselves
+  // only when the selection next changes - so a board panned past and then left
+  // alone kept one live closure per audio card. See releaseTransports().
+  releaseTransports(el);
 }
 
 /**

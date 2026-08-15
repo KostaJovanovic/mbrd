@@ -329,7 +329,26 @@ type NoteToolbarApi = {
   setTag(tag: NoteTag): void;
   setAlign(align: NoteAlign): void;
   setValign(v: NoteValign): void;
-  setWash(wash: NoteWash | null): void;
+  /**
+   * The lines the caret is on right now, for a control that is about to open a
+   * menu over them. See setWash().
+   */
+  linesNow(): Element[];
+  /**
+   * `lines` is which lines to mark, and it is not optional by accident: the
+   * marker is the one control in this bar that acts on a *selection* rather
+   * than on the sheet, and it is also the one that opens a menu.
+   *
+   * The menu takes focus (it is opened with `focus: true`, which is right - it
+   * was opened by a press), and ui/menu.ts closes the panel *before* running a
+   * row's action, with close() handing focus back to the contenteditable. So a
+   * setWash that resolved the selection when the row was pressed resolved it
+   * against whatever caret that hand-back had left: select three lines, press
+   * the marker, pick Amber, and the mark landed on one line or none. The lines
+   * are read when the button is pressed, which is when the person still has
+   * them selected.
+   */
+  setWash(wash: NoteWash | null, lines: Element[]): void;
   setFont(key: string): void;
   bumpSize(delta: number): void;
 };
@@ -418,7 +437,11 @@ function buildToolbar(api: NoteToolbarApi) {
   let wash: NoteWash | null = null;
   const washBtn = document.createElement('button');
   washBtn.type = 'button';
-  washBtn.className = 'ntb-btn ntb-wash';
+  // `ntb-btn` alone. It carried an `ntb-wash` beside it that no stylesheet
+  // defines - a class that looks like a hook and is not one, which is worse
+  // than none: the next person styling the marker writes a rule against it and
+  // finds it already there, doing nothing.
+  washBtn.className = 'ntb-btn';
   washBtn.title = 'Highlight';
   washBtn.setAttribute('aria-label', 'Highlight');
   washBtn.setAttribute('aria-haspopup', 'menu');
@@ -426,6 +449,9 @@ function buildToolbar(api: NoteToolbarApi) {
   washChip.className = 'ntb-chip';
   washBtn.append(washChip);
   washBtn.addEventListener('click', () => {
+    // Read here, before a menu that takes focus is anywhere near the caret -
+    // see setWash() in NoteToolbarApi for the whole of why.
+    const lines = api.linesNow();
     openMenu?.(
       washBtn,
       // The off row first, which is where a row that undoes the other four
@@ -442,7 +468,8 @@ function buildToolbar(api: NoteToolbarApi) {
         swatch: `var(--note-wash-${w})`,
       }))],
       wash || '',
-      key => api.setWash((NOTE_WASHES as readonly string[]).includes(key) ? key as NoteWash : null),
+      key => api.setWash(
+        (NOTE_WASHES as readonly string[]).includes(key) ? key as NoteWash : null, lines),
     );
   });
   gWash.append(washBtn);
@@ -504,6 +531,13 @@ function buildToolbar(api: NoteToolbarApi) {
     font = fontKey;
     sel.textContent = LABEL[fontKey] || fontKey;
     wash = washKey || null;
+    // The marker button lights up like every other control in the bar when the
+    // line under the caret carries a mark. The loop above only walks
+    // `.ntb-btn[data-key]` - the tag, alignment and placement glyphs - and
+    // neither this button nor the face carries one, so cards.css's
+    // `.ntb-btn.is-active .ntb-chip` rule could never match and the marker gave
+    // no pressed state at all beyond the colour in its chip.
+    washBtn.classList.toggle('is-active', !!wash);
     // The chip carries the name and cards.css turns it into the colour, which is
     // the same rule the line on the sheet is painted by. Removed rather than set
     // to anything when there is no mark - the empty outline is a rule keyed on
@@ -518,6 +552,30 @@ function buildToolbar(api: NoteToolbarApi) {
 // ---------------------------------------------------------------------------
 // The editor
 // ---------------------------------------------------------------------------
+
+/**
+ * The card and the column an edit needs, or null if this is not an editable
+ * note on screen.
+ *
+ * Spelled out rather than left to nodeFor(): this module is the note editor and
+ * what it needs of the card is an element it can measure and make editable,
+ * which is a statement about this file rather than about that one.
+ *
+ * Its own function because openComposer() has to ask the same question *before*
+ * it moves the card into the dialog. It used to call showModal() and then hand
+ * the id to editNote(), which answers a no-op `finish` on exactly these
+ * conditions - so a non-note id (reachable from the console handle:
+ * `mbrd.cmds.editNote(<id>)`) opened a modal whose Save, Cancel and Escape were
+ * all dead, with the card stranded in #compose and the geometry restore never
+ * run. One check, asked in both places.
+ */
+function editableNote(id: string): { found: HTMLElement; rich: HTMLElement } | null {
+  const item = byId(id);
+  const found: HTMLElement | undefined = nodeFor(id);
+  const rich = found?.querySelector('.card')?.querySelector<HTMLElement>('.note-rich');
+  if (!item || item.type !== 'note' || !found || !rich) return null;
+  return { found, rich };
+}
 
 /**
  * Turn a note into an editable column of blocks until focus leaves it.
@@ -545,13 +603,9 @@ export function editNote(
     onDone?: ((text: string | null) => void) | null;
   } = {},
 ): { finish: (discard?: boolean) => void } {
-  const item = byId(id);
-  // Spelled out rather than left to nodeFor(): this module is the note editor
-  // and what it needs of the card is an element it can measure and make
-  // editable, which is a statement about this file rather than about that one.
-  const found: HTMLElement | undefined = nodeFor(id);
-  const rich = found?.querySelector('.card')?.querySelector<HTMLElement>('.note-rich');
-  if (!item || item.type !== 'note' || !found || !rich) return { finish: () => {} };
+  const parts = editableNote(id);
+  if (!parts) return { finish: () => {} };
+  const { found, rich } = parts;
   // Bound again now they are known present. finish() below is a hoisted
   // declaration and the handlers close over both, and TypeScript will not carry
   // a guard into a function it cannot order against - so the guard is spent here
@@ -619,7 +673,13 @@ export function editNote(
     // drawn over the words you meant, and a note whose every line is
     // highlighted has said nothing about any of them - at which point the tint
     // of the sheet is the control that was wanted.
-    setWash(w) { for (const l of selectedLines(wrap)) setLineWash(l, w); afterEdit(); },
+    linesNow: () => selectedLines(wrap),
+    setWash(w, lines) {
+      // Only the ones still on the sheet: an edit can have removed a line
+      // between the press and the pick.
+      for (const l of lines) if (wrap.contains(l)) setLineWash(l, w);
+      afterEdit();
+    },
     setFont(key) {
       // NOTE_FONT_KEYS is Object.keys(NOTE_FONTS) and so answers `true` only for
       // a NoteFont; 'sheet' is one as well. The cast is that pair of facts, which
@@ -761,7 +821,24 @@ export function editNote(
         changed = true;
         continue;
       }
-      const line = buildNoteLine({ tag: 'p', align: 'left', text: node.textContent || '' });
+      // A stray node arrives with no formatting of its own, so it takes the
+      // formatting of the line it landed beside rather than the model's
+      // defaults. Folding it into a hard `{p, left}` was how a marked,
+      // right-aligned paragraph lost both the moment an engine dropped a bare
+      // text node into the wrapper - which is what this function exists to
+      // tidy up after, not an edit anybody made.
+      // A ChildNode has no *Element sibling; walk the two neighbours by hand
+      // and take whichever of them is a line.
+      const near = [node.previousSibling, node.nextSibling]
+        .find((n): n is Element => !!n && n.nodeType === 1
+          && (n as Element).classList.contains('note-line'));
+      const beside = near ?? null;
+      const line = buildNoteLine({
+        tag: 'p',
+        align: beside ? lineAlign(beside) : 'left',
+        wash: beside ? lineWash(beside) : undefined,
+        text: node.textContent || '',
+      });
       wrap.replaceChild(line, node);
       changed = true;
     }
@@ -792,7 +869,14 @@ export function editNote(
       const off = caretOffset(line);
       const full = textOf(line);
       line.textContent = full.slice(0, off);
-      const next = buildNoteLine({ tag: 'p', align: lineAlign(line), text: full.slice(off) });
+      // The mark travels with the alignment. It did not, so pressing Enter in
+      // the middle of a marked line left the second half unmarked - a mark
+      // somebody drew across a sentence came apart at the point they typed.
+      // `wash` is absent rather than falsy on an unmarked line, which is what
+      // buildNoteLine() reads, so passing undefined through is right.
+      const next = buildNoteLine({
+        tag: 'p', align: lineAlign(line), wash: lineWash(line), text: full.slice(off),
+      });
       line.after(next);
       caretTo(next, 0);
       afterEdit();
@@ -806,6 +890,16 @@ export function editNote(
           selectionNow().isCollapsed) {
         e.preventDefault();
         const at = textOf(prev).length;
+        // Whose mark the merged line carries. A block carries one, so one of
+        // the two has to go, and the rule is the one every editor uses: the
+        // line being merged *into* keeps its formatting.
+        //
+        // The exception is the case that rule gets wrong, and it was the whole
+        // of the damage. Backspacing at the top of a marked line to close up a
+        // blank line above it merged into an *empty* line - which carries no
+        // mark and had none to lose - and the mark went with it. An empty line
+        // has no formatting anybody chose, so it takes the arriving line's.
+        if (!at) setLineWash(prev, lineWash(line) ?? null);
         prev.textContent = textOf(prev) + textOf(line);
         line.remove();
         caretTo(prev, at);
@@ -835,7 +929,11 @@ export function editNote(
     for (let i = 1; i < parts.length; i++) {
       const last = i === parts.length - 1;
       cur = insertAfter(cur, buildNoteLine({
-        tag: 'p', align: lineAlign(line), text: last ? parts[i] + tail : parts[i],
+        // Marked like the line being pasted into, for the reason Enter gives
+        // above: the paste is happening inside a marked sentence, and the
+        // continuation of it is part of the same mark.
+        tag: 'p', align: lineAlign(line), wash: lineWash(line),
+        text: last ? parts[i] + tail : parts[i],
       }));
     }
     if (parts.length === 1) caretTo(line, head.length + parts[0].length);
@@ -1005,6 +1103,12 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>) {
   const mount = document.getElementById('compose-mount');
   const node: HTMLElement | undefined = nodeFor(id);
   if (!node || !mount || typeof dlg?.showModal !== 'function') { editNote(id); return; }
+  // And the check editNote() makes for itself, asked here because everything
+  // below this line moves the card, resizes it and opens a modal round it -
+  // and editNote()'s way of declining is a `finish` that does nothing, which
+  // would leave all three of the dialog's buttons dead over a card stranded in
+  // #compose. See editableNote().
+  if (!editableNote(id)) { editNote(id); return; }
 
   // The dialog draws every note on the same sheet, whatever the note's own box
   // is, and this is the whole of what it is for: it is where the words are
@@ -1043,7 +1147,13 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>) {
   // the full sheet would hang off both sides of a dialog that had already given
   // it everything it had. Read once, here: a modal is not a thing you resize the
   // window behind.
-  const sheetW = Math.max(200, Math.min(EDIT_W, innerWidth - 48));
+  // The floor is a floor and not an override. `Math.max(200, ...)` wins outright
+  // below an innerWidth of 248, and the dialog is capped at the viewport less
+  // 32px (#compose in dialog.css) - so on anything narrower the sheet was drawn
+  // wider than the dialog it sits inside and hung off both edges. Clamped to
+  // what the dialog can actually hold, with the 200 applying only where there is
+  // room for it.
+  const sheetW = Math.min(Math.max(200, Math.min(EDIT_W, innerWidth - 48)), innerWidth - 32);
   node.style.width = sheetW + 'px';
   // The margins are a share of the width (--note-half in cards.css), so the
   // stand-in width has to bring its own half or the sheet is drawn at this size

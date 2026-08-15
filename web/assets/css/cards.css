@@ -202,11 +202,29 @@
    on the toolbar button that says which colour is set - and the whole reason
    the wash is an attribute rather than a class is that both of them then read
    one name through one rule. Scoping it would mean writing the four colours
-   twice and finding out later that only one copy was updated. */
-[data-wash="amber"]      { --wash: var(--note-wash-amber); }
-[data-wash="terracotta"] { --wash: var(--note-wash-terracotta); }
-[data-wash="olive"]      { --wash: var(--note-wash-olive); }
-[data-wash="graphite"]   { --wash: var(--note-wash-graphite); }
+   twice and finding out later that only one copy was updated.
+
+   --note-wash, and the name is the fix. This block wrote `--wash`, which
+   tokens.css has owned since long before as the whimsy *ornament multiplier* -
+   `--wash: 1 / 1.4 / 0` at :root and per tier, consumed by base.css as
+   `calc(3% * var(--wash))`. Two meanings, one inherited name, and both of them
+   wrong somewhere:
+
+     - the chip's `var(--wash, transparent)` never took its fallback, because
+       `--wash: 1` is always inherited from :root. It read empty only because
+       `background: 1` is invalid at computed-value time, which is not the same
+       thing and is not what the comment beside it claimed.
+     - `--wash` is in the look allowlist (ui/look.ts), so a .mbrd carrying
+       `{"--wash": "red"}` - an allowed token, and `red` passes the value
+       grammar - painted every unmarked marker chip red.
+
+   The newer of the two moves, which is this one: `--wash` is in saved files and
+   in the allowlist and the note colour is neither. --note-wash also matches the
+   four sheet tokens it is built from. */
+[data-wash="amber"]      { --note-wash: var(--note-wash-amber); }
+[data-wash="terracotta"] { --note-wash: var(--note-wash-terracotta); }
+[data-wash="olive"]      { --note-wash: var(--note-wash-olive); }
+[data-wash="graphite"]   { --note-wash: var(--note-wash-graphite); }
 
 /* Around the words and not across the column, which is the difference between a
    marker and a ruled band. A block-level line fills its container, so the box
@@ -224,7 +242,7 @@
    flex item with a width of its own is placed by the cross-axis alignment. The
    text-align above still does the wrapped lines inside the box. */
 .item[data-type="note"] .note-line[data-wash] {
-  background: var(--wash);
+  background: var(--note-wash);
   width: max-content;
   max-width: calc(100% + 0.64em);
   padding-inline: 0.32em;
@@ -355,19 +373,22 @@
 }
 
 /* The marker control, whose face is the colour rather than a picture of a pen.
-   The chip is drawn from --wash, which the data-wash block up by the note lines
-   sets - one attribute, one mapping, two very different elements reading it.
+   The chip is drawn from --note-wash, which the data-wash block up by the note
+   lines sets - one attribute, one mapping, two very different elements reading
+   it.
 
-   Unmarked there is no attribute and so no --wash, and the fallback is the whole
-   of what "none" looks like here: nothing inside a ring. The ring is on in both
-   states deliberately, so the chip does not change size or weight as a colour is
+   Unmarked there is no attribute and so no --note-wash, and the fallback is the
+   whole of what "none" looks like here: nothing inside a ring - which is now
+   what actually happens, rather than what the old `--wash` fallback claimed
+   while an inherited `1` shadowed it. The ring is on in both states
+   deliberately, so the chip does not change size or weight as a colour is
    chosen - only what is in it. */
 .note-toolbar .ntb-chip {
   display: block;
   width: 17px;
   height: 17px;
   border-radius: 4px;
-  background: var(--wash, transparent);
+  background: var(--note-wash, transparent);
   box-shadow: inset 0 0 0 var(--hairline) color-mix(in srgb, var(--ink) 30%, transparent);
 }
 /* On the accent, where the ring would vanish into it. */

@@ -51,6 +51,7 @@
 
 import { clamp } from '../util.ts';
 import { readPref, writePref } from '../prefs.ts';
+import { reportPlayError } from '../media/transport.ts';
 import type { Item } from '../board-model.ts';
 
 /**
@@ -128,7 +129,7 @@ export const getVolume = () => volume;
 export function togglePlayback() {
   const el = current?.el;
   if (!el) return false;
-  if (el.paused) el.play().catch(() => {}); else el.pause();
+  if (el.paused) el.play().catch(reportPlayError); else el.pause();
   return true;
 }
 

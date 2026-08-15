@@ -11,7 +11,9 @@
 // a pause button for it - if anything the case is stronger, since a clip you
 // cannot see is one you cannot reach for. What differs is only the notation:
 // video gets the plain line its own card carries and audio gets the measured
-// waveform, which is buildTransport's `line` option and nothing more.
+// waveform. This used to point at buildTransport's `line` option for that, an
+// option nothing ever passed and which is now gone; the bar draws both forms
+// itself, out of the pieces named in the paragraph below.
 //
 // It is deliberately not a second player. The <audio> in the card is still the
 // engine; this builds its own strip over that same element - bindScrub() and
@@ -59,7 +61,7 @@ import { board } from '../state.ts';
 import { setLens, currentLens } from './board-view.ts';
 import { togglePlayerWindow, isPlayerWindowOpen } from './playlist.ts';
 import { baseName, clamp } from '../util.ts';
-import { seekInnerHTML, sizeSeekWave } from '../media/transport.ts';
+import { seekInnerHTML, sizeSeekWave, reportPlayError } from '../media/transport.ts';
 import type { NowPlaying } from '../canvas/audio.ts';
 import type { Item } from '../board-model.ts';
 
@@ -93,6 +95,7 @@ const LIST_ICON = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="tru
 
 /** The transport currently in the bar, and the way to take it back apart. */
 let shown: Item | null = null;      // the item it was built for
+let boundEl: HTMLMediaElement | null = null;   // and the element it is driving
 let abort: AbortController | null = null;      // its listeners on the <audio>
 
 /**
@@ -233,13 +236,25 @@ export function initNowPlaying() {
 function show(current: NowPlaying | null) {
   if (!bar) return;
   if (!current) { hide(); return; }
-  if (current.item === shown) return;
+  // The element as well as the item, which ui/playlist.ts has always compared
+  // and this did not.
+  //
+  // One track can be playing through two different elements over its life: the
+  // queue uses a shared <audio> while a card is culled, and the card's own the
+  // moment it mounts. Pressing that card's play button fires setNowPlaying()
+  // with the same item and a different element, and the early return here kept
+  // every listener, the rAF and `seekTo` on the element the exclusivity rule in
+  // canvas/audio.ts had just paused and rewound. The bar drew 0:00, showed
+  // Play while sound was coming out of the other one, and scrubbing seeked
+  // something silent.
+  if (current.item === shown && current.el === boundEl) return;
 
   // Whatever was on its way out is not going any more - the box it was leaving
   // is about to hold a different track.
   cancelExit();
   teardown();
   shown = current.item;
+  boundEl = current.el;
 
   bind(current.el);
   caption!.textContent = name(current.item);
@@ -361,7 +376,7 @@ const playlistOpen = () => (board.layoutMode === 'mobile'
 function togglePlay() {
   const sound = nowPlaying()?.el;
   if (!sound) return;
-  if (sound.paused) sound.play().catch(() => {});
+  if (sound.paused) sound.play().catch(reportPlayError);
   else sound.pause();
 }
 
@@ -451,6 +466,7 @@ function teardown() {
   abort?.abort();
   abort = null;
   shown = null;
+  boundEl = null;
   seekTo = null;
   if (frame) { cancelAnimationFrame(frame); frame = 0; }
   lineEl?.style.setProperty('--np-progress', '0');

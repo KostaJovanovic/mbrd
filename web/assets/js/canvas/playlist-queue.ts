@@ -52,6 +52,7 @@
 import type { Item } from '../board-model.ts';
 import { readPref, writePref } from '../prefs.ts';
 import { assetURL } from '../storage/assets.ts';
+import { reportPlayError } from '../media/transport.ts';
 import {
   claimPlayer, nowPlaying, onPlayerReleased, ownerOf,
   registerPlayer, registeredPlayers, setNowPlaying,
@@ -225,9 +226,23 @@ function rebuildOrder(): void {
   }
   if (playing) {
     const idx = queueItems.indexOf(playing as Track);
-    const at = queueOrder.indexOf(idx);
-    if (at > 0 && shuffleOn) { queueOrder.splice(at, 1); queueOrder.unshift(idx); }
-    queuePos = queueOrder.indexOf(idx);
+    // Only when it is still in the list. `indexOf` answers -1 for a track that
+    // has been deleted, and writing that into `queuePos` made the *next* thing
+    // to end restart the queue at track one: advanceQueue() read `-1 >= length
+    // - 1` as false, stepped to 0, and played the first track. On Mobile that
+    // is the ordinary path, because the queue plays through the shared element
+    // and deleting a card there never releases a registered player.
+    //
+    // Left where it was instead. `queuePos` still points at the slot the gone
+    // track occupied, which is the slot its neighbour has now moved into - so
+    // ending advances to what came after it, which is what "next" means.
+    if (idx >= 0) {
+      const at = queueOrder.indexOf(idx);
+      if (at > 0 && shuffleOn) { queueOrder.splice(at, 1); queueOrder.unshift(idx); }
+      queuePos = queueOrder.indexOf(idx);
+    } else {
+      queuePos = Math.min(queuePos, queueOrder.length - 1);
+    }
   }
 }
 
@@ -244,10 +259,28 @@ export function playTrack(item: Track): void {
   startCurrent();
 }
 
-function startCurrent(): void {
+/**
+ * Start whatever `queuePos` points at.
+ *
+ * `skips` is how many tracks this call has already stepped past, and it is what
+ * stops a queue whose assets have gone from either stalling or spinning. A
+ * track whose bytes are missing used to return here in silence, *after*
+ * queuePos had been advanced: playback simply stopped, nothing was announced,
+ * and notifyQueue() was never reached so no transport repainted. A queue that
+ * skips a hole is what every player does; the counter is the bound, because a
+ * queue where every asset has gone would otherwise walk itself forever.
+ */
+function startCurrent(skips = 0): void {
   const item: Track | undefined = queueItems[queueOrder[queuePos]];
   const url: string | null = item?.asset?.hash ? assetURL(item.asset.hash) : null;
-  if (!url) return;
+  if (!url) {
+    if (skips >= queueOrder.length) { notifyQueue(); return; }
+    const last = queuePos >= queueOrder.length - 1;
+    if (last && repeatMode !== 'all') { notifyQueue(); return; }
+    queuePos = last ? 0 : queuePos + 1;
+    startCurrent(skips + 1);
+    return;
+  }
   const el = playerFor(item);
   if (el === player) {
     // The shared element holds whatever it last played; point it at this track.
@@ -264,7 +297,10 @@ function startCurrent(): void {
   queuePlayerEl = el;
   claimPlayer(el, item);
   setNowPlaying({ el, item });
-  el.play().catch(() => {});
+  // Reported, not swallowed - see reportPlayError(). This is the line every
+  // playlist Play press ends at, so an empty catch here meant pressing Play
+  // with autoplay blocked did nothing whatever, with nothing in the console.
+  el.play().catch(reportPlayError);
   notifyQueue();
 }
 

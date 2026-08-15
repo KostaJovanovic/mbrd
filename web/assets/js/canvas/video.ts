@@ -108,6 +108,9 @@ export function buildVideoPlayer(item: Item, video: HTMLVideoElement): HTMLEleme
   // loop over the width, so laying it per frame would rebuild it sixty times a
   // second to arrive at the same characters. A video card is resizable, which is
   // why it is laid more than once at all.
+  // Once here, so a browser without a ResizeObserver still gets a wave rather
+  // than an empty path - see the same repair in ui/playlist.ts.
+  sizeSeekWave(track, trackWave, trackWavePath);
   if (typeof ResizeObserver === 'function') {
     new ResizeObserver(() => sizeSeekWave(track, trackWave, trackWavePath)).observe(track);
   }
@@ -180,12 +183,21 @@ export function buildVideoPlayer(item: Item, video: HTMLVideoElement): HTMLEleme
   };
   big.addEventListener('click', toggle);
 
-  mute.addEventListener('click', () => {
-    video.muted = !video.muted;
+  // Painted from the element, not from the press.
+  //
+  // The three lines below used to live inside the click handler, so the glyph
+  // was a record of what this button had been asked to do rather than of what
+  // the video is doing - and the element's `muted` moves without this button:
+  // an autoplay policy mutes a clip to let it start, and the exclusivity rule
+  // reaches across cards. The button then said Mute over a silent video.
+  const paintMute = () => {
     mute.innerHTML = video.muted ? MUTED_ICON : SOUND_ICON;
     mute.setAttribute('aria-label', video.muted ? 'Unmute' : 'Mute');
     player.classList.toggle('is-muted', video.muted);
-  });
+  };
+  mute.addEventListener('click', () => { video.muted = !video.muted; });
+  video.addEventListener('volumechange', paintMute);
+  paintMute();
 
   // On the player and not on the bar. The bar carried the same class so it
   // could stay up for the length of a clip, and that is exactly what the

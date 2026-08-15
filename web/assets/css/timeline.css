@@ -164,7 +164,12 @@
   cursor: pointer;
 }
 #timeline-strip .tl-close:hover,
-#timeline-strip .tl-name:hover { background: var(--wash); color: var(--ink); }
+/* --wash was a number, not a colour: tokens.css declares it as the whimsy
+   ornament multiplier (1 / 1.4 / 0), so `background: 1` was invalid at
+   computed-value time and these three hovers did nothing at all. The tint
+   the rest of the app hovers with, written the way cards.css and menu.css
+   already write it. */
+#timeline-strip .tl-name:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink); }
 #timeline-strip .tl-close svg,
 #timeline-strip .tl-name svg { width: 14px; height: 14px; }
 /* Absent at the start of the board, where there is no step to name. A grid
@@ -297,7 +302,8 @@
 #timeline-strip .tl-step .tl-dot .ico { width: 14px; height: 14px; }
 #timeline-strip .tl-step:hover .tl-dot {
   transform: scale(1.15);
-  background: var(--wash);
+  /* See the note by .tl-name:hover above. */
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
   color: var(--ink);
 }
 
@@ -410,7 +416,8 @@
   color: var(--ink-2);
   cursor: pointer;
 }
-.tl-trim-go:hover { background: var(--wash); color: var(--ink); }
+/* Ditto - see .tl-name:hover. */
+.tl-trim-go:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink); }
 /* In the strip it takes a line of its own under the track, and it is the only
    thing that ever wraps there - everything else is the one row the strip is cut
    to. Scoped, because the sheet uses the same row as a block between its list

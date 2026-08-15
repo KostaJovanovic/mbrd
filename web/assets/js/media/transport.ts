@@ -71,6 +71,10 @@
 // or a board would make this the wrong shape of function, and the fix then would
 // be to build the nodes rather than to escape the string.
 
+// The one import: notify.ts, which is beside this in the base layer. See
+// reportPlayError() at the foot of the file.
+import { toast } from '../notify.ts';
+
 /** A half period in px. Smaller is a higher frequency. */
 export const WAVE_HALF = 7;
 
@@ -163,12 +167,22 @@ export function sizeSeekWave(
  */
 export function bindScrub(el: HTMLElement, seekTo: (clientX: number) => void): void {
   el.addEventListener('pointerdown', e => {
-    el.setPointerCapture(e.pointerId);
+    // The seek and the stopPropagation come first, because the capture is the
+    // one line here that can throw. setPointerCapture() answers NotFoundError
+    // for a pointer that is no longer active, and with it in front the throw
+    // skipped both - so the press fell through to canvas/input.ts and was read
+    // as the start of a card drag, which is the exact outcome the note above
+    // says the capture exists to prevent.
     seekTo(e.clientX);
     e.stopPropagation();
+    try { el.setPointerCapture(e.pointerId); } catch { /* the pointer has gone */ }
   });
   el.addEventListener('pointermove', e => {
-    if (el.hasPointerCapture(e.pointerId)) seekTo(e.clientX);
+    if (!el.hasPointerCapture(e.pointerId)) return;
+    // The other half of the isolation, and it was missing: a captured move is
+    // still a move that bubbles, so the canvas saw every frame of a scrub.
+    e.stopPropagation();
+    seekTo(e.clientX);
   });
 }
 
@@ -185,6 +199,32 @@ export const PAUSE_ICON =
 
 /** m:ss. Hours are possible and would be a strange thing to pin to a board. */
 export function clock(secs: number): string {
+  // Number.isFinite, not the max: `Math.max(0, Math.floor(NaN))` is NaN, so the
+  // clamp let one straight through and the readout said "NaN:NaN". A duration
+  // is NaN until the metadata arrives, and ui/playlist.ts guards it with
+  // `typeof === 'number'`, which NaN passes.
+  if (!Number.isFinite(secs)) return '0:00';
   const s = Math.max(0, Math.floor(secs));
   return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+
+/**
+ * What to say when play() rejects, said once for every player in the app.
+ *
+ * A rejected play() is almost always the browser refusing rather than a broken
+ * file - Firefox blocks audible playback outright when a site's autoplay
+ * permission is set to block - and an empty catch is why "the cards are
+ * unplayable" once had nothing behind it in the console.
+ *
+ * canvas/transport.ts argued exactly that and then wrote its own copy, while
+ * the queue, the playlist window, the now-playing bar and canvas/audio.ts all
+ * used `.catch(() => {})`. So pressing Play on the playlist hero with autoplay
+ * blocked did nothing at all, silently, on the one path every playlist press
+ * takes. It is here for the same reason the scrubber is: five players in three
+ * layers, and the only place all of them can reach is the bottom.
+ */
+export function reportPlayError(err: { name?: string } | null | undefined): void {
+  toast(err && err.name === 'NotAllowedError'
+    ? 'Your browser blocked playback — allow audio for this site'
+    : 'Could not play this file');
 }
