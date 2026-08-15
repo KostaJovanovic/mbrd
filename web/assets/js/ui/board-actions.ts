@@ -11,26 +11,27 @@
 // two paint functions are called by their own state machines. `vp` is handed in
 // by initBoardActions() so nothing touches a browser global at import time.
 //
-// ── This is a second wiring point, and it is not declared as one ──
+// ── This was a second wiring point, and it is narrower now ──
 //
 // Worth knowing before adding to it. main.ts is the wiring point by design and
-// says so; this file reaches into ten different modules under canvas/ from a
-// module in ui/, which is the widest reach anywhere in that directory and wider
-// than main.ts's own. That is not an accident of growth - it is what these
-// commands are. A Rearrange has to settle the geometry and then repaint the
-// grid, the grain, the paper outline and the Mobile frame, and something has to
-// hold the knowledge of which four; Reset size has to ask the renderers what a
-// default size is; Scale from item has to reach the asset registry. Each import
-// is the shortest honest path from one control to the thing it changes.
+// says so; this file used to reach into ten different modules under canvas/ from
+// a module in ui/, which was the widest reach anywhere in that directory and
+// wider than main.ts's own. That was not an accident of growth - it is what
+// these commands are. Reset size has to ask the renderers what a default size
+// is; Scale from item has to reach the asset registry. Each import is the
+// shortest honest path from one control to the thing it changes.
 //
-// The cost is that the layering graph reads as narrower than it is. The
-// architecture doc draws main.ts as the place that knows about everything, and
-// on the strength of the import lists that is half true here instead. The shape
-// that would fix it is a repaintBoard() owned by canvas/ - one call standing for
-// the four paints that always run together - and every import added here makes
-// that shape more expensive to reach, because it is one more caller to find.
-// So: before importing an eleventh canvas/ module, check whether what you want
-// is that function.
+// The one that was not was the ground. A Rearrange has to settle the geometry
+// and then repaint the grid, the grain, the paper outline and the Mobile frame,
+// and something had to hold the knowledge of which four - which meant this file
+// held it, and so did main.ts, in the same order, copied. That is
+// canvas/ground.ts now: repaintGround() and forgetLookInk(), two calls where
+// there were seven imports and two hand-kept sequences, and the reach is seven
+// canvas/ modules rather than ten.
+//
+// So the rule this header used to end on still stands, one module further out:
+// before importing an eighth canvas/ module, check whether what you want is
+// something canvas/ should be answering in one call.
 
 import { shuffle, isRecord } from '../util.ts';
 import { toast } from '../notify.ts';
@@ -45,13 +46,13 @@ import {
 } from '../state.ts';
 import { latticeBox, itemBounds, rotatedExtents } from '../geometry.ts';
 import { travelMs } from '../canvas/viewport.ts';
-import { paintGrid, resetGridInk } from '../canvas/grid.ts';
-import { paintGrain } from '../canvas/grain.ts';
-import { paintPaper } from '../canvas/paper.ts';
-import { paintMobileFrame } from '../canvas/mobile-frame.ts';
+// The four layers under the cards, and the three caches they resolve out of the
+// look - one call each, rather than the seven imports and two hand-copied
+// sequences that used to be here. See the head of canvas/ground.ts.
+import { repaintGround, forgetLookInk } from '../canvas/ground.ts';
 import { barHeight, resetItems } from '../canvas/items.ts';
 import { resetWeb } from '../canvas/web.ts';
-import { resetModels, resetModelInk } from '../canvas/model.ts';
+import { resetModels } from '../canvas/model.ts';
 import { flushNoteEdit, noteFloor } from '../canvas/notes.ts';
 import { getAsset } from '../storage/assets.ts';
 import { saveBoard, exportBoard, autosave, clearAllData } from '../storage/storage.ts';
@@ -67,8 +68,8 @@ import type { Viewport } from '../canvas/viewport.ts';
  * canvas/viewport.ts still carries its migration pragma, so the class type it
  * exports has the methods but not the fields the constructor assigns - the same
  * intersection ui/hud.ts and ui/fence-prompt.ts make, for the same reason. These
- * are the fields paintGrid() and paintGrain() read off the viewport this module
- * hands them; the intersection comes out the day that module is annotated.
+ * are the fields the ground's painters read off the viewport this module hands
+ * repaintGround(); the intersection comes out the day that module is annotated.
  */
 type ActionsViewport = Viewport & {
   el: HTMLElement;
@@ -401,8 +402,7 @@ export async function scaleFromItem() {
 export function reloadBoard() {
   flushNoteEdit();
   recheckBoardGeometry();
-  resetGridInk();
-  resetModelInk();
+  forgetLookInk();
   resetModels();
   resetItems();
   // The lines between cards, and this one is not covered by the 'items' emit
@@ -415,10 +415,7 @@ export function reloadBoard() {
   bus.emit('items');
   bus.emit('selection');
   bus.emit('settings', 'reload');
-  paintGrid(vp!);
-  paintGrain(vp!);
-  paintPaper();
-  paintMobileFrame();
+  repaintGround(vp!);
   vp!.apply();
   toast('Board reloaded');
 }
