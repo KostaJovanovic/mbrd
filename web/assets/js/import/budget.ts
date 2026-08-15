@@ -15,6 +15,22 @@
 export const IMPORT_LIMITS = {
   /** One file, raw. Matches the ZIP single-entry ceiling in storage/zip.js. */
   fileBytes: 512 * 1024 ** 2,
+  /**
+   * Not a limit - the size at which one file is worth mentioning first.
+   *
+   * The two numbers around it are refusals, decided here and reported after the
+   * fact. This one is a question, and it is a question because the answer is
+   * not the importer's to give: a 90 MB video is a perfectly reasonable thing
+   * to put on a board and also a perfectly common thing to have dropped by
+   * accident, and nothing measurable tells the two apart. Everything past this
+   * point in an import is slow and hard to interrupt - hashing, decoding,
+   * thumbnailing - so the moment to ask is before any of it starts.
+   *
+   * Well clear of the sizes an ordinary import is made of - a phone photo is
+   * 3 MB, a scan 30 - so the dialog stays a thing that means something when it
+   * appears rather than one more press between somebody and their own files.
+   */
+  warnBytes: 60 * 1024 ** 2,
   /** Raw bytes summed across one import. Peak decode cost is a multiple of this. */
   batchBytes: 1024 ** 3,
   /**
