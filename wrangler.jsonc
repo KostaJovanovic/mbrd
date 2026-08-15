@@ -11,8 +11,13 @@
 // There is no Worker script: no `main`, only `assets`. The app is static files
 // and a service worker, and nothing is asked of the edge beyond handing them
 // back, which is the same bargain serve.py makes locally.
+// No `$schema`. The autoconfig PR this file replaced pointed one at
+// node_modules/wrangler/config-schema.json, which is a path this repo never
+// has: wrangler is not a devDependency and the deploy reaches it through
+// `npx`. A key resolving to nothing is worse than an absent one - it reads as
+// a dependency that is not there, and the editor validation it promises never
+// arrives to contradict it.
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
   "name": "mbrd",
   "compatibility_date": "2026-08-12",
   "assets": {
