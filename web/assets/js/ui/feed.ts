@@ -32,6 +32,9 @@ import { noteWords } from '../canvas/note-model.ts';
 import { displayURLReady, ensureDisplay } from '../canvas/display.ts';
 import { baseName, clamp } from '../util.ts';
 import { mobileOrder } from '../arrange/arrangements.ts';
+// Shortest-column-first, shared with the board's own masonry - see the head of
+// that file for why the two walls are one rule and two surfaces.
+import { packColumns } from '../arrange/columns.ts';
 import { assetURL, readText } from '../storage/assets.ts';
 import { linkURL, buildContent } from '../canvas/renderers.ts';
 import { bindDial } from '../canvas/ghosts.ts';
@@ -839,40 +842,50 @@ function fillFile(t: Tile) {
 
 /**
  * Shortest-column packing. `list` is the tiles in reading order; each lands in
- * whichever column is shortest so far, leftmost on a tie - the same rule
- * arrange/arrangements.js's masonry() uses. Returns the boxes and the height of
- * the tallest column, which is the wall's height. Pure but for reading `cols`.
+ * whichever column is shortest so far, leftmost on a tie.
+ *
+ * The packing itself is arrange/columns.ts's, which is *the same call*
+ * arrange/arrangements.js's masonry() makes rather than the same rule written
+ * out again beside it. They were two loops that had been written from each other
+ * and had come apart in three places; two of the three are arguments now
+ * (`span`, `tolerance`) and the third - one column width here, a width per
+ * column on the board - is the half that stays in each surface, which is why
+ * packColumns() answers in columns and tops rather than in x and y.
+ *
+ * What is left here is exactly the screen-space half: how wide a column is, what
+ * a span costs in pixels, and where a tile's box lands. Returns the boxes and
+ * the height of the tallest column, which is the wall's height. Pure but for
+ * reading `cols`.
  */
 function feedMasonry(list: Tile[], width: number):
 { boxes: TileBox[], colW: number, height: number } {
   const colW = (width - (cols - 1) * GAP) / cols;
-  const heights: number[] = new Array(cols).fill(0);
-  const boxes: TileBox[] = [];
-  for (const t of list) {
+  // Every tile's span and height, before anything is placed. Both are knowable
+  // up front - a span comes from the tile's kind and the column width, a height
+  // from the width that span buys - and packColumns() wants only the heights.
+  const sized = list.map(t => {
     const span = spanFor(t, colW);
-    // The best run of `span` adjacent columns: the one whose *tallest* column is
-    // lowest, since a wide tile has to start below every column it covers. Ties
-    // go to the leftmost, which keeps a full-width tile at x = 0 and keeps the
-    // whole wall stable between layouts.
-    let c = 0;
-    let best = Infinity;
-    for (let i = 0; i + span <= cols; i++) {
-      const top = Math.max(...heights.slice(i, i + span));
-      if (top < best - 0.5) { best = top; c = i; }
-    }
     const w = span * colW + (span - 1) * GAP;
     // A measured height wins over the shape, and only hints have one - see
     // Tile.measured. Falling back to the ratio keeps every other tile, and a
     // hint on the very first pass before it has been measured, exactly as they
     // were.
-    const h = t.measured > 0 ? t.measured : w / t.ratio;
-    const y = span > 1 ? best : heights[c];
-    boxes.push({ t, x: c * (colW + GAP), y, w, h });
-    // Every column the tile covers is filled to the same line, or the next tile
-    // would tuck under a wide one and overlap it.
-    for (let i = c; i < c + span; i++) heights[i] = y + h + GAP;
-  }
-  return { boxes, colW, height: Math.max(0, ...heights) - GAP };
+    return { t, span, w, h: t.measured > 0 ? t.measured : w / t.ratio };
+  });
+
+  // Half a pixel of tolerance: these heights are pixel arithmetic off measured
+  // elements, and two columns apart in the eighth decimal place are level to
+  // anybody looking at them. Without it a full-width tile wanders off x = 0.
+  const { spots, height } = packColumns(sized, { cols, gap: GAP, tolerance: 0.5 });
+
+  const boxes: TileBox[] = sized.map((s, i) => ({
+    t: s.t,
+    x: spots[i].col * (colW + GAP),
+    y: spots[i].top,
+    w: s.w,
+    h: s.h,
+  }));
+  return { boxes, colW, height };
 }
 
 /**

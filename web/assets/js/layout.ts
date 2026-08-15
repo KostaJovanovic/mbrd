@@ -799,10 +799,13 @@ export function completeLayout(mode: LayoutMode): Geometry[] {
     // another order, so every element here is one of `missing`.
     const ordered = mobileOrder(missing, { name: board.arrangements.mobile }) as Item[];
     // Masonry, and it is the same rule the Feed itself packs by: shortest column
-    // first, leftmost on a tie (LAYOUTS.masonry in arrange/arrangements.js, and
-    // feedMasonry() in ui/feed.js, which were written from each other). Fed the
-    // Feed's order it reproduces the Feed's wall as a rectangular block, which is
-    // the one arrangement that can honestly be called "the same board".
+    // first, leftmost on a tie. That used to be a claim about two loops written
+    // from each other - and by the time it was written here they had come apart,
+    // over spanning and over how level two columns have to be to count as level.
+    // It is one call now (packColumns in arrange/columns.js) with the two
+    // differences as arguments, so fed the Feed's order this reproduces the
+    // Feed's wall as a rectangular block, which is the one arrangement that can
+    // honestly be called "the same board".
     //
     // Below whatever is already placed rather than on top of it, and `obstacles`
     // is the belt to that braces: arrange() pushes only the newcomers that would
