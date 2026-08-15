@@ -957,8 +957,9 @@ export {
   // not-found opens a blank board that must never be written over the one the
   // visitor already has, so the writer is stopped before anything can fire.
   // resetSessionLatches is how it comes back on, once the board underneath is
-  // the real one - see leaveNotFound() in main.js.
-  suspendCache, resetSessionLatches,
+  // the real one - see leaveNotFound() in main.js. failHandover is the third of
+  // them, for the way out that the handover reaching neither end leaves behind.
+  suspendCache, resetSessionLatches, failHandover,
 } from './session.ts';
 export { fileNameFor, titleFromFileName, titleForOpenedBoard } from './naming.ts';
 

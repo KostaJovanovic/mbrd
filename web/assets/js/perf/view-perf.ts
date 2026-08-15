@@ -182,8 +182,8 @@ export function createViewPerf(vp: { apply(): void }) {
     // settles the gesture is no longer the transient activation execCommand
     // asks for, so the fallback would fail on precisely the device it exists
     // for. Nothing is awaited before the attempt that has to work.
+    const box = document.createElement('textarea');
     try {
-      const box = document.createElement('textarea');
       box.value = text;
       // Off-screen but focusable, and readOnly so a phone does not open its
       // keyboard over the readout on the way past.
@@ -192,10 +192,13 @@ export function createViewPerf(vp: { apply(): void }) {
       document.body.append(box);
       box.select();
       box.setSelectionRange(0, text.length);
-      const ok = document.execCommand('copy');
-      box.remove();
-      if (ok) return Promise.resolve(true);
+      if (document.execCommand('copy')) return Promise.resolve(true);
     } catch { /* deprecated, and one day gone - the API below is the future */ }
+    // In a finally-shaped position rather than after the call, because an
+    // engine that has already removed execCommand throws there and left the
+    // <textarea> in document.body - one orphan per press of a button whose
+    // whole purpose is to be pressed until something works.
+    finally { box.remove(); }
     try {
       if (navigator.clipboard?.writeText) {
         return navigator.clipboard.writeText(text).then(() => true, () => false);
@@ -243,13 +246,18 @@ export function createViewPerf(vp: { apply(): void }) {
     document.body.appendChild(hud);
   };
   const hideHud = () => { hud?.remove(); hud = hudText = null; };
-  const paintHud = (now: number) => {
+  /** Whether it did the work - see the gap it costs, in tick(). */
+  const paintHud = (now: number): boolean => {
     // hud and hudText are put up and taken down together, so either one standing
     // alone is not a state this has - but only the pair being tested says so.
-    if (!hud || !hudText || now - hudAt < 250) return;   // four updates a second is plenty
+    if (!hud || !hudText || now - hudAt < 250) return false;   // four updates a second is plenty
+    // Before stats(), which sorts a copy of up to eight thousand numbers and
+    // then divides by gaps.length four times. With no gaps yet there is nothing
+    // to sort and nothing the readout could say, and this used to be tested
+    // after all of it.
+    if (!gaps.length) return false;
     hudAt = now;
     const { median, base, twos, overs, off } = stats();
-    if (!gaps.length) return;
     // A second line for what the frame rate cannot say on a panel that changes
     // its own refresh rate: the beat this run was actually delivered on, and
     // the tail counted in it - see stats(). `2f` is the ambiguous column and
@@ -273,20 +281,34 @@ export function createViewPerf(vp: { apply(): void }) {
       + `2f ${share(twos)}%   3f+ ${share(overs)}%   offbeat ${share(off)}%\n`
       + `cull ${cullAvg.toFixed(2)}ms   mnt ${m.mounted}  vid ${m.videos}  img ${(m.imgBytes / 1048576).toFixed(0)}MB\n`
       + `${board.layoutMode} ${board.items.length} items   ${runLabel()}`;
+    return true;
   };
+  /**
+   * Whether the last frame carried the readout, and so must not be measured.
+   *
+   * The profiler's own work lands in the interval it is about to report: a
+   * sort of up to eight thousand numbers, four filter passes and a text node
+   * rewrite, all inside the rAF callback whose *next* gap they lengthen. Four
+   * times a second, that inflates `2f`, `3f+` and `offbeat` - and it inflates
+   * them most on the slow devices the readout exists for, which is the one
+   * place a profiler must not be the thing it is measuring. So the gap the
+   * paint lands in is skipped: four samples a second out of sixty, in exchange
+   * for figures that are about the app.
+   */
+  let painted = false;
   const tick = (now: number) => {
     if (!on) return;
     // Only a moved frame counts. requestAnimationFrame still fires at the
     // display rate on an idle board, and those intervals are not what we are
     // measuring - the question is how fast frames come while something is
     // actually happening.
-    if (lastRaf && moved) {
+    if (lastRaf && moved && !painted) {
       if (gaps.length >= CAP) gaps.shift();
       gaps.push(now - lastRaf);
     }
     lastRaf = now;
     moved = false;
-    paintHud(now);
+    painted = paintHud(now);
     raf = requestAnimationFrame(tick);
   };
   return {
@@ -411,15 +433,23 @@ export function createViewPerf(vp: { apply(): void }) {
  */
 export function initPerfHash(perf: ViewPerf) {
   const armPerf = () => {
-    const run = location.hash.match(/perf(\d)?/);
+    // Anchored, and the digit is the whole of what may follow. Unanchored, this
+    // matched the substring anywhere in the fragment: #imperfect, #superficial
+    // or a heading anchor on a board somebody shared armed the profiler and put
+    // a green readout over the board for a reader who asked for nothing.
+    const run = location.hash.match(/^#perf(\d)?$/);
     if (!run) {
       // off() only stops the profiler; a run entered as #perf2/#perf3 also set
       // Mobile kill switches (hidden chrome, skipped grid writes) that would
-      // otherwise persist after the hash is cleared. Put them back to default.
-      if (perf.active) {
-        perf.off();
-        perf.mobile({ legacyVars: false, chrome: true, gridPos: true });
-      }
+      // otherwise persist after the hash is cleared. Put them back to default -
+      // unconditionally, because `perf.active` is not the state they belong to:
+      // mbrd.perf.off() from the console leaves the flags set and the profiler
+      // inactive, and then clearing the hash was the one path that would have
+      // restored them and did not. The Mobile sheet and the masthead stayed
+      // gone for the session, which is exactly what the note above says is
+      // being prevented. Both calls are no-ops when nothing was armed.
+      if (perf.active) perf.off();
+      perf.mobile({ legacyVars: false, chrome: true, gridPos: true });
       return;
     }
     perf.mobile({

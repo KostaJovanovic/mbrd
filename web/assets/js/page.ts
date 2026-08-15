@@ -51,11 +51,20 @@ export function homePath(): string {
  * implementation of anything.
  *
  * `.html` counts as well, the way index.html does: the host resolves the
- * extensionless form and both spellings are this page.
+ * extensionless form and both spellings are this page. So does the trailing
+ * slash, and that one is not tidiness: a host serving the changelog at
+ * `/patch/` - or a link written with one, which any host that redirects to the
+ * directory form will produce - would otherwise fall through to
+ * isNotFoundPage(), and the not-found arm suspends the writer but does *not*
+ * call freezePrefs(). Every whimsy nudge, quality change and palette pick a
+ * reader made while reading the changelog would then be written to their
+ * browser and follow them back to their own board. See prefs.ts: a page that
+ * shows somebody a document has no business changing how their board looks.
  */
 export function isPatchPage(): boolean {
   const at = location.pathname;
-  return at === homePath() + 'patch' || at === homePath() + 'patch.html';
+  const patch = homePath() + 'patch';
+  return at === patch || at === patch + '/' || at === patch + '.html';
 }
 
 /**

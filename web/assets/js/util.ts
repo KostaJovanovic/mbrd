@@ -185,17 +185,6 @@ export function formatBytes(n: number) {
 }
 
 /**
- * Whether something is a content id of the shape sha256() produces.
- *
- * Here rather than beside sha256() in crypto.ts, and the distance is on
- * purpose: this is the *shape* of an id, asked by layers that never make one -
- * storage/mbrd.ts spelling a hash into an archive path, state.ts deciding
- * whether an item arriving from a file may claim one, board-schema.ts holding a
- * field to it. None of them should have to import a hundred and thirty lines of
- * FIPS 180-4 to ask a question about a string. Written twice, the two would
- * drift, which is why it is written once - just not in there.
- */
-/**
  * Whether something is an object that may be looked into, key by key.
  *
  * Here for the same reason as everything else in this file: most of the graph
@@ -220,6 +209,17 @@ export function formatBytes(n: number) {
 export const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
+/**
+ * Whether something is a content id of the shape sha256() produces.
+ *
+ * Here rather than beside sha256() in crypto.ts, and the distance is on
+ * purpose: this is the *shape* of an id, asked by layers that never make one -
+ * storage/mbrd.ts spelling a hash into an archive path, state.ts deciding
+ * whether an item arriving from a file may claim one, board-schema.ts holding a
+ * field to it. None of them should have to import a hundred and thirty lines of
+ * FIPS 180-4 to ask a question about a string. Written twice, the two would
+ * drift, which is why it is written once - just not in there.
+ */
 export const isHash = (v: unknown): v is string =>
   typeof v === 'string' && /^[0-9a-f]{64}$/.test(v);
 

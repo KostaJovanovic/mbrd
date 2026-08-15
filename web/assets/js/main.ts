@@ -14,9 +14,9 @@
 // (tests/imports.test.js); everything it calls exports an init*() for exactly
 // that reason.
 
-import { el } from './util.ts';
+import { el, rafThrottle } from './util.ts';
 import { toast } from './notify.ts';
-import { initErrors, setBoardProbe } from './errors.ts';
+import { initErrors, setBoardProbe, reportCaught } from './errors.ts';
 import { initOverlays } from './ui/overlays.ts';
 import { initTimeline } from './ui/timeline-view.ts';
 import { ask } from './ui/dialog.ts';
@@ -44,7 +44,7 @@ import { initInput } from './canvas/input.ts';
 import { initDrop, setImportPrompt } from './import/drop.ts';
 import {
   initStorage, restoreSession, openFile, autosave, setPrompt, setBoardThumb,
-  suspendCache, resetSessionLatches, boardSafety,
+  suspendCache, resetSessionLatches, failHandover, boardSafety,
 } from './storage/storage.ts';
 import { boardThumb } from './ui/snapshot.ts';
 import { flushNoteEdit, growNote, setNoteMenu } from './canvas/notes.ts';
@@ -133,6 +133,17 @@ if (isPatch) freezePrefs();
 // hands that question over without errors.ts ever learning what a save is.
 initErrors();
 setBoardProbe(boardSafety);
+
+// The other half of dismissSplash()'s pairing with `started`, and armed here
+// rather than written beside it because it has to be in place before the first
+// line that can throw. `started` only exists if the module body got as far as
+// assigning it: a throw anywhere between this line and there - a renamed id in
+// index.html, a constructor that does not like what it was handed - aborts
+// evaluation with #splash still on the screen, fixed and full-screen, over the
+// toast initErrors() has just raised. Nothing can recover that boot, so this
+// does not try; it takes the cover off so the failure can be read. The function
+// is a declaration further down and hoisted, and it is safe to call twice.
+addEventListener('error', () => dismissSplash());
 
 // Every `el(...)!` in this file is one of the ids index.html declares. They are
 // part of the page's own markup rather than anything the app puts there, so an
@@ -452,17 +463,39 @@ bus.on('geom', syncMobileBoardBounds);
 // A note can arrive with text already in it - pasted, duplicated, or loaded
 // from a file saved before it grew - so it is sized for what it says as soon
 // as it has a node to measure.
-bus.on('items', delta => requestAnimationFrame(() => {
+//
+// Ids waiting for the next frame, and `null` for "every note on the board" -
+// what a payloadless emit means. They are gathered here rather than handed
+// straight to rafThrottle because the throttle keeps the last call's arguments
+// and drops the rest: importing 500 files emits far more often than a frame
+// lands, and the arrivals from every emit but the last would go unmeasured.
+// One frame, one pass, nothing missed - which is the whole reason a raf per
+// emit was the wrong shape. Each queued its own callback, so the run that most
+// needs coalescing was the one that got none.
+let toGrow: Set<string> | null = new Set();
+const growArrivals = rafThrottle(() => {
+  const ids = toGrow;
+  toGrow = new Set();
   // Only a note new to the board needs measuring - the rest already fit what
   // they say. The delta names the arrivals; with none (a load) every note is new
   // here, so all of them are grown. This used to re-grow every note on the board
   // on every add, remove or reorder, which is the O(n)-per-event this delta ends.
-  if (delta && delta.added) {
-    for (const id of delta.added) if (byId(id)?.type === 'note') growNote(id);
+  if (ids) {
+    for (const id of ids) if (byId(id)?.type === 'note') growNote(id);
   } else {
     for (const it of board.items) if (it.type === 'note') growNote(it.id);
   }
-}));
+});
+bus.on('items', delta => {
+  if (delta && delta.added) {
+    // Already sweeping the whole board this frame, so naming a few of them
+    // again would change nothing.
+    if (toGrow) for (const id of delta.added) toGrow.add(id);
+  } else {
+    toGrow = null;
+  }
+  growArrivals();
+});
 bus.on('board:load', () => {
   // Seed the Desktop title card before the board is drawn. state.loadBoard()
   // deliberately leaves it out (so its own tests load an exact item set); the
@@ -669,7 +702,24 @@ async function leaveNotFound() {
 }
 
 /** Bound once so it can be taken off again inside the handover. */
-const onFirstContent = () => { if (hasContent()) leaveNotFound(); };
+const onFirstContent = () => {
+  if (!hasContent()) return;
+  // The one call in this file whose rejection has to be caught rather than left
+  // to the global handler, because the handover is not atomic: replaceState()
+  // runs before the await, so a throw after it leaves an address that is theirs,
+  // a board on the screen, and - with the promise dropped - a writer suspended
+  // for the rest of the session with nothing saying so. Every message they then
+  // get is the not-found one, about a board they no longer have.
+  //
+  // The listener is not re-armed. leaveNotFound() takes it off first, and a
+  // second run would replay a handover that has already moved the address and
+  // may have half-loaded their board underneath. One failure, one honest
+  // message, and the file in front of them is the way out.
+  leaveNotFound().catch(e => {
+    failHandover();
+    reportCaught(e, 'the move to your own board');
+  });
+};
 
 const started = (async function start() {
   // Before anything can fire a write. A not-found boot opens a blank board, and
@@ -818,7 +868,9 @@ function dismissSplash() {
 }
 // Both arms, deliberately: a boot that threw still has to give the page back.
 // Whatever went wrong, the board underneath is more use than a cover nobody
-// can dismiss - and the console already carries the failure.
+// can dismiss - and the console already carries the failure. This covers a
+// throw inside start() only; the window 'error' listener near the top of this
+// file is what covers a throw in the module body, before `started` exists.
 started.then(dismissSplash, dismissSplash);
 
 // Installed as a PWA, "Open with mbrd" on a .mbrd hands us the file here
@@ -845,22 +897,41 @@ if ('launchQueue' in window) {
 }
 
 if ('serviceWorker' in navigator) {
-  addEventListener('load', () => {
+  // A new worker installing while a page is already controlled means a fresh
+  // build shipped mid-session. sw.js self-promotes (skipWaiting + claim), so
+  // the code swaps under the running tab; tell the user rather than reload out
+  // from under them (jarring mid-import or mid-edit). Guarded on an existing
+  // controller so the first-ever install stays silent.
+  const announce = (fresh: ServiceWorker | null) => {
+    if (!fresh) return;
+    const say = () => {
+      if (fresh.state === 'installed' && navigator.serviceWorker.controller) {
+        toast('New version ready — reload to update');
+      }
+    };
+    // Both, because a worker found this way may have finished installing before
+    // anybody looked: 'statechange' only fires on the next change, and for a
+    // worker already sitting in `waiting` there is not going to be one.
+    say();
+    fresh.addEventListener('statechange', say);
+  };
+  const registerWorker = () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
-      // A new worker installing while a page is already controlled means a fresh
-      // build shipped mid-session. sw.js self-promotes (skipWaiting + claim), so
-      // the code swaps under the running tab; tell the user rather than reload out
-      // from under them (jarring mid-import or mid-edit). Guarded on an existing
-      // controller so the first-ever install stays silent.
-      reg.addEventListener('updatefound', () => {
-        const fresh = reg.installing;
-        if (!fresh) return;
-        fresh.addEventListener('statechange', () => {
-          if (fresh.state === 'installed' && navigator.serviceWorker.controller) {
-            toast('New version ready — reload to update');
-          }
-        });
-      });
+      reg.addEventListener('updatefound', () => announce(reg.installing));
+      // register() resolves against a registration that may already be part-way
+      // through an update - a second tab started it, or this one was reloaded
+      // mid-install - and 'updatefound' fired for that before this listener
+      // existed. Without these two the update the block was written for is the
+      // one case it stays quiet about.
+      announce(reg.installing ?? reg.waiting);
     }).catch(err => console.warn('[mbrd] sw:', err));
-  });
+  };
+  // Deferred to 'load' so registration does not compete with the first paint -
+  // but only if there is still a load to wait for. This module is deferred and
+  // ordinarily runs before it; a dynamic import, or a script moved out of the
+  // parser's path, would put it after, and then a listener for an event that
+  // has already fired is a registration that silently never happens and a
+  // .catch() inside a callback nobody calls.
+  if (document.readyState === 'complete') registerWorker();
+  else addEventListener('load', registerWorker);
 }

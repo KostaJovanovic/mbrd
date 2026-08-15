@@ -21,8 +21,20 @@ export type StoreName = 'kv' | 'assets' | 'library';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
+/**
+ * Which open() the cached promise belongs to.
+ *
+ * Every way a connection ends drops the cache so the next call reconnects, and
+ * some of those arrive late - a `close` event for a handle that was replaced
+ * two reconnects ago. Without the stamp, that late arrival throws away a
+ * perfectly good current connection, and on a bad day the two take turns.
+ */
+let generation = 0;
+
 function open(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
+  const mine = ++generation;
+  const forget = () => { if (generation === mine) dbPromise = null; };
   dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     // `blocked` is not the end of an open request - it means "waiting on the
@@ -30,8 +42,8 @@ function open(): Promise<IDBDatabase> {
     // promise below is settled at most once, and a connection that arrives
     // after we have already given up is closed rather than kept: nobody is
     // holding it, and an idle connection nobody owns is itself what blocks the
-    // next tab's upgrade. Unreachable while DB_VERSION stays 1 - no open ever
-    // needs a version change - and here for the first bump that changes it.
+    // next tab's upgrade. Reachable since DB_VERSION went to 2: a tab still
+    // holding a v1 connection blocks this open until it closes.
     let settled = false;
     req.onupgradeneeded = () => {
       const db = req.result;
@@ -48,7 +60,15 @@ function open(): Promise<IDBDatabase> {
       // Another tab opening a newer schema version blocks on any connection
       // still holding the old one. Step aside and drop the cached handle so the
       // next operation reconnects, instead of deadlocking that upgrade forever.
-      db.onversionchange = () => { db.close(); dbPromise = null; };
+      db.onversionchange = () => { db.close(); forget(); };
+      // The connection ending without this tab asking. Storage eviction and
+      // "Clear site data" from another tab both force-close every open handle,
+      // and nothing else here would notice: the promise stays cached and
+      // resolves forever to a dead connection, every db.transaction() throws
+      // InvalidStateError, and storage/session.js latches cacheOk = false on the
+      // first of those - so nothing is saved again for the rest of the session
+      // on a browser where reconnecting would have worked immediately.
+      db.onclose = forget;
       if (settled) { db.close(); return; }
       settled = true;
       resolve(db);
@@ -57,7 +77,7 @@ function open(): Promise<IDBDatabase> {
     // clear it on failure: the connection is worth retrying (private-mode
     // toggles, transient quota, a blocking sibling tab that later closes).
     req.onerror = () => {
-      dbPromise = null;
+      forget();
       if (settled) return;
       settled = true;
       reject(req.error);
@@ -66,7 +86,7 @@ function open(): Promise<IDBDatabase> {
     // close is worse than one that fails and says so, and dropping dbPromise
     // means the next operation simply tries again.
     req.onblocked = () => {
-      dbPromise = null;
+      forget();
       if (settled) return;
       settled = true;
       reject(req.error || new Error('IndexedDB open blocked by another tab'));
@@ -117,9 +137,15 @@ type ResultOf<F extends Issued> =
   F extends IDBRequest<infer R>[] ? R[] :
   F extends IDBRequest<infer R> ? R : unknown;
 
-function tx<F extends Issued>(
+/**
+ * One transaction, on whatever connection is current.
+ *
+ * Split from tx() so the retry below can run the same thing twice without the
+ * two spellings ever drifting.
+ */
+function once<F extends Issued>(
   store: StoreName, mode: IDBTransactionMode, fn: (s: IDBObjectStore) => F,
-): Promise<ResultOf<F>> {
+): Promise<unknown> {
   return open().then(db => new Promise<unknown>((resolve, reject) => {
     const t = db.transaction(store, mode);
     let result: unknown;
@@ -144,10 +170,48 @@ function tx<F extends Issued>(
     t.oncomplete = () => { if (!settled) { settled = true; resolve(result); } };
     t.onerror = () => fail(t.error);
     t.onabort = () => fail(t.error);
-    // Safe: `result` is exactly what the requests `fn` issued produced, and
-    // ResultOf<F> is the same two-way branch the code above just took - one
-    // request's result, or an array of them in issue order.
-  })) as Promise<ResultOf<F>>;
+  }));
+}
+
+/**
+ * Whether a failure is the connection being gone rather than the work being
+ * wrong.
+ *
+ * db.transaction() on a closed handle throws InvalidStateError, and that is the
+ * whole shape: nothing about the store, the key or the value is at fault, and
+ * the same call on a fresh connection succeeds.
+ */
+function deadHandle(err: unknown): boolean {
+  return !!err && typeof err === 'object' && (err as { name?: string }).name === 'InvalidStateError';
+}
+
+/**
+ * A transaction, with one reconnect if the connection died under it.
+ *
+ * Exactly one. A retry loop on a database that is genuinely gone is a page that
+ * hangs instead of one that says so, and every caller here already treats a
+ * rejection as an answer. What this buys is the case the loop would not help
+ * with anyway: the handle was force-closed - storage eviction, "Clear site
+ * data" in another tab - open() has already dropped it (see db.onclose), and
+ * the second attempt opens a new one and does the work. Without it, the first
+ * save after an eviction latched cacheOk = false and nothing was written again
+ * for the rest of the session.
+ *
+ * Re-issuing `fn` is safe because there is nothing to re-issue *into*: the
+ * first attempt threw before a transaction existed, so no request was accepted
+ * and no half-write is being repeated.
+ */
+function tx<F extends Issued>(
+  store: StoreName, mode: IDBTransactionMode, fn: (s: IDBObjectStore) => F,
+): Promise<ResultOf<F>> {
+  // Safe: `result` is exactly what the requests `fn` issued produced, and
+  // ResultOf<F> is the same two-way branch the body of once() takes - one
+  // request's result, or an array of them in issue order.
+  return once(store, mode, fn).catch(err => {
+    if (!deadHandle(err)) throw err;
+    dbPromise = null;
+    return once(store, mode, fn);
+  }) as Promise<ResultOf<F>>;
 }
 
 /**

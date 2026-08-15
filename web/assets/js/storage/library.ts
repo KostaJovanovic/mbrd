@@ -94,7 +94,12 @@ export async function putLibraryBoard(
   return (writes = writes.then(async () => {
     await idbSet(STORE, id, blob);
     const rest = (await libraryIndex()).filter(e => e.id !== id);
-    rest.push({ id, title: title || 'Untitled board', at: at || 0, thumb: thumb || null });
+    // `at` is when this board was last worked on, and the shelf is sorted by it
+    // - so a missing one is not 0. Zero is a real timestamp, 1970, and it sinks
+    // the board to the bottom of the shelf forever with a blank "when" beside
+    // it. A row with no time of its own is being filed *now*, which is the one
+    // thing that is certainly true about it.
+    rest.push({ id, title: title || 'Untitled board', at: at || Date.now(), thumb: thumb || null });
     try {
       await writeIndex(rest);
     } catch (err) {
