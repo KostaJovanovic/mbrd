@@ -416,18 +416,14 @@
    Both foot bars, because both are in the gap and a panel covers both ends of
    it equally. The general sibling combinator only looks forward, which is why
    #sidebar and #header-panel precede the pair in index.html and why the strip
-   sits between #toolbar and #nowplaying rather than anywhere else. */
-#sidebar.is-open ~ :is(#nowplaying, #timeline-strip) {
-  --foot-left: calc(max(14px, env(safe-area-inset-left))
-                    + min(var(--sidebar-w), 100vw - 28px) + var(--foot-gap));
-}
-/* The masthead panel is the same object from the other side. */
-#header-panel.is-open ~ :is(#nowplaying, #timeline-strip) {
-  --foot-right: calc(max(14px, env(safe-area-inset-right))
-                     + min(var(--sidebar-w), 100vw - 28px) + var(--foot-gap));
-}
+   sits between #toolbar and #nowplaying rather than anywhere else.
+
+   The two rules are below the narrow-window block that follows, on purpose -
+   see the note there. */
 /* Where a panel and the zoom cluster together leave too little to be a player,
-   the bar steps over the cluster rather than squeezing between the two.
+   the bar steps over the cluster rather than squeezing between the two: the
+   corner stack stops taking a bite out of the gap and is cleared vertically
+   instead.
 
    Spelled out as a sum rather than as the 67px it used to be. That number was
    measured off the corner stack when the zoom pill was 32 tall, so raising the
@@ -438,7 +434,16 @@
 
    Named as a property rather than written into `bottom` directly, because the
    strip may be up as well and then the player has to clear both. See
-   timeline.css, which adds its own height to this. */
+   timeline.css, which adds its own height to this.
+
+   **Above the two panel rules, and that placement is the whole mechanism.**
+   This selector and theirs have the same specificity, so whichever is written
+   last wins - which means the panel's own gutter is re-applied over this reset
+   simply by following it, and the side with no panel on it keeps the plain
+   inset. The two rules used to be copied in here, byte for byte, to win the
+   order back; nothing held the copies together, so a gutter edited in one place
+   changed the player's inset above 1080px and not below it, while a panel was
+   open, and nowhere else. */
 @media (max-width: 1080px) {
   :is(#sidebar, #header-panel).is-open ~ :is(#nowplaying, #timeline-strip) {
     --foot-left: max(16px, env(safe-area-inset-left));
@@ -450,13 +455,35 @@
                         + 10px);                                        /* clearance */
   }
   :is(#sidebar, #header-panel).is-open ~ #nowplaying { bottom: var(--foot-bottom); }
-  #sidebar.is-open ~ :is(#nowplaying, #timeline-strip) {
-    --foot-left: calc(max(14px, env(safe-area-inset-left))
-                      + min(var(--sidebar-w), 100vw - 28px) + var(--foot-gap));
-  }
-  #header-panel.is-open ~ :is(#nowplaying, #timeline-strip) {
-    --foot-right: calc(max(14px, env(safe-area-inset-right))
-                       + min(var(--sidebar-w), 100vw - 28px) + var(--foot-gap));
+}
+#sidebar.is-open ~ :is(#nowplaying, #timeline-strip) {
+  --foot-left: calc(max(14px, env(safe-area-inset-left))
+                    + min(var(--sidebar-w), 100vw - 28px) + var(--foot-gap));
+}
+/* The masthead panel is the same object from the other side. */
+#header-panel.is-open ~ :is(#nowplaying, #timeline-strip) {
+  --foot-right: calc(max(14px, env(safe-area-inset-right))
+                     + min(var(--sidebar-w), 100vw - 28px) + var(--foot-gap));
+}
+
+/* At phone width the foot is a flush line of its own - bin, handle and history
+   - and both bars stand off it full width rather than sharing it. So the corner
+   stack is no longer in the way and the gap is the screen edge and nothing
+   else.
+
+   Here rather than in mobile.css, where it was written and where it applied to
+   #nowplaying alone. The pair is defined once, in this file, and every rule
+   that changes it changes it for both bars: that is the whole of the invariant
+   in CLAUDE.md, and a player that had taken a 12px inset while the strip kept
+   the 214px one is exactly the drift it names. It costs nothing today only
+   because timeline.css hides the strip below 720px - raise that breakpoint and
+   the strip lands on the bin row with nothing to catch it. mobile.css keeps the
+   half that is about the player alone: how high it stands and how wide it may
+   be. */
+@media (max-width: 700px) {
+  :is(#nowplaying, #timeline-strip) {
+    --foot-left: max(12px, env(safe-area-inset-left));
+    --foot-right: max(12px, env(safe-area-inset-right));
   }
 }
 

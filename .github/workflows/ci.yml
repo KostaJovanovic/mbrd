@@ -4,10 +4,9 @@
 # Until this file existed nothing ran on push. The suite ran where the author
 # ran it, which is a Windows machine with a case-insensitive filesystem, and
 # that gap is not theoretical: it is the trap CLAUDE.md and CONTRIBUTING.md
-# both spell out by name. Both of those files still say "there is no CI" in
-# prose. They are now out of date and want a small edit; this file does not
-# make it, because a workflow that quietly rewrites the docs beside it is a
-# worse thing than a stale sentence.
+# both spell out by name. Both now describe what runs here and in what order
+# (CLAUDE.md's Commands section, CONTRIBUTING.md's), so the three agree - and
+# an edit to the legs below is an edit to those two as well.
 #
 # What this does NOT do, said plainly rather than left to be discovered: the
 # production host runs `npx wrangler deploy` from the repo root on every push

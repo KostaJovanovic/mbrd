@@ -209,12 +209,13 @@ let windowView: View | null = null;    // the list inside it
 /**
  * Every transport currently built, so the events that move one move all of them.
  *
- * A set rather than the single `windowPlayer` handle it replaces, because there
- * are two homes now and both carry a real player: the Desktop window's, which
- * comes and goes with the window, and the Mobile lens's, which is built once
- * with the lens. makePlayer() adds itself and destroy() takes itself out, so
- * nothing has to remember to keep this in step - which is exactly the bookkeeping
- * that would have gone wrong first.
+ * A set rather than the single `windowPlayer` handle it replaces. There is one
+ * member today - the Desktop window's, which comes and goes with the window -
+ * and it stays a set because the count is not a fact about this module: the
+ * Mobile lens had one too until its transport panel came out (see the header),
+ * and the next surface that wants one costs nothing. makePlayer() adds itself
+ * and destroy() takes itself out, so nothing has to remember to keep this in
+ * step - which is exactly the bookkeeping that would have gone wrong first.
  *
  * onNowPlaying and onQueue already fan out to whoever is listening; this is the
  * same fan-out one level down, for the two calls those handlers make.

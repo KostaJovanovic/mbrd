@@ -308,8 +308,8 @@ export const isPanelOpen = () => !!panel?.classList.contains('is-open');
 
 export function openPanel() {
   if (!panel) return;
-  // The player panel shares this right edge: opening the edit bar hides it (and
-  // remembers it, to bring back when this closes) through the stack.
+  // The sticker drawer shares this right edge: opening the edit bar hides it
+  // (and remembers it, to bring back when this closes) through the stack.
   panelShown('header');
   setPanelOpen(true);
   // The panel is not modal and takes no focus by force; the section is given it
@@ -330,8 +330,8 @@ export function closePanel() {
   if (!panel) return;
   sliderFocus?.clear();
   setPanelOpen(false);
-  // If the player was hidden to make room for this bar, closing it brings the
-  // player back (ignored when the coordinator is the one closing us).
+  // If the drawer was hidden to make room for this bar, closing it brings the
+  // drawer back (ignored when the coordinator is the one closing us).
   panelHidden('header');
 }
 

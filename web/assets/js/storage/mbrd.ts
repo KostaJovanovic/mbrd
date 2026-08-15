@@ -186,9 +186,12 @@ export async function packBoard(
   const entries: ZipEntry[] = [
     // The archive saying what it is, in the one place a program that has never
     // heard of this format can find it: first entry, stored, no extra field, so
-    // the media type sits at a fixed offset 30 bytes into the file. That is the
-    // ODF and EPUB convention and it is what lets `file(1)` name a .mbrd instead
-    // of shrugging and saying "Zip archive data".
+    // the media type sits at a fixed offset. A local file header is 30 bytes
+    // plus the name, so offset 30 is the eight bytes `mimetype` and the media
+    // type itself begins at 38 - which is the offset a file(1) magic rule wants
+    // and is not the 30 this comment and research/docs/mbrd-format.md both used
+    // to give. That is the ODF and EPUB convention and it is what lets `file(1)`
+    // name a .mbrd instead of shrugging and saying "Zip archive data".
     //
     // It replaces a claim rather than adding a capability. The format document
     // said the MIME type was "written into the archive's header" and it was not:
