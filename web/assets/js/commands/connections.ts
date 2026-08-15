@@ -30,7 +30,8 @@
 import { toast } from '../notify.ts';
 import {
   addConnections, board, clearConnections, connectionMeta, isFence, isFurniture,
-  isJoinEnd, isRider, selection, setSetting, toggleConnection, updateConnection,
+  areConnected, isJoinEnd, isRider, selection, setSetting, toggleConnection,
+  updateConnection,
 } from '../state.ts';
 import { threads } from '../web-graph.ts';
 import {
@@ -197,8 +198,18 @@ export function connectionCommands() {
     // `label` any short string, '' to clear it. A patch that names only some of
     // the three leaves the rest as they were.
     setConnectionStyle: (a: string, b: string, patch?: object | null) => {
-      if (!updateConnection(a, b, patch || {})) {
+      // The two failures are told apart, because they mean different things and
+      // the caller is a person at a console. updateConnection() answers false
+      // for both "no such pair" and "that patch changed nothing" - connMeta()
+      // is an allowlist, so `{ dir: 'sideways' }` is dropped whole - and this
+      // used to report the first message for the second case while committing
+      // an "Edit connection" that changed nothing.
+      if (!areConnected(a, b)) {
         toast('There is no connection between those two cards');
+        return false;
+      }
+      if (!updateConnection(a, b, patch || {})) {
+        toast('Nothing in that patch changes this connection');
         return false;
       }
       showConnections();

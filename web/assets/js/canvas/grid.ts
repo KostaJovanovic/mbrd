@@ -550,10 +550,12 @@ function paintAxes(vp: Viewport) {
   // leaves the rest, so a fractional wipe would build up a faint stripe along
   // every path the axis had ever taken. Erasing a hair more than was drawn costs
   // nothing, since the rule is about to be redrawn anyway.
-  // Number() rather than leaving the coercion to Math.ceil: `t` is absent in one
-  // of the two shapes assigned to axisWas (see ensureAxisCanvas), and NaN is what
-  // Math.ceil already made of it there - a clearRect the browser draws nothing
-  // for, on a canvas that was made a moment ago and has nothing on it.
+  // Number() is a formality, and saying so is the point: the case it used to
+  // describe cannot happen. `t` is absent in one of the two shapes assigned to
+  // axisWas (ensureAxisCanvas), and that one also sets `w: 0, h: 0` - so
+  // sizeCanvas() answers null and this function has already returned by the
+  // time either line below runs. A comment explaining how a NaN reaches a
+  // clearRect is a comment the next reader spends time on for nothing.
   if (axisWas.y !== null) ctx.clearRect(0, Math.floor(axisWas.y), W, Math.ceil(Number(axisWas.t)) + 1);
   if (axisWas.x !== null) ctx.clearRect(Math.floor(axisWas.x), 0, Math.ceil(Number(axisWas.t)) + 1, H);
   axisWas.x = axisWas.y = null;

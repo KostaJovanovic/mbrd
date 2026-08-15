@@ -161,6 +161,11 @@ test('the web is one connected piece', () => {
 });
 
 test('a board too small to have threads returns none', () => {
+  // The empty case as well as the one-point one. `n = 0` slipped past the
+  // DENSE_LIMIT guard, made `k = Math.min(14, -1)` and threw a RangeError out
+  // of `new Float64Array(-1)` - a throw for the emptiest possible input, on a
+  // function whose whole job is a list of pairs.
+  assert.deepEqual(threads([]), []);
   assert.deepEqual(threads([{ x: 0, y: 0 }]), []);
 });
 

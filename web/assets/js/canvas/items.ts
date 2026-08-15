@@ -23,6 +23,7 @@ import { quality } from '../quality.ts';
 import { itemRadius, rotatedExtents } from '../geometry.ts';
 import type { Bounds } from '../geometry.ts';
 import type { Item } from '../board-model.ts';
+import { TITLE_ID } from '../board-model.ts';
 import type { Viewport } from './viewport.ts';
 import { buildContent, paintStyleTileFaces } from './renderers.ts';
 import {
@@ -35,6 +36,7 @@ import { releasePlayers } from './audio.ts';
 import { flyOut } from './exit-anim.ts';
 import { releaseStills } from './stills.ts';
 import { releaseTransports } from './transport.ts';
+import { releaseModels } from './model.ts';
 import * as spatial from './spatial.ts';
 
 // The three pure questions about what a card says. They were exported from here
@@ -479,6 +481,25 @@ export function itemIdFromEvent(target: EventTarget | null): string | null {
  */
 function discard(el: HTMLElement) {
   el.remove();
+  releaseContent(el);
+}
+
+/**
+ * Everything a card's *contents* hold on to, handed back.
+ *
+ * Its own function because two callers throw content away and only one of them
+ * was doing this. discard() is the obvious one; rebuild() is the other, and it
+ * replaces a card's whole body on a rename, a Fit toggle, a crop, an adjust or
+ * a cover change - every one of which arrives as an 'item' emit. It called
+ * releasePlayers() and nothing else, so the old `<img>` was dropped by
+ * replaceChildren() with its `src` intact and a 4000x3000 photograph's ~48 MB
+ * decode lived until the next GC, once per rename; a `<video>` was paused and
+ * kept its source and therefore its decoder.
+ *
+ * The argument for every line of it is discard()'s own: the element frees what
+ * it has buffered when its source goes, not when the last reference to it does.
+ */
+function releaseContent(el: Element) {
   releasePlayers(el);
   for (const m of el.querySelectorAll<HTMLMediaElement>('video, audio')) {
     m.pause();
@@ -503,6 +524,9 @@ function discard(el: HTMLElement) {
   // only when the selection next changes - so a board panned past and then left
   // alone kept one live closure per audio card. See releaseTransports().
   releaseTransports(el);
+  // And the model stages' size observers, whose callback closes over a parsed
+  // mesh. See releaseModels().
+  releaseModels(el);
 }
 
 /**
@@ -765,7 +789,15 @@ export function sync(restack = true, viewPath = false) {
   // to land on. Desktop only: on Mobile it is left out of onScreen, so the
   // detach pass below unmounts it (the masthead is Mobile's title instead).
   if (board.layoutMode !== 'mobile') {
-    const title = board.items.find(i => i.type === 'title');
+    // byId(), not a scan. This runs on every full sync - every frame of a
+    // zoom-out - and `find` walked the whole board to reach a card whose id is
+    // a constant: three thousand items visited per view frame, on the one path
+    // whose stated point is that the mount loop above visits only what is near
+    // the viewport. The title card is a singleton with a fixed id (TITLE_ID),
+    // which is what makes the index the right question; the type test stays as
+    // the check that the thing under that id is still what this expects.
+    const found = byId(TITLE_ID);
+    const title = found?.type === 'title' ? found : null;
     if (title) {
       onScreen.add(title.id);
       const node = nodes.get(title.id) || build(title);
@@ -796,6 +828,15 @@ export function sync(restack = true, viewPath = false) {
     detachOwed = false;
     for (const [id, el] of nodes) {
       if (onScreen.has(id) || !el.isConnected) continue;
+      // A card that has been lifted out of the world layer is somebody else's
+      // for the moment, and culling has no business touching it. The note
+      // composer moves the live .item into #compose-mount, where it is still
+      // isConnected and is nowhere near the padded rect - so any sync while the
+      // dialog was up discarded it and dropped it from the node map: the sheet
+      // blanked mid-edit, and on close the card was appended back into #world as
+      // an orphan the map no longer knew about, so the next sync built a second
+      // card for the same item. resnap() guards on exactly this test.
+      if (el.parentElement !== worldEl) continue;
       // Before the shadow goes, so the card and its shadow stay in step. The
       // mount pass would put the shadow back on the way in, so either order
       // works; leaving both mounted is the one that needs no explaining.
@@ -1039,8 +1080,9 @@ function rebuild(id: string) {
   // The old content is being thrown away, not detached, so it has to be let go
   // of properly first - replaceChildren would otherwise leave the card's former
   // <audio> registered under the volume control and holding its stream, once
-  // per rename.
-  releasePlayers(body);
+  // per rename, and its <img> holding a full-resolution decode. The same
+  // teardown discard() does, because this is the same act on a smaller scale.
+  releaseContent(body);
   body.replaceChildren(buildContent(item));
   // data-fit lives on the outer .item and is otherwise only written in build(),
   // so a per-item fit change (which arrives as 'item' → rebuild) would rebuild
@@ -1452,6 +1494,18 @@ export function resetItems() {
   for (const el of nodes.values()) discard(el);
   nodes.clear();
   shadows.clear();
+  // The five id-keyed latches, which are the same kind of state as the two maps
+  // above and were being left behind. Each is "which card is currently wearing
+  // this mark", and every one of them is compared before it is written: with
+  // the pointer resting on a card while a board loads or the quality dial
+  // rebuilds every node, setHoverGroup(id) returned early on `id ===
+  // lastHoverId` and the rebuilt card never got its `is-hover` - a card the
+  // pointer was on that would not light up until it was left and re-entered.
+  lastHoverId = null;
+  hoverGroup = new Set();
+  stickTargetId = null;
+  pickedId = null;
+  aimedId = null;
   // Non-null: a board can only be replaced once one has been opened, which is
   // after initItems() - see the note on the declarations.
   shadowLayerEl!.replaceChildren();

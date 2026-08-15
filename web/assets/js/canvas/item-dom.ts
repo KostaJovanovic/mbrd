@@ -520,10 +520,27 @@ export function buildTitleControls(el: HTMLElement): void {
   pen.className = 'item-pen';
   pen.setAttribute('aria-label', 'Edit title style');
   pen.title = 'Edit title style';
-  pen.innerHTML =
-    '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" ' +
-    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-    '<path d="M11.5 2.5l2 2L6 12l-3 1 1-3z"/><path d="M10 4l2 2"/></svg>';
+  // Built, not written. The lock badge ten lines up hand-builds its icon with
+  // createElementNS and says why; this used innerHTML for the same job in the
+  // same file, so the two adjacent icon builders disagreed about the house
+  // rule. Nothing was getting through - every character of that string is
+  // written here - but a rule that half a file keeps is a rule the next person
+  // reads twice.
+  const NS = 'http://www.w3.org/2000/svg';
+  const nib = document.createElementNS(NS, 'svg');
+  nib.setAttribute('viewBox', '0 0 16 16');
+  nib.setAttribute('fill', 'none');
+  nib.setAttribute('stroke', 'currentColor');
+  nib.setAttribute('stroke-width', '1.4');
+  nib.setAttribute('stroke-linecap', 'round');
+  nib.setAttribute('stroke-linejoin', 'round');
+  nib.setAttribute('aria-hidden', 'true');
+  for (const d of ['M11.5 2.5l2 2L6 12l-3 1 1-3z', 'M10 4l2 2']) {
+    const p = document.createElementNS(NS, 'path');
+    p.setAttribute('d', d);
+    nib.append(p);
+  }
+  pen.append(nib);
   const rename = document.createElement('button');
   rename.type = 'button';
   rename.className = 'item-rename';

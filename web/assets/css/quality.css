@@ -332,35 +332,39 @@
   color: var(--ink-3);
   font-size: var(--t-tiny);
 }
-/* Pinned to the whimsy dials by id, not to .field-stops at large. The row itself
+/* Pinned to the whimsy dials, not to .field-stops at large. The row itself
    is a general thing - any slider whose stops have names can print them, and the
    masthead's weight dial does - but these three declarations are specimens of
    the three whimsy tiers and belong to nothing else. Left unscoped, "Regular"
    and "Bold" under the weight slider came out set in a serif italic and a sans
    italic, which is the one thing a weight specimen must not do.
 
-   Two ids, because there are two whimsy dials: the panel's row (ui/panel.js
-   names it from the schema's stopsId) and the one on the ghost card, which is
-   the same control on the board. The card borrows the panel's slider whole, and
+   An id and a class, because there are two whimsy dials and one of them is not
+   unique: the panel's row is a singleton and is named by id (ui/panel.js, from
+   the schema's stopsId), while the ghost card's row is built by
+   canvas/renderers.js for the canvas *and* for the Feed, so it wears
+   .whimsy-stops and keeps its id for aria-describedby alone.
+
+   The card borrows the panel's slider whole, and
    the specimens are the half of it that carries the most meaning - a stop that
    is a word *and* an example of what choosing it does - so it borrows these too
    rather than printing three names in one face. One block, both rows, so a
    change to a specimen cannot reach one and miss the other. */
 #whimsy-stop-labels span:nth-child(1),
-#ghost-whimsy-stops span:nth-child(1) {
+.whimsy-stops span:nth-child(1) {
   font-family: var(--font-serif-text);
   font-style: italic;
   font-weight: 400;
 }
 #whimsy-stop-labels span:nth-child(2),
-#ghost-whimsy-stops span:nth-child(2) {
+.whimsy-stops span:nth-child(2) {
   color: var(--ink-2);
   font-family: var(--font-sans);
   font-style: italic;
   font-weight: 400;
 }
 #whimsy-stop-labels span:nth-child(3),
-#ghost-whimsy-stops span:nth-child(3) {
+.whimsy-stops span:nth-child(3) {
   color: var(--ink);
   font-family: var(--font-sans);
   font-style: normal;

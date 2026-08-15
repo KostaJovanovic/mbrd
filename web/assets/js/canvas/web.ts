@@ -621,6 +621,25 @@ function release() {
   draftPoints = null;
   clearTimeout(draftTimer);
   activeKey = null;
+  // The one signal ui/conn-chip.ts has for "the mark went away", and this was
+  // the one place that dropped the mark without firing it - so switching to
+  // Mobile or running Reload board left the chip on screen editing a line that
+  // is no longer drawn.
+  activeMoved?.();
+  // Ditto the hover state, which release() left standing in all three of its
+  // parts: the key, the drawn path, and #viewport's `over-connection` class -
+  // so the cursor stayed in the connection-under-pointer shape over a board
+  // with no connections on it.
+  hoveredKey = null;
+  if (hoverPath) hoverPath.setAttribute('d', '');
+  viewportEl?.classList.remove('over-connection');
+  // The lean is read once from --tilt-max and memoised for the life of the
+  // page. reshape() drops it when the slider moves and nothing dropped it when
+  // a *board* arrived - so opening a .mbrd that sets its own --tilt-max routed
+  // every line against boxes computed from the previous board's maximum lean
+  // until somebody touched the whimsy slider. release() is what a board load
+  // runs through.
+  leanDeg = null;
   focusIds = null;
   hoverIds = null;
   if (focusPath) focusPath.setAttribute('d', '');
@@ -686,6 +705,29 @@ const sigOf = (a: Card, b: Card) =>
   [a.x, a.y, a.w, a.h, a.rot, b.x, b.y, b.w, b.h, b.rot]
     .map(n => Math.round(n * 10) / 10).join(',');
 
+/**
+ * The whole obstacle field as one number, for the invalidation in build().
+ *
+ * A number and not a string, because this is computed on every build - a frame
+ * of a pan on a board of four hundred cards - and joining four hundred boxes
+ * into a string to compare it with the last one would be the allocation this
+ * exists to avoid. A rolling 32-bit mix over the same rounded values sigOf()
+ * uses: two different fields can collide, and the cost of one is a route that
+ * is one settle late.
+ */
+function fieldSig(where: Map<string, Card>): number {
+  let h = where.size | 0;
+  for (const c of where.values()) {
+    for (const n of [c.x, c.y, c.w, c.h, c.rot]) {
+      h = (Math.imul(h, 31) + Math.round(n * 10)) | 0;
+    }
+  }
+  return h;
+}
+
+/** The field the stored routes were computed against - see build(). */
+let lastField = 0;
+
 /** Grow settledBox to hold a point. */
 function stretchBox(p: Point) {
   if (p.x < settledBox.minX) settledBox.minX = p.x;
@@ -714,6 +756,26 @@ function build() {
   // been deleted. That is the whole of the dangling story on this side: not
   // drawn, no bookkeeping, and it comes back when the item does.
   const where = new Map<string, Card>(centres().map(p => [p.id, p]));
+  // A route is owed again when *anything* has moved, not only when this line's
+  // own two ends have.
+  //
+  // The seg cache below is keyed on sigOf(pa, pb), which is the pair's own
+  // boxes - so A—B routed around C stayed routed around C after C was dragged
+  // out of the way, and stayed drawn *through* C after C was dragged onto the
+  // line. Neither redrew until an endpoint moved, the whimsy slider fired
+  // reshape(), or Reload board ran, which contradicts web-route.ts's own
+  // "nothing is cached... nothing to go stale".
+  //
+  // Every card is an obstacle, so the field this is a function of is every
+  // card. Dropping the flag is the narrow invalidation reshape() already uses:
+  // the lines keep the points they have and are re-routed on the next settle,
+  // rather than blinking straight the moment anything on the board twitches.
+  const field = fieldSig(where);
+  if (field !== lastField) {
+    lastField = field;
+    for (const seg of lastSeg.values()) seg.routed = false;
+    scheduleRoute();
+  }
   // The picked end can move under a draft that is already up - an undo, a
   // rearrange, a card arriving from a paste - and the draft is drawn from a
   // cached box because the pointer asks for it sixty times a second.
@@ -959,6 +1021,13 @@ function paint(forced = false) {
     svg.style.display = 'none';
     // Nothing was drawn, so nothing below is true of what is on screen.
     paintedRect = null;
+    // The mark and the hover go with the lines, which this return used to skip
+    // past: both are reconciled and redrawn at the foot of this function, so on
+    // the frame the *last* line left the board the chip stayed pinned over
+    // empty board until the next pan, zoom or resize happened to call
+    // syncConnChip(). There is nothing left for either to point at.
+    if (hoveredKey) { hoveredKey = null; drawHover(); }
+    if (activeKey) { activeKey = null; drawActive(); activeMoved?.(); }
     return;
   }
   svg.style.display = '';
@@ -1168,6 +1237,14 @@ function nearestSeg(wx: number, wy: number, tolPx: number) {
   let best: Seg | null = null, bestKey: string | null = null, bestD = tol;
   for (const [key, seg] of lastSeg) {
     if (!seg.ends) continue;
+    // Settled lines only. `lastSeg` keeps a removed connection for the whole of
+    // its 340ms fade-out, so this could hand back a pair that is no longer on
+    // the board - and deleteActiveConnection() then ran toggleConnection() on
+    // it, found it absent, and *created* it: right-click a line, Remove
+    // connection, press Delete inside the fade, and the line comes back with a
+    // "Connect" on the undo stack. A line on its way out is not a line you can
+    // point at.
+    if (!settled.has(key)) continue;
     const pts = seg.points;
     for (let i = 1; i < pts.length; i++) {
       const d = distToSegment(wx, py, pts[i - 1], pts[i]);
@@ -1369,7 +1446,16 @@ export function setDraftFrom(id: string | null) {
 function boxOf(id: string): Card | null {
   const it = board.items.find(i => i.id === id);
   if (!it || isRider(it) || !isJoinEnd(it)) return null;
-  return { id: it.id, x: it.x, y: -it.y, w: it.w, h: it.h, rot: -(it.rot || 0) };
+  // The drawn lean, the same way centres() folds it in. It was omitted here, so
+  // the draft was clipped against a different rectangle from the line it turns
+  // into: at any non-zero --tilt-max the line jumped by up to the lean's
+  // overhang the moment the pair landed, which is the exact thing the note in
+  // aimDraft() says the edge clip exists to prevent.
+  const lean = it.type === 'fence' ? 0 : tiltOf(it.id) * drawnTilt();
+  return {
+    id: it.id, x: it.x, y: -it.y, w: it.w, h: it.h,
+    rot: -(it.rot || 0) + lean,
+  };
 }
 
 /**
@@ -1386,10 +1472,16 @@ function aimDraft(e: PointerEvent) {
   if (!draftBox) draftBox = boxOf(draftFrom);
   if (!draftBox) return;
   const w = vp.toWorld(e.clientX, e.clientY);
-  const overId = itemIdFromEvent(e.target);
   // Not the card it started from: pressing that is how somebody changes their
   // mind, and marking it as a target would say the opposite.
-  const aim = overId && overId !== draftFrom ? overId : null;
+  //
+  // And only a card this tool will actually join. boxOf() answers null for a
+  // rider, a sticker and a ghost, which is exactly what connectTap()'s own
+  // canJoin() refuses - so the "will join" ring used to land on a sticker and
+  // the press that followed it was refused with a toast. A ring that promises
+  // something the next press declines is worse than no ring.
+  const overId = itemIdFromEvent(e.target);
+  const aim = overId && overId !== draftFrom && boxOf(overId) ? overId : null;
   setConnectAim(aim);
   const to = (aim && boxOf(aim)) || { id: '', x: w.x, y: -w.y, w: 1, h: 1, rot: 0 };
   // From the edge of the picked card towards wherever the far end is, and to

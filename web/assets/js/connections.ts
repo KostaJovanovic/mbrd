@@ -177,6 +177,14 @@ export function updateConnection(a: string, b: string, patch: ConnMeta) {
   const cur = board.connections[idx];
   const meta = connMeta({ ...(cur[2] || {}), ...patch });
   const nextPair: Connection = meta ? [cur[0], cur[1], meta] : [cur[0], cur[1]];
+  // Nothing to record when nothing moved. connMeta() is an allowlist and drops
+  // whatever it does not recognise, so a patch of `{ dir: 'sideways' }` came
+  // out of it identical to what was already stored - and this committed an
+  // "Edit connection" onto the undo stack for it and told the caller it had
+  // worked. Compared as JSON because a ConnMeta is five optional strings and
+  // connMeta() writes them in a fixed order, so two equal metas serialise the
+  // same way.
+  if (JSON.stringify(cur[2] ?? null) === JSON.stringify(meta)) return false;
   const before = board.connections;
   const after = board.connections.map((p, i) => (i === idx ? nextPair : p));
   commit('Edit connection', () => write(after), () => write(before));

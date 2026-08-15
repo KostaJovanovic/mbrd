@@ -240,7 +240,13 @@ export function embedOffer(item: Item, spec: EmbedSpec, card: HTMLElement): HTML
   btn.addEventListener('click', e => {
     e.preventDefault();
     e.stopPropagation();
-    fitToPlayer(item.id, spec);
+    // The card's children first, the geometry second. fitToPlayer() commits a
+    // change and emits 'geom', and a subscriber that rebuilds this card's node
+    // in that emit would leave every line below working on an element no longer
+    // in the document - the swap would run, and the player would be appended to
+    // a card nobody can see. Swapping first means the node this handler closed
+    // over is the node that ends up holding the frame, whatever the emit does
+    // to the one on screen.
     card.classList.add('has-embed');
     // The name row stays, and it is not decoration: an iframe is another
     // origin, so every pointer event inside it belongs to the provider and
@@ -251,6 +257,7 @@ export function embedOffer(item: Item, spec: EmbedSpec, card: HTMLElement): HTML
       if (!el.classList.contains('card-name')) el.remove();
     }
     card.append(frameFor(spec));
+    fitToPlayer(item.id, spec);
   });
   return btn;
 }

@@ -127,7 +127,15 @@ export function ensureDisplay(hash: string, crop: Crop = null): Promise<string |
   const mine = epoch;
   const job = queue.then(() => generate(hash, crop, mine));
   queue = job.catch(() => {});
-  const tracked = job.finally(() => pending.delete(key));
+  // Deleted by identity, not by key. `pending` is cleared wholesale by
+  // clearDisplay(), so a job that started before the clear and settled after it
+  // deleted a key that by then pointed at a *newer* job for the same picture -
+  // and the next mount, finding nothing in flight, started a second
+  // full-resolution decode. Not a leak (the `won` guard drops the duplicate),
+  // just work done twice on the path that exists to do it once.
+  const tracked: Promise<string | null> = job.finally(() => {
+    if (pending.get(key) === tracked) pending.delete(key);
+  });
   pending.set(key, tracked);
   return tracked;
 }

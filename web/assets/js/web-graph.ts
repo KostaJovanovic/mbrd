@@ -109,6 +109,11 @@ const DENSE_LIMIT = 5600;
  */
 export function threads(pts: WebPoint[]): Edge[] {
   const n = pts.length;
+  // Nothing joins nothing. `n = 0` slipped past the DENSE_LIMIT guard below,
+  // made `k = Math.min(14, -1)` and threw a RangeError out of
+  // `new Float64Array(-1)` - a throw for the emptiest possible input, on a
+  // function whose whole job is a list of pairs.
+  if (!n) return [];
   const edges = spanningTree(pts);
   if (n > DENSE_LIMIT) return edges;
 
