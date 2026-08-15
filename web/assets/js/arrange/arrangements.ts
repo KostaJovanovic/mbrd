@@ -173,7 +173,17 @@ export function arrange(items: ArrangeItem[], opts: ArrangeOpts = {}): Point[] {
   const name = Object.hasOwn(LAYOUTS, asked) ? asked : 'grid';
   const fn = LAYOUTS[name];
   if (!items.length) return [];
-  if (name === 'free') return fn(items, o);
+  // `free` skips the negation and the cell reservation - it hands back real
+  // world coordinates untouched - but not the obstacle pass. It used to return
+  // here outright, so `obstacles` was silently discarded for exactly one
+  // layout: on a Desktop board set to `free` with one anchored card,
+  // rearrange() passes the anchored boxes and a shaken card landed straight on
+  // top of the anchor, which is the precise failure the obstacle list was added
+  // for.
+  if (name === 'free') {
+    const loose = fn(items, o);
+    return o.obstacles?.length ? avoidObstacles(items, loose, o) : loose;
+  }
   // When a caller is about to snap the result to a grid (`cellStep` is that
   // grid's cell size), the layout reserves each item a whole number of cells
   // instead of its bare rectangle - see toCells(). Without it, two cards packed
@@ -934,10 +944,25 @@ function variation(o: ArrangeOpts): (() => number) | null {
  */
 const COL_STEPS = [-2, -1, 1, 2];
 
-/** A column count moved off its natural value, kept inside 1..n. */
+/**
+ * A column count moved off its natural value, kept inside 1..n.
+ *
+ * "Never onto it" is the promise above and the clamps can break it: with
+ * `cols = 1` and `n = 1` - the one-item cluster the reflow was written for -
+ * every entry in COL_STEPS clamps straight back to 1, so a seeded Rearrange
+ * produced the byte-identical layout it exists to avoid. There is no other
+ * count available at n = 1, so the honest answer is to say so by returning the
+ * natural one rather than to pretend a shuffle happened; the callers already
+ * treat an unchanged count as an unchanged layout.
+ */
 function reflow(cols: number, n: number, rnd: () => number): number {
+  if (n <= 1) return cols;
   const step = COL_STEPS[Math.floor(rnd() * COL_STEPS.length)];
-  return Math.max(1, Math.min(n, cols + step));
+  const moved = Math.max(1, Math.min(n, cols + step));
+  // A clamp that landed back on the natural count is not a move. Step the other
+  // way instead, which is always available once n > 1.
+  if (moved !== cols) return moved;
+  return cols > 1 ? cols - 1 : Math.min(n, cols + 1);
 }
 
 /** Fisher-Yates, in place, from a supplied generator. */

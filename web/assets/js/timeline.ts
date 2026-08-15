@@ -273,20 +273,23 @@ const side = <T>(pair: [T, T], forward: boolean) => (forward ? pair[1] : pair[0]
  * step that changed its pad colour both write the whole meta bag, and going
  * finer would mean this module knowing what is in it.
  */
+// Answers a record, which is what it builds.
+//
+// It was declared `: never`, and a `never` is assignable to everything - so
+// both call sites typechecked against whatever they happened to be assigning
+// to, and the checker was switched off at exactly the two lines where a wrong
+// shape would be hardest to see. The casts each caller needs are theirs to
+// make and are written where they are made.
 function mergeChanged(
   held: unknown, from: Record<string, unknown>, to: Record<string, unknown>,
-): never {
+): Record<string, unknown> {
   const next = { ...(held as Record<string, unknown>) };
   for (const key of new Set([...Object.keys(from), ...Object.keys(to)])) {
     if (JSON.stringify(from[key]) === JSON.stringify(to[key])) continue;
     if (key in to) next[key] = to[key];
     else delete next[key];
   }
-  // The cast is the generic caller: applyKeyed() is unconstrained in T because
-  // three of its four lists carry their id on themselves and the fourth carries
-  // it on the item inside, and there is no type that says "the same shape as
-  // what came in" through a JSON round trip.
-  return next as never;
+  return next;
 }
 
 // Unconstrained in T, and it has to be: three of the four lists this runs over
@@ -323,7 +326,13 @@ function applyKeyed<T>(
     // sealed step compose with an edit upstream of it, which is the whole of
     // what "recompute everything after it" has to mean.
     if (leaving == null || !held) { map.set(id, JSON.parse(want)); continue; }
-    map.set(id, mergeChanged(held, JSON.parse(leaving), JSON.parse(want)));
+    // The cast is applyKeyed()'s generic: it is unconstrained in T because
+    // three of its four lists carry their id on themselves and the fourth
+    // carries it on the item inside, and there is no type that says "the same
+    // shape as what came in" through a JSON round trip. Written here, at the
+    // one call that needs it, rather than hidden inside mergeChanged() as a
+    // `never` return that switched the checker off for both callers.
+    map.set(id, mergeChanged(held, JSON.parse(leaving), JSON.parse(want)) as T);
   }
   const order = delta.order
     ? side(delta.order, forward)
@@ -508,6 +517,21 @@ let replaying = false;
  * the undo stack for work nobody did.
  */
 export const isReplaying = () => replaying;
+
+/**
+ * Throw away the session's undo/redo stacks. Injected, never imported.
+ *
+ * history.ts imports this module, so this module may not import it back - the
+ * same one-way seam setOverlays() and setAssetNameLookup() take, and here for
+ * the same reason. Wired by history.ts itself at load rather than by main.ts,
+ * because the pair is a fact about those two modules rather than about the
+ * app's boot, and a wiring in main.ts would leave it a no-op in the suite,
+ * which is where goTo() is actually exercised.
+ *
+ * Unwired it is a no-op, which is what keeps this module loadable on its own.
+ */
+let dropStacks: (() => void) | null = null;
+export function setStackDropper(fn: (() => void) | null) { dropStacks = fn; }
 
 /** How many steps a file may carry, before trimming is offered. */
 const TIMELINE_STEP_CAP = 20000;
@@ -783,6 +807,19 @@ function foldOldest(count: number) {
 
 /** Apply steps to a snapshot without touching the board. Used by foldOldest. */
 function restoreInto(snap: Snap, run: Step[]) {
+  // Nothing to fold, nothing to do - and the early return is not a
+  // micro-optimisation. Everything below puts the *live* board through a JSON
+  // round trip and back: restore() rebuilds every item object from text, so
+  // `board.items` comes out of this structurally equal and referentially new,
+  // which is exactly what applyKeyed()'s own note says other modules must be
+  // able to rely on not happening. dropIdIndex() covers the index; a caller
+  // holding an item object does not get told.
+  //
+  // That cost is worth paying to fold a run of steps into the base. It is not
+  // worth paying for a run of none, and this is reached from recordStep() -
+  // inside a commit - whenever the ledger passes its cap, not only from the
+  // trim button somebody pressed.
+  if (!run.length) return;
   const keep = snapshot();
   restore(snap);
   for (const step of run) apply(step.delta, true);
@@ -887,6 +924,10 @@ export function goTo(target: number): boolean {
   const want = Math.max(0, Math.min(target, steps.length));
   if (want === at) return false;
   replayTo(want);
+  // The session's undo stack described the board that was here a moment ago,
+  // and this is not that board. See dropStacks() in history.ts for what a
+  // Ctrl+Z on top of a replay used to do.
+  dropStacks?.();
   announce();
   markDirty();
   bus.emit('history');
@@ -960,9 +1001,15 @@ export function rebuildFrom(index: number) {
     // that looks like nothing rather than like an error.
     replaying = false;
   }
-  at = steps.length;  // Every checkpoint behind the rebuilt run described boards that no longer
+  at = steps.length;
+  // Every checkpoint behind the rebuilt run described boards that no longer
   // exist. Cheaper to drop them than to work out which survived.
   checkpoints = new Map();
+  // ...and so did the session's undo stack, for the same reason and worse: a
+  // rebuild recomputes every step after the edited one, so an entry whose
+  // closure captured the *old* positions would restore coordinates from a
+  // board that was discarded. See dropStacks() in history.ts.
+  dropStacks?.();
   announce();
   markDirty();
   bus.emit('history');
@@ -1226,7 +1273,8 @@ export function adoptTimeline(raw: unknown, doc?: unknown) {
   forgetBytes();
   at = Number.isFinite(raw.at)
     ? Math.max(0, Math.min(Number(raw.at), steps.length))
-    : steps.length;  // Against the document that arrived, not against the board that was built
+    : steps.length;
+  // Against the document that arrived, not against the board that was built
   // from it - see docFingerprint(). A timeline with no fingerprint at all is
   // taken at its word: that is what a file written before this check existed
   // looks like, and refusing those would be treating an old friend as a forgery.

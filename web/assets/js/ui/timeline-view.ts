@@ -46,11 +46,12 @@
 import { bus } from '../board-store.ts';
 import { toast } from '../notify.ts';
 import { el, formatBytes } from '../util.ts';
-import { ARRANGEMENTS } from '../arrange/arrangements.ts';
+import { ARRANGEMENTS, MOBILE_ARRANGEMENTS } from '../arrange/arrangements.ts';
 import { openAnchored } from './menu.ts';
 import type { MenuEntry } from './menu.ts';
 import { ask } from './dialog.ts';
 import {
+  board,
   timelineSteps, timelineAt, timelineStale, goTo, editStep, stepEditable,
   timelineBytes, trimmable, trimTimeline, TRIM_BYTES, describeStep, nameStep,
 } from '../state.ts';
@@ -308,7 +309,12 @@ function render() {
   const shown = steps.length > MAX_DOTS ? steps.slice(-MAX_DOTS) : steps;
   const offset = steps.length - shown.length;
 
-  track.append(dotFor(null, 0, at, 'Where this board started'));
+  // The start dot only when the start is what is being shown. The strip drew it
+  // unconditionally, so on a history past MAX_DOTS the leftmost dot claimed to
+  // be the beginning of the board while the dot beside it was step 2,601 - two
+  // marks a thousand steps apart, drawn touching. The sheet has always omitted
+  // it on a truncated list for exactly this reason.
+  if (!offset) track.append(dotFor(null, 0, at, 'Where this board started'));
   shown.forEach((step, index) => {
     const position = offset + index + 1;
     track!.append(dotFor(step, position, at, sentenceFor(step)));
@@ -369,7 +375,13 @@ async function namePoint() {
   const at = timelineAt();
   if (!at || timelineStale()) return;
   const step = timelineSteps()[at - 1];
-  const named = !!step?.name;
+  // Refused rather than optional-chained. `step` was guarded with `?.` for the
+  // name and then handed to sentenceFor(), which reads `step.name` unguarded -
+  // so the one branch the `?.` admits is the one that throws two lines later.
+  // There is no step to name at that point anyway, which is what the guard
+  // above already says about `at === 0`.
+  if (!step) return;
+  const named = !!step.name;
   const wasSheet = !!sheet?.open;
   if (wasSheet) sheet!.close();
   const given = await ask({
@@ -377,7 +389,7 @@ async function namePoint() {
     body: 'A name makes this step a landmark on the Timeline, and keeps it from'
       + ' being folded away when an old history is trimmed.',
     go: named ? 'Rename' : 'Name it',
-    field: { value: step?.name || '', placeholder: sentenceFor(step), maxLength: 120 },
+    field: { value: step.name || '', placeholder: sentenceFor(step), maxLength: 120 },
   });
   // null is every way out of the question; an empty box is an answer, and the
   // answer it gives is "take the name off this one" - which is the only way
@@ -508,9 +520,17 @@ function editEntries(index: number): MenuEntry[] {
   if (!step || !stepEditable(step)) return [];
   const spec = CHOICES[step.op!.name];
   if (!spec) return [];
+  // The catalogue for the board this actually is. It offered ARRANGEMENTS
+  // unconditionally, so on a Mobile board the step editor listed shapes a
+  // column cannot make - and since a Mobile Rearrange step records a Mobile id
+  // like `fit`, nothing matched and no row was ticked. Choosing "Spiral" then
+  // wrote `spiral`, which mobileArrangement() silently coerced back to `fit`:
+  // a menu whose entries do nothing, above a menu with no current entry.
+  // ui/settings-schema.ts forks on the same question.
+  const catalogue = board.layoutMode === 'mobile' ? MOBILE_ARRANGEMENTS : ARRANGEMENTS;
   const rows = spec.rows.length
     ? spec.rows
-    : ARRANGEMENTS.map(a => ({ value: a.id, label: a.label }));
+    : catalogue.map(a => ({ value: a.id, label: a.label }));
   const current = String(step.op!.params[spec.key] ?? '');
   return rows.map(row => ({
     label: row.label,

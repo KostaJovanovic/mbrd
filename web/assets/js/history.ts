@@ -18,6 +18,7 @@ import { bus, markDirty } from './board-store.ts';
 import {
   snapshot, recordStep, markerBack, markerForward, dropLastStep, resetTimeline,
   stepBack, stepForward, stepBackLabel, stepForwardLabel, isReplaying,
+  setStackDropper,
 } from './timeline.ts';
 
 /**
@@ -290,6 +291,34 @@ export function redo() {
   historyChanged();
   return true;
 }
+
+/**
+ * Throw away the closure stacks and leave the ledger alone.
+ *
+ * The half of clearHistory() that a *replay* wants. Moving the board by replay
+ * - goTo() from a click on a timeline dot, rebuildFrom() from a step edit -
+ * leaves every entry on these two stacks describing a board that no longer
+ * exists: with forty steps recorded, jumping to step ten left thirty undo
+ * entries standing, and the next Ctrl+Z ran the step-forty command's undo(),
+ * writing step-thirty-nine geometry onto a step-ten board and then moving the
+ * marker from ten to nine. The board became a silent mix of two eras and
+ * markDirty() made it saveable.
+ *
+ * Not clearHistory(), which calls resetTimeline() and would throw away the very
+ * ledger the replay is navigating.
+ */
+export function dropStacks() {
+  undoStack.length = 0;
+  redoStack.length = 0;
+  heldWeight = 0;
+  historyChanged();
+}
+
+// Handed to the timeline at load, because the arrow only goes one way: this
+// module imports that one, so that one cannot import this. The alternative -
+// wiring it from main.ts, like setOverlays() - would leave it unwired in the
+// suite, which is where goTo() is actually exercised.
+setStackDropper(dropStacks);
 
 /** Forget everything. A new board has nothing to take back. */
 export function clearHistory() {

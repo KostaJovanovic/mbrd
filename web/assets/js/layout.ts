@@ -35,7 +35,7 @@ import { commit, clearHistory } from './history.ts';
 import {
   board, byId, BOARD_MODES, DEFAULT_SETTINGS, MOBILE_TOP_ROWS,
   MOBILE_MIN_ROWS, MOBILE_BOTTOM_ROWS, mobileColumnCount,
-  cloneSettings, layoutSettingsOf, settingsFor, defaultLayoutSettings,
+  cloneSettings, layoutSettingsOf, settingsFor, defaultLayoutSettings, isLocked,
 } from './board-model.ts';
 // Types only. These were imported while this module was still unchecked, on the
 // rule that a @ts-nocheck suppresses the errors *in* a file without hiding its
@@ -141,9 +141,12 @@ function mobilePackStartRow(obstacles: Item[], step: number) {
  * so nothing can be packed into the half cell beside it. Rotation-aware through
  * itemBounds(), because what must be kept clear is the box you can see.
  *
- * Columns are clamped and rows are not. The column count is the width of the
- * board and there is nothing outside it; a card above the top edge or below the
- * lowest packed row is simply in rows the search will never ask about.
+ * Columns are clamped at both ends and rows only at the top. The column count
+ * is the width of the board and there is nothing outside it. The top row is
+ * likewise a real edge - `r0` is clamped to 0, which the sentence here used to
+ * deny - while the *bottom* has none: a card below the lowest packed row is
+ * simply in rows the search will never ask about, so there is nothing to clamp
+ * `r1` to.
  */
 function claimBlocked(
   occupied: Set<string>, box: Item, step: number, columns: number, spacing: number,
@@ -436,9 +439,22 @@ export function repackMobileBoard() {
   // The Desktop title card is not part of the Mobile board at all: it is neither
   // packed into a column nor an obstacle for what is, and applyGeom below leaves
   // its geometry untouched (it never lands in `target`).
-  const packable = ordered.filter(it => !isRider(it) && it.type !== 'title');
+  // An anchored card holds its cells here as it does through a Rearrange.
+  //
+  // `blockers` was honoured at one of placeMobileItems()'s three call sites, so
+  // an anchor survived a Rearrange and not a reflow: change the column count or
+  // the gap and every anchored card was repacked into the column like anything
+  // else, which is the one thing anchoring says will not happen. Filtered out of
+  // `packable` for the same reason ui/board-actions.ts filters them - a card
+  // that holds its own place is not a card the pack is placing.
+  const held = ordered.filter(it => !isRider(it) && it.type !== 'title' && isLocked(it));
+  const heldIds = new Set(held.map(it => it.id));
+  const packable = ordered.filter(it =>
+    !isRider(it) && it.type !== 'title' && !heldIds.has(it.id));
   const riders = ordered.filter(isRider);
-  const target = new Map(placeMobileItems(packable, []).map(item => [item.id, item]));
+  const target = new Map(
+    placeMobileItems(packable, [], { blockers: held }).map(item => [item.id, item]),
+  );
   attachRiders(riders, target, (note, hostSrc, hostDst) => {
     const at = stuckPlacement(note, hostSrc, hostDst);
     return { ...note, x: at.x, y: at.y };
@@ -458,7 +474,7 @@ export function repackMobileBoard() {
       presnap: usableMemo(item.meta?.presnap),
     };
   }));
-  commitGeom('Change Mobile grid width', before, ordered.map(item => item.id), {
+  commitGeom('Reflow the Mobile board', before, ordered.map(item => item.id), {
     preservePresnap: true,
   });
 }
@@ -915,8 +931,8 @@ export function activateLayoutSettings(mode: LayoutMode) {
   const profile = board.layoutSettings[mode] || defaultLayoutSettings(mode);
   board.layoutSettings[mode] = cloneSettings(profile);
   board.settings = settingsFor(profile, board.sharedAppearance);
-  // Read through the mode's own catalogue: Desktop's seven layouts are shapes
-  // and Mobile's six are orders, and a board carrying `spiral` for Mobile - as
+  // Read through the mode's own catalogue: Desktop's layouts are shapes and
+  // Mobile's are orders, and a board carrying `spiral` for Mobile - as
   // every board saved before this did, since 'spiral' was the fallback for both
   // - is asking for a shape a column cannot make. mobileArrangement() answers
   // with the order nearest to it. Nothing is written back; the stored id is
@@ -1068,14 +1084,31 @@ export function commitGeom(
   options: { preservePresnap?: boolean } = {},
 ) {
   let after = snapshotGeom(before.map(b => b.id));
+  // Paired by id, never by index.
+  //
+  // snapshotGeom() drops an id whose item is gone, so `after` is a *subset* of
+  // `before` - and every comparison below indexed the two arrays in step.
+  // Marquee-drag five cards, delete one mid-gesture, release: `after` has four
+  // entries and `before` five, so from the deleted card onwards each `after[i]`
+  // was compared against a different item's `before[i]`. The change test, the
+  // presnap invalidation and the fence-resize detection all read unrelated
+  // items, and the undo entry recorded a mismatched pair.
+  const wasById = new Map(before.map(b => [b.id, b]));
+  // Non-null at every call: `after` was built from `before`'s own ids.
+  const was = (a: GeomSnap) => wasById.get(a.id)!;
+  // ...and the undo half narrowed to what survived, so the entry's two sides
+  // name the same items. applyGeom() skips an id the board no longer has, so
+  // the wide version was harmless rather than wrong - but a pair that does not
+  // describe one set of cards is a pair the next reader has to check.
+  const kept = after.map(was);
   // The loose flag counts as a change even where nothing moved. A drag that
   // ends a pixel from where it began has still dropped a loose note onto a
   // card, and on a snapped board it can end *exactly* where it began - so
   // testing geometry alone would clear the flag and then decline to record it,
   // which is the one shape of bug this pair exists to rule out: a real change
   // with no entry to reverse it.
-  const changed = after.some((a, i) =>
-    a.loose !== before[i].loose || GEOM_KEYS.some(k => a[k] !== before[i][k]));
+  const changed = after.some(a =>
+    a.loose !== was(a).loose || GEOM_KEYS.some(k => a[k] !== was(a)[k]));
   if (!changed) return;
   // Placed by hand while snapping was on: this *is* where the item belongs
   // now, so it gives up its memory of where it sat before the board was laid
@@ -1089,9 +1122,9 @@ export function commitGeom(
       // "change no note's position relative to anything", and it was throwing
       // away the memory of every card it raised. Rotation is deliberately out
       // too: turning a card does not change its snapped box.
-      if (SNAP_KEYS.some(k => after[i][k] !== before[i][k])) forgetPresnap(byId(after[i].id));
+      if (SNAP_KEYS.some(k => after[i][k] !== was(after[i])[k])) forgetPresnap(byId(after[i].id));
     }
-    after = snapshotGeom(before.map(b => b.id));
+    after = snapshotGeom(after.map(a => a.id));
   }
   // What the gesture actually had hold of, as opposed to what came along for
   // the ride. Only these ask again where they are stuck; see restick(). Left
@@ -1118,10 +1151,11 @@ export function commitGeom(
   // fence on Mobile is a band the packer owns rather than a region anybody drew.
   const resized: Box[] = [];
   if (driven && board.layoutMode !== 'mobile') {
-    for (let i = 0; i < after.length; i++) {
-      if (!driven.includes(before[i].id) || !isFence(byId(before[i].id))) continue;
-      if (after[i].w === before[i].w && after[i].h === before[i].h) continue;
-      resized.push(boxOf(before[i]), boxOf(after[i]));
+    for (const a of after) {
+      const b = was(a);
+      if (!driven.includes(b.id) || !isFence(byId(b.id))) continue;
+      if (a.w === b.w && a.h === b.h) continue;
+      resized.push(boxOf(b), boxOf(a));
     }
   }
   const move = (snap: GeomSnap[]) => {
@@ -1152,8 +1186,8 @@ export function commitGeom(
   // to look. applyGeom() rather than move(): the pre-image is wanted for
   // measuring, not for living in, so restick() and the settling window stay out
   // of it and run once, forward, where they belong.
-  commit(label, () => move(after), () => move(before), before.length * 2,
-         () => applyGeom(before));
+  commit(label, () => move(after), () => move(kept), kept.length * 2,
+         () => applyGeom(kept));
 }
 
 /**

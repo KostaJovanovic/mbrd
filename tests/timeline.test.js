@@ -22,7 +22,7 @@ import {
   serializeBoard,
 } from '../web/assets/js/state.ts';
 import {
-  timelineSteps, timelineAt, timelineStale, timelineHashes, replayTo,
+  timelineSteps, timelineAt, timelineStale, timelineHashes, replayTo, goTo,
   serializeTimeline, fingerprint, registerOp, declareOp, editStep, stepEditable,
   trimmable, trimTimeline,
 } from '../web/assets/js/timeline.ts';
@@ -355,18 +355,54 @@ test('editing a step in the past changes what came after it', () => {
   assert.equal(byId(a.id).name, 'Named later');
 });
 
-test('a rebuild leaves no trace on either engine', () => {
+test('a jump to a step in the past takes the session stack with it', () => {
+  // goTo() is what a click on a dot in the strip calls, and nothing in this
+  // file exercised it. It moved the board by replay and left the closure stack
+  // standing: with three steps recorded, jumping to step one left two undo
+  // entries describing a board that no longer existed, and the next Ctrl+Z ran
+  // the last command's undo() - writing one era's geometry onto another's board
+  // and then moving the marker back as well. The result was a silent mix of
+  // two boards that markDirty() made saveable.
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  move(a.id, 40, 0);
+  move(a.id, 40, 0);
+  assert.ok(historyDepth().undo > 0, 'the fixture needs a session stack to lose');
+  const top = timelineSteps().length;
+
+  assert.equal(goTo(1), true);
+  assert.equal(timelineAt(), 1);
+  assert.equal(historyDepth().undo, 0, 'the closures from the discarded era are still there');
+  // The ledger is untouched - this is a move through the history, not an edit
+  // of it - so stepping forward again is still available.
+  assert.equal(timelineSteps().length, top);
+  assert.equal(goTo(top), true);
+  assert.equal(byId(a.id).x, 80);
+});
+
+test('a rebuild adds nothing to the ledger and leaves no stale closures', () => {
   const [a] = addItems([photo({ x: 0, y: 0 })]);
   shiftTo(a.id, 100);
   renameItem(a.id, 'X');
   const steps = timelineSteps().length;
-  const depth = historyDepth().undo;
   editStep(1, { to: 250 });
   // The rule was run again by calling the command that made it, and that command
-  // commits. Without the pass-through in commit() this would be three steps and
-  // three undo entries longer, all of them describing a replay.
+  // commits. Without the pass-through in commit() this would be three steps
+  // longer, all of them describing a replay.
   assert.equal(timelineSteps().length, steps);
-  assert.equal(historyDepth().undo, depth);
+  // And the session's closure stack is gone, which is the half this used to
+  // assert the opposite of.
+  //
+  // It read `historyDepth().undo === depth` - the stack unchanged - on the
+  // reading that a rebuild should leave both engines alone. But a rebuild
+  // recomputes every step after the edited one, so those entries close over
+  // positions from a board that has been discarded: the next Ctrl+Z restored
+  // coordinates nobody had, onto a board built from a different answer, and
+  // markDirty() made the result saveable. goTo() had the same divergence from
+  // the other direction. Undo is not lost, it is *rebased* - with the stack
+  // empty it falls through to the ledger, which is the history that still
+  // describes this board.
+  assert.equal(historyDepth().undo, 0);
+  assert.equal(historyState().undo, 'Rename');
 });
 
 test('a rule that cannot run is marked and skipped, and the rest still replay', () => {
