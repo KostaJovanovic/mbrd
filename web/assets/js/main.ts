@@ -41,7 +41,7 @@ import { initWeb } from './canvas/web.ts';
 import { initGhosts } from './canvas/ghosts.ts';
 import { initStills } from './canvas/stills.ts';
 import { initInput } from './canvas/input.ts';
-import { initDrop } from './import/drop.ts';
+import { initDrop, setImportPrompt } from './import/drop.ts';
 import {
   initStorage, restoreSession, openFile, autosave, setPrompt, setBoardThumb,
   suspendCache, resetSessionLatches, boardSafety,
@@ -344,6 +344,11 @@ initBoardTitle();
 // Hand storage the confirmation prompt it cannot import (ui sits above storage
 // - AUD-12): the clear-everything dialog.
 setPrompt(ask);
+// And the importer the one it cannot import either: the size of what has just
+// been dropped, before the minutes of hashing and decoding start. `danger: false`
+// because nothing is being destroyed - a red button here would be the dialog
+// telling somebody to be careful about opening their own file. See AskOptions.
+setImportPrompt(opts => ask({ ...opts, danger: false }));
 // And the board's own picture, for the same reason and through the same shape.
 // Every door onto "replace the board" now files the outgoing one on the shelf,
 // and two of those doors - a .mbrd dropped on the canvas, and the PWA file

@@ -11,7 +11,7 @@ import {
   board, bus, addItems, select, setItemCover, NOTE_MAX, baseStep, startSettling,
 } from '../state.ts';
 import { addFile } from '../storage/assets.ts';
-import { makeByteBudget, overPixelBudget } from './budget.ts';
+import { makeByteBudget, overPixelBudget, IMPORT_LIMITS } from './budget.ts';
 import {
   classify, defaultSize, measureSize, fitToBox, linkURL, linkDraft, videoFrame,
   swatchHex, SWATCH_DEFAULT,
@@ -84,6 +84,35 @@ const FONT_EXTS = new Set(['woff2', 'woff', 'ttf', 'otf']);
 
 /** Guard against someone dropping a whole photo library by accident. */
 export const MAX_FILES = 500;
+
+/**
+ * How the importer asks before bringing in something large, handed in rather
+ * than imported.
+ *
+ * The dialog is ui/dialog.ts and `ui/` sits above `import/` in the layering
+ * (tests/layers.test.js, whose DEBT map is empty and may only shrink) - so this
+ * is the fourth of the seams the codebase already keeps for exactly this:
+ * setOverlays(), setAssetNameLookup(), setNoteMenu(), and now this one. main.ts
+ * wires it at startup.
+ *
+ * **Unwired it asks nothing and the import proceeds**, which is the opposite
+ * default to storage's setPrompt() and is the right one for the same reason
+ * that one is right. There, the unanswered question is "may I destroy this?"
+ * and silence has to mean no. Here it is "this is big, still want it?" - a
+ * courtesy in front of something the person has already asked for twice, by
+ * choosing the file and by dropping it. A test with no DOM importing nothing
+ * would be the seam inventing a refusal nobody made.
+ */
+export type ImportPrompt =
+  (opts: { title: string, body: string, go: string }) => Promise<string>;
+
+let confirmImport: ImportPrompt | null = null;
+export function setImportPrompt(fn: ImportPrompt | null | undefined) {
+  confirmImport = typeof fn === 'function' ? fn : null;
+}
+
+/** Whole megabytes, for a sentence. Nothing here needs the decimal. */
+const mb = (bytes: number) => Math.round(bytes / 1024 ** 2) + ' MB';
 
 /**
  * How many files are prepared at once.
@@ -364,6 +393,36 @@ export async function importFiles(
     bus.emit('fonts:add', fonts);
     files = files.filter(f => !FONT_EXTS.has(extOf(f.name)));
     if (!files.length) return [];
+  }
+
+  // Anything big, said once before any of the work starts.
+  //
+  // After the two branches above and not before them, which is a statement about
+  // what this question is for. A .mbrd is not being imported, it is being opened,
+  // and that path asks its own question a moment later; a font is not a file on
+  // the board at all. This is about bytes that are going to be hashed, decoded
+  // and thumbnailed, and the whole value of asking is that it happens before any
+  // of that rather than two minutes into it.
+  //
+  // One question for the whole drop, however many files are over the line. A
+  // dialog per file is not a warning, it is a queue - and the answer to "are
+  // these forty videos meant" is one answer.
+  const big = files.filter(f => (f.size || 0) > IMPORT_LIMITS.warnBytes);
+  if (big.length && confirmImport) {
+    const answer = await confirmImport({
+      title: big.length === 1 ? 'Large file' : 'Large files',
+      // The name and the size when there is one file, because that is the whole
+      // of what is being asked about. A count when there are several: forty
+      // file names is not a shorter way of saying forty.
+      body: big.length === 1
+        ? `${big[0].name} is ${mb(big[0].size)}.`
+        : `${big.length} files are over ${mb(IMPORT_LIMITS.warnBytes)}.`,
+      go: 'Import',
+    });
+    // Everything, not just the big ones. The question was about this drop, and
+    // answering it "no" while the small half of it landed anyway would be the
+    // app doing something nobody agreed to.
+    if (answer !== 'go') return [];
   }
 
   // Seeded from what the walk reported, because by the time the list arrives
