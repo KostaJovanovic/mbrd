@@ -296,6 +296,36 @@ export function onTouch(): boolean {
 }
 
 /**
+ * Whether this engine rations simultaneous media decoders.
+ *
+ * A third question, and it exists because the media guards were asking the one
+ * above and it is not the same question. iOS allows very few live video
+ * decoders at once, which is why canvas/renderers.js parks a clip's source
+ * until it is played - a board of parked clips mounted by a zoom-out is
+ * otherwise a dead tab. That is a fact about **the engine**, not about fingers,
+ * and the two come apart on exactly one device: an iPad with a Magic Keyboard
+ * or a trackpad attached, which is iPadOS with iPadOS's decoder ration and a
+ * primary pointer that is no longer coarse. `pointer: coarse` turns the guard
+ * off there; `any-pointer: coarse` does not, because the touchscreen is still
+ * attached and still the reason the ration exists.
+ *
+ * Erring towards true is free and erring towards false is a crash, which is
+ * what makes `any-pointer` the right side to be wrong on: a desktop with a
+ * touchscreen gets a clip whose source attaches on the first play, one frame
+ * later than it would have.
+ *
+ * Deliberately not a user-agent test. Everything else in this codebase asks the
+ * browser what it can do rather than what it is called, and Chrome on iOS is
+ * WebKit underneath and would fail a Safari sniff while sharing every ration.
+ */
+let anyCoarse: MediaQueryList | null = null;
+export function rationsDecoders(): boolean {
+  if (typeof matchMedia !== 'function') return false;
+  anyCoarse ??= matchMedia('(any-pointer: coarse)');
+  return anyCoarse.matches;
+}
+
+/**
  * Whether the board is being looked at on a screen the size of a hand.
  *
  * The detail rung used to ask onTouch(), and that was the wrong question asked

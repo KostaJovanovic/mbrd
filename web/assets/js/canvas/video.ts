@@ -15,19 +15,26 @@
 // on a board whose whole premise is that it is a sheet of paper you chose the
 // colour of. This draws what is left in the board's own tokens.
 //
-// ── What is left, and what the bar at the foot took ──
+// ── One button, and what the bar at the foot took ──
 //
-// Seek and position are not here any more. The now-playing bar carries a
-// scrubber for whatever is sounding, video included, and it is *pinned to the
-// glass* - so the seek line on the card was the same control drawn a second
-// time, in the one place it is worst: laid over the picture, faded out until
-// the pointer is on the card, and gone the moment the clip is panned away from.
-// A card cannot hold a seek that survives the board moving. The bar can, and
-// does, which leaves the card the two things that are genuinely properties of
-// *this* clip rather than of what is playing:
+// Seek, position and mute are not here any more, and the whole of this file is
+// what is left after they went: a play button in the middle of the picture.
 //
-//   the big play button   the only mark on a parked clip that says it moves
-//   mute                  this clip's own sound, not the room's level
+// The now-playing bar carries a scrubber for whatever is sounding, video
+// included, and it is *pinned to the glass* - so the seek line on the card was
+// the same control drawn a second time, in the one place it is worst: laid over
+// the picture, faded out until the pointer is on the card, and gone the moment
+// the clip is panned away from. A card cannot hold a seek that survives the
+// board moving. The bar can.
+//
+// Mute went with the chin those two lived on. It looks like a property of this
+// clip rather than of the room, which is the argument for keeping it - but only
+// one thing on a board plays at a time (the exclusivity rule in canvas/audio.js),
+// so the level on the bar already governs whatever is making a noise, and it is
+// on screen for exactly as long as something is. A per-card mute was a second
+// way to silence the one clip the bar could already silence, and it cost a strip
+// of paper across the foot of every video on the board - which on a card whose
+// whole content is a picture is the most expensive place to put anything.
 //
 // An audio card kept its waveform through the same change, and the asymmetry is
 // the one this file always described: an audio card is nothing *but* its player
@@ -62,13 +69,6 @@ import type { Item } from '../board-model.ts';
  */
 export const POSTER_TIME = 0.1;
 
-const SOUND_ICON =
-  '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 6h2.4L8.8 3.1v9.8L5.4 10H3z" fill="currentColor"/>' +
-  '<path d="M11 5.6a3.4 3.4 0 010 4.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
-const MUTED_ICON =
-  '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 6h2.4L8.8 3.1v9.8L5.4 10H3z" fill="currentColor"/>' +
-  '<path d="M10.8 6.2l3.4 3.6M14.2 6.2l-3.4 3.6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
-
 /**
  * The transport for one video item.
  *
@@ -96,19 +96,13 @@ export function buildVideoPlayer(item: Item, video: HTMLVideoElement): HTMLEleme
   // which canvas/input.js does on the lift of a press that never travelled. The
   // big button is what starts it again, because a paused card has to keep some
   // mark saying it is a clip and not a photograph.
-  const big = iconButton('vbig', 'Play', PLAY_ICON);
+  const big = document.createElement('button');
+  big.type = 'button';
+  big.className = 'vbig';
+  big.setAttribute('aria-label', 'Play');
+  big.innerHTML = PLAY_ICON;
 
-  // The bar over the foot of the picture, which is now one button wide. It
-  // stays a bar rather than becoming a bare button because what it is is a
-  // strip of chrome that fades in with the pointer, and the CSS that does the
-  // fading is written against .transport-video - see media.css.
-  const bar = document.createElement('div');
-  bar.className = 'transport transport-video';
-
-  const mute = iconButton('vmute', 'Mute', SOUND_ICON);
-
-  bar.append(mute);
-  player.append(big, bar);
+  player.append(big);
 
   // ---- controls ---------------------------------------------------------
 
@@ -131,28 +125,9 @@ export function buildVideoPlayer(item: Item, video: HTMLVideoElement): HTMLEleme
   };
   big.addEventListener('click', toggle);
 
-  // Painted from the element, not from the press.
-  //
-  // The three lines below used to live inside the click handler, so the glyph
-  // was a record of what this button had been asked to do rather than of what
-  // the video is doing - and the element's `muted` moves without this button:
-  // an autoplay policy mutes a clip to let it start, and the exclusivity rule
-  // reaches across cards. The button then said Mute over a silent video.
-  const paintMute = () => {
-    mute.innerHTML = video.muted ? MUTED_ICON : SOUND_ICON;
-    mute.setAttribute('aria-label', video.muted ? 'Unmute' : 'Mute');
-    player.classList.toggle('is-muted', video.muted);
-  };
-  mute.addEventListener('click', () => { video.muted = !video.muted; });
-  video.addEventListener('volumechange', paintMute);
-  paintMute();
-
-  // On the player and not on the bar. The bar carried the same class so it
-  // could stay up for the length of a clip, and that is exactly what the
-  // two-second linger replaced - a bar pinned open by playback is one that
-  // never goes away, since a playing clip never stops playing. The player's own
-  // is-playing still does real work: it takes the big button off the picture,
-  // and #world's `:has()` rules hide the caption plate over a running clip.
+  // is-playing does two things and both are elsewhere: it takes the big button
+  // off the picture, and #world's `:has()` rules hide the caption plate over a
+  // running clip.
   video.addEventListener('play', () => player.classList.add('is-playing'));
   video.addEventListener('pause', () => player.classList.remove('is-playing'));
   // Rewound rather than left on the last frame, so the big button comes back
@@ -169,13 +144,4 @@ export function buildVideoPlayer(item: Item, video: HTMLVideoElement): HTMLEleme
   // audio and reads the type to pick its notation (ui/nowplaying.js).
   registerPlayer(video, item);
   return player;
-}
-
-function iconButton(className: string, label: string, icon: string): HTMLButtonElement {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className = className;
-  b.setAttribute('aria-label', label);
-  b.innerHTML = icon;
-  return b;
 }

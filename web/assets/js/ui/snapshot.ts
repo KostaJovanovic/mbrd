@@ -87,6 +87,53 @@ const MARGIN = 48;
 /** The longest edge the output is allowed to reach, so a huge board still fits. */
 const MAX_EDGE = 8000;
 
+/**
+ * The most pixels a canvas may hold, whatever shape they are in.
+ *
+ * iOS Safari refuses any canvas past 16,777,216 pixels, and refuses it in the
+ * worst available way: no throw, no warning, just transparent output from then
+ * on. MAX_EDGE alone permits 8000 x 8000, which is 64 megapixels - four times
+ * that - so Export as PNG and Export as PDF came back blank on iOS for any
+ * board large enough to reach the cap. boardThumb() had already been fixed for
+ * exactly this and says so in its own note; the two full-size exports had not.
+ *
+ * Applied on every engine rather than behind a check for this one, and that is
+ * a deliberate trade rather than laziness. There is no honest way to detect it:
+ * a capability probe means allocating the oversized canvas on the very device
+ * being protected, and a user-agent test would be the first in this codebase
+ * and would be wrong for Chrome on iOS, which is WebKit underneath. What it
+ * costs elsewhere is the far edge of a case nobody is in - a board over ~4096
+ * on a side exports at 16.7 MP instead of up to 64 - and what it buys is that
+ * the same board exports everywhere.
+ *
+ * Sixteen million rather than the engine's 16,777,216 exactly. The two sides
+ * are rounded *up* after the scale is applied, so a budget set at the limit
+ * lands a few thousand pixels over it - and being over it by any amount is the
+ * same blank picture as being over it by half. The 777,216 of headroom is a
+ * tenth of one percent of the edge length and buys the arithmetic room to be
+ * approximate.
+ */
+const MAX_AREA = 16_000_000;
+
+/**
+ * How far a board of this size has to shrink to become a canvas.
+ *
+ * Two ceilings, and the tighter one wins. The edge cap is about a picture
+ * nobody wants to be handed; the area cap is about a canvas the engine will not
+ * draw at all - see MAX_AREA, which is also where the headroom for the
+ * Math.ceil() on each side afterwards is accounted for.
+ *
+ * Pulled out of renderBoardCanvas() and exported so it can be tested: the
+ * renderer needs a board, a document and forty painters, and the arithmetic
+ * that decides whether an export comes back blank on a phone needs none of
+ * them. Never enlarges - a small board is drawn at 1:1 and always was.
+ */
+export function exportScale(worldW: number, worldH: number, maxEdge = MAX_EDGE): number {
+  const byEdge = maxEdge / Math.max(worldW, worldH);
+  const byArea = Math.sqrt(MAX_AREA / (worldW * worldH));
+  return Math.min(1, byEdge, byArea);
+}
+
 /** Everything on the board that is a thing rather than a hint to the person. */
 const drawable = () => board.items.filter(i => i.type !== 'ghost');
 
@@ -968,7 +1015,7 @@ async function renderBoardCanvas(detail: Detail = 'full', maxEdge = MAX_EDGE) {
 
   const worldW = (b.x1 - b.x0) + MARGIN * 2;
   const worldH = (b.y1 - b.y0) + MARGIN * 2;
-  const scale = Math.min(1, maxEdge / Math.max(worldW, worldH));
+  const scale = exportScale(worldW, worldH, maxEdge);
   const W = Math.max(1, Math.ceil(worldW * scale));
   const H = Math.max(1, Math.ceil(worldH * scale));
 
@@ -1079,8 +1126,25 @@ export async function boardThumb(max = 360) {
   const ctx = c.getContext('2d');
   if (!ctx) return null;
   ctx.drawImage(shot.canvas, 0, 0, tw, th);
-  try { return c.toDataURL('image/webp', 0.7); }
-  catch { return null; }
+  // WebP, then JPEG. toDataURL carries its own type in the string it returns,
+  // which is the only way to find out that the engine ignored the one asked
+  // for - it substitutes PNG and says nothing, and no Safari writes WebP from a
+  // canvas.
+  //
+  // This mattered more than a wrong file extension. storage/library.js keeps
+  // this string in the shelf's index, in one `kv` record read in full every
+  // time the switcher draws, on the stated grounds that it is "small by
+  // construction". A 360px PNG of a picture-dense board is a few hundred
+  // kilobytes of base64 where the WebP is fifteen, so on Safari a shelf of
+  // twenty boards turned a fast read into a multi-megabyte one.
+  //
+  // A board thumbnail is opaque - renderBoardCanvas fills the paper first - so
+  // JPEG is safe here with no question to ask about alpha.
+  try {
+    const webp = c.toDataURL('image/webp', 0.7);
+    if (webp.startsWith('data:image/webp')) return webp;
+    return c.toDataURL('image/jpeg', 0.7);
+  } catch { return null; }
 }
 
 /** The board as a one-page PDF blob, or null. */

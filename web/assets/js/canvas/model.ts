@@ -20,7 +20,7 @@
 // want anyway.
 
 import { clamp } from '../util.ts';
-import { addFile, allAssets, assetURL, getAsset, readText } from '../storage/assets.ts';
+import { addFile, allAssets, assetURL, derivedFile, getAsset, readText } from '../storage/assets.ts';
 import { applyMaterials, meshKind, parseMesh, parseMTL, MeshError } from '../mesh.ts';
 import type { Mesh } from '../mesh.ts';
 import { board, bus, byId, selection, setModelShot } from '../state.ts';
@@ -562,8 +562,9 @@ export const isTurning = (id: string) => turning.has(id);
  * time anything moves.
  *
  * Silent on failure. A model that cannot be photographed - no WebGL, a mesh
- * that will not parse, a browser without WebP - simply keeps drawing itself
- * live, which is what it did before any of this existed.
+ * that will not parse - simply keeps drawing itself live, which is what it did
+ * before any of this existed. "The engine will not write WebP" used to be on
+ * that list and is not any more: see the encode below.
  */
 async function takeShot(id: string): Promise<boolean> {
   const item = byId(id);
@@ -592,10 +593,20 @@ async function takeShot(id: string): Promise<boolean> {
   // true, which it only does once ensureGL() has built the shared canvas - and a
   // canvas this line made a moment ago has a 2d context to give.
   flat.getContext('2d')!.drawImage(glCanvas!, 0, 0, w, h, 0, 0, w, h);
+  // Whatever came out. This used to require WebP, and the doc above still
+  // called that case "a browser without WebP" as though it were exotic - it is
+  // every Safari, none of which encodes WebP from a canvas. The cost was not a
+  // missing still but a permanent one: takeShot() is called again on every
+  // settle, so each attempt was a WebGL render, an OffscreenCanvas copy and an
+  // encode, thrown away, for the life of the board.
+  //
+  // No JPEG retry, unlike canvas/display.js and canvas/poster.js. A model is
+  // drawn over the board's own paper and the still carries that transparency;
+  // flattening it onto black would put a rectangle under every model card.
   const blob = await flat.convertToBlob({ type: 'image/webp', quality: 0.9 });
-  if (!blob || !/webp/.test(blob.type)) return false;
+  if (!blob) return false;
 
-  const hash = await addFile(new File([blob], `${id}-still.webp`, { type: 'image/webp' }));
+  const hash = await addFile(derivedFile(blob, `${id}-still`));
   // Recorded before the item is told, so the rebuild this triggers does not read
   // it back as a card that still owes a picture.
   shotSize.set(id, sizeOf(item));

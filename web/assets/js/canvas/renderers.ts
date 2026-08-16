@@ -10,7 +10,7 @@
 // caller had to learn they moved.
 
 import { cue } from '../cuelume/engine.ts';
-import { extOf, baseName, formatBytes } from '../util.ts';
+import { extOf, baseName, formatBytes, isRecord } from '../util.ts';
 import type { Item, ItemType } from '../board-model.ts';
 import { assetURL, getAsset, readText } from '../storage/assets.ts';
 import { byId, bus, markDirty, board, isDefaultTitle, itemCrop, setSwatchHex } from '../state.ts';
@@ -19,7 +19,7 @@ import { describeExt, PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS } from '../im
 import { registerPlayer } from './audio.ts';
 import { buildTransport } from './transport.ts';
 import { buildVideoPlayer, POSTER_TIME } from './video.ts';
-import { onTouch } from './viewport.ts';
+import { rationsDecoders } from './viewport.ts';
 import { embedFor, embedOffer } from './embed.ts';
 import { buildModelCard } from './model.ts';
 import { hintFor, hintKey, tapeStyle, bindDial, STOPS, DIAL } from './ghosts.ts';
@@ -545,15 +545,20 @@ const RENDERERS = {
     const poster = posterHash ? assetURL(posterHash) : null;
     if (poster) v.poster = poster;
     const url = item.asset?.hash ? assetURL(item.asset.hash) : null;
-    if (onTouch()) {
-      // On a touch device the source is held back until the first play. A <video>
-      // with a src (even preload=metadata, even just to paint a poster frame)
-      // holds a decoder, and iOS rations simultaneous video decoders hard - a
-      // board of parked clips all mounted at once, which is what zooming out
-      // does, exceeds the ceiling and crashes the tab. Parked here, a clip is an
-      // inert element with no decoder; buildVideoPlayer attaches the source on
-      // the first toggle. A poster shows the frame meanwhile if the clip has one;
-      // without one the card is its play button over black until tapped.
+    if (rationsDecoders()) {
+      // On an engine that rations decoders the source is held back until the
+      // first play. A <video> with a src (even preload=metadata, even just to
+      // paint a poster frame) holds a decoder, and iOS rations simultaneous
+      // video decoders hard - a board of parked clips all mounted at once,
+      // which is what zooming out does, exceeds the ceiling and crashes the tab.
+      // Parked here, a clip is an inert element with no decoder;
+      // buildVideoPlayer attaches the source on the first toggle. A poster shows
+      // the frame meanwhile if the clip has one; without one the card is its
+      // play button over black until tapped.
+      //
+      // rationsDecoders() and not onTouch(): see the note on it. An iPad with a
+      // keyboard folded on has iPadOS's ration and a pointer that is no longer
+      // coarse, and this guard was switching itself off there.
       v.preload = 'none';
       if (url) v.dataset.src = url;
     } else {
@@ -617,9 +622,26 @@ const RENDERERS = {
     card.classList.add('card-audio');
 
     const sound = document.createElement('audio');
-    sound.preload = 'metadata';
     const url = item.asset?.hash ? assetURL(item.asset.hash) : null;
-    if (url) sound.src = url;
+    // The same parking the video renderer does, and for the same reason - it
+    // was simply never extended here. A <audio> holding a src holds a decoder
+    // too, and a board laid out for a phone can mount a column of clips at
+    // once. Cheaper per element than video, which is why this is caution rather
+    // than a crash being fixed, but the asymmetry between the two renderers was
+    // an oversight rather than a decision.
+    //
+    // The source is attached at the one place a card's own element is ever
+    // started - startCurrent() in canvas/playlist-queue.js - so unlike video
+    // there is no second entry point to keep in step. The waveform is unaffected
+    // either way: canvas/waveform.js decodes the asset's bytes through an
+    // OfflineAudioContext and never asks the element for anything.
+    if (rationsDecoders()) {
+      sound.preload = 'none';
+      if (url) sound.dataset.src = url;
+    } else {
+      sound.preload = 'metadata';
+      if (url) sound.src = url;
+    }
     registerPlayer(sound, item);
 
     card.append(buildTransport(item, sound), sound);
@@ -1218,10 +1240,110 @@ const RENDERERS = {
     return card;
   },
 
+  /**
+   * A tombstone: what is drawn where a file used to be, once the bin was
+   * emptied on it.
+   *
+   * The only card in here that is a record of an absence rather than a picture
+   * of something, and the only one nothing on the board can create - it is made
+   * by emptyTrash() (trash.ts) and by nothing else, which is why classify()
+   * knows nothing about it and never will. Where it turns up is the history: a
+   * step that deleted a photograph still replays, and what it now puts back is
+   * this rather than a card pointing at bytes that were destroyed. It also
+   * turns up in the bin itself for exactly as long as an undo of the emptying
+   * keeps it there.
+   *
+   * Everything it prints comes off `meta.gone`, which is the whole of what was
+   * kept: what kind of thing this was, what extension it had, and what it
+   * weighed. There is no asset to ask - that is the point of the card - so
+   * cardShell() is not reused here even though the head is the same three
+   * lines: it reads the registry for the size, and the registry is exactly what
+   * no longer has an answer.
+   */
+  gone(item: Item) {
+    const card = document.createElement('div');
+    card.className = 'card gone-card';
+    card.append(binArt());
+
+    const kicker = document.createElement('div');
+    kicker.className = 'card-icon';
+    // `meta` is open, so both reads are narrowed rather than trusted - the same
+    // treatment every other renderer in this file gives it.
+    const raw = item.meta?.gone;
+    const gone: Record<string, unknown> = isRecord(raw) ? raw : {};
+    const kind = metaStr(gone.type);
+    // 'generic' is the classifier's word for "a file, and nothing more is
+    // known", which is a sentence about the code rather than about the thing.
+    // On the card it reads as the plain word it always meant.
+    kicker.textContent = `Deleted ${!kind || kind === 'generic' ? 'file' : kind}`;
+
+    const name = document.createElement('div');
+    name.className = 'card-name';
+    name.textContent = titleOf(item);
+
+    const meta = document.createElement('div');
+    meta.className = 'card-meta';
+    const ext = metaStr(gone.ext).replace(/^\./, '');
+    const bytes = Number(gone.bytes);
+    // The same order and the same separator as cardShell()'s foot, so a
+    // tombstone reads as the card it replaced rather than as a different kind
+    // of object. A size of zero prints nothing: it means the bytes were already
+    // missing when the bin was emptied, and "0 B" would be a claim about the
+    // file rather than about what is known of it.
+    meta.textContent = [bytes > 0 && formatBytes(bytes), ext && ext.toUpperCase()]
+      .filter(Boolean).join(' · ');
+
+    card.append(kicker, name, meta);
+    return card;
+  },
+
   generic(item: Item) {
     return cardShell(item, extOf(item.name) || 'file');
   },
 };
+
+/**
+ * The bin, drawn: a can with its lid tipped off it.
+ *
+ * Built rather than referenced out of icons.svg, and the two are not the same
+ * kind of thing. That sprite is chrome - sixteen-pixel glyphs for buttons and
+ * menu rows, drawn to be read at one size next to a word. This is the *subject*
+ * of a card, the way a sticker's shape is: it fills the space a photograph used
+ * to fill, at whatever size the photograph was, so it is drawn for that job and
+ * lives beside the renderer that is the only thing which will ever use it.
+ *
+ * The lid is off rather than on, tilted away from the can, because a shut bin
+ * is a place things are kept and an open one is a place they have gone from -
+ * which is the entire difference this card is trying to say. Geometry in
+ * attributes, colour in items.css: a `style` attribute is refused by the CSP
+ * (see CLAUDE.md), and what a card is coloured is the stylesheet's say anyway.
+ */
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function binArt() {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('class', 'gone-bin');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  // Decorative. The card says "Deleted image" in words directly underneath, so
+  // announcing the drawing as well would read the card out twice.
+  svg.setAttribute('aria-hidden', 'true');
+  const path = (d: string, cls: string) => {
+    const node = document.createElementNS(SVG_NS, 'path');
+    node.setAttribute('d', d);
+    node.setAttribute('class', cls);
+    svg.append(node);
+    return node;
+  };
+  // The can: a tapered body with a rounded foot.
+  path('M6.3 9.4h11.4l-1 11.1a2.1 2.1 0 0 1-2.1 1.9H9.4a2.1 2.1 0 0 1-2.1-1.9z', 'gone-body');
+  // The lid, lifted clear and set down at an angle across the top of it.
+  path('M3.9 7.4 19.3 4.3l.5 2.4L4.4 9.8z', 'gone-lid');
+  // And its handle, riding the same tilt.
+  path('M9.6 5.6 9.2 3.5a1.1 1.1 0 0 1 .9-1.3l3-.6a1.1 1.1 0 0 1 1.3.9l.4 2.1', 'gone-grip');
+  // Two ribs down the inside, which is what stops the body reading as a bucket.
+  path('M10.4 12.6v6.1M13.6 12.6v6.1', 'gone-ribs');
+  return svg;
+}
 
 /**
  * Whether a type has a renderer of its own rather than falling back to the

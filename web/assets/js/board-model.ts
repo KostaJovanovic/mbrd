@@ -42,10 +42,17 @@
 // reader has to narrow. Narrow it where you use it; that is where the knowledge
 // actually is.
 
-/** Every type classify() can produce, and the whole of what RENDERERS answers. */
+/**
+ * Every type classify() can produce, and the whole of what RENDERERS answers.
+ *
+ * `gone` is the one that is not a thing anybody makes. It is what is left of an
+ * item after the bin was emptied on it: the name, the kind of file it was and
+ * how big it used to be, and no asset at all. See tombstone() in trash.ts.
+ */
 export type ItemType =
   | 'image' | 'video' | 'audio' | 'note' | 'link' | 'text' | 'model'
-  | 'title' | 'ghost' | 'swatch' | 'sticker' | 'fence' | 'style-tile' | 'generic';
+  | 'title' | 'ghost' | 'swatch' | 'sticker' | 'fence' | 'style-tile'
+  | 'gone' | 'generic';
 
 /**
  * The bytes an item points at, or null for one that is only geometry and text.

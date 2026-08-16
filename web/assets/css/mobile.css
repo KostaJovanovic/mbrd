@@ -948,6 +948,7 @@
   border-bottom: var(--hairline) solid var(--rule-2);
   cursor: grab;
   touch-action: none;
+  -webkit-user-select: none;
   user-select: none;
 }
 .player-window.is-moving { cursor: grabbing; }

@@ -23,6 +23,7 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 8px;
+  -webkit-user-select: none;
   user-select: none;
   transition: opacity var(--dur-base) var(--ease), visibility 0s;
 }
@@ -329,6 +330,15 @@
 }
 .bin-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .bin-thumb.is-note { background: var(--note-1); color: var(--ink-2); }
+/* A tombstone: an entry whose file was destroyed when the bin was emptied, in
+   the bin only for as long as an undo of that keeps it there. Drawn back rather
+   than out - it is a record of something, not something - which is the same
+   thing the dashed plate rule says about the card itself (items.css). */
+.bin-thumb.is-gone {
+  border-style: dashed;
+  background: var(--paper-2);
+  color: var(--ink-3);
+}
 /* A binned sticker shows its shape, which is the only thing that tells it from
    the next one - every star is called Star. Padded, because these are drawn to
    the edges of their own box and a 38px square with the thumb border round it

@@ -58,6 +58,7 @@
   border-radius: var(--leaf);
   background: var(--paper-card);
   box-shadow: var(--shadow-1);
+  -webkit-user-select: none;
   user-select: none;
 }
 /* Room under the track only when the trim offer is actually there. Vertical

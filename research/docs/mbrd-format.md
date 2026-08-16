@@ -319,6 +319,16 @@ so one file can stay in Mobile mode on a phone and Desktop mode on a computer.
 `trash` is the bin, and its items carry their assets. That is deliberate: a bin
 that cannot restore anything after a save is not a bin.
 
+**Emptying it is the one action that removes bytes from a board.** Everything
+else that deletes leaves the asset where it is, because undo, the bin and the
+step ledger can each put the card back — so a file stays in `assets/` until one
+of those three stops naming it, and emptying the bin is the only thing that
+makes all three stop at once. What is left in place of each file is an item of
+type `gone` carrying its name, its kind and its size (see `meta.gone` below),
+written into the bin entry that comes back if the emptying is undone, and into
+every copy of that item the step ledger holds. A reader that does not know the
+type shows a plain named card, which is very nearly the right picture.
+
 ### `connections`
 
 Lines somebody drew between two cards, as unordered pairs of item ids. A
@@ -633,7 +643,7 @@ item type and not a new top-level key like `connections`.
 | field  | meaning |
 | ------ | ------- |
 | `id`   | Unique within the board. `[A-Za-z0-9_-]{1,64}`. |
-| `type` | `image`, `video`, `audio`, `text`, `note`, `link`, `swatch`, `sticker`, `model`, `fence`, `generic`. |
+| `type` | `image`, `video`, `audio`, `text`, `note`, `link`, `swatch`, `sticker`, `model`, `fence`, `gone`, `generic`. |
 | `x`, `y` | The item's **centre**, in world units. **`y` points up** — this is the one convention that surprises people, and it is why the renderer lays items out at `-y`. |
 | `w`, `h` | Size in world units. Bounded to 48…20000 (`geometry.ts`). |
 | `rot`  | Degrees, anticlockwise-positive. Only stickers set it so far — ±8° rolled fresh every time one is pressed down — but every geometry helper has always respected it, and a hand-rotated card of any type round-trips. |
@@ -670,6 +680,7 @@ promise 1 above,** and that is the open question at the bottom of this document.
 | `shape`  | `sticker` | Which shape it is: a `<symbol>` id in `web/assets/stickers.svg`, e.g. `"s-star"`. Checked against the catalogue on every render (`stickerShape`), never trusted from the file — the value goes straight into a `<use href>`, where a name that matches nothing draws nothing at all and says nothing about it. An unknown id falls back to the first shape rather than leaving a hole. |
 | `tint`   | `note`, `sticker` | Which colour off the pad, as a number. A note cycles 1–4 (`--note-1..4`) as it is made; a sticker is born wearing its shape's own default and 1–8 (`--sticker-1..8`) are the overrides the item menu offers. Out-of-range or missing falls back to the shape's default. |
 | `url`    | `link` | The address. **Revalidated on every render**, never trusted from the file. |
+| `gone`   | `gone` | `{ type, ext, bytes }` — what a file was before the bin was emptied on it. `type` is the item type it had, carried as the string it was rather than checked against this list, for the same reason an unknown `type` is carried. `ext` is its extension and `bytes` what it weighed. This is the **whole** of what such an item keeps: `asset` is `null`, the rest of `meta` is dropped, and the geometry and `name` stay so that the card is drawn where and as large as the thing it replaces. There is nothing here that could ever resolve to a file again, which is the point — emptying the bin is the one action in the app that destroys rather than files, and this is the record it leaves in place of what it destroyed. |
 | `hex`    | `swatch` | The colour, as `#rrggbb`. The item's `name` carries the same value uppercased — a swatch has no other name it could have, which is what makes one findable and what a copy of one puts on the system clipboard. Held to six hex digits on the way in and on the way out to the card (`swatchHex`); `#rgb` is folded out to the long form, and anything else falls back to the default grey rather than being stored. The item carries no asset. |
 | `peaks`  | `audio` | RMS readings in [0, 1]. Moved out to `waveforms/` when packing — see below. |
 | `trackTitle`, `artist`, `album` | `audio` | The track's tags, read off the file (ID3 / Vorbis / MP4) the first time the Mobile Playlist lens shows it, then cached here. The Playlist and the now-playing bar prefer `trackTitle` to the filename and show `artist` beneath it. Absent means the file carried no such tag; a re-encode with no title is still a track. Plain strings, additive — no `version` bump. |

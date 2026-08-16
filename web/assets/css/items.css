@@ -483,6 +483,70 @@
   -webkit-mask-image: linear-gradient(180deg, #000 80%, transparent);
           mask-image: linear-gradient(180deg, #000 80%, transparent);
 }
+/* The tombstone card: what is drawn where a file used to be, once the bin was
+   emptied on it. canvas/renderers.js/RENDERERS.gone builds it.
+
+   Centred, where every other named card is ranged left, and that is the one
+   deliberate break with the rest of the set. Those cards are labels on a thing
+   that is present - the name is the handle you read along the top of it. This
+   card has no thing under it, so there is nothing for the type to be a label
+   *of*; it is a marker, and a marker is centred on the space it marks.
+
+   Muted throughout, including the kicker, which is the one place --accent is
+   given up. The accent on an ordinary card says "this is a file, of this kind";
+   the same colour here would announce an absence in the same voice the board
+   announces its contents in. */
+.gone-card {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 5px;
+  /* The name too, not only the meta line - see above. */
+  color: var(--ink-3);
+}
+.gone-card .card-icon { color: var(--ink-3); }
+.gone-card .card-name { color: var(--ink-3); }
+/* And the plate rule dashed rather than solid, which is the same thing said in
+   the frame: a ruled card is a card with something in it, and a dashed one is
+   the outline of where something was. The hint cards in ghosts.css draw their
+   own dashes for the mirror image of this reason - a thing not there yet. */
+.gone-card::after { border-style: dashed; }
+
+/* The bin itself. A fraction of the card rather than a fixed size, because the
+   card is the size the picture was - a tombstone for a thumbnail and one for a
+   poster are the same card at two very different scales, and a 64px glyph would
+   be the whole of the first and a speck in the second.
+
+   aspect-ratio rather than a height, so the square holds however the flex
+   column resolves. min-height 0 lets it be squeezed on a card too short for it
+   instead of pushing the type off the bottom. */
+.gone-bin {
+  flex: 0 1 auto;
+  width: 34%;
+  min-width: 28px;
+  max-width: 88px;
+  min-height: 0;
+  aspect-ratio: 1;
+  opacity: 0.55;
+}
+.gone-body, .gone-lid { fill: var(--ink-3); }
+.gone-grip {
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* Drawn in the card's own paper rather than in ink: the ribs are inside the
+   filled body, so they are grooves cut out of it rather than lines laid on it.
+   Ink on ink would be invisible, which is how this was found. */
+.gone-ribs {
+  fill: none;
+  stroke: var(--paper-card);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
 /* The swatch card: a colour and the number for it.
    canvas/renderers.js/RENDERERS.swatch builds it and writes --swatch.
 

@@ -33,6 +33,50 @@ const MIN_JPEG = 1024;        // a "preview" under a kilobyte is not one
 const MAX_JPEG = 128 * 1024 * 1024;
 const SCAN_CAP = 12 * 1024 * 1024;   // window the marker-scan fallback reads
 
+/**
+ * Pictures this browser may well draw and another browser will not.
+ *
+ * The module above is written for the file *nothing* draws - a RAW, a JPEG XL -
+ * and import/drop.js asked for a preview only when the decode had already
+ * failed. That question has an engine in it, and the answer changes with the
+ * engine: Safari decodes HEIC and nothing else does, so on an iPhone the branch
+ * never ran, the photograph went into the .mbrd as raw HEIC with no preview,
+ * and the board looked perfect on the phone that made it and arrived on a
+ * desktop as a wall of grey named cards.
+ *
+ * Masked, until now, by iOS converting HEIC to JPEG on its way through a file
+ * input. **The Safari 27 beta lists that conversion as a bug and fixes it**, so
+ * from iOS 27 the HEIC arrives as a HEIC and this becomes the ordinary case
+ * rather than the exotic one.
+ *
+ * Short and closed on purpose. A format goes in here only when one engine draws
+ * it and the others do not - AVIF is not a member, because everything draws
+ * AVIF now, and adding it would cut a preview for every AVIF on every board to
+ * solve nothing.
+ */
+export const NOT_PORTABLE = new Set(['heic', 'heif', 'hif', 'jxl']);
+
+/**
+ * How big a preview has to be before it may stand in for a picture the browser
+ * can already draw perfectly well.
+ *
+ * There are two quite different reasons to reach for an embedded JPEG, and only
+ * one of them is unconditional. Where the original cannot be decoded at all,
+ * any preview beats a grey card and no threshold applies. Where the original
+ * draws fine here and the preview exists only so the board travels, the preview
+ * becomes the pixels *this* device shows - and a HEIC's embedded JPEG is often
+ * the camera's small thumbnail rather than a full-size copy. Swapping a twelve
+ * megapixel photograph for a 320px thumbnail on the phone that took it would be
+ * fixing another engine's problem with this one's picture.
+ *
+ * 1280 because that is the top stop of the display ceiling in canvas/display.js:
+ * at or above it the card draws exactly the same either way, so adopting the
+ * preview costs the viewer nothing and buys the board its portability. Below
+ * it, the original stays and the board is honestly less portable - which is a
+ * limitation to write down rather than a picture to quietly degrade.
+ */
+export const PORTABLE_MIN_EDGE = 1280;
+
 /** One candidate JPEG: where the container says it is, and how long it claims. */
 type Candidate = { off: number, len: number };
 

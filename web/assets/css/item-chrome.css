@@ -393,8 +393,8 @@
    over cover art at far zoom - artwork is the one background this app does not
    choose, so the button needs a plate to stay legible on a dark sleeve. It is
    rare on screen and keeps its frosted look, paying the toll only while moving.
-   The caption plate and the video controls gave their blur up entirely (see
-   .item-bar, .vbig, .transport-video) and need no toggle here any more.
+   The caption plate and the video play button gave their blur up entirely (see
+   .item-bar and .vbig) and need no toggle here any more.
 
    The blur returning is not animated. A transition here would put the cost back
    on the frame after the gesture, spread over a few hundred milliseconds, which

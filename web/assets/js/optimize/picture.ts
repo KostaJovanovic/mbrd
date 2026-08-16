@@ -1,7 +1,8 @@
 // Shrinking a picture, with the browser's own decoder and encoder.
 //
 // No dependency and none wanted: `createImageBitmap` reads every format the
-// board can display, a canvas resamples it, and `convertToBlob` writes WebP.
+// board can display, a canvas resamples it, and `convertToBlob` writes WebP -
+// or JPEG, on the engines that cannot write WebP at all, which is every Safari.
 // The whole of it is four calls; what is worth writing down is the judgement
 // around them, which is when *not* to swap the file.
 
@@ -109,15 +110,62 @@ export async function shrinkPicture(
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(bmp, 0, 0, w, h);
 
-    // A browser that cannot write the format asked for silently hands back a
-    // PNG, which is how a shrink turns into a file three times the size.
-    const out = await canvas.convertToBlob({ type, quality });
-    if (!out || out.type.toLowerCase() !== type) return null;
+    const out = await encodeShrunk(canvas, type, quality, blob.type);
+    if (!out) return null;
+    // The one guard that makes any of encodeShrunk()'s answers safe: whatever
+    // came back, it is only kept if it saves enough to be worth a generation of
+    // quality. A PNG that came back three times the size of the JPEG it would
+    // replace dies right here, which is what the old type test was really for.
     if (out.size > blob.size * (1 - WORTH_IT)) return null;
     return { blob: out, width: w, height: h, from: blob.size, to: out.size };
   } finally {
     bmp.close?.();
   }
+}
+
+/**
+ * The shrunk canvas as bytes, or null when nothing usable came out.
+ *
+ * The rule this file used to follow - ask for a type, refuse anything else -
+ * was right about file size and wrong about who it was refusing. **No version
+ * of Safari encodes WebP from a canvas**, and the specification says an engine
+ * that cannot write the type asked for hands back a PNG without complaint. So
+ * on every Safari the refusal fired for every picture on the board, and
+ * Optimise ran its dialog, its progress bar and its minutes of work to report
+ * that nothing needed doing. The picture pass is the largest saving the feature
+ * offers.
+ *
+ * Three answers, in order:
+ *
+ *  - the type asked for came back. Keep it, as before.
+ *  - a *pinned* type did not come back. Null, as before. A caller that names a
+ *    type needs that type or nothing - toOpus() tags a track with JPEG cover
+ *    art, and a PNG under a JPEG's name is a broken tag rather than a big one.
+ *    Safari writes JPEG perfectly well, so this branch stays theoretical.
+ *  - the default WebP did not come back. Retry as JPEG when the source was
+ *    itself a JPEG, which is the one format that provably carries no alpha;
+ *    otherwise keep the PNG, which preserves whatever transparency a cut-out
+ *    had. Either way the WORTH_IT guard in the caller is what decides whether
+ *    it is kept, so this cannot make a board's files bigger - only smaller or
+ *    unchanged.
+ */
+async function encodeShrunk(
+  canvas: OffscreenCanvas,
+  type: string,
+  quality: number,
+  sourceType: string,
+): Promise<Blob | null> {
+  const out = await canvas.convertToBlob({ type, quality });
+  if (!out) return null;
+  if (out.type.toLowerCase() === type) return out;
+  if (type !== 'image/webp') return null;
+  if (/^image\/jpe?g$/i.test(sourceType)) {
+    try {
+      const jpeg = await canvas.convertToBlob({ type: 'image/jpeg', quality });
+      if (jpeg?.type.toLowerCase() === 'image/jpeg') return jpeg;
+    } catch { /* no JPEG encoder either: the PNG below is still the right pixels */ }
+  }
+  return out;
 }
 
 /**
@@ -220,10 +268,25 @@ export async function makeThumb(
     // a second decode of the very thing the resize above exists to avoid.
     const cutout = looksCutOut(ctx, w, h);
     const out = await canvas.convertToBlob({ type: 'image/webp', quality: THUMB_QUALITY });
-    // The same trap shrinkPicture() guards: a browser that cannot write WebP
-    // hands back a PNG without saying so, and a PNG at this quality setting is
-    // not the small file this was for.
-    if (!out || out.type.toLowerCase() !== 'image/webp') return null;
+    // Whatever came back is kept, and this used to refuse anything but WebP on
+    // the grounds that a PNG at this quality setting is not the small file the
+    // thumbnail was for. True of the bytes and wrong about the stakes.
+    //
+    // No version of Safari encodes WebP from a canvas - not on iOS, not on the
+    // desktop - so the refusal meant Safari made *no thumbnails at all*. A
+    // thumbnail is not a size optimisation, it is the memory defence for a
+    // zoomed-out board (see the twin in canvas/renderers.js: two hundred
+    // hundred-pixel pictures instead of two hundred full decodes) and the
+    // stand-in a card shows while its display copy renders. Withholding it from
+    // the one engine that runs out of memory is the wrong way round.
+    //
+    // The cost is honest and bounded: a hundred-pixel PNG is tens of kilobytes
+    // where the WebP is a few, and it travels in the .mbrd. The guard below
+    // still refuses one that outweighs the picture it stands for. No JPEG
+    // fallback here, unlike canvas/display.js - looksCutOut() above says this
+    // module deals in pictures with holes in them, and a flattened background
+    // is exactly what it must not introduce.
+    if (!out) return null;
     // A thumbnail bigger than its original is not a thumbnail. Rare, and real:
     // a hundred-pixel crop of pure noise can out-weigh a tiny flat-colour PNG.
     if (out.size >= blob.size) return null;

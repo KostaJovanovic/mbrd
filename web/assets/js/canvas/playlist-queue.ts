@@ -331,7 +331,13 @@ function startCurrent(skips = 0): void {
     if (el.currentSrc !== url && el.src !== url) el.src = url;
     else el.currentTime = 0;
   } else {
-    // A card's own element, already holding its src; start it from the top.
+    // A card's own element. It holds its src already unless the renderer parked
+    // it - on an engine that rations decoders an audio card is mounted with
+    // `data-src` and no source at all, so a whole board of them holds none.
+    // This is the only place such an element is ever started, which is what
+    // makes one line here the whole of the attach. See the audio renderer.
+    if (!el.src && el.dataset.src) el.src = el.dataset.src;
+    // Start it from the top.
     el.currentTime = 0;
   }
   // The ended -> advance hook follows the current voice: bound to this element while
