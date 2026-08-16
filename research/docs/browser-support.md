@@ -66,9 +66,14 @@ Documented so "Safari support" does not imply feature parity on every point rele
   along and is the pattern.
 - **The canvas area ceiling is 16,777,216 pixels**, and a canvas past it draws
   *transparent* rather than throwing — so an over-large export is a blank file
-  rather than an error. `MAX_AREA` in `ui/snapshot.ts` is applied on every
-  engine: a probe would mean allocating the oversized canvas on the device being
-  protected, and a user-agent test would be wrong for Chrome on iOS.
+  rather than an error. `MAX_AREA` in `ui/snapshot.ts` caps Export as PNG and
+  Export as PDF, but **only where the ceiling is real**: `drawsPastArea()` paints
+  one white pixel on a deliberately oversized canvas and reads it back, so the
+  question is put to the engine rather than to the user agent — a sniff would be
+  wrong for Chrome on iOS, which is WebKit underneath. The probe costs one large
+  allocation, so it is reached only from a board whose export would exceed the
+  cap anyway, and the answer is kept for the session. Everywhere else the edge
+  cap alone applies and a big board still exports at full size.
 - **From iOS 26, every site added to the Home Screen opens as a web app by
   default.** Relevant to the storage note below rather than to layout: WebKit
   grants `navigator.storage.persist()` on installed-web-app heuristics, so "add

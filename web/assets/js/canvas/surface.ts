@@ -11,10 +11,16 @@
 // alone" - so nothing crashed and everything quietly stopped working. What
 // stopped working is the whole of this app's memory defence: no display copies,
 // no thumbnails, no posters, no stills. A board of two dozen photographs then
-// mounts two dozen full-resolution originals, which is a gigabyte of decode, on
-// the oldest and smallest-memory hardware in the supported range. The module
-// written to stop iOS Safari killing the tab was absent on the iOS Safari most
-// likely to kill one.
+// mounts two dozen full-resolution originals, which is about a gigabyte of
+// decode.
+//
+// Worth being exact about who that hurts, because the obvious guess is wrong.
+// It is **not** a story about old, small-memory phones. The crash that started
+// all of this was an iPhone 12 on a current iOS, and the ceiling it hit was
+// iOS Safari's per-tab memory limit rather than the device's RAM - the same
+// limit a phone released this year has. So the defence matters on every iPhone,
+// and this file is only about making sure it is *present* on the engines that
+// cannot build it the tidy way.
 //
 // The fallback is not exotic: an ordinary `<canvas>` element does all of this
 // and has since the beginning. What OffscreenCanvas buys here is not capability
@@ -50,14 +56,23 @@ export type Surface = {
  * the same thing and one of them kept forgetting: the default is 'low' on some
  * engines, which aliases every hard edge on a large downscale.
  */
-export function surface(w: number, h: number): Surface | null {
+export function surface(w: number, h: number, opts: { alpha?: boolean } = {}): Surface | null {
   const canvas = blank(w, h);
   if (!canvas) return null;
-  // The cast is the one place the two canvases have to be spoken of together:
-  // each getContext('2d') is typed to its own context and the union is what
-  // every caller then works against. Nothing is assumed of the result that both
-  // do not have - see the Surface type.
-  const ctx = canvas.getContext('2d') as Surface['ctx'] | null;
+  // `alpha` is passed through because one caller means it: a video poster draws
+  // onto an opaque context (canvas/poster.js), which lets the engine skip the
+  // compositing pass and is why that file could take JPEG unconditionally.
+  // Default true, which is the platform default and what the other four want.
+  //
+  // SAFETY: the union is the whole point of this module and is the one place
+  // the two canvases have to be spoken of together. `getContext('2d')` is
+  // declared to return each canvas's own context type, and TypeScript cannot
+  // narrow the call across the union of receivers - but both members return a
+  // 2D context whose every member the Surface type names, and nothing anywhere
+  // in this app reads a property that only one of them has. The `| null` is
+  // kept rather than asserted away, because a canvas refusing a context is a
+  // real answer and is handled on the next line.
+  const ctx = canvas.getContext('2d', { alpha: opts.alpha !== false }) as Surface['ctx'] | null;
   if (!ctx) return null;
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';

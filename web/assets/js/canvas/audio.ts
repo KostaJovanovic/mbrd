@@ -25,7 +25,9 @@
 // is on the now-playing bar, and it is a slider rather than the owner of the
 // number precisely so that where the control lives stays somebody else's
 // decision. It has moved once already - it was a row in the sidebar - and this
-// file did not have to change for it.
+// file did not have to change for it. The number is amplitude and a slider is
+// not, so the square law between the two is here as well, under sliderToVolume()
+// - for the same reason, that it is about hearing rather than about a control.
 //
 // This file also answers "what is playing", because it is the only place that
 // can. The exclusive-playback listener below already hears every start on every
@@ -232,6 +234,36 @@ export function volumeLocked() {
     return false;   // no Audio constructor to probe with: leave the control as it was
   }
 }
+
+/**
+ * The curve between where the thumb is and what comes out of the speakers.
+ *
+ * `volume` above is amplitude, because amplitude is what HTMLMediaElement.volume
+ * takes - and half the wave is nowhere near half as loud. Loudness roughly
+ * halves every 10 dB, so a slider wired straight through does all of its audible
+ * work in the top third of the travel and falls off a cliff below about a fifth:
+ * the useful range ends up a thumb's width wide, and everything under it is a
+ * choice between quiet and silent.
+ *
+ * A square law is what every hardware fader does about this. Half travel is a
+ * quarter of the wave, which is -12 dB, which is a little under half as loud -
+ * near enough that the middle of the slider is the middle of the range. A cube
+ * would be -18 dB at the middle, past half again, and too steep to set a quiet
+ * level with at the bottom.
+ *
+ * It lives here rather than in the slider because it is a fact about hearing
+ * rather than about that one control: a second control anywhere would want the
+ * same curve, and the sidebar row this replaced is the proof that there can be
+ * a second one. What is *stored* is still the amplitude, so a preference written
+ * before this existed still means the level it always meant - the curve moves
+ * where the thumb sits, never how loud anything plays.
+ */
+const VOLUME_GAMMA = 2;
+
+/** Thumb position 0-1 -> amplitude. The half a control writes through. */
+export const sliderToVolume = (pos: number) => clamp(pos, 0, 1) ** VOLUME_GAMMA;
+/** Amplitude -> thumb position 0-1. The half it paints through, exactly inverse. */
+export const volumeToSlider = (v: number) => clamp(v, 0, 1) ** (1 / VOLUME_GAMMA);
 
 export function setVolume(v: number): void {
   volume = clamp(+v || 0, 0, 1);

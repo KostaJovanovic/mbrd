@@ -153,6 +153,27 @@ test('a ragged table row is padded to the header rather than shifting', async ()
   assert.match(html, /<tr><td>1<\/td><td><\/td><td><\/td><\/tr>/);
 });
 
+// An escaped pipe is a pipe, not a cell wall - and this is tested because the
+// code that decides it changed for a reason nothing about Markdown would
+// suggest. cells() split on `/(?<!\\)\|/`, and WebKit had no lookbehind before
+// Safari 16.4; an unsupported regex literal is an early SyntaxError, so that one
+// expression stopped the whole bundle parsing on every iOS below that. It is a
+// hand-written scan now (see tests/engine-floor.test.js for the guard), and this
+// is the behaviour the scan had to reproduce exactly rather than approximately.
+test('an escaped pipe is content, not a cell wall', async () => {
+  const { html } = await render('| a | b |\n|---|---|\n| x \\| y | z |\n');
+  assert.match(html, /<tr><td>x \| y<\/td><td>z<\/td><\/tr>/,
+    'one cell holding a literal pipe, and the row is two cells wide');
+});
+
+test('a backslash that is not escaping a pipe is left alone', async () => {
+  // The case the old lookbehind and the scan have to agree on for a reason
+  // neither is obvious about: `\\|` is a backslash character followed by a pipe,
+  // and the pipe *is* preceded by a backslash - so it never split there either.
+  const { html } = await render('| a | b |\n|---|---|\n| C:\\ | z |\n');
+  assert.match(html, /<td>C:\\<\/td>/, 'a trailing backslash survives as itself');
+});
+
 test('a blockquote holds blocks, not just words', async () => {
   const { html } = await render('> # inside\n');
   assert.match(html, /<blockquote><h1>inside<\/h1><\/blockquote>/);

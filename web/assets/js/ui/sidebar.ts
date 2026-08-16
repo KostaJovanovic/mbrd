@@ -142,6 +142,25 @@ export function initSidebar(cmds: SidebarCommands): void {
     // reading as a press that did nothing - see notify.ts. The button's own
     // words are what gets reported, because they are what was pressed.
     runCommand(fn(), (btn.textContent || '').trim() || 'That');
+    // And on a phone, get out of the way of what was just done.
+    //
+    // The panel is the whole screen at this width - mobile.css insets #sidebar
+    // to all four edges - so a button whose result is on the board fires into
+    // something nobody can see: press Rearrange and the panel sits there looking
+    // exactly as it did, over a board that has been rebuilt. Which rows those
+    // are is `closesPanel` in ui/settings-schema.ts, stated beside each label.
+    //
+    // Gated on the *width* and not on ctx.mobile, and the two are different
+    // things worth keeping apart. ctx.mobile is the board's own Mobile/Desktop
+    // presentation, which is a preference and can be set to Desktop on a phone;
+    // what makes the panel cover the screen is the media query, and that is the
+    // whole of the problem here. On a wide window the board is visible beside
+    // the panel and taking it away would be the bug.
+    //
+    // After the command rather than before, the same order ui/toolbar.js runs
+    // in: a command that throws on its way in should leave the panel where the
+    // press was, so there is something on screen to have another go at.
+    if (btn.dataset.closesPanel !== undefined && mobileLayoutDetected()) close();
   });
 
   // The file carries both arrangements, while each device remembers which one

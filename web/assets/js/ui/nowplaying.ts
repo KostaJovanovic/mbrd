@@ -53,7 +53,7 @@
 
 import {
   nowPlaying, onNowPlaying, clearNowPlaying,
-  getVolume, onVolume, setVolume, volumeLocked,
+  getVolume, onVolume, setVolume, sliderToVolume, volumeToSlider, volumeLocked,
 } from '../canvas/audio.ts';
 import { onQueue, queueNext, queueState, setAdvanceGate } from '../canvas/playlist-queue.ts';
 import { bindScrub, clock, PAUSE_ICON, PLAY_ICON } from '../media/transport.ts';
@@ -154,14 +154,20 @@ export function initNowPlaying() {
     // two closures: the module binding is reassigned on the branch beside this
     // one, so the narrowing would not follow it in.
     const slider = volume;
+    // Both halves go through the curve in canvas/audio.js: the position is not
+    // the amplitude, and the two mappers are exact inverses, so a whole-number
+    // position survives the round trip back through paint() and the thumb never
+    // walks under a thumb that is being dragged. The percentage a screen reader
+    // is read is the position, which is the thing being moved and the thing on
+    // screen - the amplitude behind it is not a number anybody wants spoken.
     const paint = () => {
-      const pct = Math.round(getVolume() * 100);
+      const pct = Math.round(volumeToSlider(getVolume()) * 100);
       if (slider.value !== String(pct)) slider.value = String(pct);
       slider.setAttribute('aria-valuetext', pct + '%');
     };
     paint();
     onVolume(paint);
-    slider.addEventListener('input', () => setVolume(+slider.value / 100));
+    slider.addEventListener('input', () => setVolume(sliderToVolume(+slider.value / 100)));
   }
 
   closeBtn?.addEventListener('click', close);

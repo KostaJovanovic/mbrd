@@ -188,6 +188,67 @@ function invert(recipe) {
     })
   };
 }
+var INTEGRATION = 0.2;
+var GRAIN = 1e-3;
+var NYQUIST = 24e3;
+function weighting(frequency) {
+  const f2 = frequency * frequency;
+  const response = 12194 ** 2 * f2 * f2 / ((f2 + 20.6 ** 2) * Math.sqrt((f2 + 107.7 ** 2) * (f2 + 737.9 ** 2)) * (f2 + 12194 ** 2));
+  return 1.2589 * response;
+}
+function centreOf(layer) {
+  if (layer.kind !== "tone") return layer.filterFrequency;
+  return layer.glideTo === void 0 ? layer.frequency : Math.sqrt(layer.frequency * layer.glideTo);
+}
+function densityOf(layer) {
+  if (layer.kind === "tone") return Math.SQRT1_2;
+  const q = layer.filterQ ?? 1;
+  const bandwidth = layer.filterType === "bandpass" ? Math.PI / 2 * (layer.filterFrequency / q) : 1.11 * layer.filterFrequency;
+  return Math.sqrt(Math.min(1, bandwidth / NYQUIST) / 3);
+}
+function envelopeAt(layer, t) {
+  const start = layer.offset ?? 0;
+  if (t < start) return 0;
+  const since = t - start;
+  if (since < layer.attack) return layer.attack > 0 ? since / layer.attack : 1;
+  const falling = since - layer.attack;
+  if (falling > layer.decay) return 0;
+  return 1e-3 ** (falling / layer.decay);
+}
+function loudnessOf(recipe) {
+  if (!recipe.layers.length) return 0;
+  const span = Math.max(...recipe.layers.map((l) => (l.offset ?? 0) + l.attack + l.decay));
+  const amplitude = recipe.layers.map((l) => l.peak * densityOf(l) * weighting(centreOf(l)));
+  const steps = Math.ceil((span + INTEGRATION) / GRAIN);
+  const width = Math.round(INTEGRATION / GRAIN);
+  const power = [];
+  let running = 0;
+  let loudest = 0;
+  for (let i = 0; i < steps; i++) {
+    let sum = 0;
+    for (let j = 0; j < recipe.layers.length; j++) {
+      const a = amplitude[j] * envelopeAt(recipe.layers[j], i * GRAIN);
+      sum += a * a;
+    }
+    power.push(sum);
+    running += sum;
+    if (i >= width) running -= power[i - width];
+    if (running > loudest) loudest = running;
+  }
+  return recipe.masterGain * Math.sqrt(loudest / width);
+}
+var TARGET_LOUDNESS = 36e-4;
+var MAX_TRIM = 10 ** (10 / 20);
+var trims = /* @__PURE__ */ new WeakMap();
+function trimFor(recipe) {
+  const cached = trims.get(recipe);
+  if (cached !== void 0) return cached;
+  const loudness = loudnessOf(recipe);
+  const wanted = loudness > 0 ? TARGET_LOUDNESS / loudness : 1;
+  const trim = Math.min(MAX_TRIM, Math.max(1 / MAX_TRIM, wanted));
+  trims.set(recipe, trim);
+  return trim;
+}
 
 // web/assets/js/prefs.ts
 function readPref(key, fallback = null) {
@@ -314,9 +375,10 @@ function startFor(context) {
 }
 function renderRecipe(context, recipe, volume, detune) {
   const now = startFor(context);
+  const lead = Math.max(0, now - context.currentTime);
   const output = getOutput(context);
   const master = context.createGain();
-  master.gain.value = recipe.masterGain * volume;
+  master.gain.value = recipe.masterGain * trimFor(recipe) * volume;
   master.connect(output);
   const shimmerNodes = recipe.shimmer ? attachShimmer(context, master, output, recipe.shimmer) : [];
   for (const layer of recipe.layers) {
@@ -324,7 +386,7 @@ function renderRecipe(context, recipe, volume, detune) {
     if (layer.kind === "tone") renderTone(context, master, layer, startTime, detune);
     else renderNoise(context, master, layer, startTime);
   }
-  const cleanupAfterMs = (sourceEnd(recipe) + shimmerTail(recipe.shimmer) + CLEANUP_MARGIN) * 1e3;
+  const cleanupAfterMs = (lead + sourceEnd(recipe) + shimmerTail(recipe.shimmer) + CLEANUP_MARGIN) * 1e3;
   setTimeout(() => {
     master.disconnect();
     for (const node of shimmerNodes) node.disconnect();
@@ -368,6 +430,22 @@ function sleepLater(context) {
     if (context.state === "running") void context.suspend().catch(() => {
     });
   }, IDLE_MS);
+}
+var STALE_MS = 200;
+var waking = null;
+function wake(context) {
+  if (!waking) {
+    waking = Promise.resolve(context.resume()).then(
+      () => {
+        waking = null;
+      },
+      (reason) => {
+        waking = null;
+        throw reason;
+      }
+    );
+  }
+  return waking;
 }
 function getAudioContext() {
   if (sharedContext) return sharedContext;
@@ -443,9 +521,14 @@ function render(recipe, volume, detune, note) {
     say("played");
     return;
   }
+  const asked = stamp();
   try {
-    void context.resume().then(
+    void wake(context).then(
       () => {
+        if (stamp() - asked > STALE_MS) {
+          say("stale");
+          return;
+        }
         if (muted() || context.state !== "running") {
           say("blocked");
           return;

@@ -174,6 +174,7 @@ var CUE_NAMES = (
   // SAFETY: as above.
   Object.keys(CUES)
 );
+var MAX_TRIM = 10 ** (10 / 20);
 
 // web/assets/js/notify.ts
 var NOWHERE = Object.freeze({

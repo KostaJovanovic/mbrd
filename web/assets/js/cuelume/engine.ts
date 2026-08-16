@@ -48,7 +48,10 @@
 // ── What must not move in here ──
 //
 // The recipe table and the cue map. They are recipes.ts, and the split is what
-// lets the map be walked in a test with no Web Audio at all.
+// lets the map be walked in a test with no Web Audio at all. The levelling goes
+// with them for the same reason: loudnessOf() is arithmetic on the table, so
+// the claim that the palette comes out even is checkable without ears - which
+// is the one claim about sound that can be.
 //
 // Nor any knowledge of *why* a cue fired. This module is handed a name and
 // plays it; whether a delete should sound like `fall` is an argument that
@@ -56,13 +59,22 @@
 
 import { readPref, writePref } from '../prefs.ts';
 import {
-  CUE_NAMES, RECIPES, isCue, recipeFor, voiceFor,
+  CUE_NAMES, RECIPES, isCue, recipeFor, trimFor, voiceFor,
   type Cue, type NoiseLayer, type Shimmer, type SoundRecipe, type ToneLayer, type Voice,
 } from './recipes.ts';
 
-// Upstream's four, unchanged. The gain of 4 is not a mistake: every peak in the
-// table is well under 0.15 so that a dozen overlapping cues have somewhere to
-// go, and the limiter after the output stage is what catches them when they do.
+// Upstream's four, unchanged. The gain of 4 is not a mistake: the palette is
+// written low so that a dozen overlapping cues have somewhere to go, and the
+// limiter after the output stage is what catches them when they do.
+//
+// It used to be true that "every peak in the table is under 0.15", and it is
+// not any more - trimFor() in recipes.ts multiplies a recipe's gain by up to
+// three so that a 20ms burst and a 350ms bell are the same loudness, and it is
+// the bursts that go up. At the top of the dial the loudest single cue now
+// peaks near -5.6 dBFS against the limiter's -2, so one cue is still nowhere
+// near it and two of the shortest ones together just reach it. Which is the
+// right way round: the cues that got louder are the ones that are over before
+// the limiter's 20ms release has finished with them.
 const SOURCE_STOP_PADDING = 0.05;
 const CLEANUP_MARGIN = 0.05;
 const INAUDIBLE_GAIN = 0.001;
@@ -235,7 +247,8 @@ function getOutput(context: AudioContext): GainNode {
   // the change worth understanding, because those numbers are why overlapping
   // cues did not *sound* overlapped.
   //
-  // A single cue peaks around -12 dBFS at the top of the dial. Upstream's
+  // A single cue peaks between -26 and -6 dBFS at the top of the dial, the loud
+  // end being the short transients that trimFor() lifts. Upstream's
   // threshold sat at -8 with a six-decibel knee, which means the *second*
   // simultaneous cue was already into gain reduction: two sounds together came
   // out at very nearly the level of one, and the eighty-millisecond release
@@ -315,9 +328,17 @@ function renderRecipe(
   detune: number,
 ): void {
   const now = startFor(context);
+  // How far into the future this sound was pushed, so the cleanup below can be
+  // measured from when it *starts* rather than from when it was asked for.
+  const lead = Math.max(0, now - context.currentTime);
   const output = getOutput(context);
   const master = context.createGain();
-  master.gain.value = recipe.masterGain * volume;
+  // trimFor() is the palette's own levelling and belongs to the recipe, not to
+  // the dial: see TARGET_LOUDNESS in recipes.ts. Applied here rather than in
+  // recipeFor() so that everything reaching this function is levelled the same
+  // way - which includes the bench's hand-built drafts, and is the only reason
+  // web/lab-sound.html tells the truth about what a recipe will sound like.
+  master.gain.value = recipe.masterGain * trimFor(recipe) * volume;
   master.connect(output);
 
   const shimmerNodes = recipe.shimmer
@@ -333,7 +354,18 @@ function renderRecipe(
   // Sized to this sound's own tail rather than to a constant, which is what
   // keeps a shimmer from being cut off and a tick from holding four nodes for a
   // second and a half.
-  const cleanupAfterMs = (sourceEnd(recipe) + shimmerTail(recipe.shimmer) + CLEANUP_MARGIN) * 1000;
+  //
+  // `lead` is the half of this that was missing and it was audible. A setTimeout
+  // runs on wall-clock time from *now*; the sound runs on the context's clock
+  // from `now`, which startFor() may have pushed up to MAX_LOOKAHEAD into the
+  // future. So a cue that had been spaced away from its neighbours had its
+  // master gain disconnected up to eighty milliseconds before it finished - and
+  // for `tick`, whose whole tail is nineteen, that is most of the sound. The
+  // symptom is the worst kind: it only happens during a run, so a cue was quiet
+  // exactly when several of them fired at once and full whenever it was checked
+  // on its own.
+  const cleanupAfterMs =
+    (lead + sourceEnd(recipe) + shimmerTail(recipe.shimmer) + CLEANUP_MARGIN) * 1000;
   setTimeout(() => {
     master.disconnect();
     for (const node of shimmerNodes) node.disconnect();
@@ -469,6 +501,60 @@ function sleepLater(context: AudioContext): void {
   }, IDLE_MS);
 }
 
+/**
+ * How late a cue may arrive and still be the sound of the thing that caused it.
+ *
+ * Waking the context from our own idle suspend takes single-digit milliseconds,
+ * so this never fires on that path. What it is for is the other one - see wake()
+ * below.
+ */
+const STALE_MS = 200;
+
+/**
+ * One resume in flight at a time, and everything waiting on the same promise.
+ *
+ * ── The bug this is the whole of ──
+ *
+ * A page that has not been touched yet may not make a sound, so a context built
+ * at boot starts suspended and `resume()` returns a promise that **does not
+ * settle until the browser decides to unlock it** - which may be the next
+ * gesture, or ten seconds later, or never. render() used to call `resume()` per
+ * cue and schedule the sound in its callback. So on a fresh load:
+ *
+ *   - the board opening said `arrive`, which built the context and queued;
+ *   - every tick of the whimsy dial queued behind it, in silence, because
+ *     dragging a slider is not always the gesture the browser is waiting for;
+ *   - and when something finally unlocked it, forty callbacks resolved in one
+ *     turn and forty sounds were scheduled inside eighty milliseconds - the
+ *     whole drag, plus the boot chime, arriving at once as one noise, long
+ *     after anything that could explain it.
+ *
+ * Two things were wrong and both are fixed here. Every cue held its own pending
+ * resume, so nothing could see that a queue was forming; and a sound that
+ * cannot be played *now* was treated as a sound worth playing later, which it
+ * never is. A cue is feedback. Feedback that arrives after the fact is not
+ * quieter feedback, it is a different and worse thing - a noise with no cause.
+ *
+ * So: one promise, shared, cleared when it settles; and a caller that has waited
+ * longer than STALE_MS gives up rather than plays. The last cue of a run is
+ * usually still inside the deadline, which is the right survivor - a drag that
+ * unlocks the context on its final tick makes one sound rather than none.
+ */
+let waking: Promise<void> | null = null;
+
+function wake(context: AudioContext): Promise<void> {
+  if (!waking) {
+    // Normalised to a plain Promise<void>: some browsers still return undefined
+    // from resume() rather than a promise, and a caller here only ever wants to
+    // know that the wait is over.
+    waking = Promise.resolve(context.resume()).then(
+      () => { waking = null; },
+      reason => { waking = null; throw reason; },
+    );
+  }
+  return waking;
+}
+
 function getAudioContext(): AudioContext | null {
   if (sharedContext) return sharedContext;
   if (typeof window === 'undefined') return null;
@@ -596,7 +682,8 @@ type Outcome =
   | 'level-off'       // the dial is at Off
   | 'reduced-motion'  // the operating system asked for less
   | 'no-audio'        // no Web Audio here, or the context refused to build
-  | 'blocked';        // the browser refused to resume
+  | 'blocked'         // the browser refused to resume
+  | 'stale';          // the context woke too late for this to still be feedback
 
 export type CueLogEntry = {
   /** ms since the page loaded, which is what lines these up with anything else. */
@@ -781,9 +868,15 @@ function render(
   // Logged from inside the callback for the same reason it renders there: until
   // it resolves nobody knows whether this became a sound, and a transcript that
   // said "played" before the fact would be the one line in it not worth trusting.
+  //
+  // `asked` is what makes this cue's own patience its own: several cues can be
+  // waiting on the one promise wake() holds, and each has to answer for itself
+  // whether it is still the sound of anything. See wake().
+  const asked = stamp();
   try {
-    void context.resume().then(
+    void wake(context).then(
       () => {
+        if (stamp() - asked > STALE_MS) { say('stale'); return; }
         if (muted() || context.state !== 'running') { say('blocked'); return; }
         renderRecipe(context, recipe, gain, detune);
         sleepLater(context);
@@ -831,6 +924,9 @@ export function stopCuelume(): void {
   const context = sharedContext;
   sharedContext = null;
   sharedOutput = null;
+  // A resume waiting on a context that is going. Dropping the handle is enough:
+  // whatever is attached to it will find the module unarmed and refuse.
+  waking = null;
   // Both belong to the context that is going: a buffer cannot cross one, and
   // `nextFree` is a time on a clock the next one does not share.
   noiseBuffer = null;

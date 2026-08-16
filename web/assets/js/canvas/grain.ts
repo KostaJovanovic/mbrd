@@ -62,9 +62,17 @@ const wrap = (n: number, tile: number) => ((n % tile) + tile) % tile;
  *
  * A band rather than a threshold, because a texture that vanished between one
  * wheel notch and the next would read as a bug. Full strength at 40% and above,
- * gone at 30% and below, linear across the twenty-odd percent of zoom in
- * between - which at the 1.3 step of the corner buttons is about one notch, and
- * under a pinch is continuous.
+ * gone at 35% and below, linear across the five points of zoom in between.
+ *
+ * That band was twice as wide - gone at 30% - and the narrower one is a
+ * deliberate trade with its cost on the table. Under a pinch it is continuous
+ * either way, and that is the gesture this is mostly seen under. On the corner
+ * buttons it is not: one notch of the 1.3 step takes 40% to 31%, which clears
+ * the whole band in a single press, so on those the texture now goes in one
+ * step rather than over about one. What is bought is that the degraded film -
+ * the tile at a third of a pixel a fleck, a uniform tint with none of the
+ * detail that justified it - is on screen across five points of zoom instead of
+ * ten, which is the range where it looks worst.
  *
  * Only downward. There is no ceiling: zoomed in, a big fleck is what looking
  * closely at paper does.
@@ -73,7 +81,7 @@ const wrap = (n: number, tile: number) => ((n % tile) + tile) % tile;
 // rather than against a copy of two numbers that has to be edited twice - the
 // same bargain gridStep()'s MIN_PX and MAX_PX make next door.
 export const FADE_FULL = 0.40;
-export const FADE_GONE = 0.30;
+export const FADE_GONE = 0.35;
 
 export const fadeFor = (zoom: number): number =>
   zoom >= FADE_FULL ? 1

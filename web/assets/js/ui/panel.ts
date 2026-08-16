@@ -328,15 +328,25 @@ function buildRange(c: RangeControl) {
 
   const set = c.set;
   if (!c.external && set) {
-    // The tick is tickSlider()'s, not this builder's. It was written inline
-    // here and that was the bug: it covered the six sliders this file makes and
-    // silently missed every one wired by its owning module - Whimsy, the
-    // palette count, the masthead's four, the volume, the hint card's dial.
-    tickSlider(input);
     input.addEventListener('input', () => {
       writeOut(c, input, out);
       set(+input.value);
     });
+    // The tick is tickSlider()'s, not this builder's. It was written inline
+    // here and that was the bug: it covered the six sliders this file makes and
+    // silently missed every one wired by its owning module - Whimsy, the
+    // palette count, the masthead's four, the volume, the hint card's dial.
+    //
+    // **After the setter, and that ordering is load-bearing for exactly one
+    // control.** Listeners on one element run in the order they were added, and
+    // the Sounds dial is a slider whose setter is the volume the tick is about
+    // to be played at. Ticking first meant every stop of that dial was heard at
+    // the level you had just left - drag it from Off to High and you hear four
+    // ticks, none of them at the level under the thumb, and the last thing you
+    // hear on the way down to Off is a tick at Low. There is nothing a slider
+    // can say about itself except how loud it is, so it has to say it after it
+    // has changed. Every other dial here is indifferent to the order.
+    tickSlider(input);
   }
   register(c, label, input, out);
   return label;
@@ -522,6 +532,10 @@ function buildButtons(c: ButtonsControl) {
     if (b.id) btn.id = b.id;
     if (b.cmd) btn.dataset.cmd = b.cmd;
     if (b.orient) btn.dataset.orient = b.orient;
+    // Stamped rather than looked up: the listener that reads it already has the
+    // element and would otherwise have to find its way back to the schema by
+    // command name, which is a second index over a table that has no key.
+    if (b.closesPanel) btn.dataset.closesPanel = '';
     if (b.ariaPressed != null) btn.setAttribute('aria-pressed', b.ariaPressed);
     btn.textContent = b.label;
     row.append(btn);

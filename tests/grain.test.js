@@ -100,7 +100,7 @@ test('cork is the softish end of the axis and nowhere else', async () => {
   // and a spec sheet has no cork on it. Unscope either half and every board in
   // the app grows a pinboard.
   const css = appCss();
-  assert.match(css, /:root\[data-whimsy="0"\] \.item\[data-type="fence"\] \{ background: var\(--cork\); \}/);
+  assert.match(css, /:root\[data-whimsy="0"\] \.item\[data-type="fence"\] \{ background: var\(--paper\); \}/);
   assert.match(css, /:root\[data-whimsy="0"\] \.fence-card::after\s*\{[^}]*cork-board\.webp/s);
 
   // And laid smaller than the paper it replaces - half the grain's 512, still
@@ -110,8 +110,14 @@ test('cork is the softish end of the axis and nowhere else', async () => {
   const cork = css.slice(css.indexOf(':root[data-whimsy="0"] .fence-card::after'));
   assert.match(cork.slice(0, cork.indexOf('}')), /background-size:\s*256px 256px;/);
 
-  // The token is declared in that tier and only there, so the fallback the middle
-  // and Harsh use stays --paper-2 by never having been overwritten.
+  // The tint under the tile is the board's own --paper now rather than --cork,
+  // which is what makes the tier a wash of cork on the sheet instead of a slab
+  // of it set into the sheet - see the block above the rule in fences.css.
+  //
+  // --cork outlives that: #fence-ghost in menu.css is the preview of a region
+  // being placed and has to be visible against the board it is being placed on,
+  // so it still takes the flat tone. Declared in that tier and only there, which
+  // is the whole of what keeps the other two ends of the axis clear of it.
   const tokens = await readFile(new URL('../web/assets/css/tokens.css', import.meta.url), 'utf8');
   assert.equal(tokens.match(/^\s*--cork:/gm)?.length, 1, 'declared once');
   const tier = tokens.slice(tokens.indexOf(':root[data-whimsy="0"] {'));
@@ -119,16 +125,29 @@ test('cork is the softish end of the axis and nowhere else', async () => {
     '--cork escaped the softish block');
 });
 
-test('a cork region fades to cork rather than to grey', async () => {
+test('a cork region fades off rather than freezing into a film', async () => {
   // The one thing the tile and the tint have to agree about. Zoomed out past the
-  // band the chips stop resolving and the tile is taken off - so what is left is
-  // the flat tint, and if that were the paper tone a region would change colour
-  // on the way out. --cork is the mean of the tile for exactly this reason, and
-  // the fade has to still be in the opacity for it to ever be reached.
+  // band the chips stop resolving, and a tile left at full strength there is a
+  // flat film of its own mean laid over the region - which is a colour nobody
+  // chose. So the fade has to still be *in* the opacity.
+  //
+  // What it now fades onto is --paper, the board's own. This test was called
+  // 'fades to cork' and asserted the reverse: the tint under the tile was --cork,
+  // the image's own average, so that a region came out the same colour at every
+  // zoom. The tint is the sheet now and a region at the far end of the zoom is
+  // the board plus its dashed rule, which is the same amount of fence the paper
+  // tiers have there. The property being pinned is unchanged and is the only one
+  // that was ever load-bearing: the fade is reachable, so nothing freezes.
   const css = appCss();
   const cork = css.slice(css.indexOf(':root[data-whimsy="0"] .fence-card::after'));
   const rule = cork.slice(0, cork.indexOf('}'));
-  assert.match(rule, /opacity:\s*var\(--grain-fade, 1\)/);
+  // The fade has to be *in* the opacity, not be the whole of it. It was asserted
+  // as the entire value until the tile's strength became a thing worth tuning -
+  // `calc(var(--grain-fade, 1) * 0.5)` multiplies the fade rather than replacing
+  // it, which is the shape any future tuning will take too. Pinning the literal
+  // made the test fail on a change that kept every promise it was written to
+  // keep, so it pins the reachability and not the number.
+  assert.match(rule, /opacity:[^;]*var\(--grain-fade, 1\)/);
   // And --grain is deliberately not in it: that dial is how hard a tooth is
   // pressed into paper, and cork is a material rather than a tooth.
   assert.ok(!/var\(--grain\)/.test(rule), 'cork is not a grain');
