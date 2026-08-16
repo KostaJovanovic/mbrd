@@ -52,9 +52,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SOURCE = join(ROOT, 'patch-notes.md');
 const SHELL = join(ROOT, 'web', 'index.html');
 // An argument overrides where the page lands. save.bat and every hand run pass
-// nothing and write web/patch.html; tests/patch.test.js passes a temp path, so
-// the drift check can run the real generator without writing over the file it
-// is checking. A test that repairs what it inspects only ever fails once.
+// nothing and write web/patch.html; a path argument writes elsewhere, which is
+// how the output can be inspected without writing over the committed file.
 const OUT = process.argv[2] ? resolve(process.argv[2]) : join(ROOT, 'web', 'patch.html');
 
 const SITE = 'https://mbrd.valjdakosta.com';
@@ -255,10 +254,10 @@ function buildPage(shell, releases, entries) {
   // this page, so ui/sidebar.ts writes it into the panel's foot exactly as it
   // does on a board.
   const stamps = readFileSync(join(ROOT, 'web', 'assets', 'js', 'version.js'), 'utf8');
-  // The app's own count, not the sum of the spans. The two now agree - the
-  // releases tile the history from the first commit to this one, and
-  // tests/patch.test.js is what keeps them tiling - but this is still the
-  // number read off version.js rather than added up from the page, because it
+  // The app's own count, not the sum of the spans. The two agree as long as the
+  // releases tile the history from the first commit to this one - but this is
+  // still the number read off version.js rather than added up from the page,
+  // because it
   // is the number in the foot of the app's sidebar and a reader comparing the
   // two should find one figure and not two derivations of it.
   const commits = (stamps.match(/const COMMIT_COUNT = (\d+)/) || [])[1] || '';
