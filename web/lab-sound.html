@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en" data-theme="lab">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mbrd — sound lab</title>
+<!-- ── A bench for the interface sounds. Not part of the app. ──
+
+     Everything on this page is built by web/assets/js/ui/sound-lab.ts, which
+     says at length why it exists; this file is the shell it builds into. The
+     short version: cuelume/recipes.ts maps eleven cue names onto eight of the
+     seventeen recipes, that table has been written three times, and every
+     version written by reading the recipe names rather than by hearing them was
+     wrong. A table of numbers describing a sound tells you nothing.
+
+     It reaches the real modules through assets/lab-sound.js, which is
+     ui/sound-lab.ts bundled on its own: `npm run build` writes it and
+     `npm run dev:sound` rewatches it. The indirection is not a copy - the app
+     is TypeScript and a browser cannot fetch a .ts file, so a page loaded
+     directly, which this one is, needs a built entry of its own or it needs a
+     duplicate. A build product cannot drift.
+
+     ── Off the design system, deliberately ──
+
+     Its own flat colours, its own type, none of tokens.css, and it does not
+     render at the current whimsy tier. web/lab.html states the same rule about
+     itself: a bench that wore the palette it was auditing would be taking the
+     reading through the thing being measured. It had a tier switch on it once,
+     back when a cue resolved to a different recipe at each stop of the whimsy
+     dial; the axis stopped carrying sound and the switch went with it.
+
+     ── Not a page of the site ──
+
+     It ships in web/ only because tools/serve.py's document root is web/ and
+     this is the one place it can import the real cuelume modules; that is a
+     build constraint, not a decision to publish a debug harness. A crawler
+     cannot know the difference, so it is told.
+
+     noindex, not a robots.txt Disallow: a Disallow stops the fetch, which stops
+     the crawler ever reading the directive, so a page already in the index
+     stays there. noindex has to be fetched to work. Absent from sitemap.xml and
+     from SHELL in sw.js for the same reason lab.html is - a dev bench has no
+     business in the offline shell. -->
+<meta name="robots" content="noindex, nofollow">
+<style>
+:root {
+  --ink: #17181b;
+  --paper: #fbfbf9;
+  --line: #d8d8d2;
+  --faint: #7b7c80;
+  --hot: #1d4ed8;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 24px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+h1 { font-size: 15px; font-weight: 600; margin: 0 0 4px; }
+h2 { font-size: 12px; font-weight: 600; margin: 28px 0 8px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.08em; }
+p.lede { margin: 0 0 4px; max-width: 62ch; color: var(--faint); }
+button {
+  font: inherit;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #fff;
+  color: inherit;
+  cursor: pointer;
+}
+button:hover { border-color: var(--faint); }
+button[aria-pressed="true"] { background: var(--hot); border-color: var(--hot); color: #fff; }
+.strip { display: flex; flex-wrap: wrap; gap: 6px; }
+#cues { display: table; border-collapse: collapse; }
+#cues .row { display: table-row; }
+#cues .row > * { display: table-cell; padding: 3px 8px 3px 0; vertical-align: middle; }
+#cues .head > * { color: var(--faint); font-size: 11px; }
+#cues .cue { width: 8ch; }
+#cues button.col { width: 13ch; text-align: left; }
+.pane { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; align-items: start; }
+.field { display: grid; grid-template-columns: 13ch 1fr 7ch; gap: 8px; align-items: center; padding: 1px 0; }
+.field .name { color: var(--faint); }
+.field .value { text-align: right; font-variant-numeric: tabular-nums; }
+.field input { width: 100%; }
+#numbers .title { font-weight: 600; padding-bottom: 6px; }
+#numbers .sub { color: var(--faint); padding: 10px 0 2px; border-top: 1px solid var(--line); margin-top: 8px; }
+.actions { padding-top: 12px; }
+#out { white-space: pre; overflow-x: auto; border: 1px solid var(--line); border-radius: 4px; padding: 10px; background: #fff; min-height: 2em; }
+</style>
+</head>
+<body>
+
+<h1>sound lab</h1>
+<p class="lede">Every cue and the recipe it plays, and the numbers behind them. Pinned to High; nothing here writes to a board.</p>
+
+<h2>cues</h2>
+<div id="cues"></div>
+
+<h2>pairs, and a flurry</h2>
+<div id="pairs" class="strip"></div>
+
+<h2>recipes</h2>
+<div id="recipes" class="strip"></div>
+
+<div class="pane">
+  <div>
+    <h2>numbers</h2>
+    <div id="numbers"></div>
+    <div class="strip actions">
+      <button id="play">play</button>
+      <button id="flip">invert</button>
+      <button id="dump">print</button>
+    </div>
+  </div>
+  <div>
+    <h2>out</h2>
+    <div id="out"></div>
+  </div>
+</div>
+
+<script type="module">
+import { initSoundLab } from './assets/lab-sound.js';
+initSoundLab();
+</script>
+</body>
+</html>

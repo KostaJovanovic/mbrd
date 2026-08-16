@@ -61,8 +61,8 @@ items belonging to another, and nothing tells the other document. Five status
 blocks is five things that can be wrong about the same tree.
 
 So the open items are in one register, and the documents that argued them are all
-five in `old/` with the reasoning intact. Four files at this level now, the
-register, two subject documents and one design:
+five in `old/` with the reasoning intact. Three files at this level now, the
+register and two subject documents:
 
 - `open-work-2026-08-14.md` — **the whole of what is open, in plain language.**
   Twenty items with an id each: five things somebody using the app would hit
@@ -107,20 +107,7 @@ register, two subject documents and one design:
   is done (the canvas menu is six rows, and `canvasEntries()` carries the
   argument); **B–H** are open, in the order the *Sequence* section gives.
 
-- `cuelume-2026-08-15.md` — **the design for L5, interface sounds.** The app
-  makes no sound of its own today, and this takes the engine half of Cuelume
-  (MIT, seventeen sounds synthesized live, no files, no dependencies) and throws
-  its binder away, because `bind()` is four capture-phase listeners on `document`
-  and a second markup contract beside `data-cmd`. The part worth reading whether
-  or not the feature is ever built is the middle: **the whimsy axis carries sound
-  as character rather than as volume**, which is the same rule the visual audit
-  reached about shape — the axis governs how much the interface softens and does
-  not get to become a loudness control. It is a design rather than a register
-  entry, so it is the shape `plan-2026-08-14.md` kept: it has a row in the
-  register, it carries the argument the row summarises, and it goes to `old/` on
-  the commit that ships the feature.
-
-Two documents that were at this level went down to `old/` on 2026-08-15.
+Three documents that were at this level went down to `old/` on 2026-08-15.
 
 `plan-2026-08-14.md` was **the order the register was worked in** — eighteen
 items in ten batches, everything except **L1** and **B1**. It said in its own
@@ -163,6 +150,27 @@ holds: *do not fix this by reading the CSS* — every one of the four was found 
 opening the app, and every one of them had a plausible wrong answer available to
 anybody who did not.
 
+`cuelume-2026-08-15.md` was **the design for L5, interface sounds**, and it was
+written and retired inside a day like the feedback plan above it. The app made no
+sound of its own; it now makes eleven, synthesised from a table of numbers rather
+than played from files, and the document is the argument for every choice in
+`web/assets/js/cuelume/`. Three things in it are worth knowing without touching
+the feature. **The whimsy axis carries sound as character rather than as
+volume** — the same rule the visual audit reached about shape, and the reason
+there is one recipe per cue *per tier* instead of a loudness control wearing a
+second name. **Two thirds of Cuelume was taken and the last third thrown away**:
+`bind()` is four capture-phase listeners on `document` and a second markup
+contract beside `data-cmd`, which `CLAUDE.md` forbids in as many words. And the
+one claim in it that no test can make is about a **phone** — whether
+`audioSession = 'ambient'` really leaves somebody's background music alone. That
+is now flow 9 of the release checklist in `docs/browser-support.md`, and it is
+still unverified.
+
+What it leaves genuinely open is the table itself. Eleven cues across three tiers
+were assigned by reading adjectives, which is the method the feedback plan proves
+wrong four times out of twelve; `web/lab-sound.html` is the bench for settling it
+by ear, and the assignment is expected to move.
+
 That is the whole of this level. **A second open document here is the thing to
 argue about, not to add quietly** — the point of one register is that it cannot
 disagree with itself, and that property is lost the moment there are two. The
@@ -172,16 +180,16 @@ to check — and it had an end, which it kept, going to `old/` on the last commi
 the work it scheduled. The feedback plan is the proof that the end is real rather
 than a promise: it was written and retired inside one day.
 
-`cuelume-2026-08-15.md` is the third version of that exception and the one the
-register asked for outright. Four rows in the register carry their own argument
+`cuelume-2026-08-15.md` was the third version of that exception and it kept the
+same bargain, which is why it is only mentioned here in the past tense. It was
+the one the register asked for outright: four rows carry their own argument
 because no document exists for them, and the register says of itself that
 **writing a proper document for one of them is the first half of doing it, not a
-detour**, and that the moment such a document exists the source column should
-point at it. L5 was added with the document, so the row is a summary and the
-argument is beside it — the way every unbroken row in that table reads. It can
-disagree with the register in a way the plan could not, since it does describe
-its item; what keeps that cheap is the end, and the end is the same one: `old/`
-on the commit that ships it.
+detour**. L5 was added with its document, so the row was a summary and the
+argument sat beside it — the way every unbroken row in that table reads. It could
+disagree with the register in a way the plan could not, since it did describe its
+item; what kept that cheap was the end, and it went down to `old/` on the commit
+that shipped the feature, one day after it was written.
 
 **The two subject documents are the untidy version of it, and this is the debt to
 be honest about.** `mbrd-format` and `ui-clutter` each carry open items the

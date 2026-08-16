@@ -37,10 +37,16 @@ const store = new Map<string, Asset>();
  * The parameter admits the two spellings of "no hash" because that is how it is
  * called: `getAsset(item.asset?.hash)` for an item that may carry no asset, and
  * `getAsset(thumbSource(it))` for a lookup that answers null. "There is nothing
- * under that hash" is the answer both want. The cast is safe for the same
- * reason: a key that cannot be in the map finds nothing.
+ * under that hash" is the answer both want.
+ *
+ * SAFETY: a Map lookup does not care what it is handed - a key that cannot be
+ * in the map finds nothing, which is the same undefined a missing hash gives.
+ * The cast only satisfies the signature; nothing is written through it.
  */
-export function getAsset(hash: string | null | undefined) { return store.get(hash as string); }
+export function getAsset(hash: string | null | undefined) {
+  // SAFETY: see above.
+  return store.get(hash as string);
+}
 export function allAssets() { return store; }
 
 /**

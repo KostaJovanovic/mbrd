@@ -15,6 +15,8 @@
 // own name. Like toast(), it reaches for `document` only inside a function, so
 // storage.js can import it and stay loadable without a browser.
 
+import { cue } from '../cuelume/engine.ts';
+
 /** Which button was pressed, for the question that has buttons. */
 export type Answer = 'go' | 'keep' | 'cancel';
 
@@ -94,9 +96,9 @@ export function ask(opts?: AskOptions & { field?: null }): Promise<Answer>;
 export function ask(opts: AskOptions & { field: AskField }): Promise<string | null>;
 export async function ask(opts: AskOptions = {}): Promise<Answer | string | null> {
   if (typeof document === 'undefined') return 'cancel';
-  // #ask is a <dialog> in index.html; the duck-type check below is the runtime
-  // half of that claim, and is what makes a browser without <dialog> fall out
-  // here rather than throw.
+  // SAFETY: #ask is a <dialog> in index.html; the duck-type check below is the
+  // runtime half of that claim, and is what makes a browser without <dialog> -
+  // or a page that does not carry it - fall out here rather than throw.
   const el = document.getElementById('ask') as HTMLDialogElement | null;
   if (!el || typeof el.showModal !== 'function') return 'cancel';
 
@@ -123,6 +125,10 @@ function openWith(el: HTMLDialogElement, o: AskSettled): Promise<Answer | string
   const go = document.getElementById('ask-go')!;
   const cancel = document.getElementById('ask-cancel')!;
   const keep = document.getElementById('ask-keep')!;
+  // SAFETY: #ask-field is the <input> inside #ask, and the dialog around it has
+  // already been found and duck-typed - a page carrying the prompt carries the
+  // whole of it, since it is one block of markup in index.html. The three `!`
+  // above say the same about the elements that need no tag.
   const field = document.getElementById('ask-field') as HTMLInputElement;
 
   title.textContent = o.title;
@@ -160,6 +166,10 @@ function openWith(el: HTMLDialogElement, o: AskSettled): Promise<Answer | string
 
     const close = (choice: Answer) => {
       answer = choice;
+      // One door for all five ways a dialog ends - the three buttons, the
+      // backdrop, Escape and Enter - so answering one says the same thing
+      // however it was answered.
+      cue('pick');
       el.close();
     };
     const onGo = () => close('go');

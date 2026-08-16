@@ -759,9 +759,9 @@ export async function unpackBoard(blob: Blob) {
     throw new Error('The board inside this file is not readable (board.json will not parse)');
   }
   if (!isRecord(parsed)) throw new Error('The board inside this file is not a board (board.json is not an object)');
-  // Cast, not a check: FileBoard says `items?: unknown[]` on purpose, and what
-  // holds that claim up is the loop below throwing on a file whose items are
-  // not a list. See the type.
+  // SAFETY: a cast, not a check - FileBoard says `items?: unknown[]` on purpose,
+  // and what holds that claim up is the loop below throwing on a file whose
+  // items are not a list. See the type.
   const board = parsed as FileBoard;
   if (manifest.title && !board.title) board.title = manifest.title;
 

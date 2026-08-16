@@ -15,6 +15,7 @@
 // flag, both of which now sit below it in board-store.js. See the header there.
 
 import { bus, markDirty } from './board-store.ts';
+import { cue } from './cuelume/engine.ts';
 import {
   snapshot, recordStep, markerBack, markerForward, dropLastStep, resetTimeline,
   stepBack, stepForward, stepBackLabel, stepForwardLabel, isReplaying,
@@ -238,6 +239,7 @@ export function undo() {
     if (!stepBack()) return false;
     markDirty();
     historyChanged();
+    cue('fall');
     return true;
   }
   cmd.undo();
@@ -265,6 +267,10 @@ export function undo() {
   redoStack.push(cmd);
   markDirty();
   historyChanged();
+  // Held down, this stutters, and that is the intended reading: the stutter is
+  // the feedback that many steps are going by. See the repeat guard in
+  // cuelume/engine.js, which is what keeps a stutter from becoming a buzz.
+  cue('fall');
   return true;
 }
 
@@ -277,6 +283,7 @@ export function redo() {
     if (!stepForward()) return false;
     markDirty();
     historyChanged();
+    cue('rise');
     return true;
   }
   cmd.redo();
@@ -289,6 +296,9 @@ export function redo() {
   heldWeight += cmd.weight;
   markDirty();
   historyChanged();
+  // `rise` is `fall`'s recipe with the glide inverted, so redo is audibly undo
+  // played backwards. See invert() in cuelume/recipes.js.
+  cue('rise');
   return true;
 }
 

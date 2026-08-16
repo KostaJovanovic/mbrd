@@ -35,6 +35,7 @@
 
 import { shuffle, isRecord } from '../util.ts';
 import { toast } from '../notify.ts';
+import { cue } from '../cuelume/engine.ts';
 import { formatLength, scaleFrom, MM_PER_INCH } from '../measure.ts';
 import { ask } from './dialog.ts';
 import {
@@ -43,6 +44,7 @@ import {
   recheckBoardGeometry, placeMobileItems,
   isRider, stuckTo, stuckPlacement, isFence, isLocked, fenceOf, fenceBox,
   declareOp,
+  type GeomPatch,
 } from '../state.ts';
 import { latticeBox, itemBounds, rotatedExtents } from '../geometry.ts';
 import { travelMs } from '../canvas/viewport.ts';
@@ -91,6 +93,11 @@ type ActionsViewport = Viewport & {
  * infers the row as `{ id }` alone and the array as possibly holding nulls -
  * which the function's own trailing .filter(Boolean) has already removed. This
  * names what is really there. It comes out the day layout.ts is annotated.
+ *
+ * SAFETY: this covers the three `as GeomRow[]` below, which are one claim said
+ * three times - that snapshotGeom() fills in the six geometry keys and returns
+ * no nulls. Both halves are read off its body, not assumed: the keys come from
+ * the GEOM_KEYS loop and the nulls from its own filter.
  */
 type GeomRow = Omit<Geometry, 'presnap'> & {
   presnap: { x: number, y: number, w: number, h: number } | null;
@@ -179,6 +186,10 @@ export async function saveWithCooldown() {
   // went wrong is worth another try immediately - it may be a permission that
   // has just been granted.
   if (!ok) { paintSave(); return; }
+  // The one thing in the app worth a sound of its own that is not a change to
+  // the board: work is safe. Whatever saveBoard() toasted says the same thing a
+  // beat later and says so on top of this, which is two things having happened.
+  cue('done');
   saveReadyAt = Date.now() + SAVE_COOLDOWN_MS;
   clearInterval(saveTick);
   saveTick = setInterval(paintSave, 1000);
@@ -336,6 +347,10 @@ export async function resetSize() {
     // Blob has, and which putAsset() fills from the file it was made of - has
     // already answered for an SVG. Nothing is constructed here to make the types
     // agree, because that would be a different measurement.
+    //
+    // SAFETY: measureSize() takes a File because that is what the import path
+    // hands it; what it actually reads is the Blob half - bytes and a type -
+    // and a File is a Blob with a name. Nothing here reads the name.
     const size = blob
       ? await measureSize(it.type, blob as File).catch(() => defaultSize(it.type))
       : defaultSize(it.type);
@@ -351,7 +366,7 @@ export async function resetSize() {
     return board.settings.snap ? latticeBox({ ...it, w, h }, step) : { w, h };
   }));
 
-  // The cast is what GeomRow is for - see its note.
+  // SAFETY: the cast is what GeomRow is for - see its note.
   const before = snapshotGeom(items.map(i => i.id)) as GeomRow[];
   // Tested before anything is applied, so a run that changes nothing leaves no
   // history entry behind - an undo step that restores the state it was already
@@ -606,6 +621,8 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
   const free = items.filter(it => !isRider(it) && !isLocked(it) && !carriedIds.has(it.id));
   // The region joins the snapshot when there is one, so closing it around the
   // result is inside the same undo entry as the layout that made it necessary.
+  //
+  // SAFETY: as above - see GeomRow.
   const beforeAll = snapshotGeom(
     enclosing ? [...items.map(i => i.id), enclosing.id] : items.map(i => i.id)) as GeomRow[];
   // Nothing to lay out - the whole set was followers. There is no arrangement of
@@ -650,6 +667,7 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
     held.has(it.id) && !isRider(it) && !around.has(it.id));
 
   const at = options.center ?? (whole ? { x: 0, y: 0 } : middleOf(free));
+  // SAFETY: as above - see GeomRow.
   const before = snapshotGeom(free.map(i => i.id)) as GeomRow[];
   // Two things vary here, and neither is enough on its own.
   //
@@ -705,9 +723,9 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
     // fork - the shuffle above exists to re-deal a set of 2D slots, and dealt
     // into a Mobile order it would scramble the very sequence the order just
     // chose. See MOBILE_ARRANGEMENTS in arrange/arrangements.js.
-    // The cast holds because mobileOrder() hands back the very items it was
-    // given, in a new order - ArrangeItem is only the narrower shape it reads
-    // them through, and every ORDERS entry is a permutation of its input.
+    // SAFETY: the cast holds because mobileOrder() hands back the very items it
+    // was given, in a new order - ArrangeItem is only the narrower shape it
+    // reads them through, and every ORDERS entry is a permutation of its input.
     placed = mobileOrder(free, { name: board.arrangement, seed }) as Item[];
     const moving = new Set(free.map(item => item.id));
     // Riders are not obstacles - they overlap their host and would wall it off.
@@ -761,17 +779,20 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
     // applyGeom() runs the same value past usableMemo() either way, so what
     // reaches the board is unchanged.
     const memo = target[i].meta?.presnap;
-    const at = {
-      ...g,
-      x: target[i].x,
-      y: target[i].y,
-      ...(mobile ? {
-        w: target[i].w,
-        h: target[i].h,
-        rot: target[i].rot,
-        presnap: isRecord(memo) ? { ...memo } : null,
-      } : {}),
-    };
+    // A patch that always carries a position: GeomPatch has x and y optional
+    // because most of its callers omit them, and latticeBox() below wants a
+    // whole rectangle. The intersection is what says this one never omits them.
+    const at: GeomPatch & { x: number, y: number } = { ...g, x: target[i].x, y: target[i].y };
+    // Mobile carries the size and the memo across as well; Desktop moves the
+    // card and leaves both alone. Written rather than spread through a ternary
+    // because applyGeom() tells a `presnap` that is absent from one that is
+    // explicitly null - the first leaves the memo, the second forgets it.
+    if (mobile) {
+      at.w = target[i].w;
+      at.h = target[i].h;
+      at.rot = target[i].rot;
+      at.presnap = isRecord(memo) ? { ...memo } : null;
+    }
     if (!sized) return at;
     // Through latticeBox a second time, now with the slot the engine chose and
     // the size it laid out for. The sizes are already on the lattice and it

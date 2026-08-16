@@ -95,8 +95,16 @@ export function cloneItem(i: ItemDraft, dx = 0, dy = 0): ItemDraft {
   };
 }
 
-const clipboard: { items: ItemDraft[], text: string, pastes: number } =
-  { items: [], text: '', pastes: 0 };
+/**
+ * What was last copied, and how many times it has been pasted.
+ *
+ * `pastes` is the offset counter, not a statistic: each paste lands the cards a
+ * little further from the last so a repeated Ctrl+V fans them out rather than
+ * stacking them into one shape.
+ */
+type Clipboard = { items: ItemDraft[], text: string, pastes: number };
+
+const clipboard: Clipboard = { items: [], text: '', pastes: 0 };
 
 export const clipboardSize = () => clipboard.items.length;
 

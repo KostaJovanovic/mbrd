@@ -144,7 +144,15 @@ export function planMerge(
     // card the rename just created.
     connections: incoming.connections
       .filter(c => arriving.has(c[0]) && arriving.has(c[1]))
-      .map(c => (c.length > 2 ? [now(c[0]), now(c[1]), c[2]] : [now(c[0]), now(c[1])]) as Connection),
+      .map(c => {
+        // SAFETY: a Connection is a pair of ids with an optional meta, and the
+        // ternary builds exactly those two shapes - the assertion is only that
+        // a literal of two or three elements is a tuple rather than an array.
+        // `now()` answers an id, and `c[2]` is carried through untouched.
+        return (c.length > 2
+          ? [now(c[0]), now(c[1]), c[2]]
+          : [now(c[0]), now(c[1])]) as Connection;
+      }),
     audioOrder: incoming.audioOrder.filter(id => arriving.has(id)).map(now),
     tour: incoming.tour.filter(id => arriving.has(id)).map(now),
   };

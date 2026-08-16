@@ -9,6 +9,7 @@
 // canvas/poster.js the video first-frame grab. Both are re-exported below so no
 // caller had to learn they moved.
 
+import { cue } from '../cuelume/engine.ts';
 import { extOf, baseName, formatBytes } from '../util.ts';
 import type { Item, ItemType } from '../board-model.ts';
 import { assetURL, getAsset, readText } from '../storage/assets.ts';
@@ -534,7 +535,7 @@ const RENDERERS = {
     const posterHash = metaStr(item.meta?.cover);
     const poster = posterHash ? assetURL(posterHash) : null;
     if (poster) v.poster = poster;
-    const url = item.asset && assetURL(item.asset.hash);
+    const url = item.asset?.hash ? assetURL(item.asset.hash) : null;
     if (onTouch()) {
       // On a touch device the source is held back until the first play. A <video>
       // with a src (even preload=metadata, even just to paint a poster frame)
@@ -575,7 +576,7 @@ const RENDERERS = {
 
     const sound = document.createElement('audio');
     sound.preload = 'metadata';
-    const url = item.asset && assetURL(item.asset.hash);
+    const url = item.asset?.hash ? assetURL(item.asset.hash) : null;
     if (url) sound.src = url;
     registerPlayer(sound, item);
 
@@ -597,6 +598,10 @@ const RENDERERS = {
     // meta is unknown per key: a `rich` that is not an object is no rich model,
     // and normalizeNoteRich() reads null and a malformed value the same way.
     const rawRich = item.meta.rich;
+    // SAFETY: the `typeof rawRich === 'object'` on the line below is the check,
+    // and normalizeNoteRich() reads a malformed value and a null the same way -
+    // so the assertion only gets the value through the door, and what is inside
+    // it is validated block by block there.
     const rich = normalizeNoteRich(
       rawRich && typeof rawRich === 'object' ? rawRich as NoteRichInput : null, item.meta.text);
     const wrap = document.createElement('div');
@@ -649,8 +654,9 @@ const RENDERERS = {
     name.className = 'card-name';
     name.textContent = label;
     if (u) {
-      // The element above is an <a> exactly when there is a URL for it to carry,
-      // which is what this narrowing says and the ternary that built it enforces.
+      // SAFETY: the element above is an <a> exactly when there is a URL for it
+      // to carry - the ternary that built it and the `if (u)` around this line
+      // are the same condition, so the narrowing is that test said twice.
       const a = name as HTMLAnchorElement;
       // Assigned as properties on a real element and only after the scheme
       // check above - never assembled into markup, which is what keeps this
@@ -880,6 +886,20 @@ const RENDERERS = {
       // writes - the same source watchWhimsy() keeps this in step with.
       slider.value = document.documentElement.dataset.whimsy ?? '1';
       slider.setAttribute('aria-label', title);
+      // The detent tick, inline rather than through ui/controls.ts's
+      // tickSlider(). That helper is where every other slider in the app gets
+      // this, and this one cannot have it: canvas/ may not import ui/, which
+      // tests/layers.test.js enforces and architecture.md calls a layering
+      // regression rather than a style note. What tickSlider() computes is
+      // whether a slider has few enough stops to be worth marking, and this one
+      // has three, written two lines up - so the arithmetic it exists for has
+      // no work to do here and only the listener is copied.
+      let ticked = slider.value;
+      slider.addEventListener('input', () => {
+        if (slider.value === ticked) return;
+        ticked = slider.value;
+        cue('pick');
+      });
 
       // The stops, built the way ui/panel.js builds them: names rather than a
       // <datalist>, which Chromium ignores on a painted track and Firefox draws

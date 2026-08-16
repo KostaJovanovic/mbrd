@@ -1248,6 +1248,13 @@
           The data, not the code around it.</span>
       </li>
       <li>
+        <a href="https://github.com/Danilaa1/cuelume" target="_blank" rel="noopener noreferrer">Cuelume</a>
+        <span class="credits-lic">MIT</span>
+        <span class="credits-why">The sounds the interface makes. Seventeen
+          recipes of a few numbers each, synthesised as you go &mdash; no audio
+          files anywhere. Forked: its engine, not its event listeners.</span>
+      </li>
+      <li>
         <a href="https://github.com/googlefonts/Playfair" target="_blank" rel="noopener noreferrer">Playfair</a>,
         <a href="https://github.com/undercasetype/Fraunces" target="_blank" rel="noopener noreferrer">Fraunces</a>,
         <a href="https://github.com/vercel/geist-font" target="_blank" rel="noopener noreferrer">Geist</a>
@@ -1384,13 +1391,124 @@
          down: how many releases there are, how many commits they cover, and
          when it started. All counted from the source. -->
     <p class="pn-tally">
-      <span>15 releases</span>
-      <span>230 commits</span>
+      <span>17 releases</span>
+      <span>231 commits</span>
       <span>since 25 July 2026</span>
     </p>
   </header>
 
   <ol class="pn-list">
+<li class="pn-rel" id="r-every-corner">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">24</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.207 - 0.230</p>
+      <h2 class="pn-name">Every Corner</h2>
+      <p class="pn-date">15 - 16 August 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>The app was read end to end against its own stated intentions</strong>, and the hundred and forty-five places where the two had come apart were repaired. One thing was added along the way. Everything else here is something that was already meant to work.</li>
+    </ul>
+    <h3 class="pn-part">What is new</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>A multi-select mode, for a finger.</strong> While it is on, a tap on a card adds it to what is picked rather than replacing it, and nothing you do to the board underneath - a pan, a tap on bare ground, opening the menu - clears the selection. It ends from the row it was started from, from <code>Esc</code>, or from opening another board.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>PDFs draw on the live site.</strong> The reader was fetched from another host, which the site's own security rules refuse, so every PDF and <code>.ai</code> card fell back to grey for everyone except somebody running the app on their own machine. It ships with mbrd now.</li>
+    </ul>
+    <h3 class="pn-part">Work nobody could have known was at risk</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-fix">Fix</span><strong>A note keeps its alignment and its markers through an export and a re-import.</strong> The board file carried both all along; reading it back threw them away and rebuilt every note from its plain text.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A board that has lost one file can still be left.</strong> It could not be saved, switched, replaced or exported, and the only way out the app offered was <code>Clear everything</code>.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Reloading while a board is still opening no longer writes a blank one over it.</strong> On a heavy board that window is a few hundred milliseconds long, and hiding the tab inside it was enough.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Deleting a saved board asks first</strong>, and names it. It was one tap on a small glyph in the corner of a card whose whole face means Open, with no confirmation, no undo and no bin.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Two boards stashed at once no longer lose one of them</strong>, and the shelf is capped at twenty-four rather than growing until the browser refuses a write and the board on screen quietly stops saving.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Deleting a card no longer loses its place in the tour</strong>, so restoring it from the bin brings the stop back with it.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A board carrying its own colours keeps them.</strong> The four note markers, a card's shadow and how far a card leans were among the things a board file was allowed to set and the app then dropped on open.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The Timeline will not offer to fold away a history it cannot date.</strong> A file whose steps carry no times read as older than any cutoff, so the offer covered this morning as well, and it does not come back.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A board old enough to carry its own video stills keeps them.</strong> They were on neither of the two lists the cleanup checks against, so the first sweep after opening deleted them and the next export left them out.</li>
+    </ul>
+    <h3 class="pn-part">The ones that stopped the tab</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-fix">Fix</span><strong>A note stuck to itself, or two notes stuck to each other, ended the session on the first press.</strong> Nothing you can do in the app makes one; a file can.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A 3D model no longer asks for more memory than the machine has.</strong> A 356-byte model was asking for 366 megabytes, and forty of them at once.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A picture claiming 30,000 pixels a side is refused in four more formats.</strong> The browser decodes eight and the guard knew four, so a sixty-byte file could ask for three and a half gigabytes.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A note with a long run of backticks in it no longer locks the app</strong>, measured at thirteen and a half seconds.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A big JPEG, a deep folder drop, a two-thousand-card phone board and a PDF with an enormous page</strong> each stopped costing far more than they are worth.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong><code>Join</code> with nothing selected no longer weighs every card on the board against every other</strong>, and says so past two thousand rather than joining a sample nobody asked for.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Dragging a colour slider with the Timeline open is smooth again.</strong> Every tick was re-measuring the whole history.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A pinned sticker on a locked photograph no longer kills every drag for the rest of the page.</strong></li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Lifting a second finger over the toolbar or off the edge of the window no longer leaves the app believing it is still down</strong>, after which a plain tap panned and zoomed.</li>
+    </ul>
+    <h3 class="pn-part">Everything else you might have met</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-fix">Fix</span><strong>Pinching out of a drag puts the card back</strong> rather than committing a move nobody made.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A second menu button opens its own menu.</strong> Font then Highlight in the note bar, <code>More</code> then the palette on the toolbar: one closed and neither opened.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong><code>Ctrl+K</code> works while the pointer is resting on a toolbar button</strong>, and what you type reaches Find instead of being eaten a letter at a time by a menu that has not got the keyboard.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Find is a toggle</strong>, and keeps what you typed rather than starting over.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A menu opened from a Feed tile acts on that tile</strong>, not on whatever was selected on the canvas before you switched to it.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A save that fails says so</strong>, rather than leaving the button reading <code>Saving...</code> for the rest of the session - and <code>Restart</code> still offers its dialog, which on a phone is the only way back to a fresh page.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The bar at the foot follows a track through its card being drawn and undrawn</strong>, so it stops reading <code>0:00</code> under a <code>Play</code> button while the music is audible.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A play the browser refuses is reported.</strong> Five places in the app can start a track and only one of them said anything, so pressing Play and getting silence now has a reason behind it.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The queue skips a track whose file has gone</strong>, and moves on from one you deleted rather than starting again at the top.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A marked line keeps its marker</strong> through Enter, through a paste and through a tidy-up, and the marker menu marks the lines that were selected when you opened it.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Going back to an earlier step no longer leaves the old undo stack standing.</strong> The next <code>Ctrl+Z</code> wrote one era's positions onto another's, and the board could then be saved that way.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>An anchored card survives a rearrange and a reflow</strong>, including a change of column count or spacing on a phone.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The step editor offers the arrangements the board it is on has</strong>, not the other board's.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A line between two cards re-routes when the card in its way moves.</strong> It held the old detour until one of its own ends was dragged.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A board that fails to start shows the failure</strong>, instead of a grey sheet over a message nobody can read.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The app stops calling a board saved before it has read one</strong>, and says plainly when what is on screen is not being kept.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A dropped connection to the browser's store is picked up again</strong>, where it used to latch and write nothing for the rest of the session.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A card hands back what it holds when it is rebuilt.</strong> A rename, a crop, an adjust or a <code>Fit</code> toggle each left a photograph's decode and a video's decoder behind.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A frozen GIF gives its picture back</strong>, once per freeze rather than never.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Opening the note editor no longer blanks the card behind it</strong>, or leaves a second copy of it on the board afterwards.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>Zooming out no longer visits every card on the board</strong> to find the title card.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>The performance readout stopped measuring itself</strong>, four times a second, worst on the slow machines it exists for.</li>
+      <li class="is-plain">Reading the changelog at a <code>/patch/</code> address with a trailing slash no longer takes your whimsy dial and your palette home with you.</li>
+    </ul>
+    <h3 class="pn-part">Maintenance</h3>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>The suite went from 1,335 cases to 1,545</strong>, and a first pass through it replaced the ones that could not fail.</li>
+      <li class="is-plain"><strong>Six rearrangements that change nothing on screen</strong>: the board and the Feed pack by one masonry, the export and the screen share one grid policy, the ground is repainted through one door, a track's name and a note's first words are each worked out in one place, and the order things start up in is a test rather than a comment.</li>
+      <li class="is-plain"><strong>What a press means can now be asked in a test</strong>, which is the half of the gesture pipeline nothing could reach before.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-room-to-look">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">5</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.202 - 0.206</p>
+      <h2 class="pn-name">Room to Look</h2>
+      <p class="pn-date">15 August 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>An hour spent driving the app and writing down every place the same command turns up twice</strong>, and then the cut. Plus a picture you can finally get close to.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A picture opened from the board zooms and pans.</strong> Wheel or pinch to go in, drag to move about, a plain click for a closer look, and eight times as far in as it starts. The zoom goes to the point under the cursor rather than to the middle of the window, so pointing at a face keeps the face.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A line of a note can be drawn over with a marker</strong>, in <em>four</em> colours, the way a highlighter is.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The style tile is a card on the board rather than a picture you save.</strong> It carries the board's pictures, its pigments and its two faces, and it is live: move the palette or the whimsy dial and every tile on the board follows in the same frame.</li>
+      <li><span class="pn-tag is-new">New</span><strong><code>Flip</code> and <code>Flop</code> in the darkroom</strong>, mirroring a picture left to right or top to bottom.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A crop reshapes the card it is in</strong>, so a 16:9 slice of a square photograph stops being letterboxed inside a square. The area is held, which is what stops a crop quietly making a card louder or quieter on the board.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A clip with no still gets one in the background</strong>, a frame at a time while nothing else is happening, so a board saved before stills existed stops drawing black rectangles.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Something large is asked about before it comes in</strong>, once for the whole drop, rather than two minutes into hashing and decoding it.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The right-click menu on empty board is six rows rather than twelve</strong>, and the six that went were the ones already resting somewhere you could see without doing anything.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong><code>Fill the card</code> and <code>Fit in the card</code> no longer both carry a tick.</strong> They are one choice, and the tick now says which.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The toolbar steps out of the way whenever a panel is open</strong>, at every width. It used to do it only below 1080 pixels, and the bar has grown twice since that number was chosen - so the first tool sat under the panel while the other seven looked perfectly fine.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A picture desaturates all the way to grey again.</strong> Zero on the saturation dial was being read as no answer at all, so the slider sprang back to the middle at the far left and greyscale could not be reached.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Resizing a note rewraps what it says rather than rescaling it</strong>, and a note grown by a line no longer comes back needing another one.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong><code>No card</code> takes the shadow with it</strong>, in both directions. An emptied sticky was leaving a shadow with nothing casting it.</li>
+      <li><span class="pn-tag is-fix">Fix</span>At the spec-sheet end of the whimsy axis a cut-out is no longer given a mat, a chin and a hairline round the outside - a frame round nothing, which is the thing a cut-out exists to be free of.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The Playlist lens gave up the transport it carried.</strong> The bar along the foot is already one and does not move when the list does, so the lens is now the two things a bar cannot be: how a board is started, and how a track is chosen.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>An anchored card is something an arrangement keeps clear of</strong> rather than something it deals a slot to and lays another card on top of.</li>
+      <li><span class="pn-tag is-fix">Fix</span>Going to a step in the Timeline that a later edit had changed no longer rebuilds from a picture of a board that never existed.</li>
+      <li><span class="pn-tag is-fix">Fix</span>A paste, an anchor and an unanchor are named in the Timeline instead of arriving as unlabelled steps.</li>
+    </ul>
+  </article>
+</li>
 <li class="pn-rel" id="r-every-step">
   <div class="pn-margin" aria-hidden="true">
     <span class="pn-mark"></span>

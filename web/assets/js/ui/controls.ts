@@ -31,6 +31,8 @@
  * least two of them afterwards - the label to place or hide, the head to hang a
  * class on, the output to write into on every input event.
  */
+import { cue } from '../cuelume/engine.ts';
+
 /** The three pieces of a row, handed back for the caller to finish. */
 export interface Field {
   label: HTMLLabelElement;
@@ -95,4 +97,48 @@ export function fieldStops<T extends string | { label: string }>(
     stops.append(span);
   }
   return stops;
+}
+
+/**
+ * Tick once per stop a slider crosses, for the sliders that have stops.
+ *
+ * The one place a range input is given a voice, and it exists because the
+ * alternative was found the hard way: the panel's own builder grew this
+ * behaviour inline, which covered the six controls that builder makes and
+ * silently missed every slider wired by the module that owns it - Whimsy, the
+ * palette count, the masthead's four, the volume, the hint card's dial. Six of
+ * about fifteen. So it is a function, and every range input in the app is
+ * handed to it.
+ *
+ * **It decides for itself whether a slider is the kind that ticks**, and that is
+ * what makes "all of them" safe to say. A range fires `input` about sixty times
+ * a second while a thumb is moving; on Whimsy that is three stops and three
+ * ticks, and on the hue wheel it would be three hundred and sixty and a buzz.
+ * The distinction a person is making when they say a slider feels *steppy* is
+ * exactly the stop count, so that is what is measured - `(max - min) / step`,
+ * over DETENT_MAX and it stays silent.
+ *
+ * Forty is the cut, which puts "Pictures used" (25 stops) and the masthead's
+ * size dial (34) in, and the colour and darkroom sliders (100+) out. It is a
+ * judgement about how fast a thumb crosses a stop rather than a fact about
+ * anything, and the bench cannot help with it - a slider is dragged, not
+ * pressed.
+ */
+const DETENT_MAX = 40;
+
+export function tickSlider(input: HTMLInputElement | null | undefined): void {
+  if (!input) return;
+  const min = parseFloat(input.min || '0');
+  const max = parseFloat(input.max || '100');
+  const step = parseFloat(input.step || '1');
+  const stops = step > 0 ? (max - min) / step : Infinity;
+  if (!Number.isFinite(stops) || stops > DETENT_MAX) return;
+  // The value it last spoke for, not the value it started at: a slider painted
+  // from a stored preference must not tick on the way up.
+  let ticked = input.value;
+  input.addEventListener('input', () => {
+    if (input.value === ticked) return;
+    ticked = input.value;
+    cue('pick');
+  });
 }

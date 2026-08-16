@@ -12,7 +12,7 @@
 // Written out in full rather than composed from PREFIX, because save.bat bumps
 // this line by regex on every commit and would not recognise an expression.
 // tests/sw.test.js holds the two together.
-const VERSION = 'mbrd-v230';
+const VERSION = 'mbrd-v231';
 const PREFIX = 'mbrd-';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) turns the
@@ -107,6 +107,13 @@ const SHELL = [
   // tests/sw.test.js reads SHELL by pulling out single-quoted runs, and one
   // apostrophe up here silently unlists every entry below it.)
   './assets/phosphor-LICENSE.txt',
+  // The interface sounds, on the same terms. Cuelume is MIT and the palette is
+  // synthesised from a table rather than fetched, so there is no audio file
+  // here to precache - but the notice condition does not care how small the
+  // borrowed thing is, and an installed app that makes those sounds offline
+  // while leaving the notice on the server is an installed app that does not
+  // meet it. See THIRD-PARTY.md.
+  './assets/cuelume-LICENSE.txt',
   // The three faces the same way, and for the same reason spelled the same way.
   // The OFL asks that the notice accompany the fonts; every .woff2 below is in
   // this list, so offline the app was carrying three typefaces and none of the

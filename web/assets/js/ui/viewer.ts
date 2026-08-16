@@ -75,9 +75,9 @@ let releaseDoc: (() => void) | null = null;
 let pdfDoc: { destroy: () => void } | null = null;
 
 export function initViewer() {
-  // #viewer is the <dialog> in index.html; the showModal test in openViewer()
-  // is the real guard, and it covers an engine with no dialog support too -
-  // which is why this is a cast rather than an instanceof.
+  // SAFETY: #viewer is the <dialog> in index.html; the showModal test in
+  // openViewer() is the real guard, and it covers an engine with no dialog
+  // support too - which is why this is a cast rather than an instanceof.
   dlg = document.getElementById('viewer') as HTMLDialogElement | null;
   if (!dlg) return;
   titleEl = document.getElementById('viewer-title');

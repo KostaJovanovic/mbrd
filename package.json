@@ -6,19 +6,21 @@
   "engines": {
     "node": ">=22.18"
   },
-  "description": "Dev-only tooling. The app has no runtime dependency and nothing TypeScript reaches the browser: tsc only checks, esbuild builds web/assets/app.js, and that bundle is what ships. `npm test` still needs no install - Node strips types natively from 22.18, which is why the floor above is not a bare 22. The three devDependencies are for the lint, the typecheck and the build.",
+  "description": "Dev-only tooling. The app has no runtime dependency and nothing TypeScript reaches the browser: tsc only checks, esbuild builds web/assets/app.js, and that bundle is what ships. `npm test` still needs no install - Node strips types natively from 22.18, which is why the floor above is not a bare 22. The four devDependencies are for the lint, the typecheck and the build - oxlint brings @oxlint/plugins with it, which the vendored anti-slop plugin under tools/oxlint imports.",
   "scripts": {
     "start": "python tools/serve.py",
     "dev": "esbuild web/assets/js/main.ts --bundle --sourcemap --format=esm --target=es2022 --outfile=web/assets/app.js --watch",
     "dev:lab": "esbuild web/assets/js/ui/pigments.ts --bundle --format=esm --target=es2022 --outfile=web/assets/lab-pigments.js --watch",
+    "dev:sound": "esbuild web/assets/js/ui/sound-lab.ts --bundle --format=esm --target=es2022 --outfile=web/assets/lab-sound.js --watch",
     "test": "node --test \"tests/**/*.test.js\" \"tests/**/*.test.ts\"",
     "lint": "oxlint web tests tools",
     "typecheck": "tsc -p tsconfig.json",
-    "build": "esbuild web/assets/js/main.ts --bundle --minify --format=esm --target=es2022 --outfile=web/assets/app.js && esbuild web/assets/js/ui/pigments.ts --bundle --format=esm --target=es2022 --outfile=web/assets/lab-pigments.js"
+    "build": "esbuild web/assets/js/main.ts --bundle --minify --format=esm --target=es2022 --outfile=web/assets/app.js && esbuild web/assets/js/ui/pigments.ts --bundle --format=esm --target=es2022 --outfile=web/assets/lab-pigments.js && esbuild web/assets/js/ui/sound-lab.ts --bundle --format=esm --target=es2022 --outfile=web/assets/lab-sound.js"
   },
   "devDependencies": {
+    "@oxlint/plugins": "^1.78.0",
     "esbuild": "^0.28.2",
-    "oxlint": "^1.76.0",
+    "oxlint": "^1.78.0",
     "typescript": "^5.9.3"
   }
 }

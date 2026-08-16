@@ -163,6 +163,10 @@ export function queueState(): QueueSnapshot {
  * started from the board keep its live waveform while the queue advances it.
  */
 function playerFor(item: Track): HTMLMediaElement {
+  // SAFETY: registeredPlayers() answers the elements canvas/transport.ts
+  // registered, and it registers the <audio> and <video> a card was built with -
+  // both HTMLMediaElement. The assertion is the element type of the iterable,
+  // which the registry's own signature has not been annotated to say.
   for (const el of registeredPlayers() as Iterable<HTMLMediaElement>) {
     if (el !== player && ownerOf(el) === item) return el;
   }
@@ -225,6 +229,10 @@ function rebuildOrder(): void {
     }
   }
   if (playing) {
+    // SAFETY: `playing` is an item off the board and Track is the narrower shape
+    // the queue reads one through. indexOf() compares by identity and answers -1
+    // for anything it does not hold, which the line below is written for - so a
+    // wrong assertion here would find nothing rather than find the wrong track.
     const idx = queueItems.indexOf(playing as Track);
     // Only when it is still in the list. `indexOf` answers -1 for a track that
     // has been deleted, and writing that into `queuePos` made the *next* thing

@@ -132,8 +132,13 @@ export const stopName = (level: number): string => STOPS[level] || STOPS[1];
  * The test is on the entry, not on the key, and the cast says only that: a key
  * out of a file is checked by what it looks up rather than by its spelling.
  */
-export const hintKey = (key: string | undefined): HintKey =>
-  (HINTS[key as HintKey] ? key as HintKey : 'drop');
+export const hintKey = (key: string | undefined): HintKey => {
+  // SAFETY: both assertions are the lookup, which is the paragraph above - the
+  // key is checked by what it finds in HINTS rather than by its spelling, and a
+  // key that finds nothing takes 'drop'. The first cast is only what lets an
+  // arbitrary string be looked up at all.
+  return HINTS[key as HintKey] ? key as HintKey : 'drop';
+};
 
 /**
  * A strip of tape as state.js's tapeFor() places it: an edge, how far along it,
@@ -198,7 +203,7 @@ export function hintFor(key: string | undefined): Hint {
  * down here, the same move it makes for storage's confirmation prompt
  * (setPrompt). So the dial drives the one command surface everything else does.
  */
-type GhostCommands = { setWhimsy?: (level: number) => unknown };
+type GhostCommands = { setWhimsy?: (level: number) => void };
 
 let cmds: GhostCommands | null = null;
 

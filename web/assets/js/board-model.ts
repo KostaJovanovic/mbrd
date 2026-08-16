@@ -51,8 +51,19 @@ export type ItemType =
  * The bytes an item points at, or null for one that is only geometry and text.
  * `hash` names the content in the asset store; `family` is the format catalogue
  * entry. See the note above normalizeAssets() in board-schema.ts.
+ *
+ * The second arm is the reserved link-instead-of-embed form, which has no local
+ * bytes and so no hash. `hash?: undefined` rather than an omission is what makes
+ * `asset?.hash` still readable on the union without narrowing first - it reads
+ * as `string | undefined`, which is the truth, and the handful of callers that
+ * need a real hash test for it. Nothing reads `external` yet; normalizeAsset()
+ * carries it through so that a board saved by a newer build survives a round
+ * trip here.
  */
-export type ItemAsset = { hash: string; family?: string } | null;
+export type ItemAsset =
+  | { hash: string; family?: string }
+  | { hash?: undefined; external: unknown }
+  | null;
 
 /** See the paragraph above: unknown per key on purpose, narrowed at the use. */
 export type ItemMeta = Record<string, unknown>;
@@ -480,6 +491,9 @@ export const board: Board = {
   // know yet", it is a positive claim that nothing can be in it, and it lands as
   // an error at every module that walks the board rather than here. The two
   // annotations are erased; see the Item note at the top of this file.
+  //
+  // SAFETY: an empty array is every array. The assertion names what will go in
+  // it, which inference cannot get from `[]`, and asserts nothing about a value.
   items: [] as Item[],
   // The board name's typography, styled by ui/mobile-header.js. Board-level
   // rather than per-layout on purpose: the Mobile masthead and the Desktop
@@ -532,6 +546,8 @@ export const board: Board = {
   // wherever each layout happens to have put them.
   tour: [],
   // Thrown away but not gone. Entries are { item, at }, newest first.
+  //
+  // SAFETY: empty, as with `items` above - the assertion is the element type.
   trash: [] as TrashEntry[],
 };
 
@@ -630,6 +646,10 @@ const WEIGHT_SET: ReadonlySet<ConnWeight> = new Set(CONN_WEIGHTS);
  * is safe and is the point - `has` only needs to compare, and a ReadonlySet of
  * a union cannot be asked about a value that is not one yet.
  */
+// SAFETY: the widening is on the *set*, not on the value - a ReadonlySet<T>
+// where T is a union of strings holds strings, so asking it about a plain one is
+// sound. The answer is what makes the predicate true; this assertion is only
+// what lets the question be asked at all.
 const inSet = <T extends string>(set: ReadonlySet<T>, v: unknown): v is T =>
   typeof v === 'string' && (set as ReadonlySet<string>).has(v);
 
@@ -1256,6 +1276,12 @@ export function makeItem(partial: Record<string, unknown>): Item {
     // to the generic card at the draw, so the board opens and a save gives the
     // file its own word back. ItemType is therefore what the *app* produces, not
     // an assertion about every string a document can hold.
+    //
+    // SAFETY: this is the one assertion in this file that is knowingly wider
+    // than what it claims, and the paragraph above is why: a type a newer build
+    // wrote is carried rather than dropped, and RENDERERS falls through to the
+    // generic card for anything it does not know. What is checked here is that
+    // it is a non-empty string.
     type: (typeof partial.type === 'string' && partial.type ? partial.type : 'generic') as ItemType,
     x: coord(partial.x),
     y: coord(partial.y),
@@ -1303,19 +1329,24 @@ function normalizeMeta(meta: ItemMeta): ItemMeta {
  * be exported. `external` is the reserved link-instead-of-embed form and has no
  * hash to check; it is carried through untouched.
  *
- * Two casts, and they say the same thing twice: ItemAsset above describes the
- * embedded form - `{ hash, family }` - and the reserved external form is not in
- * it. Widening the type would put `hash` in doubt at every one of the several
- * dozen `item.asset?.hash` reads in the app, over a form nothing in it reads
- * yet, so the narrower type stays and the two returns below say what they are.
- * tests/state-clipboard.test.js pins the carry-through; when something starts
- * *reading* the external form, that is the moment ItemAsset should grow a
- * second member and these should go.
+ * ItemAsset used to describe only the embedded form and this function returned
+ * the external one through `as unknown as`, on the reasoning that widening the
+ * type would put `hash` in doubt at several dozen `item.asset?.hash` reads. The
+ * count was wrong: it is eight, because every other read already flowed into
+ * something that took `string | undefined`. So the union is honest now, and the
+ * eight are guarded rather than asserted - each was a place that would have
+ * spelled `undefined` into an archive path the day an external asset arrived.
+ * tests/state-clipboard.test.js pins the carry-through.
  */
 function normalizeAsset(asset: unknown): ItemAsset {
   if (!isRecord(asset)) return null;
   // The whole object, not a rebuilt one: `family` and anything else a newer
   // build wrote alongside the hash travels with it.
-  if (isHash(asset.hash)) return asset as ItemAsset;
-  return asset.external ? { external: asset.external } as unknown as ItemAsset : null;
+  //
+  if (isHash(asset.hash)) {
+    // SAFETY: the isHash() on the line above is the check - it holds `hash` to
+    // a digest, which is the only required field of ItemAsset's embedded arm.
+    return asset as ItemAsset;
+  }
+  return asset.external ? { external: asset.external } : null;
 }

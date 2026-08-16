@@ -129,8 +129,18 @@ export interface Look {
   derived?: boolean;
 }
 
+/**
+ * A look taken apart: the half that belongs to the board and the half that
+ * belongs to one layout profile.
+ *
+ * The local half is only ever vars - a palette and a whimsy level are board-wide
+ * by definition - and saying that in the type is what stops a later edit from
+ * quietly giving Desktop and Mobile two different palettes.
+ */
+export type SplitLook = { shared: Look, local: { vars: Record<string, string> } };
+
 /** Split one complete look into its board-wide and layout-local halves. */
-export function splitAppearance(look: Look = {}): { shared: Look, local: { vars: Record<string, string> } } {
+export function splitAppearance(look: Look = {}): SplitLook {
   const source = look && typeof look === 'object' ? look : {};
   const sharedVars: Record<string, string> = {};
   const localVars: Record<string, string> = {};
@@ -139,23 +149,27 @@ export function splitAppearance(look: Look = {}): { shared: Look, local: { vars:
     (paletteToken.has(key) ? sharedVars : localVars)[key] = value;
   }
 
-  const shared = {
-    ...(source.whimsy != null ? { whimsy: source.whimsy } : {}),
+  // The three optional keys are written rather than spread, and the difference
+  // is the one this whole type turns on: absent means "never said", where a
+  // present `false` means "said no". mergeAppearance() puts the halves back
+  // together by spreading, so a key invented here would outlive the split.
+  const shared: Look = {
     palette: typeof source.palette === 'string' ? source.palette : '',
     vars: sharedVars,
-    ...(source.auto === false ? { auto: false } : {}),
-    ...(source.derived === true && Object.keys(sharedVars).length ? { derived: true } : {}),
   };
+  if (source.whimsy != null) shared.whimsy = source.whimsy;
+  if (source.auto === false) shared.auto = false;
+  if (source.derived === true && Object.keys(sharedVars).length) shared.derived = true;
   return { shared, local: { vars: localVars } };
 }
 
 /** Rebuild the complete look consumed by ui/appearance.js. */
 export function mergeAppearance(shared: Look = {}, local: Look = {}): Look {
-  return {
-    ...(shared && typeof shared === 'object' ? shared : {}),
-    vars: {
-      ...(local?.vars && typeof local.vars === 'object' ? local.vars : {}),
-      ...(shared?.vars && typeof shared.vars === 'object' ? shared.vars : {}),
-    },
-  };
+  // Each half named before the merge. Both arguments default to {} but are also
+  // guarded, because these two arrive off a file as often as from the app.
+  const base = shared && typeof shared === 'object' ? shared : {};
+  const fromLocal = local?.vars && typeof local.vars === 'object' ? local.vars : {};
+  const fromShared = shared?.vars && typeof shared.vars === 'object' ? shared.vars : {};
+  // Shared wins, which is what makes a palette token board-wide.
+  return { ...base, vars: { ...fromLocal, ...fromShared } };
 }

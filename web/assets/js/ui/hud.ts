@@ -17,6 +17,7 @@
 // imports *this* module (for paintZoom) and the arrow may only go one way.
 
 import { el } from '../util.ts';
+import { cue } from '../cuelume/engine.ts';
 import { formatLength, formatSize } from '../measure.ts';
 import { board, bus, selection, byId, historyState, isContent } from '../state.ts';
 import { MIN_ZOOM, MAX_ZOOM, BASE_ZOOM, zoomMs, travelMs } from '../canvas/viewport.ts';
@@ -40,11 +41,11 @@ type HudViewport = Viewport & {
  * button is called and not what it does.
  */
 export interface HudCommands {
-  fit: () => unknown;
-  recenter: () => unknown;
-  lockZoom: () => unknown;
-  undo: () => unknown;
-  redo: () => unknown;
+  fit: () => void;
+  recenter: () => void;
+  lockZoom: () => void;
+  undo: () => void;
+  redo: () => void;
 }
 
 const ZOOM_STEP = 1.3;
@@ -74,8 +75,12 @@ export function initHud(viewport: HudViewport, cmds: HudCommands) {
   vp = viewport;
 
   el('zoom-ctl')!.addEventListener('click', e => {
+    // SAFETY: the listener is on an element, so the target of a click inside it
+    // is one too, and closest() is only asked whether an ancestor matches - see
+    // the paragraph over `vp` above, which covers this and the pair below.
     const btn = (e.target as Element).closest<HTMLElement>('[data-zoom]');
     if (!btn) return;
+    cue('pick');
     switch (btn.dataset.zoom) {
       case 'in':    vp!.zoomBy(ZOOM_STEP, zoomMs()); break;
       case 'out':   vp!.zoomBy(1 / ZOOM_STEP, zoomMs()); break;
@@ -100,8 +105,12 @@ export function initHud(viewport: HudViewport, cmds: HudCommands) {
   // Through cmds, not through state's undo() directly - the keyboard, the
   // context menu and these three now all press the same button.
   el('history-ctl')!.addEventListener('click', e => {
+    // SAFETY: as at the zoom controls above.
     const btn = (e.target as Element).closest<HTMLElement>('[data-history]');
     if (!btn) return;
+    // The press, and then history.ts says `fall` or `rise` for what it did -
+    // the same two-sound shape every other button on the glass has.
+    cue('pick');
     if (btn.dataset.history === 'undo') cmds.undo(); else cmds.redo();
   });
 
@@ -226,6 +235,9 @@ export function paintZoom(force = false) {
     : locked ? 'Bring everything into view  F' : 'Zoom to fit  F';
   fit.setAttribute('aria-label', fixed ? 'Back to the top'
     : locked ? 'Bring everything into view' : 'Zoom to fit');
+  // SAFETY: #zoom-lock is a <button> in index.html, like every other id this
+  // module reads with `!` - see the paragraph over `vp`. `disabled` is the only
+  // thing asked of it, and it is why the tag has to be named.
   const lock = el('zoom-lock') as HTMLButtonElement;
   lock.disabled = fixed;
   lock.setAttribute('aria-pressed', String(vp!.zoomLocked));

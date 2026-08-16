@@ -45,6 +45,7 @@ import {
 } from '../state.ts';
 import { DEFAULT_SCALE } from '../measure.ts';
 import { clearQualityOverrides } from '../quality.ts';
+import { cueLogOn, dumpCueLog, setCueLog } from '../cuelume/engine.ts';
 import { travelMs } from '../canvas/viewport.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 import type { ViewPerf } from '../perf/view-perf.ts';
@@ -255,6 +256,46 @@ export function viewCommands(vp: CommandViewport, { resetAppearance, perf }: Vie
       if (!perf.active) { toast('Turn profiling on first, then pan and zoom'); return; }
       const r = perf.report();
       toast(r ? 'Report printed to the console' : 'Nothing sampled yet - pan or zoom first');
+    },
+    /**
+     * The transcript of every interface cue, and what became of it.
+     *
+     * The same two-row shape as the profiler above - arm, use the app, print -
+     * and it is here for the same reason that pair is: the question it answers
+     * is asked while somebody is *using* a board, and until now the only way in
+     * was a console, on a tool whose sounds are most worth checking on a phone.
+     *
+     * **What it is for is the lines that are not there.** Three separate reports
+     * of the sounds skipping turned out to be a call site missing from a branch
+     * - a resize grip, a widget press, a multi-card drop - rather than anything
+     * in the engine, and each was found by reasoning about pressIntent() one
+     * branch at a time. Pressing a thing and seeing whether the log says
+     * anything at all settles it in one go, which is why the log records
+     * refusals as loudly as it records sounds: a muted cue and a cue nobody made
+     * must not look the same.
+     *
+     * Unlike the two toggles above it, this one is *remembered* - the useful
+     * session is turn it on, reload, reproduce - so the button reads its state
+     * back through cueLogOn() as well as being written here. That is the
+     * opposite of the note over the grips row, and for the opposite reason:
+     * there the truth is a DOM attribute nothing else can be asked for, here it
+     * is a function.
+     */
+    debugSound: () => {
+      const on = setCueLog(!cueLogOn());
+      document.querySelector('[data-cmd="debug-sound"]')?.setAttribute('aria-pressed', String(on));
+      toast(on
+        ? 'Logging cues - use the board, then Print the cue log'
+        : 'Cue logging off');
+      return on;
+    },
+    /** The transcript as a table. Its own row, for the reason the report is. */
+    debugSoundReport: () => {
+      if (!cueLogOn()) { toast('Turn cue logging on first, then use the board'); return; }
+      const rows = dumpCueLog();
+      toast(rows.length
+        ? `${rows.length} cue${rows.length === 1 ? '' : 's'} printed to the console`
+        : 'Nothing logged yet - press something first');
     },
     // Hold the magnification where it is. A command rather than two lines in the
     // click handler, because that is what a user-facing action is here - the one

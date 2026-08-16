@@ -34,6 +34,7 @@
 import { toast } from './notify.ts';
 import { bus } from './board-store.ts';
 import { commit } from './history.ts';
+import { cue } from './cuelume/engine.ts';
 import { board, pairKey, connMeta, MAX_CONNECTIONS } from './board-model.ts';
 import type { Connection, ConnMeta } from './board-model.ts';
 
@@ -104,6 +105,9 @@ export function toggleConnection(a: string, b: string) {
     : [...board.connections, [a, b]];
   commit(had ? 'Remove connection' : 'Connect',
     () => write(after), () => write(before));
+  // A line drawn and a line parted are the same recipe with the glide inverted,
+  // which is as close as this app gets to saying a thing and its opposite.
+  cue(had ? 'fall' : 'rise');
   return !had;
 }
 
@@ -135,6 +139,9 @@ export function addConnections(pairs: Iterable<[string, string]> | null | undefi
   const before = board.connections;
   const after = [...board.connections, ...fresh];
   commit(label, () => write(after), () => write(before), fresh.length);
+  // One cue for the set, as it is one commit for the set: forty lines drawn by
+  // one button press is one thing happening, not forty.
+  cue('rise');
   return fresh.length;
 }
 
@@ -153,6 +160,7 @@ export function clearConnections(label = 'Remove all connections') {
   const before = board.connections;
   if (!before.length) return 0;
   commit(label, () => write([]), () => write(before), before.length);
+  cue('fall');
   return before.length;
 }
 

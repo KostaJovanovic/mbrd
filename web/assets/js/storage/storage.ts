@@ -621,6 +621,9 @@ function pickViaInput() {
     // with Add files - see the dataset.mode note below. Absent, this whole
     // fallback has nothing to click, which is a broken build rather than a
     // state to recover from.
+    // SAFETY: #file-input is the one <input type="file"> in index.html - the
+    // same element import/drop.ts reaches for, and the paragraph above says why
+    // an absent one is a broken build rather than a state to recover from.
     const input = document.getElementById('file-input') as HTMLInputElement;
     const prevAccept = input.accept;
     input.accept = '.mbrd,application/zip';

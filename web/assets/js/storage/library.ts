@@ -56,6 +56,11 @@ export async function libraryIndex(): Promise<LibraryEntry[]> {
   // and it writes exactly the rows putLibraryBoard() builds. The Array.isArray
   // above is the one shape check worth making - a key holding something else
   // entirely is the case a hand-edited database produces.
+  //
+  // SAFETY: the Array.isArray above is the check, and putLibraryBoard() is the
+  // only writer of this key - the rows are what it built. A row with a missing
+  // field reads as undefined through the `|| 0` on the next line rather than
+  // throwing, which is the failure mode a hand-edited database gets.
   const rows = list as LibraryEntry[];
   return [...rows].sort((a, b) => (b.at || 0) - (a.at || 0));
 }
@@ -133,14 +138,20 @@ export async function sweepLibrary() {
   const known = new Set((await libraryIndex()).map(e => e.id));
   const keys = await idbKeys(STORE);
   const orphans = keys.filter(k => typeof k === 'string' && !known.has(k));
-  if (orphans.length) await idbDelMany(STORE, orphans as string[]);
+  if (orphans.length) {
+    // SAFETY: the filter above holds every element to a string, so what is
+    // asserted is what was just checked, element by element.
+    await idbDelMany(STORE, orphans as string[]);
+  }
   return orphans.length;
 }
 
 /** The packed blob for a board, or null if the shelf has no such id. */
 export async function getLibraryBoard(id: string): Promise<Blob | null> {
-  // Safe: putLibraryBoard() above is the only writer of this store, and what it
-  // puts under a board id is the packed .mbrd Blob.
+  // SAFETY: putLibraryBoard() above is the only writer of this store, and what
+  // it puts under a board id is the packed .mbrd Blob. The `|| null` covers a
+  // key that is not there; a key holding something else is a hand-edited
+  // database, and the caller opens it as a zip, which refuses anything else.
   return ((await idbGet(STORE, id)) || null) as Blob | null;
 }
 

@@ -216,10 +216,13 @@ export function fenceCommands() {
      * asked once when it opens: a right-click inside a region should offer to
      * arrange *that*, not the board it is drawn on.
      */
-    fenceUnder: (at: { x: number; y: number }) =>
-      (board.layoutMode === 'mobile'
-        ? null
-        : (fenceAt(at.x, at.y) as Boxed | null)?.id ?? null),
+    fenceUnder: (at: { x: number; y: number }) => {
+      if (board.layoutMode === 'mobile') return null;
+      // SAFETY: fenceAt() answers an Item, and Boxed is the narrower shape this
+      // file reads one through - an id and a rectangle. The `?.` covers the
+      // miss; nothing is written through the view.
+      return (fenceAt(at.x, at.y) as Boxed | null)?.id ?? null;
+    },
 
     /** Is this item a region? The menu's other way in - by its name plate. */
     isFenceItem: (id: string) => isFence(byId(id)),

@@ -182,6 +182,9 @@ function once<F extends Issued>(
  * the same call on a fresh connection succeeds.
  */
 function deadHandle(err: unknown): boolean {
+  // SAFETY: the two tests on the same line are the check - a truthy object is
+  // the only thing this reads a `name` off, and the property is declared
+  // optional so a DOMException without one compares false rather than throwing.
   return !!err && typeof err === 'object' && (err as { name?: string }).name === 'InvalidStateError';
 }
 
@@ -204,7 +207,7 @@ function deadHandle(err: unknown): boolean {
 function tx<F extends Issued>(
   store: StoreName, mode: IDBTransactionMode, fn: (s: IDBObjectStore) => F,
 ): Promise<ResultOf<F>> {
-  // Safe: `result` is exactly what the requests `fn` issued produced, and
+  // SAFETY: `result` is exactly what the requests `fn` issued produced, and
   // ResultOf<F> is the same two-way branch the body of once() takes - one
   // request's result, or an array of them in issue order.
   return once(store, mode, fn).catch(err => {

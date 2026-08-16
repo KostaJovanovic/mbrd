@@ -171,7 +171,7 @@ type Drag = {
  * FlyoutCommands states in ui/flyout.ts.
  */
 export interface PlaylistCommands {
-  setBoardMode: (mode: string) => unknown;
+  setBoardMode: (mode: string) => void;
 }
 
 const DISC_ICON =
@@ -278,8 +278,8 @@ export function initPlaylist(_viewport: Viewport | null, _commands: PlaylistComm
 function orderedAudio(): Item[] {
   const audio = board.items.filter(it => it.type === 'audio');
   // The cast holds for the reason board-actions.ts states at its own call:
-  // mobileOrder() hands back the very items it was given, in a new order, and
-  // ArrangeItem is only the narrower shape it reads them through.
+  // SAFETY: mobileOrder() hands back the very items it was given, in a new
+  // order, and ArrangeItem is only the narrower shape it reads them through.
   return applyAudioOrder(
     mobileOrder(audio, { name: board.arrangement }) as Item[], board.audioOrder);
 }
@@ -701,8 +701,8 @@ function beginDrag(e: PointerEvent, view: View, r: Row) {
   e.preventDefault();
   drag = { view, rowEl: r.el, pointerId: e.pointerId, mids: null, ref: undefined };
   r.el.classList.add('is-dragging');
-  // currentTarget is the grip this listener was put on - the same reading
-  // ui/hud.ts states about a target inside the element a listener is bound to.
+  // SAFETY: currentTarget is the grip this listener was put on, which is the one
+  // target a handler can be sure of - the same reading ui/hud.ts states.
   const grip = e.currentTarget as HTMLElement;
   grip.setPointerCapture?.(e.pointerId);
   grip.addEventListener('pointermove', onDragMove);
@@ -747,7 +747,7 @@ function onDragMove(e: PointerEvent) {
 
 function endDrag(e: PointerEvent) {
   if (!drag) return;
-  // The grip, for the reason beginDrag() gives about the same read.
+  // SAFETY: the grip, for the reason beginDrag() gives about the same read.
   const grip = e.currentTarget as HTMLElement;
   drag.rowEl.classList.remove('is-dragging');
   grip.releasePointerCapture?.(e.pointerId);
@@ -1196,9 +1196,13 @@ function makePlayer(): Player {
     if (item) {
       const c = urlOf(item.meta?.cover);
       let src = c;
-      // `img.asset` is asserted because the find() that answered it tested the
-      // hash - a picture with no asset is not one of the items it looked for.
-      if (!src) { const img = board.items.find(it => it.type === 'image' && it.asset?.hash); if (img) src = assetURL(img.asset!.hash); }
+      // The hash is read back off the found item rather than asserted: the
+      // find() tested it, and re-reading it is what lets the checker agree
+      // instead of being told to.
+      if (!src) {
+        const hash = board.items.find(it => it.type === 'image' && it.asset?.hash)?.asset?.hash;
+        if (hash) src = assetURL(hash);
+      }
       if (src) { cover.className = 'pw-cover'; cover.appendChild(coverImg(src)); }
       else { cover.className = 'pw-cover is-placeholder'; cover.innerHTML = DISC_ICON; }
       title.textContent = trackName(item);

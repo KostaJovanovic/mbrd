@@ -512,7 +512,11 @@ const GEOM_KEYS = ['x', 'y', 'w', 'h', 'rot', 'z'] as const;
  * and the copy is what gets fitted, so an out-of-range value never lands on the
  * item even briefly - and on Mobile the fit is what holds a card to the column.
  */
-function fitOnto(it: Item, patch: object, keys: readonly GeomKey[]): void {
+function fitOnto(it: Item, patch: Partial<Pick<Item, GeomKey>>, keys: readonly GeomKey[]): void {
+  // SAFETY: fitBoardMode() clamps numbers on the object it is given and hands
+  // the same object back - it adds and removes nothing - so a copy of an Item
+  // comes out an Item. The spread above is what makes it a copy, which is the
+  // point of the paragraph over this function.
   const next = fitBoardMode({ ...it, ...patch }) as Item;
   for (const key of keys) it[key] = next[key];
 }
@@ -590,8 +594,10 @@ export function mobileBoardBottom(items = board.items) {
 type GeomSource = Geometry & { meta?: ItemMeta };
 
 export const geometryOf = (it: GeomSource): Geometry => {
-  // The cast is the loop below it: GEOM_KEYS names exactly the fields a
-  // Geometry has beyond its id, so the object is complete by the next line.
+  // SAFETY: the cast is the loop below it - GEOM_KEYS names exactly the fields
+  // a Geometry has beyond its id, so the object is complete by the next line.
+  // A key added to Geometry and not to GEOM_KEYS is what this would not catch,
+  // which is why the two are written next to each other.
   const out = { id: it.id } as Geometry;
   for (const key of GEOM_KEYS) out[key] = it[key];
   const presnap = usableMemo(it.meta?.presnap);
@@ -617,12 +623,15 @@ export function normalizeLayout(raw: unknown, items: Item[]): Geometry[] {
     // The memo as usableMemo() reads it: the same four numbers the spread used
     // to copy, minus anything else a hand-written file put beside them.
     const presnap = usableMemo(value.presnap);
-    out.push({
+    const geometry: Geometry = {
       id: value.id,
       x: Number(value.x), y: Number(value.y), w, h,
       rot: Number(value.rot), z: Number(value.z),
-      ...(presnap ? { presnap } : {}),
-    });
+    };
+    // Assigned rather than spread, because the key must be *absent* and not
+    // present-and-undefined: writeLayout() tells the two apart.
+    if (presnap) geometry.presnap = presnap;
+    out.push(geometry);
     seen.add(value.id);
   }
   return out;
@@ -755,10 +764,10 @@ export function completeLayout(mode: LayoutMode): Geometry[] {
         continue;
       }
       const presnap = saved.presnap;
-      const geometry = {
-        ...geometryOf(fitMobile(saved, false, step, columns, spacing)),
-        ...(presnap ? { presnap: { ...presnap } } : {}),
-      };
+      const geometry = geometryOf(fitMobile(saved, false, step, columns, spacing));
+      // A copy, not the saved memo itself, and only when there is one - see the
+      // note on the same pattern in completeLayout().
+      if (presnap) geometry.presnap = { ...presnap };
       map.set(it.id, geometry);
       known.push({
         ...it,
@@ -837,9 +846,9 @@ export function completeLayout(mode: LayoutMode): Geometry[] {
     // different the moment the Mobile arrangement is anything but 'placed', and
     // the sequence somebody scrolled through on the phone is the sequence they
     // expect to read across on the desktop.
-    // The cast is safe for the reason import/drop.ts gives at its own call:
-    // mobileOrder() mints nothing, it returns the items it was handed in
-    // another order, so every element here is one of `missing`.
+    // SAFETY: the reason import/drop.ts gives at its own call - mobileOrder()
+    // mints nothing, it returns the items it was handed in another order, so
+    // every element here is one of `missing`. See ORDERS in arrangements.ts.
     const ordered = mobileOrder(missing, { name: board.arrangements.mobile }) as Item[];
     // Masonry, and it is the same rule the Feed itself packs by: shortest column
     // first, leftmost on a tie. That used to be a claim about two loops written
@@ -1038,8 +1047,9 @@ export function snapshotGeom(ids: Iterable<string>): GeomSnap[] {
   return [...ids].map(id => {
     const it = byId(id);
     if (!it) return null;
-    // The cast is the loop below it, as in geometryOf(): GEOM_KEYS names every
-    // number a snapshot holds, and the two fields after it fill the rest.
+    // SAFETY: the cast is the loop below it, as in geometryOf() - GEOM_KEYS
+    // names every number a snapshot holds, and the two fields after it fill the
+    // rest, so the object is complete before anything reads it.
     const g = { id } as GeomSnap;
     for (const k of GEOM_KEYS) g[k] = it[k];
     const presnap = usableMemo(it.meta?.presnap);

@@ -24,7 +24,7 @@ import { board, setSetting } from '../state.ts';
 import { appearanceControlVisible } from '../layout-settings.ts';
 import { clamp } from '../util.ts';
 import { customFaces } from './fonts.ts';
-import { field } from './controls.ts';
+import { field, tickSlider } from './controls.ts';
 import { pickColor } from './color-picker.ts';
 
 // Not `document.documentElement` at module scope: this file must import without
@@ -95,6 +95,20 @@ export type LookDeps = {
 // the thing they are checking - and a `!` at each of them would be noise in the
 // file as well as a break in the assertion.
 let d!: LookDeps;
+
+/**
+ * One of this panel's own sliders, by id, or nothing.
+ *
+ * Four call sites wanted the same two lines and the same claim; it is written
+ * here once. The null is kept rather than asserted away because these controls
+ * are rendered from ui/settings-schema.ts and a tab that has not been built yet
+ * has none of them on the page - every caller tests before writing.
+ */
+// SAFETY: every id passed here is a `type: 'range'` row in the Look tab of
+// ui/settings-schema.ts, and the schema renders a range as an <input>. A row
+// that changed kind would be a control this module writes `.value` onto and
+// nothing would happen, which is why the ids live in one list there.
+const rangeInput = (id: string) => document.getElementById(id) as HTMLInputElement | null;
 
 /** Hand the controls what they need from the look model. Called once, first. */
 export function initAppearanceControls(deps: LookDeps) {
@@ -203,6 +217,10 @@ export function buildControls() {
       // The three are numbers in the table and strings on the element; the
       // conversion was the assignment's own before it was written down.
       input.min = String(c.min); input.max = String(c.max); input.step = String(c.step);
+      // After the three above, because tickSlider() reads them to decide
+      // whether this slider has detents worth marking - most of these tokens
+      // run over a hundred steps and it will decline them on its own.
+      tickSlider(input);
       input.addEventListener('input', () => {
         out!.textContent = format(input.value, c);
         d.setVar(c.var, input.value + (c.unit || ''));
@@ -245,10 +263,7 @@ export function syncControls() {
       out.textContent = format(input.value, spec);
     }
   }
-  // #opt-whimsy is the Look tab's `type: 'range'` control in
-  // ui/settings-schema.js, so the schema renders it as an <input> - the same
-  // element wireWhimsy() below writes a max onto.
-  const whimsy = document.getElementById('opt-whimsy') as HTMLInputElement | null;
+  const whimsy = rangeInput('opt-whimsy');
   if (whimsy) whimsy.value = String(d.current().whimsy);
 
   syncPaletteMode();
@@ -291,7 +306,7 @@ export function syncPaletteMode() {
 /** The slider showing its own value, and the count it reflects. */
 export function syncPaletteSources() {
   // Another `type: 'range'` from the schema, and its readout beside it.
-  const input = document.getElementById('opt-palette-sources') as HTMLInputElement | null;
+  const input = rangeInput('opt-palette-sources');
   const out = document.getElementById('opt-palette-sources-out');
   const n = d.sourceCount();
   const all = n === Infinity;
@@ -306,10 +321,11 @@ export function syncPaletteSources() {
 }
 
 export function wirePaletteSources() {
-  const input = document.getElementById('opt-palette-sources') as HTMLInputElement | null;
+  const input = rangeInput('opt-palette-sources');
   if (!input) return;
   input.max = String(d.ALL_SOURCES_STOP);
   input.value = String(d.sourceCount() === Infinity ? d.ALL_SOURCES_STOP : d.sourceCount());
+  tickSlider(input);
   input.addEventListener('input', () => {
     const n = +input.value;
     setSetting('paletteSources', n >= d.ALL_SOURCES_STOP ? 0 : n);
@@ -318,10 +334,13 @@ export function wirePaletteSources() {
 }
 
 export function wireWhimsy() {
-  const input = document.getElementById('opt-whimsy') as HTMLInputElement | null;
+  const input = rangeInput('opt-whimsy');
   if (!input) return;
   input.max = String(d.WHIMSY.length - 1);
   input.value = String(d.current().whimsy);
+  // Three stops, so three ticks across the whole drag. The dial this file is
+  // most associated with, and the one that went silent longest.
+  tickSlider(input);
   input.addEventListener('input', () => d.setWhimsy(input.value));
 }
 
@@ -353,6 +372,10 @@ export function wirePalette() {
   const el = document.getElementById('opt-palette');
   if (!el) return;
   el.addEventListener('pick', e => {
+    // SAFETY: 'pick' is not a DOM event - buildPicker() in ui/panel.ts is the
+    // only thing that dispatches it, and it dispatches a CustomEvent whose
+    // detail is the chosen id. The two are a pair; the line above names the
+    // file that makes the other half.
     const value = (e as CustomEvent<string>).detail;
     if (value === DYNAMIC) d.goDynamic();
     else d.setPalette(value);

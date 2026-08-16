@@ -109,6 +109,8 @@ export function flyOut(el: HTMLElement | null | undefined): void {
   const kind = exitKindFor(el.dataset.type, document.documentElement.dataset.whimsy);
   if (kind === 'chip') { dropChip(); return; }
 
+  // SAFETY: cloneNode() answers Node because it is declared on Node; a deep
+  // clone of an HTMLElement is an HTMLElement. `el` is a card's own element.
   const g = el.cloneNode(true) as HTMLElement;
   // The ghost is not selected and holds nothing that could play or fetch.
   g.classList.remove('is-selected', 'is-stick-target');

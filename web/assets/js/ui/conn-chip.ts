@@ -87,18 +87,21 @@ export interface ConnChipCommands {
 const DIRS: readonly ConnDir[] = CONN_DIRECTIONS;
 const STYLES: readonly ConnStyle[] = CONN_STYLES;
 
-const DIR_ICON: Record<ConnDir, string> = {
+// `satisfies` rather than an annotation, here and in the three below: the check
+// that every ConnDir has a row is the whole point of naming the type, and an
+// annotation buys that at the price of forgetting which four strings these are.
+const DIR_ICON = {
   none: 'i-connect', fwd: 'i-arrow-fwd', back: 'i-arrow-back', both: 'i-arrow-both',
-};
-const DIR_TITLE: Record<ConnDir, string> = {
+} satisfies Record<ConnDir, string>;
+const DIR_TITLE = {
   none: 'No arrows', fwd: 'Arrow one end', back: 'Arrow other end', both: 'Arrows both ends',
-};
-const STYLE_ICON: Record<ConnStyle, string> = {
+} satisfies Record<ConnDir, string>;
+const STYLE_ICON = {
   solid: 'i-line-solid', dashed: 'i-line-dashed', dotted: 'i-line-dotted',
-};
-const STYLE_TITLE: Record<ConnStyle, string> = {
+} satisfies Record<ConnStyle, string>;
+const STYLE_TITLE = {
   solid: 'Solid line', dashed: 'Dashed line', dotted: 'Dotted line',
-};
+} satisfies Record<ConnStyle, string>;
 
 let cmds: ConnChipCommands | null = null;
 let vp: Viewport | null = null;

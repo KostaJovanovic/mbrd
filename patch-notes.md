@@ -76,6 +76,206 @@ string from the interface.
 
 ## Releases
 
+## Every Corner
+version: 0.207 - 0.230
+date: 15 - 16 August 2026
+
+- **The app was read end to end against its own stated intentions**, and the
+  hundred and forty-five places where the two had come apart were repaired. One
+  thing was added along the way. Everything else here is something that was
+  already meant to work.
+
+### What is new
+
+- [new] **A multi-select mode, for a finger.** While it is on, a tap on a card
+  adds it to what is picked rather than replacing it, and nothing you do to the
+  board underneath - a pan, a tap on bare ground, opening the menu - clears the
+  selection. It ends from the row it was started from, from `Esc`, or from
+  opening another board.
+- [fix] **PDFs draw on the live site.** The reader was fetched from another host,
+  which the site's own security rules refuse, so every PDF and `.ai` card fell
+  back to grey for everyone except somebody running the app on their own
+  machine. It ships with mbrd now.
+
+### Work nobody could have known was at risk
+
+- [fix] **A note keeps its alignment and its markers through an export and a
+  re-import.** The board file carried both all along; reading it back threw them
+  away and rebuilt every note from its plain text.
+- [fix] **A board that has lost one file can still be left.** It could not be
+  saved, switched, replaced or exported, and the only way out the app offered
+  was `Clear everything`.
+- [fix] **Reloading while a board is still opening no longer writes a blank one
+  over it.** On a heavy board that window is a few hundred milliseconds long,
+  and hiding the tab inside it was enough.
+- [fix] **Deleting a saved board asks first**, and names it. It was one tap on a
+  small glyph in the corner of a card whose whole face means Open, with no
+  confirmation, no undo and no bin.
+- [fix] **Two boards stashed at once no longer lose one of them**, and the shelf
+  is capped at twenty-four rather than growing until the browser refuses a write
+  and the board on screen quietly stops saving.
+- [fix] **Deleting a card no longer loses its place in the tour**, so restoring
+  it from the bin brings the stop back with it.
+- [fix] **A board carrying its own colours keeps them.** The four note markers, a
+  card's shadow and how far a card leans were among the things a board file was
+  allowed to set and the app then dropped on open.
+- [fix] **The Timeline will not offer to fold away a history it cannot date.** A
+  file whose steps carry no times read as older than any cutoff, so the offer
+  covered this morning as well, and it does not come back.
+- [fix] **A board old enough to carry its own video stills keeps them.** They
+  were on neither of the two lists the cleanup checks against, so the first
+  sweep after opening deleted them and the next export left them out.
+
+### The ones that stopped the tab
+
+- [fix] **A note stuck to itself, or two notes stuck to each other, ended the
+  session on the first press.** Nothing you can do in the app makes one; a file
+  can.
+- [fix] **A 3D model no longer asks for more memory than the machine has.** A
+  356-byte model was asking for 366 megabytes, and forty of them at once.
+- [fix] **A picture claiming 30,000 pixels a side is refused in four more
+  formats.** The browser decodes eight and the guard knew four, so a sixty-byte
+  file could ask for three and a half gigabytes.
+- [fix] **A note with a long run of backticks in it no longer locks the app**,
+  measured at thirteen and a half seconds.
+- [fix] **A big JPEG, a deep folder drop, a two-thousand-card phone board and a
+  PDF with an enormous page** each stopped costing far more than they are worth.
+- [fix] **`Join` with nothing selected no longer weighs every card on the board
+  against every other**, and says so past two thousand rather than joining a
+  sample nobody asked for.
+- [fix] **Dragging a colour slider with the Timeline open is smooth again.**
+  Every tick was re-measuring the whole history.
+- [fix] **A pinned sticker on a locked photograph no longer kills every drag for
+  the rest of the page.**
+- [fix] **Lifting a second finger over the toolbar or off the edge of the window
+  no longer leaves the app believing it is still down**, after which a plain tap
+  panned and zoomed.
+
+### Everything else you might have met
+
+- [fix] **Pinching out of a drag puts the card back** rather than committing a
+  move nobody made.
+- [fix] **A second menu button opens its own menu.** Font then Highlight in the
+  note bar, `More` then the palette on the toolbar: one closed and neither
+  opened.
+- [fix] **`Ctrl+K` works while the pointer is resting on a toolbar button**, and
+  what you type reaches Find instead of being eaten a letter at a time by a menu
+  that has not got the keyboard.
+- [fix] **Find is a toggle**, and keeps what you typed rather than starting over.
+- [fix] **A menu opened from a Feed tile acts on that tile**, not on whatever was
+  selected on the canvas before you switched to it.
+- [fix] **A save that fails says so**, rather than leaving the button reading
+  `Saving...` for the rest of the session - and `Restart` still offers its
+  dialog, which on a phone is the only way back to a fresh page.
+- [fix] **The bar at the foot follows a track through its card being drawn and
+  undrawn**, so it stops reading `0:00` under a `Play` button while the music is
+  audible.
+- [fix] **A play the browser refuses is reported.** Five places in the app can
+  start a track and only one of them said anything, so pressing Play and getting
+  silence now has a reason behind it.
+- [fix] **The queue skips a track whose file has gone**, and moves on from one
+  you deleted rather than starting again at the top.
+- [fix] **A marked line keeps its marker** through Enter, through a paste and
+  through a tidy-up, and the marker menu marks the lines that were selected when
+  you opened it.
+- [fix] **Going back to an earlier step no longer leaves the old undo stack
+  standing.** The next `Ctrl+Z` wrote one era's positions onto another's, and
+  the board could then be saved that way.
+- [fix] **An anchored card survives a rearrange and a reflow**, including a
+  change of column count or spacing on a phone.
+- [fix] **The step editor offers the arrangements the board it is on has**, not
+  the other board's.
+- [fix] **A line between two cards re-routes when the card in its way moves.** It
+  held the old detour until one of its own ends was dragged.
+- [fix] **A board that fails to start shows the failure**, instead of a grey
+  sheet over a message nobody can read.
+- [fix] **The app stops calling a board saved before it has read one**, and says
+  plainly when what is on screen is not being kept.
+- [fix] **A dropped connection to the browser's store is picked up again**, where
+  it used to latch and write nothing for the rest of the session.
+- [fix] **A card hands back what it holds when it is rebuilt.** A rename, a crop,
+  an adjust or a `Fit` toggle each left a photograph's decode and a video's
+  decoder behind.
+- [fix] **A frozen GIF gives its picture back**, once per freeze rather than
+  never.
+- [fix] **Opening the note editor no longer blanks the card behind it**, or
+  leaves a second copy of it on the board afterwards.
+- [faster] **Zooming out no longer visits every card on the board** to find the
+  title card.
+- [faster] **The performance readout stopped measuring itself**, four times a
+  second, worst on the slow machines it exists for.
+- Reading the changelog at a `/patch/` address with a trailing slash no longer
+  takes your whimsy dial and your palette home with you.
+
+### Maintenance
+
+- **The suite went from 1,335 cases to 1,545**, and a first pass through it
+  replaced the ones that could not fail.
+- **Six rearrangements that change nothing on screen**: the board and the Feed
+  pack by one masonry, the export and the screen share one grid policy, the
+  ground is repainted through one door, a track's name and a note's first words
+  are each worked out in one place, and the order things start up in is a test
+  rather than a comment.
+- **What a press means can now be asked in a test**, which is the half of the
+  gesture pipeline nothing could reach before.
+
+## Room to Look
+version: 0.202 - 0.206
+date: 15 August 2026
+
+- **An hour spent driving the app and writing down every place the same command
+  turns up twice**, and then the cut. Plus a picture you can finally get close
+  to.
+- [new] **A picture opened from the board zooms and pans.** Wheel or pinch to go
+  in, drag to move about, a plain click for a closer look, and eight times as
+  far in as it starts. The zoom goes to the point under the cursor rather than
+  to the middle of the window, so pointing at a face keeps the face.
+- [new] **A line of a note can be drawn over with a marker**, in _four_ colours,
+  the way a highlighter is.
+- [new] **The style tile is a card on the board rather than a picture you save.**
+  It carries the board's pictures, its pigments and its two faces, and it is
+  live: move the palette or the whimsy dial and every tile on the board follows
+  in the same frame.
+- [new] **`Flip` and `Flop` in the darkroom**, mirroring a picture left to right
+  or top to bottom.
+- [new] **A crop reshapes the card it is in**, so a 16:9 slice of a square
+  photograph stops being letterboxed inside a square. The area is held, which is
+  what stops a crop quietly making a card louder or quieter on the board.
+- [new] **A clip with no still gets one in the background**, a frame at a time
+  while nothing else is happening, so a board saved before stills existed stops
+  drawing black rectangles.
+- [new] **Something large is asked about before it comes in**, once for the whole
+  drop, rather than two minutes into hashing and decoding it.
+- [fix] **The right-click menu on empty board is six rows rather than twelve**,
+  and the six that went were the ones already resting somewhere you could see
+  without doing anything.
+- [fix] **`Fill the card` and `Fit in the card` no longer both carry a tick.**
+  They are one choice, and the tick now says which.
+- [fix] **The toolbar steps out of the way whenever a panel is open**, at every
+  width. It used to do it only below 1080 pixels, and the bar has grown twice
+  since that number was chosen - so the first tool sat under the panel while the
+  other seven looked perfectly fine.
+- [fix] **A picture desaturates all the way to grey again.** Zero on the
+  saturation dial was being read as no answer at all, so the slider sprang back
+  to the middle at the far left and greyscale could not be reached.
+- [fix] **Resizing a note rewraps what it says rather than rescaling it**, and a
+  note grown by a line no longer comes back needing another one.
+- [fix] **`No card` takes the shadow with it**, in both directions. An emptied
+  sticky was leaving a shadow with nothing casting it.
+- [fix] At the spec-sheet end of the whimsy axis a cut-out is no longer given a
+  mat, a chin and a hairline round the outside - a frame round nothing, which is
+  the thing a cut-out exists to be free of.
+- [fix] **The Playlist lens gave up the transport it carried.** The bar along the
+  foot is already one and does not move when the list does, so the lens is now
+  the two things a bar cannot be: how a board is started, and how a track is
+  chosen.
+- [fix] **An anchored card is something an arrangement keeps clear of** rather
+  than something it deals a slot to and lays another card on top of.
+- [fix] Going to a step in the Timeline that a later edit had changed no longer
+  rebuilds from a picture of a board that never existed.
+- [fix] A paste, an anchor and an unanchor are named in the Timeline instead of
+  arriving as unlabelled steps.
+
 ## Every Step
 version: 0.198 - 0.201
 date: 14 August 2026

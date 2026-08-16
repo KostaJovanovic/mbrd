@@ -81,6 +81,7 @@ import { initAppearance, resetAppearance, setWhimsy } from './ui/appearance.ts';
 import { initFonts } from './ui/fonts.ts';
 import { initMobileHeaderEditor, isPanelOpen as isHeaderPanelOpen, closePanel as closeHeaderPanel, styleFeedMasthead } from './ui/mobile-header.ts';
 import { initAudio } from './canvas/audio.ts';
+import { cue, initCuelume, setCueLog, cueLog, dumpCueLog, soundLevel, setSoundLevel } from './cuelume/engine.ts';
 import { initFeed } from './ui/feed.ts';
 import { initViewer } from './ui/viewer.ts';
 import { initDarkroom } from './ui/darkroom.ts';
@@ -220,6 +221,26 @@ setNoteMenu((anchor, rows, current, pick) => {
 // The inline guard in index.html has already done this for the stylesheet; this
 // is the module half, and it is also what fills `quality` for canvas/*.
 armQuality();
+// The interface's own sounds. A different subsystem from initAudio() below and
+// the two never meet: that one plays the board's *content* - somebody's
+// recording, because it was asked for - through <audio> elements, and this
+// synthesises hundred-millisecond blips through Web Audio. (There is a third,
+// and it reaches no speaker at all: canvas/waveform.js and optimize/opus.js
+// render into an OfflineAudioContext.)
+//
+// Here rather than beside initAudio(), for the reason armQuality() is above
+// buildPanel(): the panel's Sounds dial paints itself from soundLevel() as it
+// is generated, and until this call that is the default rather than what was
+// stored. The volume slider one line down in the same section has the opposite
+// requirement - canvas/audio.js takes that element *out* of the panel - which
+// is why the two sit either side of it.
+//
+// Skipped on the changelog, like initIdle() further down and for the reason
+// freezePrefs() is called at the top: /patch is a document rather than a
+// workspace, and it does not get to make noise at somebody reading release
+// notes. The engine is silent until this call, so the skip is the whole of the
+// mechanism - there is no page check inside it.
+if (!isPatch) initCuelume();
 // The panel's DOM, before every module that reaches into it by id:
 // ui/appearance.js takes the whimsy slider, the palette menu and three hosts,
 // canvas/audio.js takes the volume slider, and ui/sidebar.js takes the board
@@ -567,16 +588,33 @@ declare global {
 // `mbrd.board` to inspect state, `mbrd.cmds.fit()` to drive the app, `mbrd.vp`
 // for the coordinate model, `mbrd.bus` to listen to or fire an app event,
 // `mbrd.selection` for what is picked, `mbrd.perf.on()` to profile the pan/zoom
-// frame, `mbrd.debugGrips()` to see the resize hitboxes.
+// frame, `mbrd.debugGrips()` to see the resize hitboxes, and `mbrd.sound` for
+// the interface sounds.
 //
 // `bus` and `selection` were on the object and in no comment, which is how a
 // deliberate handle turns into an accidental one: seven keys are reachable from
 // any console on the deploy and the file describing it named five. Naming them
 // is the fix rather than removing them - both are exactly the kind of thing the
 // handle is for, and nothing here is a secret. It is a page anyone can read.
+//
+// `sound` is the eighth and it is the one whose value is diagnostic rather than
+// exploratory. `mbrd.sound.log()` starts a transcript of every cue that reaches
+// cuelume/engine.ts and what became of it - played, refused, and why - and
+// `mbrd.sound.dump()` prints the run as a table with the gap between neighbours
+// in its own column. **What it is for is the lines that are not there.** Three
+// separate "it skipped that one" reports were each a call site missing from a
+// branch rather than anything wrong in the engine, and the way to tell those
+// apart is to press the thing and see whether the log says anything at all.
 const handle = {
   board, bus, vp, cmds, selection, perf: viewPerf,
   debugGrips: cmds.debugGrips,
+  sound: {
+    log: setCueLog,
+    dump: dumpCueLog,
+    entries: cueLog,
+    level: soundLevel,
+    setLevel: setSoundLevel,
+  },
 };
 window.mbrd = handle;
 
@@ -776,6 +814,18 @@ const started = (async function start() {
       ...ghosts,
     ];
     if (seeded.length) bus.emit('items', { added: seeded, removed: [] });
+    // A board has arrived, and this is the one arrival that has to be said from
+    // here. `arrive` is fired by loadBoard() for every other board this app
+    // shows - a restore, an open, a New, a dropped .mbrd - but the comment four
+    // lines above says why this branch is different: **the very first blank
+    // session never calls loadBoard at all.** So a visitor's first ever launch,
+    // which is the one launch most worth marking, was the single case that
+    // fired nothing.
+    //
+    // Not on a not-found boot. That page is a wrong address wearing a blank
+    // board, and a sound of arrival over it would be the app being pleased
+    // about a mistake.
+    if (!notFound) cue('arrive');
     // Armed after the seeding, not before: mounting the cards emits 'items'
     // itself, and a listener watching for the first content would have fired on
     // the message announcing the message. hasContent() would have said no and

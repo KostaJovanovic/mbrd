@@ -95,6 +95,10 @@ export async function openLibrary() {
   closeLibrary();
   // Read before the panel exists, so it is the button that opened the shelf and
   // not something inside it.
+  //
+  // SAFETY: the same claim ui/menu.ts makes about the same read - what holds
+  // the keyboard on this page is a button, a field or the board, all of them
+  // HTMLElements, and focus() is the only thing ever asked of what comes back.
   opener = document.activeElement as HTMLElement | null;
 
   root = document.createElement('div');

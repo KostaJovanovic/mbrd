@@ -54,8 +54,10 @@ export function initBoardTitle() {
   el('mobile-board-title')!.addEventListener('pointerdown', e => {
     // Already editing: the caret owns the pointer, and re-entering the edit
     // would reselect the whole name out from under somebody aiming at one word
-    // of it. currentTarget is the element this listener is on, which is why it
-    // can be read as one.
+    // of it.
+    //
+    // SAFETY: currentTarget is the element this listener was put on, which is
+    // the one target a handler can be sure of - it is the field itself.
     titleTap = (e.currentTarget as HTMLElement).isContentEditable
       ? null
       : { id: e.pointerId, x: e.clientX, y: e.clientY };

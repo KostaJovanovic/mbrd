@@ -80,14 +80,14 @@ const LINGER = 250;
  */
 export interface FlyoutCommands {
   arrangement: () => string;
-  arrangeAs: (id: string) => unknown;
+  arrangeAs: (id: string) => void;
   hasSelection: () => boolean;
-  rearrangeSelection: () => unknown;
-  getSetting: (key: string) => unknown;
-  setSetting: (key: string, value: unknown) => unknown;
-  addNote: (tint: number) => unknown;
-  addSwatch: () => unknown;
-  addSwatchOf: (hex: string) => unknown;
+  rearrangeSelection: () => void;
+  settingNumber: (key: string) => number | undefined;
+  setSetting: (key: string, value: unknown) => void;
+  addNote: (tint: number) => void;
+  addSwatch: () => void;
+  addSwatchOf: (hex: string) => void;
 }
 
 let cmds: FlyoutCommands | null = null;
@@ -140,8 +140,9 @@ export function initFlyouts(commands: FlyoutCommands) {
   // that got you there keep working.
   bar.addEventListener('keydown', e => {
     if (e.key !== 'ArrowDown') return;
-    // The listener is on the bar, so a key inside it comes from an element.
-    // Every match carries a data-cmd, which is what the selector asked for.
+    // SAFETY: the listener is on the bar, so a key inside it comes from an
+    // element. Every match carries a data-cmd, which is what the selector asked
+    // for, and the optional call covers anything that somehow is not a node.
     const btn = (e.target as Element).closest?.<HTMLElement>('[data-cmd]');
     if (!btn || !FLYOUTS[btn.dataset.cmd!]) return;
     e.preventDefault();
@@ -180,11 +181,13 @@ function onOver(e: PointerEvent) {
   // other side. Latent today, because no FLYOUTS builder uses `sub`; written
   // now because the first one that does would not connect the two.
   //
-  // The two reads below are on the window, so the target can be any node - the
-  // optional call is the guard it always was, and the cast only says that
-  // closest() is the thing being asked for.
+  // SAFETY: the two reads below are on the window, so the target can be any
+  // node - the optional call is the guard it always was, and the cast only says
+  // that closest() is the thing being asked for. A target without it (the
+  // document, the window itself) answers undefined and falls through.
   if ((e.target as Element).closest?.('#ctx-menu, #ctx-child')) { hold(); return; }
 
+  // SAFETY: as above.
   const btn = (e.target as Element).closest?.<HTMLElement>('#toolbar [data-cmd]');
   if (btn && FLYOUTS[btn.dataset.cmd!]) {
     hold();
@@ -305,7 +308,7 @@ export function arrangeEntries(cmds: FlyoutCommands) {
     { label: 'Spacing',
       range: {
         min: 0, max: 200, step: 4, unit: 'px',
-        get: () => cmds.getSetting('spacing') ?? 0,
+        get: () => cmds.settingNumber('spacing') ?? 0,
         set: (v: number) => cmds.setSetting('spacing', v),
       } },
   ];

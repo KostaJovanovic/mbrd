@@ -134,8 +134,9 @@ export const refreshStills = () => recheck();
 function capture(force: boolean) {
   if (!worldEl) return;
   for (const img of worldEl.querySelectorAll<HTMLImageElement>('img[data-gif]')) {
-    // The twin is built as the GIF's next sibling <img> by the renderer - the
-    // `.still` class is what says so, so the assertion is the class test.
+    // SAFETY: the twin is built as the GIF's next sibling <img> by the renderer,
+    // and the `.still` class on the next line is what says so - the assertion is
+    // that test, which runs before anything is read off it.
     const twin = img.nextElementSibling as StillImage | null;
     if (!twin?.classList.contains('still')) continue;
     if (!force && twin.classList.contains('is-ready')) continue;

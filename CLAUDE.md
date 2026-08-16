@@ -205,5 +205,8 @@ the top level, carried-out work in `old/`, speculative work in `future/`. See
 [`research/README.md`](research/README.md). **Nothing in `old/` is
 authoritative** — if it disagrees with the code, the code is right.
 
-`window.mbrd` is a deliberate console handle, and `main.ts` names all seven
-keys: `board`, `bus`, `vp`, `cmds`, `selection`, `perf`, `debugGrips`.
+`window.mbrd` is a deliberate console handle, and `main.ts` names all eight
+keys: `board`, `bus`, `vp`, `cmds`, `selection`, `perf`, `debugGrips`, `sound`.
+`mbrd.sound.log()` starts a transcript of every interface cue and what became of
+it; **its value is the lines that are not there**, since a press that logs
+nothing never reached the engine.

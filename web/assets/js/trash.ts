@@ -36,6 +36,7 @@
 
 import { bus, selection } from './board-store.ts';
 import { commit } from './history.ts';
+import { cue } from './cuelume/engine.ts';
 import { board, byId, topZ, TRASH_LIMIT } from './board-model.ts';
 import type { TrashEntry } from './board-model.ts';
 import { stuckTo } from './sticky.ts';
@@ -147,6 +148,10 @@ export function removeItems(ids: Iterable<string>, label = 'Delete') {
   // re-run the closure) do not re-announce it. A UI module toasts (ui/trash.js);
   // state does not reach for the DOM itself.
   if (evicted.length) bus.emit('trash:evicted', evicted.length);
+  // Out here rather than inside the closure, for the reason the line above is:
+  // undo and redo re-run the closure, and they have their own cues (history.js).
+  // A delete that also sounded from in there would say two things at once.
+  cue('fall');
 }
 
 /**
@@ -188,6 +193,9 @@ export function restoreItems(ids: Iterable<string>, at: { x: number, y: number }
             board.trash.unshift(...entries);
             bus.emit('items', { added: [], removed: [...back] });
             bus.emit('selection'); bus.emit('trash'); });
+  // The other direction of the same door, and the same recipe with its glide
+  // the other way up. See removeItems() above for why it is out here.
+  cue('rise');
   return items;
 }
 

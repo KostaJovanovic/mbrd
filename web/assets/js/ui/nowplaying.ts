@@ -58,6 +58,7 @@ import {
 import { setAdvanceGate } from '../canvas/playlist-queue.ts';
 import { bindScrub, clock, PAUSE_ICON, PLAY_ICON } from '../media/transport.ts';
 import { board } from '../state.ts';
+import { tickSlider } from './controls.ts';
 import { setLens, currentLens } from './board-view.ts';
 import { togglePlayerWindow, isPlayerWindowOpen } from './playlist.ts';
 import { baseName, clamp } from '../util.ts';
@@ -129,6 +130,11 @@ export function initNowPlaying() {
   seekWrap = bar.querySelector('.np-seek');
   // #np-volume is the range input in the bar's markup.
   volume = bar.querySelector<HTMLInputElement>('#np-volume');
+  // Handed over like every range in the app. It runs 0 to 100 in ones, so
+  // tickSlider() will decline it - a hundred ticks across one drag is a buzz,
+  // not a dial. Wired anyway so the rule is *every slider*, with the helper
+  // making the judgement rather than this file making an exception.
+  tickSlider(volume);
   closeBtn = bar.querySelector('.np-close');
 
   // The same iPhone Safari case the sidebar's slider makes: writes to media

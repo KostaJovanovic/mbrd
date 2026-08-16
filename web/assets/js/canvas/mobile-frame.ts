@@ -169,11 +169,14 @@ export function sheetBox(r: MobileScreenRect, width: number, height: number): Sh
  * Pure for the same reason as sheetBox() - "does the band go away when it
  * leaves the screen" is a question with a right answer at each end of a board.
  */
+/** Whether the masthead band is on screen at all, and where its top sits. */
+export type MastShift = { visible: boolean; y: number };
+
 export function mastShift(
   r: Pick<MobileScreenRect, 'top'>,
   headerH: number,
   height: number,
-): { visible: boolean; y: number } {
+): MastShift {
   const bottom = r.top;
   const visible = bottom > 0 && bottom - headerH < height;
   return { visible, y: bottom - headerH };

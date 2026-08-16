@@ -498,9 +498,19 @@ function breakCycles() {
     if (settled.has(start)) continue;
     const path = new Set<unknown>();
     let at: unknown = start;
+    // SAFETY: both assertions in this loop are the same fact - `at` is a key of
+    // `sticks`, which is keyed by item id, so it is a string whenever it is not
+    // null. It is typed unknown because it is read back out of the map's own
+    // values, which the map cannot promise are keys of itself. The `!= null` on
+    // the line above is what rules out the absence.
     while (at != null && !settled.has(at)) {
-      if (path.has(at)) { sticks.set(at as string, null); break; }
+      if (path.has(at)) {
+        // SAFETY: see above.
+        sticks.set(at as string, null);
+        break;
+      }
       path.add(at);
+      // SAFETY: see above.
       at = sticks.get(at as string) ?? null;
     }
     for (const id of path) settled.add(id);

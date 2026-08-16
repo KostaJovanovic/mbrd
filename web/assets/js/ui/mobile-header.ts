@@ -23,7 +23,7 @@ import {
   headerFontWeights,
 } from './fonts.ts';
 import { createMobileSliderFocus } from './sidebar.ts';
-import { field, fieldStops } from './controls.ts';
+import { field, fieldStops, tickSlider } from './controls.ts';
 import { paintTitleField, wireTitleField } from './board-title.ts';
 import { registerPanel, panelShown, panelHidden } from './panel-stack.ts';
 import { open as openSearch } from './search.ts';
@@ -127,27 +127,48 @@ let axesHost: HTMLElement;
 let weightControl: WeightControl | null = null;
 const axisControls = new Map<string, AxisControl>();
 
+/**
+ * The two controls this panel is built out of, by id.
+ *
+ * Eleven of these used to be spelled `el('some-id') as HTMLInputElement` at the
+ * point of use, which put the same claim on eleven lines and made the *tag* the
+ * one thing the reader had to check by hand against index.html. Said once here
+ * instead. The `!` is the same promise el() already makes to every other caller
+ * in this file - a missing id is a broken page, and a boot that throws on it is
+ * the loud failure, where a silently inert slider is not.
+ */
+// SAFETY: both ids are written out in index.html with these tags. A rename
+// throws on the `!` at boot; a tag swapped under an unchanged id is the one
+// mistake this does not catch, which is why the two helpers are named after the
+// tags rather than after what the controls do.
+const inputEl = (id: string) => el(id)! as HTMLInputElement;
+// SAFETY: as above.
+const selectEl = (id: string) => el(id)! as HTMLSelectElement;
+
 export function initMobileHeaderEditor(vp: Viewport | null) {
   viewport = vp;
   button = el('mobile-header-edit-btn')!;
   panel = el('header-panel')!;
   section = el('mobile-header-settings')!;
-  titleInput = el('header-title') as HTMLInputElement;
-  fontSelect = el('mobile-header-font') as HTMLSelectElement;
-  sizeInput = el('mobile-header-size') as HTMLInputElement;
+  titleInput = inputEl('header-title');
+  fontSelect = selectEl('mobile-header-font');
+  sizeInput = inputEl('mobile-header-size');
   sizeOut = el('mobile-header-size-out')!;
-  stretchInput = el('mobile-header-stretch') as HTMLInputElement;
+  stretchInput = inputEl('mobile-header-stretch');
   stretchOut = el('mobile-header-stretch-out')!;
-  leadingInput = el('mobile-header-leading') as HTMLInputElement;
+  leadingInput = inputEl('mobile-header-leading');
   leadingOut = el('mobile-header-leading-out')!;
-  offsetInput = el('mobile-header-offset') as HTMLInputElement;
+  offsetInput = inputEl('mobile-header-offset');
   offsetOut = el('mobile-header-offset-out')!;
-  italicInput = el('mobile-header-italic') as HTMLInputElement;
-  wrapInput = el('mobile-header-wrap') as HTMLInputElement;
+  italicInput = inputEl('mobile-header-italic');
+  wrapInput = inputEl('mobile-header-wrap');
   weightHost = el('mobile-header-weight')!;
   axesHost = el('mobile-header-axes')!;
 
   sliderFocus = createMobileSliderFocus(panel);
+  // SAFETY: a pointerdown delivered to #header-panel landed on an element
+  // inside it - the panel is markup, not a canvas or a worker, so there is no
+  // other kind of target this listener can be handed.
   panel.addEventListener('pointerdown', e => sliderFocus.begin(e.target as Element | null, e.pointerId));
   const endSliderFocus = (e: PointerEvent) => sliderFocus.end(e.pointerId);
   globalThis.addEventListener('pointerup', endSliderFocus);
@@ -175,6 +196,7 @@ export function initMobileHeaderEditor(vp: Viewport | null) {
   // with the inline caret on the masthead and on the title card.
   wireTitleField(titleInput);
   fontSelect.addEventListener('change', changeFont);
+  for (const dial of [sizeInput, stretchInput, leadingInput, offsetInput]) tickSlider(dial);
   sizeInput.addEventListener('input', () => {
     update({ size: +sizeInput.value });
     sizeOut.textContent = `${sizeInput.value}%`;
@@ -471,6 +493,7 @@ function buildWeight(axis: FontAxis | undefined) {
   input.min = '0';
   input.max = String(stops.length - 1);
   input.step = '1';
+  tickSlider(input);
   // Each name set in the weight it names, the way the whimsy stops are each set
   // in their own tier: the label is the specimen as well as the word.
   const names = fieldStops(stops, { specimen: s => ({ fontWeight: String(s.value) }) });
@@ -888,8 +911,10 @@ function header(): MobileHeader {
 }
 
 function axisLabel(tag: string) {
-  // The table is keyed by the tags it happens to know; a tag it does not is the
-  // fallback below, which is what the note over AXIS_LABELS says it is for.
+  // SAFETY: the widening is the lookup, not a claim about the table. AXIS_LABELS
+  // is keyed by the four tags it happens to know, and `tag` comes off a font's
+  // fvar - so the read has to be allowed to miss. It does, and the two lines
+  // below are what a miss becomes. Nothing is written through this view.
   const known = (AXIS_LABELS as Record<string, string>)[tag];
   if (known) return known;
   return tag.trim() || 'Axis';

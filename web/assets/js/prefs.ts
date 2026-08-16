@@ -98,6 +98,13 @@ export function writePref(key: string, value: unknown): boolean {
 export function readPrefJSON<T = unknown>(key: string, fallback: T | null = null): T | null {
   try {
     const raw = localStorage.getItem(key);
+    // SAFETY: T is the caller's word for what it wrote, and this is the read
+    // half of writePref() - the two are a pair, keyed by the same string. What
+    // is *not* checked is that the bytes still parse to that shape, because
+    // localStorage is editable and an older build may have written something
+    // else; every caller in this app treats the answer as a suggestion and
+    // falls back, which is what the `fallback` parameter is for. The catch
+    // below turns a parse failure into that fallback rather than a throw.
     return raw === null ? fallback : JSON.parse(raw) as T;
   } catch {
     return fallback;

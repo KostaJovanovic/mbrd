@@ -217,6 +217,10 @@ function tiltFactor(): number {
     tiltBag.push(0, -1, 1);
     shuffle(tiltBag);
   }
+  // SAFETY: the refill three lines up runs whenever the bag is empty, so there
+  // is always something to pop. pop() is typed `| undefined` because tsc cannot
+  // see that; the multiplication below would answer NaN rather than throw if it
+  // ever were wrong.
   const dir = tiltBag.pop() as number;
   return dir && dir * (TILT_MIN + Math.random() * (1 - TILT_MIN));
 }

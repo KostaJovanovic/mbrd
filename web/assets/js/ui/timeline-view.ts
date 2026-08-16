@@ -56,6 +56,20 @@ import {
   timelineBytes, trimmable, trimTimeline, TRIM_BYTES, describeStep, nameStep,
 } from '../state.ts';
 
+/**
+ * The row a delegated click landed on, by selector, or null.
+ *
+ * Three listeners in this file are delegated - the dots and the sheet rows are
+ * rebuilt on every change, so a listener each would be hundreds thrown away per
+ * click - and all three began with the same two casts.
+ */
+// SAFETY: these listeners are on elements inside #timeline-strip and the sheet,
+// so a click delivered to one landed on an element in this document. `target` is
+// typed EventTarget only because an event can come off a worker or a socket, and
+// none of those reach a DOM listener. The optional chain covers the null.
+const rowUnder = (event: Event, selector: string) =>
+  (event.target as HTMLElement | null)?.closest<HTMLElement>(selector);
+
 let strip: HTMLElement | null = null;
 let track: HTMLElement | null = null;
 let where: HTMLElement | null = null;
@@ -198,7 +212,7 @@ export function initTimeline() {
   // Delegated, because the dots are rebuilt on every change and a listener per
   // dot would be four hundred of them thrown away per click.
   track?.addEventListener('click', event => {
-    const dot = (event.target as HTMLElement | null)?.closest<HTMLElement>('.tl-step');
+    const dot = rowUnder(event, '.tl-step');
     if (!dot?.dataset.at) return;
     goTo(Number(dot.dataset.at));
   });
@@ -207,7 +221,7 @@ export function initTimeline() {
   // and right is *do this differently*, which is the same gesture that opens
   // every other menu in the app.
   track?.addEventListener('contextmenu', event => {
-    const dot = (event.target as HTMLElement | null)?.closest<HTMLElement>('.tl-step');
+    const dot = rowUnder(event, '.tl-step');
     if (!dot?.dataset.at) return;
     const index = Number(dot.dataset.at) - 1;
     const entries = editEntries(index);
@@ -623,10 +637,11 @@ let sheetWired = false;
 /** Open the sheet. Idempotent; safe without a document. */
 function openSheet() {
   if (typeof document === 'undefined') return;
+  // SAFETY: the duck type on the next line is the runtime half of the claim
+  // that this is a <dialog> in index.html, and is what makes a browser without
+  // one - or a page that does not carry the sheet - fall out here rather than
+  // throw. Same shape as openInventory().
   const dlg = el('timeline-sheet') as HTMLDialogElement | null;
-  // The duck type is the runtime half of the claim that this is a <dialog> in
-  // index.html, and is what makes a browser without one fall out here rather
-  // than throw. Same shape as openInventory().
   if (!dlg || typeof dlg.showModal !== 'function') return;
   sheet = dlg;
   sheetList = el('tl-sheet-list');
@@ -645,7 +660,7 @@ function openSheet() {
     // on every change to the ledger, and a listener per row would be four
     // hundred of them thrown away per tap.
     sheetList?.addEventListener('click', event => {
-      const row = (event.target as HTMLElement | null)?.closest<HTMLElement>('.tl-go');
+      const row = rowUnder(event, '.tl-go');
       if (!row?.dataset.at) return;
       // The board first and the sheet after it: goTo() announces, and a modal
       // still up while the board rearranges behind it is a change nobody sees.
