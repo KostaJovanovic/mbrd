@@ -95,9 +95,20 @@ export const historyState = () => ({
   // every control in the app binds to this, so a board reopened with a history
   // and an empty stack would show its undo button greyed while undo would in
   // fact work. The button and the key have to agree about what is possible.
-  undo: undoStack.at(-1)?.label || stepBackLabel(),
-  redo: redoStack.at(-1)?.label || stepForwardLabel(),
+  undo: top(undoStack)?.label || stepBackLabel(),
+  redo: top(redoStack)?.label || stepForwardLabel(),
 });
+
+/**
+ * The last thing on a stack, or undefined.
+ *
+ * `arr.at(-1)` says this better and is what was here, but it landed in **Safari
+ * 15.4** - and historyState() is read by every undo control in the app and is
+ * called from initHud() during boot, so on an older WebKit it was a TypeError
+ * that took the rest of the wiring with it rather than a missing nicety.
+ * Indexing is the same answer and is as old as the language.
+ */
+const top = <T>(stack: T[]): T | undefined => stack[stack.length - 1];
 
 /**
  * The stacks changed.
@@ -182,7 +193,7 @@ export function commit(
  * find out whether it committed anything at all. There is nothing to read in
  * the value; it is an identity, and takeBack() is what it is for.
  */
-export const lastCommand = () => undoStack.at(-1) || null;
+export const lastCommand = () => top(undoStack) || null;
 
 /**
  * Take back a command, if it is still the last thing that happened.
@@ -203,7 +214,7 @@ export const lastCommand = () => undoStack.at(-1) || null;
  * clean up by ordinary means.
  */
 export function takeBack(cmd: Command | null) {
-  if (!cmd || undoStack.at(-1) !== cmd) return false;
+  if (!cmd || top(undoStack) !== cmd) return false;
   undoStack.pop();
   cmd.undo();
   // As if it never ran, on the timeline too. A step left behind here would put

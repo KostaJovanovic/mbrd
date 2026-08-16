@@ -275,10 +275,39 @@ function codeBlock(text: string, lang: string) {
   return pre;
 }
 
-/** A table row split on unescaped pipes, with the outer pair dropped. */
+/**
+ * A table row split on unescaped pipes, with the outer pair dropped.
+ *
+ * Scanned rather than split on `/(?&lt;!\\)\|/`, and the reason is not style.
+ * **WebKit did not support lookbehind assertions until Safari 16.4**, and an
+ * unsupported regular expression literal is an *early* SyntaxError - the engine
+ * refuses to parse the file that contains it, before a line of it runs. This
+ * module is imported by ui/feed.ts and ui/viewer.ts, both of which main.ts
+ * imports, and esbuild concatenates the whole tree into one assets/app.js. So
+ * this single expression meant the entire application failed to parse on every
+ * iOS below 16.4: no board, no error, a splash screen that never lifts.
+ *
+ * That is also the only thing that made 16.4 the floor. The capability check in
+ * main.ts, the guarded OffscreenCanvas paths, the toast about Compression
+ * Streams - all of it was written to degrade gracefully below that line, and
+ * none of it ever ran, because nothing ever got as far as running.
+ *
+ * The scan does the unescaping as it goes rather than in a second pass, which
+ * is the same answer by a shorter route: `\|` contributes a literal pipe and
+ * does not end the cell, and any other backslash is kept as written.
+ */
 function cells(line: string) {
   const trimmed = line.trim().replace(/^\|/, '').replace(/\|$/, '');
-  return trimmed.split(/(?<!\\)\|/).map(c => c.trim().replace(/\\\|/g, '|'));
+  const out: string[] = [];
+  let cur = '';
+  for (let i = 0; i < trimmed.length; i++) {
+    const ch = trimmed[i];
+    if (ch === '\\' && trimmed[i + 1] === '|') { cur += '|'; i++; continue; }
+    if (ch === '|') { out.push(cur.trim()); cur = ''; continue; }
+    cur += ch;
+  }
+  out.push(cur.trim());
+  return out;
 }
 
 function table(head: string[], body: string[][], align: string[]) {

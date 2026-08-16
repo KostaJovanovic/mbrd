@@ -214,6 +214,25 @@ export const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /**
+ * Own-property test, written the long way round.
+ *
+ * `Object.hasOwn` is the modern spelling and says exactly this, but it landed in
+ * **Safari 15.4** - and the six places that reached for it are guards on tables
+ * anybody with a console can put a key into: a layout name, an embed kind, a
+ * quality stop, a gesture, a renderer type, a sound cue. Every one of them runs
+ * on an ordinary path and two of them run during boot, so on an older WebKit
+ * this was a TypeError rather than a missing nicety.
+ *
+ * `Object.prototype.hasOwnProperty.call` is the same question asked of the same
+ * object and is as old as the language. Called off the prototype rather than off
+ * the value, which is the whole point of the exercise: the map being tested may
+ * hold a key named `hasOwnProperty`, and asking it directly would be asking the
+ * very thing under suspicion.
+ */
+export const hasOwn = <T extends object>(table: T, key: PropertyKey): boolean =>
+  Object.prototype.hasOwnProperty.call(table, key);
+
+/**
  * Whether something is a content id of the shape sha256() produces.
  *
  * Here rather than beside sha256() in crypto.ts, and the distance is on

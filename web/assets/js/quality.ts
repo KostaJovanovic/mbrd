@@ -26,7 +26,7 @@
 // state, and a subscriber list of three is not worth pretending otherwise.
 
 import { readPrefJSON, writePref } from './prefs.ts';
-import { isRecord } from './util.ts';
+import { hasOwn, isRecord } from './util.ts';
 
 const PREF = 'mbrd.quality';
 
@@ -133,7 +133,7 @@ const KEYS = Object.keys(PRESETS.full) as QualityKey[];
  * see the note in initQuality about "__proto__".
  */
 const isLevel = (v: unknown): v is QualityLevel =>
-  typeof v === 'string' && Object.hasOwn(PRESETS, v);
+  typeof v === 'string' && hasOwn(PRESETS, v);
 
 /** Whether a string names one of the six flags. */
 const isKey = (v: unknown): v is QualityKey => KEYS.some(k => k === v);

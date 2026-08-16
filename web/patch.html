@@ -12,10 +12,10 @@
 
      The app carries one because it is served at every address it does not
      have. This page is served at exactly one, so it has nothing to fix - and a
-     base would break every row in the sidebar's index: a fragment-only href
-     resolves against the base rather than the document, so #r-the-viewer would
-     become /#r-the-viewer and clicking it would leave the changelog and load a
-     board. It shipped once and did exactly that. -->
+     base would break every fragment link on it: a fragment-only href resolves
+     against the base rather than the document, so #r-the-viewer would become
+     /#r-the-viewer and following it would leave the changelog and load a board.
+     It shipped once and did exactly that. -->
 <title>Patch notes - mbrd</title>
 <meta name="description" content="Every version of mbrd, newest first - what was added, what was fixed and what got faster on the infinite freeform moodboard that runs in your browser.">
 <meta name="author" content="valjdakosta">
@@ -160,1228 +160,23 @@
 </head>
 <body class="is-patch">
 
-<!-- index.html's body, copied verbatim. All of it: the sidebar with its three
-     real tabs, the menu button, the viewport, the toolbar, every dialog, and
-     the bundle at the end. patch.css hides the board furniture - this page is a
-     document - and leaves the panel, which is then the app's own rather than a
-     likeness of it that drifts. -->
-<!-- The boot cover, over the page until main.js has a board on it.
-
-     What it hides is not a slow app so much as an ugly order of events: the
-     paper, the grid and the whole of the chrome are in the document at first
-     paint, while the board itself comes out of IndexedDB several awaits later -
-     so without this the app opens as a finished, empty room and then has its
-     furniture carried in one piece at a time. A cover holds that back until
-     there is something to show.
-
-     Every part of it is inert: no ids anything else looks up, no state, and the
-     node deletes itself after the fade (dismissSplash in main.js). aria-hidden
-     because a screen reader has no use for a curtain - and nothing here is
-     content, only the app's own name while it gets ready.
-
-     The <noscript> below is the honest exit for a visitor with JavaScript off.
-     Nothing in mbrd works without it, but a permanently covered page cannot
-     even say so; uncovering at least shows the board it will not be able to
-     fill. -->
-<noscript>
-  <style>
-    #splash { display: none !important; }
-    /* Sized and coloured from tokens.css, which has already loaded, so this
-       reads as the app rather than as a browser default. Inline because it is
-       the only thing on the page that uses it and another stylesheet would have
-       to be added to SHELL in sw.js to buy nothing. */
-    #nojs {
-      position: fixed;
-      inset: 0;
-      z-index: 90;
-      display: grid;
-      place-items: center;
-      padding: 32px;
-      background: var(--paper);
-      color: var(--ink);
-      font-family: var(--font-body);
-      overflow: auto;
-    }
-    #nojs > div { max-width: 46ch; }
-    #nojs h1 {
-      font-family: var(--font-display);
-      font-weight: var(--display-weight);
-      font-size: clamp(30px, 6vw, 44px);
-      line-height: 1.1;
-      letter-spacing: calc(0.02em * var(--ls-scale));
-      margin: 0 0 16px;
-    }
-    #nojs p { margin: 0 0 12px; line-height: 1.55; color: var(--ink-2); }
-    #nojs p:last-child { color: var(--ink-3); font-size: var(--t-small); }
-  </style>
-  <!-- The page's only prose, and it is here for two readers at once.
-
-       The human one is a visitor with JavaScript off, for whom this is the
-       honest exit: nothing in mbrd works without it, and a board that silently
-       stays empty is worse than a page that says why.
-
-       The other is every fetcher that does not run scripts - Slack and Discord
-       unfurling a pasted link, Bing, and the crawlers behind the answer engines
-       people now ask for tool recommendations. To all of them the rendered page
-       is chrome and no sentences, and a page with nothing to read is a page
-       with nothing to match a query against. This is that page saying, in
-       words, what it is.
-
-       It is not keyword stuffing and must not become it: every claim below is
-       true of the app, and it says the same thing as the JSON-LD in <head>. If
-       one changes, change both. -->
-  <div id="nojs">
-    <div>
-      <h1>mbrd - an infinite freeform moodboard</h1>
-      <p>mbrd is an infinite freeform board that runs entirely in your browser.
-        Drop in images, video, audio, text notes, links, colours or arbitrary
-        files, and place them anywhere on an unbounded canvas - no grid, no
-        columns, no slots to fill.</p>
-      <p>There is no account and no server. Boards save to a single
-        <code>.mbrd</code> file you keep, and once the page has loaded it works
-        offline and installs as an app.</p>
-      <p>It needs JavaScript, which is currently switched off. Everything the
-        board does - the canvas, the files you drop on it, the saving - is that
-        JavaScript, so with it off there is nothing here but paper.</p>
-    </div>
-  </div>
-</noscript>
-<div id="splash" aria-hidden="true">
-  <div class="splash-inner">
-    <div class="splash-word">mbrd.</div>
-    <div class="splash-sub">Plan it, see it. Sorted.</div>
-    <!-- Three cards landing on a board with threads snapping between them - the
-         app's own signature (canvas/web.js), which is why the loader is this
-         and not a spinner. It is a CSS animation for the same reason #busy's
-         bar is one: the work it covers is on the main thread, so anything
-         driven from JavaScript would freeze at exactly the moment somebody is
-         watching it to find out whether the app has hung.
-
-         Five elements alternating card / thread / card, in that order, because
-         the CSS staggers them by nth-child and the sequence *is* the animation:
-         a card arrives, a thread reaches for the next one, and so on. -->
-    <div class="splash-thread">
-      <i class="splash-card"></i><i class="splash-line"></i><i class="splash-card"></i><i class="splash-line"></i><i class="splash-card"></i>
-    </div>
-  </div>
-</div>
-<script>
-  /* Two jobs, both of them failsafes, and neither belongs in a module: this has
-     to run whether or not main.js ever parses.
-
-     One - hold the wordmark back until the display face has landed. Every
-     bundled face is `font-display: swap`, so a cover shown for 300ms would
-     otherwise set the name in Times, then swap it to Fraunces, and the last
-     thing the eye catches before the board appears would be the app's own name
-     changing shape. The face is asked for by reading it off the element rather
-     than naming it here: which one it is depends on the whimsy level restored
-     a moment ago, and the whole stack is a legal font shorthand, so a level
-     set in the sans asks for the sans and no board fetches a serif it is not
-     going to show. Not document.fonts.ready, which answers "is anything still
-     loading" - and at this point in the document the answer is no, because
-     layout has not reached the wordmark and so has not asked for its font yet.
-
-     Two - uncover the page if boot never happens. main.js normally does it (and
-     does it as soon as there is a board, which is well before this fires); this
-     is for the load that fails - a module 404 behind a stale service worker, a
-     syntax error, a browser below the floor. Six seconds because its only job
-     is to rescue a boot that is not coming, and firing early on a big board
-     would pull the cover off a half-built one. */
-  (function () {
-    var s = document.getElementById('splash');
-    if (!s) return;
-    var letter = function () { s.classList.add('is-lettered'); };
-    try {
-      var word = s.querySelector('.splash-word');
-      if (document.fonts && document.fonts.load && word) {
-        var css = getComputedStyle(word);
-        document.fonts.load(css.fontWeight + ' 1em ' + css.fontFamily, 'mbrd.')
-          .then(letter, letter);
-        setTimeout(letter, 1200);
-      } else letter();
-    } catch (e) { letter(); }
-    /* #load is the dev switch that holds the cover up to be looked at (see
-       dismissSplash in main.js). It has to be honoured here too, or the rescue
-       timer would take the thing away six seconds into watching it. */
-    addEventListener('load', function () {
-      if (location.hash.indexOf('load') !== -1) return;
-      setTimeout(function () { s.classList.add('is-done'); }, 6000);
-    });
-  })();
-</script>
-
-<!-- The stock the board is printed on: a tile of 300gsm grain multiplied over
-     the paper on <body>. Outside #viewport rather than inside it, because
-     #viewport has paint containment and so is a stacking context - a blend
-     inside one has nothing behind it to blend with. canvas/grain.js moves it
-     with the board; see the #grain rule in base.css for the rest. -->
-<div id="grain" aria-hidden="true"></div>
-
-<!-- The canvas. #viewport is fixed to the window and paints the grid; #world is
-     the single transformed layer every item lives in (see canvas/viewport.js). -->
-<div id="viewport">
-  <!-- The tint outside the Mobile strip. It used to be a 100vmax spread shadow
-       on the sheet below, which meant the whole window was repainted every time
-       the board scrolled a pixel. A shadow is clipped to outside its element's
-       border box, radius included, so a wash laid under an opaque rounded sheet
-       is the same picture - and this one never moves. -->
-  <div id="mobile-surround" aria-hidden="true"></div>
-  <!-- The finite Mobile sheet sits below the grid so its opaque near-white can
-       carry palette colour without washing the lattice out. canvas/mobile-frame.js
-       positions it, clipped to the window, while the items remain in #world. -->
-  <div id="mobile-board-frame" aria-hidden="true"></div>
-  <!-- The lattice at the plain end of the whimsy axis, which is drawn rather
-       than tiled - see canvas/grid.js for why a background image could not be
-       made to hold still. The other two tiers leave it empty and paint the
-       viewport's own background instead. It remains under the axes, the origin
-       mark and every item, but above the Mobile sheet. -->
-  <canvas id="grid-ink" aria-hidden="true"></canvas>
-  <!-- A standard sheet outlined round the origin, off unless View asks for one.
-       Over the lattice and under the axes, the way a page sits on a desk with
-       the rules drawn across it. See canvas/paper.js. -->
-  <div id="paper" hidden aria-hidden="true"><span id="paper-label"></span></div>
-  <!-- The world axes. A canvas rather than two 1px <div>s, and the reason is
-       the one thing an element cannot promise: that it covers exactly one
-       device pixel. Layout works in sixty-fourths of a CSS pixel, and one
-       device pixel is a whole number of those only at 100% and 200% scaling -
-       at 125%, 150% or a phone's 3x it is not, so the rule came out a hair
-       under a full row, and at the offsets where that shortfall straddled a
-       boundary the row rounded away to nothing and the axis blinked out while
-       the board was panned. On a canvas a pixel is set or it is not.
-       Its own layer, separate from the grid, because the grid cuts a hole in
-       itself where the origin mark stands and the axes must not be cut by it. -->
-  <canvas id="axis-ink" aria-hidden="true"></canvas>
-  <!-- The Mobile masthead. A screen-space 3:2 band, as wide as the board,
-       standing on the strip's top edge with the board's name set across it.
-       The room above the edge is made by the pan clamp - see
-       mobileHeaderHeight() in canvas/viewport.js - so this is real space at the
-       head of the board rather than a plate laid over the first row of items,
-       and scrolling down carries it away like anything else on the board. -->
-  <!-- h2: this is the open board's name, which is a document inside the app, not
-     the name of the app. It is also empty until a board loads, so as an h1 it
-     was a top-level heading that a crawler found blank. Everything that styles
-     or drives it goes through the id, so the rank is free to be honest. -->
-<div id="mobile-board-header"><h2 id="mobile-board-title"></h2></div>
-  <svg id="origin-mark" viewBox="0 0 36 36" fill="none" stroke="currentColor" aria-hidden="true">
-    <!-- The ring comes in all three shapes and the whimsy axis picks one: a
-         circle at the soft end, a rounded square in the middle where the cards
-         are rounded too, a hard square at the plain end. An SVG shape is the
-         shape it is - a circle cannot be squared off with a border-radius the
-         way a box can - so each stop gets its own geometry rather than a
-         rounding of one. All are inert markup; the CSS shows exactly one. -->
-    <circle class="om-ring" cx="18" cy="18" r="10" stroke-width="1.3"/>
-    <rect class="om-ring-rd" x="8" y="8" width="20" height="20" rx="5" stroke-width="1.3"/>
-    <rect class="om-ring-sq" x="8" y="8" width="20" height="20" stroke-width="1.3"/>
-    <circle class="om-pip" cx="18" cy="18" r="2" fill="currentColor" stroke="none"/>
-    <rect class="om-pip-sq" x="16" y="16" width="4" height="4" fill="currentColor" stroke="none"/>
-    <!-- The four ticks that used to radiate out to the edge of this box are
-         gone. They drew a crosshair on top of the one the axes already make -
-         the same cross, twice, a few pixels thick in the middle of the board. -->
-  </svg>
-  <div id="world">
-    <!-- Shadows live in one underlay so a front card cannot cast its shadow
-         across the face of a card behind it. canvas/items.js mirrors each
-         mounted item's geometry here. -->
-    <div id="item-shadows" aria-hidden="true"></div>
-  </div>
-  <div id="marquee" hidden></div>
-</div>
-
-<!-- The two Mobile boards, shown in place of the world-space canvas: #mobile-feed
-     is the masonry Feed (a native-scrolling wall of everything on the board),
-     #mobile-playlist is the audio player. Both are siblings of #viewport, never
-     children of it: #viewport has paint containment and publishes --iz to its
-     subtree, so a surface nested inside it would inherit that custom property and
-     be caught by the whole-board invalidation canvas/mobile-frame.js exists to
-     avoid. The CSS shows one and hides #viewport off the data-feed-lens attribute;
-     ui/feed.js and ui/playlist.js fill them. Empty here - built at runtime. -->
-<div id="mobile-feed" hidden aria-label="Board feed"></div>
-<div id="mobile-playlist" hidden aria-label="Board playlist"></div>
-
-<aside id="sidebar" aria-hidden="true">
-  <header class="side-head">
-    <!-- The document's one h1, and the only place the page says in words what it
-         is. The four letters are the mark; the tail after them is out of the
-         flow (.vh in base.css), so the eye reads "mbrd." exactly as before while
-         a screen reader and a crawler get the whole sentence. It is inside the
-         h1 rather than beside it deliberately - a heading whose text is an
-         invented coinage names nothing, and this page has no other heading to
-         name it. -->
-    <div class="wordmark">
-      <h1>mbrd.<span class="vh"> An infinite freeform moodboard in your browser.</span></h1>
-      <span class="sub">Plan it, see it. Sorted.</span>
-    </div>
-    <button id="side-close" type="button" aria-label="Close menu" title="Close">
-      <!-- Two crossed strokes rather than a "times" glyph: a character's ink is
-           not centred in its line box, so the glyph orbits when it spins. The
-           strokes are in assets/icons.svg, along with every other icon here. -->
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>
-    </button>
-  </header>
-  <!-- Three tabs, and the panel opens on the first of them every time. The
-       sections are built by ui/panel.js from ui/settings-schema.js: this used
-       to be six hundred lines of markup that had to be kept in step by hand
-       with the wiring next door, and the order it grew into was nobody's
-       decision. The strip and the body below it are the whole of the shell.
-
-       All three panels stay in the document, hidden bar one, which is what
-       keeps each tab's scroll position and what lets the panel be built once -
-       ui/appearance.js and canvas/audio.js hold elements from in here by id,
-       and a rebuild would leave them holding nodes no longer in the page. -->
-  <div class="side-tabs"></div>
-  <div class="side-body"></div>
-
-  <!-- The credit sits at the quiet end on purpose, and it opens a sheet rather
-       than leaving for one: a name and a link had nowhere to put a second name
-       or anything either person would say. Dressed as the anchor it replaces
-       and not as a button, because the row it sits in is the version number's
-       and a control shaped like a control would be the loudest thing in it.
-       Routed through data-cmd like every other action in this panel. -->
-  <footer class="side-foot">
-    <span id="version"></span>
-    <button type="button" class="by" data-cmd="credits">Credits</button>
-  </footer>
-</aside>
-
-<!-- The masthead's own panel, and its own sheet rather than a section of the
-     one next door.
-     Everything in here styles one thing - the name across the top of a Mobile
-     board - and it is reached by pointing at that name, not by going to the
-     menu and looking for it. A panel opened from the thing it edits should
-     hold that thing and nothing else; folded into the main sidebar it arrived
-     with the board actions, the arrangement, the look and the keyboard legend
-     above it, and the pen had to scroll the panel to its own section to make
-     up the difference.
-     Same sheet, same head, same body - it borrows every class - but it comes
-     in from the right, under the pen that opens it, so the two panels are
-     never the same piece of screen and either can be open without the other.
-     It sits here, after #sidebar and before the corner furniture, because the
-     rules that get out of a panel's way are written with `~`. -->
-<aside id="header-panel" aria-hidden="true">
-  <header class="side-head">
-    <!-- No subtitle under this one. The wordmark's sub line is the app saying
-         what it is, once, on the panel that opens with the app; a second panel
-         repeating the trick would be a caption explaining a word that needs no
-         explaining - you opened it from the masthead. -->
-    <!-- h2, not h1. The literal word "Header" was the page's third h1, which is
-         a document whose top-level heading is the name of a settings panel. It
-         is a section head inside a page that already has its heading, and the
-         rank now says so. -->
-    <div class="wordmark">
-      <h2>Header</h2>
-    </div>
-    <button id="header-close" type="button" aria-label="Close header options" title="Close">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>
-    </button>
-  </header>
-  <div class="side-body">
-    <section class="side-sec" id="mobile-header-settings" tabindex="-1">
-      <!-- The name itself, first, because it is the thing every dial below it
-           dresses and because a panel that can set the masthead in Playfair at
-           three times its height but cannot change what it says is a panel with
-           a hole in it. The tap-to-rename on the masthead stays - it is the
-           faster gesture and the one you find without looking - but it is not
-           reachable while this panel is covering that corner, and it does not
-           exist at all on the Desktop title card's half of this style.
-           Same input, same class and the same wiring as the sidebar's: see
-           wireTitleField() in ui/board-title.js, which both call. Chromeless at
-           rest, so the panel still opens with a name to read rather than a form
-           to fill in. -->
-      <input id="header-title" class="board-title" type="text" maxlength="32"
-             placeholder="Untitled board" aria-label="Board name">
-      <label class="field">
-        <span>Font</span>
-        <select id="mobile-header-font"></select>
-      </label>
-      <div id="mobile-header-weight"></div>
-      <!-- Three dials, because they are three questions. Size is how big the
-           name is set - a percentage of the strip's width, so it holds across
-           phones. Height is the same letters stretched vertically and left
-           exactly as wide, which is a thing type does on a title page and a
-           thing no size control can do; it runs to five times, past the point
-           where the band's own overflow starts cutting the letters off, and
-           holds a detent at 100% so the face as drawn is a stop you can find
-           without aiming. It grows evenly up and down about the name's own
-           middle - see #mobile-board-title in canvas.css.
-           Line height is the room between the lines of a name that wraps, and
-           its 100% is the face's own - see DEFAULT_MOBILE_HEADER. -->
-      <label class="field">
-        <span>Font size <output id="mobile-header-size-out">13%</output></span>
-        <input id="mobile-header-size" type="range" min="7" max="24" step="0.5" value="13">
-      </label>
-      <label class="field">
-        <span>Font height <output id="mobile-header-stretch-out">100%</output></span>
-        <input id="mobile-header-stretch" type="range" min="50" max="500" step="1" value="100">
-      </label>
-      <label class="field">
-        <span>Line height <output id="mobile-header-leading-out">Auto</output></span>
-        <input id="mobile-header-leading" type="range" min="60" max="250" step="1" value="100">
-      </label>
-      <label class="field">
-        <span>Vertical position <output id="mobile-header-offset-out">Center</output></span>
-        <input id="mobile-header-offset" type="range" min="-50" max="50" step="1" value="0">
-      </label>
-      <label class="check">
-        <input type="checkbox" id="mobile-header-italic"> Italic
-      </label>
-      <!-- Checked is the ordinary state, so this is phrased as the thing it
-           does rather than as the thing it stops - "Don't wrap" would be a box
-           you tick to make something not happen. Unticked the name is one line
-           at whatever width it comes to, and the band's overflow is what
-           decides how much of it you see. -->
-      <label class="check">
-        <input type="checkbox" id="mobile-header-wrap" checked> Wrap long names
-      </label>
-      <div id="mobile-header-axes"></div>
-      <p class="hint">Variable controls come from the selected font.</p>
-      <!-- The way back. Every control above it is a dial you can leave anywhere,
-           and a panel of dials with no way home is a panel you stop touching -
-           the same reason Appearance keeps a "Start over" at the foot of its
-           advanced fold. It puts the masthead back to the face the look is set
-           in at the size it was, and nothing else on the board moves. -->
-      <div class="btn-row">
-        <button type="button" id="mobile-header-reset">Start over</button>
-      </div>
-    </section>
-  </div>
-</aside>
-
-<button id="menu-btn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="sidebar">
-  <span></span><span></span><span></span>
-</button>
-
-<!-- At the Mobile board's top stop, this opens the masthead's panel. It borrows
-     the note pen so the action reads as editing, not as a second menu. -->
-<button id="mobile-header-edit-btn" type="button" hidden aria-expanded="false"
-        aria-label="Edit Mobile header" aria-controls="header-panel">
-  <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-pen"/></svg>
-</button>
-
-<!-- Find, on the Mobile board only. The desktop toolbar Find button is data-desktop
-     (absent on the phone tier), and there is no Ctrl+K or right-click on touch, so
-     without this the palette is unreachable on a phone. Gated and wired in
-     ui/mobile-header.js alongside the pen button. -->
-<button id="mobile-find-btn" type="button" hidden aria-label="Find something">
-  <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-find"/></svg>
-</button>
-
-<!-- The bin. Opposite corner to the zoom controls, and deliberately the same
-     kind of object: a small permanent affordance on the glass rather than
-     something buried in the panel. Its list is built by ui/trash.js. -->
-<div id="bin">
-  <!-- The pop-up and, beside it, the title card's restore button. The button
-       rides the panel rather than the dock below: it belongs to "what did I
-       throw away", which is what the open panel is, so it sits next to the
-       pop-up and not next to the trash button that opens it. -->
-  <div class="bin-pop">
-    <div id="bin-panel" hidden role="dialog" aria-label="Trash">
-      <header>
-        <h2>Trash</h2>
-        <button type="button" id="bin-empty" title="Throw it all out — the files go for good">Empty</button>
-      </header>
-      <div id="bin-list"></div>
-      <p id="bin-none">Nothing thrown away yet.</p>
-      <p id="bin-hint">Drag anything back onto the board.</p>
-    </div>
-    <!-- The Desktop title card, when it has been thrown away, is not filed in the
-         bin among ordinary items - it is a singleton the board is meant to have.
-         So it gets its own way back: this small square appears beside the open
-         pop-up while the card is gone, and one press restores it. Hidden to start
-         and toggled by ui/trash.js. -->
-    <button type="button" id="title-restore" hidden
-            aria-label="Bring back the title card" title="Bring back the title card">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-title"/></svg>
-    </button>
-  </div>
-  <!-- The autosave, saying so. Absolutely placed rather than stacked in the
-       column, because it comes and goes: a slot held open for it would be a
-       permanent gap above the bin for the sake of something visible two seconds
-       in every minute. aria-hidden because this is a reassurance and not an
-       announcement - a screen reader hearing "Saved" every few seconds while
-       you work is the same information turned into an interruption. The
-       explicit Save still says so out loud, because that one was a question. -->
-  <div id="saved" aria-hidden="true">
-    <svg class="ico"><use href="assets/icons.svg#i-check"/></svg>
-    <span>Saved</span>
-  </div>
-  <!-- One row along the bottom of the corner. The bin keeps the corner itself,
-       because that is where it has always been and where the panel above it is
-       anchored; undo and redo are added to its right rather than around it. -->
-  <div class="bin-row">
-    <!-- Named as empty here because that is what it is before any board has
-         loaded, and it matches the muted look the button starts in; ui/trash.js
-         rewrites both the label and the tooltip every time the bin changes. -->
-    <button type="button" id="bin-btn" aria-label="Trash, empty" aria-expanded="false" aria-controls="bin-panel" title="Trash, empty">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-delete"/></svg>
-    </button>
-    <!-- Undo and redo. Beside the bin because they belong to the same thought -
-         the bin is the one mistake you can walk back by hand, and these are
-         every other one - and a segmented pair like the zoom cluster opposite,
-         because that is what this app's furniture looks like.
-
-         Both start disabled: a freshly loaded board has no history, and the
-         titles are rewritten by main.js with the name of what would actually
-         happen ("Undo Add 3 items"). -->
-    <div id="history-ctl">
-      <button type="button" data-history="undo" aria-label="Undo" title="Nothing to undo" disabled>
-        <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-undo"/></svg>
-      </button>
-      <button type="button" data-history="redo" aria-label="Redo" title="Nothing to redo" disabled>
-        <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-redo"/></svg>
-      </button>
-    </div>
-  </div>
-</div>
-
-<div id="corner">
-  <!-- A stick of known length, the way a map carries one. See ui/scalebar.js
-       for why this is a drawn bar and not a printed ratio. Hidden by the module
-       when no round length fits, so it has no [hidden] here - it starts visible
-       and the first paint decides. -->
-  <div id="scale-bar" aria-hidden="true">
-    <span id="scale-bar-label">1 cm</span>
-    <span id="scale-bar-stick"></span>
-  </div>
-  <div id="zoom-ctl">
-    <button type="button" data-zoom="out" aria-label="Zoom out" title="Zoom out  −">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-zoom-out"/></svg>
-    </button>
-    <button type="button" id="zoom-level" data-zoom="reset" title="Back to 100%">100%</button>
-    <button type="button" data-zoom="in" aria-label="Zoom in" title="Zoom in  +">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-zoom-in"/></svg>
-    </button>
-    <button type="button" data-zoom="fit" aria-label="Zoom to fit" title="Zoom to fit  F">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-fit"/></svg>
-    </button>
-    <button type="button" data-zoom="home" aria-label="Back to 0,0" title="Back to 0,0  0">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-home"/></svg>
-    </button>
-    <!-- Hold the magnification. Last in the row and pressed rather than pushed,
-         because it is the only control here that changes what the other four
-         do rather than doing something itself.
-
-         Two whole padlocks, and the CSS shows whichever matches aria-pressed -
-         open and leaning off its post while the zoom is free, closed on it when
-         it is not. Two drawings rather than a rotation, because the shape a
-         padlock makes when it opens is not the shape it makes when it is turned.
-         main.js writes the pressed state, the label and the title together.
-
-         Two *elements* rather than two shapes in one, and that is the sprite's
-         doing: the shackles used to be a pair of paths in a single inline <svg>
-         with chrome.css hiding one of them by class. A symbol referenced from
-         assets/icons.svg renders into a shadow tree, and no selector in this
-         document can reach a shape inside it - the rule would have matched
-         nothing and drawn both shackles at once, silently. What CSS can still
-         do is hide one of these two wrappers, because a wrapper is an ordinary
-         element sitting in the page. Same switch, moved out one level. -->
-    <button type="button" id="zoom-lock" data-zoom="lock" aria-pressed="false"
-            aria-label="Lock zoom" title="Lock the zoom">
-      <svg class="ico lock-open" aria-hidden="true"><use href="assets/icons.svg#i-lock-open"/></svg>
-      <svg class="ico lock-shut" aria-hidden="true"><use href="assets/icons.svg#i-lock-shut"/></svg>
-    </button>
-  </div>
-  <div id="hud">
-    <span id="hud-xy">0, 0</span>
-    <span id="hud-count">nothing yet</span>
-  </div>
-</div>
-
-<!-- The toolbar. A board is made by putting things on it, and until this
-     existed there was no surface on a desktop that said so: files arrived by
-     drag, by a fold of the panel, or by a keyboard shortcut nobody was told
-     about. The phone had the one honest creation surface in the app - the old
-     #add-bar, split because "add" is honestly two verbs, bring something in or
-     write something down - and this is that bar grown up and given to both
-     layouts rather than a second thing beside it.
-
-     Every button is a data-cmd, which is the whole wiring: ui/toolbar.js reads
-     the attribute and presses the same command the panel, the keyboard and the
-     right-click menu press. The old bar had its own data-add and its own two
-     lines in ui/hud.js; folding it in here removes that one-off rather than
-     adding a second.
-
-     Top-centre on a desktop. Both side edges are spoken for - the panel opens
-     left and the masthead's opens right, and both already shove #nowplaying
-     out of the way when they do - and the whole bottom edge is the bin and the
-     history pair at one end, the zoom cluster and the readout at the other,
-     and the player in between. The top edge is the only clear one.
-
-     On a phone it collapses to #toolbar-toggle, sitting in the bottom row
-     exactly where the add bar was, and opens upward into a second tier with
-     the player stepped up to a third. Which is why this element must stay
-     *before* #nowplaying in the markup: the rules that move the player are
-     general sibling combinators, and a sibling combinator only looks forward.
-
-     data-desktop marks a button that is not on the phone's tier at all, rather
-     than one that is greyed out there. Rearrange and Find are both a tap away
-     in the panel on that layout, and the four creation tools want the room; a
-     row that scrolls is a row you cannot aim at. -->
-<div id="toolbar" role="toolbar" aria-label="Board tools">
-  <!-- Phone only. aria-expanded rather than a class alone, because what this
-       does is open a thing that is not otherwise there - the same contract the
-       panel's own menu button has. -->
-  <button type="button" id="toolbar-toggle" aria-expanded="false" aria-controls="toolbar-tools">
-    <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-plus"/></svg>
-    <span>Add</span>
-  </button>
-  <div id="toolbar-tools">
-    <button type="button" data-cmd="add-files" title="Add files  (or drop them anywhere)">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-plus"/></svg>
-      <span>Files</span>
-    </button>
-    <!-- Note and Colour carry no title, and neither does Arrange below. All
-         three have a hover flyout (ui/flyout.js), and a native tooltip is a
-         box the browser draws over whatever is under the pointer about a
-         second in - which is half a second after the flyout has opened
-         underneath it. Two things answering the same hover, one of them on
-         top of the other. The word on the button is the label; aria-label
-         carries anything the word leaves out, for the readers that used to
-         get it from the title. -->
-    <button type="button" data-cmd="add-note" aria-label="Write a note">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-pen"/></svg>
-      <span>Note</span>
-    </button>
-    <!-- data-more marks a tool that steps behind the More button on the phone's
-         tier and stays on the bar everywhere else. Five creation tools across a
-         390-wide screen is five segments of seventy points, which is a row you
-         aim at rather than press - it was already costing four of the five their
-         words below 360. Three segments and a menu is the same five tools with
-         somewhere to put the labels. -->
-    <button type="button" data-cmd="add-swatch" data-more aria-label="Add a colour">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-swatch"/></svg>
-      <span>Colour</span>
-    </button>
-    <button type="button" data-cmd="add-link" data-more title="Add a link">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-link"/></svg>
-      <span>Link</span>
-    </button>
-    <!-- The fifth creation tool, and the only one that opens a chooser rather
-         than making something at once: there is no default sticker the way
-         there is a default note, because which shape it is *is* the whole of
-         the decision. So the button opens the pad and the pad places them. On
-         both layouts, unlike Join, Arrange and Find - a phone board is exactly
-         where a tap-to-place mark is worth having, and it is the one creation
-         tool that works there without a spatial map. -->
-    <button type="button" data-cmd="stickers" data-more title="Stickers">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-sticker"/></svg>
-      <span>Stickers</span>
-    </button>
-    <!-- The three above, on a phone. data-mobile is data-desktop's mirror: absent
-         at every other width rather than greyed out there, the same rule the
-         settings schema applies to its own layout-specific rows.
-         It presses a command like everything else on this bar, and that command
-         opens an anchored menu through ui/menu.js - the one menu renderer in the
-         app. Not a FLYOUTS entry: those open on hover and this is a tap. -->
-    <button type="button" data-cmd="more-tools" data-mobile
-            aria-haspopup="menu" aria-expanded="false" aria-label="More tools">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-more"/></svg>
-      <span>More</span>
-    </button>
-    <!-- The one tool here that is a mode, and the only one in the app. It stays
-         pressed while it is armed - aria-pressed, the way #zoom-lock marks a
-         held zoom - and Escape always puts it down. Desktop only: a phone board
-         is a reading feed with no spatial map for a line to mean anything on,
-         which is the same reason webVisible() refuses that layout. -->
-    <button type="button" data-cmd="connect" data-desktop aria-pressed="false"
-            title="Join two cards  (pick one, then the other)">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-connect"/></svg>
-      <span>Join</span>
-    </button>
-    <!-- No button for the generator. cmds.connectSelection joins a whole
-         selection in one press - the spanning tree that used to draw this
-         board's web, turned into ordinary connections - and it is still there
-         on `mbrd.cmds.connectSelection()`, which is also how a board that had
-         the old automatic web gets it back. It is off the bar because it is a
-         thing you do once to a board, not a tool you reach for, and a seventh
-         segment up here made the bar read as a menu rather than a set of
-         tools. -->
-
-    <button type="button" data-cmd="rearrange" data-desktop aria-label="Rearrange everything">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-rearrange"/></svg>
-      <span>Arrange</span>
-    </button>
-    <button type="button" data-cmd="find" data-desktop title="Find something  Ctrl+K">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-find"/></svg>
-      <span>Find</span>
-    </button>
-  </div>
-</div>
-
-<!-- The Timeline, on a wide window: every change to this board as a step, and
-     where you are in them. Filled by ui/timeline-view.js; the shell is literal
-     here for the reason the tour bar's is. The same module builds
-     #timeline-sheet below, which is the face a narrow window gets.
-
-     **Between #toolbar and #nowplaying, and that is now a three-way constraint
-     rather than the two-way one the tour bar's comment describes.** The rules
-     that step the player up a tier when this strip is open are general sibling
-     combinators and those only look forward, so the strip has to be able to be
-     seen *from* the player - which puts it before. #toolbar is before the strip
-     for its own version of the same rule, and #tour is after the player for the
-     opposite one. Four elements, three constraints, one legal order.
-
-     The strip is the wide face and only the wide face: a horizontal list of
-     three thousand steps on a 430px screen is not a feature. That was once the
-     whole of what a phone got - the strip was hidden below 720px and nothing
-     took its place - and the sheet is what took its place. Same steps, same
-     sentences, a column instead of a scale.
-
-     hidden to start, and stays hidden until asked for. The bottom edge already
-     carries the bin, the zoom cluster and the player, and a fourth permanent
-     tenant there would be the app talking about itself while somebody is
-     working. -->
-<div id="timeline-strip" hidden aria-label="Timeline">
-  <div class="tl-head">
-    <span class="tl-title">Timeline</span>
-    <span class="tl-where"></span>
-    <!-- Naming the point the board is standing on, which is what a saved board
-         version became - the ring of copies went in v0.198 and the ledger holds
-         the way back, so a landmark is a string on a step. Hidden by
-         ui/timeline-view.js at the start of the board, where there is no step to
-         name; hidden here to start because the strip is drawn before it is
-         known. -->
-    <button type="button" class="tl-name" hidden aria-label="Name this point" title="Name this point">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-rename"/></svg>
-    </button>
-    <button type="button" class="tl-close" aria-label="Close the timeline" title="Close the timeline  Esc">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>
-    </button>
-  </div>
-  <div class="tl-track" role="listbox" aria-label="Steps"></div>
-</div>
-
-<!-- What is playing, and the controls for it. Built by ui/nowplaying.js.
-
-     A grid: play/pause down the left across both rows, and to the right of it
-     the name over a thin seek line, with the small controls - open the playlist,
-     volume, close - at the end of the name's row. The line is straight at the
-     middle and plain ends of the whimsy axis and a Material-style wave at the
-     soft end; it is not the measured waveform the cards carry - a bar is a
-     remote, not a picture of the sound. It is the *only* scrubber for a video
-     now, the card having given its own up (canvas/video.js).
-
-     The play button and the playlist button are built by ui/nowplaying.js, and
-     so is Next, which is there only while what is playing is a list rather than
-     one card off the board. Previous and repeat and shuffle are in the playlist
-     window, next to the list they act on; see the note in ui/nowplaying.js. The
-     volume is not one of those - it is a property of the room rather than of the
-     list, and it belongs where the sound is stopped.
-
-     Along the foot between the bin and the zoom cluster, which is where a
-     transport has lived on every player anybody has used. On a phone that edge
-     belongs to the add bar, so the CSS lifts this above it rather than moving
-     it - the two are never the same piece of screen.
-
-     hidden to start: there is nothing playing when a board opens, and a bar
-     announcing silence is furniture with no job. -->
-<div id="nowplaying" hidden>
-  <div class="np-top">
-    <!-- Just the track name. Opening the full player is the dedicated playlist
-         button in the controls cluster, built by ui/nowplaying.js. -->
-    <div class="np-name"></div>
-    <div class="np-controls">
-      <!-- The playlist button is built by ui/nowplaying.js and inserted here,
-           before the volume. Play/pause is not in this cluster any more: it is
-           the lead, prepended to the bar itself, down the left of both rows. -->
-      <!-- The global volume, and it is on the bar rather than in the panel or in
-           the playlist window because a level is reached for while something is
-           playing, which is exactly when this is up. Not a per-clip setting:
-           canvas/audio.js keeps one for the whole board, on the grounds that it
-           is a property of the room. The module removes this whole block where
-           the browser will not honour a write to it - see volumeLocked(). -->
-      <label class="np-volume">
-        <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-volume"/></svg>
-        <input id="np-volume" type="range" min="0" max="100" step="1" value="60" aria-label="Volume">
-      </label>
-      <button type="button" class="np-close" aria-label="Close the player" title="Stop and close">
-        <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>
-      </button>
-    </div>
-  </div>
-  <div class="np-seek"></div>
-</div>
-
-<!-- The tour bar: where you are in the board's stop list, and the two steps.
-
-     Literal markup rather than a node ui/tour.js builds, for the reason every
-     other piece of chrome here is literal: a runtime-built id costs an entry in
-     tests/element-ids.test.js's JS_BUILT table, and that table is for the nodes
-     that genuinely cannot exist before the module runs. This one can.
-
-     *After* #nowplaying, and that is as load-bearing as #toolbar being before
-     it. The rule that lifts this bar clear of the player is a general sibling
-     combinator, and those only look forward: this one has to see the player from
-     the tour, where the player's own has to see the toolbar from the player. The
-     two constraints point opposite ways and neither is reorderable.
-
-     Desktop only - vp.fit() ignores its items on Mobile, so a tour there would
-     step the counter and never move the camera. ui/tour.js declines with a toast
-     rather than letting the bar come up over a board it cannot drive.
-
-     hidden to start: a board is not on a tour when it opens. -->
-<div id="tour" hidden>
-  <button type="button" class="tour-prev" aria-label="The stop before" title="The stop before  Left">
-    <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-chevron-left"/></svg>
-  </button>
-  <div class="tour-where">
-    <div class="tour-name"></div>
-    <div class="tour-count"></div>
-  </div>
-  <button type="button" class="tour-next" aria-label="The next stop" title="The next stop  Right">
-    <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-chevron-right"/></svg>
-  </button>
-  <button type="button" class="tour-close" aria-label="End the tour" title="End the tour  Esc">
-    <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>
-  </button>
-</div>
-
-<div id="drop-overlay" hidden><div>let it fall</div></div>
-
-<!-- The waiting strip. Driven by busy() in util.js; see the note there for why
-     it lives in the same file as the toast and how the two differ.
-
-     Pinned at the top, opposite the toast at the foot, and the split is the
-     point: what is happening arrives at one edge, what happened arrives at the
-     other, so a report never overwrites a progress bar and the two can be on
-     screen at once without either being in the way.
-
-     aria-live=polite rather than assertive - a screen reader should hear "this
-     is going to take a moment" when it reaches a pause, not have the sentence
-     it is currently reading cut in half. -->
-<div id="busy" role="status" aria-live="polite" hidden>
-  <div class="busy-head">
-    <span id="busy-label"></span>
-    <span id="busy-count"></span>
-    <!-- Shown only for a job that hands busy() an onCancel (a large import); util.js
-         toggles it and wires the click to the current job. -->
-    <button id="busy-cancel" type="button" hidden>Cancel</button>
-  </div>
-  <div id="busy-track"><div id="busy-fill"></div></div>
-</div>
-
-<!-- role=status + aria-live: "Saved in this browser", "Export failed" and the
-     missing-asset warnings are the app's only reply to a save, and without
-     these a screen reader never hears any of them. -->
-<div id="toast" role="status" aria-live="polite"></div>
-
-<!-- The one question this app stops to ask. A real <dialog>, opened with
-     showModal(), because that is what buys the focus trap, the Escape key, the
-     top layer and the inert background without any of it being written by
-     hand - and because the native confirm() it replaces is a browser chrome
-     box that says "localhost:6273 says" above the sentence.
-     Text and buttons are filled in by ui/dialog.js; the markup is here so the
-     first time it is needed is not also the first time it is built. -->
-<dialog id="ask" aria-labelledby="ask-title">
-  <h2 id="ask-title"></h2>
-  <p id="ask-body"></p>
-  <!-- Only some questions want an answer typed rather than picked. Hidden
-       unless ask() was handed a `field`, in which case the dialog resolves to
-       what was typed instead of to which button was pressed. -->
-  <input id="ask-field" type="text" autocomplete="off" hidden>
-  <div class="ask-row">
-    <!-- The way out that loses nothing sits apart from the other two, at the
-         far end of the row, so it is not one of a pair of near-identical
-         buttons where the wrong one is unrecoverable. -->
-    <button type="button" id="ask-keep"></button>
-    <span class="ask-gap"></span>
-    <button type="button" id="ask-cancel"></button>
-    <button type="button" id="ask-go" class="danger"></button>
-  </div>
-</dialog>
-
-<!-- Choosing a colour, before the swatch exists.
-
-     Not part of #ask, and the reason is the same one that kept the note editor
-     out of it: ask() answers with one field, and a colour is a plane, a hue and
-     a number that all have to agree. It is also the one question a plain
-     <input type="color"> cannot be asked inside a dialog without the platform
-     opening a second dialog over the top of it - which is precisely the grey
-     system box #ask was written to get rid of. See ui/color-picker.js.
-
-     The square carries no colour of its own here: the stylesheet lays white and
-     black gradients over a --hue the module sets, so the markup is a box, a
-     handle, a slider and the number. -->
-<dialog id="pick" aria-labelledby="pick-title">
-  <h2 id="pick-title"></h2>
-  <div id="pick-area" tabindex="0" role="slider"
-       aria-label="Saturation and brightness" aria-valuemin="0" aria-valuemax="100">
-    <div id="pick-dot"></div>
-  </div>
-  <input id="pick-hue" type="range" min="0" max="360" step="1" aria-label="Hue">
-  <div class="pick-foot">
-    <!-- The answer, at the size it will be read at. Empty and decorative: what
-         it shows is the colour the two controls above are already showing. -->
-    <span id="pick-well" aria-hidden="true"></span>
-    <input id="pick-hex" type="text" spellcheck="false" autocomplete="off"
-           autocapitalize="off" maxlength="7" aria-label="Hex colour">
-  </div>
-  <div class="ask-row">
-    <span class="ask-gap"></span>
-    <button type="button" id="pick-cancel"></button>
-    <button type="button" id="pick-go"></button>
-  </div>
-</dialog>
-
-<!-- Writing a note, before it is on the board.
-
-     There is nothing of a note in this markup, and that is the whole point of
-     it. composeNote() (canvas/notes.js) makes the note first, takes the card
-     the canvas built for it, and lifts that card in here for as long as it is
-     being written - so what you are typing into is the item itself, with the
-     real editor, the real formatting bar and the real character count on it,
-     and the thing that lands on the board is the thing that was in front of
-     you. A second sticky drawn to look like the first was the version before
-     this one, and it behaved like a note everywhere except where it mattered.
-
-     The mount is empty and stays empty between notes. Cancel takes the note
-     back; Add and a press on the backdrop both commit it, exactly as a press
-     away from a note on the board does. -->
-<dialog id="compose" aria-label="Write a note">
-  <div id="compose-mount"></div>
-  <div class="ask-row">
-    <span class="ask-gap"></span>
-    <button type="button" id="compose-cancel">Cancel</button>
-    <button type="button" id="compose-go">Add</button>
-  </div>
-</dialog>
-
-<!-- The viewer: one item, as big as the window will allow.
-
-     A board is a wall of things at a glance, and until this there was no way to
-     look at any one of them properly. A photograph was however many pixels its
-     card happened to be, a clip had no full-screen, and a text file showed its
-     first screenful and stopped. On the Feed - which is the whole board on a
-     phone - a tap did nothing at all for most types.
-
-     One surface for every type rather than one per type: ui/viewer.js dispatches
-     on the item and fills the body, the way canvas/renderers.js dispatches on a
-     card. A new type is an entry in that table and nothing here changes.
-
-     A real <dialog>, opened with showModal(), for the reasons #ask is one - the
-     top layer, the backdrop and Escape all come with it, and canvas/input.js
-     already stands the board shortcuts down while a modal is up.
-
-     The head does not scroll and the body does: a long file scrolls under a name
-     that stays. -->
-<dialog id="viewer" aria-labelledby="viewer-title">
-  <header id="viewer-head">
-    <div id="viewer-names">
-      <h2 id="viewer-title"></h2>
-      <p id="viewer-meta"></p>
-    </div>
-    <button type="button" id="viewer-close" aria-label="Close">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>
-    </button>
-  </header>
-  <!-- tabindex so the scroller can hold focus. A dialog gives focus to the first
-       focusable thing in it, which would be the close button - and a focused
-       button swallows the Space that scrolls a long file, which is the first
-       thing anybody does in here. -->
-  <div id="viewer-body" tabindex="-1"></div>
-</dialog>
-
-<!-- The darkroom: one picture, cropped and graded.
-
-     A separate dialog from the viewer above rather than a mode inside it, and
-     the split is the same one the app makes everywhere else: the viewer's whole
-     design is a table of ways to *show* an item, and none of its entries edit
-     anything. Folding a crop rectangle, eight handles and three dials into the
-     image entry would have made one of the seven views the size of the other
-     six put together.
-
-     Nothing here is destructive. The crop is four fractions and the grade is
-     three multipliers, both stored on the item; the bytes in the board are
-     never touched, so Reset is always a way back and so is Ctrl+Z. See
-     itemCrop() in board-model.js.
-
-     The stage is sized by CSS and the frame inside it is positioned by
-     ui/darkroom.js in percentages of the picture, so the whole surface survives
-     a window resize without measuring anything. -->
-<dialog id="darkroom" aria-labelledby="darkroom-title">
-  <header id="darkroom-head">
-    <h2 id="darkroom-title">Crop &amp; adjust</h2>
-    <button type="button" id="darkroom-close" aria-label="Close">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>
-    </button>
-  </header>
-  <!-- The picture, and the frame over it. The eight handles are built by the
-       module rather than written out here, because they are the same eight the
-       board's cards carry and their names are already a table there. -->
-  <!-- The plate shrink-wraps the picture, and that is load-bearing rather than
-       tidy: the frame is positioned in percentages, so its parent has to be
-       exactly the drawn picture and not the box the picture is centred in. An
-       object-fit letterbox would have made every percentage wrong by however
-       much grey was on each side. -->
-  <div id="darkroom-stage">
-    <div id="darkroom-plate">
-      <img id="darkroom-image" alt="">
-      <div id="darkroom-frame" hidden>
-        <div class="dk-grid" aria-hidden="true"></div>
-      </div>
-    </div>
-  </div>
-  <!-- The two mirrors. Buttons rather than a third and fourth slider, because
-       neither is a quantity: a picture is turned or it is not, and the control
-       that says so is one that stays pressed. aria-pressed is written by
-       ui/darkroom.js from the same value the picture is drawn from, so the
-       button cannot claim one thing while the plate shows another.
-
-       The word and the sentence both, and deliberately: flip and flop are the
-       words asked for, they are each other's opposite in half the software that
-       has them, and the title is what settles which way this one turns. -->
-  <div id="darkroom-tools">
-    <button type="button" id="dk-flip-x" class="dk-tool" aria-pressed="false"
-            title="Mirror the picture left to right">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-flip-h"/></svg>
-      Flip
-    </button>
-    <button type="button" id="dk-flip-y" class="dk-tool" aria-pressed="false"
-            title="Mirror the picture top to bottom">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-flip-v"/></svg>
-      Flop
-    </button>
-  </div>
-  <div id="darkroom-dials">
-    <label class="dk-dial">
-      <span>Brightness</span>
-      <input type="range" id="dk-brightness" min="0.4" max="1.6" step="0.01" value="1">
-      <output for="dk-brightness">100%</output>
-    </label>
-    <label class="dk-dial">
-      <span>Contrast</span>
-      <input type="range" id="dk-contrast" min="0.4" max="1.6" step="0.01" value="1">
-      <output for="dk-contrast">100%</output>
-    </label>
-    <label class="dk-dial">
-      <span>Saturation</span>
-      <input type="range" id="dk-saturation" min="0" max="2" step="0.01" value="1">
-      <output for="dk-saturation">100%</output>
-    </label>
-  </div>
-  <!-- .ask-row, which is #ask's own button row: the same three states, the same
-       ring, the same press. A second set of dialog buttons styled separately is
-       two button designs by the end of the quarter. -->
-  <footer id="darkroom-foot" class="ask-row">
-    <button type="button" id="darkroom-reset">Reset</button>
-    <span class="ask-gap"></span>
-    <button type="button" id="darkroom-cancel">Cancel</button>
-    <button type="button" id="darkroom-apply">Apply</button>
-  </footer>
-</dialog>
-
-<!-- The credits sheet the footer opens. A real <dialog> for the same four
-     reasons #ask is one, and written out here rather than built by ui/credits.js
-     because two names are not data: nothing about this list is decided at run
-     time, so the module above it is two listeners and no builder.
-     The faces are committed files, not GitHub URLs. An <img> pointing at
-     avatars.githubusercontent.com would tell somebody else's server that this
-     board was opened, which is the one thing this app does not do, and it would
-     leave the sheet broken offline. Both are dressed to a display size of 56px;
-     the first is 72px square because that is all its source is. -->
-<dialog id="credits" aria-labelledby="credits-title">
-  <h2 id="credits-title">Credits</h2>
-  <ul class="credit-list">
-    <li class="credit">
-      <!-- The face goes to the same place the name does, because a picture
-           beside a link is a thing people click and being right about that
-           costs one element. It is hidden from the keyboard and from screen
-           readers on purpose: two tab stops and two announcements for one
-           destination is worse than one of each, and the name below is the
-           one that can say where it goes. alt is empty for the same reason -
-           the name is the next thing read out. -->
-      <a class="credit-face-link" href="https://valjdakosta.com" tabindex="-1"
-         aria-hidden="true" target="_blank" rel="noopener noreferrer">
-        <img class="credit-face" src="assets/img/credit-valjdakosta.webp" alt=""
-             width="56" height="56" loading="lazy" decoding="async">
-      </a>
-      <div class="credit-who">
-        <a class="credit-name" href="https://valjdakosta.com"
-           target="_blank" rel="noopener noreferrer">valjdakosta</a>
-        <span class="credit-site">valjdakosta.com</span>
-        <p class="credit-quote">Of course it depends, of course it depends</p>
-      </div>
-    </li>
-    <li class="credit">
-      <a class="credit-face-link" href="https://omarzunic.com" tabindex="-1"
-         aria-hidden="true" target="_blank" rel="noopener noreferrer">
-        <img class="credit-face" src="assets/img/credit-omarzunic.webp" alt=""
-             width="56" height="56" loading="lazy" decoding="async">
-      </a>
-      <div class="credit-who">
-        <a class="credit-name" href="https://omarzunic.com"
-           target="_blank" rel="noopener noreferrer">Omar Žunić</a>
-        <span class="credit-site">omarzunic.com</span>
-        <p class="credit-quote">[INSERT FUNNY QUIP HERE]</p>
-      </div>
-    </li>
-  </ul>
-  <!-- What the app is standing on, folded away.
-       A <details> rather than a button and a class, which keeps ui/credits.js
-       at two listeners and no builder: the open/closed state is the element's
-       own, the keyboard and the screen reader already know what a summary is,
-       and there is nothing here for a script to remember. Shut by default
-       because the two names above are what somebody opened this for.
-       The list is written out rather than generated from THIRD-PARTY.md - that
-       file is for the licence audit and says which files each notice covers;
-       this is for a person, and says what was borrowed and why. They are
-       checked against each other by tests/credits.test.js so the short version
-       cannot quietly fall behind the long one. -->
-  <details class="credits-more">
-    <summary>What this is built on</summary>
-    <p class="credits-note">
-      No frameworks, no build step, and nothing fetched at run time — the
-      browser loads the source directly. Three devDependencies exist for the
-      optional lint, typecheck and end-to-end runs; none of them ships.
-      What <em>does</em> ship that somebody else made:
-    </p>
-    <ul class="credits-deps">
-      <li>
-        <!-- The repository rather than phosphoricons.com, and the same for the
-             three faces below: every link in this list goes to the source
-             THIRD-PARTY.md names, so the two lists can be checked against each
-             other by string rather than by judgement. -->
-        <a href="https://github.com/phosphor-icons/core" target="_blank" rel="noopener noreferrer">Phosphor Icons</a>
-        <span class="credits-lic">MIT</span>
-        <span class="credits-why">The sticker shapes. Vendored at a pinned
-          revision, two weights, paint rewritten to this board&rsquo;s paper and ink.</span>
-      </li>
-      <li>
-        <a href="https://github.com/valjdakosta/file-analyser" target="_blank" rel="noopener noreferrer">file&#8209;analyser</a>
-        <span class="credits-lic">borrowed data</span>
-        <span class="credits-why">Its catalogue of 1,359 file extensions, so a
-          dropped <code>.sldprt</code> says &ldquo;SolidWorks&rdquo; and not &ldquo;file&rdquo;.
-          The data, not the code around it.</span>
-      </li>
-      <li>
-        <a href="https://github.com/Danilaa1/cuelume" target="_blank" rel="noopener noreferrer">Cuelume</a>
-        <span class="credits-lic">MIT</span>
-        <span class="credits-why">The sounds the interface makes. Seventeen
-          recipes of a few numbers each, synthesised as you go &mdash; no audio
-          files anywhere. Forked: its engine, not its event listeners.</span>
-      </li>
-      <li>
-        <a href="https://github.com/googlefonts/Playfair" target="_blank" rel="noopener noreferrer">Playfair</a>,
-        <a href="https://github.com/undercasetype/Fraunces" target="_blank" rel="noopener noreferrer">Fraunces</a>,
-        <a href="https://github.com/vercel/geist-font" target="_blank" rel="noopener noreferrer">Geist</a>
-        <span class="credits-lic">OFL 1.1</span>
-        <span class="credits-why">The typefaces, subset to Latin and Latin
-          Extended and otherwise untouched.</span>
-      </li>
-    </ul>
-    <p class="credits-note">
-      Full notices are in <code>THIRD&#8209;PARTY.md</code>, and each licence sits
-      beside the thing it covers. mbrd itself is GPL&#8209;3.0&#8209;or&#8209;later.
-    </p>
-  </details>
-
-  <!-- Borrowing #ask's row and its gap: one button, pushed to the end, wearing
-       the same dressing every other dialog button in the app wears. -->
-  <div class="ask-row">
-    <span class="ask-gap"></span>
-    <button type="button" id="credits-close">Close</button>
-  </div>
-</dialog>
-
-<!-- What is in this board and what it weighs. A shell only, unlike #credits
-     above: that one is two names decided at build time, and this one is the
-     board described back to you, so everything inside #inventory-body is built
-     by ui/inventory.js on each open. It is a sheet rather than a panel section
-     because it is a report and not a setting - nothing in it has a value.
-     Opened from System - What is in this board, immediately above Optimize,
-     which is the point of it: the optimizer is a button nobody has a reason to
-     press until something here says a photograph is 12 MB. -->
-<dialog id="inventory" aria-labelledby="inventory-title">
-  <h2 id="inventory-title">What is in this board</h2>
-  <div id="inventory-body"></div>
-  <!-- #ask's row, the same one #credits borrows. Optimize sits at the left and
-       Close at the right, with the gap between them, because they are not two
-       ways out: one of them is the thing this sheet exists to lead to.
-       An id rather than a data-cmd, and that is not a style choice: the panel's
-       delegated data-cmd listener is bound to the sidebar, and a <dialog> is in
-       the top layer and is not inside it. A data-cmd here would look like every
-       other button in the app and do nothing. ui/inventory.js wires it. -->
-  <div class="ask-row">
-    <button type="button" id="inventory-optimize">Optimize</button>
-    <span class="ask-gap"></span>
-    <button type="button" id="inventory-close">Close</button>
-  </div>
-</dialog>
-
-<!-- The Timeline, on a narrow window. A shell only, like #inventory above: every
-     row inside #tl-sheet-list is built by ui/timeline-view.js on each open, from
-     the same step ledger and with the same past-tense sentence the strip puts in
-     a mark's hover.
-
-     A sheet rather than a strip because the strip is a scale, and a scale needs
-     a width a phone has not got. It is the same feature reached from the same
-     place - System, Timeline - and which one opens is decided by the window,
-     inside that module.
-
-     The buttons are #ask's row, which is where every sheet in this app gets its
-     buttons. Ids rather than data-cmd, and that is not a style choice: the
-     panel's delegated data-cmd listener is bound to the sidebar, and a <dialog>
-     is in the top layer and is not inside it.
-
-     data-words on the naming button is how that module knows this one wears its
-     label as text - the strip's is the same control drawn as an icon, and the
-     word it would say is on its title instead. -->
-<dialog id="timeline-sheet" aria-labelledby="tl-sheet-title">
-  <h2 id="tl-sheet-title">Timeline</h2>
-  <p id="tl-sheet-where"></p>
-  <!-- A list of buttons, and no role="listbox" on it - unlike the strip's
-       track, where the marks are options in a scale. Here every row is a
-       control with a sentence in it, which is a list of buttons and is already
-       navigable; the row the board is standing on says so with aria-current. -->
-  <ol id="tl-sheet-list" aria-label="Steps"></ol>
-  <div id="tl-sheet-trim"></div>
-  <div class="ask-row">
-    <button type="button" id="tl-sheet-name" data-words hidden>Name this point</button>
-    <span class="ask-gap"></span>
-    <button type="button" id="tl-sheet-close">Close</button>
-  </div>
-</dialog>
-
-<input id="file-input" type="file" multiple hidden>
-
-<!-- The bundle, not the source tree, and this is the line where that changed.
-
-     The app is written in TypeScript now (see tsconfig.json), and a browser
-     cannot fetch a .ts module - so what ships is one built artifact rather than
-     the ninety-odd files under assets/js. `npm run build` writes it; `npm run
-     dev` rebuilds it on every save, which is what replaces "edit a file and
-     refresh" with "save and refresh".
-
-     The sources still ship beside it, so view-source on the deployed app is
-     still this repository - one directory away instead of being the page
-     itself. That is the trade the bundle was costed at; nothing else about it
-     was free either.
-
-     No source map ships. `npm run dev` emits one for devtools and .gitignore
-     keeps it out, because it is 2.9MB rewritten on every build and a repository
-     should not grow by that much for a convenience nobody reviews. -->
-<script type="module" src="assets/app.js"></script>
-
-<!-- The changelog: a fixed scroller of its own, the way #mobile-feed is, so the
-     app stays pinned to the window exactly as base.css pins it. See the head of
-     patch.css for what happened when the body was unpinned instead. -->
+<!-- The whole page. index.html's body is NOT copied here - see the head of
+     tools/gen-patch-page.mjs. There is no sidebar, no board furniture and no
+     bundle: this is a document, and the only thing it takes from the app is the
+     cascade above and the look that cascade is read at. -->
 <main class="pn">
  <div class="pn-inner">
   <!-- The way back, and it is a real one.
 
        There is a link in the footer and there has been all along, which is the
        bottom of a page fifteen thousand pixels tall - a way out you have to
-       read the whole changelog to reach. The panel's View rows go home too
-       (goHome in page.ts), and a reader who has not opened the panel has no
-       reason to know that. So: a button, at the top, that stays at the top. It
-       is sticky inside the scroller rather than fixed to the window, because
-       fixed would put it over the board's own menu button in the corner.
+       read the whole changelog to reach. So: a button, at the top, that stays
+       at the top. Sticky inside the column rather than fixed to the window, so
+       it rides the measure and cannot land somewhere different on a phone.
 
-       An <a> and not a <button data-cmd>, which is the opposite of the rule the
-       panel follows - and it is right here for the same reason that rule is
-       right there. The panel reaches the app through one delegated listener
-       because the panel is part of the app; this is a document, and the way out
-       of a document is a link. It also means it works before the bundle has
-       parsed, which on the one page that is mostly prose is the whole point.
+       An <a> and not a button: this is a document, and the way out of a
+       document is a link. Nothing on this page runs, so there is nothing else
+       it could have been.
 
        href="/" and not "patch/..", matching the footer: this page carries no
        <base>, and the root is the root. -->
@@ -1391,13 +186,14 @@
   </a>
   <header class="pn-head">
     <h1 class="pn-title">Patch notes</h1>
-    <p class="pn-lede">Everything that has changed in mbrd, newest first.</p>
+    <p class="pn-lede">What has changed in mbrd, newest first. The things
+      worth knowing about, rather than every commit.</p>
     <!-- The three numbers this page can state without anybody writing them
          down: how many releases there are, how many commits they cover, and
          when it started. All counted from the source. -->
     <p class="pn-tally">
       <span>17 releases</span>
-      <span>236 commits</span>
+      <span>237 commits</span>
       <span>since 25 July 2026</span>
     </p>
   </header>
@@ -1415,68 +211,25 @@
       <p class="pn-date">15 - 16 August 2026</p>
     </header>
     <ul class="pn-notes">
-      <li class="is-plain"><strong>The app was read end to end against its own stated intentions</strong>, and the hundred and forty-five places where the two had come apart were repaired. One thing was added along the way. Everything else here is something that was already meant to work.</li>
-    </ul>
-    <h3 class="pn-part">What is new</h3>
-    <ul class="pn-notes">
+      <li class="is-plain"><strong>The app was read end to end against its own stated intentions</strong>, and the places where the two had come apart were repaired. One thing was added along the way. Everything else here is something that was already meant to work.</li>
       <li><span class="pn-tag is-new">New</span><strong>A multi-select mode, for a finger.</strong> While it is on, a tap on a card adds it to what is picked rather than replacing it, and nothing you do to the board underneath - a pan, a tap on bare ground, opening the menu - clears the selection. It ends from the row it was started from, from <code>Esc</code>, or from opening another board.</li>
       <li><span class="pn-tag is-fix">Fix</span><strong>PDFs draw on the live site.</strong> The reader was fetched from another host, which the site's own security rules refuse, so every PDF and <code>.ai</code> card fell back to grey for everyone except somebody running the app on their own machine. It ships with mbrd now.</li>
-    </ul>
-    <h3 class="pn-part">Work nobody could have known was at risk</h3>
-    <ul class="pn-notes">
       <li><span class="pn-tag is-fix">Fix</span><strong>A note keeps its alignment and its markers through an export and a re-import.</strong> The board file carried both all along; reading it back threw them away and rebuilt every note from its plain text.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Deleting a saved board asks first</strong>, and names it. It was one tap on a small glyph in the corner of a card whose whole face means Open, with no confirmation, no undo and no bin.</li>
       <li><span class="pn-tag is-fix">Fix</span><strong>A board that has lost one file can still be left.</strong> It could not be saved, switched, replaced or exported, and the only way out the app offered was <code>Clear everything</code>.</li>
       <li><span class="pn-tag is-fix">Fix</span><strong>Reloading while a board is still opening no longer writes a blank one over it.</strong> On a heavy board that window is a few hundred milliseconds long, and hiding the tab inside it was enough.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>Deleting a saved board asks first</strong>, and names it. It was one tap on a small glyph in the corner of a card whose whole face means Open, with no confirmation, no undo and no bin.</li>
       <li><span class="pn-tag is-fix">Fix</span><strong>Two boards stashed at once no longer lose one of them</strong>, and the shelf is capped at twenty-four rather than growing until the browser refuses a write and the board on screen quietly stops saving.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>Deleting a card no longer loses its place in the tour</strong>, so restoring it from the bin brings the stop back with it.</li>
       <li><span class="pn-tag is-fix">Fix</span><strong>A board carrying its own colours keeps them.</strong> The four note markers, a card's shadow and how far a card leans were among the things a board file was allowed to set and the app then dropped on open.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>The Timeline will not offer to fold away a history it cannot date.</strong> A file whose steps carry no times read as older than any cutoff, so the offer covered this morning as well, and it does not come back.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>A board old enough to carry its own video stills keeps them.</strong> They were on neither of the two lists the cleanup checks against, so the first sweep after opening deleted them and the next export left them out.</li>
-    </ul>
-    <h3 class="pn-part">The ones that stopped the tab</h3>
-    <ul class="pn-notes">
-      <li><span class="pn-tag is-fix">Fix</span><strong>A note stuck to itself, or two notes stuck to each other, ended the session on the first press.</strong> Nothing you can do in the app makes one; a file can.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>A 3D model no longer asks for more memory than the machine has.</strong> A 356-byte model was asking for 366 megabytes, and forty of them at once.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>A picture claiming 30,000 pixels a side is refused in four more formats.</strong> The browser decodes eight and the guard knew four, so a sixty-byte file could ask for three and a half gigabytes.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>A note with a long run of backticks in it no longer locks the app</strong>, measured at thirteen and a half seconds.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>A big JPEG, a deep folder drop, a two-thousand-card phone board and a PDF with an enormous page</strong> each stopped costing far more than they are worth.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong><code>Join</code> with nothing selected no longer weighs every card on the board against every other</strong>, and says so past two thousand rather than joining a sample nobody asked for.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>Dragging a colour slider with the Timeline open is smooth again.</strong> Every tick was re-measuring the whole history.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>A pinned sticker on a locked photograph no longer kills every drag for the rest of the page.</strong></li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>Lifting a second finger over the toolbar or off the edge of the window no longer leaves the app believing it is still down</strong>, after which a plain tap panned and zoomed.</li>
-    </ul>
-    <h3 class="pn-part">Everything else you might have met</h3>
-    <ul class="pn-notes">
-      <li><span class="pn-tag is-fix">Fix</span><strong>Pinching out of a drag puts the card back</strong> rather than committing a move nobody made.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>A second menu button opens its own menu.</strong> Font then Highlight in the note bar, <code>More</code> then the palette on the toolbar: one closed and neither opened.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong><code>Ctrl+K</code> works while the pointer is resting on a toolbar button</strong>, and what you type reaches Find instead of being eaten a letter at a time by a menu that has not got the keyboard.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>Find is a toggle</strong>, and keeps what you typed rather than starting over.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Deleting a card no longer loses its place in the tour</strong>, so restoring it from the bin brings the stop back with it.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A handful of files that could stop the tab cannot any more.</strong> A model asking for more memory than the machine has, a picture claiming thirty thousand pixels a side, a note with a long run of backticks in it: each is now refused or handled rather than taking the page down with it.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A save that fails says so</strong>, rather than leaving the button reading <code>Saving...</code> for the rest of the session.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Find is a toggle</strong>, and keeps what you typed rather than starting over. <code>Ctrl+K</code> also works while the pointer is resting on a toolbar button, where what you typed used to be eaten a letter at a time.</li>
       <li><span class="pn-tag is-fix">Fix</span><strong>A menu opened from a Feed tile acts on that tile</strong>, not on whatever was selected on the canvas before you switched to it.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>A save that fails says so</strong>, rather than leaving the button reading <code>Saving...</code> for the rest of the session - and <code>Restart</code> still offers its dialog, which on a phone is the only way back to a fresh page.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>The bar at the foot follows a track through its card being drawn and undrawn</strong>, so it stops reading <code>0:00</code> under a <code>Play</code> button while the music is audible.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>A play the browser refuses is reported.</strong> Five places in the app can start a track and only one of them said anything, so pressing Play and getting silence now has a reason behind it.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>The queue skips a track whose file has gone</strong>, and moves on from one you deleted rather than starting again at the top.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>A marked line keeps its marker</strong> through Enter, through a paste and through a tidy-up, and the marker menu marks the lines that were selected when you opened it.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>Going back to an earlier step no longer leaves the old undo stack standing.</strong> The next <code>Ctrl+Z</code> wrote one era's positions onto another's, and the board could then be saved that way.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>An anchored card survives a rearrange and a reflow</strong>, including a change of column count or spacing on a phone.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>The step editor offers the arrangements the board it is on has</strong>, not the other board's.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Pinching out of a drag puts the card back</strong> rather than committing a move nobody made.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The queue skips a track whose file has gone</strong>, and moves on from one you deleted rather than starting again at the top. A play the browser refuses is now reported instead of being silence with no reason behind it.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A marked line keeps its marker</strong> through Enter, through a paste and through a tidy-up.</li>
       <li><span class="pn-tag is-fix">Fix</span><strong>A line between two cards re-routes when the card in its way moves.</strong> It held the old detour until one of its own ends was dragged.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>A board that fails to start shows the failure</strong>, instead of a grey sheet over a message nobody can read.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>The app stops calling a board saved before it has read one</strong>, and says plainly when what is on screen is not being kept.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>A dropped connection to the browser's store is picked up again</strong>, where it used to latch and write nothing for the rest of the session.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>A card hands back what it holds when it is rebuilt.</strong> A rename, a crop, an adjust or a <code>Fit</code> toggle each left a photograph's decode and a video's decoder behind.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>A frozen GIF gives its picture back</strong>, once per freeze rather than never.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>Opening the note editor no longer blanks the card behind it</strong>, or leaves a second copy of it on the board afterwards.</li>
-      <li><span class="pn-tag is-faster">Faster</span><strong>Zooming out no longer visits every card on the board</strong> to find the title card.</li>
-      <li><span class="pn-tag is-faster">Faster</span><strong>The performance readout stopped measuring itself</strong>, four times a second, worst on the slow machines it exists for.</li>
-      <li class="is-plain">Reading the changelog at a <code>/patch/</code> address with a trailing slash no longer takes your whimsy dial and your palette home with you.</li>
-    </ul>
-    <h3 class="pn-part">Maintenance</h3>
-    <ul class="pn-notes">
-      <li class="is-plain"><strong>The suite went from 1,335 cases to 1,545</strong>, and a first pass through it replaced the ones that could not fail.</li>
-      <li class="is-plain"><strong>Six rearrangements that change nothing on screen</strong>: the board and the Feed pack by one masonry, the export and the screen share one grid policy, the ground is repainted through one door, a track's name and a note's first words are each worked out in one place, and the order things start up in is a test rather than a comment.</li>
-      <li class="is-plain"><strong>What a press means can now be asked in a test</strong>, which is the half of the gesture pipeline nothing could reach before.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>Dragging a colour slider with the Timeline open is smooth again.</strong> Every tick was re-measuring the whole history.</li>
     </ul>
   </article>
 </li>
@@ -1492,25 +245,20 @@
       <p class="pn-date">15 August 2026</p>
     </header>
     <ul class="pn-notes">
-      <li class="is-plain"><strong>An hour spent driving the app and writing down every place the same command turns up twice</strong>, and then the cut. Plus a picture you can finally get close to.</li>
       <li><span class="pn-tag is-new">New</span><strong>A picture opened from the board zooms and pans.</strong> Wheel or pinch to go in, drag to move about, a plain click for a closer look, and eight times as far in as it starts. The zoom goes to the point under the cursor rather than to the middle of the window, so pointing at a face keeps the face.</li>
       <li><span class="pn-tag is-new">New</span><strong>A line of a note can be drawn over with a marker</strong>, in <em>four</em> colours, the way a highlighter is.</li>
       <li><span class="pn-tag is-new">New</span><strong>The style tile is a card on the board rather than a picture you save.</strong> It carries the board's pictures, its pigments and its two faces, and it is live: move the palette or the whimsy dial and every tile on the board follows in the same frame.</li>
-      <li><span class="pn-tag is-new">New</span><strong><code>Flip</code> and <code>Flop</code> in the darkroom</strong>, mirroring a picture left to right or top to bottom.</li>
       <li><span class="pn-tag is-new">New</span><strong>A crop reshapes the card it is in</strong>, so a 16:9 slice of a square photograph stops being letterboxed inside a square. The area is held, which is what stops a crop quietly making a card louder or quieter on the board.</li>
+      <li><span class="pn-tag is-new">New</span><strong><code>Flip</code> and <code>Flop</code> in the darkroom</strong>, mirroring a picture left to right or top to bottom.</li>
       <li><span class="pn-tag is-new">New</span><strong>A clip with no still gets one in the background</strong>, a frame at a time while nothing else is happening, so a board saved before stills existed stops drawing black rectangles.</li>
       <li><span class="pn-tag is-new">New</span><strong>Something large is asked about before it comes in</strong>, once for the whole drop, rather than two minutes into hashing and decoding it.</li>
       <li><span class="pn-tag is-fix">Fix</span><strong>The right-click menu on empty board is six rows rather than twelve</strong>, and the six that went were the ones already resting somewhere you could see without doing anything.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong><code>Fill the card</code> and <code>Fit in the card</code> no longer both carry a tick.</strong> They are one choice, and the tick now says which.</li>
       <li><span class="pn-tag is-fix">Fix</span><strong>The toolbar steps out of the way whenever a panel is open</strong>, at every width. It used to do it only below 1080 pixels, and the bar has grown twice since that number was chosen - so the first tool sat under the panel while the other seven looked perfectly fine.</li>
       <li><span class="pn-tag is-fix">Fix</span><strong>A picture desaturates all the way to grey again.</strong> Zero on the saturation dial was being read as no answer at all, so the slider sprang back to the middle at the far left and greyscale could not be reached.</li>
       <li><span class="pn-tag is-fix">Fix</span><strong>Resizing a note rewraps what it says rather than rescaling it</strong>, and a note grown by a line no longer comes back needing another one.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong><code>No card</code> takes the shadow with it</strong>, in both directions. An emptied sticky was leaving a shadow with nothing casting it.</li>
-      <li><span class="pn-tag is-fix">Fix</span>At the spec-sheet end of the whimsy axis a cut-out is no longer given a mat, a chin and a hairline round the outside - a frame round nothing, which is the thing a cut-out exists to be free of.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>The Playlist lens gave up the transport it carried.</strong> The bar along the foot is already one and does not move when the list does, so the lens is now the two things a bar cannot be: how a board is started, and how a track is chosen.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong><code>Fill the card</code> and <code>Fit in the card</code> no longer both carry a tick.</strong> They are one choice, and the tick now says which.</li>
       <li><span class="pn-tag is-fix">Fix</span><strong>An anchored card is something an arrangement keeps clear of</strong> rather than something it deals a slot to and lays another card on top of.</li>
-      <li><span class="pn-tag is-fix">Fix</span>Going to a step in the Timeline that a later edit had changed no longer rebuilds from a picture of a board that never existed.</li>
-      <li><span class="pn-tag is-fix">Fix</span>A paste, an anchor and an unanchor are named in the Timeline instead of arriving as unlabelled steps.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The Playlist lens gave up the transport it carried.</strong> The bar along the foot is already one and does not move when the list does, so the lens is now the two things a bar cannot be: how a board is started, and how a track is chosen.</li>
     </ul>
   </article>
 </li>
@@ -1530,16 +278,14 @@
       <li><span class="pn-tag is-new">New</span><strong>The Timeline lives in the board file rather than in the tab</strong>, so it is still there tomorrow.</li>
       <li><span class="pn-tag is-new">New</span><strong>A step can be given a name</strong>, and a named step is a landmark you can find again months later.</li>
       <li><span class="pn-tag is-new">New</span><strong>An align, a distribute or an arrange can be changed after the fact</strong>, and everything you did after it happens again on top of the new answer.</li>
-      <li><span class="pn-tag is-new">New</span><strong>Exporting asks whether to send the history with the board</strong>, and the answer already under your thumb is to leave it out.</li>
       <li><span class="pn-tag is-new">New</span><strong>The Timeline offers to fold steps older than thirty days into the starting point</strong>, leaving the board <em>unchanged</em> and the named landmarks where they are.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Exporting asks whether to send the history with the board</strong>, and the answer already under your thumb is to leave it out.</li>
       <li><span class="pn-tag is-new">New</span><strong><code>Board contents</code> takes you to the card</strong>, so pressing a row in the list of heaviest files travels the board to whatever is using it.</li>
       <li><span class="pn-tag is-new">New</span><strong>The board file names its own parts</strong>, so a <code>.mbrd</code> renamed to <code>.zip</code> opens with the pictures under the names of the cards they sit on.</li>
       <li><span class="pn-tag is-new">New</span>The palette menu draws each palette as a bar of its own colours down the trailing edge, where they line up and can be read against each other.</li>
       <li><span class="pn-tag is-fix">Fix</span><strong>Hovering a card animates again</strong>, after several releases of the lift, the tilt and the ring arriving instantly.</li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>A second press on a menu button closes the menu</strong> rather than reopening it.</li>
       <li><span class="pn-tag is-fix">Fix</span><strong>A note no longer sticks to the pointer after you change its face.</strong></li>
-      <li><span class="pn-tag is-fix">Fix</span>The panel row that reports how much undo is left is called <code>How much can be undone</code> rather than <code>Undo history</code>.</li>
-      <li><span class="pn-tag is-faster">Faster</span><strong>A board carrying an embedded typeface saves quicker</strong>, now that faces are stored as they are rather than compressed into a copy that was never any smaller.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>A board carrying an embedded typeface saves quicker.</strong></li>
       <li class="is-plain">The three lines on an empty board now say what the board is for rather than listing what you are allowed to drop on it.</li>
     </ul>
   </article>
@@ -1556,16 +302,11 @@
       <p class="pn-date">14 August 2026</p>
     </header>
     <ul class="pn-notes">
-      <li><span class="pn-tag is-new">New</span><strong>The board remembers what it used to look like</strong>, keeping copies as you work and any you name yourself under System, then <code>Earlier versions</code>.</li>
       <li><span class="pn-tag is-new">New</span><strong><code>What is in this board</code> says where the weight went</strong>, counting by kind and naming the ten heaviest files and anything stored that no card uses any more.</li>
       <li><span class="pn-tag is-new">New</span><strong>A style tile joins the two ways of saving a picture</strong>, carrying the palette, the faces, a few of the pictures, the name and the date.</li>
       <li><span class="pn-tag is-new">New</span><strong>A cut-out picture can drop its card</strong>, landing on the board as the shape rather than in a box.</li>
       <li><span class="pn-tag is-fix">Fix</span><strong>The Join tool no longer accepts a join it cannot draw</strong>, and boards already carrying one have it cleaned out when they open.</li>
-      <li><span class="pn-tag is-fix">Fix</span>The <code>Arrange</code> panel no longer hangs off the end of the toolbar.</li>
-      <li><span class="pn-tag is-fix">Fix</span>The sticker pad opens at the top rather than a few pixels down, so the first heading is not sliced along the letters.</li>
-      <li><span class="pn-tag is-fix">Fix</span>Two rows of an image's right-click menu no longer claim the same double-click.</li>
       <li><span class="pn-tag is-faster">Faster</span><strong>Importing pictures is lighter on memory</strong>, now that the small copy is asked for directly rather than decoded out of the full size.</li>
-      <li><span class="pn-tag is-faster">Faster</span>The right-click menu on a large selection opens without comparing every card to every other card first.</li>
     </ul>
   </article>
 </li>
@@ -1581,18 +322,8 @@
       <p class="pn-date">13 - 14 August 2026</p>
     </header>
     <ul class="pn-notes">
-      <li><span class="pn-tag is-new">New</span><strong>The changelog is a page of the app now</strong>, printed by the app's own stylesheets under the app's own sidebar and reached from System.</li>
-      <li><span class="pn-tag is-new">New</span><strong>It is printed the way your board is printed</strong>, so moving the whimsy dial while you are reading moves the page in front of you.</li>
-      <li><span class="pn-tag is-new">New</span><strong>Nothing you touch on the changelog is kept</strong>, because the page never opens your session and never writes a preference.</li>
-      <li><span class="pn-tag is-new">New</span><strong><code>Canvas</code>, <code>Feed</code> and <code>Playlist</code> take you back to the board</strong>, each on the face you pressed.</li>
-      <li><span class="pn-tag is-new">New</span><strong>Everything that needs a board is greyed on the changelog rather than missing from it.</strong></li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>The menu button stopped fading away on the changelog</strong>, where a faded control took no clicks and was the only way in.</li>
-      <li class="is-plain"><strong>The whole record was rewritten</strong>, which is why the entries below this one are longer than they were.</li>
-    </ul>
-    <h3 class="pn-part">Maintenance</h3>
-    <ul class="pn-notes">
-      <li class="is-plain"><strong>The last two files carrying an exemption from the type checker were typed</strong>, and the count is zero.</li>
-      <li class="is-plain"><strong>The script that commits also builds</strong>, so a build that fails stops the commit rather than warning about it.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The changelog is a page of the app now</strong>, reached from System, and printed the way your own board is printed - so the look you set is the look you read it in.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Nothing you touch on the changelog is kept.</strong> The page never opens your session and never writes a preference.</li>
     </ul>
   </article>
 </li>
@@ -1608,19 +339,11 @@
       <p class="pn-date">12 - 13 August 2026</p>
     </header>
     <ul class="pn-notes">
-      <li class="is-plain"><strong>Almost nothing here is visible on a board</strong>, because the release went on rewriting the app in a language that checks itself and taking it apart into smaller pieces.</li>
+      <li class="is-plain"><strong>Almost nothing here is visible on a board.</strong> The release went on rewriting the app in a language that checks itself and taking it apart into smaller pieces, which is work that pays for itself later and shows nothing now.</li>
       <li><span class="pn-tag is-fix">Fix</span><strong>The app now tells you when something goes wrong</strong>, on the board, in words.</li>
       <li><span class="pn-tag is-fix">Fix</span><strong>Hovering works on a laptop that reports itself as a touchscreen.</strong></li>
       <li><span class="pn-tag is-fix">Fix</span><strong>The buttons round the edge of the board react to the pointer again in Chrome.</strong></li>
       <li><span class="pn-tag is-new">New</span><strong>The hint cards show on the Feed</strong>, which used to open as an empty column on a brand-new board.</li>
-      <li><span class="pn-tag is-fix">Fix</span>A card no longer takes the accent outline just for being pointed at, since that mark means <em>selected</em>.</li>
-      <li><span class="pn-tag is-fix">Fix</span>The slider thumb stopped leaking its fill past its own border.</li>
-    </ul>
-    <h3 class="pn-part">Maintenance</h3>
-    <ul class="pn-notes">
-      <li class="is-plain"><strong>Written in TypeScript and shipped as one file</strong>, so a board downloads one script instead of fetching the whole tree.</li>
-      <li class="is-plain"><strong>A Content-Security-Policy, with a test that keeps it honest.</strong></li>
-      <li class="is-plain"><strong>The two largest files were split up</strong>, and a test now enforces the rule about which piece may reach for which.</li>
     </ul>
   </article>
 </li>
@@ -1664,9 +387,6 @@
       <li><span class="pn-tag is-fix">Fix</span><strong>The note composer drew its sheet at life size, off to the left.</strong></li>
       <li><span class="pn-tag is-fix">Fix</span><strong>The sticker drawer shuts the moment a shape is dragged out of it.</strong></li>
       <li><span class="pn-tag is-fix">Fix</span><strong>The Feed is printed on paper again</strong>, after a spell on untextured stock.</li>
-      <li><span class="pn-tag is-fix">Fix</span>The phone toolbar handle no longer shows a square corner while pressed.</li>
-      <li><span class="pn-tag is-fix">Fix</span>The pen no longer comes down as soon as the Feed's title page has scrolled away.</li>
-      <li><span class="pn-tag is-fix">Fix</span>The Debug section is folded, so the System tab no longer ends on a footnote.</li>
     </ul>
   </article>
 </li>
@@ -1686,7 +406,6 @@
       <li><span class="pn-tag is-new">New</span><strong>Stickers</strong>, a drawer of shapes you can drag onto the board and tint from the board's own palette.</li>
       <li><span class="pn-tag is-new">New</span><strong>Windows you can move and leave open</strong>, of which the sticker drawer is the first and the Playlist the second.</li>
       <li><span class="pn-tag is-new">New</span><strong>Hover flyouts on the toolbar</strong>, so a tool with options shows them where the tool is.</li>
-      <li class="is-plain">A full pass over the look of the app, with everything it found written down rather than quietly fixed.</li>
     </ul>
   </article>
 </li>
@@ -1751,7 +470,6 @@
       <li><span class="pn-tag is-new">New</span><strong>The toolbar</strong>, in the shape it still has.</li>
       <li><span class="pn-tag is-new">New</span><strong>Threads route around the cards they pass</strong> instead of running under them.</li>
       <li><span class="pn-tag is-new">New</span><strong>A second typeface to set the app in</strong>, Playfair, which gives the softer end of the dial a face with some weight to it.</li>
-      <li class="is-plain">Maintenance: the single stylesheet the whole app had grown into was split into one file per subsystem, and the first full audit of the code was written down.</li>
     </ul>
   </article>
 </li>
@@ -1768,20 +486,13 @@
     </header>
     <ul class="pn-notes">
       <li class="is-plain"><strong>A release about the board staying smooth while it moves, and about not losing anything.</strong></li>
-      <li><span class="pn-tag is-faster">Faster</span><strong>Editing a note no longer drags the whole board down</strong>, now that its little toolbar works out where to sit from what the board already knows.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>Editing a note no longer drags the whole board down.</strong></li>
       <li><span class="pn-tag is-faster">Faster</span><strong>The grid stops redrawing when nothing has moved</strong>, which is most of the tail of a flicked pan.</li>
-      <li><span class="pn-tag is-faster">Faster</span><strong>Zooming out does less work per frame</strong>, checking what has left the view about eight times a second rather than on every one.</li>
-      <li><span class="pn-tag is-faster">Faster</span><strong>Exporting no longer holds the whole board in memory twice</strong>, writing straight from where the files already sit.</li>
       <li><span class="pn-tag is-faster">Faster</span><strong>Saving and reopening a board full of photographs is much quicker</strong>, without one round trip to storage per picture.</li>
-      <li><span class="pn-tag is-faster">Faster</span><strong>Dragging a colour stops writing to disk sixty times a second</strong>, and saves about five times a second instead.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>Exporting no longer holds the whole board in memory twice.</strong></li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>Dragging a colour stops writing to disk sixty times a second.</strong></li>
       <li><span class="pn-tag is-fix">Fix</span><strong>A picture from a board you had already closed can no longer reappear on the next one.</strong></li>
-      <li><span class="pn-tag is-fix">Fix</span><strong>Undo stopped holding on to more than it should</strong>, now that heavy actions declare their true cost.</li>
       <li><span class="pn-tag is-fix">Fix</span><strong>A board with an unresolved conflict refuses to save</strong> rather than writing something half-merged over the good copy.</li>
-      <li><span class="pn-tag is-fix">Fix</span>A stuck database connection is cleaned up rather than left open with nobody holding it.</li>
-    </ul>
-    <h3 class="pn-part">Maintenance</h3>
-    <ul class="pn-notes">
-      <li class="is-plain"><strong>The central file became seven</strong>, and nothing that used any of it had to change.</li>
     </ul>
   </article>
 </li>
@@ -1799,12 +510,10 @@
     <ul class="pn-notes">
       <li class="is-plain"><strong>Worked on against measurements rather than impressions</strong>, taken against the display's own refresh and kept.</li>
       <li><span class="pn-tag is-faster">Faster</span><strong>Panning and zooming a large board</strong> now costs what is on the screen rather than what is on the board.</li>
-      <li><span class="pn-tag is-faster">Faster</span><strong>Photographs are mounted at a sensible size</strong> for how large they are actually being drawn.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>Photographs are mounted at a sensible size</strong> for how large they are actually being drawn, and zoomed out the app sheds image decoding and card shadows entirely.</li>
       <li><span class="pn-tag is-faster">Faster</span><strong>A video does not load until it is first played on a touch device.</strong></li>
-      <li><span class="pn-tag is-faster">Faster</span>Zoomed out, image decoding and card shadows are shed entirely.</li>
       <li><span class="pn-tag is-new">New</span><strong>A redrawn app icon:</strong> three cards on the grid.</li>
       <li><span class="pn-tag is-new">New</span>Cards <strong>animate out when they leave</strong>, so something deleted reads as having gone rather than as having never been there.</li>
-      <li class="is-plain"><strong>The phone scroll campaign ended in no rewrite</strong>, and that is the finding.</li>
     </ul>
   </article>
 </li>
@@ -1877,7 +586,7 @@
   </ol>
 
   <footer class="pn-foot">
-    <span>mbrd by valjdakosta</span>
+    <span>mbrd 0.237 by valjdakosta</span>
     <a href="/">Back to the board</a>
   </footer>
  </div>

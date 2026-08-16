@@ -3,10 +3,10 @@
 
    NOT ONE OF THE TWENTY, and last after all of them. web/patch.html loads
    index.html's whole cascade - copied at build time by
-   tools/gen-patch-page.mjs, so this page wears the app's paper, the app's ink
-   and the app's sidebar rather than a second account of them - and then loads
-   this. Everything below is either the one correction a document has to make
-   to a stylesheet written for a board, or the page itself.
+   tools/gen-patch-page.mjs, so this page wears the app's paper and the app's
+   ink rather than a second account of them - and then loads this. Everything
+   below is either the one correction a document has to make to a stylesheet
+   written for a board, or the page itself.
 
    It IS in SHELL in web/sw.js. tests/sw.test.js walks this directory and
    precaches every .css it finds, which is the right rule here too.
@@ -32,46 +32,37 @@
    only what a token cannot say: the tape, the marker swipe, the tilt, and the
    tag column.
 
-   ── Classes, with three exceptions ──
+   ── Only classes now ──
 
    tests/element-ids.test.js walks this directory and asserts that every id a
-   selector names exists in index.html. The page's own elements do not, so
-   everything of this page's is a class. The exceptions are #sidebar,
-   #menu-btn and #side-close, which are the app's own ids on the app's own
-   markup - and which this file does not restyle anyway.
+   selector names exists in index.html. This file names none: the page's own
+   elements are all classes, and the app's own furniture is no longer on the
+   page to be hidden.
+
+   ── There is no board on this page, and no app either ──
+
+   There used to be both. patch.html was index.html's entire body, the bundle
+   booted on it, and the sidebar over the changelog was the app's real sidebar -
+   with this file hiding the viewport, the toolbar, the HUD, the bin and the
+   corner furniture so that what showed through was a document. The sidebar has
+   been taken off the page, and the copy went with it, because everything the
+   copy was for was that sidebar.
+
+   Two things were wrong with it in the meantime and both are now gone by
+   construction rather than by a rule here. The page shipped half a megabyte of
+   script to boot a board nobody could see. And #grain - the app's paper tooth,
+   `position: fixed`, full window - stayed on the page and stayed still, behind
+   a sheet whose own texture scrolls: two grounds over one another, one of them
+   nailed to the window, which is exactly what it looked like.
    ========================================================= */
-
-/* ---------------------------------------------------------
-   Putting the board away
-
-   The app is running on this page - that is what makes the sidebar the app's
-   own - and everything it draws a board with is in the document. None of it
-   belongs on a changelog, so it goes here rather than being left out of the
-   markup: leaving it out would mean patch.html stopped being index.html's body
-   and started being a second copy of it, which is the whole thing this design
-   is trying not to be. main.ts loads no session and seeds no cards, so what is
-   hidden below is an empty board nobody is looking at.
-
-   The panel and the button that opens it stay, obviously. So does everything
-   the panel opens - the dialogs are all `hidden` or <dialog> and show
-   themselves when asked.
-   --------------------------------------------------------- */
-
-body.is-patch :is(#viewport, #toolbar, #hud, #corner, #bin, #scale-bar,
-  #nowplaying, #splash, #mobile-feed, #mobile-playlist, #mobile-header-edit-btn,
-  #mobile-find-btn, #drop-overlay) {
-  display: none !important;
-}
 
 /* ---------------------------------------------------------
    The document scrolls, and the paper goes with it
 
-   base.css pins the app to the window - height 100%, overflow hidden - because
-   every gesture on a board belongs to the board. This page is not a board. The
-   viewport is hidden a few rules up, what is left of the app is #sidebar and
-   #menu-btn, and both of those are `position: fixed`, which measures itself
-   against the window whatever the document under it does. So the pin comes off
-   here and the changelog scrolls the way a document scrolls.
+   base.css is loaded here and it pins the app to the window - height 100%,
+   overflow hidden - because every gesture on a board belongs to the board. This
+   page is not a board and has nothing on it but prose, so the pin comes off and
+   the changelog scrolls the way a document scrolls.
 
    An earlier version kept the pin and scrolled the changelog inside a fixed
    surface of its own, the way the Feed does on the Mobile board. That works,
@@ -128,7 +119,14 @@ body {
    Softish and 0 at Harsh, so the tooth arrives and leaves with the rest of the
    personality and this rule needs no level of its own.
    Absolute rather than fixed, and against a body that is now the height of the
-   changelog: the tooth runs the length of the sheet and scrolls with it. */
+   changelog: the tooth runs the length of the sheet and scrolls with it.
+
+   **This is the only grain on the page**, and it was not always. #grain in
+   base.css is the same tile, fixed to the window, and it used to come here with
+   the rest of index.html's body - so the page carried two, one scrolling with
+   the prose and one nailed behind it, multiplied over each other. Nothing in
+   this file could have hidden it without also admitting that the body copy was
+   the problem, which is what taking the copy away did instead. */
 body.is-patch::before {
   content: "";
   position: absolute;
@@ -142,24 +140,15 @@ body.is-patch::before {
   opacity: calc(0.8 * var(--grain));
 }
 
-/* The measure of prose down the middle of the page.
-
-   Note what is *not* here: #sidebar and #menu-btn. An earlier version of this
-   file gave them `position: relative` "to lift them above the grain", which
-   took both out of the app's own `position: fixed` - the panel became a
-   full-height block in normal flow and pushed the whole changelog below it.
-   They are already above everything: sidebar.css gives them z-index 40, and
-   this file has no business restating either. */
+/* The measure of prose down the middle of the page, and now the whole of what
+   is on it. The top padding was clearing the board's menu button in the corner;
+   it stays at that value because the page reads better opening on paper than on
+   a headline flush to the top edge. */
 .pn-inner {
   max-width: 880px;
   margin: 0 auto;
   padding: clamp(76px, 11vw, 132px) clamp(18px, 5vw, 40px) 96px;
 }
-
-/* Nothing is taken out of the panel. Not the Board tab, not Arrange, not one
-   row: the whole sidebar is the whole sidebar, and a changelog that quietly
-   dropped the sections it judged pointless would be the fourth different
-   sidebar this page has had. */
 
 /* ---------------------------------------------------------
    The column
@@ -172,12 +161,11 @@ body.is-patch::before {
 
 /* The way back.
 
-   Sticky rather than fixed, and inside the column rather than over the
-   window: the board's own menu button is fixed in the top-left corner of this
-   page - it is the app's real sidebar, which is the whole design of /patch -
-   and a second fixed control would land on top of it. Sticking inside the
-   column means it rides the measure, stays clear of that corner at every width,
-   and cannot be somewhere different on a phone.
+   Sticky rather than fixed, and inside the column rather than over the window.
+   It used to have to be, to stay clear of the board's own menu button in the
+   corner; that button is off the page now and it stays sticky anyway, because
+   riding the measure is what keeps it in the same place at every width and on a
+   phone rather than somewhere different on each.
 
    It has to be opaque and it has to outrank the plates. A sticky element with a
    transparent ground is a word with a changelog scrolling through it, and the
@@ -493,15 +481,18 @@ body.is-patch::before {
 }
 
 /* ---------------------------------------------------------
-   Links, the foot, and the index in the sidebar
+   Links and the foot
+
+   `.side-foot .by` used to ride this rule, which was the app's own sidebar
+   credit line sitting in the panel on this page. There is no panel here now.
    --------------------------------------------------------- */
 
-.pn a, .side-foot .by {
+.pn a {
   color: var(--accent);
   text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
   text-underline-offset: 2px;
 }
-.pn a:hover, .side-foot .by:hover { color: var(--accent-deep); }
+.pn a:hover { color: var(--accent-deep); }
 .pn a:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
