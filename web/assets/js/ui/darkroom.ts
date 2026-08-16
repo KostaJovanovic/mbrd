@@ -137,7 +137,7 @@ export function initDarkroom() {
     // feel like a form field rather than like a control on a photograph.
     // 120 stops each, so tickSlider() declines all three. Wired for the reason
     // the volume is: the helper judges, not the call site.
-    tickSlider(el as HTMLInputElement);
+    tickSlider(el);
     el.addEventListener('input', () => {
       // `Number.isFinite`, and emphatically not `Number(el.value) || 1`. Zero
       // is a real position on this control - saturation runs 0..2, and 0 is

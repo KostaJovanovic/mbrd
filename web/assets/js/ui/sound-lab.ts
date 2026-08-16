@@ -52,13 +52,12 @@ import { initCuelume, playRecipe, resetCueState, setSoundLevel } from '../cuelum
 /**
  * A voice as a playable recipe, with the inversion applied where it asks for
  * one.
- *
- * SAFETY: RECIPES is read back as readonly literals and SoundRecipe is the
- * mutable shape of one; the assertion drops `readonly` and claims nothing about
- * the contents. Nothing here writes to a recipe - invert() builds a new one and
- * playRecipe() only reads numbers off it.
  */
 const recipeOf = (voice: Voice): SoundRecipe => {
+  // SAFETY: RECIPES is read back as readonly literals and SoundRecipe is the
+  // mutable shape of one; the assertion drops `readonly` and claims nothing
+  // about the contents. Nothing here writes to a recipe - invert() builds a new
+  // one and playRecipe() only reads numbers off it.
   const recipe = RECIPES[voice.sound] as SoundRecipe;
   return voice.reverse ? invert(recipe) : recipe;
 };
