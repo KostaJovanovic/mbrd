@@ -931,3 +931,11 @@
 #hud span + span { border-left: 1px solid var(--rule); }
 #hud-xy { color: var(--accent-deep); }
 #hud[hidden] { display: none; }
+
+/* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
+   the argument and declares the channel-form tokens. */
+@supports not (color: color-mix(in srgb, red, blue)) {
+  #toolbar button[aria-pressed="true"] { background: rgb(var(--accent-c) / 12%); }
+  #nowplaying .np-line-base { stroke: rgb(var(--ink-c) / 22%); }
+  #scale-bar-label { background: rgb(var(--paper-card-c) / 78%); }
+}

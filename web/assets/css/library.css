@@ -126,3 +126,13 @@
 .library-card:hover .library-del,
 .library-del:focus-visible { opacity: 1; }
 .library-del:hover { color: var(--danger); }
+
+/* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
+   the argument and declares the channel-form tokens. Both of these are `in
+   oklab` above and convert the same way: the transparent end premultiplies to
+   nothing, so the trip through oklab is a lossless round trip and what is left
+   is the colour at that alpha. */
+@supports not (color: color-mix(in srgb, red, blue)) {
+  #library { background: rgb(var(--ink-c) / 34%); }
+  .library-del { background: rgb(var(--paper-c) / 82%); }
+}

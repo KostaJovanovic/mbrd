@@ -733,3 +733,41 @@ body.is-patch::before {
     :root[data-whimsy="0"] .pn-plate:hover { rotate: calc(var(--tilt-max) * 0.18); }
   }
 }
+
+/* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
+   the argument and declares the channel-form tokens.
+
+   This page is index.html's head and nothing else, so it wears the app's whole
+   cascade with none of its script - which means it gets the same fallback for
+   the same reason, and gets it from the same tokens. The plate and the tape are
+   ghosts.css's, rebuilt here for a document rather than a card; the two blocks
+   should be read together and changed together. */
+@supports not (color: color-mix(in srgb, red, blue)) {
+  .pn a { text-decoration-color: rgb(var(--accent-c) / 45%); }
+
+  :root[data-whimsy="0"] .pn-plate {
+    background:
+      repeating-linear-gradient(180deg,
+        transparent 0 21px,
+        rgb(111 134 168 / 17%) 21px 22px),
+      linear-gradient(90deg,
+        transparent 0 26px,
+        rgb(180 84 74 / 42%) 26px 27px,
+        transparent 27px),
+      var(--paper-card);
+  }
+
+  :root[data-whimsy="0"] .pn-rel::after {
+    background:
+      repeating-linear-gradient(90deg,
+        rgb(168 129 74 / 7%) 0 2px, transparent 2px 6px),
+      linear-gradient(180deg,
+        rgb(232 207 156 / 78%),
+        rgb(220 192 138 / 72%));
+    box-shadow: 0 1px 2px rgb(var(--ink-c) / 18%);
+  }
+
+  :root[data-whimsy="0"] .pn-mark {
+    box-shadow: 0 1px 3px rgb(var(--ink-c) / 34%);
+  }
+}

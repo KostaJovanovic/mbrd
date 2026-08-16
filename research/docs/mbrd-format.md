@@ -502,10 +502,16 @@ whole of the recovery. What the app will not do is carry it forward.
 
 ### `timeline`
 
-How the board got here. Absent on a board nobody has changed, and absent from
-every export where the person saving it said to leave it out — which is the
-default, and the reason it is described here as something you may or may not
-find rather than as part of a board.
+How the board got here. Absent on a board nobody has changed, and absent from a
+**share** where the person sending it said to leave it out.
+
+Export used to ask the same question and default to leaving it out. It no longer
+asks and no longer drops: a file written to your own disk without its ledger
+opens as a board with no past, and nothing at the far end can put back what was
+never written. Share still asks, because that is the path where the file goes to
+somebody else by definition and the ledger holds everything that was tried and
+thrown away. So a reader must still cope with the key being absent — an older
+build, an unedited board, or a share somebody trimmed.
 
 ```json
 "timeline": {

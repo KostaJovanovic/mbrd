@@ -450,3 +450,12 @@
   20%  { transform: scale(1.06); filter: blur(0); }
   100% { transform: scale(0); filter: blur(6px); opacity: 0; }
 }
+
+/* Without color-mix(), for WebKit below 16.2. The whole argument - the
+   premultiplied-alpha identity that makes rgb() exact rather than close, why a
+   second declaration in the same rule would not have worked, and why a current
+   browser pays nothing for this - is section 7 of tokens.css, where the
+   channel-form tokens are declared. */
+@supports not (color: color-mix(in srgb, red, blue)) {
+  #saved { background: rgb(var(--paper-card-c) / 82%); }
+}

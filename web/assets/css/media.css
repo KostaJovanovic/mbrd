@@ -498,3 +498,13 @@
    only gets in the way of picking the card up. */
 #world.zoom-far .vbig { display: none; }
 
+/* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
+   the argument and declares the channel-form tokens. */
+@supports not (color: color-mix(in srgb, red, blue)) {
+  .card-cover { box-shadow: 0 0 0 var(--board-hairline) rgb(var(--ink-c) / 10%); }
+  .wave-base i { background: rgb(var(--ink-c) / 38%); }
+  #world.zoom-far .card-audio.has-cover .play {
+    background: rgb(var(--paper-card-c) / 84%);
+  }
+}
+

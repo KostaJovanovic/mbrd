@@ -852,3 +852,19 @@ button.inv-line:focus-visible {
   object-fit: contain;
 }
 
+/* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
+   the argument and declares the channel-form tokens. The scrims matter more
+   here than most: a backdrop that falls back to its initial value is not a
+   dimmed board, it is no scrim at all, and the dialog then sits on a board that
+   still looks live. */
+@supports not (color: color-mix(in srgb, red, blue)) {
+  #ask::backdrop,
+  #credits::backdrop,
+  #inventory::backdrop,
+  #timeline-sheet::backdrop,
+  #compose::backdrop,
+  #darkroom::backdrop { background: rgb(var(--ink-c) / 42%); }
+  #darkroom-frame { box-shadow: 0 0 0 100vmax rgb(var(--ink-c) / 55%); }
+  .dk-tool[aria-pressed="true"] { border-color: rgb(var(--accent-c) / 40%); }
+}
+

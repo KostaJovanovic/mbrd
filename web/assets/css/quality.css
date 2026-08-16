@@ -461,3 +461,11 @@
   pointer-events: none;
   z-index: 1;
 }
+
+/* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
+   the argument and declares the channel-form tokens. */
+@supports not (color: color-mix(in srgb, red, blue)) {
+  :root[data-whimsy="0"] .item[data-type="image"]:not([data-bare]) .item-body img {
+    box-shadow: 0 0 0 var(--board-hairline) rgb(var(--ink-c) / 10%);
+  }
+}

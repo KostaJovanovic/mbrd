@@ -587,3 +587,18 @@
 @media (max-width: 720px) {
   #timeline-strip { display: none; }
 }
+
+/* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
+   the argument and declares the channel-form tokens. Only the colour is
+   restated; the rest of each rule above is untouched and still applies. */
+@supports not (color: color-mix(in srgb, red, blue)) {
+  #timeline-strip .tl-name:hover,
+  #timeline-strip .tl-step:hover .tl-dot,
+  .tl-trim-go:hover { background: rgb(var(--ink-c) / 8%); }
+  #timeline-strip .tl-step.is-at::after {
+    box-shadow: 0 0 0 2px rgb(var(--accent-c) / 35%);
+  }
+  #timeline-strip .tl-step.is-ruled .tl-dot {
+    box-shadow: 0 0 0 var(--hairline) rgb(var(--accent-c) / 55%);
+  }
+}

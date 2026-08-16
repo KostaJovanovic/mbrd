@@ -176,3 +176,9 @@
   letter-spacing: 0.04em;
 }
 #pick-hex:focus { outline: none; border-color: var(--accent); }
+
+/* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
+   the argument and declares the channel-form tokens. */
+@supports not (color: color-mix(in srgb, red, blue)) {
+  #pick::backdrop { background: rgb(var(--ink-c) / 42%); }
+}

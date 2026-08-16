@@ -760,3 +760,43 @@ plates do: below a third of size a card is a coloured tile, and a click on
    five pixels tall. Opening a tab is not a thing to do by accident. */
 #world.zoom-far .card-link .card-name { pointer-events: none; }
 
+/* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
+   the argument and declares the channel-form tokens.
+
+   Four of these restate a whole shorthand rather than a colour, for the reason
+   base.css gives: a gradient stop, a shadow in a list and a drop-shadow in a
+   filter chain are all parts of one declaration and cannot be reached
+   separately. Each is otherwise identical to the rule it mirrors - if one of
+   them is edited above and not here, the two disagree only on a browser nobody
+   testing this is holding, which is what tests/legacy-color.test.js is for. */
+@supports not (color: color-mix(in srgb, red, blue)) {
+  .item[data-type="note"] .card {
+    background:
+      linear-gradient(180deg,
+        rgb(var(--ink-c) / 6%) 0,
+        transparent var(--note-band)),
+      var(--note-paper);
+    box-shadow: inset 0 0 0 var(--board-hairline) rgb(var(--ink-c) / 7%);
+  }
+  .note-toolbar {
+    box-shadow:
+      0 3px 10px rgb(var(--ink-c) / 16%),
+      inset 0 0 0 var(--hairline) var(--item-border);
+  }
+  .note-toolbar .ntb-group + .ntb-group {
+    border-left: var(--hairline) solid rgb(var(--ink-c) / 12%);
+  }
+  .note-toolbar .ntb-btn:hover { background: rgb(var(--ink-c) / 8%); }
+  .note-toolbar .ntb-select { background: rgb(var(--ink-c) / 6%); }
+  .note-toolbar .ntb-chip {
+    box-shadow: inset 0 0 0 var(--hairline) rgb(var(--ink-c) / 30%);
+  }
+  .note-toolbar .ntb-btn.is-active .ntb-chip {
+    box-shadow: inset 0 0 0 var(--hairline) rgb(var(--accent-fg-c) / 55%);
+  }
+  .sticker-art {
+    filter: drop-shadow(0 1px 1px rgb(var(--ink-c) / 16%))
+            drop-shadow(0 3px 5px rgb(var(--ink-c) / 15%));
+  }
+}
+

@@ -758,3 +758,13 @@
    a plate that is display:none while it is being typed into is a rename with
    nowhere to type. It comes back for the edit and goes again after it. */
 .item[data-bare]:not(.is-editing) .item-bar { display: none; }
+
+/* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
+   the argument and declares the channel-form tokens. */
+@supports not (color: color-mix(in srgb, red, blue)) {
+  .swatch-well,
+  .style-tile-shot,
+  .style-tile-band {
+    box-shadow: 0 0 0 var(--board-hairline) rgb(var(--ink-c) / 10%);
+  }
+}
