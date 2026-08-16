@@ -34,6 +34,7 @@
 // initStickerWindow() or a handler that runs after it.
 
 import { readPrefJSON, writePref } from '../prefs.ts';
+import { cue } from '../cuelume/engine.ts';
 import { bus, wouldStick, byId } from '../state.ts';
 import { defaultSize } from '../canvas/renderers.ts';
 import { showStickTarget } from '../canvas/items.ts';
@@ -52,7 +53,7 @@ import type { Viewport } from '../canvas/viewport.ts';
  * one way.
  */
 export interface StickerCommands {
-  addStickerAt: (shape: string, at: { x: number, y: number }) => unknown;
+  addStickerAt: (shape: string, at: { x: number, y: number }) => void;
 }
 
 const CLOSE_ICON =
@@ -144,7 +145,7 @@ function openStickerWindow() {
   close.className = 'sticker-window-close';
   close.setAttribute('aria-label', 'Close stickers');
   close.innerHTML = CLOSE_ICON;
-  close.addEventListener('click', closeStickerWindow);
+  close.addEventListener('click', () => { cue('pick'); closeStickerWindow(); });
   head.append(title, spacer, close);
   makeWindowDrag(win, head);
 
@@ -242,6 +243,9 @@ function renderBody() {
   // symptom, and would be wrong the moment somebody has a favourite, because the
   // Favourites shelf then sits above Marks and scrolling to it is correct.
   const at = body.querySelector<HTMLElement>(`[data-cat="${lastCategory}"]`);
+  // SAFETY: every child of the window's body is a shelf this module built with
+  // div(), so the first of them is an HTMLElement. The null is kept for a body
+  // with nothing in it, and the `&&` below is what reads it.
   const first = body.firstElementChild as HTMLElement | null;
   if (at && first && at !== first) body.scrollTop = at.offsetTop - first.offsetTop;
 }
@@ -288,7 +292,9 @@ function tile(entry: Sticker, inFavourites: boolean) {
   // pointerdown, and without stopping it here a press on the star would start
   // dragging the shape out of the window.
   fav.addEventListener('pointerdown', e => e.stopPropagation());
-  fav.addEventListener('click', e => { e.stopPropagation(); toggleFavourite(entry.id); });
+  // A star is a toggle rather than an action, so it says which way it went -
+  // the same pair the checkboxes in the panel use.
+  fav.addEventListener('click', e => { e.stopPropagation(); cue(on ? 'off' : 'on'); toggleFavourite(entry.id); });
   el.append(fav);
   if (inFavourites) el.classList.add('is-favourite');
 
@@ -397,7 +403,8 @@ function markArmed() {
 function startTileDrag(e: PointerEvent, entry: Sticker) {
   if (e.button !== 0) return;
   e.preventDefault();
-  // currentTarget is the tile this listener was bound to.
+  // SAFETY: currentTarget is the tile this listener was bound to, which is the
+  // one target a handler can be sure of.
   const el = e.currentTarget as HTMLElement;
   el.setPointerCapture?.(e.pointerId);
   drag = { entry, el, id: e.pointerId, x: e.clientX, y: e.clientY, ghost: null };

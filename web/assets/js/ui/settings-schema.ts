@@ -68,6 +68,7 @@ import {
   QUALITY_LEVELS, quality, qualityLevel, setQualityLevel, setQualityOverride,
   clearQualityOverrides, SHARPNESS_STEPS, BUILD_STEPS,
 } from '../quality.ts';
+import { SOUND_STOPS, cueLogOn, soundLevel, setSoundLevel } from '../cuelume/engine.ts';
 
 // ---------------------------------------------------------------------------
 // What a control is
@@ -134,7 +135,7 @@ export type TextControl = Common & {
   type: 'text', maxlength?: number, placeholder?: string, ariaLabel?: string,
 };
 export type CheckControl = Common & {
-  type: 'check', label: string, get?: () => boolean, set?: (value: boolean) => unknown,
+  type: 'check', label: string, get?: () => boolean, set?: (value: boolean) => void,
 };
 export type RangeControl = Common & {
   type: 'range', label: string,
@@ -147,13 +148,13 @@ export type RangeControl = Common & {
   outText?: string,
   format?: (value: number) => string,
   get?: () => number,
-  set?: (value: number) => unknown,
+  set?: (value: number) => void,
 };
 export type SelectControl = Common & {
   type: 'select', label: string, fieldId?: string,
   options?: (ctx: Ctx) => Option[],
   get?: () => string,
-  set?: (value: string) => unknown,
+  set?: (value: string) => void,
 };
 /**
  * A select whose options are worth *seeing* rather than only reading.
@@ -200,7 +201,7 @@ export type PickerControl = Common & {
   options?: (ctx: Ctx) => Option[],
   swatches?: (value: string) => string[],
   get?: () => string,
-  set?: (value: string) => unknown,
+  set?: (value: string) => void,
 };
 export type ButtonsControl = Common & {
   type: 'buttons', group?: boolean, ariaLabel?: string, buttons: ButtonSpec[],
@@ -307,6 +308,20 @@ const QUALITY_HINT = {
   balanced: 'Softer pictures, no panel blur, smaller batches. Nothing you can see standing still.',
   light: 'GIFs held still, no shadows, no blur, no animation. For a tired phone.',
 };
+
+/**
+ * The same for the sound dial, and it has one sentence to carry that the
+ * quality hint does not: this control is loudness and nothing else. The sounds
+ * themselves are the same eleven whatever else the app is wearing - the whimsy
+ * axis carried them for a day and stopped, for the reason the head of CUES in
+ * cuelume/recipes.ts gives at length.
+ */
+const SOUND_HINT = [
+  'Silent.',
+  'Just audible. For a quiet room.',
+  'Small sounds for the things you do.',
+  'The same sounds, further forward.',
+];
 
 /**
  * Every section, in the order it appears inside its tab.
@@ -687,6 +702,28 @@ export const SECTIONS: Section[] = [
         get: () => QUALITY_LEVELS.findIndex(l => l.id === qualityLevel()),
         set: v => setQualityLevel(QUALITY_LEVELS[v]?.id) },
       { id: 'quality-hint', type: 'hint', text: () => QUALITY_HINT[qualityLevel()] },
+      // In this section rather than in Appearance, and that is the same line
+      // the section's own note draws: how loud somebody else's laptop should be
+      // is not a property of your moodboard, so it never travels inside a
+      // .mbrd. It is stored under mbrd.sound like every other per-device
+      // choice - which means "Clear everything" sweeps it and /patch cannot
+      // change it, both for free (prefs.ts).
+      //
+      // One four-stop dial rather than a checkbox and a volume beside it: two
+      // controls can disagree with each other, and "Off" is a stop on this one.
+      // Defaults to Medium, which is to say defaults to on - a setting nobody
+      // ever hears is a setting nobody knows they have, and Off is one drag
+      // away and sticks.
+      //
+      // The quality dial deliberately does not touch it. Sound costs nothing to
+      // draw, and muting it on a tired phone would be tidying rather than
+      // helping.
+      { id: 'opt-sound', type: 'range', label: 'Sounds',
+        min: 0, max: 3, step: 1, silent: true,
+        stops: SOUND_STOPS,
+        get: () => soundLevel(),
+        set: v => setSoundLevel(v) },
+      { id: 'sound-hint', type: 'hint', text: () => SOUND_HINT[soundLevel()] },
       // The overrides. Each reads the resolved flag - so moving the dial moves
       // every one of these - and writes an override that outranks the dial from
       // then on. "Start over" at the foot is the way back, the same as
@@ -839,6 +876,21 @@ export const SECTIONS: Section[] = [
         // the useful sequence is arm, drive the board, read, drive some more,
         // and turning it off to see the numbers would reset them.
         { cmd: 'debug-perf-report', label: 'Print the frame report' },
+        // The interface sounds, and the one row in this fold that is about
+        // something you cannot see. Every cue that reaches cuelume/engine.ts,
+        // with the reason where it made no sound - and the point of it is the
+        // presses that produce *no line at all*, which are call sites that never
+        // asked rather than sounds the engine dropped.
+        //
+        // `pressed` here, unlike the two rows above, and that difference is the
+        // whole of the difference between the toggles: this one is remembered
+        // across a reload, so a button that assumed it started off would be
+        // wrong on every load after the first. cueLogOn() is askable, which is
+        // what makes painting it right rather than a guess; the command writes
+        // aria-pressed too, for the repaints in between.
+        { cmd: 'debug-sound', label: 'Log interface sounds',
+          pressed: () => cueLogOn() },
+        { cmd: 'debug-sound-report', label: 'Print the cue log' },
         // Every line between cards, in one press. Here rather than beside the
         // Join tool because it is a demolition and not a drawing tool: the way
         // to remove *a* connection is to draw over it, and a board-wide clear is

@@ -33,6 +33,7 @@ import { clamp } from '../util.ts';
 // Only the six-digit parse, which is arithmetic and shared. The space this
 // module works in is still HSV, for the reason the header gives.
 import { parseHex } from '../color.ts';
+import { tickSlider } from './controls.ts';
 
 /** A colour as this module holds it: hue in degrees, the other two in 0..1. */
 type Hsv = { h: number, s: number, v: number };
@@ -120,9 +121,10 @@ function hexToHsv(raw: unknown): Hsv | null {
 export async function pickColor(opts: PickOptions = {}): Promise<string | null> {
   if (typeof document === 'undefined') return null;
   // #pick is the <dialog> in index.html. A cast rather than an instanceof
-  // because the showModal test on the next line is the real guard and covers
-  // one more case than an instanceof could: an engine with no HTMLDialogElement
-  // at all, where the instanceof would be the thing that threw.
+  // SAFETY: the showModal test on the next line is the real guard, and it
+  // covers one more case than an instanceof could - an engine with no
+  // HTMLDialogElement at all, where the instanceof would be the thing that
+  // threw. Nothing is called on `el` before that test.
   const el = document.getElementById('pick') as HTMLDialogElement | null;
   if (!el || typeof el.showModal !== 'function') return null;
 
@@ -145,7 +147,13 @@ function openWith(el: HTMLDialogElement, o: Required<PickOptions>) {
   const title = document.getElementById('pick-title')!;
   const area = document.getElementById('pick-area')!;
   const dot = document.getElementById('pick-dot')!;
+  // SAFETY: both are <input> inside #pick in index.html, and the dialog they sit
+  // in has already been found and duck-typed above - a page carrying the picker
+  // carries the whole of it, since it is one block of markup. The five `!` on
+  // the lines around these say the same thing about the elements that need no
+  // tag.
   const hue = document.getElementById('pick-hue') as HTMLInputElement;
+  // SAFETY: as above.
   const hex = document.getElementById('pick-hex') as HTMLInputElement;
   const go = document.getElementById('pick-go')!;
   const cancel = document.getElementById('pick-cancel')!;
@@ -287,6 +295,8 @@ function openWith(el: HTMLDialogElement, o: Required<PickOptions>) {
     area.addEventListener('pointerup', onUp);
     area.addEventListener('pointercancel', onUp);
     area.addEventListener('keydown', onAreaKey);
+    // 360 stops, so tickSlider() declines it. See the note in ui/nowplaying.ts.
+    tickSlider(hue);
     hue.addEventListener('input', onHue);
     hex.addEventListener('input', onHexInput);
     hex.addEventListener('blur', onHexBlur);

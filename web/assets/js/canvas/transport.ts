@@ -379,6 +379,9 @@ export function buildTransport(
   // detached strip, for as long as the tab is open. A liveness test that runs
   // only on an event nobody is going to fire is not a teardown. See
   // releaseTransports(), which discard() calls.
+  // SAFETY: TransportNode is this module's own name for the element it built,
+  // plus the unsubscribe it hangs off it. `_offSelection` is written here and
+  // read only by releaseTransports() in this same file.
   (transport as TransportNode)._offSelection = off;
 
   return transport;

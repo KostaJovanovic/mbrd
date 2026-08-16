@@ -13,6 +13,64 @@
 // no-undef earns its place on its own: the same class of bug it catches was
 // sitting in web-graph.js, which called two geometry helpers it had never
 // imported and threw out of threads() for the life of the module.
+//
+// The anti-slop/* block is the one departure from "correctness only", and it is
+// a narrow one: every rule in it fires on a way of writing TypeScript that hides
+// a mistake rather than on a way of laying code out. `as X as Y`, a signature
+// that promises `unknown` back, an index signature standing in for a type - each
+// is a place where the checker was talked out of an answer it had. The plugin is
+// vendored at tools/oxlint/anti-slop and loaded through jsPlugins, so it costs
+// the repo a devDependency and no plugin graph. It is still not a formatter and
+// Prettier is still not coming.
+//
+// Four of the plugin's fifteen rules are off, and the reason is the same in each
+// case: they read a syntax as evidence of a missing boundary, and in this repo
+// that syntax IS the boundary. They are listed here rather than deleted so that
+// nobody turns one back on without reading why it went off.
+//
+//   no-runtime-typeof         245 hits. Two populations, both correct. One is
+//                             feature detection - `typeof document === void`,
+//                             `typeof MutationObserver !== 'function'` - which
+//                             is how browser-support.md says to ask. The other
+//                             is storage/ and board-schema.ts reading a .mbrd a
+//                             stranger wrote, where a typeof IS the parse.
+//   no-unknown-parameters     173 hits, almost all coercers and type guards:
+//                             clampScale(n: unknown), safeVars, isFamily. The
+//                             rule wants input parsed at the boundary; these are
+//                             the boundary, and their headers say so.
+//   no-unsafe-dictionary-type  47 hits, nearly all in board-schema.ts, where
+//                             Record<string, unknown> is the type of a file
+//                             BEFORE validation. A named type there would be a
+//                             claim about bytes we have not checked yet.
+//   no-shape-in-symbol-names  159 hits, every one of them the word "shape" -
+//                             stickerShape, DEFAULT_SHAPE, addStickerAt(shape).
+//                             Stickers have shapes. The rule is looking for
+//                             type-jargon names and finding a domain noun.
+//   no-known-value-widening    85 hits, and this one earned its keep before it
+//                             went off: 39 were real and are fixed. Thirty were
+//                             a function or a `let` wearing an inline object
+//                             type, and each of those is a named type now -
+//                             ConnectStep, SplitLook, AxisMemo, Taps. Nine more
+//                             were closed-key tables that took `satisfies`
+//                             instead of an annotation, which is strictly
+//                             better: CUES now fails to compile if a cue is
+//                             missing a row. What is left is 46 hits on the
+//                             dispatch tables this app is built out of - VIEWS,
+//                             LAYOUTS, ORDERS, FLYOUTS, READERS, RENDERERS -
+//                             every one of them looked up with a string that
+//                             arrived in a .mbrd file or on a data-cmd. The rule
+//                             wants `satisfies` there and `satisfies` cannot be
+//                             indexed by a runtime string. CLAUDE.md tells you
+//                             to add a row to those tables; this rule would tell
+//                             you off for the table.
+//
+// A fifth, no-unknown-returns, is on everywhere but two files - see the override
+// at the foot of this config. It found eighty real ones: the injected command
+// interfaces said `=> unknown` where they meant `=> void`, and two of them were
+// hiding a value the caller then read. The two exemptions are the only places
+// where the return genuinely is unknown - idb.ts hands back bytes some older
+// build of this app wrote, and errors.ts reads a property off something that
+// may be a Proxy with a throwing getter. Both headers say so at length.
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "env": {
@@ -25,7 +83,26 @@
     "web/assets/js/import/formats.ts",
     "web/assets/app.js",
     "web/assets/app.js.map",
-    "web/assets/lab-pigments.js"
+    "web/assets/lab-pigments.js",
+    "web/assets/lab-sound.js",
+    ".agent/**",
+    ".agents/**",
+    ".claude/**",
+    ".codex/**",
+    ".continue/**",
+    ".cursor/**",
+    ".gemini/**",
+    ".opencode/**",
+    ".pi/**",
+    ".roo/**",
+    ".windsurf/**",
+    "tools/oxlint/anti-slop/**"
+  ],
+  "jsPlugins": [
+    {
+      "name": "anti-slop",
+      "specifier": "./tools/oxlint/anti-slop/index.ts"
+    }
   ],
   "rules": {
     "no-undef": "error",
@@ -47,7 +124,22 @@
     "no-dupe-keys": "error",
     "no-unreachable": "error",
     "no-self-assign": "error",
-    "no-constant-condition": "error"
+    "no-constant-condition": "error",
+    "anti-slop/no-chained-type-assertions": "error",
+    "anti-slop/no-conditional-empty-object-spread": "error",
+    "anti-slop/no-module-mocking": "error",
+    "anti-slop/no-object-parameters": "error",
+    "anti-slop/no-reflect-apply": "error",
+    "anti-slop/no-reflect-get": "error",
+    "anti-slop/no-unknown-returns": "error",
+    "anti-slop/no-unknown-type-aliases": "error",
+    "anti-slop/no-widen-then-assert": "error",
+    "anti-slop/require-safety-comment-for-type-assertion": "error",
+    "anti-slop/no-known-value-widening": "off",
+    "anti-slop/no-runtime-typeof": "off",
+    "anti-slop/no-unknown-parameters": "off",
+    "anti-slop/no-unsafe-dictionary-type": "off",
+    "anti-slop/no-shape-in-symbol-names": "off"
   },
   "overrides": [
     {
@@ -67,6 +159,15 @@
       ],
       "env": {
         "node": true
+      }
+    },
+    {
+      "files": [
+        "web/assets/js/storage/idb.ts",
+        "web/assets/js/errors.ts"
+      ],
+      "rules": {
+        "anti-slop/no-unknown-returns": "off"
       }
     }
   ]

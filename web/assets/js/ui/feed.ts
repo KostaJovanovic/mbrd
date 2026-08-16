@@ -124,9 +124,9 @@ type TileBox = { t: Tile; x: number; y: number; w: number; h: number };
  * initFeed() rather than imported.
  */
 export interface FeedCommands {
-  addStickerAt: (shape: string, at: Point) => unknown;
+  addStickerAt: (shape: string, at: Point) => void;
   contextMenu: (x: number, y: number, id: string | null, count: number,
-    opts?: { mobile?: boolean }) => unknown;
+    opts?: { mobile?: boolean }) => void;
 }
 
 /**
@@ -192,9 +192,9 @@ function cancelHold() {
 /** The item a press landed on, or null for the sheet between the tiles. */
 function tileIdAt(target: EventTarget | null) {
   // The `as` is the reading ui/hud.ts states for its delegated handlers: the
-  // listener is on an element, so a press inside it lands on one too, and
-  // closest() is only being asked whether an ancestor matches. The optional
-  // calls are the ones that were already here.
+  // SAFETY: the listener is on an element, so a press inside it lands on one
+  // too, and closest() is only being asked whether an ancestor matches. The
+  // optional calls are the ones that were already here.
   return (target as HTMLElement | null)?.closest?.<HTMLElement>('.feed-tile')?.dataset.id || null;
 }
 
@@ -398,9 +398,9 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
 
 /** Everything the Feed shows, in the board's arrangement order. */
 function feedItems(): Item[] {
-  // The cast holds for the reason board-actions.ts states at its own call:
-  // mobileOrder() hands back the very items it was given, in a new order, and
-  // ArrangeItem is only the narrower shape it reads them through.
+  // SAFETY: the reason board-actions.ts states at its own call - mobileOrder()
+  // hands back the very items it was given, in a new order, and ArrangeItem is
+  // only the narrower shape it reads them through.
   return mobileOrder(
     board.items.filter(it => !HIDDEN.has(it.type)),
     { name: board.arrangement }) as Item[];
@@ -670,7 +670,7 @@ function fillVideo(t: Tile) {
 /** Swap a video tile's poster for a live, registered <video>. */
 function mountVideo(t: Tile) {
   if (t.video) return;
-  const url = t.item.asset && assetURL(t.item.asset.hash);
+  const url = t.item.asset?.hash ? assetURL(t.item.asset.hash) : null;
   if (!url) return;
   const v = document.createElement('video');
   v.playsInline = true;
@@ -907,8 +907,18 @@ function fillFile(t: Tile) {
  * the height of the tallest column, which is the wall's height. Pure but for
  * reading `cols`.
  */
-function feedMasonry(list: Tile[], width: number):
-{ boxes: TileBox[], colW: number, height: number } {
+/**
+ * A finished masonry pass: where every tile goes, how wide a column came out,
+ * and how tall the whole thing is.
+ *
+ * `colW` and `height` travel with the boxes because the caller needs both and
+ * neither can be recovered from the boxes alone - a column nothing landed in
+ * still has a width, and the tallest box is not the height when the last row is
+ * ragged.
+ */
+type FeedLayout = { boxes: TileBox[], colW: number, height: number };
+
+function feedMasonry(list: Tile[], width: number): FeedLayout {
   const colW = (width - (cols - 1) * GAP) / cols;
   // Every tile's span and height, before anything is placed. Both are knowable
   // up front - a span comes from the tile's kind and the column width, a height

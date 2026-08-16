@@ -82,6 +82,7 @@
 // tap and hold bookkeeping, for the same reason and in the same shape.
 
 import { clamp } from '../util.ts';
+import { cue } from '../cuelume/engine.ts';
 import {
   board, byId, selection, select, deselect, clearSelection, isMultiSelect, topZ, stackOrder,
   snapshotGeom, applyGeom, commitGeom, bus, stuckFollowers, stuckPlacement, wouldStick,
@@ -106,6 +107,17 @@ const DRAG_SLOP = 3;      // screen px before a press becomes a drag
 const DOUBLE_TAP_MS = 350;
 const DOUBLE_TAP_SLOP = 28;
 const TAP_MOVE_SLOP = 12;
+/**
+ * How many cards of one drop are worth a sound of their own.
+ *
+ * Seven, because that is what cuelume/engine.js can lay out inside its
+ * eighty-millisecond lookahead at twelve milliseconds apart. The eighth and
+ * everything after it would be scheduled at the same instant as each other,
+ * and transients sharing a sample are one transient - so the cap costs nothing
+ * that could be heard, and saves four Web Audio nodes per card on a drop that
+ * can legitimately be five hundred of them.
+ */
+const TAP_BURST = 7;
 // How long a finger has to rest before the press means "show me the menu".
 // Long enough not to fire on a slow tap, short enough to feel deliberate;
 // it is the interval both mobile platforms use for the same gesture.
@@ -400,10 +412,13 @@ export type CarryHold = { fx: number, fy: number, hw: number, hh: number };
  * card at or past the halfway fraction can never fit, and the cap is what turns
  * that from an infinity into "this one will not shrink".
  */
+/** The smallest box the held cards allow, as a width and a height. */
+type CarryFloor = { w: number, h: number };
+
 export function carryFloor(
   box: { w: number, h: number },
   holds: readonly CarryHold[] | null | undefined,
-): { w: number, h: number } {
+): CarryFloor {
   if (!holds?.length) return { w: 0, h: 0 };
   const axis = (side: number, at: (p: CarryHold) => number, half: (p: CarryHold) => number) => {
     let want = 0;
@@ -621,7 +636,10 @@ export function resetWheelKind(): void {
  * carrying no sideways is what four out of five look like from inside a rail and
  * also what a perfectly straight moment of a free swipe looks like.
  */
-function unrail(dx: number, dy: number): { dx: number, dy: number } {
+/** A drag delta after the rail has taken its share of it. */
+type Delta = { dx: number, dy: number };
+
+function unrail(dx: number, dy: number): Delta {
   axisX += (Math.abs(dx) - axisX) * AXIS_EASE;
   axisY += (Math.abs(dy) - axisY) * AXIS_EASE;
   seenX += ((dx ? 1 : 0) - seenX) * AXIS_EASE;
@@ -942,7 +960,7 @@ export function nudgeDelta(
  */
 export type GestureMode = 'idle' | 'press' | 'pan' | 'pinch' | 'marquee' | 'move' | 'resize';
 
-export const GESTURE_MOVES: Record<GestureMode, readonly GestureMode[]> = {
+export const GESTURE_MOVES = {
   // A press decides between five things - see onDown().
   idle: ['pan', 'marquee', 'move', 'press', 'pinch'],
   // The slop is crossed and the press becomes what it was waiting to be, or the
@@ -954,7 +972,7 @@ export const GESTURE_MOVES: Record<GestureMode, readonly GestureMode[]> = {
   marquee: ['idle'],
   move: ['idle'],
   resize: ['idle'],
-};
+} satisfies Record<GestureMode, readonly GestureMode[]>;
 
 /**
  * The mode a gesture in `from` reaches by being asked for `to`, or null when
@@ -977,8 +995,19 @@ export function gestureTransition(
   // string that is neither takes the null branch like any other non-mode. An
   // absent argument goes the same way - Object.hasOwn(table, undefined) is
   // false, which is the totality this promises without a check of its own.
+  // SAFETY: both assertions in this function are the paragraph above - neither
+  // name is trusted. `key` is asked of the table through hasOwn and `want` is
+  // looked for in the list that answered, so a string that is not a mode takes
+  // the null. The casts are only what lets a string be looked up at all.
   const key = from as GestureMode;
-  const legal = Object.hasOwn(GESTURE_MOVES, key) ? GESTURE_MOVES[key] : null;
+  // Annotated because GESTURE_MOVES keeps its literal rows: a lookup on it
+  // answers a union of seven tuples, and asking that union whether it includes
+  // an arbitrary mode narrows the argument to `never`. The list is read here as
+  // what it is for - the modes reachable from one state.
+  const legal: readonly GestureMode[] | null =
+    Object.hasOwn(GESTURE_MOVES, key) ? GESTURE_MOVES[key] : null;
+  // SAFETY: as at `key` above - `want` is looked for in the list `key` answered,
+  // and a string that is not on it takes the null.
   const want = to as GestureMode;
   return legal?.includes(want) ? want : null;
 }
@@ -1123,6 +1152,30 @@ type GestureOf<M extends GestureMode> = Extract<Gesture, { mode: M }>;
 type GestureData<G> = G extends Gesture ? Omit<G, 'mode'> : never;
 
 /**
+ * The three pieces of pointer state that are not a gesture.
+ *
+ * Named up here with the gesture types rather than left inline at their
+ * bindings, because that is the distinction they exist to draw: a Gesture is
+ * one at a time and is replaced wholesale, and each of these outlives one. See
+ * the paragraphs above each binding in initInput() for what they are for.
+ */
+type MidPaste = { down: boolean, at: Point | null, dragged: boolean };
+
+type Hold = {
+  timer: ReturnType<typeof setTimeout> | 0,
+  at: (Point & { id: string | null }) | null,
+  menu: TapPoint | null,
+};
+
+type Taps = {
+  arm: (Point & { pointerId: number, id: string, additive: boolean }) | null,
+  card: (Point & { pointerId: number, id: string, slop: number }) | null,
+  empty: (Point & { pointerId: number }) | null,
+  lastEmpty: TapPoint | null,
+  lastTitle: TapPoint | null,
+};
+
+/**
  * The commands this pipeline reaches for, handed in rather than imported.
  *
  * canvas/ may not import ui/ (tests/layers.test.js), and half of what a gesture
@@ -1137,29 +1190,29 @@ type InputCommands = {
   undo(): void,
   redo(): void,
   duplicate(): void,
-  save(): unknown,
-  export(): unknown,
-  open(): unknown,
+  save(): void,
+  export(): void,
+  open(): void,
   deleteSelection(): void,
   recenter(): void,
   fit(): void,
   closeSidebar(): void,
-  editNote(id: string): unknown,
-  editConnectionLabel(a: string, b: string): unknown,
+  editNote(id: string): void,
+  editConnectionLabel(a: string, b: string): void,
   fencePrompt(x: number, y: number, rect: Bounds): void,
   contextMenu(x: number, y: number, id: string | null, count: number,
     opts?: { touch?: boolean }): void,
   // Read straight from state.ts on the pointer path - the flag is state, not a
   // command - so what is wanted here is only the way *out*, for Escape.
-  toggleMultiSelect?(): unknown,
+  toggleMultiSelect?(): void,
   connectTap?(id: string | null): boolean,
   connectionUnder?(at: Point): { a: string, b: string } | null,
-  pickConnection?(at: Point): unknown,
-  clearActiveConnection?(): unknown,
+  pickConnection?(at: Point): void,
+  clearActiveConnection?(): void,
   deleteActiveConnection?(): boolean,
-  editTitle?(): unknown,
-  editTitleText?(): unknown,
-  openViewer?(id: string): unknown,
+  editTitle?(): void,
+  editTitleText?(): void,
+  openViewer?(id: string): void,
   playPause?(): boolean,
   // The tour's two keys, in the shape the three above use: the command answers
   // whether it took the press. See the Escape and arrow cases below.
@@ -1224,6 +1277,10 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // exactly the variant `mode` names - that is what GestureData is - but a
     // spread of a generic comes back to tsc as an intersection it will not fold
     // into the union member. The argument types are where the check happens.
+    //
+    // SAFETY: `data` is GestureData<GestureOf<M>>, which is the named variant
+    // minus its `mode` - so putting `mode` back is exactly the variant again.
+    // The check happened at the call, where M was fixed.
     const next = { mode, ...data } as GestureOf<M>;
     gesture = next;
     return next;
@@ -1240,8 +1297,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   //
   // Not part of the gesture, and it could not be: the paste it exists to swallow
   // arrives a task *after* the pan that armed it has been released.
-  const midPaste: { down: boolean, at: Point | null, dragged: boolean } =
-    { down: false, at: null, dragged: false };
+  const midPaste: MidPaste = { down: false, at: null, dragged: false };
   // Where the cursor is - a paste lands under it. Null on a touch device, where
   // pasteAt falls back to placing beside the original rather than guessing.
   let hover: Point | null = null;
@@ -1253,11 +1309,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   //
   // `menu` is the menu a hold opened, kept so the native contextmenu some touch
   // engines fire afterwards can be told from a fresh right-click.
-  const hold: {
-    timer: ReturnType<typeof setTimeout> | 0,
-    at: (Point & { id: string | null }) | null,
-    menu: TapPoint | null,
-  } = { timer: 0, at: null, menu: null };
+  const hold: Hold = { timer: 0, at: null, menu: null };
   // The pointer id of a touch press on bare board that owes the selection a
   // clear, spent on the lift. Null on a mouse, which clears on the press as it
   // always has.
@@ -1304,13 +1356,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   //                 retargets the compatibility mouse events to the viewport -
   //                 the same reason the masthead reads its taps directly (see
   //                 editBoardName in main.js).
-  const taps: {
-    arm: (Point & { pointerId: number, id: string, additive: boolean }) | null,
-    card: (Point & { pointerId: number, id: string, slop: number }) | null,
-    empty: (Point & { pointerId: number }) | null,
-    lastEmpty: TapPoint | null,
-    lastTitle: TapPoint | null,
-  } = { arm: null, card: null, empty: null, lastEmpty: null, lastTitle: null };
+  const taps: Taps = { arm: null, card: null, empty: null, lastEmpty: null, lastTitle: null };
   const cancelPress = () => { clearTimeout(hold.timer); hold.timer = 0; hold.at = null; };
 
   /**
@@ -1980,6 +2026,25 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       isMobile: vp.isMobile,
     });
 
+    // Every press that takes hold of a card, said once here rather than in each
+    // branch that performs one.
+    //
+    // It was in the `move` branch alone, and the branches around it are the
+    // reason that read as the app skipping presses. A grip press is `resize`,
+    // and a card that has just been dropped is a card that is *selected*, so its
+    // grips are showing - which means dragging the same card over and over lands
+    // on a grip about as often as not, and both the press and the release were
+    // silent. A press on a control inside a card is `widget`, and that was
+    // silent too while still selecting the card underneath.
+    //
+    // `pan` and `empty` are not here because they take hold of nothing, and
+    // `tapGate` is not because a gated first tap has not taken hold yet - it
+    // sounds on the lift, in endPointer(), which is where it becomes a pick.
+    if (intent.kind === 'widget' || intent.kind === 'resize'
+        || intent.kind === 'move' || intent.kind === 'lockedPan') {
+      cue('pick');
+    }
+
     if (intent.kind === 'widget') {
       if (id) select([id]);
       pointers.delete(e.pointerId);
@@ -2065,6 +2130,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       const { id: cardId, additive, wasSelected: held } = intent;
       if (additive) select([cardId], true);
       else if (!held) select([cardId]);
+      // No cue here: it is said once for all four card branches, above.
       taps.card = {
         pointerId: e.pointerId, id: cardId, x: e.clientX, y: e.clientY, slop: DRAG_SLOP,
       };
@@ -2491,7 +2557,12 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // pointercancel is the system taking the gesture away - a notification
     // shade, a call - and nothing a person did.
     if (taps.arm?.pointerId === e.pointerId) {
-      if (e.type === 'pointerup') select([taps.arm.id], taps.arm.additive);
+      if (e.type === 'pointerup') {
+        // Unconditional, like the mouse branch above: the cue answers the tap
+        // and not what the tap turned out to change.
+        select([taps.arm.id], taps.arm.additive);
+        cue('pick');
+      }
       taps.arm = null;
     }
     // pointerup only, like the pick above and for the same reason: a
@@ -2624,6 +2695,37 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         commitGeom('Move', gesture.before, gesture.driven);
       }
       if (gesture.mode === 'resize') commitGeom('Resize', gesture.before, gesture.driven);
+      // A card landing, and a band closing on something. Both here rather than
+      // at their own ends of the pipeline, because this is the one door back to
+      // idle - so a gesture cannot be released twice and be heard twice.
+      //
+      // **One cue per card, not one per gesture.** This said "forty cards land
+      // as forty taps" directly above a line that fired exactly once however
+      // many were being dragged, which is the comment describing the intention
+      // and the code doing something else. `driven` is the set the drag
+      // actually moved, so a five-card drop is five taps and a one-card drop is
+      // one.
+      //
+      // Capped, and this is the one cap in the feature - it is here because past
+      // it nothing is being lost. cuelume/engine.js spaces cues twelve
+      // milliseconds apart up to an eighty-millisecond lookahead and then lets
+      // them pile; a pile is a set of transients starting on the same sample,
+      // which is the one thing established to be unhearable as separate events.
+      // So beyond seven or so the extra calls buy no sound and cost four Web
+      // Audio nodes each - and dragging a five-hundred-card selection is a
+      // thing somebody can do.
+      if (gesture.mode === 'move' && gesture.moved) {
+        for (let i = Math.min(gesture.driven.length, TAP_BURST); i > 0; i--) cue('tap');
+      }
+      // A resize that reached the pipeline changed the card - the grip press
+      // waits out the slop before it becomes one, so there is no zero-distance
+      // resize to guard against. It landed too, and was silent for no reason
+      // beyond having been left off the line above.
+      if (gesture.mode === 'resize') cue('tap');
+      // Nothing while the band is being dragged, and nothing when it closes on
+      // empty board: a marquee that selected nothing is a click on the
+      // background, and the app has no news for that.
+      if (gesture.mode === 'marquee' && selection.size) cue('sweep');
     } else if (gesture.mode === 'move' || gesture.mode === 'resize') {
       // Put it back, which is what "abort" has always said and never done.
       //

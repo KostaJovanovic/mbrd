@@ -126,6 +126,9 @@ export function normalizeBoard(data: unknown): Omit<Board, 'settings' | 'arrange
   // bearing part and is unchanged - the live board fills `ids` first, the bin
   // second, so a binned item colliding with a live one is still the one that
   // gets renamed.
+  // SAFETY: `trash` was filtered to records above, so every `t.item` is whatever
+  // the file put under that key - and makeItem() takes an unknown-per-key record
+  // and validates every field of it. The assertion is the shape, not the values.
   const trashItems = dedupeIds(trash.map(t => makeItem(t.item as Record<string, unknown>)), ids);
   // The ids a connection may name, which is narrower than `ids` and narrower
   // for a reason the id union cannot express: a line to a sticker or a ghost is
@@ -218,7 +221,17 @@ export function normalizeBoard(data: unknown): Omit<Board, 'settings' | 'arrange
   };
 }
 
-function layoutRecord(raw: unknown): { items: unknown[], settings: unknown, arrangement: string } {
+/**
+ * One layout profile as it sits in a file, before any of it is checked.
+ *
+ * Every field is still the file's word: `items` is an array of something,
+ * `settings` is an object or nothing. Named so that the three returns below are
+ * visibly the same answer, and so that "this has been read but not yet
+ * validated" is a state with a spelling.
+ */
+type FiledLayout = { items: unknown[], settings: unknown, arrangement: string };
+
+function layoutRecord(raw: unknown): FiledLayout {
   if (Array.isArray(raw)) return { items: raw, settings: null, arrangement: '' };
   if (!isRecord(raw)) return { items: [], settings: null, arrangement: '' };
   return {
@@ -298,14 +311,58 @@ function cleanSettings(settings: Record<string, unknown>): Record<string, unknow
   return out;
 }
 
+/**
+ * A Look as it comes out of a file, with the three optional keys written only
+ * when the file said something about them.
+ *
+ * Absence is the point and is why this is four statements rather than one
+ * literal: `auto` and `derived` are provenance, and a look that has never said
+ * either must not grow a `false` here - withProvenance() in the look model
+ * reads the absence. `whimsy` is the same distinction for a different reason:
+ * the key missing means "inherit", where a zero means "off".
+ *
+ * The one assertion at the end marks a gap rather than papering over one, and
+ * it is the same gap the old `as Look` marked. `palette` is held to a string
+ * and `auto`/`derived` to one value each, but `whimsy` and every value inside
+ * `vars` are carried from the file exactly as they arrived, where Look declares
+ * them a number and strings. What actually holds them is downstream - ui/look.ts
+ * admits a token value only if it matches its alphabet, which is where a value
+ * out of somebody's file meets the CSSOM. FiledLook is that difference written
+ * down, so the assertion is between two named types instead of being spelled
+ * `any`.
+ */
+type FiledLook = {
+  whimsy?: unknown,
+  palette: string,
+  vars: Record<string, unknown>,
+  auto?: boolean,
+  derived?: boolean,
+};
+
+function filedLook(appearance: Record<string, unknown>, vars: Record<string, unknown>): Look {
+  const look: FiledLook = {
+    palette: typeof appearance.palette === 'string' ? appearance.palette : '',
+    vars,
+  };
+  if (appearance.whimsy != null) look.whimsy = appearance.whimsy;
+  if (appearance.auto === false) look.auto = false;
+  if (appearance.derived === true && Object.keys(vars).length) look.derived = true;
+  // SAFETY: every difference between FiledLook and Look is a value this
+  // function deliberately did not check, and the paragraph above names each one
+  // and says which module does check it.
+  return look as Look;
+}
+
 function normalizeSettings(raw: unknown, mode: LayoutMode): BoardSettings {
   const settings: Record<string, unknown> = isRecord(raw) ? raw : {};
   const appearance: Record<string, unknown> = isRecord(settings.appearance)
     ? settings.appearance : {};
-  const vars = {
-    ...(mode === 'mobile' ? MOBILE_APPEARANCE_VARS : {}),
-    ...(isRecord(appearance.vars) ? appearance.vars : {}),
-  };
+  // Both halves named before they are merged, so that "mobile starts from a
+  // different floor" and "the file may carry nothing" are two readable facts
+  // rather than two ternaries inside a literal.
+  const floor = mode === 'mobile' ? MOBILE_APPEARANCE_VARS : {};
+  const filed = isRecord(appearance.vars) ? appearance.vars : {};
+  const vars = { ...floor, ...filed };
   // A sheet id has to be a string before it can be one of PAPERS - and anything
   // that is not one fails the same lookup it always failed, arriving at the
   // same empty string.
@@ -318,21 +375,9 @@ function normalizeSettings(raw: unknown, mode: LayoutMode): BoardSettings {
     mobileColumns: mode === 'mobile'
       ? mobileColumnCount(settings.mobileColumns ?? MOBILE_COLUMNS)
       : DEFAULT_SETTINGS.mobileColumns,
-    // The cast marks a gap rather than papering over one. `palette` is held to
-    // a string here and `auto`/`derived` to one value each, but `whimsy` and
-    // every value inside `vars` are carried from the file exactly as they
-    // arrived, where Look declares them a number and strings. What actually
-    // holds them is downstream - ui/look.ts admits a token value only if it
-    // matches its alphabet, which is where a value out of somebody's file meets
-    // the CSSOM. This line is the one place that difference is visible, so it
-    // says so instead of being spelled `any`.
-    appearance: {
-      ...(appearance.whimsy != null ? { whimsy: appearance.whimsy } : {}),
-      palette: typeof appearance.palette === 'string' ? appearance.palette : '',
-      vars,
-      ...(appearance.auto === false ? { auto: false } : {}),
-      ...(appearance.derived === true && Object.keys(vars).length ? { derived: true } : {}),
-    } as Look,
+    // Which keys survive a file, and which values are checked here rather than
+    // downstream: see filedLook() above.
+    appearance: filedLook(appearance, vars),
     // Both names and hashes become declarations or asset paths downstream.
     fonts: normalizeFonts(settings.fonts),
     scale: clampScale(settings.scale),
@@ -541,7 +586,7 @@ export function serializeBoard() {
   const filedItems = real.map(item => serializeItem(itemIn(item, desktopById.get(item.id))));
   const filedTrash = board.trash.map(t => ({ at: t.at, item: serializeItem(t.item) }));
   const timeline = serializeTimeline(docFingerprint({ items: filedItems, trash: filedTrash }));
-  return {
+  const base = {
     title: board.title,
     view: { pan: { ...board.view.pan }, zoom: board.view.zoom },
     // Board-level: the one style behind the Mobile masthead and the Desktop
@@ -592,17 +637,25 @@ export function serializeBoard() {
     // above it: a board whose tour was built and then cleared must not come
     // back carrying the old one from a file that simply omitted the key.
     tour: normalizeTour(board.tour, filed),
-    // The step ledger, when there is one. Omitted rather than written as null
-    // on a board nobody has changed yet, so a freshly opened and immediately
-    // saved file looks exactly as it did before this feature existed - which is
-    // the difference between a format that grew a key and one that grew a key
-    // that is usually empty.
-    //
-    // Not pruned against `filed`: a step names cards this board no longer has,
-    // and that is the whole of what it is for. What it *does* need is the asset
-    // walk in packBoard() to know about it - see timelineHashes().
-    ...(timeline ? { timeline } : {}),
   };
+  // The step ledger, when there is one. Written in a statement of its own
+  // because it has to be *omitted* rather than written as null on a board nobody
+  // has changed yet, so a freshly opened and immediately saved file looks
+  // exactly as it did before this feature existed - which is the difference
+  // between a format that grew a key and one that grew a key that is usually
+  // empty.
+  //
+  // Not pruned against `filed`: a step names cards this board no longer has,
+  // and that is the whole of what it is for. What it *does* need is the asset
+  // walk in packBoard() to know about it - see timelineHashes().
+  //
+  // The key is declared here and written below rather than spread in
+  // conditionally, so that readers of a filed board - storage.ts asks for
+  // `doc.timeline` twice - still see one type with an optional key rather than
+  // a union of two shapes.
+  const doc: typeof base & { timeline?: typeof timeline } = base;
+  if (timeline) doc.timeline = timeline;
+  return doc;
 }
 
 const serializeItem = (i: Item) => ({
@@ -612,17 +665,21 @@ const serializeItem = (i: Item) => ({
   name: i.name, asset: i.asset, meta: i.meta,
 });
 
-const serializeGeometry = (geometry: Geometry) => ({
-  id: geometry.id,
-  x: round(geometry.x), y: round(geometry.y),
-  w: round(geometry.w), h: round(geometry.h),
-  rot: round(geometry.rot), z: geometry.z,
-  ...(geometry.presnap ? {
-    presnap: {
-      x: round(geometry.presnap.x), y: round(geometry.presnap.y),
-      w: round(geometry.presnap.w), h: round(geometry.presnap.h),
-    },
-  } : {}),
-});
+/** The memo is written only when there is one - completeLayout() reads its absence. */
+const serializeGeometry = (geometry: Geometry) => {
+  const out: Geometry = {
+    id: geometry.id,
+    x: round(geometry.x), y: round(geometry.y),
+    w: round(geometry.w), h: round(geometry.h),
+    rot: round(geometry.rot), z: geometry.z,
+  };
+  const memo = geometry.presnap;
+  if (memo) {
+    out.presnap = {
+      x: round(memo.x), y: round(memo.y), w: round(memo.w), h: round(memo.h),
+    };
+  }
+  return out;
+};
 
 const round = (n: number) => Math.round(n * 100) / 100;

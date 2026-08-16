@@ -19,6 +19,7 @@
 
 import { isHash, isRecord, itemHashes } from './util.ts';
 import { toast } from './notify.ts';
+import { cue } from './cuelume/engine.ts';
 // Pure geometry, shared with the canvas and the input layer so that "where is
 // this item and what does it cover" has exactly one answer in this app. Kept
 // at the top level rather than under canvas/ because it depends on nothing and
@@ -203,6 +204,10 @@ export {
 } from './layout.ts';
 
 export { baseStep, snapshotGeom, applyGeom, commitGeom, placeMobileItems, mobileBoardWidth, travelling };
+// applyGeom()'s argument type, through the same door as applyGeom itself: a
+// caller in ui/ that builds a patch has to be able to name what it is building,
+// and layout.ts is below the line ui/ may import from.
+export type { GeomPatch } from './layout.ts';
 
 export {
   STICK_MIN, stuckTo, wouldStick, restick, forgetSticks,
@@ -641,7 +646,7 @@ export function renameItem(id: string, name: unknown) {
   const orig = typeof it.meta?.origName === 'string' ? it.meta.origName : '';
   const next = String(name ?? '').trim() ||
                orig ||
-               (it.asset && assetName(it.asset.hash)) || it.name;
+               (it.asset?.hash ? assetName(it.asset.hash) : '') || it.name;
   if (it.name === next) return;
   const prev = it.name;
   // byId() again inside the pair, and non-null: the item was on the board when
@@ -692,14 +697,20 @@ export function renameItem(id: string, name: unknown) {
  * Deliberately **not** used by setItemThumb() or setItemPoster(). Those two are
  * non-undoable on purpose and their headers say why; folding them in would make
  * the shared shape decide something it has no business deciding.
+ *
+ * Generic in what the validator answers, which is the one type here worth
+ * naming. `raw` is unknown because it comes off a file or a console, but what
+ * comes *out* of the validator is the setting's own type, and `label` and
+ * `same` are both handed it - so a caller whose validator answers a tint and
+ * whose comparison expects a rectangle is a mistake this signature catches.
  */
-function patchMeta(
+function patchMeta<T>(
   id: string,
   key: string,
   raw: unknown,
-  label: string | ((next: unknown) => string),
-  validate: (value: unknown) => unknown,
-  same: (a: unknown, b: unknown) => boolean = Object.is,
+  label: string | ((next: T) => string),
+  validate: (value: unknown) => T,
+  same: (a: T, b: T) => boolean = Object.is,
 ) {
   const it = byId(id);
   if (!it) return;
@@ -1133,9 +1144,13 @@ const sameRect = (a: unknown, b: unknown) => {
 export function setItemAdjust(id: string, adjust: unknown) {
   const it = byId(id);
   if (!it || (it.type !== 'image' && it.type !== 'video')) return;
+  // The incoming set is hoisted out of the literal rather than spread through a
+  // ternary: `adjust` is whatever a caller passed, and naming the non-record
+  // case is what says out loud that it contributes nothing.
+  const patch = isRecord(adjust) ? adjust : {};
   const merged = adjust == null ? null : {
     ...(itemAdjust(it) || { brightness: 1, contrast: 1, saturation: 1 }),
-    ...(isRecord(adjust) ? adjust : {}),
+    ...patch,
   };
   patchMeta(id, 'adjust', merged, next => (next ? 'Adjust picture' : 'Reset picture'),
     value => itemAdjust({ meta: { adjust: value } }), sameAdjust);
@@ -1459,6 +1474,15 @@ export function setSetting(key: string, value: unknown) {
   board.layoutSettings[board.layoutMode] = layoutSettingsOf(board.settings);
   markDirty();
   bus.emit('settings', key);
+  // Every boolean board setting is a switch, and this is the one door all of
+  // them come through - the grid, the axes, the readout, the twenty in the
+  // panel. One line here rather than a cue at each checkbox, for the same
+  // reason this function exists at all. `off` is `on`'s recipe with the glide
+  // inverted, so the two are audibly a pair rather than two similar noises.
+  //
+  // Below the early return above, so a setting written to the value it already
+  // held stays silent: pressing a toggle that was already on is not a toggle.
+  if (typeof value === 'boolean') cue(value ? 'on' : 'off');
 }
 
 /** Replace the shared color/whimsy half and the active layout's local look. */
@@ -1742,5 +1766,10 @@ export function loadBoard(data: unknown) {
   bus.emit('selection');
   bus.emit('trash');
   bus.emit('connections');
+  // Somewhere has been arrived at. Silent for the board that arrives at boot,
+  // and not by a check here: a page that has not been touched yet may not make
+  // a sound at all, which cuelume/engine.js asks about before every cue. The
+  // restored session is exactly that page.
+  cue('arrive');
 }
 

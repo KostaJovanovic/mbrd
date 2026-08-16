@@ -56,6 +56,7 @@ import {
   isLocked, snapshotGeom, applyGeom, commitGeom,
 } from '../state.ts';
 import { assetURL } from '../storage/assets.ts';
+import { tickSlider } from './controls.ts';
 
 /** The crop rectangle, as fractions of the source. */
 type Rect = { x: number, y: number, w: number, h: number };
@@ -113,17 +114,30 @@ const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const;
 type Handle = typeof HANDLES[number] | 'move';
 
 export function initDarkroom() {
+  // SAFETY: four assertions in this function and one fact behind all of them.
+  // Each id names an element written out in index.html with the tag asserted,
+  // and every one is kept `| null` and tested on the next line - so a page that
+  // does not have it (the patch page, a stripped build) leaves the darkroom
+  // uninitialised instead of throwing. The assertion is about the tag only.
   dlg = document.getElementById('darkroom') as HTMLDialogElement | null;
   if (!dlg) return;
+  // SAFETY: as above - #darkroom-image is the <img> the crop is drawn over, and
+  // every read of it in this module goes through `img!` only after this
+  // assignment and the dialog test that guards it.
   img = document.getElementById('darkroom-image') as HTMLImageElement | null;
   frame = document.getElementById('darkroom-frame');
   for (const key of GRADE) {
+    // SAFETY: as above - `dk-brightness` and its two siblings are <input> in
+    // index.html, and the null is kept and tested rather than asserted away.
     const el = document.getElementById(`dk-${key}`) as HTMLInputElement | null;
     if (!el) continue;
     dials[key] = el;
     // 'input' and not 'change': the picture behind the dial is the readout, and
     // a grade that only arrived when the slider was let go would make the dial
     // feel like a form field rather than like a control on a photograph.
+    // 120 stops each, so tickSlider() declines all three. Wired for the reason
+    // the volume is: the helper judges, not the call site.
+    tickSlider(el as HTMLInputElement);
     el.addEventListener('input', () => {
       // `Number.isFinite`, and emphatically not `Number(el.value) || 1`. Zero
       // is a real position on this control - saturation runs 0..2, and 0 is
@@ -139,6 +153,8 @@ export function initDarkroom() {
     });
   }
   for (const { axis, id } of FLIPS) {
+    // SAFETY: as above - FLIPS names two <button> ids from index.html, and the
+    // null survives to the next line.
     const el = document.getElementById(id) as HTMLButtonElement | null;
     if (!el) continue;
     mirrors[axis] = el;
@@ -207,7 +223,7 @@ export function openDarkroom(id: string) {
   // what the crop is applied to - so editing against it would compose each new
   // rectangle on top of the last and there would be no way back out to the full
   // frame. This is the one surface in the app that has to see the whole picture.
-  img!.src = assetURL(it.asset!.hash) || '';
+  img!.src = (it.asset?.hash ? assetURL(it.asset.hash) : null) || '';
   img!.alt = it.name || '';
   writeDials();
   paint();
@@ -282,6 +298,11 @@ function onGrab(e: PointerEvent) {
   // and the crop jumped with no button pressed.
   if (grabbing) return;
   grabbing = true;
+  // SAFETY: `data-h` is written by this module and nowhere else - the eight
+  // grips carry one of HANDLES, and anything without the attribute falls to
+  // 'move', which is the other member of Handle. A hand-edited attribute would
+  // land on mirrorHandle()'s pass-through and move the crop rather than resize
+  // it, which is a wrong drag and not a broken one.
   const handle = mirrorHandle((e.target.dataset.h || 'move') as Handle);
   // The drawn size of the picture, read once at the press. Every delta below is
   // divided by it to become a fraction, which is the only pixel measurement in
@@ -330,6 +351,10 @@ function onGrab(e: PointerEvent) {
 function mirrorHandle(handle: Handle): Handle {
   if (handle === 'move' || (!flip.x && !flip.y)) return handle;
   const swap: Record<string, string> = { w: 'e', e: 'w', n: 's', s: 'n' };
+  // SAFETY: the map swaps each letter for its opposite and changes nothing
+  // else, so a corner stays a corner and an edge stays an edge - 'nw' becomes
+  // 'ne' or 'sw' or 'se', all of which are in HANDLES. The set is closed under
+  // this operation, which is what the assertion is.
   return [...handle]
     .map(c => ((flip.x && (c === 'w' || c === 'e')) || (flip.y && (c === 'n' || c === 's'))
       ? swap[c] : c))

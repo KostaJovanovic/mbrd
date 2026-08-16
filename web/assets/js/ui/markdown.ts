@@ -206,9 +206,11 @@ function listAt(lines: string[], start: number): [HTMLElement, number] {
   const indent = first[1].length;
   const ordered = !lines[start].match(BULLET);
   const list = document.createElement(ordered ? 'ol' : 'ul');
-  // `ordered` is the flag that chose <ol> on the line above, so inside this
-  // branch the element is that one.
-  if (ordered && first[2] !== '1') (list as HTMLOListElement).start = Number(first[2]);
+  if (ordered && first[2] !== '1') {
+    // SAFETY: `ordered` is the flag that chose <ol> two lines above, and it is
+    // the same flag tested here - so inside this branch the element is that one.
+    (list as HTMLOListElement).start = Number(first[2]);
+  }
   let i = start;
   let li: HTMLElement | null = null;
   while (i < lines.length) {

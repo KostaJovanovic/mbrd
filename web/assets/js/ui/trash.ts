@@ -51,6 +51,9 @@ export function initTrash(viewport: Viewport) {
   list = el('bin-list');
   none = el('bin-none');
   hint = el('bin-hint');
+  // SAFETY: #bin-empty is a <button> in index.html; the null is kept and every
+  // read of `emptyBtn` in this file goes through `?.`, so a page without the
+  // bin leaves it inert rather than throwing at init.
   emptyBtn = el('bin-empty') as HTMLButtonElement | null;
   titleRestore = el('title-restore');
   // All five that this module then dereferences with `!`, not the two.
@@ -156,7 +159,7 @@ function binRow(entry: TrashEntry) {
 
   const thumb = document.createElement('div');
   thumb.className = 'bin-thumb';
-  const url = item.asset && assetURL(item.asset.hash);
+  const url = item.asset?.hash ? assetURL(item.asset.hash) : null;
   if (item.type === 'image' && url) {
     const img = document.createElement('img');
     img.src = url;
@@ -267,8 +270,8 @@ function ago(at: number) {
  */
 function restoreByKey(e: KeyboardEvent) {
   if (e.key !== 'Enter' && e.key !== ' ' && e.code !== 'Space') return;
-  // The listener is on #bin-list, so the target of a key inside it is an
-  // element - the optional call is the guard it always was for anything else.
+  // SAFETY: the listener is on #bin-list, so the target of a key inside it is
+  // an element - the optional call is the guard it always was for anything else.
   const line = (e.target as Element).closest?.<HTMLElement>('.bin-item');
   if (!line) return;
   e.preventDefault();
@@ -281,6 +284,8 @@ function restoreByKey(e: KeyboardEvent) {
 
 function startDrag(e: PointerEvent) {
   if (e.button !== 0) return;
+  // SAFETY: as in the key handler above - this listener is on #bin-list, so a
+  // press delivered to it landed on an element inside it.
   const line = (e.target as Element).closest<HTMLElement>('.bin-item');
   if (!line) return;
   // As above: binRow() writes the id onto every row it makes.
@@ -341,7 +346,7 @@ function startDrag(e: PointerEvent) {
 function makeGhost(item: Item) {
   const node = document.createElement('div');
   node.id = 'bin-ghost';
-  const url = item.asset && assetURL(item.asset.hash);
+  const url = item.asset?.hash ? assetURL(item.asset.hash) : null;
   if (item.type === 'image' && url) {
     const img = document.createElement('img');
     img.src = url;

@@ -117,15 +117,19 @@ export function noteTint(raw: unknown): number {
   return typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= NOTE_TINTS ? n : 0;
 }
 
-// The widening to `readonly string[]` is only so `.includes()` will take an
-// arbitrary string: a NoteTag[] *is* a readonly string[], so nothing is claimed
-// here that is not already true.
+// SAFETY: the widening to `readonly string[]` is only so `.includes()` will
+// take an arbitrary string: a NoteTag[] *is* a readonly string[], so nothing is
+// claimed here that is not already true. All four say the same thing, and in
+// each the includes() is what decides the predicate.
 const isTag = (v: unknown): v is NoteTag =>
   typeof v === 'string' && (NOTE_TAGS as readonly string[]).includes(v);
+// SAFETY: as above.
 const isAlign = (v: unknown): v is NoteAlign =>
   typeof v === 'string' && (NOTE_ALIGNS as readonly string[]).includes(v);
+// SAFETY: as above.
 const isValign = (v: unknown): v is NoteValign =>
   typeof v === 'string' && (NOTE_VALIGNS as readonly string[]).includes(v);
+// SAFETY: as above.
 const isWash = (v: unknown): v is NoteWash =>
   typeof v === 'string' && (NOTE_WASHES as readonly string[]).includes(v);
 
@@ -134,12 +138,12 @@ const isWash = (v: unknown): v is NoteWash =>
  * as a `font-family` string, so it is only ever chosen from this table and never
  * taken from a file - the same rule the token allowlist keeps for the board.
  */
-export const NOTE_FONTS: Record<NoteFont, string> = {
+export const NOTE_FONTS = {
   sheet: 'var(--font-display)',
   sans: 'system-ui, sans-serif',
   serif: 'Georgia, "Times New Roman", serif',
   mono: 'ui-monospace, "Cascadia Code", Consolas, monospace',
-};
+} satisfies Record<NoteFont, string>;
 export const NOTE_FONT_KEYS = Object.keys(NOTE_FONTS);
 
 const isFont = (v: unknown): v is NoteFont =>
@@ -154,7 +158,7 @@ const clampSize = (n: unknown) =>
   Math.min(NOTE_SIZE_MAX, Math.max(NOTE_SIZE_MIN, Number.isFinite(Number(n)) ? Number(n) : 1));
 
 /** The Markdown marker a tag writes at the head of its line. */
-export const NOTE_MARKER: Record<NoteTag, string> = { h1: '# ', h2: '## ', p: '' };
+export const NOTE_MARKER = { h1: '# ', h2: '## ', p: '' } satisfies Record<NoteTag, string>;
 
 /** The block a single line of Markdown-ish text describes, given its position. */
 function lineToBlock(line: string, index: number): NoteBlock {
@@ -275,6 +279,9 @@ export function noteWords(meta: unknown): string {
   const rich = meta.rich;
   const blocks = isRecord(rich) ? rich.blocks : null;
   if (Array.isArray(blocks) && blocks.length) {
+    // SAFETY: `rich` passed isRecord() two lines up and its `blocks` is a
+    // non-empty array, which is the whole of what NoteRichInput requires to be
+    // worth reading. normalizeNoteRich() checks every block inside it.
     return normalizeNoteRich(rich as NoteRichInput).blocks.map(b => b.text).join('\n');
   }
   // Through the parser rather than returned raw: a note written before meta.rich

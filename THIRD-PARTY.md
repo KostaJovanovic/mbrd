@@ -1,16 +1,24 @@
 # Third-party assets
 
 Everything the app ships that someone else made, with where it came from and the
-licence it carries. The app has no runtime dependencies and no build step, so
-this list is short: the bundled `.woff2` faces under `web/assets/fonts/`, and
-one sprite of drawings. Each licence text sits beside the thing it covers in the
-repository, which is what redistributing the source requires — condition 2 of
-the OFL, and the notice condition of the MIT licence.
+licence it carries. The app has no runtime dependencies, so this list is short:
+the bundled `.woff2` faces under `web/assets/fonts/`, one sprite of drawings,
+and one vendored module. Each licence text sits beside the thing it covers in
+the repository, which is what redistributing the source requires — condition 2
+of the OFL, and the notice condition of the MIT licence.
 
-The sticker licence is also in `SHELL` (`web/sw.js`), so an installed app that
-carries the drawings offline carries the notice with them. The font licences are
-not, which is a gap rather than a decision: the faces predate that reading and
-moving them into the shell is a change worth making on its own.
+Two of the three are also in `SHELL` (`web/sw.js`), so an installed app that
+carries the drawings and makes the sounds offline carries the notices with them.
+The font licences are not, which is a gap rather than a decision: the faces
+predate that reading and moving them into the shell is a change worth making on
+its own.
+
+The vendored module is the one entry here that is *code* rather than an asset,
+and it is worth saying why that changes nothing. MIT into GPL-3.0-or-later is
+compatible in that direction — the combined work goes out under the GPL — but
+the notice condition travels with the source, so the copyright line stays at the
+top of both vendored files, the licence text ships beside them, and neither can
+be tidied away as boilerplate.
 
 ## Typefaces
 
@@ -40,6 +48,31 @@ mbrd's paper and the foreground takes the tint. No path data is touched.
 
 `web/assets/icons.svg`, the app's own chrome sprite, is drawn here and is not
 third-party. The two are separate files for the reason the head of each states.
+
+## Code
+
+| Module | Files | Source | Licence | Licence file |
+| --- | --- | --- | --- | --- |
+| Cuelume 0.2.2 | `web/assets/js/cuelume/recipes.ts`, `web/assets/js/cuelume/engine.ts` | https://github.com/Danilaa1/cuelume | MIT | `web/assets/cuelume-LICENSE.txt` |
+
+The interface sounds. Seventeen recipes — each a handful of numbers rather than
+an audio file — and the Web Audio graph that renders them, taken as source and
+forked rather than depended on, since the app has no runtime dependencies and
+this is about two hundred lines.
+
+Two thirds of upstream is here and the missing third is deliberate: `bind.ts`
+and `index.ts` are not vendored. `bind()` installs four capture-phase listeners
+on `document` and reads `data-cuelume-*` attributes off whatever the event
+landed on, which for a library is exactly right and here is a second event
+listener beside `cmds`, a second markup contract beside `data-cmd`, and a hover
+tick on a canvas somebody sweeps a pointer across without meaning anything by
+it. The head of `engine.ts` argues all three at length.
+
+What was changed from upstream is listed at the top of each file. In summary:
+the cue map and the whimsy tiers, which have no counterpart there; a repeat
+guard and a detune; the context suspending after a spell of quiet; the ambient
+audio session; and the level being read from `prefs.ts` rather than set by the
+host. No recipe number was altered.
 
 Every face here is subset to Latin and Latin Extended rather than shipped whole,
 and that is the only change made to any of them: all variation axes are intact,

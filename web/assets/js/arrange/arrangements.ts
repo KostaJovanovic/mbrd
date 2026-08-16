@@ -406,6 +406,10 @@ const LAYOUTS: Record<string, Layout> = {
       // whenever the ray is not exactly on an axis, and no angle this deals is.
       // See the note on slideOut() about a standing ban, which is the one shape
       // that could leave nothing chosen.
+      // SAFETY: the paragraph above - the ray is never exactly on an axis for
+      // any angle this deals, so the search always lands somewhere and `best` is
+      // never null by here. slideOut()'s note names the one shape that could
+      // leave nothing chosen, and it is a standing ban.
       const landed = best as Point;
       placed.push({ ...box, x: landed.x, y: landed.y });
       return { x: o.center.x + landed.x, y: o.center.y + landed.y };
@@ -611,11 +615,14 @@ function clustered(
   return out;
 }
 
+/** A grid solved: a centre per cell, and the rectangle the whole thing fills. */
+type Lattice = { pos: Point[], box: Extent };
+
 function lattice(
   cells: [number, number][],
   items: ArrangeItem[],
   gap: number,
-): { pos: Point[], box: Extent } {
+): Lattice {
   const colW = new Map<number, number>(), rowH = new Map<number, number>();
   let c0 = 0, c1 = 0, r0 = 0, r1 = 0;
   cells.forEach(([c, r], i) => {

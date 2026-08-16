@@ -105,6 +105,9 @@ export function initFencePrompt(viewport: PromptViewport | null): void {
     if (outOfReach(box, e.clientX, e.clientY, REACH)) close();
   }, { passive: true });
   addEventListener('pointerdown', e => {
+    // SAFETY: a pointerdown reaching the window came off this document, so the
+    // target is a Node - and `contains()` answers false for the null anyway,
+    // which closes the prompt, which is the safe direction to be wrong in.
     if (node && !node.contains(e.target as Node | null)) close();
   }, true);
   addEventListener('keydown', e => {

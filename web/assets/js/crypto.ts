@@ -53,6 +53,11 @@ export async function sha256(buf: ArrayBuffer | ArrayBufferView): Promise<string
   // about every call this app makes, since nothing here is ever backed by
   // shared memory. Narrowing the parameter instead would push the same cast out
   // to five call sites that know even less about it than this one does.
+  // SAFETY: the instanceof on the first line picks the arm, so `buf` here is a
+  // view - and a view's `.buffer` is an ArrayBuffer unless it is a
+  // SharedArrayBuffer, which needs cross-origin isolation this app never asks
+  // for and which no caller here could produce. The offset and length are the
+  // view's own, so the window read is exactly the bytes it describes.
   const bytes = buf instanceof ArrayBuffer
     ? new Uint8Array(buf)
     : new Uint8Array(buf.buffer as ArrayBuffer, buf.byteOffset, buf.byteLength);

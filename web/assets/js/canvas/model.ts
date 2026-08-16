@@ -300,6 +300,9 @@ export function buildModelCard(item: Item) {
   // reachable for as long as its target is, and `paint` closes over the parsed
   // Mesh, so a culled model card kept a whole mesh alive past the point
   // MESH_CACHE_MAX would have evicted it.
+  // SAFETY: StageCanvas is this module's own name for the canvas it made, plus
+  // the two fields it hangs off it. Nothing outside this file writes or reads
+  // `_modelRO`, and the element is the one created a few lines up.
   (stage as StageCanvas)._modelRO = ro;
 
   orbit(stage, view, paint);
@@ -452,6 +455,10 @@ function liveView(item: Item): View {
   // Number() is the unary + this line was written with, said in a form that
   // takes an unknown; the coercion and the `|| default` are unchanged.
   const m = item.meta?.view;
+  // SAFETY: the `typeof m === 'object'` on the same line is the check, and the
+  // truthiness before it rules out null. Every key read off `raw` below goes
+  // through Number() and a `|| default`, so a record holding rubbish gives the
+  // default view rather than a broken camera.
   const raw = m && typeof m === 'object' ? m as Record<string, unknown> : null;
   const view = raw
     ? { yaw: Number(raw.yaw) || 0, pitch: Number(raw.pitch) || 0, zoom: Number(raw.zoom) || 1 }

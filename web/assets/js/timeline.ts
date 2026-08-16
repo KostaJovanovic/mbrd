@@ -146,6 +146,18 @@ export type Step = {
 };
 
 /**
+ * A step as it goes into the file: the five fields a reader needs, and `name`
+ * when somebody gave one.
+ *
+ * `op` and `broken` are deliberately not here - an op is re-derived on load and
+ * a broken mark belongs to the session that failed, not to the document. This
+ * type exists so that serializeTimeline() can write `name` in a statement of its
+ * own; the alternative was a conditional spread, and the key has to be *absent*
+ * rather than undefined for adoptTimeline() to leave an unnamed step unnamed.
+ */
+type SerializedStep = Pick<Step, 'id' | 'at' | 'label' | 'run' | 'delta'> & { name?: string };
+
+/**
  * The fields of the board a step carries, beyond the four keyed lists above.
  *
  * `items`, `layouts` and `trash` are absent because they are the keyed
@@ -161,6 +173,16 @@ const REST_FIELDS = [
   'arrangement', 'arrangements', 'layoutMode', 'mobileHeader', 'titleHidden',
   'mediaFit', 'paletteSources', 'connections', 'audioOrder', 'tour',
 ] as const;
+
+/**
+ * The same list as a type, and the reason the two writes below need no cast.
+ * Every name in REST_FIELDS is a key of the board, so the board *is* a
+ * `Record<RestField, unknown>` - the assignment is checked rather than asserted,
+ * and a name added to the list that the board does not have fails right here
+ * instead of silently writing a field nothing reads.
+ */
+type RestField = typeof REST_FIELDS[number];
+type RestBag = Record<RestField, unknown>;
 
 // ---------------------------------------------------------------------------
 // Snapshot, restore, diff, apply
@@ -212,11 +234,12 @@ export function restore(snap: Snap) {
   board.trash = snap.trashOrder.map(id => JSON.parse(snap.trash[id]));
   for (const field of REST_FIELDS) {
     if (snap.rest[field] == null) continue;
-    // The assignment is untypeable as written - one loop over fields of a dozen
-    // different types - and spelling out fifteen separate lines to please the
-    // checker would make the list drift from REST_FIELDS the first time
-    // somebody added one. The cast is confined to this line.
-    (board as unknown as Record<string, unknown>)[field] = JSON.parse(snap.rest[field]);
+    // One loop over fields of a dozen different types; spelling out fifteen
+    // separate lines to please the checker would make the list drift from
+    // REST_FIELDS the first time somebody added one. RestBag is what lets the
+    // loop stay a loop without a cast.
+    const live: RestBag = board;
+    live[field] = JSON.parse(snap.rest[field]);
   }
 }
 
@@ -283,6 +306,10 @@ const side = <T>(pair: [T, T], forward: boolean) => (forward ? pair[1] : pair[0]
 function mergeChanged(
   held: unknown, from: Record<string, unknown>, to: Record<string, unknown>,
 ): Record<string, unknown> {
+  // SAFETY: `held` is only spread, and spreading a non-object is not an error -
+  // a null or a number contributes no keys and `next` starts empty, which is
+  // exactly what "the board had nothing here" should merge to. The assertion is
+  // for the index writes below, and every key written comes from `from` or `to`.
   const next = { ...(held as Record<string, unknown>) };
   for (const key of new Set([...Object.keys(from), ...Object.keys(to)])) {
     if (JSON.stringify(from[key]) === JSON.stringify(to[key])) continue;
@@ -332,6 +359,11 @@ function applyKeyed<T>(
     // shape as what came in" through a JSON round trip. Written here, at the
     // one call that needs it, rather than hidden inside mergeChanged() as a
     // `never` return that switched the checker off for both callers.
+    //
+    // SAFETY: T is the element type of the list being patched, and every value
+    // in this map came out of JSON.parse on bytes serialize() wrote from a T.
+    // mergeChanged() copies keys and replaces values; it invents none. What is
+    // being asserted is that a JSON round trip of a T is a T.
     map.set(id, mergeChanged(held, JSON.parse(leaving), JSON.parse(want)) as T);
   }
   const order = delta.order
@@ -368,9 +400,13 @@ export function apply(delta: Delta, forward: boolean) {
     board.trash = applyKeyed(board.trash, delta.trash, forward, t => t.item.id);
   }
   if (delta.rest) {
-    const live = board as unknown as Record<string, unknown>;
-    for (const field of Object.keys(delta.rest)) {
+    const live: RestBag = board;
+    // Walked over REST_FIELDS rather than over the delta's own keys: the two
+    // hold the same names, and taking them from the list is what keeps `field`
+    // a RestField without asking anyone to believe it.
+    for (const field of REST_FIELDS) {
       const pair = delta.rest[field];
+      if (!pair) continue;
       const to = JSON.parse(side(pair, forward));
       const from = JSON.parse(side(pair, !forward));
       // The same rule as the keyed lists above, for the same reason: a step that
@@ -380,6 +416,9 @@ export function apply(delta: Delta, forward: boolean) {
       // bite; a scalar like `title` has no keys to preserve and falls through to
       // a plain write.
       const plain = isRecord(to) && isRecord(from) && isRecord(live[field]);
+      // SAFETY: `plain` is the isRecord() on all three, taken one line above and
+      // tested here - the two assertions are that check, which does not survive
+      // into the ternary's arms.
       live[field] = plain
         ? mergeChanged(live[field], from as Record<string, unknown>, to as Record<string, unknown>)
         : to;
@@ -625,9 +664,8 @@ export function recordStep(label: string, before: Snap): Step | null {
     if (checkpoints.has(at)) checkpoints.set(at, after);
     return prev;
   }
-  const step: Step = {
-    id: uid('s'), at: Date.now(), label, run, delta, ...(op ? { op } : {}),
-  };
+  const step: Step = { id: uid('s'), at: Date.now(), label, run, delta };
+  if (op) step.op = op;
   steps.push(step);
   at = steps.length;
   if (at % CHECKPOINT_EVERY === 0) checkpoints.set(at, after);
@@ -1176,11 +1214,16 @@ export function serializeTimeline(fingerprintOf = '') {
     base,
     at,
     fingerprint: fingerprintOf,
-    steps: steps.map(step => ({
-      id: step.id, at: step.at, label: step.label, run: step.run,
-      ...(step.name ? { name: step.name } : {}),
-      delta: step.delta,
-    })),
+    steps: steps.map(step => {
+      // `name` is written only when there is one: a step with `name: undefined`
+      // serialises to a key JSON.stringify drops anyway, but the two forms are
+      // not the same object to a test that compares them.
+      const out: SerializedStep = {
+        id: step.id, at: step.at, label: step.label, run: step.run, delta: step.delta,
+      };
+      if (step.name) out.name = step.name;
+      return out;
+    }),
   };
 }
 
@@ -1197,7 +1240,13 @@ function readKeyed(raw: unknown): Keyed | null {
   return out;
 }
 
-/** A list of ids, ditto. */
+/**
+ * A list of ids, ditto.
+ *
+ * SAFETY: the `every` on the line below walks the whole array and holds each
+ * element to a string, so what is asserted has just been checked element by
+ * element. An array with one number in it takes the null.
+ */
 const readOrder = (raw: unknown): string[] | null =>
   Array.isArray(raw) && raw.every(id => typeof id === 'string') ? raw as string[] : null;
 
@@ -1244,15 +1293,20 @@ export function adoptTimeline(raw: unknown, doc?: unknown) {
   const parsed: Step[] = [];
   for (const entry of raw.steps) {
     if (!isRecord(entry) || !isRecord(entry.delta)) continue;
-    parsed.push({
+    // SAFETY: entry.delta is checked by the isRecord() guard at the top of the
+    // loop; a Delta is a record of keyed sections and every reader of one
+    // narrows per section before touching it.
+    const step: Step = {
       id: typeof entry.id === 'string' && entry.id ? entry.id.slice(0, 64) : uid('s'),
       at: Number.isFinite(entry.at) ? Number(entry.at) : 0,
       label: typeof entry.label === 'string' ? entry.label.slice(0, 120) : 'Change',
       run: typeof entry.run === 'string' ? entry.run.slice(0, 400) : '',
-      ...(typeof entry.name === 'string' && entry.name
-        ? { name: entry.name.slice(0, 120) } : {}),
       delta: entry.delta as Delta,
-    });
+    };
+    // Absent rather than undefined, the same distinction serializeTimeline()
+    // makes at the other end of the trip.
+    if (typeof entry.name === 'string' && entry.name) step.name = entry.name.slice(0, 120);
+    parsed.push(step);
     if (parsed.length >= TIMELINE_STEP_CAP) break;
   }
   if (!parsed.length) return;

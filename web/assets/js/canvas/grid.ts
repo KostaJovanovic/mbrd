@@ -514,8 +514,13 @@ const AXIS_PX = 1.2;
  * height come along so that a canvas which has just been resized - and therefore
  * blanked - is not asked to clear rows out of a bitmap that no longer has them.
  */
-let axisWas: { x: number | null; y: number | null; t?: number; w: number; h: number } =
-  { x: null, y: null, t: 0, w: 0, h: 0 };
+/**
+ * Where the two axis lines were last drawn, how thick, and on a bitmap of what
+ * size. Null on either coordinate means that axis was off screen.
+ */
+type AxisMemo = { x: number | null; y: number | null; t?: number; w: number; h: number };
+
+let axisWas: AxisMemo = { x: null, y: null, t: 0, w: 0, h: 0 };
 
 /**
  * The two world axes, in whole device pixels.
@@ -609,8 +614,9 @@ function paintAxes(vp: Viewport) {
 function ensureAxisCanvas(el: HTMLElement): InkCanvas {
   let canvas = el.querySelector<InkCanvas>(':scope > #axis-ink');
   if (!canvas) {
-    // The cast is `_dpr`, and sizeCanvas() is where it lands. Every painter
-    // sizes the backing store before it draws, so nothing reads it before then.
+    // SAFETY: the cast is `_dpr`, and sizeCanvas() is where it lands. Every
+    // painter sizes the backing store before it draws, so nothing reads it
+    // before then, and the field is this module's own.
     canvas = document.createElement('canvas') as InkCanvas;
     canvas.id = 'axis-ink';
     canvas.setAttribute('aria-hidden', 'true');
@@ -927,7 +933,8 @@ function lattice(ctx: CanvasRenderingContext2D, tileCss: number, o: { x: number;
 function ensureCanvas(el: HTMLElement): InkCanvas {
   let canvas = el.querySelector<InkCanvas>(':scope > #grid-ink');
   if (!canvas) {
-    // As in ensureAxisCanvas(): the cast is `_dpr`, written by sizeCanvas().
+    // SAFETY: as in ensureAxisCanvas() - the cast is `_dpr`, written by
+    // sizeCanvas() before any painter reads it.
     canvas = document.createElement('canvas') as InkCanvas;
     canvas.id = 'grid-ink';
     canvas.setAttribute('aria-hidden', 'true');

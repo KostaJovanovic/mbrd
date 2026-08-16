@@ -71,6 +71,7 @@
 // predicted reason. It stays a report.
 
 import { board, byId, select, timelineHashes } from '../state.ts';
+import { cue } from '../cuelume/engine.ts';
 import { allAssets, assetURL, getAsset } from '../storage/assets.ts';
 import { travelMs } from '../canvas/viewport.ts';
 import { itemHashes, el, clamp, formatBytes } from '../util.ts';
@@ -208,6 +209,13 @@ function kindLabel(type: string, count: number): string {
 // open do not need to exist before it is asked for.
 let wired = false;
 
+/** The inventory sheet, or null on a page that does not carry one. */
+// SAFETY: #inventory is a <dialog> in index.html. The null is kept and every
+// caller either duck-types showModal() before using it or reaches it through
+// `?.`, so a page without the sheet - the changelog, a stripped build - gets a
+// no-op rather than a throw.
+const sheetEl = () => el('inventory') as HTMLDialogElement | null;
+
 /**
  * The camera, handed in rather than imported, the same shape ui/search.ts
  * takes it in.
@@ -229,7 +237,7 @@ export function initInventory(viewport: Viewport): void { vp = viewport; }
 /** Open the inventory sheet. Idempotent; safe without a document. */
 export function openInventory(): void {
   if (typeof document === 'undefined') return;
-  const dlg = el('inventory') as HTMLDialogElement | null;
+  const dlg = sheetEl();
   // The duck type is the runtime half of the claim that this is a <dialog> in
   // index.html, and is what makes a browser without one fall out here rather
   // than throw. Same shape as openCredits().
@@ -244,7 +252,7 @@ export function openInventory(): void {
     // target is the dialog itself landed on the backdrop. Same test dialog.ts
     // and credits.ts make.
     dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
-    el('inventory-close')?.addEventListener('click', () => dlg.close());
+    el('inventory-close')?.addEventListener('click', () => { cue('pick'); dlg.close(); });
     // Escape closes a modal dialog without any of the buttons above being
     // pressed, and a peek is a fixed box that would be left hanging over the
     // board with nothing under it. `close` catches every way out at once.
@@ -259,6 +267,7 @@ export function openInventory(): void {
     // The sheet closes first. The optimiser raises its own progress and its own
     // result, and both would land behind a modal that is still up.
     el('inventory-optimize')?.addEventListener('click', () => {
+      cue('pick');
       dlg.close();
       void import('../optimize/ui.ts').then(m => m.optimizeBoard());
     });
@@ -358,7 +367,7 @@ function assetRow(asset: InventoryAsset): HTMLElement {
   go.title = asset.cards.length > 1
     ? `Go to the first of ${asset.cards.length} cards using this file`
     : 'Go to the card using this file';
-  go.addEventListener('click', () => jump(to));
+  go.addEventListener('click', () => { cue('pick'); jump(to); });
   // Only a picture has anything to show. A clip's own bytes are not an image
   // and the still that stands in for it is a different row of this report, so
   // a video row goes somewhere and shows nothing on the way.
@@ -388,7 +397,7 @@ function assetRow(asset: InventoryAsset): HTMLElement {
  */
 function jump(id: string): void {
   hidePeek();
-  (el('inventory') as HTMLDialogElement | null)?.close();
+  sheetEl()?.close();
   const item = byId(id);
   if (!item) return;
   select([id]);
@@ -416,7 +425,7 @@ let peek: HTMLElement | null = null;
 let peekImg: HTMLImageElement | null = null;
 
 function showPeek(row: HTMLElement, hash: string): void {
-  const dlg = el('inventory') as HTMLDialogElement | null;
+  const dlg = sheetEl();
   const url = assetURL(hash);
   if (!dlg || !url) return;
 

@@ -220,6 +220,10 @@ const lineAlign = (line: Element): NoteAlign =>
 // at all rather than a wash of 'none', so this answers undefined where the two
 // above answer a default. Read back through the allowlist all the same - the
 // attribute is on an element the user has been typing into.
+//
+// SAFETY: every caller walks in from `.note-line`, which is an HTMLElement -
+// only an HTMLElement carries a `dataset` at all, and one without it would
+// throw here rather than read as unwashed.
 const lineWash = (line: Element): NoteWash | undefined =>
   NOTE_WASHES.find(w => (line as HTMLElement).dataset.wash === w);
 
@@ -230,8 +234,12 @@ function setLineAlign(line: Element, align: NoteAlign) {
   for (const a of NOTE_ALIGNS) line.classList.toggle('al-' + a, a === align);
 }
 function setLineWash(line: Element, wash: NoteWash | null) {
-  if (wash) (line as HTMLElement).dataset.wash = wash;
-  else delete (line as HTMLElement).dataset.wash;
+  // SAFETY: the same fact lineWash() states above - a note line is an
+  // HTMLElement, because that is what buildLine() made and what the editor's
+  // own markup holds. `dataset` exists on nothing narrower.
+  const el = line as HTMLElement;
+  if (wash) el.dataset.wash = wash;
+  else delete el.dataset.wash;
 }
 
 /** The block-line the caret is in, if any. */
@@ -239,9 +247,9 @@ function currentLine(wrap: HTMLElement): HTMLElement | null {
   const sel = selectionNow();
   const node = sel.anchorNode;
   if (!node || !wrap.contains(node)) return null;
-  // Two assertions, both about what a selection anchor can be: it is an element
-  // or a text node and nothing else, and a text node the line above found inside
-  // `wrap` has a parent element by definition. Neither can fire.
+  // SAFETY: two assertions, both about what a selection anchor can be: it is an
+  // element or a text node and nothing else, and a text node the line above
+  // found inside `wrap` has a parent element by definition. Neither can fire.
   const el = node.nodeType === 3 ? node.parentElement! : (node as Element);
   return el.closest<HTMLElement>('.note-line');
 }
@@ -273,9 +281,9 @@ function caretOffset(line: Element): number {
 function caretTo(line: Element, offset: number) {
   const sel = selectionNow();
   const range = document.createRange();
-  // nodeType 3 is a text node, which is the only kind that has a `length` to
-  // clamp against - that check is the cast.
   const first = line.firstChild;
+  // SAFETY: nodeType 3 is a text node, which is the only kind that has a
+  // `length` to clamp against - that check is the cast.
   const t = first && first.nodeType === 3 ? (first as Text) : null;
   if (t) range.setStart(t, Math.min(offset, t.length));
   else range.setStart(line, 0);
@@ -468,6 +476,11 @@ function buildToolbar(api: NoteToolbarApi) {
         swatch: `var(--note-wash-${w})`,
       }))],
       wash || '',
+      // SAFETY: two assertions and the includes() between them is what makes
+      // both hold. The first widens NOTE_WASHES so a plain string can be looked
+      // for in it at all; the second is that lookup having answered yes, which
+      // is the only way a string becomes a NoteWash. A key from anywhere else -
+      // an older build's stored value, a hand-edited file - takes the null.
       key => api.setWash(
         (NOTE_WASHES as readonly string[]).includes(key) ? key as NoteWash : null, lines),
     );
@@ -596,13 +609,15 @@ function editableNote(id: string): { found: HTMLElement; rich: HTMLElement } | n
  * the discard: it tears the editor down and commits nothing, which is a thing
  * only a caller that owns the item can sensibly ask for.
  */
+export type NoteEdit = { finish: (discard?: boolean) => void };
+
 export function editNote(
   id: string,
   { surface = null, onDone = null }: {
     surface?: HTMLElement | null;
     onDone?: ((text: string | null) => void) | null;
   } = {},
-): { finish: (discard?: boolean) => void } {
+): NoteEdit {
   const parts = editableNote(id);
   if (!parts) return { finish: () => {} };
   const { found, rich } = parts;
@@ -681,9 +696,9 @@ export function editNote(
       afterEdit();
     },
     setFont(key) {
-      // NOTE_FONT_KEYS is Object.keys(NOTE_FONTS) and so answers `true` only for
-      // a NoteFont; 'sheet' is one as well. The cast is that pair of facts, which
-      // Object.keys() cannot say for itself.
+      // SAFETY: NOTE_FONT_KEYS is Object.keys(NOTE_FONTS) and so answers `true`
+      // only for a NoteFont; 'sheet' is one as well. The cast is that pair of
+      // facts, which Object.keys() cannot say for itself.
       const font = (NOTE_FONT_KEYS.includes(key) ? key : 'sheet') as NoteFont;
       wrap.style.fontFamily = NOTE_FONTS[font];
       wrap.dataset.font = font;
@@ -814,7 +829,8 @@ export function editNote(
   const normalizeStructure = () => {
     let changed = false;
     for (const node of [...wrap.childNodes]) {
-      // nodeType 1 is an element, which is the whole of what the cast says.
+      // SAFETY: nodeType 1 is an element, which is the whole of what the cast
+      // says, and the && makes the test happen first.
       if (node.nodeType === 1 && (node as Element).classList.contains('note-line')) continue;
       if (node.nodeName === 'BR' || (node.nodeType === 3 && node.textContent === '')) {
         node.remove();
@@ -829,6 +845,8 @@ export function editNote(
       // tidy up after, not an edit anybody made.
       // A ChildNode has no *Element sibling; walk the two neighbours by hand
       // and take whichever of them is a line.
+      //
+      // SAFETY: nodeType 1 again, tested in the same expression that casts.
       const near = [node.previousSibling, node.nextSibling]
         .find((n): n is Element => !!n && n.nodeType === 1
           && (n as Element).classList.contains('note-line'));
@@ -961,9 +979,14 @@ export function editNote(
   // "left it entirely". The toolbar counts as inside, wherever it is mounted: on
   // Mobile it lives in the viewport rather than the item, so a control on it
   // would otherwise read as leaving and commit the note out from under the tap.
-  // The casts on both handlers say the same thing: where focus is going, and
-  // what a press landed on, are nodes in this document or nothing at all.
+  // SAFETY: the casts on both handlers say the same thing: where focus is
+  // going, and what a press landed on, are nodes in this document or nothing at
+  // all. `relatedTarget` and `target` are typed EventTarget because an event may
+  // come off a worker or a socket; these two are pointer and focus events out of
+  // the DOM, and `contains()` takes the null either way.
   const onFocusOut = (e: FocusEvent) => {
+    // SAFETY: see above - a focus event out of this document goes to a Node or
+    // to nothing.
     const to = e.relatedTarget as Node | null;
     if (node.contains(to) || toolbar.el.contains(to)) return;
     if (surface?.contains(to) || inMenu(to)) return;
@@ -974,7 +997,11 @@ export function editNote(
   // the reliable close: focusout does not fire when the press lands on something
   // the canvas refuses focus to (an empty spot, another card), which would leave
   // the note editable. Capture phase, so it runs before the canvas eats the press.
+  //
+  // SAFETY: `target` on a pointer event out of this document is a Node or
+  // nothing - see the paragraph above onFocusOut.
   const onDocPointerDown = (e: PointerEvent) => {
+    // SAFETY: as above - a pointer event in this document landed on a Node.
     const on = e.target as Node | null;
     if (node.contains(on) || toolbar.el.contains(on) || inMenu(on)) return;
     // A press on the surface is a press on the thing the note is being written
@@ -1097,8 +1124,9 @@ export function composeNote(make: () => Item | null | undefined) {
 
 /** `added` is whatever lastCommand() answered - the entry composeNote() made. */
 function openComposer(id: string, added: ReturnType<typeof lastCommand>) {
-  // #compose is a <dialog> in index.html, and the showModal() test below is the
-  // runtime half of that claim: a page stripped of it takes the other branch.
+  // SAFETY: #compose is a <dialog> in index.html, and the showModal() test
+  // below is the runtime half of that claim: a page stripped of it, or one that
+  // renamed the id, takes the other branch rather than calling into nothing.
   const dlg = document.getElementById('compose') as HTMLDialogElement | null;
   const mount = document.getElementById('compose-mount');
   const node: HTMLElement | undefined = nodeFor(id);

@@ -114,15 +114,16 @@ export const BUILD_STEPS = [
  * the user had done - which is not a quality trade, it is a missing feature. The
  * board's own "Show connections" is the honest control, and it is in View.
  */
-const PRESETS: Record<QualityLevel, QualityFlags> = {
+const PRESETS = {
   full: { motion: true, shadows: true, blur: true, anim: true, sharpness: 1280, build: 12 },
   balanced: { motion: true, shadows: true, blur: false, anim: true, sharpness: 1152, build: 8 },
   light: { motion: false, shadows: false, blur: false, anim: false, sharpness: 1024, build: 4 },
-};
+} satisfies Record<QualityLevel, QualityFlags>;
 
 const DEFAULT_LEVEL: QualityLevel = 'full';
-// Cast: PRESETS.full is the object literal above and its own keys are exactly
-// the six of QualityFlags, which is what Object.keys cannot say for itself.
+// SAFETY: PRESETS.full is the object literal above and its own keys are exactly
+// the six of QualityFlags - the `satisfies` on that table is what holds it to
+// them. Object.keys() cannot say that for itself.
 const KEYS = Object.keys(PRESETS.full) as QualityKey[];
 
 /**
@@ -230,9 +231,9 @@ function cleanOverrides(from: unknown): Partial<QualityFlags> {
     if (key === 'sharpness' && !SHARPNESS_STEPS.some(s => s.px === value)) continue;
     if (key === 'build' && !BUILD_STEPS.some(s => s.n === value)) continue;
     // Cast: `want` is this flag's own typeof taken from PRESETS.full, and the
-    // line above dropped anything that does not match it. That is the check;
-    // tsc cannot follow it because the type name is computed rather than
-    // written, so the answer is restated here.
+    // SAFETY: the line above dropped anything whose type does not match the
+    // key's. That is the check; tsc cannot follow it because the type name is
+    // computed rather than written, so the answer is restated here.
     writeFlag(out, key, value as QualityFlags[typeof key]);
   }
   return out;

@@ -47,6 +47,8 @@
 // whether the person needs to be told, and says so through here if the answer
 // is yes.
 
+import { cue } from './cuelume/engine.ts';
+
 /** A toast is either a receipt or a complaint. Nothing else has a spelling. */
 export type ToastKind = '' | 'error';
 
@@ -94,9 +96,25 @@ export function setOverlays(impl: Overlays | null): void {
   overlays = impl;
 }
 
-/** One-line status message at the foot of the screen. Newest at the bottom. */
+/**
+ * One-line status message at the foot of the screen. Newest at the bottom.
+ *
+ * **Every toast makes a sound, including one that lands on the heels of
+ * something else.** There was a rule here that let the receipt step aside when
+ * a more specific cue had just spoken - so a save said `done` and the toast
+ * behind it said nothing - and it was wrong for the reason the whole design is
+ * the way it is: a receipt that is sometimes silent is a receipt you stop
+ * trusting, and two sounds a beat apart are two things having happened. They
+ * overlap, which is what the limiter in cuelume/engine.ts is for.
+ *
+ * The sound happens whether or not there is an interface to draw the words on,
+ * and that is deliberate rather than an oversight of the `?.` above: this
+ * module's promise is that saying something is safe from a layer with no
+ * screen, and a speaker is not a screen.
+ */
 export function toast(msg: string, kind: ToastKind = ''): void {
   overlays?.toast(msg, kind);
+  cue(kind === 'error' ? 'fail' : 'note');
 }
 
 /**
@@ -119,7 +137,12 @@ export function toast(msg: string, kind: ToastKind = ''): void {
  * stack, not behind a toast.
  */
 export function runCommand(result: unknown, what = 'That'): void {
+  // SAFETY: both assertions are the duck type on the first line, which is the
+  // only test that matters here - a command returns whatever it returns, and
+  // what this function does is catch the rejection of the ones that return a
+  // promise. Anything without a callable `then` leaves on that line.
   if (typeof (result as { then?: unknown } | null)?.then !== 'function') return;
+  // SAFETY: see above - the duck type on the line before is the check.
   (result as Promise<unknown>).catch((err: unknown) => {
     console.warn('[mbrd] command failed', err);
     toast(`${what} did not work`, 'error');

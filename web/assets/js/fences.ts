@@ -119,8 +119,13 @@ function desktopBox(it: Boxed | null | undefined): Box | null {
  * completeLayout, captureLayout all assign), which makes identity an exact
  * test for "this is stale" and costs one comparison.
  */
-let desktopCache: { from: Geometry[] | null, map: Map<string, Geometry> } =
-  { from: null, map: new Map() };
+/**
+ * The Desktop index and the array it was built from. `from` is the staleness
+ * test described above, not data - it is compared by identity and never read.
+ */
+type DesktopIndex = { from: Geometry[] | null, map: Map<string, Geometry> };
+
+let desktopCache: DesktopIndex = { from: null, map: new Map() };
 function desktopIndex() {
   const list = board.layouts?.desktop || [];
   if (desktopCache.from !== list) {

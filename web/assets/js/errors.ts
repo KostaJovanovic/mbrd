@@ -322,6 +322,10 @@ export function reportCaught(cause: unknown, context: string): void {
 function prop(obj: unknown, key: string): unknown {
   if (!obj || (typeof obj !== 'object' && typeof obj !== 'function')) return undefined;
   try {
+    // SAFETY: the line above rules out anything that cannot carry a property,
+    // and the try/catch is the rest of it - this is the one read in the app
+    // that assumes nothing at all about what it is looking at, including that
+    // the getter will return rather than throw.
     return (obj as Record<string, unknown>)[key];
   } catch {
     return undefined;

@@ -81,6 +81,9 @@ const BEFORE = [
     + 'palette menu and three hosts out of it by id'],
   ['buildPanel', 'initAudio',
     'canvas/audio.ts takes the volume slider out of the panel by id'],
+  ['initCuelume', 'buildPanel',
+    'the Sounds dial paints itself from soundLevel() as the panel is generated, '
+    + 'and until initCuelume runs that is the default rather than what was stored'],
   ['buildPanel', 'initSidebar',
     'ui/sidebar.ts takes the board name field out of the panel by id'],
   ['buildPanel', 'initHud',

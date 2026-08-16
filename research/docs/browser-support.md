@@ -64,6 +64,17 @@ Documented so "Safari support" does not imply feature parity on every point rele
   The exported `.mbrd` is always the durable path.
 - **Backdrop blur** needs `-webkit-backdrop-filter` before Safari 18; the two
   blurred surfaces (audio play button over cover art, the dialog scrim) carry it.
+- **The Audio Session API is Safari-only, and that is where it is needed.** The
+  interface sounds run on a live `AudioContext`, which on a phone can interrupt
+  or duck audio playing in another app — and somebody arranging pictures with
+  music on in the background is the ordinary case here, not the edge one. There
+  is **no way to duck another app from a web page**; no API offers it. What
+  there is is `navigator.audioSession.type = 'ambient'`, which says *mix,
+  interrupt nothing, and be silenced by the ringer switch* — the same category a
+  keyboard click uses. `cuelume/engine.ts` sets it where it exists and does
+  nothing where it does not, which is the whole of the handling: elsewhere a
+  hundred-millisecond Web Audio blip generally mixes anyway. **Unverified on
+  hardware**, and it cannot be verified anywhere else — see the checklist below.
 - **Optimiser codecs.** WebCodecs audio encoding needs Safari 26; Ogg Opus
   playback needs 18.4; WebM on iOS needs 17.4. These only matter if the optional
   ffmpeg core is bundled, which this repo does not ship.
@@ -111,6 +122,12 @@ iPhone + iPad Safari** before a release:
 6. Play an audio and a video card; confirm the volume slider is hidden on iPhone.
 7. Install to Home Screen / Dock; confirm the icon and a cold offline launch.
 8. VoiceOver over the dialog and the waveform seek slider.
+9. **With music playing in another app on an iPhone**, open a board and do
+   anything that makes a sound — drop a file, undo, toggle the grid. The music
+   must keep playing at the volume it was at, and the ringer switch must silence
+   the interface sounds. This is the one claim in this document that no test in
+   the repository can make, and the only place it can be made is on a phone.
 
 If a `safaridriver` suite is added later, flows 1–5 are the ones worth
-automating first; 3, 7 and 8 stay manual.
+automating first; 3, 7, 8 and 9 stay manual — 9 permanently, since a driver has
+no second app to play music from.

@@ -20,6 +20,7 @@
 // would tell you the thing exists, which you already suspected.
 
 import { board, byId, itemTags, select } from '../state.ts';
+import { cue } from '../cuelume/engine.ts';
 import { travelMs } from '../canvas/viewport.ts';
 import { extOf } from '../util.ts';
 import { describeExt } from '../import/formats.ts';
@@ -90,6 +91,9 @@ export function initSearch(viewport: Viewport) {
 
   // Anything that makes the board move out from under the answers.
   addEventListener('pointerdown', e => {
+    // SAFETY: a pointerdown reaching the window came off this document, so the
+    // target is a Node - and `contains()` answers false for a null, which
+    // closes the palette, which is the safe direction to be wrong in.
     if (!node || node.contains(e.target as Node | null)) return;
     // Recorded before the close, which is what clears the state this is a fact
     // about - the same shape justDismissed() has in ui/menu.ts, and here for
@@ -99,6 +103,7 @@ export function initSearch(viewport: Viewport) {
     // palette was built in its place, and open()'s own `if (node)` branch -
     // the one that keeps the query and selects the field - was unreachable
     // from any button in the app.
+    // SAFETY: as above - the same target, from the same event.
     dismissedBy = e.target as Node | null;
     dismissedAt = performance.now();
     close();
@@ -311,7 +316,7 @@ function draw(q: string) {
     // Selecting on hover would fight the keyboard: an arrow key moves the
     // highlight, the pointer happens to be resting over row four, and the
     // highlight jumps back the moment anything reflows.
-    row.addEventListener('click', () => commit(h));
+    row.addEventListener('click', () => { cue('pick'); commit(h); });
     list!.append(row);
   });
 

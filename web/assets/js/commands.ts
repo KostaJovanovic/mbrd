@@ -657,6 +657,18 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     // hundred milliseconds, and a keystroke writes none.
     find: () => openSearch(document.querySelector('#toolbar [data-cmd="find"]')),
     getSetting: (key: string) => settingsBag()[key],
+    // The two readers the menu and the flyout actually want. getSetting() above
+    // stays as it is - it is the console's, where a bare key naming nothing has
+    // to read as undefined - but a tick and a slider are not asking "what is
+    // under this key", they are asking for a boolean and a number. Answering
+    // `unknown` there pushed the question one line downstream to a `String()` or
+    // a `!!`, which is where a setting that had gone missing turned into the
+    // word "undefined" on a dial instead of a fault anybody could see.
+    settingOn: (key: string) => !!settingsBag()[key],
+    settingNumber: (key: string) => {
+      const value = settingsBag()[key];
+      return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+    },
     toggleSetting: (key: string) => setSetting(key, !settingsBag()[key]),
     // The dial's half of the pair. The panel writes settings through
     // ui/settings-schema.js, which imports setSetting straight; the flyout's

@@ -285,6 +285,15 @@ const BASE = new Set([
   //                never reaches for `document`, which is what lets it be down
   //                here rather than in ui/.
   'crypto.ts', 'prefs.ts', 'notify.ts', 'media/transport.ts',
+  // The interface's own sounds, and the same sentence as quality.js one more
+  // time: state.js, canvas/, import/, ui/ and notify.js all say something
+  // happened, which is four tiers, and a thing every tier reads has to be under
+  // all of them or it is an inversion for most of them. The table half
+  // (recipes.js) imports nothing at all; the engine imports prefs.js and the
+  // table, and touches `document` only inside a function to read the whimsy
+  // tier. ui/sound-lab.js is the bench and stays in ui/, because a page is
+  // interface.
+  'cuelume/recipes.ts', 'cuelume/engine.ts',
   // Colour as arithmetic, lifted out of ui/pigments.js's own "Colour" heading.
   // Here for the same reason as the four above: it imports nothing, it knows
   // nothing about this app - OKLab conversion, a gamut-safe hex, a WCAG ratio

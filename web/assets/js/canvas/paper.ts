@@ -173,8 +173,9 @@ function draw() {
  * on the first move - the sheet would jump before it grew.
  */
 function onDown(e: PointerEvent) {
-  // The listener is on #paper, so the target is an element of it; the optional
-  // call is kept because a harness can dispatch at something plainer.
+  // SAFETY: the listener is on #paper, so the target is an element of it; the
+  // optional call is kept because a harness can dispatch at something plainer,
+  // and answers undefined rather than throwing when it does.
   const grip = (e.target as Element).closest?.<HTMLElement>('[data-grip]');
   // The setting as well as the class, because a hidden grip is a stylesheet's
   // opinion and this is the board's. The two only disagree if a look ever
@@ -230,6 +231,8 @@ function onUp(e: PointerEvent) {
   if (!drag) return;
   drag = null;
   document.documentElement.classList.remove('is-sizing-paper');
+  // SAFETY: as in onDown() - the target of a pointer event on #paper is an
+  // element of it, and the optional call covers anything else.
   (e.target as Element).releasePointerCapture?.(e.pointerId);
 }
 

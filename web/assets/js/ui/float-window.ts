@@ -35,8 +35,9 @@ export function makeWindowDrag(win: HTMLElement, handle: HTMLElement): void {
   /** The grab: where in the window the pointer took hold, and how big it was. */
   let d: { dx: number; dy: number; w: number; h: number } | null = null;
   handle.addEventListener('pointerdown', e => {
-    // A pointerdown's target is the element it landed on; the cast says that
-    // where the DOM types only promise an EventTarget.
+    // SAFETY: a pointerdown's target is the element it landed on; the cast says
+    // that where the DOM types only promise an EventTarget. The listener is on
+    // the window's own handle, so there is nowhere else it can come from.
     if (e.button !== 0 || (e.target as Element).closest('button')) return;
     const r = win.getBoundingClientRect();
     win.style.left = `${r.left}px`;

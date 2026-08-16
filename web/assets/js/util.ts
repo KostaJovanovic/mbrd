@@ -144,9 +144,13 @@ export function emitter<E = Record<string, unknown>>(): Emitter<E> {
     off(evt, fn) { map.get(evt)?.delete(fn); },
     emit(evt, payload) {
       for (const fn of map.get(evt) || []) {
-        // Safe by construction: on() checked this handler against the payload
-        // type of this same event name, which is what the Map cannot remember.
-        try { (fn as (payload?: E[typeof evt]) => void)(payload); }
+        try {
+          // SAFETY: safe by construction - on() checked this handler against
+          // the payload type of this same event name, which is what the Map
+          // cannot remember. The catch is for what the handler does, not for
+          // this.
+          (fn as (payload?: E[typeof evt]) => void)(payload);
+        }
         catch (e) { reportCaught(e, 'handler for "' + evt + '"'); }
       }
     },

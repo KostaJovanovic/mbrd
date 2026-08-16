@@ -7,6 +7,7 @@
 
 import { extOf } from '../util.ts';
 import { toast, busy } from '../notify.ts';
+import { cue } from '../cuelume/engine.ts';
 import {
   board, bus, addItems, select, setItemCover, NOTE_MAX, baseStep, startSettling,
 } from '../state.ts';
@@ -114,6 +115,20 @@ export function setImportPrompt(fn: ImportPrompt | null | undefined) {
 
 /** Whole megabytes, for a sentence. Nothing here needs the decimal. */
 const mb = (bytes: number) => Math.round(bytes / 1024 ** 2) + ' MB';
+
+/**
+ * The one hidden <input type="file"> on the page.
+ *
+ * Three entry points reach for it - the "Add files" button, the picker fallback
+ * and "Choose a picture" - and they take turns with it through `dataset.mode`,
+ * which is why there is one rather than three.
+ */
+// SAFETY: #file-input is written out in index.html as <input type="file">, and
+// the `!`-free assertion is deliberate: unlike the panel's controls this one is
+// not optional. A page without it cannot import at all, and a throw at the first
+// press is the honest failure - a null-checked no-op would be a button that
+// silently does nothing.
+const fileInput = () => document.getElementById('file-input') as HTMLInputElement;
 
 /**
  * How many files are prepared at once.
@@ -252,7 +267,7 @@ export function initDrop(vp: DropViewport) {
   });
 
   // The "Add files" button and the picker fallback share one hidden input.
-  const input = document.getElementById('file-input') as HTMLInputElement;
+  const input = fileInput();
   input.addEventListener('change', async () => {
     const mode = input.dataset.mode;
     // Not ours. Either nobody set one, or storage.js has it open for a .mbrd and
@@ -289,7 +304,7 @@ export function initDrop(vp: DropViewport) {
  * button for the rest of the session.
  */
 export function pickFiles() {
-  const input = document.getElementById('file-input') as HTMLInputElement;
+  const input = fileInput();
   input.accept = '';
   input.multiple = true;
   input.dataset.mode = 'content';
@@ -319,7 +334,7 @@ let coverFor: string | null = null;
 
 /** Choose a picture for one card. See setItemCover() in state.js. */
 export function pickCover(id: string) {
-  const input = document.getElementById('file-input') as HTMLInputElement;
+  const input = fileInput();
   input.accept = 'image/*';
   input.multiple = false;
   input.dataset.mode = 'cover';
@@ -546,9 +561,9 @@ export async function importFiles(
     // out - and, once the two catalogues split, work done under a name that no
     // longer names a shape. No seed: a drop is reproducible, and Shuffle
     // unseeded is the order the files arrived in.
-    // The cast is safe because mobileOrder() mints nothing: it returns the very
-    // objects it was handed, in another order (see ORDERS in arrangements.ts),
-    // so every element here is one of the drafts that went in.
+    // SAFETY: mobileOrder() mints nothing - it returns the very objects it was
+    // handed, in another order (see ORDERS in arrangements.ts), so every element
+    // here is one of the drafts that went in.
     const ordered = mobileOrder(drafts, { name: board.arrangement }) as Draft[];
     drafts.length = 0;
     drafts.push(...ordered);
@@ -593,6 +608,10 @@ export async function importFiles(
   if (stats.undecodable && !failed.length) {
     msg += `, ${stats.undecodable} shown as cards (this browser can’t decode ${stats.undecodable === 1 ? 'it' : 'them'})`;
   }
+  // One cue for the whole import, never one per card: forty files arriving at
+  // once is one thing finishing. The toast on the next line says `note` on top
+  // of this, which is two things having happened and is meant to overlap.
+  cue(failed.length ? 'fail' : 'done');
   toast(msg, failed.length ? 'error' : '');
 
   // Announced rather than acted on, and that is a layering constraint rather
@@ -862,6 +881,50 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
   // from the one `size` describes, so those pass nothing and take the old path.
   const thumbWidth = type === 'image' && !previewFile ? size.natural?.w || 0 : 0;
   const thumb = thumbSource ? await thumbFor(thumbSource, thumbWidth).catch(() => null) : null;
+  // The four optional keys of the meta, decided before the literal below.
+  //
+  // Each has to be *absent* rather than present-and-undefined: itemHashes() in
+  // util.ts walks meta looking for content ids, the note and image renderers
+  // test `'preview' in meta`, and a key holding undefined would put an empty
+  // slot into an archive path. They are written by assignment for that reason.
+  const meta: ItemMeta = {
+    mime: file.type || '',
+    ext: extOf(file.name),
+    size: file.size,
+    mtime: file.lastModified || 0,
+    // The name the file arrived under, kept even after it is renamed, because
+    // clearing a name is meant to give this back - see state.js/renameItem.
+    //
+    // On the item rather than only in the asset registry, which is where it used
+    // to live alone. The registry is rebuilt from the archive on every open and
+    // the archive carries no filenames, so after a save and a reopen "clear the
+    // name" fell back to the *renamed* value and the original was gone. Here it
+    // travels inside board.json.
+    origName: file.name,
+    // Tells adoptAspect() the size is already right; only unmeasurable media
+    // leaves this off and gets resized once it loads.
+    sized: !!size.measured,
+  };
+  // One slot, two sources. An audio card wears the picture out of its own tags;
+  // a video that cannot be played wears a frame out of itself. Both are "the
+  // picture this item shows", and the renderers already know what to do with one
+  // - a card draws it in the corner, a video makes it the poster.
+  if (cover) meta.cover = cover;
+  else if (poster?.hash) meta.cover = poster.hash;
+  if (thumb) meta.thumb = thumb.hash;
+  // A guess, and only a guess: a picture whose outer ring is mostly transparent
+  // is a shape rather than a photograph, so it lands with no card round it. The
+  // menu row ("No card") is what makes it a default rather than a verdict -
+  // whatever is chosen there wins and is what gets saved. Only for an image that
+  // is its own thumbnail source: a preview pulled out of a HEIC or a frame
+  // grabbed from a clip is a different picture from the one being imported, and
+  // neither is ever a cut-out.
+  if (type === 'image' && !previewFile && thumb?.cutout) meta.bare = true;
+  // The decodable stand-in for a picture the browser won't draw. asset.hash
+  // below is still the untouched original; the image renderer draws this when it
+  // is present. Preserved and packed like any other content id - see
+  // META_HASHES in board-model.js and itemHashes() in util.js.
+  if (previewHash) meta.preview = previewHash;
   return {
     type,
     name: file.name,
@@ -872,45 +935,7 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
     w: size.w,
     h: size.h,
     asset: { hash, embedded: true },
-    meta: {
-      // One slot, two sources. An audio card wears the picture out of its own
-      // tags; a video that cannot be played wears a frame out of itself. Both
-      // are "the picture this item shows", and the renderers already know what
-      // to do with one - a card draws it in the corner, a video makes it the
-      // poster.
-      ...(cover ? { cover } : poster?.hash ? { cover: poster.hash } : {}),
-      ...(thumb ? { thumb: thumb.hash } : {}),
-      // A guess, and only a guess: a picture whose outer ring is mostly
-      // transparent is a shape rather than a photograph, so it lands with no
-      // card round it. The menu row ("No card") is what makes it a default
-      // rather than a verdict - whatever is chosen there wins and is what gets
-      // saved. Only for an image that is its own thumbnail source: a preview
-      // pulled out of a HEIC or a frame grabbed from a clip is a different
-      // picture from the one being imported, and neither is ever a cut-out.
-      ...(type === 'image' && !previewFile && thumb?.cutout ? { bare: true } : {}),
-      // The decodable stand-in for a picture the browser won't draw. asset.hash
-      // above is still the untouched original; the image renderer draws this
-      // when it is present. Preserved and packed like any other content id - see
-      // META_HASHES in board-model.js and itemHashes() in util.js.
-      ...(previewHash ? { preview: previewHash } : {}),
-      mime: file.type || '',
-      ext: extOf(file.name),
-      size: file.size,
-      mtime: file.lastModified || 0,
-      // The name the file arrived under, kept even after it is renamed,
-      // because clearing a name is meant to give this back - see
-      // state.js/renameItem.
-      //
-      // On the item rather than only in the asset registry, which is where
-      // it used to live alone. The registry is rebuilt from the archive on
-      // every open and the archive carries no filenames, so after a save
-      // and a reopen "clear the name" fell back to the *renamed* value and
-      // the original was gone. Here it travels inside board.json.
-      origName: file.name,
-      // Tells adoptAspect() the size is already right; only unmeasurable
-      // media leaves this off and gets resized once it loads.
-      sized: !!size.measured,
-    },
+    meta,
   };
 }
 
@@ -1009,6 +1034,11 @@ export function addSticker(shape: string, centre: Point, tint?: string) {
   // star you placed a hair off centre. See addNote above and sticky.js.
   startSettling([item.id]);
   select([item.id]);
+  // Placed, which is a card landing by another route - the same cue a drag
+  // gives when it lets go. The other two fileless types say nothing: a note and
+  // a swatch are made to be typed into or picked from, so the making of one is
+  // the start of the gesture rather than the end of it.
+  cue('tap');
   return item;
 }
 

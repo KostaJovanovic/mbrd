@@ -33,7 +33,7 @@ let wired = false;
 /** Open the credits sheet. Idempotent; safe without a document. */
 export function openCredits(): void {
   if (typeof document === 'undefined') return;
-  // el() answers with the base element type; #credits is a <dialog> in
+  // SAFETY: el() answers with the base element type; #credits is a <dialog> in
   // index.html. The duck-type check below is the runtime half of that claim and
   // is what makes a browser without <dialog> fall out here rather than throw.
   const dlg = el('credits') as HTMLDialogElement | null;

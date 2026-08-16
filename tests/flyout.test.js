@@ -57,7 +57,7 @@ test('a button with a flyout carries no title', () => {
 const stub = (over = {}) => ({
   arrangement: () => 'spiral',
   hasSelection: () => true,
-  getSetting: () => 12,
+  settingNumber: () => 12,
   setSetting: () => {},
   arrangeAs: () => {},
   rearrangeSelection: () => {},
@@ -112,7 +112,7 @@ test('Rearrange selection is absent when there is no selection', () => {
 test('the spacing dial reads and writes the spacing setting', () => {
   let wrote = null;
   const rows = arrangeEntries(stub({
-    getSetting: key => (key === 'spacing' ? 44 : undefined),
+    settingNumber: key => (key === 'spacing' ? 44 : undefined),
     setSetting: (key, v) => { wrote = [key, v]; },
   }));
   const dial = rows.find(e => e.range);

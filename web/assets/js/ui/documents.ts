@@ -321,8 +321,9 @@ function wordParagraph(p: Element, entries: Entries, rels: Rels, urls: string[],
   const name = (style?.getAttribute('w:val') || style?.getAttribute('val') || '').toLowerCase();
   // Heading1..Heading9, and the aliases Word itself writes for a title page.
   const heading = /^heading([1-9])$/.exec(name);
-  // The cast is the clamp above read as a type: h1 through h6 are all tag names,
-  // and Math.min(6, …) on a digit matched by the pattern cannot leave that set.
+  // SAFETY: the cast is the clamp read as a type - h1 through h6 are all tag
+  // names, the regex above matched a single digit 1-9, and Math.min(6, …) on
+  // one of those cannot leave the set. The other two arms are literals.
   const tag = (heading ? 'h' + Math.min(6, Number(heading[1]))
     : name === 'title' ? 'h1'
     : name === 'subtitle' ? 'h2'
@@ -662,8 +663,9 @@ function odfBlocks(root: Element, host: HTMLElement, entries: Entries, urls: str
       switch (child.localName) {
         case 'h': {
           const level = Number(child.getAttribute('text:outline-level') || 1);
-          // Cast for the reason wordParagraph()'s does: the clamp on either side
-          // of it is what makes the name one of h1..h6.
+          // SAFETY: for the reason wordParagraph()'s says - the clamp on either
+          // side of it is what makes the name one of h1..h6, whatever the
+          // document's outline level claims.
           const h = el(('h' + Math.min(6, Math.max(1, level))) as keyof HTMLElementTagNameMap);
           h.textContent = child.textContent;
           into.append(h);

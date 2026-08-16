@@ -378,6 +378,10 @@ export function axesFromFilename(filename: unknown): FontAxis[] {
     const tag = raw.trim();
     if (!/^[A-Za-z0-9 ]{4}$/.test(tag) || seen.has(tag)) continue;
     seen.add(tag);
+    // SAFETY: the assertion is the lookup and not a claim about the tag - the
+    // `|| { … }` beside it is what a tag AXIS_FALLBACKS has never heard of gets,
+    // which is most of them. `tag` has already been held to four characters of
+    // an alphabet by the test above.
     axes.push({ tag, ...(AXIS_FALLBACKS[tag as keyof typeof AXIS_FALLBACKS] || { min: 0, default: 0, max: 100 }) });
   }
   return axes;

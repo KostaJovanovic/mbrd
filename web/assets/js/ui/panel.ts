@@ -32,8 +32,10 @@
 // decides what is on screen. ui/sidebar.js owns the subscriptions and calls
 // paintPanel() - there is one paint, not two racing.
 import { board } from '../state.ts';
+import { cue } from '../cuelume/engine.ts';
 import { isPatchPage } from '../page.ts';
 import { field, fieldStops } from './controls.ts';
+import { tickSlider } from './controls.ts';
 import {
   TABS, SECTIONS, controlVisible, controlEnabled, sectionVisible,
 } from './settings-schema.ts';
@@ -116,7 +118,7 @@ export function buildPanel(root = document.getElementById('sidebar')) {
     tab.textContent = t.label;
     tab.setAttribute('role', 'tab');
     tab.setAttribute('aria-controls', `panel-${t.id}`);
-    tab.addEventListener('click', () => showTab(t.id));
+    tab.addEventListener('click', () => { cue('pick'); showTab(t.id); });
     strip.append(tab);
 
     const panel = make('div', 'side-panel');
@@ -230,6 +232,11 @@ function buildControl(c: Control, _spec: Section) {
   // builder below takes the member carrying its own key - but TypeScript cannot
   // carry that correlation through an index, so the pair is asserted here once
   // rather than at each of the eight.
+  //
+  // SAFETY: BUILDERS is a mapped type over Control['type'], so the value under
+  // `c.type` is by construction the builder for that member. The `| undefined`
+  // is kept and the call below is optional, so a control type with no row in
+  // the table draws nothing rather than throwing.
   const build = BUILDERS[c.type] as ((spec: Control) => HTMLElement) | undefined;
   const node = build?.(c);
   if (!node) return null;
@@ -270,7 +277,18 @@ function buildCheck(c: CheckControl) {
   label.append(input, document.createTextNode(' ' + c.label));
   const set = c.set;
   if (!c.external && set) {
-    input.addEventListener('change', () => set(input.checked));
+    // `pick` and not `on`/`off`, which is the one place that distinction earns
+    // its keep. Every control in the app says `pick` when it is pressed and
+    // whatever it changed says its own thing on top - and a board setting
+    // *does*, from setSetting() in state.ts, which is the door every route to a
+    // setting comes through. Saying `on` here as well would be the same recipe
+    // twice at a zero gap, which is not two events, it is one louder one.
+    //
+    // The quality overrides have no such second voice, so they say only that
+    // they were pressed. That is honest rather than tidy: nothing downstream of
+    // them speaks, and inventing a toggle sound here would be this file
+    // guessing at what its setter did.
+    input.addEventListener('change', () => { cue('pick'); set(input.checked); });
   }
   register(c, label, input, null);
   return label;
@@ -310,6 +328,11 @@ function buildRange(c: RangeControl) {
 
   const set = c.set;
   if (!c.external && set) {
+    // The tick is tickSlider()'s, not this builder's. It was written inline
+    // here and that was the bug: it covered the six sliders this file makes and
+    // silently missed every one wired by its owning module - Whimsy, the
+    // palette count, the masthead's four, the volume, the hint card's dial.
+    tickSlider(input);
     input.addEventListener('input', () => {
       writeOut(c, input, out);
       set(+input.value);
@@ -328,7 +351,7 @@ function buildSelect(c: SelectControl) {
   label.append(select);
   const set = c.set;
   if (!c.external && set) {
-    select.addEventListener('change', () => set(select.value));
+    select.addEventListener('change', () => { cue('pick'); set(select.value); });
   }
   register(c, label, select, null);
   return label;
@@ -420,6 +443,9 @@ function buildPicker(c: PickerControl) {
  */
 function pickerOf(el: HTMLElement): PickerControl | null {
   const hit = built.find(b => b.c.type === 'picker' && b.c.id && b.c.id === el.id);
+  // SAFETY: the find() tested `type === 'picker'`, which is the discriminant -
+  // so anything it answered is a PickerControl. TypeScript loses that across
+  // the optional chain, not across the predicate.
   return (hit?.c as PickerControl) ?? null;
 }
 
@@ -610,9 +636,13 @@ function paintControl({ c: spec, owner, wrap, input, out, nodes }: Built, c: Ctx
   if (spec.type === 'buttons' && nodes) {
     for (let i = 0; i < nodes.length; i++) {
       const b = spec.buttons[i];
-      if (nodes[i] instanceof HTMLButtonElement) (nodes[i] as HTMLButtonElement).disabled = !live;
-      if (typeof b.pressed === 'function') nodes[i].setAttribute('aria-pressed', String(b.pressed(c)));
-      if (typeof b.title === 'function') nodes[i].title = b.title(c);
+      // Bound before the test rather than indexed at each use: the instanceof
+      // then narrows it properly, which is what the assertion here used to be
+      // standing in for.
+      const node = nodes[i];
+      if (node instanceof HTMLButtonElement) node.disabled = !live;
+      if (typeof b.pressed === 'function') node.setAttribute('aria-pressed', String(b.pressed(c)));
+      if (typeof b.title === 'function') node.title = b.title(c);
     }
     return;
   }
@@ -633,10 +663,20 @@ function paintControl({ c: spec, owner, wrap, input, out, nodes }: Built, c: Ctx
   // clears the selection, which is why this cannot happen the other way round.
   // The element is the one buildSelect() made for this same spec, which is what
   // the two assertions here and below say.
-  if (spec.type === 'select') fillSelect(spec, input as HTMLSelectElement, c);
+  //
+  // SAFETY: `input` and `spec` were paired when the row was built - a 'select'
+  // spec got a <select> from buildSelect() and a 'check' got an <input>, and
+  // the pair is stored together in `built`. The discriminant test on each line
+  // is what picks the branch; the assertion is the element that came with it.
+  if (spec.type === 'select') {
+    // SAFETY: see above - this spec's element came from buildSelect().
+    fillSelect(spec, input as HTMLSelectElement, c);
+  }
   const value = spec.get();
-  if (spec.type === 'check') (input as HTMLInputElement).checked = !!value;
-  else if (spec.type === 'range') { input.value = String(value); writeOut(spec, input, out); }
+  if (spec.type === 'check') {
+    // SAFETY: see above - a 'check' spec's element is the <input> built for it.
+    (input as HTMLInputElement).checked = !!value;
+  } else if (spec.type === 'range') { input.value = String(value); writeOut(spec, input, out); }
   // The String() is the coercion the assignment did on its own; what reaches
   // here is a select's value, which is text already.
   else input.value = String(value ?? '');
@@ -652,7 +692,9 @@ function paintControl({ c: spec, owner, wrap, input, out, nodes }: Built, c: Ctx
 function paintRules() {
   for (const { panel } of tabs.values()) {
     let first = true;
-    // Every child of a tab panel is a <section> this file built.
+    // SAFETY: every child of a tab panel is a <section> this file built - see
+    // buildTab(). Nothing else appends to one, and `hidden` below is the only
+    // thing read off them.
     for (const el of panel.children as HTMLCollectionOf<HTMLElement>) {
       if (el.hidden) continue;
       el.classList.toggle('is-first', first);

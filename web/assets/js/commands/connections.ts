@@ -197,7 +197,7 @@ export function connectionCommands() {
     // read against the pair's stored order; `style` one of solid/dashed/dotted;
     // `label` any short string, '' to clear it. A patch that names only some of
     // the three leaves the rest as they were.
-    setConnectionStyle: (a: string, b: string, patch?: object | null) => {
+    setConnectionStyle: (a: string, b: string, patch?: ConnMeta | null) => {
       // The two failures are told apart, because they mean different things and
       // the caller is a person at a console. updateConnection() answers false
       // for both "no such pair" and "that patch changed nothing" - connMeta()
@@ -261,6 +261,10 @@ export function connectionCommands() {
     // box including an empty one; the way to clear a label is the menu's Remove
     // label, which sets it to '' through the same door.
     editConnectionLabel: async (a: string, b: string) => {
+      // SAFETY: connectionMeta() answers what connMeta() built, which is a
+      // ConnMeta - the assertion is only because state.ts re-exports it through
+      // a signature that has not been annotated. The `?.` covers the null, and
+      // the `|| ''` covers a pair with no label.
       const current = (connectionMeta(a, b) as ConnMeta | null)?.label || '';
       const typed = await ask({
         title: 'Connection label',

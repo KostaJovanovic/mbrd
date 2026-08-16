@@ -114,11 +114,10 @@ function context(): OfflineAudioContext | null {
   // peaks() and leave the card with no readings at all. `false` records that
   // we asked and were refused, so it is not retried for every card.
   if (decodeCtx === null) {
-    // The prefixed name is Safari's and is not in lib.dom, so the window is read
-    // through an index rather than a property. Both spellings take the same
+    // The prefixed name is Safari's and is not in lib.dom; vendor-globals.d.ts
+    // declares it optional so this is a plain read. Both spellings take the same
     // three arguments.
-    const w = window as unknown as Record<string, typeof OfflineAudioContext | undefined>;
-    const Ctx = w.OfflineAudioContext || w.webkitOfflineAudioContext;
+    const Ctx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     try { decodeCtx = Ctx ? new Ctx(1, 1, 44100) : false; } catch { decodeCtx = false; }
   }
   return decodeCtx || null;

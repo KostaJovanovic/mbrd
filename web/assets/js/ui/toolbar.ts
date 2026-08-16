@@ -28,6 +28,7 @@
 import { el } from '../util.ts';
 import { board, bus, isJoinEnd, toggleConnection } from '../state.ts';
 import { toast, runCommand } from '../notify.ts';
+import { cue } from '../cuelume/engine.ts';
 import { setConnectPick } from '../canvas/items.ts';
 // The line that follows the pointer out of the picked card. Written from the
 // same place as the ring, because they are one state: a pick with no draft is
@@ -44,7 +45,7 @@ const camel = (s: string): string => s.replace(/-([a-z])/g, (_, c: string) => c.
  * any of them do.
  */
 export interface ToolbarCommands {
-  [name: string]: ((...args: never[]) => unknown) | undefined;
+  [name: string]: ((...args: never[]) => void) | undefined;
 }
 
 let bar: HTMLElement | null = null;
@@ -59,10 +60,17 @@ export function initToolbar(cmds: ToolbarCommands): void {
   toggle!.addEventListener('click', () => setOpen(!isOpen()));
 
   bar!.addEventListener('click', e => {
+    // SAFETY: the listener is on #toolbar, so a click delivered to it landed on
+    // an element inside it - closest() is only being asked whether an ancestor
+    // carries a data-cmd, and a target that is not a node cannot reach here.
     const btn = (e.target as Element).closest<HTMLElement>('[data-cmd]');
     if (!btn) return;
     const fn = cmds[camel(btn.dataset.cmd!)];
     if (!fn) return;
+    // Every tool on the bar says so, from the one place that knows a button was
+    // pressed - the same line ui/sidebar.ts carries, and there because these are
+    // the two delegated data-cmd dispatchers in the app.
+    cue('pick');
     // See notify.ts: the returned promise was dropped, so an async command that
     // rejected read as a button that did nothing at all.
     runCommand(fn(), btn.getAttribute('aria-label') || (btn.textContent || '').trim() || 'That');
@@ -161,11 +169,26 @@ let pick: string | null = null;
  * survived a reload, and was never drawn, and the only way to find out was to
  * read the file.
  */
+/**
+ * What one press of the connect tool decides: which card is now held, which pair
+ * is finished, and whether the press was turned down.
+ *
+ * Named because five returns build it and the three fields are not independent -
+ * a `connect` and a `pick` together would be a state nothing draws, and a
+ * `refused` with a fresh `pick` would say the tool both declined and advanced.
+ * Reading them off one type is what makes the five lines below comparable.
+ */
+export type ConnectStep = {
+  pick: string | null;
+  connect: [string, string] | null;
+  refused: boolean;
+};
+
 export function connectStep(
   from: string | null,
   id: string | null,
   joinable = true,
-): { pick: string | null; connect: [string, string] | null; refused: boolean } {
+): ConnectStep {
   if (!id) return { pick: null, connect: null, refused: false };
   // Before every other case, including `from === id`: a sticker you picked by
   // mistake cannot have been picked in the first place, so there is no

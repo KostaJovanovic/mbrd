@@ -72,7 +72,12 @@ function boardArtefactName(ext: string): string {
  * change to the text on a path nothing reaches, made in a commit that is
  * supposed to change nothing at all.
  */
-const why = (err: unknown): string => (err as Error).message;
+const why = (err: unknown): string =>
+  // SAFETY: every caller hands this a value out of a `catch`, and what this app
+  // throws is an Error - the paragraph above is about the *text* of one, not
+  // about its shape. A thrown string would read `undefined` here rather than
+  // throw, which is the failure the paragraph says is acceptable.
+  (err as Error).message;
 
 /**
  * Whether this export should carry the step history, asked.

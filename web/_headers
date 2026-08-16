@@ -87,6 +87,12 @@
 #     it. tests/csp.test.js recomputes all of them and fails first.
 #   - lab.html's inline module. The pigment lab is one page with its script in
 #     it; it ships in web/ so it is covered by /* like everything else.
+#   - lab-sound.html's inline module, on exactly the same terms. It is two lines
+#     - import initSoundLab, call it - and it cannot be a file for a reason
+#     worth knowing: tests/imports.test.js holds every module under
+#     web/assets/js to loading without a browser, its list of exceptions is
+#     three names long and closed, and a bench is not an argument for a fourth.
+#     So the bundled module exports a function and the *page* is what starts it.
 #
 # 404.html is a byte copy of index.html (see save.bat), so it needs no hashes of
 # its own - it carries the same two, and if it ever stops doing so
@@ -113,9 +119,13 @@
 #   - the style="..." attributes in lab.html's generated preview card, same fix.
 #   - the last static one, a font-size on a span in lab.html, now a class.
 #
-# With the attributes gone the two inline <style> blocks can be hashed, which
-# is what the two sha256 values below are - one for the block in index.html, one
-# for lab.html. Hashes and 'unsafe-inline' cannot be mixed anyway: a browser
+# With the attributes gone the inline <style> blocks can be hashed, which is
+# what the three sha256 values below are - one for the block in index.html, one
+# for lab.html, one for lab-sound.html. The benches carry their look inline
+# rather than in a sheet of their own on purpose: tests/sw.test.js requires
+# every .css under assets/css to be in SHELL, and a debug harness has no
+# business in the offline shell. Hashes and 'unsafe-inline' cannot be mixed
+# anyway: a browser
 # ignores the keyword the moment a hash is present, which is exactly the
 # property being relied on here.
 #
@@ -269,7 +279,7 @@
 # report to, which is the whole architecture).
 
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-TXFmC+WkJ7pej6GG4eilTgWXAPfRfnxeO2p8iCMvh/k=' 'sha256-qxiwxtjeQUbsHr4op9ZRXOdxUq+CLu4QIJRuvidUe5c=' 'sha256-eJzJ8523EitoBKAS5A1tCSnraL7SAmf2gesGT63wGSk=' 'sha256-7MOXuzYEVnwtGN5LaHmnA8It5SPyIoYzkvOEItbnkGg=' 'sha256-Q8ZzrQgcVPkApKR0qNf6mroKHffRQsjhyVVZIRu0QtU=' 'sha256-8ZGO4EWxaESz6+qYFa7Px/8iyW9D2UaZh/+P4/mg99Q='; style-src 'self' 'sha256-wkVFcbpQLLLncGzQDSypPX4g+PgpgKuYUfkJ3D7xrA8=' 'sha256-9MwbduHoYcvGbMyIKsXKkXLfI0H0ks+ah6sfj4TrmeA='; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self' blob:; connect-src 'self' blob: https://cdn.jsdelivr.net; worker-src 'self'; manifest-src 'self'; frame-src https://www.youtube-nocookie.com https://open.spotify.com; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-TXFmC+WkJ7pej6GG4eilTgWXAPfRfnxeO2p8iCMvh/k=' 'sha256-qxiwxtjeQUbsHr4op9ZRXOdxUq+CLu4QIJRuvidUe5c=' 'sha256-eJzJ8523EitoBKAS5A1tCSnraL7SAmf2gesGT63wGSk=' 'sha256-7MOXuzYEVnwtGN5LaHmnA8It5SPyIoYzkvOEItbnkGg=' 'sha256-Q8ZzrQgcVPkApKR0qNf6mroKHffRQsjhyVVZIRu0QtU=' 'sha256-8ZGO4EWxaESz6+qYFa7Px/8iyW9D2UaZh/+P4/mg99Q=' 'sha256-W6Ek3VdZ0h8I8y6AJQrxOK0kORl/bq7s85k8oOrakjs='; style-src 'self' 'sha256-wkVFcbpQLLLncGzQDSypPX4g+PgpgKuYUfkJ3D7xrA8=' 'sha256-9MwbduHoYcvGbMyIKsXKkXLfI0H0ks+ah6sfj4TrmeA=' 'sha256-AL9WaAEqAR1J/jBnSEHAmJZsBz/eGk5SgKE4e+Z9lIY='; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self' blob:; connect-src 'self' blob: https://cdn.jsdelivr.net; worker-src 'self'; manifest-src 'self'; frame-src https://www.youtube-nocookie.com https://open.spotify.com; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
 
 # The one exemption, and the only interesting thing about the whole file.
 #

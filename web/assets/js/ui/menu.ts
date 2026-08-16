@@ -52,6 +52,8 @@
 // a second name for it and nothing else. canvas/notes.js takes the same
 // shortcut to the same module for the same reason.
 import { canRenameItem, editItemName } from '../canvas/items.ts';
+import { cue } from '../cuelume/engine.ts';
+import { tickSlider } from './controls.ts';
 import { STICKER_TINT_NAMES } from '../stickers/catalogue.ts';
 import type { ConnMeta, ConnColor, ConnWeight } from '../board-model.ts';
 import type { Point } from '../geometry.ts';
@@ -67,12 +69,15 @@ export type MenuRange = {
   step: number;
   unit?: string;
   /**
-   * `unknown` for the reason `check` below is: what a dial reads is a board
-   * setting, and getSetting() knowing that a key can be read is not knowing what
-   * came back. rangeRow() only ever puts it through String(), which is the whole
-   * of what a slider's starting position is.
+   * The dial's two ends, and they agree on the type: a slider's position is a
+   * number going in, so it is a number coming out. This used to be `unknown`,
+   * on the reasoning that a board setting read by key could be anything - but
+   * the only reader is rangeRow(), which puts it straight into `slider.value`,
+   * and the only writer is `set` two lines down. A dial that reads something
+   * other than a number has a bug in whoever built the row, and this is where
+   * it should be caught rather than turned into the string "undefined".
    */
-  get: () => unknown;
+  get: () => number;
   set: (value: number) => void;
 };
 
@@ -189,17 +194,17 @@ export interface MenuCommands {
   // duplicate on Ctrl+D, and this list is now the menu again.
   //
   // The canvas menu
-  addNoteAt: (at: Point | null) => unknown;
-  selectAll: () => unknown;
-  rearrange: () => unknown;
-  rearrangeFence: (id: string) => unknown;
+  addNoteAt: (at: Point | null) => void;
+  selectAll: () => void;
+  rearrange: () => void;
+  rearrangeFence: (id: string) => void;
   // The touch multi-select mode: whether it is on, and the one way in or out.
   multiSelect: () => boolean;
-  toggleMultiSelect: () => unknown;
-  reload: () => unknown;
+  toggleMultiSelect: () => void;
+  reload: () => void;
   fenceUnder: (at: Point) => string | null;
-  getSetting: (key: 'snap' | 'grid') => unknown;
-  toggleSetting: (key: 'snap' | 'grid') => unknown;
+  settingOn: (key: 'snap' | 'grid') => boolean;
+  toggleSetting: (key: 'snap' | 'grid') => void;
   // One card, or the selection it is part of
   isTitleCard: (id: string) => boolean;
   isFenceItem: (id: string) => boolean;
@@ -217,75 +222,78 @@ export interface MenuCommands {
   canTag: () => boolean;
   boardTags: () => { tag: string, count: number }[];
   selectionHasTag: (tag: string) => boolean;
-  toggleSelectionTag: (tag: string) => unknown;
-  addTag: () => unknown;
+  toggleSelectionTag: (tag: string) => void;
+  addTag: () => void;
   tagFilter: () => string[];
   hasTagFilter: () => boolean;
   isTagFiltered: (tag: string) => boolean;
-  toggleTagFilter: (tag: string) => unknown;
-  clearTagFilter: () => unknown;
+  toggleTagFilter: (tag: string) => void;
+  clearTagFilter: () => void;
   filterCounts: () => { shown: number, all: number };
-  selectFiltered: () => unknown;
+  selectFiltered: () => void;
   selectionInTour: () => boolean;
-  toggleSelectionTour: () => unknown;
+  toggleSelectionTour: () => void;
   inTour: () => boolean;
   tourLength: () => number;
-  tourStart: () => unknown;
-  tourStop: () => unknown;
+  tourStart: () => void;
+  tourStop: () => void;
   canLock: () => boolean;
   lockableCount: () => number;
   lockedCount: () => number;
   selectionHasStackOverlap: () => boolean;
   itemFit: (id: string) => string;
   stickerTintOf: (id: string) => number;
-  openViewer: (id: string) => unknown;
-  editNote: (id: string) => unknown;
-  setCover: (id: string) => unknown;
-  clearCover: (id: string) => unknown;
-  setItemFit: (id: string, fit: string) => unknown;
+  openViewer: (id: string) => void;
+  editNote: (id: string) => void;
+  setCover: (id: string) => void;
+  clearCover: (id: string) => void;
+  setItemFit: (id: string, fit: string) => void;
   canSetBare: (id: string) => boolean;
   itemBare: (id: string) => boolean;
-  setItemBare: (id: string, bare: boolean) => unknown;
-  editPicture: (id: string) => unknown;
-  flipUpAxis: (id: string) => unknown;
-  extractSwatches: (id: string) => unknown;
-  rotateModel: (id: string) => unknown;
-  setStickerTint: (id: string, tint: number) => unknown;
-  raise: () => unknown;
-  lower: () => unknown;
-  unstick: () => unknown;
-  lockSelection: (on: boolean) => unknown;
-  resetSize: () => unknown;
-  rearrangeSelection: () => unknown;
-  fenceSelection: () => unknown;
-  alignSelection: (edge: string) => unknown;
-  distributeSelection: (axis: 'x' | 'y') => unknown;
-  copy: () => unknown;
-  paste: (at: Point | null) => unknown;
+  setItemBare: (id: string, bare: boolean) => void;
+  editPicture: (id: string) => void;
+  flipUpAxis: (id: string) => void;
+  extractSwatches: (id: string) => void;
+  rotateModel: (id: string) => void;
+  setStickerTint: (id: string, tint: number) => void;
+  raise: () => void;
+  lower: () => void;
+  unstick: () => void;
+  lockSelection: (on: boolean) => void;
+  resetSize: () => void;
+  rearrangeSelection: () => void;
+  fenceSelection: () => void;
+  alignSelection: (edge: string) => void;
+  distributeSelection: (axis: 'x' | 'y') => void;
+  copy: () => void;
+  paste: (at: Point | null) => void;
   canPaste: () => boolean;
-  zoomToSelection: () => unknown;
-  deleteSelection: () => unknown;
+  zoomToSelection: () => void;
+  deleteSelection: () => void;
   // The title card
-  editTitle: () => unknown;
-  resetTitlePosition: () => unknown;
+  editTitle: () => void;
+  resetTitlePosition: () => void;
   // A line between two cards
   connectionUnder: (at: Point) => { a: string, b: string } | null;
   connectionStyle: (a: string, b: string) => ConnMeta | null;
-  setConnectionStyle: (a: string, b: string, patch?: object | null) => unknown;
-  editConnectionLabel: (a: string, b: string) => unknown;
-  clearConnectionLabel: (a: string, b: string) => unknown;
-  removeConnection: (a: string, b: string) => unknown;
+  setConnectionStyle: (a: string, b: string, patch?: ConnMeta | null) => void;
+  editConnectionLabel: (a: string, b: string) => void;
+  clearConnectionLabel: (a: string, b: string) => void;
+  removeConnection: (a: string, b: string) => void;
 }
 
 let node: HTMLElement | null = null;
 let vp: Viewport | null = null;
 let cmds: MenuCommands | null = null;
 // Whatever had the keyboard when the menu opened, so it can be given back.
-// document.activeElement answers Element; what holds the keyboard on this page
-// is a button, a field or the board, all of them HTMLElements - and focus() is
-// the only thing ever asked of it, which is why the three assignments below say
-// so rather than testing for it.
 let opener: HTMLElement | null = null;
+
+// SAFETY: document.activeElement answers Element; what holds the keyboard on
+// this page is a button, a field or the board, all of them HTMLElements - and
+// focus() is the only thing ever asked of what comes back, which is why this
+// says so rather than testing for it. Written once here rather than at each of
+// the three menu openers that call it.
+const focusedNow = () => document.activeElement as HTMLElement | null;
 // The anchor the menu was opened at, kept so a drill-down submenu re-renders in
 // the same place rather than jumping to wherever the pointer has drifted. The
 // options go with it for the same reason: a fold opened inside a flyout must
@@ -336,8 +344,10 @@ export function setMenuCloseHook(fn: (() => void) | null) { onClose = fn; }
  * worse bug than the one being fixed - so anything older than a slow tap is
  * treated as unrelated.
  */
-let dismissed: { by: EventTarget | null, at: number, owner: Element | null } =
-  { by: null, at: -Infinity, owner: null };
+/** The record above, named: who closed a menu, when, and which menu it was. */
+type Dismissal = { by: EventTarget | null, at: number, owner: Element | null };
+
+let dismissed: Dismissal = { by: null, at: -Infinity, owner: null };
 const DISMISS_MS = 400;
 
 /**
@@ -366,6 +376,10 @@ let menuOwner: Element | null = null;
 export function justDismissed(el: Element | null): boolean {
   if (!el || !dismissed.by) return false;
   if (performance.now() - dismissed.at > DISMISS_MS) return false;
+  // SAFETY: `dismissed.by` is an EventTarget only because that is what a
+  // pointerdown carries. It was recorded by the document listener below off a
+  // press on this page, so it is a Node; the truthiness test two lines up is
+  // what rules out the null.
   if (!el.contains(dismissed.by as Node)) return false;
   // ...and it has to have been *this* button's menu. See menuOwner. A menu with
   // no owner - the right-click menu, a fold - was never a toggle, so a press on
@@ -394,6 +408,9 @@ export function justDismissed(el: Element | null): boolean {
  * you. The same trap the two panels' own `pointerleave` handling has to dodge,
  * from the other side.
  */
+// SAFETY: the same fact as justDismissed() above - the callers hand this the
+// target of a pointer or focus event out of this document, which is a Node or
+// nothing, and `contains()` answers false for the nothing.
 const insideMenu = (target: EventTarget | null) =>
   !!node?.contains(target as Node | null) || !!child?.contains(target as Node | null);
 
@@ -612,7 +629,7 @@ export function openAnchored(rect: MenuAnchor, entries: MenuEntry[],
   { label = 'Menu', focus = false, owner = null }:
     { label?: string, focus?: boolean, owner?: Element | null } = {}) {
   close();
-  opener = document.activeElement as HTMLElement | null;
+  opener = focusedNow();
   // The button this hangs off, for the toggle question - see menuOwner. Set
   // after close(), which clears it.
   menuOwner = owner;
@@ -639,7 +656,7 @@ export function openContextMenu(clientX: number, clientY: number, itemId: string
   if (mobile) {
     if (!itemId) return;
     close();
-    opener = document.activeElement as HTMLElement | null;
+    opener = focusedNow();
     // No `at`: the only row that reads it is "Add a note here", and that is one
     // of the rows the Feed drops. The wall has no *here* to add anything at.
     render(itemEntries(itemId, 1, null, true), clientX, clientY);
@@ -649,7 +666,7 @@ export function openContextMenu(clientX: number, clientY: number, itemId: string
   // has the old menu holding focus, and close() has just handed it back to
   // whatever owned it first. That is the element this menu owes it to as well.
   close();
-  opener = document.activeElement as HTMLElement | null;
+  opener = focusedNow();
   // Annotated rather than inferred: canvas/viewport.ts is still on the migration
   // pragma, so toWorld() answers `any` until it is not.
   const at: Point = vp!.toWorld(clientX, clientY);
@@ -1364,9 +1381,9 @@ function canvasEntries(at: Point): MenuEntry[] {
     // The board's own two marks: the lattice, and the lattice with a card
     // locked onto it. The tick that says which way they are set is a separate
     // mark on the other edge of the row - see render().
-    { label: 'Snap to grid', icon: 'i-snap', check: cmds!.getSetting('snap'),
+    { label: 'Snap to grid', icon: 'i-snap', check: cmds!.settingOn('snap'),
       action: () => cmds!.toggleSetting('snap') },
-    { label: 'Show grid', icon: 'i-grid', check: cmds!.getSetting('grid'),
+    { label: 'Show grid', icon: 'i-grid', check: cmds!.settingOn('grid'),
       action: () => cmds!.toggleSetting('grid') },
   ];
 }
@@ -1595,6 +1612,10 @@ function fillPanel(panel: HTMLElement, entries: MenuEntry[]) {
         // that is the question with four answers.
         const byKey = e.detail === 0;
         if (entry.sub && child && childRow === btn && !byKey) return;
+        // Below the refusal above, not beside it: that branch is the menu
+        // deliberately answering a press with nothing, and a sound there would
+        // be the one feedback saying something happened when nothing did.
+        cue('pick');
         swap(entry.sub ? subMenu(entry.sub, entries) : entry.to!);
       });
       // And the other route into the same list: hover it open beside the row,
@@ -1618,6 +1639,11 @@ function fillPanel(panel: HTMLElement, entries: MenuEntry[]) {
       });
       btn.addEventListener('click', () => {
         close();
+        // Every action row says so, from the one place that renders every menu
+        // in the app. Before the action, so a row that goes on to change
+        // something says both - a press and its result - rather than one
+        // swallowing the other.
+        cue('pick');
         // Everything that is not a separator, a slider, a fold or a Back row is
         // an action row - which is the whole of what this branch is.
         entry.action!();
@@ -1839,6 +1865,7 @@ function rangeRow(entry: MenuEntry) {
   read.textContent = slider.value + unit;
   row.append(read);
 
+  tickSlider(slider);
   slider.addEventListener('input', () => {
     read.textContent = slider.value + unit;
     set(Number(slider.value));

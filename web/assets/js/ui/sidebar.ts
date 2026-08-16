@@ -20,6 +20,7 @@ import { VERSION } from '../version.js';
 import { el } from '../util.ts';
 import { readPref, writePref } from '../prefs.ts';
 import { runCommand } from '../notify.ts';
+import { cue } from '../cuelume/engine.ts';
 import { buildPanel, paintPanel } from './panel.ts';
 import { paintTitleField, wireTitleField } from './board-title.ts';
 
@@ -34,7 +35,7 @@ import { paintTitleField, wireTitleField } from './board-title.ts';
  */
 export interface SidebarCommands {
   setBoardMode: (mode: string | null) => void;
-  [name: string]: ((...args: never[]) => unknown) | undefined;
+  [name: string]: ((...args: never[]) => void) | undefined;
 }
 
 /** The pointer lifecycle of one isolated slider, as createMobileSliderFocus() returns it. */
@@ -111,6 +112,9 @@ export function initSidebar(cmds: SidebarCommands): void {
   el('side-close')!.addEventListener('click', close);
 
   sidebar!.addEventListener('pointerdown', e => {
+    // SAFETY: a pointerdown delivered to #sidebar landed on an element inside
+    // it - the panel is markup, and `target` is only typed EventTarget because
+    // an event can come off something that is not a node at all.
     sliderFocus.begin(e.target as Element | null, e.pointerId);
   });
   const endSliderFocus = (e: PointerEvent) => sliderFocus.end(e.pointerId);
@@ -120,13 +124,24 @@ export function initSidebar(cmds: SidebarCommands): void {
 
   // Every action button in the panel is a data-cmd; the map is the whole API.
   sidebar!.addEventListener('click', e => {
+    // SAFETY: as above - a click on #sidebar landed on an element inside it.
     const btn = (e.target as Element).closest<HTMLElement>('[data-cmd]');
     if (!btn) return;
     const fn = cmds[camel(btn.dataset.cmd!)];
+    if (!fn) return;
+    // Every button in the panel says so, from the one place that knows a button
+    // was pressed. Here rather than in each command, for exactly the reason this
+    // listener is delegated at all: there are thirty of them and they arrive by
+    // name. A command that goes on to change something says that too, on top -
+    // pressing Grid is a press and a toggle, and it sounds like both.
+    //
+    // After the lookup: a data-cmd naming nothing did nothing, and an interface
+    // that answers a press it did not act on is worse than one that is quiet.
+    cue('pick');
     // Through runCommand(), so an async command that rejects says so instead of
     // reading as a press that did nothing - see notify.ts. The button's own
     // words are what gets reported, because they are what was pressed.
-    if (fn) runCommand(fn(), (btn.textContent || '').trim() || 'That');
+    runCommand(fn(), (btn.textContent || '').trim() || 'That');
   });
 
   // The file carries both arrangements, while each device remembers which one
@@ -136,8 +151,10 @@ export function initSidebar(cmds: SidebarCommands): void {
   cmds.setBoardMode(readPref(MODE_PREF, detected));
 
   wirePaperOrientation();
-  // #board-title is the Board tab's `type: 'text'` control, so the schema
-  // renders it as an <input> - which is the element the two calls here want.
+  // SAFETY: #board-title is the Board tab's `type: 'text'` control, so the
+  // schema renders it as an <input> - which is the element this call and
+  // paintTitleField() below both want. The null is kept: the tab may not have
+  // been built yet, and ui/board-title.ts takes the absence.
   wireTitleField(el('board-title') as HTMLInputElement | null);
 
   el('version')!.textContent = 'v' + VERSION;
@@ -182,6 +199,7 @@ function paint(): void {
   // The name field's behaviour lives in ui/board-title.js now - the masthead's
   // panel grew a second one, and one rename showing up in both is only true
   // while there is one implementation of it.
+  // SAFETY: as at wireTitleField() above.
   paintTitleField(el('board-title') as HTMLInputElement | null);
   paintPanel();
 }
