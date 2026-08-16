@@ -109,11 +109,18 @@ export type VideoFrameShot = { blob: Blob; w: number; h: number };
  * optimiser's repair pass and the idle backfill all call this, so "run Optimize"
  * did not fix what import had missed, which is exactly the complaint.
  *
- * So it walks a little way in - see POINTS - and keeps the first frame with
- * something in it. A clip that is flat at every point really is flat, and then
- * the flat frame is used anyway rather than nothing: a white rectangle the right
- * shape is still the clip, and the alternative on a phone is a card that shows
- * no picture at all.
+ * So it walks a little way in - see points() - and keeps the first frame with
+ * something in it.
+ *
+ * A clip that is flat at *every* point gets no poster, and that is deliberate
+ * rather than defeatist. A frame with nothing in it is what a genuine fade looks
+ * like and it is also what a decoder that produced nothing looks like, and the
+ * two cannot be told apart from the pixels. Storing one settles the question the
+ * wrong way and settles it permanently: `meta.cover` would then name real bytes,
+ * every repair pass would see a clip with a picture and skip it, and a board of
+ * black rectangles would be a board nothing could ever fix. Not storing it costs
+ * a genuinely flat clip its poster - a card that looks exactly like the flat
+ * frame it would have been given - and keeps the question open.
  *
  * Everything here still degrades to null, and null is not a failure: it means
  * the card is exactly what it was before any of this existed. The refusals worth
@@ -131,6 +138,40 @@ export async function videoFrame(file: Blob): Promise<VideoFrameShot | null> {
   // draws as a transparent rectangle onto a canvas however far it has seeked.
   v.muted = true;
   v.playsInline = true;
+  // And it has to be *in the page*, and drawn while it is there.
+  //
+  // An element outside the document is one no engine has any reason to decode
+  // for, and both of the ones that matter act on that. It will load metadata,
+  // report videoWidth, accept a currentTime and fire `seeked` - every signal
+  // this function waits on - and still have no pixels to give. drawImage then
+  // paints nothing onto an `alpha: false` canvas, which is a flat black
+  // rectangle, at every seek point. That is a phone's video card: black, and
+  // black is also what gets *stored*, because the card's own source is parked on
+  // a phone (see rationsDecoders() and the video renderer) so the poster is the
+  // only picture there will ever be.
+  //
+  // Two pixels, all but transparent, out of the flow and refusing the pointer.
+  // Every part of that is chosen against a way of being ignored:
+  //
+  //   not `display: none`, not `visibility: hidden`  both say "nothing to show
+  //     here", which is the state being escaped rather than a way out of it.
+  //   `opacity: 0.01` rather than 0  a fully transparent video is one Chrome may
+  //     class as hidden and suspend the decoder for, on Android especially. A
+  //     hundredth is not visible on any screen and is not zero.
+  //   `position: fixed` at the origin  so it intersects the viewport. Decoding
+  //     is skipped for what is scrolled far out of sight.
+  //
+  // Written through .style rather than as an attribute, which is what the CSP
+  // requires of every inline style in this app - see the note in web/_headers.
+  v.style.position = 'fixed';
+  v.style.left = '0';
+  v.style.top = '0';
+  v.style.width = '2px';
+  v.style.height = '2px';
+  v.style.opacity = '0.01';
+  v.style.pointerEvents = 'none';
+  v.setAttribute('aria-hidden', 'true');
+  document.body?.append(v);
   // 'metadata', not 'auto', and on a board of phone clips this is most of what
   // the grab costs. 'auto' asks the browser to buffer the *whole* file before
   // it is needed - a four-minute 4K clip is half a gigabyte read and held to
@@ -140,24 +181,22 @@ export async function videoFrame(file: Blob): Promise<VideoFrameShot | null> {
   // pulls whatever the decoder wants past that.
   v.preload = 'metadata';
 
-  // The best flat frame seen, kept in this scope rather than inside grab() so
-  // that a run cut off by the clock still answers with whatever it managed.
-  const held: { shot: VideoFrameShot | null } = { shot: null };
   try {
     return await Promise.race([
-      grab(v, url, held),
+      grab(v, url),
       wait(POSTER_MS).then(() => {
         console.warn('[mbrd] poster: gave up waiting for a frame');
-        return held.shot;
+        return null;
       }),
     ]);
   } catch (err) {
     console.warn('[mbrd] poster: no frame', err);
-    return held.shot;
+    return null;
   } finally {
     v.pause?.();
     v.removeAttribute('src');
     v.load?.();
+    v.remove();
     URL.revokeObjectURL(url);
   }
 }
@@ -181,11 +220,7 @@ function points(dur: number): number[] {
 }
 
 /** Open the clip, walk the points, and answer with the first frame worth having. */
-async function grab(
-  v: HTMLVideoElement,
-  url: string,
-  held: { shot: VideoFrameShot | null },
-): Promise<VideoFrameShot | null> {
+async function grab(v: HTMLVideoElement, url: string): Promise<VideoFrameShot | null> {
   const opened = once(v, 'loadedmetadata');
   const failed = once(v, 'error').then(() => { throw new Error('this browser cannot decode it'); });
   // Handled here as well as raced below, and it is not belt and braces: the
@@ -209,16 +244,28 @@ async function grab(
     const seeked = once(v, 'seeked');
     v.currentTime = at;
     await Promise.race([seeked, failed]);
-    await presented(v);
-    const took = await capture(v).catch(() => null);
-    if (!took) continue;
-    if (!took.flat) return took.shot;
-    // Nothing in this frame. Hold on to it in case the whole clip is like that,
-    // and look further in - see the note on FLAT_SPREAD.
-    held.shot ??= took.shot;
+    // Read twice before giving up on a point, and the second read is for the
+    // engines that cannot say when a frame has arrived.
+    //
+    // Where requestVideoFrameCallback exists, presented() returns the moment the
+    // frame does and the first read has it. Firefox does not implement it at
+    // all, so there the wait is a guess at how long a decode takes - and a guess
+    // that is short on a slow phone reads the frame *before* the seek has drawn,
+    // which is a flat capture, which walks on to the next point and eventually
+    // answers null for a clip that was going to be fine. A second look a beat
+    // later costs nothing when the first was good, because a good first read
+    // returns from inside the loop.
+    for (let look = 0; look < 2; look++) {
+      await presented(v);
+      const took = await capture(v).catch(() => null);
+      if (took && !took.flat) return took.shot;
+    }
+    // Nothing at this point. Look further in - see the note on FLAT_SPREAD, and
+    // the head of this function for why a frame with nothing in it is never the
+    // answer rather than being kept as a last resort.
   }
-  if (!held.shot) console.warn('[mbrd] poster: every seek came back with nothing');
-  return held.shot;
+  console.warn('[mbrd] poster: every seek came back with nothing in it');
+  return null;
 }
 
 /** One event, as a promise. */
@@ -283,7 +330,7 @@ async function capture(
  *
  * True on a throw, which is the safe way round: getImageData on a tainted
  * canvas raises, and a frame this cannot inspect is one to look past rather than
- * one to keep. If every point raises, grab() keeps the first anyway.
+ * one to keep.
  */
 function looksFlat(ctx: OffscreenCanvasRenderingContext2D, w: number, h: number): boolean {
   let data: Uint8ClampedArray;
@@ -302,6 +349,47 @@ function looksFlat(ctx: OffscreenCanvasRenderingContext2D, w: number, h: number)
   return hi[0] - lo[0] <= FLAT_SPREAD
     && hi[1] - lo[1] <= FLAT_SPREAD
     && hi[2] - lo[2] <= FLAT_SPREAD;
+}
+
+/**
+ * Whether a picture already on a card has nothing in it.
+ *
+ * The repair for what the bug above left behind. A build that could not decode
+ * a frame still wrote one - a black rectangle, cut and stored as the clip's
+ * poster - and a stored poster is the strongest thing there is here: `meta.cover`
+ * names real bytes, so every pass that looks for clips needing a picture skips
+ * that card forever. The board cannot heal, and on a phone, where the card's own
+ * source is parked and the poster is the only picture, the clip is black for
+ * good.
+ *
+ * So the two repair passes ask this of a cover they are about to accept, and
+ * treat a flat one as no cover at all - see wantsPoster() in optimize/backfill.ts
+ * and the filter in backfillPosters(). It is the same reading looksFlat() makes
+ * of a fresh capture, applied to bytes rather than to an element, which is what
+ * keeps one definition of "nothing in it" for both.
+ *
+ * A decode per cover, so neither caller does it in bulk: the trickle asks about
+ * one clip at a time when it has nothing else to do, and the optimiser is a
+ * modal act that has already been given permission to spend a minute.
+ *
+ * False on anything it cannot read. A picture that will not decode is a
+ * different fault with a different repair, and guessing here would re-cut
+ * posters for a board whose bytes are simply missing.
+ */
+export async function pictureIsFlat(blob: Blob): Promise<boolean> {
+  try {
+    const bitmap = await createImageBitmap(blob);
+    const w = Math.max(1, Math.min(bitmap.width, POSTER_SIDE));
+    const h = Math.max(1, Math.round((bitmap.height / bitmap.width) * w));
+    const canvas = new OffscreenCanvas(w, h);
+    const ctx = canvas.getContext('2d', { alpha: false });
+    if (!ctx) return false;
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close?.();
+    return looksFlat(ctx, w, h);
+  } catch {
+    return false;
+  }
 }
 
 /**

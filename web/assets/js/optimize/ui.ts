@@ -9,7 +9,7 @@ import { ask } from '../ui/dialog.ts';
 import { formatBytes } from '../util.ts';
 import { toast, busy } from '../notify.ts';
 import { discardOriginals, originalsHeld } from '../state.ts';
-import { planOptimize, runOptimize, describeSaving } from './optimize.ts';
+import { planOptimize, runOptimize, describeSaving, clipsWantingStills } from './optimize.ts';
 import { opusAvailable, OPUS_KBPS } from './opus.ts';
 
 /**
@@ -38,7 +38,17 @@ export async function optimizeBoard() {
     [plan.sounds.length, 'sound file'],
   ].filter(([n]) => n);
 
-  if (!counts.length && !plan.posters && !plan.empty.length) {
+  // The plan's own poster count is a hash test - a clip with no cover at all -
+  // and it misses the case that matters most here: a cover that is there and
+  // has nothing in it. Telling those apart means decoding each one, which the
+  // plan may not do (boardWeight() calls it, and it is synchronous), so the
+  // question is asked separately and only when the cheap count came back zero.
+  // Without this the dialog said "already optimized, nothing left to do" to
+  // precisely the board that needed the run: every clip a black rectangle, and
+  // the one button that would have fixed them refusing to open.
+  const posters = plan.posters || (await clipsWantingStills()).length;
+
+  if (!counts.length && !posters && !plan.empty.length) {
     // Two different nothings, and telling them apart is the difference between
     // "this is done" and "this button does not work".
     toast(plan.done
@@ -53,9 +63,9 @@ export async function optimizeBoard() {
     // A board with nothing to shrink but clips to take stills from, or empty
     // files to clear out. Said first and on its own, because otherwise the
     // dialog opens by listing zero files and then asks to be run anyway.
-    : [plan.posters
-        ? `Nothing on this board is worth shrinking, but ${plan.posters} ` +
-          `video${plan.posters === 1 ? '' : 's'} ${plan.posters === 1 ? 'has' : 'have'} no still yet.`
+    : [posters
+        ? `Nothing on this board is worth shrinking, but ${posters} ` +
+          `video${posters === 1 ? '' : 's'} ${posters === 1 ? 'has' : 'have'} no still yet.`
         : 'Nothing on this board is worth shrinking, but there are empty files on it.'];
 
   if (plan.pictures.length) lines.push('Pictures are capped at 1200px and rewritten as WebP.');
@@ -76,8 +86,8 @@ export async function optimizeBoard() {
   // a phone shows a black box where a clip should be: the card has no picture
   // until the clip is played, and on a touch device it is not played until it
   // is tapped.
-  if (plan.posters) {
-    lines.push(`${plan.posters} clip${plan.posters === 1 ? '' : 's'} will have a still taken ` +
+  if (posters) {
+    lines.push(`${posters} clip${posters === 1 ? '' : 's'} will have a still taken ` +
       'from the first frame, so the card shows something before it is played.');
   }
   // The one thing here that takes something away rather than making it smaller,

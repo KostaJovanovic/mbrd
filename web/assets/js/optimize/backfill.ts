@@ -33,7 +33,12 @@
 //     what the ffmpeg path in optimize/media.js is for, and it is thirty
 //     megabytes and needs to be asked for.
 //   - **nothing left to do**, which is the normal state of a board built since
-//     import started making these. The scan is a filter over the item list.
+//     import started making these. The scan is a filter over the item list -
+//     and when it finds nothing, the window is spent auditing one picture that
+//     is already on a card instead. See auditOne(): a build that could not
+//     decode a frame still *wrote* one, a black rectangle, and a card holding
+//     one looks repaired to every test that reads hashes. Somebody has to open
+//     the picture and look, and this is the only pass that can afford to.
 //
 // The thumbnail comes with the poster, deliberately. A poster is what the card
 // draws close up and the hundred-pixel thumbnail is what it draws zoomed out, so
@@ -43,7 +48,7 @@
 
 import { board, bus, byId, setItemPoster, setItemThumb } from '../state.ts';
 import { addFile, derivedFile, getAsset } from '../storage/assets.ts';
-import { videoFrame } from '../canvas/poster.ts';
+import { pictureIsFlat, videoFrame } from '../canvas/poster.ts';
 import { makeThumb } from './picture.ts';
 import type { Item } from '../board-model.ts';
 
@@ -105,7 +110,19 @@ function arm(ms: number): void {
 async function pass(): Promise<void> {
   if (busy || document.visibilityState !== 'visible') return;
   const item = nextWanted();
-  if (!item) return;
+  if (!item) {
+    // Nothing wants a frame. Spend the window looking at one picture that is
+    // already on a card instead - see auditOne(), and blank() above for what it
+    // is looking for. If it learned something, come back round: what it learned
+    // may be that a clip wants a frame after all.
+    busy = true;
+    try {
+      await idleWindow();
+      if (await auditOne()) arm(GAP_MS);
+    } catch { /* a cover that will not decode is not this module's business */ }
+    finally { busy = false; }
+    return;
+  }
 
   busy = true;
   try {
@@ -126,10 +143,11 @@ async function pass(): Promise<void> {
     const frame = await videoFrame(asset.blob);
     if (!frame) { refused.add(fresh.id); return; }
     const hash = await addFile(derivedFile(frame.blob, 'poster'));
-    // `true`: whatever cover this item names, wantsPoster() has already looked
-    // for its bytes and not found them - so it is a reference to a picture and
-    // not a picture, and replacing it is repairing a card that draws nothing
-    // rather than overwriting one that draws something. See setItemPoster().
+    // `true`: whatever cover this item names, wantsPoster() has established it
+    // is not a picture - either its bytes are gone, or they are there and there
+    // is nothing in them. Either way replacing it repairs a card that draws
+    // nothing rather than overwriting one that draws something. See
+    // setItemPoster().
     setItemPoster(fresh.id, hash, true);
     // It is still allowed to decline - it validates the hash - so this asks
     // whether it took rather than assuming. The same argument as the asset
@@ -159,18 +177,64 @@ async function pass(): Promise<void> {
 
 /** Does this clip still want a still? */
 function wantsPoster(it: Item): boolean {
-  return it.type === 'video'
-    && !!it.asset?.hash
-    && !refused.has(it.id)
-    // The same test the optimiser's own pass makes: a hash whose bytes went
-    // away - an item restored from an archive that was missing a file - counts
-    // as no picture, or it would never be repaired.
-    && !(typeof it.meta?.cover === 'string' && getAsset(it.meta.cover));
+  if (it.type !== 'video' || !it.asset?.hash || refused.has(it.id)) return false;
+  const cover = typeof it.meta?.cover === 'string' ? it.meta.cover : '';
+  // The same test the optimiser's own pass makes: a hash whose bytes went
+  // away - an item restored from an archive that was missing a file - counts
+  // as no picture, or it would never be repaired.
+  if (!cover || !getAsset(cover)) return true;
+  // And so does a picture with nothing in it, which is the harder case: the
+  // bytes are there, so nothing that looks at hashes can tell this card from a
+  // repaired one. See blank() below and pictureIsFlat() in canvas/poster.ts.
+  return blank.has(cover);
 }
+
+/**
+ * Covers this session has decoded and found to be one flat colour.
+ *
+ * Keyed by hash rather than by item, because that is what the picture is: two
+ * clips that were both given the same black rectangle share one entry, and a
+ * cover re-cut into a real frame gets a new hash and is simply not in here.
+ */
+const blank = new Set<string>();
+/** Covers already asked about, flat or not, so each is decoded once a session. */
+const audited = new Set<string>();
 
 /** The next clip with no picture, or null when the board is done. */
 function nextWanted(): Item | null {
   return board.items.find(wantsPoster) || null;
+}
+
+/**
+ * Decode one cover that has never been looked at, and remember whether there is
+ * anything in it.
+ *
+ * The audit half of this module, and it runs only when the other half has
+ * nothing to do - see pass(). A board where every clip has a picture is the
+ * normal state, and it is also the state a board of black rectangles is in as
+ * far as every other test here can see, so somebody has to actually look. One
+ * decode per idle window, once per cover per session, and it stops entirely
+ * when there is nothing left unaudited.
+ *
+ * Answers whether anything was learned, which is what tells pass() to come back
+ * round rather than go quiet.
+ */
+async function auditOne(): Promise<boolean> {
+  const it = board.items.find(i =>
+    i.type === 'video'
+    && typeof i.meta?.cover === 'string'
+    && !audited.has(i.meta.cover)
+    && !!getAsset(i.meta.cover));
+  const cover = typeof it?.meta?.cover === 'string' ? it.meta.cover : '';
+  if (!cover) return false;
+  audited.add(cover);
+  const asset = getAsset(cover);
+  if (!asset) return false;
+  if (await pictureIsFlat(asset.blob)) {
+    blank.add(cover);
+    console.warn('[mbrd] poster: the picture on', it?.name || it?.id, 'has nothing in it - re-cutting');
+  }
+  return true;
 }
 
 /**

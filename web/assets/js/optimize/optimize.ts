@@ -490,9 +490,36 @@ export async function runOptimize(
  * cards are blank" was that running the optimiser changed nothing - which is
  * the thing that was actually wrong.
  */
+
+/**
+ * The clips on this board with no usable still, asked properly.
+ *
+ * Two kinds, and only the first is cheap. A cover whose bytes are absent is a
+ * hash lookup. A cover whose bytes are *there and empty* - a black rectangle,
+ * written by a build that could not decode a frame and stored one anyway - is a
+ * decode, and there is no way round it: that card looks finished to every test
+ * that reads hashes, which is what let a whole board of them report "nothing
+ * left to do".
+ *
+ * So the cheap question is asked first and the decode only happens for clips
+ * that pass it. Exported because the dialog has to ask the same question before
+ * it offers the run - see optimize/ui.ts, where a wrong answer is the difference
+ * between a button that works and a toast saying the board is already done.
+ */
+export async function clipsWantingStills(): Promise<ItemView[]> {
+  const clips = cards().filter(it => it.type === 'video' && it.asset?.hash);
+  if (!clips.length) return [];
+  const { pictureIsFlat } = await import('../canvas/poster.ts');
+  const wanted: ItemView[] = [];
+  for (const it of clips) {
+    const cover = typeof it.meta?.cover === 'string' ? it.meta.cover : '';
+    const held = cover ? getAsset(cover) : null;
+    if (!held || await pictureIsFlat(held.blob)) wanted.push(it);
+  }
+  return wanted;
+}
 async function backfillPosters(onProgress: (p: Progress) => void): Promise<number> {
-  const wanted = cards().filter(it =>
-    it.type === 'video' && it.asset?.hash && !(it.meta?.cover && getAsset(it.meta.cover)));
+  const wanted = await clipsWantingStills();
   if (!wanted.length) return 0;
 
   // Loaded here rather than at the top of the file, and from canvas/poster.js
