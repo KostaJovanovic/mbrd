@@ -46,6 +46,36 @@ test('a quarter of the way up the band is a quarter of the strength', () => {
   assert.ok(Math.abs(fadeFor(at) - 0.25) < 1e-9, `got ${fadeFor(at)}`);
 });
 
+test('the zoom ladder actually lands on the ramp', () => {
+  // The one thing about this band that is invisible from inside it, and it
+  // shipped broken once for exactly that reason.
+  //
+  // Every test above checks the ramp as a function - endpoints, midpoint, a
+  // quarter of the way up - and a band can pass all of them while showing
+  // nobody a fade, because **zoom is stepped**. The readout buttons multiply by
+  // 1.3 and the +/- keys by 1.25, so a board sits on 1.3^-n from 100%: 59.2%,
+  // 45.5%, 35.0%, 26.9%. A band from 40% down has room for exactly one of them.
+  // Put the floor on that rung - FADE_GONE was 0.35, and the rung is 0.3501 -
+  // and the fade is mathematically perfect and never once seen: full at 45.5%,
+  // nothing at 35.0%, one press apart.
+  //
+  // So this asserts the property the ramp is *for* rather than the ramp: some
+  // resting zoom has to read as visibly part-strength. Not which one, and not
+  // what it reads - those are the tuning, and pinning them would make this the
+  // second copy of two numbers the exports exist to avoid.
+  const LADDERS = [['the readout buttons', 1.3], ['the +/- keys', 1.25]];
+  for (const [name, step] of LADDERS) {
+    const rungs = [];
+    for (let z = 1; z > 0.05; z /= step) rungs.push(z);
+    const lit = rungs.map(fadeFor).filter(f => f > 0.15 && f < 0.85);
+    assert.ok(lit.length > 0,
+      `no rung of ${name} lands part-way up the band, so the stock goes from `
+      + `full to gone in one press and the ramp is never seen. Rungs near the `
+      + `band: ${rungs.filter(z => z > FADE_GONE - 0.1 && z < FADE_FULL + 0.1)
+        .map(z => `${(z * 100).toFixed(1)}% -> ${fadeFor(z).toFixed(3)}`).join(', ')}`);
+  }
+});
+
 test('it never leaves 0..1, and never doubles back', () => {
   // Monotonic matters as much as the endpoints: a fade that rose anywhere on
   // the way out would read as the grain flickering back during a pinch.
@@ -100,7 +130,7 @@ test('cork is the softish end of the axis and nowhere else', async () => {
   // and a spec sheet has no cork on it. Unscope either half and every board in
   // the app grows a pinboard.
   const css = appCss();
-  assert.match(css, /:root\[data-whimsy="0"\] \.item\[data-type="fence"\] \{ background: var\(--paper\); \}/);
+  assert.match(css, /:root\[data-whimsy="0"\] \.item\[data-type="fence"\] \{ background: var\(--cork\); \}/);
   assert.match(css, /:root\[data-whimsy="0"\] \.fence-card::after\s*\{[^}]*cork-board\.webp/s);
 
   // And laid smaller than the paper it replaces - half the grain's 512, still
@@ -110,14 +140,10 @@ test('cork is the softish end of the axis and nowhere else', async () => {
   const cork = css.slice(css.indexOf(':root[data-whimsy="0"] .fence-card::after'));
   assert.match(cork.slice(0, cork.indexOf('}')), /background-size:\s*256px 256px;/);
 
-  // The tint under the tile is the board's own --paper now rather than --cork,
-  // which is what makes the tier a wash of cork on the sheet instead of a slab
-  // of it set into the sheet - see the block above the rule in fences.css.
-  //
-  // --cork outlives that: #fence-ghost in menu.css is the preview of a region
-  // being placed and has to be visible against the board it is being placed on,
-  // so it still takes the flat tone. Declared in that tier and only there, which
-  // is the whole of what keeps the other two ends of the axis clear of it.
+  // The token is declared in that tier and only there, so the fallback the middle
+  // and Harsh use stays --paper-2 by never having been overwritten. #fence-ghost
+  // in menu.css is the only other thing that reads it - the preview of a region
+  // being placed, which has to be visible against the board it is placed on.
   const tokens = await readFile(new URL('../web/assets/css/tokens.css', import.meta.url), 'utf8');
   assert.equal(tokens.match(/^\s*--cork:/gm)?.length, 1, 'declared once');
   const tier = tokens.slice(tokens.indexOf(':root[data-whimsy="0"] {'));
@@ -125,19 +151,13 @@ test('cork is the softish end of the axis and nowhere else', async () => {
     '--cork escaped the softish block');
 });
 
-test('a cork region fades off rather than freezing into a film', async () => {
+test('a cork region fades to cork rather than to grey', async () => {
   // The one thing the tile and the tint have to agree about. Zoomed out past the
-  // band the chips stop resolving, and a tile left at full strength there is a
-  // flat film of its own mean laid over the region - which is a colour nobody
-  // chose. So the fade has to still be *in* the opacity.
-  //
-  // What it now fades onto is --paper, the board's own. This test was called
-  // 'fades to cork' and asserted the reverse: the tint under the tile was --cork,
-  // the image's own average, so that a region came out the same colour at every
-  // zoom. The tint is the sheet now and a region at the far end of the zoom is
-  // the board plus its dashed rule, which is the same amount of fence the paper
-  // tiers have there. The property being pinned is unchanged and is the only one
-  // that was ever load-bearing: the fade is reachable, so nothing freezes.
+  // band the chips stop resolving and the tile is taken off - so what is left is
+  // the flat tint, and if that were the paper tone a region would change colour
+  // on the way out and stop being a region at all. --cork is the mean of the tile
+  // for exactly this reason, and the fade has to still be in the opacity for it
+  // to ever be reached.
   const css = appCss();
   const cork = css.slice(css.indexOf(':root[data-whimsy="0"] .fence-card::after'));
   const rule = cork.slice(0, cork.indexOf('}'));

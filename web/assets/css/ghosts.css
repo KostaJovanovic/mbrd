@@ -478,3 +478,48 @@
   box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 18%, transparent);
 }
 
+/* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
+   the argument and declares the channel-form tokens.
+
+   The five literals here are the one case that needs no token at all: a hex at
+   N% into transparent is that hex at N% alpha, and the hex is already written
+   out. They are spelled in channel form anyway so the whole block reads one
+   way, and so that a future palette-aware pass has one shape to change.
+
+   .ghost-go:hover is the exception in this file - a blend of two pigments, with
+   no rgb() spelling and no value that can be written here, since --accent may
+   be something somebody picked a moment ago. It reads a token that
+   legacyBlends() in ui/appearance.js computes, which is the same mechanism the
+   note and sticker colours use. */
+@supports not (color: color-mix(in srgb, red, blue)) {
+  .ghost-go:hover { background: var(--lc-accent-88-ink); }
+
+  :root[data-whimsy="0"] .ghost-card:not([data-hint="whimsy"]) {
+    background:
+      repeating-linear-gradient(180deg,
+        transparent 0 21px,
+        rgb(111 134 168 / 17%) 21px 22px),
+      linear-gradient(90deg,
+        transparent 0 26px,
+        rgb(180 84 74 / 42%) 26px 27px,
+        transparent 27px),
+      var(--paper-card);
+  }
+
+  :root[data-whimsy="0"] .item[data-type="ghost"]:not(:has([data-hint="whimsy"])) .item-body {
+    filter:
+      drop-shadow(0 1px 1px rgb(var(--ink-c) / 12%))
+      drop-shadow(0 7px 10px rgb(var(--ink-c) / 20%));
+  }
+
+  :root[data-whimsy="0"] .ghost-tape {
+    background:
+      repeating-linear-gradient(90deg,
+        rgb(168 129 74 / 7%) 0 2px, transparent 2px 6px),
+      linear-gradient(180deg,
+        rgb(232 207 156 / 78%),
+        rgb(220 192 138 / 72%));
+    box-shadow: 0 1px 2px rgb(var(--ink-c) / 18%);
+  }
+}
+

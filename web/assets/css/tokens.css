@@ -1126,3 +1126,175 @@
   --dur-travel: 0ms;
   --dur-palette: 0.01ms;
 }
+
+/* =========================================================
+   7. The palette without color-mix().
+
+   WebKit got color-mix() in 16.2, and everything above reaches for it 141
+   times. Below that version every one of those declarations is dead - and dead
+   in the worst way CSS has, because *invalid at computed-value time* is not the
+   same as invalid at parse time. A declaration holding var() always parses: the
+   engine cannot check a value it has not substituted yet. So the cascade picks
+   the color-mix() line, substitutes into it, finds a function it does not know,
+   and drops the property to its inherited or initial value. It does **not** fall
+   back to an earlier declaration in the same rule.
+
+   That is worth stating plainly because it rules out the obvious fix. Writing
+
+     border-color: rgb(var(--ink-c) / 42%);
+     border-color: color-mix(in srgb, var(--ink) 42%, transparent);
+
+   does nothing on the browser it was written for: both lines parse, the second
+   wins, and the first was discarded before substitution ever happened. Only a
+   color-mix() with no var() in it - twelve of the hundred and forty-one - falls
+   back the way that shape suggests. @supports is the mechanism that works,
+   because it is resolved before the cascade rather than after it.
+
+   Which is also why this costs current browsers nothing at all. A block whose
+   condition is false is skipped whole - not parsed, not stored, not cascaded -
+   so everything above stays the single source of the look and the palette fade
+   is untouched. That mattered enough to pick the mechanism for it: the 700ms
+   crossfade in section 1b works *because* a color-mix() re-resolves on every
+   frame against an --ink that is mid-interpolation, and any fallback that
+   replaced those mixes for everybody would have had to earn that back.
+
+   Two mechanisms below, for two shapes of mix.
+
+   **Alpha-only.** `color-mix(in srgb, C N%, transparent)` is not a mix at all.
+   Mixing is done on premultiplied values, and transparent premultiplies to
+   nothing, so the result is exactly C at N% alpha:
+
+     premultiplied  C x N% + (0,0,0) x (100-N)%  =  C x N%
+     alpha          1 x N% + 0 x (100-N)%        =  N%
+     un-premultiply C x N% / N%                  =  C
+
+   So `rgb(var(--ink-c) / 42%)` is the same colour, not an approximation of it,
+   and the channel-form tokens below are what make that spelling available. The
+   three `in oklab` mixes convert identically - the transparent end premultiplies
+   to nothing there too, so the trip through oklab is a lossless round trip.
+   Channel form rather than a second hex because the alpha has to stay a free
+   parameter: one --ink-c serves sixty-four different percentages.
+
+   **Two-colour blends.** `color-mix(in srgb, var(--accent) 12%, var(--paper-3))`
+   has no rgb() spelling, and it cannot be precomputed here either - Harsh derives
+   its entire sheet from --accent, and --accent can be a pigment somebody picked
+   in the Appearance panel a moment ago. Those thirty-one are computed in script
+   instead and written onto :root, where inline properties outrank every selector
+   in this file. See legacyBlends() in ui/appearance.js, which runs only when this
+   same condition is false and re-runs whenever the look changes.
+
+   The channel tokens are declared *inside* the block on purpose: a current
+   browser never sees them, so there is no second set of colours in the app for
+   anybody to read the wrong one of. tests/legacy-color.test.js holds every --X-c
+   against the --X it was taken from, in both directions, so a repalette that
+   moves one and not the other fails rather than drifting.
+   ========================================================= */
+
+@supports not (color: color-mix(in srgb, red, blue)) {
+  /* The four palettes, in channel form. Same order and same names as sections 1
+     and 2 above, so the two lists read as one thing. */
+  :root {
+    --paper-c:       250 248 243;
+    --paper-2-c:     241 239 232;
+    --paper-3-c:     230 227 216;
+    --paper-card-c:  253 253 250;
+    --ink-c:         49 38 27;
+    --ink-2-c:       97 81 65;
+    --ink-3-c:       150 131 113;
+    --rule-c:        218 215 205;
+    --rule-2-c:      186 182 167;
+    --accent-c:      185 73 0;
+    --accent-warm-c: 232 145 0;
+    --accent-deep-c: 127 47 0;
+    --leafy-c:       102 132 43;
+    /* Derived above and derived here: --select is --accent, and --accent-fg is
+       45% of the sheet into white. The second is a blend, but a blend of two
+       things that are both known at author time in this tier, so it is the one
+       that does not need the script. */
+    --select-c:      185 73 0;
+    --accent-fg-c:   253 252 250;
+  }
+
+  :root[data-palette="absinthe"] {
+    --paper-c:       248 249 244;
+    --paper-2-c:     239 240 232;
+    --paper-3-c:     226 228 217;
+    --paper-card-c:  253 253 251;
+    --ink-c:         32 39 26;
+    --ink-2-c:       75 84 65;
+    --ink-3-c:       123 134 112;
+    --rule-c:        214 216 206;
+    --rule-2-c:      181 184 169;
+    --accent-c:      104 123 0;
+    --accent-warm-c: 181 173 0;
+    --accent-deep-c: 69 83 0;
+    --leafy-c:       155 111 36;
+    --select-c:      104 123 0;
+    --accent-fg-c:   252 252 250;
+  }
+
+  :root[data-palette="tearose"] {
+    --paper-c:       253 247 246;
+    --paper-2-c:     246 237 235;
+    --paper-3-c:     236 223 221;
+    --paper-card-c:  255 252 252;
+    --ink-c:         59 42 42;
+    --ink-2-c:       109 85 85;
+    --ink-3-c:       163 134 134;
+    --rule-c:        224 212 210;
+    --rule-2-c:      195 177 175;
+    --accent-c:      205 31 63;
+    --accent-warm-c: 255 120 115;
+    --accent-deep-c: 144 2 37;
+    --leafy-c:       112 129 32;
+    --select-c:      205 31 63;
+    --accent-fg-c:   254 251 251;
+  }
+
+  :root[data-palette="orca"] {
+    --paper-c:       244 250 249;
+    --paper-2-c:     232 241 240;
+    --paper-3-c:     216 230 227;
+    --paper-card-c:  251 253 253;
+    --ink-c:         12 32 31;
+    --ink-2-c:       49 76 75;
+    --ink-3-c:       96 126 124;
+    --rule-c:        205 218 216;
+    --rule-2-c:      168 187 183;
+    --accent-c:      0 131 121;
+    --accent-warm-c: 217 154 18;
+    --accent-deep-c: 0 88 82;
+    --leafy-c:       148 114 41;
+    --select-c:      0 131 121;
+    --accent-fg-c:   250 253 252;
+  }
+
+  /* The alpha-only tokens, restated. Each one mirrors its declaration above,
+     same scope and same specificity, so the cascade lands where it did - a
+     :root rule here could not reach past the (0,2,0) of a whimsy block. */
+  :root {
+    --highlight:     rgb(var(--accent-c) / 26%);
+    --grid-minor:    rgb(var(--ink-c) / calc(var(--grid-alpha) * 100%));
+    --grid-major:    rgb(var(--ink-c) / calc(var(--grid-alpha) * 190%));
+    --sheet-line:    rgb(var(--ink-c) / 26%);
+    --sheet-fill:    rgb(var(--ink-c) / 3.5%);
+    --item-border:   rgb(var(--ink-c) / 16%);
+    --ghost-edge:    rgb(var(--ink-c) / 38%);
+    --select-fill:   rgb(var(--accent-c) / 15%);
+    --note-wash-amber:      rgb(var(--accent-warm-c) / 46%);
+    --note-wash-terracotta: rgb(var(--accent-c) / 28%);
+    --note-wash-olive:      rgb(var(--leafy-c) / 34%);
+    --note-wash-graphite:   rgb(var(--ink-c) / 14%);
+  }
+
+  :root[data-whimsy="0"] {
+    --ghost-ink:  rgb(var(--ink-c) / 92%);
+    --ghost-edge: rgb(var(--ink-c) / 32%);
+    --highlight:  rgb(var(--accent-warm-c) / 42%);
+  }
+
+  :root[data-quality="light"]:not([data-q-shadows]),
+  :root[data-q-shadows="off"] {
+    --item-border: rgb(var(--ink-c) / 38%);
+  }
+}

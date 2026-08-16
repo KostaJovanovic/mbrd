@@ -229,28 +229,28 @@ export async function saveBoard() {
 }
 
 /**
- * Write the board out as a .mbrd.
+ * Write the board out as a `.mbrd`.
  *
  * With a file picker, the handle is remembered, so exporting the same board a
  * second time overwrites the file you chose instead of asking again - pass
  * `pickNew` for a Save-as. Without one, every export is a download.
- */
-/**
- * Write the board out as a `.mbrd`.
  *
- * `history` decides whether the step ledger travels with it, and it defaults to
- * **false**: the history records everything that was tried and thrown away -
- * the rejected pictures, the layout that was abandoned, the note that was
- * deleted - and a recipient can scrub back through all of it. The failure is
- * asymmetric, which is what settles the default: forgetting to include the
- * history costs a resend, and forgetting to exclude it cannot be taken back.
+ * **`history` defaults to true, and Export never passes it.** It used to default
+ * to false with a dialog in front of every export - the ledger holds every
+ * rejected picture and every deleted note, which is not always yours to hand
+ * over. That question belongs to Share, which is the path where the file goes to
+ * somebody else by definition; an export is a file you are writing for yourself,
+ * and there the history is the difference between a file that *is* the board and
+ * a file that is a photograph of it. An export without one opens as a board that
+ * has never been touched, and nothing at the far end can put back what was
+ * dropped on the way out.
  *
- * The *asking* is not here. This module sits below ui/ and may not open a
- * dialog; commands/file.ts asks, and only when there is a history to ask about.
- * What lives here is the honest default, so that a caller which never asks
- * still cannot leak.
+ * The parameter is still here because shareBoard() falls through to this
+ * function where files cannot be shared, and the answer somebody gave to that
+ * dialog has to survive the fallback. Without it, saying "leave it out" on a
+ * browser that refuses to share files would write the history to disk anyway.
  */
-export async function exportBoard({ pickNew = false, history = false } = {}) {
+export async function exportBoard({ pickNew = false, history = true } = {}) {
   const picking = canPickFiles();
   try {
     // The picker runs *before* anything is serialised, and that ordering is the
@@ -361,11 +361,12 @@ export function saveBlob(blob: Blob, name: string) {
  * A dismissed sheet is an AbortError, swallowed like the picker's - the board is
  * untouched either way, because nothing here changes state.
  */
-export async function shareBoard({ history = false } = {}) {
+export async function shareBoard({ history = true } = {}) {
   try {
     const data = serializeBoard();
-    // The same default and for the stronger reason: sharing is the case where
-    // the file is going to somebody else by definition. See exportBoard().
+    // Share is the one path that still asks - commands/file.ts, askHistory() -
+    // because this is the case where the file is going to somebody else by
+    // definition. Export does not ask and does not drop; see exportBoard().
     if (!history) delete data.timeline;
     const { blob, manifest } = await packBoard(data, { created });
     created = manifest.created;

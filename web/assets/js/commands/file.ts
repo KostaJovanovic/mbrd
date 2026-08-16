@@ -80,7 +80,7 @@ const why = (err: unknown): string =>
   (err as Error).message;
 
 /**
- * Whether this export should carry the step history, asked.
+ * Whether this share should carry the step history, asked.
  *
  * The history records everything that was tried and thrown away, so a file
  * carrying it hands the recipient every rejected picture and every deleted note.
@@ -88,22 +88,27 @@ const why = (err: unknown): string =>
  * leaking, and nobody can be expected to remember which case they are in - so
  * this asks, and the safe answer is the primary button.
  *
+ * **Share only.** Export used to ask as well and no longer does: a file you
+ * write to your own disk is one you will open again yourself, and an export
+ * without its history opens as a board that has never been touched. Share is
+ * where the file is going to somebody else by definition, so the question is
+ * about the one path where the answer can matter.
+ *
  * **It only asks when there is something to ask about.** A board whose history
- * is empty - a file just opened, a board never edited this session - exports
+ * is empty - a file just opened, a board never edited this session - shares
  * without a word, which is what keeps this from becoming a dialog people learn
  * to dismiss without reading. The one that then appears on the board they have
  * been working on all afternoon is a question they will actually read.
  *
  * The answer is deliberately **not remembered**. A preference that quietly
  * turns leaking back on six months later is precisely the failure this exists to
- * prevent, and the cost of not remembering is one keystroke on the exports where
+ * prevent, and the cost of not remembering is one keystroke on the shares where
  * it matters.
  *
- * Cancelling the dialog answers "leave it out" rather than abandoning the
- * export, on the same reasoning ask() gives for every accidental way out
- * resolving to the harmless answer: this question is not "do you want to
- * export", and a stray Escape must not turn into a file with somebody's
- * discarded work in it.
+ * Cancelling the dialog answers "leave it out" rather than abandoning the share,
+ * on the same reasoning ask() gives for every accidental way out resolving to
+ * the harmless answer: this question is not "do you want to share", and a stray
+ * Escape must not turn into a file with somebody's discarded work in it.
  */
 async function askHistory(): Promise<boolean> {
   if (!timelineSteps().length) return false;
@@ -201,11 +206,15 @@ export function fileCommands() {
         weight: historyWeight() });
     },
     save: () => saveWithCooldown(),
-    export: async () => exportBoard({ history: await askHistory() }),
-    exportAs: async () => exportBoard({ pickNew: true, history: await askHistory() }),
+    // Neither of these asks about the history any more: a file you write to your
+    // own disk keeps everything, because an export without its history opens as
+    // a board with no past and nothing can put that back. See askHistory().
+    export: () => exportBoard(),
+    exportAs: () => exportBoard({ pickNew: true }),
     // The mobile face of Export: the same packed .mbrd, handed to the OS share
     // sheet instead of a download folder a phone has no good way to reach. Falls
-    // back to Export where files cannot be shared - see shareBoard().
+    // back to Export where files cannot be shared - see shareBoard(), which
+    // carries the answer below into that fallback.
     share: async () => shareBoard({ history: await askHistory() }),
     // A picture of the board, for showing rather than reopening. A moodboard
     // exists to be presented, and until these two the only thing that left mbrd

@@ -483,3 +483,21 @@ button, input, select, textarea { font: inherit; color: inherit; }
   /* States the design shows by fill: make them an outline instead. */
   [aria-pressed="true"], .is-on, .is-selected { outline: 2px solid Highlight; }
 }
+
+/* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
+   the argument and declares the channel-form tokens.
+
+   The whole background-image has to be restated rather than the three colours
+   inside it, because a shorthand is one declaration: there is no way to reach
+   the colour of the second gradient on its own. It is otherwise character for
+   character what is above, including the calc()s - rgb() takes a calc in the
+   alpha slot, so --wash and --vignette keep flattening the sheet at Harsh
+   exactly as they do everywhere else. */
+@supports not (color: color-mix(in srgb, red, blue)) {
+  body {
+    background-image:
+      radial-gradient(58% 44% at 18% 12%, rgb(var(--accent-c) / calc(3% * var(--wash))), transparent 70%),
+      radial-gradient(52% 40% at 84% 78%, rgb(var(--leafy-c) / calc(4% * var(--wash))), transparent 72%),
+      radial-gradient(120% 100% at 50% 50%, transparent 55%, rgb(var(--ink-c) / calc(5% * var(--vignette))));
+  }
+}

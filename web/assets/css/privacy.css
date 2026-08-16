@@ -354,3 +354,10 @@ body::before {
     .pv-back:hover { translate: none; }
   }
 }
+
+/* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
+   the argument and declares the channel-form tokens. This page wears the app's
+   cascade without booting it, so it needs the same fallback the app does. */
+@supports not (color: color-mix(in srgb, red, blue)) {
+  .pv-plate a, .pv-foot a { text-decoration-color: rgb(var(--accent-c) / 45%); }
+}
