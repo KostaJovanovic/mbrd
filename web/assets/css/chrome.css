@@ -294,11 +294,17 @@
   right: var(--foot-right);
   max-width: 520px;
   margin-inline: auto;
-  /* Two rows now: the name-and-controls row, and the thin seek line under it. */
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 4px;
+  /* Two rows and two columns: the transport down the left across both rows, and
+     to the right of it the name-and-controls row over the thin seek line.
+     A grid rather than a column of flex rows, because the play button belongs to
+     both rows at once - it is the bar's one control and it stands beside the
+     whole of what it is playing, rather than sitting in the row of small round
+     buttons at the far end where it used to be the third of four. */
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 4px;
   padding: 7px 12px 8px;
   border: var(--hairline) solid var(--rule-2);
   border-radius: var(--leaf);
@@ -344,15 +350,54 @@
   :root.playlist-transport #nowplaying { transition: none; }
 }
 
-/* The top row: the name on the left, the controls pushed to the right. */
-#nowplaying .np-top { display: flex; align-items: center; gap: 10px; }
+/* The lead, down the left of both rows: play/pause, and Next behind it while
+   there is a list to step through. ui/nowplaying.js builds it and prepends it,
+   which is why it is the first column without being named in the markup.
+
+   Both rows, explicitly, rather than left to the auto-placement: a Next button
+   that comes and goes must not be able to change what row the name is on. */
+#nowplaying .np-lead {
+  grid-row: 1 / span 2;
+  grid-column: 1;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+#nowplaying .np-top { grid-column: 2; display: flex; align-items: center; gap: 10px; }
+#nowplaying .np-seek { grid-column: 2; }
+
+/* Play/pause, at the size a player's play button is.
+   Filled in the accent rather than drawn in it, which is the one place on the
+   glass that treatment is earned: this is the only control on the bar anybody
+   presses without looking for it, and the four in the cluster are ghosts by
+   comparison on purpose. Same disc the card's own play button wears (.transport
+   .play in media.css), a size up. */
+#nowplaying .np-play {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-fg);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), scale var(--dur-base) var(--ease-back);
+}
+#nowplaying .np-play svg { width: 16px; height: 16px; }
+#nowplaying .np-play:hover { scale: var(--btn-grow); }
+/* Next is a passenger: it is only there some of the time, so it is one of the
+   quiet round buttons (.np-qbtn, below) rather than a second accent disc. Its
+   own rule is further down, next to the class it shares. */
+
 #nowplaying .np-controls { display: flex; align-items: center; gap: 1px; margin-left: auto; }
-/* Four things, all of them always there: open the playlist, play/pause, the
-   volume, close. Shuffle, prev, next and repeat used to live here too and be
-   shown or hidden off an .is-queue class depending on whether a playlist was the
-   sound. They are in the playlist window now, beside the list they act on, where
-   there is always a queue to act on and so nothing left to hide them for: the
-   class went with the buttons and then went away. */
+/* Three things in the cluster, all of them always there: open the playlist, the
+   volume, close. Play/pause was the fourth and is the lead now - see the note in
+   ui/nowplaying.js about which cluster a control belongs in. Shuffle, prev and
+   repeat used to live here too and be shown or hidden off an .is-queue class;
+   they are in the playlist window, beside the list they act on. */
 
 /* Arriving and leaving.
    It comes up from under the edge of the window and goes back down under it.
@@ -638,6 +683,12 @@
 #nowplaying .np-qbtn svg { width: 16px; height: 16px; }
 /* An engaged shuffle or repeat reads in the accent. */
 #nowplaying .np-qbtn[aria-pressed="true"] { color: var(--accent); }
+/* And one of them comes and goes: Next, which is only on the bar while a list is
+   what is playing (paintNext() in ui/nowplaying.js). Written here rather than
+   left to the browser because `display: grid` above beats the user-agent's
+   `[hidden] { display: none }`, so without this the button would be there the
+   whole time and merely claim not to be. */
+#nowplaying .np-qbtn[hidden] { display: none; }
 
 /* ---------------------------------------------------------------------------
    The tour bar (ui/tour.js)

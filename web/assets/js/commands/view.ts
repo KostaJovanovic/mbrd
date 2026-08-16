@@ -46,7 +46,7 @@ import {
 import { DEFAULT_SCALE } from '../measure.ts';
 import { clearQualityOverrides } from '../quality.ts';
 import { cueLogOn, dumpCueLog, setCueLog } from '../cuelume/engine.ts';
-import { travelMs } from '../canvas/viewport.ts';
+import { onNarrowScreen, travelMs } from '../canvas/viewport.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 import type { ViewPerf } from '../perf/view-perf.ts';
 import { togglePlayback } from '../canvas/audio.ts';
@@ -161,8 +161,34 @@ export function viewCommands(vp: CommandViewport, { resetAppearance, perf }: Vie
       setLens('feed');
       selectBoardMode('mobile');
     },
+    /**
+     * Playlist, which is two different surfaces and one button.
+     *
+     * On a phone-width window it is always the lens: the album view, full
+     * screen, which is the size it was drawn for. Always, in both senses - the
+     * floating window is never opened there, and pressing it while the lens is
+     * already up does *nothing* rather than stepping back to the canvas.
+     *
+     * The toggle-out is what Feed keeps and this gives up, and they are not the
+     * same button. Feed is the board; stepping out of the board to the canvas is
+     * a real move between two views of the same thing. The playlist is a player,
+     * and a player closing itself because you reached for it twice is a player
+     * that has hidden the track you were about to choose. Canvas is one press
+     * away and names itself, which is the way back from either.
+     *
+     * With room on screen it is the floating window over the canvas - a player,
+     * not a takeover - unless the board is already in the mobile view, where a
+     * window would float over a surface that has the list on it. onNarrowScreen()
+     * rather than onTouch(): what decides this is whether there is room for a
+     * window, and a touchscreen laptop has as much of it as any other laptop.
+     */
     playlist: () => {
       if (goHome('playlist')) return;
+      if (onNarrowScreen()) {
+        setLens('playlist');
+        if (board.layoutMode !== 'mobile') selectBoardMode('mobile');
+        return;
+      }
       if (board.layoutMode === 'mobile') {
         if (currentLens() === 'playlist') { selectBoardMode('desktop'); toast('Back to the canvas'); }
         else setLens('playlist');

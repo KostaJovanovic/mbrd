@@ -726,9 +726,16 @@ function fillAudio(t: Tile) {
   }
   t.el.append(art, badge, cap);
   // A tap plays the track, in place - it does not leave the Feed.
+  //
+  // 'board', like a card, because that is what a Feed tile is: the Feed is the
+  // whole board pressed flat, in the board's arrangement, with this track
+  // between a photograph and a note. Pressing it means play *this*, and nothing
+  // about the tiles either side of it says a sequence. The Playlist next door is
+  // where the board's audio is a list, and a track started there runs on - see
+  // playTrack() and the note on `fromList`.
   t.el.setAttribute('role', 'button');
   t.el.tabIndex = 0;
-  const go = () => playTrack(item);
+  const go = () => playTrack(item, 'board');
   t.el.addEventListener('click', go);
   t.el.addEventListener('keydown', e => {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); }

@@ -667,10 +667,11 @@
    show a resize cursor over them - the control keeps the eye and the pointer. It
    works without this too (input.js hands a grip press over a control back to it),
    but the raise keeps the cursor honest. Only the ones sitting *inside* the card
-   face are raised: the big video play, a link's anchor, the two scrubbers. */
+   face are raised: the big video play, a link's anchor, the audio card's
+   waveform - which is the one scrubber left on a card, the video's having moved
+   to the bar at the foot of the window. */
 .vbig,
 .wave,
-.vtrack,
 .card-link .card-name { position: relative; z-index: 3; }
 
 /* Edge handles are invisible strips running between the corners. Drawing them

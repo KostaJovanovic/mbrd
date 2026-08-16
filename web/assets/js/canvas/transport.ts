@@ -246,14 +246,19 @@ export function buildTransport(
   // media/transport.ts, where the other four players can reach it. See
   // reportPlayError() there.
   play.addEventListener('click', () => {
-    // The card is a voice of the shared queue: pressing play starts the queue here,
-    // so the track advances to the next when it ends and the bar shows the playlist
-    // controls - the same as playing it from the Playlist. When this card is already
-    // the sounding track, the button just pauses and resumes it where it is.
+    // The card is a voice of the shared queue - pressing play starts the queue
+    // here, which is what keeps one thing sounding at a time and lets a Next
+    // press reach the rest of the board. What it is *not* is a list: 'board'
+    // says so, and the queue holds on to that. A card that ends stops there
+    // rather than moving on to whichever audio the board's order happens to put
+    // next, and the bar offers no Next button for it. See playTrack().
+    //
+    // When this card is already the sounding track, the button just pauses and
+    // resumes it where it is.
     if (nowPlaying()?.el === sound) {
       if (sound.paused) sound.play().catch(reportPlayError); else sound.pause();
     } else {
-      playTrack(item);
+      playTrack(item, 'board');
     }
   });
   // No signal to pass. The <audio> is built with the card and dies with it, so

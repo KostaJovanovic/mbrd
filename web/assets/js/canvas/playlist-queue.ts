@@ -118,11 +118,36 @@ export interface QueueSnapshot {
    * row below, which is a question with a long answer and no useful one.
    */
   index: number;
+  /**
+   * Whether the current track was started *as a list* - from a playlist row, or
+   * from the lens's Play or Shuffle - rather than from a card on the board.
+   *
+   * The distinction is the difference between two things somebody meant. A row
+   * in a list is a place in a sequence: pressing it says play from here, and the
+   * track after it is the one below, which you can see. A card on a board is one
+   * object among two hundred: pressing it says play *this*, and the board has no
+   * "after this" - the next track would be whichever card the list order happens
+   * to put next, chosen by nobody and probably somewhere else on the canvas.
+   *
+   * So it decides two things, and they are the same fact seen twice: whether an
+   * ended track hands over (advanceQueue), and whether the now-playing bar shows
+   * a Next button (ui/nowplaying.ts). A bar offering Next for a clip that will
+   * not advance on its own would be offering a move into a list nobody opened.
+   */
+  fromList: boolean;
 }
 
 let queueItems: Track[] = [];   // the audio items, in list order
 let queueOrder: number[] = [];  // indices into queueItems, in play order (shuffled or not)
 let queuePos = -1;              // where we are within queueOrder
+/**
+ * How the current track was started. See `fromList` on the snapshot.
+ *
+ * True by default so that everything which does not say - a test, the lens's
+ * own Play, a queueNext() - keeps the queue's plain behaviour, and only the one
+ * caller that knows it is a card says otherwise.
+ */
+let fromList = true;
 let shuffleOn = readPref(SHUFFLE_KEY) === '1';
 let repeatMode: RepeatMode = readRepeat();
 /** The one shared <audio>, for tracks with no card on screen. */
@@ -154,6 +179,7 @@ export function queueState(): QueueSnapshot {
     // the shuffle changes, so a stale position is a real state rather than a
     // theoretical one.
     index: queuePos >= 0 && queuePos < queueOrder.length ? queueOrder[queuePos] : -1,
+    fromList,
   };
 }
 
@@ -259,11 +285,21 @@ function rebuildOrder(): void {
 // Math.random keeps the shuffle genuinely random per press.
 function mulberryLike(): number { return Math.random(); }
 
-/** Start playing a specific item (a row tap), if it is in the queue. */
-export function playTrack(item: Track): void {
+/**
+ * Start playing a specific item, if it is in the queue.
+ *
+ * `from` is where the press came from, and it is the whole of what tells a list
+ * apart from a board - see `fromList` on the snapshot for what turns on it. It
+ * defaults to 'list' because a list is what this function was written for: the
+ * rows, the lens's Play and its Shuffle all mean the same thing by it, and the
+ * one caller that means something else - a card's own play button, in
+ * canvas/transport.ts - is the one that passes 'board'.
+ */
+export function playTrack(item: Track, from: 'list' | 'board' = 'list'): void {
   const idx = queueItems.indexOf(item);
   if (idx < 0) return;
   queuePos = queueOrder.indexOf(idx);
+  fromList = from === 'list';
   startCurrent();
 }
 
@@ -312,19 +348,27 @@ function startCurrent(skips = 0): void {
   notifyQueue();
 }
 
-/** The next track (or previous), respecting shuffle and repeat. */
-export function queueNext(): void { advanceQueue(false); }
+/**
+ * The next track (or previous), respecting shuffle and repeat.
+ *
+ * Either one makes this a list. A skip is somebody stepping *through* something,
+ * which is a thing you can only be doing to a sequence - so a track that began
+ * as a card on the board and was then skipped past carries on as a queue, and
+ * the one after it follows. See `fromList`.
+ */
+export function queueNext(): void { fromList = true; advanceQueue(false); }
 export function queuePrev(): void {
   if (!queueItems.length) return;
   // Within the first few seconds prev restarts the track, as every player does;
   // past that it steps back.
   if (queuePlayerEl && queuePlayerEl.currentTime > 3) { queuePlayerEl.currentTime = 0; return; }
+  fromList = true;
   queuePos = queuePos <= 0 ? queueOrder.length - 1 : queuePos - 1;
   startCurrent();
 }
 
 /**
- * Whether a track that has ended may start the next one.
+ * Whether a track that has ended may start the next one *anyway*.
  *
  * Injected by the interface (ui/nowplaying.js/playlistOpen) rather than asked
  * for, because the answer is "is the playlist on screen" and this module sits
@@ -332,6 +376,14 @@ export function queuePrev(): void {
  * that way by tests/layers.test.js. Unset - in a test, or before the bar is
  * wired - means yes, so the queue's own behaviour is the default and the gate is
  * something the interface adds.
+ *
+ * "Anyway" is the word that changed. This used to be the only thing that decided
+ * a hand-over, so a track started from a *playlist row* stopped dead at the end
+ * if the window had been closed in the meantime - which is a list that is not a
+ * list. The first question is now how the track was started (`fromList`), and
+ * this is the second: a track started from a card does not run on into the
+ * board's other audio, unless the list is on screen, where the next track is
+ * something you can see coming and stop.
  */
 let advanceGate: (() => boolean) | null = null;
 export const setAdvanceGate = (fn: (() => boolean) | null | undefined): void => {
@@ -345,9 +397,12 @@ export const setAdvanceGate = (fn: (() => boolean) | null | undefined): void => 
  * press still moves on. At the end of the list, repeat 'all' wraps; otherwise an
  * automatic end stops and a Next press wraps.
  *
- * And an automatic hand-over needs the gate above to agree. Only the automatic
- * one: a Next press is somebody asking, and the whole point of the gate is the
- * difference between playback you asked for and playback that happened to you.
+ * And an automatic hand-over needs one of two things to be true: the track was
+ * started as a list, or the gate above agrees that the list is on screen. Only
+ * the automatic one: a Next press is somebody asking, and the whole point of
+ * both tests is the difference between playback you asked for and playback that
+ * happened to you.
+ *
  * It sits *after* the repeat-'one' branch on purpose - repeating one track is not
  * moving on to another, it is an instruction already given about the track you
  * chose, and revoking it here would make a setting mean different things
@@ -356,7 +411,7 @@ export const setAdvanceGate = (fn: (() => boolean) | null | undefined): void => 
 function advanceQueue(auto: boolean): void {
   if (!queueItems.length) return;
   if (auto && repeatMode === 'one') { startCurrent(); return; }
-  if (auto && advanceGate && !advanceGate()) return;
+  if (auto && !fromList && advanceGate && !advanceGate()) return;
   const last = queuePos >= queueOrder.length - 1;
   if (last) {
     if (repeatMode === 'all' || !auto) queuePos = 0;
@@ -396,6 +451,9 @@ export function clearQueue(): void {
   queueItems = [];
   queueOrder = [];
   queuePos = -1;
+  // Back to the default, with the track that was started from a card. The next
+  // board's first press decides this again.
+  fromList = true;
   if (nowPlaying()?.el === voice) setNowPlaying(null);
   queuePlayerEl = null;
   notifyQueue();

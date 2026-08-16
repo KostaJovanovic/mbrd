@@ -127,10 +127,10 @@ const LONG_PRESS_CONTEXT_GUARD_PX = 24;
 
 // Controls a straddling corner hitbox can cover and must hand the press back to,
 // rather than resize over: buttons (play, mute, the big video play), a link's
-// anchor, the two scrubbers, a text field. Deliberately *not* the full-card
-// surfaces - a model stage, a picture, a note's editable body fill the card
-// corner to corner, and a corner over those is meant to resize. See onDown().
-const GRIP_YIELD = 'button, a[href], input, .wave, .vtrack';
+// anchor, the audio card's waveform, a text field. Deliberately *not* the
+// full-card surfaces - a model stage, a picture, a note's editable body fill the
+// card corner to corner, and a corner over those is meant to resize. See onDown().
+const GRIP_YIELD = 'button, a[href], input, .wave';
 
 /**
  * A geometry snapshot as state.ts hands one back.
@@ -1983,13 +1983,13 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // A real control inside a card (the audio scrubber, a note being edited)
     // owns the whole gesture: no capture, no drag. Capturing here would redirect
     // every following pointermove to #viewport and leave the scrubber dead.
-    // .vtrack is the video scrubber; a video's own <video> is deliberately not
-    // in this list, because the picture is the card and dragging it has to drag
-    // the card. Only the transport laid over it claims the gesture.
+    // A video's own <video> is deliberately not in this list, because the
+    // picture is the card and dragging it has to drag the card; the two buttons
+    // laid over it are, as buttons.
     // .model-stage is the 3D canvas: a drag on it turns the model over, so it
     // has to claim the gesture the way the audio scrubber does, or the card
     // would move out from under the hand instead.
-    const widget = target?.closest('audio, video[controls], input, button, a, .wave, .vtrack, .model-stage, [contenteditable="true"], [contenteditable="plaintext-only"]');
+    const widget = target?.closest('audio, video[controls], input, button, a, .wave, .model-stage, [contenteditable="true"], [contenteditable="plaintext-only"]');
     const tap = { x: e.clientX, y: e.clientY, at: e.timeStamp };
     const doubleTapDrag = e.pointerType === 'touch' && !id && !widget
       && isDoubleTap(taps.lastEmpty, tap);

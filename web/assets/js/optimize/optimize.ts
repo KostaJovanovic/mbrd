@@ -28,6 +28,7 @@
 // (firstFrame in media.js), not part of optimising.
 
 import { board, byId, swapAssets, setItemThumb, setItemPoster, removeItems } from '../state.ts';
+import { toast } from '../notify.ts';
 import { addFile, getAsset } from '../storage/assets.ts';
 import { formatBytes, itemHashes, extOf } from '../util.ts';
 import { PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS } from '../import/formats.ts';
@@ -471,6 +472,23 @@ export async function runOptimize(
  *
  * Only ever adds. setItemPoster() refuses an item that already carries a
  * picture, so a cover somebody chose by hand survives this untouched.
+ *
+ * ── The one place ffmpeg is reached for on a clip that plays ──
+ *
+ * The browser's own decoder answers first and answers for almost everything.
+ * What is new is what happens when it does not: this falls through to
+ * firstFrame() in optimize/media.ts, the thirty-megabyte path, where import
+ * deliberately does not.
+ *
+ * The difference is that somebody asked. Import is a drop - it must not go to a
+ * CDN for a file that landed on the board fine - and the idle backfill is a
+ * trickle nobody requested, so neither may spend that. Optimize is a dialog with
+ * a progress bar in front of somebody who pressed a button meaning "spend some
+ * time making this board better", and a board of clips with no pictures is
+ * precisely what they pressed it about. Without this, a clip the browser cannot
+ * decode had *no* route to a poster at all after import, and the answer to "the
+ * cards are blank" was that running the optimiser changed nothing - which is
+ * the thing that was actually wrong.
  */
 async function backfillPosters(onProgress: (p: Progress) => void): Promise<number> {
   const wanted = cards().filter(it =>
@@ -488,9 +506,12 @@ async function backfillPosters(onProgress: (p: Progress) => void): Promise<numbe
     const asset = getAsset(item.asset?.hash);
     if (!asset) { onProgress({ done: ++n, total: wanted.length, name: item.name || '', phase: 'posters' }); return; }
     try {
-      const frame = await videoFrame(asset.blob);
+      const shot = await videoFrame(asset.blob);
+      const frame = shot
+        ? { blob: shot.blob, name: 'poster.webp', type: 'image/webp' }
+        : await viaFfmpeg(asset.blob, asset.name || item.name || 'clip', asset.mime);
       if (!frame) return;
-      const hash = await addFile(new File([frame.blob], 'poster.webp', { type: 'image/webp' }));
+      const hash = await addFile(new File([frame.blob], frame.name, { type: frame.type }));
       setItemPoster(item.id, hash);
       made++;
     } catch (err) {
@@ -502,6 +523,39 @@ async function backfillPosters(onProgress: (p: Progress) => void): Promise<numbe
     }
   });
   return made;
+}
+
+/**
+ * A frame out of a clip the browser would not open, through ffmpeg.
+ *
+ * Everything about the module it loads is expensive and conditional - thirty
+ * megabytes off a CDN, a worker, wasm - so it is imported here, inside the one
+ * call that has already established that nothing cheaper will do. See the note
+ * on backfillPosters() for why this pass is allowed to spend it and the other
+ * two are not, and the head of optimize/media.ts for what the spend is.
+ *
+ * A name with the real extension on it, because ffmpeg picks its demuxer off
+ * one; an asset registered from an archive may have neither, and `clip` with no
+ * extension is a fair answer that lets the container be sniffed instead.
+ *
+ * Null for everything: no core, no network, a frame it could not write. The
+ * caller treats that as "no poster", which is the card it already had.
+ */
+async function viaFfmpeg(
+  blob: Blob, name: string, mime: string,
+): Promise<{ blob: Blob, name: string, type: string } | null> {
+  try {
+    const { firstFrame } = await import('./media.ts');
+    // Said out loud, once: firstFrame() only calls this on the boot that fetches
+    // the core, and a thirty-megabyte download that happens silently in the
+    // middle of a progress bar is a download nobody consented to.
+    const out = await firstFrame(new File([blob], name, { type: mime }), msg => toast(msg));
+    if (!out) return null;
+    const png = out.type === 'image/png';
+    return { blob: out, name: png ? 'poster.png' : 'poster.jpg', type: out.type };
+  } catch {
+    return null;
+  }
 }
 
 /**
