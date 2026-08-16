@@ -7,27 +7,35 @@
 //   web/patch.html   index.html's entire body, the app running on it, and the
 //                    changelog as the thing it shows instead of a board.
 //
-// ── The whole shell, not a likeness of it ──
+// ── The app's cascade, not the app ──
 //
-// The body is copied out of index.html verbatim and the bundle comes with it,
-// so /patch has the app's real sidebar: the real tab strip, the real Board,
-// Look and System panels built by ui/panel.ts from ui/settings-schema.ts, the
-// real Credits sheet in the foot. Not a hand-written section list that looks
-// like one - three attempts at that produced three different sidebars, none of
-// which was this one, and every control the schema grows from now on arrives
-// here without anybody remembering to add it.
+// **This page is a document and nothing else.** It takes index.html's head -
+// the fonts, the twenty stylesheets in cascade order, and the pre-paint script
+// that puts the reader's saved look on <html> - and then its own prose. No
+// sidebar, no toolbar, no viewport, no bundle.
 //
-// What the page does *not* show is the board: the viewport, the toolbar, the
-// HUD, the bin and the corner furniture are all hidden by patch.css, because
-// this page is a document. Everything is still there and still wired, which is
-// what keeps the panel whole.
+// It was not always. The page used to be index.html's entire *body*, copied
+// verbatim, so that the app booted on it and the panel over the changelog was
+// the app's real panel rather than a likeness that drifts. That argument was
+// sound and the thing it bought is gone: the sidebar has been taken off this
+// page, and once it is off, everything the copy was for goes with it. What the
+// copy left behind was a changelog shipping half a megabyte of script to boot
+// an empty board nobody could see, and #grain - the app's fixed, full-window
+// paper texture - sitting still behind a page whose own texture scrolls, which
+// is two sheets of stock over one another and was visible as exactly that.
+//
+// The head is still lifted rather than listed, and that half of the old design
+// is the half worth keeping: a stylesheet added to the app dresses this page in
+// the same commit and still in the right place in the cascade, and the look
+// restore is the same bytes and therefore the same CSP hash.
 //
 // ── Nothing you do while reading may change what you own ──
 //
-// The consequence of running the real app on a page with no board of its own,
-// and the reason main.ts has an isPatch branch: the session is never read,
-// suspendCache() stops the writer, and freezePrefs() stops the panel recording
-// a whimsy nudge as a preference. See that branch for the rest.
+// Now trivially true, since nothing here runs. main.ts keeps its isPatch branch
+// all the same and it is not dead code: sw.js precaches patch.html, so a
+// returning visitor can be handed a cached copy of the page from back when it
+// did boot the app. That branch reads no session, stops the writer and freezes
+// the preference store, and it is what keeps that copy harmless.
 //
 // ── The whimsy axis is the design ──
 //
@@ -40,9 +48,9 @@
 // commit that changes it.
 //
 // So the changelog arrives dressed the way that visitor's own board is dressed,
-// and patch.css says what each of the three printings looks like. The dial in
-// the sidebar moves the page and nothing else: it writes no preference, which
-// is the same promise the old design needed a freeze to make.
+// and patch.css says what each of the three printings looks like. There is no
+// dial on this page to move it with - that lived in the sidebar - and there is
+// nothing here that could write a preference if there were.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
@@ -225,14 +233,19 @@ function buildRelease(r) {
  * in the same commit, still in the right place in the cascade - and so the look
  * restore is the same bytes and therefore the same CSP hash.
  *
+ * **The head and only the head.** index.html's body is not copied; see the note
+ * at the top of this file for what that copy was for and why it went with the
+ * sidebar. The one thing it took a moment to notice is that the slice below has
+ * to keep carrying the inline script, since it is now the whole of what dresses
+ * this page - a page that lost it would render in the default pigment for
+ * everybody, silently and only on their own machine.
+ *
  * patch.css goes after that slice, which is what makes it last: it is the only
  * sheet here that knows this is a document and not a board.
  */
 function buildPage(shell, releases, entries) {
   const bodyStart = shell.indexOf('<body>');
-  const bodyEnd = shell.lastIndexOf('</body>');
-  if (bodyStart < 0 || bodyEnd < 0) throw new Error('index.html has no <body>');
-  const body = shell.slice(bodyStart + '<body>'.length, bodyEnd).trim();
+  if (bodyStart < 0) throw new Error('index.html has no <body>');
 
   const head = shell.slice(0, bodyStart);
   const from = head.indexOf('<link rel="preload"');
@@ -242,17 +255,16 @@ function buildPage(shell, releases, entries) {
   if (!/<script>/.test(loads)) {
     throw new Error('the load block carries no inline script - has the pre-paint restore moved?');
   }
-  // The bundle rides in with the body - its tag is the last line of it - which
-  // is what makes the sidebar on this page the app's own rather than a likeness.
-  // Asserted rather than assumed: a page that quietly stopped booting the app
-  // would still look almost right, and would have an empty panel.
-  if (!body.includes('src="assets/app.js"')) {
-    throw new Error('index.html body does not load the bundle - has the script tag moved?');
+  // Asserted rather than assumed, and this is the assertion that replaced the
+  // one about the bundle. A slice that quietly stopped carrying the sheets
+  // would give a page of unstyled prose, which is a thing somebody would notice
+  // - a slice missing one of them is not.
+  if (!loads.includes('assets/css/tokens.css') || !loads.includes('assets/css/base.css')) {
+    throw new Error('the load block is missing the app cascade - has the head been reordered?');
   }
 
-  // The version stamp itself is not read here any more: the app is running on
-  // this page, so ui/sidebar.ts writes it into the panel's foot exactly as it
-  // does on a board.
+  // The version stamp, which the app used to write into the sidebar's foot on
+  // this page. There is no sidebar here now, so it is read and printed below.
   const stamps = readFileSync(join(ROOT, 'web', 'assets', 'js', 'version.js'), 'utf8');
   // The app's own count, not the sum of the spans. The two agree as long as the
   // releases tile the history from the first commit to this one - but this is
@@ -261,6 +273,7 @@ function buildPage(shell, releases, entries) {
   // is the number in the foot of the app's sidebar and a reader comparing the
   // two should find one figure and not two derivations of it.
   const commits = (stamps.match(/const COMMIT_COUNT = (\d+)/) || [])[1] || '';
+  const version = (stamps.match(/const VERSION = '([^']+)'/) || [])[1] || '';
   const oldest = releases.at(-1);
   const DESC = 'Every version of mbrd, newest first - what was added, what was fixed and '
     + 'what got faster on the infinite freeform moodboard that runs in your browser.';
@@ -281,10 +294,10 @@ function buildPage(shell, releases, entries) {
 
      The app carries one because it is served at every address it does not
      have. This page is served at exactly one, so it has nothing to fix - and a
-     base would break every row in the sidebar's index: a fragment-only href
-     resolves against the base rather than the document, so #r-the-viewer would
-     become /#r-the-viewer and clicking it would leave the changelog and load a
-     board. It shipped once and did exactly that. -->
+     base would break every fragment link on it: a fragment-only href resolves
+     against the base rather than the document, so #r-the-viewer would become
+     /#r-the-viewer and following it would leave the changelog and load a board.
+     It shipped once and did exactly that. -->
 <title>Patch notes - mbrd</title>
 <meta name="description" content="${DESC}">
 <meta name="author" content="valjdakosta">
@@ -352,34 +365,23 @@ ${loads}
 </head>
 <body class="is-patch">
 
-<!-- index.html's body, copied verbatim. All of it: the sidebar with its three
-     real tabs, the menu button, the viewport, the toolbar, every dialog, and
-     the bundle at the end. patch.css hides the board furniture - this page is a
-     document - and leaves the panel, which is then the app's own rather than a
-     likeness of it that drifts. -->
-${body}
-
-<!-- The changelog: a fixed scroller of its own, the way #mobile-feed is, so the
-     app stays pinned to the window exactly as base.css pins it. See the head of
-     patch.css for what happened when the body was unpinned instead. -->
+<!-- The whole page. index.html's body is NOT copied here - see the head of
+     tools/gen-patch-page.mjs. There is no sidebar, no board furniture and no
+     bundle: this is a document, and the only thing it takes from the app is the
+     cascade above and the look that cascade is read at. -->
 <main class="pn">
  <div class="pn-inner">
   <!-- The way back, and it is a real one.
 
        There is a link in the footer and there has been all along, which is the
        bottom of a page fifteen thousand pixels tall - a way out you have to
-       read the whole changelog to reach. The panel's View rows go home too
-       (goHome in page.ts), and a reader who has not opened the panel has no
-       reason to know that. So: a button, at the top, that stays at the top. It
-       is sticky inside the scroller rather than fixed to the window, because
-       fixed would put it over the board's own menu button in the corner.
+       read the whole changelog to reach. So: a button, at the top, that stays
+       at the top. Sticky inside the column rather than fixed to the window, so
+       it rides the measure and cannot land somewhere different on a phone.
 
-       An <a> and not a <button data-cmd>, which is the opposite of the rule the
-       panel follows - and it is right here for the same reason that rule is
-       right there. The panel reaches the app through one delegated listener
-       because the panel is part of the app; this is a document, and the way out
-       of a document is a link. It also means it works before the bundle has
-       parsed, which on the one page that is mostly prose is the whole point.
+       An <a> and not a button: this is a document, and the way out of a
+       document is a link. Nothing on this page runs, so there is nothing else
+       it could have been.
 
        href="/" and not "patch/..", matching the footer: this page carries no
        <base>, and the root is the root. -->
@@ -389,7 +391,8 @@ ${body}
   </a>
   <header class="pn-head">
     <h1 class="pn-title">Patch notes</h1>
-    <p class="pn-lede">Everything that has changed in mbrd, newest first.</p>
+    <p class="pn-lede">What has changed in mbrd, newest first. The things
+      worth knowing about, rather than every commit.</p>
     <!-- The three numbers this page can state without anybody writing them
          down: how many releases there are, how many commits they cover, and
          when it started. All counted from the source. -->
@@ -405,7 +408,7 @@ ${entries}
   </ol>
 
   <footer class="pn-foot">
-    <span>mbrd by valjdakosta</span>
+    <span>mbrd ${esc(version)} by valjdakosta</span>
     <a href="/">Back to the board</a>
   </footer>
  </div>

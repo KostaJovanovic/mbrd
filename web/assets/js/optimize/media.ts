@@ -156,11 +156,18 @@ export async function mediaAvailable(): Promise<boolean> {
     // AbortSignal.timeout throws on expiry, which the catch below already reads
     // as unreachable - and unreachable-for-now is not cached, so a blip does not
     // switch the feature off for the session.
-    const res = await fetch(CORE_JS, {
-      headers: { Range: 'bytes=0-0' },
-      cache: 'no-store',
-      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
-    });
+    //
+    // Feature-tested, because AbortSignal.timeout landed in Safari 16.0 and the
+    // failure without the test was the worst shape available: calling a method
+    // that is not there threw straight into the catch below, which cached
+    // `present = false` - so on every older WebKit this probe permanently
+    // answered "the core is unreachable" without ever having asked. A clock is
+    // a nicety here; the request is not.
+    const probe: RequestInit = { headers: { Range: 'bytes=0-0' }, cache: 'no-store' };
+    if (typeof AbortSignal?.timeout === 'function') {
+      probe.signal = AbortSignal.timeout(PROBE_TIMEOUT_MS);
+    }
+    const res = await fetch(CORE_JS, probe);
     present = res.ok || res.status === 206;
   } catch {
     present = false;

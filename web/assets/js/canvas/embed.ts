@@ -30,6 +30,7 @@
 
 import { byId, snapshotGeom, applyGeom, commitGeom } from '../state.ts';
 import type { Item } from '../board-model.ts';
+import { hasOwn } from '../util.ts';
 
 /**
  * Everything the offer and the frame need about one provider's player. One
@@ -118,7 +119,7 @@ const SPOTIFY = {
 
 /** The kinds above, and the predicate that lets a path segment become one. */
 type SpotifyKind = keyof typeof SPOTIFY;
-const isSpotifyKind = (k: string): k is SpotifyKind => Object.hasOwn(SPOTIFY, k);
+const isSpotifyKind = (k: string): k is SpotifyKind => hasOwn(SPOTIFY, k);
 
 /**
  * The { kind, id } a Spotify URL carries, or null.

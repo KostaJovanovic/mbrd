@@ -43,6 +43,7 @@
 // MOBILE_ARRANGEMENTS.
 
 import { cellInset } from '../geometry.ts';
+import { hasOwn } from '../util.ts';
 // Shortest-column-first, shared with the Feed's wall - see the head of that file
 // for why the two masonries are one rule and two surfaces.
 import { packColumns } from './columns.ts';
@@ -173,7 +174,7 @@ export function arrange(items: ArrangeItem[], opts: ArrangeOpts = {}): Point[] {
   // Rearrange with it. `toString`, `valueOf` and `hasOwnProperty` are the same
   // shape. The fallback was always there; it just was not reached.
   const asked = o.name || 'grid';
-  const name = Object.hasOwn(LAYOUTS, asked) ? asked : 'grid';
+  const name = hasOwn(LAYOUTS, asked) ? asked : 'grid';
   const fn = LAYOUTS[name];
   if (!items.length) return [];
   // `free` skips the negation and the cell reservation - it hands back real

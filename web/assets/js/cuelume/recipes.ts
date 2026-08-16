@@ -34,6 +34,21 @@
 // twice in a day is that nothing outside it had an opinion.
 
 /** Seconds after the trigger that a layer starts, and its envelope. */
+/**
+ * Own-property test. Written out here rather than imported from util.js, and
+ * that is deliberate: this module has no imports at all and is the better for
+ * it - it is a vendored table of numbers, and a dependency on the app's own
+ * helpers would make it something else.
+ *
+ * The long form rather than `Object.hasOwn`, which landed in Safari 15.4. Both
+ * guards below are reached from ordinary interface sounds, so on an older
+ * WebKit the modern spelling was a TypeError rather than a missing nicety.
+ * Called off the prototype because the tables it is asked about are keyed by
+ * strings that reach here from stored preferences.
+ */
+const own = <T extends object>(table: T, key: PropertyKey) =>
+  Object.prototype.hasOwnProperty.call(table, key);
+
 type BaseLayer = {
   offset?: number,
   /** Fade-in time, in seconds. */
@@ -251,7 +266,7 @@ export const SOUND_NAMES =
   Object.keys(RECIPES) as SoundName[];
 
 export const isSoundName = (value: unknown): value is SoundName =>
-  typeof value === 'string' && Object.hasOwn(RECIPES, value);
+  typeof value === 'string' && own(RECIPES, value);
 
 // ---------------------------------------------------------------------------
 // The cues
@@ -428,7 +443,7 @@ export const CUE_NAMES =
   Object.keys(CUES) as Cue[];
 
 export const isCue = (value: unknown): value is Cue =>
-  typeof value === 'string' && Object.hasOwn(CUES, value);
+  typeof value === 'string' && own(CUES, value);
 
 /**
  * Recipes in the palette that no cue names, and what each is for.

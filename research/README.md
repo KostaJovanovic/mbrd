@@ -107,6 +107,13 @@ register and two subject documents:
   is done (the canvas menu is six rows, and `canvasEntries()` carries the
   argument); **B–H** are open, in the order the *Sequence* section gives.
 
+`patch-notes-full.md` sits at this level too and is **not open work** - it is an
+archive, and the only file here that argues nothing. It holds every release at
+the length it was first written at, internal work included, and it was split off
+when `/patch` was cut down to the entries a person using the app would notice.
+Nothing generates anything from it and nothing keeps it in step; the live source
+is `patch-notes.md` at the repository root.
+
 Three documents that were at this level went down to `old/` on 2026-08-15.
 
 `plan-2026-08-14.md` was **the order the register was worked in** — eighteen

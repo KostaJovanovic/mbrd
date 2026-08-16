@@ -10,7 +10,7 @@
 // caller had to learn they moved.
 
 import { cue } from '../cuelume/engine.ts';
-import { extOf, baseName, formatBytes, isRecord } from '../util.ts';
+import { extOf, baseName, formatBytes, hasOwn, isRecord } from '../util.ts';
 import type { Item, ItemType } from '../board-model.ts';
 import { assetURL, getAsset, readText } from '../storage/assets.ts';
 import { byId, bus, markDirty, board, isDefaultTitle, itemCrop, setSwatchHex } from '../state.ts';
@@ -1356,7 +1356,7 @@ function binArt() {
  * nothing anywhere noticed that RENDERERS had no such key. Nothing failed -
  * the files just quietly came out as generic cards.
  */
-export const hasRenderer = (type: string) => Object.hasOwn(RENDERERS, type);
+export const hasRenderer = (type: string) => hasOwn(RENDERERS, type);
 
 /**
  * The URL behind a link item, or null for anything that is not one.

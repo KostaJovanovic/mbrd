@@ -81,7 +81,7 @@
 // initInput() and out of a test's reach - the next thing worth naming is the
 // tap and hold bookkeeping, for the same reason and in the same shape.
 
-import { clamp } from '../util.ts';
+import { clamp, hasOwn } from '../util.ts';
 import { cue } from '../cuelume/engine.ts';
 import {
   board, byId, selection, select, deselect, clearSelection, isMultiSelect, topZ, stackOrder,
@@ -1005,7 +1005,7 @@ export function gestureTransition(
   // an arbitrary mode narrows the argument to `never`. The list is read here as
   // what it is for - the modes reachable from one state.
   const legal: readonly GestureMode[] | null =
-    Object.hasOwn(GESTURE_MOVES, key) ? GESTURE_MOVES[key] : null;
+    hasOwn(GESTURE_MOVES, key) ? GESTURE_MOVES[key] : null;
   // SAFETY: as at `key` above - `want` is looked for in the list `key` answered,
   // and a string that is not on it takes the null.
   const want = to as GestureMode;
