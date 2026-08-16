@@ -21,6 +21,7 @@
 
 import { clamp } from '../util.ts';
 import { addFile, allAssets, assetURL, derivedFile, getAsset, readText } from '../storage/assets.ts';
+import { surface, surfaceToBlob } from './surface.ts';
 import { applyMaterials, meshKind, parseMesh, parseMTL, MeshError } from '../mesh.ts';
 import type { Mesh } from '../mesh.ts';
 import { board, bus, byId, selection, setModelShot } from '../state.ts';
@@ -588,11 +589,14 @@ async function takeShot(id: string): Promise<boolean> {
   // Copied off the shared canvas rather than encoded from it: that one is the
   // WebGL drawing buffer and the next card to draw will overwrite it, so the
   // bytes have to be taken now.
-  const flat = new OffscreenCanvas(w, h);
-  // Two assertions and one fact behind both: renderShared() has just answered
-  // true, which it only does once ensureGL() has built the shared canvas - and a
-  // canvas this line made a moment ago has a 2d context to give.
-  flat.getContext('2d')!.drawImage(glCanvas!, 0, 0, w, h, 0, 0, w, h);
+  // Through canvas/surface.js: OffscreenCanvas is Safari 16.4, and below that
+  // this line threw and takeShot() answered false - forever, on every settle,
+  // paying a WebGL render each time to throw it away.
+  const flat = surface(w, h);
+  if (!flat) return false;
+  // Non-null: renderShared() has just answered true, which it only does once
+  // ensureGL() has built the shared canvas.
+  flat.ctx.drawImage(glCanvas!, 0, 0, w, h, 0, 0, w, h);
   // Whatever came out. This used to require WebP, and the doc above still
   // called that case "a browser without WebP" as though it were exotic - it is
   // every Safari, none of which encodes WebP from a canvas. The cost was not a
@@ -603,7 +607,7 @@ async function takeShot(id: string): Promise<boolean> {
   // No JPEG retry, unlike canvas/display.js and canvas/poster.js. A model is
   // drawn over the board's own paper and the still carries that transparency;
   // flattening it onto black would put a rectangle under every model card.
-  const blob = await flat.convertToBlob({ type: 'image/webp', quality: 0.9 });
+  const blob = await surfaceToBlob(flat, 'image/webp', 0.9);
   if (!blob) return false;
 
   const hash = await addFile(derivedFile(blob, `${id}-still`));

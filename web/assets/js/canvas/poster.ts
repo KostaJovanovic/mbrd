@@ -10,6 +10,7 @@
 // case, not an error. optimize/media.js is the path that reaches for ffmpeg
 // when it matters enough to be worth thirty megabytes.
 
+import { surface, surfaceToBlob, type Surface } from './surface.ts';
 
 /**
  * How wide a video's own first frame is kept.
@@ -303,14 +304,15 @@ async function capture(
   const scale = Math.min(1, POSTER_SIDE / Math.max(v.videoWidth, v.videoHeight));
   const w = Math.max(1, Math.round(v.videoWidth * scale));
   const h = Math.max(1, Math.round(v.videoHeight * scale));
-  const canvas = new OffscreenCanvas(w, h);
-  const ctx = canvas.getContext('2d', { alpha: false });
-  if (!ctx) return null;
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(v, 0, 0, w, h);
-  const flat = looksFlat(ctx, w, h);
-  const out = await encodeFrame(canvas);
+  // Through canvas/surface.js, which falls back to an ordinary <canvas> where
+  // OffscreenCanvas is absent - Safari before 16.4. Without it this returned
+  // null for every clip on those engines, which is the same "no poster" answer
+  // an undecodable codec gets, and so was indistinguishable from one.
+  const face = surface(w, h, { alpha: false });
+  if (!face) return null;
+  face.ctx.drawImage(v, 0, 0, w, h);
+  const flat = looksFlat(face.ctx, w, h);
+  const out = await encodeFrame(face);
   if (!out) return null;
   return { shot: { blob: out, w: v.videoWidth, h: v.videoHeight }, flat };
 }
@@ -332,7 +334,7 @@ async function capture(
  * canvas raises, and a frame this cannot inspect is one to look past rather than
  * one to keep.
  */
-function looksFlat(ctx: OffscreenCanvasRenderingContext2D, w: number, h: number): boolean {
+function looksFlat(ctx: Surface['ctx'], w: number, h: number): boolean {
   let data: Uint8ClampedArray;
   try { data = ctx.getImageData(0, 0, w, h).data; } catch { return true; }
   const pixels = data.length / 4;
@@ -381,12 +383,11 @@ export async function pictureIsFlat(blob: Blob): Promise<boolean> {
     const bitmap = await createImageBitmap(blob);
     const w = Math.max(1, Math.min(bitmap.width, POSTER_SIDE));
     const h = Math.max(1, Math.round((bitmap.height / bitmap.width) * w));
-    const canvas = new OffscreenCanvas(w, h);
-    const ctx = canvas.getContext('2d', { alpha: false });
-    if (!ctx) return false;
-    ctx.drawImage(bitmap, 0, 0, w, h);
+    const face = surface(w, h, { alpha: false });
+    if (!face) return false;
+    face.ctx.drawImage(bitmap, 0, 0, w, h);
     bitmap.close?.();
-    return looksFlat(ctx, w, h);
+    return looksFlat(face.ctx, w, h);
   } catch {
     return false;
   }
@@ -417,8 +418,8 @@ export async function pictureIsFlat(blob: Blob): Promise<boolean> {
  * transparency here to flatten, so there is no question to ask about the
  * source.
  */
-async function encodeFrame(canvas: OffscreenCanvas): Promise<Blob | null> {
-  const webp = await canvas.convertToBlob({ type: 'image/webp', quality: 0.72 });
+async function encodeFrame(face: Surface): Promise<Blob | null> {
+  const webp = await surfaceToBlob(face, 'image/webp', 0.72);
   if (!webp) return null;
   if (webp.type.toLowerCase() === 'image/webp') return webp;
   // Falls back to `webp` - a PNG under a wrong name - if this engine writes
@@ -426,7 +427,7 @@ async function encodeFrame(canvas: OffscreenCanvas): Promise<Blob | null> {
   // A large poster beats no poster, and the size guard this file does not have
   // is the size guard it does not need, since nothing here replaces a file.
   try {
-    const jpeg = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.72 });
+    const jpeg = await surfaceToBlob(face, 'image/jpeg', 0.72);
     return jpeg?.type.toLowerCase() === 'image/jpeg' ? jpeg : webp;
   } catch {
     return webp;

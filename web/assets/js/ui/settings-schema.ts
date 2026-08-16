@@ -96,6 +96,28 @@ export type ButtonSpec = {
   className?: string,
   /** The paper pair, which ui/sidebar.js wires itself - see buildButtons(). */
   orient?: string,
+  /**
+   * Put the panel away after this one, on a narrow screen.
+   *
+   * On a phone the panel is the whole screen - mobile.css insets #sidebar to
+   * all four edges - so a button whose result is *on the board* fires into
+   * something nobody can see. Press Rearrange and the panel sits there looking
+   * exactly as it did; the board behind it has been rebuilt.
+   *
+   * Opt-in and not the default, which is the decision in this flag. Most rows
+   * here change the panel rather than the board - a checkbox, a dial, "Start
+   * over" - and closing on those would take the panel away mid-thought, while
+   * the thing you just changed is one repaint behind you. Anything that reports
+   * with a toast needs nothing either: #toast is z-index 50 over the panel's 40,
+   * so it is already read over an open panel. What is left is the set that
+   * changes the board, replaces it, leaves the page, or opens a surface of its
+   * own - and each of those says so here, beside its own label, rather than in
+   * a list somewhere of names to match against.
+   *
+   * Honoured in one place, the delegated listener in ui/sidebar.ts, which is
+   * also the only place that knows a panel button was pressed at all.
+   */
+  closesPanel?: boolean,
   /** A starting value for a button whose own command writes the attribute after. */
   ariaPressed?: string,
   pressed?: (ctx: Ctx) => boolean,
@@ -355,8 +377,8 @@ export const SECTIONS: Section[] = [
       // be the weight, not the row - and Export writes the real .mbrd, which is
       // the one file on this tab that opens again.
       { type: 'buttons', buttons: [
-        { cmd: 'save', label: 'Save', className: 'primary' },
-        { cmd: 'export', label: 'Export' },
+        { cmd: 'save', label: 'Save', className: 'primary', closesPanel: true },
+        { cmd: 'export', label: 'Export', closesPanel: true },
       ] },
       // Which board you are on. Three verbs, one row, none of them about the
       // board's contents.
@@ -368,26 +390,35 @@ export const SECTIONS: Section[] = [
       // only ever comes up when a file arrives, and it would have to open a
       // picker to ask the same thing the drop has already answered.
       { type: 'buttons', buttons: [
-        { cmd: 'new', label: 'New' },
-        { cmd: 'open', label: 'Open' },
-        { cmd: 'library', label: 'Boards' },
+        { cmd: 'new', label: 'New', closesPanel: true },
+        { cmd: 'open', label: 'Open', closesPanel: true },
+        { cmd: 'library', label: 'Boards', closesPanel: true },
       ] },
-      // The style tile, which is no longer a file at all: it is a card you add
-      // to the board - the palette, the faces and a few of the pictures. So it
-      // sits above the fold and outside `advanced`, with the things you do to
-      // the board rather than the things you make to send. The title says what
-      // it draws from, because the answer changes with the selection.
-      { type: 'buttons', needsBoard: true, buttons: [
-        { cmd: 'add-style-tile', label: 'Add style tile',
+      // The style tile, which is not a file at all: it is a card you add to the
+      // board - the palette, the faces and a few of the pictures. The title
+      // says what it draws from, because the answer changes with the selection.
+      //
+      // It stood above the fold once, on the argument that it acts on the board
+      // rather than producing something to send. That reading of it is still
+      // right and it is not what decides the position. What decides it is how
+      // often the row is wanted, which is about as often as the three below it:
+      // rarely. Four rarely-pressed rows standing over a fold is a fold that has
+      // stopped sorting anything, and what is left above it now is the whole of
+      // what this section is for - the board's name, what happens to it, and
+      // which board you are on.
+      { type: 'buttons', advanced: true, needsBoard: true, buttons: [
+        { cmd: 'add-style-tile', label: 'Add style tile', closesPanel: true,
           title: () => (selectionSize()
             ? 'The palette, the faces and the cards you have selected'
             : 'The palette, the faces and a few of the pictures') },
       ] },
-      // And the three that produce a file which is not this board, behind one
-      // fold. They are the least-pressed things on the tab and they are one idea
-      // - make something to send somebody - stated three ways. A section may
-      // have exactly one fold (buildSection, ui/panel.js), which is the whole
-      // reason they group rather than each getting its own heading.
+      // And the three that produce a file which is not this board. They are one
+      // idea - make something to send somebody - stated three ways, and they
+      // are behind the same fold as the style tile above rather than one of
+      // their own: a section may have exactly one fold (buildSection,
+      // ui/panel.js). So the fold is named for how often its rows are wanted
+      // rather than for what they do, which is what lets a row that makes no
+      // file sit at the top of it.
       //
       // Export is deliberately not among them any more: what these three write
       // is a picture or a summary, and what Export writes is the board. It sits
@@ -400,12 +431,12 @@ export const SECTIONS: Section[] = [
       // shareBoard().
       { type: 'buttons', advanced: true,
         when: () => typeof navigator !== 'undefined' && typeof navigator.canShare === 'function',
-        buttons: [{ cmd: 'share', label: 'Share' }] },
+        buttons: [{ cmd: 'share', label: 'Share', closesPanel: true }] },
       // A picture of the board, for showing rather than reopening - a PNG to send
       // or a PDF to print. Derived artefacts, not board files; see cmds.exportImage.
       { type: 'buttons', advanced: true, buttons: [
-        { cmd: 'export-image', label: 'Save image' },
-        { cmd: 'export-pdf', label: 'Save PDF' },
+        { cmd: 'export-image', label: 'Save image', closesPanel: true },
+        { cmd: 'export-pdf', label: 'Save PDF', closesPanel: true },
       ] },
     ],
   },
@@ -447,15 +478,15 @@ export const SECTIONS: Section[] = [
       // over - a player, not a takeover - so Canvas stays lit through it, which
       // is the truth: you are still on the canvas, with a player window open.
       { type: 'buttons', buttons: [
-        { id: 'view-canvas', cmd: 'canvas', label: 'Canvas',
+        { id: 'view-canvas', cmd: 'canvas', label: 'Canvas', closesPanel: true,
           pressed: ctx => !ctx.mobile,
           title: () => 'The freeform board' },
-        { id: 'view-feed', cmd: 'feed', label: 'Feed',
+        { id: 'view-feed', cmd: 'feed', label: 'Feed', closesPanel: true,
           pressed: ctx => ctx.mobile && currentLens() === 'feed',
           title: ctx => (ctx.mobile
             ? 'Back to the canvas'
             : 'Show everything on the board as a scrollable feed') },
-        { id: 'view-playlist', cmd: 'playlist', label: 'Playlist',
+        { id: 'view-playlist', cmd: 'playlist', label: 'Playlist', closesPanel: true,
           pressed: ctx => ctx.mobile && currentLens() === 'playlist',
           title: ctx => (ctx.mobile
             ? 'Back to the canvas'
@@ -489,7 +520,7 @@ export const SECTIONS: Section[] = [
         get: () => board.settings.spacing,
         set: v => setSetting('spacing', v) },
       { type: 'buttons', needsBoard: true,
-        buttons: [{ cmd: 'rearrange', label: 'Rearrange everything' }] },
+        buttons: [{ cmd: 'rearrange', label: 'Rearrange everything', closesPanel: true }] },
       { type: 'hint', when: desktop,
         html: 'New drops use this layout. <em>Free</em> leaves every position untouched.' },
       // The Mobile half of the same sentence, and it has to be a different one:
@@ -792,7 +823,7 @@ export const SECTIONS: Section[] = [
       // is a sentence in a column of nouns - the sheet keeps that sentence as
       // its own heading, where a heading is allowed to be one.
       { type: 'buttons', buttons: [
-        { cmd: 'inventory', label: 'Board contents',
+        { cmd: 'inventory', label: 'Board contents', closesPanel: true,
           title: () => 'Counts, weights and the heaviest files. A row takes you to the card' },
       ] },
       // Above the two below it because it is the one that answers "something
@@ -804,7 +835,7 @@ export const SECTIONS: Section[] = [
         // two answered the same question at two grains - "take me back" by
         // named copy and "take me back" by step - and once a step could be
         // named, the copies were a second, coarser, more expensive answer.
-        { cmd: 'timeline', label: 'Timeline',
+        { cmd: 'timeline', label: 'Timeline', closesPanel: true,
           title: () => 'Every change to this board, as steps you can go back to' },
       ] },
       // Feed | Playlist used to live here, next to Clear everything; it is the
@@ -817,7 +848,8 @@ export const SECTIONS: Section[] = [
       // reload and not restart: nothing is lost and nothing starts over, the
       // page just comes back.
       { type: 'buttons', buttons: [
-        { cmd: 'restart', label: 'Reload mbrd', title: () => 'Save and load the page again' },
+        { cmd: 'restart', label: 'Reload mbrd', closesPanel: true,
+          title: () => 'Save and load the page again' },
       ] },
       // The changelog, directly under Reload rather than in a section of its
       // own. It had one, two headings up, on the argument that a thing to read
@@ -837,7 +869,8 @@ export const SECTIONS: Section[] = [
         // is a navigation now (see patchNotes in commands/view.ts). What it says
         // instead is the thing somebody about to press it wants to know - that
         // the board is saved on the way out and is still there on the way back.
-        { cmd: 'patch-notes', label: 'Patch notes', title: () => 'Every version since the first. Your board is saved and waiting when you come back' },
+        { cmd: 'patch-notes', label: 'Patch notes', closesPanel: true,
+          title: () => 'Every version since the first. Your board is saved and waiting when you come back' },
       ] },
     ],
   },
@@ -866,7 +899,8 @@ export const SECTIONS: Section[] = [
         // No `pressed` here on purpose: cmds.debugGrips writes aria-pressed
         // itself - the #grips URL and mbrd.debugGrips() drive the same toggle -
         // and a painted value would put the button back to false behind it.
-        { cmd: 'debug-grips', label: 'Highlight resize grips', ariaPressed: 'false' },
+        { cmd: 'debug-grips', label: 'Highlight resize grips', ariaPressed: 'false',
+          closesPanel: true },
         // The frame profiler, which until now had no way in from the interface
         // at all - a console call or a URL fragment, on a tool whose whole point
         // is the device with neither. Writes its own aria-pressed for the reason
@@ -944,7 +978,7 @@ export const SECTIONS: Section[] = [
       // have left the one button here that must not be pressed by accident as
       // the only one on permanent display. See buildFold() in ui/panel.ts.
       { type: 'buttons', advanced: true, buttons: [
-        { cmd: 'clear-data', label: 'Clear everything', className: 'danger' },
+        { cmd: 'clear-data', label: 'Clear everything', className: 'danger', closesPanel: true },
       ] },
     ],
   },

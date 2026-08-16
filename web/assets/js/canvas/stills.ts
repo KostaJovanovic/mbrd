@@ -21,6 +21,7 @@
 import { bus } from '../state.ts';
 import { quality } from '../quality.ts';
 import { stillZoom } from './viewport.ts';
+import { surface, surfaceToBlob } from './surface.ts';
 import type { Viewport } from './viewport.ts';
 
 /** Long edge of a captured frame. It is only ever shown at a third size. */
@@ -156,17 +157,19 @@ function shoot(img: HTMLImageElement, twin: StillImage) {
   // mid zoom-out, once per mounted GIF; a synchronous toDataURL('image/png')
   // per twin blocked that gesture frame. OffscreenCanvas + WebP matches what
   // poster.js/display.js already do for exactly this reason.
-  let canvas: OffscreenCanvas;
+  // Through canvas/surface.js, which falls back to an ordinary <canvas> where
+  // OffscreenCanvas does not exist - Safari before 16.4, where this used to
+  // land in the catch below and every GIF simply kept animating at every zoom.
+  let face;
   try {
-    canvas = new OffscreenCanvas(w, h);
-    const ctx = canvas.getContext('2d');
-    // A context this browser will not hand over lands where the throw did.
-    if (!ctx) return;
-    ctx.drawImage(img, 0, 0, w, h);
+    face = surface(w, h);
+    // A surface this browser will not hand over lands where the throw did.
+    if (!face) return;
+    face.ctx.drawImage(img, 0, 0, w, h);
   } catch {
     return;
   }
-  canvas.convertToBlob({ type: 'image/webp', quality: 0.8 }).then(blob => {
+  surfaceToBlob(face, 'image/webp', 0.8).then(blob => {
     if (!blob) return;
     const url = URL.createObjectURL(blob);
     // is-ready is set on load rather than here: the attribute lands

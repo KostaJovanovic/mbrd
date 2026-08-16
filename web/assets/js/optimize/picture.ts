@@ -5,6 +5,15 @@
 // or JPEG, on the engines that cannot write WebP at all, which is every Safari.
 // The whole of it is four calls; what is worth writing down is the judgement
 // around them, which is when *not* to swap the file.
+//
+// The canvas comes from canvas/surface.js rather than straight from
+// `new OffscreenCanvas(...)`, which is the one import this otherwise
+// dependency-free module carries. OffscreenCanvas is Safari 16.4, and every
+// call here sat inside a catch that answers "leave the picture alone" - so
+// below that version the optimiser ran its dialog and its progress bar and
+// found nothing to do, and no board ever got a thumbnail.
+
+import { surface, surfaceToBlob, type Surface } from '../canvas/surface.ts';
 
 /**
  * The long edge a picture is allowed to keep.
@@ -97,20 +106,16 @@ export async function shrinkPicture(
     // for an Opus tag is a conversion, not a re-encode, and has to happen.
     if (scale === 1 && blob.type.toLowerCase() === type) return null;
 
-    const canvas = new OffscreenCanvas(w, h);
-    const ctx = canvas.getContext('2d', { alpha: true });
-    // A canvas with no 2D context is one more thing this browser cannot do with
-    // this picture, and it is answered the way all the others are - see the note
-    // above. Unreachable on a fresh canvas; the type says it is possible and the
-    // module's contract already says what to do about it.
-    if (!ctx) return null;
-    // The default is 'low' on some engines, which on a 4:1 downscale is visible
-    // as aliasing along every hard edge in the picture.
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(bmp, 0, 0, w, h);
+    // Through canvas/surface.js rather than `new OffscreenCanvas(...)`: that
+    // constructor is Safari 16.4, and below it this threw into the catch that
+    // answers "leave the picture alone" - so on those engines the optimiser's
+    // whole picture pass silently found nothing to do, which is its largest
+    // saving. A surface this browser will not give is still that answer.
+    const face = surface(w, h);
+    if (!face) return null;
+    face.ctx.drawImage(bmp, 0, 0, w, h);
 
-    const out = await encodeShrunk(canvas, type, quality, blob.type);
+    const out = await encodeShrunk(face, type, quality, blob.type);
     if (!out) return null;
     // The one guard that makes any of encodeShrunk()'s answers safe: whatever
     // came back, it is only kept if it saves enough to be worth a generation of
@@ -150,18 +155,18 @@ export async function shrinkPicture(
  *    unchanged.
  */
 async function encodeShrunk(
-  canvas: OffscreenCanvas,
+  face: Surface,
   type: string,
   quality: number,
   sourceType: string,
 ): Promise<Blob | null> {
-  const out = await canvas.convertToBlob({ type, quality });
+  const out = await surfaceToBlob(face, type, quality);
   if (!out) return null;
   if (out.type.toLowerCase() === type) return out;
   if (type !== 'image/webp') return null;
   if (/^image\/jpe?g$/i.test(sourceType)) {
     try {
-      const jpeg = await canvas.convertToBlob({ type: 'image/jpeg', quality });
+      const jpeg = await surfaceToBlob(face, 'image/jpeg', quality);
       if (jpeg?.type.toLowerCase() === 'image/jpeg') return jpeg;
     } catch { /* no JPEG encoder either: the PNG below is still the right pixels */ }
   }
@@ -256,18 +261,15 @@ export async function makeThumb(
     const scale = THUMB_SIDE / bmp.width;
     const w = THUMB_SIDE;
     const h = Math.max(1, Math.round(bmp.height * scale));
-    const canvas = new OffscreenCanvas(w, h);
-    const ctx = canvas.getContext('2d', { alpha: true });
-    if (!ctx) return null;   // one more thing this browser cannot do - see shrinkPicture()
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(bmp, 0, 0, w, h);
+    const face = surface(w, h);
+    if (!face) return null;   // one more thing this browser cannot do - see shrinkPicture()
+    face.ctx.drawImage(bmp, 0, 0, w, h);
     // Read before the encode, off the bitmap that is already here. This is the
     // whole cost of the cut-out guess: a hundred-pixel canvas that had to be
     // drawn anyway, sampled once. Doing it from the full-size picture would mean
     // a second decode of the very thing the resize above exists to avoid.
-    const cutout = looksCutOut(ctx, w, h);
-    const out = await canvas.convertToBlob({ type: 'image/webp', quality: THUMB_QUALITY });
+    const cutout = looksCutOut(face.ctx, w, h);
+    const out = await surfaceToBlob(face, 'image/webp', THUMB_QUALITY);
     // Whatever came back is kept, and this used to refuse anything but WebP on
     // the grounds that a PNG at this quality setting is not the small file the
     // thumbnail was for. True of the bytes and wrong about the stakes.
@@ -321,7 +323,7 @@ export async function makeThumb(
  * and taking the card off it would leave a card-sized hole nothing can be
  * grabbed by except its grips.
  */
-function looksCutOut(ctx: OffscreenCanvasRenderingContext2D, w: number, h: number): boolean {
+function looksCutOut(ctx: Surface['ctx'], w: number, h: number): boolean {
   if (w < 3 || h < 3) return false;
   let clear = 0;
   let ring = 0;

@@ -134,10 +134,17 @@
    the grain. On the way out the chips stop resolving and the tile would become a
    flat film of its own mean - so it is faded to exactly that mean instead, which
    is what --cork is (the image's own average, sampled from it). A region zoomed
-   out is a cork-coloured rectangle rather than a grey one, and nothing about it
-   changes colour on the way there. The paper's grain fades to nothing for the
-   same reason and gets to keep the sheet it was lying on; cork has to bring its
-   own. */
+   out is a cork-coloured rectangle rather than a paper-coloured one, and nothing
+   about it changes colour on the way there. The paper's grain fades to nothing
+   for the same reason and gets to keep the sheet it was lying on; cork has to
+   bring its own.
+
+   This carried --paper for a version, which read as a wash of cork on the board
+   rather than a plate of it set in. It is the tint the *fade* needs that
+   settles it: with the sheet underneath, a fence too small to resolve its chips
+   was the board's own colour and stopped being a region at all below the band -
+   which is the one thing the tint here has to prevent. Halving the tile below is
+   what makes it a lighter cork without needing a lighter thing under it. */
 :root[data-whimsy="0"] .item[data-type="fence"] { background: var(--cork); }
 :root[data-whimsy="0"] .fence-card::after {
   background-image: url("../img/cork-board.webp");
@@ -151,7 +158,23 @@
      isotropic, so the phase and the seam argument above are untouched. */
   background-size: 256px 256px;
   mix-blend-mode: normal;
-  opacity: var(--grain-fade, 1);
+  /* Half strength. At 1 the tile came out as hard as a photograph of cork -
+     every chip at full contrast, over the whole face of a thing that is by
+     definition the largest object on the board. Halved, the chips are still
+     chips and the surface reads as material rather than as a picture of one.
+
+     What makes half a clean thing to ask for is the tint under it: the item's
+     background is --cork, this image's own mean, so the layer is not being made
+     transparent onto something else - it is being mixed back towards its own
+     average. That scales the *contrast* of the chips and moves nothing about
+     the colour.
+
+     --grain stays out of it for the reason above, and --grain-fade stays in:
+     this is a multiplier on the fade, not a replacement for it.
+
+     This is the number to move if cork is ever too hard or too washed. Nothing
+     else on this tier depends on it. */
+  opacity: calc(var(--grain-fade, 1) * 0.5);
 }
 .item[data-type="fence"].is-selected .fence-card { border-color: var(--select); }
 

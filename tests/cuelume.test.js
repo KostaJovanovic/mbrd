@@ -31,7 +31,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  CUES, CUE_NAMES, IDLE_SOUNDS, RECIPES, SOUND_NAMES, invert, isCue, recipeFor, voiceFor,
+  CUES, CUE_NAMES, IDLE_SOUNDS, RECIPES, SOUND_NAMES, TARGET_LOUDNESS,
+  invert, isCue, loudnessOf, recipeFor, trimFor, voiceFor,
 } from '../web/assets/js/cuelume/recipes.ts';
 import {
   SOUND_STOPS, cue, cueLog, initCuelume, playRecipe, resetCueState, setCueLog,
@@ -153,6 +154,76 @@ test('inverting never touches the table it was handed', () => {
   const before = JSON.stringify(RECIPES);
   invert(RECIPES.chime);
   invert(invert(RECIPES.arrival));
+  assert.equal(JSON.stringify(RECIPES), before);
+});
+
+// ---------------------------------------------------------------------------
+// Levelling
+// ---------------------------------------------------------------------------
+
+/** How loud a recipe comes out once its own trim is on it. */
+const levelled = recipe => loudnessOf(recipe) * trimFor(recipe);
+
+/** Decibels between two amplitudes. */
+const dB = (a, b) => 20 * Math.log10(a / b);
+
+test('loudness is not peak, which is the whole reason this exists', () => {
+  // The fault every version of the table walked into, and the one thing about
+  // it a reader will otherwise measure wrongly: `press` has the higher peak of
+  // the two by a clear margin and cannot be heard beside `chime`. Twenty-one
+  // milliseconds of band-limited noise against a third of a second of two
+  // sines. If this assertion ever inverts, the model has stopped modelling a
+  // listener and is back to reading the tallest number in the table.
+  const peak = r => r.masterGain * Math.max(...r.layers.map(l => l.peak));
+  assert.ok(peak(RECIPES.press) > peak(RECIPES.chime),
+    'the table has moved under this test - pick another pair for it');
+  assert.ok(loudnessOf(RECIPES.press) < loudnessOf(RECIPES.chime),
+    'a 21ms noise burst measured louder than a 356ms bell, which is what peak '
+    + 'says and what nobody hears');
+});
+
+test('every recipe is trimmed to one loudness', () => {
+  // The palette was tuned a recipe at a time and came out spanning
+  // twenty-three decibels: undo was a doorbell and a button press was almost
+  // inaudible, and both were defensible on their own because nothing in the
+  // table ever compares two of them. This is the thing that compares them.
+  const off = SOUND_NAMES.map(name => ({
+    name, gap: dB(levelled(RECIPES[name]), TARGET_LOUDNESS),
+  }));
+  const worst = off.reduce((a, b) => (Math.abs(b.gap) > Math.abs(a.gap) ? b : a));
+  assert.ok(Math.abs(worst.gap) <= 2.5,
+    `${worst.name} lands ${worst.gap.toFixed(1)} dB off the target. Only the two `
+    + 'held at the clamp may miss it at all, and a recipe that cannot be levelled '
+    + 'from within ten decibels is a recipe whose own numbers want changing - '
+    + 'widening the clamp instead would turn a sound into a click');
+});
+
+test('a trim never redesigns the sound it is levelling', () => {
+  // The clamp, from the other side. It is a guard rather than a lever: it bites
+  // on two recipes today and both are within a decibel of it.
+  for (const name of SOUND_NAMES) {
+    const trim = trimFor(RECIPES[name]);
+    assert.ok(trim > 0 && Math.abs(dB(trim, 1)) <= 10 + 1e-9,
+      `${name} is trimmed by ${dB(trim, 1).toFixed(1)} dB`);
+  }
+});
+
+test('a pair comes out level with itself', () => {
+  // `on`/`off` and `rise`/`fall` are one recipe dealt out both ways, and the
+  // levelling measures each direction separately - so this is the assertion
+  // that it does not hear a difference where a listener cannot. A pair whose
+  // halves were a decibel apart would read as a switch that is louder one way.
+  for (const [up, down] of [['on', 'off'], ['rise', 'fall']]) {
+    const gap = dB(levelled(recipeFor(voiceFor(down))), levelled(recipeFor(voiceFor(up))));
+    assert.ok(Math.abs(gap) < 0.5, `${up}/${down} come out ${gap.toFixed(2)} dB apart`);
+  }
+});
+
+test('levelling never touches the table it measures', () => {
+  // trimFor() memoises on the recipe object, which is a WeakMap and not a
+  // property - the same claim invert() has to make, and for the same reason.
+  const before = JSON.stringify(RECIPES);
+  for (const name of SOUND_NAMES) trimFor(RECIPES[name]);
   assert.equal(JSON.stringify(RECIPES), before);
 });
 
@@ -564,6 +635,79 @@ test('stopCuelume puts the module back to silence', t => {
   stopCuelume();
   cue('rise');
   assert.equal(built.contexts, 1, 'a stopped engine built a second context');
+});
+
+test('a locked context queues nothing and plays nothing late', async t => {
+  t.after(restoreGlobals);
+  const info = console.info;
+  console.info = () => {};
+  t.after(() => { console.info = info; setCueLog(false); });
+
+  // A page that has not been touched may not make a sound, so a context built
+  // at boot starts suspended and its resume() does not settle until the browser
+  // decides to unlock it - which may be the next gesture or ten seconds later.
+  // This is that browser.
+  let resumes = 0;
+  let unlock = () => {};
+  class Locked extends StubContext {
+    constructor() { super(); this.state = 'suspended'; }
+    resume() {
+      resumes++;
+      return new Promise(resolve => { unlock = () => { this.state = 'running'; resolve(); }; });
+    }
+  }
+
+  // A clock this test owns. The engine stamps a cue's arrival off
+  // performance.now(), so this is what lets the wait below be ten seconds
+  // without taking ten seconds - and, more to the point, what keeps the second
+  // half from going stale because a loaded machine stalled for a fifth of a
+  // second rather than because the engine decided anything.
+  let clock = 0;
+  stubBrowser();
+  setGlobal('window', { AudioContext: Locked });
+  setGlobal('performance', { now: () => clock });
+  initCuelume('2');
+  setCueLog(true);
+
+  // The board arriving, and then a drag of the whimsy dial - which is exactly
+  // the sequence that was reported: silence while the thumb moved, and then the
+  // whole drag plus the boot chime arriving at once, long afterwards, as one
+  // noise with nothing to explain it.
+  cue('arrive');
+  for (let i = 0; i < 6; i++) cue('pick');
+  assert.equal(resumes, 1,
+    `${resumes} resumes for seven cues - one wait is shared by everything `
+    + 'behind it, or nothing can see that a queue is forming');
+  assert.equal(built.gains.length, 0, 'a suspended context rendered anyway');
+
+  clock = 10_000;
+  unlock();
+  await new Promise(setImmediate);
+
+  assert.equal(built.gains.length, 0,
+    'seven sounds arrived together ten seconds after anything that could '
+    + 'explain them - a cue is feedback, and feedback that arrives after the '
+    + 'fact is not quieter feedback, it is a noise with no cause');
+  assert.deepEqual(new Set(cueLog().map(r => r.outcome)), new Set(['stale']),
+    'and it has to say so, or a dropped cue and a cue nobody made look the same');
+
+  // The other half, which is what keeps this from being a mute button: a
+  // context that wakes when it is asked still speaks. Our own idle suspend is
+  // this case and takes single-digit milliseconds, which is what the clock
+  // standing still says here.
+  restoreGlobals();
+  clock = 0;
+  stubBrowser();
+  setGlobal('window', { AudioContext: class extends StubContext {
+    constructor() { super(); this.state = 'suspended'; }
+  } });
+  setGlobal('performance', { now: () => clock });
+  initCuelume('2');
+  setCueLog(true);
+  cue('done');
+  await new Promise(setImmediate);
+  assert.ok(built.gains.length > 0, 'a context that resumed at once stayed silent');
+  assert.deepEqual(cueLog().map(r => r.outcome), ['resumed']);
 });
 
 test('a browser with no Web Audio is silent rather than broken', t => {

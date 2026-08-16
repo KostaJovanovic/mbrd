@@ -97,14 +97,12 @@ const MAX_EDGE = 8000;
  * board large enough to reach the cap. boardThumb() had already been fixed for
  * exactly this and says so in its own note; the two full-size exports had not.
  *
- * Applied on every engine rather than behind a check for this one, and that is
- * a deliberate trade rather than laziness. There is no honest way to detect it:
- * a capability probe means allocating the oversized canvas on the very device
- * being protected, and a user-agent test would be the first in this codebase
- * and would be wrong for Chrome on iOS, which is WebKit underneath. What it
- * costs elsewhere is the far edge of a case nobody is in - a board over ~4096
- * on a side exports at 16.7 MP instead of up to 64 - and what it buys is that
- * the same board exports everywhere.
+ * Applied only where it is true - see drawsPastArea(). This began as a cap on
+ * every engine, on the reasoning that there is no honest way to detect the
+ * limit; that was wrong about the detection and right about the user-agent
+ * test, which would have been the first in this codebase and would have been
+ * wrong for Chrome on iOS, which is WebKit underneath. What there is instead is
+ * the canvas itself, asked directly and only when the answer could matter.
  *
  * Sixteen million rather than the engine's 16,777,216 exactly. The two sides
  * are rounded *up* after the scale is applied, so a budget set at the limit
@@ -115,6 +113,53 @@ const MAX_EDGE = 8000;
  */
 const MAX_AREA = 16_000_000;
 
+/** null until asked. true where a canvas past MAX_AREA actually draws. */
+let bigCanvas: boolean | null = null;
+
+/**
+ * Whether this engine will draw a canvas larger than MAX_AREA.
+ *
+ * Asked of the canvas rather than of the user agent, and asked **lazily** -
+ * which together are what make it cheap enough to be honest. The probe costs
+ * one oversized allocation, so it is only ever reached from a board whose
+ * export would exceed the cap anyway (see renderBoardCanvas). A board under the
+ * ceiling never runs it, which is nearly every board; the answer is then kept
+ * for the session, so a person exporting five large boards pays once.
+ *
+ * The test is the failure mode itself. WebKit does not throw for an oversized
+ * canvas and does not return a null context - it hands back a canvas that draws
+ * *nothing*, which is exactly why the blank export was so quiet. So: paint one
+ * white pixel and read it back. Opaque means the engine drew it and the size is
+ * real; transparent means this is the engine that silently gives up, and the
+ * cap applies. Anything that throws on the way is read the same way as
+ * transparent, because a canvas that cannot be measured cannot be trusted with
+ * a full-size export either.
+ *
+ * The probe canvas is collapsed to 0x0 afterwards rather than left to the
+ * collector. It is sixty-odd megabytes of backing store on the one path where
+ * memory is the entire subject, and releasing it is one assignment.
+ */
+function drawsPastArea(): boolean {
+  if (bigCanvas !== null) return bigCanvas;
+  bigCanvas = false;
+  const side = Math.ceil(Math.sqrt(MAX_AREA)) + 8;   // comfortably past the ceiling
+  let probe: HTMLCanvasElement | null = null;
+  try {
+    probe = document.createElement('canvas');
+    probe.width = side;
+    probe.height = side;
+    const ctx = probe.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, 1, 1);
+      bigCanvas = ctx.getImageData(0, 0, 1, 1).data[3] > 0;
+    }
+  } catch { /* unreadable is untrustworthy: the cap stands */ } finally {
+    if (probe) { probe.width = 0; probe.height = 0; }
+  }
+  return bigCanvas;
+}
+
 /**
  * How far a board of this size has to shrink to become a canvas.
  *
@@ -123,15 +168,42 @@ const MAX_AREA = 16_000_000;
  * draw at all - see MAX_AREA, which is also where the headroom for the
  * Math.ceil() on each side afterwards is accounted for.
  *
+ * `areaCap` is Infinity for an engine that draws whatever it is given, which is
+ * every engine but WebKit - so the second ceiling simply drops out of the
+ * Math.min and the edge cap decides alone, as it did before any of this. Passed
+ * in rather than read here so the probe behind it stays the caller's to run,
+ * and so this remains what it looks like: arithmetic.
+ *
  * Pulled out of renderBoardCanvas() and exported so it can be tested: the
  * renderer needs a board, a document and forty painters, and the arithmetic
  * that decides whether an export comes back blank on a phone needs none of
  * them. Never enlarges - a small board is drawn at 1:1 and always was.
  */
-export function exportScale(worldW: number, worldH: number, maxEdge = MAX_EDGE): number {
+export function exportScale(
+  worldW: number,
+  worldH: number,
+  maxEdge = MAX_EDGE,
+  areaCap = MAX_AREA,
+): number {
   const byEdge = maxEdge / Math.max(worldW, worldH);
-  const byArea = Math.sqrt(MAX_AREA / (worldW * worldH));
+  const byArea = Math.sqrt(areaCap / (worldW * worldH));
   return Math.min(1, byEdge, byArea);
+}
+
+/**
+ * The area budget for this export, and the one place the probe is reached.
+ *
+ * The order matters and is the whole economy of it: work out what the *edge*
+ * cap alone would produce, and only if that is past the ceiling ask whether
+ * this engine minds. Nearly every board is comfortably under, so nearly every
+ * export costs nothing at all - and the ones that would ask for 64 megapixels
+ * pay one allocation, once, to find out whether they may have it.
+ */
+function areaBudget(worldW: number, worldH: number, maxEdge: number): number {
+  const byEdge = Math.min(1, maxEdge / Math.max(worldW, worldH));
+  const wanted = worldW * byEdge * worldH * byEdge;
+  if (wanted <= MAX_AREA) return MAX_AREA;   // never reached; the edge cap already binds
+  return drawsPastArea() ? Infinity : MAX_AREA;
 }
 
 /** Everything on the board that is a thing rather than a hint to the person. */
@@ -1015,7 +1087,7 @@ async function renderBoardCanvas(detail: Detail = 'full', maxEdge = MAX_EDGE) {
 
   const worldW = (b.x1 - b.x0) + MARGIN * 2;
   const worldH = (b.y1 - b.y0) + MARGIN * 2;
-  const scale = exportScale(worldW, worldH, maxEdge);
+  const scale = exportScale(worldW, worldH, maxEdge, areaBudget(worldW, worldH, maxEdge));
   const W = Math.max(1, Math.ceil(worldW * scale));
   const H = Math.max(1, Math.ceil(worldH * scale));
 

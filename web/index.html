@@ -945,10 +945,16 @@
            playing, which is exactly when this is up. Not a per-clip setting:
            canvas/audio.js keeps one for the whole board, on the grounds that it
            is a property of the room. The module removes this whole block where
-           the browser will not honour a write to it - see volumeLocked(). -->
+           the browser will not honour a write to it - see volumeLocked().
+
+           The position is not the level: it is squared on the way through, so
+           that the middle of the travel is about half as loud rather than a
+           quarter of the wave and nearly there. 77 is where the default level
+           sits on that curve, and it is only what shows before ui/nowplaying.js
+           paints the stored one over it. -->
       <label class="np-volume">
         <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-volume"/></svg>
-        <input id="np-volume" type="range" min="0" max="100" step="1" value="60" aria-label="Volume">
+        <input id="np-volume" type="range" min="0" max="100" step="1" value="77" aria-label="Volume">
       </label>
       <button type="button" class="np-close" aria-label="Close the player" title="Stop and close">
         <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>

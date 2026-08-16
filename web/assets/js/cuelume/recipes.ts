@@ -33,7 +33,6 @@
 // mean finding every caller, and the whole reason CUES below could be rewritten
 // twice in a day is that nothing outside it had an opinion.
 
-/** Seconds after the trigger that a layer starts, and its envelope. */
 /**
  * Own-property test. Written out here rather than imported from util.js, and
  * that is deliberate: this module has no imports at all and is the better for
@@ -49,6 +48,7 @@
 const own = <T extends object>(table: T, key: PropertyKey) =>
   Object.prototype.hasOwnProperty.call(table, key);
 
+/** Seconds after the trigger that a layer starts, and its envelope. */
 type BaseLayer = {
   offset?: number,
   /** Fade-in time, in seconds. */
@@ -375,6 +375,14 @@ export type Voice = { sound: SoundName, reverse?: boolean };
  * high that peak is, and an unpitched one gives nothing to hold on to at all.
  * `press` measures 2 dB *above* `chime` and cannot be heard beside it.
  *
+ * **Those numbers no longer decide how loud anything is.** They are peaks, and
+ * the column is kept because it is what a reader will otherwise measure first
+ * and be misled by. What sets the level now is loudnessOf() at the foot of this
+ * file, which measures the same seventeen the way a listener hears them - and
+ * found them twenty-three decibels apart. See TARGET_LOUDNESS. A voice is still
+ * chosen for its character; it is no longer chosen for how loud it happens to
+ * come out.
+ *
  * What the arithmetic cannot tell you is whether a sound will be *wanted*, and
  * that is what every rewrite of this table has actually turned on. `pick` and
  * `tap` have now been through four recipes on that question alone - `press` and
@@ -552,4 +560,249 @@ export function recipeFor(voice: Voice): SoundRecipe {
   // builds a new one, and engine.ts only reads numbers off it.
   const recipe = RECIPES[voice.sound] as SoundRecipe;
   return voice.reverse ? invert(recipe) : recipe;
+}
+
+// ---------------------------------------------------------------------------
+// Levelling
+// ---------------------------------------------------------------------------
+
+/**
+ * Why `masterGain` alone cannot make two recipes the same loudness.
+ *
+ * The table above was tuned by ear, one recipe at a time, and each number in it
+ * is defensible on its own. Together they were not: measured as a listener
+ * hears them, the palette spanned **twenty-three decibels** end to end - `chime`
+ * at -37 dBFS against `press` at -60 - which is the difference between a
+ * doorbell and a watch ticking in the next room. Undo was loud, a button press
+ * was almost inaudible, and both were "correct" because nothing in this file
+ * ever compared them.
+ *
+ * The head of CUES has the peak measurements and says the thing that matters
+ * about them: **peak is not loudness.** `press` measures 2 dB above `chime` on
+ * peak and cannot be heard beside it. Peak is what a meter sees in one sample;
+ * what a person hears is energy gathered over about a fifth of a second, in the
+ * band their ear is actually sensitive in. Three things separate the two, and
+ * all three are arithmetic on the table rather than opinions about it:
+ *
+ *   duration     A 19 ms tick and a 356 ms bell at the same peak are nowhere
+ *                near the same loudness. The ear integrates, so the short one
+ *                arrives with a fifth of the energy.
+ *   bandwidth    A layer's `peak` is applied *after* its filter. Broadband
+ *                noise through a Q of 1.8 keeps a couple of kilohertz out of
+ *                twenty-four, which is 8 dB gone before the gain node sees it -
+ *                so a noise layer at peak 0.14 and a sine at peak 0.14 are not
+ *                remotely the same signal.
+ *   pitch        220 Hz and 3 kHz at one amplitude are ten decibels apart to a
+ *                listener. `arrival` opens on a 220 Hz sine; `tick` sits at
+ *                5400.
+ *
+ * So each recipe is measured here and trimmed to a common level. What that
+ * buys is the thing the dial could not: **the dial now sets the loudness of the
+ * app rather than the loudness of whichever cue happens to fire.**
+ *
+ * ── What this is not ──
+ *
+ * It is not a compressor and it does not run on audio. It is a number per
+ * recipe, computed from the table, applied once to `masterGain` before anything
+ * is scheduled. The limiter in engine.ts still catches sums; this stops the
+ * *parts* being twenty decibels apart before they get there.
+ *
+ * Nor is it a claim about whether a sound is any good. Levelling settles
+ * loudness and nothing else - the head of CUES is emphatic that measurement
+ * says a sound will be heard and says nothing whatever about whether it will be
+ * liked, and two of the entries in IDLE_SOUNDS are there because of it.
+ *
+ * ── What it measures ──
+ *
+ * The loudest fifth of a second in the sound, A-weighted, as an RMS amplitude:
+ *
+ *   1. Each layer's envelope is walked at 1 ms - a linear rise over `attack`,
+ *      then the engine's exponential fall to a thousandth over `decay`.
+ *   2. Its `peak` is scaled to an RMS by what the layer actually is: a sine
+ *      spends its life between its extremes rather than at them, and filtered
+ *      noise keeps only its own bandwidth out of the whole band.
+ *   3. That is weighted by the ear's sensitivity at the layer's pitch.
+ *   4. Layers are summed as powers, not amplitudes. Nothing in a recipe is
+ *      correlated with anything else in it - different frequencies, and noise -
+ *      so they add as energy.
+ *   5. A 200 ms window is slid over the result and the loudest position wins.
+ *
+ * The shimmer is ignored. It is a wet echo at a fifth of the level behind a
+ * lowpass, and folding it in would move every recipe that has one by about the
+ * same amount - which is a change to TARGET rather than to the shape of this.
+ */
+const INTEGRATION = 0.2;
+
+/** How finely the envelopes are walked, in seconds. */
+const GRAIN = 0.001;
+
+/** Half the rate the palette is measured at, in Hz - the whole audible band. */
+const NYQUIST = 24000;
+
+/**
+ * A-weighting as a linear gain, 1.0 at 1 kHz.
+ *
+ * The standard curve, IEC 61672. It is a rough model of a real ear and a very
+ * good one for this: the question here is only ever "how much quieter does this
+ * layer sound than that one", over a palette that lives between 220 Hz and
+ * 5.4 kHz where the curve is at its most trustworthy.
+ */
+function weighting(frequency: number): number {
+  const f2 = frequency * frequency;
+  const response = (12194 ** 2 * f2 * f2)
+    / ((f2 + 20.6 ** 2)
+      * Math.sqrt((f2 + 107.7 ** 2) * (f2 + 737.9 ** 2))
+      * (f2 + 12194 ** 2));
+  // The 1.2589 is what puts the curve through unity at 1 kHz rather than at the
+  // 4 kHz where it peaks, so a weight reads as "against a reference tone".
+  return 1.2589 * response;
+}
+
+/** The pitch a layer is heard at. */
+function centreOf(layer: SoundLayer): number {
+  if (layer.kind !== 'tone') return layer.filterFrequency;
+  // The geometric mean rather than either end: a glide spends equal *time* per
+  // octave, and the weighting curve is a function of the octave.
+  return layer.glideTo === undefined
+    ? layer.frequency
+    : Math.sqrt(layer.frequency * layer.glideTo);
+}
+
+/**
+ * RMS of what reaches the layer's gain node, per unit of `peak`.
+ *
+ * The bandwidth half is the one that surprises. A biquad has unity gain in its
+ * passband and throws the rest away, so full-band noise comes out carrying only
+ * the fraction of its power that the filter passed - the equivalent noise
+ * bandwidth, which for a second-order bandpass is about (pi/2)(f/Q) and for a
+ * lowpass about 1.11 f. Anything that is not a bandpass is treated as a lowpass
+ * because the palette has only those two.
+ */
+function densityOf(layer: SoundLayer): number {
+  if (layer.kind === 'tone') return Math.SQRT1_2;
+  const q = layer.filterQ ?? 1;
+  const bandwidth = layer.filterType === 'bandpass'
+    ? (Math.PI / 2) * (layer.filterFrequency / q)
+    : 1.11 * layer.filterFrequency;
+  // Uniform noise over [-1, 1] has an RMS of 1/sqrt(3) before the filter takes
+  // its share, and power scales with bandwidth, so amplitude scales with its
+  // root.
+  return Math.sqrt(Math.min(1, bandwidth / NYQUIST) / 3);
+}
+
+/** A layer's envelope at `t` seconds after the trigger, 0..1. */
+function envelopeAt(layer: SoundLayer, t: number): number {
+  const start = layer.offset ?? 0;
+  if (t < start) return 0;
+  const since = t - start;
+  if (since < layer.attack) return layer.attack > 0 ? since / layer.attack : 1;
+  const falling = since - layer.attack;
+  if (falling > layer.decay) return 0;
+  // A thousandth, not zero: engine.ts ramps exponentially and an exponential
+  // never arrives. Matching it here is what keeps a long decay from being
+  // counted as longer than it is heard.
+  return 0.001 ** (falling / layer.decay);
+}
+
+/**
+ * How loud a recipe is to a listener, as an RMS amplitude. Pure, and slow only
+ * in the sense that it walks a few hundred milliseconds a millisecond at a time.
+ */
+export function loudnessOf(recipe: SoundRecipe): number {
+  if (!recipe.layers.length) return 0;
+  const span = Math.max(...recipe.layers.map(l => (l.offset ?? 0) + l.attack + l.decay));
+  const amplitude = recipe.layers.map(l => l.peak * densityOf(l) * weighting(centreOf(l)));
+  const steps = Math.ceil((span + INTEGRATION) / GRAIN);
+  const width = Math.round(INTEGRATION / GRAIN);
+
+  const power: number[] = [];
+  let running = 0;
+  let loudest = 0;
+  for (let i = 0; i < steps; i++) {
+    let sum = 0;
+    for (let j = 0; j < recipe.layers.length; j++) {
+      const a = amplitude[j] * envelopeAt(recipe.layers[j], i * GRAIN);
+      sum += a * a;
+    }
+    power.push(sum);
+    running += sum;
+    if (i >= width) running -= power[i - width];
+    if (running > loudest) loudest = running;
+  }
+  return recipe.masterGain * Math.sqrt(loudest / width);
+}
+
+/**
+ * The level every cue is trimmed towards, and the numbers behind it.
+ *
+ * The geometric mean of the seventeen as they were written, rounded - which is
+ * the one choice here that keeps the app as loud overall as it was. Levelling
+ * to the loudest would have quadrupled everything and levelling to the quietest
+ * would have buried the palette; the mean moves the parts and leaves the whole
+ * alone, so the dial still means what it meant.
+ *
+ * Written down rather than computed from RECIPES at load, so that editing one
+ * recipe moves one trim rather than all seventeen.
+ *
+ * As measured, loudest first, with the trim each lands on:
+ *
+ *     recipe    dBFS   trim        recipe    dBFS   trim
+ *     chime     -37.0  x0.32*      page      -52.3  x1.48
+ *     success   -40.5  x0.38       error     -52.5  x1.53
+ *     bloom     -40.7  x0.39       whisper   -53.0  x1.60
+ *     droplet   -42.4  x0.48       tick      -56.3  x2.36
+ *     ready     -43.3  x0.53       release   -56.6  x2.43
+ *     sparkle   -43.9  x0.57       toggle    -57.3  x2.65
+ *     arrival   -44.0  x0.57       press     -60.4  x3.16*
+ *     scan      -49.0  x1.02
+ *     loading   -49.1  x1.03       * held at the clamp
+ *     pulse     -50.6  x1.22
+ *
+ * Fifteen of the seventeen come out at -48.9 dB exactly; `chime` lands at -47.0
+ * and `press` at -50.4, held off the target by the clamp. A palette that spanned
+ * 23.4 dB now spans 3.4.
+ *
+ * Read the two ends together, because they are the whole argument: `chime` is
+ * undo, `toggle` is every press of everything, and before this they were
+ * twenty decibels apart.
+ */
+export const TARGET_LOUDNESS = 0.0036;
+
+/**
+ * The most a trim may move a recipe, as a factor - ten decibels either way.
+ *
+ * A guard rather than a lever. It bites on exactly two recipes today and both
+ * are within a decibel of it, so it changes almost nothing now; what it is for
+ * is later. The model is an estimate, and a recipe that came out needing to be
+ * multiplied by eight would not be a levelling error, it would be a recipe
+ * whose numbers are wrong - and quietly multiplying it by eight would turn a
+ * sound into a click and hide the fault.
+ */
+const MAX_TRIM = 10 ** (10 / 20);
+
+const trims = new WeakMap<SoundRecipe, number>();
+
+/**
+ * What to multiply a recipe's `masterGain` by so it lands at TARGET_LOUDNESS.
+ *
+ * Memoised on the recipe object, which is what makes it free for the fifteen
+ * cues that name a table entry. The three inverted voices build a fresh object
+ * every play and so measure every play; that costs a few thousand multiplies
+ * against a sound that lasts a third of a second, and it is worth *not* caching
+ * around, because a WeakMap keyed on throwaway objects is a cache that never
+ * hits and a leak that never shows.
+ *
+ * Inverting a recipe moves its measured loudness by under a quarter of a
+ * decibel across the whole palette - the layers are the same layers, dealt out
+ * backwards - so `on` and `off` come out level with each other without this
+ * having to know about the pair.
+ */
+export function trimFor(recipe: SoundRecipe): number {
+  const cached = trims.get(recipe);
+  if (cached !== undefined) return cached;
+  const loudness = loudnessOf(recipe);
+  const wanted = loudness > 0 ? TARGET_LOUDNESS / loudness : 1;
+  const trim = Math.min(MAX_TRIM, Math.max(1 / MAX_TRIM, wanted));
+  trims.set(recipe, trim);
+  return trim;
 }

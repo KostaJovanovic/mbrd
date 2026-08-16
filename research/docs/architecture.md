@@ -416,6 +416,15 @@ property of the room rather than of a list, and it belongs where the sound is
 stopped. `volumeLocked()` guards it, because a slider iOS ignores is a control
 that lies, and the row is not built at all rather than built and disabled.
 
+The slider is not linear. `HTMLMediaElement.volume` is amplitude, hearing is
+closer to logarithmic, and a fader wired straight through has its whole useful
+range in the top third of the travel. `sliderToVolume()` and `volumeToSlider()`
+in `canvas/audio.ts` are a square law and its inverse — half travel is −12 dB,
+a little under half as loud. They sit with the number rather than with the
+control, on the grounds that the curve is about ears and not about where the
+slider happens to live; what is stored is still the amplitude, so the change
+moved every thumb and no levels.
+
 `ui/tour.ts` is the board read as a sequence of stops rather than as a surface.
 `board.tour` — the itinerary, top-level in the `.mbrd` beside `connections` and
 `audioOrder` for the same reason both of those are — existed end to end with

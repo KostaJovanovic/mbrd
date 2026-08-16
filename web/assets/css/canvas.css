@@ -20,11 +20,37 @@
   -webkit-user-select: none;
   user-select: none;
   cursor: default;
+  /* And the exception, stated rather than assumed - see the rule below. */
   overflow: hidden;
   background-color: transparent;   /* the paper on <body> shows through */
   background-repeat: repeat;
   contain: layout paint;
 }
+/* The board's editable surfaces, given their selection back explicitly.
+ *
+ * Three of them, all inside #viewport and all made editable from script rather
+ * than in the markup: a card's name (canvas/items.js), a note's text
+ * (canvas/notes.js) and the board title (ui/board-title.js). The first two sit
+ * inside `.item`, which has carried `user-select: none` since long before the
+ * rule above existed and has been fine - which is the evidence that a
+ * contenteditable is exempt from an inherited `none`, and it is *only* evidence.
+ * The specification does not promise it, engines have disagreed about it, and
+ * the board title is not inside `.item` at all, so the rule above is what newly
+ * reached it.
+ *
+ * A caret that will not select is the kind of fault nobody reports as a bug -
+ * it reads as the app being awkward - so this says the thing out loud instead of
+ * relying on a behaviour that happened to hold. `text`, not `auto`: auto would
+ * inherit the `none` straight back.
+ *
+ * Both spellings, because WebKit wanted the prefix until Safari 17 and this is
+ * one of the rules least worth losing there. */
+#viewport [contenteditable="true"],
+#viewport [contenteditable="plaintext-only"] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 #viewport.is-panning { cursor: grabbing; }
 #viewport.can-pan    { cursor: grab; }
 /* A card held mid-drag. #viewport captures the pointer, so the grabbing hand has

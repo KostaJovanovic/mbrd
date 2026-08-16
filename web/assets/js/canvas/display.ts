@@ -38,6 +38,7 @@
 
 import { getAsset, assetURL } from '../storage/assets.ts';
 import { quality } from '../quality.ts';
+import { surface, surfaceToBlob, type Surface } from './surface.ts';
 
 /**
  * The long edge a display copy is allowed to keep. Matches the reasoning behind
@@ -206,18 +207,19 @@ async function shrink(blob: Blob | null | undefined, crop: Crop = null): Promise
     if (scale === 1 && !crop) return null;
     const w = Math.max(1, Math.round(sw * scale));
     const h = Math.max(1, Math.round(sh * scale));
-    const canvas = new OffscreenCanvas(w, h);
-    const ctx = canvas.getContext('2d', { alpha: true });
-    // No 2d context is one more "leave the original alone" case, and it already
-    // was one: reaching for a property of null threw straight into the catch
-    // below, which returns null. Said out loud now that the type says it can be.
-    if (!ctx) return null;
-    // Default is 'low' on some engines, which aliases every hard edge on a big
-    // downscale.
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(bmp, sx, sy, sw, sh, 0, 0, w, h);
-    return await encode(canvas, blob.type);
+    // Through canvas/surface.js rather than `new OffscreenCanvas(...)` directly,
+    // and this is the whole module's fate riding on one constructor: it landed
+    // in Safari 16.4, and below that the call threw straight into the catch
+    // below - which answers "leave the original alone". So on an older iOS this
+    // file did nothing at all, on a device with the same per-tab memory ceiling
+    // as a current one. See the header there.
+    //
+    // No surface is one more "leave the original alone" case, and it already
+    // was one: it threw into the same catch. Said out loud now.
+    const face = surface(w, h);
+    if (!face) return null;
+    face.ctx.drawImage(bmp, sx, sy, sw, sh, 0, 0, w, h);
+    return await encode(face, blob.type);
   } catch {
     return null;
   } finally {
@@ -256,8 +258,8 @@ async function shrink(blob: Blob | null | undefined, crop: Crop = null): Promise
  * a cut-out keeps the canvas's own PNG rather than gaining a black background,
  * which would be this function trading a crash for a wrong picture.
  */
-async function encode(canvas: OffscreenCanvas, sourceType: string): Promise<Blob | null> {
-  const first = await canvas.convertToBlob({ type: 'image/webp', quality: QUALITY });
+async function encode(face: Surface, sourceType: string): Promise<Blob | null> {
+  const first = await surfaceToBlob(face, 'image/webp', QUALITY);
   if (!first) return null;
   if (first.type.toLowerCase() === 'image/webp') return first;
   if (!/^image\/jpe?g$/i.test(sourceType)) return first;
@@ -265,7 +267,7 @@ async function encode(canvas: OffscreenCanvas, sourceType: string): Promise<Blob
   // blob that comes back is the same pixels at the same size. Falls back to
   // `first` if this engine cannot write JPEG either, which no engine does.
   try {
-    const jpeg = await canvas.convertToBlob({ type: 'image/jpeg', quality: QUALITY });
+    const jpeg = await surfaceToBlob(face, 'image/jpeg', QUALITY);
     return jpeg?.type.toLowerCase() === 'image/jpeg' ? jpeg : first;
   } catch {
     return first;
