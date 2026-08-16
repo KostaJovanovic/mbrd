@@ -149,8 +149,15 @@
   /* The 8px the placement keeps at each edge (ui/menu.js). A picture card's
      menu is a dozen entries, which is taller than a phone held sideways - so
      the overflow scrolls rather than hanging off the bottom where the last
-     entries could not be reached at all. */
-  max-height: calc(100vh - 16px);
+     entries could not be reached at all.
+
+     dvh, not vh, which is the same correction the timeline sheet already
+     carries: on a phone `vh` is the *large* viewport - the window as it would
+     be with the address bar retracted - so a menu measured against it runs
+     under the address bar or the home indicator in the state where it is
+     actually open, and the last entries are unreachable again by a different
+     route. dvh follows the window it is in. */
+  max-height: calc(100dvh - 16px);
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 5px;
@@ -159,6 +166,7 @@
   background: var(--paper-card);
   box-shadow: var(--shadow-2);
   animation: ctx-in var(--dur-fast) var(--ease);
+  -webkit-user-select: none;
   user-select: none;
 }
 /* The menu takes focus when it opens so the keyboard has somewhere to land;
@@ -437,6 +445,7 @@
   background: var(--paper-card);
   box-shadow: var(--shadow-2);
   animation: ctx-in var(--dur-fast) var(--ease);
+  -webkit-user-select: none;
   user-select: none;
 }
 #fence-prompt .ctx-item { white-space: nowrap; }
@@ -465,6 +474,7 @@
   background: var(--paper-card);
   box-shadow: var(--shadow-2);
   animation: ctx-in var(--dur-fast) var(--ease);
+  -webkit-user-select: none;
   user-select: none;
 }
 #conn-chip button {

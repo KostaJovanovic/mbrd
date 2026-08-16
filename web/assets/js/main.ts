@@ -31,7 +31,7 @@ import { initTimeline } from './ui/timeline-view.ts';
 import { ask } from './ui/dialog.ts';
 import { VERSION } from './version.js';
 import {
-  board, bus, selection, byId, setAssetNameLookup, isMultiSelect,
+  board, bus, selection, byId, setAssetNameLookup, setAssetPurge, isMultiSelect,
   ensureTitleCard, isTitleHidden, TITLE_ID, setTitle,
   ensureGhostCards, reseedGhostCards, hasContent, dismissGhosts,
   leaveNotFoundBoard, isContent,
@@ -61,7 +61,8 @@ import {
 } from './storage/storage.ts';
 import { boardThumb } from './ui/snapshot.ts';
 import { flushNoteEdit, growNote, setNoteMenu } from './canvas/notes.ts';
-import { initAssets, getAsset } from './storage/assets.ts';
+import { initAssets, getAsset, forgetAssets } from './storage/assets.ts';
+import { forgetDisplay } from './canvas/display.ts';
 import { initSidebar } from './ui/sidebar.ts';
 import { buildPanel } from './ui/panel.ts';
 import { armQuality, watchQuality } from './ui/quality.ts';
@@ -190,6 +191,16 @@ initAssets();
 // (storage sits above state - AUD-12). This is the original-filename fallback
 // renameItem() uses when a name is cleared.
 setAssetNameLookup((hash: string) => getAsset(hash)?.name);
+// And the destructive half of the same seam, for emptying the bin - the one
+// action in the app that throws bytes away rather than taking a card off the
+// board. Both stores go: the registry holds the originals, and canvas/display
+// holds the card-sized copies made from them, which nothing could ever ask for
+// again once the original is gone. The registry's answer - hash to size - is
+// what the tombstone cards print, so it is what comes back out.
+setAssetPurge((hashes: Set<string>) => {
+  forgetDisplay(hashes);
+  return forgetAssets(hashes);
+});
 // And the note toolbar's face menu, for the same reason from the other side:
 // canvas/ may not import ui/, so the editor is handed the one verb it needs
 // rather than the module that answers it. See NoteMenu in canvas/notes.ts.

@@ -7,6 +7,18 @@
   inset: 0;
   /* Pointer Events only - the browser must never claim a pan/pinch for itself. */
   touch-action: none;
+  /* Nor a *selection*. A long press on the board opens this app's own context
+     menu (canvas/input.js), and a long press is also how iOS starts a text
+     selection - so the gesture did both, and because the board surface is one
+     fixed element behind everything, what the system reached for was the whole
+     screen. The card was already covered (.item in items.css); the ground it
+     sits on was not, which is the half nobody presses on purpose.
+     The callout menu is turned off beside this, in mobile.css, under the same
+     reasoning and the same gesture.
+     Safe against the editable note: a contenteditable is selectable whatever an
+     ancestor says here, which is why .item has carried this rule all along. */
+  -webkit-user-select: none;
+  user-select: none;
   cursor: default;
   overflow: hidden;
   background-color: transparent;   /* the paper on <body> shows through */
@@ -930,6 +942,7 @@
      literal deliberately - the face follows the axis, the size does not. */
   font: 500 12px var(--font-body);
   dominant-baseline: middle;
+  -webkit-user-select: none;
   user-select: none;
 }
 /* The line under the pointer, so a connection reads as a thing you can click and

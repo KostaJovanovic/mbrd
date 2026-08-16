@@ -409,76 +409,26 @@
 .vbig:hover { background: var(--accent); color: var(--accent-fg); scale: var(--btn-grow); }
 .vplayer.is-playing .vbig { opacity: 0; pointer-events: none; }
 
-.transport-video {
-  position: absolute;
-  left: 0; right: 0; bottom: 0;
-  margin: 0;                 /* the audio bar's margin-top: auto means nothing here */
-  /* Stops short of the handle rather than running under it. The three dots are
-     pinned to the card's bottom-right corner and this bar spans the whole foot,
-     so the mute button and the item menu were sharing one square: the pointer
-     got whichever was on top, which is the handle, and the volume control was
-     simply unreachable on every video on the board.
-     The bar gives way rather than the handle moving, because the handle is in
-     the same corner on every card of every type and a video is not a reason for
-     it to be somewhere else. --handle-w rather than a 30 written again here, so
-     the reservation cannot drift away from the thing being reserved for. */
-  padding: 6px var(--handle-w) 6px 9px;
-  gap: 8px;
-  /* One button in here now that the scrubber is the bar at the foot's job, and
-     it keeps the end of the strip it always sat at. */
-  justify-content: flex-end;
-  background: var(--paper-card);
-  border-top: var(--board-hairline) solid var(--rule);
-  opacity: 0;
-  /* Quick in, and out two seconds after the reason to show it stopped being
-     true. The delay is the whole auto-hide, and it is a transition-delay rather
-     than a timer because there is nothing here a timer would know that the
-     cascade does not: the bar is visible exactly while some selector matches,
-     so "two seconds after none of them do" is what a delayed fade-out already
-     means. One declaration, no per-card setTimeout on a board of clips, and no
-     state to get out of step with what is on screen. */
-  transition: opacity var(--dur-fast) var(--ease) 2s;
-}
-/* Up while the pointer is on the card, and for two seconds after it leaves.
-   The rule used to be selected-or-running and explicitly not hover, on the
-   grounds that a board of videos should not sprout bars under a crossing
-   pointer. That objection was against a bar with no way of going away again -
-   which is also why running is no longer on this list, since a playing clip
-   never stops running and its bar therefore never left. With a linger the two
-   halves belong together: hover is what brings it up, and not hovering is what
-   takes it away. It is what the header of canvas/video.js always described.
+/* There is no bar across the foot of a video card any more, and nothing here
+   replaces it.
 
-   Nothing on the way in waits: transition-delay goes to zero here, so the bar
-   answers the pointer immediately and only dawdles on the way out.
+   It held a play button, then a scrubber and a clock, and finally a mute on its
+   own; each went to the now-playing bar or went away, and what was left was a
+   strip of paper and a hairline drawn across the bottom of every clip on the
+   board to carry one 20px glyph. The argument is in the head of canvas/video.js.
+   Two things went with it that are worth naming, because they were both real
+   work and neither is missed:
 
-   :focus-within is not a nicety - without it the bar would vanish two seconds
-   after the pointer left, taking the scrubber the keyboard is on with it, and
-   a scrub dragged off the edge of the card (the pointer is captured, the hover
-   is not) would fade out under the hand doing it. */
-.item:hover .transport-video,
-.transport-video:focus-within {
-  opacity: 1;
-  transition-delay: 0s;
-}
-/* Where there is no pointer to hover with, selection is the way in - a tap
-   raises the bar, and it fades two seconds after the card is let go of. Behind
-   a media query rather than left in the list above, because on a mouse the same
-   rule would pin the bar open on any selected card and there would be no
-   auto-hide to speak of. */
-@media (hover: none) {
-  .item.is-selected .transport-video {
-    opacity: 1;
-    transition-delay: 0s;
-  }
-}
-/* No play button in here, and no scrubber either - see the note at the top of
-   canvas/video.js. What is left is the mute, at the right end of the strip
-   where it has always been, a handle's width clear of the corner.
+   - the two-second linger. A bar that appeared under a crossing pointer and
+     stayed until it was explicitly taken away needed a transition-delay to act
+     as its own timer, plus a :focus-within so a keyboard scrub did not fade out
+     under the hand doing it.
+   - the reservation for the handle. The strip ran the width of the card, so it
+     had to stop a --handle-w short of the corner or the mute and the item menu
+     shared one square and the menu won.
 
-   The bar stays the full width of the foot rather than shrinking to its one
-   button. It is a strip of chrome the caption plate takes turns with (see the
-   `:has()` rules below); a 20px tab floating over the bottom-right of a picture
-   would be a different object with a different set of rules to write. */
+   The caption plate has the foot to itself now, which is what the take-turns
+   rules below have been simplified to. */
 
 /* A stopped track's waveform is not a control.
 
@@ -496,23 +446,6 @@
   pointer-events: none;
   cursor: inherit;
 }
-
-.vmute {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--ink-3);
-  cursor: pointer;
-  transition: color var(--dur-fast) var(--ease);
-}
-.vmute svg { width: 15px; height: 15px; }
-.vmute:hover { color: var(--accent); }
-.vplayer.is-muted .vmute { color: var(--danger); }
 
 /* The caption is hidden until you reach for the card, on images and video
    alike: a name is a label, and at rest the picture should be the whole card
@@ -533,41 +466,35 @@
 .item[data-type="video"]:focus-within .item-bar,
 .item[data-type="video"].is-editing .item-bar { opacity: 1; }
 
-/* On a video the caption plate and the control bar want the same strip of card,
-   so they take turns: the name on hover, the transport once the clip is the one
-   being worked on - selected or running. When the transport is up the name
-   steps aside: faded out, its plate gone transparent, and refusing the pointer.
+/* A running clip has its foot to itself.
 
-   The caption goes, and the sheet under it with it - the handle stays, because
-   it is the only way into the item's menu on a touchscreen and a playing video
-   is no reason to take it away. The `:has()` tests .item and not .item-body:
-   the bar is a sibling of the body, not a child of it.
+   This was a take-turns arrangement between the caption plate and the control
+   bar, which both wanted the same strip of card: the name on hover, the
+   transport once the clip was selected or running. There is no bar to take
+   turns with now, so only the half that was about the *picture* is left - a
+   plate of paper with a filename on it, laid across a clip that is playing, is
+   a label over a moving image and reads as damage. Selected and focus-within
+   have gone with the bar they were making room for: a selected clip that is not
+   playing is a card like any other and keeps its name.
 
-   Ordered after the hover reveal above so a card that is both selected and
-   hovered keeps the name down - the transport wins the foot. */
-.item[data-type="video"].is-selected .item-label,
-.item[data-type="video"]:focus-within .item-label,
+   The caption goes and the sheet under it with it; the handle stays, because it
+   is the only way into the item's menu on a touchscreen and a playing video is
+   no reason to take it away. The `:has()` tests .item and not .item-body: the
+   plate is a sibling of the body, not a child of it. */
 .item:has(.vplayer.is-playing) .item-label { opacity: 0; }
-.item[data-type="video"].is-selected .item-bar,
-.item[data-type="video"]:focus-within .item-bar,
 .item:has(.vplayer.is-playing) .item-bar {
   background: none;
   border-top-color: transparent;
   /* And it must stop catching the pointer, not only stop being seen. The plate
-     hangs off .item while the transport lives in .item-body, so the plate is the
-     later sibling and paints - and hit-tests - above the transport. Gone to
-     transparent it was still an invisible sheet over the play and mute buttons,
-     which is why a named video's controls did nothing: every click landed on the
-     plate. Let them through, so the play and mute buttons under it work. */
+     hangs off .item and paints - and hit-tests - above the picture, so gone to
+     transparent it was still an invisible sheet over the foot of the clip. That
+     is where a tap has to land to pause (see pauseOnTap in canvas/input.js), and
+     over a named video every such press was landing on the plate instead. */
   pointer-events: none;
 }
 
-/* Far zoom leaves the same thing behind that an audio card is left with: the
-   one control worth hitting from across the board. The bar's type and its
-   3px line are both under a pixel down here. */
-#world.zoom-far .transport-video { display: none; }
-/* And the big centre play with it: past the chrome rung a clip is a swatch to
-   move around, not one to start, and a button sitting in the middle of it only
-   gets in the way of picking the card up. */
+/* Past the chrome rung the big centre play goes: a clip that far out is a swatch
+   to move around, not one to start, and a button sitting in the middle of it
+   only gets in the way of picking the card up. */
 #world.zoom-far .vbig { display: none; }
 

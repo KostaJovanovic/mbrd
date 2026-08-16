@@ -118,6 +118,33 @@ export async function addFile(file: File): Promise<string> {
   return hash;
 }
 
+/**
+ * A derived picture as a named File, labelled with the type it actually is.
+ *
+ * Six places in the app make a picture out of another picture - a thumbnail, a
+ * video poster, a model's still - and register it here. Every one of them used
+ * to write `something.webp` and `image/webp` outright, which was true for
+ * exactly as long as the encoders refused to return anything else.
+ *
+ * They do not any more, and the label is not cosmetic: addFile() *relabels* the
+ * blob with the type it is handed, and an <img> renders a blob: URL by that
+ * type - so a PNG announced as WebP is a picture that does not draw, on
+ * precisely the engine those changes were made for. No version of Safari
+ * encodes WebP from a canvas, so that engine is every Safari.
+ *
+ * Here rather than in optimize/picture.js, where the first two callers live:
+ * canvas/ does not import optimize/ anywhere today and a naming helper is not
+ * the right reason to open that edge. Every caller already imports addFile().
+ *
+ * The fallback is WebP rather than octet-stream because the only way to reach
+ * it is a blob with no type at all, and every producer of one here asked for a
+ * picture.
+ */
+export function derivedFile(blob: Blob, stem: string): File {
+  const type = /^image\/[a-z0-9.+-]+$/i.test(blob.type) ? blob.type.toLowerCase() : 'image/webp';
+  return new File([blob], `${stem}.${type.slice('image/'.length)}`, { type });
+}
+
 /** Read an asset back as text - used by the text renderer. */
 export async function readText(hash: string, limit = 20000): Promise<string> {
   const a = store.get(hash);
@@ -135,6 +162,40 @@ export function clearAssets() {
 // Deleted items keep their assets alive on purpose: undo has to be able to put
 // the item back, and a save only ever writes the hashes the live items still
 // reference. Assets are released wholesale by clearAssets() on board close.
+
+/**
+ * Throw specific bytes away, and say how many went.
+ *
+ * The one door in this module that removes something without removing
+ * everything, and it exists for exactly one caller: emptying the bin, which is
+ * the only action in the app that means *this file is finished with* rather
+ * than *this card is off the board*. Everything else that deletes leaves the
+ * bytes here, because undo, the bin and the step ledger can all put the card
+ * back and a card whose picture had been swept is worse than no card.
+ *
+ * So this is not called from here. trash.ts holds the decision - which hashes
+ * nothing else claims, and what the board keeps in their place - and is handed
+ * this function by main.ts, since storage/ sits above the base layer and may
+ * not be imported from it (tests/layers.test.js).
+ *
+ * The answer is `hash -> size`, and it is the reason this returns anything at
+ * all: the tombstone the bin leaves behind prints the size of what went, and
+ * the only place that number exists is the entry being deleted on this line.
+ * A hash that names nothing is simply absent from the answer.
+ */
+export function forgetAssets(hashes: Iterable<string>): Map<string, number> {
+  const freed = new Map<string, number>();
+  for (const hash of hashes) {
+    const a = store.get(hash);
+    if (!a) continue;
+    // Before the delete, or the URL outlives the only reference to it - the
+    // same pairing clearAssets() makes one line apart.
+    if (a.url) URL.revokeObjectURL(a.url);
+    freed.set(hash, a.size);
+    store.delete(hash);
+  }
+  return freed;
+}
 
 /**
  * Release the object URLs when the document goes away.

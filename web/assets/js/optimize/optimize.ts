@@ -29,7 +29,7 @@
 
 import { board, byId, swapAssets, setItemThumb, setItemPoster, removeItems } from '../state.ts';
 import { toast } from '../notify.ts';
-import { addFile, getAsset } from '../storage/assets.ts';
+import { addFile, derivedFile, getAsset } from '../storage/assets.ts';
 import { formatBytes, itemHashes, extOf } from '../util.ts';
 import { PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS } from '../import/formats.ts';
 import { coverArt, audioTags } from '../import/artwork.ts';
@@ -507,12 +507,21 @@ async function backfillPosters(onProgress: (p: Progress) => void): Promise<numbe
     if (!asset) { onProgress({ done: ++n, total: wanted.length, name: item.name || '', phase: 'posters' }); return; }
     try {
       const shot = await videoFrame(asset.blob);
-      const frame = shot
-        ? { blob: shot.blob, name: 'poster.webp', type: 'image/webp' }
-        : await viaFfmpeg(asset.blob, asset.name || item.name || 'clip', asset.mime);
-      if (!frame) return;
-      const hash = await addFile(new File([frame.blob], frame.name, { type: frame.type }));
-      setItemPoster(item.id, hash);
+      // ffmpeg is still only reached when the browser's own decoder came back
+      // with nothing - it is a 32 MB download, and the ternary below is what
+      // keeps it that way. Its result carries its own name and type; a frame
+      // cut here is named from the blob instead, because what canvas/poster.js
+      // hands back is no longer always a WebP (see encodeFrame there).
+      const ff = shot ? null : await viaFfmpeg(asset.blob, asset.name || item.name || 'clip', asset.mime);
+      const named = shot ? derivedFile(shot.blob, 'poster')
+        : ff ? new File([ff.blob], ff.name, { type: ff.type })
+          : null;
+      if (!named) return;
+      const hash = await addFile(named);
+      // `true` for the reason the idle backfill passes it: the filter above took
+      // only clips whose cover has no bytes behind it, so what is being replaced
+      // is a reference to a picture rather than a picture. See setItemPoster().
+      setItemPoster(item.id, hash, true);
       made++;
     } catch (err) {
       // One clip that will not give up a frame is not a failed pass. It stays
@@ -649,7 +658,7 @@ async function backfillThumbs(
       // decoding it to find out.
       const small = await makeThumb(asset.blob, (source && width.get(source)) || 0);
       if (!small) return;
-      const hash = await addFile(new File([small.blob], 'thumb.webp', { type: 'image/webp' }));
+      const hash = await addFile(derivedFile(small.blob, 'thumb'));
       setItemThumb(item.id, hash);
       made++;
     } catch (err) {

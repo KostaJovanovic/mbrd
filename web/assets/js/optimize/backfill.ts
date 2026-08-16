@@ -42,7 +42,7 @@
 // by cutting thumbnails before it made posters.
 
 import { board, bus, byId, setItemPoster, setItemThumb } from '../state.ts';
-import { addFile, getAsset } from '../storage/assets.ts';
+import { addFile, derivedFile, getAsset } from '../storage/assets.ts';
 import { videoFrame } from '../canvas/poster.ts';
 import { makeThumb } from './picture.ts';
 import type { Item } from '../board-model.ts';
@@ -125,12 +125,16 @@ async function pass(): Promise<void> {
 
     const frame = await videoFrame(asset.blob);
     if (!frame) { refused.add(fresh.id); return; }
-    const hash = await addFile(new File([frame.blob], 'poster.webp', { type: 'image/webp' }));
-    setItemPoster(fresh.id, hash);
-    // setItemPoster is allowed to decline - it refuses to overwrite a picture,
-    // and it validates the hash - so this asks whether it took rather than
-    // assuming. The same argument as the asset above: a write that quietly did
-    // nothing would be this clip, again, in a second and a half.
+    const hash = await addFile(derivedFile(frame.blob, 'poster'));
+    // `true`: whatever cover this item names, wantsPoster() has already looked
+    // for its bytes and not found them - so it is a reference to a picture and
+    // not a picture, and replacing it is repairing a card that draws nothing
+    // rather than overwriting one that draws something. See setItemPoster().
+    setItemPoster(fresh.id, hash, true);
+    // It is still allowed to decline - it validates the hash - so this asks
+    // whether it took rather than assuming. The same argument as the asset
+    // above: a write that quietly did nothing would be this clip, again, in a
+    // second and a half.
     const after = byId(fresh.id);
     if (after && wantsPoster(after)) { refused.add(fresh.id); return; }
     // From the poster rather than from the clip, which is the only source there
@@ -140,8 +144,7 @@ async function pass(): Promise<void> {
     // decoding that to a hundred is not the full-resolution decode the hint
     // exists to avoid.
     const small = await makeThumb(frame.blob);
-    if (small) setItemThumb(fresh.id, await addFile(
-      new File([small.blob], 'thumb.webp', { type: 'image/webp' })));
+    if (small) setItemThumb(fresh.id, await addFile(derivedFile(small.blob, 'thumb')));
   } catch (err) {
     // One clip that will not give up a frame is not a failure worth telling
     // anybody about - nobody asked for this pass. It is logged because a board

@@ -33,22 +33,46 @@ const POSTER_SIDE = 640;
 const POSTER_MS = 9000;
 
 /**
- * Under this many bytes, a capture is treated as a frame with nothing in it.
+ * How long a seek is given to put a frame on the element before it is read
+ * anyway.
  *
- * A flat rectangle compresses to almost nothing, so size is a decent test for
- * "the decoder handed us a blank". It is a *verdict on that seek point* and not
- * on the clip, which is the thing that used to be wrong here: one 2 KB capture
- * at 0.1s and the clip was written off, which threw away every video that opens
- * on a fade from black or from white, a slate, or a title card - and threw it
- * away identically at import, in the optimiser and in the idle backfill, since
- * all three come through this one function. Now it moves on to the next point
- * and only settles for a blank frame if the whole clip looks like one.
+ * The reason there is a number here at all is requestVideoFrameCallback, which
+ * is the right thing to wait on and cannot be relied on to arrive: it fires when
+ * a frame is *presented for composition*, and the element this module grabs from
+ * is never in the document, so on Chrome it does not fire at all. Measured
+ * rather than reasoned: a bench that recorded a clip, seeked it and waited on
+ * the callback timed out at every attempt, on a detached element *and* on one
+ * appended to the page, while a drawImage taken straight after `seeked` returned
+ * the frame every time.
  *
- * Lower than the 2 KB it was, too. 2 KB at 640px is not "nothing in it" - a
- * genuinely dark night shot lands near it - and a poster that is nearly black is
- * still the picture the clip starts on.
+ * It was the sole gate before the capture, which is why the whole feature
+ * produced nothing: every grab sat until the cap above and answered null, at
+ * import, in the optimiser and in the idle backfill alike. That is the "video
+ * cards have no picture" bug, and it is older than the three-point walk below.
+ *
+ * So the callback is now a *shortcut* rather than a gate: whichever of it and
+ * this clock comes first, the frame is read. `seeked` has already fired by then,
+ * which is the condition that actually matters - a decoder that has finished
+ * seeking draws through drawImage whether or not anything was composited.
  */
-const BLANK_BYTES = 900;
+const FRAME_MS = 150;
+
+/**
+ * How much two sampled pixels may differ before a frame counts as having
+ * something in it, and how many pixels are looked at.
+ *
+ * This replaces a test on the *encoded size* - under 2 KB was "blank" - which
+ * was a guess wearing a number. A 320-wide frame of ordinary colour encodes to
+ * 800 bytes, so the guess threw away real pictures; and it made the judgement at
+ * one seek point, so a clip that opens on a fade from white, a slate or a title
+ * card was written off entirely rather than looked at a second further in.
+ *
+ * The pixels answer the question the size was standing in for, and answer it
+ * exactly. A flat frame is one where every sample is the same colour; anything
+ * else is a picture, however dark or however small it compresses to.
+ */
+const FLAT_SPREAD = 10;
+const FLAT_SAMPLES = 240;
 
 /**
  * A grabbed frame: the WebP itself, and the clip's *own* pixel size.
@@ -185,18 +209,15 @@ async function grab(
     const seeked = once(v, 'seeked');
     v.currentTime = at;
     await Promise.race([seeked, failed]);
-    // requestVideoFrameCallback fires when a frame has actually been presented,
-    // which 'seeked' does not promise - it says the seek finished, not that
-    // there is anything on the element yet.
     await presented(v);
-    const shot = await capture(v).catch(() => null);
-    if (!shot) continue;
-    if (shot.blob.size >= BLANK_BYTES) return shot;
-    // Flat here. Hold on to it in case the whole clip is flat, and look further
-    // in - see the note on BLANK_BYTES.
-    held.shot ??= shot;
+    const took = await capture(v).catch(() => null);
+    if (!took) continue;
+    if (!took.flat) return took.shot;
+    // Nothing in this frame. Hold on to it in case the whole clip is like that,
+    // and look further in - see the note on FLAT_SPREAD.
+    held.shot ??= took.shot;
   }
-  if (!held.shot) console.warn('[mbrd] poster: every frame came back empty');
+  if (!held.shot) console.warn('[mbrd] poster: every seek came back with nothing');
   return held.shot;
 }
 
@@ -205,25 +226,33 @@ function once(el: EventTarget, type: string): Promise<Event> {
   return new Promise(resolve => el.addEventListener(type, resolve, { once: true }));
 }
 
-/** A frame actually on the element, where the browser can say so. */
+/**
+ * A frame on the element - either because the browser said so, or because long
+ * enough has passed to read one anyway. See FRAME_MS, which is where the whole
+ * argument for the race is written.
+ */
 function presented(v: HTMLVideoElement): Promise<void> {
+  const clock = wait(FRAME_MS);
   return typeof v.requestVideoFrameCallback === 'function'
-    ? new Promise<void>(resolve => v.requestVideoFrameCallback(() => resolve()))
-    : Promise.resolve();
+    ? Promise.race([new Promise<void>(resolve => v.requestVideoFrameCallback(() => resolve())), clock])
+    : clock;
 }
 
 const wait = (ms: number) => new Promise<void>(resolve => { setTimeout(resolve, ms); });
 
 /**
- * Draw whatever the element is showing into a capped WebP.
+ * Draw whatever the element is showing into a capped picture, and say whether
+ * there was anything in it.
  *
- * Null means the drawing itself did not come off - no 2D context, or a browser
- * that answered with something other than WebP (the same trap the picture
- * shrinker guards: one that cannot write WebP hands back a PNG). *How much* is
- * in the frame is not judged here any more; that is grab()'s to decide across
- * the whole clip rather than one seek's to decide for it.
+ * Null means the drawing itself did not come off - no 2D context, or nothing
+ * this engine will encode at all. `flat` is the other answer, and it is a
+ * report rather than a refusal: whether to keep a frame with nothing in it is a
+ * question about the whole clip, so grab() decides it across every seek point
+ * and this only says what it saw at one.
  */
-async function capture(v: HTMLVideoElement): Promise<VideoFrameShot | null> {
+async function capture(
+  v: HTMLVideoElement,
+): Promise<{ shot: VideoFrameShot, flat: boolean } | null> {
   const scale = Math.min(1, POSTER_SIDE / Math.max(v.videoWidth, v.videoHeight));
   const w = Math.max(1, Math.round(v.videoWidth * scale));
   const h = Math.max(1, Math.round(v.videoHeight * scale));
@@ -233,7 +262,85 @@ async function capture(v: HTMLVideoElement): Promise<VideoFrameShot | null> {
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(v, 0, 0, w, h);
-  const out = await canvas.convertToBlob({ type: 'image/webp', quality: 0.72 });
-  if (!out || out.type.toLowerCase() !== 'image/webp') return null;
-  return { blob: out, w: v.videoWidth, h: v.videoHeight };
+  const flat = looksFlat(ctx, w, h);
+  const out = await encodeFrame(canvas);
+  if (!out) return null;
+  return { shot: { blob: out, w: v.videoWidth, h: v.videoHeight }, flat };
+}
+
+/**
+ * Whether every sampled pixel is the same colour, give or take FLAT_SPREAD.
+ *
+ * Which is what "the decoder handed us nothing" looks like from here: a seek
+ * that produced no frame draws as one flat rectangle, and so does a fade, a
+ * slate and a black leader - all of which are things to seek past rather than
+ * things to keep, and none of which can be told apart by how many bytes they
+ * compress to.
+ *
+ * Sampled on a stride rather than pixel by pixel: a couple of hundred readings
+ * spread across the frame settles the question, and this runs up to three times
+ * per clip on a board that may hold fifty.
+ *
+ * True on a throw, which is the safe way round: getImageData on a tainted
+ * canvas raises, and a frame this cannot inspect is one to look past rather than
+ * one to keep. If every point raises, grab() keeps the first anyway.
+ */
+function looksFlat(ctx: OffscreenCanvasRenderingContext2D, w: number, h: number): boolean {
+  let data: Uint8ClampedArray;
+  try { data = ctx.getImageData(0, 0, w, h).data; } catch { return true; }
+  const pixels = data.length / 4;
+  const stride = Math.max(1, Math.floor(pixels / FLAT_SAMPLES)) * 4;
+  const lo = [255, 255, 255];
+  const hi = [0, 0, 0];
+  for (let i = 0; i < data.length; i += stride) {
+    for (let c = 0; c < 3; c++) {
+      const v = data[i + c];
+      if (v < lo[c]) lo[c] = v;
+      if (v > hi[c]) hi[c] = v;
+    }
+  }
+  return hi[0] - lo[0] <= FLAT_SPREAD
+    && hi[1] - lo[1] <= FLAT_SPREAD
+    && hi[2] - lo[2] <= FLAT_SPREAD;
+}
+
+/**
+ * The frame as bytes. WebP where the engine writes it, JPEG where it does not.
+ *
+ * This used to ask for WebP and return null on anything else, which read as
+ * "this browser cannot give up a frame" - and null here is not a soft answer.
+ * capture() is the only thing in the app that cuts a poster, so a null means no
+ * poster at import, none from the optimiser, and none from the idle backfill,
+ * which then marks the clip `refused` for the session having decoded it to
+ * produce nothing.
+ *
+ * **No version of Safari encodes WebP from a canvas** - not on iOS, not on the
+ * desktop, not in the 27 beta - and the specification says an engine that
+ * cannot write the type asked for hands back a PNG without complaint. So the
+ * refusal fired for every clip on every Safari, and it compounded with the one
+ * piece of this file that is exactly right: on a touch device the renderer
+ * parks a clip's `src` so a zoomed-out board stays inside iOS's decoder ration,
+ * and shows the poster meanwhile. With no poster there is nothing to show, and
+ * every clip on an iPhone was a play button over black until it was tapped.
+ *
+ * JPEG unconditionally rather than the conditional retry canvas/display.js
+ * makes, and the context above is why it is allowed to be that simple: this
+ * canvas is built `alpha: false` and holds a frame of video. There is no
+ * transparency here to flatten, so there is no question to ask about the
+ * source.
+ */
+async function encodeFrame(canvas: OffscreenCanvas): Promise<Blob | null> {
+  const webp = await canvas.convertToBlob({ type: 'image/webp', quality: 0.72 });
+  if (!webp) return null;
+  if (webp.type.toLowerCase() === 'image/webp') return webp;
+  // Falls back to `webp` - a PNG under a wrong name - if this engine writes
+  // neither, which no engine does: PNG is the one format a canvas must encode.
+  // A large poster beats no poster, and the size guard this file does not have
+  // is the size guard it does not need, since nothing here replaces a file.
+  try {
+    const jpeg = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.72 });
+    return jpeg?.type.toLowerCase() === 'image/jpeg' ? jpeg : webp;
+  } catch {
+    return webp;
+  }
 }

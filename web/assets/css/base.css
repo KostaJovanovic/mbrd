@@ -79,6 +79,18 @@ html, body {
   /* Kill rubber-band / pull-to-refresh: every gesture on this page is ours. */
   overscroll-behavior: none;
   -webkit-tap-highlight-color: transparent;
+  /* Double-tap zooms the *page* on a touch browser, and this app is full of
+     controls somebody taps twice in a second on purpose - a zoom button, Undo,
+     a stepper, the clear button in a field. Every one of them was zooming the
+     page in and out underneath the press.
+     `manipulation` is the narrow word for it: it drops double-tap zoom and the
+     300ms click delay that comes with it, and leaves panning and *pinch* zoom
+     alone. That distinction is the whole reason this is not `none` - the
+     viewport tag next door deliberately keeps browser zoom, because it is how
+     a low-vision reader reads the sidebar and the menus, and the canvas's own
+     zoom does not touch those. #viewport takes `none` on top of this, since
+     the board claims every gesture over it for itself. */
+  touch-action: manipulation;
 }
 
 /* The small print goes in the display face.

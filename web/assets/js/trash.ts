@@ -26,6 +26,14 @@
 // beside the point. They were in the bin before the command ran and gone after
 // it. See the note inside removeItems(), which is the bug that argument caused.
 //
+// **Emptying it is the one door out of the app**, and the only place anything
+// here destroys rather than files. Everything above this line is reversible by
+// three different routes; emptyTrash() deletes the bytes, rewrites the ledger's
+// copies of the items that named them, and leaves a tombstone card in the place
+// of each - the name, the kind of file, the size. The argument is at length
+// over that function, because it is the one thing in this module that cannot be
+// taken back.
+//
 // What is deliberately *not* here: any bookkeeping about connections. A pair
 // naming a deleted item is simply not drawn, and the item coming back brings
 // its lines with it because they never left - see the head of connections.js.
@@ -37,11 +45,16 @@
 import { bus, selection } from './board-store.ts';
 import { commit } from './history.ts';
 import { cue } from './cuelume/engine.ts';
-import { board, byId, topZ, TRASH_LIMIT } from './board-model.ts';
-import type { TrashEntry } from './board-model.ts';
+import { board, byId, topZ, makeItem, TRASH_LIMIT } from './board-model.ts';
+import type { Item, TrashEntry } from './board-model.ts';
 import { stuckTo } from './sticky.ts';
 import { refenceArrivals } from './fences.ts';
 import { fitBoardMode } from './layout.ts';
+import { itemHashes, isRecord, extOf } from './util.ts';
+// The ledger's own copies of every item, which emptying the bin has to reach -
+// see entombRecorded() at the foot of this file. history.ts already imports it;
+// the arrow from here points the same way and there is nothing pointing back.
+import { rewriteRecorded } from './timeline.ts';
 
 /**
  * The stickers that go with a delete: everything of type `sticker` stuck, at
@@ -199,11 +212,213 @@ export function restoreItems(ids: Iterable<string>, at: { x: number, y: number }
   return items;
 }
 
-/** Throw the bin out. Undoable - emptying it by accident is a bad afternoon. */
+// ---------------------------------------------------------------------------
+// Emptying it, which is the one thing in this app that destroys something
+// ---------------------------------------------------------------------------
+//
+// Everything else that removes a card leaves the bytes exactly where they were.
+// Undo can put the card back, the bin can put it back, and the step ledger can
+// put it back after a refresh - so an asset stays in the registry until the
+// board closes, and the three readers of the reference union (the packer, the
+// autosave sweep, ui/inventory.ts) each know to keep whatever any of those
+// three still names.
+//
+// Emptying the bin is the one action that means *finished with*. Until this it
+// did not act like one: it cleared board.trash and left every photograph in the
+// registry, still written into every .mbrd, still swept as live - because the
+// step that deleted the card names it on its before side, and that is what
+// stepping back is for. So a board somebody had cleaned out went on weighing
+// what it weighed before they cleaned it, and the only way to actually get rid
+// of a file was to never let it onto the board.
+//
+// **What is left behind is a card, not a hole.** The alternative - drop the
+// bytes and leave the item naming them - is worse than doing nothing: the step
+// still replays, the card still mounts, and what it mounts is a dead blob URL.
+// A hole in a history is indistinguishable from a bug. So the item is replaced
+// everywhere it is written down by a tombstone that says what was there - its
+// name, the kind of file it was, and how big it used to be - which is a thing
+// the board can draw and a person can read. See RENDERERS.gone.
+
+/**
+ * Throw specific bytes away, from whoever holds the registry.
+ *
+ * Injected, never imported: storage/assets.ts sits above the base layer and
+ * this module is in it (tests/layers.test.js, whose DEBT map is empty and may
+ * only shrink). The same one-way seam as setOverlays(), setAssetNameLookup()
+ * and setNoteMenu(); main.ts introduces the two.
+ *
+ * The answer is `hash -> bytes freed`, because the size printed on a tombstone
+ * exists in exactly one place - the registry entry being deleted - and asking
+ * for it afterwards is asking a question about something that no longer exists.
+ *
+ * **Unwired it frees nothing and says so**, by answering an empty map, and that
+ * is the honest default rather than a convenient one: nothing is tombstoned,
+ * the bin empties the way it always did, and a test with no registry in scope
+ * gets the old behaviour instead of a board full of cards claiming their
+ * pictures were destroyed.
+ */
+type AssetPurge = (hashes: Set<string>) => Map<string, number>;
+
+let purgeAssets: AssetPurge = () => new Map();
+export function setAssetPurge(fn: AssetPurge | null | undefined) {
+  purgeAssets = typeof fn === 'function' ? fn : () => new Map();
+}
+
+/**
+ * Every content id one item is a claim on: its own bytes, the pictures made
+ * from them, and the optimiser's memo of what it replaced.
+ *
+ * `itemHashes()` is the first two and is shared with the packer and the sweep,
+ * which is where it belongs - a list of "what this item points at" written down
+ * twice is how a second id comes to be missed. `was` and `wasCover` are not on
+ * it on purpose: they drive the *export*, and an export carries the small copies
+ * alone. Here they count twice over, being both bytes this item is the only
+ * claim on and the largest thing the bin is holding - the untouched original.
+ *
+ * Takes `unknown`, because half of what this file asks about is an item as a
+ * step wrote it down: JSON, never an Item, and every field of it `unknown`.
+ * Everything not a non-empty string is dropped, which is what makes the answer
+ * safe to hand to a registry that keys on digests.
+ */
+function allHashes(raw: unknown): string[] {
+  if (!isRecord(raw)) return [];
+  // SAFETY: itemHashes() is structurally typed and reads two optional fields,
+  // neither of which it trusts - it filters for truthiness and the caller here
+  // filters for a string. The assertion is only what lets an untyped record be
+  // passed at all; nothing is written through it.
+  const item = raw as { asset?: { hash?: string } | null, meta?: Record<string, unknown> | null };
+  const meta = isRecord(raw.meta) ? raw.meta : null;
+  return [...itemHashes(item), meta?.was, meta?.wasCover]
+    .filter((h): h is string => typeof h === 'string' && !!h);
+}
+
+/**
+ * What is left of an item once its bytes are gone: eleven fields down to the
+ * seven that are still true.
+ *
+ * The geometry stays, whole, because a tombstone is drawn where the picture was
+ * - scrub back through a delete and the card is the size and shape of the thing
+ * that used to be there, in its place, rather than a default rectangle wandering
+ * in from the side. The name stays because it is the name, and it is what the
+ * strip prints when it describes the step (see describeStep in timeline.ts).
+ *
+ * **Everything else goes, including all of `meta`.** That is the point rather
+ * than tidiness: `meta` is where the crop, the cover, the thumbnail, the
+ * preview and the optimiser's memo live, and every one of them is a second name
+ * for bytes that have just been deleted. What replaces it is one key holding
+ * the three facts a person would want - what kind of thing this was, what
+ * extension it had, and what it weighed - and nothing that could ever resolve
+ * to a file again.
+ *
+ * Takes a loose record rather than an Item so that the ledger's copies, which
+ * are JSON and were never Items, go through the same function. There is no
+ * second spelling of what a tombstone is.
+ */
+function tombstoneRecord(item: Record<string, unknown>, bytes: number) {
+  const meta = isRecord(item.meta) ? item.meta : {};
+  const name = typeof item.name === 'string' ? item.name : '';
+  const ext = typeof meta.ext === 'string' && meta.ext ? meta.ext : extOf(name);
+  return {
+    id: item.id,
+    type: 'gone',
+    x: item.x, y: item.y, w: item.w, h: item.h, rot: item.rot, z: item.z,
+    name,
+    asset: null,
+    meta: {
+      gone: {
+        // What it was. Carried as the string the item had rather than checked
+        // against a list, for the reason makeItem() carries an unknown type: a
+        // board written by a newer build can hold a kind this one never heard
+        // of, and "a card that was something" is more honest than "generic".
+        type: typeof item.type === 'string' && item.type ? item.type : 'generic',
+        ext,
+        bytes,
+      },
+    },
+  };
+}
+
+/** The same, as something that can go straight back on the board. */
+const tombstone = (item: Item, bytes: number): Item => makeItem(tombstoneRecord(item, bytes));
+
+/**
+ * Throw the bin out, and the files in it with it.
+ *
+ * Still undoable, and it gives back exactly what still exists: the entries come
+ * back, in their order, as the tombstones the purge made of them. Anything that
+ * was never a file - a note, a swatch, a sticker, a link - comes back *whole*,
+ * because nothing of it was destroyed and marking it deleted would be the app
+ * throwing away somebody's words to make a rule look uniform.
+ *
+ * The order of the four steps below is the whole of the correctness here.
+ */
 export function emptyTrash() {
   if (!board.trash.length) return;
-  const held = board.trash;
+  // 1. What the board still claims. A photograph dropped twice is one asset and
+  //    two cards (dedupe by content), so a picture in the bin whose bytes a live
+  //    card is also standing on must not be touched - and neither must the
+  //    optimiser's memo of an original a live card can still be reverted to.
+  const kept = new Set<string>();
+  for (const it of board.items) for (const hash of allHashes(it)) kept.add(hash);
+  // Nothing else needs adding here. The other two claims on an asset are the
+  // bin, which is what is being emptied, and the ledger, which is rewritten
+  // below rather than consulted - a step naming a photograph is a reason to
+  // change the step, not a reason to keep the photograph. Board fonts are not
+  // reachable: every hash below comes off an item that was in the bin.
+  const doomed = new Set<string>();
+  for (const entry of board.trash) {
+    for (const hash of allHashes(entry.item)) if (!kept.has(hash)) doomed.add(hash);
+  }
+
+  // 2. The bytes. Done before anything is written down, because the sizes only
+  //    exist while the registry still holds them.
+  const freed = purgeAssets(doomed);
+  let bytes = 0;
+  for (const size of freed.values()) bytes += size;
+  // What one card weighed, and whether anything of it was actually destroyed.
+  //
+  // Asked of `freed` rather than of `doomed`, and the difference is the whole
+  // of what a tombstone means: **one is put down where bytes went, never where
+  // bytes were merely named.** A hash the registry did not have frees nothing -
+  // a board opened from a snapshot whose assets did not survive, or, more to
+  // the point, an unwired seam in a test - and marking those items deleted
+  // would be the app claiming to have destroyed something it never held. It
+  // would also rewrite the ledger, irreversibly, for no gain at all.
+  const weigh = (item: unknown) =>
+    allHashes(item).reduce((sum, hash) => sum + (freed.get(hash) || 0), 0);
+  const purged = (item: unknown) => allHashes(item).some(hash => freed.has(hash));
+
+  // 3. The bin itself, **before the commit and outside it**, which is the one
+  //    line here that breaks the ordinary rule about writing to the board only
+  //    through commit() - and has to. commit() photographs the board on either
+  //    side of the change it is given, so the before-side of this step is
+  //    whatever board.trash holds when it is called. Assign the tombstones
+  //    inside the closure and that photograph is of the originals: the step
+  //    would name every hash just deleted, the sweep would keep bytes that are
+  //    gone, and undo would hand back cards pointing at nothing. Assigning here
+  //    means the step records tombstones going to nothing, which is the truth.
+  //    Nothing is announced in between - the commit on the next line does that.
+  let entombed = 0;
+  const stones = board.trash.map(entry => {
+    if (!purged(entry.item)) return entry;
+    entombed += 1;
+    return { at: entry.at, item: tombstone(entry.item, weigh(entry.item)) };
+  });
+  board.trash = stones;
+
+  // 4. And every copy the ledger holds, for the same reason and with the same
+  //    replacement. This is the half that makes the deletion real: without it
+  //    the steps still name the bytes, the autosave sweep still keeps them, and
+  //    the .mbrd still carries them - the board would have been emptied in the
+  //    interface and nowhere else.
+  rewriteRecorded(item => (purged(item) ? tombstoneRecord(item, weigh(item)) : null));
+
   commit('Empty trash',
     () => { board.trash = []; bus.emit('trash'); },
-    () => { board.trash = held; bus.emit('trash'); });
+    () => { board.trash = stones; bus.emit('trash'); });
+  // Out here rather than in the closure, the same rule removeItems() states for
+  // 'trash:evicted': undo and redo re-run the closure, and this is a thing that
+  // happened once. A UI module toasts it (ui/trash.ts); state does not reach for
+  // the DOM itself.
+  if (entombed) bus.emit('trash:purged', { items: entombed, bytes });
 }

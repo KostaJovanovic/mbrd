@@ -626,7 +626,14 @@ function pickViaInput() {
     // an absent one is a broken build rather than a state to recover from.
     const input = document.getElementById('file-input') as HTMLInputElement;
     const prevAccept = input.accept;
-    input.accept = '.mbrd,application/zip';
+    // `.mbrd` is an extension no operating system has heard of, and iOS
+    // resolves an accept list to UTIs rather than matching the string - an
+    // unrecognised entry there can leave the Files browser showing every file
+    // greyed out, this app's own boards included. octet-stream is the widest
+    // honest thing to say about a binary container and is here to keep that
+    // door open; the list only ever *widens* what can be picked, so it cannot
+    // hide a file that used to be selectable.
+    input.accept = '.mbrd,application/zip,application/octet-stream';
     input.multiple = false;
     // Say whose picker this is rather than saying nothing. import/drop.js
     // listens on the same input and stands down on a mode it does not own - it

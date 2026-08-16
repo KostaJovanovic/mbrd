@@ -70,9 +70,12 @@ export { clipboardBounds, clipboardHasOurs, clipboardSize, copyItems };
 // of one door and they sat four hundred lines apart in here; the bin's bound is
 // in board-model.js beside MAX_ITEMS, because it is part of the board's shape
 // and the file reader applies it too.
-import { removeItems, restoreItems, emptyTrash } from './trash.ts';
+// setAssetPurge is the seam emptying it needs: the bin destroys the files it
+// was holding, and the registry that holds them is a layer above this one.
+// main.ts wires it, the same shape as setAssetNameLookup() below.
+import { removeItems, restoreItems, emptyTrash, setAssetPurge } from './trash.ts';
 
-export { removeItems, restoreItems, emptyTrash };
+export { removeItems, restoreItems, emptyTrash, setAssetPurge };
 // Downward: the catalogue is pure - geometry.js and nothing else - and this is
 // the one thing state needs from it, which of the two lists a stored
 // arrangement id belongs to. See tests/layers.test.js, where it is BASE.
@@ -794,10 +797,22 @@ export function setItemThumb(id: string, hash: unknown) {
  * it, whether that came from a previous cut or from somebody choosing a picture
  * by hand. This can add a picture to a card that has none; it can never replace
  * one, which is what keeps a non-undoable write safe to make.
+ *
+ * `dangling` is the one exception, and it is not a loosening of that rule - it
+ * is the rule applied to what a cover *is*. A hash whose bytes are not in the
+ * registry is not a picture, it is a reference to one: it draws nothing, and an
+ * item restored from an archive that was missing a file carries one. Left
+ * refused, such a card could never be repaired by anything - not by import, not
+ * by the optimiser, not by the idle backfill - because all three ask "has it got
+ * a cover" of the *hash* while the card on screen stays blank. Both repair
+ * passes already establish the difference with getAsset() before they cut a
+ * frame, which is why the caller says so rather than this asking: state.ts sits
+ * under storage/ and may not look in the registry itself (tests/layers.test.js).
  */
-export function setItemPoster(id: string, hash: unknown) {
+export function setItemPoster(id: string, hash: unknown, dangling = false) {
   const it = byId(id);
-  if (!it || !isHash(hash) || isHash(it.meta?.cover)) return;
+  if (!it || !isHash(hash)) return;
+  if (isHash(it.meta?.cover) && !dangling) return;
   it.meta = { ...it.meta, cover: hash };
   bus.emit('item', id);
   markDirty();

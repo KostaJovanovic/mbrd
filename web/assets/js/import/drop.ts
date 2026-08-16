@@ -11,7 +11,7 @@ import { cue } from '../cuelume/engine.ts';
 import {
   board, bus, addItems, select, setItemCover, NOTE_MAX, baseStep, startSettling,
 } from '../state.ts';
-import { addFile } from '../storage/assets.ts';
+import { addFile, derivedFile } from '../storage/assets.ts';
 import { makeByteBudget, overPixelBudget, IMPORT_LIMITS } from './budget.ts';
 import {
   classify, defaultSize, measureSize, fitToBox, linkURL, linkDraft, videoFrame,
@@ -20,7 +20,7 @@ import {
 import { iframeURL, embedFor } from '../canvas/embed.ts';
 import { arrange, mobileOrder } from '../arrange/arrangements.ts';
 import { coverArt, mayHaveArt } from './artwork.ts';
-import { embeddedPreview } from './preview.ts';
+import { embeddedPreview, NOT_PORTABLE, PORTABLE_MIN_EDGE } from './preview.ts';
 // Statically, unlike import/pdf.js below it: this one reaches storage/zip.js and
 // nothing else, and the zip reader is already in memory - it is what opens every
 // .mbrd. There is no dependency to defer and so no reason to defer it.
@@ -641,7 +641,7 @@ export async function importFiles(
 export async function thumbFor(blob: Blob, naturalWidth = 0) {
   const small = await makeThumb(blob, naturalWidth);
   if (!small) return null;
-  const hash = await addFile(new File([small.blob], 'thumb.webp', { type: 'image/webp' }));
+  const hash = await addFile(derivedFile(small.blob, 'thumb'));
   // `cutout` rides back with the hash because it was measured on the way past.
   // It is the thumbnail pass that has a decoded picture in hand, so asking the
   // question anywhere else would mean decoding the file a second time to learn
@@ -676,7 +676,7 @@ async function posterFor(file: File, decodable: boolean | undefined) {
     try {
       const frame = await videoFrame(file);
       if (frame) {
-        const named = new File([frame.blob], 'poster.webp', { type: 'image/webp' });
+        const named = derivedFile(frame.blob, 'poster');
         // The file comes back beside the hash so the caller can cut a thumbnail
         // from it without going to the asset store for bytes it just handed over.
         return { hash: await addFile(named), w: frame.w, h: frame.h, file: named };
@@ -806,7 +806,14 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
     // while asset.hash below still names the untouched original - so it costs the
     // original nothing and upgrades itself for free the day a real decoder lands.
     // Not found, it is a named card, exactly as before.
-    if (type === 'image' && !size.decodable) {
+    //
+    // And a second reason to look, which is not about this browser at all: a
+    // format *this* engine draws and others do not. Safari decodes HEIC, so the
+    // test above never fired on an iPhone and the photograph travelled into the
+    // .mbrd with nothing any other engine could draw. See NOT_PORTABLE in
+    // import/preview.js, and the note there on why iOS 27 makes this urgent.
+    const portable = !NOT_PORTABLE.has(extOf(file.name));
+    if (type === 'image' && (!size.decodable || !portable)) {
       const preview = await embeddedPreview(file).catch(() => null);
       // Budgeted for the same reason the baked path above now is. preview.ts
       // verifies the lead bytes are FF D8 FF and admits a JPEG up to MAX_JPEG
@@ -815,11 +822,21 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
       // 65535x65535 in its SOF0 was handed straight to createImageBitmap().
       const previewOk = preview && !(await overPixelBudget(preview));
       const shot = previewOk ? await measureSize('image', preview) : null;
-      if (preview && shot?.decodable) {
+      // The threshold applies to the portability case only - see
+      // PORTABLE_MIN_EDGE. A picture this browser cannot draw takes whatever
+      // preview it can get, because the alternative is a grey card; a picture
+      // it draws perfectly well only gives way to one big enough that the card
+      // looks the same afterwards.
+      const bigEnough = !!shot?.natural
+        && Math.max(shot.natural.w, shot.natural.h) >= PORTABLE_MIN_EDGE;
+      if (preview && shot?.decodable && (!size.decodable || bigEnough)) {
         previewFile = preview;
         previewHash = await addFile(preview);
-        size = shot;
-      } else {
+        // Only when the original had no measurement of its own. A decodable
+        // HEIC was already measured from the real thing, and the card's shape
+        // is the photograph's rather than its preview's.
+        if (!size.decodable) size = shot;
+      } else if (!size.decodable) {
         type = 'generic';
         size = defaultSize('generic');
         stats.undecodable++;

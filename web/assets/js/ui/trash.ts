@@ -21,7 +21,7 @@ import {
   restoreTitleCard, isTitleHidden,
 } from '../state.ts';
 import { assetURL } from '../storage/assets.ts';
-import { extOf, baseName, el } from '../util.ts';
+import { extOf, baseName, formatBytes, el } from '../util.ts';
 import { noteWords } from '../canvas/note-model.ts';
 import { toast } from '../notify.ts';
 import {
@@ -97,6 +97,13 @@ export function initTrash(viewport: Viewport) {
   // those entries are past getting back by any other means.
   bus.on('trash:evicted', n => toast(
     n === 1 ? 'Bin full — dropped the oldest item' : `Bin full — dropped the ${n} oldest items`));
+  // And the other end of the same idea: emptying the bin now deletes the files
+  // rather than only the entries, so it is worth saying what went and how much
+  // came back. The count is of *files* - notes, swatches and stickers empty out
+  // of the bin as they always did, since there were never any bytes to delete.
+  // See emptyTrash() in trash.ts, which decides both numbers.
+  bus.on('trash:purged', ({ items, bytes }) => toast(
+    `Deleted ${items} ${items === 1 ? 'file' : 'files'} for good${bytes ? ` — ${formatBytes(bytes)} freed` : ''}`));
   paint();
 }
 
@@ -198,6 +205,13 @@ function binRow(entry: TrashEntry) {
     use.setAttribute('href', `${STICKER_SPRITE}#${shape}`);
     svg.append(use);
     thumb.append(svg);
+  } else if (item.type === 'gone') {
+    // A tombstone, which is in the bin only while an undo of the emptying keeps
+    // it there. There is nothing to preview and no extension worth printing -
+    // the file it names was destroyed, and badging the square "JPG" would be the
+    // panel offering back something that cannot come back. See RENDERERS.gone.
+    thumb.classList.add('is-gone');
+    thumb.textContent = 'gone';
   } else if (item.type === 'link') {
     // A link's name is a hostname, not a filename, and extOf() reads the last
     // dot in it - so "example.com" came out as a card badged "com" filed under

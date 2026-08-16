@@ -25,6 +25,12 @@
 //    live. Mid-generation the cards show their hundred-pixel thumbnail (or
 //    nothing), never the full-res original, so memory stays bounded throughout.
 //
+//  - A copy is made whatever the engine can encode. There is exactly one reason
+//    to mount the original instead - it is already small enough - and "the
+//    encoder would not write the format we asked for" is not it. See encode(),
+//    where treating those two as the same answer disabled this whole module on
+//    Safari and cost the crash it exists to prevent.
+//
 //  - The cache owns only what it made. A picture already inside the ceiling is
 //    left alone and the entry points at the asset store's own object URL; that
 //    URL is storage/assets.js's to revoke, not this module's. Only the WebP
@@ -51,7 +57,7 @@ import { quality } from '../quality.ts';
  */
 const displayMax = () => quality.sharpness;
 
-/** WebP quality for the copy. High enough not to band on paper. */
+/** Encoder quality for the copy. High enough not to band on paper. */
 const QUALITY = 0.82;
 
 /**
@@ -211,24 +217,92 @@ async function shrink(blob: Blob | null | undefined, crop: Crop = null): Promise
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(bmp, sx, sy, sw, sh, 0, 0, w, h);
-    // A browser that cannot write WebP hands back a PNG silently, which would be
-    // a copy larger than the original - refuse it and mount the original instead.
-    //
-    // Unless there is a crop, where "mount the original" is not a graceful
-    // fallback but a wrong picture: the card would show the whole photograph
-    // where the person cropped it to a detail, silently and only on that
-    // engine. A larger-than-ideal PNG of the right rectangle beats a
-    // right-sized picture of the wrong one, so the size trade is taken the
-    // other way round here and the copy is kept whatever came out.
-    const out = await canvas.convertToBlob({ type: 'image/webp', quality: QUALITY });
-    if (!out) return null;
-    if (out.type.toLowerCase() !== 'image/webp' && !crop) return null;
-    return out;
+    return await encode(canvas, blob.type);
   } catch {
     return null;
   } finally {
     bmp.close?.();
   }
+}
+
+/**
+ * The card-sized canvas as bytes. **Whatever came out is kept.**
+ *
+ * That sentence is the fix for a crash, so it is worth saying what it replaced.
+ * This used to ask for WebP and, if the blob came back as anything else, return
+ * null - which this module's caller reads as "leave it alone" and answers by
+ * mounting the full-resolution original. The reasoning was a file-size one
+ * borrowed from optimize/picture.js, where refusing a PNG is right because that
+ * module *writes to the board* and a copy larger than the original is a bad
+ * trade.
+ *
+ * Here it was catastrophic, because **no version of Safari can encode WebP from
+ * a canvas** - not on iOS, not on the desktop. So on every Safari the refusal
+ * fired for every picture on the board, every card mounted its original, and
+ * the one module written to stop iOS Safari killing the tab was switched off on
+ * the only engine that kills tabs. Two dozen phone photographs is a gigabyte of
+ * decode and a dead page; the same board on Chrome was fine, which is exactly
+ * why it survived.
+ *
+ * The size trade the refusal was making does not exist at this end. What bounds
+ * memory here is the *decode*, and a decoded bitmap is width x height x 4 bytes
+ * whatever wrote it - a 1280px PNG and a 1280px WebP cost the same on screen.
+ * Only the blob differs, and a few megabytes of held bytes against a hundred of
+ * decode is not a trade worth losing the feature over.
+ *
+ * So: WebP where it works, because it is much the smallest. Where it does not,
+ * one retry as JPEG - but only for a source that was already JPEG, since that
+ * is the one format that provably has no alpha to lose. Anything that might be
+ * a cut-out keeps the canvas's own PNG rather than gaining a black background,
+ * which would be this function trading a crash for a wrong picture.
+ */
+async function encode(canvas: OffscreenCanvas, sourceType: string): Promise<Blob | null> {
+  const first = await canvas.convertToBlob({ type: 'image/webp', quality: QUALITY });
+  if (!first) return null;
+  if (first.type.toLowerCase() === 'image/webp') return first;
+  if (!/^image\/jpe?g$/i.test(sourceType)) return first;
+  // A second encode, and it can only improve on the first: JPEG or not, the
+  // blob that comes back is the same pixels at the same size. Falls back to
+  // `first` if this engine cannot write JPEG either, which no engine does.
+  try {
+    const jpeg = await canvas.convertToBlob({ type: 'image/jpeg', quality: QUALITY });
+    return jpeg?.type.toLowerCase() === 'image/jpeg' ? jpeg : first;
+  } catch {
+    return first;
+  }
+}
+
+/**
+ * Drop the copies made from these originals, and release their URLs.
+ *
+ * The narrow half of clearDisplay(), for the one caller that throws specific
+ * bytes away rather than all of them: emptying the bin (see forgetAssets() in
+ * storage/assets.ts). Without it the copy of a purged photograph would sit in
+ * this cache for the rest of the session - the original gone, the derived
+ * WebP still held, and nothing left that could ever ask for it.
+ *
+ * Every key for a hash, not the hash itself: a cropped card keys its copy as
+ * `hash|x,y,w,h` (see keyFor), so one photograph cropped two ways has three
+ * entries here and the bare hash finds one of them.
+ *
+ * `pending` is cleared for the same keys, and deliberately not awaited. A job
+ * in flight publishes into `cache` when it lands, which is a copy of bytes
+ * nobody can reach - harmless, one entry, and gone on the next board load.
+ * Waiting for a decode inside an action somebody pressed a button for is not.
+ */
+export function forgetDisplay(hashes: Iterable<string>) {
+  const doomed = new Set(hashes);
+  // The keys taken before anything is deleted, rather than deleting as the map
+  // is walked. Deleting the current entry mid-iteration happens to be defined
+  // for a Map, which is exactly the kind of thing a reader has to stop and look
+  // up - and the lists here are a handful of entries.
+  const mine = (key: string) => doomed.has(key.split('|')[0]);
+  for (const key of Array.from(cache.keys()).filter(mine)) {
+    const entry = cache.get(key);
+    if (entry?.own) URL.revokeObjectURL(entry.url);
+    cache.delete(key);
+  }
+  for (const key of Array.from(pending.keys()).filter(mine)) pending.delete(key);
 }
 
 /**

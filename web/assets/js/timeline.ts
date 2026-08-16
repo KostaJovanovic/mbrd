@@ -1337,6 +1337,80 @@ export function adoptTimeline(raw: unknown, doc?: unknown) {
 }
 
 /**
+ * Rewrite items the ledger has written down, wherever it wrote them.
+ *
+ * **The one operation in this module that edits the past on purpose**, and the
+ * only caller is the only action in the app that destroys something: emptying
+ * the bin, which throws the bytes away rather than merely taking the card off
+ * the board. Everything else that removes an item leaves the ledger able to put
+ * it back, which is what timelineHashes() exists to protect. A picture whose
+ * bytes are gone breaks that promise silently - the step still names the hash,
+ * the sweep still keeps nothing, and stepping back mounts a card with a dead
+ * source. So the record is brought into line with the truth instead: the step
+ * that deleted the photograph now says a photograph *was* here, which is a
+ * thing the board can still draw. See tombstone() in trash.ts.
+ *
+ * `rewrite` is handed each recorded item and answers a replacement, or null to
+ * leave that one alone. It is passed in rather than written here because what a
+ * removed item becomes is the bin's business and this module's business is
+ * where the copies are - which is the whole of what it knows that nobody else
+ * does: the starting snapshot, and both sides of every step's items and bin.
+ *
+ * Both sides, and that is the half worth stating. A step's *before* is what
+ * going backwards puts on the board, so rewriting only the after would leave
+ * every scrub past the delete mounting the picture again.
+ *
+ * Checkpoints are dropped rather than rewritten - they are whole snapshots of
+ * boards the rewrite has just changed, cheaper to rebuild than to walk, and
+ * replayTo() prefers one over the base whenever it has it. Answers how many
+ * recorded copies were replaced, which is what the caller reports.
+ */
+export function rewriteRecorded(
+  rewrite: (item: Record<string, unknown>) => Record<string, unknown> | null,
+): number {
+  let count = 0;
+  const redo = (text: string | null): string | null => {
+    if (text == null) return text;
+    let parsed: unknown;
+    // Tolerant, like nameOfPair() above and for the same reason: a value that
+    // will not parse is left exactly as it was rather than throwing out of an
+    // action somebody pressed a button for.
+    try { parsed = JSON.parse(text); } catch { return text; }
+    if (!isRecord(parsed)) return text;
+    // A bin entry is { at, item }; an item is itself. One unwrap covers both -
+    // the same shape timelineHashes() reads a line below.
+    const inner = isRecord(parsed.item) ? parsed.item : null;
+    const next = rewrite(inner ?? parsed);
+    if (!next) return text;
+    count += 1;
+    return JSON.stringify(inner ? { ...parsed, item: next } : next);
+  };
+  const sections = ['items', 'trash'] as const;
+  for (const section of sections) {
+    const keyedBase = base[section];
+    for (const id of Object.keys(keyedBase)) {
+      const next = redo(keyedBase[id]);
+      if (next != null) keyedBase[id] = next;
+    }
+  }
+  for (const step of steps) {
+    for (const section of sections) {
+      const part = step.delta[section];
+      if (!part) continue;
+      for (const id of Object.keys(part.changed)) {
+        const [before, after] = part.changed[id];
+        part.changed[id] = [redo(before), redo(after)];
+      }
+    }
+  }
+  if (count) {
+    checkpoints = new Map();
+    forgetBytes();
+  }
+  return count;
+}
+
+/**
  * Every asset hash the steps point at.
  *
  * **The third member of the reference union, and the reason this function had

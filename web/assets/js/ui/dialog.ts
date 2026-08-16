@@ -16,6 +16,7 @@
 // storage.js can import it and stay loadable without a browser.
 
 import { cue } from '../cuelume/engine.ts';
+import { onTouch } from '../canvas/viewport.ts';
 
 /** Which button was pressed, for the question that has buttons. */
 export type Answer = 'go' | 'keep' | 'cancel';
@@ -219,7 +220,28 @@ function openWith(el: HTMLDialogElement, o: AskSettled): Promise<Answer | string
     // Unless there is a field, where the whole point is to type: nothing is
     // destroyed by this kind of question, and landing on Cancel would mean
     // every use of it began with a click into the box.
-    if (o.field) field.focus();
-    else cancel.focus();
+    //
+    // And unless there is no keyboard, which is the case this reasoning had
+    // never met. Every word of it is about Enter, and on a phone there is no
+    // Enter to protect against - so all the focus did was put a highlight on
+    // Cancel that read as a button already chosen, on a dialog whose whole
+    // question is which button to press. Focus still has to land *inside* the
+    // modal (leaving it to showModal's own default would put it on whichever
+    // control comes first, which is the very thing the paragraph above is
+    // guarding against), so it lands on the dialog itself: nothing is
+    // highlighted, nothing is armed, and a screen reader still reads the
+    // question from the top.
+    if (o.field) {
+      field.focus();
+    } else if (onTouch()) {
+      // A <dialog> is not focusable of its own accord - showModal() can land on
+      // it, but focus() on an element with no tabindex is a no-op, so the -1
+      // is what makes the line below do anything at all. -1 rather than 0: this
+      // is a place for focus to rest, not a stop on the way round.
+      el.tabIndex = -1;
+      el.focus();
+    } else {
+      cancel.focus();
+    }
   });
 }

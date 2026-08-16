@@ -18,7 +18,7 @@ import assert from 'node:assert/strict';
 import { putAsset, clearAssets } from '../web/assets/js/storage/assets.ts';
 
 /** A blob-alike: display.js only reads .type, and putAsset only reads .size. */
-const imageBlob = () => ({ type: 'image/png', size: 1024 });
+const imageBlob = (type = 'image/png') => ({ type, size: 1024 });
 
 /**
  * Install the four browser APIs display.js reaches for, with the decode held
@@ -34,7 +34,7 @@ const imageBlob = () => ({ type: 'image/png', size: 1024 });
  * would land somewhere else entirely - `new URL(...) is not a constructor` in a
  * module that never asked for a stub.
  */
-function stubImageAPIs() {
+function stubImageAPIs({ encodes = ['image/webp'] } = {}) {
   const saved = ['createImageBitmap', 'OffscreenCanvas', 'URL']
     .map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]);
   const restore = () => {
@@ -60,10 +60,18 @@ function stubImageAPIs() {
     }));
   };
 
+  // Models a real encoder rather than a cooperative one: the specification says
+  // an unsupported type comes back as PNG *without complaint*, which is what
+  // every Safari does when asked for WebP. A stub that always answers
+  // 'image/webp' is why that went unnoticed here for as long as it did.
+  const asked = [];
   globalThis.OffscreenCanvas = class {
     constructor(w, h) { this.width = w; this.height = h; }
     getContext() { return { drawImage() {}, imageSmoothingEnabled: true, imageSmoothingQuality: '' }; }
-    async convertToBlob() { return { type: 'image/webp', size: 64 }; }
+    async convertToBlob({ type } = {}) {
+      asked.push(type);
+      return { type: encodes.includes(type) ? type : 'image/png', size: 64 };
+    }
   };
 
   globalThis.URL = {
@@ -71,7 +79,7 @@ function stubImageAPIs() {
     revokeObjectURL: () => { revoked++; },
   };
 
-  return { release, restore, urls: () => created, revoked: () => revoked, peak: () => peak };
+  return { release, restore, urls: () => created, revoked: () => revoked, peak: () => peak, asked: () => asked };
 }
 
 // display.js keeps its cache in module scope, so each test needs its own copy.
@@ -129,4 +137,43 @@ test('generation still works normally when no clear intervenes', async (t) => {
   const url = await job;
   assert.match(url, /^blob:copy-/, 'an uninterrupted job publishes its copy');
   assert.equal(displayURLReady('h2'), url, 'and the copy is cached for re-mounts');
+});
+
+// The crash this module exists to prevent, reached by the module itself. No
+// version of Safari encodes WebP from a canvas, and this used to answer that by
+// returning null - which the renderer reads as "mount the original", at full
+// resolution, for every picture on the board. Two dozen phone photographs is a
+// gigabyte of decode and a dead tab, on the one engine that dies.
+test('a copy is still published where the engine cannot write WebP', async (t) => {
+  const api = stubImageAPIs({ encodes: ['image/png'] });
+  t.after(api.restore);
+  const { ensureDisplay, displayURLReady } = await freshDisplay();
+
+  putAsset('png', imageBlob('image/png'));
+  const job = ensureDisplay('png');
+  api.release();
+
+  assert.match(await job, /^blob:copy-/, 'a PNG copy is a bounded copy and must be kept');
+  assert.match(displayURLReady('png'), /^blob:copy-/, 'and it must be cached like any other');
+});
+
+// The one retry, and the reason it is conditional. A JPEG source provably has
+// no alpha, so re-encoding as JPEG cannot flatten anything; a PNG source might
+// be a cut-out, and gaining a black background would be this module trading a
+// crash for a wrong picture.
+test('a JPEG source retries as JPEG where WebP is refused, a PNG one does not', async (t) => {
+  const api = stubImageAPIs({ encodes: ['image/jpeg', 'image/png'] });
+  t.after(api.restore);
+  const { ensureDisplay } = await freshDisplay();
+
+  putAsset('jpg', imageBlob('image/jpeg'));
+  putAsset('png', imageBlob('image/png'));
+  const jpg = ensureDisplay('jpg');
+  const png = ensureDisplay('png');
+  api.release();
+  await jpg;
+  await png;
+
+  assert.deepEqual(api.asked(), ['image/webp', 'image/jpeg', 'image/webp'],
+    'the JPEG source asks twice and the PNG source keeps what came out');
 });

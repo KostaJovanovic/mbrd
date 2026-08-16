@@ -431,6 +431,7 @@
   border-radius: var(--leaf);
   padding: 4px 6px;
   margin: -4px -6px;
+  -webkit-user-select: none;
   user-select: none;
   transition: color var(--dur-fast) var(--ease),
               background var(--dur-fast) var(--ease);
@@ -598,6 +599,7 @@
   /* Nothing here is a drag target except the frame, and a picture that could be
      dragged away as a file mid-crop is a gesture fighting a gesture. */
   -webkit-user-drag: none;
+  -webkit-user-select: none;
   user-select: none;
 }
 
