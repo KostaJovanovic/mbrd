@@ -525,14 +525,23 @@ const RENDERERS = {
     v.playsInline = true;
     v.draggable = false;
     v.addEventListener('loadedmetadata', () => adoptAspect(item, v.videoWidth, v.videoHeight), { once: true });
-    // A frame pulled out of the file at import, for a clip this browser cannot
-    // open at all - H.265 is the case, see firstFrame() in optimize/media.js.
-    // Set as the poster rather than drawn as a card cover, because a video *is*
-    // its picture: the card then shows the clip, full bleed and the right shape,
-    // instead of the black rectangle a refused codec leaves behind. It costs
-    // nothing on a clip the browser can play, since the first frame it decodes
-    // paints straight over the poster.
-    const posterHash = metaStr(item.meta?.cover);
+    // A frame pulled out of the file at import - and, failing that, by the
+    // optimiser or the idle backfill. Set as the poster rather than drawn as a
+    // card cover, because a video *is* its picture: the card then shows the clip,
+    // full bleed and the right shape, instead of the blank rectangle a clip with
+    // no frame decoded leaves behind. It costs nothing on a clip the browser can
+    // play and has mounted, since the first frame it decodes paints over it.
+    //
+    // Three keys, not one, and the thumbnail behind them. setItemPoster() writes
+    // `cover`, older boards carry `poster` or `shot`, and thumbSource() in
+    // optimize/optimize.ts has read all three for as long as they have existed -
+    // so a board whose clips predate the current key had a picture the optimiser
+    // could see and the card could not. The hundred-pixel thumbnail is the last
+    // resort and a real one: blown up to card size it is soft, and soft is a
+    // great deal closer to the clip than an empty rectangle is.
+    const posterHash = ['cover', 'poster', 'shot', 'thumb']
+      .map(key => metaStr(item.meta?.[key]))
+      .find(hash => hash && getAsset(hash));
     const poster = posterHash ? assetURL(posterHash) : null;
     if (poster) v.poster = poster;
     const url = item.asset?.hash ? assetURL(item.asset.hash) : null;
@@ -555,10 +564,43 @@ const RENDERERS = {
       // know that in order to tell a parked clip from a played one.
       if (url) v.src = url + '#t=' + POSTER_TIME;
     }
-    // A fragment so both land as siblings inside .item-body, the same way an
-    // animated picture travels with its still.
+    // The twin, and it is the same twin a photograph carries: zoomed out past
+    // the detail rung the board draws hundred-pixel copies instead of the real
+    // thing, and a clip is the heaviest thing on the board to be drawing the
+    // real thing of.
+    //
+    // This is the half of that feature video never had. Both ends of it were
+    // built - import cuts a thumbnail from a clip's poster, the optimiser and the
+    // idle backfill repair the ones that are missing - and nothing ever mounted
+    // one, so every clip on a board zoomed right out stayed a live <video>
+    // holding a decoder to paint something 80px wide. The rules that swap them
+    // are in items.css beside the picture's.
+    //
+    // Not while it is playing: that swap is in the CSS too, because a clip you
+    // zoom away from mid-play should keep showing the picture it is making.
+    const twinHash = metaStr(item.meta?.thumb);
+    const twinURL = twinHash && getAsset(twinHash) ? assetURL(twinHash) : null;
+    let still: HTMLImageElement | null = null;
+    if (twinURL) {
+      still = document.createElement('img');
+      still.className = 'still';
+      still.alt = '';
+      still.decoding = 'async';
+      still.draggable = false;
+      // is-ready gates the swap for the reason it does on a picture: the src
+      // lands at once and the bytes still have to decode, and swapping early
+      // shows an empty square where the clip was.
+      still.addEventListener('load', () => still?.classList.add('is-ready'), { once: true });
+      still.src = twinURL;
+    }
+
+    // A fragment so all of them land as siblings inside .item-body, the same way
+    // an animated picture travels with its still. The twin goes directly after
+    // the <video> because the CSS pairs them with `+`.
     const pair = document.createDocumentFragment();
-    pair.append(v, buildVideoPlayer(item, v));
+    pair.append(v);
+    if (still) pair.append(still);
+    pair.append(buildVideoPlayer(item, v));
     return pair;
   },
 

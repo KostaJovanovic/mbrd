@@ -55,9 +55,10 @@ import {
   nowPlaying, onNowPlaying, clearNowPlaying,
   getVolume, onVolume, setVolume, volumeLocked,
 } from '../canvas/audio.ts';
-import { setAdvanceGate } from '../canvas/playlist-queue.ts';
+import { onQueue, queueNext, queueState, setAdvanceGate } from '../canvas/playlist-queue.ts';
 import { bindScrub, clock, PAUSE_ICON, PLAY_ICON } from '../media/transport.ts';
-import { board } from '../state.ts';
+import { board, setBoardMode } from '../state.ts';
+import { onNarrowScreen } from '../canvas/viewport.ts';
 import { tickSlider } from './controls.ts';
 import { setLens, currentLens } from './board-view.ts';
 import { togglePlayerWindow, isPlayerWindowOpen } from './playlist.ts';
@@ -82,6 +83,8 @@ let lineEl: HTMLElement | null = null;
 let elapsedEl: HTMLElement | null = null;
 let totalEl: HTMLElement | null = null;
 let playBtn: HTMLElement | null = null;
+/** The skip, which is only there while there is a list to skip through. */
+let nextBtn: HTMLElement | null = null;
 // The wave's own svg and path, sized to the bar's pixel width so the frequency
 // does not stretch with it - see sizeWave() and the WAVE_HALF note above.
 let waveSvg: SVGSVGElement | null = null;
@@ -92,6 +95,8 @@ let seekTo: ((clientX: number) => void) | null = null;
 
 // A little list with a play triangle: the way in to the full player.
 const LIST_ICON = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="2" y="3.2" width="8" height="1.6" rx="0.8"/><rect x="2" y="7.2" width="8" height="1.6" rx="0.8"/><rect x="2" y="11.2" width="5" height="1.6" rx="0.8"/><path d="M11.4 7v5l3.3-2.5z"/></svg>';
+// Skip: a triangle against a bar, the shape every transport draws for it.
+const NEXT_ICON = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 3.5v9l7-4.5z"/><rect x="11.6" y="3.5" width="1.6" height="9" rx="0.8"/></svg>';
 
 
 /** The transport currently in the bar, and the way to take it back apart. */
@@ -162,33 +167,53 @@ export function initNowPlaying() {
   closeBtn?.addEventListener('click', close);
 
   // ---------------------------------------------------------------------------
-  // Four things, and that is the whole bar: the playlist, play/pause, the
-  // volume, close.
+  // Two clusters, and the split between them is what each thing acts on.
   //
-  // It used to carry seven. Shuffle, previous, next and repeat made it a second
-  // copy of a transport that already exists in the playlist window, next to the
-  // list those four act on - and prev and next beside a name with nothing else on
-  // screen are two buttons that move you through something you cannot see. Those
-  // went; they are one press away, on the surface that has the list.
+  // ── The lead, at the left, across both rows ──
   //
-  // The volume did not, and the difference is what it is a property *of*. Prev
-  // and next act on a list, so they belong with the list. A level is a property
-  // of the room, not of the queue - it is what you reach for while something is
-  // playing, which is exactly when this bar is up, and putting it a window away
-  // means opening a window to turn a noise down.
+  // Play/pause, and Next behind it when there is a list. This is the transport:
+  // the one control anybody comes to this bar to press, and it is now the size
+  // and the place that says so - a big round button at the head of the bar,
+  // beside the name it is playing and above the line it is running along, rather
+  // than a 25px disc in a row of four small ones at the far end. A player's play
+  // button is not one of its options.
   //
-  // Close stays for a third reason again. It is not a transport control - it is
-  // how the bar is dismissed, and it is the only way; a player with no way to put
-  // it away is furniture.
+  // ── The cluster, at the right ──
+  //
+  // The playlist, the volume, close: the three things that are not this track.
+  // The playlist is where you go for the list, the volume is a property of the
+  // room rather than of the queue - which is why it is here and not a window
+  // away - and close is how the bar is dismissed, which is not a transport
+  // control at all but is the only way to put it away.
+  //
+  // Previous is deliberately not here, and it is the one asymmetry. Next is
+  // where a list is going; previous is where it has been, which is a thing you
+  // can see on the list itself. One button says "carry on without me", which is
+  // what a bar over a board is for; two buttons make the bar a place you steer
+  // from, and steering wants the list in front of you.
   // ---------------------------------------------------------------------------
-  // Both inserted before the volume, which is already in the markup along with
-  // close - so the built and the written halves interleave in one order.
-  const before = controls!.querySelector('.np-volume') || closeBtn;
-  // The way in to the full player: the Playlist lens on a Mobile board (a second
-  // press steps back to the Feed), the floating window on the Desktop.
-  const listBtn = ctlBtn('np-list', 'Open the playlist', LIST_ICON, openPlaylist);
+  // The way in to the full player: the Playlist lens on a narrow screen, the
+  // floating window where there is room for one.
+  const listBtn = ctlBtn('np-qbtn np-list', 'Open the playlist', LIST_ICON, openPlaylist);
+  // Before the volume, which is already in the markup along with close - so the
+  // built and the written halves interleave in one order.
+  controls!.insertBefore(listBtn, controls!.querySelector('.np-volume') || closeBtn);
+
   playBtn = ctlBtn('np-play', 'Play', PLAY_ICON, togglePlay);
-  for (const b of [listBtn, playBtn]) controls!.insertBefore(b, before);
+  nextBtn = ctlBtn('np-qbtn np-next', 'Next track', NEXT_ICON, queueNext);
+  const lead = document.createElement('div');
+  lead.className = 'np-lead';
+  lead.append(playBtn, nextBtn);
+  // First child of the bar, which the grid in chrome.css puts down the left of
+  // both rows. Prepended rather than written into index.html because everything
+  // that varies with what is playing is built here, and Next is the most varying
+  // thing on the bar - see paintNext().
+  bar.prepend(lead);
+  // Whether Next belongs on the bar is a question about the queue, so it is
+  // asked again whenever the queue moves. The other two moments are a track
+  // change (show) and the playlist being opened or shut from this bar.
+  onQueue(paintNext);
+  paintNext();
 
   // A track that ends hands over only while the playlist is up - see
   // playlistOpen(). By injection rather than an import, because canvas/audio.js
@@ -265,6 +290,7 @@ function show(current: NowPlaying | null) {
   bind(current.el);
   caption!.textContent = name(current.item);
   caption!.title = current.item.name || '';
+  paintNext();
   raise();
   // The bar was display:none until raise(), where the line read zero width and
   // the ResizeObserver had nothing to size against; now it has a box.
@@ -345,13 +371,51 @@ function onSeekKey(e: KeyboardEvent) {
 }
 
 /**
- * Open the full player. On a Mobile board that is the Playlist lens - and a second
- * press, while it is up, steps back to the Feed; on the Desktop it is the floating
- * window, toggled open and shut.
+ * Whether the bar carries a Next button, which is to say whether the thing
+ * playing is running through a list.
+ *
+ * Three conditions, and each is a way of not being one. The queue has to be what
+ * is sounding at all (a video card is not); there has to be more than one track
+ * in it to move to; and the track has to have been started *as* a list, or the
+ * list has to be on screen - which are exactly the two cases where the track
+ * after this one will start on its own. See advanceQueue() in
+ * canvas/playlist-queue.ts, which asks the same pair of questions to decide it.
+ *
+ * That agreement is the point. A Next button on a track that will stop dead at
+ * the end is a button promising a queue that is not there, and the argument
+ * against prev/next on this bar always was that they steer something you cannot
+ * see. When the list *is* what is playing, one of them is honest.
+ */
+function paintNext() {
+  if (!nextBtn) return;
+  const q = queueState();
+  nextBtn.hidden = !(q.active && q.length > 1 && (q.fromList || playlistOpen()));
+}
+
+/**
+ * Open the full player: the Playlist lens on a narrow screen, the floating
+ * window where there is room for one - and on a Mobile board that is not narrow,
+ * the lens too, since a window would float over a surface that has the list.
+ *
+ * The same reading cmds.playlist takes, for the same reason, and its header is
+ * where the argument is written. What is not the same is the toggle: on the lens
+ * this button steps back to the Feed rather than doing nothing, because it is
+ * *this bar's* button and the bar is up over whatever you were doing - a way
+ * back out of the list is the thing it is for.
  */
 function openPlaylist() {
-  if (board.layoutMode === 'mobile') setLens(currentLens() === 'playlist' ? 'feed' : 'playlist');
-  else togglePlayerWindow();
+  if (board.layoutMode === 'mobile') {
+    setLens(currentLens() === 'playlist' ? 'feed' : 'playlist');
+  } else if (onNarrowScreen()) {
+    // Off the canvas and into the lens. setLens first, so the mode switch lands
+    // on the lens that was asked for rather than on whichever one was last up -
+    // the order cmds.feed and cmds.playlist both take.
+    setLens('playlist');
+    setBoardMode('mobile');
+  } else {
+    togglePlayerWindow();
+  }
+  paintNext();
 }
 
 /**
@@ -386,11 +450,18 @@ function togglePlay() {
   else sound.pause();
 }
 
-/** Build one round icon button for the controls cluster. */
+/**
+ * Build one round icon button.
+ *
+ * `className` is the whole list rather than a suffix on `np-qbtn`, because the
+ * play button is not one of the quiet ones any more: it is the lead, it is a
+ * size and a colour of its own, and a shared class it then had to out-specify
+ * would be a rule fighting a rule for the sake of a shorter call.
+ */
 function ctlBtn(className: string, label: string, icon: string, onClick: () => void) {
   const b = document.createElement('button');
   b.type = 'button';
-  b.className = 'np-qbtn ' + className;
+  b.className = className;
   b.setAttribute('aria-label', label);
   b.title = label;
   b.innerHTML = icon;
@@ -479,6 +550,9 @@ function teardown() {
   if (elapsedEl) elapsedEl.textContent = '0:00';
   if (totalEl) totalEl.textContent = '0:00';
   if (playBtn) { playBtn.innerHTML = PLAY_ICON; playBtn.setAttribute('aria-label', 'Play'); }
+  // Nothing is playing, so there is nothing to be next after. Left to paintNext()
+  // to bring back, which the next track's show() calls.
+  if (nextBtn) nextBtn.hidden = true;
 }
 
 /**

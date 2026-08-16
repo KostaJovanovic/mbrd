@@ -424,6 +424,9 @@
      the reservation cannot drift away from the thing being reserved for. */
   padding: 6px var(--handle-w) 6px 9px;
   gap: 8px;
+  /* One button in here now that the scrubber is the bar at the foot's job, and
+     it keeps the end of the strip it always sat at. */
+  justify-content: flex-end;
   background: var(--paper-card);
   border-top: var(--board-hairline) solid var(--rule);
   opacity: 0;
@@ -468,58 +471,14 @@
     transition-delay: 0s;
   }
 }
-/* No play button in here any more - see the note at the top of canvas/video.js.
-   What is left is the scrubber, the clock and the mute, and the 9px lead that
-   used to hold a 25px button now just gives the line somewhere to start. */
+/* No play button in here, and no scrubber either - see the note at the top of
+   canvas/video.js. What is left is the mute, at the right end of the strip
+   where it has always been, a handle's width clear of the corner.
 
-/* A plain line, deliberately, where the audio card gets a measured waveform.
-   A waveform is worth its space when it is the only picture of the file there
-   is; over a video it would be a drawing of the soundtrack laid across the
-   picture, competing with it to say something you can already see. */
-.vtrack {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-  /* Taller than the line it draws: 3px is not a thing anyone can hit, and the
-     hit area is what the pointer is actually aiming at. */
-  height: 14px;
-  cursor: pointer;
-}
-/* Drawn as the same three-svg shape the now-playing bar and the playlist window
-   use, so all three scrubbers wave together at the soft end of the whimsy axis -
-   see the note in util.js. It was a ::before rail and a div scaled on X, which
-   cannot carry a wave: scaling one horizontally changes its frequency as the
-   clip plays. The clip below moves it instead, and a clip-path is the same
-   never-touches-layout write the transform was. */
-.vt-svg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  fill: none;
-  stroke-width: 2;
-  stroke-linecap: round;
-}
-.vtrack > .vt-svg { clip-path: inset(0 0 0 calc(var(--vt-progress, 0) * 100%)); }
-.vt-base { stroke: color-mix(in srgb, var(--ink) 22%, transparent); }
-.vt-fill {
-  position: absolute;
-  inset: 0;
-  clip-path: inset(0 calc((1 - var(--vt-progress, 0)) * 100%) 0 0);
-}
-.vt-fill-line,
-.vt-fill-wave { stroke: var(--accent); }
-.vt-fill-wave { display: none; transform-box: view-box; }
-:root[data-whimsy="0"] .vt-fill-line { display: none; }
-:root[data-whimsy="0"] .vt-fill-wave {
-  /* One period is 2 * WAVE_HALF = 14 user units; keep the 14 in step with it. */
-  display: block;
-  animation: seek-wave 3s linear infinite;
-}
-@media (prefers-reduced-motion: reduce) {
-  :root[data-whimsy="0"] .vt-fill-wave { animation: none; }
-}
-.vtrack:focus-visible { outline: var(--sel-line) solid var(--select); outline-offset: 2px; }
+   The bar stays the full width of the foot rather than shrinking to its one
+   button. It is a strip of chrome the caption plate takes turns with (see the
+   `:has()` rules below); a 20px tab floating over the bottom-right of a picture
+   would be a different object with a different set of rules to write. */
 
 /* A stopped track's waveform is not a control.
 

@@ -361,6 +361,24 @@
 #world.is-stilled .item-body img.still.is-ready { display: block; }
 #world.is-stilled .item-body img:not(.still):has(+ .still.is-ready) { display: none; }
 
+/* And a clip's twin, which is the same swap with one condition on it.
+
+   A video card carries a thumbnail cut from its poster (the video renderer
+   mounts it, import and the optimiser make it), so a board zoomed out past the
+   rung draws hundred-pixel WebPs instead of holding a decoder open per card -
+   which on a wall of clips is the difference the feature exists for.
+
+   The condition is playback. A photograph swapped for its thumbnail is showing
+   the same picture smaller; a *playing* clip swapped for its first frame has
+   stopped showing what it is doing while still making the noise. So the swap
+   only happens while the clip is parked, and a clip you zoom away from mid-play
+   keeps its picture. .vplayer.is-playing is canvas/video.ts's class and it sits
+   in the same .item-body, which is why both rules can be written against it. */
+#world.is-stilled .item-body:has(> .vplayer.is-playing) img.still { display: none; }
+#world.is-stilled .item-body:not(:has(> .vplayer.is-playing)) video:has(+ .still.is-ready) {
+  display: none;
+}
+
 /* Cards for the non-visual types: audio, text, and the generic fallback.
    Ruled just inside the edge, the way a plate or a bookplate is. */
 .card {

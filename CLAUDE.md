@@ -19,23 +19,30 @@ within a quarter.
 ## Commands
 
 ```bash
-npm test                          # node --test over tests/ — no install, no deps
+npm test                          # node --test over tests/**/*.test.{js,ts} — no install, no deps
 node --test tests/state-history.test.js                            # one file
 node --test --test-name-pattern "undo" tests/state-history.test.js # one test
 python tools/serve.py [port]      # dev server on 6273; server.bat on Windows
 ```
 
-Everything below needs `npm install` first (three devDependencies). `npm test`
+Everything below needs `npm install` first (four devDependencies). `npm test`
 never does:
 
 ```bash
 npm run dev         # esbuild watch → web/assets/app.js; edit, then refresh
-npm run build       # minified bundle + assets/lab-pigments.js — this is what ships
+npm run build       # minified bundle + both lab bundles — this is what ships
 npm run lint        # oxlint, correctness only — adding a formatter is a regression
 npm run typecheck   # tsc --noEmit, strict, whole tree
 npm run dev:lab     # watch build for web/lab.html, the pigment lab
+npm run dev:sound   # watch build for web/lab-sound.html, the sound lab
 save.bat            # version stamps → build → commit → optionally push
 ```
+
+The lint is oxlint plus one vendored plugin, `tools/oxlint/anti-slop`, which is
+why `@oxlint/plugins` is a dependency. Its rules are the single departure from
+correctness-only and a narrow one — each fires on a way of writing TypeScript
+that hides a mistake, never on layout. The argument is in `.oxlintrc.json`'s
+header.
 
 Generators, run when their source changes:
 `node tools/gen-formats.mjs` (→ `import/formats.ts`), `tools/gen-stickers.mjs`
@@ -180,13 +187,13 @@ What matters when touching it:
 - No `<base>` tag, unlike `index.html` — a base makes every fragment resolve
   against it and load a board.
 
-## `web/lab.html` is a bench, not a page of the site
+## `web/lab.html` and `web/lab-sound.html` are benches, not pages of the site
 
-Its own bundle (`npm run dev:lab`), its own colours, none of `tokens.css` — a
-bench rendering at the current whimsy tier makes a wrong colour and a warmly
-displayed one look identical. `noindex` rather than a `robots.txt` Disallow (a
-Disallow stops the fetch, which stops the directive being read), absent from
-`sitemap.xml` and from `SHELL`.
+Each has its own bundle (`npm run dev:lab`, `npm run dev:sound`), its own
+colours, none of `tokens.css` — a bench rendering at the current whimsy tier
+makes a wrong colour and a warmly displayed one look identical. `noindex` rather
+than a `robots.txt` Disallow (a Disallow stops the fetch, which stops the
+directive being read), absent from `sitemap.xml` and from `SHELL`.
 
 ## Reporting work
 

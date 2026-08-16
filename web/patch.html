@@ -852,16 +852,20 @@
 
 <!-- What is playing, and the controls for it. Built by ui/nowplaying.js.
 
-     Two rows: the name on the left and the controls on the right - open the
-     playlist, play/pause, volume, close - with a thin seek line under both. The
-     line is straight at the middle and plain ends of the whimsy axis and a
-     Material-style wave at the soft end; it is not the measured waveform the
-     cards carry - a bar is a remote, not a picture of the sound.
+     A grid: play/pause down the left across both rows, and to the right of it
+     the name over a thin seek line, with the small controls - open the playlist,
+     volume, close - at the end of the name's row. The line is straight at the
+     middle and plain ends of the whimsy axis and a Material-style wave at the
+     soft end; it is not the measured waveform the cards carry - a bar is a
+     remote, not a picture of the sound. It is the *only* scrubber for a video
+     now, the card having given its own up (canvas/video.js).
 
-     Shuffle, previous, next and repeat used to sit here too. They are in the
-     playlist window, next to the list they act on; see the note in
-     ui/nowplaying.js. The volume is not one of them - it is a property of the
-     room rather than of the list, and it belongs where the sound is stopped.
+     The play button and the playlist button are built by ui/nowplaying.js, and
+     so is Next, which is there only while what is playing is a list rather than
+     one card off the board. Previous and repeat and shuffle are in the playlist
+     window, next to the list they act on; see the note in ui/nowplaying.js. The
+     volume is not one of those - it is a property of the room rather than of the
+     list, and it belongs where the sound is stopped.
 
      Along the foot between the bin and the zoom cluster, which is where a
      transport has lived on every player anybody has used. On a phone that edge
@@ -876,8 +880,9 @@
          button in the controls cluster, built by ui/nowplaying.js. -->
     <div class="np-name"></div>
     <div class="np-controls">
-      <!-- The playlist button and play/pause are built by ui/nowplaying.js and
-           inserted here, before the volume. -->
+      <!-- The playlist button is built by ui/nowplaying.js and inserted here,
+           before the volume. Play/pause is not in this cluster any more: it is
+           the lead, prepended to the bar itself, down the left of both rows. -->
       <!-- The global volume, and it is on the bar rather than in the panel or in
            the playlist window because a level is reached for while something is
            playing, which is exactly when this is up. Not a per-clip setting:
@@ -1392,7 +1397,7 @@
          when it started. All counted from the source. -->
     <p class="pn-tally">
       <span>17 releases</span>
-      <span>234 commits</span>
+      <span>235 commits</span>
       <span>since 25 July 2026</span>
     </p>
   </header>

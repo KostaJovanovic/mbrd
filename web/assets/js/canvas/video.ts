@@ -13,21 +13,33 @@
 // canvas/audio.js gives: the native widget is the one piece of chrome a
 // browser will not let you restyle, so it puts a slab of vendor-grey plastic
 // on a board whose whole premise is that it is a sheet of paper you chose the
-// colour of. This draws the same three affordances - play, seek, position - in
-// the board's own tokens.
+// colour of. This draws what is left in the board's own tokens.
 //
-// Deliberately shallow next to the audio transport. An audio card is nothing
-// *but* its player, so it earns a measured waveform; a video already shows you
-// what it is, and its controls are laid over the picture, where every pixel
-// spent is a pixel of the thing you pinned up. So: a plain progress line, and
-// a bar that stays out of the way until the pointer is on the card.
+// ── What is left, and what the bar at the foot took ──
+//
+// Seek and position are not here any more. The now-playing bar carries a
+// scrubber for whatever is sounding, video included, and it is *pinned to the
+// glass* - so the seek line on the card was the same control drawn a second
+// time, in the one place it is worst: laid over the picture, faded out until
+// the pointer is on the card, and gone the moment the clip is panned away from.
+// A card cannot hold a seek that survives the board moving. The bar can, and
+// does, which leaves the card the two things that are genuinely properties of
+// *this* clip rather than of what is playing:
+//
+//   the big play button   the only mark on a parked clip that says it moves
+//   mute                  this clip's own sound, not the room's level
+//
+// An audio card kept its waveform through the same change, and the asymmetry is
+// the one this file always described: an audio card is nothing *but* its player
+// and a measured waveform is the whole of what it has to show, while a video
+// already shows you what it is and every pixel of chrome over it is a pixel of
+// the thing you pinned up.
 
 // No PAUSE_ICON: the only button here is the big one over the picture, and it
 // is a play button that goes away rather than one that turns into a pause.
 import { registerPlayer } from './audio.ts';
-import { clamp } from '../util.ts';
 import { toast } from '../notify.ts';
-import { bindScrub, clock, PLAY_ICON, seekInnerHTML, sizeSeekWave } from '../media/transport.ts';
+import { PLAY_ICON } from '../media/transport.ts';
 import type { Item } from '../board-model.ts';
 
 /**
@@ -36,13 +48,13 @@ import type { Item } from '../board-model.ts';
  * rectangle.
  *
  * Here rather than beside the `v.src` line that writes it, because it is not a
- * private detail of the renderer - it is the value two other places have to
- * compare against, and comparing against zero instead is what made them both
- * wrong. canvas/items.js read `currentTime > 0` as "this clip is doing
- * something" and so exempted every desktop video card from the node cull, which
- * left the cache growing one detached <video> per card panned over for the life
- * of the tab; the transport below read the same thing as "this clip has been
- * played" and put 0:00 where the running time goes.
+ * private detail of the renderer - it is the value the cull has to compare
+ * against, and comparing against zero instead is what made it wrong.
+ * canvas/items.js read `currentTime > 0` as "this clip is doing something" and
+ * so exempted every desktop video card from the node cull, which left the cache
+ * growing one detached <video> per card panned over for the life of the tab.
+ * The card's own clock used to read it too, for the same reason and to the same
+ * end; that clock is the now-playing bar's now.
  *
  * A tenth of a second rather than zero because a decoder handed t=0 often has
  * nothing decoded yet and paints the black frame this exists to avoid. Small
@@ -86,81 +98,17 @@ export function buildVideoPlayer(item: Item, video: HTMLVideoElement): HTMLEleme
   // mark saying it is a clip and not a photograph.
   const big = iconButton('vbig', 'Play', PLAY_ICON);
 
+  // The bar over the foot of the picture, which is now one button wide. It
+  // stays a bar rather than becoming a bare button because what it is is a
+  // strip of chrome that fades in with the pointer, and the CSS that does the
+  // fading is written against .transport-video - see media.css.
   const bar = document.createElement('div');
   bar.className = 'transport transport-video';
 
-  const track = document.createElement('div');
-  track.className = 'vtrack';
-  // The same slider contract canvas/audio.js's waveform signs: focusable,
-  // driven by the arrow keys, and reporting where it is. A role without those
-  // is worse than no role - it announces a control that cannot be operated.
-  track.setAttribute('role', 'slider');
-  track.setAttribute('aria-label', 'Seek');
-  track.setAttribute('aria-valuemin', '0');
-  track.tabIndex = 0;
-  // The same three-svg scrubber the now-playing bar, the playlist window and
-  // canvas/audio.js's own line all draw, so every seek on the board waves
-  // together at the soft end of the whimsy axis - see the note in media/transport.js.
-  track.innerHTML = seekInnerHTML('vt');
-  const trackWave = track.querySelector('.vt-wave-svg');
-  const trackWavePath = track.querySelector('.vt-fill-wave');
-  // On a resize rather than on a playback frame: the path is a string built in a
-  // loop over the width, so laying it per frame would rebuild it sixty times a
-  // second to arrive at the same characters. A video card is resizable, which is
-  // why it is laid more than once at all.
-  // Once here, so a browser without a ResizeObserver still gets a wave rather
-  // than an empty path - see the same repair in ui/playlist.ts.
-  sizeSeekWave(track, trackWave, trackWavePath);
-  if (typeof ResizeObserver === 'function') {
-    new ResizeObserver(() => sizeSeekWave(track, trackWave, trackWavePath)).observe(track);
-  }
-
-  const time = document.createElement('span');
-  time.className = 'transport-time';
-  time.textContent = '0:00';
-
   const mute = iconButton('vmute', 'Mute', SOUND_ICON);
 
-  bar.append(track, time, mute);
+  bar.append(mute);
   player.append(big, bar);
-
-  // ---- painting ---------------------------------------------------------
-
-  const paint = () => {
-    const at = video.duration ? clamp(video.currentTime / video.duration, 0, 1) : 0;
-    // A custom property the clip-path reads, rather than a transform: a wave
-    // scaled on X is a wave whose frequency changes as the clip plays. Still a
-    // compositor-only write, which matters because this runs on every frame of
-    // playback.
-    track.style.setProperty('--vt-progress', at.toFixed(4));
-    // A parked clip shows how long it is; once it has started, where you are in
-    // it. The old readout was currentTime alone, so every unplayed video on the
-    // board said 0:00 and nothing anywhere gave its length.
-    //
-    // Measured against POSTER_TIME rather than zero, because that is where a
-    // parked clip actually sits: the desktop path mounts the source at the
-    // poster fragment, so `!video.currentTime` was false for every clip nobody
-    // had touched and the length went back to never being shown. The touch path
-    // holds the source back entirely and reads 0:00 for a different reason -
-    // `duration` is NaN until the first play - which this does not address.
-    const parked = video.paused && video.currentTime <= POSTER_TIME;
-    time.textContent = clock(parked ? (video.duration || 0) : (video.currentTime || 0));
-    // String() rather than the number these two used to be handed: setAttribute
-    // was doing the conversion itself, and this is that conversion said aloud.
-    track.setAttribute('aria-valuemax', String(Math.round(video.duration || 0)));
-    track.setAttribute('aria-valuenow', String(Math.round(video.currentTime || 0)));
-    track.setAttribute('aria-valuetext',
-      `${clock(video.currentTime || 0)} of ${clock(video.duration || 0)}`);
-  };
-
-  // Driven by the frame clock while playing, for the reason the waveform is:
-  // timeupdate fires about four times a second, which is fine for a digit and
-  // nowhere near enough for a line that is supposed to glide.
-  let frame = 0;
-  const follow = () => {
-    paint();
-    frame = video.paused ? 0 : requestAnimationFrame(follow);
-  };
 
   // ---- controls ---------------------------------------------------------
 
@@ -205,69 +153,21 @@ export function buildVideoPlayer(item: Item, video: HTMLVideoElement): HTMLEleme
   // never goes away, since a playing clip never stops playing. The player's own
   // is-playing still does real work: it takes the big button off the picture,
   // and #world's `:has()` rules hide the caption plate over a running clip.
-  video.addEventListener('play', () => {
-    player.classList.add('is-playing');
-    if (!frame) frame = requestAnimationFrame(follow);
-  });
-  video.addEventListener('pause', () => {
-    player.classList.remove('is-playing');
-    paint();
-  });
-  video.addEventListener('loadedmetadata', paint);
-  // Covers everything the frame loop cannot see: a seek while paused, a
-  // buffering stall, currentTime written from outside.
-  video.addEventListener('timeupdate', paint);
-  video.addEventListener('seeked', paint);
+  video.addEventListener('play', () => player.classList.add('is-playing'));
+  video.addEventListener('pause', () => player.classList.remove('is-playing'));
   // Rewound rather than left on the last frame, so the big button comes back
   // over the picture the clip started from and a second viewing is one click.
-  video.addEventListener('ended', () => { video.currentTime = 0; paint(); });
+  video.addEventListener('ended', () => { video.currentTime = 0; });
 
-  // ---- scrubbing --------------------------------------------------------
-
-  const seekTo = (clientX: number) => {
-    if (!video.duration) return;
-    const box = track.getBoundingClientRect();
-    if (!box.width) return;
-    video.currentTime = clamp((clientX - box.left) / box.width, 0, 1) * video.duration;
-    paint();
-  };
-
-  // The shared gesture - see bindScrub() in audio.js for why it is captured.
-  // It lived here first and the audio waveform went without it, which is how
-  // one of the two seek controls on this board came to be draggable and the
-  // other only clickable.
-  bindScrub(track, seekTo);
-
-  /** Seek by `secs`, or to an absolute point when `to` is given. */
-  const seekBy = (secs: number, to: number | null = null) => {
-    if (!video.duration) return;
-    video.currentTime = clamp(to != null ? to : video.currentTime + secs, 0, video.duration);
-    paint();
-  };
-
-  // stopPropagation is load-bearing: these are the canvas's keys too, and
-  // without it an arrow would seek the clip *and* nudge the selection.
-  track.addEventListener('keydown', e => {
-    const step = e.shiftKey ? 1 : 5;
-    switch (e.key) {
-      case 'ArrowRight': case 'ArrowUp': seekBy(step); break;
-      case 'ArrowLeft': case 'ArrowDown': seekBy(-step); break;
-      case 'PageUp': seekBy(30); break;
-      case 'PageDown': seekBy(-30); break;
-      case 'Home': seekBy(0, 0); break;
-      case 'End': seekBy(0, video.duration); break;
-      case ' ': case 'Enter': toggle(); break;
-      default: return;
-    }
-    e.preventDefault();
-    e.stopPropagation();
-  });
+  // No seek and no frame loop. Both were here and both are the bar's now - see
+  // the head of this file. What went with them is a per-card requestAnimationFrame
+  // for every clip playing on the board, which was one loop that existed to move
+  // a line the pointer had to be resting on the card to see.
 
   // The item goes with it so the exclusive-playback rule can name what is
   // playing - and so the now-playing bar can, since it carries video as well as
   // audio and reads the type to pick its notation (ui/nowplaying.js).
   registerPlayer(video, item);
-  paint();
   return player;
 }
 

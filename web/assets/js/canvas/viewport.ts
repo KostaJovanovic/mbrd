@@ -327,6 +327,31 @@ export function onSmallScreen(): boolean {
   return handheld.matches;
 }
 
+/**
+ * Whether there is a phone's width to work with, whatever is pointing at it.
+ *
+ * The third of these three questions and the narrowest in scope: onTouch() asks
+ * what is doing the poking, onSmallScreen() asks for both together to pick a
+ * level of detail, and this asks only how wide the window is.
+ *
+ * Width alone is the right test for *which surface a control opens*. The
+ * playlist has two homes - a floating window over the canvas, and a lens that
+ * fills the screen - and a floating window is a thing that needs room around it.
+ * A 380px window has no room whether it is a phone or a browser dragged narrow
+ * on a desk, and the person who dragged it narrow gets the same answer as the
+ * person holding a phone, which is the one they want in both cases. Touch has
+ * nothing to say about it: a touchscreen laptop at full width has all the room
+ * there is, and it was getting the phone's answer for no reason.
+ *
+ * Same 640px as the two rules above, for the reason given there.
+ */
+let narrow: MediaQueryList | null = null;
+export function onNarrowScreen(): boolean {
+  if (typeof matchMedia !== 'function') return false;
+  narrow ??= matchMedia('(max-width: 640px)');
+  return narrow.matches;
+}
+
 /** The rung in force, as a zoom factor. */
 const lodZoom = () => (onSmallScreen() ? LOD_ZOOM_SMALL : LOD_ZOOM);
 
