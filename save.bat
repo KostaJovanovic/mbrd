@@ -167,10 +167,9 @@ rem prose from patch-notes.md at the repository root and, around it, index.html'
 rem own load block - every stylesheet and the pre-paint look restore - so a
 rem change to the shell has to reach it or /patch is dressed by an older cascade
 rem than the site is. Reproducible: no timestamps anywhere in it, so re-running
-rem with nothing edited writes identical bytes and stages nothing.
-rem tests/patch.test.js runs
-rem the generator and compares, so a skipped run fails the suite rather than
-rem shipping.
+rem with nothing edited writes identical bytes and stages nothing. This run is
+rem the only thing keeping the page level with the prose - nothing in the suite
+rem checks it.
 echo [gen]  patch notes
 node tools\gen-patch-page.mjs
 if errorlevel 1 (

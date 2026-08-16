@@ -33,7 +33,7 @@ lines of metadata, then bullets:
 `version:` is the number or the span the release covers, and the high end of
 the newest one must equal VERSION in web/assets/js/version.js - the app prints
 it in the foot of its sidebar, and a changelog behind the app it describes is
-one that stops being believed. tests/patch.test.js holds the two together.
+one that stops being believed.
 
 The spans are contiguous and they cover everything. Every commit from the first
 to the current one falls inside exactly one release, which is the property that
