@@ -16,7 +16,7 @@ import { makeByteBudget, overPixelBudget, pixelCrossing, IMPORT_LIMITS } from '.
 import { allow, isAllowed, lift, fileKey, mb as consentMb } from '../consent.ts';
 import {
   classify, defaultSize, measureSize, fitToBox, linkURL, linkDraft, videoFrame,
-  videoDrawsBlank, swatchHex, SWATCH_DEFAULT,
+  videoDrawsBlank, pictureIsFlat, swatchHex, SWATCH_DEFAULT,
 } from '../canvas/renderers.ts';
 import { iframeURL, embedFor } from '../canvas/embed.ts';
 import { arrange, mobileOrder } from '../arrange/arrangements.ts';
@@ -796,6 +796,17 @@ async function posterFor(file: File, decodable: boolean | undefined) {
     const { firstFrame } = await import('../optimize/media.ts');
     const frame = await firstFrame(file, msg => toast(msg));
     if (!frame) return null;
+    // A clip the browser opened only reaches here because every frame it drew
+    // was blank, and one reading of that - the uncommon one - is that the film
+    // really does open on black. ffmpeg answers that reading with a black
+    // picture, and storing it is the thing poster.ts refuses to do for exactly
+    // this reason: `meta.cover` naming real bytes makes every repair pass skip
+    // the card forever, so a black rectangle stored once is black for good.
+    //
+    // Only on this route. A clip the browser could not open at all has no other
+    // source of a picture, and the frame ffmpeg found is the only answer there
+    // will be whatever is in it.
+    if (decodable && await pictureIsFlat(frame)) return null;
     const named = new File([frame], 'poster.' + (frame.type === 'image/png' ? 'png' : 'jpg'),
                            { type: frame.type });
     // Measured as a picture, which it now is, and hashed like any other asset -

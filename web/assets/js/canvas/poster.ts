@@ -159,8 +159,8 @@ export async function videoFrame(file: Blob): Promise<VideoFrameShot | null> {
   // a phone (see rationsDecoders() and the video renderer) so the poster is the
   // only picture there will ever be.
   //
-  // Two pixels, all but transparent, out of the flow and refusing the pointer.
-  // Every part of that is chosen against a way of being ignored:
+  // A card-sized rectangle, all but transparent, out of the flow and refusing
+  // the pointer. Every part of that is chosen against a way of being ignored:
   //
   //   not `display: none`, not `visibility: hidden`  both say "nothing to show
   //     here", which is the state being escaped rather than a way out of it.
@@ -169,14 +169,23 @@ export async function videoFrame(file: Blob): Promise<VideoFrameShot | null> {
   //     hundredth is not visible on any screen and is not zero.
   //   `position: fixed` at the origin  so it intersects the viewport. Decoding
   //     is skipped for what is scrolled far out of sight.
+  //   **160x90 rather than the 2x2 it was**  and this one is a guess, said
+  //     plainly because it cannot be checked from here. The same clip on the
+  //     same phone gives Samsung Internet a frame and Firefox a flat rectangle,
+  //     so what differs is Gecko: it decodes into a surface the compositor owns,
+  //     and a two-pixel element is the least likely thing in the world to get
+  //     one allocated for it. A card-sized element is an ordinary thing for a
+  //     compositor to be asked about. It costs nothing if it changes nothing -
+  //     at a hundredth of an opacity neither size is visible - and if it does
+  //     work it saves every Firefox user a thirty-megabyte download.
   //
   // Written through .style rather than as an attribute, which is what the CSP
   // requires of every inline style in this app - see the note in web/_headers.
   v.style.position = 'fixed';
   v.style.left = '0';
   v.style.top = '0';
-  v.style.width = '2px';
-  v.style.height = '2px';
+  v.style.width = '160px';
+  v.style.height = '90px';
   v.style.opacity = '0.01';
   v.style.pointerEvents = 'none';
   v.setAttribute('aria-hidden', 'true');
@@ -312,14 +321,26 @@ async function grab(v: HTMLVideoElement, url: string): Promise<VideoFrameShot | 
   // Recorded rather than acted on here, because what to do about it is not this
   // module's to decide - it costs thirty megabytes and belongs to whoever is
   // importing. See videoDrawsBlank() and posterFor() in import/drop.ts.
-  if (!refused && played && canvasReads()) blankBrowser = true;
+  //
+  // Whether playback actually started is *not* part of the condition, and that
+  // is deliberate rather than an oversight - it is in the log because it is
+  // worth knowing, not because it changes the answer. A browser that refused to
+  // play the clip has not proved anything about its compositor, but it has
+  // proved the same practical thing: four attempts at a frame, every one blank,
+  // and no fifth attempt this module has. Both endings want the same fallback.
+  //
+  // What that costs when it is wrong is one clip that genuinely opens on black
+  // going the long way round to a picture that is also black - which posterFor()
+  // then declines to store, so the board is not poisoned by it.
+  if (!refused && canvasReads()) blankBrowser = true;
   // Said differently in that case, and it is not a nicety: the ordinary line
   // here is about the clip, and this one is about the browser and is followed by
   // something being done. A person who reads "no frame could be decoded" and
   // then watches the decoder arrive has been told two contradictory things about
   // the same import.
   if (blankBrowser) {
-    console.warn('[mbrd] poster: this browser draws video onto a canvas as nothing');
+    console.warn('[mbrd] poster: this browser draws video onto a canvas as nothing',
+      played ? '(it played and drew nothing)' : '(it would not play either)');
     noPreview('clip', 'this browser will not draw a clip onto a canvas - trying the video tools instead');
     return null;
   }
