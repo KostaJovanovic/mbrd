@@ -14,6 +14,7 @@ import { surface, surfaceToBlob, canvasReads, type Surface } from './surface.ts'
 // The console lines below are invisible on a phone, which is where a clip most
 // often arrives without a frame. See noPreview().
 import { noPreview, canvasBlocked } from '../notify.ts';
+import { glFrame } from './gl-frame.ts';
 
 /**
  * How wide a video's own first frame is kept.
@@ -167,8 +168,8 @@ export async function videoFrame(file: Blob): Promise<VideoFrameShot | null> {
   // a phone (see rationsDecoders() and the video renderer) so the poster is the
   // only picture there will ever be.
   //
-  // A card-sized rectangle, all but transparent, out of the flow and refusing
-  // the pointer. Every part of that is chosen against a way of being ignored:
+  // Two pixels, all but transparent, out of the flow and refusing the pointer.
+  // Every part of that is chosen against a way of being ignored:
   //
   //   not `display: none`, not `visibility: hidden`  both say "nothing to show
   //     here", which is the state being escaped rather than a way out of it.
@@ -177,23 +178,21 @@ export async function videoFrame(file: Blob): Promise<VideoFrameShot | null> {
   //     hundredth is not visible on any screen and is not zero.
   //   `position: fixed` at the origin  so it intersects the viewport. Decoding
   //     is skipped for what is scrolled far out of sight.
-  //   **160x90 rather than the 2x2 it was**  and this one is a guess, said
-  //     plainly because it cannot be checked from here. The same clip on the
-  //     same phone gives Samsung Internet a frame and Firefox a flat rectangle,
-  //     so what differs is Gecko: it decodes into a surface the compositor owns,
-  //     and a two-pixel element is the least likely thing in the world to get
-  //     one allocated for it. A card-sized element is an ordinary thing for a
-  //     compositor to be asked about. It costs nothing if it changes nothing -
-  //     at a hundredth of an opacity neither size is visible - and if it does
-  //     work it saves every Firefox user a thirty-megabyte download.
+  //
+  // The size was briefly 160x90 on a guess that Gecko might want something
+  // card-sized before it would allocate a frame for it. It would not have
+  // helped: the Android fault is a SurfaceTexture with one consumer, and the
+  // consumer is the compositor - so a *more* visible element is if anything the
+  // wrong direction. It is back at two pixels, and the fix is in
+  // canvas/gl-frame.ts where the evidence actually pointed.
   //
   // Written through .style rather than as an attribute, which is what the CSP
   // requires of every inline style in this app - see the note in web/_headers.
   v.style.position = 'fixed';
   v.style.left = '0';
   v.style.top = '0';
-  v.style.width = '160px';
-  v.style.height = '90px';
+  v.style.width = '2px';
+  v.style.height = '2px';
   v.style.opacity = '0.01';
   v.style.pointerEvents = 'none';
   v.setAttribute('aria-hidden', 'true');
@@ -499,21 +498,29 @@ async function capture(
   if (!face) return { shot: null, flat: false, why: 'this browser would not give a canvas to draw the frame on' };
   face.ctx.drawImage(v, 0, 0, w, h);
   let flat = looksFlat(face.ctx, w, h);
-  // **Two ways to get a frame off an element, and a browser may have only one.**
+  // **Three ways to get a frame off an element, and Firefox for Android has
+  // only the third.**
   //
-  // `drawImage(video)` is the obvious one and it is the one that fails on
-  // Firefox for Android: the canvas is fine there - it draws bitmaps, it reads
-  // back, it encodes, all of which the Debug readout confirms - and a video
-  // drawn onto it comes out as one flat rectangle at every seek point on a clip
-  // the phone plays perfectly. The frame exists; that particular door to it is
-  // shut, because the decoder hands its picture to a hardware surface the 2D
-  // context never sees.
+  // `drawImage(video)` is the obvious one and it is the one that fails there -
+  // silently, leaving the canvas exactly as it was. It is Mozilla bug 1526207,
+  // open since 2019: Gecko decodes video on Android into a SurfaceTexture, a
+  // SurfaceTexture has one GL consumer, and the compositor is already it. The
+  // canvas is not the problem and never was - it draws bitmaps, reads back and
+  // encodes perfectly on that engine.
   //
-  // createImageBitmap() asks the element for the same instant through a
-  // different door, and it is a door that engine does open. Tried only when the
-  // first came back flat, so a browser where drawImage works pays nothing for
-  // this - and if the second is blank too, the first drawing stands and the
-  // verdict is unchanged, which is the case where the clip really is on a fade.
+  // createImageBitmap() asks for the same instant through a different door and
+  // is worth the two lines, but it is not the answer to that bug: it wants a
+  // source surface off the same element and there is not one to be had.
+  //
+  // WebGL is. `texImage2D` from a video takes the SurfaceTexture path Gecko
+  // does implement - bug 1655101, fixed in Firefox 123 - and hands back a canvas
+  // this context can then draw, because canvas-to-canvas is an operation with
+  // none of this trouble in it. See canvas/gl-frame.ts.
+  //
+  // Both are reached only when the ordinary path came back flat, so every engine
+  // that works pays nothing for either. If all three are blank the first drawing
+  // stands and the verdict is unchanged, which is the case where the clip really
+  // does open on a fade.
   if (flat && typeof createImageBitmap === 'function') {
     try {
       const bmp = await createImageBitmap(v);
@@ -521,6 +528,13 @@ async function capture(
       bmp.close?.();
       flat = looksFlat(face.ctx, w, h);
     } catch { /* the first drawing stands */ }
+  }
+  if (flat) {
+    const gl = glFrame(v, w, h);
+    if (gl) {
+      face.ctx.drawImage(gl, 0, 0, w, h);
+      flat = looksFlat(face.ctx, w, h);
+    }
   }
   const out = await encodeFrame(face);
   if (!out) return { shot: null, flat, why: 'the frame drew and this browser would not encode it' };
