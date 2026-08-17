@@ -941,7 +941,7 @@ export const SECTIONS: Section[] = [
         // the danger dressing the clear-everything button wears.
         { cmd: 'clear-connections', label: 'Remove all connections' },
       ] },
-      // Five readouts. Buttons rather than live rows, and that is forced rather
+      // Four readouts. Buttons rather than live rows, and that is forced rather
       // than chosen: paintPanel() repaints on `board`, `settings`, `layout` and
       // `lens`, and on none of the events these four would have to follow - not
       // `items`, not `history`, and not on the panel being opened. A hint
@@ -950,7 +950,7 @@ export const SECTIONS: Section[] = [
       //
       // Each answers into a toast and into the console: the toast for whoever
       // pressed it, the console line for whoever is reading it back off a bug
-      // report. See the five commands in commands/file.ts.
+      // report. See the four commands in commands/file.ts.
       { type: 'buttons', advanced: true, buttons: [
         // The one question here that is not a developer's - "if I close this
         // tab, is my board still here tomorrow?" - and until now it was
@@ -966,13 +966,6 @@ export const SECTIONS: Section[] = [
         // is read as an action, so this one is phrased as the question it
         // answers, the way "Is my work safe?" three rows up is.
         { cmd: 'history-state', label: 'How much can be undone' },
-        // The one here that is about the browser rather than about the board,
-        // and it earned its place: a card with no picture on it looks the same
-        // whether the canvas would not draw, would not be read, would not
-        // encode, or handed back bytes an <img> refused. Phrased as a question
-        // for the same reason the row above it is - this reports, it does not
-        // act. See pictureCheck() in commands/file.ts.
-        { cmd: 'picture-check', label: 'Can this browser make pictures?' },
       ] },
       // The way out, and it lives in here now rather than at the foot of "This
       // browser". It used to sit at the far end of the tab on the argument that

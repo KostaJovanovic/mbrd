@@ -520,15 +520,11 @@ const RENDERERS = {
     // load and the far-zoom twin get hold of it.
     const crop = itemCrop(item);
     // An `<img>` that will not load says nothing: it draws its own alt text and
-    // fires an event nobody was listening for. That is the third way a card ends
-    // up as a name over an empty rectangle - after "no source was ever set" and
-    // "the source is a file this browser cannot decode" - and it is the one that
-    // looks most like a failed import when it is nothing of the kind.
-    //
-    // Answered rather than only reported: a display copy that will not decode is
-    // this app's own derived file, and the original beside it in the store is
-    // very likely fine. Only when *that* refuses too is it worth a line, and one
-    // line covers a board of them - see noPreview().
+    // fires an event nobody was listening for. Answered rather than only
+    // reported - a display copy that will not decode is this app's own derived
+    // file, and the original beside it in the store is very likely fine. Only
+    // when that refuses too is it worth a line, and one line covers a board of
+    // them - see noPreview().
     img.addEventListener('error', () => {
       const raw = hash ? assetURL(hash) : null;
       if (raw && img.src !== raw) { img.src = raw; return; }
@@ -545,22 +541,12 @@ const RENDERERS = {
         // stand-in for something else - it would show the full frame and then
         // snap to the detail. Better to show nothing for the moment it takes.
         if (thumb && !crop) img.src = thumb;   // crisp-enough stand-in while the copy renders
-        // **A copy that could not be made falls back to the original**, and the
-        // fallback is not belt and braces: without it this card ends with no
-        // `src` at all, which is an `<img>` drawing its own alt text - the file's
-        // name, at the top of an empty rectangle. That is a card that reads as a
-        // failed import, on an item whose picture is sitting in the store.
-        //
-        // The case it was hit in is a PDF's rendered page: display.ts falls back
-        // to the original itself for every ordinary failure, so the null that
-        // reaches here means the *asset* went missing, and a photograph survives
-        // that invisibly because it has a thumbnail standing in above. A page
-        // raster does not always, so it had nothing to draw and said so in the
-        // one way nobody can act on.
-        //
-        // `!img.src` alongside isConnected for the same reason: the guard is
-        // there to stop work for a card that has been discarded, and a card with
-        // nothing on it is not one this should be quiet about.
+        // **A copy that could not be made falls back to the original.** Without
+        // it this card ends with no `src` at all, which is an `<img>` drawing
+        // its own alt text - the file's name at the top of an empty rectangle,
+        // on an item whose picture is sitting in the store. `!img.src` alongside
+        // isConnected for the same reason: the guard exists to save work on a
+        // discarded card, not to leave a live one blank.
         ensureDisplay(hash, crop).then(u => {
           const src = u || assetURL(hash);
           if (src && (img.isConnected || !img.src)) img.src = src;

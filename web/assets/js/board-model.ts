@@ -1328,13 +1328,10 @@ const META_HASHES = ['cover', 'shot', 'thumb', 'preview', 'poster'];
  *
  * Hand the second to an `<img>` and it draws its own alt text - the item's name,
  * at the top of an empty rectangle - which reads as an import that failed and is
- * nothing of the kind. That is a bug this app has had twice: once on the canvas,
- * and once in the Feed, where it lasted longer because the canvas was right and
- * nobody thought the rule was written down in two places. It was written down in
- * three - the palette samples the board's pictures and had it wrong too.
- *
- * So it is here, in the module that owns what an item *is*, and the three views
- * ask rather than each deciding. Null only for an item with no bytes at all.
+ * nothing of the kind. The rule was written out separately in the canvas
+ * renderer, the Feed and the palette; two of the three had it wrong. It is here
+ * now, in the module that owns what an item *is*, and all three ask. Null only
+ * for an item with no bytes at all.
  */
 export function shownHash(item: Item): string | null {
   const preview = item.meta?.preview;

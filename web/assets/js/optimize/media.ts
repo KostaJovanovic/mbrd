@@ -200,16 +200,12 @@ const FRAME_MAX_SIDE = 1280;
  * not readable, the encoder is missing a format. The caller treats that as "no
  * poster", which is the black rectangle it was already going to be.
  *
- * **And it says which, through `say`.** It used to answer null for all four of
- * those and for a fifth - the worker never booting - without a word, which was
- * defensible while this ran only for H.265: a clip nothing here can decode has a
- * blank card either way, and the person watching had asked for nothing. It stops
- * being defensible now that a whole browser can arrive here (see
- * videoDrawsBlank() in canvas/poster.ts). Then this is not a long shot at an
- * exotic codec, it is the *only* route to a picture, and thirty megabytes have
- * just been spent in front of somebody who was told they were being spent. A
- * silent null after that is the app announcing a download and then declining to
- * say what became of it.
+ * **And it says which, through `say`.** Every one of those used to answer null
+ * without a word, which was defensible while this ran only for H.265 - a clip
+ * nothing can decode has a blank card either way. It stops being defensible now
+ * that a whole browser can arrive here (videoDrawsBlank() in canvas/poster.ts):
+ * this is then the only route to a picture, and thirty megabytes have just been
+ * announced to somebody who is owed the end of the sentence.
  *
  * The one exception to "null" is a boot that fails, which is said and then
  * re-thrown - see the note at the await below.
@@ -237,15 +233,10 @@ export async function firstFrame(file: File, say: (msg: string) => void = () => 
   }
   // Said on the way past and then re-thrown, which is the one failure here that
   // is not a null. A worker that cannot be built (a CSP refusing workers, a
-  // blocked script URL) and one that never finishes booting are both faults in
-  // the app rather than facts about a clip, and the callers' catches turn them
-  // into "no poster" anyway - tests/media.test.js holds this to rejecting,
-  // because a rejection is how it can see that the module cleared `ready` and
-  // will respawn rather than wedging.
-  //
-  // What was missing was only the sentence. Both arrived at the import as a
-  // plain null indistinguishable from "this clip has no picture in it", after
-  // thirty megabytes had been announced.
+  // blocked script URL) and one that never finishes booting are faults in the
+  // app rather than facts about a clip; the callers' catches turn them into "no
+  // poster" anyway, and tests/media.test.js holds this to rejecting, because a
+  // rejection is how it sees that `ready` was cleared and will respawn.
   try {
     await ready;
   } catch (err) {

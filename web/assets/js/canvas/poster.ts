@@ -307,117 +307,48 @@ async function grab(v: HTMLVideoElement, url: string): Promise<VideoFrameShot | 
     // the head of this function for why a frame with nothing in it is never the
     // answer rather than being kept as a last resort.
   }
-  // Nothing at any seek point. One last attempt, and it changes the question
-  // rather than repeating it - see playing(), which grabs off a clip that is
-  // running instead of one that has been parked on a seek.
-  let played = false;
-  if (!refused) {
-    const live = await playing(v).catch(() => ({ played: false, shot: null }));
-    if (live.shot) return live.shot;
-    played = live.played;
-  }
   // **What this browser has just proved about itself**, which is a bigger fact
   // than what it said about this clip. Every capture came back with an encoded
-  // frame in it, the canvas reads back, the clip played - and every pixel of
-  // every frame at four different moments was the same colour. A film can be
-  // black at 0.1s; a film that is black at 0.1s, at 1s, a tenth of the way in
-  // and through six looks of playback is not a film, it is a decoder handing its
-  // picture to a surface this 2D context cannot see. Firefox for Android does
-  // exactly that.
+  // frame in it, the canvas reads back, and every pixel at every seek point was
+  // the same colour - through both doors, the 2D one and WebGL. That is a
+  // decoder this app cannot reach, and no further clip on this board is going to
+  // go differently.
   //
-  // Recorded rather than acted on here, because what to do about it is not this
-  // module's to decide - it costs thirty megabytes and belongs to whoever is
-  // importing. See videoDrawsBlank() and posterFor() in import/drop.ts.
+  // Recorded rather than acted on here, because what to do about it costs thirty
+  // megabytes and belongs to whoever is importing. See videoDrawsBlank() and
+  // posterFor() in import/drop.ts.
   //
-  // Whether playback actually started is *not* part of the condition, and that
-  // is deliberate rather than an oversight - it is in the log because it is
-  // worth knowing, not because it changes the answer. A browser that refused to
-  // play the clip has not proved anything about its compositor, but it has
-  // proved the same practical thing: four attempts at a frame, every one blank,
-  // and no fifth attempt this module has. Both endings want the same fallback.
-  //
-  // What that costs when it is wrong is one clip that genuinely opens on black
-  // going the long way round to a picture that is also black - which posterFor()
-  // then declines to store, so the board is not poisoned by it.
+  // What it costs when it is wrong - a clip that genuinely opens on black - is
+  // one trip the long way round to a picture that is also black, which
+  // posterFor() then declines to store.
   if (!refused && canvasReads()) blankBrowser = true;
-  // Said differently in that case, and it is not a nicety: the ordinary line
-  // here is about the clip, and this one is about the browser and is followed by
-  // something being done. A person who reads "no frame could be decoded" and
-  // then watches the decoder arrive has been told two contradictory things about
-  // the same import.
   if (blankBrowser) {
-    console.warn('[mbrd] poster: this browser draws video onto a canvas as nothing',
-      played ? '(it played and drew nothing)' : '(it would not play either)');
+    console.warn('[mbrd] poster: this browser draws video onto a canvas as nothing');
     noPreview('clip', 'this browser will not draw a clip onto a canvas - trying the video tools instead');
     return null;
   }
-  // **Three different endings, and they used to share one sentence.** "Every
-  // frame came back empty" is true of exactly one of them - the decoder that
-  // drew nothing at any seek point - and was said just as readily when the
-  // canvas never existed and when the frame drew perfectly and would not
-  // encode. A person reading that off a phone is being pointed at their video
-  // file, which is the one thing in the chain that was working.
-  console.warn('[mbrd] poster: no frame kept', refused || 'every seek was flat');
+  // Two endings left, and they used to share one sentence - "every frame came
+  // back empty", said just as readily when the canvas never existed and when the
+  // frame drew perfectly and would not encode, which points a reader at the one
+  // thing in the chain that was working.
+  //
+  // A refusal is a canvas or an encoder saying no, in its own words. Anything
+  // else that reaches here has flat frames *and* a canvas that would not be read,
+  // because flat frames on a readable canvas returned above.
+  console.warn('[mbrd] poster: no frame kept', refused || 'the pixels could not be read');
   if (refused) noPreview('clip', refused);
-  else if (!canvasReads()) canvasBlocked();
-  else noPreview('clip', 'every frame came back blank - this browser would not draw the clip onto a canvas');
+  else canvasBlocked();
   return null;
-}
-
-/**
- * A frame off a clip that is *running*, as the last thing tried.
- *
- * The walk above parks the element on a seek and reads it, which is the cheap
- * way and is what works nearly everywhere. What it assumes is that a decoder
- * asked for the frame at 1.0s will have that frame sitting on the element
- * afterwards, and on a phone that assumption is not always good: some decoders
- * produce nothing at all for a seek on a clip that has never run, and some
- * produce a frame the compositor has but the 2D context cannot see. Both look
- * identical from here - a flat rectangle at every point - and both are a clip
- * the person can watch by tapping the card.
- *
- * So this stops asking for a particular moment and takes whatever the running
- * clip has. Half a dozen looks, a frame interval apart, and the first one with
- * something in it wins; the point being reached at all means the clip is
- * already going to have no picture, so a second of playback is cheap against
- * that.
- *
- * Muted from birth (see videoFrame), which is what makes the play() allowed
- * without a gesture. Where it is refused anyway this answers null and the clip
- * keeps the card it had.
- *
- * The pause in `finally` is not tidiness: videoFrame's teardown drops the
- * source, and an element left running while its src is pulled is a decoder held
- * open on a phone with a ration of them.
- */
-async function playing(v: HTMLVideoElement): Promise<{ played: boolean, shot: VideoFrameShot | null }> {
-  try {
-    await v.play();
-  } catch {
-    // Not the same as "it played and drew nothing", and the difference decides
-    // what the caller concludes about the browser - see blankBrowser.
-    return { played: false, shot: null };
-  }
-  try {
-    for (let look = 0; look < 6; look++) {
-      await wait(FRAME_MS);
-      const took = await capture(v);
-      if (took.shot && !took.flat) return { played: true, shot: took.shot };
-    }
-    return { played: true, shot: null };
-  } finally {
-    v.pause();
-  }
 }
 
 /**
  * Whether this browser has been shown to draw video onto a canvas as nothing.
  *
  * A fact about the engine, not about a file, and it is only ever set by the
- * evidence in grab(): a clip that played, on a canvas that reads back, whose
- * every frame at four moments was one flat colour. False until something has
- * actually failed that way - nothing here guesses from a user-agent string, and
- * a browser that has not been asked is not accused.
+ * evidence in grab(): every seek point flat, through both doors, on a canvas
+ * that reads back. False until something has actually failed that way - nothing
+ * here guesses from a user-agent string, and a browser that has not been asked
+ * is not accused.
  *
  * What it is for is one decision in import/drop.ts: whether a clip the browser
  * opened perfectly well should still go the thirty-megabyte way round. The
@@ -427,8 +358,8 @@ async function playing(v: HTMLVideoElement): Promise<{ played: boolean, shot: Vi
  * where the card's own source is parked until it is tapped.
  *
  * Sticky for the session and never unset. One clip proving it is enough, and the
- * next fifty on the same board should not each pay four seeks and a second of
- * playback to prove it again.
+ * next fifty on the same board should not each pay three seeks and nine seconds
+ * of budget to prove it again - see the early return in videoFrame().
  */
 let blankBrowser = false;
 
@@ -498,37 +429,17 @@ async function capture(
   if (!face) return { shot: null, flat: false, why: 'this browser would not give a canvas to draw the frame on' };
   face.ctx.drawImage(v, 0, 0, w, h);
   let flat = looksFlat(face.ctx, w, h);
-  // **Three ways to get a frame off an element, and Firefox for Android has
-  // only the third.**
+  // **On Firefox for Android that drawing is blank, and WebGL is the way round
+  // it.** Mozilla bug 1526207, open since 2019: Gecko decodes video on Android
+  // into a SurfaceTexture, a SurfaceTexture has one GL consumer, and the
+  // compositor is already it - so `drawImage(video)` silently leaves the canvas
+  // as it was. `texImage2D` takes the path Gecko does implement (bug 1655101,
+  // Firefox 123), and hands back a canvas, which draws with none of this trouble
+  // in it. See canvas/gl-frame.ts.
   //
-  // `drawImage(video)` is the obvious one and it is the one that fails there -
-  // silently, leaving the canvas exactly as it was. It is Mozilla bug 1526207,
-  // open since 2019: Gecko decodes video on Android into a SurfaceTexture, a
-  // SurfaceTexture has one GL consumer, and the compositor is already it. The
-  // canvas is not the problem and never was - it draws bitmaps, reads back and
-  // encodes perfectly on that engine.
-  //
-  // createImageBitmap() asks for the same instant through a different door and
-  // is worth the two lines, but it is not the answer to that bug: it wants a
-  // source surface off the same element and there is not one to be had.
-  //
-  // WebGL is. `texImage2D` from a video takes the SurfaceTexture path Gecko
-  // does implement - bug 1655101, fixed in Firefox 123 - and hands back a canvas
-  // this context can then draw, because canvas-to-canvas is an operation with
-  // none of this trouble in it. See canvas/gl-frame.ts.
-  //
-  // Both are reached only when the ordinary path came back flat, so every engine
-  // that works pays nothing for either. If all three are blank the first drawing
-  // stands and the verdict is unchanged, which is the case where the clip really
-  // does open on a fade.
-  if (flat && typeof createImageBitmap === 'function') {
-    try {
-      const bmp = await createImageBitmap(v);
-      face.ctx.drawImage(bmp, 0, 0, w, h);
-      bmp.close?.();
-      flat = looksFlat(face.ctx, w, h);
-    } catch { /* the first drawing stands */ }
-  }
+  // Reached only when the ordinary path came back flat, so every engine that
+  // works pays nothing. If both are blank the first drawing stands, which is the
+  // case where the clip really does open on a fade.
   if (flat) {
     const gl = glFrame(v, w, h);
     if (gl) {
@@ -554,22 +465,12 @@ async function capture(
  * spread across the frame settles the question, and this runs up to three times
  * per clip on a board that may hold fifty.
  *
- * **False, not true, where this browser will not hand its pixels back.** That
- * was the other way round and it was the wrong way round, because it treats one
- * failure as another: a frame that cannot be *inspected* is not a frame that is
- * empty. Firefox's fingerprinting protection - on by default in the strict mode
- * that is the default on Android - answers a canvas read with blank or
- * randomised data rather than an error, so every frame of every clip read as
- * one flat rectangle, all three seek points were walked and discarded, and the
- * whole feature answered "every seek came back with nothing in it" on a device
- * where the decoder had been handing over perfect frames all along. The clip
- * then had no poster, and on a phone the renderer parks the source, so the card
- * was black until it was tapped. See canvasReads() in canvas/surface.ts.
- *
- * What that costs where the reading really is blocked is the seek past a black
- * leader: the first frame is kept whatever is in it. A still of the first frame
- * beats no still, and it is what this function was written to improve on rather
- * than to replace.
+ * **False, not true, where this browser will not hand its pixels back**, because
+ * the two are different failures: a frame that cannot be *inspected* is not a
+ * frame that is empty, and answering "flat" would discard a good frame on a
+ * browser that had merely refused to be read. See canvasReads(). The cost where
+ * the reading really is blocked is the seek past a black leader - the first
+ * frame is kept whatever is in it, which beats no still at all.
  *
  * A throw is still treated as flat, which is the tainted-canvas case and is a
  * different thing again - that one really is a frame nothing can be done with.

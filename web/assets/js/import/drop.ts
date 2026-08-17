@@ -779,33 +779,25 @@ async function posterFor(file: File, decodable: boolean | undefined) {
     // declined to hand over one frame is a decoder quirk, not a format this app
     // cannot read.
     //
-    // **Unless the quirk is the whole browser**, which is the one case that
-    // reasoning did not cover and it is not a rare one. Firefox for Android
-    // hands its decoded frames to a surface a 2D context cannot see: the clip
-    // plays, the canvas is fine, and every frame drawn from it is one flat
-    // rectangle. There the browser cannot answer the question at all, and the
-    // sentence above quietly became "so no clip on this phone gets a picture" -
-    // on the one kind of device where it matters most, because the renderer
-    // parks a card's own source there until it is tapped.
-    //
-    // videoDrawsBlank() is only true once a clip has demonstrated it - four
-    // moments, including playback, on a canvas that reads back. See poster.ts.
+    // **Unless the quirk is the whole browser**, which that reasoning did not
+    // cover. On an engine where no clip will ever draw onto a canvas - and where
+    // WebGL did not rescue it either, see canvas/gl-frame.ts - "it can already
+    // answer" is false, and the sentence above quietly means "so no clip on this
+    // phone gets a picture", on the devices where the card's own source is
+    // parked until it is tapped. videoDrawsBlank() is only true once a clip has
+    // demonstrated it.
     if (!videoDrawsBlank()) return null;
   }
   try {
     const { firstFrame } = await import('../optimize/media.ts');
     const frame = await firstFrame(file, msg => toast(msg));
     if (!frame) return null;
-    // A clip the browser opened only reaches here because every frame it drew
-    // was blank, and one reading of that - the uncommon one - is that the film
-    // really does open on black. ffmpeg answers that reading with a black
-    // picture, and storing it is the thing poster.ts refuses to do for exactly
-    // this reason: `meta.cover` naming real bytes makes every repair pass skip
-    // the card forever, so a black rectangle stored once is black for good.
-    //
-    // Only on this route. A clip the browser could not open at all has no other
-    // source of a picture, and the frame ffmpeg found is the only answer there
-    // will be whatever is in it.
+    // A clip the browser opened reaches here because every frame drew blank, and
+    // the uncommon reading of that is that the film really does open on black -
+    // which ffmpeg answers with a black picture. Storing it is what poster.ts
+    // refuses to do: `meta.cover` naming real bytes makes every repair pass skip
+    // the card forever. Only on this route; a clip the browser could not open at
+    // all has no other source of a picture whatever is in it.
     if (decodable && await pictureIsFlat(frame)) return null;
     const named = new File([frame], 'poster.' + (frame.type === 'image/png' ? 'png' : 'jpg'),
                            { type: frame.type });
