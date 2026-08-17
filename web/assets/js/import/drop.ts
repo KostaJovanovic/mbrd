@@ -16,7 +16,7 @@ import { makeByteBudget, overPixelBudget, pixelCrossing, IMPORT_LIMITS } from '.
 import { allow, isAllowed, lift, fileKey, mb as consentMb } from '../consent.ts';
 import {
   classify, defaultSize, measureSize, fitToBox, linkURL, linkDraft, videoFrame,
-  swatchHex, SWATCH_DEFAULT,
+  videoDrawsBlank, swatchHex, SWATCH_DEFAULT,
 } from '../canvas/renderers.ts';
 import { iframeURL, embedFor } from '../canvas/embed.ts';
 import { arrange, mobileOrder } from '../arrange/arrangements.ts';
@@ -748,11 +748,16 @@ export async function thumbFor(blob: Blob, naturalWidth = 0) {
  * the phone the same picture without holding a decoder open for it.
  *
  * The browser's own decoder is tried first and answers for almost everything,
- * at the cost of one seek. Only a clip it cannot open at all falls through to
- * ffmpeg - H.265 is the case - and that route is dynamically imported for a
- * reason: the core is thirty megabytes off a CDN, most boards never need it,
- * and a machine without it answers "no" from a HEAD request before anything is
- * loaded. An import of ordinary MP4s never touches it.
+ * at the cost of one seek. Two things fall through to ffmpeg: a clip this
+ * browser cannot open at all - H.265 is the case - and a browser that cannot
+ * draw *any* clip onto a canvas, which is a different fault and was not covered
+ * until a phone found it. See videoDrawsBlank() and the note at the fall-through
+ * below.
+ *
+ * That route is dynamically imported for a reason: the core is thirty megabytes
+ * off a CDN, most boards never need it, and a machine without it answers "no"
+ * from a HEAD request before anything is loaded. An import of ordinary MP4s on
+ * an ordinary browser never touches it.
  *
  * Everything about this is allowed to fail. No decoder, no frame, a format the
  * encoder will not write - all of them come back null, and null means the clip
@@ -769,11 +774,23 @@ async function posterFor(file: File, decodable: boolean | undefined) {
         return { hash: await addFile(named), w: frame.w, h: frame.h, file: named };
       }
     } catch { /* fall through - a clip with no poster is what it was before */ }
-    // Deliberately not falling through to ffmpeg. The browser opened this clip,
-    // so thirty megabytes would be spent to answer a question it can already
-    // answer; that it declined to hand over a frame is a decoder quirk, not a
-    // format this app cannot read.
-    return null;
+    // Normally the end of it. The browser opened this clip, so thirty megabytes
+    // would be spent to answer a question it can already answer; that it
+    // declined to hand over one frame is a decoder quirk, not a format this app
+    // cannot read.
+    //
+    // **Unless the quirk is the whole browser**, which is the one case that
+    // reasoning did not cover and it is not a rare one. Firefox for Android
+    // hands its decoded frames to a surface a 2D context cannot see: the clip
+    // plays, the canvas is fine, and every frame drawn from it is one flat
+    // rectangle. There the browser cannot answer the question at all, and the
+    // sentence above quietly became "so no clip on this phone gets a picture" -
+    // on the one kind of device where it matters most, because the renderer
+    // parks a card's own source there until it is tapped.
+    //
+    // videoDrawsBlank() is only true once a clip has demonstrated it - four
+    // moments, including playback, on a canvas that reads back. See poster.ts.
+    if (!videoDrawsBlank()) return null;
   }
   try {
     const { firstFrame } = await import('../optimize/media.ts');
