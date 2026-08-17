@@ -107,6 +107,19 @@ register and two subject documents:
   is done (the canvas menu is six rows, and `canvasEntries()` carries the
   argument); **B–H** are open, in the order the *Sequence* section gives.
 
+- `simplification-2026-08-18.md` — **two whole-tree sweeps, one for duplication
+  and dead code and one for circuitous routes, and the order to clear them in.**
+  Seven batches, nothing touching the `.mbrd` schema, a generated catalogue or
+  `SHELL`. Like the two above it, it carries open items the register has never
+  heard of, and adds to the debt the closing section of this file describes. Its
+  list is the disposable half. The part worth reading whatever you do with the
+  items is the table it opens with: ten places where a module header argues a
+  rule — usually one learned from a real bug — and a sibling site still does the
+  thing the header warns against, because the knowledge stayed in the file that
+  learned it. Two of that document's own claims were wrong before they were
+  checked, and it records both rather than quietly dropping them; one of them is
+  the `isDev()` trap `CLAUDE.md` already warns about.
+
 `patch-notes-full.md` sits at this level too and is **not open work** - it is an
 archive, and the only file here that argues nothing. It holds every release at
 the length it was first written at, internal work included, and it was split off
