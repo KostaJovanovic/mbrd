@@ -1315,6 +1315,33 @@ export function makeItem(partial: Record<string, unknown>): Item {
  */
 const META_HASHES = ['cover', 'shot', 'thumb', 'preview', 'poster'];
 
+/**
+ * The bytes a picture of this item should be drawn from.
+ *
+ * **An item is type 'image' from the moment something drew a picture *of* it,
+ * and for a whole family of files that picture is not `asset.hash`.** A PDF's
+ * first page, a RAW's or a HEIC's embedded JPEG, a PSD's or a .docx's baked
+ * thumbnail, a TIFF decoded outright - in every one of those the asset behind
+ * the card is still the original document or camera file, deliberately, because
+ * it is what an export writes and what a click opens. `meta.preview` is the
+ * picture; `asset.hash` is the thing it is a picture of.
+ *
+ * Hand the second to an `<img>` and it draws its own alt text - the item's name,
+ * at the top of an empty rectangle - which reads as an import that failed and is
+ * nothing of the kind. That is a bug this app has had twice: once on the canvas,
+ * and once in the Feed, where it lasted longer because the canvas was right and
+ * nobody thought the rule was written down in two places. It was written down in
+ * three - the palette samples the board's pictures and had it wrong too.
+ *
+ * So it is here, in the module that owns what an item *is*, and the three views
+ * ask rather than each deciding. Null only for an item with no bytes at all.
+ */
+export function shownHash(item: Item): string | null {
+  const preview = item.meta?.preview;
+  if (typeof preview === 'string' && preview) return preview;
+  return item.asset?.hash || null;
+}
+
 function normalizeMeta(meta: ItemMeta): ItemMeta {
   let out = meta;
   for (const key of META_HASHES) {

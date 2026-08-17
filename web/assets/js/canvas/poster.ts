@@ -291,6 +291,13 @@ async function grab(v: HTMLVideoElement, url: string): Promise<VideoFrameShot | 
     // the head of this function for why a frame with nothing in it is never the
     // answer rather than being kept as a last resort.
   }
+  // Nothing at any seek point. One last attempt, and it changes the question
+  // rather than repeating it - see playing(), which grabs off a clip that is
+  // running instead of one that has been parked on a seek.
+  if (!refused) {
+    const live = await playing(v).catch(() => null);
+    if (live) return live;
+  }
   // **Three different endings, and they used to share one sentence.** "Every
   // frame came back empty" is true of exactly one of them - the decoder that
   // drew nothing at any seek point - and was said just as readily when the
@@ -300,8 +307,52 @@ async function grab(v: HTMLVideoElement, url: string): Promise<VideoFrameShot | 
   console.warn('[mbrd] poster: no frame kept', refused || 'every seek was flat');
   if (refused) noPreview('clip', refused);
   else if (!canvasReads()) canvasBlocked();
-  else noPreview('clip', 'every frame came back empty - the decoder drew nothing');
+  else noPreview('clip', 'every frame came back blank - this browser would not draw the clip onto a canvas');
   return null;
+}
+
+/**
+ * A frame off a clip that is *running*, as the last thing tried.
+ *
+ * The walk above parks the element on a seek and reads it, which is the cheap
+ * way and is what works nearly everywhere. What it assumes is that a decoder
+ * asked for the frame at 1.0s will have that frame sitting on the element
+ * afterwards, and on a phone that assumption is not always good: some decoders
+ * produce nothing at all for a seek on a clip that has never run, and some
+ * produce a frame the compositor has but the 2D context cannot see. Both look
+ * identical from here - a flat rectangle at every point - and both are a clip
+ * the person can watch by tapping the card.
+ *
+ * So this stops asking for a particular moment and takes whatever the running
+ * clip has. Half a dozen looks, a frame interval apart, and the first one with
+ * something in it wins; the point being reached at all means the clip is
+ * already going to have no picture, so a second of playback is cheap against
+ * that.
+ *
+ * Muted from birth (see videoFrame), which is what makes the play() allowed
+ * without a gesture. Where it is refused anyway this answers null and the clip
+ * keeps the card it had.
+ *
+ * The pause in `finally` is not tidiness: videoFrame's teardown drops the
+ * source, and an element left running while its src is pulled is a decoder held
+ * open on a phone with a ration of them.
+ */
+async function playing(v: HTMLVideoElement): Promise<VideoFrameShot | null> {
+  try {
+    await v.play();
+  } catch {
+    return null;
+  }
+  try {
+    for (let look = 0; look < 6; look++) {
+      await wait(FRAME_MS);
+      const took = await capture(v);
+      if (took.shot && !took.flat) return took.shot;
+    }
+    return null;
+  } finally {
+    v.pause();
+  }
 }
 
 /** An error's own words, for a line somebody has to act on. */
@@ -365,7 +416,30 @@ async function capture(
   const face = surface(w, h, { alpha: false });
   if (!face) return { shot: null, flat: false, why: 'this browser would not give a canvas to draw the frame on' };
   face.ctx.drawImage(v, 0, 0, w, h);
-  const flat = looksFlat(face.ctx, w, h);
+  let flat = looksFlat(face.ctx, w, h);
+  // **Two ways to get a frame off an element, and a browser may have only one.**
+  //
+  // `drawImage(video)` is the obvious one and it is the one that fails on
+  // Firefox for Android: the canvas is fine there - it draws bitmaps, it reads
+  // back, it encodes, all of which the Debug readout confirms - and a video
+  // drawn onto it comes out as one flat rectangle at every seek point on a clip
+  // the phone plays perfectly. The frame exists; that particular door to it is
+  // shut, because the decoder hands its picture to a hardware surface the 2D
+  // context never sees.
+  //
+  // createImageBitmap() asks the element for the same instant through a
+  // different door, and it is a door that engine does open. Tried only when the
+  // first came back flat, so a browser where drawImage works pays nothing for
+  // this - and if the second is blank too, the first drawing stands and the
+  // verdict is unchanged, which is the case where the clip really is on a fade.
+  if (flat && typeof createImageBitmap === 'function') {
+    try {
+      const bmp = await createImageBitmap(v);
+      face.ctx.drawImage(bmp, 0, 0, w, h);
+      bmp.close?.();
+      flat = looksFlat(face.ctx, w, h);
+    } catch { /* the first drawing stands */ }
+  }
   const out = await encodeFrame(face);
   if (!out) return { shot: null, flat, why: 'the frame drew and this browser would not encode it' };
   return { shot: { blob: out, w: v.videoWidth, h: v.videoHeight }, flat, why: '' };

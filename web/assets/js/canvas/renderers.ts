@@ -11,7 +11,7 @@
 
 import { cue } from '../cuelume/engine.ts';
 import { extOf, baseName, formatBytes, hasOwn, isRecord } from '../util.ts';
-import type { Item, ItemType } from '../board-model.ts';
+import { shownHash, type Item, type ItemType } from '../board-model.ts';
 import { assetURL, getAsset, readText } from '../storage/assets.ts';
 import { noPreview } from '../notify.ts';
 import { byId, bus, markDirty, board, isDefaultTitle, itemCrop, setSwatchHex } from '../state.ts';
@@ -508,7 +508,10 @@ const RENDERERS = {
     // (HEIC, RAW): asset.hash still names the untouched original for export and
     // for the day a decoder lands, but the pixels drawn here are the camera's
     // own embedded JPEG - see import/preview.js and meta.preview in drop.js.
-    const hash = metaStr(item.meta?.preview) || item.asset?.hash;
+    // shownHash(), which is that rule written once - see board-model.ts. This
+    // file had it right and the Feed did not, which is exactly what two copies
+    // of a rule are for.
+    const hash = shownHash(item);
     const vector = (getAsset(hash)?.mime || '').toLowerCase().includes('svg');
     // The crop rides down into the display copy, which is what applies it - see
     // the Crop note in canvas/display.ts. Nothing else in this function changes
