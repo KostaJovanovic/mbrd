@@ -294,9 +294,34 @@ async function grab(v: HTMLVideoElement, url: string): Promise<VideoFrameShot | 
   // Nothing at any seek point. One last attempt, and it changes the question
   // rather than repeating it - see playing(), which grabs off a clip that is
   // running instead of one that has been parked on a seek.
+  let played = false;
   if (!refused) {
-    const live = await playing(v).catch(() => null);
-    if (live) return live;
+    const live = await playing(v).catch(() => ({ played: false, shot: null }));
+    if (live.shot) return live.shot;
+    played = live.played;
+  }
+  // **What this browser has just proved about itself**, which is a bigger fact
+  // than what it said about this clip. Every capture came back with an encoded
+  // frame in it, the canvas reads back, the clip played - and every pixel of
+  // every frame at four different moments was the same colour. A film can be
+  // black at 0.1s; a film that is black at 0.1s, at 1s, a tenth of the way in
+  // and through six looks of playback is not a film, it is a decoder handing its
+  // picture to a surface this 2D context cannot see. Firefox for Android does
+  // exactly that.
+  //
+  // Recorded rather than acted on here, because what to do about it is not this
+  // module's to decide - it costs thirty megabytes and belongs to whoever is
+  // importing. See videoDrawsBlank() and posterFor() in import/drop.ts.
+  if (!refused && played && canvasReads()) blankBrowser = true;
+  // Said differently in that case, and it is not a nicety: the ordinary line
+  // here is about the clip, and this one is about the browser and is followed by
+  // something being done. A person who reads "no frame could be decoded" and
+  // then watches the decoder arrive has been told two contradictory things about
+  // the same import.
+  if (blankBrowser) {
+    console.warn('[mbrd] poster: this browser draws video onto a canvas as nothing');
+    noPreview('clip', 'this browser will not draw a clip onto a canvas - trying the video tools instead');
+    return null;
   }
   // **Three different endings, and they used to share one sentence.** "Every
   // frame came back empty" is true of exactly one of them - the decoder that
@@ -337,22 +362,50 @@ async function grab(v: HTMLVideoElement, url: string): Promise<VideoFrameShot | 
  * source, and an element left running while its src is pulled is a decoder held
  * open on a phone with a ration of them.
  */
-async function playing(v: HTMLVideoElement): Promise<VideoFrameShot | null> {
+async function playing(v: HTMLVideoElement): Promise<{ played: boolean, shot: VideoFrameShot | null }> {
   try {
     await v.play();
   } catch {
-    return null;
+    // Not the same as "it played and drew nothing", and the difference decides
+    // what the caller concludes about the browser - see blankBrowser.
+    return { played: false, shot: null };
   }
   try {
     for (let look = 0; look < 6; look++) {
       await wait(FRAME_MS);
       const took = await capture(v);
-      if (took.shot && !took.flat) return took.shot;
+      if (took.shot && !took.flat) return { played: true, shot: took.shot };
     }
-    return null;
+    return { played: true, shot: null };
   } finally {
     v.pause();
   }
+}
+
+/**
+ * Whether this browser has been shown to draw video onto a canvas as nothing.
+ *
+ * A fact about the engine, not about a file, and it is only ever set by the
+ * evidence in grab(): a clip that played, on a canvas that reads back, whose
+ * every frame at four moments was one flat colour. False until something has
+ * actually failed that way - nothing here guesses from a user-agent string, and
+ * a browser that has not been asked is not accused.
+ *
+ * What it is for is one decision in import/drop.ts: whether a clip the browser
+ * opened perfectly well should still go the thirty-megabyte way round. The
+ * answer is normally no, emphatically - that route exists for a format nothing
+ * here can read. But on an engine that will not hand over a frame it is the only
+ * route there is, and the alternative is a board of black rectangles on a phone
+ * where the card's own source is parked until it is tapped.
+ *
+ * Sticky for the session and never unset. One clip proving it is enough, and the
+ * next fifty on the same board should not each pay four seeks and a second of
+ * playback to prove it again.
+ */
+let blankBrowser = false;
+
+export function videoDrawsBlank(): boolean {
+  return blankBrowser;
 }
 
 /** An error's own words, for a line somebody has to act on. */
