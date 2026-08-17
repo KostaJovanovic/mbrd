@@ -136,9 +136,14 @@ export function toast(msg: string, kind: ToastKind = ''): void {
  *
  * Once per reason per session, which is what makes this a line rather than a
  * pile: forty clips a browser cannot decode are one fact said once, and two
- * different faults are two lines. Plain rather than an error, because it is
- * usually not one - a codec this engine does not have is the ordinary case, and
- * the card is still a card.
+ * different faults are two lines.
+ *
+ * Carrying the error dressing, which is a deliberate second thought. It is not
+ * always a fault - a codec this engine does not have is the ordinary case - but
+ * the line has to be *read* to be worth writing, and it competes with an import
+ * that is throwing receipts at the same corner of the screen. An error lingers
+ * six seconds where a receipt gets two and a half (see ui/overlays.ts), and
+ * once per session is not a pile whichever dressing it wears.
  */
 const saidNoPreview = new Set<string>();
 
@@ -147,7 +152,33 @@ export function noPreview(subject: string, why: unknown): void {
   const reason = message.trim().slice(0, 100) || 'no reason given';
   if (saidNoPreview.has(reason)) return;
   saidNoPreview.add(reason);
-  toast(`No ${subject} preview - ${reason}`);
+  toast(`No ${subject} preview - ${reason}`, 'error');
+}
+
+/**
+ * The one reason worth saying in its own words, because it is a *setting* and
+ * not a fault.
+ *
+ * Every picture this app makes of a file - a PDF's page, a clip's frame, a
+ * board's palette - is drawn into a canvas and then read back out of it, and a
+ * browser may refuse the reading. Firefox's fingerprinting protection does,
+ * silently, in the strict mode that is its default on Android; Safari's
+ * Lockdown Mode does too. Nothing throws and nothing is logged: the pixels come
+ * back blank, and every one of those features quietly produces nothing.
+ *
+ * Which is why this is worth a sentence of its own rather than a line of error
+ * text. There is nothing wrong with the file, nothing wrong with the app, and
+ * nothing either of them can do - the only fix is on the device, and somebody
+ * who is told what it is can apply it in ten seconds. Told once a session, like
+ * every other line here.
+ */
+let saidCanvasBlocked = false;
+
+export function canvasBlocked(): void {
+  if (saidCanvasBlocked) return;
+  saidCanvasBlocked = true;
+  toast('This browser is blocking canvas reads for this site, so previews cannot be made - '
+    + 'turn off strict tracking protection here and reload', 'error');
 }
 
 /**

@@ -10,10 +10,10 @@
 // case, not an error. optimize/media.js is the path that reaches for ffmpeg
 // when it matters enough to be worth thirty megabytes.
 
-import { surface, surfaceToBlob, type Surface } from './surface.ts';
+import { surface, surfaceToBlob, canvasReads, type Surface } from './surface.ts';
 // The console lines below are invisible on a phone, which is where a clip most
 // often arrives without a frame. See noPreview().
-import { noPreview } from '../notify.ts';
+import { noPreview, canvasBlocked } from '../notify.ts';
 
 /**
  * How wide a video's own first frame is kept.
@@ -251,6 +251,10 @@ async function grab(v: HTMLVideoElement, url: string): Promise<VideoFrameShot | 
   // alone is usually enough.
   await v.play().then(() => v.pause(), () => {});
 
+  // The last reason a capture produced nothing, kept for the line at the foot of
+  // this function. Empty means every capture came back with a frame in it and
+  // every frame was flat, which is a different fact about a different thing.
+  let refused = '';
   for (const at of points(v.duration)) {
     const seeked = once(v, 'seeked');
     v.currentTime = at;
@@ -278,18 +282,30 @@ async function grab(v: HTMLVideoElement, url: string): Promise<VideoFrameShot | 
         // everything below is a null. A throw here is an encoder or a canvas
         // refusing, which is a fault to fix rather than a clip to walk past.
         console.warn(`[mbrd] poster: capture threw at ${at}s`, err);
-        return null;
+        return { shot: null, flat: false, why: 'the capture threw: ' + why(err) };
       });
-      if (took && !took.flat) return took.shot;
+      if (took.shot && !took.flat) return took.shot;
+      if (took.why) refused = took.why;
     }
     // Nothing at this point. Look further in - see the note on FLAT_SPREAD, and
     // the head of this function for why a frame with nothing in it is never the
     // answer rather than being kept as a last resort.
   }
-  console.warn('[mbrd] poster: every seek came back with nothing in it');
-  noPreview('clip', 'every frame came back empty - the decoder drew nothing');
+  // **Three different endings, and they used to share one sentence.** "Every
+  // frame came back empty" is true of exactly one of them - the decoder that
+  // drew nothing at any seek point - and was said just as readily when the
+  // canvas never existed and when the frame drew perfectly and would not
+  // encode. A person reading that off a phone is being pointed at their video
+  // file, which is the one thing in the chain that was working.
+  console.warn('[mbrd] poster: no frame kept', refused || 'every seek was flat');
+  if (refused) noPreview('clip', refused);
+  else if (!canvasReads()) canvasBlocked();
+  else noPreview('clip', 'every frame came back empty - the decoder drew nothing');
   return null;
 }
+
+/** An error's own words, for a line somebody has to act on. */
+const why = (err: unknown) => (err instanceof Error ? err.message : String(err ?? 'no reason given'));
 
 /** One event, as a promise. */
 function once(el: EventTarget, type: string): Promise<Event> {
@@ -324,15 +340,21 @@ const wait = (ms: number) => new Promise<void>(resolve => { setTimeout(resolve, 
  * Draw whatever the element is showing into a capped picture, and say whether
  * there was anything in it.
  *
- * Null means the drawing itself did not come off - no 2D context, or nothing
- * this engine will encode at all. `flat` is the other answer, and it is a
- * report rather than a refusal: whether to keep a frame with nothing in it is a
- * question about the whole clip, so grab() decides it across every seek point
- * and this only says what it saw at one.
+ * No shot means the drawing itself did not come off, and `why` says which of
+ * the two - no canvas at all, or nothing this engine will encode. It used to be
+ * a bare null, which grab() could only report as the one thing it is not: a
+ * clip whose every frame was empty. The two failures are a browser's and the
+ * third is a film's, and telling somebody the wrong one costs them an evening
+ * looking at the wrong end of it.
+ *
+ * `flat` is the other answer, and it is a report rather than a refusal: whether
+ * to keep a frame with nothing in it is a question about the whole clip, so
+ * grab() decides it across every seek point and this only says what it saw at
+ * one.
  */
 async function capture(
   v: HTMLVideoElement,
-): Promise<{ shot: VideoFrameShot, flat: boolean } | null> {
+): Promise<{ shot: VideoFrameShot | null, flat: boolean, why: string }> {
   const scale = Math.min(1, POSTER_SIDE / Math.max(v.videoWidth, v.videoHeight));
   const w = Math.max(1, Math.round(v.videoWidth * scale));
   const h = Math.max(1, Math.round(v.videoHeight * scale));
@@ -341,12 +363,12 @@ async function capture(
   // null for every clip on those engines, which is the same "no poster" answer
   // an undecodable codec gets, and so was indistinguishable from one.
   const face = surface(w, h, { alpha: false });
-  if (!face) return null;
+  if (!face) return { shot: null, flat: false, why: 'this browser would not give a canvas to draw the frame on' };
   face.ctx.drawImage(v, 0, 0, w, h);
   const flat = looksFlat(face.ctx, w, h);
   const out = await encodeFrame(face);
-  if (!out) return null;
-  return { shot: { blob: out, w: v.videoWidth, h: v.videoHeight }, flat };
+  if (!out) return { shot: null, flat, why: 'the frame drew and this browser would not encode it' };
+  return { shot: { blob: out, w: v.videoWidth, h: v.videoHeight }, flat, why: '' };
 }
 
 /**
@@ -362,11 +384,28 @@ async function capture(
  * spread across the frame settles the question, and this runs up to three times
  * per clip on a board that may hold fifty.
  *
- * True on a throw, which is the safe way round: getImageData on a tainted
- * canvas raises, and a frame this cannot inspect is one to look past rather than
- * one to keep.
+ * **False, not true, where this browser will not hand its pixels back.** That
+ * was the other way round and it was the wrong way round, because it treats one
+ * failure as another: a frame that cannot be *inspected* is not a frame that is
+ * empty. Firefox's fingerprinting protection - on by default in the strict mode
+ * that is the default on Android - answers a canvas read with blank or
+ * randomised data rather than an error, so every frame of every clip read as
+ * one flat rectangle, all three seek points were walked and discarded, and the
+ * whole feature answered "every seek came back with nothing in it" on a device
+ * where the decoder had been handing over perfect frames all along. The clip
+ * then had no poster, and on a phone the renderer parks the source, so the card
+ * was black until it was tapped. See canvasReads() in canvas/surface.ts.
+ *
+ * What that costs where the reading really is blocked is the seek past a black
+ * leader: the first frame is kept whatever is in it. A still of the first frame
+ * beats no still, and it is what this function was written to improve on rather
+ * than to replace.
+ *
+ * A throw is still treated as flat, which is the tainted-canvas case and is a
+ * different thing again - that one really is a frame nothing can be done with.
  */
 function looksFlat(ctx: Surface['ctx'], w: number, h: number): boolean {
+  if (!canvasReads()) return false;
   let data: Uint8ClampedArray;
   try { data = ctx.getImageData(0, 0, w, h).data; } catch { return true; }
   const pixels = data.length / 4;
@@ -411,8 +450,7 @@ function looksFlat(ctx: Surface['ctx'], w: number, h: number): boolean {
 export async function frameOnScreen(v: HTMLVideoElement): Promise<VideoFrameShot | null> {
   if (!v.videoWidth || !v.videoHeight) return null;
   if (v.readyState < v.HAVE_CURRENT_DATA) return null;
-  const out = await capture(v);
-  return out ? out.shot : null;
+  return (await capture(v)).shot;
 }
 
 /**

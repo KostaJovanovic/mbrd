@@ -56,7 +56,8 @@
 // The one import in this file, and it is not the library: this module is
 // written to hold pdf.js at arm's length and reaches for nothing else. See
 // noPreview() - a failure here is invisible on the devices where it happens.
-import { noPreview } from '../notify.ts';
+import { noPreview, canvasBlocked } from '../notify.ts';
+import { canvasReads } from '../canvas/surface.ts';
 
 // Exported so tests/pdf-vendor.test.js can hold it to the bytes actually
 // sitting in web/assets/vendor/pdfjs. A version recorded only in a comment
@@ -231,12 +232,31 @@ export async function firstPageRaster(file: Blob) {
     const ctx = canvas.getContext('2d');
     if (!ctx) {
       console.warn('[mbrd] pdf: no 2D context for the page raster');
+      noPreview('PDF', 'this browser would not give a canvas to draw the page on');
       return null;
     }
     await page.render({ canvasContext: ctx, viewport }).promise;
 
     const blob = await toBlob(canvas, 'image/webp', 0.9) || await toBlob(canvas, 'image/png');
-    return blob ? { blob, w, h } : null;
+    // A page that rendered and will not come back out of the canvas, which is
+    // not a fault in this file or in the document. A browser may refuse to hand
+    // back what was drawn - Firefox's fingerprinting protection does exactly
+    // that, silently, in the strict mode that is its default on Android - and
+    // `toBlob` then answers null however good the page is. Said out loud in its
+    // own words, because the fix is a setting on the device and nothing here
+    // can do it. See canvasBlocked() and canvasReads().
+    if (!blob) {
+      console.warn('[mbrd] pdf: the page rendered and would not encode');
+      // Two different things, and only one of them is a setting somebody can
+      // change. Both are said out loud: every exit from this function that
+      // leaves a PDF without its page now speaks, because the absence of a line
+      // is itself evidence - it means the raster worked and the picture was lost
+      // somewhere after this file.
+      if (!canvasReads()) canvasBlocked();
+      else noPreview('PDF', 'the page drew and this browser would not encode it');
+      return null;
+    }
+    return { blob, w, h };
   } catch (err) {
     // Said out loud, and the reason is the history of this module: the whole
     // feature was dead on the deployed site for months because the policy

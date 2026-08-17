@@ -42,6 +42,7 @@ import {
   saveBlob, shareBoard, storageReport,
 } from '../storage/storage.ts';
 import { assetBytes } from '../storage/assets.ts';
+import { canvasReport } from '../canvas/surface.ts';
 import { openLibrary } from '../ui/library.ts';
 import { boardPdf, boardPng } from '../ui/snapshot.ts';
 import { saveWithCooldown } from '../ui/board-actions.ts';
@@ -141,7 +142,7 @@ export function fileCommands() {
     // same door with a list in front of it.
     library: () => openLibrary(),
     /**
-     * The four Debug readouts. Buttons that report, not live rows, and that
+     * The five Debug readouts. Buttons that report, not live rows, and that
      * shape is forced rather than chosen: ui/panel.ts repaints on `board`,
      * `settings`, `layout` and `lens` and on nothing else - not on `items`, not
      * on `history`, and not when the panel is opened. A hint showing the undo
@@ -196,6 +197,38 @@ export function fileCommands() {
       toast(`${count} files, ${formatBytes(bytes)} in this browser. `
         + `${plan.total} could be made smaller, ${plan.done} already are.`);
       console.info('[mbrd] board weight:', { files: count, bytes, plan, saving: describeSaving });
+    },
+    /**
+     * Which step of making a picture this browser will not do.
+     *
+     * The one readout here that answers a question about the *browser* rather
+     * than about the board, and it is here because of how long the alternative
+     * took. A card with no picture on it is the same card whether the canvas
+     * would not draw, would not be read, would not encode, or produced bytes an
+     * `<img>` then refused - four different faults with four different repairs,
+     * and no way at all to tell them apart by looking at the board. Every guess
+     * costs a build, a save and somebody's afternoon on a phone.
+     *
+     * So it says which. See canvasReport(), which does the work by making a
+     * picture rather than by reading version strings, and reports on the same
+     * door - surface() and surfaceToBlob() - that every derived picture in the
+     * app goes through, so it cannot quietly disagree with them.
+     *
+     * The toast is the whole point: a phone has no console, and this is for
+     * somebody standing in front of a board that has come up blank.
+     */
+    pictureCheck: async () => {
+      const r = await canvasReport();
+      // 'unreadable' is not counted as a failure: a browser that blocks canvas
+      // reads has said nothing about whether it draws, and the two that matter
+      // to a card - something came out, and an <img> took it - are answerable
+      // without reading a pixel.
+      const ok = r.writes.length > 0 && r.mounts && r.draws !== 'no' && r.roundTrip !== 'no';
+      toast(`Pictures: offscreen ${r.offscreen}, canvas ${r.element}, using ${r.using}, `
+        + `draws ${r.draws}, reads ${r.reads ? 'yes' : 'no'}, `
+        + `writes ${r.writes.join('/') || 'nothing'}, `
+        + `decodes ${r.roundTrip}, shows ${r.mounts ? 'yes' : 'no'}`, ok ? undefined : 'error');
+      console.info('[mbrd] pictures:', r);
     },
     /** How deep the undo stack is, and what it is holding on to. */
     historyState: () => {
