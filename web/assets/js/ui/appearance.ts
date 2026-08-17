@@ -30,6 +30,7 @@ import { oklch, parseHex } from '../color.ts';
 import { toast } from '../notify.ts';
 import { readPrefJSON, writePref } from '../prefs.ts';
 import { assetURL, getAsset } from '../storage/assets.ts';
+import { shownHash } from '../board-model.ts';
 import {
   extractPalette, paletteFromAccent, samplePixels, MAX_SOURCES, PALETTE_TOKENS,
 } from './pigments.ts';
@@ -660,12 +661,9 @@ function pictureHashes() {
     // to be the colours of what is on screen, and what is on screen is the
     // preview.
     //
-    // Held to being a string on the way past, like the cover below it: `meta` is
-    // open, and a preview key holding a number would otherwise reach getAsset().
-    const shown = it.meta?.preview;
-    const hash = it.type !== 'image' ? null
-      : typeof shown === 'string' && shown ? shown
-        : it.asset?.hash;
+    // shownHash() is that rule written once - see board-model.ts, which holds it
+    // for the canvas renderer and the Feed as well.
+    const hash = it.type === 'image' ? shownHash(it) : null;
     for (const h of [hash, it.meta?.cover]) {
       // Registered, but not resolved: getAsset() is the same "are the bytes
       // here?" test assetURL() returning null used to stand in for. A cover out

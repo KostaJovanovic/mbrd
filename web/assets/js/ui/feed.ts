@@ -51,7 +51,7 @@ import {
 import { armedSticker, disarm } from './sticker-window.ts';
 import { openViewer, canView, MARKDOWN } from './viewer.ts';
 import { renderMarkdown } from './markdown.ts';
-import type { Item } from '../board-model.ts';
+import { shownHash, type Item } from '../board-model.ts';
 import type { Point } from '../geometry.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 
@@ -481,10 +481,24 @@ function ratioOf(item: Item) {
   return clamp(r, 0.5, 2);
 }
 
-/** A raster URL for anything that has one - a thumb, a poster, a cover, a shot. */
+/**
+ * The derived stand-in alone, for a tile whose first choice would not load.
+ *
+ * Deliberately not pictureURL(): that starts with the preview, which is the
+ * thing that has just failed, so it would hand the element back the source it
+ * refused. These are all pictures some other path made, so whatever stopped the
+ * first one is unlikely to have touched them.
+ */
+function spareURL(item: Item) {
+  const m = item.meta || {};
+  const hash = str(m.thumb) || str(m.cover) || str(m.poster) || str(m.shot);
+  return hash ? assetURL(hash) : null;
+}
+
+/** A raster URL for anything that has one - a preview, a thumb, a poster, a cover, a shot. */
 function pictureURL(item: Item) {
   const m = item.meta || {};
-  const hash = str(m.thumb) || str(m.cover) || str(m.poster) || str(m.shot)
+  const hash = str(m.preview) || str(m.thumb) || str(m.cover) || str(m.poster) || str(m.shot)
     || (item.type === 'image' || item.type === 'video' ? item.asset?.hash : null);
   return hash ? assetURL(hash) : null;
 }
@@ -604,19 +618,35 @@ function fillImage(t: Tile) {
   // board is zoomed right out: a feed tile is far bigger than 100px, so the thumb
   // reads as blurry. Thumb (via pictureURL) is only the fallback if there is no
   // asset to show.
-  const url = (t.item.asset?.hash && assetURL(t.item.asset.hash)) || pictureURL(t.item);
+  //
+  // Through shownHash(), which is the fix for a tile that drew its own filename:
+  // the asset behind a PDF, a RAW or a HEIC is not a picture, and only
+  // `meta.preview` is.
+  const shown = shownHash(t.item);
+  const url = (shown && assetURL(shown)) || pictureURL(t.item);
   if (url) img.src = url;
+  // And a source that will not load is answered rather than left as alt text -
+  // the same guard the card has. The fallback is the thumbnail, which is a
+  // different set of bytes made by a different path, so it survives whatever
+  // this one hit.
+  img.addEventListener('error', () => {
+    const spare = spareURL(t.item);
+    if (spare && img.src !== spare) img.src = spare;
+  });
   // A cropped picture is cropped here too, and by the same route the card and
   // the viewer take: the display copy is where the rectangle is applied. The
   // Feed is the whole board on a phone, so a tile showing the full frame of a
   // picture that is cropped everywhere else would not be a small inconsistency -
   // it would be the only view most phone users ever see.
   const crop = itemCrop(t.item);
-  const hash = t.item.asset?.hash;
-  if (crop && hash) {
-    const ready = displayURLReady(hash, crop);
+  // `shown` again, not the asset: a cropped PDF page has to be cropped from the
+  // page, and asking display.ts for a crop of the PDF's own bytes answers with
+  // nothing - which then left the tile on whatever it had, uncropped, on the one
+  // view where a wrong frame is most visible.
+  if (crop && shown) {
+    const ready = displayURLReady(shown, crop);
     if (ready) img.src = ready;
-    else ensureDisplay(hash, crop).then(u => { if (u && img.isConnected) img.src = u; });
+    else ensureDisplay(shown, crop).then(u => { if (u && img.isConnected) img.src = u; });
   }
   applyGrade(img, t.item);
   t.el.appendChild(img);
