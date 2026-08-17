@@ -47,7 +47,7 @@ export {
   parseNoteText, normalizeNoteRich, flattenNoteRich, applyNoteStyle,
   buildNoteLine,
 } from './note-model.ts';
-export { videoFrame, videoDrawsBlank } from './poster.ts';
+export { videoFrame, videoDrawsBlank, pictureIsFlat } from './poster.ts';
 
 
 /**
