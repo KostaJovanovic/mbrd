@@ -74,11 +74,17 @@ export function surface(w: number, h: number, opts: { alpha?: boolean } = {}): S
  * back when the *constructor* threw, which is the one failure that engine does
  * not have.
  *
- * What that cost is every picture this app derives: no display copies, no
- * thumbnails, no video posters, no model stills, no GIF stills. A PDF's card
- * had a rendered page in the board and no source on its `<img>`, so it drew its
- * own alt text at the top of an empty card; a clip had no frame at any zoom.
- * Both read as "the preview did not work" and neither was.
+ * What that would cost is every picture this app derives: no display copies, no
+ * thumbnails, no video posters, no model stills, no GIF stills - every one of
+ * them reading as "the preview did not work" on an engine that was capable of
+ * all of it.
+ *
+ * Written as "would" rather than "did", because this fallback was added during
+ * a hunt for a bug that turned out to be two other things entirely (see
+ * ui/feed.ts's shownHash and canvas/gl-frame.ts), and it was never shown to
+ * have fired on anybody's phone. It stays because the gap it covers is real and
+ * the cost of covering it is one extra call on an engine that has already
+ * failed - not because it is known to have been the fault.
  *
  * `alpha` is passed through because one caller means it: a video poster draws
  * onto an opaque context (canvas/poster.js), which lets the engine skip the
@@ -153,10 +159,21 @@ function element(w: number, h: number): HTMLCanvasElement | null {
  *   - a video poster, because looksFlat() reads the frame to see whether the
  *     decoder actually drew one, and a blank read means every frame of every
  *     clip is discarded as empty;
- *   - the palette taken from the board's own pictures (ui/pigments.ts), which
- *     is where this was first seen - "could not read any of the pictures on the
- *     board", on a board full of them;
+ *   - the palette taken from the board's own pictures (ui/pigments.ts);
  *   - the cut-out guess on an imported picture (optimize/picture.ts).
+ *
+ * **It has never been seen to happen here**, and that is worth saying because
+ * this function was written believing it had. A board that answered "could not
+ * read any of the pictures on the board" looked exactly like this and was not:
+ * the board held nothing but PDFs, and the palette was handing an image decoder
+ * each PDF's own bytes rather than its rendered page. That was one bug (see
+ * shownHash in board-model.ts) and the missing clip frames were another
+ * (canvas/gl-frame.ts), and neither had anything to do with reading a canvas.
+ *
+ * What is left is a documented browser behaviour with no confirmed sighting,
+ * guarded cheaply. That is a fair thing to keep and a bad thing to reason from:
+ * anybody reaching for this to explain a missing picture should find the actual
+ * cause first, because twice now it has been somewhere else entirely.
  *
  * So it is asked once, here, rather than guessed at three times: draw a known
  * colour into a two-pixel canvas and read it back. A tolerance of eight per
@@ -197,177 +214,6 @@ function probeReads(): boolean {
   } catch {
     return false;
   }
-}
-
-/**
- * What this browser will and will not do with a canvas, end to end.
- *
- * Every derived picture in this app - a display copy, a thumbnail, a video
- * poster, a PDF's page - is the same four steps: get a surface, draw on it, get
- * the bytes out, mount them in an `<img>`. When a board comes up with no
- * pictures on it, exactly one of those four is the reason, and **from the
- * outside all four look identical**: a card with nothing on it. That is the
- * whole difficulty of the bug this exists for, which took three builds to place
- * because every guess about it was a guess about which step.
- *
- * So this walks the four in order and reports each, on a picture it makes
- * itself. Nothing here is inferred from a version string or a `typeof` - the
- * report is what happened when it was tried, which is the only kind of answer
- * worth carrying back off a phone with no console. Read out by the "Can this
- * browser make pictures?" button in the Debug fold; see pictureCheck() in
- * commands/file.ts.
- *
- * The picture is two flat colours side by side rather than one, because half
- * the failures here hand back something rather than nothing: a blocked read is
- * a uniform rectangle, and a canvas that never drew encodes to a perfectly
- * valid picture of nothing. Two colours make "the bytes are the picture I drew"
- * a question with an answer.
- */
-export type Verdict = 'yes' | 'no' | 'unreadable';
-
-export type CanvasReport = {
-  /** `new OffscreenCanvas(2, 2)` and its 2D context. */
-  offscreen: 'none' | 'threw' | 'no-2d' | 'ok',
-  /** `<canvas>` and its 2D context. 'none' is a Node test. */
-  element: 'none' | 'no-2d' | 'ok',
-  /** Which of the two surface() handed back for the real probe. */
-  using: 'offscreen' | 'element' | 'none',
-  /**
-   * Whether the fill put the colours where they were put - and 'unreadable'
-   * where that cannot be established, which is a third answer rather than a no:
-   * a browser blocking canvas reads has said nothing at all about whether it
-   * draws, and reporting that as a failure to draw would send the next person
-   * looking in the wrong place. Which is the mistake this whole readout exists
-   * to stop making.
-   */
-  draws: Verdict,
-  /** canvasReads() - whether getImageData answers with what was drawn. */
-  reads: boolean,
-  /** The types that came back as themselves, shortest spelling: webp, jpeg, png. */
-  writes: string[],
-  /** Whether the encoded bytes decode again to the picture that was drawn. */
-  roundTrip: Verdict,
-  /** Whether an `<img>` accepts those bytes - which is what a card does. */
-  mounts: boolean,
-};
-
-const LEFT = { r: 0x3b, g: 0x7d, b: 0xd8 };
-const RIGHT = { r: 0xd8, g: 0xa0, b: 0x3b };
-
-export async function canvasReport(): Promise<CanvasReport> {
-  const report: CanvasReport = {
-    offscreen: probeOffscreen(),
-    element: probeElement(),
-    using: 'none',
-    draws: 'unreadable',
-    reads: canvasReads(),
-    writes: [],
-    roundTrip: 'unreadable',
-    mounts: false,
-  };
-
-  const face = surface(64, 64, { alpha: false });
-  if (!face) return report;
-  report.using = typeof OffscreenCanvas === 'function' && face.canvas instanceof OffscreenCanvas
-    ? 'offscreen'
-    : 'element';
-  paint(face);
-  report.draws = report.reads ? verdict(twoColours(face.ctx)) : 'unreadable';
-
-  let first: Blob | null = null;
-  for (const type of ['image/webp', 'image/jpeg', 'image/png']) {
-    // Through surfaceToBlob(), not through the canvas, so this reports on the
-    // door the app actually uses - including its PNG substitution, which is why
-    // the type is checked rather than the request.
-    const blob = await surfaceToBlob(face, type, 0.9).catch(() => null);
-    if (!blob || !blob.size || blob.type.toLowerCase() !== type) continue;
-    report.writes.push(type.slice(6));
-    first ??= blob;
-  }
-  if (!first) return report;
-
-  report.roundTrip = report.reads ? verdict(await decodesBack(first)) : 'unreadable';
-  report.mounts = await mountsInImg(first);
-  return report;
-}
-
-const verdict = (ok: boolean): Verdict => (ok ? 'yes' : 'no');
-
-/** The two-colour picture the checks below are about. */
-function paint({ ctx }: Surface): void {
-  ctx.fillStyle = `rgb(${LEFT.r} ${LEFT.g} ${LEFT.b})`;
-  ctx.fillRect(0, 0, 64, 64);
-  ctx.fillStyle = `rgb(${RIGHT.r} ${RIGHT.g} ${RIGHT.b})`;
-  ctx.fillRect(32, 0, 32, 64);
-}
-
-/** Whether both halves are the colour they were painted, give or take. */
-function twoColours(ctx: Surface['ctx']): boolean {
-  try {
-    const l = ctx.getImageData(8, 32, 1, 1).data;
-    const r = ctx.getImageData(56, 32, 1, 1).data;
-    return near(l[0], LEFT.r) && near(l[1], LEFT.g) && near(l[2], LEFT.b)
-      && near(r[0], RIGHT.r) && near(r[1], RIGHT.g) && near(r[2], RIGHT.b);
-  } catch {
-    return false;
-  }
-}
-
-const near = (got: number, want: number) => Math.abs(got - want) <= 12;
-
-/**
- * Whether the bytes decode back to the picture. The full round trip a display
- * copy makes: encode, hand to createImageBitmap, draw, read.
- */
-async function decodesBack(blob: Blob): Promise<boolean> {
-  if (typeof createImageBitmap !== 'function') return false;
-  try {
-    const bmp = await createImageBitmap(blob);
-    const face = surface(64, 64, { alpha: false });
-    if (!face) return false;
-    face.ctx.drawImage(bmp, 0, 0, 64, 64);
-    bmp.close?.();
-    return twoColours(face.ctx);
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Whether an `<img>` will take those bytes.
- *
- * The last of the four steps and the one nothing else here covers: a card is an
- * `<img>` with a blob URL on it, and an `<img>` that refuses its source draws
- * its own alt text - the file's name, at the top of an empty rectangle, which
- * is precisely what a broken card looks like. So it is asked rather than
- * assumed, and the URL is revoked either way.
- */
-async function mountsInImg(blob: Blob): Promise<boolean> {
-  if (typeof document === 'undefined' || typeof Image !== 'function') return false;
-  const url = URL.createObjectURL(blob);
-  try {
-    const img = new Image();
-    img.src = url;
-    await img.decode();
-    return img.naturalWidth > 0;
-  } catch {
-    return false;
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
-
-function probeOffscreen(): CanvasReport['offscreen'] {
-  if (typeof OffscreenCanvas !== 'function') return 'none';
-  let canvas: OffscreenCanvas;
-  try { canvas = new OffscreenCanvas(2, 2); } catch { return 'threw'; }
-  try { return canvas.getContext('2d') ? 'ok' : 'no-2d'; } catch { return 'no-2d'; }
-}
-
-function probeElement(): CanvasReport['element'] {
-  const el = element(2, 2);
-  if (!el) return 'none';
-  try { return el.getContext('2d') ? 'ok' : 'no-2d'; } catch { return 'no-2d'; }
 }
 
 /**
