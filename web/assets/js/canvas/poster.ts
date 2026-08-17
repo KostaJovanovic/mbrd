@@ -140,6 +140,14 @@ export type VideoFrameShot = { blob: Blob; w: number; h: number };
  * from a guess.
  */
 export async function videoFrame(file: Blob): Promise<VideoFrameShot | null> {
+  // **Asked and answered.** Once a clip has proved this browser draws video onto
+  // a canvas as nothing, every clip after it on the same board would spend three
+  // seeks, a second of playback and up to nine seconds of budget proving it
+  // again - on a phone, during an import, while the fallback it is holding up
+  // downloads thirty megabytes in the background. What that looked like was a
+  // second toast saying "no frame after 9s" about a clip nobody had a question
+  // about. Silent, because the first one said it. See blankBrowser.
+  if (blankBrowser) return null;
   const url = URL.createObjectURL(file);
   const v = document.createElement('video');
   // Muted and inline are not cosmetic: an unmuted video may not be allowed to

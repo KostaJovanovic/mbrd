@@ -199,9 +199,26 @@ const FRAME_MAX_SIDE = 1280;
  * Null whenever anything is not right - the core is not vendored, the file is
  * not readable, the encoder is missing a format. The caller treats that as "no
  * poster", which is the black rectangle it was already going to be.
+ *
+ * **And it says which, through `say`.** It used to answer null for all four of
+ * those and for a fifth - the worker never booting - without a word, which was
+ * defensible while this ran only for H.265: a clip nothing here can decode has a
+ * blank card either way, and the person watching had asked for nothing. It stops
+ * being defensible now that a whole browser can arrive here (see
+ * videoDrawsBlank() in canvas/poster.ts). Then this is not a long shot at an
+ * exotic codec, it is the *only* route to a picture, and thirty megabytes have
+ * just been spent in front of somebody who was told they were being spent. A
+ * silent null after that is the app announcing a download and then declining to
+ * say what became of it.
+ *
+ * The one exception to "null" is a boot that fails, which is said and then
+ * re-thrown - see the note at the await below.
  */
 export async function firstFrame(file: File, say: (msg: string) => void = () => {}): Promise<Blob | null> {
-  if (!(await mediaAvailable())) return null;
+  if (!(await mediaAvailable())) {
+    say('The video tools could not be reached - no network, or the CDN is blocked here');
+    return null;
+  }
   if (!ready) {
     say(`Loading the media decoder (${MEDIA_MB} MB, once)…`);
     // A boot that fails must not be remembered as a permanently rejected
@@ -218,7 +235,23 @@ export async function firstFrame(file: File, say: (msg: string) => void = () => 
       .catch(err => { if (ready === boot) ready = null; throw err; });
     ready = boot;
   }
-  await ready;
+  // Said on the way past and then re-thrown, which is the one failure here that
+  // is not a null. A worker that cannot be built (a CSP refusing workers, a
+  // blocked script URL) and one that never finishes booting are both faults in
+  // the app rather than facts about a clip, and the callers' catches turn them
+  // into "no poster" anyway - tests/media.test.js holds this to rejecting,
+  // because a rejection is how it can see that the module cleared `ready` and
+  // will respawn rather than wedging.
+  //
+  // What was missing was only the sentence. Both arrived at the import as a
+  // plain null indistinguishable from "this clip has no picture in it", after
+  // thirty megabytes had been announced.
+  try {
+    await ready;
+  } catch (err) {
+    say('The video tools did not load: ' + (err instanceof Error ? err.message : String(err)));
+    throw err;
+  }
 
   const ext = extOf(file.name);
   const inName = 'in' + (ext ? '.' + ext : '');
@@ -230,6 +263,8 @@ export async function firstFrame(file: File, say: (msg: string) => void = () => 
     { out: 'frame.png', type: 'image/png', codec: 'png', extra: [] },
   ];
 
+  /** Why the last writer produced nothing, for the line at the end. */
+  let last = 'no reason given';
   for (const attempt of attempts) {
     // Read again per attempt rather than holding one copy: the bytes are
     // *transferred* into the worker, not copied, so the buffer from the first
@@ -238,10 +273,13 @@ export async function firstFrame(file: File, say: (msg: string) => void = () => 
     let bytes;
     try {
       bytes = new Uint8Array(await file.arrayBuffer());
-    } catch {
+    } catch (err) {
+      say('The clip could not be read back for the video tools - '
+        + (err instanceof Error ? err.message : String(err)));
       return null;
     }
     let res: WorkerReply | null = null;
+    let trouble = '';
     try {
       res = await ask({
         type: 'run',
@@ -257,11 +295,16 @@ export async function firstFrame(file: File, say: (msg: string) => void = () => 
           '-f', 'image2', attempt.out,
         ],
       });
-    } catch {
+    } catch (err) {
       // A refused format is not a failure of the feature; try the next writer.
+      // The complaint is kept rather than dropped, because if the *last* writer
+      // also refuses it is the only account of why there is no poster.
+      trouble = err instanceof Error ? err.message : String(err);
     }
     if (res?.bytes?.byteLength) return new Blob([res.bytes], { type: attempt.type });
+    last = trouble || `it wrote no ${attempt.codec} frame`;
   }
+  say('The video tools could not pull a frame from this clip - ' + last);
   return null;
 }
 
