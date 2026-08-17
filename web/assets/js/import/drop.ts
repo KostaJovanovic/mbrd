@@ -1002,14 +1002,47 @@ export function addNote(centre: Point, text = '', want = 0) {
 }
 
 /**
- * How far off square a sticker lands, in degrees either way.
+ * How far off square a sticker lands, as a multiple of the lean the whimsy axis
+ * is currently allowing an ordinary card.
  *
- * Small. This is the difference between a sticker and a diagram element, and
- * eight degrees is about as far as a thumb pressing something down actually
- * takes it - past that it stops reading as hand-placed and starts reading as
- * broken.
+ * A sticker leans further than a card and should: a card is pinned up, and a
+ * sticker is pressed down with a thumb. 2.7 puts it at about eight degrees at
+ * the scrapbook end of the axis, which is where that number was tuned and is
+ * about as far as a thumb actually takes one - past that it stops reading as
+ * hand-placed and starts reading as broken. The other two tiers get half of it,
+ * because --tilt-max halves there, and the point of the axis is that the whole
+ * board straightens up together. It used to be a flat eight degrees at every
+ * tier, which left a sticker the one thing on a Harsh board still thrown down
+ * at a scrapbook angle.
  */
-const STICKER_TILT = 8;
+const STICKER_TILT_X = 2.7;
+
+/**
+ * The lean a card may currently rest at, in degrees.
+ *
+ * Read off --tilt-max rather than tabulated here, because that token is the one
+ * place the whimsy axis says how crooked this board is - see canvas.css and the
+ * [data-whimsy] blocks in tokens.css - and a copy of those numbers in JS is a
+ * copy that goes wrong the first time the axis is retuned.
+ *
+ * canvas/item-dom.js reaches the same token, and never has to read it: a card
+ * multiplies its dealt factor by --tilt-max *in CSS*, so it re-leans on its own
+ * when the dial moves. A sticker cannot do that. Its angle is real geometry -
+ * it goes in the file, it is in the undo snapshot, and a deliberate 45 degrees
+ * is a thing somebody can have meant - so it is rolled once, against whatever
+ * the axis allowed at the moment the sticker was pressed down. Moving one
+ * re-rolls it (see addSticker), which is also when it picks up a dial that has
+ * moved since.
+ *
+ * The fallback is the token's own default and is only reached with no document
+ * at all, which is a test importing this module rather than anything the app
+ * does.
+ */
+function cardTiltMax(): number {
+  if (typeof document === 'undefined') return 1.5;
+  const deg = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--tilt-max'));
+  return Number.isFinite(deg) ? deg : 1.5;
+}
 
 /**
  * A shape pressed onto the board. The third item type with no file behind it.
@@ -1021,6 +1054,11 @@ const STICKER_TILT = 8;
  * shimmer while you dragged it. Undo gets it for free: `rot` goes into the same
  * geometry snapshot as x and y (GEOM_KEYS in layout.js), so stepping back puts
  * the old angle back along with the old position.
+ *
+ * How far it may go is the whimsy axis's to say, the same as a card's lean -
+ * see STICKER_TILT_X and cardTiltMax() above. The roll is against the dial as
+ * it stands right now, so a sticker put down at one end of the axis keeps that
+ * angle until it is moved.
  *
  * The one part of that worth revisiting once it is in the hand: a sticker you
  * have deliberately turned to 45 degrees is re-rolled too if you move it to
@@ -1043,7 +1081,7 @@ export function addSticker(shape: string, centre: Point, tint?: string) {
     // it could be called: a sticker has no filename and no text of its own.
     name: entry.name,
     x: centre.x, y: centre.y, w: size.w, h: size.h,
-    rot: (Math.random() * 2 - 1) * STICKER_TILT,
+    rot: (Math.random() * 2 - 1) * STICKER_TILT_X * cardTiltMax(),
     meta: { shape: entry.id, tint: stickerTint(tint, entry.id) },
   }], 'Add sticker');
   // Just pressed down, so it lies where it landed for ten seconds before it

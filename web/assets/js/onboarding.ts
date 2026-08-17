@@ -57,11 +57,12 @@ import {
  * Ghost cards: the four hints a brand-new board opens with.
  *
  * A blank board cannot say what to do with itself, so it is handed cards that
- * do - drop things here, drag to move around, add a note. The moment real
- * content arrives they leave, and that board never shows them again.
+ * do - how to move around it, how to get things onto it, what it can take, and
+ * the whimsy dial itself. The moment real content arrives they leave, and that
+ * board never shows them again.
  */
 export const GHOST_IDS = Object.freeze([
-  '__ghost_drop__', '__ghost_move__', '__ghost_note__', '__ghost_whimsy__',
+  '__ghost_drop__', '__ghost_move__', '__ghost_formats__', '__ghost_whimsy__',
 ]);
 
 // The one hint that is a control rather than a sentence. Named here because the
@@ -120,7 +121,7 @@ type GhostSpec = {
 const HINT_GHOSTS: readonly GhostSpec[] = Object.freeze([
   { id: GHOST_IDS[0], hint: 'drop', x: -320, y:   96, w: 256, h: 192, mspan: 0.5, mrows: 2 },
   { id: GHOST_IDS[1], hint: 'move', x:  -64, y: -160, w: 256, h: 192, mspan: 0.5, mrows: 2 },
-  { id: GHOST_IDS[2], hint: 'note', x:  320, y:  -32, w: 256, h: 192, mspan: 0.5, mrows: 2 },
+  { id: GHOST_IDS[2], hint: 'formats', x:  320, y:  -32, w: 256, h: 192, mspan: 0.5, mrows: 2 },
   // The odd one out: a control rather than a sentence, so it is 4:1 on Desktop -
   // four grid spaces by one. Parked under the title card and in the gap the
   // cascade leaves between the drop card and the note card: the title's lower

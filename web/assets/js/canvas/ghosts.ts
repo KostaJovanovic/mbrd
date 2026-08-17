@@ -7,7 +7,7 @@
 //
 // The split is the layering rule doing its job. state.js sits below the canvas
 // and has no business holding user-facing prose, so an item carries only a key
-// in meta.hint - 'drop', 'move', 'note' - and the mapping from key to sentence
+// in meta.hint - 'drop', 'move', 'formats' - and the mapping from key to sentence
 // lives up here beside the renderer that draws it.
 //
 // Note what is *not* here: the exit. That was expected to be a third job and
@@ -16,48 +16,141 @@
 // The copy is deliberately layout-neutral. Desktop and Mobile share items and
 // differ in everything spatial, and these cards are shown in both, so a hint
 // that says "wheel to zoom" would be wrong on a phone and one that says "pinch"
-// would be wrong on a laptop. Each line therefore names the *outcome* and lets
-// both input pipelines be a way of reaching it. The gestures behind them are the
-// ones in canvas/input.js's header - it is the map, and this is a paraphrase of
-// it that has to stay true.
+// would be wrong on a laptop.
+//
+// The three hints are legends rather than paragraphs - three icons with a few
+// words beside each - and that is a form which cannot name the outcome and duck
+// the gesture the way a sentence can. So each row names both registers at once
+// ("Wheel or pinch to zoom"), the move ui/settings-schema.js's KEYS table
+// already makes with its 'two fingers' row; and a row with no touch form carries
+// `desktop`, which ghosts.css hides under data-board-mode="mobile". A phone is
+// never shown a gesture it cannot make.
+//
+// The prose left in the file is the not-found pair, and it stays prose because
+// it is not instruction. A card saying that the address is dead and that the
+// visitor's own board has not been touched has nothing to draw and everything
+// to say.
+//
+// The gestures behind all of it are the ones in canvas/input.js's header - it is
+// the map, and this is a paraphrase of it that has to stay true.
 
 import { bus, dismissGhosts, hasContent, hasGhosts, isNotFoundBoard } from '../state.ts';
+
+/**
+ * One row of the legend a hint may print in place of a paragraph: a `<symbol>`
+ * in web/assets/icons.svg, and the few words that stand beside it.
+ *
+ * `desktop` marks a row naming something a phone cannot do. Two lists - one per
+ * layout - would be the obvious alternative and is the wrong one: the item is
+ * the same item in both modes and the card is rebuilt on a layout switch, so a
+ * flag CSS can act on keeps one list and one source of truth. See the head of
+ * the file.
+ */
+export type HintRow = {
+  icon: string;
+  label: string;
+  desktop?: true;
+};
 
 /**
  * One card's copy. `href`/`go` are the link card's alone - every hint has the
  * same shape so nothing downstream has to check, which is why they are optional
  * here rather than a second type.
+ *
+ * `line` and `rows` are the two registers a hint can be in, and a hint is in
+ * exactly one of them: a paragraph you read, or a legend you look at. The
+ * renderer prints whichever it finds.
  */
 export type Hint = {
   title: string;
-  line: string;
+  line?: string;
+  rows?: readonly HintRow[];
   href?: string;
   go?: string;
 };
 
 /** The keys a ghost item's `meta.hint` may name - the two sets, in one union. */
-export type HintKey = 'drop' | 'move' | 'note' | 'whimsy' | 'gone' | 'back';
+export type HintKey = 'drop' | 'move' | 'formats' | 'whimsy' | 'gone' | 'back';
 
 /**
  * The three hints, keyed by the meta.hint their item carries.
  *
- * A title and one line. The title has to survive being read at a glance and
- * from across a zoomed-out board; the line is for someone who has actually
- * stopped to look. Anything longer stops being a hint and starts being a manual
- * pinned to the board.
+ * A title and three rows. The title has to survive being read at a glance and
+ * from across a zoomed-out board; the rows under it are for someone who has
+ * actually stopped to look. Anything longer stops being a hint and starts being
+ * a manual pinned to the board.
+ *
+ * Three is the ceiling rather than the shape, and a card is welcome to run to
+ * two: a row added to square up a set is the manual arriving one line at a
+ * time. All three happen to have three today.
+ *
+ * They were paragraphs, and the change is that discipline taken one step
+ * further rather than a different one. A sentence explaining that the surface
+ * pans and zooms is read once and by nobody; four words beside a mark are read
+ * at a glance and are the answer to the question the card is actually being
+ * asked. The three cards are the three questions, in the order they come up:
+ * where am I, how do things get here, and what is it willing to take.
+ *
+ * The glyphs are the app's own, which is most of what makes a row worth
+ * drawing - i-plus is the Files tool on the toolbar, i-pen is Note, i-link is
+ * Link - so a row is a picture of the button it names, and
+ * the board is teaching its own chrome. No glyph appears on two cards: a mark
+ * meaning one thing here and another thing four hundred pixels away is worse
+ * than no mark.
  */
 export const HINTS: Readonly<Record<HintKey, Hint>> = Object.freeze({
   drop: {
     title: 'A surface for thinking',
-    line: 'It extends as far as you need. Pan across it, zoom in and out. There is no edge, only the room your ideas take up.',
+    // Three, and in the order somebody meets them: you move before you scale,
+    // and you gather things up only once there is something to gather. A fourth
+    // row would be the manual this card exists not to be - the whole legend,
+    // sixteen rows of it, is in the panel already (KEYS in
+    // ui/settings-schema.js) and this is the doorway to it, not a copy.
+    rows: [
+      { icon: 'i-move', label: 'Drag or two fingers to pan' },
+      { icon: 'i-zoom-in', label: 'Wheel or pinch to zoom' },
+      // No touch form: a marquee on a screen is a double-tap and then a drag,
+      // which cannot be said in four words and is not the gesture anybody needs
+      // told on a phone. Hidden there rather than reworded. See HintRow.
+      { icon: 'i-select-all', label: 'Shift-drag to select', desktop: true },
+    ],
   },
   move: {
     title: 'Whatever you\'re gathering',
-    line: 'Images, video, music, documents, 3D files, notes. Drop them on or paste them in. It all lands here.',
+    // The line here used to be the list - images, video, music, documents, 3D
+    // files, notes - and a list is the wrong shape for this card twice over. It
+    // is longer than anybody reads standing at a blank board, and it is the
+    // next card's job now.
+    //
+    // What is left is the three things you can make: the first three creation
+    // tools on the toolbar, in the toolbar's own order and wearing the toolbar's
+    // own glyphs. Colour and Stickers are the two left out, and they are the two
+    // that mean nothing on a board with nothing on it yet.
+    rows: [
+      { icon: 'i-plus', label: 'Drop files anywhere' },
+      { icon: 'i-link', label: 'Add a link' },
+      { icon: 'i-pen', label: 'Write a note' },
+    ],
   },
-  note: {
-    title: 'Move things until they make sense',
-    line: 'Drag them around. Put things next to each other, spread them out, stack them up. Where they end up is the point.',
+  formats: {
+    title: 'Almost anything you have',
+    // The first two rows are what the board *draws*, which is the branches of
+    // classify() in canvas/renderers.js and nothing else - so they move when
+    // that function does and are wrong the moment they do not.
+    //
+    // The third is the one row on any of these cards that is a promise rather
+    // than an instruction, and it earns the space the count row did not: audio
+    // is the one thing on that list which stops being a card once there is more
+    // than one of it. The board becomes a player - ui/playlist.js, the sidebar
+    // window on Desktop and the Feed's second lens on Mobile - and a player is
+    // not a thing anybody guesses a pinboard has. Where it opens from is left
+    // out on purpose: two layouts, two answers, and neither is any use until
+    // there is a song on the board.
+    rows: [
+      { icon: 'i-picture', label: 'Images, video, audio, 3D' },
+      { icon: 'i-edit-text', label: 'PDFs, documents, code' },
+      { icon: 'i-music', label: 'Music becomes a playlist' },
+    ],
   },
   // The fourth card is a control, not a sentence: it carries the whimsy dial
   // itself, and it prints neither of these. The three stop names under the dial

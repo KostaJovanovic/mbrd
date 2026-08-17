@@ -331,7 +331,22 @@
    there is no daylight left in it: two hairlines a fraction of a pixel apart are
    not two rules, they are one thick border. The card keeps the one line that says
    where it ends. */
-#world.zoom-far .card::after { content: none; }
+/* Not the fence, and the exclusion is load-bearing rather than tidy. A fence's
+   plate is `class="card fence-card"`, so it answers to `.card` - and fences.css
+   puts the *cork* on .fence-card::after, which is this very pseudo-element of
+   this very element. Two unrelated things on one ::after, and this rule outranks
+   the cork by an id, so without the :not() a region below the rung loses its
+   surface outright: not faded, deleted. content:none is no box at all, so the
+   zoom fade that fences.css computes for it lands on nothing.
+
+   That was reported for a long time as "the cork pops out at 40%", and 40% is
+   this rung (LOD_ZOOM, canvas/viewport.ts) rather than anything in the fade
+   band - which is where it was looked for, at length, several times.
+
+   A fence has no bookplate ruling to take away in any case: its ::after has
+   never been a second hairline, and the border it does have is the dashed rule
+   on .fence-card itself. */
+#world.zoom-far .card:not(.fence-card)::after { content: none; }
 /* The card's edge, out where the thing that used to draw it is switched off.
    ---------------------------------------------------------------------------
    A card's hairline is an inset shadow on `.card`, and `.card` lives inside

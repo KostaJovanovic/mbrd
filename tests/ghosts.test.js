@@ -79,13 +79,21 @@ test('seeding twice does not double the hints', () => {
   assert.equal(ghosts().length, GHOST_IDS.length);
 });
 
-test('every hint carries a key the copy knows a sentence for', () => {
+test('every hint carries a key the copy knows something to say for', () => {
   ensureGhostCards();
   for (const g of someGhosts()) {
     assert.ok(g.meta.hint, 'the item carries its key');
     assert.ok(HINTS[g.meta.hint], `${g.meta.hint} has copy`);
     assert.ok(hintFor(g.meta.hint).title, 'and the copy has a title');
-    assert.ok(hintFor(g.meta.hint).line, 'and a line');
+    // A line or a legend, and the renderer prints whichever it finds - so what
+    // is being guarded is that a card is never a bare heading, not that the copy
+    // is prose. See Hint in canvas/ghosts.js.
+    const { line, rows } = hintFor(g.meta.hint);
+    assert.ok(line || rows?.length, 'and a line or a row of keys');
+    for (const r of rows ?? []) {
+      assert.ok(r.label, `${g.meta.hint}: every row has words`);
+      assert.match(r.icon, /^i-[a-z0-9-]+$/, `${g.meta.hint}: and a sprite name`);
+    }
   }
   assert.equal(new Set(ghosts().map(g => g.meta.hint)).size, ghosts().length,
     'each hint has a key of its own');

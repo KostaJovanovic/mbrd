@@ -249,10 +249,12 @@ export function resetTilt(): void {
  *
  * A sticker joins the fence in hanging straight, and for the opposite reason. A
  * fence gets no lean because it is a drawn line rather than a pinned card; a
- * sticker gets none *here* because it already has one of its own - the +/-8
- * degrees rolled onto item.rot when it was pressed down (see addSticker). Two
- * leans would compound, and only one of them is a fact about the board rather
- * than about the whimsy dial.
+ * sticker gets none *here* because it already has one of its own - the degrees
+ * rolled onto item.rot when it was pressed down (see addSticker). Two leans
+ * would compound, and only one of them is a fact about the board. The roll over
+ * there is taken against --tilt-max, so a sticker answers the whimsy dial the
+ * same way a card does; it simply answers it once, at the moment it lands,
+ * because its angle is geometry and a card's is a stylesheet.
  */
 export function restingTilt(item: ItemLike): string {
   return isFence(item) || item.type === 'sticker' ? '0' : tiltFactor().toFixed(3);

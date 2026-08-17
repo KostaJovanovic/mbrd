@@ -495,9 +495,9 @@ function overBoard(clientX: number, clientY: number) {
 function hostUnderPointer(clientX: number, clientY: number) {
   if (!overBoard(clientX, clientY)) return null;
   const at = vp!.toWorld(clientX, clientY);
-  // Every sticker is the same fixed 96 square (see defaultSize), so the box the
-  // measurement gets is the box the drop will make. The day a shape carries a
-  // size of its own, this is where that stops being true.
+  // Every sticker is the same fixed square, whatever defaultSize says it is, so
+  // the box the measurement gets is the box the drop will make. The day a shape
+  // carries a size of its own, this is where that stops being true.
   const size = defaultSize('sticker');
   // No id to exclude: there is no item yet, which is the whole point of asking.
   const host = wouldStick(

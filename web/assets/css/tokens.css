@@ -1273,6 +1273,10 @@
      same scope and same specificity, so the cascade lands where it did - a
      :root rule here could not reach past the (0,2,0) of a whimsy block. */
   :root {
+    /* The one two-colour blend that can be written down here, because both
+       terms are known at author time in every tier: 45% of the sheet into
+       white. Harsh overrides it with a flat #fff and needs nothing. */
+    --accent-fg:     rgb(var(--accent-fg-c));
     --highlight:     rgb(var(--accent-c) / 26%);
     --grid-minor:    rgb(var(--ink-c) / calc(var(--grid-alpha) * 100%));
     --grid-major:    rgb(var(--ink-c) / calc(var(--grid-alpha) * 190%));

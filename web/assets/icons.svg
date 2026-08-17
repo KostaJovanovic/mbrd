@@ -203,6 +203,15 @@
   <path d="M11 5.6a3.4 3.4 0 0 1 0 4.8"/>
 </symbol>
 
+<!-- A quaver, and the same split as the speaker above: the head is the filled
+     part, the stem and flag are drawn. Music rather than sound, which is the
+     distinction between this and i-volume: that one is a level you set, this
+     one is what is on the board. -->
+<symbol id="i-music" viewBox="0 0 16 16">
+  <ellipse cx="5.4" cy="11.5" rx="2.2" ry="1.8" fill="currentColor"/>
+  <path d="M7.6 11.5V3.1c2.5.4 4.1 1.7 4.5 3.5"/>
+</symbol>
+
 <!-- ═════ The right-click menu ═════ -->
 
 <!-- Lines of writing. The pen is "write a new one"; this is "the words already

@@ -62,36 +62,9 @@ const wrap = (n: number, tile: number) => ((n % tile) + tile) % tile;
  *
  * A band rather than a threshold, because a texture that vanished between one
  * wheel notch and the next would read as a bug. Full strength at 40% and above,
- * gone at 31% and below, linear across the nine points of zoom in between.
- *
- * ── The floor may not sit on a rung of the zoom ladder ──
- *
- * Which is why the floor is 31 and not the 35 it was briefly set to, and it is
- * a thing the arithmetic of the band cannot show you. **Zoom is stepped.** The
- * readout buttons multiply by 1.3 (ZOOM_STEP, ui/hud.ts) and the +/- keys by
- * 1.25, so a board is hardly ever at an arbitrary zoom - it is on 1.3^-n from
- * 100%, which runs 59.2%, 45.5%, 35.0%, 26.9%. A band starting at 40% has room
- * for exactly one of those, and it is 35.0%.
- *
- * So a floor of 35 lands on the band's only sampling point. That rung comes out
- * at 0.003: full at 45.5%, gone at 35.0%, one press apart, with a ramp
- * underneath that nothing ever stands on to show. The band was still a band and
- * fadeFor() still interpolated - it was the ladder that never asked it anything
- * in between. It read exactly like the hard threshold this was written to
- * avoid, which is how it shipped.
- *
- * At 31 that rung reads 0.446 - the stock visibly thinner, gone at the next
- * press - and the +/- ladder's 32.8% rung reads 0.196 rather than nothing.
- * Both ladders need the floor under 31.5% to light a rung at all; 32 lit the
- * buttons and left the keys at 0.096, which is why it is not 32 either. The 30
- * this carried for a long time reads 0.501 and 0.277 and is better still, and
- * the point of moving the floor up at all was to spend less of the zoom showing
- * the degraded film. Nine points is that, with both rungs lit.
- *
- * Under a pinch or a trackpad none of this arises: the zoom is continuous and
- * any band reads as a fade. It is the ladder that has to be checked against,
- * and tests/grain.test.js is what checks it - `the zoom ladder actually lands
- * on the ramp`. **Move either end and that test is the one to read.**
+ * gone at 30% and below, linear across the twenty-odd percent of zoom in
+ * between - which at the 1.3 step of the corner buttons is about one notch, and
+ * under a pinch is continuous.
  *
  * Only downward. There is no ceiling: zoomed in, a big fleck is what looking
  * closely at paper does.
@@ -100,7 +73,7 @@ const wrap = (n: number, tile: number) => ((n % tile) + tile) % tile;
 // rather than against a copy of two numbers that has to be edited twice - the
 // same bargain gridStep()'s MIN_PX and MAX_PX make next door.
 export const FADE_FULL = 0.40;
-export const FADE_GONE = 0.31;
+export const FADE_GONE = 0.30;
 
 export const fadeFor = (zoom: number): number =>
   zoom >= FADE_FULL ? 1
@@ -139,7 +112,7 @@ let el: HTMLElement | null = null, sheetEl: HTMLElement | null = null;
  * The token and not the resolved opacity, which is the tempting read and is
  * wrong here: the resolved opacity now carries the zoom fade this file writes
  * itself, so caching it would latch the layer off the first time anybody zoomed
- * past the band and only a look change would ever bring it back. This asks what the
+ * past 30% and only a look change would ever bring it back. This asks what the
  * board wants; fadeFor() asks what the zoom allows; they are different
  * questions and only the first one is worth caching.
  */
@@ -216,7 +189,7 @@ export function paintGrain(vp: Viewport): void {
     document.documentElement.style.setProperty('--grain-fade', f);
   }
   // Faded out, so there is nothing to place. Skipping this is the point of the
-  // band as much as the look is: below 31% the tile is at its smallest and a
+  // band as much as the look is: below 30% the tile is at its smallest and a
   // resample of it is at its most expensive, which is exactly where a board is
   // most likely to be showing every card it has.
   if (fade === 0) return;

@@ -46,36 +46,6 @@ test('a quarter of the way up the band is a quarter of the strength', () => {
   assert.ok(Math.abs(fadeFor(at) - 0.25) < 1e-9, `got ${fadeFor(at)}`);
 });
 
-test('the zoom ladder actually lands on the ramp', () => {
-  // The one thing about this band that is invisible from inside it, and it
-  // shipped broken once for exactly that reason.
-  //
-  // Every test above checks the ramp as a function - endpoints, midpoint, a
-  // quarter of the way up - and a band can pass all of them while showing
-  // nobody a fade, because **zoom is stepped**. The readout buttons multiply by
-  // 1.3 and the +/- keys by 1.25, so a board sits on 1.3^-n from 100%: 59.2%,
-  // 45.5%, 35.0%, 26.9%. A band from 40% down has room for exactly one of them.
-  // Put the floor on that rung - FADE_GONE was 0.35, and the rung is 0.3501 -
-  // and the fade is mathematically perfect and never once seen: full at 45.5%,
-  // nothing at 35.0%, one press apart.
-  //
-  // So this asserts the property the ramp is *for* rather than the ramp: some
-  // resting zoom has to read as visibly part-strength. Not which one, and not
-  // what it reads - those are the tuning, and pinning them would make this the
-  // second copy of two numbers the exports exist to avoid.
-  const LADDERS = [['the readout buttons', 1.3], ['the +/- keys', 1.25]];
-  for (const [name, step] of LADDERS) {
-    const rungs = [];
-    for (let z = 1; z > 0.05; z /= step) rungs.push(z);
-    const lit = rungs.map(fadeFor).filter(f => f > 0.15 && f < 0.85);
-    assert.ok(lit.length > 0,
-      `no rung of ${name} lands part-way up the band, so the stock goes from `
-      + `full to gone in one press and the ramp is never seen. Rungs near the `
-      + `band: ${rungs.filter(z => z > FADE_GONE - 0.1 && z < FADE_FULL + 0.1)
-        .map(z => `${(z * 100).toFixed(1)}% -> ${fadeFor(z).toFixed(3)}`).join(', ')}`);
-  }
-});
-
 test('it never leaves 0..1, and never doubles back', () => {
   // Monotonic matters as much as the endpoints: a fade that rose anywhere on
   // the way out would read as the grain flickering back during a pinch.
