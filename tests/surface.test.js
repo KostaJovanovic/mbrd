@@ -22,15 +22,68 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { surface, surfaceToBlob } from '../web/assets/js/canvas/surface.ts';
+import { surface, surfaceToBlob, canvasReads, canvasReport } from '../web/assets/js/canvas/surface.ts';
 
-/** A 2D context with the members the Surface type names, and nothing else. */
-const fakeCtx = () => ({
-  drawImage() {},
-  imageSmoothingEnabled: false,
-  imageSmoothingQuality: '',
-  getImageData: (_x, _y, w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }),
-});
+/**
+ * A 2D context with the members the Surface type names, and nothing else.
+ *
+ * `reads` is what getImageData does with what was drawn: 'blank' is the
+ * fingerprinting protection that answers with nothing, 'noise' is the form that
+ * perturbs the low bits, 'throws' is a tainted canvas, and 'true' is a browser
+ * behaving. Nothing here is cooperative by default - a stub that always handed
+ * back the fill colour would agree with any implementation at all.
+ */
+const fakeCtx = (reads = 'blank', paints = false) => {
+  let fill = '#000000';
+  // Only when `paints` - the default engine here draws nothing, which is the
+  // whole point of the stubs in this file. A painting engine is needed for one
+  // question and one only: whether canvasReport() can tell a canvas that draws
+  // from one that does not, which cannot be asked of a canvas that never draws.
+  const painted = new Map();
+  const colourOf = (v) => {
+    const hex = /^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(v);
+    if (hex) return [1, 2, 3].map(i => Number.parseInt(hex[i], 16));
+    const rgb = /(\d+)\D+(\d+)\D+(\d+)/.exec(v);
+    return rgb ? [1, 2, 3].map(i => Number(rgb[i])) : [0, 0, 0];
+  };
+  return {
+    drawImage() {},
+    fillRect(x, y, w, h) {
+      if (!paints) return;
+      const c = colourOf(fill);
+      for (let py = y; py < y + h; py++) for (let px = x; px < x + w; px++) painted.set(`${px},${py}`, c);
+    },
+    imageSmoothingEnabled: false,
+    imageSmoothingQuality: '',
+    set fillStyle(v) { fill = v; },
+    get fillStyle() { return fill; },
+    getImageData: (x, y, w, h) => {
+      if (reads === 'throws') throw new Error('the canvas is tainted');
+      const data = new Uint8ClampedArray(w * h * 4);
+      if (paints) {
+        for (let py = 0; py < h; py++) {
+          for (let px = 0; px < w; px++) {
+            const c = painted.get(`${x + px},${y + py}`);
+            const i = (py * w + px) * 4;
+            if (c) [data[i], data[i + 1], data[i + 2]] = c;
+            data[i + 3] = 255;
+          }
+        }
+        return { data };
+      }
+      if (reads === 'true' || reads === 'noise') {
+        const nudge = reads === 'noise' ? 3 : 0;
+        for (let i = 0; i < data.length; i += 4) {
+          data[i] = 0x3b + nudge;
+          data[i + 1] = 0x7d - nudge;
+          data[i + 2] = 0xd8 + nudge;
+          data[i + 3] = 255;
+        }
+      }
+      return { data };
+    },
+  };
+};
 
 /**
  * Install an engine for the length of one call.
@@ -40,7 +93,9 @@ const fakeCtx = () => ({
  * Firefox on Android, and 'works' for everything else. `element` is whether
  * there is a document to make a `<canvas>` in.
  */
-function engine({ offscreen = 'works', element = true, encodes = ['image/png'] } = {}) {
+function engine({
+  offscreen = 'works', element = true, encodes = ['image/png'], reads = 'blank', paints = false,
+} = {}) {
   const saved = ['OffscreenCanvas', 'document']
     .map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]);
   const made = [];
@@ -53,7 +108,7 @@ function engine({ offscreen = 'works', element = true, encodes = ['image/png'] }
         this.height = h;
         made.push('offscreen');
       }
-      getContext() { return offscreen === 'no-2d' ? null : fakeCtx(); }
+      getContext() { return offscreen === 'no-2d' ? null : fakeCtx(reads, paints); }
       async convertToBlob({ type } = {}) {
         if (!encodes.includes(type)) throw new Error(`cannot write ${type}`);
         return new Blob([new Uint8Array(8)], { type });
@@ -70,7 +125,7 @@ function engine({ offscreen = 'works', element = true, encodes = ['image/png'] }
         return {
           width: 0,
           height: 0,
-          getContext: () => fakeCtx(),
+          getContext: () => fakeCtx(reads, paints),
           toBlob(cb, type) {
             cb(new Blob([new Uint8Array(8)], { type: encodes.includes(type) ? type : 'image/png' }));
           },
@@ -205,4 +260,171 @@ test('a canvas with neither method answers null instead of throwing', async () =
   // nobody expected to reject.
   const out = await surfaceToBlob({ canvas: { width: 8, height: 8 }, ctx: fakeCtx() }, 'image/webp', 0.8);
   assert.equal(out, null);
+});
+
+// ---------------------------------------------------------------------------
+// The readout
+// ---------------------------------------------------------------------------
+//
+// canvasReport() is the answer to the question this whole file is about being
+// unanswerable from a board: a card with no picture on it looks the same
+// whether the canvas would not draw, would not be read, would not encode, or
+// handed back bytes an <img> refused. These check that each of those four comes
+// back as itself.
+//
+// Before the canvasReads() block below on purpose - the yes there is remembered
+// for the rest of the file, and a report that says `reads: true` on a blocked
+// engine would check nothing.
+
+test('the report says which canvas came back', async () => {
+  const eng = engine({ offscreen: 'works', encodes: ['image/webp', 'image/png'] });
+  try {
+    const r = await canvasReport();
+    assert.equal(r.offscreen, 'ok');
+    assert.equal(r.using, 'offscreen');
+    assert.deepEqual(r.writes, ['webp', 'png'], 'a type the engine refuses was reported as written');
+  } finally {
+    eng.restore();
+  }
+});
+
+test('a broken OffscreenCanvas is named, and so is the canvas that stood in for it', async () => {
+  // The engine the module exists for, read back off the phone it happened on.
+  const eng = engine({ offscreen: 'no-2d' });
+  try {
+    const r = await canvasReport();
+    assert.equal(r.offscreen, 'no-2d');
+    assert.equal(r.element, 'ok');
+    assert.equal(r.using, 'element');
+  } finally {
+    eng.restore();
+  }
+});
+
+test('an engine with no canvas at all reports nothing rather than throwing', async () => {
+  const eng = engine({ offscreen: 'none', element: false });
+  try {
+    const r = await canvasReport();
+    assert.equal(r.offscreen, 'none');
+    assert.equal(r.element, 'none');
+    assert.equal(r.using, 'none');
+    assert.deepEqual(r.writes, []);
+  } finally {
+    eng.restore();
+  }
+});
+
+test('a blocked read is unreadable rather than a failure to draw', async () => {
+  // The distinction the readout is for. A browser blocking canvas reads has
+  // said nothing whatever about whether it draws, and reporting that as "draws
+  // no" sends the next person to look at the decoder.
+  const eng = engine({ reads: 'blank' });
+  try {
+    const r = await canvasReport();
+    assert.equal(r.reads, false);
+    assert.equal(r.draws, 'unreadable');
+    assert.equal(r.roundTrip, 'unreadable');
+  } finally {
+    eng.restore();
+  }
+});
+
+test('a canvas that will not encode reports nothing written', async () => {
+  // An OffscreenCanvas that rejects every type, including the PNG retry - the
+  // element path cannot be this engine, because toBlob substitutes rather than
+  // refusing, and a substituted PNG is a picture that came out.
+  const eng = engine({ offscreen: 'works', encodes: [] });
+  try {
+    const r = await canvasReport();
+    assert.deepEqual(r.writes, [], 'a type that was never written was reported as written');
+    assert.equal(r.mounts, false, 'bytes that do not exist were mounted');
+  } finally {
+    eng.restore();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Whether the pixels come back
+// ---------------------------------------------------------------------------
+//
+// The failure that reached a person before it reached a test. Firefox's
+// fingerprinting protection - on by default in the strict mode that is its
+// default on Android - answers a canvas read with blank data rather than with
+// an error, so a poster's flat-frame check discarded every frame of every clip,
+// the palette taken from the board's own pictures found none of them, and a
+// rendered PDF page would not come back out of the canvas. Nothing threw and
+// nothing was logged.
+//
+// canvasReads() remembers a yes and re-asks after a no - Firefox prompts, and
+// somebody who allows it mid-session should not have to reload - so the order
+// of these tests does not matter *except* that the yes must come last.
+
+test('a browser that hands back blank pixels is not readable', () => {
+  const eng = engine({ reads: 'blank' });
+  try {
+    assert.equal(canvasReads(), false);
+  } finally {
+    eng.restore();
+  }
+});
+
+test('a canvas that throws on the read is not readable either', () => {
+  const eng = engine({ reads: 'throws' });
+  try {
+    assert.equal(canvasReads(), false);
+  } finally {
+    eng.restore();
+  }
+});
+
+test('no canvas at all reads as not readable rather than throwing', () => {
+  const eng = engine({ offscreen: 'none', element: false });
+  try {
+    assert.equal(canvasReads(), false);
+  } finally {
+    eng.restore();
+  }
+});
+
+test('the randomising form of the protection is not treated as blocking', () => {
+  // It perturbs a few least-significant bits, which is harmless to a flat-frame
+  // check and to a palette. Reading it as "blocked" would turn a browser that
+  // works into one this app refuses to derive anything on.
+  const eng = engine({ reads: 'noise' });
+  try {
+    assert.equal(canvasReads(), true);
+  } finally {
+    eng.restore();
+  }
+});
+
+test('a yes is remembered, so the loops that ask do not pay for it', () => {
+  // Last on purpose: the yes above has already settled it, and this is the
+  // assertion that it *stays* settled once the engine is gone.
+  const eng = engine({ offscreen: 'none', element: false });
+  try {
+    assert.equal(canvasReads(), true, 'a browser that reads once was asked again');
+  } finally {
+    eng.restore();
+  }
+});
+
+test('a canvas that really draws is reported as drawing', async () => {
+  // The one cooperative engine in this file, and it is here rather than higher
+  // up for the same reason the remembered yes is: it has to run after the read
+  // has been settled, or the report answers 'unreadable' and checks nothing.
+  //
+  // It is also the only test of the report's *positive* half. The two colours
+  // canvasReport() paints are the point of painting two: a stub returning one
+  // constant colour - which is what a blocked read looks like, and what every
+  // other engine in this file does - passes a one-colour check and fails this.
+  const eng = engine({ offscreen: 'works', encodes: ['image/webp'], reads: 'true', paints: true });
+  try {
+    const r = await canvasReport();
+    assert.equal(r.reads, true);
+    assert.equal(r.draws, 'yes', 'a canvas that put both colours down was reported as blank');
+    assert.deepEqual(r.writes, ['webp']);
+  } finally {
+    eng.restore();
+  }
 });

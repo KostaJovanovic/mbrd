@@ -648,7 +648,24 @@ function pictureHashes() {
     // helper also returns a video's or an audio file's asset, and handing those
     // to an <img> costs a decode that fails and a source slot that produced no
     // vote. A video's cover art is still wanted, and is picked up below.
-    const hash = it.type === 'image' ? it.asset?.hash : null;
+    // **The preview first, where there is one.** An item is type 'image' from
+    // the moment something drew a picture of it, and for a PDF, a HEIC or a RAW
+    // the asset behind that card is not a picture at all - it is the document or
+    // the camera file, and `meta.preview` names the rendered page or the
+    // embedded JPEG the card is actually showing. Handing the original here is
+    // a decode that cannot succeed and a source slot spent on it, and on a board
+    // of nothing but PDFs it is every slot: the palette then reports "could not
+    // read any of the pictures on the board" about a board whose every card is
+    // showing one. It is also simply the wrong question - the palette is meant
+    // to be the colours of what is on screen, and what is on screen is the
+    // preview.
+    //
+    // Held to being a string on the way past, like the cover below it: `meta` is
+    // open, and a preview key holding a number would otherwise reach getAsset().
+    const shown = it.meta?.preview;
+    const hash = it.type !== 'image' ? null
+      : typeof shown === 'string' && shown ? shown
+        : it.asset?.hash;
     for (const h of [hash, it.meta?.cover]) {
       // Registered, but not resolved: getAsset() is the same "are the bytes
       // here?" test assetURL() returning null used to stand in for. A cover out
