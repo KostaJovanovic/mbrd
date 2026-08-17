@@ -57,13 +57,39 @@ export type Surface = {
  * engines, which aliases every hard edge on a large downscale.
  */
 export function surface(w: number, h: number, opts: { alpha?: boolean } = {}): Surface | null {
-  const canvas = blank(w, h);
+  // Both kinds, in order, and the second is tried when the first hands back no
+  // context - not only when it cannot be constructed. See withContext().
+  return withContext(offscreen(w, h), opts) || withContext(element(w, h), opts);
+}
+
+/**
+ * A canvas and its 2D context, or null if this canvas will not give one.
+ *
+ * **A canvas that exists is not a canvas that draws, and the gap between those
+ * two is a whole engine.** Firefox on Android has had `OffscreenCanvas` as a
+ * global while its 2D context was unimplemented: the constructor succeeds,
+ * `getContext('2d')` answers null, and the old shape of this function - build
+ * one, take its context, return null if there is no context - stopped there
+ * without ever trying the element that would have worked. `blank()` only fell
+ * back when the *constructor* threw, which is the one failure that engine does
+ * not have.
+ *
+ * What that cost is every picture this app derives: no display copies, no
+ * thumbnails, no video posters, no model stills, no GIF stills. A PDF's card
+ * had a rendered page in the board and no source on its `<img>`, so it drew its
+ * own alt text at the top of an empty card; a clip had no frame at any zoom.
+ * Both read as "the preview did not work" and neither was.
+ *
+ * `alpha` is passed through because one caller means it: a video poster draws
+ * onto an opaque context (canvas/poster.js), which lets the engine skip the
+ * compositing pass and is why that file could take JPEG unconditionally.
+ * Default true, which is the platform default and what the other four want.
+ */
+function withContext(
+  canvas: OffscreenCanvas | HTMLCanvasElement | null,
+  opts: { alpha?: boolean },
+): Surface | null {
   if (!canvas) return null;
-  // `alpha` is passed through because one caller means it: a video poster draws
-  // onto an opaque context (canvas/poster.js), which lets the engine skip the
-  // compositing pass and is why that file could take JPEG unconditionally.
-  // Default true, which is the platform default and what the other four want.
-  //
   // SAFETY: the union is the whole point of this module and is the one place
   // the two canvases have to be spoken of together. `getContext('2d')` is
   // declared to return each canvas's own context type, and TypeScript cannot
@@ -71,8 +97,17 @@ export function surface(w: number, h: number, opts: { alpha?: boolean } = {}): S
   // 2D context whose every member the Surface type names, and nothing anywhere
   // in this app reads a property that only one of them has. The `| null` is
   // kept rather than asserted away, because a canvas refusing a context is a
-  // real answer and is handled on the next line.
-  const ctx = canvas.getContext('2d', { alpha: opts.alpha !== false }) as Surface['ctx'] | null;
+  // real answer and is the whole reason this function exists.
+  //
+  // Wrapped, because refusing is not the only way to say no: an engine may
+  // throw on an argument it does not know rather than answer null.
+  let ctx: Surface['ctx'] | null = null;
+  try {
+    // SAFETY: the paragraph above is the invariant - both canvases answer with
+    // a 2D context whose every member the Surface type names, and the checker
+    // cannot narrow one call across a union of receivers. The null is kept.
+    ctx = canvas.getContext('2d', { alpha: opts.alpha !== false }) as Surface['ctx'] | null;
+  } catch { /* the next canvas, or null */ }
   if (!ctx) return null;
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
@@ -80,17 +115,23 @@ export function surface(w: number, h: number, opts: { alpha?: boolean } = {}): S
 }
 
 /**
- * OffscreenCanvas where it exists, an ordinary `<canvas>` where it does not.
+ * An OffscreenCanvas, or null on an engine that has none.
  *
- * `typeof` rather than a try/catch around the constructor, so that an engine
- * without it costs nothing to detect. The element path needs a document, which
- * a Node test does not have - hence the second guard, which also makes this
- * module loadable by tests/imports.test.js like every other.
+ * `typeof` rather than a try/catch alone, so that an engine without it costs
+ * nothing to detect - the try is for the ones that have the name and refuse the
+ * size.
  */
-function blank(w: number, h: number): OffscreenCanvas | HTMLCanvasElement | null {
-  if (typeof OffscreenCanvas === 'function') {
-    try { return new OffscreenCanvas(w, h); } catch { /* fall through */ }
-  }
+function offscreen(w: number, h: number): OffscreenCanvas | null {
+  if (typeof OffscreenCanvas !== 'function') return null;
+  try { return new OffscreenCanvas(w, h); } catch { return null; }
+}
+
+/**
+ * An ordinary `<canvas>`, or null with no document to make one in - which is a
+ * Node test, and is what keeps this module loadable by tests/imports.test.js
+ * like every other.
+ */
+function element(w: number, h: number): HTMLCanvasElement | null {
   if (typeof document === 'undefined') return null;
   const el = document.createElement('canvas');
   el.width = w;
@@ -130,16 +171,23 @@ export async function surfaceToBlob(
   type: string,
   quality: number,
 ): Promise<Blob | null> {
-  if (!('convertToBlob' in canvas)) {
-    return new Promise(resolve => canvas.toBlob(resolve, type, quality));
-  }
-  try {
-    return await canvas.convertToBlob({ type, quality });
-  } catch {
+  // Both branches test for the method rather than for the kind of canvas, for
+  // the reason surface() above now builds them that way: an engine may ship one
+  // of these objects with half of it missing, and calling the method the other
+  // kind has is a TypeError thrown out of a promise nobody expected to reject.
+  if ('convertToBlob' in canvas && typeof canvas.convertToBlob === 'function') {
     try {
-      return await canvas.convertToBlob({ type: 'image/png' });
+      return await canvas.convertToBlob({ type, quality });
     } catch {
-      return null;
+      try {
+        return await canvas.convertToBlob({ type: 'image/png' });
+      } catch {
+        return null;
+      }
     }
   }
+  if ('toBlob' in canvas && typeof canvas.toBlob === 'function') {
+    return new Promise(resolve => canvas.toBlob(resolve, type, quality));
+  }
+  return null;
 }
