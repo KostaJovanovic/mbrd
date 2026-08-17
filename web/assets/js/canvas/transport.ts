@@ -281,6 +281,11 @@ export function buildTransport(
     paint();
   });
   on('loadedmetadata', paint);
+  // A duration that arrives late, or arrives wrong and is corrected: a stream
+  // with no duration in its container - raw AAC, an MP3 with no Xing header -
+  // is guessed at from the bitrate at 'loadedmetadata' and settled later, and
+  // the guess is what this bar sized itself against.
+  on('durationchange', paint);
   // The frame loop above covers playback. This covers everything else that can
   // move the playhead - a seek while paused, a buffering stall, currentTime set
   // from outside - none of which produce a frame loop of their own.

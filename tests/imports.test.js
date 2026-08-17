@@ -17,7 +17,14 @@ import { join } from 'node:path';
 import { JS, walk } from './helpers.js';
 
 /**
- * The three documented exceptions, none of which is a unit.
+ * The workers that are not modules, listed once because two tests want them:
+ * they are exempt from the import loop below and they are what the parse test
+ * at the foot of this file reads.
+ */
+const CLASSIC_WORKERS = ['optimize/media-worker.js', 'import/tiff-worker.js'];
+
+/**
+ * The four documented exceptions, none of which is a unit.
  *
  *   main.js                     constructs the Viewport against real elements
  *   ui/appearance.js            holds :root and the theme-colour <meta> at
@@ -28,11 +35,15 @@ import { JS, walk } from './helpers.js';
  *                               a global factory - so it installs `self.onmessage`
  *                               at the top level and cannot be imported by
  *                               anything, in a browser or out of one.
+ *   import/tiff-worker.js       the same, for the same reason: UTIF.js assigns
+ *                               itself to `self.UTIF` and reads `self.pako`
+ *                               back out, which is importScripts' contract and
+ *                               not a module's.
  *
  * Anything else appearing here is a regression, not a new exception.
  */
 const DOM_ENTRY_POINTS = new Set([
-  'main.ts', 'ui/appearance.ts', 'optimize/media-worker.js',
+  'main.ts', 'ui/appearance.ts', ...CLASSIC_WORKERS,
 ]);
 
 const modules = walk(JS, ['.js', '.ts'], JS)
@@ -47,8 +58,8 @@ test('every module is listed as testable or as a DOM entry point', () => {
   // Without this, the way to get an import-time `document` past this file is to
   // add a fourth name here - a one-line edit that reads like housekeeping and
   // silently exempts a module from the thing that makes the suite possible.
-  assert.equal(DOM_ENTRY_POINTS.size, 3,
-    'there are three documented DOM entry points; a fourth needs the argument '
+  assert.equal(DOM_ENTRY_POINTS.size, 4,
+    'there are four documented DOM entry points; a fifth needs the argument '
     + 'for it written into the comment above, not just the name added');
 });
 
@@ -105,14 +116,16 @@ for (const mod of modules) {
   });
 }
 
-test('the worker parses, though nothing can import it', async () => {
-  // optimize/media-worker.js is skipped by the loop above because it is a
-  // classic worker and cannot be imported at all, and it is excluded from the
-  // bundle - so until now the only thing that ever looked at its syntax was
-  // CI's parse leg, which reports after the push and after the deploy has
-  // started. Parsing it here costs a millisecond and moves that to `npm test`.
+test('the workers parse, though nothing can import them', async () => {
+  // Both are skipped by the loop above because a classic worker cannot be
+  // imported at all, and both are excluded from the bundle - so until this the
+  // only thing that ever looked at their syntax was CI's parse leg, which
+  // reports after the push and after the deploy has started. Parsing them here
+  // costs a millisecond and moves that to `npm test`.
   const { Script } = await import('node:vm');
   const { readFileSync } = await import('node:fs');
-  const src = readFileSync(join(JS, 'optimize', 'media-worker.js'), 'utf8');
-  assert.doesNotThrow(() => new Script(src, { filename: 'media-worker.js' }));
+  for (const rel of CLASSIC_WORKERS) {
+    const src = readFileSync(join(JS, ...rel.split('/')), 'utf8');
+    assert.doesNotThrow(() => new Script(src, { filename: rel }), rel);
+  }
 });

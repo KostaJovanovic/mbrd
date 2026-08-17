@@ -116,8 +116,16 @@ export type ButtonSpec = {
    *
    * Honoured in one place, the delegated listener in ui/sidebar.ts, which is
    * also the only place that knows a panel button was pressed at all.
+   *
+   * `'if-done'` is the same thing, deferred until the command says it happened:
+   * the panel closes only if the returned promise settles truthy. That is for
+   * the buttons whose press is not yet the action - one that counts presses
+   * before it asks (Clear everything), or one whose dialog can be cancelled.
+   * Closing on the press would take the panel away between the first press and
+   * the question, which on a phone means the countdown and the row it is
+   * painted on both vanish before anybody can answer.
    */
-  closesPanel?: boolean,
+  closesPanel?: boolean | 'if-done',
   /** A starting value for a button whose own command writes the attribute after. */
   ariaPressed?: string,
   pressed?: (ctx: Ctx) => boolean,
@@ -978,7 +986,7 @@ export const SECTIONS: Section[] = [
       // have left the one button here that must not be pressed by accident as
       // the only one on permanent display. See buildFold() in ui/panel.ts.
       { type: 'buttons', advanced: true, buttons: [
-        { cmd: 'clear-data', label: 'Clear everything', className: 'danger', closesPanel: true },
+        { cmd: 'clear-data', label: 'Clear everything', className: 'danger', closesPanel: 'if-done' },
       ] },
     ],
   },

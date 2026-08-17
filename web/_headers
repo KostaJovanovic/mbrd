@@ -103,8 +103,21 @@
 # exists to do. Hashes are the tight answer here, not the loose one.
 #
 # No 'unsafe-eval' and no 'wasm-unsafe-eval': nothing in the app calls eval or
-# new Function, and the one piece of WebAssembly it can run - the vendored
-# ffmpeg core - runs in a worker with its own policy. See the second rule below.
+# new Function, and neither piece of WebAssembly it can run is loaded into this
+# realm. Both run in workers with policies of their own - the vendored ffmpeg
+# core, and pdf.js's JPEG 2000 decoder. See the two rules at the foot of this
+# file.
+#
+# The second of those was found the hard way and is worth writing down, because
+# the shape of the failure is the reason this directive is easy to get wrong.
+# pdf.worker.min.mjs carries an Emscripten build of OpenJPEG - a base64 wasm
+# payload it compiles with `new WebAssembly.Module(...)` - and it reaches it
+# lazily, from JpxImage.decode. So a PDF with no JPEG 2000 image in it never
+# touches the codec and rendered perfectly, while a scan or a press-ready file
+# threw inside the render, was swallowed by firstPageRaster()'s catch, and came
+# back as the same grey card a PDF with nothing to show gets. The feature was not
+# broken and was not working: it was working on some documents, which is the
+# hardest version of this to notice from the outside.
 #
 # ---------------------------------------------------------------------------
 # style-src 'self' + two hashes - no 'unsafe-inline'
@@ -281,7 +294,7 @@
 /*
   Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-TXFmC+WkJ7pej6GG4eilTgWXAPfRfnxeO2p8iCMvh/k=' 'sha256-qxiwxtjeQUbsHr4op9ZRXOdxUq+CLu4QIJRuvidUe5c=' 'sha256-eJzJ8523EitoBKAS5A1tCSnraL7SAmf2gesGT63wGSk=' 'sha256-7MOXuzYEVnwtGN5LaHmnA8It5SPyIoYzkvOEItbnkGg=' 'sha256-Q8ZzrQgcVPkApKR0qNf6mroKHffRQsjhyVVZIRu0QtU=' 'sha256-8ZGO4EWxaESz6+qYFa7Px/8iyW9D2UaZh/+P4/mg99Q=' 'sha256-W6Ek3VdZ0h8I8y6AJQrxOK0kORl/bq7s85k8oOrakjs='; style-src 'self' 'sha256-wkVFcbpQLLLncGzQDSypPX4g+PgpgKuYUfkJ3D7xrA8=' 'sha256-9MwbduHoYcvGbMyIKsXKkXLfI0H0ks+ah6sfj4TrmeA=' 'sha256-AL9WaAEqAR1J/jBnSEHAmJZsBz/eGk5SgKE4e+Z9lIY='; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self' blob:; connect-src 'self' blob: https://cdn.jsdelivr.net; worker-src 'self'; manifest-src 'self'; frame-src https://www.youtube-nocookie.com https://open.spotify.com; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
 
-# The one exemption, and the only interesting thing about the whole file.
+# The two exemptions, and the only interesting thing about the whole file.
 #
 # A dedicated worker does not inherit the document's policy. It gets its own,
 # from the headers on its own script response - and since the rule above is /*,
@@ -308,4 +321,33 @@
 # encoder is not offered. That is a degradation the module already handles by
 # design, which is what makes this safe to get wrong.
 /assets/js/optimize/media-worker.js
+  ! Content-Security-Policy
+
+# The second, on exactly the same terms and for exactly the same reason.
+#
+# pdf.js spawns this file as a module worker, and it carries an Emscripten build
+# of OpenJPEG that compiles itself with `new WebAssembly.Module(...)`. Under the
+# rule at the top of this file that compile throws, JpxImage.decode throws with
+# it, and every PDF holding a JPEG 2000 image - which is to say most scans -
+# comes back as a grey named card. See the note in the script-src section above
+# for why that read as "PDF thumbnails are unreliable" rather than as a policy.
+#
+# Narrower than it looks, and worth being precise about what is being given up.
+# The exemption is one file, not the vendor directory: pdf.min.mjs runs in the
+# *document* and must keep the document's policy, which it does - it holds no
+# WebAssembly, and the grep in tests/csp.test.js holds it to reaching no host.
+# What runs unpoliced is a worker with no DOM, spawned by us, from bytes
+# committed to this repository and pinned by version in import/pdf.ts and by
+# tests/pdf-vendor.test.js. It reads a Uint8Array we hand it over a message port
+# and answers with page geometry. It cannot reach this page.
+#
+# Removed rather than replaced, for the reason the first exemption gives: two
+# Content-Security-Policy values on one path are intersected, not overridden, so
+# a looser rule here would change nothing.
+#
+# The alternative was 'wasm-unsafe-eval' in script-src, which would hand the
+# capability to the document and to every worker in order to buy it for one
+# vendored file. That is the opposite of the trade the rest of this file argues
+# for, and it would have been the second time a policy was widened for pdf.js.
+/assets/vendor/pdfjs/pdf.worker.min.mjs
   ! Content-Security-Policy

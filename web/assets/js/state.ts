@@ -73,9 +73,16 @@ export { clipboardBounds, clipboardHasOurs, clipboardSize, copyItems };
 // setAssetPurge is the seam emptying it needs: the bin destroys the files it
 // was holding, and the registry that holds them is a layer above this one.
 // main.ts wires it, the same shape as setAssetNameLookup() below.
-import { removeItems, restoreItems, emptyTrash, setAssetPurge } from './trash.ts';
+// freezeClip is the bin's fourth route and belongs with the other three for the
+// reason the file's header gives - it is a way an item leaves the board, and
+// leaving and coming back are two directions of one door.
+import {
+  removeItems, restoreItems, emptyTrash, setAssetPurge, freezeClip, clipHomeId,
+} from './trash.ts';
 
-export { removeItems, restoreItems, emptyTrash, setAssetPurge };
+export {
+  removeItems, restoreItems, emptyTrash, setAssetPurge, freezeClip, clipHomeId,
+};
 // Downward: the catalogue is pure - geometry.js and nothing else - and this is
 // the one thing state needs from it, which of the two lists a stored
 // arrangement id belongs to. See tests/layers.test.js, where it is BASE.
@@ -355,6 +362,25 @@ function makeTitleItem(at: { x?: number, y?: number } | null = null) {
     y: at?.y ?? TITLE_DEFAULT_POS.y,
     w: TITLE_SIZE.w,
     h: TITLE_SIZE.h,
+    // Anchored from the moment it appears, and this is the one card where that
+    // is the right default. It is the board's *name*: it sits at top-centre
+    // above where everything lands, it is the largest thing on a fresh board,
+    // and it is therefore the thing a press aimed at the board behind it hits.
+    // Anchored, that press pans - which is what somebody reaching past the
+    // masthead meant - and a Rearrange lays the board out around it instead of
+    // dealing a slot underneath it.
+    //
+    // Nothing is taken away by it: the pen and the T are buttons, so they claim
+    // their own press (see the widget branch in canvas/input.ts), a double
+    // click still drops into the rename, and Reset position goes through
+    // applyGeom rather than a drag, so it works anchored. What is gone is the
+    // accidental drag, and the menu row below Reset position is how to get it
+    // back.
+    //
+    // Only on a card this function makes. A board opened from a file carries
+    // whatever it saved, which is why ensureTitleCard() adds nothing to one
+    // that already has its card - an older board is not retro-anchored.
+    meta: { locked: true },
   });
 }
 
@@ -1073,7 +1099,13 @@ export function setStickerTint(id: string, tint: unknown) {
  * things somebody may want to stop moving, so there is no narrowing by type
  * here. The two exclusions are about the item's situation rather than its kind.
  *
- * Furniture, which has no menu to ask from and whose geometry the app owns.
+ * A **hint card**, which has no menu to ask from and whose geometry the app
+ * owns. `type !== 'ghost'` rather than isFurniture(), which is the other half of
+ * that pair and is deliberately not excluded: the title card is movable, it has
+ * a menu of its own, and it is anchored by default (see makeTitleItem) - so it
+ * is exactly the furniture this door has to let through. isFurniture()'s own
+ * note in board-model.ts asks for this - a site that means one of the two keeps
+ * its own test. lockable() in commands/item-meta.ts is the matching offer.
  *
  * And a **rider** - a note or a sticker stuck to a host - which has no geometry
  * of its own to fix: it is placed from its host every time the host moves. A
@@ -1092,7 +1124,7 @@ export function setStickerTint(id: string, tint: unknown) {
 export function setItemsLocked(ids: Iterable<string>, locked: boolean) {
   const affected = [...new Set(ids)].filter(id => {
     const it = byId(id);
-    return !!it && !isFurniture(it) && !isRider(it) && !!it.meta.locked !== locked;
+    return !!it && it.type !== 'ghost' && !isRider(it) && !!it.meta.locked !== locked;
   });
   if (!affected.length) return;
   const write = (on: boolean) => {

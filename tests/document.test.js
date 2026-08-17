@@ -216,3 +216,77 @@ test('a PSD with a lying record length is declined', async () => {
   new DataView(bytes.buffer).setUint32(at, 0x7fffffff, false);
   assert.equal(await bakedPreview(new File([bytes], 'lying.psd')), null);
 });
+
+// ---------------------------------------------------------------------------
+// PDN
+// ---------------------------------------------------------------------------
+
+/**
+ * A Paint.NET file: 'PDN3', a 24-bit little-endian XML length, and the XML -
+ * whose `thumb` attribute holds the flattened preview as base64 PNG.
+ */
+function pdn({ magic = 'PDN3', picture = png(), attr = 'png', wrap = false } = {}) {
+  const b64 = Buffer.from(picture).toString('base64');
+  const xml = `<pdnImage width="800" height="600" layers="3">`
+    + `<custom><thumb ${attr}="${wrap ? b64.replace(/(.{40})/g, '$1\n') : b64}" /></custom></pdnImage>`;
+  const body = new TextEncoder().encode(xml);
+  const head = new Uint8Array([
+    ...new TextEncoder().encode(magic),
+    body.length & 0xff, (body.length >> 8) & 0xff, (body.length >> 16) & 0xff,
+  ]);
+  return new File([head, body, new Uint8Array(4096)], 'art.pdn');
+}
+
+test('a .pdn is worth looking inside', () => {
+  assert.ok(hasBakedPreview(new File([], 'art.pdn')));
+});
+
+test('a PDN gives up the flattened preview out of its XML header', async () => {
+  const out = await bakedPreview(pdn());
+  assert.ok(out);
+  assert.equal(out.type, 'image/png');
+});
+
+test('a base64 attribute wrapped across lines still decodes', async () => {
+  // XML may break an attribute over as many lines as it likes, and Paint.NET's
+  // own writer has - so the whitespace comes out before atob sees it.
+  assert.ok(await bakedPreview(pdn({ wrap: true })));
+});
+
+test('a PDN with no thumbnail attribute is declined', async () => {
+  assert.equal(await bakedPreview(pdn({ attr: 'jpg' })), null);
+});
+
+test('a thumbnail that is not a PNG is declined', async () => {
+  // The attribute says png and the bytes say otherwise; the bytes win, the same
+  // way they do everywhere else in this module.
+  assert.equal(await bakedPreview(pdn({ picture: jpeg() })), null);
+});
+
+test('anything that is not a PDN is declined on its signature', async () => {
+  assert.equal(await bakedPreview(pdn({ magic: 'PDN2' })), null);
+});
+
+test('a declared XML length that is a lie is bounded, not believed', async () => {
+  const whole = new Uint8Array(await pdn().arrayBuffer());
+  // Sixteen megabytes of header claimed, in a file that is kilobytes. The read
+  // is capped and a slice past the end of a Blob is simply shorter, so what
+  // comes back is the picture that really was in there - the point being that
+  // nothing allocated against the claim on the way.
+  whole[4] = 0xff; whole[5] = 0xff; whole[6] = 0xff;
+  assert.ok(await bakedPreview(new File([whole], 'lying.pdn')));
+
+  // And the lie in the other direction: a length that stops inside the
+  // attribute leaves no `thumb` to match, which is a null rather than half a
+  // picture decoded out of a truncated base64 string.
+  const short = new Uint8Array(whole);
+  short[4] = 60; short[5] = 0; short[6] = 0;
+  assert.equal(await bakedPreview(new File([short], 'short.pdn')), null);
+});
+
+test('a truncated PDN comes back null rather than throwing', async () => {
+  const whole = new Uint8Array(await pdn().arrayBuffer());
+  for (const cut of [0, 4, 7, 40, 200]) {
+    assert.equal(await bakedPreview(new File([whole.subarray(0, cut)], 'cut.pdn')), null, `cut at ${cut}`);
+  }
+});

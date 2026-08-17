@@ -29,6 +29,7 @@ import { assetURL, getAsset, readText } from '../storage/assets.ts';
 import { baseName, formatBytes } from '../util.ts';
 import { linkURL } from '../canvas/renderers.ts';
 import { noteTint } from '../canvas/note-model.ts';
+import { kindName } from '../canvas/item-dom.ts';
 import { renderMarkdown } from './markdown.ts';
 // Statically: the reader's only import is storage/zip.js, which is already in
 // memory because it is what opens every .mbrd, and the browser's own DOMParser.
@@ -139,7 +140,10 @@ export function openViewer(id: string) {
   const view = viewFor(item);
   if (!view) return;
 
-  titleEl!.textContent = baseName(item.name) || item.name || item.type;
+  // A document that arrived without a name opens under what it is - "Word
+  // document" rather than the type it was imported as, which for anything the
+  // board cannot draw is the word `generic`.
+  titleEl!.textContent = baseName(item.name) || item.name || kindName(item);
   metaEl!.textContent = describe(item);
   bodyEl!.replaceChildren();
   dlg.dataset.type = item.type;
@@ -614,11 +618,12 @@ const PDF_BATCH = 5;
 /**
  * A PDF, page by page.
  *
- * The one view here that reaches the network, and the reason it is the only one:
- * a PDF is a page-description language and rendering it is an interpreter, which
- * is the app's first outside-code dependency (import/pdf.js, fetched on demand
- * from a CDN). Offline or CDN down, this says so and the file is still what it
- * was - which is the same degradation the import path takes.
+ * A PDF is a page-description language and rendering it is an interpreter, which
+ * is the app's first outside-code dependency (import/pdf.js). That library is
+ * carried in web/assets/vendor and served from this origin, so this view reaches
+ * no third party and works offline once the service worker has seen it once. A
+ * failure here says so and the file is still what it was - the same degradation
+ * the import path takes.
  *
  * In batches, because a two-hundred-page report rendered eagerly is two hundred
  * canvases and a tab that stops answering. Five is about a screenful and a half
@@ -676,10 +681,18 @@ function pdfView(item: Item, host: HTMLElement) {
 
     more.addEventListener('click', batch);
     await batch();
-  }).catch(() => {
+  }).catch(err => {
+    // The message used to blame an offline session, which was the right guess
+    // back when the renderer came off a CDN and is now almost never the reason:
+    // it is served from this origin and cached with everything else. The honest
+    // remaining cases are a document this renderer will not parse and a first
+    // PDF on a fresh install with no connection, so the text says both and the
+    // console carries the actual error.
+    console.warn('[mbrd] pdf: the document would not open', err);
     if (!waiting.isConnected) return;
-    waiting.textContent = 'That PDF could not be opened. It needs the page renderer, '
-      + 'which is fetched the first time one is used - so this may be an offline session.';
+    waiting.textContent = 'That PDF could not be opened. Either the file is one the page '
+      + 'renderer cannot read, or this is the first PDF since installing and the renderer '
+      + 'has not been fetched yet.';
   });
 }
 

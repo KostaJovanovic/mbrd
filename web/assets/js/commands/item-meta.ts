@@ -36,16 +36,21 @@
 
 import { toast } from '../notify.ts';
 import {
-  board, boardTags, byId, cleanTag, isContent, isFurniture, isLocked, isRider,
+  board, boardTags, byId, cleanTag, freezeClip, isContent, isLocked, isRider,
   itemTags, selection, setItemBare, setItemCover, setItemFit, setItemUpAxis, setItemsLocked,
   setItemsTagged, setStickerTint, setTourMembers, unstickItems, TAG_MAX, TAGS_PER_ITEM,
 } from '../state.ts';
+import { extOf } from '../util.ts';
 import { ask } from '../ui/dialog.ts';
 import { defaultUpAxis, meshKind } from '../mesh.ts';
 import { stickerTint } from '../stickers/catalogue.ts';
-import { getAsset } from '../storage/assets.ts';
+import { addFile, derivedFile, getAsset } from '../storage/assets.ts';
 import { pickCover } from '../import/drop.ts';
 import { isTurning, rotateModel } from '../canvas/model.ts';
+// The card's own <video>, and the one thing in the app that reads a frame off
+// an element that is already on screen. Both for keepFrame() below.
+import { nodeFor } from '../canvas/items.ts';
+import { frameOnScreen } from '../canvas/poster.ts';
 import { canView, openViewer } from '../ui/viewer.ts';
 import { canEditPicture, openDarkroom } from '../ui/darkroom.ts';
 import { resetSize } from '../ui/board-actions.ts';
@@ -53,7 +58,7 @@ import { resetSize } from '../ui/board-actions.ts';
 /**
  * The members of the selection an anchor can be put on.
  *
- * Everything but furniture, and **not a rider**: a note or a sticker that is
+ * Everything but a hint card, and **not a rider**: a note or a sticker that is
  * stuck to something has no geometry of its own to hold. Its position is its
  * host's, and it is recomputed from the host every time the host moves.
  *
@@ -70,9 +75,16 @@ import { resetSize } from '../ui/board-actions.ts';
  * command - nothing outside this file asks it, and the three entries that do
  * would otherwise have to reach for each other through the surface they are
  * being built into.
+ *
+ * `type !== 'ghost'` rather than isFurniture(), which is the *other* half of
+ * that pair and is deliberately let through. The title card is movable and has
+ * a menu of its own, so it is a card somebody can want held still - and it is
+ * anchored by default (makeTitleItem, state.ts), which means its own menu has to
+ * be able to say so and to undo it. A hint card has neither and stays out. Same
+ * test at the door, in setItemsLocked().
  */
 const lockable = () =>
-  board.items.filter(i => selection.has(i.id) && !isFurniture(i) && !isRider(i));
+  board.items.filter(i => selection.has(i.id) && i.type !== 'ghost' && !isRider(i));
 
 /**
  * The members of the selection a tag can go on.
@@ -152,9 +164,10 @@ export function itemMetaCommands() {
      *
      * Both counts are over the *lockable* members rather than over the whole
      * selection, which is the difference that makes "all" mean anything: a
-     * selection holding the title card can never have every member locked, so
-     * comparing against the selection size would leave such a menu permanently
-     * offering Lock on a set that is already entirely locked.
+     * selection holding a hint card, or a sticky riding on one of its own
+     * members, can never have every member locked - so comparing against the
+     * selection size would leave such a menu permanently offering Anchor on a
+     * set that is already entirely anchored.
      */
     canLock: () => lockable().length > 0,
     lockableCount: () => lockable().length,
@@ -374,6 +387,79 @@ export function itemMetaCommands() {
     rotateModel: (id: string) => {
       rotateModel(id);
       toast('Drag the model to turn it. It settles when you click away.');
+    },
+
+    /**
+     * Keep the frame that is on the card and send the clip to the bin.
+     *
+     * Every clip on a board is on it for one of two reasons - it is something to
+     * watch, or it is a picture that happens to move - and the second kind costs
+     * what the first kind costs. A three-minute clip somebody put there for one
+     * shot in it is thirty megabytes in the file, a decoder while it is on
+     * screen, and a card that has to be played before it shows anything on a
+     * phone. This is the way to say "that shot is the reason it is here": the
+     * card stays, wearing the frame, and the video goes to the bin.
+     *
+     * **Which frame** is the frame that is on the card, and that is the whole
+     * design. Not the first, not the poster, not one chosen in a dialog with a
+     * scrubber - the person scrubbed already, in the now-playing bar, and left
+     * it where they wanted it. There is nothing to ask.
+     *
+     * Two sources, and the second is not a fallback so much as the same answer
+     * arrived at differently. A clip that is playing, or paused, or has simply
+     * loaded its metadata, has a frame on its element and it is captured. A
+     * clip whose source is *parked* has none - on iOS the renderer holds the
+     * `src` back until the first tap, to stay inside the decoder ration - and
+     * what the card is showing there is `meta.cover`, the poster. So that is
+     * what is kept, and its bytes are already in the registry, which is why the
+     * hash is reused rather than a second copy of the same picture cut.
+     *
+     * Offered on any clip, without asking first whether either source will
+     * answer. The predicate cannot await and the answer is a decode away, so a
+     * row that hid itself on the clips this might refuse would hide itself on
+     * clips it would in fact have managed; the refusal says so in words instead.
+     */
+    canKeepFrame: (id: string) => {
+      const it = byId(id);
+      return it?.type === 'video' && !!it.asset?.hash;
+    },
+    keepFrame: async (id: string) => {
+      const it = byId(id);
+      if (it?.type !== 'video') return;
+      // The card's own element, which is where the frame somebody is looking at
+      // actually is. nodeFor() answers nothing for a culled card, and a card
+      // whose menu is open is on screen by construction.
+      const v = nodeFor(id)?.querySelector('video');
+      const shot = v ? await frameOnScreen(v) : null;
+      let hash = '';
+      let facts: Record<string, unknown> = {};
+      if (shot) {
+        // Named for what it is rather than 'poster': a poster is the picture a
+        // clip wears, and this is the picture that replaces one.
+        const file = derivedFile(shot.blob, 'frame');
+        hash = await addFile(file);
+        facts = { mime: file.type, ext: extOf(file.name), size: shot.blob.size };
+      } else {
+        // The parked case - see the header. `meta` is open, so the cover is
+        // narrowed here, and getAsset() is what establishes that it names bytes
+        // this session actually holds rather than a hash out of a file whose
+        // asset went missing.
+        const cover = typeof it.meta?.cover === 'string' ? it.meta.cover : '';
+        const asset = cover ? getAsset(cover) : null;
+        if (asset) {
+          hash = cover;
+          facts = { mime: asset.mime, ext: asset.ext, size: asset.size };
+        }
+      }
+      if (!hash) {
+        toast('No frame to keep yet - play the clip to the frame you want');
+        return;
+      }
+      if (!freezeClip(id, hash, facts)) return;
+      // Said out loud because half of what happened is invisible: the card looks
+      // almost the same, and the part that changed is that the clip is now
+      // somewhere else. The bin is where it is and where it comes back from.
+      toast('Kept the frame. The clip is in the bin - click it there to put it back.');
     },
   };
 }

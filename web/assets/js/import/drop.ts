@@ -12,7 +12,8 @@ import {
   board, bus, addItems, select, setItemCover, NOTE_MAX, baseStep, startSettling,
 } from '../state.ts';
 import { addFile, derivedFile } from '../storage/assets.ts';
-import { makeByteBudget, overPixelBudget, IMPORT_LIMITS } from './budget.ts';
+import { makeByteBudget, overPixelBudget, pixelCrossing, IMPORT_LIMITS } from './budget.ts';
+import { allow, isAllowed, lift, fileKey, mb as consentMb } from '../consent.ts';
 import {
   classify, defaultSize, measureSize, fitToBox, linkURL, linkDraft, videoFrame,
   swatchHex, SWATCH_DEFAULT,
@@ -20,11 +21,14 @@ import {
 import { iframeURL, embedFor } from '../canvas/embed.ts';
 import { arrange, mobileOrder } from '../arrange/arrangements.ts';
 import { coverArt, mayHaveArt } from './artwork.ts';
+import { mediaFacts } from './containers.ts';
 import { embeddedPreview, NOT_PORTABLE, PORTABLE_MIN_EDGE } from './preview.ts';
 // Statically, unlike import/pdf.js below it: this one reaches storage/zip.js and
 // nothing else, and the zip reader is already in memory - it is what opens every
 // .mbrd. There is no dependency to defer and so no reason to defer it.
 import { hasBakedPreview, bakedPreview } from './document.ts';
+import { isDeck, slideOneRaster } from './slide.ts';
+import { isTiffFile, tiffRaster } from './tiff.ts';
 import { makeThumb } from '../optimize/picture.ts';
 import { looksLikeMbrd } from '../storage/mbrd.ts';
 import { openOrMergeFile } from '../storage/storage.ts';
@@ -115,6 +119,35 @@ export function setImportPrompt(fn: ImportPrompt | null | undefined) {
 
 /** Whole megabytes, for a sentence. Nothing here needs the decimal. */
 const mb = (bytes: number) => Math.round(bytes / 1024 ** 2) + ' MB';
+
+/**
+ * Run one of the readers, and if it stops at a ceiling, ask and run it again.
+ *
+ * The asking end of the retry contract in consent.ts. Four readers below reach a
+ * size they cannot decide about on their own - the container a document's preview
+ * is inside, the deck being composited, the JPEG a camera left in a RAW, the
+ * artwork in a tag - and none of them can ask: they run six at a time under the
+ * work pool, and import/ has no way to reach a dialog and no business having one.
+ * So each throws Oversize, this catches it, and a yes calls the reader again with
+ * its ceiling lifted.
+ *
+ * Every one of these fails soft. A `null` means the card is the card it would
+ * have been anyway - a named document, a grey deck, a track with no cover - which
+ * is why the second attempt swallows its own errors and why declining costs
+ * nothing but the picture. The importer carries on either way.
+ *
+ * Keyed by the file, so a document that is both an enormous container and an
+ * enormous inflate is one question. Anything already allowed - here, or by the
+ * byte budget before the work started - is not asked again.
+ */
+async function asking<T>(file: File, read: (lift: boolean) => Promise<T | null>): Promise<T | null> {
+  try {
+    return await read(false);
+  } catch (err) {
+    if (!await lift(err, fileKey(file), `${file.name} - ${consentMb(file.size || 0)}`)) return null;
+    return await read(true).catch(() => null);
+  }
+}
 
 /**
  * The one hidden <input type="file"> on the page.
@@ -420,9 +453,12 @@ export async function importFiles(
   // and thumbnailed, and the whole value of asking is that it happens before any
   // of that rather than two minutes into it.
   //
-  // One question for the whole drop, however many files are over the line. A
+  // One question for the whole drop, however many files are merely *large*. A
   // dialog per file is not a warning, it is a queue - and the answer to "are
-  // these forty videos meant" is one answer.
+  // these forty videos meant" is one answer. This is the courtesy at 60 MB, and
+  // it stayed a single question when the ceilings below it became per-file ones,
+  // because that argument is about a question with no numbers in it: forty files
+  // over a soft line have nothing to tell somebody one at a time.
   const big = files.filter(f => (f.size || 0) > IMPORT_LIMITS.warnBytes);
   if (big.length && confirmImport) {
     const answer = await confirmImport({
@@ -445,27 +481,74 @@ export async function importFiles(
   // here the cut has already happened: filesFrom() stops *at* MAX_FILES, so the
   // comparison below can only ever fire for a caller that did not cap - the
   // picker, and the paste path.
-  let trimmed = truncated;
-  if (files.length > MAX_FILES) {
-    files = files.slice(0, MAX_FILES);
-    trimmed = true;
+  //
+  // Asked about rather than done quietly. The cut itself has to happen before
+  // the walk can stop walking, so what is on offer here is the rest: a drop of
+  // 900 files arrives as 500 and somebody can say "no, all of it" - which is a
+  // real answer, because the reason for the cap is time rather than memory and
+  // time is theirs to spend.
+  let trimmed = truncated || files.length > MAX_FILES;
+  if (trimmed) {
+    const wanted = files.length;
+    const keepAll = await allow(
+      `count:${wanted}`,
+      `${wanted > MAX_FILES ? wanted : 'More than ' + MAX_FILES} files at once.`,
+      [{
+        ceiling: 'file-count',
+        what: `This is ${wanted > MAX_FILES ? wanted : 'more than ' + MAX_FILES} files, past the `
+          + `${MAX_FILES} taken at once. Declining brings in the first ${MAX_FILES}.`,
+      }],
+      'Take all of them',
+    );
+    if (!keepAll && files.length > MAX_FILES) files = files.slice(0, MAX_FILES);
+    if (keepAll) trimmed = false;
   }
 
-  // Byte budget, applied in file order so the cut is deterministic. The 500-file
-  // cap above is a UX guard, not a memory boundary - five files can be five 4K
-  // videos. Files past the budget are dropped rather than failing the whole
-  // import, so a folder with one giant video still brings the rest in. See
-  // import/budget.js and AUD-05.
+  // Byte budget. Measured in file order so the questions are deterministic, and
+  // charged only once the answer is in.
+  //
+  // The 500-file cap above is a UX guard, not a memory boundary - five files can
+  // be five 4K videos. This is the memory boundary, and it is the place where
+  // "one warning per file, with the reasoning" is actually implemented: a file
+  // over either ceiling is described - its size, the number it passed, what the
+  // decode will cost - and the answer decides that file alone. A folder with one
+  // giant video still brings the rest in whichever way that goes, which is what
+  // this did before; the difference is that the giant video now gets a hearing
+  // instead of a line in a receipt.
+  //
+  // Sequential on purpose, and this is the one place in the importer that is. The
+  // work pool below runs six at a time, but a queue of dialogs is not work - two
+  // questions on screen at once is one of them being answered by accident, and
+  // ui/dialog.ts serialises them anyway. See import/budget.js and AUD-05.
   const budget = makeByteBudget();
   let overBudget = 0;
-  files = files.filter(f => {
-    if (budget.take(f.size || 0)) return true;
-    overBudget++;
-    return false;
-  });
+  const keep: File[] = [];
+  for (const f of files) {
+    const reasons = budget.check(f.size || 0);
+    // The decode bomb, folded into the same question rather than left for the
+    // measurement two hundred lines below. It is knowable here - the dimensions
+    // are in the first few hundred bytes - and a file that is both enormous and
+    // enormously large is one decision, not two dialogs a minute apart.
+    //
+    // Only for something that will actually be decoded as a picture: classify()
+    // has not run yet, so this asks the cheap half of the same question the
+    // header-reader answers, and a file with no image header returns null.
+    const px = await pixelCrossing(f).catch(() => null);
+    if (px) reasons.push(px);
+    if (!reasons.length || await allow(fileKey(f), `${f.name} - ${consentMb(f.size || 0)}`, reasons)) {
+      budget.charge(f.size || 0);
+      keep.push(f);
+    } else {
+      overBudget++;
+    }
+  }
+  files = keep;
   if (!files.length) {
     budget.release();
-    toast('Those files are too large to import', 'error');
+    // No tone, and no longer an error: nothing went wrong here. Every file in
+    // this drop was described and declined, which is somebody choosing - and an
+    // app that says "error" back at a choice it asked for is arguing.
+    toast(overBudget ? 'Nothing imported' : 'Those files are too large to import', overBudget ? '' : 'error');
     return [];
   }
 
@@ -601,7 +684,11 @@ export async function importFiles(
 
   let msg = `${cancelled ? 'Stopped — kept' : 'Added'} ${added.length} item${added.length === 1 ? '' : 's'}`;
   if (trimmed) msg += ` (capped at ${MAX_FILES})`;
-  if (overBudget) msg += `, ${overBudget} too large`;
+  // "Skipped", not "too large". Nothing was too large for this app to take any
+  // more - these are the ones somebody was shown the numbers for and said no to,
+  // and reporting their own answer back to them as a limit would be the receipt
+  // taking credit for a decision it did not make.
+  if (overBudget) msg += `, ${overBudget} skipped`;
   if (failed.length) msg += `, ${failed.length} failed`;
   // The undecodable photos still came in - as named cards - so this rides the
   // ordinary receipt, not the error tone, and only when nothing worse happened.
@@ -738,17 +825,21 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
   let previewFile: File | null = null;
   // A PDF is the same shape of problem as an undecodable photo: the app cannot
   // draw it, but it can produce a picture of its first page (import/pdf.js, which
-  // fetches pdf.js on demand). Handled exactly like the embedded-preview path -
-  // the original PDF stays asset.hash and is still what a click opens, while the
-  // rendered page becomes meta.preview and is what the card shows. Any failure -
-  // offline, CDN down, a parse error - leaves size unset, so it falls through to
-  // the named card it would otherwise have been. This is the app's second
-  // outside-code dependency; see the header of import/pdf.js.
+  // loads the vendored pdf.js on demand). Handled exactly like the
+  // embedded-preview path - the original PDF stays asset.hash and is still what a
+  // click opens, while the rendered page becomes meta.preview and is what the card
+  // shows. Any failure - a parse error, a page that will not draw, a first PDF on
+  // a fresh install with no network - leaves size unset, so it falls through to
+  // the named card it would otherwise have been, and says so in the console. This
+  // is the app's second outside-code dependency; see the header of import/pdf.js.
   if (isPdf(file)) {
     const { firstPageRaster } = await import('./pdf.ts');
     const page = await firstPageRaster(file).catch(() => null);
     if (page?.blob) {
-      previewFile = new File([page.blob], 'page.webp', { type: page.blob.type || 'image/webp' });
+      // derivedFile() rather than a hand-written 'page.webp': the raster is WebP
+      // where the engine writes one and a PNG where it does not, and the name
+      // should follow the bytes like every other derived picture here.
+      previewFile = derivedFile(page.blob, 'page');
       previewHash = await addFile(previewFile);
       type = 'image';
       size = { ...fitToBox('image', page.w, page.h), measured: true, decodable: true };
@@ -765,7 +856,7 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
   // has already decided what the card is, and nothing below should measure it a
   // second time. A miss is silent and leaves the card exactly as it was.
   if (!size && hasBakedPreview(file)) {
-    const baked = await bakedPreview(file).catch(() => null);
+    const baked = await asking(file, l => bakedPreview(file, l));
     // Budgeted, like every other picture. This path sets `size` itself, so it
     // runs *before* the overPixelBudget() branch below and skipped it entirely -
     // and what it hands to measureSize() came out of a container somebody else
@@ -774,7 +865,14 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
     // decoded here, twice: once to measure and once by makeThumb() further
     // down. A preview that is over budget is not a preview - the card falls
     // back to the document it always was.
-    const bakedOk = baked && !(await overPixelBudget(baked));
+    // Under the file's own answer, not its own. A preview is not a thing anybody
+    // chose - it is a picture somebody else's exporter put inside the container -
+    // so there is nothing here to ask about that the person could weigh, and the
+    // fallback costs them nothing: the card is still the document it was. What
+    // this does honour is a yes already given for the file it came out of, since
+    // somebody who has agreed to decode a 900-megapixel scan has answered this
+    // question too.
+    const bakedOk = baked && (isAllowed(fileKey(file)) || !(await overPixelBudget(baked)));
     const shot = bakedOk ? await measureSize('image', baked) : null;
     // `baked` again rather than only `shot`: without a preview there is no
     // measurement either, so the two are one condition said twice.
@@ -785,13 +883,67 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
       size = shot;
     }
   }
+  // A deck, when the well above was dry - which for PowerPoint is nearly always.
+  // docProps/thumbnail is optional, current PowerPoint does not write it unless
+  // somebody turns it on, and the exporters most decks arrive from never write
+  // one at all, so the cheap path answers for almost no .pptx and the family was
+  // a grey card whatever was inside it. import/slide.js composites the first
+  // slide instead: the pictures at their real positions, the text at its real
+  // size, the background behind both.
+  //
+  // Last of the three because it is the only one that renders. A deck that *did*
+  // carry a thumbnail has already been handled above and never reaches this, and
+  // the same `!size` gate keeps it that way.
+  if (!size && isDeck(extOf(file.name))) {
+    const slide = await asking(file, l => slideOneRaster(file, l));
+    if (slide?.blob) {
+      previewFile = derivedFile(slide.blob, 'slide');
+      previewHash = await addFile(previewFile);
+      type = 'image';
+      size = { ...fitToBox('image', slide.w, slide.h), measured: true, decodable: true };
+    }
+  }
+  // And a TIFF, which is the same shape of problem as all three above and the
+  // one where the picture was simply out of reach: a scan or a print export is
+  // a photograph in a container no engine but Safari decodes, with no embedded
+  // JPEG for import/preview.js to find and no thumbnail for import/document.js
+  // to look up. import/tiff.js decodes it outright, in a worker, through the
+  // vendored UTIF - see the head of that file for what that costs and why it is
+  // carried rather than fetched.
+  //
+  // Unconditional rather than gated on this engine failing to draw it, which is
+  // deliberate and is NOT_PORTABLE's argument in import/preview.js: a board made
+  // on the one browser that *can* draw a TIFF would otherwise travel to every
+  // other browser as a grey card. The original file is untouched either way, and
+  // this raster is `meta.preview` like every other stand-in.
+  //
+  // Through asking() like the three above it, because the ceiling it can stop at
+  // is a real question - a 1200-dpi flatbed scan is honestly 400 megapixels -
+  // and a no costs nothing but the picture.
+  if (!size && isTiffFile(file)) {
+    const raster = await asking(file, l => tiffRaster(file, l));
+    const shot = raster ? await measureSize('image', raster) : null;
+    if (raster && shot?.decodable) {
+      previewFile = raster;
+      previewHash = await addFile(raster);
+      type = 'image';
+      size = shot;
+    }
+  }
   // A decode bomb - a small file that declares enormous dimensions - is caught
   // from its header before measureSize() hands it to createImageBitmap(), which
   // would otherwise allocate gigabytes. Over budget it becomes a named card, the
   // same fallback an undecodable image gets below. See import/budget.js.
+  //
+  // Not asked about here, because it already was: importFiles() puts this file's
+  // declared dimensions in the one warning it shows for the file, before any of
+  // the hashing. What is left for this line is to honour the answer. Without the
+  // isAllowed() check the yes would be silently overruled by the branch that
+  // asked for it - the picture somebody chose to decode arriving as a grey card
+  // with no explanation, which is the worst of both behaviours.
   if (size) {
     // Already decided - the PDF branch above rendered a page and measured it.
-  } else if (type === 'image' && await overPixelBudget(file)) {
+  } else if (type === 'image' && !isAllowed(fileKey(file)) && await overPixelBudget(file)) {
     type = 'generic';
     size = defaultSize('generic');
   } else {
@@ -814,7 +966,7 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
     // import/preview.js, and the note there on why iOS 27 makes this urgent.
     const portable = !NOT_PORTABLE.has(extOf(file.name));
     if (type === 'image' && (!size.decodable || !portable)) {
-      const preview = await embeddedPreview(file).catch(() => null);
+      const preview = await asking(file, l => embeddedPreview(file, l));
       // Budgeted for the same reason the baked path above now is. preview.ts
       // verifies the lead bytes are FF D8 FF and admits a JPEG up to MAX_JPEG
       // (128 MB) with no dimension check at all - so a .dng whose
@@ -844,6 +996,22 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
     }
   }
   const hash = await addFile(file);
+  // What the container itself says: how long it runs, and how big its picture
+  // is. Read for every clip and every track, because it costs one slice of the
+  // header and answers two questions this app otherwise has to ask a decoder -
+  // and for the formats no engine here will open (AVI, WMV, AC-3, an .aac's
+  // true length) it is the only answer there is. See import/containers.js.
+  const facts = type === 'video' || type === 'audio'
+    ? await mediaFacts(file, extOf(file.name)).catch(() => null)
+    : null;
+  // The shape, where the browser could not measure one. This runs *before*
+  // posterFor() below, which would answer the same question by fetching thirty
+  // megabytes of ffmpeg - so a .avi now lands the right shape whether or not
+  // anybody agrees to that download, and a clip that gets a poster anyway is
+  // measured twice to the same box.
+  if (type === 'video' && !size.measured && facts?.width && facts.height) {
+    size = { ...size, ...fitToBox('video', facts.width, facts.height), measured: true };
+  }
   // Every clip gets a still pulled out of it, because a video card has nothing
   // to show until it is played - on a phone, where the source is held back
   // entirely, that is a black rectangle. See posterFor() below.
@@ -864,7 +1032,7 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
   // the card is never briefly the plain one; null is the common answer and
   // costs a single 16-byte read.
   const cover = type === 'audio' && mayHaveArt(file.name)
-    ? await coverArt(file).then(art => art && addFile(art)).catch(() => null)
+    ? await asking(file, l => coverArt(file, l)).then(art => art && addFile(art)).catch(() => null)
     : null;
   // The hundred-pixel copy the board shows once it is zoomed out past the
   // detail rung - see makeThumb() for why a hundred, and canvas/stills.js for
@@ -929,6 +1097,14 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
   if (cover) meta.cover = cover;
   else if (poster?.hash) meta.cover = poster.hash;
   if (thumb) meta.thumb = thumb.hash;
+  // How long it runs, where the container was willing to say. The playlist used
+  // to be the only thing that knew this and it found out by mounting an <audio>
+  // per row on the first draw; here it is one header read on a file already in
+  // hand, it covers video as well as audio, and it is in the .mbrd - so a board
+  // opened on a machine that cannot decode the format at all still shows the
+  // times. The estimate is deliberately not taken: see runProbe() in
+  // ui/playlist.ts for why that one case belongs to the engine.
+  if (facts?.duration && !facts.estimated) meta.duration = facts.duration;
   // A guess, and only a guess: a picture whose outer ring is mostly transparent
   // is a shape rather than a photograph, so it lands with no card round it. The
   // menu row ("No card") is what makes it a default rather than a verdict -

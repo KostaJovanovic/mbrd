@@ -535,7 +535,7 @@ function buildButtons(c: ButtonsControl) {
     // Stamped rather than looked up: the listener that reads it already has the
     // element and would otherwise have to find its way back to the schema by
     // command name, which is a second index over a table that has no key.
-    if (b.closesPanel) btn.dataset.closesPanel = '';
+    if (b.closesPanel) btn.dataset.closesPanel = b.closesPanel === true ? '' : b.closesPanel;
     if (b.ariaPressed != null) btn.setAttribute('aria-pressed', b.ariaPressed);
     btn.textContent = b.label;
     row.append(btn);

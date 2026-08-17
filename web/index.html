@@ -1292,10 +1292,11 @@
   <details class="credits-more">
     <summary>What this is built on</summary>
     <p class="credits-note">
-      No frameworks, no build step, and nothing fetched at run time — the
-      browser loads the source directly. Three devDependencies exist for the
-      optional lint, typecheck and end-to-end runs; none of them ships.
-      What <em>does</em> ship that somebody else made:
+      No frameworks and no build step for the app itself — the browser loads the
+      source directly. Four devDependencies exist for the optional lint,
+      typecheck and end-to-end runs; none of them ships. What <em>does</em> ship
+      that somebody else made — and, at the foot, the one thing that is fetched
+      rather than carried:
     </p>
     <ul class="credits-deps">
       <li>
@@ -1329,6 +1330,31 @@
         <span class="credits-lic">OFL 1.1</span>
         <span class="credits-why">The typefaces, subset to Latin and Latin
           Extended and otherwise untouched.</span>
+      </li>
+      <li>
+        <a href="https://github.com/mozilla/pdf.js" target="_blank" rel="noopener noreferrer">pdf.js</a>
+        <span class="credits-lic">Apache-2.0</span>
+        <span class="credits-why">Page one of a PDF &mdash; and of an
+          <code>.ai</code>, which is a PDF &mdash; drawn as the card&rsquo;s
+          picture. Carried here rather than fetched, and read only when you
+          import one.</span>
+      </li>
+      <li>
+        <a href="https://github.com/photopea/UTIF.js" target="_blank" rel="noopener noreferrer">UTIF.js</a>,
+        <a href="https://github.com/nodeca/pako" target="_blank" rel="noopener noreferrer">pako</a>
+        <span class="credits-lic">MIT</span>
+        <span class="credits-why">TIFF, which is the one everyday picture format
+          no browser but Safari draws and the only one with no smaller copy of
+          itself inside to fall back on. Decoded in a worker so a 400&#8209;megapixel
+          scan does not stop the board.</span>
+      </li>
+      <li>
+        <a href="https://github.com/ffmpegwasm/ffmpeg.wasm" target="_blank" rel="noopener noreferrer">ffmpeg.wasm</a>
+        <span class="credits-lic">MIT over LGPL-2.1</span>
+        <span class="credits-why">The one thing not carried: 32 MB fetched from
+          a CDN, with your say-so, only to pull a still out of a clip this
+          browser cannot open &mdash; an iPhone&rsquo;s HEVC, most often. Nothing
+          about a board is sent, and declining costs the still and nothing else.</span>
       </li>
     </ul>
     <p class="credits-note">

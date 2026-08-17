@@ -53,6 +53,7 @@ import type { Item } from '../board-model.ts';
 import { readPref, writePref } from '../prefs.ts';
 import { assetURL } from '../storage/assets.ts';
 import { reportPlayError } from '../media/transport.ts';
+import { toast } from '../notify.ts';
 import {
   claimPlayer, nowPlaying, onPlayerReleased, ownerOf,
   registerPlayer, registeredPlayers, setNowPlaying,
@@ -200,8 +201,44 @@ function playerFor(item: Track): HTMLMediaElement {
 }
 
 /** Advance when the queue's current element ends, wherever that element lives. */
-function queueEnded(): void { advanceQueue(true); }
+function queueEnded(): void { deadRun = 0; advanceQueue(true); }
 let endedBound: HTMLMediaElement | null = null;
+
+/**
+ * Move on from a track this browser will not decode, rather than stopping on it.
+ *
+ * Every engine refuses part of the catalogue and no two refuse the same part -
+ * an AC-3, a DTS, a WMA or an AIFF plays in one browser each. Before this, a
+ * queue that reached one simply stopped: the element errored, nothing was
+ * listening, and the playlist sat on a track making no sound with no way to
+ * know why. A track that cannot be played has not begun, so the honest thing is
+ * the same as the thing done for a file whose asset has gone missing, which is
+ * to step past it.
+ *
+ * The counter is what stops that becoming a loop. A queue of twenty AC-3 tracks
+ * would otherwise skip through all twenty, wrap round under repeat 'all', and
+ * do it again forever - so a run of refusals as long as the queue itself gives
+ * up and says so once. It resets the moment anything actually plays.
+ *
+ * The card says its own half of this; see markUnplayable() in
+ * canvas/renderers.ts. This is the queue's half, and the two are independent -
+ * a track skipped here may not be on screen at all.
+ */
+let deadRun = 0;
+
+function queueRefused(this: HTMLMediaElement): void {
+  const code = this.error?.code || 0;
+  // Decode and unsupported-source. An abort is somebody else's doing and a
+  // network error on a blob URL is a missing asset - neither is "this engine
+  // cannot read this format", and skipping over either would hide a real fault.
+  if (code !== 3 && code !== 4) return;
+  if (++deadRun >= Math.max(1, queueOrder.length)) {
+    deadRun = 0;
+    toast('Nothing in this queue plays in this browser');
+    return;
+  }
+  advanceQueue(true);
+}
 
 /**
  * Drop what this file holds on an element that is being destroyed.
@@ -214,7 +251,11 @@ let endedBound: HTMLMediaElement | null = null;
  * to run.
  */
 onPlayerReleased((el: HTMLMediaElement) => {
-  if (endedBound === el) { el.removeEventListener('ended', queueEnded); endedBound = null; }
+  if (endedBound === el) {
+    el.removeEventListener('ended', queueEnded);
+    el.removeEventListener('error', queueRefused);
+    endedBound = null;
+  }
   if (queuePlayerEl === el) queuePlayerEl = null;
 });
 
@@ -342,15 +383,27 @@ function startCurrent(skips = 0): void {
   }
   // The ended -> advance hook follows the current voice: bound to this element while
   // it is the one playing, moved off it when the queue steps to another.
-  if (endedBound && endedBound !== el) endedBound.removeEventListener('ended', queueEnded);
-  if (endedBound !== el) { el.addEventListener('ended', queueEnded); endedBound = el; }
+  // The refusal hook rides with it: both are "this track is over", one because
+  // it finished and one because it never started. See queueRefused().
+  if (endedBound && endedBound !== el) {
+    endedBound.removeEventListener('ended', queueEnded);
+    endedBound.removeEventListener('error', queueRefused);
+  }
+  if (endedBound !== el) {
+    el.addEventListener('ended', queueEnded);
+    el.addEventListener('error', queueRefused);
+    endedBound = el;
+  }
   queuePlayerEl = el;
   claimPlayer(el, item);
   setNowPlaying({ el, item });
   // Reported, not swallowed - see reportPlayError(). This is the line every
   // playlist Play press ends at, so an empty catch here meant pressing Play
   // with autoplay blocked did nothing whatever, with nothing in the console.
-  el.play().catch(reportPlayError);
+  // The resolve half is the run counter's reset: a track that actually started
+  // is proof this browser is not simply refusing everything in the queue. See
+  // queueRefused().
+  el.play().then(() => { deadRun = 0; }, reportPlayError);
   notifyQueue();
 }
 

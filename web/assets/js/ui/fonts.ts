@@ -27,15 +27,20 @@ import { board, bus, setSetting } from '../state.ts';
 import { addFile, assetURL } from '../storage/assets.ts';
 import { isFamily } from '../util.ts';
 import { toast } from '../notify.ts';
+import { allow, fileKey, mb } from '../consent.ts';
 import type { FontAxis, FontSpec } from '../board-model.ts';
 
 /**
  * A ceiling per face and a ceiling per board.
  *
  * A 4MB cap passes every reasonable woff2 - a full variable family is well
- * under one - and stops a 200MB CJK .ttf being quietly folded into every save
- * and every export of the board from then on. Eight faces is past any real
- * use of two menus with two slots.
+ * under one - and stops a 200MB CJK .ttf being folded into every save and every
+ * export of the board from then on *without anybody being told*. That last
+ * clause is now the whole of it: the ceiling asks rather than refuses, because
+ * "quietly" was always the objection and a face somebody has been shown the cost
+ * of is not quiet. Eight faces is past any real use of two menus with two slots,
+ * and stays a flat cap - it is a limit on the interface having somewhere to put
+ * them, not on memory.
  */
 const MAX_BYTES = 4 * 1024 * 1024;
 const MAX_FONTS = 8;
@@ -614,8 +619,20 @@ async function runAddFontFiles(files: Iterable<File>) {
       toast(`A board can carry ${MAX_FONTS} faces`);
       break;
     }
-    if (file.size > MAX_BYTES) {
-      toast(`${file.name} is too big to travel with a board`, 'error');
+    // Offered, with what it costs. A CJK face genuinely is 200 MB and somebody
+    // setting a board in one is not making a mistake - they are accepting that
+    // every save and every share carries it, which is a sentence long enough to
+    // say and theirs to answer. Declined, nothing happens to the board and the
+    // next file in the loop is tried, which is what the toast used to do.
+    if (file.size > MAX_BYTES && !await allow(
+      fileKey(file),
+      `${file.name} - ${mb(file.size)}`,
+      [{
+        ceiling: 'font-bytes',
+        what: `This face is ${mb(file.size)}, past the ${mb(MAX_BYTES)} one is packed into a board at.`,
+      }],
+      'Add it',
+    )) {
       continue;
     }
     const [hash, axes, variable] = await Promise.all([

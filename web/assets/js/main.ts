@@ -26,6 +26,7 @@
 import { el, rafThrottle } from './util.ts';
 import { toast } from './notify.ts';
 import { initErrors, setBoardProbe, reportCaught } from './errors.ts';
+import { setRiskPrompt } from './consent.ts';
 import { initOverlays } from './ui/overlays.ts';
 import { initTimeline } from './ui/timeline-view.ts';
 import { ask } from './ui/dialog.ts';
@@ -409,6 +410,19 @@ setPrompt(ask);
 // because nothing is being destroyed - a red button here would be the dialog
 // telling somebody to be careful about opening their own file. See AskOptions.
 setImportPrompt(opts => ask({ ...opts, danger: false }));
+// And every size ceiling in the app the same way (consent.ts), which is the same
+// question one tier deeper: not "this is big" but "this is past the number
+// somebody wrote down, here is what it may cost, still yes?". Three buttons
+// because there are three answers and the dialog has always had room for the
+// third - the useful one on a folder of forty large files being "yes, and stop
+// asking me". `danger: false` for the same reason as above: opening one's own
+// file is not destructive, and the warning already says what the risk is in
+// words. The default when this is *not* wired is to allow, which is deliberate
+// and argued in consent.ts.
+setRiskPrompt(async opts => {
+  const answer = await ask({ ...opts, keep: 'Allow all', danger: false });
+  return answer === 'go' ? 'go' : answer === 'keep' ? 'all' : 'no';
+});
 // And the board's own picture, for the same reason and through the same shape.
 // Every door onto "replace the board" now files the outgoing one on the shelf,
 // and two of those doors - a .mbrd dropped on the canvas, and the PWA file

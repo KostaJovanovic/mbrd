@@ -1,24 +1,27 @@
 # Third-party assets
 
 Everything the app ships that someone else made, with where it came from and the
-licence it carries. The app has no runtime dependencies, so this list is short:
-the bundled `.woff2` faces under `web/assets/fonts/`, one sprite of drawings,
-and one vendored module. Each licence text sits beside the thing it covers in
-the repository, which is what redistributing the source requires — condition 2
-of the OFL, and the notice condition of the MIT licence.
+licence it carries: the bundled `.woff2` faces under `web/assets/fonts/`, one
+sprite of drawings, and the code under `Code` below. Each licence text sits
+beside the thing it covers in the repository, which is what redistributing the
+source requires — condition 2 of the OFL, and the notice condition of the MIT
+and Apache licences.
 
-Two of the three are also in `SHELL` (`web/sw.js`), so an installed app that
-carries the drawings and makes the sounds offline carries the notices with them.
-The font licences are not, which is a gap rather than a decision: the faces
-predate that reading and moving them into the shell is a change worth making on
-its own.
+The drawings and the sounds are in `SHELL` (`web/sw.js`), so an installed app
+that shows them and makes them offline carries their notices with them. The font
+licences are not, which is a gap rather than a decision: the faces predate that
+reading and moving them into the shell is a change worth making on its own.
+Neither are the vendored decoders, and that one *is* a decision — they are
+loaded only when a file that needs them is imported, and precaching megabytes
+for a format most boards never hold is the trade their own module headers argue
+against.
 
-The vendored module is the one entry here that is *code* rather than an asset,
-and it is worth saying why that changes nothing. MIT into GPL-3.0-or-later is
-compatible in that direction — the combined work goes out under the GPL — but
-the notice condition travels with the source, so the copyright line stays at the
-top of both vendored files, the licence text ships beside them, and neither can
-be tidied away as boilerplate.
+Code rather than an asset changes nothing about the terms, and it is worth
+saying why. MIT, Apache-2.0 and Zlib into GPL-3.0-or-later are all compatible in
+that direction — the combined work goes out under the GPL — but the notice
+condition travels with the source, so the copyright line stays at the top of
+every vendored file, the licence text ships beside it, and none of it can be
+tidied away as boilerplate.
 
 ## Typefaces
 
@@ -54,6 +57,38 @@ third-party. The two are separate files for the reason the head of each states.
 | Module | Files | Source | Licence | Licence file |
 | --- | --- | --- | --- | --- |
 | Cuelume 0.2.2 | `web/assets/js/cuelume/recipes.ts`, `web/assets/js/cuelume/engine.ts` | https://github.com/Danilaa1/cuelume | MIT | `web/assets/cuelume-LICENSE.txt` |
+| pdf.js 4.7.76 | `web/assets/vendor/pdfjs/pdf.min.mjs`, `web/assets/vendor/pdfjs/pdf.worker.min.mjs` | https://github.com/mozilla/pdf.js | Apache-2.0 | `web/assets/vendor/pdfjs/LICENSE.txt` |
+| UTIF.js 3.1.0 | `web/assets/vendor/utif/UTIF.js` | https://github.com/photopea/UTIF.js | MIT | `web/assets/vendor/utif/LICENSE.txt` |
+| pako 1.0.11 (inflate) | `web/assets/vendor/pako/pako_inflate.min.js` | https://github.com/nodeca/pako | MIT AND Zlib | `web/assets/vendor/pako/LICENSE.txt` |
+
+Four vendored builds, none of them modified, each loaded only when a file that
+needs it is imported and none of them in `SHELL`.
+
+**pdf.js** renders page one of a PDF — and of an `.ai`, which is a PDF — to a
+raster the card draws. It is carried rather than fetched for a reason worth
+keeping written down: `script-src 'self'` refused the CDN copy outright on the
+deployed site while working perfectly on the dev server, so the feature was dead
+exactly where anybody else would see it. `web/assets/js/import/pdf.ts` argues it
+at length and pins the version, and `tests/pdf-vendor.test.js` holds the pin to
+the bytes actually in the directory.
+
+**UTIF.js** decodes a TIFF, which is the one ordinary picture format no engine
+but Safari draws and the one with nothing else to fall back on: a scan carries
+no embedded JPEG for the RAW reader to find and no thumbnail for the document
+reader to look up. **pako** is its inflate, and only its inflate — TIFF's ZIP
+compression, which Photoshop writes by default. Both run inside
+`web/assets/js/import/tiff-worker.js`, off the main thread, because the decode
+is straight-line JavaScript over every pixel of what may be a 400-megapixel
+scan. Neither touches the DOM and neither reaches any host.
+
+The ffmpeg core (`@ffmpeg/core` 0.12.6, MIT over LGPL-2.1 — the npm package is
+MIT and the FFmpeg build inside it is LGPL-2.1 —
+https://github.com/ffmpegwasm/ffmpeg.wasm) is deliberately *not* in the table
+above: it ships with nothing, is not in this repository, and is fetched from
+jsdelivr on first use — see `web/assets/js/optimize/media.ts`, which is the one
+place in the app that reaches a host for code, and `web/_headers`, which permits
+that one host and nothing else. It is listed here because a reader of this file
+wants to know what runs, not only what is committed.
 
 The interface sounds. Seventeen recipes — each a handful of numbers rather than
 an audio file — and the Web Audio graph that renders them, taken as source and

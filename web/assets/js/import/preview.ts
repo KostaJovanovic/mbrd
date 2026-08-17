@@ -23,6 +23,8 @@
 // returns null on anything malformed - a preview that cannot be found is a named
 // card, which is exactly where the caller was headed anyway.
 
+import { oversize, isOversize, mb } from '../consent.ts';
+
 // Ceilings. None is a correctness bound - a real preview clears all of them by a
 // wide margin - they are the "this file is lying to us" backstops that keep a
 // hostile or truncated container from turning into an unbounded loop or a
@@ -32,6 +34,29 @@ const MAX_ENTRIES = 4096;     // directory entries read from one IFD
 const MIN_JPEG = 1024;        // a "preview" under a kilobyte is not one
 const MAX_JPEG = 128 * 1024 * 1024;
 const SCAN_CAP = 12 * 1024 * 1024;   // window the marker-scan fallback reads
+
+/**
+ * The one of those that is now a question, and why the other three are not.
+ *
+ * MAX_JPEG is a ceiling on something somebody might actually want: the camera's
+ * own full-size preview, which for a medium-format RAW can honestly be enormous,
+ * and which is the difference between a photograph on the board and a grey card
+ * with a filename on it. So a candidate this turns away is offered instead - the
+ * throw at the end of each picker, asked about by the caller, lifted with `lift`.
+ *
+ * MAX_IFDS, MAX_ENTRIES and SCAN_CAP stay absolute, and the distinction is not
+ * squeamishness. None of the three is a limit on the file: they are how far a
+ * walk walks and how far a scan scans. Nothing is refused for crossing them,
+ * because crossing them is not a thing a file does - what happens is that a
+ * heuristic gives up and the card falls back, and there is no evidence at that
+ * point that looking harder would have found anything. "Read all 400 MB of this
+ * HEIC in case there is a thumbnail further in" is not a risk somebody can weigh;
+ * it is a coin toss with their memory, and offering it as a choice would be the
+ * app dressing a guess up as consent.
+ */
+const jpegTooBig = (len: number) =>
+  `The preview picture stored inside this file claims to be ${mb(len)}, past the ${mb(MAX_JPEG)} `
+  + 'one is taken at. That size is the container\'s own claim rather than anything measured here.';
 
 /**
  * Pictures this browser may well draw and another browser will not.
@@ -94,17 +119,30 @@ type TiffEntry = { type: number, count: number, valueOff: number };
  * bytes before it is handed on, so a wrong offset yields null rather than a
  * broken picture.
  */
-export async function embeddedPreview(file: Blob): Promise<File | null> {
+export async function embeddedPreview(file: Blob, lift = false): Promise<File | null> {
   try {
     const head = await bytes(file, 0, 16);
     if (head.length < 12) return null;
-    const jpeg = isTiff(head)
-      ? await fromTiff(file)
-      : null;
+    // An X3F is answered by its own directory or not at all. The scan below is
+    // the fallback for every other container and is actively wrong for this
+    // one: a Foveon sensor block is full of stray FF D8 and FF D9 pairs, so
+    // "the longest span between them" is reliably several megabytes of noise,
+    // and a card drawing that is worse off than a card drawing nothing. See
+    // fromX3f().
+    if (isX3f(head)) {
+      const only = await fromX3f(file, lift);
+      return only ? new File([only], 'preview.jpg', { type: 'image/jpeg' }) : null;
+    }
+    const jpeg = isTiff(head) ? await fromTiff(file, lift) : null;
     const found = jpeg || await scanForJpeg(file);
     if (!found) return null;
     return new File([found], 'preview.jpg', { type: 'image/jpeg' });
-  } catch {
+  } catch (err) {
+    // Except a ceiling, which is a preview we found and did not take. The
+    // difference matters to the caller: everything else here is "there is nothing
+    // in this file", and this one is "there is something in this file and it is
+    // 200 MB". Only the second is a question, and only the caller can ask it.
+    if (isOversize(err)) throw err;
     return null;   // a preview that throws is a preview we did not find
   }
 }
@@ -146,7 +184,7 @@ function isTiff(h: Uint8Array) {
 // matter; anything else is read for its size and otherwise ignored.
 const TYPE_BYTES: Record<number, number> = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 6: 1, 7: 1, 8: 2, 9: 4, 10: 8, 11: 4, 12: 8 };
 
-async function fromTiff(file: Blob): Promise<Blob | null> {
+async function fromTiff(file: Blob, lift = false): Promise<Blob | null> {
   const head = await bytes(file, 0, 8);
   const le = ((head[0] << 8) | head[1]) === II;
   const dv0 = new DataView(head.buffer, head.byteOffset, head.byteLength);
@@ -236,14 +274,98 @@ async function fromTiff(file: Blob): Promise<Blob | null> {
   // Largest first, and take the first that is really a JPEG where it claims to
   // be. The length is the container's claim; the sniff is the file's own word.
   found.sort((a, b) => b.len - a.len);
+  // The largest candidate the cap turned away, and nothing else about it. Kept so
+  // the throw at the bottom can say a number - and only consulted if no candidate
+  // succeeded, which is the whole point: a RAW carrying a 200 MB full-size preview
+  // *and* a sensible 2 MB thumbnail should take the thumbnail and say nothing. The
+  // cap costing somebody their preview is the only case worth a question.
+  let blocked = 0;
   for (const { off, len } of found) {
-    if (len < MIN_JPEG || len > MAX_JPEG || off + len > file.size) continue;
+    if (len < MIN_JPEG || off + len > file.size) continue;
+    if (!lift && len > MAX_JPEG) { blocked = Math.max(blocked, len); continue; }
     const lead = await bytes(file, off, 3);
     if (!isJpeg(lead)) continue;
     return file.slice(off, off + len, 'image/jpeg');
   }
+  if (blocked) throw oversize('embedded-jpeg', jpegTooBig(blocked));
   return null;
 }
+
+// ---------------------------------------------------------------------------
+// X3F  -  Sigma and Polaroid, the one RAW that is not a TIFF
+// ---------------------------------------------------------------------------
+//
+// A Foveon file has its own container: a 'FOVb' header, the picture data, and a
+// directory at the very end - the last four bytes of the file point at it. So
+// the IFD walk above finds nothing in one, and the marker scan below finds
+// something worse than nothing: the sensor block is full of stray FF D8 and
+// FF D9 pairs, and "the longest span between them" is reliably a few megabytes
+// of noise rather than the picture. A card showing that is not a preview that
+// failed, it is a preview that lied.
+//
+// The directory is short and says exactly where the real one is, so it is read
+// instead. Every image section states its own format, and format 18 is a JPEG -
+// the full-size one the camera wrote for its screen. The other formats are the
+// Foveon sensor data itself, which needs a demosaic this app does not have and
+// is skipped rather than guessed at.
+
+const isX3f = (h: Uint8Array) => h[0] === 0x46 && h[1] === 0x4f && h[2] === 0x56 && h[3] === 0x62;
+
+/** X3F counts sections in a 32-bit field; this is the cap on believing it. */
+const MAX_SECTIONS = 512;
+
+/** The section format that means "an ordinary JPEG is in here". */
+const X3F_JPEG = 18;
+
+async function fromX3f(file: Blob, lift = false): Promise<Blob | null> {
+  if (file.size < 16) return null;
+  const foot = await bytes(file, file.size - 4, 4);
+  const dirOff = le32(foot, 0);
+  // Bounded before it is read, like every other offset here: the last four
+  // bytes of a truncated or hostile file are a claim about where to look.
+  if (dirOff + 12 > file.size) return null;
+  const dirHead = await bytes(file, dirOff, 12);
+  if (dirHead.length < 12 || ascii(dirHead, 0, 4) !== 'SECd') return null;
+  const count = Math.min(le32(dirHead, 8), MAX_SECTIONS);
+  if (count < 1) return null;
+  const table = await bytes(file, dirOff + 12, count * 12);
+
+  // Every JPEG section, largest picture first - a camera writes a full-size
+  // preview and a screen-sized thumbnail, and the card wants the former.
+  const found: { off: number, len: number, px: number }[] = [];
+  for (let i = 0; i + 12 <= table.length; i += 12) {
+    const off = le32(table, i);
+    const len = le32(table, i + 4);
+    const type = ascii(table, i + 8, 4);
+    if (type !== 'IMA2' && type !== 'IMAG') continue;
+    if (len < 28 || off + 28 > file.size || off + len > file.size) continue;
+    const sec = await bytes(file, off, 28);
+    if (ascii(sec, 0, 4) !== 'SECi' || le32(sec, 12) !== X3F_JPEG) continue;
+    const px = le32(sec, 16) * le32(sec, 20);
+    // The picture starts after the section header, and its length is what is
+    // left of the section.
+    found.push({ off: off + 28, len: len - 28, px });
+  }
+  found.sort((a, b) => b.px - a.px);
+  let blocked = 0;
+  for (const { off, len } of found) {
+    if (len < MIN_JPEG) continue;
+    if (!lift && len > MAX_JPEG) { blocked = Math.max(blocked, len); continue; }
+    const lead = await bytes(file, off, 3);
+    if (!isJpeg(lead)) continue;
+    return file.slice(off, off + len, 'image/jpeg');
+  }
+  if (blocked) throw oversize('embedded-jpeg', jpegTooBig(blocked));
+  return null;
+}
+
+/** X3F is little-endian throughout, unlike the TIFF walk above which reads
+ *  whichever order the file declares. */
+const le32 = (b: Uint8Array, i: number) =>
+  (b[i] | (b[i + 1] << 8) | (b[i + 2] << 16)) + b[i + 3] * 0x1000000;
+
+const ascii = (b: Uint8Array, i: number, n: number) =>
+  i + n <= b.length ? String.fromCharCode(...b.subarray(i, i + n)) : '';
 
 // ---------------------------------------------------------------------------
 // Marker scan  -  the fallback

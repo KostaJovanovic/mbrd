@@ -64,6 +64,7 @@ import {
   queuePrev, queueState, setQueue, toggleShuffle,
 } from '../canvas/playlist-queue.ts';
 import { audioTags, coverArt } from '../import/artwork.ts';
+import { mediaFacts } from '../import/containers.ts';
 import { resetPanels } from './panel-stack.ts';
 import { makeWindowDrag, makeWindowResize } from './float-window.ts';
 // Which Mobile lens comes up, for the title-bar button's one job. Set before the
@@ -771,15 +772,28 @@ async function ensureTrackMeta(item: Item) {
 
   const needTags = !item.meta?.artist && !item.meta?.trackTitle && !item.meta?.album;
   const needArt = !item.meta?.cover;
-  if (item.meta?.duration == null) probeDuration(item);
-
   const asset = getAsset(hash);
+  // A duration already on the item is kept - except on a raw AAC, where it may
+  // be a number an engine guessed for a board saved before this counted the
+  // frames, and where the guess is off by a factor rather than by seconds. The
+  // recount happens once a session, only for a row somebody has looked at, and
+  // `countOnly` is what stops a file it cannot count from being handed straight
+  // back to the engine that got it wrong.
+  if (item.meta?.duration == null) probeDuration(item);
+  else if (asset?.ext === 'aac') probeDuration(item, true);
+
   if (!asset || (!needTags && !needArt)) return;
   let changed = false;
   try {
     const [tags, art] = await Promise.all([
       needTags ? audioTags(asset.blob) : Promise.resolve([]),
-      needArt ? coverArt(asset.blob) : Promise.resolve(null),
+      // Its own catch, inside the shared one. coverArt() throws on a cover past
+      // the ceiling now (consent.ts) and this is not a place to ask - the track
+      // is already on the board, nobody dropped anything, and a dialog over a
+      // playlist filling itself in would come from nowhere. What must not happen
+      // is the outer catch swallowing the title and the artist along with it,
+      // which is what a bare rejection here would cost.
+      needArt ? coverArt(asset.blob).catch(() => null) : Promise.resolve(null),
     ]);
     const map = Object.fromEntries(tags || []);
     if (map.TITLE && !item.meta.trackTitle) { item.meta.trackTitle = map.TITLE; changed = true; }
@@ -806,50 +820,118 @@ async function ensureTrackMeta(item: Item) {
  */
 const PROBE_LIMIT = 4;
 const PROBE_MS = 15_000;
-const probeQueue: Item[] = [];
+const probeQueue: { item: Item, countOnly: boolean }[] = [];
 let probesRunning = 0;
 
-function probeDuration(item: Item) {
-  probeQueue.push(item);
+function probeDuration(item: Item, countOnly = false) {
+  probeQueue.push({ item, countOnly });
   pumpProbes();
 }
 
 function pumpProbes() {
   while (probesRunning < PROBE_LIMIT && probeQueue.length) {
-    const item = probeQueue.shift()!;
-    const url = item.asset?.hash && assetURL(item.asset.hash);
+    const { item, countOnly } = probeQueue.shift()!;
+    const hash = item.asset?.hash;
+    if (!hash) continue;
+    const url = assetURL(hash);
     if (!url) continue;
     probesRunning += 1;
-    const probe = new Audio();
-    let timer = 0;
-    // The one exit, so a slot is given back exactly once whichever way the
-    // probe ended. load() after clearing the src is what actually makes the
-    // element let go of what it buffered - the same pairing canvas/items.ts,
-    // canvas/poster.ts and canvas/renderers.ts all make, and the one this was
-    // missing.
-    let done = false;
-    const finish = () => {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
-      probe.removeAttribute('src');
-      probe.load();
-      probesRunning -= 1;
-      pumpProbes();
-    };
-    probe.preload = 'metadata';
-    probe.addEventListener('loadedmetadata', () => {
-      if (Number.isFinite(probe.duration)) {
-        item.meta.duration = probe.duration;
-        markDirty();
-        rebuildRow(item.id);
-      }
-      finish();
-    }, { once: true });
-    probe.addEventListener('error', finish, { once: true });
-    timer = setTimeout(finish, PROBE_MS);
-    probe.src = url;
+    // The slot is this function's to give back, so a probe that throws on its
+    // way in gives it back too - otherwise four bad files stop the queue dead.
+    void runProbe(item, hash, url, countOnly)
+      .catch(() => { probesRunning -= 1; pumpProbes(); });
   }
+}
+
+/**
+ * What a probe found, however it found it: written once, in one place.
+ *
+ * A recount that agrees with what is already there writes nothing. The row is
+ * drawn to the second, and a board marked dirty on every visit by a number that
+ * did not change would put a save behind a track nobody touched.
+ */
+function takeDuration(item: Item, secs: number) {
+  if (!Number.isFinite(secs) || secs <= 0) return;
+  const had = item.meta.duration;
+  if (typeof had === 'number' && Math.abs(had - secs) < 0.5) return;
+  item.meta.duration = secs;
+  markDirty();
+  rebuildRow(item.id);
+}
+
+/**
+ * One track's duration: the file's own answer where it has one, the engine's
+ * where it does not.
+ *
+ * The file first, which is the opposite of what this used to do and is the
+ * right way round for three reasons. It is *exact* - a FLAC, a WAV, an MP4 and
+ * an Ogg all count their own samples, where the engine reports what its decoder
+ * has reached. It is *available* - a .ac3, a .wma or an .aiff plays in no
+ * engine here, so the element answers nothing at all and the row stayed blank
+ * forever. And for a raw `.aac` the engine is not slower but wrong: the format
+ * states its length nowhere, so every engine divides bytes by bitrate, and
+ * Firefox has put a ninety-minute file at seven thousand minutes from a few
+ * near-silent frames at the front.
+ *
+ * The engine keeps exactly one case: an MP3 with no Xing header, where this
+ * module's own answer is bytes over bitrate too and says so (`estimated`). The
+ * engine will decode the file and count, so on that one format it is the better
+ * authority and this defers to it - see import/containers.ts.
+ *
+ * `countOnly` is a recount of a track that already has a duration - see
+ * ensureTrackMeta(). There is nothing to fall back *to* on one of those: the
+ * number on the item came from the engine in the first place, and asking it
+ * again would replace it with itself.
+ */
+async function runProbe(item: Item, hash: string, url: string, countOnly: boolean) {
+  const blob = getAsset(hash)?.blob;
+  const facts = blob ? await mediaFacts(blob, String(item.meta?.ext || '')).catch(() => null) : null;
+  const stated = facts?.estimated ? 0 : facts?.duration || 0;
+  if (stated || countOnly) {
+    if (stated) takeDuration(item, stated);
+    probesRunning -= 1;
+    pumpProbes();
+    return;
+  }
+  elementProbe(item, url, facts?.duration || 0);
+}
+
+/**
+ * The engine's own answer, with the file's estimate behind it.
+ *
+ * `estimate` is the bytes-over-bitrate figure from import/containers.ts, which
+ * is the only number a Xing-less MP3 has. It is used exactly where the engine
+ * declines to answer at all - an `error`, or a `loadedmetadata` that never
+ * comes - because at that point the alternative is a row with no time on it for
+ * the rest of the board's life.
+ */
+function elementProbe(item: Item, url: string, estimate = 0) {
+  const probe = new Audio();
+  let timer = 0;
+  // The one exit, so a slot is given back exactly once whichever way the
+  // probe ended. load() after clearing the src is what actually makes the
+  // element let go of what it buffered - the same pairing canvas/items.ts,
+  // canvas/poster.ts and canvas/renderers.ts all make, and the one this was
+  // missing.
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    probe.removeAttribute('src');
+    probe.load();
+    probesRunning -= 1;
+    pumpProbes();
+  };
+  probe.preload = 'metadata';
+  probe.addEventListener('loadedmetadata', () => {
+    takeDuration(item, probe.duration);
+    finish();
+  }, { once: true });
+  const giveUp = () => { if (!done && estimate) takeDuration(item, estimate); finish(); };
+  probe.addEventListener('error', giveUp, { once: true });
+  timer = setTimeout(giveUp, PROBE_MS);
+  probe.src = url;
 }
 
 /** Redraw one track's row in every home it appears in, after metadata arrived. */
@@ -1225,6 +1307,9 @@ function makePlayer(): Player {
         s.addEventListener('timeupdate', paint, { signal: sig });
         s.addEventListener('seeked', paint, { signal: sig });
         s.addEventListener('loadedmetadata', paint, { signal: sig });
+        // See canvas/transport.ts - a duration guessed from the bitrate is
+        // corrected by this event alone.
+        s.addEventListener('durationchange', paint, { signal: sig });
       }
     }
     refresh();

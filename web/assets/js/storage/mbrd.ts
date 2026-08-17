@@ -18,6 +18,10 @@ import type { ZipEntry } from './zip.ts';
 import { getAsset, putAsset } from './assets.ts';
 import type { Asset } from './assets.ts';
 import { sha256 } from '../crypto.ts';
+// Aliased on the way in: this module already has a `fileKey()` (the name an item
+// is stored under inside the archive) and a `nameOf()`, and both mean something
+// else here. The consent pair is about the archive being opened, not its contents.
+import { lift, fileKey as consentKey, nameOf as blobName } from '../consent.ts';
 import { isHash, isRecord, itemHashes } from '../util.ts';
 // Read out of the stored document rather than off the live ledger, the way
 // every other reference class in here is: what this function must not miss is
@@ -692,7 +696,28 @@ function* allItems(board: FileBoard): Generator<FileItem> {
  * returns `{ manifest, board }` ready for state.loadBoard().
  */
 export async function unpackBoard(blob: Blob) {
-  const files = await readZip(blob);
+  // Read once, and if the archive is past what an open is sized for, say what it
+  // declares and read it again. The asking end of the retry contract in
+  // consent.ts - readZip() cannot ask from inside a directory walk, and storage/
+  // may not open the interface (tests/layers.test.js), so the question is
+  // injected and the decision is the person's whose board this is.
+  //
+  // Worth being clear about what a yes buys here, because it is not the same
+  // trade as the importer's. Every other ceiling in the app fails soft: a
+  // declined document is a named card and nothing is lost. This one is the board
+  // itself, so declining means not opening it at all - which is the strongest
+  // reason of any of them for the answer not to be the app's to give.
+  //
+  // Keyed by name and size like a dropped file, so a board that will not open
+  // asks once rather than on every attempt in a session.
+  const name = blobName(blob, 'This board');
+  let files;
+  try {
+    files = await readZip(blob);
+  } catch (err) {
+    if (!await lift(err, consentKey(blob), name, 'Open it')) throw err;
+    files = await readZip(blob, { lift: true });
+  }
 
   const boardBytes = files.get('board.json');
   if (!boardBytes) throw new Error('Not an .mbrd file (no board.json inside)');

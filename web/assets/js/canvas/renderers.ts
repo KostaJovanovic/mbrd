@@ -15,9 +15,12 @@ import type { Item, ItemType } from '../board-model.ts';
 import { assetURL, getAsset, readText } from '../storage/assets.ts';
 import { byId, bus, markDirty, board, isDefaultTitle, itemCrop, setSwatchHex } from '../state.ts';
 import { latticeBox } from '../geometry.ts';
-import { describeExt, PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS } from '../import/formats.ts';
+import {
+  describeExt, formatName, PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS,
+} from '../import/formats.ts';
 import { registerPlayer } from './audio.ts';
 import { buildTransport } from './transport.ts';
+import { clock } from '../media/transport.ts';
 import { buildVideoPlayer, POSTER_TIME } from './video.ts';
 import { rationsDecoders } from './viewport.ts';
 import { embedFor, embedOffer } from './embed.ts';
@@ -422,6 +425,64 @@ function coverEl(item: Item) {
   return img;
 }
 
+/**
+ * Say on the card that this engine will not play what the card is holding, and
+ * take away the button that was pretending otherwise.
+ *
+ * Every browser refuses part of this app's own format catalogue and no two
+ * refuse the same part: nothing but Safari opens AC-3, DTS or an AIFF; Chrome
+ * and Firefox decline AVI, WMV, FLV and the MPEG program streams a camcorder
+ * writes; HEVC in an .mp4 plays on the phone that shot it and on nothing else.
+ * Until now all of those mounted a player like any other clip, and pressing it
+ * did nothing at all - no sound, no error, no explanation, and a running time
+ * of 0:00 because the element never loaded enough to have one.
+ *
+ * The element is what decides, not a table of what each engine supports. Those
+ * tables are wrong within a version or two, they are wrong per platform for the
+ * same version - Chrome on Windows plays what Chrome on Linux will not,
+ * because half of this is the operating system's decoders - and `canPlayType`
+ * answers "maybe" for most of what is actually in question. An `error` event
+ * with a code of 3 or 4 is the engine saying it outright.
+ *
+ * The other two codes are not this. An abort is somebody navigating away, and a
+ * network error on a blob URL is the asset going missing - a different fault
+ * with a different fix, and saying "this browser cannot play it" over either
+ * would send somebody looking for a codec they already have.
+ *
+ * What stays on the card is everything that was already true: the poster frame
+ * pulled out of the clip at import, the cover art out of the track's tags, the
+ * name, the size, and the duration read out of the container by
+ * import/containers.ts - which is precisely the case that reader exists for.
+ * The card becomes an honest still of a thing this browser will not play,
+ * rather than a broken player.
+ */
+function markUnplayable(media: HTMLMediaElement, item: Item) {
+  const code = media.error?.code || 0;
+  // 3 is MEDIA_ERR_DECODE, 4 is MEDIA_ERR_SRC_NOT_SUPPORTED.
+  if (code !== 3 && code !== 4) return;
+  const host = media.closest<HTMLElement>('.item');
+  const body = media.parentElement;
+  if (!host || !body || body.querySelector('.media-dead')) return;
+  host.classList.add('is-unplayable');
+  const note = document.createElement('div');
+  note.className = 'media-dead';
+  // The extension and not a codec name, because the extension is what somebody
+  // has in their folder and what they would search for. The same choice
+  // cardShell() makes a few lines down the card, and for the same reason.
+  const ext = (metaStr(item.meta?.ext) || extOf(item.name) || '').replace(/^\./, '');
+  // And how long it runs, when the item knows - which for exactly these formats
+  // it usually does, because import/containers.ts read it out of the header
+  // rather than asking the decoder that is refusing to open the file. It is the
+  // one fact the hidden transport was carrying that is worth keeping.
+  const secs = item.meta?.duration;
+  const words = ext ? `This browser cannot play ${ext.toUpperCase()}` : 'This browser cannot play this file';
+  note.textContent = typeof secs === 'number' && secs > 0
+    ? `${words} · ${clock(secs)}`
+    : words;
+  // Appended last, which keeps `video + .still` adjacent - items.css pairs the
+  // two with a sibling combinator and swaps them at the far zoom rung.
+  body.append(note);
+}
 
 const RENDERERS = {
   image(item: Item) {
@@ -531,6 +592,10 @@ const RENDERERS = {
     v.playsInline = true;
     v.draggable = false;
     v.addEventListener('loadedmetadata', () => adoptAspect(item, v.videoWidth, v.videoHeight), { once: true });
+    // Not `{ once: true }`: a clip parked with `preload='none'` on iOS fails
+    // when it is first tapped rather than when it mounts, and a clip that fails
+    // twice has the same one thing to say each time. markUnplayable() is idempotent.
+    v.addEventListener('error', () => markUnplayable(v, item));
     // A frame pulled out of the file at import - and, failing that, by the
     // optimiser or the idle backfill. Set as the poster rather than drawn as a
     // card cover, because a video *is* its picture: the card then shows the clip,
@@ -573,7 +638,24 @@ const RENDERERS = {
       // rectangle. Named, because it leaves every parked clip on the board
       // sitting at a currentTime that is not zero, and two other places have to
       // know that in order to tell a parked clip from a played one.
-      if (url) v.src = url + '#t=' + POSTER_TIME;
+      //
+      // **Firefox does not implement media fragments**, and this is where "video
+      // thumbnails do not work on Firefox" came from. There the `#t=` is dropped
+      // on the floor, `preload='metadata'` fetches the header and paints nothing,
+      // and the card is a black rectangle - which the poster asset set above
+      // covers, but only for a clip that got one. So the frame this line asks
+      // for is asked for again as an ordinary seek, which every engine has.
+      //
+      // Guarded on `currentTime === 0` so it is a no-op wherever the fragment
+      // was honoured, and on the duration so a clip shorter than the poster time
+      // is left where it is. Both readings then park at POSTER_TIME, which is
+      // the state canvas/items.ts reads to tell a parked clip from a played one.
+      if (url) {
+        v.src = url + '#t=' + POSTER_TIME;
+        v.addEventListener('loadedmetadata', () => {
+          if (v.currentTime === 0 && v.duration > POSTER_TIME) v.currentTime = POSTER_TIME;
+        }, { once: true });
+      }
     }
     // The twin, and it is the same twin a photograph carries: zoomed out past
     // the detail rung the board draws hundred-pixel copies instead of the real
@@ -649,6 +731,11 @@ const RENDERERS = {
       if (url) sound.src = url;
     }
     registerPlayer(sound, item);
+    // The same admission the video renderer makes, and the case is wider here:
+    // a .ac3, a .dts, a .wma and an .aiff all play in one engine each, and the
+    // card for one of them was a play button that did nothing over a waveform
+    // that never drew. See markUnplayable().
+    sound.addEventListener('error', () => markUnplayable(sound, item));
 
     card.append(buildTransport(item, sound), sound);
     return card;
@@ -1313,8 +1400,14 @@ const RENDERERS = {
     const kind = metaStr(gone.type);
     // 'generic' is the classifier's word for "a file, and nothing more is
     // known", which is a sentence about the code rather than about the thing.
-    // On the card it reads as the plain word it always meant.
-    kicker.textContent = `Deleted ${!kind || kind === 'generic' ? 'file' : kind}`;
+    // Something was known, though: the tombstone kept the extension, two lines
+    // down, so the catalogue can say what the file had been - "Deleted
+    // SolidWorks part" over "Deleted file". The plain word is what is left when
+    // there was no extension either.
+    const word = !kind || kind === 'generic'
+      ? formatName(gone.ext) || 'file'
+      : kind;
+    kicker.textContent = `Deleted ${word}`;
 
     const name = document.createElement('div');
     name.className = 'card-name';

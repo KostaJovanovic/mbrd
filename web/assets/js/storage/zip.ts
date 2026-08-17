@@ -11,6 +11,26 @@
 // Not supported (and not needed here): ZIP64, encryption, multi-disk, data
 // descriptors. Archives at or above 4 GB are rejected with a clear error rather
 // than silently written as corrupt.
+//
+// Two kinds of throw come out of readZip() and they are not the same kind of
+// thing, which is why one of them has its own class:
+//
+//   - **A ceiling.** LIMITS says how much memory an open may cost, and every one
+//     of those checks now throws `Oversize` (consent.ts) for a caller to ask
+//     about and, if told to, lift with `limits.lift`. None of them refuse
+//     anything on their own any more.
+//   - **A broken archive.** An offset past the end of the file, two entries
+//     under one name, a directory that overruns its own record, an entry that
+//     does not inflate to the length it declared. These stay plain Errors and
+//     stay absolute. There is no risk to accept here - the file does not say
+//     what it means, and continuing would mean reading bytes that are not
+//     there. `lift` does not reach them and must not be made to.
+//
+// The writer's 4 GB checks are the second kind for the same reason: a
+// non-ZIP64 header has 32 bits to say where an entry is, so past that the
+// format cannot express the archive at all. Nobody's consent makes it able to.
+
+import { oversize, mb } from '../consent.ts';
 
 /**
  * Bytes over a plain ArrayBuffer, which is what everything here holds.
@@ -349,6 +369,10 @@ export const LIMITS = {
   ratioFloor: 1 << 20,
 };
 
+/** The measurement half of the archive-size warning, in the words a reader wants. */
+const tooBig = (n: number) =>
+  `This file is ${mb(n)}, past the ${mb(LIMITS.archive)} an archive is normally opened at.`;
+
 /** Bounds-check before a read, with a message that names the file's fault. */
 function within(end: number, size: number, what: string) {
   if (!Number.isFinite(end) || end < 0 || end > size) {
@@ -370,10 +394,36 @@ export async function readZip(
   // import/document.ts capped the *compressed* container at 96 MB and then
   // inherited a 768 MB inflate ceiling at a 200:1 ratio, six of those running
   // at once under the import pool.
-  limits: { entry?: number, total?: number } = {},
+  // Every size ceiling in this function lifted, because the caller has asked
+  // whoever owns the file and been told to open it anyway.
+  //
+  // The retry contract in consent.ts: the checks below cannot ask - they are
+  // inside a directory walk, and this module has no way to reach a dialog and no
+  // business having one - so they throw Oversize instead of Error, the caller
+  // catches, asks, and calls this again with `lift`. Nothing else changes. The
+  // corruption checks are untouched and stay untouched: an entry that points past
+  // the end of the file is not a risk somebody can accept, it is an archive that
+  // does not say what it means, and `lift` deliberately does not reach them.
+  // `only` is a name filter, and it is the difference between opening a document
+  // and unpacking an application. Everything below inflates every entry, which is
+  // right for a .mbrd and for a .docx - the caller wants all of it, or wants one
+  // small thing out of something small. It is wrong for an .apk: a 90 MB package
+  // is unpacked in full to reach a 40 KB launcher icon, and six of those run at
+  // once under IMPORT_WORKERS.
+  //
+  // Names come from the central directory, so a filter costs nothing and is
+  // applied *before* the inflate rather than after - which is the only place it
+  // would be worth anything. Absent, this behaves exactly as it always has.
+  //
+  // Deliberately not a way around the ceilings: an entry that is skipped is not
+  // inflated and so does not count toward the total, but every entry the filter
+  // *admits* is checked exactly as before.
+  limits: { entry?: number, total?: number, lift?: boolean, only?: (name: string) => boolean } = {},
 ) {
+  const lift = !!limits.lift;
   const entryCap = limits.entry ?? LIMITS.entry;
   const totalCap = limits.total ?? LIMITS.total;
+  const only = limits.only;
   // Blob is what the app passes (a File, or one built by the packer). The
   // typed-array and ArrayBuffer forms are for anything already in memory -
   // notably the tests, which have no reason to wrap bytes in a Blob first.
@@ -389,16 +439,16 @@ export async function readZip(
     // pulls the whole file into memory first, so an archive already provably too
     // large could exhaust the tab before the length check below - the one it was
     // meant to be stopped by - ever ran. See AUD-04.
-    if (typeof source.size === 'number' && source.size > LIMITS.archive) {
-      throw new Error(`Archive is too large to open (${source.size} bytes)`);
+    if (!lift && typeof source.size === 'number' && source.size > LIMITS.archive) {
+      throw oversize('archive-bytes', tooBig(source.size));
     }
     bytes = new Uint8Array(await source.arrayBuffer());
   }
   const size = bytes.length;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
-  if (size > LIMITS.archive) {
-    throw new Error(`Archive is too large to open (${size} bytes)`);
+  if (!lift && size > LIMITS.archive) {
+    throw oversize('archive-bytes', tooBig(size));
   }
   if (size < 22) throw new Error('Not a ZIP archive (too short to hold a directory)');
 
@@ -409,8 +459,11 @@ export async function readZip(
   const cdSize = view.getUint32(eocd + 12, true);
   let p = view.getUint32(eocd + 16, true);
 
-  if (count > LIMITS.entries) {
-    throw new Error(`Archive declares too many entries (${count})`);
+  if (!lift && count > LIMITS.entries) {
+    throw oversize(
+      'archive-entries',
+      `This archive declares ${count.toLocaleString()} entries, past the ${LIMITS.entries.toLocaleString()} one is normally opened with.`,
+    );
   }
   // The directory has to lie inside the file and stop before the record that
   // describes it. A backwards scan for the EOCD signature can land on four
@@ -441,6 +494,11 @@ export async function readZip(
     within(p, size, 'the central directory');
 
     if (name.endsWith('/')) continue;      // directory entry: nothing to store
+    // Before the duplicate check on purpose: a name the caller does not want is a
+    // name this read has no opinion about, including about whether it appears
+    // twice. The archive's own consistency is still checked for everything the
+    // filter admits.
+    if (only && !only(name)) continue;
     // Two entries under one name is not something a zipper produces, and it
     // makes the archive mean two different things depending on which the
     // reader keeps - which for board.json or manifest.json is the whole file.
@@ -471,14 +529,24 @@ export async function readZip(
     // Everything here is judged from the *declared* size, before a byte is
     // inflated. That is the point: the cost of a decompression bomb is paid
     // during the inflate, so the decision has to be made before it starts.
-    if (usize > entryCap) {
-      throw new Error(`"${name}" is too large to open (${usize} bytes)`);
+    if (!lift && usize > entryCap) {
+      throw oversize(
+        'entry-bytes',
+        `"${name}" inside this file is ${mb(usize)} unpacked, past the ${mb(entryCap)} one entry is normally given.`,
+      );
     }
-    if (totalOut + usize > totalCap) {
-      throw new Error('Archive expands to more than this app will open at once');
+    if (!lift && totalOut + usize > totalCap) {
+      throw oversize(
+        'inflated-bytes',
+        `This file unpacks to at least ${mb(totalOut + usize)}, past the ${mb(totalCap)} opened at once.`,
+      );
     }
-    if (usize > LIMITS.ratioFloor && csize > 0 && usize / csize > LIMITS.ratio) {
-      throw new Error(`"${name}" expands ${Math.round(usize / csize)}x - refusing to unpack it`);
+    if (!lift && usize > LIMITS.ratioFloor && csize > 0 && usize / csize > LIMITS.ratio) {
+      throw oversize(
+        'entry-ratio',
+        `"${name}" inside this file is ${mb(csize)} packed and claims ${mb(usize)} unpacked - `
+        + `it expands ${Math.round(usize / csize)} times over.`,
+      );
     }
 
     const raw = bytes.subarray(start, start + csize);

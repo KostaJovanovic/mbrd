@@ -314,6 +314,13 @@ const BASE = new Set([
   // setOverlays() above and for the same reason: the answer lives up the graph,
   // the question has to be askable from the bottom of it.
   'errors.ts',
+  // Every size ceiling in the app, and the prose for asking about one instead of
+  // refusing. Down here for exactly the reason errors.ts above is: the three
+  // tiers that hit a ceiling are import/, storage/ and mesh.ts at the base, and
+  // the thing that can put the question on screen is ui/dialog.js at the top -
+  // so the question is injected through setRiskPrompt() and the module under all
+  // three of them holds it. Imports nothing at all.
+  'consent.ts',
 ]);
 
 /**

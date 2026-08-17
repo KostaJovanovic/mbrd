@@ -37,6 +37,7 @@ import { mobileOrder } from '../arrange/arrangements.ts';
 import { packColumns } from '../arrange/columns.ts';
 import { assetURL, readText } from '../storage/assets.ts';
 import { linkURL, buildContent, swatchHex } from '../canvas/renderers.ts';
+import { kindName } from '../canvas/item-dom.ts';
 import { bindDial } from '../canvas/ghosts.ts';
 import { noteTint } from '../canvas/note-model.ts';
 import {
@@ -886,9 +887,11 @@ function fillText(t: Tile) {
 function fillFile(t: Tile) {
   const card = div('feed-file');
   const name = div('feed-file-name');
-  name.textContent = baseName(t.item.name) || t.item.name || t.item.type;
+  // Both lines through kindName(): this is the tile every unrenderable file
+  // lands on, so it is where the word `generic` used to be printed the most.
+  name.textContent = baseName(t.item.name) || t.item.name || kindName(t.item);
   const kind = div('feed-file-kind');
-  kind.textContent = t.item.type;
+  kind.textContent = kindName(t.item);
   card.append(name, kind);
   t.el.appendChild(card);
 }

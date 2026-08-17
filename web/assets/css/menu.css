@@ -80,8 +80,9 @@
   display: grid;
   /* The kind column is fixed so the names line up down the list - a ragged
      left edge on a list you are scanning is what makes you read it twice.
-     Wide enough for "generic", which is the longest of the seven and was
-     coming out as "GENER…". */
+     Wide enough for "sticker", the longest word that reaches it: the column
+     holds a type word or an extension, never a format's full name. kindTag()
+     in canvas/item-dom.ts is where that is decided, and says why. */
   grid-template-columns: 68px 1fr;
   align-items: baseline;
   gap: 2px 10px;

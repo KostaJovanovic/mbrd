@@ -18,11 +18,12 @@
 
 import {
   board, bus, selection, removeItems, restoreItems, emptyTrash, select,
-  restoreTitleCard, isTitleHidden,
+  restoreTitleCard, isTitleHidden, clipHomeId,
 } from '../state.ts';
 import { assetURL } from '../storage/assets.ts';
 import { extOf, baseName, formatBytes, el } from '../util.ts';
 import { noteWords } from '../canvas/note-model.ts';
+import { kindName, kindTag } from '../canvas/item-dom.ts';
 import { toast } from '../notify.ts';
 import {
   STICKER_SPRITE, STICKER_VIEWBOX, DEFAULT_SHAPE, stickerShape, stickerTint,
@@ -43,6 +44,16 @@ let hint: HTMLElement | null = null;
 let emptyBtn: HTMLButtonElement | null = null;
 let titleRestore: HTMLElement | null = null;
 let ghost: HTMLElement | null = null;
+
+/**
+ * How far a press may wander and still count as a click rather than a drag.
+ *
+ * Only the rows that have a home read it - see onUp() in startDrag(). Four
+ * pixels rather than the board's own DRAG_SLOP, because this is a small target
+ * in a panel and the two gestures it separates are not near each other: a drag
+ * out of the bin crosses the panel's edge, and a click does not move at all.
+ */
+const TAP_SLOP = 4;
 
 export function initTrash(viewport: Viewport) {
   vp = viewport;
@@ -151,12 +162,43 @@ function paintButton() {
   button!.title = name;
 }
 
+/**
+ * The picture a bin row can show, or null for the rows that have none.
+ *
+ * A photograph's own bytes, and a clip's *poster* - which is the picture that
+ * clip was showing on the board, so a row that draws it is a row showing the
+ * thing that was thrown away rather than the three letters of its file
+ * extension. That mattered little while a binned clip was a clip somebody had
+ * deleted and rather more now: a frozen clip goes to the bin off a card that is
+ * still on the board wearing its frame, and "MP4" beside a still of the same
+ * shot is the panel refusing to say they are the same thing.
+ *
+ * Not a general cover lookup. A track's album art is a picture *about* the card
+ * rather than the card, and a row of album covers would read as a bin full of
+ * pictures - the badge is the honest answer there.
+ */
+function binPicture(item: Item): string | null {
+  if (item.type === 'image' && item.asset?.hash) return assetURL(item.asset.hash);
+  // `meta` is open, so the cover is narrowed rather than trusted.
+  const cover = item.type === 'video' ? item.meta?.cover : null;
+  return typeof cover === 'string' ? assetURL(cover) : null;
+}
+
 function binRow(entry: TrashEntry) {
   const item = entry.item;
   const node = document.createElement('div');
   node.className = 'bin-item';
   node.dataset.id = item.id;
-  node.title = 'Drag onto the board to put it back, or press Enter';
+  // A clip frozen off a card that is still on the board has exactly one place
+  // to go, so it is the one row here that does not need to be told where - see
+  // the header of restoreItems() in trash.ts, and `home` in startDrag() below,
+  // which is what makes the click work. Everything else keeps the drag, and the
+  // words keep saying so.
+  const home = clipHomeId(item);
+  if (home) node.dataset.home = home;
+  node.title = home
+    ? 'Click to put it back on its card'
+    : 'Drag onto the board to put it back, or press Enter';
   // Reachable and operable without a pointer. Deleting was already a keystroke;
   // until this, taking something back was a drag and nothing else, so a
   // keyboard or screen-reader user could empty the bin and never look inside it.
@@ -166,10 +208,10 @@ function binRow(entry: TrashEntry) {
 
   const thumb = document.createElement('div');
   thumb.className = 'bin-thumb';
-  const url = item.asset?.hash ? assetURL(item.asset.hash) : null;
-  if (item.type === 'image' && url) {
+  const picture = binPicture(item);
+  if (picture) {
     const img = document.createElement('img');
-    img.src = url;
+    img.src = picture;
     img.alt = '';
     img.draggable = false;
     thumb.append(img);
@@ -218,7 +260,9 @@ function binRow(entry: TrashEntry) {
     // "example". Neither half of the filename convention applies here.
     thumb.textContent = 'link';
   } else {
-    thumb.textContent = extOf(item.name) || item.type;
+    // kindTag rather than the type, so a dropped file with no extension in its
+    // name is badged "file" and not with this codebase's word for one.
+    thumb.textContent = extOf(item.name) || kindTag(item);
   }
 
   const name = document.createElement('div');
@@ -257,7 +301,9 @@ function label(item: Item): string {
   }
   if (item.name) return baseName(item.name) || item.name;
   if (item.type === 'note') return noteText(item).split('\n')[0] || 'Empty note';
-  return item.type;
+  // A nameless item stands under what it is. There is room for the words here -
+  // it is a row of the bin, not the square at the head of one.
+  return kindName(item);
 }
 
 /** Coarse and relative - the exact minute a thing was binned is never the question. */
@@ -328,11 +374,36 @@ function startDrag(e: PointerEvent) {
     unwire();
     dropGhost();
 
+    // A press that never went anywhere, on a row that knows where it belongs.
+    //
+    // This is the click, and it is written here rather than as a `click`
+    // listener because the pointerdown above calls preventDefault() - which
+    // suppresses the compatibility mouse events on every engine and the click
+    // itself on some, so a listener for one would work in Chrome and not in
+    // Safari. The gesture is already being watched; the tap is the degenerate
+    // case of it.
+    //
+    // Only the rows with a home, and that is the whole of why a click is safe
+    // to add at all. The header argues that coming back is a drag because a
+    // deleted item's old spot is usually the reason it was deleted and only a
+    // drag can say where it goes now. A frozen clip has no such question - its
+    // card is on the board, in front of the person clicking - so the gesture
+    // that would answer it has nothing to answer.
+    const moved = Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) > TAP_SLOP;
+    const home = !!line.dataset.home;
+
     // Let go over the panel itself and nothing happens - that is a cancel, and
     // the item stays in the bin rather than being flung somewhere arbitrary.
-    if (panel!.contains(document.elementFromPoint(ev.clientX, ev.clientY))) return;
+    // Unless it is that tap, which is a press and a release in the same place
+    // and so is *always* over the panel.
+    if (panel!.contains(document.elementFromPoint(ev.clientX, ev.clientY))) {
+      if (moved || !home) return;
+    }
 
-    const at = vp!.toWorld(ev.clientX, ev.clientY);
+    // A clip going home ignores the drop point - restoreItems() puts it back on
+    // its own card, wherever that card is now. Handing one over anyway would be
+    // a coordinate nothing reads.
+    const at = home ? null : vp!.toWorld(ev.clientX, ev.clientY);
     const back = restoreItems([id], at);
     if (!back.length) return;
     select(back.map((i: Item) => i.id));
@@ -360,10 +431,12 @@ function startDrag(e: PointerEvent) {
 function makeGhost(item: Item) {
   const node = document.createElement('div');
   node.id = 'bin-ghost';
-  const url = item.asset?.hash ? assetURL(item.asset.hash) : null;
-  if (item.type === 'image' && url) {
+  // The same picture the row draws, for the same reason - what is under the
+  // pointer should be the thing being carried. See binPicture().
+  const picture = binPicture(item);
+  if (picture) {
     const img = document.createElement('img');
-    img.src = url;
+    img.src = picture;
     img.alt = '';
     node.append(img);
   } else {

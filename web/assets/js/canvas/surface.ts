@@ -108,12 +108,38 @@ function blank(w: number, h: number): OffscreenCanvas | HTMLCanvasElement | null
  * check the type that came back rather than the type it asked for - which is
  * what every caller now does, and why this returns the blob rather than
  * pretending the request was honoured.
+ *
+ * **The two spellings do not agree about the refusal, and that is what the
+ * try/catch below is for.** "Substitutes PNG without complaint" is `toBlob`'s
+ * rule. `convertToBlob` is specified the other way round: an unsupported type
+ * *rejects* the promise. So the same unencodable request came back as a
+ * relabelled PNG through the element path and as a thrown error through the
+ * OffscreenCanvas path - and a caller written against the docstring above, which
+ * is all five of them, loses the picture rather than keeping a substitute. The
+ * worst of it is where that lands: canvas/poster.ts awaits this unguarded, so a
+ * clip's poster was not "no frame could be decoded" but "the frame was decoded
+ * and then thrown away", and every repair pass afterwards re-decoded it to reach
+ * the same throw.
+ *
+ * PNG on the retry because it is the one format a canvas must encode. The type
+ * still comes back on the blob, so the caller's check is unchanged and this
+ * stays a report rather than a pretence.
  */
-export function surfaceToBlob(
+export async function surfaceToBlob(
   { canvas }: Surface,
   type: string,
   quality: number,
 ): Promise<Blob | null> {
-  if ('convertToBlob' in canvas) return canvas.convertToBlob({ type, quality });
-  return new Promise(resolve => canvas.toBlob(resolve, type, quality));
+  if (!('convertToBlob' in canvas)) {
+    return new Promise(resolve => canvas.toBlob(resolve, type, quality));
+  }
+  try {
+    return await canvas.convertToBlob({ type, quality });
+  } catch {
+    try {
+      return await canvas.convertToBlob({ type: 'image/png' });
+    } catch {
+      return null;
+    }
+  }
 }

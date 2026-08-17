@@ -320,3 +320,131 @@ test('a TIFF truncated exactly at its last IFD entry still reaches the fallback'
   assert.ok(found, 'the truncated directory took the fallback down with it');
   assert.equal(found.size, art.length);
 });
+
+// ---------------------------------------------------------------------------
+// X3F  -  the RAW that is not a TIFF
+// ---------------------------------------------------------------------------
+//
+// A Foveon file is read backwards: the last four bytes point at a directory,
+// and the directory points at the pictures. The reason it gets its own reader
+// rather than falling to the marker scan is in the fixtures below - the sensor
+// block is written here the way a real one looks, full of stray FF D8 and FF D9
+// pairs, and the scan picks the largest span between any two of them.
+
+const LE32 = n => [n & 0xff, (n >>> 8) & 0xff, (n >>> 16) & 0xff, (n >>> 24) & 0xff];
+const A4 = s => [...s].map(c => c.charCodeAt(0));
+
+/** Sensor data as the scan sees it: a long run with false JPEG bookends in it. */
+function sensorNoise(len) {
+  const b = new Uint8Array(len);
+  for (let i = 0; i < len; i++) b[i] = (i * 31) & 0xff;
+  b[16] = 0xff; b[17] = 0xd8; b[18] = 0xff;            // a start that is not one
+  b[len - 40] = 0xff; b[len - 39] = 0xd9;              // and an end to match it
+  return b;
+}
+
+/**
+ * An X3F: 'FOVb', a run of sections, and a SECd directory at the end whose
+ * offset is the file's last four bytes.
+ *
+ * `images` is a list of { format, cols, rows, bytes } - format 18 is a JPEG and
+ * anything else is Foveon sensor data this app cannot decode.
+ */
+function x3f(images, { magic = 'FOVb', dirTag = 'SECd', type = 'IMA2', count = null,
+                       dirAt = null, sensor = 0 } = {}) {
+  const parts = [];
+  const sections = [];
+  let at = 0;
+  const push = data => { parts.push(data); at += data.length; };
+  push(new Uint8Array([...A4(magic), ...LE32(0)]));
+  if (sensor) push(sensorNoise(sensor));
+  for (const img of images) {
+    const head = new Uint8Array([
+      ...A4('SECi'), ...LE32(1), ...LE32(0), ...LE32(img.format),
+      ...LE32(img.cols), ...LE32(img.rows), ...LE32(0),
+    ]);
+    sections.push({ off: at, len: head.length + img.bytes.length });
+    push(head);
+    push(img.bytes);
+  }
+  const dirOff = at;
+  const table = sections.flatMap(s => [...LE32(s.off), ...LE32(s.len), ...A4(type)]);
+  push(new Uint8Array([...A4(dirTag), ...LE32(1), ...LE32(count ?? sections.length), ...table]));
+  push(new Uint8Array(LE32(dirAt ?? dirOff)));
+  const out = new Uint8Array(at);
+  let p = 0;
+  for (const part of parts) { out.set(part, p); p += part.length; }
+  return new Blob([out]);
+}
+
+test('an X3F gives up the JPEG its directory points at', async () => {
+  const art = jpeg(4096);
+  const found = await embeddedPreview(x3f([{ format: 18, cols: 640, rows: 480, bytes: art }]));
+  assert.ok(found);
+  assert.equal(found.size, art.length);
+});
+
+test('the largest preview wins, not the first', async () => {
+  // A camera writes a screen-sized thumbnail and a full-size preview, in that
+  // order. The card wants the second one.
+  const small = jpeg(2048);
+  const big = jpeg(9000);
+  const found = await embeddedPreview(x3f([
+    { format: 18, cols: 128, rows: 96, bytes: small },
+    { format: 18, cols: 2640, rows: 1760, bytes: big },
+  ]));
+  assert.equal(found.size, big.length);
+});
+
+test('sensor sections are skipped rather than handed over as a picture', async () => {
+  // Format 3 and 11 are the Foveon data itself. Reading one as a JPEG is the
+  // failure this reader exists to prevent, and there is no preview here at all.
+  const found = await embeddedPreview(x3f([
+    { format: 3, cols: 2640, rows: 1760, bytes: sensorNoise(40000) },
+  ]));
+  assert.equal(found, null);
+});
+
+test('the directory is preferred over the marker scan, which would pick noise', async () => {
+  // The whole argument for this branch: 200 kB of sensor data with false JPEG
+  // bookends 200 kB apart, and a real 4 kB preview behind it. The scan takes
+  // the longest span, which is the noise; the directory takes the picture.
+  const art = jpeg(4096);
+  const found = await embeddedPreview(x3f(
+    [{ format: 18, cols: 640, rows: 480, bytes: art }], { sensor: 200_000 }));
+  assert.equal(found.size, art.length, 'the marker scan answered instead');
+});
+
+test('an X3F pointing its directory into nowhere answers null', async () => {
+  const art = jpeg(4096);
+  const cases = {
+    'past the end of the file': x3f([{ format: 18, cols: 8, rows: 8, bytes: art }], { dirAt: 1 << 30 }),
+    'at a directory that is not one': x3f([{ format: 18, cols: 8, rows: 8, bytes: art }], { dirTag: 'SECx' }),
+  };
+  for (const [what, blob] of Object.entries(cases)) {
+    // Null, and specifically not the marker scan's answer: for this one format
+    // the directory is the whole authority, so a directory that does not read
+    // is a file with no preview rather than a file to go guessing in.
+    assert.equal(await embeddedPreview(blob), null, what);
+  }
+});
+
+test('a section count larger than the file is bounded, not believed', async () => {
+  // Four thousand sections claimed and one written. The count is capped before
+  // the table is read and the walk stops where the bytes do, so the picture
+  // that really is in there still comes out - the failure this guards against
+  // is the allocation, not the answer.
+  const art = jpeg(4096);
+  const found = await embeddedPreview(
+    x3f([{ format: 18, cols: 640, rows: 480, bytes: art }], { count: 4000 }));
+  assert.equal(found.size, art.length);
+});
+
+test('a truncated X3F comes back without throwing', async () => {
+  const whole = new Uint8Array(await x3f([
+    { format: 18, cols: 640, rows: 480, bytes: jpeg(4096) },
+  ]).arrayBuffer());
+  for (const cut of [4, 16, 40, 1000, whole.length - 8, whole.length - 2]) {
+    await embeddedPreview(new Blob([whole.subarray(0, cut)]));
+  }
+});

@@ -46,28 +46,53 @@
 // people want from a moodboard is to read the words.
 
 import { readZip } from '../storage/zip.ts';
+import { lift, allow, mb, nameOf } from '../consent.ts';
+// The container walk itself, shared with import/slide.ts, which composites a
+// deck's first slide into a card. It lives down there rather than here because
+// the importer may not reach into ui/ - see the header of import/ooxml.ts.
+import {
+  byLocal, childOf, relationships, resolveFrom, slideNo,
+  type Entries, type Rels,
+} from '../import/ooxml.ts';
 
 /** How large a document this will open. See MAX_CONTAINER in import/document.js. */
 const MAX_CONTAINER = 96 * 1024 * 1024;
+
+/**
+ * What "this document" means when the same one is opened twice.
+ *
+ * A viewer has no file to key by - it has an asset's blob, which carries neither
+ * a name nor a hash - so this is the size and nothing else. Coarse on purpose: the
+ * cost of a collision is a question not asked about a document of exactly the same
+ * byte length as one already agreed to, in a session where somebody has already
+ * said yes to opening documents this large. The cost of being precise is asking
+ * the same question every time a card is opened.
+ */
+const docKey = (blob: Blob) => `doc:${blob.size}`;
+
+/**
+ * Every reader's way in, so the archive's own ceilings are asked about once.
+ *
+ * Six readers below open a ZIP and all six used to call readZip() directly, which
+ * meant six places for an inflate ceiling to come back as "that document could not
+ * be read" - technically true and useless, since the document reads fine and what
+ * happened is that it declares more than an open is sized for. The retry contract
+ * is in consent.ts; this is its shortest possible call site.
+ */
+async function openDoc(blob: Blob): Promise<Entries> {
+  try {
+    return await readZip(blob);
+  } catch (err) {
+    if (!await lift(err, docKey(blob), nameOf(blob, 'This document'), 'Open it')) throw err;
+    return await readZip(blob, { lift: true });
+  }
+}
 
 /** Caps. None is a correctness bound; all are "this file is lying to us" stops. */
 const MAX_BLOCKS = 20000;      // paragraphs, rows, slides - anything emitted
 const MAX_CELLS = 40000;       // table cells across one document
 const MAX_PAGES = 400;         // comic pages, slides
 const MAX_IMAGES = 300;        // pictures drawn out of one document
-
-/**
- * An archive as readZip() answers it: the entry name, and the bytes.
- *
- * Named because half the functions below take one and nothing else does.
- */
-// The buffer is named because storage/zip.ts names it: a Uint8Array over an
-// ArrayBuffer rather than over ArrayBufferLike, which is what lets the bytes go
-// straight into a Blob without being copied first.
-type Entries = Map<string, Uint8Array<ArrayBuffer>>;
-
-/** rId -> target path, as a _rels part gives it - see relationships(). */
-type Rels = Map<string, string>;
 
 /**
  * What every reader in the table below is.
@@ -108,7 +133,24 @@ export const canReadDocument = (ext: unknown) => !!READERS[String(ext || '').toL
 export async function readDocument(blob: Blob, ext: unknown) {
   const read = READERS[String(ext || '').toLowerCase()];
   if (!read) throw new Error('No reader for that file');
-  if (blob.size > MAX_CONTAINER) throw new Error('That file is too large to open here');
+  // Asked rather than refused, and this module is the one place where asking is
+  // simply a call - it is in ui/, so the dialog is a sibling. It still goes
+  // through consent.ts rather than reaching for ask() directly, for the reason
+  // that module exists: this is the same question the importer asks about the
+  // same file at the same ceiling, and a second wording of it here would drift
+  // from the first within a release. It also means a yes given at import is still
+  // a yes when the viewer opens the same document a minute later.
+  if (blob.size > MAX_CONTAINER && !await allow(
+    docKey(blob),
+    `${nameOf(blob, 'This document')} - ${mb(blob.size)}`,
+    [{
+      ceiling: 'container-bytes',
+      what: `This document is ${mb(blob.size)}, past the ${mb(MAX_CONTAINER)} one is opened at here.`,
+    }],
+    'Open it',
+  )) {
+    throw new Error('That file is too large to open here');
+  }
   const urls: string[] = [];
   const node = await read(blob, urls);
   return { node, release: () => { for (const u of urls) URL.revokeObjectURL(u); urls.length = 0; } };
@@ -147,14 +189,6 @@ function xmlOf(entries: Entries, path: string) {
   if (doc.querySelector('parsererror')) throw new Error('That file could not be parsed');
   return doc;
 }
-
-/** Every element with this local name, whatever namespace prefix it carries. */
-const byLocal = (root: Document | Element, name: string) =>
-  [...root.getElementsByTagName('*')].filter(n => n.localName === name);
-
-/** The first child element with this local name, or null. */
-const childOf = (node: Element, name: string) =>
-  [...node.children].find(n => n.localName === name) || null;
 
 /** A blob URL for an archive entry, remembered so it can be released. */
 function urlFor(entries: Entries, path: string, urls: string[], mime?: string) {
@@ -243,7 +277,7 @@ function partHead(text: string) {
  * numbered list. Stated rather than hidden.
  */
 async function ooxmlText(blob: Blob, urls: string[]) {
-  const entries = await readZip(blob);
+  const entries = await openDoc(blob);
   const doc = xmlOf(entries, 'word/document.xml');
   const rels = relationships(entries, 'word/_rels/document.xml.rels');
   const body = byLocal(doc, 'body')[0];
@@ -286,22 +320,6 @@ async function ooxmlText(blob: Blob, urls: string[]) {
   }
   if (!out.childNodes.length) throw new Error('That document has nothing in it to show');
   return frag;
-}
-
-/** rId -> target path, from a _rels part. Missing is an empty map, not an error. */
-function relationships(entries: Entries, path: string): Rels {
-  const map: Rels = new Map();
-  const bytes = entries.get(path);
-  if (!bytes) return map;
-  try {
-    const doc = new DOMParser().parseFromString(dec.decode(bytes), 'application/xml');
-    for (const r of byLocal(doc, 'Relationship')) {
-      const id = r.getAttribute('Id');
-      const target = r.getAttribute('Target');
-      if (id && target) map.set(id, target);
-    }
-  } catch { /* a document with no usable relationships still has its words */ }
-  return map;
 }
 
 /** The list level of a paragraph, or null if it is not a list item. */
@@ -435,7 +453,7 @@ function wordTable(tbl: Element) {
  * list would also handle a hidden slide, and this does not.
  */
 async function ooxmlSlides(blob: Blob, urls: string[]) {
-  const entries = await readZip(blob);
+  const entries = await openDoc(blob);
   const slides = [...entries.keys()]
     .filter(k => /^ppt\/slides\/slide\d+\.xml$/.test(k))
     .sort((a, b) => slideNo(a) - slideNo(b))
@@ -492,25 +510,6 @@ async function ooxmlSlides(blob: Blob, urls: string[]) {
   return frag;
 }
 
-export const slideNo = (path: string) => Number(/(\d+)\.xml$/.exec(path)?.[1] || 0);
-
-/**
- * A relationship target resolved against the part that referenced it.
- *
- * Only `../` is honoured, and only by popping - the result is still looked up in
- * the archive's own key set, so a target that climbs out of the package simply
- * finds nothing.
- */
-export function resolveFrom(base: string, target: string) {
-  const parts = base.replace(/\/$/, '').split('/');
-  for (const seg of target.replace(/^\/+/, '').split('/')) {
-    if (seg === '.' || seg === '') continue;
-    if (seg === '..') parts.pop();
-    else parts.push(seg);
-  }
-  return parts.join('/');
-}
-
 // ---------------------------------------------------------------------------
 // OOXML: Excel
 // ---------------------------------------------------------------------------
@@ -525,7 +524,7 @@ export function resolveFrom(base: string, target: string) {
  * which is what the file says the answer was.
  */
 async function ooxmlSheets(blob: Blob) {
-  const entries = await readZip(blob);
+  const entries = await openDoc(blob);
   const shared = sharedStrings(entries);
   const sheets = [...entries.keys()]
     .filter(k => /^xl\/worksheets\/sheet\d+\.xml$/.test(k))
@@ -628,7 +627,7 @@ export function colIndex(ref: string) {
  * blocks are inside and nothing else.
  */
 async function odfText(blob: Blob, urls: string[]) {
-  const entries = await readZip(blob);
+  const entries = await openDoc(blob);
   const doc = xmlOf(entries, 'content.xml');
   const pages = byLocal(doc, 'page');
   const frag = document.createDocumentFragment();
@@ -721,7 +720,7 @@ function odfBlocks(root: Element, host: HTMLElement, entries: Entries, urls: str
 
 /** A spreadsheet is the same content.xml, and its tables are the whole of it. */
 async function odfSheets(blob: Blob) {
-  const entries = await readZip(blob);
+  const entries = await openDoc(blob);
   const doc = xmlOf(entries, 'content.xml');
   const tables = byLocal(doc, 'table').filter(t => t.localName === 'table');
   if (!tables.length) throw new Error('That workbook has no sheets');
@@ -955,7 +954,7 @@ export function scrub(node: Element, depth = 0) {
 
 /** A CBZ: every picture in it, in the order its names sort. */
 async function comic(blob: Blob, urls: string[]) {
-  const entries = await readZip(blob);
+  const entries = await openDoc(blob);
   const pages = [...entries.keys()]
     .filter(k => /\.(png|jpe?g|gif|webp|bmp)$/i.test(k) && !k.startsWith('__MACOSX'))
     // Natural order, so page10 comes after page9 rather than after page1.

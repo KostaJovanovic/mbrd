@@ -575,9 +575,13 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
   // keeps its place on it. So a pinned sticky stays pinned through a Rearrange,
   // and a note whose host is not in this set rides a host that does not move -
   // and so does not move either. Everything else is arranged as before.
-  // The title card takes a slot like any other: Rearrange gives it a place in
-  // the layout and sizes it to the lattice on a snapped board, so cards no
-  // longer land on top of it and it moves with the rest.
+  // The title card is not singled out here and takes a slot like any other -
+  // but it arrives anchored (makeTitleItem in state.ts), so in practice it falls
+  // out into `held` below with every other anchored card and the board is laid
+  // out around it where it stands. That is the same end the old special case was
+  // after, "cards no longer land on top of it", reached through the anchor
+  // rather than through a rule of its own; unanchor it from its menu and it
+  // takes a slot and moves with the rest again.
   const riders = items.filter(isRider);
   // A fenced card is not laid out either, and rides its fence the way a sticky
   // rides its card. A fence is one object - that is what fenceFollowers() says

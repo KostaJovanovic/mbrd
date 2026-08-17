@@ -141,7 +141,12 @@ export function initSidebar(cmds: SidebarCommands): void {
     // Through runCommand(), so an async command that rejects says so instead of
     // reading as a press that did nothing - see notify.ts. The button's own
     // words are what gets reported, because they are what was pressed.
-    runCommand(fn(), (btn.textContent || '').trim() || 'That');
+    // `unknown` for the reason runCommand() takes one: the map above says every
+    // command returns void, and half of them return a promise. What is done
+    // with it here is asking whether it settles truthy, which is a question
+    // that has an answer either way.
+    const result: unknown = fn();
+    runCommand(result, (btn.textContent || '').trim() || 'That');
     // And on a phone, get out of the way of what was just done.
     //
     // The panel is the whole screen at this width - mobile.css insets #sidebar
@@ -160,7 +165,21 @@ export function initSidebar(cmds: SidebarCommands): void {
     // After the command rather than before, the same order ui/toolbar.js runs
     // in: a command that throws on its way in should leave the panel where the
     // press was, so there is something on screen to have another go at.
-    if (btn.dataset.closesPanel !== undefined && mobileLayoutDetected()) close();
+    //
+    // 'if-done' waits for the command to report that it happened, which is the
+    // difference between a button that acts on its press and one that is still
+    // asking. Clear everything counts three presses and then puts up a dialog:
+    // closing on any of those takes the panel - and the countdown painted on
+    // the button's own face - off screen while the question is still open, and
+    // the answer lands on a panel nobody can see. The same promise runCommand()
+    // already has, and the rejection is its to report, not this one's.
+    const closes = btn.dataset.closesPanel;
+    if (closes === undefined || !mobileLayoutDetected()) return;
+    if (closes === 'if-done') {
+      void Promise.resolve(result).then(done => { if (done) close(); }, () => {});
+      return;
+    }
+    close();
   });
 
   // The file carries both arrangements, while each device remembers which one

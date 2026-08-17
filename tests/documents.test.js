@@ -7,17 +7,24 @@
 //
 // resolveFrom() is the one that matters most. Every picture drawn out of a
 // document is named by a relationship target the *document* supplied, and the
-// module's rule is that a target is resolved and then *looked up* in the
-// archive's own key set - never opened as a path. These tests hold the resolver
-// to producing a key, so a target that climbs out of the package produces a key
-// that is not in the archive rather than a path that is somewhere on a disk.
+// rule is that a target is resolved and then *looked up* in the archive's own
+// key set - never opened as a path. These tests hold the resolver to producing a
+// key, so a target that climbs out of the package produces a key that is not in
+// the archive rather than a path that is somewhere on a disk.
+//
+// It and slideNo() are imported from import/ooxml.js rather than from the reader
+// now: the deck compositor in import/slide.js walks the same containers, the
+// importer may not reach into ui/, and a file format with two answers to "where
+// does this picture live" is the disagreement worth spending a module to avoid.
+// The tests follow the functions.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  canReadDocument, parseDelimited, resolveFrom, colIndex, slideNo, scrub,
+  canReadDocument, parseDelimited, colIndex, scrub,
 } from '../web/assets/js/ui/documents.ts';
+import { resolveFrom, slideNo } from '../web/assets/js/import/ooxml.ts';
 
 test('it claims the formats it has readers for', () => {
   for (const ext of ['docx', 'pptx', 'xlsx', 'odt', 'ods', 'odp', 'csv', 'tsv', 'svg', 'cbz']) {

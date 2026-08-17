@@ -100,6 +100,13 @@ included — `tests/sw.test.js` reads that list by pulling out single-quoted run
 - **An icon** → a `<symbol>` in `web/assets/icons.svg`, referenced by name. A
   misspelled id fails *silently* on screen; `tests/icons.test.js` is what
   catches it, in both directions.
+- **A size ceiling** → a `CeilingId` and a risk sentence in `consent.ts`, a
+  `throw oversize(...)` where the number is measured, and a `lift()` at the
+  nearest async caller that knows the file. **No ceiling refuses anything on its
+  own.** The numbers stay where they are argued — `IMPORT_LIMITS`
+  (`import/budget.ts`), `LIMITS` (`storage/zip.ts`), `MAX_TRIANGLES`
+  (`mesh.ts`), `MAX_ART` (`import/artwork.ts`) — and `consent.ts` holds only the
+  prose and the decision.
 - **Do not split `canvas/input.ts`.** One pipeline, exactly one active gesture.
 
 Two traps in that list, both found the hard way:
@@ -137,8 +144,23 @@ Two traps in that list, both found the hard way:
 
 - **The hand-written binary readers parse files the app did not write** —
   `storage/zip.ts`, `mesh.ts`, `import/artwork.ts`, `import/preview.ts`,
-  `import/document.ts`, `optimize/opus.ts`. All bounds-check before allocating.
-  A change near them wants a test that feeds it something broken.
+  `import/document.ts`, `import/containers.ts`, `optimize/opus.ts`. All
+  bounds-check before allocating. A change near them wants a test that feeds it
+  something broken.
+- **Those readers throw two different things and the difference is load-bearing.**
+  `Oversize` (`consent.ts`) means "this is larger than the number somebody wrote
+  down" — a question, carried up to whoever owns the file, and lifted with a
+  `lift` flag if they say yes. A plain `Error` means the file does not say what it
+  means: an offset past the end, two entries under one name, a count that is not
+  an integer. **`lift` must never reach the second kind.** A ceiling that stops
+  being liftable, or a corruption check that starts being one, both look like a
+  one-word edit and neither is.
+- **`setRiskPrompt()` unwired allows everything**, unlike storage's `setPrompt()`.
+  Argued at length in `consent.ts`; the short version is that a module with no
+  interface attached must not invent a refusal, and this is what keeps `import/`,
+  `storage/` and `mesh.ts` loadable in a test with no DOM. It also means the
+  ceilings are only as good as `main.ts`'s wiring — if that line goes, nothing
+  fails, and every limit in the app silently becomes no limit.
 - **Nothing that reads a foreign document may touch `innerHTML`.**
   `ui/markdown.ts` and `ui/documents.ts` build trees with `createElement` and
   `createTextNode` only, so there is no escaping to get right. The one exception

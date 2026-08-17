@@ -498,6 +498,54 @@
    only gets in the way of picking the card up. */
 #world.zoom-far .vbig { display: none; }
 
+/* A clip or a track this engine will not decode.
+
+   Set by markUnplayable() in canvas/renderers.ts, off the media element's own
+   error and nothing else - see the note there on why a table of what each
+   browser supports would be wrong by the next version.
+
+   The controls go rather than grey out. A disabled play button is still an
+   invitation to press it, and the honest reading of this card is that there is
+   nothing to press: what remains is the poster frame or the cover art, the
+   name, and the running time read out of the container - a still of a thing
+   this browser will not play. Everything else about the card is unchanged, and
+   the file is untouched and still what a download hands over.
+
+   The line itself sits at the foot, over the picture on a clip and under the
+   words on a track, and it is quiet. It reports a fact about this browser, not
+   a fault with the board - a red banner would be the app blaming the file. */
+.item.is-unplayable .vbig,
+.item.is-unplayable .transport { display: none; }
+
+.media-dead {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 6px 10px;
+  font-size: var(--t-small);
+  font-style: var(--display-italic);
+  color: var(--ink-3);
+  background: var(--paper-card);
+  border-top: var(--board-hairline) solid var(--rule);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+/* On a card it is one of the plate's own rows rather than a strip laid over the
+   bottom of a picture, so it keeps the plate's inset and its rule. */
+.card .media-dead {
+  position: static;
+  padding: 6px 0 0;
+  background: none;
+  border-top: none;
+}
+/* Far out the card is a swatch and the sentence is unreadable anyway - the same
+   bargain .vbig and the transport make one rung above. */
+#world.zoom-far .media-dead { display: none; }
+
 /* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
    the argument and declares the channel-form tokens. */
 @supports not (color: color-mix(in srgb, red, blue)) {

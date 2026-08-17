@@ -14,14 +14,16 @@
 // optimize/media.js keeps ffmpeg - the app's only other outside-code path, and
 // the model this one copies:
 //
-//   - fetched from a CDN, not vendored. pdf.js is pulled from jsdelivr on first
-//     use and the browser caches it; nothing about a board is sent, only the
-//     request for the library. Offline or CDN down, the page is simply not
-//     rendered and the PDF stays a named card.
+//   - carried, not fetched. pdf.js sits in web/assets/vendor/pdfjs and is served
+//     from this origin like any other asset, so nothing about a board is sent
+//     and nothing about the library can change under the app. It used to be a
+//     jsdelivr URL; the paragraph below is why it is not any more, and is worth
+//     reading before anybody moves it back.
 //   - loaded on demand. Nothing here is touched until a PDF is imported, and it
-//     is deliberately not in sw.js's SHELL - cross-origin, the service worker
-//     steps aside for it, and it has no business in the cache of an app that is
-//     otherwise self-contained.
+//     is deliberately not in sw.js's SHELL - 1.7 MB precached on every install,
+//     for a feature most boards never touch, is a worse trade than a first PDF
+//     that needs the network. Same-origin, so the service worker caches it on
+//     first use like anything else and every PDF after that works offline.
 //   - degrades to "no picture". Any failure - the library, the parse, the
 //     render - returns null, and the caller falls back to the named card it
 //     would have shown anyway.
@@ -222,12 +224,22 @@ export async function firstPageRaster(file: Blob) {
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
+    if (!ctx) {
+      console.warn('[mbrd] pdf: no 2D context for the page raster');
+      return null;
+    }
     await page.render({ canvasContext: ctx, viewport }).promise;
 
     const blob = await toBlob(canvas, 'image/webp', 0.9) || await toBlob(canvas, 'image/png');
     return blob ? { blob, w, h } : null;
-  } catch {
+  } catch (err) {
+    // Said out loud, and the reason is the history of this module: the whole
+    // feature was dead on the deployed site for months because the policy
+    // refused the library, this catch swallowed the refusal, and a grey card is
+    // what a PDF with nothing to show looks like anyway. There is no way to tell
+    // "this file is not really a PDF" from "the renderer never loaded" without
+    // it. One line, no toast - the card is still the same soft answer.
+    console.warn('[mbrd] pdf: page one did not render', err);
     return null;
   } finally {
     try { doc?.destroy?.(); } catch { /* nothing to clean up */ }

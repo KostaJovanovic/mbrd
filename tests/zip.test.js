@@ -15,6 +15,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { writeZip, readZip, crc32, LIMITS } from '../web/assets/js/storage/zip.ts';
+import { isOversize } from '../web/assets/js/consent.ts';
 import { bytes, zeros } from './helpers.js';
 
 const enc = new TextEncoder();
@@ -198,7 +199,11 @@ test('rejects duplicate entry names', async () => {
 test('rejects an absurd entry count', async () => {
   const archive = await buf([{ name: 'a.bin', data: bytes(100) }]);
   put16(archive, eocdAt(archive) + 10, 60000);
-  await rejects(readZip(archive), /declares too many entries \(60000\)|central directory/);
+  // The separator is the machine's, not ours - these messages are read by a person
+  // and go through toLocaleString(), like the triangle counts in mesh.ts. So the
+  // count is matched loosely and the sentence around it exactly, which is the half
+  // this file is entitled to have an opinion about.
+  await rejects(readZip(archive), /declares 60[., \s]000 entries|central directory/);
 });
 
 test('rejects a decompression bomb by its declared ratio', async () => {
@@ -208,7 +213,7 @@ test('rejects a decompression bomb by its declared ratio', async () => {
   const data = zeros(8 * 1024 * 1024);
   const archive = await buf([{ name: 'bomb', data, compress: true }]);
   assert.ok(archive.length < 64 * 1024, 'fixture is not actually a bomb');
-  await rejects(readZip(archive), /expands \d+x - refusing to unpack it/);
+  await rejects(readZip(archive), /expands \d+ times over/);
 });
 
 test('rejects a bomb that lies about its uncompressed size', async () => {
@@ -265,7 +270,7 @@ test('an oversized Blob is rejected on its size, before it is ever allocated', a
     size: 768 * 1024 ** 2 + 1,
     arrayBuffer() { throw new Error('must not allocate an over-limit archive'); },
   };
-  await assert.rejects(readZip(oversize), /too large to open/);
+  await assert.rejects(readZip(oversize), /past the .* an archive is normally opened at/);
 });
 
 // ---------------------------------------------------------------------------
@@ -349,7 +354,47 @@ test('an entry over the per-entry ceiling is refused on its declared size', asyn
   // this one.
   const archive = await buf([{ name: 'big.bin', data: enc.encode('x'.repeat(4000)), compress: true }]);
   put32(archive, cdAt(archive) + 24, LIMITS.entry + 1);
-  await rejects(readZip(archive), /is too large to open/);
+  await rejects(readZip(archive), /unpacked, past the .* one entry is normally given/);
+});
+
+test('a ceiling is thrown as Oversize, and a corrupt archive is not', async () => {
+  // The distinction the whole asking-instead-of-refusing change rests on. Both
+  // of these come out of readZip() as a throw, and the caller has to be able to
+  // tell "this is large, shall I go on?" from "this file does not say what it
+  // means" - the first is a question for whoever owns the file and the second is
+  // not a question at all. Told apart by the class and by nothing else, because a
+  // message is what changes when somebody rewords a sentence.
+  const big = await buf([{ name: 'big.bin', data: enc.encode('x'.repeat(4000)), compress: true }]);
+  put32(big, cdAt(big) + 24, LIMITS.entry + 1);
+  await assert.rejects(readZip(big), err => isOversize(err));
+
+  const broken = await buf([{ name: 'a.bin', data: bytes(100) }]);
+  put32(broken, cdAt(broken) + 42, 0x7fffffff);   // local header offset past the end
+  await assert.rejects(readZip(broken), err => !isOversize(err) && err instanceof Error);
+});
+
+test('a lifted ceiling opens what the same ceiling refused', async () => {
+  // The other half of the contract, and the point of the exercise: a ceiling is
+  // a number the caller may overrule once somebody has agreed to it. Proved with
+  // a deliberately tiny cap rather than a 512 MB fixture - the mechanism is the
+  // same one the real ceilings use, and a test that has to allocate half a
+  // gigabyte to say so is a test nobody runs.
+  const archive = await buf([{ name: 'a.bin', data: enc.encode('x'.repeat(4000)), compress: true }]);
+  await rejects(readZip(archive, { entry: 10, total: 10 }), /one entry is normally given/);
+
+  const entries = await readZip(archive, { entry: 10, total: 10, lift: true });
+  assert.equal(entries.get('a.bin').length, 4000);
+});
+
+test('lifting a ceiling does not lift a corruption check', async () => {
+  // `lift` is scoped to the size checks and must stay there. An archive whose
+  // entry data runs off the end of the file is not somebody's large document, and
+  // an agreement to spend memory is not an agreement to read bytes that are not
+  // there - so the guard has to hold with `lift` set, which is the only way to
+  // know the flag was wired to the ceilings alone.
+  const archive = await buf([{ name: 'a.bin', data: bytes(100) }]);
+  put32(archive, cdAt(archive) + 42, 0x7fffffff);
+  await assert.rejects(readZip(archive, { lift: true }), err => !isOversize(err));
 });
 
 test('a garbage DEFLATE payload fails as a bad entry, not as a crash', async () => {
@@ -400,4 +445,66 @@ test('the streamed CRC agrees with the whole-buffer one', async () => {
   // The local header's CRC field, at a fixed offset from the start.
   const written = new DataView(archive.buffer).getUint32(14, true);
   assert.equal(written, crc32(data));
+});
+
+// ---------------------------------------------------------------------------
+// The name filter
+// ---------------------------------------------------------------------------
+//
+// `only` exists so that reaching one small entry inside a large archive does not
+// mean unpacking the archive - an .apk is the case it was added for. What has to
+// be true of it is that it decides *before* the inflate, that it changes nothing
+// when absent, and that it is not a way around the ceilings.
+
+test('only admits the entries it names and skips the rest', async () => {
+  const archive = await buf([
+    { name: 'wanted.txt', data: bytes(64, 1) },
+    { name: 'ignored.bin', data: bytes(4096, 2) },
+  ]);
+  const all = await readZip(archive);
+  assert.deepEqual([...all.keys()].sort(), ['ignored.bin', 'wanted.txt'],
+    'the archive itself holds both, so the filtered read below means something');
+
+  const some = await readZip(archive, { only: n => n === 'wanted.txt' });
+  assert.deepEqual([...some.keys()], ['wanted.txt']);
+  assert.equal(some.get('wanted.txt').length, 64);
+});
+
+test('an absent filter reads exactly what it always did', async () => {
+  const archive = await buf([{ name: 'a', data: bytes(32, 3) }, { name: 'b', data: bytes(32, 4) }]);
+  assert.deepEqual(
+    [...(await readZip(archive)).keys()],
+    [...(await readZip(archive, {})).keys()],
+  );
+});
+
+test('a skipped entry is not inflated, so it cannot cross a ceiling', async () => {
+  // The point of the filter: the entry that would refuse the whole read is the
+  // one the caller never asked for.
+  const archive = await buf([
+    { name: 'small.txt', data: bytes(32, 5) },
+    { name: 'huge.bin', data: zeros(1 << 20) },
+  ]);
+  await assert.rejects(
+    () => readZip(archive, { entry: 4096 }),
+    isOversize,
+    'unfiltered, the big entry is past the ceiling',
+  );
+  const got = await readZip(archive, { entry: 4096, only: n => n === 'small.txt' });
+  assert.deepEqual([...got.keys()], ['small.txt']);
+});
+
+test('an entry the filter admits is still held to every ceiling', async () => {
+  const archive = await buf([{ name: 'huge.bin', data: zeros(1 << 20) }]);
+  await assert.rejects(
+    () => readZip(archive, { entry: 4096, only: () => true }),
+    isOversize,
+    'the filter is not a way around the caps',
+  );
+});
+
+test('a filter that admits nothing is an empty read rather than an error', async () => {
+  const archive = await buf([{ name: 'a', data: bytes(32, 6) }]);
+  const got = await readZip(archive, { only: () => false });
+  assert.equal(got.size, 0);
 });
