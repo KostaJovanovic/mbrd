@@ -11,6 +11,9 @@
 // when it matters enough to be worth thirty megabytes.
 
 import { surface, surfaceToBlob, type Surface } from './surface.ts';
+// The console lines below are invisible on a phone, which is where a clip most
+// often arrives without a frame. See noPreview().
+import { noPreview } from '../notify.ts';
 
 /**
  * How wide a video's own first frame is kept.
@@ -192,11 +195,13 @@ export async function videoFrame(file: Blob): Promise<VideoFrameShot | null> {
       grab(v, url),
       wait(POSTER_MS).then(() => {
         console.warn('[mbrd] poster: gave up waiting for a frame');
+        noPreview('clip', `no frame after ${POSTER_MS / 1000}s`);
         return null;
       }),
     ]);
   } catch (err) {
     console.warn('[mbrd] poster: no frame', err);
+    noPreview('clip', err);
     return null;
   } finally {
     v.pause?.();
@@ -282,6 +287,7 @@ async function grab(v: HTMLVideoElement, url: string): Promise<VideoFrameShot | 
     // answer rather than being kept as a last resort.
   }
   console.warn('[mbrd] poster: every seek came back with nothing in it');
+  noPreview('clip', 'every frame came back empty - the decoder drew nothing');
   return null;
 }
 

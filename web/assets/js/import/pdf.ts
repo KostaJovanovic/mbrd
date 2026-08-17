@@ -53,6 +53,11 @@
 // works offline, cannot change under the app, and needs no exception in the
 // policy. See web/assets/vendor/pdfjs/LICENSE.txt; pdf.js is Apache-2.0 and the
 // build is pinned below.
+// The one import in this file, and it is not the library: this module is
+// written to hold pdf.js at arm's length and reaches for nothing else. See
+// noPreview() - a failure here is invisible on the devices where it happens.
+import { noPreview } from '../notify.ts';
+
 // Exported so tests/pdf-vendor.test.js can hold it to the bytes actually
 // sitting in web/assets/vendor/pdfjs. A version recorded only in a comment
 // beside a file nobody re-reads is a version that stops being true the first
@@ -238,8 +243,15 @@ export async function firstPageRaster(file: Blob) {
     // refused the library, this catch swallowed the refusal, and a grey card is
     // what a PDF with nothing to show looks like anyway. There is no way to tell
     // "this file is not really a PDF" from "the renderer never loaded" without
-    // it. One line, no toast - the card is still the same soft answer.
+    // it. The card is still the same soft answer either way.
+    //
+    // And said on the screen as well as in the console, once per reason - see
+    // noPreview() in notify.ts. The console line above is invisible on a phone,
+    // which is exactly where this fails: a person watching every PDF land as a
+    // grey card has no way to find out that the renderer never loaded, and
+    // neither has anybody they tell about it.
     console.warn('[mbrd] pdf: page one did not render', err);
+    noPreview('PDF', err);
     return null;
   } finally {
     try { doc?.destroy?.(); } catch { /* nothing to clean up */ }
