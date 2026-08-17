@@ -11,17 +11,38 @@
 // the importer and any future caller share one set of limits. The only browser
 // object it touches is a File, and only inside a function (File.slice), so this
 // stays loadable without a browser like the rest of import/.
+//
+// **None of these refuse anything any more.** They are the line at which the
+// importer stops and explains itself, and the answer past that line belongs to
+// whoever dropped the files - see consent.ts, which holds the prose and the
+// decision. The numbers stayed exactly where they were, and so did the reasoning
+// under each one: what a decode costs has not changed just because somebody is
+// now allowed to pay it. What changed is that check() reports *which* ceiling and
+// by how much, because a warning that cannot say what it found is not a warning,
+// and charge() bills a file the importer has been told to bring in regardless of
+// what it costs.
+
+import type { Crossed } from '../consent.ts';
+import { mb } from '../consent.ts';
 
 export const IMPORT_LIMITS = {
   /** One file, raw. Matches the ZIP single-entry ceiling in storage/zip.js. */
   fileBytes: 512 * 1024 ** 2,
   /**
-   * Not a limit - the size at which one file is worth mentioning first.
+   * The size at which one file is worth mentioning first.
    *
-   * The two numbers around it are refusals, decided here and reported after the
-   * fact. This one is a question, and it is a question because the answer is
-   * not the importer's to give: a 90 MB video is a perfectly reasonable thing
-   * to put on a board and also a perfectly common thing to have dropped by
+   * The oldest of these and the one the rest became. It was the only question
+   * here for a long time, while the two numbers around it were refusals decided
+   * in this file and reported after the fact; the argument below is why this one
+   * was a question, and it turned out to be the argument for all of them. It
+   * survives as its own entry because it is far lower than the ceilings - this is
+   * the courtesy at 60 MB, those are the warnings at the edge of what a tab can
+   * hold, and collapsing the two would either lose the early mention or move it
+   * to where it is too late to be useful.
+   *
+   * A question because the answer is not the importer's to give: a 90 MB video
+   * is a perfectly reasonable thing to put on a board and also a perfectly
+   * common thing to have dropped by
    * accident, and nothing measurable tells the two apart. Everything past this
    * point in an import is slow and hard to interrupt - hashing, decoding,
    * thumbnailing - so the moment to ask is before any of it starts.
@@ -36,9 +57,14 @@ export const IMPORT_LIMITS = {
   /**
    * Decoded pixels a single raster image may claim. A decode allocates about
    * 4 bytes a pixel, so 64 MP (e.g. 8192x8192) is ~256 MB per image - and the
-   * importer decodes several at once. Past this the image is not decoded at all;
-   * it becomes a named card, the same graceful fallback an undecodable image
-   * already gets.
+   * importer decodes several at once. Past this the decode is worth asking about
+   * first; declined, the image is not decoded at all and becomes a named card,
+   * the same graceful fallback an undecodable image already gets.
+   *
+   * The gentlest of these to decline, and the only one where the fallback costs
+   * nothing but the picture - which is exactly why the warning has to say so.
+   * Somebody weighing "risk the tab" against "lose nothing but the thumbnail"
+   * needs to know that is the choice, and cannot work it out from a number.
    */
   pixels: 64 * 1024 * 1024,
 };
@@ -46,13 +72,68 @@ export const IMPORT_LIMITS = {
 /**
  * A running byte account for one import.
  *
- * `take(bytes)` returns whether a file fits both the per-file and the remaining
- * batch budget, charging it when it does. Called in file order before the work
- * pool starts, so which files are accepted near the ceiling is deterministic.
+ * Three ways in, and the split between them is the whole of what asking instead
+ * of refusing changed here. `check(bytes)` measures and charges nothing;
+ * `charge(bytes)` bills without measuring. The importer uses the pair, with the
+ * question in between - check, ask, charge - which is the only order that can put
+ * a number in front of somebody before spending it.
+ *
+ * `take(bytes)` is the two in one step, refusing what does not fit. Nothing in
+ * the importer calls it now and it is kept because it is still the honest
+ * primitive for a caller with nobody to ask - a background repack, a test.
+ *
+ * All three are called in file order before the work pool starts, so which files
+ * are charged near the ceiling is deterministic.
  */
 export function makeByteBudget(limit: number = IMPORT_LIMITS.batchBytes) {
   let spent = 0;
   return {
+    /**
+     * Which ceilings this file crosses, charging nothing either way.
+     *
+     * The half of take() that is a measurement, split out from the half that is
+     * a decision, because the decision is no longer this module's to make. The
+     * importer asks the person and then charges what they agreed to, and it
+     * cannot ask without knowing which of the two numbers was passed and by how
+     * much - `false` did not say. Empty array means it fits.
+     */
+    check(bytes: number): Crossed[] {
+      const n = Number.isFinite(bytes) ? bytes : 0;
+      const out: Crossed[] = [];
+      if (n > IMPORT_LIMITS.fileBytes) {
+        out.push({
+          ceiling: 'file-bytes',
+          what: `This file is ${mb(n)}, past the ${mb(IMPORT_LIMITS.fileBytes)} one file is normally given.`,
+        });
+      }
+      // The two accounts are one sentence: whichever of them this file would
+      // overrun, what somebody needs to know is that the import as a whole is
+      // past its budget. Reported from the larger of the two, since that is the
+      // one that will actually be exceeded first.
+      const account = Math.max(spent, inFlight);
+      if (account + n > limit) {
+        out.push({
+          ceiling: 'batch-bytes',
+          what: `This import comes to ${mb(account + n)}, past the ${mb(limit)} one import is normally given.`
+            + (inFlight > spent ? ' Another import is still running and shares the same budget.' : ''),
+        });
+      }
+      return out;
+    },
+    /**
+     * Charge a file whatever it costs, having been told to.
+     *
+     * No ceiling and no return value: by the time this is called the answer is
+     * yes, and a budget that refused after the fact would be the app agreeing to
+     * something and then not doing it. The accounting still happens, because
+     * `spent` is what the receipt is written from and `inFlight` is what the
+     * *next* import gets warned about.
+     */
+    charge(bytes: number) {
+      const n = Number.isFinite(bytes) ? bytes : 0;
+      spent += n;
+      inFlight += n;
+    },
     take(bytes: number) {
       const n = Number.isFinite(bytes) ? bytes : 0;
       if (n > IMPORT_LIMITS.fileBytes) return false;
@@ -234,11 +315,38 @@ const HEADER_BYTES = 128 * 1024;
  * measure cheaply.
  */
 export async function overPixelBudget(file: Blob): Promise<boolean> {
+  return !!(await pixelCrossing(file));
+}
+
+/**
+ * The same question, answered with the numbers rather than with a yes.
+ *
+ * What overPixelBudget() is underneath, and the form the importer wants: a
+ * decode this large is a warning now, and a warning that says "too many pixels"
+ * without saying how many is not one. The dimensions are the whole of the case -
+ * a sixty-byte file declaring 30000x30000 reads very differently from a 200 MB
+ * scan that genuinely is 25000x18000, and only one of the two is somebody's
+ * photograph.
+ *
+ * Null when it fits, when the header is unreadable, or when there is no header
+ * to read - the same asymmetry the note above imageDimensions() argues, and for
+ * the same reason: a false positive here interrupts somebody about a picture
+ * that was never a problem.
+ */
+export async function pixelCrossing(file: Blob): Promise<Crossed | null> {
   try {
     const head = new Uint8Array(await file.slice(0, HEADER_BYTES).arrayBuffer());
     const dims = imageDimensions(head);
-    return !!dims && dims.w > 0 && dims.h > 0 && dims.w * dims.h > IMPORT_LIMITS.pixels;
+    if (!dims || dims.w <= 0 || dims.h <= 0) return null;
+    const px = dims.w * dims.h;
+    if (px <= IMPORT_LIMITS.pixels) return null;
+    return {
+      ceiling: 'pixels',
+      what: `This image declares ${dims.w}x${dims.h} - ${Math.round(px / 1e6)} megapixels, past the `
+        + `${Math.round(IMPORT_LIMITS.pixels / 1e6)} a decode is normally given, and about `
+        + `${mb(px * 4)} to decode.`,
+    };
   } catch {
-    return false;
+    return null;
   }
 }

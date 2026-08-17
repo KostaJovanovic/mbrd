@@ -81,6 +81,7 @@
     "node_modules",
     "graphify-out",
     "web/assets/js/import/formats.ts",
+    "web/assets/vendor/**",
     "web/assets/app.js",
     "web/assets/app.js.map",
     "web/assets/lab-pigments.js",
@@ -145,7 +146,8 @@
     {
       "files": [
         "web/sw.js",
-        "web/assets/js/optimize/media-worker.js"
+        "web/assets/js/optimize/media-worker.js",
+        "web/assets/js/import/tiff-worker.js"
       ],
       "env": {
         "worker": true,

@@ -571,7 +571,12 @@ test('an accessor that declares an implausible count is refused before it alloca
     meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
     nodes: [{ mesh: 0 }],
     scenes: [{ nodes: [0] }],
-  })), /implausible amount of geometry/);
+    // Still refused before it allocates, which is the whole of AUD-06 and has not
+    // changed. What changed is that a count that is merely enormous is now the
+    // triangle ceiling arriving early - a question, thrown as Oversize - while a
+    // count that is absent or fractional stays the flat refusal below. The two
+    // used to share one message and could not be told apart.
+  })), /vertex values in one array/);
 });
 
 test('a non-integer accessor count is refused rather than truncated', () => {
@@ -717,7 +722,7 @@ test('a MAT4 accessor is bounded by what it allocates, not by its count', () => 
     meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
     nodes: [{ mesh: 0 }],
     scenes: [{ nodes: [0] }],
-  })), /implausible amount of geometry/);
+  })), /vertex values in one array/);
 });
 
 test('an accessor with no bufferView cannot claim gigabytes it does not carry', () => {
@@ -732,7 +737,7 @@ test('an accessor with no bufferView cannot claim gigabytes it does not carry', 
     meshes: [{ primitives: Array.from({ length: 40 }, () => ({ attributes: { POSITION: 0 } })) }],
     nodes: [{ mesh: 0 }],
     scenes: [{ nodes: [0] }],
-  })), /declares data it does not contain|implausible amount of geometry/);
+  })), /declares data it does not contain|vertex values in one array/);
 });
 
 test('a small view-less accessor is still legal', () => {

@@ -22,6 +22,8 @@
 // Nothing here touches the DOM or WebGL, which is what lets the whole file be
 // tested against real bytes under node.
 
+import { oversize, mb } from './consent.ts';
+
 /**
  * The block above, said in types.
  *
@@ -51,10 +53,18 @@ export type Mesh = {
  *
  * A 3D file has no natural size limit and a dropped folder is not vetted, so
  * this is the same kind of guard zip.js puts on an inflated entry: past it the
- * file is refused with a message rather than being allowed to take the tab
- * down. Two million triangles is roughly a 100MB binary STL and far more detail
- * than a card a few hundred pixels wide can show - the honest failure is "too
- * big to look at", not a black canvas after forty seconds.
+ * file is not opened without being asked about first, rather than being allowed
+ * to take the tab down unannounced. Two million triangles is roughly a 100MB
+ * binary STL and far more detail than a card a few hundred pixels wide can show -
+ * the honest failure is "too big to look at", not a black canvas after forty
+ * seconds.
+ *
+ * "Too big to look at" is the part that made this a question rather than a
+ * refusal. It is an argument about what the *card* can use, and somebody opening
+ * a 6M-triangle scan on a machine that can hold it is not wrong about their own
+ * machine - they are answering a question about detail, and the answer is theirs.
+ * What they are owed is the number and what it costs, which is what the warning
+ * carries.
  */
 export const MAX_TRIANGLES = 2_000_000;
 
@@ -94,6 +104,32 @@ const MAX_NODE_DEPTH = 4096;
 const MAX_NODE_VISITS = 1_000_000;
 
 export class MeshError extends Error {}
+
+// ---------------------------------------------------------------------------
+// The ceilings, for one parse
+// ---------------------------------------------------------------------------
+//
+// Every number above is a warning now, not a refusal: a model past MAX_TRIANGLES
+// is offered to whoever dropped it, with what it will cost, and opened if they
+// say yes. See consent.ts, and the retry contract in its header - this module
+// throws Oversize and canvas/model.ts asks and calls back with `lift`.
+//
+// Held in module state rather than threaded through every parser, which needs an
+// argument because module state is usually the wrong answer. **parseMesh() is
+// synchronous from end to end.** There is no await anywhere beneath it, so one
+// parse cannot begin while another is in progress and there is nothing for two
+// parses to race over; the `finally` puts the defaults back whichever way this
+// one ends. The alternative is a cap parameter on parseSTL, asciiSTL, parseOBJ,
+// parseGLB, addPrimitive, readAccessor and readBuffer - seven signatures widened
+// to carry one boolean down a call chain that has no branches in it, and every
+// one of them a place for a future caller to forget it.
+//
+// Which is also why they are read through `let` and not passed: a parser that
+// takes a cap invites being called with a different one, and there is exactly one
+// caller here entitled to raise these - the one that asked.
+let triCap = MAX_TRIANGLES;
+let elemCap = MAX_ELEMENTS;
+let bufCap = MAX_BUFFER_BYTES;
 
 // ---------------------------------------------------------------------------
 // The glTF document, as this reader reads one
@@ -204,14 +240,33 @@ export const defaultUpAxis = (kind: string | null) => (Z_UP.has(kind) ? 'z' : 'y
  * by hand. This function's job is to hand the viewer geometry in the app's own
  * space, which is a different question with a different answer.
  */
-export function parseMesh(kind: string | null, bytes: ArrayBuffer, upAxis?: unknown): Mesh {
-  let mesh: Mesh;
-  if (kind === 'stl') mesh = parseSTL(bytes);
-  else if (kind === 'obj') mesh = parseOBJ(bytes);
-  else if (kind === 'glb') mesh = parseGLB(bytes);
-  else throw new MeshError('Not a model file');
-  const up = upAxis === 'z' || upAxis === 'y' ? upAxis : defaultUpAxis(kind);
-  return up === 'z' ? standUp(mesh) : mesh;
+export function parseMesh(
+  kind: string | null,
+  bytes: ArrayBuffer,
+  upAxis?: unknown,
+  // Open it however large it turns out to be, because somebody has been told what
+  // that costs and said yes. The three ceilings this raises are argued above; the
+  // ones it does not are the accessor sanity checks on a *claim* nobody can weigh
+  // - a 356-byte file declaring six million MAT4 elements is not a large model,
+  // it is a file lying about its size, and there is no version of consent that
+  // covers being lied to.
+  lift = false,
+): Mesh {
+  if (lift) { triCap = Infinity; elemCap = Infinity; bufCap = Infinity; }
+  try {
+    let mesh: Mesh;
+    if (kind === 'stl') mesh = parseSTL(bytes);
+    else if (kind === 'obj') mesh = parseOBJ(bytes);
+    else if (kind === 'glb') mesh = parseGLB(bytes);
+    else throw new MeshError('Not a model file');
+    const up = upAxis === 'z' || upAxis === 'y' ? upAxis : defaultUpAxis(kind);
+    return up === 'z' ? standUp(mesh) : mesh;
+  } finally {
+    // Whichever way it ended, including the throw that starts the asking. A
+    // lifted ceiling that outlived its parse would silently apply to the next
+    // model on the board, which nobody agreed to.
+    triCap = MAX_TRIANGLES; elemCap = MAX_ELEMENTS; bufCap = MAX_BUFFER_BYTES;
+  }
 }
 
 /**
@@ -270,7 +325,7 @@ export function parseSTL(bytes: ArrayBuffer): Mesh {
 }
 
 function binarySTL(view: DataView, n: number) {
-  if (n > MAX_TRIANGLES) throw new MeshError(tooBig(n));
+  if (n > triCap) throw oversize('mesh-triangles', tooBig(n));
   const positions = new Float32Array(n * 9);
   const normals = new Float32Array(n * 9);
   const box = newBox();
@@ -304,7 +359,7 @@ function asciiSTL(text: string) {
   // and the line breaks are not reliable across exporters.
   const facets = text.match(/facet[\s\S]*?endfacet/g);
   if (!facets) throw new MeshError('This STL has no facets in it');
-  if (facets.length > MAX_TRIANGLES) throw new MeshError(tooBig(facets.length));
+  if (facets.length > triCap) throw oversize('mesh-triangles', tooBig(facets.length));
 
   const positions = new Float32Array(facets.length * 9);
   const normals = new Float32Array(facets.length * 9);
@@ -407,7 +462,7 @@ export function parseOBJ(bytes: string | ArrayBuffer): Mesh {
       const corners = line.slice(sp + 1).trim().split(/\s+/);
       if (corners.length < 3) continue;
       for (let i = 1; i + 1 < corners.length; i++) {
-        if (outP.length / 9 >= MAX_TRIANGLES) throw new MeshError(tooBig(MAX_TRIANGLES));
+        if (outP.length / 9 >= triCap) throw oversize('mesh-triangles', tooBig(triCap));
         // outC only matters when the file carried vertex colours; until the
         // first coloured `v` line flips hasVC it is left empty rather than grown
         // and thrown away (near the triangle ceiling that is tens of MB of
@@ -713,7 +768,7 @@ function addPrimitive(
   const idx = prim.indices !== undefined ? readAccessor(json, buffers, prim.indices) : null;
   const n = idx ? idx.length : pos.length / 3;
   if (n % 3) return;
-  if (outP.length / 9 + n / 3 > MAX_TRIANGLES) throw new MeshError(tooBig(MAX_TRIANGLES));
+  if (outP.length / 9 + n / 3 > triCap) throw oversize('mesh-triangles', tooBig(triCap));
 
   // Normals transform by the inverse transpose, not the matrix - a non-uniform
   // scale would otherwise leave them off the surface and the shading wrong.
@@ -796,9 +851,18 @@ function readAccessor(json: GLTF, buffers: (Uint8Array | null)[], index: number 
   // The typeof leads, and rejects exactly what Number.isInteger() already
   // rejected: an absent count, or one that is not a number at all.
   const count = acc.count;
-  if (typeof count !== 'number' || !Number.isInteger(count) || count < 0 || count > MAX_ELEMENTS) {
+  // Split in two, because two different things used to come out of here as one
+  // message. A count that is absent, fractional or negative is a broken file and
+  // stays a flat refusal - there is no quantity being asked for, so there is
+  // nothing to consent to. A count that is a perfectly good integer and merely
+  // enormous is the triangle ceiling arriving early, and it has to be offered like
+  // any other: a five-million-triangle GLB trips this line long before it reaches
+  // the check in addPrimitive(), and reporting it as "implausible" would be the
+  // one path where a large model is still refused out of hand.
+  if (typeof count !== 'number' || !Number.isInteger(count) || count < 0) {
     throw new MeshError('This model declares an implausible amount of geometry');
   }
+  if (count > elemCap) throw oversize('mesh-triangles', manyElements(count));
   // The *elements*, which is what gets allocated - not the count.
   //
   // The guard above bounds `count` and the line below allocates `count *
@@ -808,9 +872,7 @@ function readAccessor(json: GLTF, buffers: (Uint8Array | null)[], index: number 
   // 384,000,000 bytes - measured at 366 MiB of arrayBuffers - before the
   // per-element bounds check below could throw. On a phone the tab is simply
   // gone, and the file that did it fits in a text message.
-  if (count * comps > MAX_ELEMENTS) {
-    throw new MeshError('This model declares an implausible amount of geometry');
-  }
+  if (count * comps > elemCap) throw oversize('mesh-triangles', manyElements(count * comps));
 
   const bv = json.bufferViews?.[acc.bufferView ?? -1];
   // An accessor with no bufferView is defined as all zeroes, and is how a
@@ -871,8 +933,12 @@ function dataURIBytes(uri: string) {
   // and atob() allocates the whole binary string in one go, so a huge embedded
   // buffer is refused from the string length rather than after the allocation.
   // See AUD-06.
-  if (body.length / 4 * 3 > MAX_BUFFER_BYTES) {
-    throw new MeshError('This model embeds more data than it is allowed to');
+  if (body.length / 4 * 3 > bufCap) {
+    throw oversize(
+      'mesh-buffer',
+      `This model embeds a ${mb(body.length / 4 * 3)} buffer inside itself, past the `
+      + `${mb(MAX_BUFFER_BYTES)} one is decoded at.`,
+    );
   }
   if (!head.includes(';base64')) return new TextEncoder().encode(decodeURIComponent(body));
   const bin = atob(body);
@@ -1035,4 +1101,17 @@ function finish(positions: Float32Array, normals: Float32Array, box: MeshBounds)
 }
 
 const tooBig = (n: number) =>
-  `This model has ${n.toLocaleString()} triangles, past the ${MAX_TRIANGLES.toLocaleString()} a card can show`;
+  `This model has ${n.toLocaleString()} triangles, past the ${MAX_TRIANGLES.toLocaleString()} a card `
+  + `normally shows - about ${mb(n * 36)} of geometry.`;
+
+/**
+ * The same ceiling, met a step earlier and in the units the file states it in.
+ *
+ * A glTF accessor counts elements, not triangles, and the ratio between them
+ * depends on whether the primitive is indexed and how - so this says what was
+ * actually read rather than dividing by three and claiming a triangle count the
+ * file has not committed to yet.
+ */
+const manyElements = (n: number) =>
+  `This model declares ${n.toLocaleString()} vertex values in one array, more than the `
+  + `${MAX_TRIANGLES.toLocaleString()}-triangle ceiling leaves room for.`;

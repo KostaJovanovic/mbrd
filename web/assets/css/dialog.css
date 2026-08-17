@@ -67,6 +67,15 @@
   text-wrap: pretty;
 }
 #ask p[hidden] { display: none; }
+/* The one question that is a paragraph rather than a sentence.
+   A crossed size ceiling (consent.ts) reads out what was measured and then what
+   it may cost, and several ceilings can be crossed by one file - so the body is
+   a few lines with blank lines between them, joined with \n by allow() and set
+   through textContent like every other body here. `pre-line` is what makes those
+   breaks visible; without it the whole explanation runs together into one block
+   and the reader cannot tell the measurement from the consequence. Collapsing
+   runs of spaces, which is the half of `pre` this does not want, stays. */
+#ask-body { white-space: pre-line; }
 /* The box on the questions that want a value rather than a choice. Dressed as
    the panel's own controls are, and given the row of buttons' full width -
    there is only ever one of these, and a short box beside a long sentence reads

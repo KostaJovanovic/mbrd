@@ -417,29 +417,53 @@ test("base-uri is 'self' and not 'none', for the reason index.html gives", () =>
 });
 
 // ---------------------------------------------------------------------------
-// The worker exemption
+// The worker exemptions
 // ---------------------------------------------------------------------------
 
-test('the exempted path is the worker the app actually spawns', () => {
-  // A URL written as a string in one file and as a path in another, with
-  // nothing between them. A rename would leave the rule pointing at nothing and
-  // the worker inheriting the site policy, which forbids both things it does -
-  // and the way that shows is a feature quietly not being offered.
+/**
+ * The two workers allowed to run without the site policy, each derived from the
+ * code that names it rather than written out here.
+ *
+ * Two rather than one since the pdf.js worker was added: it carries an Emscripten
+ * OpenJPEG build and compiles it with new WebAssembly.Module, which the policy
+ * forbids - so every PDF holding a JPEG 2000 image came back as a grey card while
+ * ordinary ones rendered. See the note beside the rule in web/_headers.
+ *
+ * Derived, because a URL written as a string in one file and as a path in another
+ * with nothing between them is exactly the pair that drifts. A rename would leave
+ * the rule pointing at nothing and the worker inheriting the site policy, which
+ * forbids the one thing it exists to do - and the way that shows is a feature
+ * quietly not being offered.
+ */
+function spawnedWorkers() {
+  const media = /new Worker\('([^']+)'\)/.exec(read(join(JS, 'optimize', 'media.ts')));
+  assert.ok(media, 'optimize/media.ts no longer spawns a worker - is the exemption still needed?');
+
+  const pdf = read(join(JS, 'import', 'pdf.ts'));
+  const dir = /PDF_DIR = '([^']+)'/.exec(pdf);
+  const worker = /workerSrc = pdfURL\('([^']+)'\)/.exec(pdf);
+  assert.ok(dir && worker, 'import/pdf.ts no longer points pdf.js at a worker of its own');
+
+  return [media[1], dir[1] + worker[1]].map(url => url.replace(/^\.?\//, '/'));
+}
+
+test('the exempted paths are the workers the app actually spawns', () => {
   const exempt = rules.filter(r => r.removed.includes('Content-Security-Policy'));
-  assert.equal(exempt.length, 1,
-    `${exempt.length} paths drop the policy - each one is a page or a worker running unprotected`);
-  const [rule] = exempt;
-  const spawned = /new Worker\('([^']+)'\)/.exec(read(join(JS, 'optimize', 'media.ts')));
-  assert.ok(spawned, 'optimize/media.ts no longer spawns a worker - is the exemption still needed?');
-  assert.equal(rule.path, spawned[1].replace(/^\.?\//, '/'),
-    'the exempted path is not the worker URL optimize/media.ts asks for');
-  assert.ok(existsSync(join(WEB, rule.path.slice(1))), `${rule.path} does not exist`);
+  const wanted = spawnedWorkers();
+  assert.deepEqual(exempt.map(r => r.path).sort(), [...wanted].sort(),
+    'a path drops the policy that is not one of the two workers, or a worker has lost its rule '
+    + '- each unlisted one is a page or a script running unprotected');
+  for (const rule of exempt) {
+    assert.ok(existsSync(join(WEB, rule.path.slice(1))), `${rule.path} does not exist`);
+  }
 });
 
-test('nothing but that worker is exempted, and no page is', () => {
+test('nothing but those workers is exempted, and no page is', () => {
   for (const rule of rules) {
     if (!rule.removed.length) continue;
-    assert.match(rule.path, /\.js$/, `${rule.path} drops a header and is not a script`);
+    // .mjs as well as .js: the vendored pdf.js worker is an ES module, which is
+    // how pdf.js spawns it - new Worker(src, { type: 'module' }).
+    assert.match(rule.path, /\.m?js$/, `${rule.path} drops a header and is not a script`);
     assert.ok(!rule.path.includes('*'), `${rule.path} exempts a whole tree, not one file`);
   }
 });

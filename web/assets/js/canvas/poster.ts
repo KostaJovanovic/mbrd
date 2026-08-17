@@ -27,9 +27,14 @@ const POSTER_SIDE = 640;
  * How long a frame grab may take before the clip is left without one.
  *
  * Nine seconds rather than the six it was, because a grab is up to three seeks
- * now instead of one - see the point list in grab(). The whole of it is still
- * one budget: whatever has been captured when the clock runs out is what the
- * caller gets, so a slow clip yields the frame it managed rather than nothing.
+ * now instead of one - see the point list in grab(). The whole of it is one
+ * budget for all three, and it is a hard stop rather than a settlement: the race
+ * in videoFrame() answers null the moment this expires, and a capture still in
+ * flight is dropped. That is the right way round - a frame that took longer than
+ * nine seconds to arrive belongs to a clip the import has already moved past -
+ * but it is worth saying plainly, because the comment here used to claim the
+ * opposite and somebody reading it would look for a partial answer that is not
+ * there.
  */
 const POSTER_MS = 9000;
 
@@ -248,17 +253,28 @@ async function grab(v: HTMLVideoElement, url: string): Promise<VideoFrameShot | 
     // Read twice before giving up on a point, and the second read is for the
     // engines that cannot say when a frame has arrived.
     //
-    // Where requestVideoFrameCallback exists, presented() returns the moment the
-    // frame does and the first read has it. Firefox does not implement it at
-    // all, so there the wait is a guess at how long a decode takes - and a guess
-    // that is short on a slow phone reads the frame *before* the seek has drawn,
-    // which is a flat capture, which walks on to the next point and eventually
-    // answers null for a clip that was going to be fine. A second look a beat
-    // later costs nothing when the first was good, because a good first read
-    // returns from inside the loop.
+    // The first look is free where the element can answer for itself: presented()
+    // returns at once on a readyState that already has a frame at the current
+    // position, which is the exact question drawImage is about to ask. Where it
+    // cannot - and that is most of the time here, because a seek that has only
+    // just fired `seeked` is still catching up - the wait is a guess at how long
+    // a decode takes, and a guess that is short on a slow phone reads *before*
+    // the seek has drawn. That is a flat capture, which walks on to the next
+    // point and eventually answers null for a clip that was going to be fine.
+    //
+    // So the second look always takes the clock, however ready the element
+    // claimed to be. It costs nothing when the first was good, because a good
+    // first read returns from inside the loop.
     for (let look = 0; look < 2; look++) {
-      await presented(v);
-      const took = await capture(v).catch(() => null);
+      await presented(v, look);
+      const took = await capture(v).catch(err => {
+        // Not silent, and this is the one place in the pipeline where an error
+        // has anything to say: everything above it is a race that expires and
+        // everything below is a null. A throw here is an encoder or a canvas
+        // refusing, which is a fault to fix rather than a clip to walk past.
+        console.warn(`[mbrd] poster: capture threw at ${at}s`, err);
+        return null;
+      });
       if (took && !took.flat) return took.shot;
     }
     // Nothing at this point. Look further in - see the note on FLAT_SPREAD, and
@@ -278,8 +294,18 @@ function once(el: EventTarget, type: string): Promise<Event> {
  * A frame on the element - either because the browser said so, or because long
  * enough has passed to read one anyway. See FRAME_MS, which is where the whole
  * argument for the race is written.
+ *
+ * `look` is which of grab()'s two reads this is, and it is here rather than at
+ * the call site because it decides whether the readyState shortcut applies.
+ * HAVE_CURRENT_DATA means there is a frame at the current position, which is
+ * precisely what drawImage needs, so on the first look it is worth taking at
+ * face value - a ready decoder read 150ms sooner is 150ms off every clip on the
+ * board. On the second look it is not: the element said the same thing before
+ * the read that came back flat, so believing it again would collapse the two
+ * looks into one and throw away the only mitigation this function has.
  */
-function presented(v: HTMLVideoElement): Promise<void> {
+function presented(v: HTMLVideoElement, look = 0): Promise<void> {
+  if (look === 0 && v.readyState >= v.HAVE_CURRENT_DATA) return Promise.resolve();
   const clock = wait(FRAME_MS);
   return typeof v.requestVideoFrameCallback === 'function'
     ? Promise.race([new Promise<void>(resolve => v.requestVideoFrameCallback(() => resolve())), clock])
@@ -351,6 +377,36 @@ function looksFlat(ctx: Surface['ctx'], w: number, h: number): boolean {
   return hi[0] - lo[0] <= FLAT_SPREAD
     && hi[1] - lo[1] <= FLAT_SPREAD
     && hi[2] - lo[2] <= FLAT_SPREAD;
+}
+
+/**
+ * The frame a `<video>` that is *already on the board* is showing this instant.
+ *
+ * videoFrame() above is the import path and opens a clip of its own to do it -
+ * it takes a Blob, mints an element, seeks it, walks three points looking for a
+ * frame with something in it. None of that applies here. The element has been
+ * decoding in front of somebody for the last minute and is parked on the frame
+ * they stopped it at, so the whole job is capture(): one drawImage off a
+ * decoder that is already where it is wanted.
+ *
+ * Which is also why the flat test is *reported* and not obeyed. grab() seeks
+ * past a flat frame because it is choosing one on the clip's behalf; this is
+ * given one, by a person looking at it, and a still of a fade to black is a
+ * still of a fade to black. The caller may want to say so - see keepFrame() in
+ * commands/item-meta.ts, which does - but nothing here refuses it.
+ *
+ * Null where there is nothing to read, and the case that matters is a *parked*
+ * clip: on iOS the renderer holds a card's `src` back until the first tap (see
+ * rationsDecoders in canvas/renderers.ts), so its element has no dimensions and
+ * no frame, and what the card is showing is its poster rather than any frame at
+ * all. A caller wanting "what is on that card" has to answer that one from
+ * `meta.cover`, which is the picture actually on screen.
+ */
+export async function frameOnScreen(v: HTMLVideoElement): Promise<VideoFrameShot | null> {
+  if (!v.videoWidth || !v.videoHeight) return null;
+  if (v.readyState < v.HAVE_CURRENT_DATA) return null;
+  const out = await capture(v);
+  return out ? out.shot : null;
 }
 
 /**

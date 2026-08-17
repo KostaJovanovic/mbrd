@@ -23,7 +23,8 @@ import { board, byId, itemTags, select } from '../state.ts';
 import { cue } from '../cuelume/engine.ts';
 import { travelMs } from '../canvas/viewport.ts';
 import { extOf } from '../util.ts';
-import { describeExt } from '../import/formats.ts';
+import { describeExt, formatName } from '../import/formats.ts';
+import { kindName, kindTag } from '../canvas/item-dom.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 import type { Item } from '../board-model.ts';
 
@@ -206,14 +207,24 @@ function fields(item: Item): Fields {
     name,
     text,
     url,
-    // "what is this" in words: the item type, plus what the catalogue calls
-    // the extension - so "solidworks", "raw" and "subtitles" find things whose
-    // names say none of that.
-    kind: [item.type, kind?.label, kind?.categoryLabel, extOf(name)].filter(Boolean).join(' '),
+    // "what is this" in words: what the file's own format is called, plus what
+    // the catalogue files it under - so "solidworks", "raw" and "subtitles"
+    // find things whose names say none of that. kindName() rather than
+    // item.type, so the haystack holds words a person can see and not the word
+    // `generic`, which is one nobody would type on purpose and which would have
+    // matched every unrenderable file on the board at once.
+    kind: [kindName(item), kind?.label, kind?.categoryLabel, extOf(name)].filter(Boolean).join(' '),
     // The same knowledge said out loud. Kept apart from `kind` because that
     // one is a bag of words to match against and reads like one - "audio
     // Waveform audio Sound" is a fine haystack and a terrible caption.
-    kindLabel: kind ? [kind.label, kind.categoryLabel].filter(Boolean).join(' · ') : '',
+    //
+    // The format's name leads, and it is the one thing on the row that the
+    // 68px kind column cannot show: a hit found by kind reads "SolidWorks part
+    // · 3D / CAD" under a name that says neither. Deduped because the two
+    // halves agree often enough - a .zip is an "Archives / Archives" - and a
+    // word printed twice in a caption reads as a bug.
+    kindLabel: [...new Set([formatName(extOf(name)), kind?.label, kind?.categoryLabel]
+      .filter(Boolean))].join(' · '),
     // Already lowercased and already clean - itemTags() does both - so nothing
     // here has to fold case the way the four fields above do.
     tags: itemTags(item),
@@ -302,7 +313,10 @@ function draw(q: string) {
 
     const kind = document.createElement('span');
     kind.className = 'search-kind';
-    kind.textContent = h.item.type;
+    // The short form: this column is 68px wide and set in capitals. The words
+    // are still in reach - they are what the row matched on, and context()
+    // prints them underneath when that is why the row is here.
+    kind.textContent = kindTag(h.item);
 
     const name = document.createElement('span');
     name.className = 'search-name';

@@ -93,6 +93,164 @@ function stickerCascade(ids: Iterable<string>) {
   return out;
 }
 
+/**
+ * The `meta` keys that belong to the *clip* rather than to the card it is on.
+ *
+ * Freezing a clip and bringing it back are one edit in two directions, and this
+ * list is what moves in each: everything here comes off the card when the clip
+ * goes to the bin and back onto it when the clip comes home. Everything not
+ * here - the tags, the fit, the crop, the anchor, the sticky memo, the note a
+ * fence keeps - stays on the card throughout, because it is a fact about the
+ * card and the card never left.
+ *
+ * Written out rather than derived, and it is deliberately wider than
+ * META_HASHES (board-model.ts). The hashes are the pictures a clip carries; the
+ * rest are what it *is* - its type, its extension, its byte count, how long it
+ * runs, and the optimiser's memo of which copy is which. A card wearing a still
+ * has its own answers to all of those and must not be left claiming the clip's.
+ */
+const CLIP_META = [
+  'mime', 'ext', 'size', 'duration', 'cover', 'thumb', 'preview', 'gif',
+  'sized', 'origName', 'mtime', 'opt', 'was', 'wasCover',
+];
+
+/** `meta` less the clip's own keys - what a card keeps across the swap. */
+function withoutClipMeta(meta: Item['meta']): Item['meta'] {
+  const out = { ...meta };
+  for (const key of CLIP_META) delete out[key];
+  return out;
+}
+
+/** Only the clip's own keys, which is the half that travels with it. */
+function clipMetaOf(meta: Item['meta']): Item['meta'] {
+  const out: Item['meta'] = {};
+  for (const key of CLIP_META) if (key in meta) out[key] = meta[key];
+  return out;
+}
+
+/**
+ * Put one item in the board's place of another, in the pile position the first
+ * one held.
+ *
+ * retypeItem()'s swap (state.ts), which the two below need and cannot import -
+ * state.ts is above this file, not below it. The splice rather than a
+ * filter-and-push is what keeps the z-order *position*: the card is the same
+ * card seen differently and has no business jumping to the top of the pile.
+ *
+ * The selection follows, in both directions, so whichever of the pair is on the
+ * board is the one that is selected. False when the item is not there, which is
+ * a replay against a board that has moved on and a reason to do nothing.
+ */
+function swapItem(out: Item, into: Item): boolean {
+  const at = board.items.indexOf(out);
+  if (at < 0) return false;
+  board.items.splice(at, 1, into);
+  if (selection.delete(out.id)) selection.add(into.id);
+  return true;
+}
+
+/**
+ * The card a binned clip came off, if it is still on the board.
+ *
+ * `meta.clipOf` is written by freezeClip() below and read by restoreItems(),
+ * and those two are its only readers - it is a link between a bin entry and a
+ * live card and means nothing to anything else. An id, so it survives a save
+ * and reopen the way `stuckTo` does.
+ *
+ * Null covers two different situations that want the same answer: a bin entry
+ * that is not a frozen clip at all, and one whose card has since been deleted.
+ * Both mean "there is nowhere for this to go back to", and restoreItems() then
+ * hands it back as an ordinary card, which is what it was before it was frozen.
+ */
+function clipHome(item: Item): Item | null {
+  const of = item.meta?.clipOf;
+  return typeof of === 'string' ? byId(of) ?? null : null;
+}
+
+/**
+ * The same question, for the panel: does this bin entry have a card to go back
+ * to?
+ *
+ * The panel needs it to say so - a row that goes home on a click cannot look
+ * like the rows that only come back by being dragged somewhere - and it has no
+ * business knowing that the link is spelled `meta.clipOf`. The id rather than
+ * the item, because that is all a caller above this layer can use.
+ */
+export function clipHomeId(item: Item): string | null {
+  return clipHome(item)?.id ?? null;
+}
+
+/**
+ * Throw the clip away and keep the frame that was on it.
+ *
+ * The fourth route out, after the three the header names, and the one that is
+ * not really a delete at all: the card stays exactly where it is, wearing the
+ * still it was showing, and the *video* is what goes to the bin. A clip that
+ * was worth keeping as a picture and is not worth thirty megabytes is the whole
+ * case - a board of them opens instantly and weighs what a board of photographs
+ * weighs - and it is a case nothing else here answers, since deleting the card
+ * takes the picture with it.
+ *
+ * `hash` is the frozen frame, already in the asset registry, and `facts` are
+ * that picture's own mime, ext and size. Both are the caller's because this
+ * file sits under storage/ and may not look in the registry itself - the same
+ * arrangement setItemPoster()'s `dangling` argument is built on. See keepFrame()
+ * in commands/item-meta.ts, which is the only caller and is where the frame is
+ * cut.
+ *
+ * **The card is replaced rather than edited**, which is retypeItem()'s
+ * reasoning and not a choice made again here: canvas/items.ts writes the type
+ * onto a node when it *builds* it and caches that node by id, so a card that
+ * changed type under a node that stayed would go on wearing the old type's
+ * clothes. Retiring the id retires the node. The clip keeps the original id and
+ * takes it to the bin, which is the tidier half of the same swap - the thing
+ * that left the board is the thing that keeps the identity it had while it was
+ * on it, and the bin's one id space (dedupeIds, board-schema.ts) never sees two.
+ *
+ * One history entry for both halves, like removeItems() above and for the same
+ * reason: this is one thing somebody did, and an undo that gave back the clip
+ * but left the still on the board would be a board with the clip in two places.
+ */
+export function freezeClip(
+  id: string, hash: string, facts: Record<string, unknown> = {},
+): Item | null {
+  const clip = byId(id);
+  if (!clip || clip.type !== 'video') return null;
+  // Everything the card is, minus everything the clip was. Geometry, name,
+  // rotation and pile position all carry over untouched: it is the same card.
+  const picture = makeItem({
+    ...clip,
+    id: null,
+    type: 'image',
+    asset: { hash, embedded: true },
+    meta: { ...withoutClipMeta(clip.meta), ...facts },
+  });
+  const entry: TrashEntry = {
+    item: makeItem({ ...clip, meta: { ...clip.meta, clipOf: picture.id } }),
+    at: Date.now(),
+  };
+  // As in removeItems(): what this pushed out the bottom of the bin, so undo
+  // can put it back. A clip is the largest thing anybody bins, so a board where
+  // this is used often is exactly the board that reaches TRASH_LIMIT.
+  let evicted: TrashEntry[] = [];
+  commit('Keep this frame',
+    () => { if (!swapItem(clip, picture)) return;
+            board.trash.unshift(entry);
+            evicted = board.trash.splice(TRASH_LIMIT);
+            bus.emit('items', { added: [picture.id], removed: [clip.id] });
+            bus.emit('selection'); bus.emit('trash'); },
+    () => { if (!swapItem(picture, clip)) return;
+            board.trash = board.trash.filter(t => t.item.id !== clip.id);
+            board.trash.push(...evicted);
+            bus.emit('items', { added: [clip.id], removed: [picture.id] });
+            bus.emit('selection'); bus.emit('trash'); });
+  // Outside the closure, for the reason removeItems() gives: undo and redo
+  // re-run it and have cues of their own.
+  if (evicted.length) bus.emit('trash:evicted', evicted.length);
+  cue('fall');
+  return picture;
+}
+
 export function removeItems(ids: Iterable<string>, label = 'Delete') {
   // One undo entry for the cascade and the delete that caused it, which is the
   // whole reason it is folded in here rather than run by the caller: Ctrl+Z
@@ -177,39 +335,89 @@ export function removeItems(ids: Iterable<string>, label = 'Delete') {
  * Restored items are stacked on top rather than returned to their old z: they
  * were absent while everything else moved on, and coming back underneath a
  * pile is the same as not coming back.
+ *
+ * ── The one entry that does not land anywhere ──
+ *
+ * A clip frozen by freezeClip() went to the bin off a card that is *still on the
+ * board*, wearing the frame it was showing. It has a home, so `at` is not a
+ * question anybody has to answer for it - and neither is the drag the panel's
+ * header argues for, whose whole point is that a deleted item's old spot is
+ * usually the reason it was deleted. That reasoning does not reach this case:
+ * nothing was deleted, the gap was never left, and the still standing in the gap
+ * is the thing being replaced. So a frozen clip goes back onto its card, at that
+ * card's size and place, and `at` is ignored.
+ *
+ * If the card has since been deleted there is no home, clipHome() answers null,
+ * and the entry comes back as an ordinary video card the way it always would
+ * have. That is the honest fallback rather than a refusal: the clip is still a
+ * clip, and the bin is still the only place it exists.
  */
 export function restoreItems(ids: Iterable<string>, at: { x: number, y: number } | null = null, label = 'Restore') {
   const set = new Set(ids);
   const entries = board.trash.filter(t => set.has(t.item.id));
   if (!entries.length) return [];
+  // Split before anything is built, because the two halves are built
+  // differently: one is placed on the board and one takes a card's place.
+  const homing = entries
+    .map(e => ({ entry: e, home: clipHome(e.item) }))
+    .filter((r): r is { entry: TrashEntry, home: Item } => !!r.home);
+  const arriving = entries.filter(e => !clipHome(e.item));
+  // The clip, wearing everything the card learned while it was away. Geometry
+  // and name are the card's - it may have been moved, resized or renamed since -
+  // and so is every `meta` key that is not the clip's own. The swap is
+  // freezeClip()'s in reverse, down to retiring the still's id with its node.
+  const rehomes = homing.map(({ entry, home }) => {
+    const meta = { ...entry.item.meta };
+    delete meta.clipOf;
+    return {
+      home,
+      item: makeItem({
+        ...entry.item,
+        x: home.x, y: home.y, w: home.w, h: home.h, rot: home.rot, z: home.z,
+        name: home.name,
+        meta: { ...withoutClipMeta(home.meta), ...clipMetaOf(meta) },
+      }),
+    };
+  });
   let z = topZ();
-  const items = entries.map(e => fitBoardMode({
+  const items = arriving.map(e => fitBoardMode({
     ...e.item,
     ...(at ? { x: at.x, y: at.y } : null),
     z: ++z,
   }));
   const back = new Set(items.map(i => i.id));
+  const all = [...items, ...rehomes.map(r => r.item)];
   commit(label,
     () => { const fresh = items.filter(i => !byId(i.id));
             board.items.push(...fresh);
+            const swapped = rehomes.filter(r => swapItem(r.home, r.item));
             // The third door a fence can come back through, and it needs the
             // same notice as the other two. See refenceArrivals(). Note that a
             // fence dragged out of the bin lands where the drag put it, not
             // where it was deleted from, so what it now holds is a fresh
-            // question in the strongest sense.
+            // question in the strongest sense. A rehomed clip is not asked: it
+            // is standing exactly where the still it replaced stood, so its
+            // membership is whatever that card's was.
             refenceArrivals(items);
             board.trash = board.trash.filter(t => !set.has(t.item.id));
-            bus.emit('items', { added: fresh.map(i => i.id), removed: [] });
-            bus.emit('trash'); },
+            bus.emit('items', {
+              added: [...fresh.map(i => i.id), ...swapped.map(r => r.item.id)],
+              removed: swapped.map(r => r.home.id),
+            });
+            bus.emit('selection'); bus.emit('trash'); },
     () => { board.items = board.items.filter(i => !back.has(i.id));
             back.forEach(id => selection.delete(id));
+            const swapped = rehomes.filter(r => swapItem(r.item, r.home));
             board.trash.unshift(...entries);
-            bus.emit('items', { added: [], removed: [...back] });
+            bus.emit('items', {
+              added: swapped.map(r => r.home.id),
+              removed: [...back, ...swapped.map(r => r.item.id)],
+            });
             bus.emit('selection'); bus.emit('trash'); });
   // The other direction of the same door, and the same recipe with its glide
   // the other way up. See removeItems() above for why it is out here.
   cue('rise');
-  return items;
+  return all;
 }
 
 // ---------------------------------------------------------------------------

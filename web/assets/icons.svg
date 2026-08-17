@@ -238,6 +238,25 @@
   <path d="M3 11.8 6.2 8.6l2 2 2-2 2.8 2.8"/>
 </symbol>
 
+<!-- Keep this frame: one frame of film, held.
+
+     A film frame rather than a camera or a snowflake, because what the row does
+     is take *this* frame out of a strip of them - the sprocket holes down both
+     edges are the only part of the drawing that says "video", and they say it
+     without a play triangle, which is already the card's own big button and
+     would read as "play" on a row that stops a clip being playable at all.
+
+     The mountain inside is i-picture's, at the same pitch, because the frame
+     ends up being an ordinary picture and that is the drawing this set uses for
+     one. Two symbols sharing a shape rather than sharing an id: the actions are
+     not the same action, and the file's header allows the likeness where it is
+     the same idea seen from a different side. -->
+<symbol id="i-still" viewBox="0 0 16 16">
+  <rect x="2.5" y="3" width="11" height="10" rx="1.5"/>
+  <path d="M4.9 3v10M11.1 3v10"/>
+  <path d="M5.6 11 7.6 9l1.4 1.4L10.4 9l1.3 1.3"/>
+</symbol>
+
 <!-- The frame with the picture struck out. The mountain goes: a slash over a
      drawing this small reads as neither.
 

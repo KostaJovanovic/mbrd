@@ -527,10 +527,20 @@
   white-space: nowrap;
 }
 .feed-file-kind {
+  max-width: 100%;
   color: var(--ink-3);
   font-size: var(--t-tiny);
   text-transform: uppercase;
   letter-spacing: 0.06em;
+  /* This line is a format's full name now - "Excel spreadsheet", and at the far
+     end of the catalogue "REDengine 4 archive (Cyberpunk 2077)". Two lines of
+     it is as much as a tile this size can give before the name above it starts
+     losing room. Prefixed only, for the reason set out at .card-link
+     .card-meta in cards.css. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 
 /* The "nothing to show yet" message, centred on the sheet under the masthead.

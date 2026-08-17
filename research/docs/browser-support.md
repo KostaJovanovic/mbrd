@@ -89,6 +89,17 @@ Documented so "Safari support" does not imply feature parity on every point rele
   provably opaque (a video frame, a board thumbnail) or the source was itself a
   JPEG, one JPEG retry gets the size back. `import/pdf.ts` had it right all
   along and is the pattern.
+
+  **The two spellings disagree about the refusal, which is the half that was
+  missed.** Substituting silently is `toBlob`'s rule;
+  `OffscreenCanvas.convertToBlob` is specified the other way and *rejects* an
+  unsupported type. So the same unencodable request came back as a relabelled
+  PNG through the element path and as a thrown error through the other, and
+  every caller
+  was written against the first. `surfaceToBlob()` in `canvas/surface.ts` now
+  owns that difference — it catches the rejection and retries as PNG, so both
+  spellings answer alike and the "check what came back" rule above is the whole
+  of what a caller has to know.
 - **The canvas area ceiling is 16,777,216 pixels**, and a canvas past it draws
   *transparent* rather than throwing — so an over-large export is a blank file
   rather than an error. `MAX_AREA` in `ui/snapshot.ts` caps Export as PNG and
@@ -131,6 +142,35 @@ Documented so "Safari support" does not imply feature parity on every point rele
 - **Optimiser codecs.** WebCodecs audio encoding needs Safari 26; Ogg Opus
   playback needs 18.4; WebM on iOS needs 17.4. These only matter if the optional
   ffmpeg core is bundled, which this repo does not ship.
+
+## Firefox behaviours the app already accommodates
+
+A much shorter list than Safari's, and it stayed empty for a long time because
+Firefox clears the floor comfortably. It is here because "clears the floor" and
+"renders the same" turned out to be different claims, and the gap between them
+cost the video card its picture on one engine for as long as the card has
+existed.
+
+- **Firefox does not implement Media Fragment URI seeking.** `#t=0.1` on a media
+  source is honoured by Chrome and by Safari and dropped on the floor by Firefox
+  — which mattered because `RENDERERS.video` used exactly that to pull a real
+  frame onto a parked clip, and `canvas/poster.ts` says so in its header: *"the
+  desktop path gets a frame for free"*. It was free on two engines out of three.
+  On Firefox the element loaded its metadata, painted nothing, and the card was
+  a black rectangle unless the clip had a captured poster to fall back on. It is
+  now asked for twice — the fragment for the engines that honour it, and a plain
+  `currentTime` seek on `loadedmetadata` for the ones that do not, guarded so
+  the second is a no-op wherever the first worked. The seek is what every engine
+  has, so this is one line covering a whole browser.
+
+  Worth knowing for anything else that parks media at a position: the fragment
+  is not a shorthand for a seek, it is a *hint* with two implementations and an
+  abstention, and `canvas/items.ts` reads the resulting `currentTime` to tell a
+  parked clip from a played one.
+- **`requestVideoFrameCallback` exists here from Firefox 132**, so the comment in
+  `canvas/poster.ts` that called it absent is gone. It changes nothing: the
+  callback was already a shortcut raced against a clock rather than a gate, for
+  the Chrome reason written beside `FRAME_MS`.
 
 ## Known limitations
 

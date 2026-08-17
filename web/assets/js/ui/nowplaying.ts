@@ -342,6 +342,9 @@ function bind(sound: HTMLMediaElement) {
   on('play', () => { setIcon(); if (!frame) frame = requestAnimationFrame(follow); });
   on('pause', () => { setIcon(); paint(); });
   on('loadedmetadata', paint);
+  // See canvas/transport.ts: a guessed duration is corrected by its own event
+  // and by nothing else while the track sits paused.
+  on('durationchange', paint);
   on('timeupdate', paint);
   on('seeked', paint);
 

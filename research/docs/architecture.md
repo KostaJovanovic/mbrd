@@ -187,6 +187,26 @@ browser owns an XML parser. What it costs is stated in `ui/documents.ts`'s own
 header — it is layout and not typesetting, so a `.docx` reads as a flow of styled
 runs rather than as the page Word would print.
 
+They are three now, and the third is where the container walk went. A deck was
+the one family the cheap answer did not reach: `docProps/thumbnail.jpeg` is
+optional, current PowerPoint does not write it, and the exporters most `.pptx`
+files actually arrive from — Google Slides, Keynote, LibreOffice, python-pptx —
+never write one, so every deck was a grey card. `import/slide.ts` composites the
+first slide instead, which is the only reader here that draws rather than reads:
+the pictures at their real positions, the text at its real size, the background
+behind both, and everything else — autoshape geometry, charts, tables, SmartArt,
+theme inheritance — skipped rather than approximated. The line it must not cross
+is in its header, and it is the same line `ui/documents.ts` draws: recognisable
+at card size, not faithful at full size.
+
+`import/ooxml.ts` is the seam that made that possible without a second copy of
+the format. The relationship walk, the part lookup and the slide ordering were
+inside `ui/documents.ts`, the importer may not reach into `ui/` and
+`tests/layers.test.js` says so, and the choice was one module low enough for both
+or two answers to "where does this picture live". That question having two
+answers is the kind of disagreement that survives a year, which is the whole
+argument for the file.
+
 ---
 
 ## state.ts is the only door

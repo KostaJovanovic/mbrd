@@ -13,7 +13,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { coverArt, mayHaveArt } from '../web/assets/js/import/artwork.ts';
+import { coverArt, mayHaveArt, streamDuration } from '../web/assets/js/import/artwork.ts';
 
 // ---------------------------------------------------------------------------
 // Builders
@@ -220,4 +220,113 @@ test('only the extensions that can carry art are worth reading', () => {
   for (const name of ['a.wav', 'a.ogg', 'a.png', 'a']) {
     assert.ok(!mayHaveArt(name), `${name} should not be read at all`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// ADTS  -  the duration of a raw .aac
+// ---------------------------------------------------------------------------
+//
+// The one reader here that walks the audio rather than the metadata, and the
+// only field in this module a browser would otherwise supply - badly. Built the
+// same way as the tags above: frames written forwards from the spec, so the
+// numbers below are arithmetic anybody can check rather than a fixture.
+
+/** One ADTS frame: a 7-byte header stating its own length, then filler. */
+function adts({ len = 200, rate = 4, blocks = 1 } = {}) {
+  const b = new Uint8Array(len);
+  b[0] = 0xff;
+  b[1] = 0xf1;                                  // sync, MPEG-4, layer 00, no CRC
+  b[2] = (1 << 6) | (rate << 2);                // AAC-LC, sampling frequency index
+  b[3] = (len >> 11) & 0x03;
+  b[4] = (len >> 3) & 0xff;
+  b[5] = ((len & 0x07) << 5) | 0x1f;
+  b[6] = 0xfc | (blocks - 1);
+  return b;
+}
+
+/** `n` frames of `len` bytes, as a file. */
+const aac = (n, opts = {}) =>
+  audio(bytes(...Array.from({ length: n }, () => adts(opts))), 'song.aac');
+
+/** What `n` blocks of 1024 samples come to at 44100 Hz. */
+const secs = n => (n * 1024) / 44100;
+
+/**
+ * Seconds against seconds. The walk adds a frame at a time so that a stream can
+ * change rate mid-file, which costs it the last bit or two of a float against
+ * the same count divided once - a microsecond over an hour, and not part of
+ * what any of these tests is claiming.
+ */
+const lasts = async (file, want, what = '') =>
+  assert.ok(Math.abs(await streamDuration(file) - want) < 1e-6,
+    `${what || 'stream'} should last ${want}s`);
+
+test('counts the frames of a raw AAC stream', async () => {
+  await lasts(aac(100), secs(100));
+});
+
+test('a frame straddling the read window is not split', async () => {
+  // 4000 frames of 400 bytes is 1.6 MB against a 256 KB window, so the walk
+  // re-reads six times and every one of those boundaries lands mid-frame.
+  await lasts(aac(4000, { len: 400 }), secs(4000));
+});
+
+test('a variable bitrate is counted, not extrapolated', async () => {
+  // The failure this whole reader exists for: fifty near-empty frames at the
+  // front, and an engine dividing the file size by what it saw there puts a
+  // 90-minute file at 7000. Frames are frames whatever they weigh.
+  const quiet = Array.from({ length: 50 }, () => adts({ len: 12 }));
+  const loud = Array.from({ length: 250 }, () => adts({ len: 900 }));
+  await lasts(audio(bytes(...quiet, ...loud), 'song.aac'), secs(300));
+});
+
+test('a frame carrying two blocks counts as two', async () => {
+  await lasts(aac(50, { blocks: 2 }), secs(100));
+});
+
+test('the sampling rate is read per frame', async () => {
+  // 22050 for the first half, 44100 for the second - what a concatenated
+  // stream looks like, and the reason the sum is not one division at the end.
+  const slow = Array.from({ length: 100 }, () => adts({ rate: 7 }));
+  const fast = Array.from({ length: 100 }, () => adts({ rate: 4 }));
+  const want = (100 * 1024) / 22050 + (100 * 1024) / 44100;
+  await lasts(audio(bytes(...slow, ...fast), 'song.aac'), want);
+});
+
+test('a tag in front of the audio is stepped over', async () => {
+  const tag = bytes('ID3', [4, 0, 0], [0, 0, 0, 40], new Uint8Array(40));
+  const frames = Array.from({ length: 100 }, () => adts());
+  await lasts(audio(bytes(tag, ...frames), 'song.aac'), secs(100));
+});
+
+test('a trailer ends the walk without losing the count', async () => {
+  // An ID3v1 tag on the end, and a last frame the file stops in the middle of.
+  const frames = Array.from({ length: 100 }, () => adts());
+  const v1 = bytes('TAG', new Uint8Array(125));
+  await lasts(audio(bytes(...frames, v1), 'song.aac'), secs(100), 'a tagged stream');
+  await lasts(audio(bytes(...frames, adts().subarray(0, 3)), 'song.aac'), secs(100),
+    'a truncated stream');
+});
+
+test('anything that is not a raw stream answers null', async () => {
+  // Null and not zero: the caller falls back to the engine on a null, and every
+  // one of these is a file whose container states a duration the engine reads.
+  const cases = {
+    'an MP3 frame': bytes([0xff, 0xfb, 0x90, 0x00], new Uint8Array(1000)),
+    'an MP4': m4a(),
+    'a FLAC': flac(),
+    'an ID3 tag with no audio after it': bytes('ID3', [4, 0, 0], [0, 0, 0, 0], new Uint8Array(64)),
+    'nothing at all': new Uint8Array(0),
+    'a run of 0xff': new Uint8Array(4096).fill(0xff),
+    'a stream too short to be sure of': bytes(...Array.from({ length: 3 }, () => adts())),
+  };
+  for (const [what, data] of Object.entries(cases)) {
+    assert.equal(await streamDuration(audio(data, 'song.aac')), null, what);
+  }
+});
+
+test('a header that names no sampling rate is refused', async () => {
+  // Indices 13 to 15 are reserved. A frame claiming one is a file this reader
+  // cannot count, and half a count is worse than none.
+  assert.equal(await streamDuration(aac(20, { rate: 13 })), null);
 });

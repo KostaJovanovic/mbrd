@@ -27,6 +27,11 @@
 //                   Image Resources block, which is a chain of length-prefixed
 //                   records near the front of the file. That one is a byte walk.
 //
+//   PDN             Not a zip either. Paint.NET opens with a header naming the
+//                   length of an XML block, and the flattened preview is a PNG
+//                   sitting inside that XML as base64 - which makes it the one
+//                   picture here that is read out of text.
+//
 // The original file is untouched and still the one embedded in the .mbrd, so the
 // day any of these gets a real renderer the card upgrades itself; until then it
 // shows the picture the authoring application already made rather than a hole.
@@ -34,6 +39,18 @@
 
 import { readZip } from '../storage/zip.ts';
 import { extOf } from '../util.ts';
+import { oversize, isOversize, mb } from '../consent.ts';
+// The two families whose picture is not at a path a specification names. A
+// program keeps its icon in a resource tree (import/pe.js) and an app package or
+// a book keeps its in one of several places that have to be ranked
+// (import/packages.js). Both answer the same question this module asks and both
+// are dispatched from bakedPreview() below, so there is one door for "does this
+// file carry a picture of itself" rather than three.
+import { exeIcon, isExecutable } from './pe.ts';
+import { packagePicture, isPackage } from './packages.ts';
+import { isDrawablePng } from './winimage.ts';
+import { openCompound, compoundPicture, isCompoundExt } from './cfbf.ts';
+import { carvedPicture, isCarved } from './carved.ts';
 
 /**
  * How big a container this will open at all.
@@ -46,7 +63,10 @@ import { extOf } from '../util.ts';
  * is set for a whole board archive and is three orders of magnitude too generous
  * for one document.
  */
-const MAX_CONTAINER = 96 * 1024 * 1024;
+// Exported for import/slide.ts, which reads the same containers for the same
+// caller and has no business holding a second opinion about how big a document
+// is allowed to be.
+export const MAX_CONTAINER = 96 * 1024 * 1024;
 
 /**
  * How much a document may inflate to, whatever it compressed down from.
@@ -54,10 +74,13 @@ const MAX_CONTAINER = 96 * 1024 * 1024;
  * MAX_CONTAINER is a cap on the bytes that arrive; this is the cap on the bytes
  * that come out, which is the number that actually has to fit in memory - and
  * six of these run at once under IMPORT_WORKERS. A document that expands past
- * this is not a document, and the caller turns the refusal into a named card
- * exactly as it does every other miss here.
+ * this is probably not a document - but "probably" is the whole reason this is a
+ * question now rather than a refusal, and the caller asks it. Declined, it turns
+ * into a named card exactly as every other miss here does, which is why this is
+ * the cheapest of all these ceilings to say no to: nothing is lost but a
+ * thumbnail somebody else's exporter may not even have written.
  */
-const MAX_INFLATED = 192 * 1024 * 1024;
+export const MAX_INFLATED = 192 * 1024 * 1024;
 
 /** A preview under a kilobyte is not one. Same floor import/preview.js uses. */
 const MIN_IMAGE = 512;
@@ -143,7 +166,8 @@ const FAMILY = new Map<string, string>([
 /** Whether this file is one this module knows how to look inside. */
 export function hasBakedPreview(file: File) {
   const ext = extOf(file.name);
-  return FAMILY.has(ext) || ext === 'psd' || ext === 'psb';
+  return FAMILY.has(ext) || ext === 'psd' || ext === 'psb' || ext === 'pdn'
+    || isExecutable(ext) || isPackage(ext) || isCompoundExt(ext, file.name) || isCarved(ext);
 }
 
 /**
@@ -153,16 +177,71 @@ export function hasBakedPreview(file: File) {
  * measureSize(), which is what import/preview.js returns too - the two are used
  * interchangeably by prepareFile().
  */
-export async function bakedPreview(file: File): Promise<File | null> {
+export async function bakedPreview(file: File, lift = false): Promise<File | null> {
   try {
     const ext = extOf(file.name);
     if (ext === 'psd' || ext === 'psb') return await fromPsd(file);
+    if (ext === 'pdn') return await fromPdn(file);
+    // A program's icon. No container ceiling of its own here: pe.js reads only
+    // the section it needs, out of a Blob, and carries its own ceiling on that -
+    // so a 400 MB installer costs a few slices rather than 400 MB.
+    if (isExecutable(ext)) {
+      const icon = await exeIcon(file, lift);
+      return icon ? named(new Uint8Array(await icon.blob.arrayBuffer())) : null;
+    }
+    // An app package or a book. The ceiling that matters for these is the
+    // archive's, which readZip owns and asks about itself.
+    if (isPackage(ext)) {
+      const bytes = await packagePicture(file, ext, lift);
+      return bytes ? named(bytes) : null;
+    }
+    // A compound file: SolidWorks, Office before OOXML, 3ds Max, Thumbs.db.
+    // Matched on the whole name as well as the extension, because the one this
+    // family is named after has no extension worth the word - `Thumbs.db` is a
+    // .db only by accident.
+    if (isCompoundExt(ext, file.name)) {
+      const doc = await openCompound(file, lift);
+      const bytes = doc && compoundPicture(doc);
+      return bytes ? named(bytes) : null;
+    }
+    // The four that keep a picture behind a header of their own - an Apple icon,
+    // an AutoCAD drawing, a binary EPS, a Blender scene - and a contact card.
+    if (isCarved(ext)) {
+      const bytes = await carvedPicture(file, ext);
+      return bytes ? named(bytes) : null;
+    }
     const family = FAMILY.get(ext);
     if (!family) return null;
-    if (file.size > MAX_CONTAINER) return null;
-    return await fromZip(file, WELLS[family]);
-  } catch {
-    return null;   // a preview that throws is a preview we did not find
+    // Thrown rather than returned, which is the difference between this ceiling
+    // and the misses around it. Every other null out of this function means "no
+    // picture in there" and the card is a named card, correctly and finally. This
+    // one means "there may well be a picture in there and looking would cost 96 MB
+    // of somebody's memory" - a question, and one this module cannot ask from
+    // inside an import pool. The caller asks it. See consent.ts.
+    if (!lift && file.size > MAX_CONTAINER) {
+      throw oversize(
+        'container-bytes',
+        `This document is ${mb(file.size)}, past the ${mb(MAX_CONTAINER)} one is opened at to look for `
+        + 'the preview picture inside it.',
+      );
+    }
+    return await fromZip(file, WELLS[family], lift);
+  } catch (err) {
+    // Past the caller, untouched. A ceiling is not a failure to find a preview,
+    // it is a question nobody has answered yet, and swallowing it here would be
+    // this module deciding after all - by doing quietly what it used to do
+    // loudly.
+    if (isOversize(err)) throw err;
+    // A preview that throws is still a preview we did not find, and the card is
+    // unchanged either way - but the two reasons to end up here are not the same
+    // thing and only one of them is ordinary. A container with no thumbnail entry
+    // returns null quietly from fromZip() and never reaches this line; a throw
+    // means readZip refused the archive itself - a bad central directory, a
+    // checksum that does not match, a compression method it does not speak, ZIP64
+    // - and that is a file this app could not open at all rather than a document
+    // that simply carries no picture of itself.
+    console.warn('[mbrd] document: the container would not read', file.name, err);
+    return null;
   }
 }
 
@@ -170,7 +249,7 @@ export async function bakedPreview(file: File): Promise<File | null> {
 // ZIP containers
 // ---------------------------------------------------------------------------
 
-async function fromZip(file: Blob, paths: string[]): Promise<File | null> {
+async function fromZip(file: Blob, paths: string[], lift = false): Promise<File | null> {
   // readZip throws on anything that is not a well-formed archive, on an entry
   // whose checksum does not match, and on the expansion ratios a zip bomb needs.
   // All of that is caught by the caller and comes back as null.
@@ -181,7 +260,7 @@ async function fromZip(file: Blob, paths: string[]): Promise<File | null> {
   // could each hold 768 MB of inflated entries at once. That is ~4.6 GB, which
   // is precisely the tab that stops responding MAX_CONTAINER's comment says it
   // exists to prevent.
-  const entries = await readZip(file, { entry: MAX_INFLATED, total: MAX_INFLATED });
+  const entries = await readZip(file, { entry: MAX_INFLATED, total: MAX_INFLATED, lift });
   for (const path of paths) {
     const bytes = entries.get(path);
     if (!bytes || bytes.length < MIN_IMAGE) continue;
@@ -202,9 +281,44 @@ function imageType(b: Uint8Array): { ext: string, mime: string } | null {
   }
   if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47
       && b[4] === 0x0d && b[5] === 0x0a && b[6] === 0x1a && b[7] === 0x0a) {
-    return { ext: 'png', mime: 'image/png' };
+    // A CgBI PNG passes every one of those bytes and decodes in nothing outside
+    // Apple's software - see import/winimage.js. It is the .emf case wearing a
+    // signature this function already trusted, which is why the check is here
+    // rather than at the one call site that meets one.
+    return isDrawablePng(b) ? { ext: 'png', mime: 'image/png' } : null;
+  }
+  // The three below arrive with the executables and the app packages and not from
+  // any document: an icon resource wrapped as an .ico, a clipboard bitmap given
+  // its file header back, and the WebP that Android build tools now write for
+  // launcher icons. A browser draws all three, which is the whole of the bar this
+  // function is applying - GIF is here for the same reason and costs one line.
+  if (b.length >= 6 && b[0] === 0 && b[1] === 0 && b[2] === 1 && b[3] === 0) {
+    return { ext: 'ico', mime: 'image/x-icon' };
+  }
+  if (b.length >= 14 && b[0] === 0x42 && b[1] === 0x4d) {
+    return { ext: 'bmp', mime: 'image/bmp' };
+  }
+  if (b.length >= 12 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46
+      && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) {
+    return { ext: 'webp', mime: 'image/webp' };
+  }
+  if (b.length >= 6 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38) {
+    return { ext: 'gif', mime: 'image/gif' };
   }
   return null;
+}
+
+/**
+ * A picture as the File every caller of this module expects back.
+ *
+ * The name and the type come from the bytes rather than from whatever the reader
+ * believed it built. That is the same rule fromZip() applies to a path a
+ * container supplied, applied one layer further in, and it is what keeps
+ * imageType() the single place that decides what this app will mount.
+ */
+function named(bytes: Uint8Array<ArrayBuffer>): File | null {
+  const type = imageType(bytes);
+  return type ? new File([bytes], `preview.${type.ext}`, { type: type.mime }) : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -294,3 +408,58 @@ async function fromPsd(file: Blob): Promise<File | null> {
 // File constructor needs to be told - a view onto a shared one is not a BlobPart.
 const file1 = (bytes: Uint8Array<ArrayBuffer>) =>
   new File([bytes], 'preview.jpg', { type: 'image/jpeg' });
+
+// ---------------------------------------------------------------------------
+// PDN  -  Paint.NET
+// ---------------------------------------------------------------------------
+//
+// Four bytes of magic, a 24-bit little-endian length, and then that many bytes
+// of UTF-8 XML describing the document. The layers behind it are a serialised
+// .NET object graph and are not readable without the application - but the XML
+// carries a `<thumb png="...">` attribute holding a base64 PNG of the flattened
+// image, which is a picture of the document and is all this needs.
+//
+// The only preview in this module that arrives as text, so it is the only one
+// that is decoded rather than sliced. The length is capped before the read for
+// the usual reason: it is a number a stranger wrote, and a claim of sixteen
+// megabytes of header is not one to allocate against.
+
+/** How much of a .pdn's XML header is worth reading. A thumbnail is tens of
+ *  kilobytes of base64; the rest is a few hundred bytes of attributes. */
+const PDN_MAX_XML = 4 * 1024 * 1024;
+
+async function fromPdn(file: Blob): Promise<File | null> {
+  const head = new Uint8Array(await file.slice(0, 7).arrayBuffer());
+  // 'PDN3'
+  if (head.length < 7 || head[0] !== 0x50 || head[1] !== 0x44 || head[2] !== 0x4e || head[3] !== 0x33) {
+    return null;
+  }
+  const len = Math.min(head[4] | (head[5] << 8) | (head[6] << 16), PDN_MAX_XML);
+  if (len < 32) return null;
+  const xml = new TextDecoder().decode(await file.slice(7, 7 + len).arrayBuffer());
+  const b64 = xml.match(/<thumb\s+png="([A-Za-z0-9+/=\s]*)"/i)?.[1];
+  if (!b64) return null;
+  const png = fromBase64(b64);
+  // By its own first bytes, like every other picture that leaves this module.
+  if (!png || png.length < MIN_IMAGE || imageType(png)?.ext !== 'png') return null;
+  return new File([png], 'preview.png', { type: 'image/png' });
+}
+
+/**
+ * Base64 to bytes, through atob.
+ *
+ * The attribute is written by Paint.NET and read here, so it is well-formed in
+ * practice - but it arrived in a file, which makes it a string to be refused
+ * rather than trusted, and atob throws on anything that is not base64. The
+ * whitespace strip is because XML attributes may be wrapped across lines.
+ */
+function fromBase64(s: string): Uint8Array<ArrayBuffer> | null {
+  try {
+    const bin = atob(s.replace(/\s+/g, ''));
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  } catch {
+    return null;
+  }
+}

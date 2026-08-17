@@ -45,6 +45,7 @@
 // table.
 
 import { extOf, shuffle } from '../util.ts';
+import { formatName } from '../import/formats.ts';
 import { adjustFilter, flipTransform, isFence, isLocked } from '../state.ts';
 import { buildContent, fitMode } from './renderers.ts';
 import { noteTint } from './note-model.ts';
@@ -171,6 +172,55 @@ export function farKind(item: ItemFragment): string {
   if (item.type === 'note') return '';
   const ext = (item.meta?.ext || extOf(item.name) || '').replace(/^\./, '');
   return ext || KIND_WORD[item.type ?? ''] || 'file';
+}
+
+/**
+ * What an item *is*, in words, for the places that print a kind beside a name:
+ * the feed's file tile, a name for one that has none of its own, a viewer title.
+ *
+ * All three printed `item.type` raw, and for one type that is a word about this
+ * codebase rather than about the file. `generic` is classify()'s answer for "a
+ * file, and nothing more is known" - the card the board draws when it cannot
+ * draw the thing itself - and it went to the screen untranslated, so a
+ * SolidWorks part somebody dropped on a board sat in the feed under the word
+ * "generic". Everything else in that column is already a plain English noun.
+ *
+ * So ask the catalogue, which was lifted from analyser for exactly this and
+ * names all but four of thirteen hundred extensions: the part is a SolidWorks
+ * part, a .zip is a ZIP archive, and a .qqq nobody has heard of is a QQQ. Only
+ * a file with no extension at all falls through to the plain word, and there is
+ * genuinely nothing more to say about one of those.
+ *
+ * The other types are handed back as they are. `image`, `note`, `link` and the
+ * rest are the words those cards have always shown, and the extension is not an
+ * improvement on any of them - a picture is a picture whether it is a JPEG or a
+ * PNG, and the card is showing it.
+ */
+export function kindName(item: ItemFragment): string {
+  const type = item.type ?? '';
+  if (type && type !== 'generic') return type;
+  return formatName(item.meta?.ext || extOf(item.name)) || 'file';
+}
+
+/**
+ * The same answer where there is no room for it: the search list's kind column
+ * and the square on a bin tile, both of which are badges a few characters wide.
+ *
+ * The names the catalogue gives are written to be read - "Excel spreadsheet",
+ * "SolidWorks part", and at the far end "REDengine 4 archive (Cyberpunk 2077)",
+ * which is a fine thing to know and not something to set in 68 pixels of
+ * letter-spaced capitals. Half of them run past twenty characters. So a badge
+ * gets the extension instead, which is what the card itself is badged with (see
+ * farKind above) - and a row in the search list reading SLDPRT next to the card
+ * it will jump to reading SLDPRT is the two of them agreeing, which is worth
+ * more here than the longer word is.
+ *
+ * Never the type word for a generic item: that is the whole point of both of
+ * these. A file with no extension to show falls through to farKind's "file".
+ */
+export function kindTag(item: ItemFragment): string {
+  const type = item.type ?? '';
+  return type && type !== 'generic' ? type : farKind(item);
 }
 
 // ---------------------------------------------------------------------------

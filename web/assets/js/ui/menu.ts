@@ -216,6 +216,7 @@ export interface MenuCommands {
   canFlipUpAxis: (id: string) => boolean;
   canRotateModel: (id: string) => boolean;
   canExtractSwatches: (id: string) => boolean;
+  canKeepFrame: (id: string) => boolean;
   canTintSticker: (id: string) => boolean;
   canViewItem: (id: string) => boolean;
   canUnstick: () => boolean;
@@ -254,6 +255,9 @@ export interface MenuCommands {
   editPicture: (id: string) => void;
   flipUpAxis: (id: string) => void;
   extractSwatches: (id: string) => void;
+  // Async in the implementation - it decodes a frame - and void here, because
+  // the menu presses it and closes. Nothing in this file waits for a row.
+  keepFrame: (id: string) => void;
   rotateModel: (id: string) => void;
   setStickerTint: (id: string, tint: number) => void;
   raise: () => void;
@@ -691,11 +695,27 @@ export function openContextMenu(clientX: number, clientY: number, itemId: string
  * style is the pen's action, offered here too; Reset position is its way home
  * (it is a movable singleton); Delete hides it, and the bin's restore button
  * brings it back.
+ *
+ * Anchor sits with Reset position because the two are one subject - where the
+ * card is, and whether it stays there - and because this menu is the *only*
+ * place the anchor can be reached: the card comes anchored (makeTitleItem in
+ * state.ts), so a press on it pans the board and there is no drag to discover
+ * the state from. The mirrored pair, its wording and its two icons are the item
+ * menu's, twenty lines of argument and all; see the Anchor rows in itemEntries.
  */
 function titleEntries(_id: string, _at: Point): MenuEntry[] {
+  // Guarded on canLock() and not on the count alone: with the card unselected
+  // both counts are zero, and `0 === 0` would print Unanchor on a card that is
+  // not anchored. Exactly the shape itemEntries uses.
+  const lockable = cmds!.canLock();
+  const anchored = lockable && cmds!.lockedCount() === cmds!.lockableCount();
   return [
     { label: 'Edit style', icon: 'i-style', action: () => cmds!.editTitle() },
     { label: 'Reset position', icon: 'i-reset-position', action: () => cmds!.resetTitlePosition() },
+    { label: 'Anchor', icon: 'i-anchor', hidden: !lockable || anchored,
+      action: () => cmds!.lockSelection(true) },
+    { label: 'Unanchor', icon: 'i-anchor-off', hidden: !lockable || !anchored,
+      action: () => cmds!.lockSelection(false) },
     { sep: true },
     { label: 'Zoom to it', icon: 'i-zoom-to', action: () => cmds!.zoomToSelection() },
     { sep: true },
@@ -784,6 +804,12 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
   // Anything with something worth seeing full size. Single-item: the viewer
   // shows one thing, which is the whole of what it is for.
   const viewable = !many && cmds!.canViewItem(id);
+  // A clip, and only a clip. Single-item like the rest of the fold, and for a
+  // sharper reason than most: "the frame that is on it" is a different frame on
+  // each of nine cards, so the plural has no meaning to offer. Never on the
+  // Feed - a tile there is not the element the frame would be read off, and the
+  // clip is parked behind a tap.
+  const freezable = !many && !mobile && cmds!.canKeepFrame(id);
   // ── The picture edits, as a fold ──
   //
   // Four rows about how one picture *looks*, taken out of the main column and
@@ -820,6 +846,25 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // changing the thing under the cursor.
     { label: 'Extract palette', icon: 'i-swatch', hidden: !swatchable,
       action: () => cmds!.extractSwatches(id) },
+    // A clip kept as the frame it is showing. Last, below the palette, and the
+    // one row in this fold that is not reversible by pressing it again - which
+    // is why it is at the bottom, away from the fit pair somebody flicks
+    // between. Undo takes it back, and so does the bin.
+    //
+    // It belongs here rather than in the main column on the fold's own stated
+    // test - "how the picture sits in its card, and what the picture is made
+    // of". This is the second of those, said as strongly as it can be said: it
+    // decides what the picture on this card *is*. The main column's rows are
+    // about the card as a thing on the board, and this changes nothing about
+    // that - same place, same size, same name, same tags.
+    //
+    // The words are the frame's rather than the clip's. "Delete the video" is
+    // what happens and is the wrong half to lead with: the row is pressed by
+    // somebody who wants the still, and naming the loss first reads as a
+    // destructive row on a menu where Delete is already the destructive row.
+    // The toast says where the clip went; see keepFrame in commands/item-meta.ts.
+    { label: 'Keep this frame', icon: 'i-still', hidden: !freezable,
+      action: () => cmds!.keepFrame(id) },
   ];
   // A fold with nothing behind it is a row that opens an empty box. The rows
   // hide themselves one at a time on the conditions above, so the fold has to

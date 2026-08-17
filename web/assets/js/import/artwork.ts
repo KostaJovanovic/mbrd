@@ -1,15 +1,18 @@
-// What an audio file says about itself: its cover art, and its tags.
+// What an audio file says about itself: its cover art, its tags, and - for the
+// one shape of file that states it nowhere - how long it runs.
 //
 // Three container formats, parsed by hand: ID3v2 for .mp3, the MP4 atom tree
 // for .m4a/.mp4/.aac, and FLAC's metadata blocks. No dependency, the same way
 // storage/zip.js is no dependency - these are header formats, and a parser that
 // only has to find one field in each is a short one.
 //
-// Both readers live here rather than one per caller, because they are the same
-// walk through the same containers and only differ in which field they stop at.
-// coverArt() is what the importer wants - see import/drop.js. audioTags() is
-// what the optimiser wants, so that a track re-encoded to Opus arrives at the
-// other end still knowing who made it - see optimize/opus.js.
+// All three readers live here rather than one per caller, because they are the
+// same walk through the same containers and only differ in which field they
+// stop at. coverArt() is what the importer wants - see import/drop.js.
+// audioTags() is what the optimiser wants, so that a track re-encoded to Opus
+// arrives at the other end still knowing who made it - see optimize/opus.js.
+// streamDuration() is what the playlist wants, and it is the one reader here
+// that walks the audio rather than the metadata around it - see its own note.
 //
 // Everything here is read through Blob.slice(), never by pulling the file into
 // memory. An album is routinely 40 MB of audio wrapped around 200 KB of
@@ -21,6 +24,7 @@
 // importer treats a null as "nothing to show" and carries on.
 
 import { extOf } from '../util.ts';
+import { oversize, isOversize, mb } from '../consent.ts';
 
 /**
  * One tag, as a Vorbis-comment pair: `['ARTIST', 'Talk Talk']`.
@@ -58,6 +62,12 @@ type Bytes = Uint8Array<ArrayBuffer>;
  * to import them. It is a judgement about what a cover is *for*: this becomes a
  * thumbnail on a card, and a 30 MB scan of a gatefold sleeve costs the board's
  * memory and its .mbrd the same as the music does, to be looked at at 200px.
+ *
+ * Which is exactly why it is offered rather than enforced now. A judgement about
+ * what a cover is for is a judgement, and the person who scanned the gatefold at
+ * 600 dpi has a different one - defensibly, on their own board. The number stays
+ * as the line at which the trade is spelled out: what it costs, and that saying
+ * no costs nothing but the artwork.
  */
 const MAX_ART = 12 * 1024 * 1024;
 
@@ -73,6 +83,10 @@ const MAX_ART = 12 * 1024 * 1024;
  */
 const MAX_ID3_BYTES = MAX_ART + 256 * 1024;
 
+/** The measurement half of the cover warning. The risk half is in consent.ts. */
+const artTooBig = (n: number) =>
+  `The artwork inside this track is ${mb(n)}, past the ${mb(MAX_ART)} a cover is taken at.`;
+
 /** How far into an MP4 the atom walk will go before giving up. */
 const MAX_ATOMS = 4096;
 
@@ -83,14 +97,15 @@ const MAX_ATOMS = 4096;
  * storage/assets.js, which wants a name and a type - and so the asset registry
  * remembers it arrived as "cover.jpg" rather than as nothing.
  */
-export async function coverArt(file: Blob): Promise<File | null> {
+export async function coverArt(file: Blob, lift = false): Promise<File | null> {
   try {
     const head = await bytes(file, 0, 16);
-    const data = isID3(head) ? await id3Art(file, head)
-               : isFLAC(head) ? await flacArt(file)
-               : isMP4(head) ? await mp4Art(file)
+    const data = isID3(head) ? await id3Art(file, head, lift)
+               : isFLAC(head) ? await flacArt(file, lift)
+               : isMP4(head) ? await mp4Art(file, lift)
                : null;
-    if (!data || !data.length || data.length > MAX_ART) return null;
+    if (!data || !data.length) return null;
+    if (!lift && data.length > MAX_ART) throw oversize('cover-art', artTooBig(data.length));
     // The picture is identified by its own first bytes and by nothing else.
     //
     // Every one of these formats has a field for the MIME type, and every one
@@ -105,7 +120,14 @@ export async function coverArt(file: Blob): Promise<File | null> {
     const type = sniff(data);
     if (!type) return null;
     return new File([data], 'cover.' + extFor(type), { type });
-  } catch {
+  } catch (err) {
+    // The cover being too large is the one thing that comes out of here as a
+    // question rather than a shrug. Everything else in this module is meek by
+    // design - a tagger that wrote something strange is a track without a cover
+    // and nobody needs telling - but "there is a 30 MB sleeve scan in here and
+    // taking it costs your board 30 MB forever" is a real trade with two
+    // defensible answers, and the caller is where it can be put.
+    if (isOversize(err)) throw err;
     return null;
   }
 }
@@ -214,7 +236,7 @@ const isID3 = (h: Bytes) => h.length >= 10 && ascii(h, 0, 3) === 'ID3' && h[3] <
  * of it is read at once and walked in memory - it is kilobytes plus the
  * picture, and the picture is what we came for anyway.
  */
-async function id3Body(file: Blob, head: Bytes): Promise<Bytes | null> {
+async function id3Body(file: Blob, head: Bytes, lift = false): Promise<Bytes | null> {
   const size = syncsafe(head, 6);
   if (size <= 0) return null;
   // Capped before it is read, not after it is extracted.
@@ -230,7 +252,15 @@ async function id3Body(file: Blob, head: Bytes): Promise<Bytes | null> {
   //
   // A tag is the picture plus a few kilobytes of text, so the picture's own
   // ceiling plus room for the text is the honest bound.
-  if (size > MAX_ID3_BYTES) return null;
+  //
+  // Liftable with the cover it exists to bound, and it has to be: this is the
+  // number that decides whether the picture is ever reached, so leaving it fixed
+  // while MAX_ART became a question would have made the ID3 answer "yes" and then
+  // quietly do nothing. The risk somebody accepts here is the one the paragraph
+  // above describes and it is the largest in this module - the tag is read whole
+  // and desync() may allocate a second copy - which is why the warning for it says
+  // so rather than talking about thumbnails.
+  if (!lift && size > MAX_ID3_BYTES) throw oversize('cover-art', artTooBig(size));
   const footer = (head[5] & 0x10) ? 10 : 0;
   const tag = await bytes(file, 10, size + footer);
   // Tag-level unsynchronisation: every 0xFF in the body was followed by a
@@ -288,8 +318,8 @@ function eachID3Frame(
 }
 
 /** The APIC (v2.3+) or PIC (v2.2) frame of an ID3v2 tag. */
-async function id3Art(file: Blob, head: Bytes): Promise<Bytes | null> {
-  const tag = await id3Body(file, head);
+async function id3Art(file: Blob, head: Bytes, lift = false): Promise<Bytes | null> {
+  const tag = await id3Body(file, head, lift);
   if (!tag) return null;
   const major = head[3];
   const want = major <= 2 ? 'PIC' : 'APIC';
@@ -322,7 +352,15 @@ const ID3_TAGS: Record<string, string> = {
 };
 
 async function id3Tags(file: Blob, head: Bytes): Promise<TagPair[]> {
-  const tag = await id3Body(file, head);
+  // A tag past the ceiling is no tags here, and deliberately not a question.
+  // id3Body() throws one for coverArt()'s benefit, because a picture is worth
+  // asking about - but this path came for a title and an artist, and "may I read
+  // 300 MB to find out what this track is called" is not a trade anybody would
+  // take. The names come back empty, which is what a file with no tags does.
+  const tag = await id3Body(file, head).catch(err => {
+    if (isOversize(err)) return null;
+    throw err;
+  });
   if (!tag) return [];
   const major = head[3];
   const out: TagPair[] = [];
@@ -420,7 +458,7 @@ const isFLAC = (h: Bytes) => ascii(h, 0, 4) === 'fLaC';
  * walk through four-byte headers and the only block ever read in full is the
  * one we want.
  */
-async function flacArt(file: Blob): Promise<Bytes | null> {
+async function flacArt(file: Blob, lift = false): Promise<Bytes | null> {
   let at = 4;
   for (let n = 0; n < MAX_ATOMS; n++) {
     const head = await bytes(file, at, 4);
@@ -429,7 +467,10 @@ async function flacArt(file: Blob): Promise<Bytes | null> {
     const type = head[0] & 0x7f;
     const len = be24(head, 1);
     if (type === 6) {
-      if (len > MAX_ART + 4096) return null;
+      // Thrown rather than returned, so the caller can offer it. The +4096 is
+      // room for the block's own header fields around the picture, which is why
+      // this is not simply MAX_ART - the number quoted to the reader still is.
+      if (!lift && len > MAX_ART + 4096) throw oversize('cover-art', artTooBig(len));
       const b = await bytes(file, at + 4, len);
       return readFlacPicture(b);
     }
@@ -520,7 +561,7 @@ const isMP4 = (h: Bytes) => h.length >= 12 && ascii(h, 4, 4) === 'ftyp';
  * immediately. A walk that misses that reads the first child's size out of the
  * middle of the version field and goes nowhere.
  */
-async function mp4Art(file: Blob): Promise<Bytes | null> {
+async function mp4Art(file: Blob, lift = false): Promise<Bytes | null> {
   const moov = await findAtom(file, 0, file.size, 'moov');
   if (!moov) return null;
   const udta = await findAtom(file, moov.start, moov.end, 'udta');
@@ -537,7 +578,8 @@ async function mp4Art(file: Blob): Promise<Bytes | null> {
   // the flags is iTunes' own type - 13 JPEG, 14 PNG - and it is ignored in
   // favour of sniffing the bytes, which cannot disagree with themselves.
   const len = data.end - data.start - 8;
-  if (len <= 0 || len > MAX_ART) return null;
+  if (len <= 0) return null;
+  if (!lift && len > MAX_ART) throw oversize('cover-art', artTooBig(len));
   return await bytes(file, data.start + 8, len);
 }
 
@@ -632,4 +674,113 @@ async function findAtom(file: Blob, from: number, to: number, type: string): Pro
     at += size;
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// ADTS  -  raw .aac, the one file here that is not a container at all
+// ---------------------------------------------------------------------------
+
+/**
+ * The samples one ADTS raw data block carries. Fixed by the format, and the
+ * same number whether or not the stream uses SBR: HE-AAC doubles the output
+ * rate *and* the samples per block, so a frame covers the same wall clock
+ * either way and the header's own rate is the one to divide by.
+ */
+const ADTS_BLOCK = 1024;
+
+/** The sampling rates an ADTS header's four-bit index can name. */
+const ADTS_RATES = [
+  96000, 88200, 64000, 48000, 44100, 32000, 24000,
+  22050, 16000, 12000, 11025, 8000, 7350,
+];
+
+/** The fixed part of an ADTS header, which is all of it this reads. */
+const ADTS_HEAD = 7;
+
+/** How much of the file to hold at once while hopping headers. */
+const SCAN_CHUNK = 256 * 1024;
+
+/**
+ * Frames enough to believe this is a stream and not a coincidence, and frames
+ * enough that something has gone wrong.
+ *
+ * The floor is what stops seven bytes of some other format that happen to look
+ * like a header from being read as a one-frame track; real frames chain, and
+ * eight of them in a row is not an accident. It costs a stream shorter than a
+ * fifth of a second its exact answer, which is the whole of the trade.
+ *
+ * The ceiling is a runaway guard on a file this module did not write - about
+ * thirteen hours at a normal frame rate. Hitting it answers null rather than a
+ * truncated count, because a duration that is confidently short is worse than
+ * no duration at all.
+ */
+const MIN_FRAMES = 8;
+const MAX_FRAMES = 2_000_000;
+
+/**
+ * How long a raw AAC stream runs, in seconds - or null if the file is not one.
+ *
+ * Everything else here reads metadata; this counts audio, and it exists for a
+ * number no engine will give straight. A `.aac` is a bare run of ADTS frames
+ * with no container around it, so the file states its length nowhere at all,
+ * and `HTMLMediaElement.duration` for one is a *guess*: bytes remaining divided
+ * by the bitrate of the frames read so far. On a variable-bitrate stream that
+ * opens quietly the guess is not slightly off, it is off by orders of magnitude
+ * - Firefox reported a ninety-minute file as seven thousand minutes, from a few
+ * near-silent frames at the front. Every engine guesses; Firefox is only the
+ * one that guesses from the least.
+ *
+ * The count is exact instead, because each frame states its own length and
+ * carries a fixed number of samples: hop the headers to the end of the file and
+ * the samples are the answer. No frame is decoded and no payload is read - the
+ * walk touches seven bytes per frame - but it is the whole file end to end, so
+ * it is worth doing once and remembering, which is what the playlist does with
+ * `meta.duration`.
+ *
+ * Null for anything that is not this: an MP4, a FLAC, an MP3 (whose frames
+ * declare a layer, where AAC's are required to leave those two bits clear), a
+ * file whose frames stop chaining. All of those either carry a duration a
+ * browser can read or are none of this reader's business, and the caller falls
+ * back to asking the engine.
+ */
+export async function streamDuration(file: Blob): Promise<number | null> {
+  try {
+    const head = await bytes(file, 0, 16);
+    if (head.length < 16 || isMP4(head) || isFLAC(head)) return null;
+    // A tag in front of the audio is legal here and common - it is how a `.aac`
+    // carries a title at all - and every byte of it would read as garbage.
+    let at = isID3(head) ? 10 + syncsafe(head, 6) + ((head[5] & 0x10) ? 10 : 0) : 0;
+    let base = at;
+    let chunk = await bytes(file, base, SCAN_CHUNK);
+    let seconds = 0;
+    let frames = 0;
+    let ended = false;
+    while (frames < MAX_FRAMES) {
+      // Re-read from the frame rather than from the chunk end, so a header
+      // straddling the boundary is never split. Frames are a few hundred bytes
+      // against a quarter-megabyte window, so this is one read per thousand.
+      if (at + ADTS_HEAD > base + chunk.length) {
+        base = at;
+        chunk = await bytes(file, base, SCAN_CHUNK);
+        if (chunk.length < ADTS_HEAD) { ended = true; break; }
+      }
+      const i = at - base;
+      // Twelve sync bits and then a layer of 00, which is what says AAC. The
+      // ID bit between them is MPEG-2 against MPEG-4 and is not ours to mind.
+      if (chunk[i] !== 0xff || (chunk[i + 1] & 0xf6) !== 0xf0) { ended = true; break; }
+      const rate = ADTS_RATES[(chunk[i + 2] >> 2) & 0x0f];
+      // The length is of the whole frame, header and CRC included, so nothing
+      // here has to care whether the two protection bytes are present.
+      const len = ((chunk[i + 3] & 0x03) << 11) | (chunk[i + 4] << 3) | (chunk[i + 5] >> 5);
+      if (!rate || len < ADTS_HEAD) { ended = true; break; }
+      // Summed per frame rather than counted and divided once, because a stream
+      // may change rate at a frame boundary and a concatenated one often does.
+      seconds += ((chunk[i + 6] & 0x03) + 1) * ADTS_BLOCK / rate;
+      at += len;
+      frames += 1;
+    }
+    return ended && frames >= MIN_FRAMES ? seconds : null;
+  } catch {
+    return null;
+  }
 }

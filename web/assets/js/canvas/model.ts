@@ -23,6 +23,7 @@ import { clamp } from '../util.ts';
 import { addFile, allAssets, assetURL, derivedFile, getAsset, readText } from '../storage/assets.ts';
 import { surface, surfaceToBlob } from './surface.ts';
 import { applyMaterials, meshKind, parseMesh, parseMTL, MeshError } from '../mesh.ts';
+import { lift, isOversize } from '../consent.ts';
 import type { Mesh } from '../mesh.ts';
 import { board, bus, byId, selection, setModelShot } from '../state.ts';
 import type { Item } from '../board-model.ts';
@@ -319,7 +320,13 @@ export function buildModelCard(item: Item) {
     // never been rotated stays a board of live WebGL for ever.
     if (!turning.has(item.id)) takeShot(item.id).catch(() => {});
   }).catch(err => {
-    note.textContent = err instanceof MeshError ? err.message : 'This model could not be read';
+    // A declined ceiling reads out what was found, not "could not be read" - the
+    // model reads perfectly well and somebody said not to. isOversize() first
+    // because Oversize is not a MeshError and would otherwise land on the generic
+    // half of this line, which is the app forgetting the answer it just got.
+    note.textContent = isOversize(err) ? err.what
+      : err instanceof MeshError ? err.message
+      : 'This model could not be read';
     note.classList.add('is-error');
     stage.remove();
   });
@@ -349,7 +356,26 @@ async function load(item: Item): Promise<Mesh> {
   const kind = meshKind(asset.name || item.name || '');
   if (!kind) throw new MeshError('This is not a model file');
 
-  const mesh = parseMesh(kind, await asset.blob.arrayBuffer(), item.meta?.upAxis);
+  // Read once; if it stops at a ceiling, say what it found and read it again.
+  //
+  // The asking end of the retry contract in consent.ts. parseMesh() is
+  // synchronous and cannot ask anything, and this is the nearest place that both
+  // knows the file's name and is allowed to wait - so the ceiling comes back as a
+  // throw, the question goes out here, and a yes re-parses with `lift`. The second
+  // parse is the cost of a yes and it only ever happens to a model somebody has
+  // explicitly asked for.
+  //
+  // Keyed by the asset hash rather than by a name: two cards on one file are one
+  // model, and answering for the first has answered for the second.
+  const buf = await asset.blob.arrayBuffer();
+  const name = asset.name || item.name || 'This model';
+  let mesh: Mesh;
+  try {
+    mesh = parseMesh(kind, buf, item.meta?.upAxis);
+  } catch (err) {
+    if (!await lift(err, `mesh:${hash}`, name, 'Open it')) throw err;
+    mesh = parseMesh(kind, buf, item.meta?.upAxis, true);
+  }
   await paint(mesh);
   meshes.set(key, mesh);
   // The loop condition is what makes the first key present: a Map with more
