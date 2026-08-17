@@ -118,6 +118,39 @@ export function toast(msg: string, kind: ToastKind = ''): void {
 }
 
 /**
+ * Say, once, why a card has no picture of the thing it holds.
+ *
+ * Four paths in this app make a picture *of* a file rather than showing the
+ * file: a PDF's first page, a clip's first frame, a document's baked thumbnail,
+ * a TIFF decoded outright. All four are allowed to fail, all four fail to the
+ * same soft answer - a named card - and until this every one of them said so
+ * only to the console.
+ *
+ * Which is fine on a desktop and useless where it matters. **The engines that
+ * fail these are the ones on phones**, and a phone has no console at all: the
+ * person watching a folder of clips land as grey rectangles cannot see the one
+ * line that says which of a dozen reasons it was, and neither can anybody they
+ * report it to. A feature whose failure is only visible to somebody who already
+ * has a debugger is a feature that is undiagnosable by exactly the people who
+ * hit it.
+ *
+ * Once per reason per session, which is what makes this a line rather than a
+ * pile: forty clips a browser cannot decode are one fact said once, and two
+ * different faults are two lines. Plain rather than an error, because it is
+ * usually not one - a codec this engine does not have is the ordinary case, and
+ * the card is still a card.
+ */
+const saidNoPreview = new Set<string>();
+
+export function noPreview(subject: string, why: unknown): void {
+  const message = why instanceof Error ? why.message : String(why ?? '');
+  const reason = message.trim().slice(0, 100) || 'no reason given';
+  if (saidNoPreview.has(reason)) return;
+  saidNoPreview.add(reason);
+  toast(`No ${subject} preview - ${reason}`);
+}
+
+/**
  * Run a command from a button and say so if it fails.
  *
  * The two delegated `data-cmd` dispatchers - ui/sidebar.ts and ui/toolbar.ts -
