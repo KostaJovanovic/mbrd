@@ -1131,3 +1131,22 @@
   opacity: 0.85;
   pointer-events: none;
 }
+
+/* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
+   the argument and declares the channel-form tokens.
+
+   The board frame is the one rule in this file that cannot be written here. It
+   is a blend, its share is a variable the whimsy axis moves, and --accent may be
+   a pigment ui/pigments.js pulled out of a photograph a second ago - so it is
+   computed in script instead, by legacyBlends() in ui/appearance.js, which
+   reads --mobile-board-accent off the root and so follows the axis for free.
+
+   The literal in the var() fallback is not decoration. This frame is opaque on
+   purpose - the surround above is painted across the whole window and the frame
+   is what stops it at the board's edge - so it must not resolve to nothing if
+   the script has not run yet or has not run at all. White is 94% of the answer
+   at every tier, which makes it the right thing to be wrong with. */
+@supports not (color: color-mix(in srgb, red, blue)) {
+  #mobile-surround { background: rgb(var(--ink-c) / 6%); }
+  #mobile-board-frame { background: var(--lc-mobile-board, #fff); }
+}

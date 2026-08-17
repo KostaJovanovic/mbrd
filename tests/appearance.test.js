@@ -15,6 +15,24 @@ import {
 } from '../web/assets/js/layout-settings.ts';
 import { WEB, read } from './helpers.js';
 
+/**
+ * tokens.css down to the point where it stops describing the look.
+ *
+ * Section 7 is the palette restated for WebKit below 16.2 - channel-form
+ * companions and a copy of every mixed token, all inside an `@supports not`
+ * block. None of it is part of the look API: a --ink-c is derived from --ink
+ * rather than chosen, it is not something a board may set or a palette switch
+ * has to clear, and legacy-color.js rewrites all of it from the resolved
+ * colours anyway. Both parity tests below would otherwise read the fallback as
+ * fourteen new pigments per palette. tests/legacy-color.test.js is what holds
+ * that section honest.
+ */
+const lookTokens = () => {
+  const css = read(join(WEB, 'assets', 'css', 'tokens.css'));
+  const at = css.indexOf('@supports not (color: color-mix(in srgb, red, blue))');
+  return at < 0 ? css : css.slice(0, at);
+};
+
 // ---------------------------------------------------------------------------
 // The two attacks
 // ---------------------------------------------------------------------------
@@ -93,7 +111,7 @@ test('the allowlist is exactly the tokens tokens.css declares', () => {
   // here is one the Appearance panel can set but a saved board silently loses
   // on the way back in; a name here that the stylesheet dropped is a rule
   // guarding nothing. Neither shows up anywhere else.
-  const css = read(join(WEB, 'assets', 'css', 'tokens.css'));
+  const css = lookTokens();
   const declared = new Set([...css.matchAll(/^\s*(--[a-z0-9-]+)\s*:/gm)].map(m => m[1]));
 
   const missing = [...declared].filter(t => !TOKENS.has(t)).sort();
@@ -110,7 +128,7 @@ test('the allowlist is exactly the tokens tokens.css declares', () => {
  * way down, and half of those sentences are inside the blocks being read.
  */
 function declaredIn(pattern) {
-  const css = read(join(WEB, 'assets', 'css', 'tokens.css')).replace(/\/\*[\s\S]*?\*\//g, '');
+  const css = lookTokens().replace(/\/\*[\s\S]*?\*\//g, '');
   const out = new Set();
   for (const block of css.matchAll(pattern)) {
     for (const decl of block[2].matchAll(/(--[a-z0-9-]+)\s*:/g)) out.add(decl[1]);

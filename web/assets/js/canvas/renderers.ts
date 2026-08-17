@@ -152,7 +152,13 @@ export function defaultSize(type: string): Size {
     // place should be the one you saw in the window. Smaller than a note,
     // because a note is something you wrote and a sticker is a mark you made;
     // the resize grips are right there for the times that is wrong.
-    case 'sticker': return { w: 96, h: 96 };
+    //
+    // 72, a quarter off the 96 this started at. A sticker is a mark *on* the
+    // board and it was arriving the size of the things it was meant to be
+    // marking - next to the 120 note it is smallest by a margin nobody could
+    // see, and on a photograph it covered enough of the picture to be an
+    // object in its own right. Still well clear of MIN_SIZE (48).
+    case 'sticker': return { w: 72, h: 72 };
     // Wide and short: an address is a wide thing, and there is no body under
     // it - a link card is a name, a URL, and nothing else.
     case 'link':    return { w: 256, h: 106 };
@@ -909,7 +915,7 @@ const RENDERERS = {
     // counts things that are not cards and hands two hints the same outline.
     const key = hintKey(metaStr(item.meta?.hint));
     card.dataset.hint = key;
-    const { title, line, href, go: goes } = hintFor(metaStr(item.meta?.hint));
+    const { title, line, rows, href, go: goes } = hintFor(metaStr(item.meta?.hint));
     // Every hint but the dial prints its title here, at the head of the card and
     // ranged left. The dial prints its own, inside the row and centred over the
     // track - see below.
@@ -995,10 +1001,43 @@ const RENDERERS = {
 
       bindDial(slider);
       card.append(row);
+    } else if (rows) {
+      // A legend rather than a paragraph, which is what all three hints print;
+      // the prose branch below is the not-found pair's. Icons are built the
+      // long way here for the reason
+      // canvas/item-dom.js's anchor badge is: ui/menu.js's icon() is the helper
+      // every other module reaches for and canvas/ may not import ui/.
+      //
+      // .ico is base.css's, plain screen pixels - which on a card is what is
+      // wanted, since the whole card is inside the board transform and a 16px
+      // glyph there zooms with the words beside it.
+      const list = document.createElement('div');
+      list.className = 'ghost-keys';
+      for (const { icon, label, desktop } of rows) {
+        const row = document.createElement('div');
+        row.className = 'ghost-key';
+        // Named rather than hidden here: Mobile and Desktop share the item, the
+        // card is rebuilt on a layout switch either way, and a row that CSS can
+        // drop is one list instead of two. See HintRow in canvas/ghosts.js.
+        if (desktop) row.dataset.only = 'desktop';
+        const svg = document.createElementNS(SVG_NS, 'svg');
+        svg.setAttribute('class', 'ico');
+        // The words beside it say the same thing, so announcing the glyph as
+        // well reads the row out twice.
+        svg.setAttribute('aria-hidden', 'true');
+        const use = document.createElementNS(SVG_NS, 'use');
+        use.setAttribute('href', `assets/icons.svg#${icon}`);
+        svg.append(use);
+        const word = document.createElement('span');
+        word.textContent = label;
+        row.append(svg, word);
+        list.append(row);
+      }
+      card.append(list);
     } else {
       const body = document.createElement('div');
       body.className = 'ghost-line';
-      body.textContent = line;
+      body.textContent = line ?? '';
       card.append(body);
       // A hint carrying an href is one you follow. Only the not-found set has
       // one today - the way back off a dead address - and it is built here

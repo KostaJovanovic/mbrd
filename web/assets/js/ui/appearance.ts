@@ -47,6 +47,7 @@ import {
   syncPaletteMode, syncPaletteSources, wirePaletteSources,
   wireWhimsy, wirePalette, inputs, toHex,
 } from './appearance-controls.ts';
+import { legacyBlends } from './legacy-color.ts';
 import type { ControlSpec, Look } from './appearance-controls.ts';
 
 // Re-exported under its old name because this is where the rest of the app has
@@ -955,6 +956,11 @@ function apply(look: Look) {
   applied = new Set(Object.keys(vars));
   paintThemeColour();
   markDisplayFace();
+  // Every colour in the app that is a mix of two pigments, for the engines that
+  // cannot mix. A no-op on all of them but WebKit below 16.2, and it has to run
+  // here rather than once at boot: the mixes are functions of --accent, and
+  // this is the line after --accent has just moved. See ui/legacy-color.js.
+  legacyBlends(root);
   // Every other way a look changes wholesale - the palette menu, the axis, a
   // board arriving with its own colours - and each of them is a change the
   // canvas has to be walked through as well. Free at boot: main.js has not

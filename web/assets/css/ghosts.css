@@ -140,6 +140,48 @@
   text-wrap: pretty;
 }
 
+/* The legend: what all three hints print instead of a paragraph. The prose rule
+   above is the not-found pair's now, and theirs alone.
+
+   Same family, size and ink as .ghost-line above, because it is the same voice
+   saying a shorter thing - a second type treatment here would read as a second
+   kind of card. What it is not is `text-wrap: pretty`: these lines are four
+   words and are written not to wrap, and a row that wraps is a row to shorten
+   rather than to break well.
+
+   Rows are flex and the labels still line up, because .ico (base.css) is a fixed
+   16px box whatever the glyph inside it draws to - so the words start at the
+   same x without a grid to hold them there.
+
+   World pixels throughout, like every other size on a card. The icons are inside
+   the board transform and zoom with the words beside them, which is the point:
+   at the zoom where the text is legible the glyphs are, and nothing here is
+   chrome that has to hold a screen size. */
+.ghost-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.2;
+  color: var(--ghost-ink-2);
+}
+.ghost-key {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.ghost-key .ico {
+  /* Never squeezed by a long label - the box is the alignment. */
+  flex: none;
+  /* The glyph repeats what the words say, so it is the quieter half of the row:
+     the title's ink rather than the line's, held back with opacity so it reads
+     as a mark beside the text and not as a second thing to read. Stroke colour
+     is currentColor on .ico, so this is the whole of it. */
+  color: var(--ghost-ink);
+  opacity: 0.68;
+}
+
 /* The number, on the one card that is a statement rather than a hint.
 
    Reached through data-hint, which the ghost renderer already puts on every
@@ -405,6 +447,23 @@
   font-size: 14px;
   line-height: 1.38;
 }
+/* The legend, stepped up with the prose - and the icons with it, since a glyph
+   left at 16px beside 14px text stops being the same weight as the words. */
+:root[data-board-mode="mobile"] .ghost-keys {
+  font-size: 14px;
+  gap: 8px;
+}
+:root[data-board-mode="mobile"] .ghost-key .ico {
+  width: 18px;
+  height: 18px;
+}
+/* A row naming something a phone cannot do - the marquee on the first card, the
+   Arrange tool on the third, which is data-desktop on the toolbar too.
+   canvas/ghosts.js marks them rather than shipping a second list per layout; see
+   HintRow there. Hidden and not reworded: a marquee on a screen is a double-tap
+   and then a drag, which is not four words and is not what somebody on a phone
+   needs told. */
+:root[data-board-mode="mobile"] .ghost-key[data-only="desktop"] { display: none; }
 /* The torn page holds its text clear of the perforation down the left edge. A
    third of the width of a Desktop card is one thing; a third of a phone's is a
    column of nothing beside four lines of prose, so it comes in to the width of
@@ -492,7 +551,7 @@
    legacyBlends() in ui/appearance.js computes, which is the same mechanism the
    note and sticker colours use. */
 @supports not (color: color-mix(in srgb, red, blue)) {
-  .ghost-go:hover { background: var(--lc-accent-88-ink); }
+  .ghost-go:hover { background: var(--lc-accent-88-ink, var(--accent)); }
 
   :root[data-whimsy="0"] .ghost-card:not([data-hint="whimsy"]) {
     background:

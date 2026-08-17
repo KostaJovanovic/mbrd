@@ -1703,3 +1703,67 @@
      the token. */
   :root { --bar-h: 44px; }
 }
+
+/* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
+   the argument and declares the channel-form tokens.
+
+   The heaviest block in the app, because the phone chrome tints more than
+   anything else does: a feed tile, a playlist row and a cover placeholder are
+   all the accent laid over the sheet at some share, and that is a two-colour
+   blend rather than a colour at an alpha. Sixteen of the twenty-four here are
+   blends and none of them can be written down - Harsh derives the sheet itself
+   from --accent, and --accent can be a pigment pulled out of a photograph. They
+   read --lc-* tokens that legacyBlends() in ui/appearance.js computes and
+   rewrites whenever the look changes.
+
+   Every one carries a var() fallback, and the fallbacks are chosen so that a
+   board with no script yet is quiet rather than wrong: a tint falls back to the
+   sheet it was a tint of, and a tinted ink falls back to the ink. Nothing here
+   falls back to nothing, because most of these are backgrounds on chrome that
+   has to stay legible over the board. */
+@supports not (color: color-mix(in srgb, red, blue)) {
+  /* Alpha only - exact, and needing nothing from script. */
+  .feed-play { background: rgb(0 0 0 / 18%); }
+  .pl-eq { background: rgb(0 0 0 / 34%); }
+  .feed-tile-badge { background: rgb(var(--paper-c) / 82%); }
+  .feed-swatch-label { background: rgb(var(--paper-c) / 78%); }
+  .pl-cover::after {
+    box-shadow: inset 0 0 0 var(--hairline) rgb(var(--ink-c) / 12%);
+  }
+  .pw-line-base { stroke: rgb(var(--ink-c) / 20%); }
+  .pl-disc {
+    background:
+      radial-gradient(circle closest-side at 50% 50%,
+        var(--paper-card) 0 5%, transparent 5.5%),
+      radial-gradient(circle closest-side at 50% 50%,
+        var(--accent) 5.5% 33%, transparent 33.5%),
+      repeating-radial-gradient(circle closest-side at 50% 50%,
+        rgb(var(--ink-c) / 86%) 0 1.5px,
+        rgb(var(--ink-c) / 70%) 1.5px 3.5px);
+  }
+
+  /* Blends - computed in script, with the sheet or the ink behind each. */
+  #mobile-feed,
+  #mobile-playlist { background: var(--lc-ink-6-paper, var(--paper)); }
+  .feed-sheet { background: var(--lc-accent-6-white, #fff); }
+  .feed-tile[data-kind="audio"] {
+    background: var(--lc-accent-10-paper-3, var(--paper-3));
+  }
+  .feed-tile-art.is-placeholder,
+  .pl-row.is-playing .pl-time { color: var(--lc-accent-70-ink-3, var(--ink-3)); }
+  .feed-bars i { background: var(--lc-accent-58-ink-3, var(--ink-3)); }
+  .pl-cover,
+  .pl-art,
+  .pw-cover { background: var(--lc-accent-12-paper-3, var(--paper-3)); }
+  .pl-cover.is-placeholder,
+  .pw-cover.is-placeholder { color: var(--lc-accent-65-ink-3, var(--ink-3)); }
+  .pl-shuffle.is-on { background: var(--lc-accent-14-paper-card, var(--paper-card)); }
+  .pl-row.is-playing { background: var(--lc-accent-10-paper-card, var(--paper-card)); }
+  .pl-art.is-placeholder {
+    background: var(--lc-accent-9-paper-2, var(--paper-2));
+    color: var(--lc-ink-2-75-accent, var(--ink-2));
+  }
+  .pl-row.is-playing .pl-art.is-placeholder {
+    background: var(--lc-accent-14-paper-2, var(--paper-2));
+  }
+}

@@ -31,8 +31,33 @@ for. The rest degrade inside optional paths:
   `canvas/model.ts` still capture).
 - **`<dialog>.showModal()`** — the discard/clear question; `ui/dialog.ts` already
   feature-detects and defaults destructive answers to cancel when it is absent.
-- **CSS `:has()`, `@property`, `color-mix()`, modern colour** — the palette and a
-  handful of layout rules.
+- **CSS `@property`** — the 700ms crossfade between palettes (Safari 16.4). Below
+  it a palette switch is a hard cut, which is what it was before the fade existed.
+  `:has()` and `color-mix()` are *not* on this list any more: `:has()` is 15.4, and
+  `color-mix()` is carried below 16.2 by the fallback described next.
+- **`color-mix()` has a fallback, and the mechanism is worth knowing.** The app
+  mixes a colour 141 times. Ninety-nine of those are `color-mix(in srgb, C N%,
+  transparent)`, which is not a mix at all — mixing is done on premultiplied
+  values and `transparent` premultiplies to nothing, so the result is exactly `C`
+  at `N%` alpha and `rgb(var(--C-c) / N%)` is the same colour rather than an
+  approximation of it. Those are restated in channel form inside `@supports not
+  (color: color-mix(...))` blocks, one at the foot of each stylesheet, with the
+  channel tokens declared in section 7 of `tokens.css`.
+  **A doubled declaration would not have worked**, and the reason generalises: a
+  declaration containing `var()` is valid at *parse* time, so the cascade picks
+  the `color-mix()` line, substitutes into it, and only then finds a function it
+  cannot read — which makes the property invalid at computed-value time and drops
+  it to its initial value rather than to the line above it. `@supports` is
+  resolved before the cascade, which is why it is the mechanism that works. It
+  also means a current browser skips the whole block unparsed, so the fade above
+  and everything else about the look are untouched.
+  The remaining thirty-one are blends of two pigments, which have no `rgb()`
+  spelling and no value that can be written down — Harsh derives its entire sheet
+  from `--accent`, and `--accent` may be a colour `ui/pigments.ts` pulled out of a
+  photograph. `ui/legacy-color.ts` computes those at every change of look by
+  reading the recipe back out of the computed value, so it carries no second copy
+  of the palette. `tests/legacy-color.test.js` holds the two lists together in
+  both directions.
 - **External SVG `<use>`** — every icon in the app is a `<symbol>` in
   `assets/icons.svg`, referenced as `<use href="assets/icons.svg#i-note">`. Above
   the floor this is uniform; it is called out because it is the app's only
